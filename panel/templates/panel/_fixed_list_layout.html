@@ -12,6 +12,11 @@ asentarse un swap de htmx y al pulsar una pestaña. Por debajo de 992 px,
 altura natural.
 
 Uso: {% include "panel/_fixed_list_layout.html" with top_id="..." bottom_id="..." %}
+
+H30 (S128), punto 6 (móvil): por debajo de 992 px el panel fijo de
+arriba (filtros y acciones) se pliega tras un botón "Filtros y
+acciones", cerrado al entrar, para que la lista se vea a la primera.
+En el ordenador el botón no existe y el panel no cambia.
 {% endcomment %}
 <style>
 .fixed-list-scroll thead th {
@@ -26,6 +31,7 @@ Uso: {% include "panel/_fixed_list_layout.html" with top_id="..." bottom_id="...
     "use strict";
     const GUTTER = 8;
     const MIN_HEIGHT = 240;
+    const TOP_MAX_RATIO = 0.45;
     const bottomPanel = document.getElementById("{{ bottom_id|escapejs }}");
     const topPanel = document.getElementById("{{ top_id|escapejs }}");
     if (!bottomPanel) return;
@@ -60,7 +66,21 @@ Uso: {% include "panel/_fixed_list_layout.html" with top_id="..." bottom_id="...
         bottomPanel.style.height = "auto";
         if (window.innerWidth < 992 || bottomPanel.offsetParent === null) {
             bottomPanel.style.height = "";
+            if (topPanel) {
+                topPanel.style.maxHeight = "";
+                topPanel.style.overflowY = "";
+            }
             return;
+        }
+        // S128 (4.24): en pantallas bajas el panel fijo de Personal
+        // (510 px en una de 900) dejaba la lista en el mínimo y la
+        // página se salía de la ventana. Por encima del 45 % del alto
+        // de la ventana, el panel fijo tiene su propio scroll.
+        if (topPanel) {
+            topPanel.style.maxHeight = Math.round(
+                window.innerHeight * TOP_MAX_RATIO
+            ) + "px";
+            topPanel.style.overflowY = "auto";
         }
         const naturalHeight = bottomPanel.getBoundingClientRect().height;
         const overflow = Math.max(
@@ -79,6 +99,24 @@ Uso: {% include "panel/_fixed_list_layout.html" with top_id="..." bottom_id="...
         if (ev.target.closest("#docH30Tabs a, .nav-tabs a")) {
             setTimeout(recompute, 250);
         }
+    }
+
+    // S128 (móvil): botón para plegar/desplegar el panel superior.
+    // Solo visible por debajo de 992 px (d-lg-none); la clase
+    // fl-collapsed solo oculta en ese tramo (panel.css).
+    if (topPanel && !topPanel.dataset.flToggle) {
+        topPanel.dataset.flToggle = "1";
+        topPanel.classList.add("fl-collapsed");
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "btn btn-sm btn-outline-secondary w-100 mb-2 d-lg-none fl-toggle";
+        toggle.setAttribute("aria-expanded", "false");
+        toggle.textContent = "Filtros y acciones";
+        toggle.addEventListener("click", function () {
+            const collapsed = topPanel.classList.toggle("fl-collapsed");
+            toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+        });
+        topPanel.parentNode.insertBefore(toggle, topPanel);
     }
 
     let observer = null;

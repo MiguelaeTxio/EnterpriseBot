@@ -6,7 +6,13 @@ gestiona el JS delegado de _personal_pane.html (nunca se repinta al
 paginar/buscar), así que aquí solo se marca `checked` si el pk ya está
 en la selección recordada por ese JS al reconstruir la tabla.
 {% endcomment %}
-<table class="table table-hover table-light">
+{% comment %}
+H30 (S128), punto 6: `stack-mobile` -- en el móvil cada fila es una
+tarjeta (casilla, avisos y nombre arriba; el resto debajo, con su
+rótulo de `data-label`), sin columnas cortadas ni scroll lateral. En
+el ordenador la tabla no cambia (panel.css).
+{% endcomment %}
+<table class="table table-hover table-light stack-mobile">
     <thead class="table-light">
         <tr>
             <th class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input" id="person-select-all-page" title="Seleccionar todos los que cumplen el filtro actual"></th>
@@ -54,11 +60,11 @@ en la selección recordada por ese JS al reconstruir la tabla.
             <td class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input person-select-checkbox" value="{{ person.pk }}" data-name="{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }}"></td>
             <td class="sticky-col sticky-col-2 sticky-col-2-wide">{% if person.has_alert %}<i class="bi bi-exclamation-triangle-fill text-danger" title="{{ person.alert_labels|join:", " }}"></i>{% endif %}{% if person.contract_alert %}<span class="badge {{ person.contract_alert.css }} ms-1" title="{{ person.contract_alert.text }}"><i class="bi bi-clock-history"></i></span>{% endif %}</td>
             <td class="sticky-col sticky-col-3 sticky-col-3-after-wide sticky-col-last">{% if person.avatar_entry_id %}<img src="{% url 'panel:documentation_document_view' pk=person.avatar_entry_id %}" alt="" width="28" height="28" loading="lazy" class="rounded border me-1 person-avatar-thumb">{% endif %}<a href="{% url 'panel:documentation_personal_detail' pk=person.pk %}">{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }}</a></td>
-            <td>{{ person.dni }}</td>
-            <td>{{ person.hire_date|date:"d/m/Y"|default_if_none:"" }}</td>
-            <td>{{ person.doc_count }}</td>
-            <td>{{ person.job_position.name|default:"—" }}</td>
-            <td><span class="dossier-missing-flag" data-person-id="{{ person.pk }}"></span></td>
+            <td data-label="DNI">{{ person.dni }}</td>
+            <td data-label="Alta">{{ person.hire_date|date:"d/m/Y"|default_if_none:"" }}</td>
+            <td data-label="Documentos">{{ person.doc_count }}</td>
+            <td data-label="Requisito">{{ person.job_position.name|default:"—" }}</td>
+            <td class="stack-mobile-full"><span class="dossier-missing-flag" data-person-id="{{ person.pk }}"></span></td>
         </tr>
         {% empty %}
         <tr><td colspan="8" class="text-muted small py-3">No se encontró personal.</td></tr>

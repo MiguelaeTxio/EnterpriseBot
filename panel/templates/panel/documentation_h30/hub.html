@@ -233,6 +233,13 @@ id, indistinto de dónde viva en el DOM.
     // "vuelve a Centros de Gasto y luego salta a Personal").
     const SCREEN_KEY = 'documentation_hub';
 
+    // S128 (punto 6): en el móvil las pestañas van en una sola fila que
+    // se desliza; la activa se trae a la vista al entrar.
+    const activeTabLink = document.querySelector('#docH30Tabs .nav-link.active');
+    if (activeTabLink && window.innerWidth < 992) {
+        activeTabLink.scrollIntoView({block: 'nearest', inline: 'center'});
+    }
+
     // S128 (punto 2): EbNavState suma los cambios pendientes en vez de
     // que el último cancele al anterior, y los envía al salir de la
     // página (panel/static/panel/js/nav_state.js).

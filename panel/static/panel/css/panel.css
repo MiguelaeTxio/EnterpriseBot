@@ -1610,3 +1610,96 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
 .inbox-progress {
     height: 6px;
 }
+
+/* ------------------------------------------------------------------
+   H30 (S128), punto 6 -- panel en el móvil (por debajo de 992 px, el
+   mismo corte que la altura fija de las listas). En el ordenador nada
+   de esto aplica.
+   - Pestañas del hub en una sola fila deslizable (antes, 4 filas).
+   - Panel de filtros y acciones plegable (_fixed_list_layout.html).
+   - Tablas `stack-mobile`: cada fila es una tarjeta, sin columnas
+     cortadas ni scroll lateral.
+   ------------------------------------------------------------------ */
+@media (max-width: 991.98px) {
+    #docH30Tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: thin;
+    }
+
+    #docH30Tabs .nav-link {
+        white-space: nowrap;
+    }
+
+    .fl-collapsed {
+        display: none !important;
+    }
+
+    .stack-mobile thead {
+        display: none;
+    }
+
+    .stack-mobile,
+    .stack-mobile tbody {
+        display: block;
+        width: 100%;
+    }
+
+    .stack-mobile tr {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        column-gap: 0.5rem;
+        row-gap: 0.15rem;
+        padding: 0.5rem 0.25rem;
+        border-bottom: 1px solid var(--bs-border-color);
+    }
+
+    /* `!important`: las columnas fijas (.sticky-col-*) llevan anchos
+       con selectores más específicos. */
+    .stack-mobile td {
+        display: block;
+        flex: 0 0 auto;
+        border: 0;
+        padding: 0;
+        min-width: 0 !important;
+        max-width: none !important;
+        width: auto !important;
+        overflow-wrap: anywhere;
+        box-shadow: none;
+    }
+
+    .stack-mobile td:empty {
+        display: none;
+    }
+
+    /* La celda del nombre ocupa el resto de la primera línea. */
+    .stack-mobile td.sticky-col-last {
+        flex: 1 1 0;
+    }
+
+    /* Las tablas fijan `nowrap` en sus celdas con selectores más
+       específicos (p. ej. #personal-results-scroll td): en la tarjeta
+       el texto tiene que poder partirse. */
+    .stack-mobile td,
+    .stack-mobile td * {
+        white-space: normal !important;
+    }
+
+    .stack-mobile td[data-label],
+    .stack-mobile td.stack-mobile-full {
+        flex: 0 0 100%;
+        font-size: 0.85rem;
+    }
+
+    .stack-mobile td[data-label]::before {
+        content: attr(data-label) ": ";
+        font-weight: 600;
+        color: var(--bs-secondary-color);
+    }
+
+    .stack-mobile .sticky-col-last::after {
+        display: none;
+    }
+}
