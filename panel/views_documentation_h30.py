@@ -2176,15 +2176,32 @@ def _attach_contract_alerts(objects):
     ---
 
     Aviso del contrato de cada activo de un listado, con una sola
-    consulta (H30, S125). Independiente del requisito de documentación:
-    Miguel Ángel, "deberían de aparecer también en el listado de
-    trabajadores". Pone `contract_alert` en cada objeto (None si no hay).
+    consulta (H30, S125). Pone `contract_alert` en cada objeto (None si
+    no hay).
+
+    S128: ya NO es independiente del requisito. Miguel Ángel: las
+    insignias del listado "nos ciñamos única y exclusivamente a los
+    requisitos [...] si no tiene requisito, no se muestra. Y si tiene
+    el requisito y el requisito no está activo, tampoco". Solo sale
+    para quien tiene un requisito ACTIVO que exige el contrato
+    (CONTRATO, prórroga o modificación). La ficha sigue mostrándolo
+    siempre (`_contract_alert`).
     """
     from document_explorer.employer_service import CONTRACT_TYPE_CODES
 
-    active_ids = [
-        obj.pk for obj in objects if obj.is_active_employee is True
-    ]
+    requirement_ids = {
+        obj.job_position_id for obj in objects
+        if obj.is_active_employee is True and obj.job_position_id
+    }
+    contract_requirement_ids = set(JobPosition.objects.filter(
+        pk__in=requirement_ids, is_active=True,
+        required_document_types__code__in=CONTRACT_TYPE_CODES,
+    ).values_list("pk", flat=True))
+    active_ids = {
+        obj.pk for obj in objects
+        if obj.is_active_employee is True
+        and obj.job_position_id in contract_requirement_ids
+    }
     latest_by_person = {}
     for entry in DocumentIndexEntry.objects.filter(
         entry_kind=DocumentIndexEntry.KIND_FILE,
@@ -2200,7 +2217,7 @@ def _attach_contract_alerts(objects):
     for obj in objects:
         obj.contract_alert = (
             _contract_alert_for(obj, latest_by_person.get(obj.pk))
-            if obj.is_active_employee is True else None
+            if obj.pk in active_ids else None
         )
     return objects
 
