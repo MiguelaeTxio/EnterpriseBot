@@ -601,7 +601,7 @@ explícitamente no abordada por decisión de Miguel Ángel.
 | S019 | 2026-07-15 | Pasos 1-3 de la hoja de ruta construidos, con corrección de flujo a mitad de sesión (directriz 4.8): la generación automática se deriva de la tarea real del operario, no de un CRUD de supervisor. Calendario con código de colores y agrupación por `WorkPeriodGroup` construido y desplegado. Ocho incidencias reales encontradas y corregidas en producción (dos `ImportError` que tumbaron el despliegue, `FieldError`, sidebar rota, dos bugs de validación que bloqueaban el flujo real, autorrelleno de H.C./H.F., patrón de errores en crudo en 17 sitios fuera de H24). Vista de detalle de solo lectura para Partes Digitales añadida (fuera de H24). Diagnosticados con datos reales dos casos de "parte no encontrado" sin causa técnica. Decidida la migración futura de Google Drive a Google Cloud Storage (sin implementar). Detectado al cierre un bug real en `WorkPeriodGroup` (activación automática sin control) que Miguel Ángel decide abordar en sesión nueva junto con un rediseño más amplio (cálculo de periodo 21-20 al vuelo, horas extra acumuladas, visor por periodo) — ver "COMPLETADAS EN S019" y la hoja de ruta arriba para el detalle completo. |
 | S020 | 2026-07-15 | Rediseño completo de `WorkPeriodGroup` cerrado (5/5 puntos de la tarea principal, commits `cd5d14b`/`205346e`); CRUD de vacaciones comprobado y confirmado correcto sin cambios; desvío puntual a H10 por incidencia real de albaranes (commit `2aa236c`, ver anexo H10 fila S020); bug real de comentarios Django `{# #}` multilínea rotos detectado y corregido tras el primer cierre (commit `d27fec1`, 3 sitios); nueva incidencia de sidebar reportada por Miguel Ángel, sin diagnosticar todavía -- primera tarea de la siguiente sesión. Ver "COMPLETADAS EN S020" arriba para el detalle completo. |
 | S021 | 2026-07-16 | Prioridad 1 resuelta (sidebar de `alvarez_admin`, commit `e2a5ecc` -- el bug vivía en `machine_documents`, app de H23). Sin más trabajo propio de H24: funcionalidad de vacaciones/calendario completa desde S020. **PCH ejecutado al cierre: H24 → H23** (confirmado explícitamente por Miguel Ángel). Migración Drive→GCS, anotada aquí desde S019 sin fecha, pasa a rastrearse en el anexo H23 como primera tarea de la sesión siguiente. Ver anexo H23 (S021) para el resto del trabajo real de esta sesión -- H24 solo tuvo el desvío puntual de arriba. |
-| S127 | 2026-10-16 | Hito reabierto desde H30, ampliado y renombrado a "Vacaciones, Ausencias y Control Horario" por los requisitos de Alejandro (ver sección 7 y `ENTERPRISEBOT_ANNEX_ROUTER.md`, sección 6). Sin código todavía: contexto real comprobado en el repositorio y hoja de ruta acordada con Miguel Ángel. |
+| S127 | 2026-10-16 | Hito reabierto desde H30, ampliado y renombrado a "Vacaciones, Ausencias y Control Horario" por los requisitos de Alejandro (ver sección 7 y `ENTERPRISEBOT_ANNEX_ROUTER.md`, sección 6). Sin código: contexto real comprobado en el repositorio, reglas de vacaciones decididas con Carolina y hoja de ruta acordada. Aplazado en la misma sesión por Miguel Ángel; el marcador vuelve a H30. |
 
 ---
 
@@ -708,23 +708,12 @@ del panel, 8 con base (Maqueda), 1 solo `VacationPeriod` registrado.
   y consulta del propio trabajador. Comprobar en el BOE su estado y su
   texto antes de diseñar el punto 3.
 
-### 7.5. Hoja de Ruta para la Siguiente Sesión (S128)
+### 7.5. Hoja de Ruta al reactivar H24
 
-**Primera línea -- incidencia del agente H28 (desvío a H28).** Tras
-7-10 días con OneDrive en pausa, el agente arrancó y está poniendo al
-día la carpeta: Miguel Ángel ve muchos errores y el historial vacío.
-A 16/10 10:51 su latido llegaba al servidor y no había subido nada ni
-corrido ninguna pasada de la cuarentena. Miguel Ángel adjunta al
-empezar `h28_migration_agent\dist\h28_migration_agent.log` (su PC no
-puede usar la app de escritorio para enlazarlo). Leer el log y
-separar los avisos de "descargando de OneDrive" de los errores reales;
-el historial (`history.py`) solo escribe al terminar cada carpeta, y
-devuelve vacío si `history.json` está ilegible (en el log: "No se pudo
-leer el historial"). **Cierre:** causa de cada error del log
-identificada y corregida (o explicada como esperable), historial con
-eventos de la puesta al día, y consulta a BD con archivos subidos por
-el agente después de la puesta al día (`DocumentIndexEntry` en
-`_CUARENTENA` con `indexed_at` posterior al arranque).
+H24 se abrió y se pausó en la misma sesión S127 sin trabajo de código
+(Miguel Ángel lo aplazó para volver a H30). Al reactivarlo se empieza
+por el punto 1. La incidencia del agente H28 que estuvo aquí como
+primera línea pasó a la hoja de ruta de H30 (S128).
 
 1. **Vacaciones: días que corresponden, disfrutados y pendientes.**
    Modelos y migración en `hr_calendar`:

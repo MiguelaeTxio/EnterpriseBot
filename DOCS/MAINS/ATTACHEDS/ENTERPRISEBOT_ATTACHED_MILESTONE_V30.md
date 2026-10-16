@@ -9190,7 +9190,7 @@ verde; relanzado el trabajo fallido, segundo intento verde completo.
 ### auditoría de ausentes con OCR completo, dossiers rescatados y cotejo
 ### exacto de archivos de otra persona)
 
-La hoja de ruta de S127 (abajo) no avanzó en sus pruebas: la sesión se
+La hoja de ruta de S127 no avanzó en sus pruebas: la sesión se
 fue entera a sanear la documentación que esas pruebas necesitan dar por
 buena. El punto 4 (avisos de las 8:00) sí queda comprobado: el aviso del
 02/10 llegó por texto libre (`165d953`) y Miguel Ángel confirma al pausar
@@ -9292,70 +9292,124 @@ por número: 16 a la ficha de su dueño activo, 3 a la papelera, y los 4
 de Aranda Reyes (no activo, confirmado por Miguel Ángel) a la papelera
 (EnterpriseBot_057). Nada pendiente.
 
-## Hoja de Ruta para la Siguiente Sesión (S127) -- REESCRITA al cierre,
-## sustituye por completo a la de S126
+**Final de la sesión: hitos, H24 y limpieza.**
+- Los requisitos que Alejandro trasladó a Miguel Ángel (vacaciones,
+  ausencias, fichaje desde el móvil, consulta de registros) se
+  encajan en H24, ampliado y renombrado a "Vacaciones, Ausencias y
+  Control Horario" (`831d18d`, sin hito nuevo). Reglas de vacaciones
+  decididas con Carolina y hoja de ruta lista en el anexo V24
+  (`b41083f`). En la misma sesión Miguel Ángel aplaza H24 y el
+  marcador vuelve a H30 por los fallos que salen revisando el panel
+  con Yolanda (hoja de ruta de abajo).
+- Miguel Ángel confirma que los avisos de las 8:00 le llegan bien y
+  que los requisitos documentales funcionan: el punto 4 de la hoja de
+  ruta de S127 queda hecho.
+- El token de sesión ya no puede borrar adjuntos de releases (403);
+  `release_cleanup.yml` (`9259559`, nuevo) los borra con el
+  GITHUB_TOKEN del repositorio. Lanzado al cierre: `relevo-imagenes`
+  queda con 0 adjuntos (había páginas de documentos de personas desde
+  el 02/10).
+- Incidencia del agente H28, sin diagnosticar: tras 7-10 días con
+  OneDrive en pausa, el agente se está poniendo al día; Miguel Ángel
+  ve muchos errores y el historial vacío. A las 10:51 su latido llegaba
+  al servidor, sin subidas ni pasadas de la cuarentena ese día.
 
-**Primera línea -- prueba del CSV de Docuten (arrastrado 2.ª sesión sin
-avanzar):** depende solo de que Miguel Ángel suba en Docuten ("Nuevo
-envío de firma") el CSV que genera "Preparar para Docuten". Se hace
-dentro del punto 5 (circular con firma y entrega de EPIs). **Cierre:** la
-tabla de procesos detectados de Docuten no marca ningún error de
-formato; si lo marca, se corrige `panel/docuten_export.py` en la misma
-sesión.
+## Hoja de Ruta para la Siguiente Sesión (S128) -- REESCRITA al cierre
+## de S127, sustituye por completo a la de S127
 
-**Arranque directo por el punto 1, sin preguntar.** Orden de Miguel
-Ángel: primero las pruebas que quedaron por hacer, después las firmas de
-Docuten para la entrega de EPIs.
+**Primera línea -- incidencia del agente H28 (desvío a H28).** Miguel
+Ángel adjunta al empezar `h28_migration_agent\dist\h28_migration_agent.log`
+(su PC no puede enlazarse con la app de escritorio). Leer el log y
+separar los avisos de "descargando de OneDrive" de los errores reales;
+el historial (`history.py`) solo escribe al terminar cada carpeta y sale
+vacío si `history.json` está ilegible (en el log: "No se pudo leer el
+historial"). **Cierre:** causa de cada error del log corregida o
+explicada como esperable, historial con eventos de la puesta al día, y
+consulta a BD con `DocumentIndexEntry` en `_CUARENTENA` subidos por el
+agente con `indexed_at` posterior a su arranque.
 
-1. **Solicitud al trabajador por WhatsApp, prueba real** (plantillas ya
-   aprobadas por Meta). Desde Avisos > Pendientes, pedir a Miguel Ángel
-   (pk 250) un documento de tipo marcado "lo aporta el trabajador" que
-   le falte o caduque; contesta con la foto. **Cierre:** consulta a BD
-   con su `WorkerDocumentRequest` en `RECEIVED` y `received_entry` no
-   nulo, y el documento vigente en su ficha.
-2. **Punto 2, prueba en producción** (no hay entorno local: se prueba
-   solo en producción). Miguel Ángel sube un contrato con "Subir" desde
-   un aviso "Falta: Contrato laboral" de una persona de prueba y marca
-   "Cita solicitada" en un aviso de reconocimiento médico. **Cierre:**
-   consulta a BD: `DocumentIndexEntry` CONTRATO de esa persona con
-   `indexed_at` de hoy y el aviso ya no sale en Pendientes;
-   `NoticeAppointmentRequest` con `requested_by` y `cancelled_at` nulo
-   para el reconocimiento.
-3. **Bandeja de entrada, prueba real.** Yolanda (o Miguel Ángel) sube el
-   firmado de Docuten "PREVENCION LEANDRO ALVAREZ" tal cual lo descarga
-   (si Docuten entrega ZIP, el ZIP). **Cierre:** consulta a BD:
-   `InboxItem` en `ARCHIVED` con `person` = Leandro Álvarez, su
-   `DocumentAcknowledgment` con `channel=DOCUTEN` y `source_entry` =
-   el `entry` del `InboxItem`; si sale `REJECTED`, se corrige el motivo
-   en la misma sesión y se usa "Volver a clasificar" hasta `ARCHIVED`.
-   Si la descarga trae documento de evidencias de Docuten, se decide con
-   ese archivo delante qué se hace con él (hoy entraría como un archivo
-   más).
-4. **Avisos por WhatsApp a Miguel Ángel, primer envío real de las
-   8:00.** **Cierre:** consulta a BD: filas `NoticeDelivery` de
-   `company_user_id=1` con `first_sent_at` del día y ninguna de otro
-   destinatario; Miguel Ángel confirma que le llegaron. Si su
-   interruptor seguía apagado, se enciende y el cierre pasa al día
-   siguiente.
-5. **Firmas de Docuten para la entrega de EPIs (nuevo, pedido por Miguel
-   Ángel al cierre).** La entrega de EPIs debe ir firmada: desde la
-   entrega masiva de EPIs, "Preparar para Docuten" genera los tres
-   archivos sueltos (PDF de entrega por trabajador con sus EPIs, CSV y
-   hoja de pasos, mismo formato que las circulares de S124), y el
+Fallos de H30 que encontró Miguel Ángel revisando el panel con Yolanda
+(S127), en este orden:
+
+1. **Requisitos de documentación (`JobPosition`): selección múltiple,
+   activar/desactivar y borrado con cuenta atrás.** Casilla por fila y
+   "seleccionar todos" para actuar sobre varios a la vez (había muchos
+   requisitos de prueba y hubo que borrarlos uno a uno); activar y
+   desactivar (campo nuevo con migración; un requisito desactivado no
+   genera avisos); y al eliminar, uno o varios, un modal que avisa de
+   lo que se va a borrar con una cuenta atrás de 5 segundos (5, 4, 3,
+   2, 1) antes de que se active el botón Eliminar. **Cierre:** en
+   producción, Miguel Ángel desactiva y reactiva un requisito y borra
+   dos requisitos de prueba de una vez con el modal; consulta a BD con
+   el estado y los borrados.
+2. **Filtros borrados que vuelven (persistencia de navegación,
+   `panel.PanelNavigationState`).** Caso real: en el listado de
+   personal se escribe un nombre, se borra, se cambia de página y al
+   volver el filtro reaparece con el nombre. Al vaciar un filtro, su
+   valor vacío debe guardarse en la navegación igual que uno escrito.
+   Revisar todos los listados que guardan filtros, no solo personal.
+   **Cierre:** el caso real reproducido en producción ya no reaparece
+   (listado de personal y uno de maquinaria), y consulta a BD con el
+   estado de navegación del usuario sin el filtro borrado.
+3. **Avisos visuales: todos los faltantes o solo los del requisito.**
+   En los listados de personal y maquinaria (insignias) y en las fichas
+   de personal y de maquinaria, un interruptor para elegir entre ver
+   todos los documentos que faltan o solo los del requisito asignado a
+   esa persona o máquina, guardado en la navegación como el resto.
+   **Cierre:** con el interruptor en cada posición, el número de una
+   persona y una máquina reales coincide con una consulta a BD de sus
+   faltantes totales y de los de su requisito.
+4. **Regresión al crear un conjunto de dosieres.** Miguel Ángel intentó
+   crear un conjunto de dosieres nuevo y no salió bien. Reproducirlo en
+   producción con él, leer el log de error del servidor (relevo) y
+   corregir. **Cierre:** conjunto de dosieres nuevo creado desde el
+   panel y consulta a BD con su fila y sus tipos.
+5. **Colores de los tipos documentales que no cargan.** En la elección
+   de tipos de la documentación necesaria para dosieres y en
+   Documentación, los colores no se cargaron bien. Reproducir, ver si
+   es el estático (`com-static`, `collectstatic`) o el dato del color, y
+   corregir. **Cierre:** las dos pantallas muestran los colores de
+   todas las familias, comprobado por Miguel Ángel en producción.
+6. **Interfaz en el móvil (reportado por Miguel Ángel y confirmado por
+   Alejandro).** Las vistas del panel no se ven bien en el móvil y no
+   se puede trabajar desde él. Empezar por las pantallas que más se
+   usan (listados y fichas de personal y maquinaria, Avisos, Bandeja de
+   entrada) y que sean adaptables al móvil. **Cierre:** Miguel Ángel
+   trabaja desde su móvil en esas pantallas sin desplazamiento lateral
+   ni elementos cortados.
+7. **Firmas de Docuten para la entrega de EPIs.** Igual que en S127:
+   desde la entrega masiva de EPIs, "Preparar para Docuten" genera los
+   tres archivos sueltos (PDF de entrega por trabajador con sus EPIs,
+   CSV y hoja de pasos, formato de las circulares de S124), y el
    firmado que vuelve por la Bandeja de entrada queda enlazado a su
    `EpiDelivery`. **Cierre:** entrega real de un EPI a Miguel Ángel ->
-   archivos generados y subidos a Docuten sin errores de formato (cierra
-   también la primera línea); firmado subido a la Bandeja -> `InboxItem`
-   `ARCHIVED` y la entrega de EPI con su documento firmado enlazado
-   (consulta a BD).
-6. **Avisos de revisiones de accesorios de elevación y de EPIs
-   (arrastrado 1.ª sesión sin avanzar).** `document_notice_service` no
-   usa `LiftingAccessoryReview` ni `EpiReview`: incorporar sus fechas de
-   próxima revisión/caducidad a Avisos > Pendientes (caducados, próximos
-   y sin revisión) con el mismo criterio de días que los documentos.
-   **Cierre:** consulta a BD con los accesorios y EPIs de revisión
-   vencida o en <=30 días, y los mismos aparecen en Avisos > Pendientes
-   con su fecha.
+   archivos subidos a Docuten sin errores de formato (cierra también la
+   prueba del CSV de Docuten); firmado subido a la Bandeja ->
+   `InboxItem` `ARCHIVED` y la entrega con su documento firmado
+   enlazado (consulta a BD).
+8. **Avisos de revisiones de accesorios de elevación y de EPIs.**
+   `document_notice_service` no usa `LiftingAccessoryReview` ni
+   `EpiReview`: incorporar sus fechas de próxima revisión/caducidad a
+   Avisos > Pendientes (caducados, próximos y sin revisión) con el
+   mismo criterio de días que los documentos. **Cierre:** consulta a BD
+   con los accesorios y EPIs de revisión vencida o en <=30 días, y los
+   mismos aparecen en Avisos > Pendientes con su fecha.
+9. **Pruebas reales -- BLOQUEADAS hasta que Miguel Ángel coteje con
+   Yolanda los avisos de falta de documentación** (que lo que falta
+   falte de verdad y cerrar a mano los huecos). No se empiezan antes.
+   Cuando el cotejo esté hecho:
+   - Solicitud por WhatsApp a Miguel Ángel (pk 250) de un documento
+     "lo aporta el trabajador" que le falte o caduque. **Cierre:**
+     `WorkerDocumentRequest` en `RECEIVED` con `received_entry` y el
+     documento vigente en su ficha.
+   - Subida de un contrato desde un aviso "Falta: Contrato laboral" y
+     "Cita solicitada" en un reconocimiento. **Cierre:**
+     `DocumentIndexEntry` CONTRATO con `indexed_at` del día y fuera de
+     Pendientes; `NoticeAppointmentRequest` con `requested_by` y
+     `cancelled_at` nulo.
+   - Bandeja de entrada con el firmado de Docuten "PREVENCION LEANDRO
+     ALVAREZ". **Cierre:** `InboxItem` `ARCHIVED` con `person` =
+     Leandro Álvarez y su `DocumentAcknowledgment` `channel=DOCUTEN`.
 
 **Decisiones de Miguel Ángel que el modelo NO debe tocar por su
 cuenta:**
@@ -9394,21 +9448,3 @@ vacías.
 que no se pueden partir se corrigen a mano con el botón "Tipo". 13
 migraciones antiguas no se aplican sobre una BD vacía (para probar en
 local: `migrate --run-syncdb` con `MIGRATION_MODULES` vacío).
-
-## Al retomar H30 (añadido al pausar en S127, concertado con Miguel Ángel)
-
-**Condición previa a las pruebas (orden de Miguel Ángel).** Las
-pruebas de la hoja de ruta de arriba (puntos 1, 2 y 3, y la primera
-línea de Docuten) no se hacen hasta que Miguel Ángel haya cotejado con
-Yolanda los avisos de falta de documentación: comprobar que lo que
-falta falta de verdad (puede estar en otras carpetas) y cerrar a mano
-los huecos que se puedan. Con la documentación comprobada, se retoma
-por el punto 1.
-
-**Punto 4 (avisos de las 8:00): hecho.** Ver "COMPLETADAS EN S127".
-
-**Interfaz en el móvil (reportado por Miguel Ángel y confirmado por
-Alejandro).** Las vistas del panel no se ven bien en el móvil y no se
-puede trabajar desde él: hay que mejorar la experiencia y que la
-aplicación sea realmente adaptable al móvil. Anotado para verlo al
-volver.
