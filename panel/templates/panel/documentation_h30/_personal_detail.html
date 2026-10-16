@@ -337,17 +337,20 @@ arriba (title=...) se queda para cuando el acordeón está cerrado.
         onclick="openUploadForm(null, false, MISSING_TYPES_BY_FAMILY['LABORAL'])">
     <i class="bi bi-upload me-1"></i>+ Subir
 </button>
-<table class="table table-sm table-hover mb-0">
+{% comment %}
+H30 (S128), punto 6: tablas `stack-mobile` -- en el móvil cada fila es una tarjeta (ver panel.css).
+{% endcomment %}
+<table class="table stack-mobile table-sm table-hover mb-0">
     <thead><tr><th class="pdet-check-col"></th><th>Tipo</th><th>Caducidad</th><th>Acciones</th></tr></thead>
     <tbody>
         {% for entry in laboral_documents %}
         <tr{% if entry.needs_attention %} class="table-danger"{% endif %}>
-            <td>
+            <td class="stack-mobile-check">
                 <input type="checkbox" class="form-check-input" data-doc-pk="{{ entry.pk }}"
                        {% if entry.pk in selected_document_ids %}checked{% endif %}
                        onchange="toggleDocumentSelection(this)">
             </td>
-            <td>{{ entry.document_type.label }}{% if entry.contract_alert or entry.contract_review %}<div class="contract-alert-box" data-url="{% url 'panel:documentation_personal_contract_reviewed' pk=person.pk %}">
+            <td class="stack-mobile-title">{{ entry.document_type.label }}{% if entry.contract_alert or entry.contract_review %}<div class="contract-alert-box" data-url="{% url 'panel:documentation_personal_contract_reviewed' pk=person.pk %}">
                 {% if entry.contract_alert %}<span class="badge {{ entry.contract_alert.css }} text-wrap text-start">{{ entry.contract_alert.text }}</span>
                 <button type="button" class="btn btn-sm btn-outline-success py-0 ms-1 contract-review-button" data-action="review"
                         title="El contrato vigente es el correcto: el aviso vuelve a contar desde hoy">Correcto</button>{% endif %}
@@ -355,11 +358,11 @@ arriba (title=...) se queda para cuando el acordeón está cerrado.
                 <button type="button" class="btn btn-sm btn-link py-0 px-1 contract-review-button" data-action="clear"
                         title="Quitar la revisión: el aviso vuelve a calcularse desde la fecha del contrato">Anular revisión</button></div>{% endif %}
                 <span class="small ms-1 contract-review-status"></span></div>{% endif %}</td>
-            <td>
+            <td data-label="Caducidad">
                 {% if entry.needs_attention %}<i class="bi bi-exclamation-triangle-fill text-danger me-1" title="Sin fecha vigente -- necesita atención"></i>{% endif %}
                 {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}
             </td>
-            <td>
+            <td class="stack-mobile-full">
                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>
                 {% if entry.name|is_image_document %}
                 <button type="button" class="btn btn-sm btn-outline-success" onclick="usarComoFotoPerfil({{ entry.pk }}, this)" title="Usar esta imagen como foto de perfil"><i class="bi bi-person-badge"></i></button>
@@ -392,14 +395,14 @@ arriba (title=...) se queda para cuando el acordeón está cerrado.
         <div id="collapseLaboralVacaciones" class="accordion-collapse collapse" data-bs-parent="#personalLaboralAccordion">
             <div class="accordion-body">
 {% if person.company_user %}
-<table class="table table-sm table-hover mb-0">
+<table class="table stack-mobile table-sm table-hover mb-0">
     <thead><tr><th>Inicio</th><th>Fin</th><th>Etiqueta</th></tr></thead>
     <tbody>
         {% for period in vacation_periods %}
         <tr>
-            <td>{{ period.date_start|date:"d/m/Y" }}</td>
-            <td>{{ period.date_end|date:"d/m/Y" }}</td>
-            <td>{{ period.label|default:"—" }}</td>
+            <td class="stack-mobile-title">{{ period.date_start|date:"d/m/Y" }}</td>
+            <td data-label="Fin">{{ period.date_end|date:"d/m/Y" }}</td>
+            <td data-label="Etiqueta">{{ period.label|default:"—" }}</td>
         </tr>
         {% empty %}
         <tr><td colspan="3" class="text-muted small">Sin periodos de vacaciones registrados.</td></tr>
@@ -493,13 +496,13 @@ vacaciones).
 </div>
 
 <h6 class="text-muted text-uppercase small mb-2">Horas por máquina</h6>
-<table class="table table-sm table-hover mb-4">
+<table class="table stack-mobile table-sm table-hover mb-4">
     <thead><tr><th>Máquina</th><th>Horas</th></tr></thead>
     <tbody>
         {% for row in partes_by_machine %}
         <tr>
-            <td>{{ row.label }}</td>
-            <td>{{ row.hours|floatformat:2 }}</td>
+            <td class="stack-mobile-title">{{ row.label }}</td>
+            <td data-label="Horas">{{ row.hours|floatformat:2 }}</td>
         </tr>
         {% empty %}
         <tr><td colspan="2" class="text-muted small">Sin horas registradas para este filtro.</td></tr>
@@ -508,14 +511,14 @@ vacaciones).
 </table>
 
 <h6 class="text-muted text-uppercase small mb-2">Resumen diario</h6>
-<table class="table table-sm table-hover mb-0">
+<table class="table stack-mobile table-sm table-hover mb-0">
     <thead><tr><th>Fecha</th><th>Horas</th><th></th></tr></thead>
     <tbody>
         {% for row in partes_by_day %}
         <tr role="button" onclick="openWorkdayDetail('{{ row.date|date:'Y-m-d' }}')" class="pdet-clickable">
-            <td>{{ row.date|date:"d/m/Y" }}</td>
-            <td>{{ row.hours|floatformat:2 }}</td>
-            <td><button type="button" class="btn btn-sm btn-outline-info" onclick="event.stopPropagation(); openWorkdayDetail('{{ row.date|date:'Y-m-d' }}')">Ver parte</button></td>
+            <td class="stack-mobile-title">{{ row.date|date:"d/m/Y" }}</td>
+            <td data-label="Horas">{{ row.hours|floatformat:2 }}</td>
+            <td class="stack-mobile-actions"><button type="button" class="btn btn-sm btn-outline-info" onclick="event.stopPropagation(); openWorkdayDetail('{{ row.date|date:'Y-m-d' }}')">Ver parte</button></td>
         </tr>
         {% empty %}
         <tr><td colspan="3" class="text-muted small">Sin partes para este filtro.</td></tr>
@@ -570,22 +573,22 @@ vacaciones).
         onclick="openUploadForm(null, false, MISSING_TYPES_BY_FAMILY['SALUD_BAJAS_PERSONA'])">
     <i class="bi bi-upload me-1"></i>+ Subir
 </button>
-<table class="table table-sm table-hover mb-0">
+<table class="table stack-mobile table-sm table-hover mb-0">
     <thead><tr><th class="pdet-check-col"></th><th>Tipo</th><th>Caducidad</th><th>Acciones</th></tr></thead>
     <tbody>
         {% for entry in salud_documents %}
         <tr{% if entry.needs_attention %} class="table-danger"{% endif %}>
-            <td>
+            <td class="stack-mobile-check">
                 <input type="checkbox" class="form-check-input" data-doc-pk="{{ entry.pk }}"
                        {% if entry.pk in selected_document_ids %}checked{% endif %}
                        onchange="toggleDocumentSelection(this)">
             </td>
-            <td>{{ entry.document_type.label }}</td>
-            <td>
+            <td class="stack-mobile-title">{{ entry.document_type.label }}</td>
+            <td data-label="Caducidad">
                 {% if entry.needs_attention %}<i class="bi bi-exclamation-triangle-fill text-danger me-1" title="Sin fecha vigente -- necesita atención"></i>{% endif %}
                 {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}
             </td>
-            <td>
+            <td class="stack-mobile-full">
                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>
                 {% if entry.name|is_image_document %}
                 <button type="button" class="btn btn-sm btn-outline-success" onclick="usarComoFotoPerfil({{ entry.pk }}, this)" title="Usar esta imagen como foto de perfil"><i class="bi bi-person-badge"></i></button>
@@ -682,22 +685,22 @@ vez de una lista única sin estructura.
                         onclick="openUploadForm(null, false, MISSING_TYPES_BY_FAMILY['{{ fam.code }}'])">
                     <i class="bi bi-upload me-1"></i>+ Subir
                 </button>
-                <table class="table table-sm table-hover mb-0">
+                <table class="table stack-mobile table-sm table-hover mb-0">
                     <thead><tr><th class="pdet-check-col"></th><th>Tipo</th><th>Caducidad</th><th>Acciones</th></tr></thead>
                     <tbody>
                         {% for entry in fam.documents %}
                         <tr{% if entry.needs_attention %} class="table-danger"{% endif %}>
-                            <td>
+                            <td class="stack-mobile-check">
                                 <input type="checkbox" class="form-check-input" data-doc-pk="{{ entry.pk }}"
                                        {% if entry.pk in selected_document_ids %}checked{% endif %}
                                        onchange="toggleDocumentSelection(this)">
                             </td>
-                            <td>{{ entry.document_type.label }}</td>
-                            <td>
+                            <td class="stack-mobile-title">{{ entry.document_type.label }}</td>
+                            <td data-label="Caducidad">
                                 {% if entry.needs_attention %}<i class="bi bi-exclamation-triangle-fill text-danger me-1" title="Sin fecha vigente -- necesita atención"></i>{% endif %}
                                 {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}
                             </td>
-                            <td>
+                            <td class="stack-mobile-full">
                                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>
                                 {% if entry.name|is_image_document %}
                                 <button type="button" class="btn btn-sm btn-outline-success" onclick="usarComoFotoPerfil({{ entry.pk }}, this)" title="Usar esta imagen como foto de perfil"><i class="bi bi-person-badge"></i></button>
@@ -722,21 +725,21 @@ vez de una lista única sin estructura.
                         vista). Aprobado por Miguel Ángel en S120.
                         {% endcomment %}
                         <tr class="driving-grants-row">
-                            <td></td>
+                            <td class="stack-mobile-check"></td>
                             <td colspan="3" class="pt-0">
                                 {% if entry.driving_grants %}
-                                <table class="table table-sm table-bordered mb-1 small">
+                                <table class="table stack-mobile table-sm table-bordered mb-1 small">
                                     <thead class="table-light"><tr><th>Clase</th><th>Primera expedición</th><th>Caducidad</th><th>Códigos</th></tr></thead>
                                     <tbody>
                                         {% for grant in entry.driving_grants %}
                                         <tr{% if grant.is_required_expired %} class="table-danger"{% endif %}>
-                                            <td class="fw-bold" title="{{ grant.category.label }}">{{ grant.category.code }}</td>
-                                            <td>{{ grant.first_issue_date|default:"—" }}</td>
-                                            <td>
+                                            <td class="fw-bold stack-mobile-title" title="{{ grant.category.label }}">{{ grant.category.code }}</td>
+                                            <td data-label="Primera expedición">{{ grant.first_issue_date|default:"—" }}</td>
+                                            <td data-label="Caducidad">
                                                 {% if grant.is_required_expired %}<i class="bi bi-exclamation-triangle-fill text-danger me-1" title="Caducada y exigida por su requisito de documentación"></i>{% endif %}
                                                 {{ grant.expiry_date|default:"—" }}
                                             </td>
-                                            <td>{{ grant.codes|default:"—" }}</td>
+                                            <td data-label="Códigos">{{ grant.codes|default:"—" }}</td>
                                         </tr>
                                         {% endfor %}
                                     </tbody>
@@ -757,7 +760,7 @@ vez de una lista única sin estructura.
                         Opción 2 de Miguel Ángel.
                         {% endcomment %}
                         <tr class="subtype-documents-row">
-                            <td></td>
+                            <td class="stack-mobile-check"></td>
                             <td colspan="3" class="pt-0">
                                 {% for sub in entry.subtype_documents %}
                                 <div class="d-flex flex-wrap align-items-center gap-2 small border-start border-3 ps-2 mb-1">
@@ -822,14 +825,14 @@ usan los documentos.
         </h2>
         <div id="collapseEpiFam{{ forloop.counter }}" class="accordion-collapse collapse {% if forloop.first %}show{% endif %}" data-bs-parent="#personalEpiAccordion">
             <div class="accordion-body p-0">
-                <table class="table table-sm table-hover mb-0">
+                <table class="table stack-mobile table-sm table-hover mb-0">
                     <thead><tr><th>EPI</th><th>Última entrega</th><th>Documento</th><th>Ficha técnica</th><th></th></tr></thead>
                     <tbody>
                         {% for delivery in fam.deliveries %}
                         <tr>
-                            <td>{{ delivery.epi.label }}</td>
-                            <td>{{ delivery.delivery_date }}</td>
-                            <td>
+                            <td class="stack-mobile-title">{{ delivery.epi.label }}</td>
+                            <td data-label="Última entrega">{{ delivery.delivery_date }}</td>
+                            <td data-label="Documento">
                                 {% if delivery.source_entry_id %}
                                 <button type="button" class="btn btn-sm btn-outline-secondary"
                                         onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=delivery.source_entry_id %}')">
@@ -839,7 +842,7 @@ usan los documentos.
                                 <span class="text-muted small">Sin documento</span>
                                 {% endif %}
                             </td>
-                            <td>
+                            <td class="stack-mobile-full">
                                 {% for doc in delivery.epi.technical_docs %}
                                 <button type="button" class="btn btn-sm btn-outline-secondary mb-1" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=doc.pk %}')">
                                     <i class="bi bi-file-earmark-text"></i> {{ doc.document_type.label|default:"Ver" }}
@@ -850,7 +853,7 @@ usan los documentos.
                                     {% if delivery.epi.technical_docs %}+ Añadir{% else %}Subir{% endif %}
                                 </button>
                             </td>
-                            <td>
+                            <td class="stack-mobile-actions">
                                 <button type="button" class="btn btn-sm btn-outline-info"
                                         onclick="openEpiHistory({{ delivery.epi.pk }})">Historial</button>
                             </td>
@@ -886,22 +889,22 @@ usan los documentos.
         <div id="collapseAccesoriosMain" class="accordion-collapse collapse{% if main_accordion_open == 'collapseAccesoriosMain' %} show{% endif %}" data-bs-parent="#personalMainAccordion">
             <div class="accordion-body">
                 {% if lifting_accessories %}
-                <table class="table table-sm table-hover mb-2">
+                <table class="table stack-mobile table-sm table-hover mb-2">
                     <thead><tr><th>Tipo</th><th>Nº</th><th>Descripción</th><th>Centro de gasto</th><th>Entregado el</th><th>Caducidad</th><th>Certificado</th></tr></thead>
                     <tbody>
                         {% for accessory in lifting_accessories %}
                         <tr>
-                            <td>{{ accessory.accessory_type.label }}</td>
-                            <td><a href="{% url 'panel:lifting_accessory_detail' accessory.pk %}?back_url={{ request.get_full_path|urlencode }}">{{ accessory.identifier }}</a></td>
-                            <td>{{ accessory.description|default:"—" }}</td>
-                            <td>{{ accessory.current_machine.code }}</td>
-                            <td class="text-nowrap">{{ accessory.current_assignment_row.start_date|date:"d/m/Y" }}</td>
-                            <td class="text-nowrap">
+                            <td data-label="Tipo">{{ accessory.accessory_type.label }}</td>
+                            <td class="stack-mobile-title"><a href="{% url 'panel:lifting_accessory_detail' accessory.pk %}?back_url={{ request.get_full_path|urlencode }}">{{ accessory.identifier }}</a></td>
+                            <td data-label="Descripción">{{ accessory.description|default:"—" }}</td>
+                            <td data-label="Centro de gasto">{{ accessory.current_machine.code }}</td>
+                            <td class="text-nowrap" data-label="Entregado el">{{ accessory.current_assignment_row.start_date|date:"d/m/Y" }}</td>
+                            <td class="text-nowrap" data-label="Caducidad">
                                 {% if accessory.is_expired %}
                                 <span class="text-danger fw-semibold"><i class="bi bi-exclamation-triangle-fill me-1"></i>{{ accessory.expiry|date:"d/m/Y" }}</span>
                                 {% else %}{{ accessory.expiry|date:"d/m/Y"|default:"—" }}{% endif %}
                             </td>
-                            <td>{% if accessory.has_certificate %}<span class="text-success">Sí</span>{% else %}<span class="text-danger">Falta</span>{% endif %}</td>
+                            <td data-label="Certificado">{% if accessory.has_certificate %}<span class="text-success">Sí</span>{% else %}<span class="text-danger">Falta</span>{% endif %}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -936,18 +939,18 @@ usan los documentos.
                     <i class="bi bi-upload me-1"></i>+ Subir contrato
                 </button>
                 {% if employment.periods %}
-                <table class="table table-sm table-hover mb-2">
+                <table class="table stack-mobile table-sm table-hover mb-2">
                     <thead><tr><th>Alta</th><th>Baja</th><th>Contrato</th></tr></thead>
                     <tbody>
                         {% for period in employment.periods %}
                         <tr>
-                            <td class="text-nowrap">
+                            <td class="text-nowrap stack-mobile-title">
                                 {% for alta in period.altas %}<a href="{% url 'panel:documentation_document_view' alta.pk %}" target="_blank">{{ alta.issue_date|date:"d/m/Y" }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}
                             </td>
-                            <td class="text-nowrap">
+                            <td class="text-nowrap" data-label="Baja">
                                 {% if period.end_baja %}<a href="{% url 'panel:documentation_document_view' period.end_baja.pk %}" target="_blank">{{ period.end_date|date:"d/m/Y" }}</a>{% elif period.is_open %}<span class="text-muted">En curso</span>{% else %}<span class="text-warning-emphasis"><i class="bi bi-exclamation-circle me-1"></i>Sin baja registrada</span>{% endif %}
                             </td>
-                            <td>
+                            <td data-label="Contrato">
                                 {% if period.has_contract %}
                                 {% for contract in period.contracts %}<a href="{% url 'panel:documentation_document_view' contract.pk %}" target="_blank">{{ contract.issue_date|date:"d/m/Y" }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}
                                 {% else %}
