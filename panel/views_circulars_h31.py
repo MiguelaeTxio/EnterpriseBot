@@ -753,8 +753,8 @@ def _render_document_variables(content_html, *, worker=None, administrator=None,
 def _circular_generate_person_search(request):
     """
     H31 (S114). Búsqueda de trabajador para "Generar documento" --
-    mismo criterio que `_vacation_person_autocomplete_page` (H31 S94,
-    panel/views_documentation_h30.py): nombre/apellidos/DNI icontains,
+    mismo criterio que el antiguo autocompletado de Vacaciones (H31
+    S94, retirado en H24 S129): nombre/apellidos/DNI icontains,
     solo activos, máx. 15, nada con menos de 2 caracteres. Duplicado
     aquí en vez de importado para no acoplar este módulo al de
     Documentación/Personal por una función de 8 líneas.

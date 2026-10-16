@@ -1,30 +1,39 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/views_vacation_balance.py
 """
-Vacation balances inside the "Vacaciones" tab of the Documentation hub
-(H24, S129, roadmap point 1 of annex V24 section 7.5): balance per
-worker, section of each worker, vacation rules per section, manual
-adjustments and the starting balance imported from Carolina's
-spreadsheet. The computation lives in hr_calendar.balance; these views
-only read the request, call it and render.
+"Vacaciones" tab of the Documentation hub (H24, S129, roadmap point 1
+of annex V24 section 7.5): the list of active workers in the format of
+directive 4.24, with their days entitled, carried over, taken and
+pending; start and end date in the fixed panel to register vacations
+for the marked workers; section of each worker, vacation rules per
+section, manual adjustments and the starting balance imported from
+Carolina's spreadsheet. The computation lives in hr_calendar.balance;
+these views only read the request, call it and render.
 
-Who sees what (annex V24, 7.3): supervisors (ADMIN, SUPERVISOR,
-WORKSHOPBOSS -- the same roles that already register vacation periods,
-SupervisorAccessMixin) manage every worker; any other panel user only
-sees their own balance, through PersonIdentity.company_user.
+Documentation is the supervisors' tool (Miguel Ángel, S129): nothing
+here is scoped to the logged-in worker. Each worker will see their own
+vacations in a viewer of their own, outside Documentation. Reading
+follows the other hub tabs (any panel user); every action is limited
+to the roles that already managed vacation periods
+(SupervisorAccessMixin: ADMIN, SUPERVISOR, WORKSHOPBOSS).
 
 ---
 
-Saldos de vacaciones dentro de la pestaña "Vacaciones" del hub de
-Documentación (H24, S129, punto 1 de la hoja de ruta 7.5 del anexo
-V24): saldo por trabajador, sección de cada trabajador, reglas por
-sección, ajustes manuales y saldo de partida importado de la hoja de
-Carolina. El cálculo vive en hr_calendar.balance; estas vistas solo
-leen la petición, lo llaman y pintan.
+Pestaña "Vacaciones" del hub de Documentación (H24, S129, punto 1 de
+la hoja de ruta 7.5 del anexo V24): el listado de trabajadores activos
+con el formato de la directriz 4.24, con los días que corresponden, del
+año anterior, consumidos y pendientes; fecha de inicio y de fin en el
+panel fijo para dar de alta las vacaciones de los marcados; sección de
+cada trabajador, reglas por sección, ajustes manuales y saldo de
+partida importado de la hoja de Carolina. El cálculo vive en
+hr_calendar.balance; estas vistas solo leen la petición, lo llaman y
+pintan.
 
-Quién ve qué (anexo V24, 7.3): los supervisores (ADMIN, SUPERVISOR,
-WORKSHOPBOSS -- los mismos roles que ya dan de alta periodos,
-SupervisorAccessMixin) gestionan a todos; cualquier otro usuario del
-panel ve solo su propio saldo, por PersonIdentity.company_user.
+Documentación es la herramienta de los supervisores (Miguel Ángel,
+S129): nada aquí se acota al trabajador que entra. Cada trabajador verá
+sus vacaciones en un visor propio, fuera de Documentación. La lectura
+sigue a las demás pestañas del hub (cualquier usuario del panel); toda
+acción queda para los roles que ya gestionaban periodos
+(SupervisorAccessMixin: ADMIN, SUPERVISOR, WORKSHOPBOSS).
 """
 import datetime
 import logging
@@ -48,6 +57,7 @@ from hr_calendar.balance_import import build_template, import_template
 from hr_calendar.models import (
     PersonSectionAssignment,
     VacationBalanceAdjustment,
+    VacationPeriod,
     VacationRule,
 )
 from ivr_config.models import CompanyUser, Section
@@ -84,7 +94,7 @@ _COLUMNS = (
     ("entitled", "Corresponden"),
     ("manual", "Ajustes"),
     ("carryover", "Año anterior"),
-    ("taken", "Disfrutados"),
+    ("taken", "Consumidos"),
     ("pending", "Pendientes"),
 )
 
@@ -102,45 +112,28 @@ def can_manage(request):
     return request.user.company_user.role in MANAGE_ROLES
 
 
-def _own_person(request):
+def _people():
     """
-    The worker linked to the logged-in panel account, if any.
+    Workers listed in the tab: the active ones.
     ---
-    El trabajador vinculado a la cuenta de panel que ha entrado, si lo
-    hay (PersonIdentity.company_user).
+    Trabajadores del listado: los activos (mismo criterio que el alta
+    de vacaciones, S94).
     """
-    return PersonIdentity.objects.filter(
-        company_user=request.user.company_user,
-    ).first()
+    return PersonIdentity.objects.select_related(
+        "company_user__base",
+    ).filter(is_active_employee=True)
 
 
-def _visible_people(request):
+def _person_or_404(pk):
     """
-    Workers whose balance the user may see.
+    A worker by pk, or 404.
     ---
-    Trabajadores cuyo saldo puede ver el usuario: los activos si
-    gestiona; si no, solo él mismo (o nadie si su cuenta no está
-    vinculada a un trabajador).
+    Un trabajador por pk, o 404 (también uno ya inactivo, para ver o
+    corregir su histórico desde el desglose).
     """
-    qs = PersonIdentity.objects.select_related("company_user__base")
-    if can_manage(request):
-        return qs.filter(is_active_employee=True)
-    own = _own_person(request)
-    return qs.filter(pk=own.pk) if own else qs.none()
-
-
-def _person_or_404(request, pk):
-    """
-    A worker the user may see, or 404.
-    ---
-    Un trabajador que el usuario puede ver, o 404 (un usuario sin
-    permiso de gestión solo llega al suyo, aunque cambie el id).
-    """
-    person = _visible_people(request).filter(pk=pk).first()
-    if person is None and can_manage(request):
-        person = PersonIdentity.objects.select_related(
-            "company_user__base",
-        ).filter(pk=pk).first()
+    person = PersonIdentity.objects.select_related(
+        "company_user__base",
+    ).filter(pk=pk).first()
     if person is None:
         raise Http404
     return person
@@ -290,7 +283,7 @@ def _list_context(request):
     search = _param(request, "search").strip()
     section = _param(request, "section")
     only_negative = _param(request, "only_negative") == "1"
-    people = list(_visible_people(request))
+    people = list(_people())
     if search:
         needle = search.upper()
         people = [
@@ -359,9 +352,9 @@ def _sections(company):
 # ------------------------------------------------------------------
 class VacationBalanceTabView(CompanyUserRequiredMixin, View):
     """
-    GET: "Saldos" sub-tab (fixed panel, list, detail column).
+    GET: "Vacaciones" tab (fixed panel, list, detail column).
     ---
-    GET: subpestaña "Saldos" (panel fijo, lista y columna de detalle),
+    GET: pestaña "Vacaciones" (panel fijo, lista y columna de detalle),
     formato de la directriz 4.24, filtros/orden/selección persistidos
     por usuario (screen_key "vacation_balance").
     """
@@ -381,8 +374,6 @@ class VacationBalanceTabView(CompanyUserRequiredMixin, View):
             "no_section": NO_SECTION,
             "years": range(today.year - 2, today.year + 2),
             "today": today,
-            "own_person": None if can_manage(request) else _own_person(
-                request),
         }
         return render(request, "panel/vacation_balance/_pane.html", context)
 
@@ -439,7 +430,7 @@ class VacationBalanceDetailView(CompanyUserRequiredMixin, View):
     """
 
     def get(self, request, pk):
-        person = _person_or_404(request, pk)
+        person = _person_or_404(pk)
         year = _year(request.GET.get("year"))
         return _detail_response(request, person, year)
 
@@ -508,7 +499,7 @@ class VacationAdjustmentCreateView(SupervisorAccessMixin, View):
     """
 
     def post(self, request, pk):
-        person = _person_or_404(request, pk)
+        person = _person_or_404(pk)
         year = _year(request.POST.get("year"))
         days = _parse_decimal(request.POST.get("days"))
         if days is None or (days * 2) != (days * 2).to_integral_value():
@@ -555,6 +546,140 @@ class VacationAdjustmentDeleteView(SupervisorAccessMixin, View):
 
 
 # ------------------------------------------------------------------
+# Periodos de vacaciones
+# ------------------------------------------------------------------
+class VacationPeriodBulkCreateView(SupervisorAccessMixin, View):
+    """
+    POST: register the same vacation period for the marked workers.
+    ---
+    POST: da de alta el mismo periodo (fecha de inicio y de fin del
+    panel fijo, con medio día opcional) a los trabajadores marcados.
+    Cada alta es la de siempre (hr_calendar.services
+    .create_vacation_period, con su tarea fantasma si el trabajador
+    tiene cuenta de panel); si una falla, las demás siguen y el
+    mensaje dice cuáles no se registraron.
+    """
+
+    def post(self, request):
+        from hr_calendar.services import create_vacation_period
+
+        cu = request.user.company_user
+        date_start = _parse_date(request.POST.get("date_start"))
+        date_end = _parse_date(request.POST.get("date_end"))
+        half_start = request.POST.get("half_day_start") == "1"
+        half_end = request.POST.get("half_day_end") == "1"
+        ids = [pk for pk in request.POST.getlist("selected") if pk.isdigit()]
+        people = list(PersonIdentity.objects.filter(pk__in=ids).order_by(
+            "first_surname", "second_surname", "given_name",
+        ))
+        if not people or date_start is None or date_end is None:
+            return _table_response(
+                request, "Marca al menos un trabajador e indica la fecha "
+                         "de inicio y la de fin.", error=True,
+            )
+        created, failed = 0, []
+        for person in people:
+            try:
+                create_vacation_period(
+                    person=person, company=cu.company, created_by=cu,
+                    date_start=date_start, date_end=date_end,
+                    half_day_start=half_start, half_day_end=half_end,
+                )
+                created += 1
+            except ValueError as exc:
+                return _table_response(request, str(exc), error=True)
+            except Exception as exc:
+                logger.error(
+                    "# [vacation_balance] Error registrando vacaciones "
+                    "de person_pk=%s (%s a %s): %s",
+                    person.pk, date_start, date_end, exc, exc_info=True,
+                )
+                failed.append(_person_label(person))
+        message = (
+            f"Vacaciones del {date_start:%d/%m/%Y} al {date_end:%d/%m/%Y} "
+            f"registradas a {created} trabajador(es)."
+        )
+        if failed:
+            message += (
+                " No se pudieron registrar a: " + "; ".join(failed)
+                + ". Falta configuración de la tarea automática (centro "
+                "de gasto PERSONAL o categoría Vacaciones); avisa al "
+                "administrador."
+            )
+        return _table_response(request, message, error=bool(failed))
+
+
+def _period_or_404(request, pk):
+    period = VacationPeriod.objects.select_related(
+        "person", "generated_entry_line__entry__work_order",
+    ).filter(pk=pk, company=request.user.company_user.company).first()
+    if period is None:
+        raise Http404
+    return period
+
+
+class VacationPeriodEditView(SupervisorAccessMixin, View):
+    """
+    POST: change the dates (and half days) of a period.
+    ---
+    POST: cambia las fechas (y medios días) de un periodo desde el
+    desglose del trabajador (hr_calendar.services
+    .update_vacation_period, que rehace la tarea fantasma si cambia el
+    inicio).
+    """
+
+    def post(self, request, pk):
+        from hr_calendar.services import update_vacation_period
+
+        period = _period_or_404(request, pk)
+        year = _year(request.POST.get("year"))
+        date_start = _parse_date(request.POST.get("date_start"))
+        date_end = _parse_date(request.POST.get("date_end"))
+        if date_start is None or date_end is None:
+            return _detail_response(
+                request, period.person, year,
+                "Indica la fecha de inicio y la de fin.", error=True,
+            )
+        try:
+            update_vacation_period(
+                period, date_start, date_end,
+                half_day_start=request.POST.get("half_day_start") == "1",
+                half_day_end=request.POST.get("half_day_end") == "1",
+            )
+        except ValueError as exc:
+            return _detail_response(request, period.person, year, str(exc),
+                                    error=True)
+        return _detail_response(
+            request, period.person, year,
+            f"Periodo guardado: {date_start:%d/%m/%Y} a "
+            f"{date_end:%d/%m/%Y}.", refresh_table=True,
+        )
+
+
+class VacationPeriodRemoveView(SupervisorAccessMixin, View):
+    """
+    POST: delete a period (and its ghost task).
+    ---
+    POST: borra un periodo y su tarea fantasma
+    (hr_calendar.services.delete_vacation_period).
+    """
+
+    def post(self, request, pk):
+        from hr_calendar.services import delete_vacation_period
+
+        period = _period_or_404(request, pk)
+        person, year = period.person, _year(request.POST.get("year"))
+        label = (
+            f"{period.date_start:%d/%m/%Y} a {period.date_end:%d/%m/%Y}"
+        )
+        delete_vacation_period(period)
+        return _detail_response(
+            request, person, year, f"Periodo borrado: {label}.",
+            refresh_table=True,
+        )
+
+
+# ------------------------------------------------------------------
 # Reglas por sección
 # ------------------------------------------------------------------
 def _rules_context(request, message="", error=False, errors=None,
@@ -587,9 +712,9 @@ def _rules_context(request, message="", error=False, errors=None,
 
 class VacationRulesPaneView(CompanyUserRequiredMixin, View):
     """
-    GET: "Reglas por sección" sub-tab.
+    GET: "Reglas por sección" window.
     ---
-    GET: subpestaña "Reglas por sección" (lectura para todos, alta y
+    GET: ventana "Reglas por sección" (lectura para todos, alta y
     borrado para quien gestiona).
     """
 
@@ -683,9 +808,9 @@ class VacationRuleDeleteView(SupervisorAccessMixin, View):
 # ------------------------------------------------------------------
 class VacationImportPaneView(SupervisorAccessMixin, View):
     """
-    GET: "Importar saldos" sub-tab.
+    GET: "Importar saldos" window.
     ---
-    GET: subpestaña "Importar saldos": plantilla descargable y subida.
+    GET: ventana "Importar saldos": plantilla descargable y subida.
     """
 
     def get(self, request):

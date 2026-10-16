@@ -17,12 +17,10 @@ vive en el JS de _pane.html y sobrevive a cada repintado.
 <table class="table table-sm table-hover align-middle mb-0 stack-mobile" id="vbal-table">
     <thead class="table-light">
         <tr>
-            {% if can_manage %}
             <th class="vbal-check-col">
                 <input class="form-check-input" type="checkbox" id="vbal-check-all"
                        title="Marcar/desmarcar todos los visibles">
             </th>
-            {% endif %}
             {% for column in sort_columns %}
             <th{% if column.key != 'person' and column.key != 'section' %} class="text-end"{% endif %}>
                 <a class="text-decoration-none text-reset d-inline-flex align-items-center gap-1 user-select-none vbal-sort-link"
@@ -45,12 +43,10 @@ vive en el JS de _pane.html y sobrevive a cada repintado.
     <tbody>
         {% for row in rows %}
         <tr class="vbal-row" data-pk="{{ row.person.pk }}">
-            {% if can_manage %}
             <td class="stack-mobile-check">
                 <input class="form-check-input vbal-row-check" type="checkbox"
                        data-pk="{{ row.person.pk }}" data-label="{{ row.label }}">
             </td>
-            {% endif %}
             <td class="stack-mobile-title">
                 <a href="#" class="fw-semibold vbal-open-detail"
                    hx-get="{% url 'panel:vacation_balance_detail' row.person.pk %}?year={{ filter_year }}"
@@ -66,7 +62,7 @@ vive en el JS de _pane.html y sobrevive a cada repintado.
                 {% if row.balance.carryover %}{{ row.balance.carryover|floatformat:"-1" }}{% else %}<span class="text-muted">—</span>{% endif %}
                 {% if row.balance.carryover_lost %}<div class="small text-danger">{{ row.balance.carryover_lost|floatformat:"-1" }} perdidos</div>{% endif %}
             </td>
-            <td class="text-end" data-label="Disfrutados">{{ row.balance.taken|floatformat:"-1" }}</td>
+            <td class="text-end" data-label="Consumidos">{{ row.balance.taken|floatformat:"-1" }}</td>
             <td class="text-end fw-semibold{% if row.balance.is_negative %} text-danger{% endif %}" data-label="Pendientes">
                 {% if row.balance.is_negative %}<i class="bi bi-exclamation-triangle-fill me-1" title="Saldo negativo"></i>{% endif %}{{ row.balance.pending|floatformat:"-1" }}
             </td>
@@ -76,6 +72,6 @@ vive en el JS de _pane.html y sobrevive a cada repintado.
 </table>
 {% else %}
 <div class="text-muted small py-3">
-    {% if is_filtered %}Ningún trabajador coincide con el filtro.{% elif can_manage %}No hay trabajadores activos.{% else %}Tu cuenta del panel no está vinculada a ninguna ficha de trabajador: pide a un supervisor que la vincule para ver tu saldo.{% endif %}
+    {% if is_filtered %}Ningún trabajador coincide con el filtro.{% else %}No hay trabajadores activos.{% endif %}
 </div>
 {% endif %}

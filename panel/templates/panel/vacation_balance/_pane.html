@@ -1,23 +1,27 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/vacation_balance/_pane.html #}
 {% comment %}
-H24 (S129). Subpestaña "Saldos" de Vacaciones: días que corresponden,
-del año anterior, disfrutados y pendientes de cada trabajador (punto 1
-de la hoja de ruta 7.5 del anexo V24). Formato de la directriz 4.24,
-mismo esquema que Accesorios de elevación:
-- #vbal-top-panel (fijo): año, buscar y filtrar + acciones sobre la
-  selección, siempre visibles.
+H24 (S129). Pestaña Vacaciones del hub: listado de trabajadores activos
+con los días que corresponden, del año anterior, consumidos y
+pendientes (punto 1 de la hoja de ruta 7.5 del anexo V24). Formato de
+la directriz 4.24, mismo esquema que Accesorios de elevación:
+- #vbal-top-panel (fijo): año, buscar y filtrar + fecha de inicio y de
+  fin para registrar vacaciones a los marcados, y el resto de acciones
+  (asignar sección, reglas por sección, importar saldos), siempre
+  visibles.
 - #vbal-bottom-panel: lista con scroll propio (2/3) y, al lado, el
-  desglose del trabajador pulsado (1/3).
+  desglose del trabajador pulsado (1/3), donde se corrigen o borran
+  sus periodos y ajustes.
 Filtros, orden y selección persistidos por usuario (screen_key
-"vacation_balance"). Quien no gestiona vacaciones ve solo su fila.
+"vacation_balance"). Documentación es para los supervisores: el visor
+de cada trabajador irá fuera de aquí.
 {% endcomment %}
 <div class="border rounded p-2 mb-2" id="vbal-top-panel">
     <div class="row g-2">
-        <div class="col-lg-7">
+        <div class="col-lg-5">
             <div class="border rounded p-2 h-100">
-                <div class="fw-bold small mb-1">Año, buscar y filtrar</div>
+                <div class="fw-bold small mb-1">Buscar y filtrar</div>
                 <div class="d-flex gap-2 mb-2">
-                    <select id="vbal-filter-year" name="year" class="form-select form-select-sm w-auto" autocomplete="off"
+                    <select id="vbal-filter-year" name="year" class="form-select form-select-sm w-auto" autocomplete="off" title="Año del saldo"
                             hx-get="{% url 'panel:vacation_balance_results' %}"
                             hx-target="#vbal-table-container"
                             hx-include="#vbal-filter-year, #vbal-filter-search, #vbal-filter-section, #vbal-filter-negative, #vbal-only-selected, #vbal-selected-ids, #vbal-sort-inputs"
@@ -26,7 +30,6 @@ Filtros, orden y selección persistidos por usuario (screen_key
                         <option value="{{ year }}" {% if year == filter_year %}selected{% endif %}>{{ year }}</option>
                         {% endfor %}
                     </select>
-                    {% if can_manage %}
                     <input id="vbal-filter-search" type="search" name="search"
                            class="form-control form-control-sm"
                            placeholder="Buscar por nombre, apellidos o DNI…"
@@ -35,9 +38,7 @@ Filtros, orden y selección persistidos por usuario (screen_key
                            hx-target="#vbal-table-container"
                            hx-include="#vbal-filter-year, #vbal-filter-search, #vbal-filter-section, #vbal-filter-negative, #vbal-only-selected, #vbal-selected-ids, #vbal-sort-inputs"
                            hx-trigger="input changed delay:300ms, search">
-                    {% endif %}
                 </div>
-                {% if can_manage %}
                 <div class="d-flex gap-3 align-items-end flex-wrap">
                     <div>
                         <div class="small fw-bold">Sección</div>
@@ -53,22 +54,24 @@ Filtros, orden y selección persistidos por usuario (screen_key
                             {% endfor %}
                         </select>
                     </div>
-                    <div class="form-check mb-1">
-                        <input class="form-check-input" type="checkbox" id="vbal-filter-negative" name="only_negative" value="1" autocomplete="off"
-                               {% if filter_only_negative %}checked{% endif %}
-                               hx-get="{% url 'panel:vacation_balance_results' %}"
-                               hx-target="#vbal-table-container"
-                               hx-include="#vbal-filter-year, #vbal-filter-search, #vbal-filter-section, #vbal-filter-negative, #vbal-only-selected, #vbal-selected-ids, #vbal-sort-inputs"
-                               hx-trigger="change">
-                        <label class="form-check-label small" for="vbal-filter-negative">Solo saldo negativo</label>
-                    </div>
-                    <div class="form-check mb-1">
-                        <input class="form-check-input" type="checkbox" id="vbal-only-selected" name="only_selected" value="1" autocomplete="off"
-                               hx-get="{% url 'panel:vacation_balance_results' %}"
-                               hx-target="#vbal-table-container"
-                               hx-include="#vbal-filter-year, #vbal-filter-search, #vbal-filter-section, #vbal-filter-negative, #vbal-only-selected, #vbal-selected-ids, #vbal-sort-inputs"
-                               hx-trigger="change, vbal-selection-refresh">
-                        <label class="form-check-label small" for="vbal-only-selected">Solo la selección</label>
+                    <div>
+                        <div class="form-check mb-0">
+                            <input class="form-check-input" type="checkbox" id="vbal-filter-negative" name="only_negative" value="1" autocomplete="off"
+                                   {% if filter_only_negative %}checked{% endif %}
+                                   hx-get="{% url 'panel:vacation_balance_results' %}"
+                                   hx-target="#vbal-table-container"
+                                   hx-include="#vbal-filter-year, #vbal-filter-search, #vbal-filter-section, #vbal-filter-negative, #vbal-only-selected, #vbal-selected-ids, #vbal-sort-inputs"
+                                   hx-trigger="change">
+                            <label class="form-check-label small" for="vbal-filter-negative">Solo saldo negativo</label>
+                        </div>
+                        <div class="form-check mb-0">
+                            <input class="form-check-input" type="checkbox" id="vbal-only-selected" name="only_selected" value="1" autocomplete="off"
+                                   hx-get="{% url 'panel:vacation_balance_results' %}"
+                                   hx-target="#vbal-table-container"
+                                   hx-include="#vbal-filter-year, #vbal-filter-search, #vbal-filter-section, #vbal-filter-negative, #vbal-only-selected, #vbal-selected-ids, #vbal-sort-inputs"
+                                   hx-trigger="change, vbal-selection-refresh">
+                            <label class="form-check-label small" for="vbal-only-selected">Mostrar solo la selección actual</label>
+                        </div>
                     </div>
                     <input type="hidden" id="vbal-selected-ids" name="selected_ids" value="">
                     <button type="button"
@@ -82,37 +85,63 @@ Filtros, orden y selección persistidos por usuario (screen_key
                         <i class="bi bi-x-circle me-1"></i>Quitar orden
                     </button>
                 </div>
-                {% else %}
-                {% comment %}Sin gestión: no hay más filtros que el año.{% endcomment %}
-                <input type="hidden" id="vbal-filter-search" name="search" value="">
-                <input type="hidden" id="vbal-filter-section" name="section" value="">
-                <input type="hidden" id="vbal-filter-negative" name="only_negative" value="">
-                <input type="hidden" id="vbal-only-selected" name="only_selected" value="">
-                <input type="hidden" id="vbal-selected-ids" name="selected_ids" value="">
-                <span id="vbal-clear-sort" class="d-none"></span>
-                {% endif %}
             </div>
         </div>
-        <div class="col-lg-5">
+
+        <div class="col-lg-7">
             <div class="border rounded p-2 h-100">
-                {% if can_manage %}
                 <div class="d-flex align-items-center gap-2 mb-1">
                     <strong class="small"><span id="vbal-mass-count">0</span> seleccionados</strong>
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="vbal-mass-clear">Limpiar</button>
+                </div>
+                {% if can_manage %}
+                {% comment %}
+                Alta de vacaciones a los marcados: mismas fechas para todos
+                (decisión de Miguel Ángel, S129: "campo fecha para
+                introducir fecha inicial y otro para la fecha final").
+                {% endcomment %}
+                <div class="d-flex gap-2 align-items-end flex-wrap mb-2">
+                    <div>
+                        <label class="form-label small mb-0" for="vbal-date-start">Fecha de inicio</label>
+                        <input type="date" id="vbal-date-start" class="form-control form-control-sm">
+                        <div class="form-check small mb-0">
+                            <input class="form-check-input" type="checkbox" id="vbal-half-start">
+                            <label class="form-check-label" for="vbal-half-start">½ jornada</label>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="form-label small mb-0" for="vbal-date-end">Fecha de fin</label>
+                        <input type="date" id="vbal-date-end" class="form-control form-control-sm">
+                        <div class="form-check small mb-0">
+                            <input class="form-check-input" type="checkbox" id="vbal-half-end">
+                            <label class="form-check-label" for="vbal-half-end">½ jornada</label>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-primary vbal-needs-selection align-self-start mt-3" id="vbal-mass-create" disabled>
+                        <i class="bi bi-calendar-plus me-1"></i>Registrar vacaciones
+                    </button>
                 </div>
                 <div class="d-flex gap-1 flex-wrap">
                     <button type="button" class="btn btn-sm btn-outline-primary vbal-needs-selection" id="vbal-mass-section" disabled>
                         <i class="bi bi-diagram-3 me-1"></i>Asignar sección
                     </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                            data-bs-toggle="modal" data-bs-target="#vbalRulesModal"
+                            hx-get="{% url 'panel:vacation_rules_pane' %}" hx-target="#vbal-rules-body">
+                        <i class="bi bi-sliders me-1"></i>Reglas por sección
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                            data-bs-toggle="modal" data-bs-target="#vbalImportModal"
+                            hx-get="{% url 'panel:vacation_import_pane' %}" hx-target="#vbal-import-body">
+                        <i class="bi bi-file-earmark-spreadsheet me-1"></i>Importar saldos
+                    </button>
                 </div>
                 <div class="form-text small mt-1">
-                    Pulsa el nombre de un trabajador para ver su desglose, sus ajustes y su historial de secciones.
-                    Las reglas de cada sección y la importación del Excel están en sus propias subpestañas.
+                    Las vacaciones se registran a los marcados con las mismas fechas. Para ver, corregir o borrar las de
+                    un trabajador, sus ajustes y su sección, pulsa su nombre.
                 </div>
                 {% else %}
-                <div class="small">
-                    Tu saldo de vacaciones. Pulsa tu nombre para ver el desglose.
-                </div>
+                <span class="text-muted small">Solo consulta para tu rol.</span>
                 {% endif %}
             </div>
         </div>
@@ -200,6 +229,34 @@ Filtros, orden y selección persistidos por usuario (screen_key
         </div>
     </div>
 </div>
+
+<div class="modal fade" id="vbalRulesModal" tabindex="-1" aria-labelledby="vbalRulesModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="vbalRulesModalLabel">Reglas de vacaciones por sección</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="vbal-rules-body">
+                <div class="text-muted small">Cargando…</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="vbalImportModal" tabindex="-1" aria-labelledby="vbalImportModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="vbalImportModalLabel">Importar saldos de partida</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="vbal-import-body">
+                <div class="text-muted small">Cargando…</div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endif %}
 
 <div class="toast-container position-fixed bottom-0 end-0 p-3">
@@ -221,7 +278,6 @@ Filtros, orden y selección persistidos por usuario (screen_key
     const liveFilters = document.getElementById("vbal-live-filters");
     const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute("content");
     const SCREEN_KEY = "{{ screen_key|escapejs }}";
-    const CAN_MANAGE = {% if can_manage %}true{% else %}false{% endif %};
 
     const selection = new Map();
     try {
@@ -231,7 +287,6 @@ Filtros, orden y selección persistidos por usuario (screen_key
     } catch (e) { /* estado ilegible: se empieza sin selección */ }
     let lastSaved = null;
     function saveSelection() {
-        if (!CAN_MANAGE) return;
         const payload = Array.from(selection.entries()).map(function ([pk, label]) {
             return {pk: pk, label: label};
         });
@@ -257,7 +312,6 @@ Filtros, orden y selección persistidos por usuario (screen_key
 
     function updateSelectionUi() {
         saveSelection();
-        if (!CAN_MANAGE) return;
         document.getElementById("vbal-mass-count").textContent = selection.size;
         const idsInput = document.getElementById("vbal-selected-ids");
         const newIds = Array.from(selection.keys()).join(",");
@@ -288,8 +342,7 @@ Filtros, orden y selección persistidos por usuario (screen_key
         setLive("_f_year", document.getElementById("vbal-filter-year").value);
         setLive("_f_search", document.getElementById("vbal-filter-search").value);
         setLive("_f_section", document.getElementById("vbal-filter-section").value);
-        const negative = document.getElementById("vbal-filter-negative");
-        setLive("_f_only_negative", negative.type === "checkbox" && negative.checked ? "1" : "");
+        setLive("_f_only_negative", document.getElementById("vbal-filter-negative").checked ? "1" : "");
         container.querySelectorAll(".vbal-row-check").forEach(function (cb) {
             cb.checked = selection.has(cb.dataset.pk);
         });
@@ -321,13 +374,10 @@ Filtros, orden y selección persistidos por usuario (screen_key
         link.closest("tr").classList.add("table-active");
     });
 
-    const clearBtn = document.getElementById("vbal-mass-clear");
-    if (clearBtn) {
-        clearBtn.addEventListener("click", function () {
-            selection.clear();
-            refreshFromFragment();
-        });
-    }
+    document.getElementById("vbal-mass-clear").addEventListener("click", function () {
+        selection.clear();
+        refreshFromFragment();
+    });
 
     function postAction(url, extra) {
         const body = new FormData();
@@ -357,6 +407,42 @@ Filtros, orden y selección persistidos por usuario (screen_key
                 showToast("Sin conexión con el servidor: no se ha guardado nada.", true);
                 return false;
             });
+    }
+
+    function selectedLabels() {
+        return Array.from(selection.values()).sort().join("\n");
+    }
+
+    // Alta de vacaciones a los marcados, con las fechas del panel fijo.
+    const createButton = document.getElementById("vbal-mass-create");
+    if (createButton) {
+        createButton.addEventListener("click", function () {
+            if (!selection.size) return;
+            const start = document.getElementById("vbal-date-start").value;
+            const end = document.getElementById("vbal-date-end").value;
+            if (!start || !end) { showToast("Indica la fecha de inicio y la de fin.", true); return; }
+            const fmt = function (iso) { return iso.split("-").reverse().join("/"); };
+            if (!confirm("¿Registrar vacaciones del " + fmt(start) + " al " + fmt(end) + " a " +
+                         selection.size + " trabajador(es)?\n\n" + selectedLabels())) return;
+            createButton.disabled = true;
+            const original = createButton.innerHTML;
+            createButton.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Registrando…';
+            postAction("{% url 'panel:vacation_period_bulk_create' %}", {
+                selected: Array.from(selection.keys()),
+                date_start: start,
+                date_end: end,
+                half_day_start: document.getElementById("vbal-half-start").checked ? "1" : "",
+                half_day_end: document.getElementById("vbal-half-end").checked ? "1" : "",
+            }).then(function (ok) {
+                createButton.innerHTML = original;
+                updateSelectionUi();
+                if (ok) {
+                    document.getElementById("vbal-half-start").checked = false;
+                    document.getElementById("vbal-half-end").checked = false;
+                    htmx.trigger(document.body, "vacation-detail-refresh");
+                }
+            });
+        });
     }
 
     const sectionButton = document.getElementById("vbal-mass-section");

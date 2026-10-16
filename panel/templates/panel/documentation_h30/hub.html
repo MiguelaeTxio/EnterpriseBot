@@ -36,7 +36,7 @@ EbTypePicker.init() (ver panel/_doc_type_picker.html).
 {% endblock %}
 
 {% block content %}
-{% with pf_personal=persisted_filters.personal pf_epis=persisted_filters.epis pf_vacaciones=persisted_filters.vacaciones %}
+{% with pf_personal=persisted_filters.personal pf_epis=persisted_filters.epis %}
 <ul class="nav nav-tabs mb-3" id="docH30Tabs">
     <li class="nav-item">
         {% comment %}
@@ -83,8 +83,14 @@ EbTypePicker.init() (ver panel/_doc_type_picker.html).
         </a>
     </li>
     <li class="nav-item">
+        {% comment %}
+        H24 (S129): listado de trabajadores con su saldo y alta de
+        vacaciones a los marcados (formato 4.24). Filtros, orden y
+        selección los guarda la propia pestaña (screen_key
+        "vacation_balance") -- por eso no lleva querystring.
+        {% endcomment %}
         <a class="nav-link {% if persisted_active_tab == 'vacaciones' %}active{% endif %}" id="tab-vacaciones" data-bs-toggle="tab" href="#pane-vacaciones"
-           hx-get="{% url 'panel:documentation_vacation_tab' %}?q={{ pf_vacaciones.q|default:'' }}&sort={{ pf_vacaciones.sort|default:'' }}&dir={{ pf_vacaciones.dir|default:'asc' }}"
+           hx-get="{% url 'panel:vacation_balance_tab' %}"
            hx-target="#pane-vacaciones"
            hx-trigger="{% if persisted_active_tab == 'vacaciones' %}load once{% else %}click once{% endif %}">
             <i class="bi bi-calendar-check me-1"></i>Vacaciones
@@ -285,8 +291,6 @@ id, indistinto de dónde viva en el DOM.
         {match: /\/documentacion\/personal\/resultados\/?(\?|$)/, tab: 'personal'},
         {match: /\/documentacion\/epis\/?(\?|$)/, tab: 'epis'},
         {match: /\/documentacion\/epis\/resultados\/?(\?|$)/, tab: 'epis'},
-        {match: /\/documentacion\/vacaciones\/?(\?|$)/, tab: 'vacaciones'},
-        {match: /\/documentacion\/vacaciones\/resultados\/?(\?|$)/, tab: 'vacaciones'},
         {match: /\/documentacion\/calendario\/?(\?|$)/, tab: 'calendario'},
         {match: /\/documentacion\/calendario\/resultados\/?(\?|$)/, tab: 'calendario'},
     ];
