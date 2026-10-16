@@ -16,7 +16,7 @@ pestaña Personal, S113/S114):
   vista): DOCS_SUPERVISOR y ADMIN gestionan; solo ADMIN borra.
 {% endcomment %}
 {% if assets %}
-<table class="table table-sm table-hover align-middle mb-0" id="fleet-table">
+<table class="table table-sm table-hover align-middle mb-0 stack-mobile" id="fleet-table">
         <thead class="table-light">
             <tr>
                 <th class="sticky-col sticky-col-1">
@@ -24,14 +24,14 @@ pestaña Personal, S113/S114):
                            title="Marcar/desmarcar todos los visibles">
                 </th>
                 <th class="sticky-col sticky-col-2"></th>
-                <th class="sticky-col sticky-col-3 sticky-col-last" style="min-width:80px">
+                <th class="sticky-col sticky-col-3 sticky-col-last fleet-col-w80">
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
                        hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.code }}"}'
-                       style="cursor:pointer">
+                       role="button">
                         Código
                         {% if sort_arrows.code %}
                             <i class="bi bi-arrow-{{ sort_arrows.code }}-short"></i>{% if sort_priority.code %}<sup class="small">{{ sort_priority.code }}</sup>{% endif %}
@@ -40,14 +40,14 @@ pestaña Personal, S113/S114):
                         {% endif %}
                     </a>
                 </th>
-                <th style="min-width:90px">
+                <th class="fleet-col-w90">
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
                        hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.family }}"}'
-                       style="cursor:pointer">
+                       role="button">
                         Familia
                         {% if sort_arrows.family %}
                             <i class="bi bi-arrow-{{ sort_arrows.family }}-short"></i>{% if sort_priority.family %}<sup class="small">{{ sort_priority.family }}</sup>{% endif %}
@@ -56,14 +56,14 @@ pestaña Personal, S113/S114):
                         {% endif %}
                     </a>
                 </th>
-                <th >
+                <th>
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
                        hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.brand_model }}"}'
-                       style="cursor:pointer">
+                       role="button">
                         Descripción / Marca-Modelo
                         {% if sort_arrows.brand_model %}
                             <i class="bi bi-arrow-{{ sort_arrows.brand_model }}-short"></i>{% if sort_priority.brand_model %}<sup class="small">{{ sort_priority.brand_model }}</sup>{% endif %}
@@ -72,14 +72,14 @@ pestaña Personal, S113/S114):
                         {% endif %}
                     </a>
                 </th>
-                <th style="min-width:100px">
+                <th class="fleet-col-w100">
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
                        hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.type_name }}"}'
-                       style="cursor:pointer">
+                       role="button">
                         Tipo
                         {% if sort_arrows.type_name %}
                             <i class="bi bi-arrow-{{ sort_arrows.type_name }}-short"></i>{% if sort_priority.type_name %}<sup class="small">{{ sort_priority.type_name }}</sup>{% endif %}
@@ -88,14 +88,14 @@ pestaña Personal, S113/S114):
                         {% endif %}
                     </a>
                 </th>
-                <th style="min-width:90px">
+                <th class="fleet-col-w90">
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
                        hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.plate }}"}'
-                       style="cursor:pointer">
+                       role="button">
                         Matrícula
                         {% if sort_arrows.plate %}
                             <i class="bi bi-arrow-{{ sort_arrows.plate }}-short"></i>{% if sort_priority.plate %}<sup class="small">{{ sort_priority.plate }}</sup>{% endif %}
@@ -104,14 +104,14 @@ pestaña Personal, S113/S114):
                         {% endif %}
                     </a>
                 </th>
-                <th class="text-center" style="min-width:90px">
+                <th class="text-center fleet-col-w90">
                     <a class="text-decoration-none text-reset d-flex align-items-center justify-content-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
                        hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.doc_count }}"}'
-                       style="cursor:pointer">
+                       role="button">
                         Documentos
                         {% if sort_arrows.doc_count %}
                             <i class="bi bi-arrow-{{ sort_arrows.doc_count }}-short"></i>{% if sort_priority.doc_count %}<sup class="small">{{ sort_priority.doc_count }}</sup>{% endif %}
@@ -120,15 +120,15 @@ pestaña Personal, S113/S114):
                         {% endif %}
                     </a>
                 </th>
-                <th class="text-center" style="min-width:70px">Contad.</th>
-                <th style="min-width:100px">
+                <th class="text-center fleet-col-w70">Contad.</th>
+                <th class="fleet-col-w100">
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
                        hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.requirement }}"}'
-                       style="cursor:pointer">
+                       role="button">
                         Requisito de documentación
                         {% if sort_arrows.requirement %}
                             <i class="bi bi-arrow-{{ sort_arrows.requirement }}-short"></i>{% if sort_priority.requirement %}<sup class="small">{{ sort_priority.requirement }}</sup>{% endif %}
@@ -137,14 +137,14 @@ pestaña Personal, S113/S114):
                         {% endif %}
                     </a>
                 </th>
-                <th class="text-center" style="min-width:70px">
+                <th class="text-center fleet-col-w70">
                     <a class="text-decoration-none text-reset d-flex align-items-center justify-content-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
                        hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.is_active }}"}'
-                       style="cursor:pointer">
+                       role="button">
                         Estado
                         {% if sort_arrows.is_active %}
                             <i class="bi bi-arrow-{{ sort_arrows.is_active }}-short"></i>{% if sort_priority.is_active %}<sup class="small">{{ sort_priority.is_active }}</sup>{% endif %}
@@ -153,14 +153,14 @@ pestaña Personal, S113/S114):
                         {% endif %}
                     </a>
                 </th>
-                <th class="text-center" style="min-width:55px">
+                <th class="text-center fleet-col-w55">
                     <a class="text-decoration-none text-reset d-flex align-items-center justify-content-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
                        hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.use_count }}"}'
-                       style="cursor:pointer">
+                       role="button">
                         Usos
                         {% if sort_arrows.use_count %}
                             <i class="bi bi-arrow-{{ sort_arrows.use_count }}-short"></i>{% if sort_priority.use_count %}<sup class="small">{{ sort_priority.use_count }}</sup>{% endif %}
@@ -169,7 +169,7 @@ pestaña Personal, S113/S114):
                         {% endif %}
                     </a>
                 </th>
-                <th class="text-end" style="min-width:60px">Acciones</th>
+                <th class="text-end fleet-col-w60">Acciones</th>
             </tr>
         </thead>
         <tbody>
@@ -197,15 +197,14 @@ pestaña Personal, S113/S114):
                     {# H30 (S118): foto de la máquina, si se ha elegido una #}
                     {% if asset.avatar_document and not asset.avatar_document.deleted_at %}
                     <img src="{% url 'panel:documentation_document_view' pk=asset.avatar_document_id %}"
-                         alt="" loading="lazy" class="rounded border me-1"
-                         style="width:28px;height:28px;object-fit:cover;">
+                         alt="" width="28" height="28" loading="lazy" class="rounded border me-1 fleet-avatar-thumb">
                     {% endif %}
                     <a href="{% url 'panel:documentation_machine_detail' pk=asset.pk %}?back_url={{ fleet_back_url|urlencode }}">{{ asset.code }}</a>
                 </td>
 
-                <td><span class="text-muted small">{{ asset.family|default:"—" }}</span></td>
+                <td data-label="Familia"><span class="text-muted small">{{ asset.family|default:"—" }}</span></td>
 
-                <td>
+                <td data-label="Descripción">
                     <span title="{{ asset.brand_model }}">
                         {{ asset.brand_model|default:"—"|truncatechars:50 }}
                     </span>
@@ -214,17 +213,17 @@ pestaña Personal, S113/S114):
                     {% endif %}
                 </td>
 
-                <td>
+                <td data-label="Tipo">
                     <span class="text-muted small" title="{{ asset.type_name }}">
                         {{ asset.type_name|default:"—"|truncatechars:35 }}
                     </span>
                 </td>
 
-                <td class="small">{{ asset.plate|default:"—" }}</td>
+                <td class="small" data-label="Matrícula">{{ asset.plate|default:"—" }}</td>
 
-                <td class="text-center">{{ asset.doc_count }}</td>
+                <td class="text-center" data-label="Documentos">{{ asset.doc_count }}</td>
 
-                <td class="text-center">
+                <td class="text-center" data-label="Contadores">
                     {% if asset.has_odometer %}
                     <i class="bi bi-speedometer2 text-secondary" title="Odómetro (km)"></i>
                     {% endif %}
@@ -246,9 +245,9 @@ pestaña Personal, S113/S114):
                 mientras que si aparece en personal, no lo hace en la
                 maquinaria".
                 {% endcomment %}
-                <td class="small">{{ asset.document_requirement.name|default:"—" }}</td>
+                <td class="small" data-label="Requisito">{{ asset.document_requirement.name|default:"—" }}</td>
 
-                <td class="text-center">
+                <td class="text-center" data-label="Estado">
                     {% if asset.is_active %}
                     <span class="badge bg-success-subtle text-success border border-success-subtle">Activo</span>
                     {% else %}
@@ -256,7 +255,7 @@ pestaña Personal, S113/S114):
                     {% endif %}
                 </td>
 
-                <td class="text-center">
+                <td class="text-center" data-label="Usos">
                     {% if asset.use_count %}
                     <span class="badge bg-primary-subtle text-primary border border-primary-subtle"
                           title="{{ asset.use_count }} línea{{ asset.use_count|pluralize }} de parte asociada{{ asset.use_count|pluralize }}">
@@ -267,7 +266,7 @@ pestaña Personal, S113/S114):
                     {% endif %}
                 </td>
 
-                <td class="text-end">
+                <td class="text-end stack-mobile-actions">
                     {% if can_manage or can_delete %}
                     <div class="dropdown">
                         <button class="btn btn-sm btn-outline-secondary border-0 px-2"

@@ -1674,9 +1674,42 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
         display: none;
     }
 
-    /* La celda del nombre ocupa el resto de la primera línea. */
-    .stack-mobile td.sticky-col-last {
+    /* Mismo selector que Bootstrap (.table > :not(caption) > * > *)
+       para quitar el fondo y la alineación de columna de cada celda:
+       en la tarjeta todo va a la izquierda y sobre el fondo de la
+       fila. */
+    .stack-mobile > :not(caption) > * > * {
+        background-color: transparent !important;
+        box-shadow: none !important;
+        text-align: left !important;
+    }
+
+    /* Primera línea de la tarjeta: casilla, avisos, título (ocupa el
+       resto) y acciones; debajo, los datos con rótulo. El orden no
+       depende del de las columnas de escritorio. */
+    .stack-mobile td.stack-mobile-check,
+    .stack-mobile td.sticky-col-1 {
+        order: -3;
+    }
+
+    .stack-mobile td.sticky-col-2 {
+        order: -2;
+    }
+
+    .stack-mobile td.sticky-col-last,
+    .stack-mobile td.stack-mobile-title {
+        order: -1;
         flex: 1 1 0;
+        font-weight: 600;
+    }
+
+    .stack-mobile td.stack-mobile-actions {
+        order: -1;
+    }
+
+    /* Fila "sin resultados" (colspan): a lo ancho. */
+    .stack-mobile td[colspan] {
+        flex: 0 0 100%;
     }
 
     /* Las tablas fijan `nowrap` en sus celdas con selectores más
@@ -1702,4 +1735,19 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
     .stack-mobile .sticky-col-last::after {
         display: none;
     }
+}
+
+/* S128 -- anchos mínimos de las columnas del listado de Centros de
+   gasto (antes style= en _table_fragment.html, avisos H021) y foto. */
+.fleet-col-w55 { min-width: 55px; }
+.fleet-col-w60 { min-width: 60px; }
+.fleet-col-w70 { min-width: 70px; }
+.fleet-col-w80 { min-width: 80px; }
+.fleet-col-w90 { min-width: 90px; }
+.fleet-col-w100 { min-width: 100px; }
+
+.fleet-avatar-thumb {
+    width: 28px;
+    height: 28px;
+    object-fit: cover;
 }

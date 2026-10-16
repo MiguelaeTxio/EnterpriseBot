@@ -3691,8 +3691,10 @@ class JobPositionBulkActiveView(CompanyUserRequiredMixin, View):
     def post(self, request):
         ids = [i for i in request.POST.getlist("ids") if i.isdigit()]
         active = request.POST.get("active") == "1"
+        # `update()` no pasa por auto_now: la fecha de edición se pone
+        # a mano para que el cambio de estado quede registrado.
         count = JobPosition.objects.filter(pk__in=ids).update(
-            is_active=active,
+            is_active=active, updated_at=timezone.now(),
         )
         return JsonResponse({"ok": True, "count": count})
 

@@ -15,7 +15,7 @@ tontas); la selección vive en el JS de _pane.html.
     <input type="hidden" name="sort" value="{{ current_sort }}">
 </span>
 {% if items %}
-<table class="table table-sm table-hover align-middle mb-0" id="inbox-table">
+<table class="table table-sm table-hover align-middle mb-0 stack-mobile" id="inbox-table">
     <thead class="table-light">
         <tr>
             <th class="inbox-check-col">
@@ -45,12 +45,12 @@ tontas); la selección vive en el JS de _pane.html.
     <tbody>
         {% for item in items %}
         <tr>
-            <td>
+            <td class="stack-mobile-check">
                 <input class="form-check-input inbox-row-check" type="checkbox"
                        data-pk="{{ item.pk }}" data-label="{{ item.original_name }}">
             </td>
-            <td>{{ item.created_at|date:"d/m/Y H:i" }}</td>
-            <td>
+            <td data-label="Subido">{{ item.created_at|date:"d/m/Y H:i" }}</td>
+            <td class="stack-mobile-title">
                 {% if item.document_url %}
                 <a href="{{ item.document_url }}" target="_blank" rel="noopener">{{ item.original_name }}</a>
                 {% else %}
@@ -58,21 +58,21 @@ tontas); la selección vive en el JS de _pane.html.
                 {% endif %}
                 {% if item.container_name %}<div class="small text-muted">en {{ item.container_name }}</div>{% endif %}
             </td>
-            <td>
+            <td data-label="Estado">
                 <span class="badge {{ item.status_badge }}">
                     {% if item.is_open %}<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>{% endif %}{{ item.get_status_display }}
                 </span>
             </td>
-            <td>
+            <td data-label="Trabajador">
                 {% if item.person_url %}
                 <a href="{{ item.person_url }}">{{ item.person_label }}</a>
                 {% else %}
                 <span class="text-muted">—</span>
                 {% endif %}
             </td>
-            <td>{% if item.document_type %}{{ item.document_type.label }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
-            <td>{{ item.uploaded_by_label|default:"—" }}</td>
-            <td class="inbox-reason">{{ item.reason|default:"" }}</td>
+            <td data-label="Tipo">{% if item.document_type %}{{ item.document_type.label }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td data-label="Subido por">{{ item.uploaded_by_label|default:"—" }}</td>
+            <td class="inbox-reason" data-label="Resultado">{{ item.reason|default:"" }}</td>
         </tr>
         {% endfor %}
     </tbody>

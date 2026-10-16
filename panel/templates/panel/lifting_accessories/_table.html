@@ -21,7 +21,7 @@ Orden vigente, para que los filtros del panel fijo lo conserven
     <input type="hidden" name="sort" value="{{ current_sort }}">
 </span>
 {% if accessories %}
-<table class="table table-sm table-hover align-middle mb-0" id="lifting-table">
+<table class="table table-sm table-hover align-middle mb-0 stack-mobile" id="lifting-table">
     <thead class="table-light">
         <tr>
             <th class="lifting-check-col">
@@ -50,23 +50,23 @@ Orden vigente, para que los filtros del panel fijo lo conserven
     <tbody>
         {% for accessory in accessories %}
         <tr class="{% if not accessory.is_active %}text-muted{% endif %}">
-            <td>
+            <td class="stack-mobile-check">
                 <input class="form-check-input lifting-row-check" type="checkbox"
                        data-pk="{{ accessory.pk }}"
                        data-label="{{ accessory.accessory_type.label }} {{ accessory.identifier }}">
             </td>
-            <td>{% if accessory.model %}{{ accessory.model.name }}{% else %}{{ accessory.accessory_type.label }}{% endif %}</td>
-            <td>
+            <td data-label="Modelo">{% if accessory.model %}{{ accessory.model.name }}{% else %}{{ accessory.accessory_type.label }}{% endif %}</td>
+            <td class="stack-mobile-title">
                 <a href="{% url 'panel:lifting_accessory_detail' accessory.pk %}"
                    class="fw-semibold">{{ accessory.identifier }}</a>
                 {% if accessory.traceability %}<div class="small text-muted">Traz. {{ accessory.traceability }}</div>{% endif %}
             </td>
-            <td>{{ accessory.description }}{% if accessory.dimensions %} <span class="text-muted">({{ accessory.dimensions }})</span>{% endif %}</td>
-            <td class="text-end">{{ accessory.working_load_kg|default_if_none:"" }}</td>
-            <td>{% if accessory.current_machine %}{{ accessory.current_machine.code }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
-            <td>{% if accessory.responsible_label %}{{ accessory.responsible_label }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
-            <td>{{ accessory.last_review_date|date:"d/m/Y"|default:"—" }}</td>
-            <td>
+            <td data-label="Descripción">{{ accessory.description }}{% if accessory.dimensions %} <span class="text-muted">({{ accessory.dimensions }})</span>{% endif %}</td>
+            <td class="text-end" data-label="Carga (kg)">{{ accessory.working_load_kg|default_if_none:"" }}</td>
+            <td data-label="Centro de gasto">{% if accessory.current_machine %}{{ accessory.current_machine.code }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td data-label="Responsable">{% if accessory.responsible_label %}{{ accessory.responsible_label }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td data-label="Última revisión">{{ accessory.last_review_date|date:"d/m/Y"|default:"—" }}</td>
+            <td data-label="Caducidad">
                 {% if accessory.expiry %}
                     {% if accessory.is_expired %}
                     <span class="text-danger fw-semibold" title="Caducado">
@@ -79,14 +79,14 @@ Orden vigente, para que los filtros del panel fijo lo conserven
                 <span class="text-muted">—</span>
                 {% endif %}
             </td>
-            <td>
+            <td data-label="Certificado">
                 {% if accessory.has_certificate %}
                 <span class="text-success"><i class="bi bi-file-earmark-check me-1"></i>Sí</span>
                 {% else %}
                 <span class="text-danger"><i class="bi bi-file-earmark-x me-1"></i>Falta</span>
                 {% endif %}
             </td>
-            <td>
+            <td data-label="Estado">
                 {% if accessory.is_active %}
                 <span class="badge text-bg-success">En servicio</span>
                 {% else %}

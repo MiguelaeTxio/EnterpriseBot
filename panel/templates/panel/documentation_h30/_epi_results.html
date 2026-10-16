@@ -1,5 +1,5 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_epi_results.html #}
-<table class="table table-hover table-light">
+<table class="table table-hover table-light stack-mobile">
     <thead class="table-light">
         <tr>
             {% for col_key, col_label in sort_columns_epi %}
@@ -18,10 +18,10 @@
     <tbody>
         {% for delivery in page %}
         <tr>
-            <td>{{ delivery.delivery_date }}</td>
-            <td><a href="{% url 'panel:documentation_personal_detail' pk=delivery.person.pk %}">{{ delivery.person.first_surname }} {{ delivery.person.second_surname }}, {{ delivery.person.given_name }}</a></td>
-            <td>{{ delivery.epi.label }}</td>
-            <td>
+            <td data-label="Fecha de entrega">{{ delivery.delivery_date }}</td>
+            <td class="stack-mobile-title"><a href="{% url 'panel:documentation_personal_detail' pk=delivery.person.pk %}">{{ delivery.person.first_surname }} {{ delivery.person.second_surname }}, {{ delivery.person.given_name }}</a></td>
+            <td data-label="EPI">{{ delivery.epi.label }}</td>
+            <td class="stack-mobile-actions">
                 {% if delivery.source_entry_id %}
                 <button type="button" class="btn btn-sm btn-outline-secondary"
                         onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=delivery.source_entry_id %}')">

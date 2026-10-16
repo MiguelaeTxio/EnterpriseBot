@@ -104,7 +104,7 @@ Documentación" que se había colado pese a la decisión de S119.
 <div class="border rounded p-2" id="circ-bottom-panel">
     <div class="h-100 d-flex flex-column">
     <div class="fixed-list-scroll circ-scroll">
-        <table class="table table-sm table-hover align-middle mb-0">
+        <table class="table table-sm table-hover align-middle mb-0 stack-mobile">
             <thead>
                 <tr>
                     <th class="circ-check-col">
@@ -121,25 +121,25 @@ Documentación" que se había colado pese a la decisión de S119.
             <tbody>
                 {% for doc_type in types %}
                 <tr>
-                    <td><input type="checkbox" class="circ-row-check" value="{{ doc_type.pk }}" {% if doc_type.is_selected %}checked{% endif %}></td>
-                    <td>{{ doc_type.label }}</td>
-                    <td class="font-monospace small">{{ doc_type.code }}</td>
-                    <td>{{ doc_type.get_domain_display }}</td>
-                    <td>
+                    <td class="stack-mobile-check"><input type="checkbox" class="circ-row-check" value="{{ doc_type.pk }}" {% if doc_type.is_selected %}checked{% endif %}></td>
+                    <td class="stack-mobile-title">{{ doc_type.label }}</td>
+                    <td class="font-monospace small" data-label="Código">{{ doc_type.code }}</td>
+                    <td data-label="Dominio">{{ doc_type.get_domain_display }}</td>
+                    <td data-label="Plantilla">
                         {% if doc_type.has_template %}
                         <span class="badge bg-success">Sí</span>
                         {% else %}
                         <span class="badge bg-secondary">No</span>
                         {% endif %}
                     </td>
-                    <td>
+                    <td data-label="Firma (Docuten)">
                         {% if doc_type.requires_signature %}
                         <span class="badge bg-primary">Con firma</span>
                         {% else %}
                         <span class="badge bg-light text-dark border">Sin firma</span>
                         {% endif %}
                     </td>
-                    <td class="text-end">
+                    <td class="text-end stack-mobile-actions">
                         <a class="btn btn-sm btn-outline-primary" href="{% url 'panel:circulars_edit' pk=doc_type.pk %}">
                             Editar
                         </a>

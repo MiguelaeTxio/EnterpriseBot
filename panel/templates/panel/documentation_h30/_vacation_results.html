@@ -12,7 +12,7 @@ misma fila, sin necesidad de un <form> real.
     {{ message }}
 </div>
 {% endif %}
-<table class="table table-hover table-light align-middle">
+<table class="table table-hover table-light align-middle stack-mobile">
     <thead class="table-light">
         <tr>
             {% for col_key, col_label in sort_columns_vacation %}
@@ -32,13 +32,13 @@ misma fila, sin necesidad de un <form> real.
     <tbody>
         {% for period in page %}
         <tr>
-            <td><input type="date" name="date_start" value="{{ period.date_start|date:'Y-m-d' }}" class="form-control form-control-sm"></td>
-            <td>
+            <td data-label="Inicio"><input type="date" name="date_start" value="{{ period.date_start|date:'Y-m-d' }}" class="form-control form-control-sm"></td>
+            <td class="stack-mobile-title">
                 {{ period.person.given_name }} {{ period.person.first_surname }} {{ period.person.second_surname }}
                 <span class="text-muted small d-block">{{ period.person.dni }}</span>
             </td>
-            <td><input type="date" name="date_end" value="{{ period.date_end|date:'Y-m-d' }}" class="form-control form-control-sm"></td>
-            <td>
+            <td data-label="Fin"><input type="date" name="date_end" value="{{ period.date_end|date:'Y-m-d' }}" class="form-control form-control-sm"></td>
+            <td data-label="Tarea automática">
                 {% if period.generated_entry_line_id %}
                 <span class="badge bg-success">Generada</span>
                 {% elif not period.operator_id %}
@@ -47,7 +47,7 @@ misma fila, sin necesidad de un <form> real.
                 <span class="badge bg-secondary">Sin generar</span>
                 {% endif %}
             </td>
-            <td class="text-end">
+            <td class="text-end stack-mobile-full">
                 <button type="button" class="btn btn-sm btn-outline-primary"
                         hx-post="{% url 'panel:documentation_vacation_update' pk=period.pk %}"
                         hx-include="closest tr" hx-target="#vacation-results">Guardar</button>
