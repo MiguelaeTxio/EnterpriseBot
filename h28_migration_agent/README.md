@@ -124,13 +124,25 @@ demanda.
 ## 4. Empaquetar como ejecutable (decisión S031: ejecutable con icono en bandeja)
 
 ```powershell
-pyinstaller --onefile --windowed --name AgenteMigracionH28 main.py
+New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\EnterpriseBot\H28MigrationAgent\runtime" | Out-Null
+.\h28_agent_venv\Scripts\python.exe -m PyInstaller --onefile --windowed --runtime-tmpdir "$env:LOCALAPPDATA\EnterpriseBot\H28MigrationAgent\runtime" --name AgenteMigracionH28 main.py
 ```
 
-El ejecutable resultante queda en `dist\AgenteMigracionH28.exe`. La
-clave sigue resolviéndose igual (sección 2) — colócala en
-`dist\agent_data\service_account_key.json`, junto al `.exe`, o usa
-la variable de entorno.
+El ejecutable resultante queda en `dist\AgenteMigracionH28.exe`. El
+procedimiento completo de actualización (parar el proceso, compilar,
+relanzar la tarea programada) está en
+`DOCS/MAINS/SESSION_VARIABLES.md`, sección "AGENTE H28"; esa es la
+fuente de verdad. La clave de servicio y el estado viven en
+`%LOCALAPPDATA%\EnterpriseBot\H28MigrationAgent\` desde S54.
+
+**`--runtime-tmpdir` es obligatorio (S128).** Sin él, `--onefile`
+extrae el agente en `%TEMP%\_MEIxxxx` y Windows borra allí archivos
+de datos con el agente en marcha: en S128 desaparecieron `init.tcl`
+(la ventana de historial no abría) y `certifi\cacert.pem` (todas las
+subidas a GCS fallaban con `OSError: Could not find a suitable TLS CA
+certificate bundle`). PowerShell expande `$env:LOCALAPPDATA` al
+compilar, así que el `.exe` guarda la ruta absoluta. Si alguna vez
+se compila sin la opción, el agente lo avisa en su log al arrancar.
 
 **Pendiente (fuera de esta sesión):** sustituir el icono de bandeja
 provisional (generado por código en `_build_tray_image()`,

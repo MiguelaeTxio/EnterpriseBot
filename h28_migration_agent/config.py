@@ -293,6 +293,19 @@ AUDIT_PROGRESS_EVERY_FILES = 500
 # Archivo de log local, escrito junto al ejecutable.
 LOG_FILE_NAME = "h28_migration_agent.log"
 
+# Log rotation. Real incident S128 (H30): the log had grown to 257 MB
+# since July with a single FileHandler -- 90,000 lines in two hours
+# once every upload started failing. Five backups of 20 MB keep weeks
+# of normal activity and cap the disk use at ~120 MB.
+# ---
+# Rotacion del log. Incidente real S128 (H30): el log habia llegado a
+# 257 MB desde julio con un unico FileHandler -- 90.000 lineas en dos
+# horas en cuanto todas las subidas empezaron a fallar. Cinco copias
+# de 20 MB guardan semanas de actividad normal y limitan el disco a
+# ~120 MB.
+LOG_MAX_BYTES = 20 * 1024 * 1024
+LOG_BACKUP_COUNT = 5
+
 
 def get_agent_root_dir():
     """Return the directory the agent (script or .exe) runs from.
@@ -531,4 +544,3 @@ def get_audit_output_dir():
     audit_dir = os.path.join(get_agent_data_dir(), AUDIT_FOLDER_NAME)
     os.makedirs(audit_dir, exist_ok=True)
     return audit_dir
-

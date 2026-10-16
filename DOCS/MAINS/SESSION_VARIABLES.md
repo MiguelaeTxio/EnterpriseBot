@@ -313,9 +313,26 @@ fallar en silencio con el siguiente que dependa de él.
   avisar (S035). Se invoca siempre el intérprete directamente:
   `.\h28_agent_venv\Scripts\python.exe -m ...`.
 - **Ejecutable:** `AgenteMigracionH28.exe`, compilado con
-  `python -m PyInstaller --onefile --windowed --name AgenteMigracionH28
-  main.py` desde el intérprete del venv (nunca `pyinstaller` a secas
-  invocado fuera de él). Sale en `h28_migration_agent\dist\`.
+  `python -m PyInstaller --onefile --windowed --runtime-tmpdir
+  "$env:LOCALAPPDATA\EnterpriseBot\H28MigrationAgent\runtime" --name
+  AgenteMigracionH28 main.py` desde el intérprete del venv (nunca
+  `pyinstaller` a secas invocado fuera de él). Sale en
+  `h28_migration_agent\dist\`.
+- ⛔ **`--runtime-tmpdir` es obligatorio (S128, incidente real).** Sin
+  él, el `.exe` se extrae en `%TEMP%\_MEIxxxx` y Windows borra allí
+  archivos de datos con el agente en marcha desde hace días: el
+  18/09 y el 16/10 desapareció `init.tcl` (la ventana de historial no
+  abre, `_tkinter.TclError`) y el 16/10 también
+  `certifi\cacert.pem` (todas las subidas a GCS fallan con `OSError:
+  Could not find a suitable TLS CA certificate bundle`, 89.049
+  errores en dos horas, log de 257 MB). PyInstaller documenta este
+  caso ("Defining the Extraction Location"). Con la opción, el agente
+  se extrae en `%LOCALAPPDATA%\EnterpriseBot\H28MigrationAgent\runtime\`,
+  fuera del alcance de la limpieza de temporales. Al arrancar, el log
+  dice "Agente extraido en ..." (correcto) o avisa si está en el
+  temporal (compilado sin la opción).
+- **Log:** `dist\h28_migration_agent.log`, rotativo desde S128 (20 MB
+  por archivo, 5 copias `.1`...`.5`).
 - **Tarea programada de arranque:** `EnterpriseBot_H28_MigrationAgent`
   (Task Scheduler de Windows). Reiniciar tras reconstruir con
   `Start-ScheduledTask -TaskName "EnterpriseBot_H28_MigrationAgent"`.
@@ -347,11 +364,18 @@ cd h28_migration_agent
 Get-Process AgenteMigracionH28 -ErrorAction SilentlyContinue | Stop-Process -Force
 Remove-Item -Recurse -Force .\build -ErrorAction SilentlyContinue
 Remove-Item -Force .\AgenteMigracionH28.spec -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\EnterpriseBot\H28MigrationAgent\runtime" | Out-Null
+Remove-Item -Recurse -Force "$env:LOCALAPPDATA\EnterpriseBot\H28MigrationAgent\runtime\_MEI*" -ErrorAction SilentlyContinue
 
-.\h28_agent_venv\Scripts\python.exe -m PyInstaller --onefile --windowed --name AgenteMigracionH28 main.py
+.\h28_agent_venv\Scripts\python.exe -m PyInstaller --onefile --windowed --runtime-tmpdir "$env:LOCALAPPDATA\EnterpriseBot\H28MigrationAgent\runtime" --name AgenteMigracionH28 main.py
 
 Start-ScheduledTask -TaskName "EnterpriseBot_H28_MigrationAgent"
 ```
+
+El `Remove-Item ... runtime\_MEI*` borra las extracciones que deja
+el `Stop-Process -Force` (un cierre forzado no limpia su carpeta
+`_MEI`; en `%TEMP%` lo hacía Windows, en `runtime\` no lo hace nadie).
+Va después de parar el proceso, nunca antes.
 
 Si el cambio añadió dependencias nuevas, insertar entre el `git pull`
 y el `PyInstaller` (ver `com-environment-management`):

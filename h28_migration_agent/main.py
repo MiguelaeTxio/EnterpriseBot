@@ -18,8 +18,10 @@ completely (Miguel Angel's verbatim decision, S031).
 
 import ctypes
 import logging
+import logging.handlers
 import os
 import sys
+import tempfile
 import threading
 import time
 import tkinter as tk
@@ -39,7 +41,9 @@ from config import (
     CATCHUP_HEARTBEAT_EVERY_SWEEPS,
     CATCHUP_INTERVAL_SECONDS,
     DIRTY_BUCKET_NAME,
+    LOG_BACKUP_COUNT,
     LOG_FILE_NAME,
+    LOG_MAX_BYTES,
 )
 from gcs_client import MissingCredentialsError, build_client
 from heartbeat import start_heartbeat_thread
@@ -141,7 +145,19 @@ def _configure_logging():
     log_path = os.path.join(
         os.path.dirname(os.path.abspath(sys.argv[0])), LOG_FILE_NAME
     )
-    handlers = [logging.FileHandler(log_path, encoding="utf-8")]
+    # S128: rotating instead of a single ever-growing file (see
+    # LOG_MAX_BYTES in config.py).
+    # ---
+    # S128: rotativo en vez de un unico archivo que crece sin fin (ver
+    # LOG_MAX_BYTES en config.py).
+    handlers = [
+        logging.handlers.RotatingFileHandler(
+            log_path,
+            maxBytes=LOG_MAX_BYTES,
+            backupCount=LOG_BACKUP_COUNT,
+            encoding="utf-8",
+        )
+    ]
     if sys.stdout is not None:
         handlers.append(logging.StreamHandler())
     logging.basicConfig(
@@ -149,6 +165,44 @@ def _configure_logging():
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         handlers=handlers,
     )
+
+
+def _warn_if_extracted_in_temp():
+    """Log a warning when the packaged .exe runs from the system temp.
+    ---
+    Avisa en el log cuando el .exe empaquetado corre desde el temporal
+    del sistema.
+
+    S128 (H30): con `--onefile`, PyInstaller extrae el agente en
+    `%TEMP%\\_MEIxxxx` salvo que se compile con `--runtime-tmpdir`.
+    Windows borro alli `init.tcl` y `certifi\\cacert.pem` con el
+    agente en marcha desde hacia dias, y todas las subidas a GCS
+    fallaron. El procedimiento de compilacion (SESSION_VARIABLES.md,
+    seccion del agente H28) ya lleva la opcion; esta comprobacion deja
+    constancia en el log si alguna vez se compila sin ella.
+    ---
+    S128 (H30): with `--onefile`, PyInstaller extracts into
+    `%TEMP%\\_MEIxxxx` unless built with `--runtime-tmpdir`. Windows
+    deleted `init.tcl` and `certifi\\cacert.pem` there while the agent
+    had been running for days, and every GCS upload failed. The build
+    procedure already carries the option; this check leaves a trace in
+    the log if it is ever built without it.
+    """
+    bundle_dir = getattr(sys, "_MEIPASS", None)
+    if bundle_dir is None:
+        return
+    temp_dir = os.path.normcase(os.path.abspath(tempfile.gettempdir()))
+    bundle_dir = os.path.normcase(os.path.abspath(bundle_dir))
+    if bundle_dir.startswith(temp_dir + os.sep):
+        logger.warning(
+            "El agente se ha extraido en el temporal del sistema (%s). "
+            "Windows puede borrar esos archivos con el agente en "
+            "marcha y dejar de subir a GCS (incidente S128). Hay que "
+            "recompilar con --runtime-tmpdir, ver SESSION_VARIABLES.md.",
+            bundle_dir,
+        )
+        return
+    logger.info("Agente extraido en %s.", bundle_dir)
 
 
 def _build_tray_image():
@@ -1078,6 +1132,7 @@ def main():
     """
     _configure_logging()
     logger.info("Agente H28 arrancado.")
+    _warn_if_extracted_in_temp()
     # H30 (S123): latido al servidor cada 5 minutos -- si deja de
     # llegar mas de 15, el servidor avisa a Miguel Angel por WhatsApp.
     start_heartbeat_thread()
