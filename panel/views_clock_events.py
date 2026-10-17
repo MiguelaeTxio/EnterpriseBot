@@ -377,7 +377,8 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
         presses = book.create_sheet("Pulsaciones")
         presses.append([
             "DNI", "Apellidos y nombre", "Tipo", "Hora de la pulsación",
-            "Hora de llegada", "Retraso (min)", "Latitud", "Longitud",
+            "Hora redondeada (parte)", "Hora de llegada", "Retraso (min)",
+            "Latitud", "Longitud",
             "Precisión (m)", "Sin GPS porque", "Cómo se envió",
             "Navegador",
         ])
@@ -394,7 +395,9 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
             for event in row.report.events:
                 presses.append([
                     row.person.dni, row.label, event.get_kind_display(),
-                    _naive(event.pressed_at), _naive(event.received_at),
+                    _naive(event.pressed_at),
+                    _naive(event.rounded_at) if event.rounded_at else None,
+                    _naive(event.received_at),
                     round(event.delay_seconds / 60),
                     float(event.latitude) if event.latitude is not None
                     else None,
@@ -412,12 +415,12 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
         for column in ("D", "E"):
             for cell in days[column][1:]:
                 cell.number_format = "DD/MM/YYYY HH:MM"
-        for column in ("D", "E"):
+        for column in ("D", "E", "F"):
             for cell in presses[column][1:]:
                 cell.number_format = "DD/MM/YYYY HH:MM:SS"
         for sheet, widths in (
             (days, (12, 34, 12, 17, 17, 8, 20)),
-            (presses, (12, 34, 9, 20, 20, 9, 11, 11, 9, 24, 34, 40)),
+            (presses, (12, 34, 9, 20, 20, 20, 9, 11, 11, 9, 24, 34, 40)),
         ):
             for index, width in enumerate(widths):
                 letter = chr(ord("A") + index)

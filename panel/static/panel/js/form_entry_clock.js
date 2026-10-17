@@ -153,14 +153,15 @@
             return;
         }
         var parts = stretches.map(function (s) {
-            return (s.clocked_start || "?") + "–" + (s.clocked_end || "sin salida todavía");
+            var fin = s.clocked_end ? s.clocked_end + " → " + s.end : "sin salida todavía";
+            return (s.clocked_start ? s.clocked_start + " → " + s.start : "?") + " a " + fin;
         });
         banner.innerHTML = "";
         var strong = document.createElement("strong");
         strong.textContent = "Fichajes de este día: " + parts.join(" · ") + ". ";
         banner.appendChild(strong);
         banner.appendChild(document.createTextNode(
-            "Las horas fichadas no se pueden cambiar (se admiten ±5 minutos, por eso el parte usa la media hora más cercana): " +
+            "El parte usa la hora redondeada del fichaje (a 5 minutos o menos de una hora o media, esa; si no, la entrada a la media hora siguiente y la salida a la anterior) y no se puede cambiar: " +
             "la primera tarea de cada tramo empieza a la entrada, " +
             "la última termina a la salida y, al cerrar el parte, todo lo fichado tiene que tener tarea." +
             (data.lunch ? " El hueco entre tramos es la pausa de comida." : "")

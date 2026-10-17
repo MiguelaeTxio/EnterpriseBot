@@ -27,7 +27,10 @@ Clock-in and work orders ("partes") together (H24, S129). Miguel
    tarea a las 13:30 es obligatorio una tarea de 13:30 a 14".
 
 A day's clocked stretches come from hr_calendar.clock_report (an IN
-with the next OUT); times are the exact clocked minute. A stretch may
+with the next OUT); the parte uses each press's ROUNDED time
+(ClockEvent.rounded_at, hr_calendar/clock_rounding.py: ±5 min to the
+whole/half hour, otherwise IN to the next half hour and OUT to the
+previous one) and must match it exactly. A stretch may
 lack its OUT (still working: the parte made before leaving) or its IN.
 
 ---
@@ -58,23 +61,24 @@ from hr_calendar.models import ClockEvent
 logger = logging.getLogger(__name__)
 
 MIN_TASK_MINUTES = 30
-# Miguel Ángel (S129): el fichaje va al minuto y el parte de media en
-# media hora -- "la 1 con una tolerancia de ±5 minutos. 15 son demasiados
-# minutos". Una hora del parte cuadra con la fichada si se separa como
-# mucho esto. El fichaje se guarda siempre exacto.
-TOLERANCE_MINUTES = 5
 
 
 @dataclass
 class Stretch:
     """
     One clocked stretch of a day, local times (None = not clocked).
+    start/end are the rounded times the parte uses; clocked_start and
+    clocked_end the real presses.
     ---
     Un tramo fichado de un día, en hora local (None = sin fichar).
+    start/end son las horas redondeadas que usa el parte;
+    clocked_start y clocked_end, las pulsaciones reales.
     """
 
     start: datetime.time = None
     end: datetime.time = None
+    clocked_start: datetime.time = None
+    clocked_end: datetime.time = None
 
     def label(self):
         return "%s–%s" % (
@@ -84,24 +88,40 @@ class Stretch:
 
     def as_dict(self):
         """
-        Clocked times, and the times the parte uses (within ±5 min of a
-        half hour, the half hour).
+        Real clocked times and the rounded times the parte uses.
         ---
-        Horas fichadas, y las que usa el parte (a ±5 min de una media
-        hora, la media hora).
+        Horas fichadas reales y las redondeadas que usa el parte.
         """
-        start, end = parte_time(self.start), parte_time(self.end)
+        def hhmm(value):
+            return value.strftime("%H:%M") if value else ""
+
         return {
-            "clocked_start": self.start.strftime("%H:%M")
-            if self.start else "",
-            "clocked_end": self.end.strftime("%H:%M") if self.end else "",
-            "start": start.strftime("%H:%M") if start else "",
-            "end": end.strftime("%H:%M") if end else "",
+            "clocked_start": hhmm(self.clocked_start),
+            "clocked_end": hhmm(self.clocked_end),
+            "start": hhmm(self.start),
+            "end": hhmm(self.end),
         }
 
 
 def _local_time(value):
     return timezone.localtime(value).time().replace(second=0, microsecond=0)
+
+
+def _rounded_time(event):
+    """
+    Rounded local time of a press (rounded_at; computed if missing).
+    ---
+    Hora local redondeada de una pulsación (rounded_at; se calcula si
+    falta).
+    """
+    from hr_calendar.clock_rounding import round_pressed_at
+
+    if event is None:
+        return None
+    rounded = event.rounded_at or round_pressed_at(
+        event.pressed_at, event.kind,
+    )
+    return _local_time(rounded)
 
 
 def _minutes(value):
@@ -131,12 +151,19 @@ def day_stretches(company_user, work_date):
     ).order_by("pressed_at", "pk"))
     stretches = []
     for shift in build_shifts(events):
-        stretches.append(Stretch(
-            start=_local_time(shift.clock_in.pressed_at)
+        stretch = Stretch(
+            start=_rounded_time(shift.clock_in),
+            end=_rounded_time(shift.clock_out),
+            clocked_start=_local_time(shift.clock_in.pressed_at)
             if shift.clock_in else None,
-            end=_local_time(shift.clock_out.pressed_at)
+            clocked_end=_local_time(shift.clock_out.pressed_at)
             if shift.clock_out else None,
-        ))
+        )
+        # Un tramo que redondeado no dura nada (entra 8:20 -> 8:30, sale
+        # 8:40 -> 8:30) no lleva tareas.
+        if stretch.start and stretch.end and stretch.end <= stretch.start:
+            continue
+        stretches.append(stretch)
     return stretches
 
 
@@ -150,9 +177,7 @@ def lunch_from_stretches(stretches):
     """
     for previous, following in zip(stretches, stretches[1:]):
         if previous.end and following.start:
-            # Con las horas del parte (±5 min a la media hora), para no
-            # descontar minutos sueltos de las tareas.
-            return parte_time(previous.end), parte_time(following.start)
+            return previous.end, following.start
     return None
 
 
@@ -165,8 +190,7 @@ def allowed_gaps(stretches):
     ninguna tarea y no cuentan como "laguna sin cubrir" (R3).
     """
     return [
-        (_minutes(a.end) - TOLERANCE_MINUTES,
-         _minutes(b.start) + TOLERANCE_MINUTES)
+        (_minutes(a.end), _minutes(b.start))
         for a, b in zip(stretches, stretches[1:])
         if a.end and b.start
     ]
@@ -174,34 +198,6 @@ def allowed_gaps(stretches):
 
 def _fmt(value):
     return value.strftime("%H:%M")
-
-
-def _near(a, b):
-    """
-    True when two times are within the tolerance (±5 min).
-    ---
-    True si dos horas están dentro de la tolerancia (±5 min).
-    """
-    return abs(_minutes(a) - _minutes(b)) <= TOLERANCE_MINUTES
-
-
-def parte_time(value):
-    """
-    The time the parte uses for a clocked time: the nearest half hour
-    when it is within the tolerance (8:04 -> 8:00, 13:55 -> 14:00),
-    otherwise the clocked minute (13:40 stays 13:40).
-    ---
-    La hora que usa el parte para una hora fichada: la media hora más
-    cercana si está dentro de la tolerancia (8:04 -> 8:00, 13:55 ->
-    14:00); si no, el minuto fichado (13:40 se queda en 13:40).
-    """
-    if value is None:
-        return None
-    minutes = _minutes(value)
-    nearest = int(round(minutes / 30.0)) * 30
-    if abs(nearest - minutes) <= TOLERANCE_MINUTES and nearest < 24 * 60:
-        return _time_of(nearest)
-    return value
 
 
 def check_tasks(stretches, tasks, closing=True):
@@ -228,10 +224,8 @@ def check_tasks(stretches, tasks, closing=True):
         home = None
         for i, stretch in enumerate(stretches):
             if (
-                (stretch.start is None or stretch.start <= hc
-                 or _near(stretch.start, hc))
-                and (stretch.end is None or hf <= stretch.end
-                     or _near(stretch.end, hf))
+                (stretch.start is None or stretch.start <= hc)
+                and (stretch.end is None or hf <= stretch.end)
             ):
                 home = i
                 break
@@ -246,20 +240,22 @@ def check_tasks(stretches, tasks, closing=True):
     for i, stretch in enumerate(stretches):
         items = sorted(groups[i], key=lambda t: t[1])
         if not items:
-            if not closing:
+            # Si alguna tarea ya se ha dicho que cae fuera, no se repite.
+            if not closing or len(errors) > 0:
                 continue
             errors.append(
                 "No hay ninguna tarea para lo fichado de %s." % stretch.label()
             )
             continue
         first, last = items[0], max(items, key=lambda t: t[2])
-        if stretch.start and not _near(first[1], stretch.start):
+        if stretch.start and first[1] != stretch.start:
             errors.append(
                 "La primera tarea de %s tiene que empezar a las %s, la "
-                "hora de entrada fichada, ±%d min (la tarea %d empieza a "
-                "las %s)."
-                % (stretch.label(), _fmt(parte_time(stretch.start)),
-                   TOLERANCE_MINUTES, first[0], _fmt(first[1]))
+                "hora de entrada (fichaste a las %s) (la tarea %d empieza "
+                "a las %s)."
+                % (stretch.label(), _fmt(stretch.start),
+                   _fmt(stretch.clocked_start or stretch.start), first[0],
+                   _fmt(first[1]))
             )
         if closing:
             for previous, following in zip(items, items[1:]):
@@ -271,13 +267,14 @@ def check_tasks(stretches, tasks, closing=True):
                         % (_fmt(previous[2]), _fmt(following[1]),
                            stretch.label())
                     )
-        if stretch.end and not _near(last[2], stretch.end):
+        if stretch.end and last[2] != stretch.end:
             errors.append(
                 "La última tarea de %s tiene que terminar a las %s, la "
-                "hora de salida fichada, ±%d min (la tarea %d termina a "
-                "las %s)."
-                % (stretch.label(), _fmt(parte_time(stretch.end)),
-                   TOLERANCE_MINUTES, last[0], _fmt(last[2]))
+                "hora de salida (fichaste a las %s) (la tarea %d termina "
+                "a las %s)."
+                % (stretch.label(), _fmt(stretch.end),
+                   _fmt(stretch.clocked_end or stretch.end), last[0],
+                   _fmt(last[2]))
             )
         # Media hora como mínimo para la última y la primera tarea del
         # tramo, contada desde las horas del propio parte.
@@ -469,7 +466,7 @@ def on_clock_out(event):
         return ""
     worker = event.company_user
     work_date = timezone.localtime(event.pressed_at).date()
-    out_time = _local_time(event.pressed_at)
+    out_time = _rounded_time(event)
     entry = (
         WorkOrderEntry.objects.select_related("work_order__uploaded_by__user")
         .filter(
@@ -504,12 +501,11 @@ def on_clock_out(event):
                 % _fmt(out_time))
 
     # 1. Ajuste a la hora de salida (solo las tareas de este tramo).
-    # Dentro de ±5 min no se toca nada (fichar 13:55 con el parte a las
-    # 14:00 cuadra); fuera, la tarea pasa a terminar a la hora fichada.
+    # La tarea pasa a terminar a la hora de salida redondeada (fichar
+    # 13:55 con el parte a las 14:00 no cambia nada: 13:55 -> 14:00).
     in_stretch = [
         line for line in timed
-        if (stretch_start is None or line.hc >= stretch_start
-            or _near(line.hc, stretch_start))
+        if (stretch_start is None or line.hc >= stretch_start)
         and line.hc < out_time
     ]
     done = []
@@ -517,7 +513,7 @@ def on_clock_out(event):
         last = max(in_stretch, key=lambda line: line.hf)
         for line in in_stretch:
             if line is last or line.hf > out_time:
-                if not _near(line.hf, out_time):
+                if line.hf != out_time:
                     done.append("tarea %d: fin %s -> %s" % (
                         line.line_number, _fmt(line.hf), _fmt(out_time)))
                     line.hf = out_time

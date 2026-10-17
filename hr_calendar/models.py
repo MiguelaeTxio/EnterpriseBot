@@ -809,6 +809,14 @@ class ClockEvent(models.Model):
         verbose_name="Hora de la pulsación",
         help_text="Hora del móvil al pulsar.",
     )
+    rounded_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Hora redondeada (parte)",
+        help_text="La hora o media hora que usa el parte "
+                  "(hr_calendar/clock_rounding.py). La pulsación real "
+                  "queda en pressed_at.",
+    )
     received_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Hora de llegada al servidor",
@@ -854,6 +862,21 @@ class ClockEvent(models.Model):
                 name="clockevent_user_pressed",
             ),
         ]
+
+    def save(self, *args, **kwargs):
+        """
+        rounded_at always follows pressed_at (clock_rounding).
+        ---
+        rounded_at sigue siempre a pressed_at (clock_rounding).
+        """
+        from hr_calendar.clock_rounding import round_pressed_at
+
+        if self.pressed_at is not None:
+            self.rounded_at = round_pressed_at(self.pressed_at, self.kind)
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None and "pressed_at" in update_fields:
+                kwargs["update_fields"] = set(update_fields) | {"rounded_at"}
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return (
