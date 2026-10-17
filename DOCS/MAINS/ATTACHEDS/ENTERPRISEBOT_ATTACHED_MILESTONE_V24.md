@@ -709,6 +709,65 @@ del panel, 8 con base (Maqueda), 1 solo `VacationPeriod` registrado.
   y consulta del propio trabajador. Comprobar en el BOE su estado y su
   texto antes de diseñar el punto 3.
 
+### 7.4bis. Fichajes: prueba real y diseño decidido (S129)
+
+**Prueba sin cobertura (S129).** Página de prueba pública
+`/fichaje-prueba/` (`hr_calendar/clockin_test.py`, sin BD, una línea
+`# [fichaje_prueba]` por pulsación en el log de errores de la web). Se
+abre una vez con cobertura y queda guardada en el móvil (service
+worker); en modo avión se pulsa Entrada/Salida, la hora se toma al
+pulsar y la ubicación con el GPS, se guarda en el móvil (IndexedDB) y
+se envía al volver la conexión.
+- **Android (Miguel Ángel, 17/10/2026):** pulsado 09:39:41, recibido
+  09:41:40; se conserva la hora de la pulsación. GPS sin datos en 9 s,
+  ±20 m. Enviado en segundo plano con la página cerrada. La pulsación
+  llegó **dos veces** (segundo plano + la página al volver la red): el
+  servidor real debe guardar cada pulsación una sola vez por su id.
+- **iPhone: pendiente de probar** (Safari no tiene envío en segundo
+  plano; lo pendiente se envía al abrir la página con cobertura, y al
+  fichar la salida se envía también la entrada pendiente). En iPhone
+  la página debe abrirse desde el icono de la pantalla de inicio.
+- La página de prueba se retira al construir el punto 3.
+
+**Alternativa estudiada y descartada como vía principal: fichar
+mandando la ubicación al bot de WhatsApp** (idea de Miguel Ángel). El
+bot ya recibe ubicaciones (Paso 19), pero sin cobertura WhatsApp envía
+el mensaje al volver la conexión y Twilio no da la hora de envío del
+móvil: el fichaje quedaría con la hora de llegada.
+
+**Real Decreto de registro horario digital (comprobado S129):** sigue
+sin publicarse en el BOE (aplazado sin fecha el 26/09/2026). Vigente el
+art. 34.9 ET. El borrador exige que toda corrección deje rastro sin
+borrar el original.
+
+**Alta y acceso (revisado el alta por WhatsApp existente, H17 S055).**
+El bot ya da de alta en el panel: nombre, apellidos, DNI, sección y
+base; rol según `Section.default_role` (hoy solo WORKSHOP o DRIVER);
+usuario `nombre.apellido`, contraseña = 4 últimos números del DNI;
+ficha enlazada por DNI; dispositivo de confianza (S039) para entrar sin
+contraseña desde ese móvil. Corregidos en S129 cuatro fallos de ese
+alta (ver commit `5eb16d5`).
+
+**Decisiones de Miguel Ángel (S129), tal cual:**
+1. Puestos de la empresa: **taller mecánico, chófer (gruista),
+   administrativo (supervisores, administradores, oficinistas y
+   comerciales) y guarda nocturno.** Hoy el alta por WhatsApp solo
+   asigna WORKSHOP o DRIVER: un guarda o un oficinista que se dé de alta
+   entraría como operario de taller o chófer. Los partes de trabajo los
+   hacen hoy solo los mecánicos y Carlos Bas (Huelva); otras secciones
+   los harán pronto (mismas vistas que los mecánicos y/o partes propios
+   de su sección): el alta debe servir de base para dar después a cada
+   uno el acceso que le toque.
+2. **Los fichajes se hacen desde el dispositivo de confianza.** Miguel
+   Ángel, verbatim: *"si siguen quiere hacer trampas, trampas se pueden
+   hacer, no vamos a idear un sistema con un nivel de protección
+   análogo al de la caja de caudales del banco de España"*.
+3. **El móvil con el que se da de alta se guarda en su ficha**
+   (cierra el pendiente de H31 S94).
+4. **Un fichaje guardado sin cobertura se acepta al llegar aunque la
+   sesión del panel haya caducado**, con la llave del dispositivo de
+   confianza.
+
 ### 7.5. Hoja de Ruta al reactivar H24
 
 H24 se abrió y se pausó en la misma sesión S127 sin trabajo de código
@@ -743,8 +802,11 @@ primera línea pasó a la hoja de ruta de H30 (S128).
    `AbsenceCategory` de la empresa. **Cierre:** una ausencia real dada
    de alta en el panel, en BD y en el calendario de ese trabajador.
 3. **Fichaje de entrada y salida desde el móvil y consulta de
-   registros.** Comprobar primero en el BOE el estado del Real Decreto
-   (7.4). El trabajador ficha desde la web con su usuario; el marcaje
+   registros**, con el diseño y las decisiones de 7.4bis (dispositivo
+   de confianza, alta por WhatsApp con los puestos reales, móvil del
+   alta en la ficha, envíos pendientes aceptados con la llave del
+   dispositivo, una sola vez por pulsación). Antes, la prueba en
+   iPhone (7.4bis). Re-comprobar el BOE (7.4) antes de empezar. El trabajador ficha desde la web con su usuario; el marcaje
    guarda hora y coordenadas GPS tomadas en el móvil y, sin cobertura,
    se guarda en el móvil y se envía al volver la conexión; los
    marcajes se ven en el mapa. Las pantallas del trabajador se diseñan
