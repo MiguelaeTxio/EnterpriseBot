@@ -37,6 +37,10 @@ urlpatterns = [
         )),
         name="sw_js",
     ),
+    # H24 (S129): prueba de fichaje sin cobertura (página que se guarda en
+    # el móvil + envío al volver la conexión). Pública, sin BD; se retira
+    # al construir el punto 3 de H24 -- ver hr_calendar/clockin_test.py.
+    path('fichaje-prueba/', include('hr_calendar.clockin_test_urls')),
     path('admin/', admin.site.urls),
     # Voice IVR bridge — puente IVR de voz.
     path('api/vox/', include('vox_bridge.urls')),
