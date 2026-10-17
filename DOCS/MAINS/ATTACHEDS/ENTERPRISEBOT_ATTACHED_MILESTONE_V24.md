@@ -818,6 +818,22 @@ hacer."*
   0047 aplicada: 20 tokens anteriores -> 20 TrustedDevice. Commit
   `d2f3e3f`.
 
+- Partes y fichajes (Miguel Ángel, 17/10, reglas literales en
+  `hr_calendar/clock_parts.py`): fichar entrada no toca partes; fichar
+  salida ajusta el parte ya hecho de ese día (última tarea del tramo a
+  la hora fichada; tareas posteriores solo si caen en un tramo fichado
+  después; lo no ajustable o un parte revisado queda en
+  `WorkOrder.clock_review_note`, migración 0032, insignia "Fichaje" en
+  el listado). Parte hecho después: horas fichadas fijas, tareas dentro
+  de lo fichado, última del tramo no empieza después de media hora antes
+  de la salida, al cerrar todo lo fichado cubierto sin huecos; hueco
+  entre tramos = comida; sin mínimo de 8 h con fichajes. Formulario:
+  banner, horas rellenas y bloqueadas, tarea automática hasta la salida.
+  Arreglado: supervisor que corrige el parte de otro dejaba su nombre y
+  comprobaba con sus datos. Commit `e353204`.
+- Primer fichaje real de Miguel Ángel: entrada 17/10 12:33 con GPS,
+  recibida 160 s después (log de producción).
+
 **Pendiente para cerrar el punto 3:** fichaje real de entrada y salida
 de Miguel Ángel desde su móvil, en BD con hora y coordenadas y visible
 en la pestaña Fichajes; y la prueba en iPhone (lo que falle se arregla
