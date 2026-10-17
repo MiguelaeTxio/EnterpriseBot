@@ -147,7 +147,6 @@
                     <td class="text-sm fw-semibold">{{ wo.operator_name }}</td>
                     <td class="text-sm">
                         {% if wo.fecha %}{{ wo.fecha|date:"d/m/Y" }}{% else %}<span class="text-muted">Sin fecha</span>{% endif %}
-                        {% if wo.clock_review_note %}<span class="badge bg-warning text-dark ms-1" title="{{ wo.clock_review_note }}"><i class="bi bi-stopwatch me-1"></i>Fichaje</span>{% endif %}
                     </td>
                     <td class="text-sm">{{ wo.num_bloques }}</td>
                     <td class="text-sm">{{ wo.horas_totales }}</td>

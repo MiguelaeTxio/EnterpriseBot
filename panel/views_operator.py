@@ -2949,6 +2949,8 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
             if _own_wo is not None and _own_wo .uploaded_by is not None :
                 _parte_owner =_own_wo .uploaded_by 
         _clock_stretches =_cp_day_stretches (_parte_owner ,work_date )
+        from hr_calendar .clock_parts import clock_required as _cp_clock_required 
+        _clock_required =_cp_clock_required (_parte_owner ,work_date )
         if _clock_stretches :
             _clk_lunch =_cp_lunch (_clock_stretches )
             if _clk_lunch :
@@ -3555,6 +3557,21 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                     _intra .ok =False 
         else :
             _intra =run_intra_part_validation (_blocks ,lunch_window =_lunch_window )
+
+        # H24 (S129): Miguel Ángel, "un parte no se puede cerrar si no está
+        # fichada la salida, las tareas si, el parte no". Solo para quien
+        # ya ficha (desde su primer fichaje); "Guardar tareas" sigue libre.
+        if _clock_required and _form_action !="save_blocks":
+            from hr_calendar .clock_parts import close_blockers as _cp_close_blockers 
+            from work_order_processor .validators import (
+            ValidationError as _VE_CLB ,
+            )
+            _blockers =_cp_close_blockers (_clock_stretches )
+            if _blockers :
+                _intra .errors .extend (
+                _VE_CLB (rule ="FICHAJE",message =m )for m in _blockers 
+                )
+                _intra .ok =False 
 
         if not _intra .ok :
 
@@ -5690,7 +5707,14 @@ class OperatorClockStretchesView(WorkOrderFormAccessMixin, View):
                 pass
         stretches = day_stretches(owner, work_date)
         lunch = lunch_from_stretches(stretches)
+        from hr_calendar.clock_parts import close_blockers, clock_required
+
+        blockers = (
+            close_blockers(stretches)
+            if clock_required(owner, work_date) else []
+        )
         return JsonResponse({
+            "close_blockers": blockers,
             "stretches": [s.as_dict() for s in stretches],
             "lunch": {
                 "start": lunch[0].strftime("%H:%M"),

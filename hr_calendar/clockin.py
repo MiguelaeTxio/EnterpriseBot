@@ -220,11 +220,11 @@ def record_press(company_user, payload, user_agent=""):
     )
     if event.kind == ClockEvent.Kind.OUT:
         # H24 (S129): la salida ajusta el parte de ese día si ya estaba
-        # hecho (hr_calendar/clock_parts.py). Un fallo aquí nunca
-        # impide guardar el fichaje.
+        # hecho y lo cierra si cuadra (hr_calendar/clock_parts.py). Un
+        # fallo aquí nunca impide guardar el fichaje.
         try:
-            from hr_calendar.clock_parts import align_parte_to_clock_out
-            align_parte_to_clock_out(event)
+            from hr_calendar.clock_parts import on_clock_out
+            on_clock_out(event)
         except Exception:
             logger.exception(
                 "# [FICHAJE-PARTE] Error ajustando el parte al fichaje %s.",

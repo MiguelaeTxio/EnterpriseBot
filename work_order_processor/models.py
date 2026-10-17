@@ -409,22 +409,6 @@ class WorkOrder(models.Model):
     )
 
     # ------------------------------------------------------------------
-    # H24 (S129). Fichaje y parte -- hr_calendar/clock_parts.py. Cada
-    # ajuste automático del parte al fichar salida (o lo que no se pudo
-    # ajustar solo) queda escrito aquí, con fecha, para el supervisor.
-    # Vacío = nada que revisar por fichajes.
-    # ------------------------------------------------------------------
-    clock_review_note = models.TextField(
-        _("Ajustes por fichaje"),
-        blank=True,
-        default="",
-        help_text=_(
-            "Cambios hechos solos en el parte al fichar salida, o lo que "
-            "no se pudo ajustar y hay que revisar."
-        ),
-    )
-
-    # ------------------------------------------------------------------
     # Cost-centre incident flag — Hito 7 / PRIMERA ACCIÓN (sesión 010)
     # Flag de incidencia de centro de gasto — Hito 7 / PRIMERA ACCIÓN (sesión 010)
     # ------------------------------------------------------------------

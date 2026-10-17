@@ -4355,8 +4355,6 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
             "horas_extra":max (Decimal ("0"),horas_totales -Decimal ("8")),
             "dieta":any (entry .has_diet for entry in entries_list ),
             "reviewed":wo .reviewed ,
-            # H24 (S129): ajustes del parte por el fichaje de salida.
-            "clock_review_note":wo .clock_review_note ,
             "reviewed_by":(
             wo .reviewed_by .user .get_full_name ()or wo .reviewed_by .user .username 
             if wo .reviewed_by else None 

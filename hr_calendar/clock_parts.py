@@ -6,7 +6,10 @@ Clock-in and work orders ("partes") together (H24, S129). Miguel
 1. Clocking IN touches no parte: "Cuando fichamos al entrar no puede
    haber ningún parte hecho, no hemos trabajado aún."
 2. Clocking OUT: if that day's parte was already made (for the lunch
-   break or before leaving) and does not match, the parte is adjusted:
+   break or before leaving) and does not match, the parte is adjusted,
+   and then closed if it matches (on a split shift, only with the OUT
+   of the second period); a parte cannot be closed before the OUT is
+   clocked:
    "fichas, se mira si hay parte de ese día y si el fichaje de cierre no
    coincide, el parte debe modificarse para concordar". The last task of
    that stretch ends at the OUT time; no task may end after it "a no ser
@@ -248,57 +251,181 @@ def check_tasks(stretches, tasks, closing=True):
 
 
 # ------------------------------------------------------------------
-# Clocking OUT adjusts a parte already made
+# Who is under the clock-in rule, and can the parte be closed?
 # ------------------------------------------------------------------
-def _net_hours(hc, hf, entry):
-    gross = Decimal(_minutes(hf) - _minutes(hc)) / Decimal(60)
-    if (
-        not entry.no_lunch_break
-        and entry.lunch_break_start and entry.lunch_break_end
-    ):
-        overlap = max(0, min(_minutes(hf), _minutes(entry.lunch_break_end))
-                      - max(_minutes(hc), _minutes(entry.lunch_break_start)))
-        gross -= Decimal(overlap) / Decimal(60)
-    return max(gross, Decimal(0)).quantize(Decimal("0.01"))
-
-
-def align_parte_to_clock_out(event):
+def clock_required(company_user, work_date):
     """
-    After an OUT press: if that day's parte of the worker already
-    exists, its tasks of the stretch closed by this OUT are made to
-    end at the OUT time (last task ends exactly then; any task ending
-    later is cut). Tasks that start at or after the OUT cannot be
-    fixed automatically: the parte is marked for the supervisor. A
-    reviewed parte is never touched, only marked. Every change is
-    written in WorkOrder.clock_review_note. Returns that note ("" when
-    nothing was done).
+    True when the parte of company_user for work_date falls under the
+    clock-in rules: from the day of the user's first clock-in on.
+    Workers who do not clock in yet, and earlier days, keep working as
+    before.
     ---
-    Tras una SALIDA: si ya existe el parte de ese día del trabajador,
-    sus tareas del tramo que cierra esta SALIDA pasan a terminar a la
-    hora fichada (la última termina justo entonces; la que acabe más
-    tarde se recorta). Las tareas que empiezan a esa hora o después no
-    se pueden arreglar solas: el parte queda marcado para el
-    supervisor. Un parte revisado nunca se toca, solo se marca. Cada
-    cambio queda escrito en WorkOrder.clock_review_note. Devuelve esa
-    nota ("" si no se hizo nada).
+    True si el parte de company_user en work_date entra en las reglas
+    del fichaje: desde el día de su primer fichaje. Quien todavía no
+    ficha, y los días anteriores, siguen como hasta ahora.
+    """
+    if company_user is None or work_date is None:
+        return False
+    first = (
+        ClockEvent.objects.filter(company_user=company_user)
+        .order_by("pressed_at").values_list("pressed_at", flat=True)
+        .first()
+    )
+    return first is not None and timezone.localtime(first).date() <= work_date
+
+
+def close_blockers(stretches):
+    """
+    Why the parte cannot be closed yet ([] = it can): Miguel Ángel, "un
+    parte no se puede cerrar si no está fichada la salida, las tareas
+    si, el parte no".
+    ---
+    Por qué el parte no se puede cerrar todavía ([] = sí se puede).
+    """
+    if not stretches:
+        return [
+            "No hay fichajes de ese día: el parte no se puede cerrar sin "
+            "fichar la entrada y la salida. Puedes guardar las tareas."
+        ]
+    if any(s.end is None for s in stretches):
+        return [
+            "Todavía no has fichado la salida: el parte no se puede cerrar. "
+            "Guarda las tareas; al fichar la salida se cerrará solo si "
+            "cuadra con lo fichado."
+        ]
+    return []
+
+
+def is_split_shift(company_user):
+    """
+    True when the worker's schedule is a split shift (morning and
+    afternoon): then the parte is not closed on the first OUT but on
+    the OUT of the second period.
+    ---
+    True si el horario del trabajador es de jornada partida (mañana y
+    tarde): entonces el parte no se cierra con la primera salida sino
+    con la salida del segundo periodo.
+    """
+    from panel.views_operator import _resolve_operator_schedule
+
+    schedule = _resolve_operator_schedule(
+        company_user, company_user.company,
+    )
+    return bool(
+        schedule is not None and not schedule.is_intensive
+        and schedule.end_time_morning and schedule.start_time_afternoon
+    )
+
+
+# ------------------------------------------------------------------
+# Clocking OUT: adjust the parte made beforehand and try to close it
+# ------------------------------------------------------------------
+def _net_hours(hc, hf, lunch):
+    gross = _minutes(hf) - _minutes(hc)
+    if lunch:
+        gross -= max(0, min(_minutes(hf), _minutes(lunch[1]))
+                     - max(_minutes(hc), _minutes(lunch[0])))
+    return (Decimal(max(gross, 0)) / Decimal(60)).quantize(Decimal("0.01"))
+
+
+def _backup_log(work_order, entry, lines, reason):
+    """
+    Same "# [PARTE-BACKUP]" line the form writes before saving, so the
+    server log keeps a full copy of the parte before any automatic
+    change (Miguel Ángel: the logs are a safeguard against failed saves).
+    ---
+    La misma línea "# [PARTE-BACKUP]" que escribe el formulario antes de
+    guardar: el log del servidor guarda copia completa del parte antes
+    de cualquier cambio automático.
+    """
+    import json
+
+    try:
+        payload = {
+            "wo_pk": work_order.pk,
+            "company": work_order.company_id,
+            "user": work_order.uploaded_by.user.username,
+            "worker_name": entry.worker_name,
+            "work_date": entry.work_date.isoformat(),
+            "lunch_start": entry.lunch_break_start.strftime("%H:%M")
+            if entry.lunch_break_start else None,
+            "lunch_end": entry.lunch_break_end.strftime("%H:%M")
+            if entry.lunch_break_end else None,
+            "no_lunch_break": entry.no_lunch_break,
+            "status": work_order.status,
+            "motivo": reason,
+            "blocks": [{
+                "n": line.line_number,
+                "machine": line.machine_raw,
+                "hc": line.hc.strftime("%H:%M") if line.hc else None,
+                "hf": line.hf.strftime("%H:%M") if line.hf else None,
+                "fault": line.fault_description,
+                "repair": line.repair_notes,
+            } for line in lines],
+        }
+        logger.info("# [PARTE-BACKUP] %s",
+                    json.dumps(payload, ensure_ascii=False))
+    except Exception as exc:
+        logger.warning(
+            "# [PARTE-BACKUP] No se pudo registrar el respaldo: %s", exc,
+        )
+
+
+def on_clock_out(event):
+    """
+    After an OUT press (Miguel Ángel: "cuando hacemos el parte antes que
+    el fichaje, queda abierto y no se puede cerrar, cuando fichamos la
+    salida se intenta cerrar si cumple con el horario, siempre que no
+    sea jornada partida, si es jornada partida no se intenta cerrar
+    hasta que se fiche el segundo periodo"):
+
+    1. The worker's parte of that day, if already made and not reviewed,
+       gets the last task of the stretch closed by this OUT ending at
+       the OUT time (a task ending later is cut). A copy of the parte
+       goes to the log first ([PARTE-BACKUP]).
+    2. If the parte is still open, it is closed when it matches what was
+       clocked (same rules and safeguards as closing it by hand) --
+       except on a split shift before the OUT of the second period. If
+       it does not match it stays open: the worker fixes it and closes
+       it, as with any parte the safeguards do not let through.
+    3. A parte already closed that no longer matches goes back to "in
+       progress" so it cannot stay closed with times that disagree with
+       the clock-in.
+    Returns a short text of what was done ("" = nothing).
+    ---
+    Tras una SALIDA (regla de Miguel Ángel arriba): 1) en el parte de
+    ese día ya hecho y no revisado, la última tarea del tramo que cierra
+    esta salida pasa a terminar a esa hora (antes, copia al log); 2) si
+    el parte sigue abierto, se cierra si cuadra con lo fichado (mismas
+    reglas que al cerrarlo a mano), salvo en jornada partida antes de la
+    salida del segundo periodo; si no cuadra, sigue abierto y lo arregla
+    el trabajador; 3) un parte ya cerrado que deja de cuadrar vuelve a
+    "en curso". Devuelve un texto corto de lo hecho ("" = nada).
     """
     from work_order_processor.models import (
         WorkOrder,
         WorkOrderEntry,
         WorkOrderEntryLine,
     )
+    from work_order_processor.validators import (
+        TimeBlock,
+        run_intra_part_validation,
+        validate_inter_overlap,
+    )
 
     if event.kind != ClockEvent.Kind.OUT:
         return ""
+    worker = event.company_user
     work_date = timezone.localtime(event.pressed_at).date()
     out_time = _local_time(event.pressed_at)
     entry = (
-        WorkOrderEntry.objects.select_related("work_order")
+        WorkOrderEntry.objects.select_related("work_order__uploaded_by__user")
         .filter(
-            work_order__uploaded_by=event.company_user,
+            work_order__uploaded_by=worker,
             work_order__source__in=(
                 WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED,
             ),
+            work_order__reviewed=False,
             work_date=work_date,
         )
         .order_by("-work_order__upload_date").first()
@@ -306,81 +433,99 @@ def align_parte_to_clock_out(event):
     if entry is None:
         return ""
     work_order = entry.work_order
+    stretches = day_stretches(worker, work_date)
     stretch_start = None
     later = []
-    for stretch in day_stretches(event.company_user, work_date):
+    for stretch in stretches:
         if stretch.end == out_time:
             stretch_start = stretch.start
         elif stretch.start and stretch.start >= out_time:
             later.append(stretch)
-
-    def _in_later(line):
-        return any(
-            line.hc >= s.start and (s.end is None or line.hf <= s.end)
-            for s in later
-        )
-
-    lines = [
-        line for line in WorkOrderEntryLine.objects.filter(entry=entry)
+    lines = list(
+        WorkOrderEntryLine.objects.filter(entry=entry)
         .order_by("hc", "line_number")
-        if line.hc and line.hf
-        and (stretch_start is None or line.hc >= stretch_start)
-    ]
-    if not lines:
-        return ""
-    notes = []
-    before = [line for line in lines if line.hc < out_time]
-    # Tras la salida solo vale lo que cae en un tramo fichado posterior.
-    after = [
-        line for line in lines
-        if line.hc >= out_time and not _in_later(line)
-    ]
-    last = max(before, key=lambda line: line.hf) if before else None
-    changes = []
-    if last is not None and last.hf != out_time:
-        changes.append((last, last.hf))
-    for line in before:
-        if line is not last and line.hf > out_time:
-            changes.append((line, line.hf))
-    if after:
-        notes.append(
-            "Salida fichada a las %s: la(s) tarea(s) %s empieza(n) a esa "
-            "hora o después; hay que corregir el parte." % (
-                _fmt(out_time),
-                ", ".join(str(line.line_number) for line in after),
-            )
-        )
-    if work_order.reviewed:
-        if changes or after:
-            notes.insert(0, "Parte ya revisado: no se ha cambiado nada.")
-            changes = []
-        else:
-            return ""
-    with transaction.atomic():
-        for line, old_hf in changes:
-            line.hf = out_time
-            line.delta_hours = _net_hours(line.hc, out_time, entry)
-            line.save(update_fields=["hf", "delta_hours"])
-            notes.append(
-                "Salida fichada a las %s: la tarea %d terminaba a las %s "
-                "y ahora termina a las %s."
-                % (_fmt(out_time), line.line_number, _fmt(old_hf),
-                   _fmt(out_time))
-            )
-        if not notes:
-            return ""
-        stamp = timezone.localtime().strftime("%d/%m/%Y %H:%M")
-        text = "\n".join("[%s] %s" % (stamp, note) for note in notes)
-        work_order.clock_review_note = (
-            (work_order.clock_review_note + "\n" + text).strip()
-        )
-        work_order.save(update_fields=["clock_review_note"])
-    logger.info(
-        "# [FICHAJE-PARTE] WorkOrder #%d (usuario #%d, %s): %s",
-        work_order.pk, event.company_user_id, work_date, text.replace(
-            "\n", " | "),
     )
-    if changes and work_order.status == WorkOrder.Status.DONE:
+    timed = [line for line in lines if line.hc and line.hf]
+    if not timed:
+        return ""
+    _backup_log(work_order, entry, lines, "fichaje de salida %s"
+                % _fmt(out_time))
+
+    # 1. Ajuste a la hora de salida (solo las tareas de este tramo).
+    in_stretch = [
+        line for line in timed
+        if (stretch_start is None or line.hc >= stretch_start)
+        and line.hc < out_time
+    ]
+    done = []
+    if in_stretch:
+        last = max(in_stretch, key=lambda line: line.hf)
+        for line in in_stretch:
+            if line is last or line.hf > out_time:
+                if line.hf != out_time:
+                    done.append("tarea %d: fin %s -> %s" % (
+                        line.line_number, _fmt(line.hf), _fmt(out_time)))
+                    line.hf = out_time
+
+    # Pausa de comida = hueco entre tramos fichados; horas netas.
+    lunch = lunch_from_stretches(stretches)
+    with transaction.atomic():
+        entry.lunch_break_start = lunch[0] if lunch else None
+        entry.lunch_break_end = lunch[1] if lunch else None
+        entry.no_lunch_break = lunch is None
+        entry.save(update_fields=[
+            "lunch_break_start", "lunch_break_end", "no_lunch_break",
+        ])
+        for line in timed:
+            line.delta_hours = _net_hours(line.hc, line.hf, lunch)
+            line.save(update_fields=["hf", "delta_hours"])
+
+    # 2/3. ¿Cuadra con lo fichado?
+    blocks = [
+        TimeBlock(idx=line.line_number, hc=line.hc, hf=line.hf)
+        for line in timed
+    ]
+    intra = run_intra_part_validation(
+        blocks, lunch_window=None, allowed_gaps=allowed_gaps(stretches),
+    )
+    problems = [e.message for e in intra.errors]
+    if not problems:
+        problems = check_tasks(
+            stretches, [(b.idx, b.hc, b.hf) for b in blocks], closing=True,
+        ) + close_blockers(stretches)
+    complete = [s for s in stretches if s.start and s.end]
+    wait_second = is_split_shift(worker) and len(complete) < 2
+    result = ""
+    if work_order.status == WorkOrder.Status.DONE:
+        if problems:
+            work_order.status = WorkOrder.Status.IN_PROGRESS
+            work_order.save(update_fields=["status"])
+            result = "parte reabierto: ya no cuadra con lo fichado"
+    elif not problems and not wait_second:
+        work_order.status = WorkOrder.Status.DONE
+        work_order.save(update_fields=["status"])
+        inter = validate_inter_overlap(
+            company_user=worker, work_date=work_date, blocks=blocks,
+            exclude_work_order_pk=work_order.pk,
+        )
+        if inter.has_overlap:
+            WorkOrder.objects.filter(pk=work_order.pk).update(
+                has_overlap_incident=True,
+            )
+        result = "parte cerrado al fichar la salida"
+    elif wait_second and not problems:
+        result = "jornada partida: se cerrará con la salida de la tarde"
+    else:
+        result = "parte abierto: no cuadra con lo fichado (%s)" % (
+            problems[0])
+    logger.info(
+        "# [FICHAJE-PARTE] WorkOrder #%d (usuario #%d, %s) salida %s: %s%s",
+        work_order.pk, worker.pk, work_date, _fmt(out_time), result,
+        (" | ajustes: " + "; ".join(done)) if done else "",
+    )
+    if result == "parte cerrado al fichar la salida" or (
+        done and work_order.status == WorkOrder.Status.DONE
+    ):
         try:
             from work_order_processor.services import (
                 generate_work_order_excel,
@@ -388,7 +533,7 @@ def align_parte_to_clock_out(event):
             generate_work_order_excel(work_order.pk)
         except Exception:
             logger.exception(
-                "# [FICHAJE-PARTE] No se pudo regenerar el Excel del "
-                "WorkOrder #%d tras ajustarlo a la salida.", work_order.pk,
+                "# [FICHAJE-PARTE] No se pudo generar el Excel del "
+                "WorkOrder #%d.", work_order.pk,
             )
-    return text
+    return result

@@ -124,8 +124,28 @@
         setLunch(lunch);
     }
 
+    // Sin la salida fichada el parte no se puede cerrar (solo guardar
+    // tareas): se desactiva "Cerrar parte" y se explica por qué.
+    function applyCloseBlock(blockers) {
+        var closeBtn = document.getElementById("btn-form-submit");
+        var note = document.getElementById("clock-close-note");
+        if (closeBtn) {
+            closeBtn.disabled = blockers.length > 0;
+            closeBtn.title = blockers.join(" ");
+        }
+        if (!note && closeBtn && closeBtn.parentNode) {
+            note = document.createElement("div");
+            note.id = "clock-close-note";
+            note.className = "small text-warning-emphasis text-end mb-2";
+            var row = closeBtn.parentNode;
+            row.parentNode.insertBefore(note, row);
+        }
+        if (note) { note.textContent = blockers.join(" "); }
+    }
+
     function render(data) {
         stretches = data.stretches || [];
+        applyCloseBlock(data.close_blockers || []);
         if (!stretches.length) {
             banner.classList.add("d-none");
             banner.textContent = "";
@@ -150,7 +170,7 @@
     }
 
     function load() {
-        if (!dateInput.value) { render({stretches: []}); return; }
+        if (!dateInput.value) { render({stretches: [], close_blockers: []}); return; }
         var params = new URLSearchParams({fecha: dateInput.value});
         if (editInput && editInput.value) { params.set("wo_pk", editInput.value); }
         fetch(cfg.clockStretchesUrl + "?" + params.toString(), {credentials: "same-origin"})
