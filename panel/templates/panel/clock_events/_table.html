@@ -18,7 +18,7 @@ vista (hr_calendar.clock_report).
             <th class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input" id="clk-check-all" title="Seleccionar todos los que cumplen el filtro actual"></th>
             <th class="sticky-col sticky-col-2"></th>
             {% for column in sort_columns %}
-            <th class="{% if column.key == 'person' %}sticky-col sticky-col-3 sticky-col-last{% elif column.key == 'events' or column.key == 'hours' or column.key == 'issues' %}text-end{% endif %}">
+            <th class="{% if column.key == 'person' %}sticky-col sticky-col-3 sticky-col-last{% elif column.key == 'events' or column.key == 'hours' or column.key == 'late' or column.key == 'issues' %}text-end{% endif %}">
                 <a href="#" class="text-decoration-none text-dark"
                    hx-get="{% url 'panel:clock_events_results' %}"
                    hx-target="#clk-results"
@@ -48,13 +48,14 @@ vista (hr_calendar.clock_report).
             <td data-label="DNI">{{ row.person.dni }}</td>
             <td class="text-end" data-label="Fichajes">{{ row.report.events|length }}</td>
             <td class="text-end fw-semibold" data-label="Horas">{{ row.report.total_label }}</td>
+            <td class="text-end{% if row.report.late_arrivals %} text-danger-emphasis fw-semibold{% endif %}" data-label="Llegadas tarde" title="Entradas después de la hora del horario, de las que tienen horario con el que compararlas">{{ row.report.punctuality_label|default:"—" }}</td>
             <td class="text-end{% if row.report.issues %} text-warning-emphasis fw-semibold{% endif %}" data-label="Incidencias">{{ row.report.issues|length }}</td>
             <td data-label="Último fichaje">
                 {% if row.report.last_event %}{{ row.report.last_event.get_kind_display }} · {{ row.report.last_event.pressed_at|date:"d/m/Y H:i" }}{% elif not row.has_account %}<span class="text-muted">Sin usuario del panel</span>{% else %}—{% endif %}
             </td>
         </tr>
         {% empty %}
-        <tr><td colspan="8" class="text-muted small py-3">No se encontró personal.</td></tr>
+        <tr><td colspan="9" class="text-muted small py-3">No se encontró personal.</td></tr>
         {% endfor %}
     </tbody>
 </table>

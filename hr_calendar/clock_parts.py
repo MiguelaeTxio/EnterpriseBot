@@ -251,10 +251,8 @@ def check_tasks(stretches, tasks, closing=True):
         if stretch.start and first[1] != stretch.start:
             errors.append(
                 "La primera tarea de %s tiene que empezar a las %s, la "
-                "hora de entrada (fichaste a las %s) (la tarea %d empieza "
-                "a las %s)."
-                % (stretch.label(), _fmt(stretch.start),
-                   _fmt(stretch.clocked_start or stretch.start), first[0],
+                "hora de entrada (la tarea %d empieza a las %s)."
+                % (stretch.label(), _fmt(stretch.start), first[0],
                    _fmt(first[1]))
             )
         if closing:
@@ -270,10 +268,8 @@ def check_tasks(stretches, tasks, closing=True):
         if stretch.end and last[2] != stretch.end:
             errors.append(
                 "La última tarea de %s tiene que terminar a las %s, la "
-                "hora de salida (fichaste a las %s) (la tarea %d termina "
-                "a las %s)."
-                % (stretch.label(), _fmt(stretch.end),
-                   _fmt(stretch.clocked_end or stretch.end), last[0],
+                "hora de salida (la tarea %d termina a las %s)."
+                % (stretch.label(), _fmt(stretch.end), last[0],
                    _fmt(last[2]))
             )
         # Media hora como mínimo para la última y la primera tarea del

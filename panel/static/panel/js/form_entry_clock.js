@@ -152,16 +152,24 @@
             applyLocks();
             return;
         }
+        // La oficina recibe también la hora real (clocked_*) y ve
+        // "real → parte"; el trabajador solo ve la hora del parte.
+        function shown(real, rounded) {
+            return real ? real + " → " + rounded : rounded;
+        }
         var parts = stretches.map(function (s) {
-            var fin = s.clocked_end ? s.clocked_end + " → " + s.end : "sin salida todavía";
-            return (s.clocked_start ? s.clocked_start + " → " + s.start : "?") + " a " + fin;
+            var desde = s.start ? shown(s.clocked_start, s.start) : "?";
+            return s.end
+                ? "de " + desde + " a " + shown(s.clocked_end, s.end)
+                : "desde " + desde + ", sin salida todavía";
         });
+        var withReal = stretches.some(function (s) { return s.clocked_start || s.clocked_end; });
         banner.innerHTML = "";
         var strong = document.createElement("strong");
-        strong.textContent = "Fichajes de este día: " + parts.join(" · ") + ". ";
+        strong.textContent = "Fichajes de este día" + (withReal ? " (real → parte)" : "") + ": " + parts.join(" · ") + ". ";
         banner.appendChild(strong);
         banner.appendChild(document.createTextNode(
-            "El parte usa la hora redondeada del fichaje (a 5 minutos o menos de una hora o media, esa; si no, la entrada a la media hora siguiente y la salida a la anterior) y no se puede cambiar: " +
+            "Estas horas no se pueden cambiar: " +
             "la primera tarea de cada tramo empieza a la entrada, " +
             "la última termina a la salida y, al cerrar el parte, todo lo fichado tiene que tener tarea." +
             (data.lunch ? " El hueco entre tramos es la pausa de comida." : "")

@@ -5713,9 +5713,25 @@ class OperatorClockStretchesView(WorkOrderFormAccessMixin, View):
             close_blockers(stretches)
             if clock_required(owner, work_date) else []
         )
+        # Real press times only for the office (ADMIN, SUPERVISOR,
+        # WORKSHOPBOSS); a worker sees the whole and half hours of the
+        # parte (Miguel Ángel, S129).
+        # La hora real de la pulsación solo para la oficina; el
+        # trabajador ve las horas en punto y a y media del parte.
+        show_real = cu.role in (
+            CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR,
+            CompanyUser.ROLE_WORKSHOPBOSS,
+        )
+        stretch_rows = []
+        for stretch in stretches:
+            row = stretch.as_dict()
+            if not show_real:
+                row.pop("clocked_start")
+                row.pop("clocked_end")
+            stretch_rows.append(row)
         return JsonResponse({
             "close_blockers": blockers,
-            "stretches": [s.as_dict() for s in stretches],
+            "stretches": stretch_rows,
             "lunch": {
                 "start": lunch[0].strftime("%H:%M"),
                 "end": lunch[1].strftime("%H:%M"),

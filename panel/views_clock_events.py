@@ -63,12 +63,14 @@ _SORT_VALUES = {
     "last": lambda r: (r.report.last_event.pressed_at
                        if r.report.last_event else None),
     "issues": lambda r: len(r.report.issues),
+    "late": lambda r: len(r.report.late_arrivals),
 }
 _COLUMNS = (
     ("person", "Apellidos, Nombre"),
     ("dni", "DNI"),
     ("events", "Fichajes"),
     ("hours", "Horas"),
+    ("late", "Llegadas tarde"),
     ("issues", "Incidencias"),
     ("last", "Último fichaje"),
 )
@@ -79,6 +81,9 @@ class _EmptyReport:
     events = ()
     issues = ()
     late_events = ()
+    timed_arrivals = ()
+    late_arrivals = ()
+    punctuality_label = ""
     last_event = None
     total_seconds = 0
     total_label = "0:00"
@@ -289,6 +294,8 @@ def _press_view(event):
     return {
         "event": event,
         "time": timezone.localtime(event.pressed_at),
+        "rounded": (timezone.localtime(event.rounded_at)
+                    if event.rounded_at else None),
         "received": timezone.localtime(event.received_at),
         "is_late": delay > 300,
         "delay_label": format_duration(delay) if delay > 300 else "",
@@ -322,6 +329,8 @@ class ClockEventsDetailView(SupervisorAccessMixin, View):
             "presses": [_press_view(s.clock_in), _press_view(s.clock_out)],
             "duration": s.duration_label,
             "issue": s.issue,
+            "expected_start": s.expected_start,
+            "late_minutes": s.late_minutes,
         } for s in report.shifts]
         return render(request, "panel/clock_events/_detail.html", {
             "person": person,
@@ -332,6 +341,7 @@ class ClockEventsDetailView(SupervisorAccessMixin, View):
             "shifts": shifts,
             "total_label": report.total_label,
             "issues_count": len(report.issues),
+            "punctuality_label": report.punctuality_label,
         })
 
 
@@ -344,7 +354,8 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
     GET: Excel of the range for the marked workers (or all filtered).
     ---
     GET: Excel del intervalo para los marcados (o todos los filtrados):
-    hoja "Jornadas" (una fila por jornada) y hoja "Pulsaciones" (cada
+    hoja "Jornadas" (una fila por jornada, con la hora real, la del
+    parte y la del horario) y hoja "Pulsaciones" (cada
     pulsación tal como llegó, con su posición).
     """
 
@@ -372,7 +383,8 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
         days.title = "Jornadas"
         days.append([
             "DNI", "Apellidos y nombre", "Fecha", "Entrada", "Salida",
-            "Horas", "Incidencia",
+            "Entrada (parte)", "Salida (parte)", "Entrada según horario",
+            "Minutos tarde", "Horas", "Incidencia",
         ])
         presses = book.create_sheet("Pulsaciones")
         presses.append([
@@ -390,6 +402,15 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
                     if shift.clock_in else None,
                     _naive(shift.clock_out.pressed_at)
                     if shift.clock_out else None,
+                    _naive(shift.clock_in.rounded_at)
+                    if shift.clock_in and shift.clock_in.rounded_at
+                    else None,
+                    _naive(shift.clock_out.rounded_at)
+                    if shift.clock_out and shift.clock_out.rounded_at
+                    else None,
+                    shift.expected_start,
+                    max(shift.late_minutes, 0)
+                    if shift.late_minutes is not None else None,
                     shift.duration_label, shift.issue,
                 ])
             for event in row.report.events:
@@ -412,14 +433,16 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
             sheet.freeze_panes = "A2"
         for cell in days["C"][1:]:
             cell.number_format = "DD/MM/YYYY"
-        for column in ("D", "E"):
+        for column in ("D", "E", "F", "G"):
             for cell in days[column][1:]:
                 cell.number_format = "DD/MM/YYYY HH:MM"
+        for cell in days["H"][1:]:
+            cell.number_format = "HH:MM"
         for column in ("D", "E", "F"):
             for cell in presses[column][1:]:
                 cell.number_format = "DD/MM/YYYY HH:MM:SS"
         for sheet, widths in (
-            (days, (12, 34, 12, 17, 17, 8, 20)),
+            (days, (12, 34, 12, 17, 17, 17, 17, 12, 9, 8, 20)),
             (presses, (12, 34, 9, 20, 20, 20, 9, 11, 11, 9, 24, 34, 40)),
         ):
             for index, width in enumerate(widths):
