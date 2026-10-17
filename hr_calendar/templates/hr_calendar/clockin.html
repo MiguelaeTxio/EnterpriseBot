@@ -48,6 +48,8 @@ saludar también sin cobertura.
         #untrusted { display: none; background: #fff3cd; border-color: #ffe69c; }
         #untrusted a { font-weight: 700; }
         .mt { margin-top: 8px; }
+        .fw { font-weight: 600; }
+        a.action { display: block; margin-top: 8px; padding: 12px; border-radius: 8px; background: #0d6efd; color: #fff; text-align: center; font-weight: 700; text-decoration: none; }
     </style>
 </head>
 <body>
@@ -63,12 +65,15 @@ saludar también sin cobertura.
     </div>
 
     <div class="card" id="untrusted">
-        <div id="untrusted-text">Este móvil no es tu dispositivo de confianza.</div>
-        <div class="muted mt">
-            Entra en el panel con tu usuario y contraseña y, cuando te pregunte, márcalo como dispositivo
-            de confianza. Después vuelve a esta página.
+        <div class="fw" id="untrusted-text">Este móvil no es tu dispositivo de confianza.</div>
+        <div id="untrusted-session" class="mt">
+            <div class="muted">Ya tienes la sesión del panel abierta en este móvil: márcalo para fichar con él.</div>
+            <a class="action" href="/panel/trust-device/?next=/fichaje/">Usar este móvil para fichar</a>
         </div>
-        <div class="mt"><a href="/panel/login/?force_form=1&amp;next=/fichaje/">Entrar en el panel</a></div>
+        <div id="untrusted-login" class="mt">
+            <div class="muted">Entra en el panel con tu usuario y contraseña; cuando te pregunte, marca este móvil como de confianza y volverás aquí.</div>
+            <a class="action" href="/panel/login/?force_form=1&amp;next=/fichaje/">Entrar en el panel</a>
+        </div>
     </div>
 
     <div id="clock">--:--:--</div>
@@ -182,7 +187,9 @@ saludar también sin cobertura.
         const info = load("fichaje-estado");
         const untrusted = load("fichaje-no-confianza");
         document.getElementById("untrusted").style.display = untrusted ? "block" : "none";
-        if (untrusted && untrusted.error) document.getElementById("untrusted-text").textContent = untrusted.error;
+        const withSession = !!(untrusted && untrusted.logged_in);
+        document.getElementById("untrusted-session").style.display = withSession ? "block" : "none";
+        document.getElementById("untrusted-login").style.display = withSession ? "none" : "block";
         document.getElementById("who").textContent = info && info.name
             ? info.name + (info.company ? " · " + info.company : "")
             : (untrusted ? "Móvil sin identificar" : "…");

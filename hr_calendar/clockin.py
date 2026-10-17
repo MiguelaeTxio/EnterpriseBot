@@ -10,8 +10,8 @@ the panel session has expired ("Claro, no?"); each press is stored
 once by the id the phone gives it.
 
 The trusted-device key is the signed HttpOnly cookie `eb_trusted_device`
-(panel.views_auth.TrustDeviceView): {"uid": user pk, "tok": UUID}, valid
-while it matches CompanyUser.trusted_device_token. The cookie is
+(panel/trusted_devices.py): {"uid": user pk, "tok": UUID}, valid while
+its TrustedDevice row exists (several per user: phone and PC). The cookie is
 SameSite=Lax, so a POST from another site never carries it -- that is
 why the receive endpoint can be CSRF-exempt: a press queued offline is
 sent later, possibly without a valid CSRF token.
@@ -29,9 +29,9 @@ caducado ("Claro, no?"); cada pulsación se guarda una sola vez por el
 identificador que le da el móvil.
 
 La llave del dispositivo de confianza es la cookie firmada HttpOnly
-`eb_trusted_device` (panel.views_auth.TrustDeviceView): {"uid": pk del
-usuario, "tok": UUID}, válida mientras coincida con
-CompanyUser.trusted_device_token. La cookie es SameSite=Lax, así que un
+`eb_trusted_device` (panel/trusted_devices.py): {"uid": pk del usuario,
+"tok": UUID}, válida mientras exista su fila TrustedDevice (varias por
+usuario: móvil y PC). La cookie es SameSite=Lax, así que un
 POST desde otra web nunca la lleva -- por eso el endpoint de recepción
 puede ir sin CSRF: una pulsación guardada sin cobertura se envía más
 tarde, quizá sin un token CSRF válido.
@@ -42,7 +42,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from decimal import Decimal, InvalidOperation
 
-from django.core import signing
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError, transaction
 from django.http import HttpResponse, JsonResponse
@@ -54,12 +53,9 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from hr_calendar.models import ClockEvent
-from ivr_config.models import CompanyUser
 
 logger = logging.getLogger(__name__)
 
-TRUSTED_COOKIE = "eb_trusted_device"
-TRUSTED_COOKIE_MAX_AGE = 365 * 24 * 3600
 MAX_BODY = 4096
 _SW_PATH = Path(__file__).resolve().parent / "static_src" / "clockin_sw.js"
 
@@ -93,34 +89,37 @@ class PressResult:
 
 def trusted_device_user(request):
     """
-    Returns the active CompanyUser that owns the trusted-device cookie
-    of the request, or None. The panel session is not needed.
+    The active CompanyUser that owns the request's trusted device, or
+    None. The panel session is not needed (panel/trusted_devices.py).
     ---
-    Devuelve el CompanyUser activo dueño de la cookie de dispositivo de
-    confianza de la petición, o None. No hace falta sesión del panel.
+    El CompanyUser activo dueño del dispositivo de confianza de la
+    petición, o None. No hace falta sesión del panel
+    (panel/trusted_devices.py).
     """
-    raw = request.COOKIES.get(TRUSTED_COOKIE, "")
-    if not raw:
-        return None
-    try:
-        payload = signing.loads(raw, max_age=TRUSTED_COOKIE_MAX_AGE)
-    except signing.BadSignature:
-        return None
-    if not isinstance(payload, dict):
-        return None
-    company_user = (
-        CompanyUser.objects.select_related("company", "user")
-        .filter(user_id=payload.get("uid"), is_active=True)
-        .first()
+    from panel.trusted_devices import device_owner
+
+    return device_owner(request)
+
+
+def _untrusted_response(request):
+    """
+    401 for a browser that is not a trusted device. When the user has
+    an open panel session on it, the page offers to trust it right away
+    (/panel/trust-device/?next=/fichaje/) instead of a new login.
+    ---
+    401 para un navegador que no es dispositivo de confianza. Si tiene
+    la sesión del panel abierta, la página ofrece marcarlo en el acto
+    (/panel/trust-device/?next=/fichaje/) en vez de volver a entrar.
+    """
+    logged_in = (
+        request.user.is_authenticated
+        and getattr(request.user, "company_user", None) is not None
     )
-    if (
-        company_user is None
-        or not company_user.user.is_active
-        or company_user.trusted_device_token is None
-        or str(company_user.trusted_device_token) != payload.get("tok")
-    ):
-        return None
-    return company_user
+    return JsonResponse({
+        "error": NO_TRUSTED_DEVICE,
+        "code": "no_trusted_device",
+        "logged_in": bool(logged_in),
+    }, status=401)
 
 
 def _coordinate(value, limit):
@@ -256,10 +255,7 @@ def receive(request):
     """
     company_user = trusted_device_user(request)
     if company_user is None:
-        return JsonResponse(
-            {"error": NO_TRUSTED_DEVICE, "code": "no_trusted_device"},
-            status=401,
-        )
+        return _untrusted_response(request)
     if len(request.body) > MAX_BODY:
         return JsonResponse({"error": "Petición demasiado grande."},
                             status=400)
@@ -296,10 +292,7 @@ def status(request):
     """
     company_user = trusted_device_user(request)
     if company_user is None:
-        return JsonResponse(
-            {"error": NO_TRUSTED_DEVICE, "code": "no_trusted_device"},
-            status=401,
-        )
+        return _untrusted_response(request)
     last = (
         ClockEvent.objects.filter(company_user=company_user)
         .order_by("-pressed_at").first()

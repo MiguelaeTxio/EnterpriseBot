@@ -326,8 +326,11 @@ class CompanyUser(models.Model):
         null=True,
         blank=True,
         default=None,
-        verbose_name="Token de dispositivo de confianza",
+        verbose_name="Token de dispositivo de confianza (legado)",
         help_text=(
+            "LEGADO desde H24 (S129): ya no se lee ni se escribe; los "
+            "dispositivos de confianza viven en TrustedDevice (varios por "
+            "usuario). Se conserva solo como histórico de la migración. "
             "UUID generado automáticamente cuando el usuario establece su "
             "contraseña por primera vez. Se almacena en una cookie HttpOnly "
             "firmada en el navegador del usuario para permitir el acceso "
@@ -542,6 +545,55 @@ class CompanyUser(models.Model):
 
     def __str__(self):
         return f"{self.company.name} — {self.user.username}"
+
+
+class TrustedDevice(models.Model):
+    """
+    One trusted device of a panel user (H24, S129). Replaces the single
+    CompanyUser.trusted_device_token: with one token per user, trusting
+    the PC invalidated the phone, and the login never asked again
+    because the phone still carried a (now useless) cookie -- found by
+    Miguel Ángel trying to clock in. The signed cookie
+    `eb_trusted_device` carries {"uid": user pk, "tok": token}; a device
+    is valid while its row exists (panel/trusted_devices.py).
+    ---
+    Un dispositivo de confianza de un usuario del panel (H24, S129).
+    Sustituye al único CompanyUser.trusted_device_token: con un token
+    por usuario, confiar en el PC invalidaba el móvil, y el login no
+    volvía a preguntar porque el móvil seguía llevando una cookie (ya
+    inútil) -- lo encontró Miguel Ángel al intentar fichar. La cookie
+    firmada `eb_trusted_device` lleva {"uid": pk del usuario, "tok":
+    token}; un dispositivo vale mientras exista su fila
+    (panel/trusted_devices.py).
+    """
+
+    company_user = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.CASCADE,
+        related_name="trusted_devices",
+        verbose_name="Usuario",
+    )
+    token = models.UUIDField(
+        unique=True,
+        verbose_name="Token",
+    )
+    user_agent = models.CharField(
+        max_length=200,
+        blank=True,
+        verbose_name="Navegador",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Marcado como de confianza",
+    )
+
+    class Meta:
+        verbose_name = "Dispositivo de confianza"
+        verbose_name_plural = "Dispositivos de confianza"
+        ordering = ["company_user", "-created_at"]
+
+    def __str__(self):
+        return f"{self.company_user} — {self.created_at:%d/%m/%Y}"
 
 
 # ---------------------------------------------------------------------------

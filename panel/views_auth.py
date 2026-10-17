@@ -1025,6 +1025,21 @@ class WorkerScheduleUpdateView (SupervisorAccessMixin ,View ):
         return JsonResponse ({"ok":True })
 
 
+def _safe_next (request ,value ):
+    """
+    value if it is a safe local URL, else "".
+    ---
+    value si es una URL local segura; si no, "".
+    """
+    from django .utils .http import url_has_allowed_host_and_scheme 
+    if value and url_has_allowed_host_and_scheme (
+    value ,allowed_hosts ={request .get_host ()},
+    require_https =request .is_secure (),
+    ):
+        return value 
+    return ""
+
+
 class PanelLoginView (LoginView ):
     """
     Login view for the panel application.
@@ -1060,7 +1075,9 @@ class PanelLoginView (LoginView ):
             company_user =getattr (request .user ,"company_user",None )
             if company_user is not None and company_user .is_active :
                 from django .shortcuts import redirect 
-                return redirect (self .next_page )
+                # H24 (S129): con sesión abierta se respeta ?next=
+                # (p. ej. /fichaje/), no siempre la portada.
+                return redirect (self .get_success_url ())
         return super ().dispatch (request ,*args ,**kwargs )
 
     def get_context_data (self ,**kwargs ):
@@ -1073,27 +1090,12 @@ class PanelLoginView (LoginView ):
         una cookie de dispositivo de confianza válida, para que el template
         pueda renderizar el modo de acceso rápido.
         """
-        from django .core import signing 
-        from django .contrib .auth import get_user_model 
+        from panel .trusted_devices import device_owner 
         context =super ().get_context_data (**kwargs )
-        _raw =self .request .COOKIES .get ("eb_trusted_device","")
-        if _raw and not self .request .GET .get ("force_form"):
-            try :
-                _payload =signing .loads (_raw ,max_age =365 *24 *3600 )
-                _user_id =_payload .get ("uid")
-                _device_token =_payload .get ("tok")
-                User =get_user_model ()
-                _user =User .objects .select_related ("company_user").get (pk =_user_id )
-                _cu =getattr (_user ,"company_user",None )
-                if (
-                _cu is not None 
-                and _cu .is_active 
-                and _cu .trusted_device_token is not None 
-                and str (_cu .trusted_device_token )==_device_token 
-                ):
-                    context ["trusted_device_user"]=_user 
-            except Exception as _exc :
-                logger .debug ("# [TRUSTED DEVICE] Cookie inválida en login: %s",_exc )
+        if not self .request .GET .get ("force_form"):
+            _cu =device_owner (self .request )
+            if _cu is not None :
+                context ["trusted_device_user"]=_cu .user 
         return context 
 
     def form_valid (self ,form ):
@@ -1104,8 +1106,14 @@ class PanelLoginView (LoginView ):
         Tras un login exitoso, redirige a trust_device si el dispositivo
         no es de confianza todavía. En caso contrario redirige al dashboard.
         """
+        from panel .trusted_devices import device_owner 
         response =super ().form_valid (form )
-        if not self .request .COOKIES .get ("eb_trusted_device",""):
+        # H24 (S129): se pregunta siempre que este navegador no sea un
+        # dispositivo de confianza VÁLIDO de este usuario -- antes bastaba
+        # con que existiera la cookie, aunque ya no valiera, y no se
+        # volvía a preguntar nunca.
+        _owner =device_owner (self .request )
+        if _owner is None or _owner .user_id !=form .get_user ().pk :
             from django .shortcuts import redirect 
             # H24 (S129): tras la pregunta de confianza se vuelve a
             # donde iba (p. ej. /fichaje/), no siempre al panel.
@@ -1134,44 +1142,23 @@ class TrustDeviceQuickLoginView (View ):
         ---
         Valida la cookie de dispositivo de confianza y autentica al usuario.
         """
-        from django .core import signing 
-        from django .contrib .auth import get_user_model ,login as auth_login 
+        from django .contrib .auth import login as auth_login 
+        from panel .trusted_devices import device_owner 
 
-        _raw =request .COOKIES .get ("eb_trusted_device","")
-        if not _raw :
-            return redirect ("panel:login")
-        try :
-            _payload =signing .loads (_raw ,max_age =365 *24 *3600 )
-            _user_id =_payload .get ("uid")
-            _device_token =_payload .get ("tok")
-            User =get_user_model ()
-            _user =User .objects .select_related ("company_user").get (pk =_user_id )
-            _cu =getattr (_user ,"company_user",None )
-            if (
-            _cu is not None 
-            and _cu .is_active 
-            and not _cu .must_change_password 
-            and _cu .trusted_device_token is not None 
-            and str (_cu .trusted_device_token )==_device_token 
-            ):
-                auth_login (
-                request ,
-                _user ,
-                backend ="django.contrib.auth.backends.ModelBackend",
-                )
-                logger .info (
-                "# [TRUSTED DEVICE] Acceso rápido concedido a usuario pk=%s.",
-                _user .pk ,
-                )
-                from django .utils .http import url_has_allowed_host_and_scheme 
-                _next =request .POST .get ("next","")
-                if _next and url_has_allowed_host_and_scheme (
-                _next ,allowed_hosts ={request .get_host ()},require_https =request .is_secure (),
-                ):
-                    return redirect (_next )
-                return redirect ("/panel/")
-        except Exception as _exc :
-            logger .warning ("# [TRUSTED DEVICE] Cookie inválida en quick-login: %s",_exc )
+        _cu =device_owner (request )
+        if _cu is not None and not _cu .must_change_password :
+            auth_login (
+            request ,
+            _cu .user ,
+            backend ="django.contrib.auth.backends.ModelBackend",
+            )
+            logger .info (
+            "# [TRUSTED DEVICE] Acceso rápido concedido a usuario pk=%s.",
+            _cu .user_id ,
+            )
+            _next =_safe_next (request ,request .POST .get ("next",""))
+            return redirect (_next or "/panel/")
+        logger .warning ("# [TRUSTED DEVICE] Cookie no válida en quick-login.")
         return redirect ("panel:login")
 
 
@@ -1180,14 +1167,14 @@ class TrustDeviceView (View ):
     Shown after a successful login on an untrusted device.
     GET:  Renders the trust-device question page.
     POST: If 'trust=yes', generates a UUID4 token, persists it in
-          CompanyUser.trusted_device_token and emits the signed HttpOnly
+          a new TrustedDevice (panel.trusted_devices) and emits the signed HttpOnly
           cookie 'eb_trusted_device' (max_age=365 days).
           If 'trust=no', redirects to dashboard without emitting the cookie.
     ---
     Se muestra tras un login exitoso en un dispositivo no conocido.
     GET:  Renderiza la página de pregunta de confianza de dispositivo.
     POST: Si 'trust=yes', genera un UUID4, lo persiste en
-          CompanyUser.trusted_device_token y emite la cookie HttpOnly firmada
+          un TrustedDevice nuevo (panel.trusted_devices) y emite la cookie HttpOnly firmada
           'eb_trusted_device' (max_age=365 días).
           Si 'trust=no', redirige al dashboard sin emitir la cookie.
     """
@@ -1202,6 +1189,11 @@ class TrustDeviceView (View ):
         """
         if not request .user .is_authenticated :
             return redirect ("panel:login")
+        # H24 (S129): /panel/trust-device/?next=/fichaje/ (botón de la
+        # página de fichaje) vuelve allí tras contestar.
+        _next =_safe_next (request ,request .GET .get ("next",""))
+        if _next :
+            request .session ["_after_trust_next"]=_next 
         cu =request .user .company_user 
         return render (request ,self .template_name ,{
         "company":cu .company ,
@@ -1219,31 +1211,15 @@ class TrustDeviceView (View ):
         'trust=yes' -> emite cookie y redirige al dashboard.
         'trust=no'  -> redirige al dashboard sin cookie.
         """
-        import uuid as _uuid 
-        from django .core import signing as _signing 
+        from panel .trusted_devices import trust 
 
+        if not request .user .is_authenticated :
+            return redirect ("panel:login")
         response =redirect (
         request .session .pop ("_after_trust_next","")or "/panel/"
         )
         if request .POST .get ("trust")=="yes":
-            cu =request .user .company_user 
-            _token =_uuid .uuid4 ()
-            cu .trusted_device_token =_token 
-            cu .save (update_fields =["trusted_device_token"])
-            _payload ={"uid":request .user .pk ,"tok":str (_token )}
-            _signed =_signing .dumps (_payload )
-            response .set_cookie (
-            key ="eb_trusted_device",
-            value =_signed ,
-            max_age =365 *24 *3600 ,
-            httponly =True ,
-            secure =True ,
-            samesite ="Lax",
-            )
-            logger .info (
-            "# [TRUSTED DEVICE] Cookie emitida para usuario pk=%s.",
-            request .user .pk ,
-            )
+            trust (request ,response ,request .user .company_user )
         return response 
 
 
@@ -1264,42 +1240,21 @@ class TrustDeviceToggleView (CompanyUserRequiredMixin ,View ):
         ---
         Procesa la acción trust/revoke.
         """
-        import uuid as _uuid 
-        from django .core import signing as _signing 
+        from panel .trusted_devices import forget ,trust 
 
         cu =request .user .company_user 
         action =request .POST .get ("action","")
         response =redirect ("panel:own_profile")
 
         if action =="trust":
-            _token =_uuid .uuid4 ()
-            cu .trusted_device_token =_token 
-            cu .save (update_fields =["trusted_device_token"])
-            _payload ={"uid":request .user .pk ,"tok":str (_token )}
-            _signed =_signing .dumps (_payload )
-            response .set_cookie (
-            key ="eb_trusted_device",
-            value =_signed ,
-            max_age =365 *24 *3600 ,
-            httponly =True ,
-            secure =True ,
-            samesite ="Lax",
-            )
+            trust (request ,response ,cu )
             django_messages .success (request ,"Este dispositivo ha sido marcado como de confianza.")
-            logger .info (
-            "# [TRUSTED DEVICE] Cookie emitida desde perfil para usuario pk=%s.",
-            request .user .pk ,
-            )
 
         elif action =="revoke":
-            cu .trusted_device_token =None 
-            cu .save (update_fields =["trusted_device_token"])
-            response .delete_cookie ("eb_trusted_device")
+            # H24 (S129): solo este dispositivo; los demás del usuario
+            # (p. ej. el móvil de fichar) siguen valiendo.
+            forget (request ,response )
             django_messages .success (request ,"La confianza de este dispositivo ha sido revocada.")
-            logger .info (
-            "# [TRUSTED DEVICE] Cookie revocada desde perfil para usuario pk=%s.",
-            request .user .pk ,
-            )
 
         return response 
 
@@ -1631,28 +1586,8 @@ class PanelPasswordChangeView (CompanyUserRequiredMixin ,View ):
 
             response =redirect ("/panel/")
             if _was_forced :
-                import uuid as _uuid 
-                from django .core import signing as _signing 
-                _token =_uuid .uuid4 ()
-                cu .trusted_device_token =_token 
-                cu .save (update_fields =["trusted_device_token"])
-                _payload ={"uid":request .user .pk ,"tok":str (_token )}
-                _signed =_signing .dumps (_payload )
-                _max_age =365 *24 *3600 
-                response .set_cookie (
-                key ="eb_trusted_device",
-                value =_signed ,
-                max_age =_max_age ,
-                httponly =True ,
-                secure =True ,
-                samesite ="Lax",
-                )
-                logger .info (
-                "# [TRUSTED DEVICE] Cookie emitida para usuario pk=%s — "
-                "token=%s.",
-                request .user .pk ,
-                _token ,
-                )
+                from panel .trusted_devices import trust 
+                trust (request ,response ,cu )
             return response 
         return render (request ,self .template_name ,self ._get_context (request ,form ))
 
@@ -1963,10 +1898,15 @@ class OwnProfileView (CompanyUserRequiredMixin ,View ):
         """
         from panel .forms import OwnProfileForm 
         company_user =request .user .company_user 
+        from panel .trusted_devices import device_owner 
         form =OwnProfileForm (company_user =company_user )
+        _owner =device_owner (request )
         return render (request ,self .template_name ,{
         "form":form ,
         "company_user":company_user ,
+        # H24 (S129): de confianza solo si la cookie VALE para este
+        # usuario (antes bastaba con que existiera).
+        "is_trusted_device":_owner is not None and _owner .pk ==company_user .pk ,
         "own_presence":self ._get_own_presence (company_user ),
         "active_nav":"own_profile",
         })
