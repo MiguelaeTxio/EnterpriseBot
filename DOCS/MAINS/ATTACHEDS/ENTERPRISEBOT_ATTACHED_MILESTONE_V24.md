@@ -851,6 +851,21 @@ hacer."*
     8:30, 13:50 -> 13:30). `ClockEvent.rounded_at` (migración 0009,
     rellenada); el parte coincide exactamente con la redondeada. Commit
     `e055601`.
+  - Quién ve qué (Miguel Ángel, 17/10): *"El tema de las 2 horas es
+    para que lo vea administración (supervisores y admin), los
+    trabajadores ven fichajes `en punto` y `a y media`"*. En el
+    formulario de partes la hora real solo llega a ADMIN, SUPERVISOR y
+    WORKSHOPBOSS; los errores del parte ya no citan la hora real. La
+    página de fichaje sigue igual (*"no es necesario"*).
+  - Visor de fichajes = pestaña Fichajes ampliada (*"pondremos las 2
+    horas para que el supervisor pueda ver si un operario llega
+    usualmente a su hora o no"*): columna "Llegadas tarde" (N de M
+    entradas comparables), detalle con real → parte y, en cada entrada,
+    hora del horario y minutos tarde/antes; Excel Jornadas con hora del
+    parte, entrada según horario y minutos tarde. Cada entrada se
+    compara con la hora de entrada más cercana del horario ACTUAL
+    (mañana o, en partida, tarde); un minuto después ya es tarde. Commit
+    `f1b999f`.
 - Primer fichaje real de Miguel Ángel (17/10, 12:16): el móvil no podía
   fichar -- un solo token de confianza por usuario; marcar otro aparato
   invalidó el del móvil y el login no volvía a preguntar porque la
