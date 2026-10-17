@@ -41,6 +41,10 @@ urlpatterns = [
     # el móvil + envío al volver la conexión). Pública, sin BD; se retira
     # al construir el punto 3 de H24 -- ver hr_calendar/clockin_test.py.
     path('fichaje-prueba/', include('hr_calendar.clockin_test_urls')),
+    # H24 (S129): fichaje oficial -- recepción con la llave del
+    # dispositivo de confianza (hr_calendar/clockin.py).
+    path('fichaje/', include('hr_calendar.clockin_urls',
+                             namespace='clockin')),
     path('admin/', admin.site.urls),
     # Voice IVR bridge — puente IVR de voz.
     path('api/vox/', include('vox_bridge.urls')),

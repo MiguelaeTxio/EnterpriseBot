@@ -731,3 +731,141 @@ class VacationBalanceAdjustment(models.Model):
             f"{self.person} — {self.year} "
             f"{self.get_kind_display()}: {self.days}"
         )
+
+
+class ClockEvent(models.Model):
+    """
+    One clock-in or clock-out press (H24, S129, roadmap point 3). The
+    press is made on the worker's trusted device, possibly without
+    coverage: the phone keeps the press time and the GPS position and
+    sends them later. Both times are stored -- the press as the phone
+    gave it and the moment the server received it -- so a late send is
+    visible. `client_id` is generated on the phone for each press: a
+    press sent twice (the Android test sent one twice) is stored once.
+
+    Records are never edited or deleted from the panel: art. 34.9 ET
+    requires keeping them four years.
+
+    ---
+
+    Una pulsación de entrada o salida (H24, S129, punto 3 de la hoja de
+    ruta). Se hace desde el dispositivo de confianza del trabajador,
+    quizá sin cobertura: el móvil guarda la hora de la pulsación y la
+    posición GPS y las envía después. Se guardan las dos horas -- la de
+    la pulsación tal como la da el móvil y la de llegada al servidor --
+    para que un envío tardío se vea. `client_id` lo genera el móvil en
+    cada pulsación: una pulsación enviada dos veces (en la prueba de
+    Android llegó una dos veces) se guarda una sola vez.
+
+    Los registros no se editan ni se borran desde el panel: el art.
+    34.9 ET obliga a conservarlos cuatro años.
+    """
+
+    class Kind(models.TextChoices):
+        IN = "IN", "Entrada"
+        OUT = "OUT", "Salida"
+
+    class SentBy(models.TextChoices):
+        ONLINE = "ONLINE", "Al momento"
+        BACKGROUND = "BACKGROUND", "Al volver la cobertura (segundo plano)"
+        PAGE = "PAGE", "Al volver a abrir la página"
+        MANUAL = "MANUAL", "Botón «Enviar pendientes»"
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.PROTECT,
+        related_name="clock_events",
+        verbose_name="Empresa",
+    )
+    company_user = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.PROTECT,
+        related_name="clock_events",
+        verbose_name="Usuario que fichó",
+    )
+    person = models.ForeignKey(
+        PersonIdentity,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="clock_events",
+        verbose_name="Trabajador",
+        help_text="Ficha de Personal del usuario en el momento de "
+                  "fichar; vacía si el usuario aún no tenía ficha.",
+    )
+    kind = models.CharField(
+        max_length=3,
+        choices=Kind.choices,
+        verbose_name="Tipo",
+    )
+    client_id = models.CharField(
+        max_length=40,
+        unique=True,
+        verbose_name="Identificador de la pulsación",
+        help_text="Generado por el móvil; evita guardar dos veces la "
+                  "misma pulsación.",
+    )
+    pressed_at = models.DateTimeField(
+        verbose_name="Hora de la pulsación",
+        help_text="Hora del móvil al pulsar.",
+    )
+    received_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Hora de llegada al servidor",
+    )
+    latitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True,
+        verbose_name="Latitud",
+    )
+    longitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True,
+        verbose_name="Longitud",
+    )
+    accuracy_m = models.PositiveIntegerField(
+        null=True, blank=True,
+        verbose_name="Precisión GPS (m)",
+    )
+    gps_error = models.CharField(
+        max_length=120, blank=True,
+        verbose_name="Motivo de la falta de GPS",
+    )
+    sent_by = models.CharField(
+        max_length=12,
+        choices=SentBy.choices,
+        default=SentBy.ONLINE,
+        verbose_name="Cómo se envió",
+    )
+    user_agent = models.CharField(
+        max_length=200, blank=True,
+        verbose_name="Navegador",
+    )
+
+    class Meta:
+        verbose_name = "Fichaje"
+        verbose_name_plural = "Fichajes"
+        ordering = ["-pressed_at"]
+        indexes = [
+            models.Index(
+                fields=["company", "pressed_at"],
+                name="clockevent_company_pressed",
+            ),
+            models.Index(
+                fields=["company_user", "pressed_at"],
+                name="clockevent_user_pressed",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.company_user} — {self.get_kind_display()} "
+            f"{self.pressed_at:%d/%m/%Y %H:%M}"
+        )
+
+    @property
+    def delay_seconds(self) -> int:
+        """
+        Seconds between the press and its arrival at the server.
+        ---
+        Segundos entre la pulsación y su llegada al servidor.
+        """
+        return round((self.received_at - self.pressed_at).total_seconds())
