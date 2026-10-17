@@ -49,10 +49,12 @@ saludar también sin cobertura.
         #untrusted a { font-weight: 700; }
         .mt { margin-top: 8px; }
         .fw { font-weight: 600; }
+        #back { display: none; margin-bottom: 10px; font-weight: 600; color: #0d6efd; text-decoration: none; }
         a.action { display: block; margin-top: 8px; padding: 12px; border-radius: 8px; background: #0d6efd; color: #fff; text-align: center; font-weight: 700; text-decoration: none; }
     </style>
 </head>
 <body>
+    <a id="back" href="/panel/">‹ Volver al panel</a>
     <div class="head">
         <h1>Fichaje</h1>
         <span id="net" class="net">…</span>
@@ -95,6 +97,24 @@ saludar también sin cobertura.
 <script>
 (function () {
     "use strict";
+    // Entrando desde el menú del panel, enlace para volver a donde se
+    // estaba; desde el icono del escritorio no sale (no hay de dónde
+    // venir). Se recuerda en la pestaña por si se recarga la página.
+    (function () {
+        const back = document.getElementById("back");
+        let target = "";
+        try {
+            const ref = document.referrer ? new URL(document.referrer) : null;
+            if (ref && ref.origin === location.origin && ref.pathname.indexOf("/panel/") === 0
+                && !/^\/panel\/(login|trust-device)/.test(ref.pathname)) {
+                target = ref.pathname + ref.search;
+                sessionStorage.setItem("fichaje-back", target);
+            } else {
+                target = sessionStorage.getItem("fichaje-back") || "";
+            }
+        } catch (e) { /* sin sessionStorage: solo con el referrer */ }
+        if (target) { back.href = target; back.style.display = "inline-block"; }
+    }());
     const DB_NAME = "fichaje";
     const STORE = "presses";
     const SYNC_TAG = "fichaje-enviar";
