@@ -2145,9 +2145,13 @@ class OnboardingService:
         base_username = _clean(f"{fn}.{ln1}") if ln1 else _clean(fn)
         username = base_username
 
-        if DjangoUser.objects.filter(username=username).exists() and ln2:
-            alt = _clean(f"{fn}.{ln2}")
-            if not DjangoUser.objects.filter(username=alt).exists():
+        # H24 (S129): sin segundo apellido, un nombre.apellido ya usado
+        # se quedaba igual y create_user fallaba con el error genérico.
+        # Ahora siempre se busca uno libre: nombre.apellido2 si lo hay y
+        # está libre; si no, sufijo numérico.
+        if DjangoUser.objects.filter(username=username).exists():
+            alt = _clean(f"{fn}.{ln2}") if ln2 else ""
+            if alt and not DjangoUser.objects.filter(username=alt).exists():
                 username = alt
             else:
                 suffix = 2
@@ -2175,129 +2179,143 @@ class OnboardingService:
             company=company, dni=dni, pending_onboarding=True,
         ).select_related("user").first()
 
+        from django.db import transaction as _transaction
+
         try:
-            if _preregistered is not None:
-                django_user = _preregistered.user
-                django_user.set_password(password)
-                django_user.is_active = True
-                django_user.save(update_fields=["password", "is_active"])
-                company_user = _preregistered
-                company_user.role = role
-                company_user.base = base
-                company_user.is_active = True
-                company_user.must_change_password = False
-                company_user.pending_onboarding = False
-                company_user.save(update_fields=[
-                    "role", "base", "is_active", "must_change_password",
-                    "pending_onboarding",
-                ])
-                logger.info(
-                    "# [ONBOARDING] Pre-registro CompanyUser #%d "
-                    "completado (DNI coincidente) -- ya no duplicado.",
-                    company_user.pk,
-                )
-            else:
-                django_user = DjangoUser.objects.create_user(
-                    username=username,
-                    password=password,
-                    first_name=first_name,
-                    last_name=f"{last_name1} {last_name2}".strip(),
-                    is_active=True,
-                    is_staff=False,
-                )
-                company_user = _CU.objects.create(
-                    company=company,
-                    user=django_user,
-                    role=role,
-                    base=base,
-                    is_active=True,
-                    must_change_password=False,
-                    dni=dni,
-                )
-            contact = _Contact.objects.create(
-                company=company,
-                name=f"{first_name} {last_name1} {last_name2}".strip(),
-                phone_number=session.phone_number,
-                is_internal=True,
-                company_user=company_user,
-            )
-            _SC.objects.create(
-                section=section,
-                contact=contact,
-                priority=99,
-            )
-
-            # Vinculación automática de documentación pre-registrada
-            # (2026-07-23, a petición de Miguel Ángel): la ingesta de
-            # carpeta (H25/H27) puede haber dejado documentos
-            # PersonalDocument con company_user=None y
-            # detected_dni_hint=<DNI> cuando el trabajador todavía no
-            # tenía cuenta -- "el pre-registro que tenemos" (ver
-            # PersonalDocument.company_user, nullable desde S024). En
-            # el momento en que el DNI introducido en el propio
-            # onboarding coincide EXACTO con ese hint, es la
-            # confirmación fehaciente de que es la misma persona --
-            # vinculación automática y silenciosa, sin cola de
-            # revisión (decisión explícita de Miguel Ángel: solo se
-            # revisa a mano cuando el DNI NO coincide, vía la pantalla
-            # "Sin asignar" ya existente, DocumentAssignView).
-            from personal_documents.models import PersonalDocument as _PD
-            from document_management.models import DocumentAlert as _DocAlert
-            from django.contrib.contenttypes.models import (
-                ContentType as _ContentType,
-            )
-            from document_ingestion.entity_matching_service import (
-                normalize_dni as _normalize_dni_ob,
-            )
-            _normalized_dni = _normalize_dni_ob(dni)
-            _preregistered_docs = _PD.objects.filter(
-                company=company,
-                company_user__isnull=True,
-                detected_dni_hint=_normalized_dni,
-            ) if _normalized_dni else _PD.objects.none()
-            _linked_count = _preregistered_docs.count()
-            if _linked_count:
-                _pd_content_type = _ContentType.objects.get_for_model(_PD)
-                _new_subject_label = (
-                    django_user.get_full_name() or django_user.username
-                )
-                for _doc in _preregistered_docs:
-                    _doc.company_user = company_user
-                    _doc.detected_dni_hint = ""
-                    _doc.status = _PD.Status.CLASSIFIED
-                    _doc.save(update_fields=[
-                        "company_user", "detected_dni_hint", "status",
+            # H24 (S129): todo el alta en una transacción -- un fallo a
+            # mitad (p. ej. el error de MySQL pendiente desde S010, anexo
+            # V17) dejaba User/CompanyUser sin su Contact.
+            with _transaction.atomic():
+                if _preregistered is not None:
+                    django_user = _preregistered.user
+                    django_user.set_password(password)
+                    django_user.is_active = True
+                    django_user.save(update_fields=["password", "is_active"])
+                    company_user = _preregistered
+                    company_user.role = role
+                    company_user.base = base
+                    company_user.is_active = True
+                    company_user.must_change_password = False
+                    company_user.pending_onboarding = False
+                    company_user.save(update_fields=[
+                        "role", "base", "is_active", "must_change_password",
+                        "pending_onboarding",
                     ])
-                _DocAlert.objects.filter(
-                    content_type=_pd_content_type,
-                    object_id__in=_preregistered_docs.values_list(
-                        "pk", flat=True,
-                    ),
-                ).update(subject_label=_new_subject_label)
-                logger.info(
-                    "# [ONBOARDING] %d documento(s) pre-registrados "
-                    "vinculados automaticamente a CompanyUser #%d "
-                    "(DNI coincidente).",
-                    _linked_count, company_user.pk,
+                    logger.info(
+                        "# [ONBOARDING] Pre-registro CompanyUser #%d "
+                        "completado (DNI coincidente) -- ya no duplicado.",
+                        company_user.pk,
+                    )
+                else:
+                    django_user = DjangoUser.objects.create_user(
+                        username=username,
+                        password=password,
+                        first_name=first_name,
+                        last_name=f"{last_name1} {last_name2}".strip(),
+                        is_active=True,
+                        is_staff=False,
+                    )
+                    company_user = _CU.objects.create(
+                        company=company,
+                        user=django_user,
+                        role=role,
+                        base=base,
+                        is_active=True,
+                        must_change_password=False,
+                        dni=dni,
+                    )
+                contact = _Contact.objects.create(
+                    company=company,
+                    name=f"{first_name} {last_name1} {last_name2}".strip(),
+                    phone_number=session.phone_number,
+                    is_internal=True,
+                    company_user=company_user,
+                )
+                _SC.objects.create(
+                    section=section,
+                    contact=contact,
+                    priority=99,
                 )
 
-            cls.clear_state(session)
+                # Vinculación automática de documentación pre-registrada
+                # (2026-07-23, a petición de Miguel Ángel): la ingesta de
+                # carpeta (H25/H27) puede haber dejado documentos
+                # PersonalDocument con company_user=None y
+                # detected_dni_hint=<DNI> cuando el trabajador todavía no
+                # tenía cuenta -- "el pre-registro que tenemos" (ver
+                # PersonalDocument.company_user, nullable desde S024). En
+                # el momento en que el DNI introducido en el propio
+                # onboarding coincide EXACTO con ese hint, es la
+                # confirmación fehaciente de que es la misma persona --
+                # vinculación automática y silenciosa, sin cola de
+                # revisión (decisión explícita de Miguel Ángel: solo se
+                # revisa a mano cuando el DNI NO coincide, vía la pantalla
+                # "Sin asignar" ya existente, DocumentAssignView).
+                from personal_documents.models import PersonalDocument as _PD
+                from document_management.models import (
+                    DocumentAlert as _DocAlert,
+                )
+                from django.contrib.contenttypes.models import (
+                    ContentType as _ContentType,
+                )
+                from document_ingestion.entity_matching_service import (
+                    normalize_dni as _normalize_dni_ob,
+                )
+                _normalized_dni = _normalize_dni_ob(dni)
+                _preregistered_docs = _PD.objects.filter(
+                    company=company,
+                    company_user__isnull=True,
+                    detected_dni_hint=_normalized_dni,
+                ) if _normalized_dni else _PD.objects.none()
+                # H24 (S129): los pk se guardan ANTES de vincular -- el
+                # queryset filtra company_user nulo, así que tras el
+                # bucle ya no devolvía nada y los avisos nunca se
+                # renombraban.
+                _doc_pks = list(
+                    _preregistered_docs.values_list("pk", flat=True),
+                )
+                _linked_count = len(_doc_pks)
+                if _linked_count:
+                    _pd_content_type = _ContentType.objects.get_for_model(_PD)
+                    _new_subject_label = (
+                        django_user.get_full_name() or django_user.username
+                    )
+                    for _doc in _PD.objects.filter(pk__in=_doc_pks):
+                        _doc.company_user = company_user
+                        _doc.detected_dni_hint = ""
+                        _doc.status = _PD.Status.CLASSIFIED
+                        _doc.save(update_fields=[
+                            "company_user", "detected_dni_hint", "status",
+                        ])
+                    _DocAlert.objects.filter(
+                        content_type=_pd_content_type,
+                        object_id__in=_doc_pks,
+                    ).update(subject_label=_new_subject_label)
+                    logger.info(
+                        "# [ONBOARDING] %d documento(s) pre-registrados "
+                        "vinculados automaticamente a CompanyUser #%d "
+                        "(DNI coincidente).",
+                        _linked_count, company_user.pk,
+                    )
 
-            role_label = dict(_CU.ROLE_CHOICES).get(role, role)
-            panel_url = (
-                "https://enterprisebot-miguelaetxio.pythonanywhere.com"
-                "/panel/users/"
-            )
+                cls.clear_state(session)
+
+                role_label = dict(_CU.ROLE_CHOICES).get(role, role)
+                panel_url = (
+                    "https://enterprisebot-miguelaetxio.pythonanywhere.com"
+                    "/panel/users/"
+                )
 
             logger.info(
                 "# [ONBOARDING] Usuario creado: username=%s role=%s "
                 "seccion=%s phone=%s",
-                username, role, section.name, session.phone_number,
+                django_user.username, role, section.name,
+                session.phone_number,
             )
 
             return (
                 f"✅ ¡Listo! Tu cuenta ha sido creada en {company.name}.\n\n"
-                f"👤 Usuario: *{username}*\n"
+                f"👤 Usuario: *{django_user.username}*\n"
                 f"🔑 Contraseña: *{password}*\n"
                 f"📋 Rol: {role_label}\n"
                 f"🏢 Sección: {section.name}\n"
