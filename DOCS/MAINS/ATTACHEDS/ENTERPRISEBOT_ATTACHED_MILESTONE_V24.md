@@ -841,6 +841,49 @@ hacer."*
     y comprobaba con sus datos.
   Commits `e353204` y `056aa48` (este quita la nota de supervisor,
   migración 0033).
+  - Redondeo (sustituye a la tolerancia de ±5 del commit `04b4124`).
+    Miguel Ángel: *"las horas y medias horas de los partes, son fijas.
+    Los fichajes son exactos, entonces, tenemos que guardar la hora real
+    de fichaje y la hora de redondeo"*. Regla
+    (`hr_calendar/clock_rounding.py`): a ±5 min o menos de una hora o
+    media, esa (x:25 y x:55 dentro, x:24 y x:54 fuera); más lejos, la
+    ENTRADA a la media hora siguiente y la SALIDA a la anterior (8:20 ->
+    8:30, 13:50 -> 13:30). `ClockEvent.rounded_at` (migración 0009,
+    rellenada); el parte coincide exactamente con la redondeada. Commit
+    `e055601`.
+- Primer fichaje real de Miguel Ángel (17/10, 12:16): el móvil no podía
+  fichar -- un solo token de confianza por usuario; marcar otro aparato
+  invalidó el del móvil y el login no volvía a preguntar porque la
+  cookie existía. Arreglado de raíz: `ivr_config.TrustedDevice` (varios
+  por usuario) y `panel/trusted_devices.py` como único punto de la
+  cookie; login pregunta si la cookie no vale; perfil fiel; botón
+  directo "Usar este móvil para fichar" con sesión abierta. Migración
+  0047 aplicada: 20 tokens anteriores -> 20 TrustedDevice. Commit
+  `d2f3e3f`.
+
+- Partes y fichajes (Miguel Ángel, 17/10, reglas literales en
+  `hr_calendar/clock_parts.py`). Corregido el mismo día: nada se manda
+  al supervisor (*"que supervisor va a ir detrás de los operarios [...]
+  Multiplicamos los gastos"*). Reglas vigentes:
+  - Fichar entrada no toca partes.
+  - *"un parte no se puede cerrar si no está fichada la salida, las
+    tareas si, el parte no"*: "Cerrar parte" bloqueado sin la salida
+    fichada; "Guardar tareas" libre. Solo para quien ya ficha (desde su
+    primer fichaje).
+  - Al fichar salida: copia del parte al log ([PARTE-BACKUP]), la
+    última tarea del tramo termina a la hora fichada, pausa = hueco
+    entre tramos, y el parte se cierra solo si cuadra con lo fichado;
+    en jornada partida, solo con la salida del segundo periodo. Si no
+    cuadra, sigue abierto y lo arregla el operario.
+  - Parte hecho después: horas fichadas fijas, tareas dentro de lo
+    fichado, última del tramo no empieza después de media hora antes de
+    la salida, al cerrar todo lo fichado cubierto sin huecos; sin mínimo
+    de 8 h con fichajes. Formulario: banner, horas rellenas y
+    bloqueadas, tarea automática hasta la salida.
+  - Arreglado: supervisor que corrige el parte de otro dejaba su nombre
+    y comprobaba con sus datos.
+  Commits `e353204` y `056aa48` (este quita la nota de supervisor,
+  migración 0033).
   - Tolerancia ±5 min entre fichaje y parte (*"la 1 con una tolerancia
     de ±5 minutos. 15 son demasiados minutos"*): el parte usa la media
     hora si el fichaje está a ±5 min de ella (8:04 -> 8:00); al fichar
