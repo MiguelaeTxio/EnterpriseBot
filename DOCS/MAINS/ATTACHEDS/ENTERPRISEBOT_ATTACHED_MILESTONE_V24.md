@@ -768,6 +768,40 @@ alta (ver commit `5eb16d5`).
    sesión del panel haya caducado**, con la llave del dispositivo de
    confianza.
 
+**Construido en S129 (punto 3 de 7.5, sin la página del trabajador):**
+Miguel Ángel: *"Lo que queda pendiente de Carolina y las pruebas con
+iPhone las haremos la semana que viene. Continuamos con lo que podemos
+hacer."*
+- Puestos: roles `OFFICE` (Administrativo) y `NIGHTGUARD` (Guarda
+  nocturno), `CompanyUser.WORKER_ROLES`; `Section.default_role` admite
+  los cuatro puestos y por fin se edita desde el panel (Secciones >
+  editar). Producción (migración 0046): "Guardas" -> NIGHTGUARD,
+  "Administración-Proveedores" -> OFFICE; el resto sigue en WORKSHOP
+  (ninguna sección de chóferes existe todavía; "Informática" sin tocar).
+  Commit `f0f8545`.
+- Móvil del alta guardado en la ficha (`phone`, o `phone_secondary` si
+  `phone` tiene otro; nunca pisa un número). Commit `f0f8545`.
+- `hr_calendar.ClockEvent` (migración 0008) y recepción en
+  `/fichaje/enviar/` y `/fichaje/estado/` (`hr_calendar/clockin.py`),
+  identificada con la cookie del dispositivo de confianza aunque la
+  sesión haya caducado; `client_id` único: el doble envío de la prueba
+  de Android (segundo plano y página a la vez, 2 ms de diferencia, se
+  ve en el log) se guarda una sola vez. Commit `757d93f`.
+- Pestaña "Fichajes" de Documentación (solo ADMIN/SUPERVISOR/
+  WORKSHOPBOSS): una fila por trabajador con fichajes, horas,
+  incidencias y último fichaje; detalle día a día con mapa y retraso
+  del envío; Excel (jornadas + pulsaciones). Jornadas: entrada con la
+  siguiente salida, también pasada la medianoche; las incompletas no
+  suman horas. Commits `a7ad589` + `dee7351`.
+- Verificado en producción: migraciones 0045/0046/0008 aplicadas
+  (`django_migrations`), secciones cambiadas, log sin errores tras la
+  recarga.
+
+**Pendiente del punto 3:** la página de fichaje del trabajador (la de
+la prueba pasada a oficial, contra `/fichaje/enviar/`), tras la prueba
+en iPhone de la semana del 19/10; retirar `/fichaje-prueba/`; cierre con
+un fichaje real de Miguel Ángel visible en la pestaña Fichajes.
+
 ### 7.5. Hoja de Ruta al reactivar H24
 
 H24 se abrió y se pausó en la misma sesión S127 sin trabajo de código
@@ -806,7 +840,9 @@ primera línea pasó a la hoja de ruta de H30 (S128).
    de confianza, alta por WhatsApp con los puestos reales, móvil del
    alta en la ficha, envíos pendientes aceptados con la llave del
    dispositivo, una sola vez por pulsación). Antes, la prueba en
-   iPhone (7.4bis). Re-comprobar el BOE (7.4) antes de empezar. El trabajador ficha desde la web con su usuario; el marcaje
+   iPhone (7.4bis). Re-comprobar el BOE (7.4) antes de empezar.
+   **ABIERTO -- hecho en S129 todo salvo la página del trabajador (ver
+   final de 7.4bis).** El trabajador ficha desde la web con su usuario; el marcaje
    guarda hora y coordenadas GPS tomadas en el móvil y, sin cobertura,
    se guarda en el móvil y se envía al volver la conexión; los
    marcajes se ven en el mapa. Las pantallas del trabajador se diseñan
