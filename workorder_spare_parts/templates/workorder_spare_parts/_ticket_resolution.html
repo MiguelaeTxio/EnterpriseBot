@@ -9,7 +9,17 @@
     Ticket de avería
 </label>
 
-{% if resolution.action == 'CREATE' %}
+{% if own_ticket %}
+{# S129: la tarea ya tiene su ticket (parte en curso o reeditado) -- se mantiene, sin preguntar. #}
+<div class="alert alert-secondary py-2 px-3 mb-0 small">
+    Ticket de esta tarea: <strong>{{ own_ticket.ticket_date_code|default:own_ticket.pk }}</strong>
+    ({{ own_ticket.get_status_display|lower }}){% if own_ticket.fault_summary %} — {{ own_ticket.fault_summary|truncatechars:60 }}{% endif %}.
+    Se mantiene; la casilla «Avería resuelta» decide si queda cerrado o abierto.
+</div>
+<input type="hidden" name="entrada_{{ block_idx }}_ticket_action" value="keep">
+<input type="hidden" name="entrada_{{ block_idx }}_ticket_chosen_pk" value="{{ own_ticket.pk }}">
+
+{% elif resolution.action == 'CREATE' %}
 <div class="alert alert-info py-2 px-3 mb-0 small">
     No hay ningún ticket abierto ni cerrado recientemente para esta máquina —
     se generará un ticket de avería nuevo al guardar.

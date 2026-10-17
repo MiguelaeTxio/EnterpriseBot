@@ -307,8 +307,9 @@
                                     <div id="ticket-resolution-{{ entrada.idx }}"
                                          class="ticket-resolution-container"
                                          data-block-idx="{{ entrada.idx }}"
+                                         data-line-ticket-pk="{{ entrada.breakdown_ticket.pk|default:'' }}"
                                          {% if entrada.machine_asset %}
-                                         hx-get="{% url 'workorder_spare_parts:task_ticket_resolution' %}?code={{ entrada.machine_asset.code|urlencode }}&block_idx={{ entrada.idx }}&work_order_pk={{ edit_wo_pk|default:'' }}"
+                                         hx-get="{% url 'workorder_spare_parts:task_ticket_resolution' %}?code={{ entrada.machine_asset.code|urlencode }}&block_idx={{ entrada.idx }}&work_order_pk={% firstof edit_wo_pk in_progress_wo_pk %}&line_ticket_pk={{ entrada.breakdown_ticket.pk|default:'' }}"
                                          hx-trigger="load"
                                          hx-swap="innerHTML"
                                          {% endif %}>

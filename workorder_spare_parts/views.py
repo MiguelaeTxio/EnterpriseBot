@@ -1546,6 +1546,24 @@ class TaskTicketResolutionView(CatalogReadAccessMixin, View):
             # escribir) -- ningún ticket que resolver por ahora.
             return render(request, self.template_name, {'machine': None})
 
+        # S129 (Miguel Ángel: "me dice que ya hay un ticket de avería
+        # para esa máquina" al volver a abrir su propio parte): si la
+        # tarea YA está enganchada a un ticket de esta misma máquina,
+        # es su propio ticket -- se muestra y se mantiene, sin
+        # preguntar si es otra avería. La casilla "Avería resuelta"
+        # sigue decidiendo si queda cerrado o abierto.
+        # The task's own ticket (same machine): shown and kept, no
+        # question asked.
+        from chat.models import BreakdownTicket
+        line_ticket_pk = request.GET.get('line_ticket_pk', '').strip()
+        own_ticket = None
+        if line_ticket_pk.isdigit():
+            own_ticket = BreakdownTicket.objects.filter(
+                pk=int(line_ticket_pk),
+                company=request.user.company_user.company,
+                machine=machine,
+            ).first()
+
         resolution = resolve_ticket_for_machine(machine)
 
         # S116-H07: distinguir un ticket realmente ajeno de uno que el
@@ -1587,6 +1605,7 @@ class TaskTicketResolutionView(CatalogReadAccessMixin, View):
             'pre_assigned_parts': pre_assigned_parts,
             'same_parte_ticket_pk': same_parte_ticket_pk,
             'same_parte_line_number': same_parte_line_number,
+            'own_ticket': own_ticket,
         })
 
 

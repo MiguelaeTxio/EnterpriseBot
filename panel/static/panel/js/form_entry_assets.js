@@ -117,12 +117,19 @@
     function _loadTicketResolution(blockIdx, code) {
         var target = document.getElementById("ticket-resolution-" + blockIdx);
         if (!target || !window.htmx) { return; }
+        // S129: el parte en curso (in_progress_wo_pk) también es "este
+        // mismo parte", y el ticket que ya tenga la tarea se manda para
+        // mantenerlo sin preguntar (el servidor comprueba la máquina).
         var editWoPkInput = document.querySelector('[name="edit_wo_pk"]');
-        var editWoPk = editWoPkInput ? editWoPkInput.value : "";
+        var inProgressInput = document.querySelector('[name="in_progress_wo_pk"]');
+        var editWoPk = (editWoPkInput && editWoPkInput.value)
+            || (inProgressInput && inProgressInput.value) || "";
+        var lineTicketPk = target.dataset.lineTicketPk || "";
         var url = TICKET_RESOLUTION_URL
             + "?code=" + encodeURIComponent(code)
             + "&block_idx=" + encodeURIComponent(blockIdx)
-            + "&work_order_pk=" + encodeURIComponent(editWoPk);
+            + "&work_order_pk=" + encodeURIComponent(editWoPk)
+            + "&line_ticket_pk=" + encodeURIComponent(lineTicketPk);
         htmx.ajax("GET", url, { target: target, swap: "innerHTML" });
     }
 

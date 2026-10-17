@@ -4063,6 +4063,13 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                                     _ip_ld ["machine_asset"],cu ,
                                     reopen =_ip_ld .get ("ticket_reopen"),
                                     )
+                                elif _ip_ticket_action =="keep":
+                                    # S129: el ticket que ya tenía la tarea.
+                                    _ip_bt =_IP_BT .objects .filter (
+                                    pk =_ip_ld .get ("ticket_chosen_pk"),
+                                    company =company ,
+                                    machine =_ip_ld ["machine_asset"],
+                                    ).first ()
                                 elif _ip_ticket_action =="choose":
                                     if _ip_ld .get ("ticket_create_new"):
                                         _ip_bt =_ip_get_ticket (
@@ -4721,6 +4728,13 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                                     ld["machine_asset"], cu,
                                     reopen=ld.get("ticket_reopen"),
                                 )
+                            elif _ticket_action == "keep":
+                                # S129: el ticket que ya tenía la tarea.
+                                _bt = _BT.objects.filter(
+                                    pk=ld.get("ticket_chosen_pk"),
+                                    company=company,
+                                    machine=ld["machine_asset"],
+                                ).first()
                             elif _ticket_action == "choose":
                                 if ld.get("ticket_create_new"):
                                     _bt = get_or_create_ticket_for_machine(
