@@ -39,12 +39,14 @@ tarde, quizá sin un token CSRF válido.
 import json
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from decimal import Decimal, InvalidOperation
 
 from django.core import signing
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError, transaction
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
+from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.views.decorators.cache import never_cache
@@ -59,6 +61,7 @@ logger = logging.getLogger(__name__)
 TRUSTED_COOKIE = "eb_trusted_device"
 TRUSTED_COOKIE_MAX_AGE = 365 * 24 * 3600
 MAX_BODY = 4096
+_SW_PATH = Path(__file__).resolve().parent / "static_src" / "clockin_sw.js"
 
 NO_TRUSTED_DEVICE = (
     "Este móvil no es tu dispositivo de confianza. Entra en el panel "
@@ -306,3 +309,104 @@ def status(request):
         "company": company_user.company.name,
         "last": _event_json(last) if last is not None else None,
     })
+
+
+@never_cache
+@require_GET
+def page(request):
+    """
+    GET: the clock-in page, the same for everyone (the service worker
+    keeps it for offline use); it asks /fichaje/estado/ who is pressing.
+    ---
+    GET: la página de fichaje, igual para todos (el service worker la
+    guarda para usarla sin cobertura); pregunta a /fichaje/estado/ quién
+    ficha.
+    """
+    return render(request, "hr_calendar/clockin.html")
+
+
+@never_cache
+@require_GET
+def service_worker(request):
+    """
+    GET: the service worker, served inside /fichaje/ so its scope is
+    exactly that path.
+    ---
+    GET: el service worker, servido dentro de /fichaje/ para que su
+    ámbito sea exactamente esa ruta.
+    """
+    response = HttpResponse(
+        _SW_PATH.read_text(encoding="utf-8"),
+        content_type="application/javascript; charset=utf-8",
+    )
+    response["Service-Worker-Allowed"] = "/fichaje/"
+    return response
+
+
+@never_cache
+@require_GET
+def manifest(request):
+    """
+    GET: web app manifest, so the page can go on the home screen.
+    ---
+    GET: manifiesto, para poner la página en la pantalla de inicio como
+    una app.
+    """
+    data = {
+        "name": "Fichaje — Grupo Álvarez",
+        "short_name": "Fichaje",
+        "start_url": "/fichaje/",
+        "scope": "/fichaje/",
+        "display": "standalone",
+        "background_color": "#ffffff",
+        "theme_color": "#0d6efd",
+        "orientation": "portrait",
+        "icons": [
+            {"src": "/static/panel/img/albaran_icon_192.png",
+             "sizes": "192x192", "type": "image/png"},
+            {"src": "/static/panel/img/albaran_icon_512.png",
+             "sizes": "512x512", "type": "image/png"},
+        ],
+    }
+    return HttpResponse(
+        json.dumps(data, ensure_ascii=False),
+        content_type="application/manifest+json; charset=utf-8",
+    )
+
+
+_RETIRED_TEST_SW = """
+self.addEventListener("install", function () { self.skipWaiting(); });
+self.addEventListener("activate", function (event) {
+    event.waitUntil(caches.keys().then(function (keys) {
+        return Promise.all(keys.filter(function (k) {
+            return k.indexOf("fichaje-prueba-") === 0;
+        }).map(function (k) { return caches.delete(k); }));
+    }).then(function () { return self.registration.unregister(); }));
+});
+"""
+
+
+@never_cache
+def retired_test_page(request):
+    """
+    GET /fichaje-prueba/: the S129 test is over; sends to /fichaje/.
+    ---
+    GET /fichaje-prueba/: la prueba de S129 ha terminado; lleva a
+    /fichaje/.
+    """
+    return redirect("/fichaje/")
+
+
+@never_cache
+def retired_test_sw(request):
+    """
+    GET /fichaje-prueba/sw.js: a service worker that deletes the test
+    copy and unregisters itself on the phones that installed the test.
+    ---
+    GET /fichaje-prueba/sw.js: un service worker que borra la copia de
+    la prueba y se da de baja solo en los móviles que la instalaron.
+    """
+    return HttpResponse(
+        _RETIRED_TEST_SW,
+        content_type="application/javascript; charset=utf-8",
+    )

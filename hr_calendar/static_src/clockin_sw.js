@@ -1,33 +1,36 @@
-/* /home/MiguelAeTxio/PROJECTS/EnterpriseBot/hr_calendar/static_src/clockin_test_sw.js
+/* /home/MiguelAeTxio/PROJECTS/EnterpriseBot/hr_calendar/static_src/clockin_sw.js
  *
- * Service worker of the offline clock-in test (H24, S129). Scope:
- * /fichaje-prueba/ only.
- * - Keeps a copy of the page so it opens without coverage (copy
- *   first, refreshed in the background when there is network).
- * - Background Sync (Android/Chrome only): sends the presses stored
- *   in IndexedDB as soon as the connection returns, even with the
- *   page closed. Safari (iPhone) has no Background Sync: there the
- *   page sends them the next time it is opened with coverage.
+ * Service worker of the clock-in page (H24, S129). Scope: /fichaje/.
+ * - Keeps a copy of the page so it opens without coverage (copy first,
+ *   refreshed in the background when there is network).
+ * - Background Sync (Android/Chrome): sends the presses stored in
+ *   IndexedDB as soon as the connection returns, even with the page
+ *   closed. Safari (iPhone) has no Background Sync: there the page
+ *   sends them when it is opened, when the connection returns while it
+ *   is open, every 30 s, or with the "Enviar pendientes" button.
+ * Same store and same sending rules as the page (clockin.html).
  *
- * Service worker de la prueba de fichaje sin cobertura (H24, S129).
- * Ámbito: solo /fichaje-prueba/.
+ * Service worker de la página de fichaje (H24, S129). Ámbito: /fichaje/.
  * - Guarda una copia de la página para que abra sin cobertura (primero
  *   la copia, y se renueva por detrás cuando hay red).
- * - Background Sync (solo Android/Chrome): envía las pulsaciones
- *   guardadas en IndexedDB en cuanto vuelve la conexión, aunque la
- *   página esté cerrada. Safari (iPhone) no lo tiene: allí las envía
- *   la página la próxima vez que se abre con cobertura.
+ * - Background Sync (Android/Chrome): envía las pulsaciones guardadas
+ *   en IndexedDB en cuanto vuelve la conexión, aunque la página esté
+ *   cerrada. Safari (iPhone) no lo tiene: allí las envía la página al
+ *   abrirse, al volver la conexión con ella abierta, cada 30 s o con el
+ *   botón «Enviar pendientes».
+ * Mismo almacén y mismas reglas de envío que la página (clockin.html).
  */
-const CACHE_NAME = "fichaje-prueba-v1";
-const PAGE_URL = "/fichaje-prueba/";
-const DB_NAME = "fichaje-prueba";
-const STORE = "records";
-const SYNC_TAG = "fichaje-prueba-enviar";
+const CACHE_NAME = "fichaje-v1";
+const PAGE_URL = "/fichaje/";
+const CACHED = [PAGE_URL, PAGE_URL + "manifest.json"];
+const DB_NAME = "fichaje";
+const STORE = "presses";
+const SYNC_TAG = "fichaje-enviar";
 
 self.addEventListener("install", function (event) {
     event.waitUntil(
         caches.open(CACHE_NAME)
-            .then(function (cache) { return cache.addAll([PAGE_URL, PAGE_URL + "manifest.json"]); })
+            .then(function (cache) { return cache.addAll(CACHED); })
             .then(function () { return self.skipWaiting(); })
     );
 });
@@ -36,7 +39,7 @@ self.addEventListener("activate", function (event) {
     event.waitUntil(
         caches.keys().then(function (keys) {
             return Promise.all(keys.filter(function (k) {
-                return k.startsWith("fichaje-prueba-") && k !== CACHE_NAME;
+                return k.startsWith("fichaje-") && k !== CACHE_NAME;
             }).map(function (k) { return caches.delete(k); }));
         }).then(function () { return self.clients.claim(); })
     );
@@ -46,9 +49,7 @@ self.addEventListener("fetch", function (event) {
     const request = event.request;
     if (request.method !== "GET") return;
     const url = new URL(request.url);
-    if (url.pathname !== PAGE_URL && url.pathname !== PAGE_URL + "manifest.json") return;
-    // Primero la copia guardada (abre al instante, con o sin señal);
-    // si hay red, se renueva la copia para la próxima vez.
+    if (CACHED.indexOf(url.pathname) === -1) return;
     event.respondWith(
         caches.open(CACHE_NAME).then(function (cache) {
             return cache.match(url.pathname).then(function (cached) {
@@ -62,7 +63,7 @@ self.addEventListener("fetch", function (event) {
                 }
                 return network.then(function (response) {
                     return response || new Response(
-                        "<h2 style='font-family:sans-serif;padding:2rem'>Sin cobertura y la página todavía no se había guardado. Ábrela una vez con cobertura.</h2>",
+                        "<h2 style='font-family:sans-serif;padding:2rem'>Sin cobertura y la página de fichaje todavía no se había guardado en este móvil. Ábrela una vez con cobertura.</h2>",
                         {headers: {"Content-Type": "text/html; charset=utf-8"}}
                     );
                 });
@@ -101,28 +102,37 @@ function putRecord(db, record) {
     });
 }
 
+// Una pulsación está pendiente mientras no tenga received_at ni haya
+// sido rechazada por inválida (400). Un 401 (móvil que no es el
+// dispositivo de confianza) la deja pendiente y corta el envío.
 function sendPending(sentBy) {
     return openDb().then(function (db) {
         return allRecords(db).then(function (records) {
-            const pending = records.filter(function (r) { return !r.received_at; });
+            const pending = records.filter(function (r) { return !r.received_at && !r.rejected; })
+                .sort(function (a, b) { return a.pressed_at.localeCompare(b.pressed_at); });
             return pending.reduce(function (chain, record) {
-                return chain.then(function () {
-                    const body = Object.assign({}, record, {sent_by: sentBy});
+                return chain.then(function (stop) {
+                    if (stop) return true;
                     return fetch(PAGE_URL + "enviar/", {
                         method: "POST",
+                        credentials: "same-origin",
                         headers: {"Content-Type": "application/json"},
-                        body: JSON.stringify(body),
+                        body: JSON.stringify(Object.assign({}, record, {sent_by: sentBy})),
                     }).then(function (response) {
-                        if (!response.ok) throw new Error("HTTP " + response.status);
-                        return response.json();
-                    }).then(function (data) {
-                        record.received_at = data.received_at;
-                        record.gap_seconds = data.gap_seconds;
-                        record.sent_by = sentBy;
-                        return putRecord(db, record);
+                        return response.json().catch(function () { return {}; }).then(function (data) {
+                            if (response.ok) {
+                                record.received_at = data.received_at;
+                                record.delay_seconds = data.delay_seconds;
+                                record.error = "";
+                                return putRecord(db, record).then(function () { return false; });
+                            }
+                            record.error = data.error || ("Error " + response.status);
+                            if (response.status === 400) record.rejected = true;
+                            return putRecord(db, record).then(function () { return response.status === 401; });
+                        });
                     });
                 });
-            }, Promise.resolve());
+            }, Promise.resolve(false));
         });
     }).then(function () {
         return self.clients.matchAll().then(function (clients) {
@@ -132,5 +142,5 @@ function sendPending(sentBy) {
 }
 
 self.addEventListener("sync", function (event) {
-    if (event.tag === SYNC_TAG) event.waitUntil(sendPending("segundo plano"));
+    if (event.tag === SYNC_TAG) event.waitUntil(sendPending("BACKGROUND"));
 });

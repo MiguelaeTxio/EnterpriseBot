@@ -13,6 +13,7 @@ from django.contrib import admin
 from django.urls import path, include
 from django.http import HttpResponse
 from django.views.decorators.cache import never_cache as _never_cache
+from hr_calendar import clockin as clockin_views
 
 urlpatterns = [
 
@@ -37,10 +38,11 @@ urlpatterns = [
         )),
         name="sw_js",
     ),
-    # H24 (S129): prueba de fichaje sin cobertura (página que se guarda en
-    # el móvil + envío al volver la conexión). Pública, sin BD; se retira
-    # al construir el punto 3 de H24 -- ver hr_calendar/clockin_test.py.
-    path('fichaje-prueba/', include('hr_calendar.clockin_test_urls')),
+    # H24 (S129): la prueba de fichaje ha terminado -- /fichaje-prueba/
+    # lleva a /fichaje/ y su service worker se da de baja solo en los
+    # móviles que la instalaron (hr_calendar/clockin.py).
+    path('fichaje-prueba/', clockin_views.retired_test_page),
+    path('fichaje-prueba/sw.js', clockin_views.retired_test_sw),
     # H24 (S129): fichaje oficial -- recepción con la llave del
     # dispositivo de confianza (hr_calendar/clockin.py).
     path('fichaje/', include('hr_calendar.clockin_urls',

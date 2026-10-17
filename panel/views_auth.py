@@ -1107,6 +1107,9 @@ class PanelLoginView (LoginView ):
         response =super ().form_valid (form )
         if not self .request .COOKIES .get ("eb_trusted_device",""):
             from django .shortcuts import redirect 
+            # H24 (S129): tras la pregunta de confianza se vuelve a
+            # donde iba (p. ej. /fichaje/), no siempre al panel.
+            self .request .session ["_after_trust_next"]=self .get_success_url ()
             return redirect ("panel:trust_device")
         return response 
 
@@ -1219,7 +1222,9 @@ class TrustDeviceView (View ):
         import uuid as _uuid 
         from django .core import signing as _signing 
 
-        response =redirect ("/panel/")
+        response =redirect (
+        request .session .pop ("_after_trust_next","")or "/panel/"
+        )
         if request .POST .get ("trust")=="yes":
             cu =request .user .company_user 
             _token =_uuid .uuid4 ()

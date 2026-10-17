@@ -16,6 +16,9 @@ from hr_calendar import clockin
 app_name = "clockin"
 
 urlpatterns = [
+    path("", clockin.page, name="page"),
+    path("sw.js", clockin.service_worker, name="service_worker"),
+    path("manifest.json", clockin.manifest, name="manifest"),
     path("enviar/", clockin.receive, name="receive"),
     path("estado/", clockin.status, name="status"),
 ]

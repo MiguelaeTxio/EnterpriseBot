@@ -1,0 +1,395 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/hr_calendar/templates/hr_calendar/clockin.html #}
+{% comment %}
+H24 (S129). Página de fichaje del trabajador -- ver hr_calendar/clockin.py.
+Autónoma (CSS y JS dentro, sin /static/) para que el service worker solo
+tenga que guardar esta página y abra entera sin cobertura. Es la misma
+para todos: no lleva el nombre del trabajador; lo pide a /fichaje/estado/
+con la llave del dispositivo de confianza y lo recuerda en el móvil para
+saludar también sin cobertura.
+{% endcomment %}
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Fichaje de entrada y salida de Grupo Álvarez.">
+    <meta name="keywords" content="fichaje, registro de jornada">
+    <meta name="theme-color" content="#0d6efd">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Fichaje">
+    <link rel="manifest" href="/fichaje/manifest.json">
+    <link rel="apple-touch-icon" href="/static/panel/img/albaran_icon_192.png">
+    <title>Fichaje</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 16px; background: #f5f6f8; color: #212529; max-width: 520px; margin-inline: auto; }
+        h1 { font-size: 1.3rem; margin: 0; }
+        .muted { color: #6c757d; font-size: .85rem; }
+        .card { background: #fff; border: 1px solid #dee2e6; border-radius: 10px; padding: 12px; margin: 12px 0; }
+        .head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+        .net { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .8rem; font-weight: 600; white-space: nowrap; }
+        .net.on { background: #d1e7dd; color: #0f5132; }
+        .net.off { background: #f8d7da; color: #842029; }
+        #who { font-size: 1.05rem; font-weight: 700; }
+        #clock { font-size: 2.4rem; font-weight: 700; text-align: center; letter-spacing: 1px; margin: 4px 0; }
+        .buttons { display: flex; gap: 10px; }
+        .buttons button { flex: 1; font-size: 1.25rem; font-weight: 700; padding: 22px 8px; border: 3px solid transparent; border-radius: 12px; color: #fff; }
+        .buttons button:disabled { opacity: .6; }
+        .buttons button.suggested { border-color: #212529; box-shadow: 0 0 0 3px #ffc107; }
+        #btn-in { background: #198754; }
+        #btn-out { background: #dc3545; }
+        #btn-send { background: #0d6efd; color: #fff; border: 0; border-radius: 8px; font-size: .95rem; padding: 10px; width: 100%; margin-top: 8px; font-weight: 600; }
+        .rec { border-top: 1px solid #e9ecef; padding: 8px 0; font-size: .9rem; }
+        .rec:first-child { border-top: 0; }
+        .ok { color: #0f5132; font-weight: 600; }
+        .wait { color: #997404; font-weight: 600; }
+        .err { color: #842029; font-weight: 600; }
+        #status { min-height: 1.3em; font-weight: 600; margin-top: 10px; text-align: center; }
+        #untrusted { display: none; background: #fff3cd; border-color: #ffe69c; }
+        #untrusted a { font-weight: 700; }
+        .mt { margin-top: 8px; }
+    </style>
+</head>
+<body>
+    <div class="head">
+        <h1>Fichaje</h1>
+        <span id="net" class="net">…</span>
+    </div>
+    <div class="muted">Grupo Álvarez · registro de jornada</div>
+
+    <div class="card">
+        <div id="who">…</div>
+        <div class="muted" id="last"></div>
+    </div>
+
+    <div class="card" id="untrusted">
+        <div id="untrusted-text">Este móvil no es tu dispositivo de confianza.</div>
+        <div class="muted mt">
+            Entra en el panel con tu usuario y contraseña y, cuando te pregunte, márcalo como dispositivo
+            de confianza. Después vuelve a esta página.
+        </div>
+        <div class="mt"><a href="/panel/login/?force_form=1&amp;next=/fichaje/">Entrar en el panel</a></div>
+    </div>
+
+    <div id="clock">--:--:--</div>
+    <div class="buttons">
+        <button type="button" id="btn-in">Entrada</button>
+        <button type="button" id="btn-out">Salida</button>
+    </div>
+    <div id="status"></div>
+
+    <div class="card">
+        <strong>Mis últimos fichajes en este móvil</strong>
+        <div class="muted">La hora es la del momento de pulsar. Sin cobertura se guardan aquí y se envían al volver la conexión.</div>
+        <div id="list"></div>
+        <button type="button" id="btn-send">Enviar pendientes ahora</button>
+    </div>
+
+    <div class="card muted" id="sw-state">Preparando la página para usarla sin cobertura…</div>
+
+<script>
+(function () {
+    "use strict";
+    const DB_NAME = "fichaje";
+    const STORE = "presses";
+    const SYNC_TAG = "fichaje-enviar";
+    const SEND_URL = "/fichaje/enviar/";
+    const STATUS_URL = "/fichaje/estado/";
+    const KEEP_DAYS = 31;
+    const LABELS = {IN: "Entrada", OUT: "Salida"};
+
+    const statusEl = document.getElementById("status");
+    function setStatus(text, cls, pendingId) {
+        statusEl.textContent = text;
+        statusEl.className = cls || "";
+        statusEl.dataset.pendingId = pendingId || "";
+    }
+
+    function store(key, value) {
+        try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* sin almacenamiento */ }
+    }
+    function load(key) {
+        try { return JSON.parse(localStorage.getItem(key) || "null"); } catch (e) { return null; }
+    }
+
+    // ---- Reloj y conexión --------------------------------------------
+    function tick() {
+        document.getElementById("clock").textContent = new Date().toLocaleTimeString("es-ES");
+    }
+    setInterval(tick, 1000);
+    tick();
+
+    function updateNet() {
+        const net = document.getElementById("net");
+        net.textContent = navigator.onLine ? "con conexión" : "sin conexión";
+        net.className = "net " + (navigator.onLine ? "on" : "off");
+    }
+    window.addEventListener("online", function () { updateNet(); refreshStatus(); sendPending("PAGE"); });
+    window.addEventListener("offline", updateNet);
+    updateNet();
+
+    // ---- Almacén en el propio móvil (IndexedDB) -----------------------
+    function openDb() {
+        return new Promise(function (resolve, reject) {
+            const req = indexedDB.open(DB_NAME, 1);
+            req.onupgradeneeded = function () {
+                if (!req.result.objectStoreNames.contains(STORE)) {
+                    req.result.createObjectStore(STORE, {keyPath: "id"});
+                }
+            };
+            req.onsuccess = function () { resolve(req.result); };
+            req.onerror = function () { reject(req.error); };
+        });
+    }
+    function allRecords() {
+        return openDb().then(function (db) {
+            return new Promise(function (resolve, reject) {
+                const req = db.transaction(STORE, "readonly").objectStore(STORE).getAll();
+                req.onsuccess = function () { resolve(req.result || []); };
+                req.onerror = function () { reject(req.error); };
+            });
+        });
+    }
+    function putRecord(record) {
+        return openDb().then(function (db) {
+            return new Promise(function (resolve, reject) {
+                const tx = db.transaction(STORE, "readwrite");
+                tx.objectStore(STORE).put(record);
+                tx.oncomplete = function () { resolve(); };
+                tx.onerror = function () { reject(tx.error); };
+            });
+        });
+    }
+    // Se borran del móvil las ya recibidas de hace más de un mes (en el
+    // servidor siguen; aquí solo es la lista de "mis últimos").
+    function pruneOld(records) {
+        const limit = Date.now() - KEEP_DAYS * 86400000;
+        const old = records.filter(function (r) { return r.received_at && Date.parse(r.pressed_at) < limit; });
+        if (!old.length) return Promise.resolve();
+        return openDb().then(function (db) {
+            const tx = db.transaction(STORE, "readwrite");
+            old.forEach(function (r) { tx.objectStore(STORE).delete(r.id); });
+        });
+    }
+
+    // ---- Quién es y qué toca ------------------------------------------
+    function fmt(iso) {
+        if (!iso) return "—";
+        const d = new Date(iso);
+        return d.toLocaleDateString("es-ES") + " " + d.toLocaleTimeString("es-ES", {hour: "2-digit", minute: "2-digit"});
+    }
+    function showWho() {
+        const info = load("fichaje-estado");
+        const untrusted = load("fichaje-no-confianza");
+        document.getElementById("untrusted").style.display = untrusted ? "block" : "none";
+        if (untrusted && untrusted.error) document.getElementById("untrusted-text").textContent = untrusted.error;
+        document.getElementById("who").textContent = info && info.name
+            ? info.name + (info.company ? " · " + info.company : "")
+            : (untrusted ? "Móvil sin identificar" : "…");
+    }
+    function suggest(lastKind) {
+        const next = lastKind === "IN" ? "OUT" : "IN";
+        document.getElementById("btn-in").classList.toggle("suggested", next === "IN");
+        document.getElementById("btn-out").classList.toggle("suggested", next === "OUT");
+    }
+    function refreshStatus() {
+        if (!navigator.onLine) return Promise.resolve();
+        return fetch(STATUS_URL, {credentials: "same-origin", cache: "no-store"}).then(function (response) {
+            return response.json().then(function (data) {
+                if (response.ok) {
+                    store("fichaje-estado", data);
+                    store("fichaje-no-confianza", null);
+                } else if (response.status === 401) {
+                    store("fichaje-estado", null);
+                    store("fichaje-no-confianza", data);
+                }
+            });
+        }).catch(function () { /* sin red: se queda lo recordado */ })
+            .then(function () { showWho(); return render(); });
+    }
+
+    // ---- Lista -----------------------------------------------------------
+    function render() {
+        return allRecords().then(function (records) {
+            records.sort(function (a, b) { return b.pressed_at.localeCompare(a.pressed_at); });
+            const list = document.getElementById("list");
+            list.innerHTML = "";
+            const info = load("fichaje-estado");
+            const serverLast = info && info.last ? info.last : null;
+            const localLast = records.find(function (r) { return !r.rejected; });
+            let lastKind = null;
+            if (localLast && (!serverLast || localLast.pressed_at > serverLast.pressed_at)) lastKind = localLast.kind;
+            else if (serverLast) lastKind = serverLast.kind;
+            suggest(lastKind);
+            document.getElementById("last").textContent = serverLast
+                ? "Último fichaje recibido: " + LABELS[serverLast.kind] + " · " + fmt(serverLast.pressed_at)
+                : "";
+            // El aviso "se enviará al volver la cobertura" se cambia en
+            // cuanto esa pulsación llega al servidor.
+            const waiting = records.find(function (r) { return r.id === statusEl.dataset.pendingId; });
+            if (waiting && waiting.received_at) {
+                setStatus(LABELS[waiting.kind] + " de las " + new Date(waiting.pressed_at).toLocaleTimeString("es-ES", {hour: "2-digit", minute: "2-digit"}) + " recibida.", "ok");
+            }
+            if (!records.length) {
+                list.innerHTML = '<div class="muted">Ninguno todavía en este móvil.</div>';
+                return;
+            }
+            records.slice(0, 10).forEach(function (r) {
+                const div = document.createElement("div");
+                div.className = "rec";
+                const title = document.createElement("strong");
+                title.textContent = LABELS[r.kind] + " · " + fmt(r.pressed_at);
+                div.appendChild(title);
+                const where = document.createElement("div");
+                where.className = "muted";
+                where.textContent = r.lat != null
+                    ? "Ubicación guardada (±" + Math.round(r.accuracy) + " m)"
+                    : "Sin ubicación: " + (r.gps_error || "desconocido");
+                div.appendChild(where);
+                const state = document.createElement("div");
+                if (r.received_at) {
+                    state.className = "ok";
+                    state.textContent = "Recibido " + fmt(r.received_at);
+                } else if (r.rejected) {
+                    state.className = "err";
+                    state.textContent = "No válido: " + r.error;
+                } else {
+                    state.className = "wait";
+                    state.textContent = "Pendiente de enviar" + (r.error ? " · " + r.error : "");
+                }
+                div.appendChild(state);
+                list.appendChild(div);
+            });
+        });
+    }
+
+    // ---- Envío (mismas reglas que el service worker) -------------------
+    let sending = false;
+    function sendPending(sentBy) {
+        if (sending || !navigator.onLine) return Promise.resolve();
+        sending = true;
+        return allRecords().then(function (records) {
+            const pending = records.filter(function (r) { return !r.received_at && !r.rejected; })
+                .sort(function (a, b) { return a.pressed_at.localeCompare(b.pressed_at); });
+            return pending.reduce(function (chain, record) {
+                return chain.then(function (stop) {
+                    if (stop) return true;
+                    return fetch(SEND_URL, {
+                        method: "POST",
+                        credentials: "same-origin",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify(Object.assign({}, record, {sent_by: sentBy})),
+                    }).then(function (response) {
+                        return response.json().catch(function () { return {}; }).then(function (data) {
+                            if (response.ok) {
+                                record.received_at = data.received_at;
+                                record.delay_seconds = data.delay_seconds;
+                                record.error = "";
+                                return putRecord(record).then(function () { return false; });
+                            }
+                            record.error = data.error || ("Error " + response.status);
+                            if (response.status === 400) record.rejected = true;
+                            if (response.status === 401) store("fichaje-no-confianza", data);
+                            return putRecord(record).then(function () { return response.status === 401; });
+                        });
+                    });
+                });
+            }, Promise.resolve(false)).then(function () { return pruneOld(records); });
+        }).catch(function () {
+            setStatus("No se ha podido enviar todavía; se reintentará solo.", "wait");
+        }).finally(function () {
+            sending = false;
+            showWho();
+            return refreshStatusQuiet();
+        });
+    }
+    function refreshStatusQuiet() {
+        if (!navigator.onLine) return render();
+        return fetch(STATUS_URL, {credentials: "same-origin", cache: "no-store"}).then(function (response) {
+            if (!response.ok) return;
+            return response.json().then(function (data) { store("fichaje-estado", data); });
+        }).catch(function () { /* sin red */ }).then(function () { showWho(); return render(); });
+    }
+
+    // ---- Pulsar ------------------------------------------------------------
+    function getPosition() {
+        return new Promise(function (resolve) {
+            if (!navigator.geolocation) {
+                resolve({error: "este navegador no da ubicación"});
+                return;
+            }
+            navigator.geolocation.getCurrentPosition(function (pos) {
+                resolve({lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy});
+            }, function (err) {
+                const reasons = {1: "permiso denegado", 2: "posición no disponible", 3: "tiempo agotado"};
+                resolve({error: reasons[err.code] || err.message});
+            }, {enableHighAccuracy: true, timeout: 30000, maximumAge: 0});
+        });
+    }
+    function newId(date) {
+        if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+        return date.getTime() + "-" + Math.random().toString(36).slice(2, 12);
+    }
+
+    function press(kind) {
+        const pressedAt = new Date();   // la hora se toma AL PULSAR
+        const buttons = document.querySelectorAll(".buttons button");
+        buttons.forEach(function (b) { b.disabled = true; });
+        setStatus(LABELS[kind] + " a las " + pressedAt.toLocaleTimeString("es-ES") + ". Buscando la ubicación…", "wait");
+        getPosition().then(function (pos) {
+            const record = {
+                id: newId(pressedAt),
+                kind: kind,
+                pressed_at: pressedAt.toISOString(),
+                lat: pos.lat != null ? pos.lat : null,
+                lon: pos.lon != null ? pos.lon : null,
+                accuracy: pos.accuracy != null ? pos.accuracy : null,
+                gps_error: pos.error || "",
+            };
+            return putRecord(record).then(function () {
+                setStatus(LABELS[kind] + " de las " + pressedAt.toLocaleTimeString("es-ES", {hour: "2-digit", minute: "2-digit"}) +
+                          " guardada" + (navigator.onLine ? "." : " en el móvil: se enviará al volver la cobertura."), "ok", record.id);
+                if ("serviceWorker" in navigator && "SyncManager" in window) {
+                    navigator.serviceWorker.ready.then(function (reg) {
+                        return reg.sync.register(SYNC_TAG);
+                    }).catch(function () { /* sin Background Sync: lo envía la página */ });
+                }
+                return sendPending("ONLINE");
+            });
+        }).catch(function (err) {
+            setStatus("No se ha podido guardar: " + err, "err");
+        }).finally(function () {
+            buttons.forEach(function (b) { b.disabled = false; });
+            render();
+        });
+    }
+    document.getElementById("btn-in").addEventListener("click", function () { press("IN"); });
+    document.getElementById("btn-out").addEventListener("click", function () { press("OUT"); });
+    document.getElementById("btn-send").addEventListener("click", function () {
+        if (!navigator.onLine) { setStatus("Sin conexión: se enviarán al volver.", "wait"); return; }
+        sendPending("MANUAL");
+    });
+
+    // ---- Service worker ------------------------------------------------------
+    const swState = document.getElementById("sw-state");
+    if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("/fichaje/sw.js", {scope: "/fichaje/"});
+        navigator.serviceWorker.ready.then(function () {
+            swState.textContent = "Página guardada en el móvil: funciona sin cobertura." +
+                ("SyncManager" in window ? " Lo pendiente se envía solo al volver la conexión."
+                                         : " Al volver la conexión, abre esta página para enviar lo pendiente.");
+        });
+        navigator.serviceWorker.addEventListener("message", function (ev) {
+            if (ev.data && ev.data.type === "records-updated") refreshStatusQuiet();
+        });
+    } else {
+        swState.textContent = "Este navegador no permite usar la página sin cobertura.";
+    }
+
+    showWho();
+    render().then(refreshStatus).then(function () { return sendPending("PAGE"); });
+    setInterval(function () { sendPending("PAGE"); }, 30000);
+}());
+</script>
+</body>
+</html>

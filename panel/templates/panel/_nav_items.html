@@ -137,6 +137,14 @@
                             </a>
                         </li>
                     {% endif %}
+                    {# Fichar -- H24 (S129). Página de fichaje del móvil de  #}
+                    {# confianza; fuera del panel (/fichaje/) para que se    #}
+                    {# guarde en el móvil y funcione sin cobertura.          #}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'clockin:page' %}">
+                            <i class="bi bi-stopwatch"></i>Fichar
+                        </a>
+                    </li>
                     {# Mi buzón -- H31 (S115). Circulares/notificaciones     #}
                     {# recibidas por WhatsApp, visible para todos los roles #}
                     {# de esta sección (mismo criterio de acceso que Mi     #}
