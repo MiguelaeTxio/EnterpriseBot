@@ -841,6 +841,11 @@ hacer."*
     y comprobaba con sus datos.
   Commits `e353204` y `056aa48` (este quita la nota de supervisor,
   migración 0033).
+  - Tolerancia ±5 min entre fichaje y parte (*"la 1 con una tolerancia
+    de ±5 minutos. 15 son demasiados minutos"*): el parte usa la media
+    hora si el fichaje está a ±5 min de ella (8:04 -> 8:00); al fichar
+    salida solo se recorta la última tarea si se aleja más de 5 min. El
+    fichaje se guarda exacto. Commit `04b4124`.
 - Primer fichaje real de Miguel Ángel (17/10, 12:16): el móvil no podía
   fichar -- un solo token de confianza por usuario; marcar otro aparato
   invalidó el del móvil y el login no volvía a preguntar porque la
