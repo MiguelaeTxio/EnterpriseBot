@@ -493,7 +493,7 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
         state = nav_state.state if nav_state and isinstance(nav_state.state, dict) else {}
         valid_tabs = (
             "maquinaria", "personal", "epis", "accesorios", "vacaciones",
-            "calendario", "requisitos", "avisos", "circulares",
+            "fichajes", "calendario", "requisitos", "avisos", "circulares",
             "plantillas", "bandeja",
         )
         # H30 (S126): "Bandeja de entrada" solo para quien puede subir
@@ -503,6 +503,14 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
         )
         if not can_use_inbox:
             valid_tabs = tuple(t for t in valid_tabs if t != "bandeja")
+        # H24 (S129): "Fichajes" lleva posiciones GPS -- solo los roles
+        # de SupervisorAccessMixin.
+        can_view_clock_events = request.user.company_user.role in (
+            CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR,
+            CompanyUser.ROLE_WORKSHOPBOSS,
+        )
+        if not can_view_clock_events:
+            valid_tabs = tuple(t for t in valid_tabs if t != "fichajes")
         # H30 (S119): "Circulares", "Plantillas" y "Requisitos" pasan
         # de botones "Gestionar..." en la barra de acción de Personal a
         # pestañas propias del hub -- Miguel Ángel: "las gestiones
@@ -542,6 +550,7 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
             "persisted_filters": filters,
             "personal_tab_qs": _build_personal_tab_querystring(filters),
             "can_use_inbox": can_use_inbox,
+            "can_view_clock_events": can_view_clock_events,
         })
 
 

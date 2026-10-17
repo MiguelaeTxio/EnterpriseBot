@@ -1,0 +1,39 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/clock_events/_detail.html #}
+{% comment %}
+H24 (S129). Jornadas de un trabajador en el intervalo: entrada,
+salida, horas e incidencia; de cada pulsación, la hora, si llegó tarde
+(sin cobertura) y su posición en el mapa. Solo consulta.
+{% endcomment %}
+<div class="d-flex align-items-baseline justify-content-between mb-1">
+    <div class="fw-bold">{{ person_label }}</div>
+    <div class="small text-muted">{{ person.dni }} · {{ date_from|date:"d/m/Y" }} – {{ date_to|date:"d/m/Y" }}</div>
+</div>
+{% if not has_account %}
+<div class="alert alert-secondary py-1 px-2 small">Sin usuario del panel: no puede fichar hasta darse de alta por WhatsApp.</div>
+{% elif not shifts %}
+<div class="small text-muted">Ningún fichaje en estas fechas.</div>
+{% else %}
+<div class="small mb-2">Total: <strong>{{ total_label }}</strong> h{% if issues_count %} · <span class="text-warning-emphasis fw-semibold">{{ issues_count }} jornada(s) incompleta(s)</span>{% endif %}</div>
+<table class="table table-sm small align-middle">
+    <thead><tr><th>Día</th><th>Entrada</th><th>Salida</th><th class="text-end">Horas</th></tr></thead>
+    <tbody>
+        {% for shift in shifts %}
+        <tr{% if shift.issue %} class="table-warning"{% endif %}>
+            <td>{{ shift.day|date:"D d/m" }}</td>
+            {% for press in shift.presses %}
+            <td>
+                {% if press %}
+                {{ press.time|date:"H:i" }}{% if press.time|date:"Ymd" != shift.day|date:"Ymd" %} <span class="text-muted">({{ press.time|date:"d/m" }})</span>{% endif %}
+                {% if press.maps_url %}<a href="{{ press.maps_url }}" target="_blank" rel="noopener" title="Ver en el mapa{% if press.accuracy %} (±{{ press.accuracy }} m){% endif %}"><i class="bi bi-geo-alt"></i></a>{% else %}<i class="bi bi-geo-alt text-muted" title="Sin posición GPS{% if press.event.gps_error %}: {{ press.event.gps_error }}{% endif %}"></i>{% endif %}
+                {% if press.is_late %}<div class="text-muted">llegó {{ press.received|date:"d/m H:i" }} ({{ press.delay_label }} h después)</div>{% endif %}
+                {% else %}
+                <span class="text-warning-emphasis">—</span>
+                {% endif %}
+            </td>
+            {% endfor %}
+            <td class="text-end">{% if shift.issue %}<span class="text-warning-emphasis">{{ shift.issue }}</span>{% else %}{{ shift.duration }}{% endif %}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}

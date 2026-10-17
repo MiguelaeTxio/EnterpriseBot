@@ -1,0 +1,60 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/clock_events/_table.html #}
+{% comment %}
+H24 (S129). Tabla de Fichajes, hecha sobre la de Vacaciones: casilla,
+aviso y "Apellidos, Nombre" fijos a la izquierda, una fila por
+trabajador con lo del intervalo elegido. Todo llega calculado desde la
+vista (hr_calendar.clock_report).
+{% endcomment %}
+<div id="clk-fragment-state" class="d-none"
+     data-count="{{ rows|length }}"
+     data-total="{{ total_label }}"
+     data-sort-active="{% if sort_active %}1{% endif %}"></div>
+<span id="clk-sort-inputs" class="d-none">
+    <input type="hidden" name="sort" value="{{ current_sort }}">
+</span>
+<table class="table table-hover table-light align-middle stack-mobile" id="clk-table">
+    <thead class="table-light">
+        <tr>
+            <th class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input" id="clk-check-all" title="Seleccionar todos los que cumplen el filtro actual"></th>
+            <th class="sticky-col sticky-col-2"></th>
+            {% for column in sort_columns %}
+            <th class="{% if column.key == 'person' %}sticky-col sticky-col-3 sticky-col-last{% elif column.key == 'events' or column.key == 'hours' or column.key == 'issues' %}text-end{% endif %}">
+                <a href="#" class="text-decoration-none text-dark"
+                   hx-get="{% url 'panel:clock_events_results' %}"
+                   hx-target="#clk-results"
+                   hx-include="#clk-filters"
+                   hx-vals='{"sort": "{{ column.next }}"}'>
+                    {{ column.label }}
+                    {% if column.arrow %}<i class="bi bi-chevron-{% if column.arrow == 'up' %}up{% else %}down{% endif %}"></i>{% if column.priority %}<sup>{{ column.priority }}</sup>{% endif %}{% endif %}
+                </a>
+            </th>
+            {% endfor %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            <td class="sticky-col sticky-col-1 stack-mobile-check">
+                <input type="checkbox" class="form-check-input clk-row-check" data-pk="{{ row.person.pk }}" data-label="{{ row.label }}">
+            </td>
+            <td class="sticky-col sticky-col-2">
+                {% if not row.has_account %}<i class="bi bi-person-x text-muted" title="Sin usuario del panel: todavía no puede fichar"></i>{% elif row.report.issues %}<i class="bi bi-exclamation-triangle-fill text-warning" title="Hay jornadas con una entrada o una salida sin su pareja"></i>{% endif %}
+            </td>
+            <td class="sticky-col sticky-col-3 sticky-col-last">
+                <a href="#" data-bs-toggle="modal" data-bs-target="#clkDetailModal"
+                   hx-get="{% url 'panel:clock_events_detail' row.person.pk %}?date_from={{ date_from|date:'Y-m-d' }}&date_to={{ date_to|date:'Y-m-d' }}"
+                   hx-target="#clk-detail-container">{{ row.label }}</a>
+            </td>
+            <td data-label="DNI">{{ row.person.dni }}</td>
+            <td class="text-end" data-label="Fichajes">{{ row.report.events|length }}</td>
+            <td class="text-end fw-semibold" data-label="Horas">{{ row.report.total_label }}</td>
+            <td class="text-end{% if row.report.issues %} text-warning-emphasis fw-semibold{% endif %}" data-label="Incidencias">{{ row.report.issues|length }}</td>
+            <td data-label="Último fichaje">
+                {% if row.report.last_event %}{{ row.report.last_event.get_kind_display }} · {{ row.report.last_event.pressed_at|date:"d/m/Y H:i" }}{% elif not row.has_account %}<span class="text-muted">Sin usuario del panel</span>{% else %}—{% endif %}
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="text-muted small py-3">No se encontró personal.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>

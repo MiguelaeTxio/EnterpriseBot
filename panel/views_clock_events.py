@@ -1,0 +1,440 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/views_clock_events.py
+"""
+"Fichajes" tab of the Documentation hub (H24, S129, roadmap point 3):
+the supervisors' view of the clock-in records. Same layout as the
+Personal and Vacaciones tabs (directive 4.24): one row per worker with
+the presses, hours and incidents of a date range; the name opens the
+day-by-day detail (presses, send delay, GPS position); the marked
+workers -- or all the filtered ones -- export to Excel. Records are
+read-only here: art. 34.9 ET requires keeping them four years.
+
+The tab carries GPS positions, so it is limited to ADMIN, SUPERVISOR
+and WORKSHOPBOSS (SupervisorAccessMixin), unlike the read-only tabs.
+
+---
+
+Pestaña "Fichajes" del hub de Documentación (H24, S129, punto 3 de la
+hoja de ruta): la vista de los supervisores sobre el registro de
+jornada. Misma disposición que Personal y Vacaciones (directriz 4.24):
+una fila por trabajador con las pulsaciones, horas e incidencias de un
+intervalo de fechas; el nombre abre el detalle día a día (pulsaciones,
+retraso del envío, posición GPS); los marcados -- o todos los
+filtrados -- se exportan a Excel. Aquí los registros solo se consultan:
+el art. 34.9 ET obliga a conservarlos cuatro años.
+
+La pestaña lleva posiciones GPS, así que queda para ADMIN, SUPERVISOR
+y WORKSHOPBOSS (SupervisorAccessMixin), a diferencia de las pestañas de
+solo lectura.
+"""
+import datetime
+import io
+
+from django.http import Http404, HttpResponse
+from django.shortcuts import render
+from django.utils import timezone
+from django.views import View
+
+from document_explorer.models import PersonIdentity
+from hr_calendar.clock_report import format_duration, reports_by_user
+from panel.mixins import SupervisorAccessMixin
+from panel.navigation_persistence import (
+    apply_list_navigation,
+    get_saved_state_key,
+)
+from panel.views_vacation_balance import (
+    _filtered_people,
+    _param,
+    _parse_date,
+    _person_label,
+)
+
+SCREEN_KEY = "clock_events"
+FILTER_KEYS = (
+    "search", "active", "company", "date_from", "date_to", "sort",
+)
+_MAX_SORT_KEYS = 4
+_MAX_RANGE_DAYS = 366
+
+_SORT_VALUES = {
+    "person": lambda r: r.sort_name,
+    "dni": lambda r: r.person.dni,
+    "events": lambda r: len(r.report.events),
+    "hours": lambda r: r.report.total_seconds,
+    "last": lambda r: (r.report.last_event.pressed_at
+                       if r.report.last_event else None),
+    "issues": lambda r: len(r.report.issues),
+}
+_COLUMNS = (
+    ("person", "Apellidos, Nombre"),
+    ("dni", "DNI"),
+    ("events", "Fichajes"),
+    ("hours", "Horas"),
+    ("issues", "Incidencias"),
+    ("last", "Último fichaje"),
+)
+
+
+class _EmptyReport:
+    shifts = ()
+    events = ()
+    issues = ()
+    late_events = ()
+    last_event = None
+    total_seconds = 0
+    total_label = "0:00"
+
+
+def _date_range(request):
+    """
+    (date_from, date_to) of the request; default: this month so far.
+    ---
+    (desde, hasta) de la petición; por defecto, lo que va de mes. Un
+    intervalo al revés se da la vuelta y uno de más de un año se corta.
+    """
+    today = timezone.localdate()
+    date_from = _parse_date(_param(request, "date_from")) or today.replace(
+        day=1,
+    )
+    date_to = _parse_date(_param(request, "date_to")) or today
+    if date_to < date_from:
+        date_from, date_to = date_to, date_from
+    if (date_to - date_from).days >= _MAX_RANGE_DAYS:
+        date_from = date_to - datetime.timedelta(days=_MAX_RANGE_DAYS - 1)
+    return date_from, date_to
+
+
+def _parse_sort(raw):
+    keys, seen = [], set()
+    for token in (raw or "").split(","):
+        token = token.strip()
+        key = token.lstrip("-")
+        if key in _SORT_VALUES and key not in seen:
+            keys.append((key, token.startswith("-")))
+            seen.add(key)
+    return keys[:_MAX_SORT_KEYS]
+
+
+def _sort_controls(raw):
+    """
+    Header links, arrows and priorities (same rules as Vacaciones).
+    ---
+    Enlaces, flechas y prioridad de cada cabecera (mismas reglas que
+    Vacaciones y Centros de gasto).
+    """
+    sort_keys = _parse_sort(raw)
+    active = [key for key, _desc in sort_keys]
+    columns = []
+    for key, label in _COLUMNS:
+        if key in active:
+            idx = active.index(key)
+            desc = sort_keys[idx][1]
+            arrow = "down" if desc else "up"
+            priority = idx + 1 if len(sort_keys) > 1 else ""
+            new_desc = (not desc) if idx == 0 else desc
+            new_keys = [(key, new_desc)] + [
+                (k, d) for k, d in sort_keys if k != key
+            ]
+        else:
+            arrow, priority = "", ""
+            new_keys = [(key, False)] + sort_keys
+        columns.append({
+            "key": key, "label": label, "arrow": arrow,
+            "priority": priority,
+            "next": ",".join(
+                ("-" if d else "") + k
+                for k, d in new_keys[:_MAX_SORT_KEYS]
+            ),
+        })
+    return {
+        "sort_columns": columns,
+        "sort_active": bool(sort_keys),
+        "current_sort": ",".join(
+            ("-" if d else "") + k for k, d in sort_keys
+        ),
+    }
+
+
+class _Row:
+    """
+    One worker of the list with the report of the range.
+    ---
+    Un trabajador del listado con el informe del intervalo.
+    """
+
+    def __init__(self, person, report):
+        self.person = person
+        self.report = report
+        self.label = _person_label(person)
+        self.sort_name = self.label.upper()
+        self.has_account = person.company_user_id is not None
+
+
+def _sort_rows(rows, sort_keys):
+    rows = sorted(rows, key=lambda r: r.sort_name)
+    for key, desc in reversed(sort_keys):
+        getter = _SORT_VALUES[key]
+        present = [r for r in rows if getter(r) is not None]
+        missing = [r for r in rows if getter(r) is None]
+        rows = sorted(present, key=getter, reverse=desc) + missing
+    return rows
+
+
+def _rows(request, people, date_from, date_to):
+    company = request.user.company_user.company
+    reports = reports_by_user(
+        company,
+        [p.company_user_id for p in people if p.company_user_id],
+        date_from, date_to,
+    )
+    return [
+        _Row(p, reports.get(p.company_user_id) or _EmptyReport())
+        for p in people
+    ]
+
+
+def _list_context(request):
+    """
+    Context of the table: filtered workers with their report, sorted.
+    ---
+    Contexto de la tabla: trabajadores filtrados con su informe,
+    ordenados.
+    """
+    date_from, date_to = _date_range(request)
+    people, active, companies, search = _filtered_people(request)
+    if request.GET.get("only_selected") == "1":
+        wanted = {
+            int(pk) for pk in request.GET.get("selected_ids", "").split(",")
+            if pk.isdigit()
+        }
+        people = list(PersonIdentity.objects.select_related(
+            "company_user",
+        ).filter(pk__in=wanted))
+    rows = _sort_rows(
+        _rows(request, people, date_from, date_to),
+        _parse_sort(_param(request, "sort")),
+    )
+    return {
+        "rows": rows,
+        "filter_search": search,
+        "filter_active": active,
+        "filter_company": companies,
+        "date_from": date_from,
+        "date_to": date_to,
+        "total_label": format_duration(
+            sum(r.report.total_seconds for r in rows),
+        ),
+        **_sort_controls(_param(request, "sort")),
+    }
+
+
+class ClockEventsTabView(SupervisorAccessMixin, View):
+    """
+    GET: "Fichajes" tab (fixed panel, list, selection column).
+    ---
+    GET: pestaña "Fichajes" (panel fijo, listado y columna de
+    selección), filtros/orden/selección persistidos por usuario
+    (screen_key "clock_events").
+    """
+
+    def get(self, request):
+        from panel.views_documentation_h30 import COMPANY_FILTER_CHOICES
+
+        apply_list_navigation(request, SCREEN_KEY, FILTER_KEYS)
+        saved_selection = get_saved_state_key(
+            request.user.company_user, SCREEN_KEY, "selection", [],
+        )
+        if not isinstance(saved_selection, list):
+            saved_selection = []
+        return render(request, "panel/clock_events/_pane.html", {
+            **_list_context(request),
+            "screen_key": SCREEN_KEY,
+            "saved_selection": saved_selection,
+            "company_filter_choices": COMPANY_FILTER_CHOICES,
+        })
+
+
+class ClockEventsResultsView(SupervisorAccessMixin, View):
+    """
+    GET: table only.
+    ---
+    GET: solo la tabla (filtros, fechas, orden).
+    """
+
+    def get(self, request):
+        apply_list_navigation(request, SCREEN_KEY, FILTER_KEYS)
+        return render(
+            request, "panel/clock_events/_table.html",
+            _list_context(request),
+        )
+
+
+def _maps_url(event):
+    if event is None or event.latitude is None:
+        return ""
+    return "https://www.google.com/maps?q=%s,%s" % (
+        event.latitude, event.longitude,
+    )
+
+
+def _press_view(event):
+    """
+    One press ready for the template (local time, delay, map link).
+    ---
+    Una pulsación lista para el template (hora local, retraso, enlace
+    al mapa).
+    """
+    if event is None:
+        return None
+    delay = event.delay_seconds
+    return {
+        "event": event,
+        "time": timezone.localtime(event.pressed_at),
+        "received": timezone.localtime(event.received_at),
+        "is_late": delay > 300,
+        "delay_label": format_duration(delay) if delay > 300 else "",
+        "maps_url": _maps_url(event),
+        "accuracy": event.accuracy_m,
+    }
+
+
+class ClockEventsDetailView(SupervisorAccessMixin, View):
+    """
+    GET: day-by-day shifts of one worker in the range.
+    ---
+    GET: jornadas día a día de un trabajador en el intervalo.
+    """
+
+    def get(self, request, pk):
+        person = PersonIdentity.objects.select_related(
+            "company_user",
+        ).filter(pk=pk).first()
+        if person is None:
+            raise Http404
+        date_from, date_to = _date_range(request)
+        report = _EmptyReport()
+        if person.company_user_id:
+            report = reports_by_user(
+                request.user.company_user.company,
+                [person.company_user_id], date_from, date_to,
+            ).get(person.company_user_id) or report
+        shifts = [{
+            "day": s.day,
+            "presses": [_press_view(s.clock_in), _press_view(s.clock_out)],
+            "duration": s.duration_label,
+            "issue": s.issue,
+        } for s in report.shifts]
+        return render(request, "panel/clock_events/_detail.html", {
+            "person": person,
+            "person_label": _person_label(person),
+            "has_account": person.company_user_id is not None,
+            "date_from": date_from,
+            "date_to": date_to,
+            "shifts": shifts,
+            "total_label": report.total_label,
+            "issues_count": len(report.issues),
+        })
+
+
+def _naive(value):
+    return timezone.localtime(value).replace(tzinfo=None)
+
+
+class ClockEventsExportView(SupervisorAccessMixin, View):
+    """
+    GET: Excel of the range for the marked workers (or all filtered).
+    ---
+    GET: Excel del intervalo para los marcados (o todos los filtrados):
+    hoja "Jornadas" (una fila por jornada) y hoja "Pulsaciones" (cada
+    pulsación tal como llegó, con su posición).
+    """
+
+    def get(self, request):
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+
+        date_from, date_to = _date_range(request)
+        wanted = [
+            int(pk) for pk in request.GET.get("selected_ids", "").split(",")
+            if pk.isdigit()
+        ]
+        if wanted:
+            people = list(PersonIdentity.objects.select_related(
+                "company_user",
+            ).filter(pk__in=wanted))
+        else:
+            people, _a, _c, _s = _filtered_people(request)
+        rows = sorted(
+            _rows(request, people, date_from, date_to),
+            key=lambda r: r.sort_name,
+        )
+        book = Workbook()
+        days = book.active
+        days.title = "Jornadas"
+        days.append([
+            "DNI", "Apellidos y nombre", "Fecha", "Entrada", "Salida",
+            "Horas", "Incidencia",
+        ])
+        presses = book.create_sheet("Pulsaciones")
+        presses.append([
+            "DNI", "Apellidos y nombre", "Tipo", "Hora de la pulsación",
+            "Hora de llegada", "Retraso (min)", "Latitud", "Longitud",
+            "Precisión (m)", "Sin GPS porque", "Cómo se envió",
+            "Navegador",
+        ])
+        for row in rows:
+            for shift in row.report.shifts:
+                days.append([
+                    row.person.dni, row.label, shift.day,
+                    _naive(shift.clock_in.pressed_at)
+                    if shift.clock_in else None,
+                    _naive(shift.clock_out.pressed_at)
+                    if shift.clock_out else None,
+                    shift.duration_label, shift.issue,
+                ])
+            for event in row.report.events:
+                presses.append([
+                    row.person.dni, row.label, event.get_kind_display(),
+                    _naive(event.pressed_at), _naive(event.received_at),
+                    round(event.delay_seconds / 60),
+                    float(event.latitude) if event.latitude is not None
+                    else None,
+                    float(event.longitude) if event.longitude is not None
+                    else None,
+                    event.accuracy_m, event.gps_error,
+                    event.get_sent_by_display(), event.user_agent,
+                ])
+        for sheet in (days, presses):
+            for cell in sheet[1]:
+                cell.font = Font(bold=True)
+            sheet.freeze_panes = "A2"
+        for cell in days["C"][1:]:
+            cell.number_format = "DD/MM/YYYY"
+        for column in ("D", "E"):
+            for cell in days[column][1:]:
+                cell.number_format = "DD/MM/YYYY HH:MM"
+        for column in ("D", "E"):
+            for cell in presses[column][1:]:
+                cell.number_format = "DD/MM/YYYY HH:MM:SS"
+        for sheet, widths in (
+            (days, (12, 34, 12, 17, 17, 8, 20)),
+            (presses, (12, 34, 9, 20, 20, 9, 11, 11, 9, 24, 34, 40)),
+        ):
+            for index, width in enumerate(widths):
+                letter = chr(ord("A") + index)
+                sheet.column_dimensions[letter].width = width
+        buffer = io.BytesIO()
+        book.save(buffer)
+        filename = "fichajes_%s_%s.xlsx" % (
+            date_from.strftime("%Y%m%d"), date_to.strftime("%Y%m%d"),
+        )
+        response = HttpResponse(
+            buffer.getvalue(),
+            content_type=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
+        )
+        response["Content-Disposition"] = (
+            'attachment; filename="%s"' % filename
+        )
+        return response

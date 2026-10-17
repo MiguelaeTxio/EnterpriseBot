@@ -65,6 +65,12 @@ from panel.views_vacation_balance import (
     VacationSectionAssignmentDeleteView,
     VacationSectionAssignView,
 )
+from panel.views_clock_events import (
+    ClockEventsDetailView,
+    ClockEventsExportView,
+    ClockEventsResultsView,
+    ClockEventsTabView,
+)
 from panel.views_lifting_accessories import (
     LiftingAccessoryAssignView,
     LiftingAccessoryBulkReviewView,
@@ -664,6 +670,11 @@ urlpatterns = [
     path("documentacion/vacaciones/importar/", VacationImportPaneView.as_view(), name="vacation_import_pane"),
     path("documentacion/vacaciones/importar/plantilla/", VacationImportTemplateView.as_view(), name="vacation_import_template"),
     path("documentacion/vacaciones/importar/subir/", VacationImportUploadView.as_view(), name="vacation_import_upload"),
+    # H24 (S129): pestaña Fichajes (supervisores) -- panel/views_clock_events.py.
+    path("documentacion/fichajes/", ClockEventsTabView.as_view(), name="clock_events_tab"),
+    path("documentacion/fichajes/resultados/", ClockEventsResultsView.as_view(), name="clock_events_results"),
+    path("documentacion/fichajes/<int:pk>/", ClockEventsDetailView.as_view(), name="clock_events_detail"),
+    path("documentacion/fichajes/exportar/", ClockEventsExportView.as_view(), name="clock_events_export"),
     # H31 (S94). Pestaña Calendario htmx del hub -- ver panel/views_documentation_h30.py.
     path("documentacion/calendario/", CalendarTabFragmentView.as_view(), name="documentation_calendar_tab"),
     path("documentacion/calendario/resultados/", CalendarResultsFragmentView.as_view(), name="documentation_calendar_results"),

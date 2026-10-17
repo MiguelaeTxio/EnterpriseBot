@@ -96,6 +96,20 @@ EbTypePicker.init() (ver panel/_doc_type_picker.html).
             <i class="bi bi-calendar-check me-1"></i>Vacaciones
         </a>
     </li>
+    {% if can_view_clock_events %}
+    <li class="nav-item">
+        {% comment %}
+        H24 (S129). Fichajes: registro de jornada para supervisores
+        (lleva posiciones GPS, por eso solo ADMIN/SUPERVISOR/WORKSHOPBOSS).
+        {% endcomment %}
+        <a class="nav-link {% if persisted_active_tab == 'fichajes' %}active{% endif %}" id="tab-fichajes" data-bs-toggle="tab" href="#pane-fichajes"
+           hx-get="{% url 'panel:clock_events_tab' %}"
+           hx-target="#pane-fichajes"
+           hx-trigger="{% if persisted_active_tab == 'fichajes' %}load once{% else %}click once{% endif %}">
+            <i class="bi bi-stopwatch me-1"></i>Fichajes
+        </a>
+    </li>
+    {% endif %}
     <li class="nav-item">
         <a class="nav-link {% if persisted_active_tab == 'calendario' %}active{% endif %}" id="tab-calendario" data-bs-toggle="tab" href="#pane-calendario"
            hx-get="{% url 'panel:documentation_calendar_tab' %}"
@@ -184,6 +198,11 @@ EbTypePicker.init() (ver panel/_doc_type_picker.html).
     <div class="tab-pane fade {% if persisted_active_tab == 'vacaciones' %}show active{% endif %}" id="pane-vacaciones">
         <div class="text-muted small py-3">Cargando…</div>
     </div>
+    {% if can_view_clock_events %}
+    <div class="tab-pane fade {% if persisted_active_tab == 'fichajes' %}show active{% endif %}" id="pane-fichajes">
+        <div class="text-muted small py-3">Cargando…</div>
+    </div>
+    {% endif %}
     <div class="tab-pane fade {% if persisted_active_tab == 'calendario' %}show active{% endif %}" id="pane-calendario">
         <div class="text-muted small py-3">Cargando…</div>
     </div>
