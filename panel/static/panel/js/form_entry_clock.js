@@ -153,14 +153,15 @@
             return;
         }
         var parts = stretches.map(function (s) {
-            return (s.start || "?") + "–" + (s.end || "sin salida todavía");
+            return (s.clocked_start || "?") + "–" + (s.clocked_end || "sin salida todavía");
         });
         banner.innerHTML = "";
         var strong = document.createElement("strong");
         strong.textContent = "Fichajes de este día: " + parts.join(" · ") + ". ";
         banner.appendChild(strong);
         banner.appendChild(document.createTextNode(
-            "Las horas fichadas no se pueden cambiar: la primera tarea de cada tramo empieza a la entrada, " +
+            "Las horas fichadas no se pueden cambiar (se admiten ±5 minutos, por eso el parte usa la media hora más cercana): " +
+            "la primera tarea de cada tramo empieza a la entrada, " +
             "la última termina a la salida y, al cerrar el parte, todo lo fichado tiene que tener tarea." +
             (data.lunch ? " El hueco entre tramos es la pausa de comida." : "")
         ));

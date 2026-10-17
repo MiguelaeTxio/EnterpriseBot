@@ -58,6 +58,11 @@ from hr_calendar.models import ClockEvent
 logger = logging.getLogger(__name__)
 
 MIN_TASK_MINUTES = 30
+# Miguel Ángel (S129): el fichaje va al minuto y el parte de media en
+# media hora -- "la 1 con una tolerancia de ±5 minutos. 15 son demasiados
+# minutos". Una hora del parte cuadra con la fichada si se separa como
+# mucho esto. El fichaje se guarda siempre exacto.
+TOLERANCE_MINUTES = 5
 
 
 @dataclass
@@ -78,9 +83,20 @@ class Stretch:
         )
 
     def as_dict(self):
+        """
+        Clocked times, and the times the parte uses (within ±5 min of a
+        half hour, the half hour).
+        ---
+        Horas fichadas, y las que usa el parte (a ±5 min de una media
+        hora, la media hora).
+        """
+        start, end = parte_time(self.start), parte_time(self.end)
         return {
-            "start": self.start.strftime("%H:%M") if self.start else "",
-            "end": self.end.strftime("%H:%M") if self.end else "",
+            "clocked_start": self.start.strftime("%H:%M")
+            if self.start else "",
+            "clocked_end": self.end.strftime("%H:%M") if self.end else "",
+            "start": start.strftime("%H:%M") if start else "",
+            "end": end.strftime("%H:%M") if end else "",
         }
 
 
@@ -134,7 +150,9 @@ def lunch_from_stretches(stretches):
     """
     for previous, following in zip(stretches, stretches[1:]):
         if previous.end and following.start:
-            return previous.end, following.start
+            # Con las horas del parte (±5 min a la media hora), para no
+            # descontar minutos sueltos de las tareas.
+            return parte_time(previous.end), parte_time(following.start)
     return None
 
 
@@ -147,7 +165,8 @@ def allowed_gaps(stretches):
     ninguna tarea y no cuentan como "laguna sin cubrir" (R3).
     """
     return [
-        (_minutes(a.end), _minutes(b.start))
+        (_minutes(a.end) - TOLERANCE_MINUTES,
+         _minutes(b.start) + TOLERANCE_MINUTES)
         for a, b in zip(stretches, stretches[1:])
         if a.end and b.start
     ]
@@ -155,6 +174,34 @@ def allowed_gaps(stretches):
 
 def _fmt(value):
     return value.strftime("%H:%M")
+
+
+def _near(a, b):
+    """
+    True when two times are within the tolerance (±5 min).
+    ---
+    True si dos horas están dentro de la tolerancia (±5 min).
+    """
+    return abs(_minutes(a) - _minutes(b)) <= TOLERANCE_MINUTES
+
+
+def parte_time(value):
+    """
+    The time the parte uses for a clocked time: the nearest half hour
+    when it is within the tolerance (8:04 -> 8:00, 13:55 -> 14:00),
+    otherwise the clocked minute (13:40 stays 13:40).
+    ---
+    La hora que usa el parte para una hora fichada: la media hora más
+    cercana si está dentro de la tolerancia (8:04 -> 8:00, 13:55 ->
+    14:00); si no, el minuto fichado (13:40 se queda en 13:40).
+    """
+    if value is None:
+        return None
+    minutes = _minutes(value)
+    nearest = int(round(minutes / 30.0)) * 30
+    if abs(nearest - minutes) <= TOLERANCE_MINUTES and nearest < 24 * 60:
+        return _time_of(nearest)
+    return value
 
 
 def check_tasks(stretches, tasks, closing=True):
@@ -181,8 +228,10 @@ def check_tasks(stretches, tasks, closing=True):
         home = None
         for i, stretch in enumerate(stretches):
             if (
-                (stretch.start is None or stretch.start <= hc)
-                and (stretch.end is None or hf <= stretch.end)
+                (stretch.start is None or stretch.start <= hc
+                 or _near(stretch.start, hc))
+                and (stretch.end is None or hf <= stretch.end
+                     or _near(stretch.end, hf))
             ):
                 home = i
                 break
@@ -204,12 +253,13 @@ def check_tasks(stretches, tasks, closing=True):
             )
             continue
         first, last = items[0], max(items, key=lambda t: t[2])
-        if stretch.start and first[1] != stretch.start:
+        if stretch.start and not _near(first[1], stretch.start):
             errors.append(
                 "La primera tarea de %s tiene que empezar a las %s, la "
-                "hora de entrada fichada (la tarea %d empieza a las %s)."
-                % (stretch.label(), _fmt(stretch.start), first[0],
-                   _fmt(first[1]))
+                "hora de entrada fichada, ±%d min (la tarea %d empieza a "
+                "las %s)."
+                % (stretch.label(), _fmt(parte_time(stretch.start)),
+                   TOLERANCE_MINUTES, first[0], _fmt(first[1]))
             )
         if closing:
             for previous, following in zip(items, items[1:]):
@@ -221,30 +271,32 @@ def check_tasks(stretches, tasks, closing=True):
                         % (_fmt(previous[2]), _fmt(following[1]),
                            stretch.label())
                     )
-        if stretch.end and last[2] != stretch.end:
+        if stretch.end and not _near(last[2], stretch.end):
             errors.append(
                 "La última tarea de %s tiene que terminar a las %s, la "
-                "hora de salida fichada (la tarea %d termina a las %s)."
-                % (stretch.label(), _fmt(stretch.end), last[0],
-                   _fmt(last[2]))
+                "hora de salida fichada, ±%d min (la tarea %d termina a "
+                "las %s)."
+                % (stretch.label(), _fmt(parte_time(stretch.end)),
+                   TOLERANCE_MINUTES, last[0], _fmt(last[2]))
             )
+        # Media hora como mínimo para la última y la primera tarea del
+        # tramo, contada desde las horas del propio parte.
         if stretch.end and len(items) > 1:
-            latest = _time_of(max(_minutes(stretch.end) - MIN_TASK_MINUTES,
-                                  0))
+            latest = _time_of(max(_minutes(last[2]) - MIN_TASK_MINUTES, 0))
             if last[1] > latest:
                 errors.append(
                     "La última tarea de %s no puede empezar después de "
-                    "las %s (media hora antes de la salida fichada)."
+                    "las %s (media hora antes de la salida)."
                     % (stretch.label(), _fmt(latest))
                 )
         if stretch.start and len(items) > 1:
             earliest = _time_of(min(
-                _minutes(stretch.start) + MIN_TASK_MINUTES, 23 * 60 + 59,
+                _minutes(first[1]) + MIN_TASK_MINUTES, 23 * 60 + 59,
             ))
             if first[2] < earliest:
                 errors.append(
                     "La primera tarea de %s no puede terminar antes de "
-                    "las %s (media hora después de la entrada fichada)."
+                    "las %s (media hora después de la entrada)."
                     % (stretch.label(), _fmt(earliest))
                 )
     return errors
@@ -452,9 +504,12 @@ def on_clock_out(event):
                 % _fmt(out_time))
 
     # 1. Ajuste a la hora de salida (solo las tareas de este tramo).
+    # Dentro de ±5 min no se toca nada (fichar 13:55 con el parte a las
+    # 14:00 cuadra); fuera, la tarea pasa a terminar a la hora fichada.
     in_stretch = [
         line for line in timed
-        if (stretch_start is None or line.hc >= stretch_start)
+        if (stretch_start is None or line.hc >= stretch_start
+            or _near(line.hc, stretch_start))
         and line.hc < out_time
     ]
     done = []
@@ -462,7 +517,7 @@ def on_clock_out(event):
         last = max(in_stretch, key=lambda line: line.hf)
         for line in in_stretch:
             if line is last or line.hf > out_time:
-                if line.hf != out_time:
+                if not _near(line.hf, out_time):
                     done.append("tarea %d: fin %s -> %s" % (
                         line.line_number, _fmt(line.hf), _fmt(out_time)))
                     line.hf = out_time
