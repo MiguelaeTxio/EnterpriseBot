@@ -204,6 +204,7 @@ from panel.views import (
     WorkshopAssetAutocompleteView,
     WorkshopAssetDetailView,
     WorkOrderEntryFormView,
+    OperatorClockStretchesView,
     WorkOrderEntryPartsReviewView,
     WorkOrderDetailView,
     WorkOrderAdminHistoryView,
@@ -359,6 +360,8 @@ urlpatterns = [
     path("operator/assets/", WorkshopAssetAutocompleteView.as_view(), name="operator_assets"),
     path("operator/assets/detail/", WorkshopAssetDetailView.as_view(), name="operator_asset_detail"),  # PASO 4.1 — Hito 7 (sesión 011)
     path("operator/form/", WorkOrderEntryFormView.as_view(), name="operator_form"),
+    # H24 (S129): tramos fichados del día para el formulario de partes.
+    path("operator/form/fichajes/", OperatorClockStretchesView.as_view(), name="operator_form_clock"),
     # Operator form edit — Edición de parte digital no revisado desde Mi historial.
     # S019 — Hito 7 (2026-05-11)
     path("operator/form/<int:wo_pk>/edit/", WorkOrderEntryFormView.as_view(), name="operator_form_edit"),

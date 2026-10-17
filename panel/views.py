@@ -14,6 +14,7 @@ from panel.views_operator import (
     WorkOrderEntryUploadView,
     WorkOrderEntryConfirmView,
     WorkOrderEntryFormView,
+    OperatorClockStretchesView,
     WorkOrderEntryPartsReviewView,
     WorkshopAssetDetailView,
     WorkOrderDescriptionAutocompleteView,

@@ -55,6 +55,11 @@
 
 /* Display button inherits form-control-sm sizing when present.
    El botón hereda el tamaño form-control-sm cuando está presente. */
+/* H24 (S129): hora fichada, no editable. */
+.tp-wrapper.tp-locked .tp-display {
+    background-color: #e9ecef;
+    cursor: not-allowed;
+}
 .tp-wrapper.tp-sm .tp-display {
     padding: 0.25rem 0.4rem;
     font-size: 0.82rem;
@@ -659,6 +664,12 @@
         ------------------------------------------------------------------ */
         var classObserver = new MutationObserver(function (mutations) {
             mutations.forEach(function (m) {
+                /* H24 (S129): una hora fichada (input readonly) no se
+                   puede cambiar desde el selector. */
+                if (m.attributeName === "readonly") {
+                    display.disabled = input.readOnly;
+                    wrapper.classList.toggle("tp-locked", input.readOnly);
+                }
                 if (m.attributeName === "class") {
                     var flagged = input.classList.contains("field-flagged");
                     wrapper.classList.toggle("tp-flagged", flagged);
@@ -687,6 +698,12 @@
         /* Hide the original input / Ocultar el input original. */
         input.style.display = "none";
         input.setAttribute("tabindex", "-1");
+
+        /* H24 (S129): quien cambie el valor por código lanza "tp:sync"
+           para refrescar lo que se ve (form_entry_clock.js). */
+        input.addEventListener("tp:sync", _syncFromInput);
+        display.disabled = input.readOnly;
+        wrapper.classList.toggle("tp-locked", input.readOnly);
 
         /* Initial sync / Sincronización inicial. */
         _syncFromInput();

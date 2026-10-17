@@ -2931,6 +2931,35 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                 except ValueError :
                     continue 
 
+        # H24 (S129): fichajes del DUEÑO del parte ese día
+        # (hr_calendar/clock_parts.py). Si los hay, mandan: el hueco
+        # entre dos tramos fichados es la pausa de comida, y un solo
+        # tramo significa jornada sin pausa (todo lo fichado es trabajo).
+        from hr_calendar .clock_parts import (
+        day_stretches as _cp_day_stretches ,
+        lunch_from_stretches as _cp_lunch ,
+        )
+        _parte_owner =cu 
+        _ewp_clk =POST .get ("edit_wo_pk","").strip ()
+        if _ewp_clk .isdigit ():
+            from work_order_processor .models import WorkOrder as _WO_CLK 
+            _own_wo =_WO_CLK .objects .filter (
+            pk =int (_ewp_clk ),company =company ,
+            ).select_related ("uploaded_by").first ()
+            if _own_wo is not None and _own_wo .uploaded_by is not None :
+                _parte_owner =_own_wo .uploaded_by 
+        _clock_stretches =_cp_day_stretches (_parte_owner ,work_date )
+        if _clock_stretches :
+            _clk_lunch =_cp_lunch (_clock_stretches )
+            if _clk_lunch :
+                _lb_start ,_lb_end =_clk_lunch 
+                _no_lunch_break =False 
+                _post_lb_start =_lb_start .strftime ("%H:%M")
+                _post_lb_end =_lb_end .strftime ("%H:%M")
+                _post_show_lunch =True 
+            else :
+                _no_lunch_break =True 
+
 
 
 
@@ -3070,14 +3099,14 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
             _ip_pks = list (
                 _WO0 .objects .filter (
                     company =company ,
-                    uploaded_by =cu ,
+                    uploaded_by =_parte_owner ,
                     status =_WO0 .Status .IN_PROGRESS ,
                 ).values_list ("pk", flat =True )
             )
             _excl_pks .update (_ip_pks )
             _existing_entry0 = _WOE0 .objects .filter (
                 work_order__company =company ,
-                work_order__uploaded_by =cu ,
+                work_order__uploaded_by =_parte_owner ,
                 work_order__source__in =[
                     _WO0 .Source .DIGITAL ,
                     _WO0 .Source .GENERATED ,
@@ -3501,7 +3530,31 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
                 _sa =_post_schedule .start_time_afternoon
                 _lunch_window =(_em .hour *60 +_em .minute ,_sa .hour *60 +_sa .minute )
 
-        _intra =run_intra_part_validation (_blocks ,lunch_window =_lunch_window )
+        if _clock_stretches :
+            from hr_calendar .clock_parts import (
+            allowed_gaps as _cp_allowed_gaps ,
+            check_tasks as _cp_check_tasks ,
+            )
+            from work_order_processor .validators import (
+            ValidationError as _VE_CLK ,
+            )
+            _intra =run_intra_part_validation (
+            _blocks ,lunch_window =None ,
+            allowed_gaps =_cp_allowed_gaps (_clock_stretches ),
+            )
+            if _intra .ok :
+                _clk_errors =_cp_check_tasks (
+                _clock_stretches ,
+                [(b .idx ,b .hc ,b .hf )for b in _blocks ],
+                closing =_form_action !="save_blocks",
+                )
+                if _clk_errors :
+                    _intra .errors .extend (
+                    _VE_CLK (rule ="FICHAJE",message =m )for m in _clk_errors 
+                    )
+                    _intra .ok =False 
+        else :
+            _intra =run_intra_part_validation (_blocks ,lunch_window =_lunch_window )
 
         if not _intra .ok :
 
@@ -3567,7 +3620,9 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
 
 
 
-        if work_date is not None and _form_action !="save_blocks":
+        # H24 (S129): con fichajes no hay mínimo de 8 h -- manda cubrir
+        # lo fichado (comprobado arriba con check_tasks).
+        if work_date is not None and _form_action !="save_blocks"and not _clock_stretches :
             from decimal import Decimal as _Dec_C 
             from ivr_config .models import WorkerAbsence as _WA_C 
             _total_hours_c =sum (
@@ -3575,7 +3630,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
             _Dec_C ("0"),
             )
             _has_absence_c =_WA_C .objects .filter (
-            company_user =cu ,
+            company_user =_parte_owner ,
             start_date__lte =work_date ,
             end_date__gte =work_date ,
             ).exists ()
@@ -3673,7 +3728,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
             try :
                 with _tx_ip .atomic ():
                     _worker_name_ip =(
-                    cu .user .get_full_name ()or cu .user .username 
+                    _parte_owner .user .get_full_name ()or _parte_owner .user .username 
                     ).upper ()
                     _date_tag_ip =(
                     work_date .strftime ("%d-%m-%Y")if work_date else "SIN-FECHA"
@@ -4333,8 +4388,10 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
 
         try :
             with transaction .atomic ():
+                # H24 (S129): el nombre es el del DUEÑO del parte -- si lo
+                # corrige un supervisor, antes quedaba con el del supervisor.
                 worker_name =(
-                cu .user .get_full_name ()or cu .user .username 
+                _parte_owner .user .get_full_name ()or _parte_owner .user .username 
                 ).upper ()
 
                 date_tag =(
@@ -5021,7 +5078,7 @@ class WorkOrderEntryFormView (WorkOrderFormAccessMixin ,View ):
 
 
         _inter =validate_inter_overlap (
-        company_user =cu ,
+        company_user =_parte_owner ,
         work_date =work_date ,
         blocks =_blocks ,
         exclude_work_order_pk =work_order .pk ,
@@ -5589,3 +5646,54 @@ class WorkshopIntensiveToggleView (WorkshopRequiredMixin ,View ):
 
 
 
+
+
+class OperatorClockStretchesView(WorkOrderFormAccessMixin, View):
+    """
+    GET ?fecha=YYYY-MM-DD[&wo_pk=N]: the clocked stretches of the
+    parte's owner that day (H24, S129), for the parte form to pre-fill
+    and lock the clocked times. The owner is the parte's worker when a
+    supervisor edits someone else's parte; otherwise the user.
+    ---
+    GET ?fecha=YYYY-MM-DD[&wo_pk=N]: los tramos fichados del dueño del
+    parte ese día (H24, S129), para que el formulario de partes rellene
+    y bloquee las horas fichadas. El dueño es el trabajador del parte
+    cuando un supervisor corrige el de otro; si no, el propio usuario.
+    """
+
+    def get(self, request):
+        from django.http import JsonResponse
+        from hr_calendar.clock_parts import (
+            day_stretches,
+            lunch_from_stretches,
+        )
+
+        from datetime import datetime as _dt_clk
+
+        cu = request.user.company_user
+        try:
+            work_date = _dt_clk.strptime(
+                request.GET.get("fecha", ""), "%Y-%m-%d",
+            ).date()
+        except ValueError:
+            return JsonResponse({"stretches": [], "lunch": None})
+        owner = cu
+        wo_pk = request.GET.get("wo_pk", "")
+        if wo_pk.isdigit():
+            try:
+                work_order = _resolve_editable_work_order(
+                    int(wo_pk), cu, cu.company,
+                )
+                if work_order.uploaded_by is not None:
+                    owner = work_order.uploaded_by
+            except (WorkOrder.DoesNotExist, ValueError):
+                pass
+        stretches = day_stretches(owner, work_date)
+        lunch = lunch_from_stretches(stretches)
+        return JsonResponse({
+            "stretches": [s.as_dict() for s in stretches],
+            "lunch": {
+                "start": lunch[0].strftime("%H:%M"),
+                "end": lunch[1].strftime("%H:%M"),
+            } if lunch else None,
+        })

@@ -295,7 +295,8 @@ def _is_lunch_gap(gap_start_min: int, gap_end_min: int, lunch_window) -> bool:
     )
 
 
-def validate_intra_gaps(blocks: List[TimeBlock], lunch_window=None) -> List[ValidationError]:
+def validate_intra_gaps(blocks: List[TimeBlock], lunch_window=None,
+                        allowed_gaps=None) -> List[ValidationError]:
     """
     Detects uncovered gaps >= _GAP_THRESHOLD_MINUTES between consecutive blocks
     when sorted by start time. A gap means no block covers the time interval
@@ -310,6 +311,10 @@ def validate_intra_gaps(blocks: List[TimeBlock], lunch_window=None) -> List[Vali
 
     The operator must fill any other gap with an AUSENCIA JUSTIFICADA or
     AUSENCIA NO JUSTIFICADA block before the part can be saved.
+
+    allowed_gaps (H24, S129): [(start_min, end_min)] gaps between two
+    clocked stretches (hr_calendar/clock_parts.py); a gap that falls
+    inside one of them is not uncovered time.
 
     Returns a list of ValidationError(rule='R3', ...) for each gap found.
 
@@ -349,6 +354,10 @@ def validate_intra_gaps(blocks: List[TimeBlock], lunch_window=None) -> List[Vali
         gap_min  = hc_next - hf_curr
 
         if gap_min < _GAP_THRESHOLD_MINUTES:
+            continue
+
+        # H24 (S129): hueco entre dos tramos fichados -- no es laguna.
+        if any(a <= hf_curr and hc_next <= b for a, b in (allowed_gaps or [])):
             continue
 
         # Regla A — Lunch break exception (single use per part).
@@ -685,7 +694,8 @@ def validate_inter_overlap(
 # Fachada pública
 # ---------------------------------------------------------------------------
 
-def run_intra_part_validation(blocks: List[TimeBlock], lunch_window=None) -> IntraPartResult:
+def run_intra_part_validation(blocks: List[TimeBlock], lunch_window=None,
+                              allowed_gaps=None) -> IntraPartResult:
     """
     Runs all intra-part validation rules (R2, R1, R3, R6, R7, R8) in priority
     order and returns an IntraPartResult.
@@ -723,7 +733,9 @@ def run_intra_part_validation(blocks: List[TimeBlock], lunch_window=None) -> Int
     # Solo continuar con R1 y R3 si todos los intervalos son estructuralmente válidos.
     if not errors:
         errors.extend(validate_intra_overlap(blocks))
-        errors.extend(validate_intra_gaps(blocks, lunch_window=lunch_window))
+        errors.extend(validate_intra_gaps(
+            blocks, lunch_window=lunch_window, allowed_gaps=allowed_gaps,
+        ))
 
     # R6, R7, R8 — meter readings: always evaluated, independent of time rules.
     # R6, R7, R8 — lecturas de contadores: siempre evaluadas, independientes de reglas temporales.

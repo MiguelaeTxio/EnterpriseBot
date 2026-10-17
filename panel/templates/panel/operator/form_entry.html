@@ -94,6 +94,8 @@
                         </div>
                         {% endif %}
                     </div>
+                    {# H24 (S129): tramos fichados del día (form_entry_clock.js). #}
+                    <div id="clock-stretches-banner" class="alert alert-info small mt-3 mb-0 d-none" role="status"></div>
                 </div>
             </div>
 
@@ -693,13 +695,15 @@ window.EB_CONFIG = {
     empresaSubtypes:    JSON.parse('{{ empresa_subtypes|default:"{}"|escapejs }}'),
     intensiveToggleUrl: "{% url 'panel:operator_intensive_toggle' %}",
     isIntensiveOverride: {{ is_intensive_override|default:False|yesno:"true,false" }},
-    meterWarnings: {{ meter_warnings|default:"[]"|safe }}
+    meterWarnings: {{ meter_warnings|default:"[]"|safe }},
+    clockStretchesUrl: "{% url 'panel:operator_form_clock' %}"
 };
 </script>
 <script src="{% static 'panel/js/form_entry_assets.js' %}"></script>
 <script src="{% static 'panel/js/material_picker.js' %}"></script>
 <script src="{% static 'panel/js/form_entry_modal.js' %}"></script>
 <script src="{% static 'panel/js/form_entry_tour.js' %}"></script>
+<script src="{% static 'panel/js/form_entry_clock.js' %}"></script>
 
 
 {# ================================================================ #}
