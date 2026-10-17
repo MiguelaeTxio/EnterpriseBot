@@ -819,6 +819,39 @@ hacer."*
   `d2f3e3f`.
 
 - Partes y fichajes (Miguel Ángel, 17/10, reglas literales en
+  `hr_calendar/clock_parts.py`). Corregido el mismo día: nada se manda
+  al supervisor (*"que supervisor va a ir detrás de los operarios [...]
+  Multiplicamos los gastos"*). Reglas vigentes:
+  - Fichar entrada no toca partes.
+  - *"un parte no se puede cerrar si no está fichada la salida, las
+    tareas si, el parte no"*: "Cerrar parte" bloqueado sin la salida
+    fichada; "Guardar tareas" libre. Solo para quien ya ficha (desde su
+    primer fichaje).
+  - Al fichar salida: copia del parte al log ([PARTE-BACKUP]), la
+    última tarea del tramo termina a la hora fichada, pausa = hueco
+    entre tramos, y el parte se cierra solo si cuadra con lo fichado;
+    en jornada partida, solo con la salida del segundo periodo. Si no
+    cuadra, sigue abierto y lo arregla el operario.
+  - Parte hecho después: horas fichadas fijas, tareas dentro de lo
+    fichado, última del tramo no empieza después de media hora antes de
+    la salida, al cerrar todo lo fichado cubierto sin huecos; sin mínimo
+    de 8 h con fichajes. Formulario: banner, horas rellenas y
+    bloqueadas, tarea automática hasta la salida.
+  - Arreglado: supervisor que corrige el parte de otro dejaba su nombre
+    y comprobaba con sus datos.
+  Commits `e353204` y `056aa48` (este quita la nota de supervisor,
+  migración 0033).
+- Primer fichaje real de Miguel Ángel (17/10, 12:16): el móvil no podía
+  fichar -- un solo token de confianza por usuario; marcar otro aparato
+  invalidó el del móvil y el login no volvía a preguntar porque la
+  cookie existía. Arreglado de raíz: `ivr_config.TrustedDevice` (varios
+  por usuario) y `panel/trusted_devices.py` como único punto de la
+  cookie; login pregunta si la cookie no vale; perfil fiel; botón
+  directo "Usar este móvil para fichar" con sesión abierta. Migración
+  0047 aplicada: 20 tokens anteriores -> 20 TrustedDevice. Commit
+  `d2f3e3f`.
+
+- Partes y fichajes (Miguel Ángel, 17/10, reglas literales en
   `hr_calendar/clock_parts.py`): fichar entrada no toca partes; fichar
   salida ajusta el parte ya hecho de ese día (última tarea del tramo a
   la hora fichada; tareas posteriores solo si caen en un tramo fichado
