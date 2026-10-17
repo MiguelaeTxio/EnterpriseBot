@@ -797,10 +797,21 @@ hacer."*
   (`django_migrations`), secciones cambiadas, log sin errores tras la
   recarga.
 
-**Pendiente del punto 3:** la página de fichaje del trabajador (la de
-la prueba pasada a oficial, contra `/fichaje/enviar/`), tras la prueba
-en iPhone de la semana del 19/10; retirar `/fichaje-prueba/`; cierre con
-un fichaje real de Miguel Ángel visible en la pestaña Fichajes.
+- Página de fichaje del trabajador `/fichaje/` (Miguel Ángel: *"si
+  hubiese algún problema con iPhone, lo arreglamos sobre la marcha"*):
+  hora y GPS al pulsar, guardado en el móvil sin cobertura, envío al
+  volver la conexión (segundo plano en Android; en iPhone al abrir la
+  página, al volver la red, cada 30 s o con «Enviar pendientes»);
+  saluda con el nombre y propone entrada o salida; si el móvil no es de
+  confianza, enlace al panel que vuelve a `/fichaje/` tras marcarlo
+  (login respeta `next` tras la pregunta de confianza). Enlace «Fichar»
+  en Mi perfil. `/fichaje-prueba/` retirada: redirige y su service
+  worker se da de baja solo. Commit `f8c2b34`.
+
+**Pendiente para cerrar el punto 3:** fichaje real de entrada y salida
+de Miguel Ángel desde su móvil, en BD con hora y coordenadas y visible
+en la pestaña Fichajes; y la prueba en iPhone (lo que falle se arregla
+sobre la marcha).
 
 ### 7.5. Hoja de Ruta al reactivar H24
 
@@ -841,8 +852,8 @@ primera línea pasó a la hoja de ruta de H30 (S128).
    alta en la ficha, envíos pendientes aceptados con la llave del
    dispositivo, una sola vez por pulsación). Antes, la prueba en
    iPhone (7.4bis). Re-comprobar el BOE (7.4) antes de empezar.
-   **ABIERTO -- hecho en S129 todo salvo la página del trabajador (ver
-   final de 7.4bis).** El trabajador ficha desde la web con su usuario; el marcaje
+   **ABIERTO -- construido entero en S129; falta el fichaje real de
+   cierre (ver final de 7.4bis).** El trabajador ficha desde la web con su usuario; el marcaje
    guarda hora y coordenadas GPS tomadas en el móvil y, sin cobertura,
    se guarda en el móvil y se envía al volver la conexión; los
    marcajes se ven en el mapa. Las pantallas del trabajador se diseñan
