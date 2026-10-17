@@ -866,6 +866,17 @@ hacer."*
     compara con la hora de entrada más cercana del horario ACTUAL
     (mañana o, en partida, tarde); un minuto después ya es tarde. Commit
     `f1b999f`.
+- Cierre real verificado (17/10): Miguel Ángel guarda tareas a las
+  18:27:09 (parte #691 en curso, 12:30–18:30, G12, ticket 139 creado y
+  cerrado), ficha la salida a las 18:27:27 (-> 18:30, envío en segundo
+  plano) y el parte se cierra solo ("[FICHAJE-PARTE] ... parte cerrado
+  al fichar la salida", copia [PARTE-BACKUP] y Excel generados).
+- Incidencia del mismo cierre: al volver a abrir el parte desde el
+  historial, la tarea preguntaba por su propio ticket como si fuera de
+  otro parte ("ya hay un ticket de avería para esa máquina"); el parte
+  en curso tampoco contaba como "este mismo parte". Arreglado: la tarea
+  manda su ticket y, si es de la misma máquina, se muestra "Ticket de
+  esta tarea" y se mantiene (acción keep). Commit `74cea56`.
 - Primer fichaje real de Miguel Ángel (17/10, 12:16): el móvil no podía
   fichar -- un solo token de confianza por usuario; marcar otro aparato
   invalidó el del móvil y el login no volvía a preguntar porque la
