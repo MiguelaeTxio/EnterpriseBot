@@ -808,6 +808,16 @@ hacer."*
   en Mi perfil. `/fichaje-prueba/` retirada: redirige y su service
   worker se da de baja solo. Commit `f8c2b34`.
 
+- Primer fichaje real de Miguel Ángel (17/10, 12:16): el móvil no podía
+  fichar -- un solo token de confianza por usuario; marcar otro aparato
+  invalidó el del móvil y el login no volvía a preguntar porque la
+  cookie existía. Arreglado de raíz: `ivr_config.TrustedDevice` (varios
+  por usuario) y `panel/trusted_devices.py` como único punto de la
+  cookie; login pregunta si la cookie no vale; perfil fiel; botón
+  directo "Usar este móvil para fichar" con sesión abierta. Migración
+  0047 aplicada: 20 tokens anteriores -> 20 TrustedDevice. Commit
+  `d2f3e3f`.
+
 **Pendiente para cerrar el punto 3:** fichaje real de entrada y salida
 de Miguel Ángel desde su móvil, en BD con hora y coordenadas y visible
 en la pestaña Fichajes; y la prueba en iPhone (lo que falle se arregla
