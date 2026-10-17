@@ -474,7 +474,9 @@ class CompanyUserUpdateView (SupervisorAccessMixin ,UpdateView ):
 
 
 
-        if self .object .role in ("WORKSHOP","WORKSHOPBOSS","DRIVER"):
+        if self .object .role in (
+        *CompanyUser .WORKER_ROLES ,CompanyUser .ROLE_WORKSHOPBOSS ,
+        ):
             self .object .is_active =True 
             self .object .save (update_fields =["is_active"])
         if "force_reset"in request .POST :

@@ -72,7 +72,7 @@
                                         </span>
                                     {% else %}
                                         <span class="badge badge-external">
-                                            <i class="bi bi-person me-1"></i>Operador
+                                            <i class="bi bi-person me-1"></i>{{ entry.cu.get_role_display }}
                                         </span>
                                     {% endif %}
                                 </td>
@@ -140,7 +140,7 @@
                                         </span>
                                     {% else %}
                                         <span class="badge badge-external">
-                                            <i class="bi bi-person me-1"></i>Operador
+                                            <i class="bi bi-person me-1"></i>{{ cu.get_role_display }}
                                         </span>
                                     {% endif %}
                                 </td>

@@ -129,7 +129,7 @@
                     {# WORKSHOPBOSS vive en Administración (mismo enlace,   #}
                     {# mismo active_nav, sección distinta según rol; a      #}
                     {# petición explícita de Miguel Ángel, 2026-07-15).     #}
-                    {% if company_user.role == 'WORKSHOP' or company_user.role == 'DRIVER' %}
+                    {% if company_user.role == 'WORKSHOP' or company_user.role == 'DRIVER' or company_user.role == 'OFFICE' or company_user.role == 'NIGHTGUARD' %}
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'vacation_calendar' %}active{% endif %}"
                                href="{% url 'hr_calendar:calendar' %}">

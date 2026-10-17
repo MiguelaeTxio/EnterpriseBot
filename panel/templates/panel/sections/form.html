@@ -630,6 +630,23 @@
                         </div>
                     </div>
 
+                    <!-- default_role (H24, S129) — puesto del alta por WhatsApp -->
+                    <div class="mb-4">
+                        <label class="form-label fw-medium" for="{{ form.default_role.id_for_label }}">
+                            {{ form.default_role.label }}
+                        </label>
+                        {{ form.default_role }}
+                        {% if form.default_role.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.default_role.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Rol que recibe automáticamente un trabajador de esta sección al darse
+                            de alta por WhatsApp: operario de taller, chófer, administrativo o guarda nocturno.
+                        </div>
+                    </div>
+
                     <!-- is_active field — Campo de estado activo -->
                     <div class="mb-4">
                         <div class="form-check">
@@ -885,6 +902,8 @@
                                 <select class="form-select form-select-sm" id="wk-role">
                                     <option value="WORKSHOP">Operario de taller</option>
                                     <option value="DRIVER">Conductor</option>
+                                    <option value="OFFICE">Administrativo</option>
+                                    <option value="NIGHTGUARD">Guarda nocturno</option>
                                     <option value="OPERATOR">Operador</option>
                                     <option value="SUPERVISOR">Supervisor</option>
                                     <option value="ADMIN">Administrador</option>

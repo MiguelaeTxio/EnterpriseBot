@@ -78,7 +78,7 @@ class SectionListView (AdminRoleRequiredMixin ,ListView ):
         "contacts",
         filter =_Q (
         _Q (contacts__company_user__isnull =True )
-        |~_Q (contacts__company_user__role__in =["WORKSHOP","DRIVER"])
+        |~_Q (contacts__company_user__role__in =list (CompanyUser .WORKER_ROLES ))
         ),
         distinct =True ,
         ),
@@ -86,7 +86,7 @@ class SectionListView (AdminRoleRequiredMixin ,ListView ):
 
         worker_count =Count (
         "contacts",
-        filter =_Q (contacts__company_user__role__in =["WORKSHOP","DRIVER"]),
+        filter =_Q (contacts__company_user__role__in =list (CompanyUser .WORKER_ROLES )),
         distinct =True ,
         ),
         ).order_by ("name")
@@ -175,7 +175,7 @@ class SectionCreateView (AdminRoleRequiredMixin ,CreateView ):
         form .fields ["contacts"].queryset =Contact .objects .filter (
         company =company 
         ).exclude (
-        company_user__role__in =["WORKSHOP","DRIVER"]
+        company_user__role__in =list (CompanyUser .WORKER_ROLES )
         )
         form .fields ["call_flow"].queryset =CallFlow .objects .filter (
         company =company ,
@@ -381,7 +381,7 @@ class SectionUpdateView (AdminRoleRequiredMixin ,UpdateView ):
         form .fields ["contacts"].queryset =Contact .objects .filter (
         company =company 
         ).exclude (
-        company_user__role__in =["WORKSHOP","DRIVER"]
+        company_user__role__in =list (CompanyUser .WORKER_ROLES )
         )
         form .fields ["call_flow"].queryset =CallFlow .objects .filter (
         company =company ,
@@ -500,7 +500,7 @@ class SectionUpdateView (AdminRoleRequiredMixin ,UpdateView ):
 
         _worker_contacts =list (
         self .object .contacts .filter (
-        company_user__role__in =["WORKSHOP","DRIVER"]
+        company_user__role__in =list (CompanyUser .WORKER_ROLES )
         ).values_list ("pk",flat =True )
         )
 
@@ -968,7 +968,7 @@ class CallFlowCreateView (AdminRoleRequiredMixin ,CreateView ):
         form .fields ["notification_contact"].queryset =Contact .objects .filter (
         company =company 
         ).exclude (
-        company_user__role__in =["WORKSHOP","DRIVER"]
+        company_user__role__in =list (CompanyUser .WORKER_ROLES )
         ).order_by ("name")
         form .fields ["notification_contact"].required =False 
         form .fields ["fallback_section"].queryset =Section .objects .filter (
@@ -1075,7 +1075,7 @@ class CallFlowUpdateView (AdminRoleRequiredMixin ,UpdateView ):
         form .fields ["notification_contact"].queryset =Contact .objects .filter (
         company =company 
         ).exclude (
-        company_user__role__in =["WORKSHOP","DRIVER"]
+        company_user__role__in =list (CompanyUser .WORKER_ROLES )
         ).order_by ("name")
         form .fields ["notification_contact"].required =False 
         form .fields ["fallback_section"].queryset =Section .objects .filter (

@@ -2236,6 +2236,10 @@ class OnboardingService:
                     contact=contact,
                     priority=99,
                 )
+                # H24 (S129): el móvil del alta se guarda en la ficha
+                # de Personal (pendiente desde H31 S94). Miguel Ángel:
+                # "Habría que guardarlo, no?".
+                _store_signup_phone(dni, session.phone_number)
 
                 # Vinculación automática de documentación pre-registrada
                 # (2026-07-23, a petición de Miguel Ángel): la ingesta de
@@ -2337,6 +2341,69 @@ class OnboardingService:
                 "Ha ocurrido un error al crear tu cuenta. "
                 "Por favor, contacta con el administrador de la plataforma."
             )
+
+
+def _phone_digits(value: str) -> str:
+    """
+    Last 9 digits of a phone number, for comparing formats.
+    ---
+    Últimos 9 dígitos de un teléfono, para comparar formatos distintos
+    (+34 600..., 600 ..., whatsapp:+34600...).
+    """
+    import re as _re
+    return _re.sub(r"[^0-9]", "", value or "")[-9:]
+
+
+def _store_signup_phone(dni: str, phone_number: str) -> None:
+    """
+    Stores the WhatsApp signup phone in the worker's PersonIdentity
+    (H24, S129). Empty `phone` gets it; if `phone` holds another
+    number and `phone_secondary` is empty, it goes there; a number
+    already present in either is left alone. Nothing is overwritten.
+    ---
+    Guarda el móvil del alta por WhatsApp en la ficha de Personal del
+    trabajador (H24, S129). Si `phone` está vacío va ahí; si `phone`
+    tiene otro número y `phone_secondary` está vacío, va al segundo;
+    si ya está en cualquiera de los dos, no se toca. Nunca se pisa un
+    número existente.
+    """
+    from document_explorer.models import PersonIdentity as _PI
+
+    phone = (phone_number or "").replace("whatsapp:", "").strip()
+    digits = _phone_digits(phone)
+    if not dni or len(digits) < 9:
+        return
+    person = _PI.objects.filter(dni__iexact=dni).first()
+    if person is None:
+        logger.info(
+            "# [ONBOARDING] Sin ficha de Personal para el DNI %s: el "
+            "móvil del alta queda solo en el contacto.", dni,
+        )
+        return
+    known = {
+        _phone_digits(person.phone), _phone_digits(person.phone_secondary),
+    }
+    if digits in known:
+        return
+    if not person.phone:
+        person.phone = phone
+        person.save(update_fields=["phone"])
+        field = "phone"
+    elif not person.phone_secondary:
+        person.phone_secondary = phone
+        person.save(update_fields=["phone_secondary"])
+        field = "phone_secondary"
+    else:
+        logger.warning(
+            "# [ONBOARDING] Ficha #%d ya tiene dos teléfonos distintos: "
+            "el móvil del alta %s no se guarda en la ficha.",
+            person.pk, phone,
+        )
+        return
+    logger.info(
+        "# [ONBOARDING] Móvil del alta guardado en la ficha #%d (%s).",
+        person.pk, field,
+    )
 
 
 def send_epi_delivery_whatsapp_confirmation(delivery) -> bool:

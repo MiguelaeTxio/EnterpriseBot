@@ -227,6 +227,17 @@ class CompanyUser(models.Model):
     # read-only for any authenticated panel user — this role (and ADMIN)
     # are the only ones that can additionally upload new documentation.
     ROLE_DOCS_SUPERVISOR = "DOCS_SUPERVISOR"
+    # H24 (S129). OFFICE y NIGHTGUARD: los dos puestos reales de la
+    # empresa que no tenían rol (Miguel Ángel: "taller mecánico, chófer
+    # (gruista), administrativo [...] y guarda nocturno"). Mismo rango
+    # que WORKSHOP/DRIVER: entran por el alta de WhatsApp según
+    # Section.default_role y de momento solo ven su perfil y el fichaje.
+    # OFFICE and NIGHTGUARD: the two real company positions that had no
+    # role. Same rank as WORKSHOP/DRIVER: assigned by WhatsApp signup
+    # from Section.default_role; for now they only see their profile
+    # and the clock-in.
+    ROLE_OFFICE       = "OFFICE"
+    ROLE_NIGHTGUARD   = "NIGHTGUARD"
     ROLE_CHOICES      = [
         (ROLE_ADMIN,         "Administrador"),
         (ROLE_OPERATOR,      "Operador"),
@@ -236,7 +247,13 @@ class CompanyUser(models.Model):
         (ROLE_DRIVER,        "Chófer"),
         (ROLE_ASSISTANCE,    "Operario de Asistencia"),
         (ROLE_DOCS_SUPERVISOR, "Supervisor de Documentación"),
+        (ROLE_OFFICE,        "Administrativo"),
+        (ROLE_NIGHTGUARD,    "Guarda nocturno"),
     ]
+    # Puestos de trabajador (alta por WhatsApp, fichaje). Worker roles.
+    WORKER_ROLES      = (
+        ROLE_WORKSHOP, ROLE_DRIVER, ROLE_OFFICE, ROLE_NIGHTGUARD,
+    )
 
     company = models.ForeignKey(
         Company,
@@ -267,7 +284,8 @@ class CompanyUser(models.Model):
             "DRIVER: reservado. "
             "ASSISTANCE: operario de Asistencia — solo modulo de presupuestos. "
             "DOCS_SUPERVISOR: puede subir documentación de centros de gasto "
-            "(el listado es de solo lectura para cualquier usuario)."
+            "(el listado es de solo lectura para cualquier usuario). "
+            "OFFICE: administrativo. NIGHTGUARD: guarda nocturno."
         ),
     )
     is_active = models.BooleanField(
@@ -813,9 +831,13 @@ class Section(models.Model):
     )
     DEFAULT_ROLE_WORKSHOP = "WORKSHOP"
     DEFAULT_ROLE_DRIVER   = "DRIVER"
+    DEFAULT_ROLE_OFFICE   = "OFFICE"
+    DEFAULT_ROLE_NIGHTGUARD = "NIGHTGUARD"
     DEFAULT_ROLE_CHOICES  = [
         (DEFAULT_ROLE_WORKSHOP, "Operario de taller"),
         (DEFAULT_ROLE_DRIVER,   "Chófer"),
+        (DEFAULT_ROLE_OFFICE,   "Administrativo"),
+        (DEFAULT_ROLE_NIGHTGUARD, "Guarda nocturno"),
     ]
 
     default_role = models.CharField(
@@ -827,6 +849,7 @@ class Section(models.Model):
             "Rol asignado automáticamente a los contactos de esta sección cuando se "
             "registran en la plataforma vía onboarding WhatsApp. "
             "WORKSHOP: operario de taller. DRIVER: chófer. "
+            "OFFICE: administrativo. NIGHTGUARD: guarda nocturno. "
             "Los roles de mayor rango (ADMIN, SUPERVISOR, OPERATOR) se asignan "
             "manualmente desde la consola de administración."
         ),
