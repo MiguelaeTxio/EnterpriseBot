@@ -246,50 +246,53 @@ id, indistinto de dónde viva en el DOM.
 </div>
 
 {% comment %}
-S130. Correo de documentación conjunto -- Miguel Ángel: la
+S130. Dosieres de trabajadores y máquinas JUNTOS -- Miguel Ángel: la
 documentación "tiene que ir toda junta para no generar varios correos
-a la misma empresa". Lee los trabajadores marcados en Personal y las
-máquinas marcadas en Centros de gasto (las dos selecciones viven en
-window) y genera UN solo .eml borrador (DossierBundleEmailView): sin
-destinatario, cuerpo por defecto, firma de Mi perfil y adjuntos.
-Vive aquí, fuera de las pestañas, para servir a las dos.
+a la misma empresa", con la plantilla elegida en cada pestaña "para
+luego no tener que elegirla al lanzar" y Descargar/Enviar en las dos
+pestañas "para no tener que estar volviendo a personal".
+
+Estado común en window (plantilla de personal, plantilla de
+maquinaria y formato): cualquier <select data-dossier-bind="..."> de
+Personal, de Centros de gasto o de este modal lo lee y lo escribe, así
+lo elegido en una pestaña ya está puesto en la otra. Los botones
+data-dossier-action="download|email" de las dos pestañas lanzan la
+misma petición (DossierBundleEmailView) con los trabajadores marcados
+en Personal y las máquinas marcadas en Centros de gasto. Solo si falta
+la plantilla de algún grupo marcado se abre este modal para elegirla.
 {% endcomment %}
 <div class="modal fade" id="dossierBundleModal" tabindex="-1" aria-labelledby="dossierBundleTitle" aria-hidden="true">
     <div class="modal-dialog modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header py-2">
-                <h6 class="modal-title" id="dossierBundleTitle"><i class="bi bi-envelope me-1"></i>Enviar documentación en un solo correo</h6>
+                <h6 class="modal-title" id="dossierBundleTitle"><i class="bi bi-files me-1"></i>Falta elegir plantilla</h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
             <div class="modal-body small">
                 <div class="mb-3">
                     <div class="fw-bold">Trabajadores marcados: <span id="bundlePersonCount">0</span></div>
-                    <div id="bundlePersonNames" class="text-muted mb-1"></div>
-                    <select id="bundlePersonTemplate" class="form-select form-select-sm">
+                    <select data-dossier-bind="personTemplate" id="bundlePersonTemplate" class="form-select form-select-sm">
                         <option value="">Plantilla de dosier de personal…</option>
                     </select>
                 </div>
                 <div class="mb-3">
                     <div class="fw-bold">Máquinas marcadas: <span id="bundleMachineCount">0</span></div>
-                    <div id="bundleMachineNames" class="text-muted mb-1"></div>
-                    <select id="bundleMachineTemplate" class="form-select form-select-sm">
+                    <select data-dossier-bind="machineTemplate" id="bundleMachineTemplate" class="form-select form-select-sm">
                         <option value="">Plantilla de dosier de maquinaria…</option>
                     </select>
                 </div>
                 <div class="mb-2">
-                    <div class="fw-bold">Adjuntos</div>
-                    <select id="bundleFormat" class="form-select form-select-sm">
-                        <option value="combined">Un PDF con todo</option>
-                        <option value="per_subject">Un PDF por trabajador y por máquina</option>
-                        <option value="zip">Un ZIP con todo (archivos originales)</option>
+                    <div class="fw-bold">Formato</div>
+                    <select data-dossier-bind="format" class="form-select form-select-sm">
+                        <option value="combined">Todo en un PDF</option>
+                        <option value="per_subject">Un PDF por cada uno</option>
+                        <option value="zip">ZIP (originales)</option>
                     </select>
                 </div>
-                <div class="form-text">Se marca en Personal y en Centros de gasto; las dos selecciones van al mismo correo. Se abre como borrador con el cuerpo, tu firma y los adjuntos: solo falta el destinatario.</div>
-                <div id="bundleResult" class="mt-2"></div>
             </div>
             <div class="modal-footer py-2">
                 <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
-                <button type="button" class="btn btn-sm btn-primary" id="bundleSubmit"><i class="bi bi-envelope me-1"></i>Generar correo</button>
+                <button type="button" class="btn btn-sm btn-primary" id="bundleSubmit">Continuar</button>
             </div>
         </div>
     </div>
@@ -299,8 +302,11 @@ Vive aquí, fuera de las pestañas, para servir a las dos.
 (function () {
     const url = "{% url 'panel:dossier_bundle_email' %}";
     const modalEl = document.getElementById('dossierBundleModal');
-    const resultEl = document.getElementById('bundleResult');
+    const state = window.__dossierBundleState = window.__dossierBundleState || {
+        personTemplate: '', machineTemplate: '', format: 'combined',
+    };
     let modal = null;
+    let pending = null;
     let templatesLoaded = null;
 
     function csrf() {
@@ -309,81 +315,77 @@ Vive aquí, fuera de las pestañas, para servir a las dos.
         const match = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
         return match ? match[1] : '';
     }
-
-    function fillSelect(select, items, keepFirst) {
-        while (select.options.length > 1) select.remove(1);
-        items.forEach(function (t) {
-            const opt = document.createElement('option');
-            opt.value = t.id;
-            opt.textContent = t.name;
-            select.appendChild(opt);
-        });
-        if (keepFirst !== undefined) select.value = keepFirst;
-    }
-
-    function loadTemplates() {
-        if (!templatesLoaded) {
-            templatesLoaded = fetch(url).then(function (r) { return r.json(); });
-        }
-        return templatesLoaded;
-    }
-
     function people() { return Array.from(window.__personMassSelection || []); }
-    function machines() { return window.__fleetMassSelection || new Map(); }
+    function machines() { return Array.from((window.__fleetMassSelection || new Map()).keys()); }
 
-    function paint(personTemplateId) {
-        const personIds = people();
-        const names = window.__personMassSelectionNames || new Map();
-        document.getElementById('bundlePersonCount').textContent = personIds.length;
-        document.getElementById('bundlePersonNames').textContent = personIds
-            .map(function (pk) { return names.get(pk) || names.get(String(pk)); })
-            .filter(Boolean).join(' · ');
-        const machineMap = machines();
-        document.getElementById('bundleMachineCount').textContent = machineMap.size;
-        document.getElementById('bundleMachineNames').textContent = Array.from(machineMap.values())
-            .map(function (m) { return m.code || m.label; }).join(' · ');
-        document.getElementById('bundlePersonTemplate').disabled = personIds.length === 0;
-        document.getElementById('bundleMachineTemplate').disabled = machineMap.size === 0;
-        resultEl.innerHTML = '';
-        loadTemplates().then(function (data) {
-            const personSelect = document.getElementById('bundlePersonTemplate');
-            const keep = personTemplateId || personSelect.value;
-            fillSelect(personSelect, data.person_templates || [], keep);
-            const machineSelect = document.getElementById('bundleMachineTemplate');
-            fillSelect(machineSelect, data.machine_templates || [], machineSelect.value);
+    window.syncDossierSelects = function () {
+        document.querySelectorAll('select[data-dossier-bind]').forEach(function (select) {
+            const key = select.dataset.dossierBind;
+            if (state[key] && Array.from(select.options).some(function (o) { return o.value === state[key]; })) {
+                if (select.value !== state[key]) {
+                    select.value = state[key];
+                    select.dispatchEvent(new Event('change', {bubbles: true}));
+                }
+            } else if (select.value && !state[key]) {
+                state[key] = select.value;
+            }
         });
-    }
-
-    window.openDossierBundleModal = function (opts) {
-        if (!modal) modal = new bootstrap.Modal(modalEl);
-        paint((opts || {}).personTemplateId || '');
-        modal.show();
     };
 
-    document.getElementById('bundleSubmit').addEventListener('click', function () {
+    window.refreshDossierCounts = function () {
+        const p = people().length;
+        const m = machines().length;
+        const text = 'Irán juntos: ' + p + ' trabajador' + (p === 1 ? '' : 'es') + ' y ' + m + ' máquina' + (m === 1 ? '' : 's') + '.';
+        document.querySelectorAll('[data-dossier-counts]').forEach(function (el) { el.textContent = text; });
+    };
+
+    document.addEventListener('change', function (ev) {
+        const select = ev.target;
+        if (!select.matches || !select.matches('select[data-dossier-bind]')) return;
+        state[select.dataset.dossierBind] = select.value;
+        window.syncDossierSelects();
+    });
+    document.body.addEventListener('htmx:afterSwap', function () {
+        window.syncDossierSelects();
+        window.refreshDossierCounts();
+    });
+
+    function show(resultEl, kind, text) {
+        if (!resultEl) return;
+        const div = document.createElement('div');
+        div.className = 'alert alert-' + kind + ' py-1 px-2 mb-0 mt-1';
+        div.textContent = text;
+        resultEl.appendChild(div);
+    }
+
+    function run(action, resultEl) {
         const personIds = people();
-        const machineMap = machines();
-        if (!personIds.length && !machineMap.size) {
-            resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">Marca trabajadores en Personal o máquinas en Centros de gasto.</div>';
+        const machineIds = machines();
+        if (resultEl) resultEl.innerHTML = '';
+        if (!personIds.length && !machineIds.length) {
+            show(resultEl, 'warning', 'Marca trabajadores en Personal o máquinas en Centros de gasto.');
+            return;
+        }
+        if ((personIds.length && !state.personTemplate) || (machineIds.length && !state.machineTemplate)) {
+            openModal(action, resultEl);
             return;
         }
         const formData = new FormData();
         personIds.forEach(function (pk) { formData.append('person_ids', pk); });
-        Array.from(machineMap.keys()).forEach(function (pk) { formData.append('machine_ids', pk); });
-        formData.append('person_template_id', document.getElementById('bundlePersonTemplate').value);
-        formData.append('machine_template_id', document.getElementById('bundleMachineTemplate').value);
-        formData.append('format', document.getElementById('bundleFormat').value);
-        const button = this;
-        button.disabled = true;
-        resultEl.innerHTML = '<div class="text-muted">Generando el correo…</div>';
+        machineIds.forEach(function (pk) { formData.append('machine_ids', pk); });
+        formData.append('person_template_id', personIds.length ? state.personTemplate : '');
+        formData.append('machine_template_id', machineIds.length ? state.machineTemplate : '');
+        formData.append('format', state.format || 'combined');
+        formData.append('action', action);
+        if (resultEl) resultEl.innerHTML = '<div class="text-muted">' + (action === 'email' ? 'Generando el correo…' : 'Generando la descarga…') + '</div>';
         fetch(url, {method: 'POST', headers: {'X-CSRFToken': csrf()}, body: formData})
             .then(function (r) {
                 if (!r.ok) {
                     return r.json().then(function (data) {
-                        let msg = data.error || 'Error al generar el correo.';
+                        if (resultEl) resultEl.innerHTML = '';
+                        let msg = data.error || 'Error al generar la documentación.';
                         if (data.skipped && data.skipped.length) msg += ' Sin documentos vigentes: ' + data.skipped.join(', ') + '.';
-                        resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0"></div>';
-                        resultEl.firstChild.textContent = msg;
+                        show(resultEl, 'danger', msg);
                     });
                 }
                 const skipped = JSON.parse(r.headers.get('X-Bundle-Skipped') || '[]');
@@ -393,27 +395,66 @@ Vive aquí, fuera de las pestañas, para servir a las dos.
                 return r.blob().then(function (blob) {
                     const link = document.createElement('a');
                     link.href = URL.createObjectURL(blob);
-                    link.download = nameMatch ? nameMatch[1] : 'documentacion.eml';
+                    link.download = nameMatch ? nameMatch[1] : 'documentacion';
                     document.body.appendChild(link);
                     link.click();
                     link.remove();
                     URL.revokeObjectURL(link.href);
-                    resultEl.innerHTML = '<div class="alert alert-success py-1 px-2 mb-0">Correo generado (' + sizeMb + ' MB de adjuntos): ábrelo, pon el destinatario y envía.</div>';
-                    if (tooBig) {
-                        resultEl.insertAdjacentHTML('beforeend', '<div class="alert alert-warning py-1 px-2 mb-0 mt-1">Pasa de 20 MB: muchos servidores de correo lo rechazan. Prueba con "Un ZIP con todo" o divide el envío.</div>');
-                    }
-                    if (skipped.length) {
-                        const warn = document.createElement('div');
-                        warn.className = 'alert alert-warning py-1 px-2 mb-0 mt-1';
-                        warn.textContent = 'Sin documentos vigentes de la plantilla, no incluidos: ' + skipped.join(', ') + '.';
-                        resultEl.appendChild(warn);
-                    }
+                    if (resultEl) resultEl.innerHTML = '';
+                    show(resultEl, 'success', action === 'email'
+                        ? 'Correo generado (' + sizeMb + ' MB de adjuntos): ábrelo, pon el destinatario y envía.'
+                        : 'Documentación descargada.');
+                    if (tooBig) show(resultEl, 'warning', 'Pasa de 20 MB: muchos servidores de correo lo rechazan. Prueba con "ZIP (originales)" o divide el envío.');
+                    if (skipped.length) show(resultEl, 'warning', 'Sin documentos vigentes de la plantilla, no incluidos: ' + skipped.join(', ') + '.');
                 });
             })
             .catch(function () {
-                resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al generar el correo.</div>';
-            })
-            .finally(function () { button.disabled = false; });
+                if (resultEl) resultEl.innerHTML = '';
+                show(resultEl, 'danger', 'Error de red al generar la documentación.');
+            });
+    }
+
+    function openModal(action, resultEl) {
+        pending = {action: action, resultEl: resultEl};
+        if (!modal) modal = new bootstrap.Modal(modalEl);
+        const p = people().length;
+        const m = machines().length;
+        document.getElementById('bundlePersonCount').textContent = p;
+        document.getElementById('bundleMachineCount').textContent = m;
+        document.getElementById('bundlePersonTemplate').disabled = p === 0;
+        document.getElementById('bundleMachineTemplate').disabled = m === 0;
+        if (!templatesLoaded) {
+            templatesLoaded = fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+                [['bundlePersonTemplate', data.person_templates], ['bundleMachineTemplate', data.machine_templates]].forEach(function (pair) {
+                    const select = document.getElementById(pair[0]);
+                    (pair[1] || []).forEach(function (t) {
+                        const opt = document.createElement('option');
+                        opt.value = String(t.id);
+                        opt.textContent = t.name;
+                        select.appendChild(opt);
+                    });
+                });
+            });
+        }
+        templatesLoaded.then(function () { window.syncDossierSelects(); });
+        modal.show();
+    }
+
+    document.addEventListener('click', function (ev) {
+        const button = ev.target.closest && ev.target.closest('[data-dossier-action]');
+        if (!button) return;
+        const resultId = button.dataset.dossierResult;
+        run(button.dataset.dossierAction, resultId ? document.getElementById(resultId) : null);
+    });
+
+    document.getElementById('bundleSubmit').addEventListener('click', function () {
+        if (!pending) return;
+        const p = people().length;
+        const m = machines().length;
+        if ((p && !state.personTemplate) || (m && !state.machineTemplate)) return;
+        modal.hide();
+        run(pending.action, pending.resultEl);
+        pending = null;
     });
 })();
 </script>

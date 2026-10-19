@@ -140,7 +140,6 @@ from panel.views_documentation_h30 import (
     JobPositionBulkDeleteView,
     JobPositionManageView,
     JobPositionSaveView,
-    PersonalDossierMassGenerateView,
     PersonalDossierTemplateApplyView,
     PersonalDossierTemplateListView,
     PersonalEpiItemHistoryView,
@@ -601,8 +600,6 @@ urlpatterns = [
     # H30 (S119): gestión de requisitos de documentación de máquina -- misma mecánica, filtro de tipos MACHINE/BOTH.
     # S130: un solo correo con la documentación de varios trabajadores y máquinas juntos.
     path("documentacion/dosieres/correo/", DossierBundleEmailView.as_view(), name="dossier_bundle_email"),
-    # H35 (S105): generar dosieres para varios trabajadores seleccionados a la vez, a partir de una plantilla -- descarga o envío por correo.
-    path("documentacion/personal/dosieres-masivo/", PersonalDossierMassGenerateView.as_view(), name="documentation_personal_dossier_mass_generate"),
     # H35 (S105): marca en el listado qué personas les falta algún documento de la plantilla elegida.
     path("documentacion/personal/dosieres-masivo/comprobar/", DossierTemplateMissingCheckView.as_view(), name="documentation_personal_dossier_missing_check"),
     path("documentacion/personal/<int:pk>/parte-dia/<str:date_iso>/", PersonalWorkdayDetailView.as_view(), name="documentation_personal_workday_detail"),

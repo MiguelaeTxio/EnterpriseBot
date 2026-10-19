@@ -220,20 +220,22 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                     {% endcomment %}
                     <div class="small text-muted fw-bold">Dosieres</div>
                     <div class="d-flex gap-1 flex-wrap">
-                        <select id="person-mass-dossier-template" class="form-select form-select-sm" style="width:auto; max-width:100%; min-width:0;">
+                        {# S130: plantilla, formato, Descargar y Enviar son los mismos que en Centros de gasto (hub.html, data-dossier-*): las dos selecciones van juntas. #}
+                        <select id="person-mass-dossier-template" data-dossier-bind="personTemplate" class="form-select form-select-sm" style="width:auto; max-width:100%; min-width:0;">
                             <option value="">Plantilla…</option>
                             {% for template in dossier_templates %}
                             <option value="{{ template.pk }}">{{ template.name }}</option>
                             {% endfor %}
                         </select>
-                        <select id="person-mass-dossier-mode" class="form-select form-select-sm" style="width:auto; max-width:100%; min-width:0;">
-                            <option value="pdf_per_person">PDF/trabajador</option>
-                            <option value="zip_per_person">ZIP/trabajador</option>
-                            <option value="combined">Todo junto</option>
+                        <select id="person-mass-dossier-mode" data-dossier-bind="format" class="form-select form-select-sm" style="width:auto; max-width:100%; min-width:0;">
+                            <option value="combined">Todo en un PDF</option>
+                            <option value="per_subject">Un PDF por cada uno</option>
+                            <option value="zip">ZIP (originales)</option>
                         </select>
-                        <button type="button" class="btn btn-sm btn-primary" id="person-mass-dossier-download">Descargar</button>
-                        <button type="button" class="btn btn-sm btn-outline-primary" id="person-mass-dossier-email">Enviar por correo</button>
+                        <button type="button" class="btn btn-sm btn-primary" data-dossier-action="download" data-dossier-result="person-mass-result">Descargar</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" data-dossier-action="email" data-dossier-result="person-mass-result">Enviar por correo</button>
                     </div>
+                    <div class="small text-muted" data-dossier-counts></div>
                 </div>
             </div>
             <div id="person-mass-result" class="small mt-1"></div>
@@ -383,6 +385,7 @@ las filas de debajo se desplacen de verdad.
 
     function refreshBar() {
         countEl.textContent = selection.size;
+        if (window.refreshDossierCounts) window.refreshDossierCounts();
         // H31 (S117): "Dar de baja" solo accionable con 1 o más marcados.
         const terminateBtn = document.getElementById('person-mass-terminate');
         if (terminateBtn) terminateBtn.disabled = selection.size === 0;
@@ -1051,76 +1054,8 @@ las filas de debajo se desplacen de verdad.
         resultEl.innerHTML = msg;
     });
 
-    document.getElementById('person-mass-dossier-download').addEventListener('click', function () {
-        const templateId = document.getElementById('person-mass-dossier-template').value;
-        const mode = document.getElementById('person-mass-dossier-mode').value;
-        if (selection.size === 0) {
-            resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">No hay personas seleccionadas.</div>';
-            return;
-        }
-        if (!templateId) {
-            resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">Falta elegir la plantilla de dosier.</div>';
-            return;
-        }
-        const formData = new FormData();
-        selection.forEach((pk) => formData.append('person_ids', pk));
-        formData.append('template_id', templateId);
-        formData.append('mode', mode);
-        formData.append('action', 'download');
-        resultEl.innerHTML = '<div class="text-muted">Generando dosieres…</div>';
-        fetch("{% url 'panel:documentation_personal_dossier_mass_generate' %}", {
-            method: 'POST',
-            headers: {'X-CSRFToken': getCookie('csrftoken')},
-            body: formData,
-        }).then((r) => {
-            if (!r.ok) {
-                r.json().then((data) => {
-                    resultEl.innerHTML = `<div class="alert alert-danger py-1 px-2 mb-0">${data.error || 'Error al generar los dosieres.'}</div>`;
-                });
-                return;
-            }
-            const skippedRaw = r.headers.get('X-Mass-Skipped') || '[]';
-            const contentType = r.headers.get('Content-Type') || '';
-            const extension = contentType.includes('application/pdf') ? 'pdf' : 'zip';
-            r.blob().then((blob) => {
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `dosieres.${extension}`;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                window.URL.revokeObjectURL(url);
-                let msg = '<div class="alert alert-success py-1 px-2 mb-0">Dosieres generados y descargados.</div>';
-                try {
-                    const skipped = JSON.parse(skippedRaw);
-                    if (skipped.length) {
-                        msg += `<div class="alert alert-warning py-1 px-2 mb-0 mt-1">${skipped.length} personas sin documentos vigentes de esta plantilla, omitidas: ` +
-                            skipped.join(', ') + '</div>';
-                    }
-                } catch (e) { /* sin omitidos que parsear */ }
-                resultEl.innerHTML = msg;
-            });
-        }).catch(() => {
-            resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al generar los dosieres.</div>';
-        });
-    });
-
-    // S130, Miguel Ángel: la documentación "tiene que ir toda junta
-    // para no generar varios correos a la misma empresa". "Enviar por
-    // correo" abre el modal común del hub (trabajadores y máquinas
-    // marcados, un solo correo), con la plantilla elegida aquí ya puesta.
-    document.getElementById('person-mass-dossier-email').addEventListener('click', function () {
-        if (selection.size === 0) {
-            resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">No hay personas seleccionadas.</div>';
-            return;
-        }
-        if (window.openDossierBundleModal) {
-            window.openDossierBundleModal({
-                personTemplateId: document.getElementById('person-mass-dossier-template').value,
-            });
-        }
-    });
+    // S130: Descargar y Enviar por correo los atiende hub.html
+    // (data-dossier-action), con trabajadores y máquinas juntos.
 
     // H35 (S105): "hay que hacer un marcado en el listado de
     // trabajadores que les falte algún documento de los que entran en

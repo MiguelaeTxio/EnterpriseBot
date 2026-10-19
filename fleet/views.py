@@ -500,7 +500,7 @@ def _build_pane_context(request, door):
     # H30 (S119): mismo catálogo ÚNICO de "Requisitos de
     # documentación" que Personal (JobPosition, sin modelo aparte para
     # máquina) -- para el desplegable de asignación masiva.
-    from document_explorer.models import JobPosition
+    from document_explorer.models import JobPosition, PersonalDossierTemplate
 
     return {
         **fragment_ctx,
@@ -509,6 +509,11 @@ def _build_pane_context(request, door):
         "fleet_screen_key": _FLEET_SCREEN_KEYS[door],
         "saved_selection": saved_selection,
         "job_positions": JobPosition.objects.order_by("name"),
+        # S130: plantillas de dosier de maquinaria, para descargar o
+        # enviar la documentación desde aquí igual que en Personal.
+        "dossier_machine_templates": company.dossier_templates.filter(
+            scope=PersonalDossierTemplate.SCOPE_MACHINE,
+        ).order_by("name"),
     }
 
 

@@ -207,10 +207,39 @@ la lista hace scroll. Dos paneles:
                             <button type="button" class="btn btn-sm btn-outline-success fleet-needs-selection" id="fleet-mass-export" disabled>
                                 <i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel
                             </button>
-                            {# S130: un solo correo con la documentación de las máquinas (y trabajadores) marcados -- modal común del hub. #}
-                            <button type="button" class="btn btn-sm btn-outline-primary fleet-needs-selection d-none" id="fleet-mass-dossier-email" disabled>
-                                <i class="bi bi-envelope me-1"></i>Enviar documentación
-                            </button>
+                        </div>
+                    </div>
+                    {% comment %}
+                    S130, Miguel Ángel: "la vista de los centros de gasto
+                    debería tener la selección de plantilla exactamente
+                    igual que la de personal [...] el envío de la
+                    documentación y la descarga [...] también debería
+                    aparecer en la pestaña de maquinaria". Mismos
+                    controles que Personal (data-dossier-*, hub.html):
+                    plantilla, formato, Descargar y Enviar, siempre con
+                    los trabajadores y las máquinas marcados juntos. Solo
+                    dentro del hub de Documentación (oculto en Taller).
+                    {% endcomment %}
+                    <div class="row g-1 mt-1 d-none" id="fleet-dossier-block">
+                        <div class="col-12">
+                            <div class="small text-muted fw-bold">Dosieres</div>
+                            <div class="d-flex gap-1 flex-wrap">
+                                <select data-dossier-bind="machineTemplate" class="form-select form-select-sm" style="width:auto; max-width:100%; min-width:0;">
+                                    <option value="">Plantilla…</option>
+                                    {% for template in dossier_machine_templates %}
+                                    <option value="{{ template.pk }}">{{ template.name }}</option>
+                                    {% endfor %}
+                                </select>
+                                <select data-dossier-bind="format" class="form-select form-select-sm" style="width:auto; max-width:100%; min-width:0;">
+                                    <option value="combined">Todo en un PDF</option>
+                                    <option value="per_subject">Un PDF por cada uno</option>
+                                    <option value="zip">ZIP (originales)</option>
+                                </select>
+                                <button type="button" class="btn btn-sm btn-primary" data-dossier-action="download" data-dossier-result="fleet-dossier-result">Descargar</button>
+                                <button type="button" class="btn btn-sm btn-outline-primary" data-dossier-action="email" data-dossier-result="fleet-dossier-result">Enviar por correo</button>
+                            </div>
+                            <div class="small text-muted" data-dossier-counts></div>
+                            <div id="fleet-dossier-result" class="small mt-1"></div>
                         </div>
                     </div>
                     {% if can_manage %}
@@ -426,6 +455,7 @@ la lista hace scroll. Dos paneles:
 
     function updateSelectionUi() {
         saveSelection();
+        if (window.refreshDossierCounts) window.refreshDossierCounts();
         document.getElementById("fleet-mass-count").textContent = selection.size;
         document.getElementById("fleet-selection-count").textContent = selection.size;
         const list = document.getElementById("fleet-selection-list");
@@ -600,12 +630,10 @@ la lista hace scroll. Dos paneles:
         });
     }
 
-    const dossierEmailBtn = document.getElementById("fleet-mass-dossier-email");
-    if (dossierEmailBtn && window.openDossierBundleModal) {
-        dossierEmailBtn.classList.remove("d-none");
-        dossierEmailBtn.addEventListener("click", function () {
-            window.openDossierBundleModal({});
-        });
+    if (window.refreshDossierCounts) {
+        document.getElementById("fleet-dossier-block").classList.remove("d-none");
+        window.syncDossierSelects();
+        window.refreshDossierCounts();
     }
 
     // Exportar la selección a Excel (mismas columnas que la hoja

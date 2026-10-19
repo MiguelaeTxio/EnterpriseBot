@@ -294,11 +294,43 @@ def build_bundle_eml(subjects, output_format, body_html, sender_company_user):
     return bytes(msg), size
 
 
+def _download_response(subjects, output_format, skipped):
+    """
+    Same attachments as the e-mail, served for download: the file
+    itself when there is one, otherwise all of them in one ZIP.
+    ---
+    Los mismos adjuntos que el correo, para descargar: el archivo tal
+    cual si es uno solo; si son varios, todos en un ZIP.
+    """
+    try:
+        attachments = _attachments(subjects, output_format)
+    except DossierBuildError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+    if len(attachments) == 1:
+        data, maintype, subtype, filename = attachments[0]
+    else:
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            for item_data, _m, _s, item_name in attachments:
+                zf.writestr(item_name, item_data)
+        data, maintype, subtype = buffer.getvalue(), "application", "zip"
+        filename = "Documentacion_%s.zip" % timezone.localdate().isoformat()
+    response = HttpResponse(data, content_type="%s/%s" % (maintype, subtype))
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response["X-Bundle-Skipped"] = json.dumps(skipped)
+    return response
+
+
 class DossierBundleEmailView(DocsUploadAccessMixin, View):
     """
-    GET: dossier templates for the modal. POST: the single `.eml`.
+    GET: dossier templates for the modal. POST: the single `.eml`
+    (`action=email`) or the same files for download
+    (`action=download`).
     ---
-    GET: plantillas de dosier para el modal. POST: el `.eml` único.
+    GET: plantillas de dosier para el modal. POST: el `.eml` único
+    (`action=email`) o los mismos archivos para descargar
+    (`action=download`) -- desde Personal o desde Centros de gasto,
+    siempre con las dos selecciones.
     """
 
     def get(self, request):
@@ -318,6 +350,7 @@ class DossierBundleEmailView(DocsUploadAccessMixin, View):
 
     def post(self, request):
         company_user = request.user.company_user
+        action = request.POST.get("action", "email")
         output_format = request.POST.get("format", FORMAT_COMBINED)
         if output_format not in FORMATS:
             return JsonResponse({"error": "Formato no válido."}, status=400)
@@ -328,6 +361,8 @@ class DossierBundleEmailView(DocsUploadAccessMixin, View):
             return JsonResponse(
                 {"error": error, "skipped": skipped or []}, status=400,
             )
+        if action == "download":
+            return _download_response(subjects, output_format, skipped)
         try:
             eml_bytes, size = build_bundle_eml(
                 subjects, output_format,
