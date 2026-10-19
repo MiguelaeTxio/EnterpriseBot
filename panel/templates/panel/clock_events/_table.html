@@ -45,7 +45,6 @@ vista (hr_calendar.clock_report).
                    hx-get="{% url 'panel:clock_events_detail' row.person.pk %}?date_from={{ date_from|date:'Y-m-d' }}&date_to={{ date_to|date:'Y-m-d' }}"
                    hx-target="#clk-detail-container">{{ row.label }}</a>
             </td>
-            <td data-label="DNI">{{ row.person.dni }}</td>
             <td class="text-end" data-label="Fichajes">{{ row.report.events|length }}</td>
             <td class="text-end fw-semibold" data-label="Horas">{{ row.report.total_label }}</td>
             <td class="text-end{% if row.report.late_arrivals %} text-danger-emphasis fw-semibold{% endif %}" data-label="Llegadas tarde" title="Entradas después de la hora del horario, de las que tienen horario con el que compararlas">{{ row.report.punctuality_label|default:"—" }}</td>
@@ -55,7 +54,7 @@ vista (hr_calendar.clock_report).
             </td>
         </tr>
         {% empty %}
-        <tr><td colspan="9" class="text-muted small py-3">No se encontró personal.</td></tr>
+        <tr><td colspan="8" class="text-muted small py-3">No se encontró personal.</td></tr>
         {% endfor %}
     </tbody>
 </table>

@@ -58,7 +58,6 @@ _MAX_RANGE_DAYS = 366
 
 _SORT_VALUES = {
     "person": lambda r: r.sort_name,
-    "dni": lambda r: r.person.dni,
     "events": lambda r: len(r.report.events),
     "hours": lambda r: r.report.total_seconds,
     "last": lambda r: (r.report.last_event.pressed_at
@@ -68,7 +67,6 @@ _SORT_VALUES = {
 }
 _COLUMNS = (
     ("person", "Apellidos, Nombre"),
-    ("dni", "DNI"),
     ("events", "Fichajes"),
     ("hours", "Horas"),
     ("late", "Llegadas tarde"),
