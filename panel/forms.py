@@ -18,6 +18,7 @@ from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm, Se
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 
+from budgets.models import Base
 from ivr_config.models import (
     CompanyUser,
     Contact,
@@ -407,6 +408,20 @@ class CompanyUserCreateForm(forms.Form):
         help_text=(
             "Selecciona la sección a la que pertenece el trabajador. "
             "El rol se pre-rellenará con el rol por defecto de la sección."
+        ),
+    )
+    # S130: base de referencia (festivos de su calendario laboral para
+    # Fichajes y el calendario de RRHH), igual que pregunta el alta por
+    # WhatsApp. El queryset lo acota la vista a las bases de la empresa.
+    base = forms.ModelChoiceField(
+        queryset=Base.objects.none(),
+        label="Base",
+        required=False,
+        empty_label="— Sin base —",
+        widget=forms.Select(attrs={"class": "form-select"}),
+        help_text=(
+            "Sus festivos son los del calendario laboral de esa base. Sin "
+            "base, solo cuentan como no laborables los sábados y domingos."
         ),
     )
     phone_number = forms.CharField(

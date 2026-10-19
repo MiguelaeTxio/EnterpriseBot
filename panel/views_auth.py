@@ -25,6 +25,21 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def _scope_base_field (form ,company ):
+    """
+    Limits the "base" field of the user creation form to the company's
+    bases (S130).
+    ---
+    Limita el campo "base" del alta de usuario a las bases de la empresa
+    (S130).
+    """
+    from budgets .models import Base 
+
+    form .fields ["base"].queryset =Base .objects .filter (
+    company =company 
+    ).order_by ("name")
+
+
 class CompanyUserCreateView (SupervisorAccessMixin ,View ):
     """
     Allows a SUPERVISOR or ADMIN to create a new CompanyUser for their company.
@@ -75,6 +90,7 @@ class CompanyUserCreateView (SupervisorAccessMixin ,View ):
             form .fields ["section"].queryset =Section .objects .filter (
             company =company 
             ).order_by ("name")
+            _scope_base_field (form ,company )
         return {
         "company":company ,
         "company_user":cu ,
@@ -118,6 +134,7 @@ class CompanyUserCreateView (SupervisorAccessMixin ,View ):
         form .fields ["section"].queryset =Section .objects .filter (
         company =company 
         ).order_by ("name")
+        _scope_base_field (form ,company )
 
         if not form .is_valid ():
             context =self ._get_context (request ,form )
@@ -152,6 +169,7 @@ class CompanyUserCreateView (SupervisorAccessMixin ,View ):
         is_active =True ,
         must_change_password =_must_change ,
         dni =form .cleaned_data .get ("dni", "").strip(),
+        base =form .cleaned_data .get ("base"),
         )
         logger .info (
         "# [USER CREATE] CompanyUser pk=%s (username='%s') creado por %s.",

@@ -110,6 +110,23 @@
                         </div>
                     </div>
 
+                    <!-- base field (S130) — Campo de base -->
+                    <div class="mb-4">
+                        <label for="{{ form.base.id_for_label }}"
+                               class="form-label fw-medium">
+                            {{ form.base.label }}
+                        </label>
+                        {{ form.base }}
+                        {% if form.base.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.base.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            {{ form.base.help_text }}
+                        </div>
+                    </div>
+
                     <!-- phone_number field — Campo de teléfono (H13) -->
                     <div class="mb-4">
                         <label for="{{ form.phone_number.id_for_label }}"
