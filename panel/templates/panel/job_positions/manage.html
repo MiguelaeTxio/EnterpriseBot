@@ -13,18 +13,4 @@ salen en el visor; casillas, activar/desactivar y eliminar varios con
 cuenta atrás. Antes, con Dosieres cargado primero en el hub, esta
 pestaña no ejecutaba su JavaScript (ids y variables repetidos).
 {% endcomment %}
-{% comment %}
-S130: pestañas Personal / Maquinaria, igual que Dosieres -- cada
-requisito es de un ámbito y solo se ofrece para asignar en el suyo.
-{% endcomment %}
-<ul class="nav nav-pills px-3 pt-3">
-    <li class="nav-item">
-        <a class="nav-link{% if not is_machine_scope %} active{% endif %}" href="{% url 'panel:job_positions_manage' %}"
-           hx-get="{% url 'panel:job_positions_manage' %}" hx-target="#pane-requisitos" hx-swap="innerHTML">Personal</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link{% if is_machine_scope %} active{% endif %}" href="{% url 'panel:job_positions_manage' %}?ambito=MAQUINARIA"
-           hx-get="{% url 'panel:job_positions_manage' %}?ambito=MAQUINARIA" hx-target="#pane-requisitos" hx-swap="innerHTML">Maquinaria</a>
-    </li>
-</ul>
 {% include "panel/_doc_type_picker.html" %}

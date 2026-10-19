@@ -508,10 +508,7 @@ def _build_pane_context(request, door):
         "form": MachineAssetForm(company=company),
         "fleet_screen_key": _FLEET_SCREEN_KEYS[door],
         "saved_selection": saved_selection,
-        # S130: solo los requisitos de Maquinaria.
-        "job_positions": JobPosition.objects.filter(
-            scope=JobPosition.SCOPE_MACHINE,
-        ).order_by("name"),
+        "job_positions": JobPosition.objects.order_by("name"),
         # S130: plantillas de dosier de maquinaria, para descargar o
         # enviar la documentación desde aquí igual que en Personal.
         "dossier_machine_templates": company.dossier_templates.filter(
@@ -944,10 +941,7 @@ class MachineAssetBulkSetDocumentRequirementView(FleetManageAccessMixin, View):
             "document_requirement_id", "",
         ).strip()
         requirement = (
-            get_object_or_404(
-                JobPosition, pk=requirement_id,
-                scope=JobPosition.SCOPE_MACHINE,
-            )
+            get_object_or_404(JobPosition, pk=requirement_id)
             if requirement_id else None
         )
         updated = _selected_assets(company, request).update(
