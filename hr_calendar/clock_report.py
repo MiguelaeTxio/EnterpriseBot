@@ -16,7 +16,9 @@ worker's current schedule (morning, or afternoon in a split shift);
 any minute after it is a late arrival. Each OUT, likewise, with the
 closest end time: any minute before it is an early departure. Real
 time, not the rounded one. Doing it on at least half of the days (and
-on 3 or more) is flagged as a habit.
+on 3 or more) is flagged as a habit. Saturdays, Sundays and the
+holidays of the worker's base are not compared (S130), except for
+night guards.
 
 ---
 
@@ -39,7 +41,8 @@ partida, la de tarde); un minuto después ya es llegada tarde. Cada
 salida, igual, con la hora de salida más cercana: un minuto antes ya
 es salida antes de hora. Con la hora real, no con la redondeada.
 Hacerlo al menos la mitad de los días (y 3 o más) se marca como
-costumbre.
+costumbre. Sábados, domingos y festivos de la base del trabajador no
+se comparan (S130), salvo en los guardas nocturnos.
 """
 import datetime
 from dataclasses import dataclass, field
@@ -486,16 +489,51 @@ def expected_start(starts, pressed_at):
 
 
 def _schedule_times_by_user(company, company_user_ids):
+    """
+    {user id: (start times, end times, is_day_compared)} -- the times of
+    the user's schedule, and a function telling whether a day is
+    compared with it (S130, Miguel Ángel: Saturdays, Sundays and the
+    holidays of the worker's base are not, except for night guards).
+    ---
+    {id de usuario: (horas de entrada, horas de salida, se_compara)} --
+    las horas de su horario y una función que dice si un día se compara
+    con él (S130, Miguel Ángel: sábados, domingos y festivos de la base
+    del trabajador no, salvo los guardas nocturnos).
+    """
     from ivr_config.models import CompanyUser
     from panel.views_operator import _resolve_operator_schedule
 
     result = {}
-    for company_user in CompanyUser.objects.filter(pk__in=company_user_ids):
+    users = CompanyUser.objects.filter(
+        pk__in=company_user_ids,
+    ).select_related("base")
+    for company_user in users:
         schedule = _resolve_operator_schedule(company_user, company)
         result[company_user.pk] = (
             schedule_starts(schedule), schedule_ends(schedule),
+            _day_rule(company_user),
         )
     return result
+
+
+def _day_rule(company_user):
+    """
+    The is_day_compared function of one user (see
+    _schedule_times_by_user): night guards, every day; anyone else, only
+    working days of their base's labour calendar (weekends only when the
+    user has no base).
+    ---
+    La función se_compara de un usuario: los guardas nocturnos, todos
+    los días; los demás, solo los laborables del calendario laboral de
+    su base (sin base, solo se descartan sábados y domingos).
+    """
+    from budgets.services import _is_holiday
+    from ivr_config.models import CompanyUser
+
+    if company_user.role == CompanyUser.ROLE_NIGHTGUARD:
+        return lambda day: True
+    base = company_user.base
+    return lambda day: not _is_holiday(day, base)
 
 
 def _range_bounds(date_from, date_to):
@@ -542,8 +580,14 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
             s for s in build_shifts(user_events)
             if date_from <= s.day <= date_to
         ]
-        starts, ends = times_by_user.get(user_id, ([], []))
+        starts, ends, is_day_compared = times_by_user.get(
+            user_id, ([], [], lambda day: True),
+        )
         for shift in report.shifts:
+            if not is_day_compared(shift.day):
+                # S130: sábado, domingo o festivo de su base (salvo
+                # guardas): sin horario con el que comparar.
+                continue
             if shift.clock_in is not None:
                 shift.expected_start = expected_start(
                     starts, shift.clock_in.pressed_at,

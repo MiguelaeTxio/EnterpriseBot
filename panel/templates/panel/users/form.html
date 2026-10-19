@@ -131,6 +131,25 @@
                         </div>
                     </div>
 
+                    <!-- base field (S130) — Campo de base -->
+                    <div class="mb-4">
+                        <label for="{{ form.base.id_for_label }}"
+                               class="form-label fw-medium">
+                            Base
+                        </label>
+                        {{ form.base }}
+                        {% if form.base.errors %}
+                        <div class="text-danger mt-1">
+                            {% for error in form.base.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Base de referencia del trabajador: sus festivos son los del
+                            calendario laboral de esa base (Fichajes y calendario de RRHH).
+                            Sin base, solo cuentan como no laborables los sábados y domingos.
+                        </div>
+                    </div>
+
                     <!-- dni field — Campo DNI / NIF -->
                     <div class="mb-4">
                         <label for="{{ form.dni.id_for_label }}"
@@ -213,6 +232,3 @@
 </div>
 
 {% endblock %}
-
-
-

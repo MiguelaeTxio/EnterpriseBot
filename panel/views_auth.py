@@ -415,7 +415,9 @@ class CompanyUserUpdateView (SupervisorAccessMixin ,UpdateView ):
 
     model =CompanyUser 
     template_name ="panel/users/form.html"
-    fields =["role","is_active","workday_schedule","dni"]
+    # S130: base (festivos de su calendario laboral para Fichajes y el
+    # calendario de RRHH); antes solo la ponía el alta por WhatsApp.
+    fields =["role","is_active","workday_schedule","base","dni"]
 
     def get_queryset (self ):
         """
@@ -431,12 +433,14 @@ class CompanyUserUpdateView (SupervisorAccessMixin ,UpdateView ):
         """
         Restricts the workday_schedule queryset to the authenticated user's
         company so that no foreign schedule can be selected from the dropdown.
-        Marks workday_schedule as optional (blank allowed).
+        Marks workday_schedule as optional (blank allowed). Same for base
+        (S130), restricted to the company's bases.
         Adds Bootstrap CSS class to the dni field.
         ---
         Restringe el queryset de workday_schedule a la empresa del usuario
         autenticado para que ningún horario externo pueda seleccionarse.
-        Marca workday_schedule como opcional (blank permitido).
+        Marca workday_schedule como opcional (blank permitido). Igual la
+        base (S130), limitada a las bases de la empresa.
         Añade clase CSS Bootstrap al campo dni.
         """
         from ivr_config .models import WorkdaySchedule 
@@ -447,6 +451,12 @@ class CompanyUserUpdateView (SupervisorAccessMixin ,UpdateView ):
         ).order_by ("label")
         form .fields ["workday_schedule"].required =False 
         form .fields ["workday_schedule"].widget .attrs .update ({"class":"form-select"})
+        from budgets.models import Base
+        form .fields ["base"].queryset =Base .objects .filter (
+        company =company 
+        ).order_by ("name")
+        form .fields ["base"].required =False 
+        form .fields ["base"].widget .attrs .update ({"class":"form-select"})
         form .fields ["dni"].required =False 
         form .fields ["dni"].widget .attrs .update ({
             "class": "form-control",
