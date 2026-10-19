@@ -378,6 +378,8 @@ las filas de debajo se desplacen de verdad.
     // marcar una casilla visible (data-name del propio checkbox) y al
     // cargar un grupo guardado (data-member-names de su fila).
     const selectionNames = new Map();
+    // S130: el modal de correo conjunto del hub pinta estos nombres.
+    window.__personMassSelectionNames = selectionNames;
 
     function refreshBar() {
         countEl.textContent = selection.size;
@@ -1104,66 +1106,20 @@ las filas de debajo se desplacen de verdad.
         });
     });
 
+    // S130, Miguel Ángel: la documentación "tiene que ir toda junta
+    // para no generar varios correos a la misma empresa". "Enviar por
+    // correo" abre el modal común del hub (trabajadores y máquinas
+    // marcados, un solo correo), con la plantilla elegida aquí ya puesta.
     document.getElementById('person-mass-dossier-email').addEventListener('click', function () {
-        const templateId = document.getElementById('person-mass-dossier-template').value;
         if (selection.size === 0) {
             resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">No hay personas seleccionadas.</div>';
             return;
         }
-        if (!templateId) {
-            resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">Falta elegir la plantilla de dosier.</div>';
-            return;
-        }
-        // S130: sin pedir el cuerpo -- el servidor pone el texto por
-        // defecto y deja el destinatario vacío (borrador de Outlook).
-        const formData = new FormData();
-        selection.forEach((pk) => formData.append('person_ids', pk));
-        formData.append('template_id', templateId);
-        formData.append('action', 'email');
-        resultEl.innerHTML = '<div class="text-muted">Generando correos…</div>';
-        fetch("{% url 'panel:documentation_personal_dossier_mass_generate' %}", {
-            method: 'POST',
-            headers: {'X-CSRFToken': getCookie('csrftoken')},
-            body: formData,
-        }).then((r) => {
-            if (!r.ok) {
-                r.json().then((data) => {
-                    resultEl.innerHTML = `<div class="alert alert-danger py-1 px-2 mb-0">${data.error || 'Error al generar los correos.'}</div>`;
-                });
-                return;
-            }
-            const skippedRaw = r.headers.get('X-Mass-Skipped') || '[]';
-            const errorsRaw = r.headers.get('X-Mass-Errors') || '[]';
-            const isSingleEml = (r.headers.get('Content-Type') || '').includes('message/rfc822');
-            const disposition = r.headers.get('Content-Disposition') || '';
-            const nameMatch = disposition.match(/filename="([^"]+)"/);
-            r.blob().then((blob) => {
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = nameMatch ? nameMatch[1] : (isSingleEml ? 'dosier.eml' : 'dosieres_correo.zip');
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                window.URL.revokeObjectURL(url);
-                let msg = isSingleEml
-                    ? '<div class="alert alert-success py-1 px-2 mb-0">Correo generado: ábrelo, pon el destinatario y envía.</div>'
-                    : '<div class="alert alert-success py-1 px-2 mb-0">Correos generados (un .eml por trabajador, descargados en .zip): ábrelos, pon el destinatario y envía.</div>';
-                try {
-                    const skipped = JSON.parse(skippedRaw);
-                    const errors = JSON.parse(errorsRaw);
-                    if (skipped.length) {
-                        msg += `<div class="alert alert-warning py-1 px-2 mb-0 mt-1">${skipped.length} sin documentos vigentes, omitidas: ` + skipped.join(', ') + '</div>';
-                    }
-                    if (errors.length) {
-                        msg += `<div class="alert alert-warning py-1 px-2 mb-0 mt-1">${errors.length} errores: ` + errors.join('; ') + '</div>';
-                    }
-                } catch (e) { /* sin datos que parsear */ }
-                resultEl.innerHTML = msg;
+        if (window.openDossierBundleModal) {
+            window.openDossierBundleModal({
+                personTemplateId: document.getElementById('person-mass-dossier-template').value,
             });
-        }).catch(() => {
-            resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red al generar los correos.</div>';
-        });
+        }
     });
 
     // H35 (S105): "hay que hacer un marcado en el listado de

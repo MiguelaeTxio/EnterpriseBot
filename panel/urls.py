@@ -47,6 +47,7 @@ from panel.views_inbox import (
     InboxUploadView,
 )
 from panel.views_navigation_state import NavigationStateSaveView
+from panel.views_dossier_bundle import DossierBundleEmailView
 from panel.views_vacation_balance import (
     AbsencePeriodCreateView,
     AbsencePeriodRemoveView,
@@ -598,6 +599,8 @@ urlpatterns = [
     path("documentacion/puestos/eliminar/", JobPositionBulkDeleteView.as_view(), name="job_positions_bulk_delete"),
     path("documentacion/puestos/activar/", JobPositionBulkActiveView.as_view(), name="job_positions_bulk_active"),
     # H30 (S119): gestión de requisitos de documentación de máquina -- misma mecánica, filtro de tipos MACHINE/BOTH.
+    # S130: un solo correo con la documentación de varios trabajadores y máquinas juntos.
+    path("documentacion/dosieres/correo/", DossierBundleEmailView.as_view(), name="dossier_bundle_email"),
     # H35 (S105): generar dosieres para varios trabajadores seleccionados a la vez, a partir de una plantilla -- descarga o envío por correo.
     path("documentacion/personal/dosieres-masivo/", PersonalDossierMassGenerateView.as_view(), name="documentation_personal_dossier_mass_generate"),
     # H35 (S105): marca en el listado qué personas les falta algún documento de la plantilla elegida.

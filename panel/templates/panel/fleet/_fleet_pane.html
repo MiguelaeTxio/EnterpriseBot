@@ -207,6 +207,10 @@ la lista hace scroll. Dos paneles:
                             <button type="button" class="btn btn-sm btn-outline-success fleet-needs-selection" id="fleet-mass-export" disabled>
                                 <i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel
                             </button>
+                            {# S130: un solo correo con la documentación de las máquinas (y trabajadores) marcados -- modal común del hub. #}
+                            <button type="button" class="btn btn-sm btn-outline-primary fleet-needs-selection d-none" id="fleet-mass-dossier-email" disabled>
+                                <i class="bi bi-envelope me-1"></i>Enviar documentación
+                            </button>
                         </div>
                     </div>
                     {% if can_manage %}
@@ -357,6 +361,8 @@ la lista hace scroll. Dos paneles:
     // cada repintado htmx del fragmento, nunca a un F5 -- mismo
     // criterio que la selección de la pestaña Personal (S75/S113).
     const selection = new Map();
+    // S130: el modal de correo conjunto del hub lee esta selección.
+    window.__fleetMassSelection = selection;
 
     // S117: selección persistida por usuario y por puerta (sobrevive a
     // ir a la ficha documental y volver, a recargar y a cambiar de
@@ -591,6 +597,14 @@ la lista hace scroll. Dos paneles:
             }).then(function (ok) {
                 if (ok) { selection.clear(); refreshFromFragment(); }
             });
+        });
+    }
+
+    const dossierEmailBtn = document.getElementById("fleet-mass-dossier-email");
+    if (dossierEmailBtn && window.openDossierBundleModal) {
+        dossierEmailBtn.classList.remove("d-none");
+        dossierEmailBtn.addEventListener("click", function () {
+            window.openDossierBundleModal({});
         });
     }
 

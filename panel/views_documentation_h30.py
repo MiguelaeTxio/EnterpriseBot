@@ -5778,16 +5778,9 @@ class PersonalDossierMassGenerateView(DocsUploadAccessMixin, View):
     `action`:
     - `download` (por defecto): sirve el archivo resultante
       directamente.
-    - `email`: **siempre** un `.eml` INDEPENDIENTE por trabajador,
-      nunca mezclados en un mismo correo sea cual sea el `mode`
-      elegido -- mezclar la documentación personal de varias personas
-      en un único envío sería un problema real de privacidad, no solo
-      de formato. Se devuelven todos los `.eml` dentro de un único ZIP
-      de descarga (mismo patrón que `PersonalNotificationMassSendView`),
-      para que el supervisor los abra/reenvíe uno a uno desde su
-      propio Outlook -- sin envío SMTP real desde el servidor, mismo
-      criterio que el resto del envío de circulares/dossier de esta
-      plataforma.
+    - `email`: retirado en S130 -- el correo va siempre en UNO solo con
+      todos los trabajadores y máquinas marcados
+      (`panel.views_dossier_bundle.DossierBundleEmailView`).
 
     Trabajadores sin ningún documento vigente de la plantilla elegida
     se omiten (nunca abortan el resto del lote) y se listan en
@@ -5803,7 +5796,6 @@ class PersonalDossierMassGenerateView(DocsUploadAccessMixin, View):
         template_pk = request.POST.get("template_id", "").strip()
         person_ids = request.POST.getlist("person_ids")
         mode = request.POST.get("mode", "pdf_per_person")
-        action = request.POST.get("action", "download")
 
         if not template_pk:
             return JsonResponse({"error": "Falta la plantilla."}, status=400)
@@ -5841,54 +5833,6 @@ class PersonalDossierMassGenerateView(DocsUploadAccessMixin, View):
             )
 
         today = timezone.localdate().isoformat()
-
-        if action == "email":
-            # S130: cuerpo opcional (vacío usa el texto por defecto) y,
-            # con un solo trabajador, el .eml se sirve tal cual en vez
-            # de dentro de un ZIP, para abrirlo directamente en Outlook.
-            body_html = request.POST.get("body_html", "").strip()
-            if len(per_person) == 1:
-                person, entries, epi_deliveries = per_person[0]
-                try:
-                    eml_bytes, filename = _build_dossier_notification_eml(
-                        person, entries, body_html,
-                        request.user.company_user,
-                        epi_deliveries=epi_deliveries,
-                    )
-                except NotificationEmlError as exc:
-                    return JsonResponse({"error": str(exc)}, status=400)
-                response = HttpResponse(
-                    eml_bytes, content_type="message/rfc822",
-                )
-                response["Content-Disposition"] = (
-                    f'attachment; filename="{filename}"'
-                )
-                response["X-Mass-Skipped"] = json.dumps(skipped)
-                response["X-Mass-Errors"] = json.dumps([])
-                return response
-            email_errors = []
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-                for person, entries, epi_deliveries in per_person:
-                    try:
-                        eml_bytes, filename = _build_dossier_notification_eml(
-                            person, entries, body_html,
-                            request.user.company_user,
-                            epi_deliveries=epi_deliveries,
-                        )
-                    except NotificationEmlError as exc:
-                        email_errors.append("%s: %s" % (person, exc))
-                        continue
-                    zf.writestr(filename, eml_bytes)
-            response = HttpResponse(
-                zip_buffer.getvalue(), content_type="application/zip",
-            )
-            response["Content-Disposition"] = (
-                f'attachment; filename="dosieres_correo_{today}.zip"'
-            )
-            response["X-Mass-Skipped"] = json.dumps(skipped)
-            response["X-Mass-Errors"] = json.dumps(email_errors)
-            return response
 
         # action == "download"
         try:
