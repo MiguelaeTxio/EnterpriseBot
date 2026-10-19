@@ -95,12 +95,14 @@ _SCHEMA = {
     "required": ["detected_type_code", "detected_description"],
 }
 
-# Current (1234BCD), special vehicles (E1234BCD), trailers (R1234BCD)
-# and old provincial (MA1234BC, M123456). / Actual, especial, remolque
-# y provincial antigua.
+# Current (1234BCD), special vehicles (E1234BCD), temporary (P1234BCD),
+# trailers (R1234BCD, old MA01520R) and old provincial (MA1234BC,
+# M123456). / Actual, especial, temporal, remolque y provincial antigua
+# (S130: las de R3, R4 y A68 se rechazaban).
 _PLATE_RE = re.compile(
-    r"^(?:[0-9]{4}[A-Z]{3}|[ER][0-9]{4}[A-Z]{3}"
-    r"|[A-Z]{1,2}[0-9]{4}[A-Z]{0,2}|[A-Z]{1,2}[0-9]{5,6})$"
+    r"^(?:[0-9]{4}[A-Z]{3}|[EPR][0-9]{4}[A-Z]{3}"
+    r"|[A-Z]{1,2}[0-9]{4}[A-Z]{0,2}|[A-Z]{1,2}[0-9]{5,6}"
+    r"|[A-Z]{1,2}[0-9]{5}R)$"
 )
 
 
