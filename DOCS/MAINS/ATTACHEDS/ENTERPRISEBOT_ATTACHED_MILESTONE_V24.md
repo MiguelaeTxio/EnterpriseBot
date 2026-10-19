@@ -603,6 +603,7 @@ explícitamente no abordada por decisión de Miguel Ángel.
 | S021 | 2026-07-16 | Prioridad 1 resuelta (sidebar de `alvarez_admin`, commit `e2a5ecc` -- el bug vivía en `machine_documents`, app de H23). Sin más trabajo propio de H24: funcionalidad de vacaciones/calendario completa desde S020. **PCH ejecutado al cierre: H24 → H23** (confirmado explícitamente por Miguel Ángel). Migración Drive→GCS, anotada aquí desde S019 sin fecha, pasa a rastrearse en el anexo H23 como primera tarea de la sesión siguiente. Ver anexo H23 (S021) para el resto del trabajo real de esta sesión -- H24 solo tuvo el desvío puntual de arriba. |
 | S127 | 2026-10-16 | Hito reabierto desde H30, ampliado y renombrado a "Vacaciones, Ausencias y Control Horario" por los requisitos de Alejandro (ver sección 7 y `ENTERPRISEBOT_ANNEX_ROUTER.md`, sección 6). Sin código: contexto real comprobado en el repositorio, reglas de vacaciones decididas con Carolina y hoja de ruta acordada. Aplazado en la misma sesión por Miguel Ángel; el marcador vuelve a H30. |
 | S128 | 2026-10-16 | Sin trabajo propio de H24 (la sesión cerró la incidencia del agente H28 y los puntos 1-6 de H30, ver anexo V30). **PCH al cierre: H30 → H24**, por decisión de Miguel Ángel. La hoja de ruta 7.5 queda tal cual: se empieza por el punto 1. |
+| S129 | 2026-10-16 → 2026-10-19 | Punto 1 (saldo de vacaciones) construido y a la espera de los datos de Carolina; punto 3 (fichaje) construido entero y cerrado con el fichaje real de Miguel Ángel del 17/10 (entrada 12:33 y salida 18:27 con GPS, Loja), salvo la prueba en iPhone. Partes y fichajes integrados (el parte se cierra con la salida, redondeo a hora/media), pestaña Fichajes de supervisores con municipio, mapa en el panel, incidencias y Excel, y fichajes en la ficha del trabajador. Ver 7.4bis y "COMPLETADAS EN S129" (7.6). |
 
 ---
 
@@ -941,55 +942,126 @@ hacer."*
 - Primer fichaje real de Miguel Ángel: entrada 17/10 12:33 con GPS,
   recibida 160 s después (log de producción).
 
-**Pendiente para cerrar el punto 3:** fichaje real de entrada y salida
-de Miguel Ángel desde su móvil, en BD con hora y coordenadas y visible
-en la pestaña Fichajes; y la prueba en iPhone (lo que falle se arregla
-sobre la marcha).
+**Punto 3 cerrado (17/10, comprobado en BD el 19/10):** `ClockEvent`
+#1 entrada 2026-10-17 10:33:30 UTC (12:33, parte 12:30) y #3 salida
+16:27:27 UTC (18:27, parte 18:30, envío en segundo plano), las dos con
+coordenadas y municipio "Loja (Granada)", visibles en la pestaña
+Fichajes y en su Excel. Queda solo la prueba en iPhone (hoja de ruta
+7.5; lo que falle se arregla sobre la marcha).
 
-### 7.5. Hoja de Ruta al reactivar H24
+### 7.5. Hoja de Ruta para la Siguiente Sesión (escrita al cierre de S129)
 
-H24 se abrió y se pausó en la misma sesión S127 sin trabajo de código
-(Miguel Ángel lo aplazó para volver a H30). Al reactivarlo se empieza
-por el punto 1. La incidencia del agente H28 que estuvo aquí como
-primera línea pasó a la hoja de ruta de H30 (S128).
+Orden de Miguel Ángel: primero la página de fichaje.
 
-1. **Vacaciones: días que corresponden, disfrutados y pendientes.**
-   Modelos y migración en `hr_calendar`:
-   - asignación de sección al trabajador (`PersonIdentity` ->
-     `ivr_config.Section`, con fecha desde para los cambios);
-   - regla de vacaciones por sección con "vigente desde" (días al
-     año, naturales o laborables, si se arrastran los sobrantes y
-     plazo para gastarlos), más una regla general de la empresa para
-     quien aún no tiene sección;
-   - ajustes por trabajador y año (saldo de partida importado,
-     ajuste manual con motivo);
-   - medio día en `VacationPeriod`.
-   Servicio de saldo con todos los supuestos de 7.3, la pantalla de
-   saldos por trabajador en la pestaña Vacaciones del hub, la gestión
-   de reglas por sección, la asignación de sección, y la importación
-   del Excel (plantilla descargable por DNI con disfrutados en 2026 y
-   sobrantes de 2025; informe de filas no casadas). **Cierre:**
-   consulta a BD de un trabajador real con sus periodos y ajustes, y
-   la pantalla muestra los mismos días que corresponden, del año
-   anterior, disfrutados y pendientes; una importación de prueba con
-   la plantilla deja los ajustes en BD.
-2. **Ausencias.** Registrar las ausencias que no son vacaciones ni
-   baja (permisos, asuntos propios...) por trabajador y con fechas,
-   con el mismo mecanismo que vacaciones, y que el calendario y la
-   consulta por trabajador las muestren. Tipos: los del catálogo
-   `AbsenceCategory` de la empresa. **Cierre:** una ausencia real dada
-   de alta en el panel, en BD y en el calendario de ese trabajador.
-3. **Fichaje de entrada y salida desde el móvil y consulta de
-   registros**, con el diseño y las decisiones de 7.4bis (dispositivo
-   de confianza, alta por WhatsApp con los puestos reales, móvil del
-   alta en la ficha, envíos pendientes aceptados con la llave del
-   dispositivo, una sola vez por pulsación). Antes, la prueba en
-   iPhone (7.4bis). Re-comprobar el BOE (7.4) antes de empezar.
-   **ABIERTO -- construido entero en S129; falta el fichaje real de
-   cierre (ver final de 7.4bis).** El trabajador ficha desde la web con su usuario; el marcaje
-   guarda hora y coordenadas GPS tomadas en el móvil y, sin cobertura,
-   se guarda en el móvil y se envía al volver la conexión; los
-   marcajes se ven en el mapa. Las pantallas del trabajador se diseñan
-   para el móvil. Consulta de los registros por trabajador. **Cierre:**
-   fichaje real de entrada y salida de Miguel Ángel desde su móvil, en
-   BD con hora y coordenadas, y visible en la consulta de registros.
+1. **Página de fichaje con un solo botón y fichajes manuales por
+   olvido.** Miguel Ángel (S129), tal cual: *"Ahora mismo tenemos
+   fichar entrada, fichar salida [...] Un botón [...] la primera marca
+   del día es la entrada, la segunda marca del día es la salida. Si
+   hay una tercera marca sería la entrada de la jornada de la tarde y
+   una cuarta sería la de salida. Y tenemos que prever también los
+   olvidos [...] la posibilidad de marcar manualmente, quedando marcado
+   como incidencia y que ha sido un fichaje manual."*
+   - `/fichaje/` (`hr_calendar/templates/hr_calendar/clockin.html`,
+     `clockin_sw.js`, `clockin.py`): un único botón "Fichar". El tipo
+     lo decide el servidor: si el trabajador tiene una entrada abierta
+     (sin salida, dentro de `clock_report.MAX_SHIFT_HOURS`, igual que
+     `build_shifts`, para que un turno de noche que cruza la
+     medianoche cierre bien) es SALIDA; si no, ENTRADA. Sin cobertura,
+     el móvil decide con sus propias pulsaciones guardadas y la última
+     conocida del servidor (`/fichaje/estado/`), y el servidor respeta
+     la pulsación tal cual llega (idempotente por `client_id`). La
+     pantalla dice qué se va a registrar ("Fichar entrada"/"Fichar
+     salida") antes de pulsar y, tras pulsar, cuál fue.
+   - Fichaje manual por olvido en la misma página: el trabajador
+     indica tipo, día y hora; se guarda con `sent_by=MANUAL` (valor
+     que ya existe) y el momento real en que se registró
+     (`received_at`); cuenta como incidencia "Fichaje manual" en
+     `Shift.incidents` (listado, detalle, ficha y Excel). El parte
+     (`clock_parts`) lo usa igual que uno normal.
+   **Cierre:** en producción, 4 pulsaciones seguidas del botón de un
+   usuario de prueba quedan en BD como ENTRADA, SALIDA, ENTRADA,
+   SALIDA (`hr_calendar_clockevent`, consulta por `company_user_id`);
+   y un fichaje manual queda en BD con `sent_by='MANUAL'` y aparece
+   como incidencia "Fichaje manual" en el detalle de la pestaña
+   Fichajes de ese trabajador.
+2. **Prueba en iPhone** (7.4bis). Miguel Ángel: lo que falle *"lo
+   arreglaremos sobre la marcha"*. **Cierre:** una entrada y una
+   salida reales hechas desde un iPhone en `hr_calendar_clockevent`,
+   con coordenadas, y `user_agent` de iPhone.
+3. **Vacaciones: cargar los datos de Carolina y comprobar el saldo
+   (punto 1, construido en S129: `hr_calendar/balance.py`,
+   `balance_import.py`, pestaña Vacaciones).** Con las reglas por
+   sección, la asignación de sección de cada trabajador y el Excel de
+   disfrutados en 2026 y sobrantes de 2025 que trae Carolina.
+   **Cierre:** consulta a BD de un trabajador real con sus periodos y
+   ajustes, y la pantalla muestra los mismos días que corresponden,
+   del año anterior, disfrutados y pendientes; una importación de
+   prueba con la plantilla deja los ajustes en BD.
+4. **Ausencias** (arrastrado 1.ª sesión sin avanzar). Registrar las
+   ausencias que no son vacaciones ni baja (permisos, asuntos
+   propios...) por trabajador y con fechas, con el mismo mecanismo
+   que vacaciones, y que el calendario y la consulta por trabajador
+   las muestren. Tipos: los del catálogo `AbsenceCategory` de la
+   empresa. **Cierre:** una ausencia real dada de alta en el panel, en
+   BD y en el calendario de ese trabajador.
+
+### 7.6. COMPLETADAS EN S129 (2026-10-16 → 2026-10-19)
+
+**Punto 1 -- saldo de vacaciones (construido; faltan los datos de
+Carolina).** Reglas por sección, secciones de los trabajadores,
+ajustes e importación (`18aceb5`); la pestaña Vacaciones rehecha sobre
+el formato del hub, una fila por trabajador con fecha de inicio y fin
+(`5edca9d`, `f30e22a`); sin medios días, la empresa no los da
+(`b607b26`).
+
+**Punto 3 -- fichaje (construido y cerrado con el fichaje real, falta
+el iPhone).** Detalle completo en 7.4bis:
+- Prueba sin cobertura en Android (`8d16cf7`, `fb0ccbc`); alta por
+  WhatsApp corregida, cuatro fallos reales (`5eb16d5`, H17); puestos
+  Administrativo y Guarda nocturno y móvil del alta en la ficha
+  (`f0f8545`).
+- Registro con dispositivo de confianza (`757d93f`), pestaña Fichajes
+  de supervisores (`a7ad589`, `dee7351`), página del trabajador
+  `/fichaje/` y retirada de la prueba (`f8c2b34`).
+- Incidencia real: el móvil de Miguel Ángel no podía fichar (un solo
+  token de confianza por usuario); arreglado con `TrustedDevice`,
+  varios por usuario (`d2f3e3f`).
+- Partes y fichajes: las horas del parte las mandan los fichajes, el
+  parte se cierra con la salida y no se manda nada al supervisor
+  (`e353204`, `056aa48`); redondeo a hora o media (±5 min, si no la
+  entrada a la media siguiente y la salida a la anterior), real y
+  redondeada guardadas (`e055601`).
+- Cierre real del parte con la salida (17/10): tareas guardadas 18:27:09,
+  salida 18:27:27, parte #691 cerrado solo con su copia en el log y su
+  Excel. En la misma prueba, incidencia real: el parte reabierto
+  preguntaba por su propio ticket como si fuera de otro; arreglado,
+  "Ticket de esta tarea" (`74cea56`).
+- Quién ve qué: la hora real solo la oficina, el trabajador ve la del
+  parte (`f1b999f`). Enlace "Volver al panel" en `/fichaje/` si se
+  entra desde el menú (`7c74f21`).
+- Pestaña Fichajes, según lo pedido por Miguel Ángel el 19/10:
+  municipio de cada fichaje por geocodificación inversa con la clave de
+  Google Maps de los presupuestos (`hr_calendar/clock_geocode.py`,
+  migración `hr_calendar 0010`, comprobado en real: "Loja (Granada)")
+  y mapa dentro del panel (`panel/static/panel/js/clock_map.js`)
+  (`9270614`, `b0c1105`); listado con nombre, fichajes, incidencias y
+  último día con entrada, salida y municipio, sin DNI ni horas
+  (`790f967`, `f7c94a0`, `97a6089`); incidencias = llegada tarde,
+  salida antes de hora, fichaje sin su pareja y fichaje a más de 3 h
+  de su horario ("Fuera de horario"), todas en rojo y explicadas
+  (`bc78a99`, `97a6089`); detalle con columna Incidencias y casilla
+  "Ver solo incidencias"; filtro "Solo con incidencias" que también
+  vale para exportar (`2f7f56f`); Excel con la fecha una vez por fila
+  y salida según horario y minutos antes (`f7c94a0`); fichajes en la
+  ficha del trabajador, Personal > Laboral > Fichajes (`f7c94a0`).
+
+**Fuera de H24 en esta sesión:**
+- H31: exportar el listado de Personal a Excel con plantillas (modal,
+  plantillas propias y globales de empresa), `document_explorer 0186`
+  (`36a9a33`).
+- Botón "Exportar a Excel" con el mismo formato en todo el panel:
+  verde de contorno, icono y texto iguales (`d64aa0d`).
+
+**Migraciones aplicadas en producción (comprobado en
+`django_migrations`):** `ivr_config` 0045-0047, `hr_calendar`
+0008-0010, `work_order_processor` 0032-0033, `document_explorer` 0186.
