@@ -218,6 +218,17 @@ def record_press(company_user, payload, user_agent=""):
         event.delay_seconds, sent_by,
         "si" if latitude is not None else (event.gps_error or "no"),
     )
+    if event.latitude is not None:
+        # H24 (S129): municipio de las coordenadas (clock_geocode). Un
+        # fallo aquí nunca impide guardar el fichaje; lo que quede sin
+        # consultar se rellena al abrirlo en la pestaña Fichajes.
+        try:
+            from hr_calendar.clock_geocode import fill_municipality
+            fill_municipality(event)
+        except Exception:
+            logger.exception(
+                "# [FICHAJE-MUNICIPIO] Error con el fichaje %s.", client_id,
+            )
     if event.kind == ClockEvent.Kind.OUT:
         # H24 (S129): la salida ajusta el parte de ese día si ya estaba
         # hecho y lo cierra si cuadra (hr_calendar/clock_parts.py). Un

@@ -837,6 +837,15 @@ class ClockEvent(models.Model):
         max_length=120, blank=True,
         verbose_name="Motivo de la falta de GPS",
     )
+    municipality = models.CharField(
+        max_length=150, null=True, blank=True,
+        verbose_name="Municipio",
+        help_text=(
+            "Municipio de las coordenadas (Google Geocoding, "
+            "hr_calendar/clock_geocode.py). Vacío = sin resultado; "
+            "nulo = todavía sin consultar."
+        ),
+    )
     sent_by = models.CharField(
         max_length=12,
         choices=SentBy.choices,

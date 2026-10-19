@@ -28,6 +28,7 @@ solo lectura.
 """
 import datetime
 import io
+import os
 
 from django.http import Http404, HttpResponse
 from django.shortcuts import render
@@ -254,6 +255,10 @@ class ClockEventsTabView(SupervisorAccessMixin, View):
             **_list_context(request),
             "screen_key": SCREEN_KEY,
             "saved_selection": saved_selection,
+            # H24 (S129): mapa del fichaje con la API de Google Maps
+            # (misma clave que los presupuestos).
+            "google_maps_api_key": os.environ.get("GOOGLE_MAPS_API_KEY", ""),
+            "google_maps_map_id": os.environ.get("GOOGLE_MAPS_MAP_ID", ""),
             "company_filter_choices": COMPANY_FILTER_CHOICES,
         })
 
@@ -301,6 +306,9 @@ def _press_view(event):
         "delay_label": format_duration(delay) if delay > 300 else "",
         "maps_url": _maps_url(event),
         "accuracy": event.accuracy_m,
+        "municipality": event.municipality or "",
+        "lat": float(event.latitude) if event.latitude is not None else None,
+        "lon": float(event.longitude) if event.longitude is not None else None,
     }
 
 
@@ -324,6 +332,11 @@ class ClockEventsDetailView(SupervisorAccessMixin, View):
                 request.user.company_user.company,
                 [person.company_user_id], date_from, date_to,
             ).get(person.company_user_id) or report
+        from hr_calendar.clock_geocode import fill_missing
+
+        fill_missing([
+            e for s in report.shifts for e in (s.clock_in, s.clock_out)
+        ])
         shifts = [{
             "day": s.day,
             "presses": [_press_view(s.clock_in), _press_view(s.clock_out)],
@@ -343,6 +356,7 @@ class ClockEventsDetailView(SupervisorAccessMixin, View):
             "issues_count": len(report.issues),
             "punctuality_label": report.punctuality_label,
         })
+
 
 
 def _naive(value):
@@ -390,10 +404,15 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
         presses.append([
             "DNI", "Apellidos y nombre", "Tipo", "Hora de la pulsación",
             "Hora redondeada (parte)", "Hora de llegada", "Retraso (min)",
-            "Latitud", "Longitud",
+            "Municipio", "Latitud", "Longitud",
             "Precisión (m)", "Sin GPS porque", "Cómo se envió",
             "Navegador",
         ])
+        from hr_calendar.clock_geocode import fill_missing
+
+        fill_missing(
+            [e for row in rows for e in row.report.events], limit=80,
+        )
         for row in rows:
             for shift in row.report.shifts:
                 days.append([
@@ -420,6 +439,7 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
                     _naive(event.rounded_at) if event.rounded_at else None,
                     _naive(event.received_at),
                     round(event.delay_seconds / 60),
+                    event.municipality or "",
                     float(event.latitude) if event.latitude is not None
                     else None,
                     float(event.longitude) if event.longitude is not None
@@ -443,7 +463,7 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
                 cell.number_format = "DD/MM/YYYY HH:MM:SS"
         for sheet, widths in (
             (days, (12, 34, 12, 17, 17, 17, 17, 12, 9, 8, 20)),
-            (presses, (12, 34, 9, 20, 20, 20, 9, 11, 11, 9, 24, 34, 40)),
+            (presses, (12, 34, 9, 20, 20, 20, 9, 28, 11, 11, 9, 24, 34, 40)),
         ):
             for index, width in enumerate(widths):
                 letter = chr(ord("A") + index)

@@ -2,7 +2,8 @@
 {% comment %}
 H24 (S129). Jornadas de un trabajador en el intervalo: entrada,
 salida, horas e incidencia; de cada pulsación, la hora real y la del
-parte, si llegó tarde (sin cobertura) y su posición en el mapa; de
+parte, si llegó tarde (sin cobertura), el municipio y su posición en
+el mapa del panel (API de Google Maps); de
 cada entrada, la hora del horario y los minutos de diferencia. Solo
 consulta.
 {% endcomment %}
@@ -27,7 +28,7 @@ consulta.
             <td>
                 {% if press %}
                 {{ press.time|date:"H:i" }}{% if press.rounded %} <span class="text-muted">→ {{ press.rounded|date:"H:i" }}</span>{% endif %}{% if press.time|date:"Ymd" != shift.day|date:"Ymd" %} <span class="text-muted">({{ press.time|date:"d/m" }})</span>{% endif %}
-                {% if press.maps_url %}<a href="{{ press.maps_url }}" target="_blank" rel="noopener" title="Ver en el mapa{% if press.accuracy %} (±{{ press.accuracy }} m){% endif %}"><i class="bi bi-geo-alt"></i></a>{% else %}<i class="bi bi-geo-alt text-muted" title="Sin posición GPS{% if press.event.gps_error %}: {{ press.event.gps_error }}{% endif %}"></i>{% endif %}
+                {% if press.maps_url %}<a href="#" class="clk-map-link" data-lat="{{ press.lat|stringformat:'f' }}" data-lon="{{ press.lon|stringformat:'f' }}" data-acc="{{ press.accuracy|default:'' }}" data-label="{% if forloop.first %}Entrada{% else %}Salida{% endif %} {{ press.time|date:'d/m H:i' }}{% if press.municipality %} · {{ press.municipality }}{% endif %}{% if press.accuracy %} · ±{{ press.accuracy }} m{% endif %}" title="Ver en el mapa{% if press.accuracy %} (±{{ press.accuracy }} m){% endif %}"><i class="bi bi-geo-alt"></i></a>{% if press.municipality %} <span class="text-muted">{{ press.municipality }}</span>{% endif %}{% else %}<i class="bi bi-geo-alt text-muted" title="Sin posición GPS{% if press.event.gps_error %}: {{ press.event.gps_error }}{% endif %}"></i>{% endif %}
                 {% if forloop.first and shift.late_minutes is not None %}<div class="{% if shift.late_minutes > 0 %}text-danger-emphasis fw-semibold{% else %}text-muted{% endif %}">horario {{ shift.expected_start|time:"H:i" }} · {% if shift.late_minutes > 0 %}{{ shift.late_minutes }} min tarde{% elif shift.late_minutes < 0 %}{{ shift.late_minutes|stringformat:"d"|slice:"1:" }} min antes{% else %}en punto{% endif %}</div>{% endif %}
                 {% if press.is_late %}<div class="text-muted">se recibió {{ press.received|date:"d/m H:i" }} ({{ press.delay_label }} h después)</div>{% endif %}
                 {% else %}
