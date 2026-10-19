@@ -99,7 +99,7 @@ selección persistidos por usuario (screen_key "clock_events").
     <div class="row g-2 h-100">
         <div class="col-lg-8 h-100">
             <div class="border rounded p-2 h-100 d-flex flex-column">
-                <div class="fw-bold small mb-1">Trabajadores (<span id="clk-row-count">{{ rows|length }}</span>) · <span id="clk-total">{{ total_label }}</span> h
+                <div class="fw-bold small mb-1">Trabajadores (<span id="clk-row-count">{{ rows|length }}</span>)
                     <button type="button" class="btn btn-sm btn-link py-0{% if not sort_active %} d-none{% endif %}" id="clk-clear-sort"
                             hx-get="{% url 'panel:clock_events_results' %}" hx-target="#clk-results"
                             hx-include="#clk-filters" hx-vals='{"sort": ""}'>Quitar orden</button>
@@ -141,15 +141,9 @@ selección persistidos por usuario (screen_key "clock_events").
                 <h5 class="modal-title" id="clkDetailModalLabel">Fichajes del trabajador</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body">
+            <div class="modal-body" data-clk-map-root data-map-id="{{ google_maps_map_id }}">
                 {# H24 (S129): mapa del fichaje (API de Google Maps), se abre al pulsar el icono de posición. #}
-                <div id="clk-map-wrap" class="d-none mb-3">
-                    <div class="d-flex justify-content-between align-items-center mb-1">
-                        <div class="small fw-semibold" id="clk-map-title"></div>
-                        <button type="button" class="btn btn-sm btn-outline-secondary py-0" id="clk-map-close">Cerrar mapa</button>
-                    </div>
-                    <div id="clk-map" style="height: 320px;" class="rounded border"></div>
-                </div>
+                {% include "panel/clock_events/_map_block.html" %}
                 <div id="clk-detail-container">
                     <div class="text-muted small">Cargando…</div>
                 </div>
@@ -158,69 +152,11 @@ selección persistidos por usuario (screen_key "clock_events").
     </div>
 </div>
 {{ saved_selection|json_script:"clk-saved-selection" }}
-{% if google_maps_api_key %}
 <script>
-{# Maps JS API -- Dynamic Library Import (mismo patrón que budgets/detail.html). #}
-(g=>{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={});var d=b.maps||(b.maps={}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`https://maps.${c}apis.com/maps/api/js?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))})
-({key: "{{ google_maps_api_key|escapejs }}", v: "weekly"});
-</script>
-{% endif %}
-<script>
-(function () {
-    "use strict";
-    // H24 (S129): el icono de posición abre el mapa dentro del panel
-    // (API de Google Maps) en vez de llevar a la web de Google Maps.
-    const HAS_KEY = {{ google_maps_api_key|yesno:"true,false" }};
-    const MAP_ID = "{{ google_maps_map_id|default:'DEMO_MAP_ID'|escapejs }}";
-    const wrap = document.getElementById("clk-map-wrap");
-    let map = null, marker = null, circle = null;
-
-    async function showMap(link) {
-        const lat = parseFloat(link.dataset.lat), lng = parseFloat(link.dataset.lon);
-        const acc = parseInt(link.dataset.acc || "0", 10);
-        if (!HAS_KEY || !window.google || !google.maps || !google.maps.importLibrary) {
-            window.open("https://www.google.com/maps?q=" + lat + "," + lng, "_blank", "noopener");
-            return;
-        }
-        document.getElementById("clk-map-title").textContent = link.dataset.label || "";
-        wrap.classList.remove("d-none");
-        const position = {lat: lat, lng: lng};
-        const mapsLib = await google.maps.importLibrary("maps");
-        const markerLib = await google.maps.importLibrary("marker");
-        if (!map) {
-            map = new mapsLib.Map(document.getElementById("clk-map"), {
-                center: position, zoom: 16, mapId: MAP_ID,
-                streetViewControl: false, mapTypeControl: true,
-            });
-            marker = new markerLib.AdvancedMarkerElement({map: map, position: position});
-            circle = new mapsLib.Circle({
-                map: map, center: position, radius: acc || 0,
-                strokeColor: "#0d6efd", strokeOpacity: 0.6, strokeWeight: 1,
-                fillColor: "#0d6efd", fillOpacity: 0.12,
-            });
-        } else {
-            map.setCenter(position);
-            map.setZoom(16);
-            marker.position = position;
-            circle.setCenter(position);
-            circle.setRadius(acc || 0);
-        }
-        wrap.scrollIntoView({block: "nearest"});
-    }
-
-    document.getElementById("clk-detail-container").addEventListener("click", function (e) {
-        const link = e.target.closest(".clk-map-link");
-        if (!link) { return; }
-        e.preventDefault();
-        showMap(link);
-    });
-    document.getElementById("clk-map-close").addEventListener("click", function () {
-        wrap.classList.add("d-none");
-    });
-    document.getElementById("clkDetailModal").addEventListener("show.bs.modal", function () {
-        wrap.classList.add("d-none");
-    });
-}());
+// H24 (S129): al abrir el detalle de otro trabajador, el mapa empieza cerrado.
+document.getElementById("clkDetailModal").addEventListener("show.bs.modal", function () {
+    this.querySelector(".clk-map-wrap").classList.add("d-none");
+});
 </script>
 {% include "panel/_fixed_list_layout.html" with top_id="clk-top-panel" bottom_id="clk-bottom-panel" %}
 <script>
@@ -286,7 +222,6 @@ selección persistidos por usuario (screen_key "clock_events").
         const state = document.getElementById("clk-fragment-state");
         if (state) {
             document.getElementById("clk-row-count").textContent = state.dataset.count;
-            document.getElementById("clk-total").textContent = state.dataset.total;
             document.getElementById("clk-clear-sort").classList.toggle("d-none", !state.dataset.sortActive);
         }
         results.querySelectorAll(".clk-row-check").forEach(function (cb) {

@@ -16,8 +16,8 @@ consulta.
 {% elif not shifts %}
 <div class="small text-muted">Ningún fichaje en estas fechas.</div>
 {% else %}
-<div class="small mb-2">Total: <strong>{{ total_label }}</strong> h{% if punctuality_label %} · Llegadas tarde: <strong>{{ punctuality_label }}</strong>{% endif %}{% if issues_count %} · <span class="text-warning-emphasis fw-semibold">{{ issues_count }} jornada(s) incompleta(s)</span>{% endif %}</div>
-<div class="small text-muted mb-2">Hora real → hora del parte. Debajo de la entrada, la hora del horario y cuánto antes o después se fichó.</div>
+<div class="small mb-2">Total: <strong>{{ total_label }}</strong> h{% if punctuality_label %} · Llegadas tarde: <strong{% if habitually_late %} class="text-danger"{% endif %}>{{ punctuality_label }}{% if habitually_late %} (costumbre){% endif %}</strong>{% endif %}{% if early_label %} · Salidas antes: <strong{% if habitually_early %} class="text-danger"{% endif %}>{{ early_label }}{% if habitually_early %} (costumbre){% endif %}</strong>{% endif %}{% if issues_count %} · <span class="text-warning-emphasis fw-semibold">{{ issues_count }} jornada(s) incompleta(s)</span>{% endif %}</div>
+<div class="small text-muted mb-2">Hora real → hora del parte. Debajo de cada entrada y salida, la hora del horario y cuánto antes o después se fichó.</div>
 <table class="table table-sm small align-middle">
     <thead><tr><th>Día</th><th>Entrada</th><th>Salida</th><th class="text-end">Horas</th></tr></thead>
     <tbody>
@@ -30,6 +30,7 @@ consulta.
                 {{ press.time|date:"H:i" }}{% if press.rounded %} <span class="text-muted">→ {{ press.rounded|date:"H:i" }}</span>{% endif %}{% if press.time|date:"Ymd" != shift.day|date:"Ymd" %} <span class="text-muted">({{ press.time|date:"d/m" }})</span>{% endif %}
                 {% if press.maps_url %}<a href="#" class="clk-map-link" data-lat="{{ press.lat|stringformat:'f' }}" data-lon="{{ press.lon|stringformat:'f' }}" data-acc="{{ press.accuracy|default:'' }}" data-label="{% if forloop.first %}Entrada{% else %}Salida{% endif %} {{ press.time|date:'d/m H:i' }}{% if press.municipality %} · {{ press.municipality }}{% endif %}{% if press.accuracy %} · ±{{ press.accuracy }} m{% endif %}" title="Ver en el mapa{% if press.accuracy %} (±{{ press.accuracy }} m){% endif %}"><i class="bi bi-geo-alt"></i></a>{% if press.municipality %} <span class="text-muted">{{ press.municipality }}</span>{% endif %}{% else %}<i class="bi bi-geo-alt text-muted" title="Sin posición GPS{% if press.event.gps_error %}: {{ press.event.gps_error }}{% endif %}"></i>{% endif %}
                 {% if forloop.first and shift.late_minutes is not None %}<div class="{% if shift.late_minutes > 0 %}text-danger-emphasis fw-semibold{% else %}text-muted{% endif %}">horario {{ shift.expected_start|time:"H:i" }} · {% if shift.late_minutes > 0 %}{{ shift.late_minutes }} min tarde{% elif shift.late_minutes < 0 %}{{ shift.late_minutes|stringformat:"d"|slice:"1:" }} min antes{% else %}en punto{% endif %}</div>{% endif %}
+                {% if forloop.last and shift.early_minutes is not None %}<div class="{% if shift.early_minutes > 0 %}text-danger-emphasis fw-semibold{% else %}text-muted{% endif %}">horario {{ shift.expected_end|time:"H:i" }} · {% if shift.early_minutes > 0 %}{{ shift.early_minutes }} min antes{% elif shift.early_minutes < 0 %}{{ shift.early_minutes|stringformat:"d"|slice:"1:" }} min después{% else %}en punto{% endif %}</div>{% endif %}
                 {% if press.is_late %}<div class="text-muted">se recibió {{ press.received|date:"d/m H:i" }} ({{ press.delay_label }} h después)</div>{% endif %}
                 {% else %}
                 <span class="text-warning-emphasis">—</span>

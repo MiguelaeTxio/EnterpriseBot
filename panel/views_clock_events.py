@@ -59,19 +59,19 @@ _MAX_RANGE_DAYS = 366
 _SORT_VALUES = {
     "person": lambda r: r.sort_name,
     "events": lambda r: len(r.report.events),
-    "hours": lambda r: r.report.total_seconds,
     "last": lambda r: (r.report.last_event.pressed_at
                        if r.report.last_event else None),
     "issues": lambda r: len(r.report.issues),
     "late": lambda r: len(r.report.late_arrivals),
+    "early": lambda r: len(r.report.early_departures),
 }
 _COLUMNS = (
     ("person", "Apellidos, Nombre"),
     ("events", "Fichajes"),
-    ("hours", "Horas"),
-    ("late", "Llegadas tarde"),
+    ("late", "Entra tarde"),
+    ("early", "Sale antes"),
     ("issues", "Incidencias"),
-    ("last", "Último fichaje"),
+    ("last", "Último día"),
 )
 
 
@@ -83,6 +83,12 @@ class _EmptyReport:
     timed_arrivals = ()
     late_arrivals = ()
     punctuality_label = ""
+    habitually_late = False
+    timed_departures = ()
+    early_departures = ()
+    early_label = ""
+    habitually_early = False
+    last_day = None
     last_event = None
     total_seconds = 0
     total_label = "0:00"
@@ -220,7 +226,9 @@ def _list_context(request):
     # H24 (S129): municipio del último fichaje de cada fila.
     from hr_calendar.clock_geocode import fill_missing
 
-    fill_missing([r.report.last_event for r in rows])
+    fill_missing([
+        r.report.last_day["last"] for r in rows if r.report.last_day
+    ])
     return {
         "rows": rows,
         "filter_search": search,
@@ -346,6 +354,8 @@ class ClockEventsDetailView(SupervisorAccessMixin, View):
             "issue": s.issue,
             "expected_start": s.expected_start,
             "late_minutes": s.late_minutes,
+            "expected_end": s.expected_end,
+            "early_minutes": s.early_minutes,
         } for s in report.shifts]
         return render(request, "panel/clock_events/_detail.html", {
             "person": person,
@@ -357,12 +367,32 @@ class ClockEventsDetailView(SupervisorAccessMixin, View):
             "total_label": report.total_label,
             "issues_count": len(report.issues),
             "punctuality_label": report.punctuality_label,
+            "habitually_late": report.habitually_late,
+            "early_label": report.early_label,
+            "habitually_early": report.habitually_early,
         })
 
 
 
-def _naive(value):
-    return timezone.localtime(value).replace(tzinfo=None)
+def _hour(event, field_name, day, seconds=False):
+    """
+    The time of a press field for the Excel: a time when it is on the
+    row's day; otherwise text with its date ("06:00 (18/10)"), so the
+    date is written once per row without hiding a change of day.
+    ---
+    La hora de un campo de la pulsación para el Excel: una hora si cae
+    en el día de la fila; si no, texto con su fecha.
+    """
+    if event is None or getattr(event, field_name) is None:
+        return None
+    value = timezone.localtime(getattr(event, field_name))
+    if value.date() == day:
+        return value.time().replace(
+            microsecond=0, second=value.second if seconds else 0,
+        )
+    return value.strftime(
+        "%H:%M:%S (%d/%m)" if seconds else "%H:%M (%d/%m)",
+    )
 
 
 class ClockEventsExportView(SupervisorAccessMixin, View):
@@ -397,20 +427,26 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
         book = Workbook()
         days = book.active
         days.title = "Jornadas"
-        days.append([
-            "DNI", "Apellidos y nombre", "Fecha", "Entrada", "Salida",
-            "Entrada (parte)", "Salida (parte)", "Municipio entrada",
-            "Municipio salida", "Entrada según horario",
-            "Minutos tarde", "Horas", "Incidencia",
-        ])
+        # S129 (Miguel Ángel): la fecha una sola vez; el resto, horas.
+        day_headers = [
+            ("DNI", 12), ("Apellidos y nombre", 34), ("Fecha", 12),
+            ("Entrada", 9), ("Salida", 9), ("Entrada (parte)", 9),
+            ("Salida (parte)", 9), ("Municipio entrada", 26),
+            ("Municipio salida", 26), ("Entrada según horario", 10),
+            ("Minutos tarde", 9), ("Salida según horario", 10),
+            ("Minutos antes", 9), ("Horas", 8), ("Incidencia", 20),
+        ]
+        days.append([h for h, _w in day_headers])
         presses = book.create_sheet("Pulsaciones")
-        presses.append([
-            "DNI", "Apellidos y nombre", "Tipo", "Hora de la pulsación",
-            "Hora redondeada (parte)", "Hora de llegada", "Retraso (min)",
-            "Municipio", "Latitud", "Longitud",
-            "Precisión (m)", "Sin GPS porque", "Cómo se envió",
-            "Navegador",
-        ])
+        press_headers = [
+            ("DNI", 12), ("Apellidos y nombre", 34), ("Tipo", 9),
+            ("Fecha", 12), ("Hora de la pulsación", 10),
+            ("Hora redondeada (parte)", 10), ("Hora de llegada", 16),
+            ("Retraso (min)", 9), ("Municipio", 28), ("Latitud", 11),
+            ("Longitud", 11), ("Precisión (m)", 9), ("Sin GPS porque", 24),
+            ("Cómo se envió", 34), ("Navegador", 40),
+        ]
+        presses.append([h for h, _w in press_headers])
         from hr_calendar.clock_geocode import fill_missing
 
         fill_missing(
@@ -418,33 +454,33 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
         )
         for row in rows:
             for shift in row.report.shifts:
+                early = shift.early_minutes
                 days.append([
                     row.person.dni, row.label, shift.day,
-                    _naive(shift.clock_in.pressed_at)
-                    if shift.clock_in else None,
-                    _naive(shift.clock_out.pressed_at)
-                    if shift.clock_out else None,
-                    _naive(shift.clock_in.rounded_at)
-                    if shift.clock_in and shift.clock_in.rounded_at
-                    else None,
-                    _naive(shift.clock_out.rounded_at)
-                    if shift.clock_out and shift.clock_out.rounded_at
-                    else None,
+                    _hour(shift.clock_in, "pressed_at", shift.day),
+                    _hour(shift.clock_out, "pressed_at", shift.day),
+                    _hour(shift.clock_in, "rounded_at", shift.day),
+                    _hour(shift.clock_out, "rounded_at", shift.day),
                     (shift.clock_in.municipality or "")
                     if shift.clock_in else "",
                     (shift.clock_out.municipality or "")
                     if shift.clock_out else "",
-                    shift.expected_start,
+                    shift.expected_start
+                    if shift.late_minutes is not None else None,
                     max(shift.late_minutes, 0)
                     if shift.late_minutes is not None else None,
+                    shift.expected_end if early is not None else None,
+                    max(early, 0) if early is not None else None,
                     shift.duration_label, shift.issue,
                 ])
             for event in row.report.events:
+                pressed = timezone.localtime(event.pressed_at)
                 presses.append([
                     row.person.dni, row.label, event.get_kind_display(),
-                    _naive(event.pressed_at),
-                    _naive(event.rounded_at) if event.rounded_at else None,
-                    _naive(event.received_at),
+                    pressed.date(),
+                    pressed.time().replace(microsecond=0),
+                    _hour(event, "rounded_at", pressed.date()),
+                    _hour(event, "received_at", pressed.date(), True),
                     round(event.delay_seconds / 60),
                     event.municipality or "",
                     float(event.latitude) if event.latitude is not None
@@ -454,27 +490,25 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
                     event.accuracy_m, event.gps_error,
                     event.get_sent_by_display(), event.user_agent,
                 ])
-        for sheet in (days, presses):
+        for sheet, headers in ((days, day_headers), (presses, press_headers)):
             for cell in sheet[1]:
                 cell.font = Font(bold=True)
             sheet.freeze_panes = "A2"
-        for cell in days["C"][1:]:
-            cell.number_format = "DD/MM/YYYY"
-        for column in ("D", "E", "F", "G"):
-            for cell in days[column][1:]:
-                cell.number_format = "DD/MM/YYYY HH:MM"
-        for cell in days["J"][1:]:
-            cell.number_format = "HH:MM"
-        for column in ("D", "E", "F"):
-            for cell in presses[column][1:]:
-                cell.number_format = "DD/MM/YYYY HH:MM:SS"
-        for sheet, widths in (
-            (days, (12, 34, 12, 17, 17, 17, 17, 26, 26, 12, 9, 8, 20)),
-            (presses, (12, 34, 9, 20, 20, 20, 9, 28, 11, 11, 9, 24, 34, 40)),
-        ):
-            for index, width in enumerate(widths):
+            for index, (_header, width) in enumerate(headers):
                 letter = chr(ord("A") + index)
                 sheet.column_dimensions[letter].width = width
+        for cell in days["C"][1:]:
+            cell.number_format = "DD/MM/YYYY"
+        for column in ("D", "E", "F", "G", "J", "L"):
+            for cell in days[column][1:]:
+                cell.number_format = "HH:MM"
+        for cell in presses["D"][1:]:
+            cell.number_format = "DD/MM/YYYY"
+        for cell in presses["E"][1:]:
+            cell.number_format = "HH:MM:SS"
+        for column in ("F", "G"):
+            for cell in presses[column][1:]:
+                cell.number_format = "HH:MM:SS" if column == "G" else "HH:MM"
         buffer = io.BytesIO()
         book.save(buffer)
         filename = "fichajes_%s_%s.xlsx" % (

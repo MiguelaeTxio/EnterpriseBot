@@ -13,7 +13,10 @@ without one of its two presses counts no hours, it is only flagged.
 
 Punctuality: each IN is compared with the closest start time of the
 worker's current schedule (morning, or afternoon in a split shift);
-any minute after it is a late arrival. Real time, not the rounded one.
+any minute after it is a late arrival. Each OUT, likewise, with the
+closest end time: any minute before it is an early departure. Real
+time, not the rounded one. Doing it on at least half of the days (and
+on 3 or more) is flagged as a habit.
 
 ---
 
@@ -32,8 +35,11 @@ que le falta una de sus dos pulsaciones no suma horas, solo se avisa.
 
 Puntualidad: cada entrada se compara con la hora de entrada más
 cercana del horario actual del trabajador (la de mañana o, en jornada
-partida, la de tarde); un minuto después ya es llegada tarde. Con la
-hora real, no con la redondeada.
+partida, la de tarde); un minuto después ya es llegada tarde. Cada
+salida, igual, con la hora de salida más cercana: un minuto antes ya
+es salida antes de hora. Con la hora real, no con la redondeada.
+Hacerlo al menos la mitad de los días (y 3 o más) se marca como
+costumbre.
 """
 import datetime
 from dataclasses import dataclass, field
@@ -44,6 +50,9 @@ from hr_calendar.models import ClockEvent
 
 MAX_SHIFT_HOURS = 24
 LATE_SEND_SECONDS = 300
+HABITUAL_SHARE = 0.5
+HABITUAL_MIN_DAYS = 3
+MAX_COMPARE_MINUTES = 180
 NO_OUT = "Entrada sin salida"
 NO_IN = "Salida sin entrada"
 
@@ -60,6 +69,27 @@ class Shift:
     clock_in: ClockEvent = None
     clock_out: ClockEvent = None
     expected_start: datetime.time = None
+    expected_end: datetime.time = None
+
+    @property
+    def early_minutes(self):
+        """
+        Minutes between the real OUT and the scheduled end (positive:
+        left early); None without OUT or without schedule.
+        ---
+        Minutos entre la salida real y la hora de salida del horario
+        (positivo: salió antes); None sin salida o sin horario.
+        """
+        if self.clock_out is None or self.expected_end is None:
+            return None
+        real = timezone.localtime(self.clock_out.pressed_at)
+        real_minutes = real.hour * 60 + real.minute
+        expected = self.expected_end.hour * 60 + self.expected_end.minute
+        return _comparable(expected - real_minutes)
+
+    @property
+    def is_early(self):
+        return (self.early_minutes or 0) > 0
 
     @property
     def late_minutes(self):
@@ -75,7 +105,7 @@ class Shift:
         real = timezone.localtime(self.clock_in.pressed_at)
         real_minutes = real.hour * 60 + real.minute
         expected = self.expected_start.hour * 60 + self.expected_start.minute
-        return real_minutes - expected
+        return _comparable(real_minutes - expected)
 
     @property
     def is_late(self):
@@ -152,9 +182,86 @@ class PersonReport:
         return "%d de %d" % (len(self.late_arrivals), len(timed)) if timed else ""
 
     @property
+    def habitually_late(self):
+        return _habitual(len(self.late_arrivals), len(self.timed_arrivals))
+
+    @property
+    def timed_departures(self):
+        """
+        Shifts with an OUT and a schedule to compare it with.
+        ---
+        Jornadas con salida y con horario con el que compararla.
+        """
+        return [s for s in self.shifts if s.early_minutes is not None]
+
+    @property
+    def early_departures(self):
+        return [s for s in self.timed_departures if s.is_early]
+
+    @property
+    def early_label(self):
+        timed = self.timed_departures
+        return "%d de %d" % (len(self.early_departures), len(timed)) if timed else ""
+
+    @property
+    def habitually_early(self):
+        return _habitual(len(self.early_departures), len(self.timed_departures))
+
+    @property
+    def last_day(self):
+        """
+        The last day with presses: (day, first IN, last OUT, last press).
+        ---
+        El último día con pulsaciones: (día, primera entrada, última
+        salida, última pulsación).
+        """
+        if not self.shifts:
+            return None
+        day = self.shifts[-1].day
+        same = [s for s in self.shifts if s.day == day]
+        ins = [s.clock_in for s in same if s.clock_in is not None]
+        outs = [s.clock_out for s in same if s.clock_out is not None]
+        last = max(
+            (e for s in same for e in (s.clock_in, s.clock_out) if e),
+            key=lambda e: e.pressed_at,
+        )
+        return {
+            "day": day,
+            "clock_in": ins[0] if ins else None,
+            "clock_out": outs[-1] if outs else None,
+            "last": last,
+        }
+
+    @property
     def late_events(self):
         return [e for e in self.events
                 if e.delay_seconds > LATE_SEND_SECONDS]
+
+
+def _comparable(minutes):
+    """
+    None when the press is more than MAX_COMPARE_MINUTES away from the
+    schedule: then it is not that schedule's shift (a night shift, a
+    schedule not yet updated) and it is neither late nor early.
+    ---
+    None si la pulsación está a más de MAX_COMPARE_MINUTES del horario:
+    no es un turno de ese horario (noche, horario sin actualizar) y no
+    cuenta ni como tarde ni como antes.
+    """
+    return None if abs(minutes) > MAX_COMPARE_MINUTES else minutes
+
+
+def _habitual(count, total):
+    """
+    Late/early "out of habit": at least HABITUAL_SHARE of the days that
+    can be compared, and at least HABITUAL_MIN_DAYS of them (Miguel
+    Ángel: "si un día sales antes de tiempo no pasa nada, pero si lo
+    haces de forma habitual [...] ya estamos en un problema").
+    ---
+    Tarde/antes "por costumbre": al menos la mitad de los días
+    comparables y al menos HABITUAL_MIN_DAYS.
+    """
+    return count >= HABITUAL_MIN_DAYS and count >= total * HABITUAL_SHARE
 
 
 def format_duration(seconds):
@@ -197,6 +304,22 @@ def build_shifts(events):
     return shifts
 
 
+def schedule_ends(schedule):
+    """
+    The end times of a WorkdaySchedule: morning, and afternoon in a
+    split shift.
+    ---
+    Las horas de salida de un horario: la de mañana y, en jornada
+    partida, la de tarde.
+    """
+    if schedule is None:
+        return []
+    ends = [schedule.end_time_morning]
+    if not schedule.is_intensive and schedule.end_time_afternoon:
+        ends.append(schedule.end_time_afternoon)
+    return [t for t in ends if t is not None]
+
+
 def schedule_starts(schedule):
     """
     The start times of a WorkdaySchedule: morning, and afternoon in a
@@ -231,14 +354,15 @@ def expected_start(starts, pressed_at):
     )
 
 
-def _schedule_starts_by_user(company, company_user_ids):
+def _schedule_times_by_user(company, company_user_ids):
     from ivr_config.models import CompanyUser
     from panel.views_operator import _resolve_operator_schedule
 
     result = {}
     for company_user in CompanyUser.objects.filter(pk__in=company_user_ids):
-        result[company_user.pk] = schedule_starts(
-            _resolve_operator_schedule(company_user, company),
+        schedule = _resolve_operator_schedule(company_user, company)
+        result[company_user.pk] = (
+            schedule_starts(schedule), schedule_ends(schedule),
         )
     return result
 
@@ -279,7 +403,7 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
     grouped = {}
     for event in events:
         grouped.setdefault(event.company_user_id, []).append(event)
-    starts_by_user = _schedule_starts_by_user(company, list(grouped))
+    times_by_user = _schedule_times_by_user(company, list(grouped))
     reports = {}
     for user_id, user_events in grouped.items():
         report = PersonReport()
@@ -287,11 +411,17 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
             s for s in build_shifts(user_events)
             if date_from <= s.day <= date_to
         ]
-        starts = starts_by_user.get(user_id, [])
+        starts, ends = times_by_user.get(user_id, ([], []))
         for shift in report.shifts:
             if shift.clock_in is not None:
                 shift.expected_start = expected_start(
                     starts, shift.clock_in.pressed_at,
+                )
+            if shift.clock_out is not None:
+                # La más cercana, igual que la entrada (expected_start
+                # sirve para cualquier lista de horas).
+                shift.expected_end = expected_start(
+                    ends, shift.clock_out.pressed_at,
                 )
         report.events = [
             e for e in user_events if start <= e.pressed_at < end

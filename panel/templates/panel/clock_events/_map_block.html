@@ -1,0 +1,25 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/clock_events/_map_block.html #}
+{% comment %}
+H24 (S129). Mapa de la pulsación de fichaje dentro del panel (ver
+panel/static/panel/js/clock_map.js). Va dentro de un elemento con
+data-clk-map-root. Carga la API de Google Maps (misma clave que los
+presupuestos) si hay clave y todavía no está cargada.
+{% endcomment %}
+{% load static %}
+<div class="clk-map-wrap d-none mb-3">
+    <div class="d-flex justify-content-between align-items-center mb-1">
+        <div class="small fw-semibold clk-map-title"></div>
+        <button type="button" class="btn btn-sm btn-outline-secondary py-0 clk-map-close">Cerrar mapa</button>
+    </div>
+    <div class="clk-map rounded border" style="height: 320px;"></div>
+</div>
+{% if google_maps_api_key %}
+<script>
+if (!(window.google && window.google.maps && window.google.maps.importLibrary)) {
+{# Maps JS API -- Dynamic Library Import (mismo patrón que budgets/detail.html). #}
+(g=>{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={});var d=b.maps||(b.maps={}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`https://maps.${c}apis.com/maps/api/js?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))})
+({key: "{{ google_maps_api_key|escapejs }}", v: "weekly"});
+}
+</script>
+{% endif %}
+<script src="{% static 'panel/js/clock_map.js' %}"></script>

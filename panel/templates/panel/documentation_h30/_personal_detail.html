@@ -417,6 +417,40 @@ H30 (S128), punto 6: tablas `stack-mobile` -- en el móvil cada fila es una tarj
         </div>
     </div>
 
+    {% if can_view_clock_events %}
+    {% comment %}
+    H24 (S129), Miguel Ángel: "no estaría de más tampoco que en la propia
+    ficha del trabajador aparezcan los fichajes". El mismo detalle que
+    la pestaña Fichajes (panel/clock_events/_detail.html), cargado al
+    abrir la sección, con su mapa y sus fechas (por defecto, este mes).
+    {% endcomment %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseLaboralFichajes">
+                Fichajes
+            </button>
+        </h2>
+        <div id="collapseLaboralFichajes" class="accordion-collapse collapse" data-bs-parent="#personalLaboralAccordion">
+            <div class="accordion-body" data-clk-map-root data-map-id="{{ google_maps_map_id }}">
+                <form class="d-flex flex-wrap gap-2 align-items-end mb-2" id="personClockFilters"
+                      hx-get="{% url 'panel:clock_events_detail' person.pk %}" hx-target="#personClockDetail"
+                      hx-trigger="change, show.bs.collapse once from:#collapseLaboralFichajes">
+                    <div>
+                        <label class="form-label small mb-0" for="personClockFrom">Desde</label>
+                        <input type="date" class="form-control form-control-sm" id="personClockFrom" name="date_from" value="{{ clock_date_from|date:'Y-m-d' }}">
+                    </div>
+                    <div>
+                        <label class="form-label small mb-0" for="personClockTo">Hasta</label>
+                        <input type="date" class="form-control form-control-sm" id="personClockTo" name="date_to" value="{{ clock_date_to|date:'Y-m-d' }}">
+                    </div>
+                </form>
+                {% include "panel/clock_events/_map_block.html" %}
+                <div id="personClockDetail"><div class="text-muted small">Cargando…</div></div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <div class="accordion-item">
         <h2 class="accordion-header">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseLaboralDietas">

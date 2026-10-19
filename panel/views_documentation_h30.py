@@ -1912,7 +1912,24 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         all_document_types = DocumentTypeCatalog.objects.filter(
             is_active=True, domain__in=["PERSONAL", "BOTH"],
         ).order_by("family", "label")
+        # H24 (S129): fichajes en la ficha, solo para quien ve la pestaña
+        # Fichajes (llevan posiciones GPS).
+        import os as _os_clk
+        from django.utils import timezone as _tz_clk
+        _today_clk = _tz_clk.localdate()
+        can_view_clock = request.user.company_user.role in (
+            CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR,
+            CompanyUser.ROLE_WORKSHOPBOSS,
+        )
         return render(request, "panel/documentation_h30/_personal_detail.html", {
+            "can_view_clock_events": can_view_clock,
+            "clock_date_from": _today_clk.replace(day=1),
+            "clock_date_to": _today_clk,
+            "google_maps_api_key": (
+                _os_clk.environ.get("GOOGLE_MAPS_API_KEY", "")
+                if can_view_clock else ""
+            ),
+            "google_maps_map_id": _os_clk.environ.get("GOOGLE_MAPS_MAP_ID", ""),
             "person": person, "current": current, "obsolete": obsolete,
             "families": families,
             "laboral_documents": laboral_documents,

@@ -4,10 +4,13 @@ H24 (S129). Tabla de Fichajes, hecha sobre la de Vacaciones: casilla,
 aviso y "Apellidos, Nombre" fijos a la izquierda, una fila por
 trabajador con lo del intervalo elegido. Todo llega calculado desde la
 vista (hr_calendar.clock_report).
+S129, Miguel Ángel ("metemos una cantidad de información que no
+sirve"): nombre, fichajes, llegadas tarde, salidas antes, incidencias
+(fichaje sin su pareja) y el último día con su entrada, salida y
+municipio. Sin horas ni DNI: eso queda para el detalle y el Excel.
 {% endcomment %}
 <div id="clk-fragment-state" class="d-none"
      data-count="{{ rows|length }}"
-     data-total="{{ total_label }}"
      data-sort-active="{% if sort_active %}1{% endif %}"></div>
 <span id="clk-sort-inputs" class="d-none">
     <input type="hidden" name="sort" value="{{ current_sort }}">
@@ -18,7 +21,7 @@ vista (hr_calendar.clock_report).
             <th class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input" id="clk-check-all" title="Seleccionar todos los que cumplen el filtro actual"></th>
             <th class="sticky-col sticky-col-2"></th>
             {% for column in sort_columns %}
-            <th class="{% if column.key == 'person' %}sticky-col sticky-col-3 sticky-col-last{% elif column.key == 'events' or column.key == 'hours' or column.key == 'late' or column.key == 'issues' %}text-end{% endif %}">
+            <th class="{% if column.key == 'person' %}sticky-col sticky-col-3 sticky-col-last{% elif column.key == 'events' or column.key == 'late' or column.key == 'early' or column.key == 'issues' %}text-end{% endif %}"{% if column.key == 'issues' %} title="Incidencia: una entrada sin su salida o una salida sin su entrada (un fichaje olvidado)"{% elif column.key == 'late' %} title="Entradas después de la hora del horario, de las que tienen horario con el que compararlas. En rojo, si es costumbre: la mitad de los días o más (y al menos 3)"{% elif column.key == 'early' %} title="Salidas antes de la hora del horario, de las que tienen horario con el que compararlas. En rojo, si es costumbre: la mitad de los días o más (y al menos 3)"{% endif %}>
                 <a href="#" class="text-decoration-none text-dark"
                    hx-get="{% url 'panel:clock_events_results' %}"
                    hx-target="#clk-results"
@@ -29,6 +32,9 @@ vista (hr_calendar.clock_report).
                 </a>
             </th>
             {% endfor %}
+            <th>Entrada</th>
+            <th>Salida</th>
+            <th>Municipio</th>
         </tr>
     </thead>
     <tbody>
@@ -46,15 +52,22 @@ vista (hr_calendar.clock_report).
                    hx-target="#clk-detail-container">{{ row.label }}</a>
             </td>
             <td class="text-end" data-label="Fichajes">{{ row.report.events|length }}</td>
-            <td class="text-end fw-semibold" data-label="Horas">{{ row.report.total_label }}</td>
-            <td class="text-end{% if row.report.late_arrivals %} text-danger-emphasis fw-semibold{% endif %}" data-label="Llegadas tarde" title="Entradas después de la hora del horario, de las que tienen horario con el que compararlas">{{ row.report.punctuality_label|default:"—" }}</td>
+            <td class="text-end{% if row.report.habitually_late %} text-danger fw-bold{% endif %}" data-label="Entra tarde"{% if row.report.habitually_late %} title="Llega tarde por costumbre"{% endif %}>{% if row.report.habitually_late %}<i class="bi bi-exclamation-circle-fill me-1"></i>{% endif %}{{ row.report.punctuality_label|default:"—" }}</td>
+            <td class="text-end{% if row.report.habitually_early %} text-danger fw-bold{% endif %}" data-label="Sale antes"{% if row.report.habitually_early %} title="Sale antes de hora por costumbre"{% endif %}>{% if row.report.habitually_early %}<i class="bi bi-exclamation-circle-fill me-1"></i>{% endif %}{{ row.report.early_label|default:"—" }}</td>
             <td class="text-end{% if row.report.issues %} text-warning-emphasis fw-semibold{% endif %}" data-label="Incidencias">{{ row.report.issues|length }}</td>
-            <td data-label="Último fichaje">
-                {% if row.report.last_event %}{{ row.report.last_event.get_kind_display }} · {{ row.report.last_event.pressed_at|date:"d/m/Y H:i" }}{% if row.report.last_event.municipality %} · {{ row.report.last_event.municipality }}{% endif %}{% elif not row.has_account %}<span class="text-muted">Sin usuario del panel</span>{% else %}—{% endif %}
-            </td>
+            {% with last=row.report.last_day %}
+            {% if last %}
+            <td data-label="Último día">{{ last.day|date:"d/m/Y" }}</td>
+            <td data-label="Entrada">{% if last.clock_in %}{{ last.clock_in.pressed_at|time:"H:i" }}{% else %}<span class="text-warning-emphasis">—</span>{% endif %}</td>
+            <td data-label="Salida">{% if last.clock_out %}{{ last.clock_out.pressed_at|time:"H:i" }}{% if last.clock_out.pressed_at|date:"Ymd" != last.day|date:"Ymd" %} <span class="text-muted">({{ last.clock_out.pressed_at|date:"d/m" }})</span>{% endif %}{% else %}<span class="text-warning-emphasis">—</span>{% endif %}</td>
+            <td data-label="Municipio">{{ last.last.municipality|default:"—" }}</td>
+            {% else %}
+            <td data-label="Último día" colspan="4">{% if not row.has_account %}<span class="text-muted">Sin usuario del panel</span>{% else %}—{% endif %}</td>
+            {% endif %}
+            {% endwith %}
         </tr>
         {% empty %}
-        <tr><td colspan="8" class="text-muted small py-3">No se encontró personal.</td></tr>
+        <tr><td colspan="11" class="text-muted small py-3">No se encontró personal.</td></tr>
         {% endfor %}
     </tbody>
 </table>
