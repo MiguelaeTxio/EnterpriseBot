@@ -54,6 +54,7 @@ NO_TYPE = "NINGUNO"
 MIN_TEXT_CHARS = 200
 MAX_TEXT_CHARS = 12000
 MAX_PDF_PAGES = 3
+IMAGE_DPI = 150
 
 # Machine fields each type states officially. Plate everywhere it is
 # printed as the vehicle's own registration; chassis and make/model
@@ -171,8 +172,15 @@ def _ask_gemini(prompt, text, data, filename):
         else:
             return None
         if mime == "application/pdf":
-            data = _first_pages(data)
-        contents = [Part.from_bytes(data=data, mime_type=mime), prompt]
+            images = _first_pages_as_images(data)
+            contents = (
+                [Part.from_bytes(data=image, mime_type="image/jpeg")
+                 for image in images] + [prompt]
+                if images else
+                [Part.from_bytes(data=data, mime_type=mime), prompt]
+            )
+        else:
+            contents = [Part.from_bytes(data=data, mime_type=mime), prompt]
     client = get_gemini_client()
     # S130: "Deadline expired" (504) real con PDFs escaneados largos en
     # la primera pasada; un reintento, y el PDF ya va recortado.
@@ -200,25 +208,26 @@ def _ask_gemini(prompt, text, data, filename):
     return None
 
 
-def _first_pages(data):
+def _first_pages_as_images(data):
     """
-    First MAX_PDF_PAGES pages of a PDF: the plate, chassis and insurer
-    are always on the first pages, and long scanned PDFs made Gemini
-    time out (504 DEADLINE_EXCEEDED, S130).
+    First MAX_PDF_PAGES pages of a PDF as JPEG images at IMAGE_DPI.
+    Plate, chassis and insurer are always on the first pages; sending
+    the scanned PDF itself made Gemini time out (504 DEADLINE_EXCEEDED,
+    S130), even cut to three pages. Rendering is not OCR. Returns []
+    when the PDF cannot be opened (then the PDF goes as it is).
     ---
-    Primeras MAX_PDF_PAGES páginas de un PDF: matrícula, bastidor y
-    aseguradora están siempre al principio, y los PDF escaneados largos
-    hacían que Gemini no respondiera a tiempo (S130).
+    Primeras MAX_PDF_PAGES páginas de un PDF como JPEG a IMAGE_DPI.
+    Mandar el PDF escaneado hacía que Gemini no respondiera a tiempo
+    incluso recortado a tres páginas (S130). Pintar no es OCR.
     """
     try:
         source = fitz.open(stream=data, filetype="pdf")
-        if source.page_count <= MAX_PDF_PAGES:
-            return data
-        excerpt = fitz.open()
-        excerpt.insert_pdf(source, from_page=0, to_page=MAX_PDF_PAGES - 1)
-        return excerpt.tobytes()
-    except Exception:  # noqa: BLE001 -- sin recorte, el PDF tal cual
-        return data
+        return [
+            source[index].get_pixmap(dpi=IMAGE_DPI).tobytes("jpeg")
+            for index in range(min(source.page_count, MAX_PDF_PAGES))
+        ]
+    except Exception:  # noqa: BLE001 -- sin imágenes, el PDF tal cual
+        return []
 
 
 def normalize_plate(value):
