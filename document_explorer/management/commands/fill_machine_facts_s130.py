@@ -13,7 +13,11 @@ seguro; del más reciente al más antiguo) con el mismo
 campos VACÍOS -- nunca sobrescribe. Se para en cuanto tiene matrícula.
 Un documento que no parece de su tipo no se usa.
 
-Sin --apply solo informa de lo que haría. --code limita a un centro.
+Sin --apply solo informa de lo que haría. --code limita a uno o varios
+centros (separados por comas). Si el documento resulta ser de otro tipo
+que también acredita los mismos datos (una "ficha técnica" que es una
+ITV, un permiso que es una autorización provisional), se usan los datos
+según el tipo real; si no, no se usa.
 Verboso (com-standards 0bis/0ter): cada línea va a pantalla y al
 --log-file con flush, con latido por centro y ETA con hora de fin.
 """
@@ -77,7 +81,11 @@ class Command(BaseCommand):
             Q(plate="") | Q(plate__isnull=True),
         )
         if options["code"]:
-            machines = machines.filter(code=options["code"].upper())
+            codes = [
+                code.strip().upper()
+                for code in options["code"].split(",") if code.strip()
+            ]
+            machines = machines.filter(code__in=codes)
         machines = list(machines.order_by("code"))
         total = len(machines)
         self._log("%s -- %d centros de gasto sin matrícula" % (
@@ -142,15 +150,20 @@ class Command(BaseCommand):
             if not result:
                 self._log("%s: %s sin lectura" % (machine.code, entry.name))
                 continue
-            if result.get("type_mismatch"):
-                self._log("%s: %s parece %s, no se usa" % (
-                    machine.code, entry.name,
-                    result["type_mismatch"]["label"],
+            facts_type = entry.document_type.code
+            mismatch = result.get("type_mismatch")
+            if mismatch:
+                if mismatch["code"] not in MACHINE_FACTS_BY_TYPE:
+                    self._log("%s: %s parece %s, no se usa" % (
+                        machine.code, entry.name, mismatch["label"],
+                    ))
+                    continue
+                facts_type = mismatch["code"]
+                self._log("%s: %s parece %s, datos según ese tipo" % (
+                    machine.code, entry.name, mismatch["label"],
                 ))
-                continue
             outcome = apply_machine_facts(
-                machine, entry.document_type.code, result["facts"],
-                save=apply,
+                machine, facts_type, result["facts"], save=apply,
             )
             if outcome["filled"] or outcome["different"]:
                 self._log("%s: %s -> rellena %s; distinto %s" % (
