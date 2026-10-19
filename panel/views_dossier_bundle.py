@@ -378,5 +378,6 @@ class DossierBundleEmailView(DocsUploadAccessMixin, View):
         )
         response["X-Bundle-Skipped"] = json.dumps(skipped)
         response["X-Bundle-Size"] = str(size)
-        response["X-Bundle-Too-Big"] = "1" if size > SIZE_WARNING_BYTES else "0"
+        too_big = size > SIZE_WARNING_BYTES
+        response["X-Bundle-Too-Big"] = "1" if too_big else "0"
         return response
