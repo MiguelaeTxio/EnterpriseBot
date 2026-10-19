@@ -814,6 +814,7 @@ class NoticeUploadView(DocsUploadAccessMixin, View):
                     ),
                     subject_label=_person_label(person),
                     uploaded_by=request.user.company_user,
+                    check_content=True,
                 )
         except SubjectUploadError as exc:
             return JsonResponse(
@@ -823,6 +824,13 @@ class NoticeUploadView(DocsUploadAccessMixin, View):
         message = "%s subido a la ficha de %s." % (
             doc_type.label, _person_label(person),
         )
+        # S130: aviso si el contenido parece de otro tipo.
+        mismatch = (result.get("check") or {}).get("type_mismatch")
+        if mismatch:
+            message += (
+                " Ojo: el documento parece %s, no %s. Revísalo en la "
+                "ficha (Cambiar tipo)." % (mismatch["label"], doc_type.label)
+            )
         warning = result.get("warning")
         if warning:
             message += (

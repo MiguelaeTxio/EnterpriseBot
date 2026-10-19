@@ -45,6 +45,31 @@
                     + escapeHtml(u.entry_name) + '. Si la necesita (un contrato, para colocarlo en su periodo), '
                     + 'bórralo y vuelve a subirlo escribiendo la fecha.</div>';
             }
+            // S130: el contenido parece de otro tipo -- aviso con botón
+            // para corregirlo sin salir del modal (Cambiar tipo).
+            if (u.type_mismatch) {
+                html += '<div class="alert alert-warning py-1 px-2 small mb-1">⚠ ' + escapeHtml(u.entry_name)
+                    + ' parece <strong>' + escapeHtml(u.type_mismatch.label) + '</strong>'
+                    + (u.type_mismatch.description ? ' (' + escapeHtml(u.type_mismatch.description) + ')' : '')
+                    + ', no el tipo elegido. '
+                    + '<button type="button" class="btn btn-sm btn-warning py-0 ms-1" data-change-type-entry="'
+                    + escapeHtml(u.entry_id) + '" data-change-type-code="' + escapeHtml(u.type_mismatch.code) + '">'
+                    + 'Cambiar a ' + escapeHtml(u.type_mismatch.label) + '</button></div>';
+            }
+            // S130: datos del centro de gasto tomados del documento.
+            if (u.filled && Object.keys(u.filled).length) {
+                html += '<div class="alert alert-info py-1 px-2 small mb-1">Datos tomados del documento: '
+                    + Object.keys(u.filled).map(function (k) {
+                        return escapeHtml(k) + ' <strong>' + escapeHtml(u.filled[k]) + '</strong>';
+                    }).join(', ') + '.</div>';
+            }
+            if (u.different && Object.keys(u.different).length) {
+                html += '<div class="alert alert-warning py-1 px-2 small mb-1">El documento no coincide con la ficha: '
+                    + Object.keys(u.different).map(function (k) {
+                        return escapeHtml(k) + ' en la ficha ' + escapeHtml(u.different[k].current)
+                            + ', en el documento <strong>' + escapeHtml(u.different[k].read) + '</strong>';
+                    }).join('; ') + '. No se ha cambiado nada: revísalo.</div>';
+            }
             if (u.warning) {
                 html += '<div class="alert alert-warning py-1 px-2 small mb-1">⚠ Escribiste ' + escapeHtml(u.warning.typed_date)
                     + ', el sistema (' + escapeHtml(u.warning.source) + ') lee ' + escapeHtml(u.warning.system_date) + '. Verifica.</div>';
@@ -98,8 +123,27 @@
                 return;
             }
             if (onUploaded && onUploaded(data)) { return; }
-            const missingDate = uploaded.some(function (u) { return !u.date_label && u.needs_date; });
-            if (missingDate && button) {
+            // S130: botones "Cambiar a ..." del aviso de tipo.
+            resultDiv.querySelectorAll('[data-change-type-entry]').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    const body = new FormData();
+                    body.append('document_type_code', btn.dataset.changeTypeCode);
+                    btn.disabled = true;
+                    fetch('/panel/documentacion/documento/' + btn.dataset.changeTypeEntry + '/cambiar-tipo/', {
+                        method: 'POST', body: body, headers: {'X-CSRFToken': csrfToken},
+                    }).then(function (r) { return r.json(); }).then(function (res) {
+                        btn.closest('.alert').className = 'alert py-1 px-2 small mb-1 alert-' + (res.ok === false ? 'danger' : 'success');
+                        btn.closest('.alert').textContent = res.ok === false
+                            ? (res.error || 'No se pudo cambiar el tipo.')
+                            : 'Tipo cambiado. Pulsa Aceptar para ver la ficha.';
+                    }).catch(function () { btn.disabled = false; });
+                });
+            });
+            const needsReview = uploaded.some(function (u) {
+                return (!u.date_label && u.needs_date) || u.type_mismatch
+                    || (u.different && Object.keys(u.different).length);
+            });
+            if (needsReview && button) {
                 form.dataset.busy = '1';
                 button.disabled = false;
                 button.innerHTML = 'Aceptar';

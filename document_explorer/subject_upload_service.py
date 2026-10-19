@@ -291,10 +291,39 @@ def _queue_entry_hooks(subject, document_type, entry):
         queue_contract_refresh(subject, document_type.code, entry)
 
 
+def _check_uploaded_document(subject, document_type, data, filename, text):
+    """
+    S130. Type check and, for machines, the data the document states
+    (document_check_service). Returns {"type_mismatch": ..., "filled":
+    {...}, "different": {...}}; empty on failure.
+    ---
+    S130. Comprobación de tipo y, en máquinas, datos que acredita el
+    documento. Vacío si algo falla: nunca para la subida.
+    """
+    from document_explorer.document_check_service import (
+        apply_machine_facts, check_document,
+    )
+
+    is_machine = isinstance(subject, MachineAsset)
+    result = check_document(
+        document_type=document_type, is_machine=is_machine, data=data,
+        filename=filename, text=text,
+    )
+    if not result:
+        return {}
+    check = {"type_mismatch": result.get("type_mismatch")}
+    # Con el tipo en duda no se toman datos del documento.
+    if is_machine and not check["type_mismatch"] and result.get("facts"):
+        check.update(apply_machine_facts(
+            subject, document_type.code, result["facts"],
+        ))
+    return check
+
+
 def upload_subject_document(
     *, subject, domain_content_type, document_type, data, original_filename,
     typed_date, subject_label, uploaded_by=None, typed_issue_date=None,
-    filename_date=None,
+    filename_date=None, check_content=False,
 ):
     """
     Ejecuta el flujo completo. Devuelve un dict:
@@ -317,6 +346,9 @@ def upload_subject_document(
     inicio). Manda sobre la de Cloud Vision/Gemini, igual que
     `typed_date` para la caducidad -- en S122 el OCR cogía la fecha de
     nacimiento de los contratos y los dejaba fuera de su periodo.
+
+    `check_content` (S130): comprueba el contenido contra el tipo
+    elegido y toma los datos que acredita (document_check_service).
 
     `filename_date` (H30 S127): fecha del nombre de archivo cuando se
     conoce la del propio documento (documentos sacados de un dossier,
@@ -407,6 +439,18 @@ def upload_subject_document(
     if update_fields:
         entry.save(update_fields=update_fields)
 
+    # S130: comprobación del contenido -- aviso si parece de otro tipo
+    # y, en máquinas, relleno de los datos vacíos (matrícula, bastidor,
+    # marca/modelo, seguro) que este tipo acredita. Nunca para la
+    # subida (document_check_service).
+    # Solo cuando el tipo lo ha elegido una persona (`check_content`):
+    # ficha y Avisos; no en circulares, EPIs ni la Bandeja (ya leída).
+    check = (
+        _check_uploaded_document(
+            subject, document_type, data, original_filename, ocr_text,
+        ) if check_content else {}
+    )
+
     # H30 (S122): aquí se creaban las 3 alertas 30/15/7 de H30/S50. Ya
     # no: los avisos se calculan en vivo desde los requisitos de
     # documentación y el ámbito de cada supervisor
@@ -430,7 +474,7 @@ def upload_subject_document(
         _queue_entry_hooks(subject, document_type, entry)
         return {
             "entry": entry, "warning": warning,
-            "superseded_count": superseded_count,
+            "superseded_count": superseded_count, "check": check,
         }
     siblings_qs = DocumentIndexEntry.objects.filter(
         bucket=BUCKET, document_type=document_type,
@@ -485,5 +529,5 @@ def upload_subject_document(
     _queue_entry_hooks(subject, document_type, entry)
     return {
         "entry": entry, "warning": warning,
-        "superseded_count": superseded_count,
+        "superseded_count": superseded_count, "check": check,
     }

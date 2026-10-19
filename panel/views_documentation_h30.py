@@ -6019,7 +6019,7 @@ class SubjectDocumentUploadView(DocsUploadAccessMixin, View):
                     document_type=document_type, data=data,
                     original_filename=uploaded_file.name,
                     typed_date=typed_date, subject_label=subject_label,
-                    typed_issue_date=typed_issue_date,
+                    typed_issue_date=typed_issue_date, check_content=True,
                 )
             except SubjectUploadError as exc:
                 errors.append({"file": uploaded_file.name, "error": str(exc)})
@@ -6047,6 +6047,17 @@ class SubjectDocumentUploadView(DocsUploadAccessMixin, View):
                     or document_type.is_cumulative
                 ),
             }
+            # S130: comprobación del contenido (tipo y datos tomados).
+            check = result.get("check") or {}
+            if check.get("type_mismatch"):
+                entry_result["type_mismatch"] = check["type_mismatch"]
+            if check.get("filled"):
+                entry_result["filled"] = check["filled"]
+            if check.get("different"):
+                entry_result["different"] = {
+                    label: {"current": pair[0], "read": pair[1]}
+                    for label, pair in check["different"].items()
+                }
             if result["warning"]:
                 entry_result["warning"] = {
                     "system_date": result["warning"]["system_date"].isoformat(),
