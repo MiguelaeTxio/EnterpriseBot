@@ -164,14 +164,12 @@
                             {% endif %}
                         </td>
                         <td class="text-center">
-                            {% if cu != company_user %}
+                            {# S130: también la propia cuenta (rol y activo bloqueados en la edición). #}
                             <a href="{% url 'panel:user_edit' cu.pk %}"
                                class="btn btn-sm btn-outline-secondary">
                                 <i class="bi bi-pencil me-1"></i>Editar
                             </a>
-                            {% else %}
-                            <span class="text-muted">Tu cuenta</span>
-                            {% endif %}
+                            {% if cu == company_user %}<div class="small text-muted">Tu cuenta</div>{% endif %}
                         </td>
                     </tr>
                     {% endfor %}

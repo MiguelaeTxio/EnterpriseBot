@@ -417,14 +417,16 @@ class CompanyUserListView (SupervisorAccessMixin ,ListView ):
 class CompanyUserUpdateView (SupervisorAccessMixin ,UpdateView ):
     """
     Allows an ADMIN to update the role, active status and workday schedule
-    of a CompanyUser belonging to the same company.
+    of a CompanyUser belonging to the same company. The own account can be
+    edited too, except its role and active status (S130).
     Prevents editing users from other companies.
     The workday_schedule queryset is restricted to the authenticated
     company's own schedules via get_form() — no schedule from another
     company can be selected.
     ---
     Permite a un ADMIN actualizar el rol, el estado activo y el horario de
-    jornada de un CompanyUser de la misma empresa.
+    jornada de un CompanyUser de la misma empresa. También la propia cuenta,
+    salvo su rol y su estado activo (S130).
     Impide editar usuarios de otras empresas.
     El queryset de workday_schedule se restringe a los horarios de la empresa
     autenticada mediante get_form() — ningún horario de otra empresa puede
@@ -480,7 +482,23 @@ class CompanyUserUpdateView (SupervisorAccessMixin ,UpdateView ):
             "class": "form-control",
             "placeholder": "12345678A",
         })
+        # S130: la propia cuenta se puede editar (base, horario, DNI...),
+        # pero no el propio rol ni el estado activo: un administrador no
+        # puede quitarse el acceso ni desactivarse por error. Un campo
+        # disabled ignora lo que llegue por POST y conserva su valor.
+        if self ._is_own_account ():
+            form .fields ["role"].disabled =True 
+            form .fields ["is_active"].disabled =True 
         return form 
+
+    def _is_own_account (self ):
+        """
+        True when the account being edited is the logged-in user's (S130).
+        ---
+        True si la cuenta que se edita es la del propio usuario (S130).
+        """
+        obj =getattr (self ,"object",None )or self .get_object ()
+        return obj .pk ==self .request .user .company_user .pk 
 
     def post (self ,request ,*args ,**kwargs ):
         """
@@ -644,6 +662,7 @@ class CompanyUserUpdateView (SupervisorAccessMixin ,UpdateView ):
         context ["company_user"]=self .request .user .company_user 
         context ["own_presence"]=self ._get_own_presence ()
         context ["active_nav"]="users"
+        context ["is_own_account"]=self ._is_own_account ()
         from ivr_config .models import Contact as _Contact 
         _contact =_Contact .objects .filter (
         company =self .object .company ,

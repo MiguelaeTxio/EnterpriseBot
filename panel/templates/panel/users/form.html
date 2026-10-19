@@ -87,6 +87,12 @@
                             de la empresa.<br>
                             <strong>Operador:</strong> solo puede gestionar su propia presencia.
                         </div>
+                        {% if is_own_account %}
+                        <div class="form-text text-warning-emphasis">
+                            <i class="bi bi-lock me-1"></i>Es tu cuenta: tu rol y tu estado activo
+                            no se pueden cambiar desde aquí. Pídeselo a otro administrador.
+                        </div>
+                        {% endif %}
                     </div>
 
                     <!-- is_active field — visible for all roles -->
