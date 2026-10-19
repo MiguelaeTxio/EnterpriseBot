@@ -1122,6 +1122,12 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
         ctx["epi_batch_templates"] = EpiDeliveryBatchTemplate.objects.prefetch_related(
             "items",
         ).order_by("name")
+        # H31 (S129): exportar a Excel con plantilla, mismos roles que
+        # la exportación de partes (lleva DNI, dirección y n.º de SS).
+        ctx["can_export_personal"] = request.user.company_user.role in (
+            CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR,
+            CompanyUser.ROLE_WORKSHOPBOSS,
+        )
         return render(request, "panel/documentation_h30/_personal_pane.html", ctx)
 
 

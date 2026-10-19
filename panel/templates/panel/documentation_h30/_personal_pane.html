@@ -108,6 +108,12 @@ pantalla completa aparte, no un fragmento htmx de este pane.
             <div class="d-flex align-items-center gap-2 mb-1">
                 <strong class="small"><span id="person-mass-count">0</span> seleccionados</strong>
                 <button type="button" class="btn btn-sm btn-outline-secondary" id="person-mass-clear">Limpiar</button>
+                {% if can_export_personal %}
+                {# H31 (S129): exportar a Excel con plantilla -- los marcados o, sin marcar, todo el listado filtrado. #}
+                <button type="button" class="btn btn-sm btn-outline-success ms-auto" data-bs-toggle="modal" data-bs-target="#personalExportModal">
+                    <i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel
+                </button>
+                {% endif %}
             </div>
             <div class="row g-1">
                 <div class="col-6 border-end pe-2">
@@ -270,6 +276,7 @@ en negrita arriba, dentro del área con esquinas redondeadas) --
 mismo criterio que ya se usa en "Grupos de reparto" y en el panel
 superior.
 {% endcomment %}
+{% if can_export_personal %}{% include "panel/documentation_h30/_personal_export_modal.html" %}{% endif %}
 <div class="border rounded p-2" id="personal-bottom-panel">
 <div class="row g-2 h-100" id="personal-results-row">
     <div class="col-lg-8 h-100" id="personal-results-col">

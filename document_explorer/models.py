@@ -4179,3 +4179,69 @@ class NoticeAppointmentRequest(models.Model):
         return "%s -- %s (%s)" % (
             self.person, self.document_type.code, self.requested_at,
         )
+
+
+class PersonalExportTemplate(models.Model):
+    """
+    H31 (S129). Named column set for the Excel export of the Personal
+    list (Documentación > Personal), same idea as the parte export
+    templates (work_order_processor.ExportTemplate): personal templates
+    per user, with one default, plus company-wide global ones that only
+    ADMIN creates or edits. The column keys live in
+    panel/views_personal_export.py (PERSONAL_EXPORT_COLUMNS).
+    ---
+    H31 (S129). Juego de columnas con nombre para exportar a Excel el
+    listado de Personal, mismo planteamiento que las plantillas de
+    exportación de partes: plantillas personales por usuario (una por
+    defecto) y globales de empresa, que solo crea o edita un ADMIN.
+    Las claves de columna están en panel/views_personal_export.py.
+    """
+
+    company = models.ForeignKey(
+        "ivr_config.Company",
+        on_delete=models.CASCADE,
+        related_name="personal_export_templates",
+        verbose_name="Empresa",
+    )
+    company_user = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="personal_export_templates",
+        verbose_name="Usuario",
+        help_text="Dueño de la plantilla personal; vacío en las globales.",
+    )
+    is_global = models.BooleanField(
+        default=False,
+        verbose_name="Plantilla global",
+        help_text="Visible para todos; solo un ADMIN la crea o edita.",
+    )
+    name = models.CharField(max_length=100, verbose_name="Nombre")
+    is_default = models.BooleanField(
+        default=False,
+        verbose_name="Por defecto",
+        help_text="La que sale elegida al abrir el modal (una por usuario).",
+    )
+    columns = models.JSONField(
+        default=list,
+        verbose_name="Columnas",
+        help_text="Claves de columna, en el orden del Excel.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Plantilla de exportación de personal"
+        verbose_name_plural = "Plantillas de exportación de personal"
+        ordering = ["-is_global", "-is_default", "name"]
+
+    def __str__(self):
+        return self.name
+
+    def save(self, *args, **kwargs):
+        if self.is_default and not self.is_global and self.company_user_id:
+            PersonalExportTemplate.objects.filter(
+                company_user_id=self.company_user_id, is_default=True,
+            ).exclude(pk=self.pk).update(is_default=False)
+        super().save(*args, **kwargs)

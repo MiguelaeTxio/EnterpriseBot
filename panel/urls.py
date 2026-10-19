@@ -91,6 +91,12 @@ from panel.views_lifting_accessories import (
     LiftingAccessoryTypeRemoveView,
     LiftingAccessoryTypeSaveView,
 )
+from panel.views_personal_export import (
+    PersonalExportTemplateDeleteView,
+    PersonalExportTemplateListView,
+    PersonalExportTemplateSaveView,
+    PersonalExportView,
+)
 from panel.views_documentation_h30 import (
     CalendarResultsFragmentView,
     CalendarTabFragmentView,
@@ -524,6 +530,11 @@ urlpatterns = [
     path("documentacion/personal/alta/", PersonalCreateView.as_view(), name="documentation_personal_create"),
     path("documentacion/personal/baja/", PersonalTerminateView.as_view(), name="documentation_personal_terminate"),
     path("documentacion/personal/reactivar/", PersonalReactivateView.as_view(), name="documentation_personal_reactivate"),
+    # H31 (S129): exportación a Excel del listado con plantillas -- panel/views_personal_export.py.
+    path("documentacion/personal/exportar/", PersonalExportView.as_view(), name="documentation_personal_export"),
+    path("documentacion/personal/exportar/plantillas/", PersonalExportTemplateListView.as_view(), name="documentation_personal_export_templates"),
+    path("documentacion/personal/exportar/plantillas/guardar/", PersonalExportTemplateSaveView.as_view(), name="documentation_personal_export_template_save"),
+    path("documentacion/personal/exportar/plantillas/<int:pk>/borrar/", PersonalExportTemplateDeleteView.as_view(), name="documentation_personal_export_template_delete"),
     # H31 (S100) Bloque 1, paso 1: extracción de datos de los documentos subidos para el alta.
     path("documentacion/personal/alta/extraer/", PersonalIntakeExtractView.as_view(), name="documentation_personal_intake_extract"),
     # H30 (S50): endpoint de solo-resultados -- el formulario de busqueda

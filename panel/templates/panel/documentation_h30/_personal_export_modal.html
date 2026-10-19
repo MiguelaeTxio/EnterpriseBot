@@ -1,0 +1,349 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_personal_export_modal.html #}
+{% comment %}
+H31 (S129). Exportar el listado de Personal a Excel con plantilla --
+Miguel Ángel: "ese botón de exportación a Excel debería de abrir un
+modal para elegir plantilla, etcétera, como tenemos hecho ya en otros
+sitios" (mismo planteamiento que la exportación de partes: plantillas
+propias con una por defecto, globales de empresa que solo edita un
+ADMIN, y "usar como base" para copiarlas). Exporta los marcados o, sin
+ninguno marcado, todo lo que enseña el listado con su búsqueda,
+filtros y orden. Vista: panel/views_personal_export.py.
+{% endcomment %}
+<div class="modal fade" id="personalExportModal" tabindex="-1" aria-labelledby="personalExportModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-bottom py-3">
+                <h6 class="modal-title fw-semibold" id="personalExportModalLabel">
+                    <i class="bi bi-file-earmark-excel me-2 text-success"></i><span id="pexp-title">Exportar personal a Excel</span>
+                </h6>
+                <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+
+            {# ---- Vista 1: exportar ---- #}
+            <div class="modal-body p-4" id="pexp-export-view">
+                <label class="form-label small fw-semibold" for="pexp-template">Plantilla de exportación</label>
+                <div class="d-flex gap-2 align-items-center mb-3">
+                    <select id="pexp-template" class="form-select form-select-sm">
+                        <option value="">Cargando plantillas…</option>
+                    </select>
+                    <button type="button" class="btn btn-outline-secondary btn-sm px-2 text-nowrap" id="pexp-manage" title="Gestionar plantillas">
+                        <i class="bi bi-gear"></i>
+                    </button>
+                </div>
+                <div id="pexp-summary" class="p-3 bg-light rounded border small d-none">
+                    <span class="text-muted">Columnas:</span> <span id="pexp-summary-columns"></span>
+                </div>
+                <div id="pexp-error" class="alert alert-danger small py-2 mt-3 mb-0 d-none"></div>
+            </div>
+
+            {# ---- Vista 2: gestionar plantillas ---- #}
+            <div class="modal-body p-4 d-none" id="pexp-manage-view">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="fw-semibold small">Plantillas</div>
+                    <button type="button" class="btn btn-success btn-sm" id="pexp-new"><i class="bi bi-plus-lg me-1"></i>Nueva plantilla</button>
+                </div>
+                <ul class="list-group list-group-flush small mb-3" id="pexp-template-list"></ul>
+
+                <div class="border rounded p-3 d-none" id="pexp-editor">
+                    <div class="fw-semibold small mb-2" id="pexp-editor-title">Nueva plantilla</div>
+                    <input type="hidden" id="pexp-edit-id" value="">
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold" for="pexp-edit-name">Nombre</label>
+                        <input type="text" id="pexp-edit-name" class="form-control form-control-sm" maxlength="100" placeholder="Ej. Teléfonos y correos">
+                    </div>
+                    <div class="mb-1 small fw-semibold">Columnas <span class="text-muted fw-normal">(el Excel las pone en el orden en que las marques)</span></div>
+                    <div class="d-flex flex-wrap gap-2 mb-2" id="pexp-edit-columns"></div>
+                    <div class="small text-muted mb-2">Orden: <span id="pexp-edit-order">—</span></div>
+                    <div class="form-check" id="pexp-edit-default-wrap">
+                        <input class="form-check-input" type="checkbox" id="pexp-edit-default">
+                        <label class="form-check-label small" for="pexp-edit-default">Plantilla por defecto</label>
+                    </div>
+                    <div class="form-check d-none" id="pexp-edit-global-wrap">
+                        <input class="form-check-input" type="checkbox" id="pexp-edit-global">
+                        <label class="form-check-label small" for="pexp-edit-global">Global de empresa (la ven todos; solo un administrador la edita)</label>
+                    </div>
+                    <div id="pexp-edit-error" class="alert alert-danger small py-1 px-2 mt-2 mb-0 d-none"></div>
+                    <div class="d-flex gap-2 justify-content-end mt-2">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="pexp-edit-cancel">Cancelar</button>
+                        <button type="button" class="btn btn-success btn-sm" id="pexp-edit-save"><i class="bi bi-check2 me-1"></i>Guardar</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer border-top py-3 d-flex justify-content-between align-items-center">
+                <small class="text-muted" id="pexp-count"></small>
+                <div class="d-flex gap-2" id="pexp-export-buttons">
+                    <button type="button" class="btn btn-outline-secondary btn-sm px-3" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-success btn-sm px-4" id="pexp-submit"><i class="bi bi-file-earmark-excel me-1"></i>Exportar</button>
+                </div>
+                <div class="d-none" id="pexp-manage-buttons">
+                    <button type="button" class="btn btn-outline-secondary btn-sm px-3" id="pexp-back"><i class="bi bi-arrow-left me-1"></i>Volver a exportar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    "use strict";
+    const LIST_URL = "{% url 'panel:documentation_personal_export_templates' %}";
+    const SAVE_URL = "{% url 'panel:documentation_personal_export_template_save' %}";
+    const DELETE_URL = "{% url 'panel:documentation_personal_export_template_delete' 0 %}";
+    const EXPORT_URL = "{% url 'panel:documentation_personal_export' %}";
+    const modalEl = document.getElementById("personalExportModal");
+    if (!modalEl) { return; }
+    const $ = function (id) { return document.getElementById(id); };
+
+    let templates = [];
+    let columns = [];
+    let isAdmin = false;
+    let editOrder = [];
+
+    function csrf() {
+        const m = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/);
+        return m ? decodeURIComponent(m[1]) : "";
+    }
+    function labelOf(key) {
+        const c = columns.find(function (x) { return x.key === key; });
+        return c ? c.label : key;
+    }
+    function selection() { return window.__personMassSelection || new Set(); }
+    function current() {
+        const id = parseInt($("pexp-template").value, 10);
+        return templates.find(function (t) { return t.id === id; }) || null;
+    }
+
+    // ---- Vista exportar ----
+    function showExportView() {
+        $("pexp-export-view").classList.remove("d-none");
+        $("pexp-manage-view").classList.add("d-none");
+        $("pexp-export-buttons").classList.remove("d-none");
+        $("pexp-manage-buttons").classList.add("d-none");
+        $("pexp-title").textContent = "Exportar personal a Excel";
+        updateCount();
+    }
+    function updateSummary() {
+        const tpl = current();
+        $("pexp-summary").classList.toggle("d-none", !tpl);
+        if (tpl) { $("pexp-summary-columns").textContent = tpl.columns.map(labelOf).join(", "); }
+    }
+    function updateCount() {
+        const marked = selection().size;
+        const listed = document.querySelectorAll("#personal-results .person-select-checkbox").length;
+        if (marked) {
+            $("pexp-count").textContent = marked === 1
+                ? "Se exportará el trabajador marcado."
+                : "Se exportarán los " + marked + " trabajadores marcados.";
+        } else {
+            $("pexp-count").textContent = (listed === 1
+                ? "Se exportará el trabajador del listado"
+                : "Se exportarán los " + listed + " trabajadores del listado") +
+                " (búsqueda y filtros actuales).";
+        }
+    }
+    function fillSelect(keepId) {
+        const sel = $("pexp-template");
+        sel.innerHTML = "";
+        templates.forEach(function (t) {
+            const opt = document.createElement("option");
+            opt.value = t.id;
+            opt.textContent = t.name + (t.is_global ? " (empresa)" : "") + (t.is_default ? " ★" : "");
+            sel.appendChild(opt);
+        });
+        const keep = templates.find(function (t) { return t.id === keepId; });
+        const def = templates.find(function (t) { return t.is_default; });
+        if (keep) { sel.value = keep.id; } else if (def) { sel.value = def.id; }
+        updateSummary();
+    }
+    function load(keepId) {
+        return fetch(LIST_URL, {credentials: "same-origin"})
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                templates = data.templates || [];
+                columns = data.columns || [];
+                isAdmin = !!data.is_admin;
+                fillSelect(keepId);
+                renderList();
+            })
+            .catch(function () {
+                $("pexp-template").innerHTML = "<option value=''>Error al cargar las plantillas</option>";
+            });
+    }
+
+    modalEl.addEventListener("show.bs.modal", function () {
+        $("pexp-error").classList.add("d-none");
+        showExportView();
+        load(current() ? current().id : null);
+    });
+    $("pexp-template").addEventListener("change", updateSummary);
+
+    $("pexp-submit").addEventListener("click", function () {
+        const tpl = current();
+        if (!tpl) {
+            $("pexp-error").textContent = "Elige una plantilla.";
+            $("pexp-error").classList.remove("d-none");
+            return;
+        }
+        let params;
+        if (selection().size) {
+            params = new URLSearchParams();
+            params.set("only_selected", "1");
+            params.set("selected_ids", Array.from(selection()).join(","));
+        } else {
+            const form = document.getElementById("personal-search-form");
+            params = new URLSearchParams(form ? new FormData(form) : undefined);
+        }
+        const sortEl = document.getElementById("personal-current-sort");
+        if (sortEl && sortEl.dataset.sort) {
+            params.set("sort", sortEl.dataset.sort);
+            params.set("dir", sortEl.dataset.dir || "asc");
+        }
+        params.set("template_pk", tpl.id);
+        window.location.href = EXPORT_URL + "?" + params.toString();
+        bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+    });
+
+    // ---- Vista gestionar ----
+    $("pexp-manage").addEventListener("click", function () {
+        $("pexp-export-view").classList.add("d-none");
+        $("pexp-manage-view").classList.remove("d-none");
+        $("pexp-export-buttons").classList.add("d-none");
+        $("pexp-manage-buttons").classList.remove("d-none");
+        $("pexp-title").textContent = "Plantillas de exportación de personal";
+        $("pexp-count").textContent = "";
+        $("pexp-editor").classList.add("d-none");
+        renderList();
+    });
+    $("pexp-back").addEventListener("click", showExportView);
+
+    function button(cls, icon, text, title, onClick) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "btn btn-sm py-0 px-2 " + cls;
+        b.title = title;
+        b.innerHTML = '<i class="bi ' + icon + '"></i>' + (text ? " " + text : "");
+        b.addEventListener("click", onClick);
+        return b;
+    }
+    function renderList() {
+        const list = $("pexp-template-list");
+        list.innerHTML = "";
+        templates.forEach(function (t) {
+            const li = document.createElement("li");
+            li.className = "list-group-item px-1 d-flex justify-content-between align-items-start gap-2";
+            const info = document.createElement("div");
+            const name = document.createElement("div");
+            name.className = "fw-semibold";
+            name.textContent = t.name + (t.is_default ? " ★" : "");
+            if (t.is_global) {
+                const badge = document.createElement("span");
+                badge.className = "badge bg-primary ms-1";
+                badge.textContent = "Empresa";
+                name.appendChild(badge);
+            }
+            const cols = document.createElement("div");
+            cols.className = "text-muted";
+            cols.textContent = t.columns.map(labelOf).join(", ");
+            info.appendChild(name);
+            info.appendChild(cols);
+            const actions = document.createElement("div");
+            actions.className = "d-flex gap-1 flex-shrink-0";
+            if (t.editable) {
+                actions.appendChild(button("btn-outline-secondary", "bi-pencil", "", "Editar", function () { openEditor(t, false); }));
+                actions.appendChild(button("btn-outline-danger", "bi-trash", "", "Borrar", function () { remove(t); }));
+            } else {
+                actions.appendChild(button("btn-outline-primary", "bi-copy", "Usar como base", "Crear una copia propia que puedes cambiar", function () { openEditor(t, true); }));
+            }
+            li.appendChild(info);
+            li.appendChild(actions);
+            list.appendChild(li);
+        });
+    }
+
+    function renderOrder() {
+        $("pexp-edit-order").textContent = editOrder.length ? editOrder.map(labelOf).join(" · ") : "—";
+    }
+    function openEditor(tpl, asCopy) {
+        const editing = tpl && !asCopy;
+        $("pexp-editor-title").textContent = editing ? "Editar plantilla" : (tpl ? "Nueva plantilla a partir de «" + tpl.name + "»" : "Nueva plantilla");
+        $("pexp-edit-id").value = editing ? tpl.id : "";
+        $("pexp-edit-name").value = editing ? tpl.name : (tpl ? tpl.name + " (copia)" : "");
+        editOrder = tpl ? tpl.columns.slice() : [];
+        const box = $("pexp-edit-columns");
+        box.innerHTML = "";
+        columns.forEach(function (c) {
+            const wrap = document.createElement("div");
+            wrap.className = "form-check";
+            const input = document.createElement("input");
+            input.type = "checkbox";
+            input.className = "form-check-input";
+            input.id = "pexp-col-" + c.key;
+            input.checked = editOrder.indexOf(c.key) !== -1;
+            input.addEventListener("change", function () {
+                if (input.checked) { editOrder.push(c.key); }
+                else { editOrder = editOrder.filter(function (k) { return k !== c.key; }); }
+                renderOrder();
+            });
+            const label = document.createElement("label");
+            label.className = "form-check-label small";
+            label.htmlFor = input.id;
+            label.textContent = c.label;
+            wrap.appendChild(input);
+            wrap.appendChild(label);
+            box.appendChild(wrap);
+        });
+        renderOrder();
+        const isGlobal = editing && tpl.is_global;
+        $("pexp-edit-default").checked = editing ? tpl.is_default : false;
+        $("pexp-edit-default-wrap").classList.toggle("d-none", isGlobal);
+        $("pexp-edit-global").checked = false;
+        $("pexp-edit-global-wrap").classList.toggle("d-none", !(isAdmin && !editing));
+        $("pexp-edit-error").classList.add("d-none");
+        $("pexp-editor").classList.remove("d-none");
+        $("pexp-edit-name").focus();
+    }
+    $("pexp-new").addEventListener("click", function () { openEditor(null, false); });
+    $("pexp-edit-cancel").addEventListener("click", function () { $("pexp-editor").classList.add("d-none"); });
+    $("pexp-edit-global").addEventListener("change", function () {
+        $("pexp-edit-default-wrap").classList.toggle("d-none", this.checked);
+    });
+
+    function showEditError(text) {
+        $("pexp-edit-error").textContent = text;
+        $("pexp-edit-error").classList.remove("d-none");
+    }
+    $("pexp-edit-save").addEventListener("click", function () {
+        const id = $("pexp-edit-id").value;
+        const payload = {
+            id: id ? parseInt(id, 10) : null,
+            name: $("pexp-edit-name").value.trim(),
+            columns: editOrder,
+            is_default: $("pexp-edit-default").checked,
+            is_global: $("pexp-edit-global").checked,
+        };
+        if (!payload.name) { showEditError("Falta el nombre."); return; }
+        if (!payload.columns.length) { showEditError("Elige al menos una columna."); return; }
+        fetch(SAVE_URL, {
+            method: "POST", credentials: "same-origin",
+            headers: {"Content-Type": "application/json", "X-CSRFToken": csrf()},
+            body: JSON.stringify(payload),
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (!data.ok) { showEditError(data.error || "No se ha podido guardar."); return; }
+            $("pexp-editor").classList.add("d-none");
+            load(data.id);
+        }).catch(function () { showEditError("Error de red al guardar."); });
+    });
+
+    function remove(tpl) {
+        if (!window.confirm("¿Borrar la plantilla «" + tpl.name + "»?")) { return; }
+        fetch(DELETE_URL.replace("/0/", "/" + tpl.id + "/"), {
+            method: "POST", credentials: "same-origin",
+            headers: {"X-CSRFToken": csrf()},
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (!data.ok) { window.alert(data.error || "No se ha podido borrar."); return; }
+            load(null);
+        });
+    }
+}());
+</script>
