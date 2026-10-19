@@ -49,12 +49,12 @@
         {# Disparador modal exportación — visible solo en Revisados     #}
         <button type="button"
                 id="btn-export-trigger"
-                class="btn btn-success btn-sm d-none"
+                class="btn btn-outline-success btn-sm d-none"
                 disabled
                 title="Selecciona partes revisados para descargar"
                 data-bs-toggle="modal"
                 data-bs-target="#exportModal">
-            <i class="bi bi-file-earmark-excel me-1"></i>Descargar selección
+            <i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel
         </button>
         <a href="{% url 'panel:work_order_upload' %}" class="btn btn-primary btn-sm">
             <i class="bi bi-upload me-1"></i>Subir PDF
