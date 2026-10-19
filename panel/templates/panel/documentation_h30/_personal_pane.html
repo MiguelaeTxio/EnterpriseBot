@@ -667,10 +667,6 @@ las filas de debajo se desplacen de verdad.
             resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">No hay personas seleccionadas.</div>';
             return;
         }
-        if (!jobPositionId) {
-            resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">Elige un requisito de documentación primero.</div>';
-            return;
-        }
         // H31 (S113), Miguel Ángel: "no hay ningún tipo de filtro.
         // Directamente se añaden [...] deberíamos de tener un modal
         // que diga: va a cambiar tantos trabajadores de requisito de
@@ -678,7 +674,11 @@ las filas de debajo se desplacen de verdad.
         // listado de quiénes son ya está siempre visible en el visor
         // de "Selección actual" -- no hace falta repetirlo aquí.
         const select = document.getElementById('person-mass-job-position');
-        const jobPositionName = select.options[select.selectedIndex].textContent;
+        // S130: la opción vacía ("Sin requisito (quitar)") quita el
+        // requisito, igual que en Maquinaria; el servidor ya lo admitía.
+        const jobPositionName = jobPositionId
+            ? select.options[select.selectedIndex].textContent
+            : '(ninguno -- se quita el requisito actual)';
         document.getElementById('personMassJobPositionConfirmText').textContent =
             `Vas a cambiar el requisito de documentación de ${selection.size} trabajador(es) a "${jobPositionName}".`;
         if (!personMassJobPositionModalInstance) {
@@ -703,7 +703,9 @@ las filas de debajo se desplacen de verdad.
         }).then((r) => r.json()).then((data) => {
             resultEl.innerHTML = '';
             if (data.ok) {
-                showPersonGroupToast(`${data.updated_count} persona(s) asignadas al requisito "${data.job_position_name}".`);
+                showPersonGroupToast(data.job_position_name
+                    ? `${data.updated_count} persona(s) asignadas al requisito "${data.job_position_name}".`
+                    : `Requisito quitado a ${data.updated_count} persona(s).`);
                 // H31 (S119): refresca la pestaña de Personal en el
                 // sitio (mismo endpoint htmx que la carga la primera
                 // vez) para que el listado ya muestre el cambio sin
