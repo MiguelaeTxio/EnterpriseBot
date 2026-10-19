@@ -339,6 +339,8 @@ las filas de debajo se desplacen de verdad.
 }
 </style>
 
+{# S130: selección guardada de Personal (ver PERSON_SELECTION_KEY). #}
+{{ saved_person_selection|json_script:"person-saved-selection" }}
 <script>
 (function () {
     // H31 (S75). Selección persistida en memoria de la sesión de chat
@@ -351,8 +353,20 @@ las filas de debajo se desplacen de verdad.
     // que envuelve todo esto) nunca se vuelve a repintar tras la
     // carga inicial "click once" -- solo #personal-results se
     // repinta en cada búsqueda/paginación.
+    // S130, Miguel Ángel: "los elegidos en personal no persisten, los
+    // centros de gasto sí". Igual que Centros de gasto (S117): la
+    // selección se guarda por usuario en PanelNavigationState
+    // ("personal_selection") y se restaura al cargar la pestaña tras
+    // un F5, al volver de una ficha o desde otro dispositivo.
+    const PERSON_SELECTION_KEY = 'personal_selection';
+    let savedPersonSelection = [];
+    try {
+        savedPersonSelection = JSON.parse(document.getElementById('person-saved-selection').textContent) || [];
+    } catch (e) { /* estado guardado ilegible: se empieza sin selección */ }
     if (window.__personMassSelection === undefined) {
-        window.__personMassSelection = new Set();
+        window.__personMassSelection = new Set(
+            savedPersonSelection.filter((item) => item && item.pk).map((item) => String(item.pk)),
+        );
     }
     const selection = window.__personMassSelection;
 
@@ -379,12 +393,31 @@ las filas de debajo se desplacen de verdad.
     // no siempre visible en la página/filtro actual). Se rellena al
     // marcar una casilla visible (data-name del propio checkbox) y al
     // cargar un grupo guardado (data-member-names de su fila).
-    const selectionNames = new Map();
-    // S130: el modal de correo conjunto del hub pinta estos nombres.
-    window.__personMassSelectionNames = selectionNames;
+    // S130: el Map vive en window, como la selección, para no perder
+    // los nombres al recargar la pestaña; se completa con lo guardado.
+    if (window.__personMassSelectionNames === undefined) {
+        window.__personMassSelectionNames = new Map();
+    }
+    const selectionNames = window.__personMassSelectionNames;
+    savedPersonSelection.forEach((item) => {
+        if (item && item.pk && item.name && !selectionNames.has(String(item.pk))) {
+            selectionNames.set(String(item.pk), item.name);
+        }
+    });
+    let lastSavedPersonSelection = JSON.stringify(savedPersonSelection);
+
+    function savePersonSelection() {
+        if (!window.EbNavState) return;
+        const payload = Array.from(selection).map((pk) => ({pk: pk, name: selectionNames.get(pk) || ''}));
+        const serialized = JSON.stringify(payload);
+        if (serialized === lastSavedPersonSelection) return;
+        lastSavedPersonSelection = serialized;
+        window.EbNavState.save(PERSON_SELECTION_KEY, {selection: payload});
+    }
 
     function refreshBar() {
         countEl.textContent = selection.size;
+        savePersonSelection();
         if (window.refreshDossierCounts) window.refreshDossierCounts();
         // H31 (S117): "Dar de baja" solo accionable con 1 o más marcados.
         const terminateBtn = document.getElementById('person-mass-terminate');

@@ -78,6 +78,7 @@ from panel.mixins import (
     CompanyUserRequiredMixin, DocsUploadAccessMixin,
 )
 from panel.models import PanelNavigationState
+from panel.navigation_persistence import get_saved_state_key
 from panel.views_task_photos import _build_photo_entries
 from spare_parts.gcs_service import download_bytes, generate_signed_url, upload_bytes
 from whatsapp.services import send_epi_delivery_whatsapp_confirmation
@@ -1103,6 +1104,13 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
         # notification_types de arriba, cargado una única vez en la
         # carga inicial de la pestaña.
         company = request.user.company_user.company
+        # S130: selección de personas guardada (como Centros de gasto).
+        saved_selection = get_saved_state_key(
+            request.user.company_user, "personal_selection", "selection", [],
+        )
+        ctx["saved_person_selection"] = (
+            saved_selection if isinstance(saved_selection, list) else []
+        )
         ctx["dossier_templates"] = company.dossier_templates.filter(
             scope=PersonalDossierTemplate.SCOPE_PERSONAL,
         ).order_by("name")
