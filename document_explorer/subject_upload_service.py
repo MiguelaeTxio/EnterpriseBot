@@ -74,7 +74,7 @@ from document_management.vigencia_service import (
 )
 from fleet.models import MachineAsset
 from ivr_config.models import Company
-from spare_parts.gcs_service import upload_bytes
+from spare_parts.gcs_service import download_bytes, upload_bytes
 
 BUCKET = "cgs_grupo_alvarez"
 
@@ -320,6 +320,169 @@ def _check_uploaded_document(subject, document_type, data, filename, text):
     return check
 
 
+def apply_substitution(
+    *, subject, domain_content_type, document_type, entry, subject_label,
+    company=None,
+):
+    """
+    Substitution of `entry` against the live documents of its type and
+    subject: the most recent stays current, the rest become obsolete
+    (never moved or deleted) with a DocumentSubstitutionLog row.
+    Returns how many were superseded. Extracted in S130 so the type
+    change can apply it too.
+    ---
+    Sustitución de `entry` frente a los documentos vivos de su tipo y
+    sujeto (el más reciente queda vigente, el resto obsoleto, nunca se
+    mueven ni borran). Devuelve cuántos ha sustituido. Extraída en S130
+    para aplicarla también al cambiar de tipo.
+    """
+    if document_type.is_cumulative:
+        return 0
+    if company is None:
+        company = _resolve_company()
+    superseded_count = 0
+    siblings_qs = DocumentIndexEntry.objects.filter(
+        bucket=BUCKET, document_type=document_type,
+        domain_content_type=domain_content_type,
+        domain_object_id=subject.pk,
+        entry_kind=DocumentIndexEntry.KIND_FILE,
+        deleted_at__isnull=True, purged_at__isnull=True,
+        is_obsolete=False,
+    ).exclude(pk=entry.pk)
+    existing_snapshots = [
+        DocumentSnapshot(
+            identifier=sibling.pk, expiry_date=sibling.expiry_date,
+            issue_date=sibling.issue_date, indexed_at=sibling.indexed_at,
+        )
+        for sibling in siblings_qs
+    ]
+    incoming_snapshot = DocumentSnapshot(
+        identifier=entry.pk, expiry_date=entry.expiry_date,
+        issue_date=entry.issue_date, indexed_at=entry.indexed_at,
+    )
+    result = evaluate_substitution(
+        incoming_snapshot, existing_snapshots,
+        current_fn=current_fn_for(
+            document_type, get_required_type_ids(subject),
+        ),
+    )
+    if result.incoming_should_prevail and result.existing_to_archive:
+        to_obsolete = siblings_qs.filter(
+            pk__in=result.existing_to_archive,
+        )
+        for old_entry in to_obsolete:
+            old_entry.is_obsolete = True
+            old_entry.save(update_fields=["is_obsolete"])
+            DocumentSubstitutionLog.objects.create(
+                company=company,
+                superseding_content_type=ContentType.objects.get_for_model(
+                    DocumentIndexEntry,
+                ),
+                superseding_object_id=entry.pk,
+                superseding_label=entry.name,
+                superseded_content_type=ContentType.objects.get_for_model(
+                    DocumentIndexEntry,
+                ),
+                superseded_object_id=old_entry.pk,
+                superseded_label=old_entry.name,
+                subject_label=subject_label,
+                document_type=document_type.code,
+                reasoning=result.reasoning,
+            )
+            superseded_count += 1
+    return superseded_count
+
+
+
+def _subject_of(entry):
+    model = entry.domain_content_type.model_class() if entry.domain_content_type_id else None
+    if model not in (MachineAsset, PersonIdentity):
+        return None
+    return model.objects.filter(pk=entry.domain_object_id).first()
+
+
+def change_document_type(entry, new_type):
+    """
+    S130. Change the type of an uploaded document properly: canonical
+    rename to the new type, undo the substitution it had made under the
+    old type, substitution under the new one and, on machines, the data
+    the document states for the new type (document_check_service).
+    Returns {"new_name", "superseded_count", "restored_count", "check"}.
+    ---
+    S130. Cambio de tipo completo (Miguel Ángel: "Claro" a que el cambio
+    de tipo renombre): nombre canónico del tipo nuevo, deshace la
+    sustitución que hizo con el tipo viejo, aplica la del nuevo y, en
+    máquinas, toma los datos que acredita el tipo nuevo.
+    """
+    from datetime import date as date_cls
+
+    from document_explorer.classification_service import (
+        apply_machine_canonical_rename, apply_personal_canonical_rename,
+    )
+
+    old_code = entry.document_type.code if entry.document_type_id else ""
+    entry.document_type = new_type
+    if not new_type.tracks_expiry and entry.expiry_date:
+        entry.issue_date = entry.issue_date or entry.expiry_date
+        entry.expiry_date = None
+    entry.save(update_fields=["document_type", "expiry_date", "issue_date"])
+
+    entry_ct = ContentType.objects.get_for_model(DocumentIndexEntry)
+    restored_count = 0
+    if old_code and old_code != new_type.code:
+        logs = DocumentSubstitutionLog.objects.filter(
+            superseding_content_type=entry_ct, superseding_object_id=entry.pk,
+            superseded_content_type=entry_ct, document_type=old_code,
+        )
+        restored_ids = list(logs.values_list("superseded_object_id", flat=True))
+        restored_count = DocumentIndexEntry.objects.filter(
+            pk__in=restored_ids, is_obsolete=True,
+        ).update(is_obsolete=False)
+        logs.delete()
+
+    subject = _subject_of(entry)
+    if subject is None:
+        return {
+            "new_name": entry.name, "superseded_count": 0,
+            "restored_count": restored_count, "check": {},
+        }
+    # Sin fecha, la del día de subida -- la misma que puso "+ Subir".
+    fallback = (
+        entry.indexed_at.date() if entry.indexed_at else date_cls.today()
+    )
+    if isinstance(subject, MachineAsset):
+        renamed = apply_machine_canonical_rename(
+            entry, subject, fictitious_date=fallback, apply_changes=True,
+        )
+        label = "%s -- %s" % (subject.code, subject.brand_model)
+    else:
+        renamed = apply_personal_canonical_rename(
+            entry, fictitious_date=fallback, apply_changes=True,
+        )
+        label = "%s %s, %s" % (
+            subject.first_surname, subject.second_surname, subject.given_name,
+        )
+    superseded_count = apply_substitution(
+        subject=subject, domain_content_type=entry.domain_content_type,
+        document_type=new_type, entry=entry, subject_label=label,
+    )
+    check = {}
+    if isinstance(subject, MachineAsset):
+        try:
+            data = download_bytes(entry.bucket, entry.blob_name)
+        except Exception:  # noqa: BLE001 -- el cambio ya está hecho
+            data = None
+        if data is not None:
+            check = _check_uploaded_document(
+                subject, new_type, data, entry.name, entry.ocr_text or "",
+            )
+    return {
+        "new_name": renamed.get("new_name") or entry.name,
+        "superseded_count": superseded_count,
+        "restored_count": restored_count, "check": check,
+    }
+
+
 def upload_subject_document(
     *, subject, domain_content_type, document_type, data, original_filename,
     typed_date, subject_label, uploaded_by=None, typed_issue_date=None,
@@ -476,55 +639,11 @@ def upload_subject_document(
             "entry": entry, "warning": warning,
             "superseded_count": superseded_count, "check": check,
         }
-    siblings_qs = DocumentIndexEntry.objects.filter(
-        bucket=BUCKET, document_type=document_type,
-        domain_content_type=domain_content_type,
-        domain_object_id=subject.pk,
-        entry_kind=DocumentIndexEntry.KIND_FILE,
-        deleted_at__isnull=True, purged_at__isnull=True,
-        is_obsolete=False,
-    ).exclude(pk=entry.pk)
-    existing_snapshots = [
-        DocumentSnapshot(
-            identifier=sibling.pk, expiry_date=sibling.expiry_date,
-            issue_date=sibling.issue_date, indexed_at=sibling.indexed_at,
-        )
-        for sibling in siblings_qs
-    ]
-    incoming_snapshot = DocumentSnapshot(
-        identifier=entry.pk, expiry_date=entry.expiry_date,
-        issue_date=entry.issue_date, indexed_at=entry.indexed_at,
+    superseded_count = apply_substitution(
+        subject=subject, domain_content_type=domain_content_type,
+        document_type=document_type, entry=entry,
+        subject_label=subject_label, company=company,
     )
-    result = evaluate_substitution(
-        incoming_snapshot, existing_snapshots,
-        current_fn=current_fn_for(
-            document_type, get_required_type_ids(subject),
-        ),
-    )
-    if result.incoming_should_prevail and result.existing_to_archive:
-        to_obsolete = siblings_qs.filter(
-            pk__in=result.existing_to_archive,
-        )
-        for old_entry in to_obsolete:
-            old_entry.is_obsolete = True
-            old_entry.save(update_fields=["is_obsolete"])
-            DocumentSubstitutionLog.objects.create(
-                company=company,
-                superseding_content_type=ContentType.objects.get_for_model(
-                    DocumentIndexEntry,
-                ),
-                superseding_object_id=entry.pk,
-                superseding_label=entry.name,
-                superseded_content_type=ContentType.objects.get_for_model(
-                    DocumentIndexEntry,
-                ),
-                superseded_object_id=old_entry.pk,
-                superseded_label=old_entry.name,
-                subject_label=subject_label,
-                document_type=document_type.code,
-                reasoning=result.reasoning,
-            )
-            superseded_count += 1
 
     _queue_entry_hooks(subject, document_type, entry)
     return {

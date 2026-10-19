@@ -135,7 +135,7 @@
                         btn.closest('.alert').className = 'alert py-1 px-2 small mb-1 alert-' + (res.ok === false ? 'danger' : 'success');
                         btn.closest('.alert').textContent = res.ok === false
                             ? (res.error || 'No se pudo cambiar el tipo.')
-                            : 'Tipo cambiado. Pulsa Aceptar para ver la ficha.';
+                            : 'Tipo cambiado: ahora se llama ' + (res.new_name || '') + '. Pulsa Aceptar para ver la ficha.';
                     }).catch(function () { btn.disabled = false; });
                 });
             });

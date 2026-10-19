@@ -5937,10 +5937,21 @@ class DocumentChangeTypeView(DocsUploadAccessMixin, View):
         new_type = get_object_or_404(
             DocumentTypeCatalog, code=new_type_code, is_active=True,
         )
-        entry.document_type = new_type
-        entry.save(update_fields=["document_type"])
+        # S130: cambio completo -- nombre canónico del tipo nuevo,
+        # sustitución deshecha (tipo viejo) y aplicada (tipo nuevo) y,
+        # en máquinas, los datos que acredita el tipo nuevo.
+        from document_explorer.subject_upload_service import (
+            change_document_type,
+        )
+
+        outcome = change_document_type(entry, new_type)
+        check = outcome.get("check") or {}
         return JsonResponse({
             "ok": True, "new_type_label": new_type.label,
+            "new_name": outcome["new_name"],
+            "superseded_count": outcome["superseded_count"],
+            "restored_count": outcome["restored_count"],
+            "filled": check.get("filled") or {},
         })
 
 
