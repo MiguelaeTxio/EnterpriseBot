@@ -45,6 +45,7 @@ incidencias" (S129). Solo consulta.
                 {% if forloop.last and shift.end_off %}<div class="text-muted">horario {{ shift.expected_end|time:"H:i" }}</div>{% endif %}
                 {% if forloop.first and shift.late_minutes is not None %}<div class="text-muted">horario {{ shift.expected_start|time:"H:i" }} · {% if shift.late_minutes > 0 %}{{ shift.late_minutes }} min tarde{% elif shift.late_minutes < 0 %}{{ shift.late_minutes|stringformat:"d"|slice:"1:" }} min antes{% else %}en punto{% endif %}</div>{% endif %}
                 {% if forloop.last and shift.early_minutes is not None %}<div class="text-muted">horario {{ shift.expected_end|time:"H:i" }} · {% if shift.early_minutes > 0 %}{{ shift.early_minutes }} min antes{% elif shift.early_minutes < 0 %}{{ shift.early_minutes|stringformat:"d"|slice:"1:" }} min después{% else %}en punto{% endif %}</div>{% endif %}
+                {% if press.is_manual %}<div class="text-danger fw-semibold">fichaje manual, apuntado {{ press.received|date:"d/m H:i" }}</div>{% endif %}
                 {% if press.is_late %}<div class="text-muted">se recibió {{ press.received|date:"d/m H:i" }} ({{ press.delay_label }} h después)</div>{% endif %}
                 {% else %}
                 <span class="text-warning-emphasis">—</span>

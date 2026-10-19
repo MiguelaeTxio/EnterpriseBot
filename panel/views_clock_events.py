@@ -37,6 +37,7 @@ from django.views import View
 
 from document_explorer.models import PersonIdentity
 from hr_calendar.clock_report import format_duration, reports_by_user
+from hr_calendar.models import ClockEvent
 from panel.mixins import SupervisorAccessMixin
 from panel.navigation_persistence import (
     apply_list_navigation,
@@ -232,7 +233,9 @@ def _list_context(request):
             "company_user",
         ).filter(pk__in=wanted))
     rows = _sort_rows(
-        _with_issues_filter(request, _rows(request, people, date_from, date_to)),
+        _with_issues_filter(
+            request, _rows(request, people, date_from, date_to),
+        ),
         _parse_sort(_param(request, "sort")),
     )
     # H24 (S129): municipio del último fichaje de cada fila.
@@ -319,13 +322,17 @@ def _press_view(event):
     if event is None:
         return None
     delay = event.delay_seconds
+    is_manual = event.sent_by == ClockEvent.SentBy.MANUAL
     return {
         "event": event,
+        # S130: fichaje manual por olvido; su "retraso" es cuándo se
+        # apuntó, no un envío tardío.
+        "is_manual": is_manual,
         "time": timezone.localtime(event.pressed_at),
         "rounded": (timezone.localtime(event.rounded_at)
                     if event.rounded_at else None),
         "received": timezone.localtime(event.received_at),
-        "is_late": delay > 300,
+        "is_late": delay > 300 and not is_manual,
         "delay_label": format_duration(delay) if delay > 300 else "",
         "maps_url": _maps_url(event),
         "accuracy": event.accuracy_m,
@@ -387,7 +394,6 @@ class ClockEventsDetailView(SupervisorAccessMixin, View):
             "early_label": report.early_label,
             "habitually_early": report.habitually_early,
         })
-
 
 
 def _hour(event, field_name, day, seconds=False):

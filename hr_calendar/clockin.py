@@ -36,6 +36,7 @@ POST desde otra web nunca la lleva -- por eso el endpoint de recepción
 puede ir sin CSRF: una pulsación guardada sin cobertura se envía más
 tarde, quizá sin un token CSRF válido.
 """
+import datetime
 import json
 import logging
 from dataclasses import dataclass
@@ -57,6 +58,9 @@ from hr_calendar.models import ClockEvent
 logger = logging.getLogger(__name__)
 
 MAX_BODY = 4096
+# S130: margen del reloj del móvil para no rechazar un fichaje manual
+# de "ahora mismo" por unos segundos de diferencia con el servidor.
+MANUAL_FUTURE_MARGIN = datetime.timedelta(minutes=2)
 _SW_PATH = Path(__file__).resolve().parent / "static_src" / "clockin_sw.js"
 
 NO_TRUSTED_DEVICE = (
@@ -156,11 +160,16 @@ def record_press(company_user, payload, user_agent=""):
     Stores one press from the payload sent by the phone. The same
     `id` sent again returns the stored press (created=False) instead
     of a second record. Raises ClockInError when the press is invalid.
+    S130: with `auto` the server decides IN/OUT (single button); a
+    manual press for a forgotten one comes with sent_by=MANUAL, its
+    own kind and time, and no GPS.
     ---
     Guarda una pulsación con los datos que envía el móvil. Si llega
     otra vez el mismo `id`, devuelve la ya guardada (created=False) en
     vez de crear un segundo registro. Lanza ClockInError si la
-    pulsación no es válida.
+    pulsación no es válida. S130: con `auto` decide el servidor si es
+    entrada o salida (botón único); un fichaje manual por olvido llega
+    con sent_by=MANUAL, su tipo y su hora, y sin GPS.
     """
     client_id = str(payload.get("id") or "").strip()
     if not client_id or len(client_id) > 40:
@@ -171,37 +180,40 @@ def record_press(company_user, payload, user_agent=""):
             raise ClockInError("Esa pulsación pertenece a otro usuario.")
         return PressResult(existing, False)
 
-    kind = str(payload.get("kind") or "").upper()
-    if kind not in ClockEvent.Kind.values:
-        raise ClockInError("Falta indicar si es entrada o salida.")
     pressed_at = parse_datetime(str(payload.get("pressed_at") or ""))
     if pressed_at is None or not timezone.is_aware(pressed_at):
         raise ClockInError("La pulsación no trae una hora válida.")
     sent_by = str(payload.get("sent_by") or "").upper()
     if sent_by not in ClockEvent.SentBy.values:
         sent_by = ClockEvent.SentBy.ONLINE
+    manual = sent_by == ClockEvent.SentBy.MANUAL
+    kind = str(payload.get("kind") or "").upper()
+    # S130: botón único. Con `auto` (pulsado con cobertura y nada
+    # pendiente en el móvil) el tipo lo decide aquí el servidor; sin
+    # cobertura lo decidió el móvil y se respeta tal cual llega. El
+    # fichaje manual trae siempre su tipo.
+    auto = bool(payload.get("auto")) and not manual
+    if not auto and kind not in ClockEvent.Kind.values:
+        raise ClockInError("Falta indicar si es entrada o salida.")
+    if manual and pressed_at > timezone.now() + MANUAL_FUTURE_MARGIN:
+        raise ClockInError(
+            "Un fichaje manual no puede ser de una hora que todavía no "
+            "ha llegado."
+        )
 
     latitude = _coordinate(payload.get("lat"), 90)
     longitude = _coordinate(payload.get("lon"), 180)
     accuracy = _accuracy(payload.get("accuracy"))
-    if latitude is None or longitude is None:
+    if manual or latitude is None or longitude is None:
         latitude = longitude = accuracy = None
-    event = ClockEvent(
-        company=company_user.company,
-        company_user=company_user,
-        person=_person_of(company_user),
-        kind=kind,
-        client_id=client_id,
-        pressed_at=pressed_at,
-        latitude=latitude,
-        longitude=longitude,
-        accuracy_m=accuracy,
-        gps_error=str(payload.get("gps_error") or "")[:120],
-        sent_by=sent_by,
-        user_agent=(user_agent or "")[:200],
-    )
     try:
         with transaction.atomic():
+            if auto:
+                kind = _decide_kind(company_user, pressed_at)
+            event = _build_event(
+                company_user, payload, client_id, kind, pressed_at,
+                latitude, longitude, accuracy, sent_by, user_agent,
+            )
             event.save()
     except IntegrityError:
         # Two sends of the same press at once (page and background).
@@ -211,12 +223,75 @@ def record_press(company_user, payload, user_agent=""):
         if existing is None:
             raise
         return PressResult(existing, False)
+    return _after_save(event, company_user)
+
+
+def _decide_kind(company_user, pressed_at):
+    """
+    IN or OUT for an `auto` press (clock_report.next_kind against the
+    user's last press before it). The user's row is locked so two
+    presses at once do not both read the same last press.
+    ---
+    ENTRADA o SALIDA para una pulsación `auto` (clock_report.next_kind
+    con la última pulsación del usuario anterior a ella). Se bloquea la
+    fila del usuario para que dos pulsaciones a la vez no lean la misma
+    última pulsación.
+    """
+    from ivr_config.models import CompanyUser
+    from hr_calendar.clock_report import next_kind
+
+    CompanyUser.objects.select_for_update().filter(
+        pk=company_user.pk,
+    ).first()
+    last = (
+        ClockEvent.objects.filter(
+            company_user=company_user, pressed_at__lte=pressed_at,
+        ).order_by("-pressed_at", "-pk").first()
+    )
+    return next_kind(last, pressed_at)
+
+
+def _build_event(company_user, payload, client_id, kind, pressed_at,
+                 latitude, longitude, accuracy, sent_by, user_agent):
+    """
+    The unsaved ClockEvent of one press.
+    ---
+    El ClockEvent, sin guardar, de una pulsación.
+    """
+    gps_error = str(payload.get("gps_error") or "")[:120]
+    if sent_by == ClockEvent.SentBy.MANUAL:
+        gps_error = "Fichaje manual"
+    return ClockEvent(
+        company=company_user.company,
+        company_user=company_user,
+        person=_person_of(company_user),
+        kind=kind,
+        client_id=client_id,
+        pressed_at=pressed_at,
+        latitude=latitude,
+        longitude=longitude,
+        accuracy_m=accuracy,
+        gps_error=gps_error,
+        sent_by=sent_by,
+        user_agent=(user_agent or "")[:200],
+    )
+
+
+def _after_save(event, company_user):
+    """
+    Log line, municipality and clock-out effects on the work order of a
+    press just stored.
+    ---
+    Línea de log, municipio y efectos de la salida sobre el parte de una
+    pulsación recién guardada.
+    """
+    client_id = event.client_id
     logger.info(
         "# [FICHAJE] %s usuario=#%d tipo=%s pulsado=%s retraso_s=%s "
         "envio=%s gps=%s",
-        client_id, company_user.pk, kind, pressed_at.isoformat(),
-        event.delay_seconds, sent_by,
-        "si" if latitude is not None else (event.gps_error or "no"),
+        client_id, company_user.pk, event.kind,
+        event.pressed_at.isoformat(), event.delay_seconds, event.sent_by,
+        "si" if event.latitude is not None else (event.gps_error or "no"),
     )
     if event.latitude is not None:
         # H24 (S129): municipio de las coordenadas (clock_geocode). Un
@@ -252,6 +327,7 @@ def _event_json(event):
         "pressed_at": event.pressed_at.isoformat(),
         "received_at": event.received_at.isoformat(),
         "delay_seconds": event.delay_seconds,
+        "manual": event.sent_by == ClockEvent.SentBy.MANUAL,
     }
 
 
@@ -316,14 +392,22 @@ def status(request):
     company_user = trusted_device_user(request)
     if company_user is None:
         return _untrusted_response(request)
+    from hr_calendar.clock_report import MAX_SHIFT_HOURS, next_kind
+
+    now = timezone.now()
     last = (
-        ClockEvent.objects.filter(company_user=company_user)
-        .order_by("-pressed_at").first()
+        ClockEvent.objects.filter(
+            company_user=company_user, pressed_at__lte=now,
+        ).order_by("-pressed_at", "-pk").first()
     )
+    # S130: lo que registrará el botón único ahora mismo, y el límite
+    # de turno abierto para que el móvil decida igual sin cobertura.
     return JsonResponse({
         "name": _worker_name(company_user),
         "company": company_user.company.name,
         "last": _event_json(last) if last is not None else None,
+        "next_kind": next_kind(last, now),
+        "max_shift_hours": MAX_SHIFT_HOURS,
     })
 
 

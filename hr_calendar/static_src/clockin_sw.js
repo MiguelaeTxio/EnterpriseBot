@@ -20,7 +20,8 @@
  *   botón «Enviar pendientes».
  * Mismo almacén y mismas reglas de envío que la página (clockin.html).
  */
-const CACHE_NAME = "fichaje-v1";
+// S130: v2 = página con botón único y fichaje manual.
+const CACHE_NAME = "fichaje-v2";
 const PAGE_URL = "/fichaje/";
 const CACHED = [PAGE_URL, PAGE_URL + "manifest.json"];
 const DB_NAME = "fichaje";
@@ -117,10 +118,13 @@ function sendPending(sentBy) {
                         method: "POST",
                         credentials: "same-origin",
                         headers: {"Content-Type": "application/json"},
-                        body: JSON.stringify(Object.assign({}, record, {sent_by: sentBy})),
+                        body: JSON.stringify(Object.assign({}, record, {sent_by: record.manual ? "MANUAL" : sentBy})),
                     }).then(function (response) {
                         return response.json().catch(function () { return {}; }).then(function (data) {
                             if (response.ok) {
+                                // S130: con `auto` el tipo lo ha decidido el servidor.
+                                if (data.kind) record.kind = data.kind;
+                                record.auto = false;
                                 record.received_at = data.received_at;
                                 record.delay_seconds = data.delay_seconds;
                                 record.error = "";

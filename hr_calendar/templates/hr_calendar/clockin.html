@@ -6,6 +6,9 @@ tenga que guardar esta página y abra entera sin cobertura. Es la misma
 para todos: no lleva el nombre del trabajador; lo pide a /fichaje/estado/
 con la llave del dispositivo de confianza y lo recuerda en el móvil para
 saludar también sin cobertura.
+S130: un solo botón "Fichar" (entrada o salida según la última pulsación,
+clock_report.next_kind) y fichaje manual por olvido (sent_by=MANUAL, sin
+GPS, queda como incidencia en la pestaña Fichajes).
 {% endcomment %}
 <!doctype html>
 <html lang="es">
@@ -32,12 +35,14 @@ saludar también sin cobertura.
         .net.off { background: #f8d7da; color: #842029; }
         #who { font-size: 1.05rem; font-weight: 700; }
         #clock { font-size: 2.4rem; font-weight: 700; text-align: center; letter-spacing: 1px; margin: 4px 0; }
-        .buttons { display: flex; gap: 10px; }
-        .buttons button { flex: 1; font-size: 1.25rem; font-weight: 700; padding: 22px 8px; border: 3px solid transparent; border-radius: 12px; color: #fff; }
-        .buttons button:disabled { opacity: .6; }
-        .buttons button.suggested { border-color: #212529; box-shadow: 0 0 0 3px #ffc107; }
-        #btn-in { background: #198754; }
-        #btn-out { background: #dc3545; }
+        #btn-fichar { display: block; width: 100%; font-size: 1.5rem; font-weight: 700; padding: 26px 8px; border: 0; border-radius: 12px; color: #fff; background: #198754; }
+        #btn-fichar.out { background: #dc3545; }
+        #btn-fichar:disabled { opacity: .6; }
+        #manual summary { font-weight: 600; cursor: pointer; }
+        #manual label { display: block; font-size: .85rem; font-weight: 600; margin-top: 8px; }
+        #manual select, #manual input { width: 100%; font-size: 1rem; padding: 8px; border: 1px solid #ced4da; border-radius: 8px; background: #fff; }
+        #btn-manual { background: #6c757d; color: #fff; border: 0; border-radius: 8px; font-size: .95rem; padding: 10px; width: 100%; margin-top: 10px; font-weight: 600; }
+        .tag-manual { color: #842029; font-weight: 600; }
         #btn-send { background: #0d6efd; color: #fff; border: 0; border-radius: 8px; font-size: .95rem; padding: 10px; width: 100%; margin-top: 8px; font-weight: 600; }
         .rec { border-top: 1px solid #e9ecef; padding: 8px 0; font-size: .9rem; }
         .rec:first-child { border-top: 0; }
@@ -79,11 +84,23 @@ saludar también sin cobertura.
     </div>
 
     <div id="clock">--:--:--</div>
-    <div class="buttons">
-        <button type="button" id="btn-in">Entrada</button>
-        <button type="button" id="btn-out">Salida</button>
-    </div>
+    <button type="button" id="btn-fichar">Fichar entrada</button>
     <div id="status"></div>
+
+    <details class="card" id="manual">
+        <summary>¿Se te olvidó fichar? Fichaje manual</summary>
+        <div class="muted mt">Indica qué se te olvidó y a qué hora. Quedará registrado como fichaje manual (incidencia), con la hora a la que lo apuntas.</div>
+        <label for="manual-kind">Tipo</label>
+        <select id="manual-kind">
+            <option value="IN">Entrada</option>
+            <option value="OUT">Salida</option>
+        </select>
+        <label for="manual-date">Día</label>
+        <input type="date" id="manual-date">
+        <label for="manual-time">Hora</label>
+        <input type="time" id="manual-time">
+        <button type="button" id="btn-manual">Guardar fichaje manual</button>
+    </details>
 
     <div class="card">
         <strong>Mis últimos fichajes en este móvil</strong>
@@ -214,10 +231,32 @@ saludar también sin cobertura.
             ? info.name + (info.company ? " · " + info.company : "")
             : (untrusted ? "Móvil sin identificar" : "…");
     }
-    function suggest(lastKind) {
-        const next = lastKind === "IN" ? "OUT" : "IN";
-        document.getElementById("btn-in").classList.toggle("suggested", next === "IN");
-        document.getElementById("btn-out").classList.toggle("suggested", next === "OUT");
+    // S130: botón único. Mismo criterio que el servidor
+    // (clock_report.next_kind): SALIDA si la última pulsación conocida
+    // es una ENTRADA de hace MAX_SHIFT_HOURS o menos; si no, ENTRADA.
+    // Con cobertura y nada pendiente lo vuelve a decidir el servidor al
+    // recibirla (auto); sin cobertura vale lo que decide el móvil.
+    function lastKnown(records) {
+        const info = load("fichaje-estado");
+        const now = new Date().toISOString();
+        let last = info && info.last ? info.last : null;
+        records.forEach(function (r) {
+            if (r.rejected || r.pressed_at > now) return;
+            if (!last || r.pressed_at > last.pressed_at) last = r;
+        });
+        return last;
+    }
+    function decideKind(records) {
+        const info = load("fichaje-estado");
+        const hours = info && info.max_shift_hours ? info.max_shift_hours : 24;
+        const last = lastKnown(records);
+        if (!last || last.kind !== "IN") return "IN";
+        return (Date.now() - Date.parse(last.pressed_at)) > hours * 3600000 ? "IN" : "OUT";
+    }
+    function showNext(kind) {
+        const btn = document.getElementById("btn-fichar");
+        btn.textContent = "Fichar " + LABELS[kind].toLowerCase();
+        btn.classList.toggle("out", kind === "OUT");
     }
     function refreshStatus() {
         if (!navigator.onLine) return Promise.resolve();
@@ -243,11 +282,7 @@ saludar también sin cobertura.
             list.innerHTML = "";
             const info = load("fichaje-estado");
             const serverLast = info && info.last ? info.last : null;
-            const localLast = records.find(function (r) { return !r.rejected; });
-            let lastKind = null;
-            if (localLast && (!serverLast || localLast.pressed_at > serverLast.pressed_at)) lastKind = localLast.kind;
-            else if (serverLast) lastKind = serverLast.kind;
-            suggest(lastKind);
+            showNext(decideKind(records));
             document.getElementById("last").textContent = serverLast
                 ? "Último fichaje recibido: " + LABELS[serverLast.kind] + " · " + fmt(serverLast.pressed_at)
                 : "";
@@ -268,10 +303,15 @@ saludar también sin cobertura.
                 title.textContent = LABELS[r.kind] + " · " + fmt(r.pressed_at);
                 div.appendChild(title);
                 const where = document.createElement("div");
-                where.className = "muted";
-                where.textContent = r.lat != null
-                    ? "Ubicación guardada (±" + Math.round(r.accuracy) + " m)"
-                    : "Sin ubicación: " + (r.gps_error || "desconocido");
+                if (r.manual) {
+                    where.className = "tag-manual";
+                    where.textContent = "Fichaje manual (incidencia), apuntado " + fmt(r.registered_at);
+                } else {
+                    where.className = "muted";
+                    where.textContent = r.lat != null
+                        ? "Ubicación guardada (±" + Math.round(r.accuracy) + " m)"
+                        : "Sin ubicación: " + (r.gps_error || "desconocido");
+                }
                 div.appendChild(where);
                 const state = document.createElement("div");
                 if (r.received_at) {
@@ -305,10 +345,13 @@ saludar también sin cobertura.
                         method: "POST",
                         credentials: "same-origin",
                         headers: {"Content-Type": "application/json"},
-                        body: JSON.stringify(Object.assign({}, record, {sent_by: sentBy})),
+                        body: JSON.stringify(Object.assign({}, record, {sent_by: record.manual ? "MANUAL" : sentBy})),
                     }).then(function (response) {
                         return response.json().catch(function () { return {}; }).then(function (data) {
                             if (response.ok) {
+                                // S130: con `auto` el tipo lo ha decidido el servidor.
+                                if (data.kind) record.kind = data.kind;
+                                record.auto = false;
                                 record.received_at = data.received_at;
                                 record.delay_seconds = data.delay_seconds;
                                 record.error = "";
@@ -358,43 +401,107 @@ saludar también sin cobertura.
         return date.getTime() + "-" + Math.random().toString(36).slice(2, 12);
     }
 
-    function press(kind) {
+    function hhmm(date) {
+        return date.toLocaleTimeString("es-ES", {hour: "2-digit", minute: "2-digit"});
+    }
+    function queueAndSend(record, sentBy) {
+        return putRecord(record).then(function () {
+            if ("serviceWorker" in navigator && "SyncManager" in window) {
+                navigator.serviceWorker.ready.then(function (reg) {
+                    return reg.sync.register(SYNC_TAG);
+                }).catch(function () { /* sin Background Sync: lo envía la página */ });
+            }
+            return sendPending(sentBy);
+        });
+    }
+
+    function press() {
         const pressedAt = new Date();   // la hora se toma AL PULSAR
-        const buttons = document.querySelectorAll(".buttons button");
-        buttons.forEach(function (b) { b.disabled = true; });
-        setStatus(LABELS[kind] + " a las " + pressedAt.toLocaleTimeString("es-ES") + ". Buscando la ubicación…", "wait");
-        getPosition().then(function (pos) {
-            const record = {
-                id: newId(pressedAt),
-                kind: kind,
-                pressed_at: pressedAt.toISOString(),
-                lat: pos.lat != null ? pos.lat : null,
-                lon: pos.lon != null ? pos.lon : null,
-                accuracy: pos.accuracy != null ? pos.accuracy : null,
-                gps_error: pos.error || "",
-            };
-            return putRecord(record).then(function () {
-                setStatus(LABELS[kind] + " de las " + pressedAt.toLocaleTimeString("es-ES", {hour: "2-digit", minute: "2-digit"}) +
-                          " guardada" + (navigator.onLine ? "." : " en el móvil: se enviará al volver la cobertura."), "ok", record.id);
-                if ("serviceWorker" in navigator && "SyncManager" in window) {
-                    navigator.serviceWorker.ready.then(function (reg) {
-                        return reg.sync.register(SYNC_TAG);
-                    }).catch(function () { /* sin Background Sync: lo envía la página */ });
-                }
-                return sendPending("ONLINE");
+        const btn = document.getElementById("btn-fichar");
+        btn.disabled = true;
+        let decided = null;
+        setStatus("Fichaje a las " + pressedAt.toLocaleTimeString("es-ES") + ". Buscando la ubicación…", "wait");
+        allRecords().then(function (records) {
+            decided = decideKind(records);
+            const nothingPending = !records.some(function (r) { return !r.received_at && !r.rejected; });
+            return getPosition().then(function (pos) {
+                return {
+                    id: newId(pressedAt),
+                    kind: decided,
+                    // Con cobertura y nada pendiente decide el servidor.
+                    auto: navigator.onLine && nothingPending,
+                    pressed_at: pressedAt.toISOString(),
+                    lat: pos.lat != null ? pos.lat : null,
+                    lon: pos.lon != null ? pos.lon : null,
+                    accuracy: pos.accuracy != null ? pos.accuracy : null,
+                    gps_error: pos.error || "",
+                };
             });
+        }).then(function (record) {
+            setStatus(LABELS[decided] + " de las " + hhmm(pressedAt) +
+                      " guardada" + (navigator.onLine ? "." : " en el móvil: se enviará al volver la cobertura."), "ok", record.id);
+            return queueAndSend(record, "ONLINE");
         }).catch(function (err) {
             setStatus("No se ha podido guardar: " + err, "err");
         }).finally(function () {
-            buttons.forEach(function (b) { b.disabled = false; });
+            btn.disabled = false;
             render();
         });
     }
-    document.getElementById("btn-in").addEventListener("click", function () { press("IN"); });
-    document.getElementById("btn-out").addEventListener("click", function () { press("OUT"); });
+
+    // ---- Fichaje manual por olvido (S130) -------------------------------
+    function pad(n) { return (n < 10 ? "0" : "") + n; }
+    function resetManualForm() {
+        const now = new Date();
+        document.getElementById("manual-date").value =
+            now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate());
+        document.getElementById("manual-time").value = "";
+    }
+    function saveManual() {
+        const kind = document.getElementById("manual-kind").value;
+        const day = document.getElementById("manual-date").value;
+        const time = document.getElementById("manual-time").value;
+        if (!day || !time) { setStatus("Indica el día y la hora del fichaje manual.", "err"); return; }
+        // Fecha y hora locales del móvil, como cualquier pulsación.
+        const parts = day.split("-").map(Number);
+        const hm = time.split(":").map(Number);
+        const pressedAt = new Date(parts[0], parts[1] - 1, parts[2], hm[0], hm[1], 0, 0);
+        const registeredAt = new Date();
+        if (isNaN(pressedAt.getTime())) { setStatus("El día o la hora no son válidos.", "err"); return; }
+        if (pressedAt.getTime() > registeredAt.getTime() + 120000) {
+            setStatus("Un fichaje manual no puede ser de una hora que todavía no ha llegado.", "err");
+            return;
+        }
+        const btn = document.getElementById("btn-manual");
+        btn.disabled = true;
+        const record = {
+            id: newId(registeredAt),
+            kind: kind,
+            manual: true,
+            pressed_at: pressedAt.toISOString(),
+            registered_at: registeredAt.toISOString(),
+            lat: null, lon: null, accuracy: null,
+            gps_error: "Fichaje manual",
+        };
+        setStatus("Fichaje manual guardado: " + LABELS[kind].toLowerCase() + " del " +
+                  pressedAt.toLocaleDateString("es-ES") + " a las " + hhmm(pressedAt) +
+                  (navigator.onLine ? "." : ". Se enviará al volver la cobertura."), "ok", record.id);
+        queueAndSend(record, "MANUAL").catch(function (err) {
+            setStatus("No se ha podido guardar: " + err, "err");
+        }).finally(function () {
+            btn.disabled = false;
+            document.getElementById("manual").open = false;
+            resetManualForm();
+            render();
+        });
+    }
+    resetManualForm();
+
+    document.getElementById("btn-fichar").addEventListener("click", press);
+    document.getElementById("btn-manual").addEventListener("click", saveManual);
     document.getElementById("btn-send").addEventListener("click", function () {
         if (!navigator.onLine) { setStatus("Sin conexión: se enviarán al volver.", "wait"); return; }
-        sendPending("MANUAL");
+        sendPending("PAGE");
     });
 
     // ---- Service worker ------------------------------------------------------

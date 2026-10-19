@@ -766,10 +766,14 @@ class ClockEvent(models.Model):
         OUT = "OUT", "Salida"
 
     class SentBy(models.TextChoices):
+        # S130: MANUAL pasa a ser el fichaje manual por olvido (anexo
+        # V24, 7.5 punto 1); el botón «Enviar pendientes» envía como
+        # PAGE. Comprobado en BD antes del cambio: ningún fichaje con
+        # MANUAL.
         ONLINE = "ONLINE", "Al momento"
         BACKGROUND = "BACKGROUND", "Al volver la cobertura (segundo plano)"
-        PAGE = "PAGE", "Al volver a abrir la página"
-        MANUAL = "MANUAL", "Botón «Enviar pendientes»"
+        PAGE = "PAGE", "Desde la página (al abrirla o con su botón)"
+        MANUAL = "MANUAL", "Fichaje manual (olvido)"
 
     company = models.ForeignKey(
         Company,

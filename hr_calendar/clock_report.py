@@ -56,6 +56,45 @@ MAX_COMPARE_MINUTES = 180
 NO_OUT = "Entrada sin salida"
 NO_IN = "Salida sin entrada"
 OFF_SCHEDULE = "Fuera de horario"
+MANUAL_PRESS = "Fichaje manual"
+
+
+def next_kind(last_event, at):
+    """
+    The kind of the next press of the single "Fichar" button (S130):
+    OUT when the last press before `at` is an IN still open, i.e. no
+    more than MAX_SHIFT_HOURS earlier (the same limit build_shifts uses,
+    so a night shift crossing midnight closes properly); IN otherwise.
+    ---
+    El tipo de la siguiente pulsación del botón único "Fichar" (S130):
+    SALIDA si la última pulsación antes de `at` es una ENTRADA todavía
+    abierta (de hace MAX_SHIFT_HOURS o menos, el mismo límite que
+    build_shifts, para que un turno de noche que cruza la medianoche
+    cierre bien); ENTRADA en cualquier otro caso.
+    """
+    if last_event is None or last_event.kind != ClockEvent.Kind.IN:
+        return ClockEvent.Kind.IN
+    limit = datetime.timedelta(hours=MAX_SHIFT_HOURS)
+    if at - last_event.pressed_at > limit:
+        return ClockEvent.Kind.IN
+    return ClockEvent.Kind.OUT
+
+
+def _manual_label(event):
+    """
+    Incident text of a manual press, with its kind, its time and when
+    it was registered.
+    ---
+    Texto de la incidencia de un fichaje manual: "Fichaje manual:
+    entrada 08:00, registrada el 19/10 a las 10:12".
+    """
+    pressed = timezone.localtime(event.pressed_at)
+    registered = timezone.localtime(event.received_at)
+    return "%s: %s %s, registrada el %s a las %s" % (
+        MANUAL_PRESS, event.get_kind_display().lower(),
+        pressed.strftime("%H:%M"), registered.strftime("%d/%m"),
+        registered.strftime("%H:%M"),
+    )
 
 
 @dataclass
@@ -164,10 +203,12 @@ class Shift:
         """
         Every incident of the shift, spelled out (Miguel Ángel, S129:
         late arrivals and early departures are incidents too, explained
-        in the worker's detail): missing pair, off schedule, late, early.
+        in the worker's detail): missing pair, manual press (S130), off
+        schedule, late, early.
         ---
         Todas las incidencias de la jornada, explicadas: fichaje sin su
-        pareja, fuera de horario, llegada tarde y salida antes de hora.
+        pareja, fichaje manual por olvido (S130), fuera de horario,
+        llegada tarde y salida antes de hora.
         """
         def hhmm(event):
             return timezone.localtime(event.pressed_at).strftime("%H:%M")
@@ -177,6 +218,11 @@ class Shift:
             found.append(NO_IN)
         if self.clock_out is None:
             found.append(NO_OUT)
+        # S130: un fichaje manual por olvido es siempre incidencia.
+        for event in (self.clock_in, self.clock_out):
+            if (event is not None
+                    and event.sent_by == ClockEvent.SentBy.MANUAL):
+                found.append(_manual_label(event))
         if self.start_off_schedule:
             found.append("Entrada fuera de horario (%s; horario %s)" % (
                 hhmm(self.clock_in), self.expected_start.strftime("%H:%M"),
@@ -256,7 +302,9 @@ class PersonReport:
     @property
     def punctuality_label(self):
         timed = self.timed_arrivals
-        return "%d de %d" % (len(self.late_arrivals), len(timed)) if timed else ""
+        if not timed:
+            return ""
+        return "%d de %d" % (len(self.late_arrivals), len(timed))
 
     @property
     def habitually_late(self):
@@ -278,11 +326,15 @@ class PersonReport:
     @property
     def early_label(self):
         timed = self.timed_departures
-        return "%d de %d" % (len(self.early_departures), len(timed)) if timed else ""
+        if not timed:
+            return ""
+        return "%d de %d" % (len(self.early_departures), len(timed))
 
     @property
     def habitually_early(self):
-        return _habitual(len(self.early_departures), len(self.timed_departures))
+        return _habitual(
+            len(self.early_departures), len(self.timed_departures),
+        )
 
     @property
     def last_day(self):
