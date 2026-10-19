@@ -10,7 +10,9 @@
 
   <div class="d-flex align-items-center gap-3 mb-4">
     <h4 class="mb-0">Mi perfil</h4>
-    <a href="{% url 'panel:mi_buzon_list' %}" class="btn btn-sm btn-outline-primary ms-auto">Mi buzón</a>
+    {# S130: cambio voluntario de contraseña (pide la actual). #}
+    <a href="{% url 'panel:password_change' %}" class="btn btn-sm btn-outline-secondary ms-auto"><i class="bi bi-key me-1"></i>Cambiar contraseña</a>
+    <a href="{% url 'panel:mi_buzon_list' %}" class="btn btn-sm btn-outline-primary">Mi buzón</a>
   </div>
 
   <div class="row">
@@ -111,7 +113,7 @@
             enviados por correo desde el panel -- abrir un .eml externo no
             dispara la firma por defecto de Outlook, así que se guarda aquí.
           </p>
-          <div id="sig-editor" class="form-control" style="min-height: 120px; font-family: Arial, sans-serif;" contenteditable="true">{{ company_user.email_signature_html|safe }}</div>
+          <div id="sig-editor" class="form-control" contenteditable="true">{{ company_user.email_signature_html|safe }}</div>
         </div>
         <div class="card-footer text-end">
           <form method="post" action="{% url 'panel:own_profile_signature_save' %}" id="sig-save-form">
@@ -127,6 +129,7 @@
 </div>
 
 <style>
+    #sig-editor { min-height: 120px; font-family: Arial, sans-serif; }
     #sig-editor:focus { outline: 2px solid #0d6efd33; }
 </style>
 

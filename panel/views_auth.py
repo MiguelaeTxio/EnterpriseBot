@@ -1586,12 +1586,13 @@ class PanelPasswordChangeView (CompanyUserRequiredMixin ,View ):
         """
         Validates and saves the new password using the appropriate form.
         On success clears must_change_password (if forced), updates the session
-        auth hash so the user stays logged in, and redirects to the dashboard.
+        auth hash so the user stays logged in, and redirects to the dashboard
+        (forced) or back to the own profile (voluntary, S130).
         ---
         Valida y guarda la nueva contraseña usando el formulario adecuado.
         En caso de éxito limpia must_change_password (si es forzado), actualiza
         el hash de sesión para que el usuario permanezca autenticado y redirige
-        al dashboard.
+        al dashboard (forzado) o de vuelta a Mi perfil (voluntario, S130).
         """
         form =self ._build_form (request ,data =request .POST )
         if form .is_valid ():
@@ -1612,7 +1613,9 @@ class PanelPasswordChangeView (CompanyUserRequiredMixin ,View ):
 
 
 
-            response =redirect ("/panel/")
+            # S130: el cambio voluntario se hace desde Mi perfil y vuelve
+            # allí; el obligatorio sigue llevando al inicio del panel.
+            response =redirect ("/panel/"if _was_forced else "panel:own_profile")
             if _was_forced :
                 from panel .trusted_devices import trust 
                 trust (request ,response ,cu )
