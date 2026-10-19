@@ -1811,11 +1811,9 @@ function toggleSendEmailForm() {
 
 function sendDossierByEmail() {
     const editor = document.getElementById('dossierEmailEditor');
-    const bodyHtml = editor.innerHTML.trim();
-    if (!bodyHtml) {
-        alert('Escribe el cuerpo del mensaje antes de generar el .eml.');
-        return;
-    }
+    // S130: el cuerpo es opcional -- vacío, el servidor pone el texto
+    // por defecto. innerText descarta un <br> suelto del editor.
+    const bodyHtml = editor.innerText.trim() ? editor.innerHTML.trim() : '';
     const form = document.createElement('form');
     form.method = 'POST';
     form.action = "{% url 'panel:documentation_personal_dossier_email_send' pk=person.pk %}";

@@ -38,6 +38,7 @@ from django.utils.text import slugify
 from django.views import View
 from email.message import EmailMessage as StdEmailMessage
 from email.utils import make_msgid
+from html import escape as html_escape
 from datetime import date, datetime
 import logging
 import unicodedata
@@ -2854,12 +2855,8 @@ class PersonalDossierEmailSendView(DocsUploadAccessMixin, View):
                 "documentos vigentes).", status=400,
             )
 
+        # S130: cuerpo opcional -- vacío usa el texto por defecto.
         body_html = request.POST.get("body_html", "").strip()
-        if not body_html:
-            return HttpResponse(
-                "Falta el cuerpo del mensaje (campo 'body_html', "
-                "editor básico del panel).", status=400,
-            )
 
         try:
             eml_bytes, filename = _build_dossier_notification_eml(
@@ -5079,6 +5076,25 @@ def _build_notification_eml(person, document_type):
     return bytes(msg), filename
 
 
+def _default_dossier_body_html(person, document_count):
+    """
+    S130. Cuerpo por defecto del correo de un dossier, para no tener
+    que escribirlo cada vez (solo se rellena el destinatario).
+    ---
+    S130. Default body for a dossier e-mail, so it never has to be
+    typed (only the recipient is filled in).
+    """
+    plural = "s" if document_count != 1 else ""
+    return (
+        "<p>Buenos días:</p>"
+        f"<p>Les adjuntamos el dossier de documentación de "
+        f"<strong>{html_escape(str(person))}</strong> "
+        f"({document_count} documento{plural}).</p>"
+        "<p>Quedamos a su disposición para cualquier aclaración.</p>"
+        "<p>Un saludo.</p>"
+    )
+
+
 def _build_dossier_notification_eml(
     person, entries, body_html, sender_company_user, epi_deliveries=None,
 ):
@@ -5102,9 +5118,10 @@ def _build_dossier_notification_eml(
     concreta.
 
     Lanza `NotificationEmlError` -- nunca HttpResponse, mismo patrón
-    que `_build_notification_eml` -- cuando la persona no tiene correo
-    registrado o cuando ni el PDF ni el ZIP pueden construirse (lista
-    de `entries` vacía o sin ningún documento descargable).
+    que `_build_notification_eml` -- cuando ni el PDF ni el ZIP pueden
+    construirse (lista de `entries` vacía o sin ningún documento
+    descargable). Desde S130 el destinatario va vacío (borrador
+    `X-Unsent`) y `body_html` vacío usa `_default_dossier_body_html`.
     ---
     H31 (S104), roadmap point 1. Builds the real dossier-sending
     `.eml` for ONE person -- extends the `.eml` mechanism from
@@ -5124,17 +5141,20 @@ def _build_dossier_notification_eml(
     selection.
 
     Raises `NotificationEmlError` -- never HttpResponse, same pattern
-    as `_build_notification_eml` -- when the person has no registered
-    email, or when neither the PDF nor the ZIP can be built (empty
-    `entries`, or no downloadable document at all).
+    as `_build_notification_eml` -- when neither the PDF nor the ZIP
+    can be built (empty `entries`, or no downloadable document at
+    all). Since S130 the recipient is left empty (`X-Unsent` draft)
+    and an empty `body_html` uses `_default_dossier_body_html`.
     """
-    recipient = (person.email or "").strip()
-    if not recipient:
-        raise NotificationEmlError(
-            f"{person} no tiene correo electrónico registrado -- no se "
-            f"puede enviar el dossier.",
-        )
-
+    # S130, Miguel Ángel: "Debería [...] generar el HTML correspondiente
+    # para no tener que escribir ni los cuerpos de mensaje [...]
+    # solamente rellenar ya lo que es el destinatario." El destinatario
+    # se deja vacío (el dossier suele ir a un cliente o a una obra, no
+    # al propio trabajador, y la mayoría no tiene correo registrado: antes
+    # eso tumbaba el .eml entero) y `X-Unsent: 1` hace que Outlook lo
+    # abra como un BORRADOR editable con el cuerpo y el adjunto ya
+    # puestos, no como un mensaje recibido de solo lectura. Sin `From`:
+    # en un borrador lo pone la cuenta de quien lo envía.
     try:
         attachment_bytes, attachment_filename = _build_dossier_pdf_bytes(
             person, entries, epi_deliveries=epi_deliveries,
@@ -5149,15 +5169,19 @@ def _build_dossier_notification_eml(
         except DossierBuildError as exc:
             raise NotificationEmlError(str(exc)) from exc
 
+    if not (body_html or "").strip():
+        body_html = _default_dossier_body_html(
+            person, len(entries or []) + len(epi_deliveries or []),
+        )
+
     msg = StdEmailMessage()
     msg["Subject"] = f"Dossier de documentación -- {person}"
-    msg["From"] = "notificaciones@grupoalvarez.local"
-    msg["To"] = recipient
+    msg["X-Unsent"] = "1"
 
     msg.set_content(
-        f"Dossier de documentación para {person}.\n"
-        "Este cliente de correo no muestra HTML -- consulte la "
-        "versión web o abra este mensaje con un cliente compatible."
+        f"Dossier de documentación de {person} (adjunto).\n"
+        "Este cliente de correo no muestra HTML -- abra este mensaje "
+        "con un cliente compatible."
     )
 
     signature_html = (
@@ -5170,7 +5194,6 @@ def _build_dossier_notification_eml(
           <p style="margin-bottom:16px;">
             <img src="cid:{logo_cid[1:-1]}" alt="Grupo Álvarez" height="40">
           </p>
-          <p>Estimado/a <strong>{person}</strong>,</p>
           {body_html}
           {signature_html}
         </body></html>
@@ -5820,12 +5843,29 @@ class PersonalDossierMassGenerateView(DocsUploadAccessMixin, View):
         today = timezone.localdate().isoformat()
 
         if action == "email":
+            # S130: cuerpo opcional (vacío usa el texto por defecto) y,
+            # con un solo trabajador, el .eml se sirve tal cual en vez
+            # de dentro de un ZIP, para abrirlo directamente en Outlook.
             body_html = request.POST.get("body_html", "").strip()
-            if not body_html:
-                return HttpResponse(
-                    "Falta el cuerpo del mensaje (campo 'body_html').",
-                    status=400,
+            if len(per_person) == 1:
+                person, entries, epi_deliveries = per_person[0]
+                try:
+                    eml_bytes, filename = _build_dossier_notification_eml(
+                        person, entries, body_html,
+                        request.user.company_user,
+                        epi_deliveries=epi_deliveries,
+                    )
+                except NotificationEmlError as exc:
+                    return JsonResponse({"error": str(exc)}, status=400)
+                response = HttpResponse(
+                    eml_bytes, content_type="message/rfc822",
                 )
+                response["Content-Disposition"] = (
+                    f'attachment; filename="{filename}"'
+                )
+                response["X-Mass-Skipped"] = json.dumps(skipped)
+                response["X-Mass-Errors"] = json.dumps([])
+                return response
             email_errors = []
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
