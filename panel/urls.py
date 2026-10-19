@@ -48,6 +48,8 @@ from panel.views_inbox import (
 )
 from panel.views_navigation_state import NavigationStateSaveView
 from panel.views_vacation_balance import (
+    AbsencePeriodCreateView,
+    AbsencePeriodRemoveView,
     VacationAdjustmentCreateView,
     VacationAdjustmentDeleteView,
     VacationBalanceDetailView,
@@ -674,6 +676,9 @@ urlpatterns = [
     path("documentacion/vacaciones/<int:pk>/alta/", VacationRowRegisterView.as_view(), name="vacation_row_register"),
     path("documentacion/vacaciones/periodo/<int:pk>/editar/", VacationPeriodEditView.as_view(), name="vacation_period_edit"),
     path("documentacion/vacaciones/periodo/<int:pk>/borrar/", VacationPeriodRemoveView.as_view(), name="vacation_period_remove"),
+    # H24 (S130): ausencias que no son vacaciones ni baja, desde el desglose del trabajador.
+    path("documentacion/vacaciones/<int:pk>/ausencia/", AbsencePeriodCreateView.as_view(), name="absence_period_create"),
+    path("documentacion/vacaciones/ausencia/<int:pk>/borrar/", AbsencePeriodRemoveView.as_view(), name="absence_period_remove"),
     path("documentacion/vacaciones/asignar-seccion/", VacationSectionAssignView.as_view(), name="vacation_balance_assign_section"),
     path("documentacion/vacaciones/seccion/<int:pk>/borrar/", VacationSectionAssignmentDeleteView.as_view(), name="vacation_balance_assignment_delete"),
     path("documentacion/vacaciones/<int:pk>/ajuste/", VacationAdjustmentCreateView.as_view(), name="vacation_balance_adjustment_create"),

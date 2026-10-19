@@ -11,7 +11,8 @@ VACATION>, delta_hours=1, on the last working day before
 VacationPeriod.date_start.
 
 Deliberately does NOT reuse the "already_exists" collision guard from
-panel/views_workorders.py::AdminHistoryView.post (action=generate_absence_parts,
+panel/views_workorders.py::AdminHistoryView.post
+(action=generate_absence_parts,
 WorkerAbsence flow) -- that guard assumes the whole day is absence and must
 be skipped if another WorkOrder already covers it. Here the ghost task is a
 1-hour marker that coexists with whatever real work the operator logged on
@@ -39,7 +40,8 @@ analytics/views.py cost-share denominator), all of which now exclude any
 line referenced by VacationPeriod.generated_entry_line
 (`.exclude(vacation_period__isnull=False)`, using the reverse accessor of
 that FK -- see VacationPeriod.generated_entry_line's related_name in
-hr_calendar/models.py). Same commit, see ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md
+hr_calendar/models.py). Same commit, see
+ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md
 sección 5, pregunta 5.
 
 ---
@@ -55,7 +57,8 @@ fault_description=<label de la AbsenceCategory VACATION>, delta_hours=1,
 en la última jornada laboral antes de VacationPeriod.date_start.
 
 Deliberadamente NO reutiliza la guarda de colisión "already_exists" de
-panel/views_workorders.py::AdminHistoryView.post (action=generate_absence_parts,
+panel/views_workorders.py::AdminHistoryView.post
+(action=generate_absence_parts,
 flujo WorkerAbsence) -- esa guarda asume que el día completo es ausencia y
 debe omitirse si ya existe otro WorkOrder que lo cubra. Aquí la tarea
 fantasma es un marcador de 1 hora que coexiste con el trabajo real que el
@@ -91,6 +94,7 @@ import logging
 from datetime import timedelta
 from decimal import Decimal
 
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 
 logger = logging.getLogger(__name__)
@@ -98,7 +102,8 @@ logger = logging.getLogger(__name__)
 # Reserved AbsenceCategory.code for the vacation ghost task -- see
 # work_order_processor/management/commands/seed_absence_categories.py.
 # Código reservado de AbsenceCategory.code para la tarea fantasma de
-# vacaciones -- ver work_order_processor/management/commands/seed_absence_categories.py.
+# vacaciones -- ver
+# work_order_processor/management/commands/seed_absence_categories.py.
 VACATION_ABSENCE_CODE = "VACATION"
 
 
@@ -534,6 +539,83 @@ def delete_vacation_period(period):
     period.delete()
 
 
+def absence_categories(company):
+    """
+    The absence kinds offered for an AbsencePeriod (S130): the
+    company's active AbsenceCategory catalogue, in its own order,
+    without VACATION (vacations have their own VacationPeriod).
+    ---
+    Los tipos que se ofrecen para una ausencia (S130): el catálogo
+    activo AbsenceCategory de la empresa, en su orden, sin VACATION (las
+    vacaciones tienen su propio VacationPeriod).
+    """
+    from ivr_config.models import AbsenceCategory
+
+    return AbsenceCategory.objects.filter(
+        company=company, is_active=True,
+    ).exclude(code=VACATION_ABSENCE_CODE).order_by("order", "label")
+
+
+def create_absence_period(person, company, created_by, category_id,
+                          date_start, date_end, note=""):
+    """
+    Registers an absence (S130). ValueError with the message for the
+    supervisor when the kind is not offered, the dates are reversed or
+    the kind needs a note and there is none.
+    ---
+    Registra una ausencia (S130). ValueError con el mensaje para el
+    supervisor si el tipo no se ofrece, las fechas están al revés o el
+    tipo exige nota y no la hay.
+    """
+    from hr_calendar.models import AbsencePeriod
+
+    category = absence_categories(company).filter(pk=category_id).first()
+    if category is None:
+        raise ValueError("Elige el tipo de ausencia.")
+    if date_start > date_end:
+        raise ValueError(
+            "La fecha de inicio no puede ser posterior a la fecha de fin."
+        )
+    note = (note or "").strip()
+    if category.requires_note and not note:
+        raise ValueError(
+            f"«{category.label}» necesita una nota: escribe el motivo."
+        )
+    return AbsencePeriod.objects.create(
+        person=person,
+        company=company,
+        category=category,
+        date_start=date_start,
+        date_end=date_end,
+        note=note,
+        created_by=created_by,
+    )
+
+
+def absence_days_by_date(person, date_from, date_to):
+    """
+    {date: category label} of the person's absences in the range (S130).
+    ---
+    {fecha: nombre del tipo} de las ausencias de la persona en el
+    intervalo (S130).
+    """
+    from hr_calendar.models import AbsencePeriod
+
+    days = {}
+    if person is None:
+        return days
+    periods = AbsencePeriod.objects.filter(
+        person=person, date_start__lte=date_to, date_end__gte=date_from,
+    ).select_related("category").order_by("date_start", "pk")
+    for period in periods:
+        cursor = max(period.date_start, date_from)
+        last = min(period.date_end, date_to)
+        while cursor <= last:
+            days[cursor] = period.category.label
+            cursor += timedelta(days=1)
+    return days
+
+
 def compute_calendar_days(operator, company, date_from, date_to):
     """
     Returns a dict {date: {"color": ..., "label": ...}} for every calendar
@@ -548,7 +630,9 @@ def compute_calendar_days(operator, company, date_from, date_to):
       light_blue — same as blue but WITH a resolved WorkdayGap that day
                    (partial PERSONAL absence, e.g. missing 2-3h) —
                    incomplete day.
-      orange     — no real task that day, but a resolved WorkdayGap for
+      orange     — an AbsencePeriod of the operator's worker file covers
+                   the day (S130, labelled with its kind); or no real
+                   task that day, but a resolved WorkdayGap for
                    that day carries an AbsenceCategory other than
                    VACATION (absence_category lives on WorkdayGap, not on
                    WorkOrderEntryLine -- bug fixed 2026-07-15 after a
@@ -654,6 +738,13 @@ def compute_calendar_days(operator, company, date_from, date_to):
     )
     # No cuentan como "tarea real" -- ver nota del mecanismo legado arriba.
     absence_non_vacation_dates -= real_task_dates
+    # S130: ausencias registradas (AbsencePeriod) de la ficha del
+    # operario; mismo naranja, con el nombre de su tipo.
+    try:
+        person = operator.person_identity
+    except ObjectDoesNotExist:
+        person = None
+    registered_absences = absence_days_by_date(person, date_from, date_to)
 
     vacation_dates = set()
     for vp in VacationPeriod.objects.filter(
@@ -681,6 +772,11 @@ def compute_calendar_days(operator, company, date_from, date_to):
                 result[cursor] = {
                     "color": "blue", "label": "Jornada completa",
                 }
+        elif cursor in registered_absences:
+            result[cursor] = {
+                "color": "orange",
+                "label": "Ausencia: %s" % registered_absences[cursor],
+            }
         elif cursor in absence_non_vacation_dates:
             result[cursor] = {"color": "orange", "label": "Ausencia"}
         elif cursor.weekday() < 5 and _is_holiday(cursor, base):

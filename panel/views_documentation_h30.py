@@ -71,7 +71,7 @@ from document_management.vigencia_service import (
     DocumentSnapshot, evaluate_substitution,
 )
 from fleet.models import MachineAsset
-from hr_calendar.models import VacationPeriod
+from hr_calendar.models import AbsencePeriod, VacationPeriod
 from ivr_config.models import Company, CompanyUser, WorkPeriod
 from panel.mixins import (
     CompanyUserRequiredMixin, DocsUploadAccessMixin,
@@ -1776,6 +1776,11 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             ).order_by("-date_start")
             if person.company_user_id else VacationPeriod.objects.none()
         )
+        # H24 (S130). Ausencias que no son vacaciones ni baja, por la
+        # ficha (person), tenga o no cuenta de panel.
+        absence_periods = AbsencePeriod.objects.filter(
+            person=person,
+        ).select_related("category").order_by("-date_start")
         # H31 (S77). Partes de trabajo digitales -- uploaded_by es el
         # propio operario autenticado (ver panel/views_operator.py),
         # vínculo 100% fiable, sin resolución por nombre. Solo
@@ -1943,6 +1948,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "job_positions": JobPosition.objects.order_by("name"),
             "all_document_types": all_document_types,
             "vacation_periods": vacation_periods,
+            "absence_periods": absence_periods,
             "partes_total_hours": partes_total_hours,
             "partes_by_machine": partes_by_machine,
             "partes_by_day": partes_by_day,

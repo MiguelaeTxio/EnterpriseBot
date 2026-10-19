@@ -6,8 +6,10 @@ directive 4.24, with their days entitled, carried over, taken and
 pending; start and end date in the fixed panel to register vacations
 for the marked workers; section of each worker, vacation rules per
 section, manual adjustments and the starting balance imported from
-Carolina's spreadsheet. The computation lives in hr_calendar.balance;
-these views only read the request, call it and render.
+Carolina's spreadsheet; and, in each worker's breakdown, the absences
+that are neither vacation nor leave (S130). The computation lives in
+hr_calendar.balance; these views only read the request, call it and
+render.
 
 Documentation is the supervisors' tool (Miguel Ángel, S129): nothing
 here is scoped to the logged-in worker. Each worker will see their own
@@ -24,9 +26,10 @@ con el formato de la directriz 4.24, con los días que corresponden, del
 año anterior, consumidos y pendientes; fecha de inicio y de fin en el
 panel fijo para dar de alta las vacaciones de los marcados; sección de
 cada trabajador, reglas por sección, ajustes manuales y saldo de
-partida importado de la hoja de Carolina. El cálculo vive en
-hr_calendar.balance; estas vistas solo leen la petición, lo llaman y
-pintan.
+partida importado de la hoja de Carolina; y, en el desglose de cada
+trabajador, las ausencias que no son vacaciones ni baja (S130). El
+cálculo vive en hr_calendar.balance; estas vistas solo leen la
+petición, lo llaman y pintan.
 
 Documentación es la herramienta de los supervisores (Miguel Ángel,
 S129): nada aquí se acota al trabajador que entra. Cada trabajador verá
@@ -54,7 +57,9 @@ from hr_calendar.balance import (
     validate_rule,
 )
 from hr_calendar.balance_import import build_template, import_template
+from hr_calendar.services import absence_categories, create_absence_period
 from hr_calendar.models import (
+    AbsencePeriod,
     PersonSectionAssignment,
     VacationBalanceAdjustment,
     VacationPeriod,
@@ -430,12 +435,20 @@ def _detail_context(request, person, year, message="", error=False):
     assignments = PersonSectionAssignment.objects.filter(
         person=person,
     ).select_related("section", "created_by__user").order_by("-valid_from")
+    # S130: ausencias del año (las que tocan algún día de ese año).
+    absences = AbsencePeriod.objects.filter(
+        person=person,
+        date_start__lte=datetime.date(year, 12, 31),
+        date_end__gte=datetime.date(year, 1, 1),
+    ).select_related("category", "created_by__user").order_by("date_start")
     return {
         "person": person,
         "person_label": _person_label(person),
         "year": year,
         "balance": balance,
         "assignments": assignments,
+        "absences": absences,
+        "absence_categories": absence_categories(company),
         "can_manage": can_manage(request),
         "message": message,
         "message_is_error": error,
@@ -706,6 +719,77 @@ class VacationPeriodRemoveView(SupervisorAccessMixin, View):
         return _detail_response(
             request, person, year, f"Periodo borrado: {label}.",
             refresh_table=True,
+        )
+
+
+# ------------------------------------------------------------------
+# Ausencias (S130, punto 4 de la hoja de ruta 7.5)
+# ------------------------------------------------------------------
+class AbsencePeriodCreateView(SupervisorAccessMixin, View):
+    """
+    POST: register an absence for a worker from their breakdown.
+    ---
+    POST: registra una ausencia (tipo, del, al y nota) desde el desglose
+    del trabajador (hr_calendar.services.create_absence_period) y repinta
+    el desglose con el resultado.
+    """
+
+    def post(self, request, pk):
+        person = _person_or_404(pk)
+        year = _year(request.POST.get("year"))
+        date_start = _parse_date(request.POST.get("date_start"))
+        date_end = _parse_date(request.POST.get("date_end"))
+        if date_start is None or date_end is None:
+            return _detail_response(
+                request, person, year,
+                "Indica la fecha de inicio y la de fin.", error=True,
+            )
+        cu = request.user.company_user
+        try:
+            period = create_absence_period(
+                person, cu.company, cu,
+                _parse_int(request.POST.get("category_id")),
+                date_start, date_end, request.POST.get("note"),
+            )
+        except ValueError as exc:
+            return _detail_response(request, person, year, str(exc),
+                                    error=True)
+        logger.info(
+            "# [ausencias] %s registra %s de person_pk=%s: %s a %s",
+            cu, period.category.code, person.pk, date_start, date_end,
+        )
+        return _detail_response(
+            request, person, year,
+            f"Ausencia registrada: {period.category.label}, "
+            f"{date_start:%d/%m/%Y} a {date_end:%d/%m/%Y}.",
+        )
+
+
+class AbsencePeriodRemoveView(SupervisorAccessMixin, View):
+    """
+    POST: delete an absence registered by mistake.
+    ---
+    POST: borra una ausencia dada por error y repinta el desglose.
+    """
+
+    def post(self, request, pk):
+        period = AbsencePeriod.objects.select_related(
+            "person", "category",
+        ).filter(pk=pk, company=request.user.company_user.company).first()
+        if period is None:
+            raise Http404
+        person, year = period.person, _year(request.POST.get("year"))
+        label = (
+            f"{period.category.label}, {period.date_start:%d/%m/%Y} a "
+            f"{period.date_end:%d/%m/%Y}"
+        )
+        period.delete()
+        logger.info(
+            "# [ausencias] %s borra la ausencia de person_pk=%s: %s",
+            request.user.company_user, person.pk, label,
+        )
+        return _detail_response(
+            request, person, year, f"Ausencia borrada: {label}.",
         )
 
 

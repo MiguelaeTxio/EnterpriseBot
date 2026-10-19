@@ -2,7 +2,7 @@
 {% comment %}
 H24 (S129). Desglose del saldo de un trabajador en un año: cifras,
 avisos, tramos (sección y regla), periodos con los días que gastan,
-ajustes e historial de secciones. Todo calculado en la vista
+ausencias (S130), ajustes e historial de secciones. Todo calculado en la vista
 (hr_calendar.balance); las acciones repintan este mismo fragmento con
 su mensaje y la tabla se refresca sola (HX-Trigger).
 {% endcomment %}
@@ -108,6 +108,60 @@ CRUD de S94): cada botón envía su fila con hx-include="closest tr".
 </table>
 {% else %}
 <div class="small text-muted mb-2">Ninguno en {{ year }}.</div>
+{% endif %}
+
+{% comment %}
+S130 (punto 4 de la hoja de ruta 7.5): ausencias que no son vacaciones
+ni baja, con el catálogo de tipos de la empresa (sin Vacaciones). No
+gastan días de vacaciones; el calendario las pinta en naranja.
+{% endcomment %}
+<div class="fw-bold small">Ausencias de {{ year }}</div>
+{% if absences %}
+<ul class="list-unstyled small mb-2">
+    {% for absence in absences %}
+    <li class="d-flex align-items-start gap-2 border-bottom py-1">
+        <div class="flex-grow-1">
+            <span class="fw-semibold">{{ absence.category.label }}</span> · {{ absence.date_start|date:"d/m/Y" }}{% if absence.date_end != absence.date_start %} a {{ absence.date_end|date:"d/m/Y" }}{% endif %}
+            {% if absence.note %}<div class="text-muted">{{ absence.note }}</div>{% endif %}
+            <div class="text-muted">Registrada {{ absence.created_at|date:"d/m/Y H:i" }}{% if absence.created_by %} · {{ absence.created_by.user.get_full_name|default:absence.created_by.user.username }}{% endif %}</div>
+        </div>
+        {% if can_manage %}
+        <button type="button" class="btn btn-sm btn-outline-danger py-0"
+                hx-post="{% url 'panel:absence_period_remove' absence.pk %}"
+                hx-vals='{"year": "{{ year }}"}' hx-target="#vbal-detail-container"
+                hx-disabled-elt="this"
+                hx-confirm="¿Borrar la ausencia ({{ absence.category.label }}, {{ absence.date_start|date:'d/m/Y' }} a {{ absence.date_end|date:'d/m/Y' }})?"
+                title="Borrar ausencia"><i class="bi bi-trash"></i></button>
+        {% endif %}
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<div class="small text-muted mb-2">Ninguna en {{ year }}.</div>
+{% endif %}
+
+{% if can_manage %}
+<form class="border rounded p-2 mb-2"
+      hx-post="{% url 'panel:absence_period_create' person.pk %}"
+      hx-target="#vbal-detail-container"
+      hx-disabled-elt="find button">
+    <input type="hidden" name="year" value="{{ year }}">
+    <div class="small fw-bold mb-1">Registrar ausencia</div>
+    <select name="category_id" class="form-select form-select-sm mb-1" required aria-label="Tipo de ausencia">
+        <option value="">Tipo de ausencia…</option>
+        {% for category in absence_categories %}
+        <option value="{{ category.pk }}">{{ category.label }}{% if category.requires_note %} (con nota){% endif %}</option>
+        {% endfor %}
+    </select>
+    <div class="d-flex gap-2 mb-1">
+        <input type="date" name="date_start" class="form-control form-control-sm" required aria-label="Desde">
+        <input type="date" name="date_end" class="form-control form-control-sm" required aria-label="Hasta">
+    </div>
+    <input type="text" name="note" class="form-control form-control-sm mb-1" placeholder="Nota (obligatoria si el tipo lo indica)">
+    <button type="submit" class="btn btn-sm btn-primary">
+        <span class="htmx-indicator spinner-border spinner-border-sm me-1"></span>Registrar ausencia
+    </button>
+</form>
 {% endif %}
 
 <div class="fw-bold small">Ajustes de {{ year }}</div>

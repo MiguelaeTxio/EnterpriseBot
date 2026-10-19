@@ -417,6 +417,39 @@ H30 (S128), punto 6: tablas `stack-mobile` -- en el móvil cada fila es una tarj
         </div>
     </div>
 
+    {% comment %}
+    H24 (S130). Ausencias que no son vacaciones ni baja (asuntos propios,
+    cita médica...), registradas desde el desglose de la pestaña
+    Vacaciones. Solo consulta.
+    {% endcomment %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseLaboralAusencias">
+                Ausencias <span class="badge bg-primary ms-2">{{ absence_periods|length }}</span>
+            </button>
+        </h2>
+        <div id="collapseLaboralAusencias" class="accordion-collapse collapse" data-bs-parent="#personalLaboralAccordion">
+            <div class="accordion-body">
+<table class="table stack-mobile table-sm table-hover mb-0">
+    <thead><tr><th>Tipo</th><th>Desde</th><th>Hasta</th><th>Nota</th></tr></thead>
+    <tbody>
+        {% for absence in absence_periods %}
+        <tr>
+            <td class="stack-mobile-title">{{ absence.category.label }}</td>
+            <td data-label="Desde">{{ absence.date_start|date:"d/m/Y" }}</td>
+            <td data-label="Hasta">{{ absence.date_end|date:"d/m/Y" }}</td>
+            <td data-label="Nota">{{ absence.note|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="4" class="text-muted small">Sin ausencias registradas.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+<small class="text-muted d-block mt-2">Alta y borrado: Documentación &gt; Vacaciones, en el desglose del trabajador.</small>
+            </div>
+        </div>
+    </div>
+
     {% if can_view_clock_events %}
     {% comment %}
     H24 (S129), Miguel Ángel: "no estaría de más tampoco que en la propia
@@ -1104,7 +1137,7 @@ Salud, acordeón genérico) -- mismo patrón que documentHistoryModal.
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-0 pdet-viewer-body">
-                <iframe id="documentViewerFrame" src="" class="pdet-viewer-frame"></iframe>
+                <iframe id="documentViewerFrame" src="about:blank" title="Visor del documento" class="pdet-viewer-frame"></iframe>
             </div>
         </div>
     </div>
@@ -1180,7 +1213,7 @@ function openDocumentViewer(url) {
 // Limpia el iframe al cerrar, para no dejar el documento cargado en
 // memoria ni que reaparezca el anterior un instante la proxima vez.
 document.getElementById('documentViewerModal').addEventListener('hidden.bs.modal', function () {
-    document.getElementById('documentViewerFrame').src = '';
+    document.getElementById('documentViewerFrame').src = 'about:blank';
 });
 
 // H35 (S105): "Ver" DESDE DENTRO del historial usaba la misma

@@ -1,3 +1,4 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/hr_calendar/migrations/0011_clockevent_sent_by_manual_s130.py
 # H24 (S130): MANUAL pasa a ser el fichaje manual por olvido; el botón
 # «Enviar pendientes» envía como PAGE. Solo cambian las etiquetas.
 from django.db import migrations, models

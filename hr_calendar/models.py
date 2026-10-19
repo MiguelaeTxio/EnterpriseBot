@@ -452,6 +452,93 @@ class MedicalLeavePeriod(models.Model):
         return f"{self.person} — {self.date_start:%d/%m/%Y} a {fin}"
 
 
+class AbsencePeriod(models.Model):
+    """
+    An absence that is neither vacation nor medical leave (personal
+    matters, medical appointment, work accident...), registered for a
+    worker with its dates (H24, S130, roadmap point 4 of annex V24
+    section 7.5). Same mechanism as VacationPeriod: `person` is the real
+    worker (PersonIdentity, directive 4.19), whole days from date_start
+    to date_end, both inclusive. The kind comes from the company's
+    AbsenceCategory catalogue (the one the partes already use), except
+    VACATION, which has its own VacationPeriod. It does not change the
+    vacation balance; the HR calendar paints these days as an absence
+    with the category's label.
+    ---
+    Una ausencia que no es ni vacaciones ni baja médica (asuntos
+    propios, cita médica, accidente de trabajo...), registrada para un
+    trabajador con sus fechas (H24, S130, punto 4 de la hoja de ruta 7.5
+    del anexo V24). Mismo mecanismo que VacationPeriod: `person` es el
+    trabajador real (PersonIdentity, directriz 4.19), días completos de
+    date_start a date_end, ambos inclusive. El tipo sale del catálogo
+    AbsenceCategory de la empresa (el que ya usan los partes), salvo
+    VACATION, que tiene su propio VacationPeriod. No cambia el saldo de
+    vacaciones; el calendario pinta estos días como ausencia con el
+    nombre del tipo.
+    """
+
+    person = models.ForeignKey(
+        PersonIdentity,
+        on_delete=models.CASCADE,
+        related_name="absence_periods",
+        verbose_name="Trabajador",
+    )
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="absence_periods",
+        verbose_name="Empresa",
+    )
+    category = models.ForeignKey(
+        "ivr_config.AbsenceCategory",
+        on_delete=models.PROTECT,
+        related_name="absence_periods",
+        verbose_name="Tipo de ausencia",
+    )
+    date_start = models.DateField(
+        verbose_name="Desde",
+        help_text="Primer día de la ausencia (inclusive).",
+    )
+    date_end = models.DateField(
+        verbose_name="Hasta",
+        help_text="Último día de la ausencia (inclusive).",
+    )
+    note = models.TextField(
+        blank=True,
+        verbose_name="Nota",
+        help_text="Obligatoria si el tipo de ausencia la exige.",
+    )
+    created_by = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="absence_periods_created",
+        verbose_name="Registrada por",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de registro",
+    )
+
+    class Meta:
+        verbose_name = "Ausencia"
+        verbose_name_plural = "Ausencias"
+        ordering = ["-date_start"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(date_end__gte=models.F("date_start")),
+                name="absenceperiod_date_end_gte_date_start",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.person} — {self.category.label} "
+            f"{self.date_start:%d/%m/%Y} a {self.date_end:%d/%m/%Y}"
+        )
+
+
 class VacationRule(models.Model):
     """
     Vacation entitlement rule of a section (or the company-wide rule
