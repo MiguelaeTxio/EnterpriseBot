@@ -219,6 +219,10 @@ def _list_context(request):
         _rows(request, people, date_from, date_to),
         _parse_sort(_param(request, "sort")),
     )
+    # H24 (S129): municipio del último fichaje de cada fila.
+    from hr_calendar.clock_geocode import fill_missing
+
+    fill_missing([r.report.last_event for r in rows])
     return {
         "rows": rows,
         "filter_search": search,
@@ -397,7 +401,8 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
         days.title = "Jornadas"
         days.append([
             "DNI", "Apellidos y nombre", "Fecha", "Entrada", "Salida",
-            "Entrada (parte)", "Salida (parte)", "Entrada según horario",
+            "Entrada (parte)", "Salida (parte)", "Municipio entrada",
+            "Municipio salida", "Entrada según horario",
             "Minutos tarde", "Horas", "Incidencia",
         ])
         presses = book.create_sheet("Pulsaciones")
@@ -427,6 +432,10 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
                     _naive(shift.clock_out.rounded_at)
                     if shift.clock_out and shift.clock_out.rounded_at
                     else None,
+                    (shift.clock_in.municipality or "")
+                    if shift.clock_in else "",
+                    (shift.clock_out.municipality or "")
+                    if shift.clock_out else "",
                     shift.expected_start,
                     max(shift.late_minutes, 0)
                     if shift.late_minutes is not None else None,
@@ -456,13 +465,13 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
         for column in ("D", "E", "F", "G"):
             for cell in days[column][1:]:
                 cell.number_format = "DD/MM/YYYY HH:MM"
-        for cell in days["H"][1:]:
+        for cell in days["J"][1:]:
             cell.number_format = "HH:MM"
         for column in ("D", "E", "F"):
             for cell in presses[column][1:]:
                 cell.number_format = "DD/MM/YYYY HH:MM:SS"
         for sheet, widths in (
-            (days, (12, 34, 12, 17, 17, 17, 17, 12, 9, 8, 20)),
+            (days, (12, 34, 12, 17, 17, 17, 17, 26, 26, 12, 9, 8, 20)),
             (presses, (12, 34, 9, 20, 20, 20, 9, 28, 11, 11, 9, 24, 34, 40)),
         ):
             for index, width in enumerate(widths):

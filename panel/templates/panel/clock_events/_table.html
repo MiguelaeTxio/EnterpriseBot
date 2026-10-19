@@ -51,7 +51,7 @@ vista (hr_calendar.clock_report).
             <td class="text-end{% if row.report.late_arrivals %} text-danger-emphasis fw-semibold{% endif %}" data-label="Llegadas tarde" title="Entradas después de la hora del horario, de las que tienen horario con el que compararlas">{{ row.report.punctuality_label|default:"—" }}</td>
             <td class="text-end{% if row.report.issues %} text-warning-emphasis fw-semibold{% endif %}" data-label="Incidencias">{{ row.report.issues|length }}</td>
             <td data-label="Último fichaje">
-                {% if row.report.last_event %}{{ row.report.last_event.get_kind_display }} · {{ row.report.last_event.pressed_at|date:"d/m/Y H:i" }}{% elif not row.has_account %}<span class="text-muted">Sin usuario del panel</span>{% else %}—{% endif %}
+                {% if row.report.last_event %}{{ row.report.last_event.get_kind_display }} · {{ row.report.last_event.pressed_at|date:"d/m/Y H:i" }}{% if row.report.last_event.municipality %} · {{ row.report.last_event.municipality }}{% endif %}{% elif not row.has_account %}<span class="text-muted">Sin usuario del panel</span>{% else %}—{% endif %}
             </td>
         </tr>
         {% empty %}
