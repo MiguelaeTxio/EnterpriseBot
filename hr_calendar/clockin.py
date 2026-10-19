@@ -304,13 +304,16 @@ def _after_save(event, company_user):
             logger.exception(
                 "# [FICHAJE-MUNICIPIO] Error con el fichaje %s.", client_id,
             )
-    if event.kind == ClockEvent.Kind.OUT:
+    if (event.kind == ClockEvent.Kind.OUT
+            or event.sent_by == ClockEvent.SentBy.MANUAL):
         # H24 (S129): la salida ajusta el parte de ese día si ya estaba
-        # hecho y lo cierra si cuadra (hr_calendar/clock_parts.py). Un
-        # fallo aquí nunca impide guardar el fichaje.
+        # hecho y lo cierra si cuadra (hr_calendar/clock_parts.py). S130:
+        # una entrada manual apuntada después de la salida vuelve a
+        # mirar ese parte (clock_parts.on_clock_press). Un fallo aquí
+        # nunca impide guardar el fichaje.
         try:
-            from hr_calendar.clock_parts import on_clock_out
-            on_clock_out(event)
+            from hr_calendar.clock_parts import on_clock_press
+            on_clock_press(event)
         except Exception:
             logger.exception(
                 "# [FICHAJE-PARTE] Error ajustando el parte al fichaje %s.",

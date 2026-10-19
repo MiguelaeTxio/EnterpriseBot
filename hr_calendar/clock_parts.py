@@ -55,7 +55,7 @@ from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 
-from hr_calendar.clock_report import build_shifts
+from hr_calendar.clock_report import MAX_SHIFT_HOURS, build_shifts
 from hr_calendar.models import ClockEvent
 
 logger = logging.getLogger(__name__)
@@ -360,6 +360,60 @@ def is_split_shift(company_user):
         schedule is not None and not schedule.is_intensive
         and schedule.end_time_morning and schedule.start_time_afternoon
     )
+
+
+# ------------------------------------------------------------------
+# A press just stored: which ones touch the parte
+# ------------------------------------------------------------------
+def on_clock_press(event):
+    """
+    Parte effects of a press just stored (S130). An OUT, normal or
+    manual, runs on_clock_out. A normal IN touches no parte (rule 1). A
+    MANUAL IN (a forgotten IN written down later, possibly after the OUT
+    of its shift was already clocked) re-runs on_clock_out with that
+    OUT, so the parte made beforehand closes if it now matches, or goes
+    back to "in progress" if it no longer does (Miguel Ángel, S130:
+    "cuando se ficha y tenga un parte con las tareas y esté sin cerrar
+    y coincida con el fichaje manual, cierre el parte").
+    ---
+    Efectos sobre el parte de una pulsación recién guardada (S130). Una
+    SALIDA, normal o manual, pasa por on_clock_out. Una ENTRADA normal
+    no toca partes (regla 1). Una ENTRADA MANUAL (olvidada y apuntada
+    después, quizá cuando la salida de su jornada ya estaba fichada)
+    vuelve a pasar por on_clock_out con esa salida: el parte hecho antes
+    se cierra si ahora cuadra, o vuelve a "en curso" si deja de cuadrar.
+    Devuelve el texto de on_clock_out ("" = nada).
+    """
+    if event.kind == ClockEvent.Kind.OUT:
+        return on_clock_out(event)
+    if event.sent_by != ClockEvent.SentBy.MANUAL:
+        return ""
+    clock_out = closing_out_of(event)
+    if clock_out is None:
+        return ""
+    return on_clock_out(clock_out)
+
+
+def closing_out_of(clock_in):
+    """
+    The OUT that closes the shift of `clock_in` (build_shifts over the
+    user's presses up to MAX_SHIFT_HOURS later), or None if that shift
+    has no OUT yet.
+    ---
+    La SALIDA que cierra la jornada de `clock_in` (build_shifts sobre
+    las pulsaciones del usuario hasta MAX_SHIFT_HOURS después), o None
+    si esa jornada todavía no tiene salida.
+    """
+    margin = datetime.timedelta(hours=MAX_SHIFT_HOURS)
+    events = list(ClockEvent.objects.filter(
+        company_user_id=clock_in.company_user_id,
+        pressed_at__gte=clock_in.pressed_at - margin,
+        pressed_at__lte=clock_in.pressed_at + margin,
+    ).order_by("pressed_at", "pk"))
+    for shift in build_shifts(events):
+        if shift.clock_in is not None and shift.clock_in.pk == clock_in.pk:
+            return shift.clock_out
+    return None
 
 
 # ------------------------------------------------------------------
