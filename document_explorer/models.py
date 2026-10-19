@@ -2898,6 +2898,28 @@ class JobPosition(models.Model):
             "falta; si su fecha ya pasó, caducada."
         ),
     )
+    # S130, Miguel Ángel: "En los requisitos de documentación de la
+    # maquinaria me sale los requisitos de documentación de personal".
+    # Cada requisito es de Personal o de Maquinaria, elegido al crearlo
+    # (pestañas del gestor, igual que las plantillas de dosier) -- lo
+    # que S119 dejó dicho: "eso se acota al crearlo y al asignarlo". El
+    # catálogo de tipos documentales sigue sin filtrarse.
+    SCOPE_PERSONAL = "PERSONAL"
+    SCOPE_MACHINE = "MACHINE"
+    SCOPE_CHOICES = [
+        (SCOPE_PERSONAL, "Personal"),
+        (SCOPE_MACHINE, "Maquinaria"),
+    ]
+    scope = models.CharField(
+        max_length=10,
+        choices=SCOPE_CHOICES,
+        default=SCOPE_PERSONAL,
+        verbose_name="Ámbito",
+        help_text=(
+            "S130. Personal o Maquinaria: en qué listados y fichas se "
+            "ofrece para asignar."
+        ),
+    )
     is_active = models.BooleanField(
         default=True,
         verbose_name="Activo",

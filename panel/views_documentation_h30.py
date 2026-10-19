@@ -1116,7 +1116,9 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
         # H31 (S109): catálogo de puestos para la acción masiva nueva
         # "Asignar puesto" -- mismo criterio que person_groups, cargado
         # una única vez en la carga inicial de la pestaña.
-        ctx["job_positions"] = JobPosition.objects.order_by("name")
+        ctx["job_positions"] = JobPosition.objects.filter(
+            scope=JobPosition.SCOPE_PERSONAL,
+        ).order_by("name")
         # H31 (S113): lotes de EPIs guardados para la nueva acción
         # masiva de entrega -- mismo criterio que job_positions/
         # person_groups de arriba, cargado una única vez.
@@ -1946,7 +1948,9 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "attention_types_by_family": attention_types_by_family,
             "documentacion_has_alert": documentacion_has_alert,
             "documentacion_alert_title": ". ".join(documentacion_alert_titles),
-            "job_positions": JobPosition.objects.order_by("name"),
+            "job_positions": JobPosition.objects.filter(
+                scope=JobPosition.SCOPE_PERSONAL,
+            ).order_by("name"),
             "all_document_types": all_document_types,
             "vacation_periods": vacation_periods,
             "absence_periods": absence_periods,
@@ -3569,7 +3573,14 @@ class JobPositionManageView(CompanyUserRequiredMixin, View):
     """
 
     def get(self, request):
-        positions = JobPosition.objects.prefetch_related(
+        # S130: ámbito del gestor -- Personal (por defecto) o
+        # Maquinaria (?ambito=MAQUINARIA), igual que Dosieres.
+        is_machine_scope = request.GET.get("ambito", "").upper() == "MAQUINARIA"
+        scope = (
+            JobPosition.SCOPE_MACHINE if is_machine_scope
+            else JobPosition.SCOPE_PERSONAL
+        )
+        positions = JobPosition.objects.filter(scope=scope).prefetch_related(
             "required_document_types", "required_driving_categories",
         ).order_by("name")
 
@@ -3613,7 +3624,7 @@ class JobPositionManageView(CompanyUserRequiredMixin, View):
             }
             for position in positions
         ]
-        nav_key = "job_positions_manager"
+        nav_key = "job_positions_manager_%s" % scope
         picker = {
             "dom_id": "tp-requisitos",
             "create_url": reverse("panel:job_position_create"),
@@ -3622,7 +3633,7 @@ class JobPositionManageView(CompanyUserRequiredMixin, View):
             ).replace("/0/", "/{pk}/"),
             "delete_url": reverse("panel:job_positions_bulk_delete"),
             "active_url": reverse("panel:job_positions_bulk_active"),
-            "scope": "",
+            "scope": scope,
             "nav_key": nav_key,
             "initial_pk": _picker_initial_pk(request, nav_key),
             "item_kinds": "category,type",
@@ -3652,6 +3663,7 @@ class JobPositionManageView(CompanyUserRequiredMixin, View):
         }
         return render(request, "panel/job_positions/manage.html", {
             "picker": picker,
+            "is_machine_scope": is_machine_scope,
         })
 
 
@@ -3670,8 +3682,14 @@ class JobPositionSaveView(CompanyUserRequiredMixin, View):
         if position_pk:
             position = get_object_or_404(JobPosition, pk=position_pk)
         else:
+            scope = request.POST.get("scope", "")
             position = JobPosition(
                 created_by=getattr(request.user, "company_user", None),
+                # S130: ámbito de la pestaña del gestor donde se crea.
+                scope=(
+                    scope if scope in dict(JobPosition.SCOPE_CHOICES)
+                    else JobPosition.SCOPE_PERSONAL
+                ),
             )
 
         name = request.POST.get("name", "").strip()
@@ -4825,7 +4843,10 @@ class PersonalUpdateView(DocsUploadAccessMixin, View):
             if field in request.POST:
                 raw_value = request.POST.get(field, "").strip()
                 if raw_value:
-                    job_position = get_object_or_404(JobPosition, pk=raw_value)
+                    job_position = get_object_or_404(
+                        JobPosition, pk=raw_value,
+                        scope=JobPosition.SCOPE_PERSONAL,
+                    )
                     setattr(person, field, job_position)
                 else:
                     setattr(person, field, None)
@@ -5311,7 +5332,10 @@ class PersonMassSetJobPositionView(DocsUploadAccessMixin, View):
             )
 
         if job_position_id:
-            job_position = get_object_or_404(JobPosition, pk=job_position_id)
+            job_position = get_object_or_404(
+                JobPosition, pk=job_position_id,
+                scope=JobPosition.SCOPE_PERSONAL,
+            )
         else:
             job_position = None
 
