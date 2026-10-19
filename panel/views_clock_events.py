@@ -356,6 +356,8 @@ class ClockEventsDetailView(SupervisorAccessMixin, View):
             "late_minutes": s.late_minutes,
             "expected_end": s.expected_end,
             "early_minutes": s.early_minutes,
+            "start_off": s.start_off_schedule,
+            "end_off": s.end_off_schedule,
         } for s in report.shifts]
         return render(request, "panel/clock_events/_detail.html", {
             "person": person,
@@ -434,7 +436,7 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
             ("Salida (parte)", 9), ("Municipio entrada", 26),
             ("Municipio salida", 26), ("Entrada según horario", 10),
             ("Minutos tarde", 9), ("Salida según horario", 10),
-            ("Minutos antes", 9), ("Horas", 8), ("Incidencia", 20),
+            ("Minutos antes", 9), ("Horas", 8), ("Incidencia", 44),
         ]
         days.append([h for h, _w in day_headers])
         presses = book.create_sheet("Pulsaciones")
@@ -471,7 +473,7 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
                     if shift.late_minutes is not None else None,
                     shift.expected_end if early is not None else None,
                     max(early, 0) if early is not None else None,
-                    shift.duration_label, shift.issue,
+                    shift.duration_label, shift.issue_detail,
                 ])
             for event in row.report.events:
                 pressed = timezone.localtime(event.pressed_at)

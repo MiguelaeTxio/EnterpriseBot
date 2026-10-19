@@ -55,6 +55,7 @@ HABITUAL_MIN_DAYS = 3
 MAX_COMPARE_MINUTES = 180
 NO_OUT = "Entrada sin salida"
 NO_IN = "Salida sin entrada"
+OFF_SCHEDULE = "Fuera de horario"
 
 
 @dataclass
@@ -72,20 +73,32 @@ class Shift:
     expected_end: datetime.time = None
 
     @property
-    def early_minutes(self):
-        """
-        Minutes between the real OUT and the scheduled end (positive:
-        left early); None without OUT or without schedule.
-        ---
-        Minutos entre la salida real y la hora de salida del horario
-        (positivo: salió antes); None sin salida o sin horario.
-        """
+    def _raw_early(self):
         if self.clock_out is None or self.expected_end is None:
             return None
         real = timezone.localtime(self.clock_out.pressed_at)
-        real_minutes = real.hour * 60 + real.minute
         expected = self.expected_end.hour * 60 + self.expected_end.minute
-        return _comparable(expected - real_minutes)
+        return expected - (real.hour * 60 + real.minute)
+
+    @property
+    def _raw_late(self):
+        if self.clock_in is None or self.expected_start is None:
+            return None
+        real = timezone.localtime(self.clock_in.pressed_at)
+        expected = self.expected_start.hour * 60 + self.expected_start.minute
+        return (real.hour * 60 + real.minute) - expected
+
+    @property
+    def early_minutes(self):
+        """
+        Minutes between the real OUT and the scheduled end (positive:
+        left early); None without OUT, without schedule or off schedule.
+        ---
+        Minutos entre la salida real y la hora de salida del horario
+        (positivo: salió antes); None sin salida, sin horario o fuera
+        de horario.
+        """
+        return _comparable(self._raw_early)
 
     @property
     def is_early(self):
@@ -95,21 +108,34 @@ class Shift:
     def late_minutes(self):
         """
         Minutes between the scheduled start and the real IN (negative:
-        early); None without IN or without schedule.
+        early); None without IN, without schedule or off schedule.
         ---
         Minutos entre la hora de entrada del horario y la entrada real
-        (negativo: antes de hora); None sin entrada o sin horario.
+        (negativo: antes de hora); None sin entrada, sin horario o fuera
+        de horario.
         """
-        if self.clock_in is None or self.expected_start is None:
-            return None
-        real = timezone.localtime(self.clock_in.pressed_at)
-        real_minutes = real.hour * 60 + real.minute
-        expected = self.expected_start.hour * 60 + self.expected_start.minute
-        return _comparable(real_minutes - expected)
+        return _comparable(self._raw_late)
 
     @property
     def is_late(self):
         return (self.late_minutes or 0) > 0
+
+    @property
+    def start_off_schedule(self):
+        """
+        IN more than MAX_COMPARE_MINUTES away from the schedule: an
+        incident (Miguel Ángel, S129: "debería de aparecer en rojo y
+        como incidencia").
+        ---
+        Entrada a más de MAX_COMPARE_MINUTES del horario: incidencia.
+        """
+        raw = self._raw_late
+        return raw is not None and abs(raw) > MAX_COMPARE_MINUTES
+
+    @property
+    def end_off_schedule(self):
+        raw = self._raw_early
+        return raw is not None and abs(raw) > MAX_COMPARE_MINUTES
 
     @property
     def day(self):
@@ -129,11 +155,38 @@ class Shift:
             return NO_IN
         if self.clock_out is None:
             return NO_OUT
+        if self.start_off_schedule or self.end_off_schedule:
+            return OFF_SCHEDULE
         return ""
 
     @property
+    def issue_detail(self):
+        """
+        The incident spelled out, for the Excel ("Fuera de horario:
+        entrada 12:33, horario 07:00").
+        ---
+        La incidencia explicada, para el Excel.
+        """
+        if self.issue != OFF_SCHEDULE:
+            return self.issue
+        parts = []
+        if self.start_off_schedule:
+            parts.append("entrada %s, horario %s" % (
+                timezone.localtime(self.clock_in.pressed_at).strftime("%H:%M"),
+                self.expected_start.strftime("%H:%M"),
+            ))
+        if self.end_off_schedule:
+            parts.append("salida %s, horario %s" % (
+                timezone.localtime(self.clock_out.pressed_at).strftime("%H:%M"),
+                self.expected_end.strftime("%H:%M"),
+            ))
+        return "%s: %s" % (OFF_SCHEDULE, "; ".join(parts))
+
+    @property
     def duration_label(self):
-        return format_duration(self.seconds) if not self.issue else ""
+        if self.clock_in is None or self.clock_out is None:
+            return ""
+        return format_duration(self.seconds)
 
 
 @dataclass
@@ -240,15 +293,17 @@ class PersonReport:
 
 def _comparable(minutes):
     """
-    None when the press is more than MAX_COMPARE_MINUTES away from the
-    schedule: then it is not that schedule's shift (a night shift, a
-    schedule not yet updated) and it is neither late nor early.
+    None when there is nothing to compare or the press is more than
+    MAX_COMPARE_MINUTES away from the schedule: then it is not late nor
+    early but an incident, "Fuera de horario" (Shift.issue).
     ---
-    None si la pulsación está a más de MAX_COMPARE_MINUTES del horario:
-    no es un turno de ese horario (noche, horario sin actualizar) y no
-    cuenta ni como tarde ni como antes.
+    None si no hay con qué comparar o la pulsación está a más de
+    MAX_COMPARE_MINUTES del horario: entonces no es tarde ni antes,
+    sino una incidencia, "Fuera de horario".
     """
-    return None if abs(minutes) > MAX_COMPARE_MINUTES else minutes
+    if minutes is None or abs(minutes) > MAX_COMPARE_MINUTES:
+        return None
+    return minutes
 
 
 def _habitual(count, total):
