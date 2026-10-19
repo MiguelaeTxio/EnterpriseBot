@@ -40,6 +40,8 @@ import json
 import logging
 import re
 
+import fitz
+from google.genai.errors import ServerError
 from google.genai.types import GenerateContentConfig, HttpOptions, Part
 
 from ai_services.gemini_client import DEFAULT_MODEL, get_gemini_client
@@ -51,6 +53,7 @@ logger = logging.getLogger(__name__)
 NO_TYPE = "NINGUNO"
 MIN_TEXT_CHARS = 200
 MAX_TEXT_CHARS = 12000
+MAX_PDF_PAGES = 3
 
 # Machine fields each type states officially. Plate everywhere it is
 # printed as the vehicle's own registration; chassis and make/model
@@ -167,20 +170,55 @@ def _ask_gemini(prompt, text, data, filename):
             mime = "image/jpeg"
         else:
             return None
+        if mime == "application/pdf":
+            data = _first_pages(data)
         contents = [Part.from_bytes(data=data, mime_type=mime), prompt]
     client = get_gemini_client()
-    acquire_gemini_slot()
-    response = client.models.generate_content(
-        model=DEFAULT_MODEL,
-        contents=contents,
-        config=GenerateContentConfig(
-            http_options=HttpOptions(timeout=90_000),
-            response_mime_type="application/json",
-            response_schema=_SCHEMA,
-            temperature=0.0,
-        ),
-    )
-    return json.loads(response.text.strip())
+    # S130: "Deadline expired" (504) real con PDFs escaneados largos en
+    # la primera pasada; un reintento, y el PDF ya va recortado.
+    for attempt in (1, 2):
+        acquire_gemini_slot()
+        try:
+            response = client.models.generate_content(
+                model=DEFAULT_MODEL,
+                contents=contents,
+                config=GenerateContentConfig(
+                    http_options=HttpOptions(timeout=90_000),
+                    response_mime_type="application/json",
+                    response_schema=_SCHEMA,
+                    temperature=0.0,
+                ),
+            )
+            return json.loads(response.text.strip())
+        except ServerError:
+            if attempt == 2:
+                raise
+            logger.warning(
+                "# [COMPROBACION] Gemini sin respuesta a tiempo con %s; "
+                "reintento.", filename,
+            )
+    return None
+
+
+def _first_pages(data):
+    """
+    First MAX_PDF_PAGES pages of a PDF: the plate, chassis and insurer
+    are always on the first pages, and long scanned PDFs made Gemini
+    time out (504 DEADLINE_EXCEEDED, S130).
+    ---
+    Primeras MAX_PDF_PAGES páginas de un PDF: matrícula, bastidor y
+    aseguradora están siempre al principio, y los PDF escaneados largos
+    hacían que Gemini no respondiera a tiempo (S130).
+    """
+    try:
+        source = fitz.open(stream=data, filetype="pdf")
+        if source.page_count <= MAX_PDF_PAGES:
+            return data
+        excerpt = fitz.open()
+        excerpt.insert_pdf(source, from_page=0, to_page=MAX_PDF_PAGES - 1)
+        return excerpt.tobytes()
+    except Exception:  # noqa: BLE001 -- sin recorte, el PDF tal cual
+        return data
 
 
 def normalize_plate(value):
@@ -287,7 +325,10 @@ def apply_machine_facts(machine, document_type_code, facts, save=True):
             filled[FACT_LABELS[name]] = value
         elif name == "plate" and normalize_plate(current) not in ("", value):
             different[FACT_LABELS[name]] = (current, value)
-        elif name == "chassis_number" and current.upper() != value:
+        elif name == "chassis_number" and (
+            re.sub(r"[^A-Z0-9]", "", current.upper())
+            != re.sub(r"[^A-Z0-9]", "", value)
+        ):
             different[FACT_LABELS[name]] = (current, value)
     if update_fields and save:
         machine.save(update_fields=update_fields)
