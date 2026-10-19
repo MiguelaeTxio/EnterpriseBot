@@ -750,15 +750,17 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
         # los vigentes con caducidad real ya pasada.
         # S123: los tipos acumulables (varios vigentes a la vez) se
         # ofrecen siempre -- "Actualizar" no es la vía para añadir otro.
-        present_type_codes = {
-            entry.document_type.code for entry in entries
-            if entry.document_type_id
-            and not entry.document_type.is_cumulative
-        }
+        # S130, Miguel Ángel: "he intentado subir el recibo del seguro
+        # de la furgoneta X12 y no podía elegir recibo del seguro" -- la
+        # X12 ya tenía uno y "+ Subir" escondía los tipos ya presentes.
+        # Ahora ofrece SIEMPRE todos los tipos de la familia: la subida
+        # ya aplica la sustitución (subject_upload_service: el más
+        # reciente queda vigente, el anterior pasa a histórico), igual
+        # que "Actualizar" en su fila.
         missing_types_by_family = {}
         for dt in DocumentTypeCatalog.objects.filter(
             domain__in=machine_domains, is_active=True,
-        ).exclude(code__in=present_type_codes).order_by("label"):
+        ).order_by("label"):
             missing_types_by_family.setdefault(dt.family, []).append(dt)
         # H30 (S119): "Falta" y "Caducado" del triángulo por familia
         # salen SOLO del requisito de documentación de la máquina
@@ -1674,11 +1676,10 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         # ofrecen siempre, aunque la persona ya tenga alguno -- Miguel
         # Ángel: "¿cómo subo el contrato nuevo?". Con uno ya subido,
         # "+ Subir" no ofrecía "Contrato laboral".
-        present_type_codes = {
-            entry.document_type.code for entry in entries
-            if entry.document_type_id
-            and not entry.document_type.is_cumulative
-        }
+        # S130: igual que en la ficha de máquina, "+ Subir" ofrece
+        # siempre todos los tipos de la familia, también los que ya
+        # tiene (la subida aplica la sustitución: el anterior pasa a
+        # histórico).
         missing_types_by_family = {}
         for dt in DocumentTypeCatalog.objects.filter(
             domain__in=[
@@ -1686,7 +1687,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
                 DocumentTypeCatalog.DOMAIN_BOTH,
             ],
             is_active=True,
-        ).exclude(code__in=present_type_codes).order_by("label"):
+        ).order_by("label"):
             missing_types_by_family.setdefault(dt.family, []).append(dt)
         # H31 (S109), punto 3 corregido: el triangulo de "documento
         # FALTANTE" ya NO usa missing_types_by_family (catalogo
