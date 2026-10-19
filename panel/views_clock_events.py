@@ -62,15 +62,11 @@ _SORT_VALUES = {
     "events": lambda r: len(r.report.events),
     "last": lambda r: (r.report.last_event.pressed_at
                        if r.report.last_event else None),
-    "issues": lambda r: len(r.report.issues),
-    "late": lambda r: len(r.report.late_arrivals),
-    "early": lambda r: len(r.report.early_departures),
+    "issues": lambda r: r.report.incident_count,
 }
 _COLUMNS = (
     ("person", "Apellidos, Nombre"),
     ("events", "Fichajes"),
-    ("late", "Entra tarde"),
-    ("early", "Sale antes"),
     ("issues", "Incidencias"),
     ("last", "Último día"),
 )
@@ -80,6 +76,7 @@ class _EmptyReport:
     shifts = ()
     events = ()
     issues = ()
+    incident_count = 0
     late_events = ()
     timed_arrivals = ()
     late_arrivals = ()
@@ -368,6 +365,7 @@ class ClockEventsDetailView(SupervisorAccessMixin, View):
             "presses": [_press_view(s.clock_in), _press_view(s.clock_out)],
             "duration": s.duration_label,
             "issue": s.issue,
+            "incidents": s.incidents,
             "expected_start": s.expected_start,
             "late_minutes": s.late_minutes,
             "expected_end": s.expected_end,
@@ -383,7 +381,7 @@ class ClockEventsDetailView(SupervisorAccessMixin, View):
             "date_to": date_to,
             "shifts": shifts,
             "total_label": report.total_label,
-            "issues_count": len(report.issues),
+            "issues_count": report.incident_count,
             "punctuality_label": report.punctuality_label,
             "habitually_late": report.habitually_late,
             "early_label": report.early_label,
@@ -453,7 +451,7 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
             ("Salida (parte)", 9), ("Municipio entrada", 26),
             ("Municipio salida", 26), ("Entrada según horario", 10),
             ("Minutos tarde", 9), ("Salida según horario", 10),
-            ("Minutos antes", 9), ("Horas", 8), ("Incidencia", 44),
+            ("Minutos antes", 9), ("Horas", 8), ("Incidencias", 60),
         ]
         days.append([h for h, _w in day_headers])
         presses = book.create_sheet("Pulsaciones")
@@ -490,7 +488,7 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
                     if shift.late_minutes is not None else None,
                     shift.expected_end if early is not None else None,
                     max(early, 0) if early is not None else None,
-                    shift.duration_label, shift.issue_detail,
+                    shift.duration_label, "; ".join(shift.incidents),
                 ])
             for event in row.report.events:
                 pressed = timezone.localtime(event.pressed_at)

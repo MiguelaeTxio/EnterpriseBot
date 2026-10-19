@@ -160,27 +160,42 @@ class Shift:
         return ""
 
     @property
-    def issue_detail(self):
+    def incidents(self):
         """
-        The incident spelled out, for the Excel ("Fuera de horario:
-        entrada 12:33, horario 07:00").
+        Every incident of the shift, spelled out (Miguel Ángel, S129:
+        late arrivals and early departures are incidents too, explained
+        in the worker's detail): missing pair, off schedule, late, early.
         ---
-        La incidencia explicada, para el Excel.
+        Todas las incidencias de la jornada, explicadas: fichaje sin su
+        pareja, fuera de horario, llegada tarde y salida antes de hora.
         """
-        if self.issue != OFF_SCHEDULE:
-            return self.issue
-        parts = []
+        def hhmm(event):
+            return timezone.localtime(event.pressed_at).strftime("%H:%M")
+
+        found = []
+        if self.clock_in is None:
+            found.append(NO_IN)
+        if self.clock_out is None:
+            found.append(NO_OUT)
         if self.start_off_schedule:
-            parts.append("entrada %s, horario %s" % (
-                timezone.localtime(self.clock_in.pressed_at).strftime("%H:%M"),
-                self.expected_start.strftime("%H:%M"),
+            found.append("Entrada fuera de horario (%s; horario %s)" % (
+                hhmm(self.clock_in), self.expected_start.strftime("%H:%M"),
             ))
         if self.end_off_schedule:
-            parts.append("salida %s, horario %s" % (
-                timezone.localtime(self.clock_out.pressed_at).strftime("%H:%M"),
+            found.append("Salida fuera de horario (%s; horario %s)" % (
+                hhmm(self.clock_out), self.expected_end.strftime("%H:%M"),
+            ))
+        if self.is_late:
+            found.append("Llegada tarde: %d min (%s; horario %s)" % (
+                self.late_minutes, hhmm(self.clock_in),
+                self.expected_start.strftime("%H:%M"),
+            ))
+        if self.is_early:
+            found.append("Salida antes de hora: %d min (%s; horario %s)" % (
+                self.early_minutes, hhmm(self.clock_out),
                 self.expected_end.strftime("%H:%M"),
             ))
-        return "%s: %s" % (OFF_SCHEDULE, "; ".join(parts))
+        return found
 
     @property
     def duration_label(self):
@@ -210,7 +225,16 @@ class PersonReport:
 
     @property
     def issues(self):
-        return [s for s in self.shifts if s.issue]
+        """
+        Shifts with at least one incident.
+        ---
+        Jornadas con al menos una incidencia.
+        """
+        return [s for s in self.shifts if s.incidents]
+
+    @property
+    def incident_count(self):
+        return sum(len(s.incidents) for s in self.shifts)
 
     @property
     def last_event(self):
