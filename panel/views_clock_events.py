@@ -52,6 +52,7 @@ from panel.views_vacation_balance import (
 SCREEN_KEY = "clock_events"
 FILTER_KEYS = (
     "search", "active", "company", "date_from", "date_to", "sort",
+    "issues_only",
 )
 _MAX_SORT_KEYS = 4
 _MAX_RANGE_DAYS = 366
@@ -202,6 +203,20 @@ def _rows(request, people, date_from, date_to):
     ]
 
 
+def _with_issues_filter(request, rows):
+    """
+    "Solo con incidencias" (Miguel Ángel, S129: "un filtro para
+    seleccionar los trabajadores con incidencias y poder exportarlos a
+    Excel"): only the workers with an incident in the dates.
+    ---
+    "Solo con incidencias": solo los trabajadores con alguna
+    incidencia en las fechas elegidas.
+    """
+    if _param(request, "issues_only") != "1":
+        return rows
+    return [r for r in rows if r.report.issues]
+
+
 def _list_context(request):
     """
     Context of the table: filtered workers with their report, sorted.
@@ -220,7 +235,7 @@ def _list_context(request):
             "company_user",
         ).filter(pk__in=wanted))
     rows = _sort_rows(
-        _rows(request, people, date_from, date_to),
+        _with_issues_filter(request, _rows(request, people, date_from, date_to)),
         _parse_sort(_param(request, "sort")),
     )
     # H24 (S129): municipio del último fichaje de cada fila.
@@ -236,6 +251,7 @@ def _list_context(request):
         "filter_company": companies,
         "date_from": date_from,
         "date_to": date_to,
+        "filter_issues_only": _param(request, "issues_only") == "1",
         "total_label": format_duration(
             sum(r.report.total_seconds for r in rows),
         ),
@@ -420,12 +436,13 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
             people = list(PersonIdentity.objects.select_related(
                 "company_user",
             ).filter(pk__in=wanted))
+            rows = _rows(request, people, date_from, date_to)
         else:
             people, _a, _c, _s = _filtered_people(request)
-        rows = sorted(
-            _rows(request, people, date_from, date_to),
-            key=lambda r: r.sort_name,
-        )
+            rows = _with_issues_filter(
+                request, _rows(request, people, date_from, date_to),
+            )
+        rows = sorted(rows, key=lambda r: r.sort_name)
         book = Workbook()
         days = book.active
         days.title = "Jornadas"

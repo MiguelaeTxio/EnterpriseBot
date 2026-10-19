@@ -68,6 +68,14 @@ selección persistidos por usuario (screen_key "clock_events").
                             </div>
                             <input type="hidden" name="selected_ids" id="clk-selected-ids" value="">
                         </div>
+                        {# H24 (S129): solo los trabajadores con alguna incidencia en las fechas elegidas (también al exportar). #}
+                        <div>
+                            <div class="fw-semibold mb-1">Incidencias</div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="issues_only" value="1" id="clkIssuesOnly"{% if filter_issues_only %} checked{% endif %}>
+                                <label class="form-check-label" for="clkIssuesOnly">Solo con incidencias</label>
+                            </div>
+                        </div>
                     </div>
                 </form>
             </div>
