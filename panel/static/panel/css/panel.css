@@ -1490,34 +1490,55 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
     width: 6.5rem;
 }
 
-/* H30 (S131): pestaña Revisiones, tabla editable fila a fila. */
+/* H30 (S131): pestaña Revisiones, tabla editable fila a fila, con
+   anchos ajustados para que quepa sin scroll horizontal. */
+.svc-table {
+    font-size: 0.85rem;
+}
 .svc-table td,
 .svc-table th {
     white-space: nowrap;
+    padding-left: 0.25rem;
+    padding-right: 0.25rem;
 }
 .svc-table .svc-sep {
     border-left: 2px solid #dee2e6;
 }
+.svc-table .svc-family {
+    white-space: normal;
+    max-width: 6.5rem;
+}
 .svc-table .svc-status {
     white-space: normal;
-    min-width: 14rem;
+    min-width: 9rem;
+    max-width: 13rem;
 }
-.svc-model {
-    max-width: 11rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
+.svc-table .svc-input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+.svc-table .svc-input[type="number"]::-webkit-outer-spin-button,
+.svc-table .svc-input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.svc-table .form-control-sm,
+.svc-table .form-select-sm {
+    padding-left: 0.3rem;
+    padding-right: 0.3rem;
+}
+.svc-table .form-select-sm {
+    padding-right: 1.4rem;
+    background-position: right 0.25rem center;
 }
 .svc-w-sel {
-    width: 6.5rem;
-}
-.svc-w-km {
-    width: 7rem;
+    width: 5.5rem;
 }
 .svc-w-date {
-    width: 8.5rem;
+    width: 7.6rem;
 }
 .svc-w-num {
-    width: 6.5rem;
+    width: 4.6rem;
 }
 /* S131: lectura nueva y revisión nueva como acordeón -- solo una. */
 .svc-open-read .svc-grp-svc,

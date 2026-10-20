@@ -13,20 +13,17 @@ datos nuevos. Todo llega resuelto de la vista.
 <tr class="svc-row" data-pk="{{ machine.pk }}" data-save-url="{% url 'panel:service_tab_row_save' pk=machine.pk %}">
     <td class="text-nowrap stack-mobile-title svc-fix-left">
         <input type="checkbox" class="form-check-input svc-select me-1" value="{{ machine.pk }}" aria-label="Seleccionar {{ machine.code }}">
-        <a href="{% url 'panel:documentation_machine_detail' pk=machine.pk %}?service_open=1#machineServicePlan" class="fw-semibold">{{ machine.code }}</a>
-        <div class="small text-muted svc-model">{{ machine.brand_model|default:"" }}</div>
+        <a href="{% url 'panel:documentation_machine_detail' pk=machine.pk %}?service_open=1#machineServicePlan" class="fw-semibold" title="{{ machine.brand_model|default:'' }}">{{ machine.code }}</a>
     </td>
-    <td class="small" data-label="Familia">{{ machine.family|default:"—" }}</td>
-    <td data-label="Revisión por horas">
-        <select class="form-select form-select-sm svc-input svc-w-sel" name="hours_interval" {% if not can_edit %}disabled{% endif %} aria-label="Revisión por horas">
+    <td class="small svc-family" data-label="Familia">{{ machine.family|default:"—" }}</td>
+    <td data-label="Revisión cada">
+        <select class="form-select form-select-sm svc-input svc-w-sel mb-1" name="hours_interval" {% if not can_edit %}disabled{% endif %} aria-label="Revisión por horas">
             <option value="">—</option>
             {% for value, label in hours_choices %}
             <option value="{{ value }}" {% if machine.service_hours_interval == value %}selected{% endif %}>{{ value }} h</option>
             {% endfor %}
         </select>
-    </td>
-    <td data-label="Revisión por km">
-        <input type="number" min="1" class="form-control form-control-sm svc-input svc-w-km" name="km_interval" list="svcKmSuggestions" value="{{ machine.service_every_km|default_if_none:'' }}" {% if not can_edit %}disabled{% endif %} aria-label="Revisión cada N km">
+        <input type="number" min="1" class="form-control form-control-sm svc-input svc-w-sel" name="km_interval" list="svcKmSuggestions" placeholder="km" value="{{ machine.service_every_km|default_if_none:'' }}" {% if not can_edit %}disabled{% endif %} aria-label="Revisión cada N km">
     </td>
     <td class="small text-nowrap svc-sep" data-label="Última lectura">
         {% if machine.last_km %}<div>{{ machine.last_km_text }} km <span class="text-muted">{{ machine.last_km.reading_date|date:"d/m/y" }}</span></div>{% endif %}

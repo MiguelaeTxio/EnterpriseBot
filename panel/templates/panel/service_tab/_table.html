@@ -5,15 +5,17 @@ filtros u orden). Cabecera en dos niveles. Código fijo a la
 izquierda y Estado fijo a la derecha; "Última lectura" y "Última
 revisión" abren su grupo de casillas nuevas, y solo se ve uno (Miguel
 Ángel: "cuando se vea una, que no se vea la otra"). Orden múltiple por
-Código, Familia y Marca/Modelo (mismas reglas que Centros de gasto).
+Código y Familia (mismas reglas que Centros de gasto). Sin columna de
+modelo y con anchos ajustados para que no haya scroll horizontal
+(Miguel Ángel, S131).
 {% endcomment %}
 <input type="hidden" id="svc-current-sort" value="{{ current_sort }}">
 <table class="table stack-mobile table-sm table-hover align-middle mb-0 svc-table {% if open_group == 'svc' %}svc-open-svc{% else %}svc-open-read{% endif %}" id="svc-table">
     <thead>
         <tr class="small">
-            <th rowspan="2" class="svc-fix-left"><input type="checkbox" class="form-check-input me-1" id="svc-select-all" aria-label="Seleccionar todos"><a href="#" class="svc-sort text-reset" data-sort="{{ sort_next.code }}">Código{% if sort_arrows.code %} <i class="bi bi-arrow-{{ sort_arrows.code }}"></i><sup>{{ sort_priority.code }}</sup>{% endif %}</a> · <a href="#" class="svc-sort text-reset fw-normal" data-sort="{{ sort_next.brand_model }}">Modelo{% if sort_arrows.brand_model %} <i class="bi bi-arrow-{{ sort_arrows.brand_model }}"></i><sup>{{ sort_priority.brand_model }}</sup>{% endif %}</a></th>
+            <th rowspan="2" class="svc-fix-left"><input type="checkbox" class="form-check-input me-1" id="svc-select-all" aria-label="Seleccionar todos"><a href="#" class="svc-sort text-reset" data-sort="{{ sort_next.code }}">Código{% if sort_arrows.code %} <i class="bi bi-arrow-{{ sort_arrows.code }}"></i><sup>{{ sort_priority.code }}</sup>{% endif %}</a></th>
             <th rowspan="2"><a href="#" class="svc-sort text-reset" data-sort="{{ sort_next.family }}">Familia{% if sort_arrows.family %} <i class="bi bi-arrow-{{ sort_arrows.family }}"></i><sup>{{ sort_priority.family }}</sup>{% endif %}</a></th>
-            <th colspan="2" class="text-center">Revisión cada</th>
+            <th rowspan="2" title="Arriba horas, abajo km">Revisión cada<div class="fw-normal text-muted">h / km</div></th>
             <th rowspan="2" class="svc-sep"><button type="button" class="btn btn-sm btn-link p-0 text-reset fw-bold svc-open" data-group="read" title="Ver lectura nueva">Última lectura <i class="bi bi-chevron-right svc-chevron"></i></button></th>
             <th colspan="4" class="text-center svc-grp-read">Lectura nueva</th>
             <th rowspan="2" class="svc-sep"><button type="button" class="btn btn-sm btn-link p-0 text-reset fw-bold svc-open" data-group="svc" title="Ver revisión nueva">Última revisión <i class="bi bi-chevron-right svc-chevron"></i></button></th>
@@ -21,8 +23,6 @@ Código, Familia y Marca/Modelo (mismas reglas que Centros de gasto).
             <th rowspan="2" class="svc-fix-right">Estado</th>
         </tr>
         <tr class="small">
-            <th>Horas</th>
-            <th>Km</th>
             <th class="svc-grp-read">Fecha</th>
             <th class="svc-grp-read">Km</th>
             <th class="svc-grp-read">Horas</th>
@@ -37,7 +37,7 @@ Código, Familia y Marca/Modelo (mismas reglas que Centros de gasto).
         {% for machine in machines %}
         {% include "panel/service_tab/_row.html" %}
         {% empty %}
-        <tr><td colspan="13" class="text-muted small">Ningún centro de gasto con estos filtros.</td></tr>
+        <tr><td colspan="12" class="text-muted small">Ningún centro de gasto con estos filtros.</td></tr>
         {% endfor %}
     </tbody>
 </table>
