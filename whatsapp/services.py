@@ -18,6 +18,7 @@ import logging
 import os
 from datetime import timedelta
 
+from django.conf import settings
 from django.db.models import Q
 from django.utils.timezone import now
 from google import genai
@@ -1230,8 +1231,12 @@ def albaran_link_text(unit) -> str:
     compartido por la entrega tras opt_in y por el envío directo dentro
     de la ventana de 24 h, mismas frases).
     """
+    # H37 (S132): PLATFORM_BASE_URL never existed in the server .env,
+    # so the link went out without host. Now a setting.
+    # PLATFORM_BASE_URL nunca existió en el .env del servidor y el
+    # enlace salía sin dominio. Ahora es un ajuste de settings.
     albaran_url = (
-        f"{os.environ.get('PLATFORM_BASE_URL', '').rstrip('/')}"
+        f"{settings.PLATFORM_BASE_URL}"
         f"/panel/budgets/work-orders/units/{unit.pk}/albaran/"
     )
     return (

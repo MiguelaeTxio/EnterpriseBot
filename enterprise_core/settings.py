@@ -4,22 +4,28 @@ Django settings for EnterpriseBot project.
 Refactored April 2026 for Django 5.2.12 and Ngrok v3 Security Standards.
 ---
 Configuración de Django para el proyecto EnterpriseBot.
-Refactorizado en Abril de 2026 para los estándares de seguridad de Django 5.2.12 y Ngrok v3.
+Refactorizado en Abril de 2026 para los estándares de seguridad de Django
+5.2.12 y Ngrok v3.
 """
 
 import os
 from pathlib import Path
+
+from celery.schedules import crontab
 from dotenv import load_dotenv
 
 # 1. CARGA DE VARIABLES DE ENTORNO / LOAD ENVIRONMENT VARIABLES
-# Centralization of secrets and environment-specific configuration via .env file.
-# Centralización de secretos y configuración específica del entorno a través del archivo .env.
+# Centralization of secrets and environment-specific configuration via .env
+# file.
+# Centralización de secretos y configuración específica del entorno a través
+# del archivo .env.
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
 
 # 2. CONFIGURACIÓN DE SEGURIDAD / SECURITY CONFIGURATION
 # Core security identifiers and operational mode (Debug/Production).
-# Identificadores de seguridad núcleo y modo de operación (Depuración/Producción).
+# Identificadores de seguridad núcleo y modo de operación
+# (Depuración/Producción).
 SECRET_KEY = os.getenv('SECRET_KEY')
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
@@ -35,9 +41,11 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 H28_AGENT_API_TOKEN = os.getenv('H28_AGENT_API_TOKEN')
 
 # ✅ APRIL 2026 SECURITY POLICY: Dynamic Ngrok TLD Resolution
-# Explicitly allowing .app, .dev, and .free.app for Ngrok v3 Agent compatibility.
+# Explicitly allowing .app, .dev, and .free.app for Ngrok v3 Agent
+# compatibility.
 # POLÍTICA DE SEGURIDAD ABRIL 2026: Resolución dinámica de TLDs de Ngrok.
-# Se permite explícitamente .app, .dev, y .free.app para compatibilidad con el agente Ngrok v3.
+# Se permite explícitamente .app, .dev, y .free.app para compatibilidad con el
+# agente Ngrok v3.
 ALLOWED_HOSTS = [
     'MiguelAeTxio.pythonanywhere.com',
     'enterprisebot-miguelaetxio.pythonanywhere.com',
@@ -49,8 +57,15 @@ ALLOWED_HOSTS = [
     'localhost'
 ]
 
+# H37 (S132): public URL of the platform, for links sent outside the panel
+# (WhatsApp messages and template buttons).
+# URL pública de la plataforma, para los enlaces que salen del panel
+# (mensajes de WhatsApp y botones de plantilla).
+PLATFORM_BASE_URL = "https://enterprisebot-miguelaetxio.pythonanywhere.com"
+
 # CSRF Trusted Origins for 2026 Secure Webhooks from Twilio and Ngrok tunnels.
-# Orígenes de confianza CSRF para Webhooks seguros de 2026 de Twilio y túneles Ngrok.
+# Orígenes de confianza CSRF para Webhooks seguros de 2026 de Twilio y túneles
+# Ngrok.
 CSRF_TRUSTED_ORIGINS = [
     'https://*.ngrok-free.app',
     'https://*.ngrok-free.dev',
@@ -73,19 +88,24 @@ INSTALLED_APPS = [
     'ai_services',
     # Core voice bridge — puente de voz principal.
     'vox_bridge',
-    # Multicompany IVR configuration engine — motor de configuración IVR multiempresa.
+    # Multicompany IVR configuration engine — motor de configuración IVR
+    # multiempresa.
     'ivr_config',
-    # Custom administration panel for CompanyUser accounts — panel de administración personalizado para cuentas CompanyUser.
+    # Custom administration panel for CompanyUser accounts — panel de
+    # administración personalizado para cuentas CompanyUser.
     'panel',
     # WhatsApp channel app — app del canal WhatsApp.
     'whatsapp',
     'work_order_processor',
     'fleet',
-    # Supplier delivery notes and spare parts warehouse — albaranes de proveedor y almacén de repuestos (Hito 10).
+    # Supplier delivery notes and spare parts warehouse — albaranes de
+    # proveedor y almacén de repuestos (Hito 10).
     'spare_parts',
-    # Bridge between digital work orders and the spare parts warehouse — puente entre partes digitales y almacén de repuestos (Hito 10, Paso 4).
+    # Bridge between digital work orders and the spare parts warehouse — puente
+    # entre partes digitales y almacén de repuestos (Hito 10, Paso 4).
     'workorder_spare_parts',
-    # IRC-style section chat rooms and breakdown agent — salas de chat IRC y agente de averías.
+    # IRC-style section chat rooms and breakdown agent — salas de chat IRC y
+    # agente de averías.
     'chat',
     # ASISTENCIA budget engine — motor de presupuestos ASISTENCIA.
     'budgets',
@@ -133,7 +153,8 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
-    # Blocks CompanyUser access to /admin/ — bloquea el acceso de CompanyUser a /admin/.
+    # Blocks CompanyUser access to /admin/ — bloquea el acceso de CompanyUser a
+    # /admin/.
     'panel.middleware.CompanyUserAdminBlockMiddleware',
     # S117: htmx + sesión caducada -> HX-Redirect al login completo en
     # vez de incrustar la página de login en el hueco del fragmento.
@@ -195,21 +216,40 @@ DATABASES = {
             # Activates MySQL Strict Mode to enforce data integrity.
             # Escalates truncation and type mismatch warnings into errors,
             # preventing silent data corruption on insert/update operations.
-            # Activa el Strict Mode de MySQL para reforzar la integridad de datos.
-            # Convierte en errores los avisos de truncado e incompatibilidad de tipo,
-            # evitando la corrupción silenciosa de datos en operaciones de inserción/actualización.
+            # Activa el Strict Mode de MySQL para reforzar la integridad de
+            # datos.
+            # Convierte en errores los avisos de truncado e incompatibilidad de
+            # tipo,
+            # evitando la corrupción silenciosa de datos en operaciones de
+            # inserción/actualización.
             'sql_mode': 'STRICT_TRANS_TABLES',
         },
     }
 }
 
 # Advanced password validation for enterprise security compliance.
-# Validación de contraseñas avanzada para cumplimiento de seguridad empresarial.
+# Validación de contraseñas avanzada para cumplimiento de seguridad
+# empresarial.
 AUTH_PASSWORD_VALIDATORS = [
-    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+    {
+        'NAME': (
+            'django.contrib.auth.password_validation.'
+            'UserAttributeSimilarityValidator'
+        ),
+    },
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
+    {
+        'NAME': (
+            'django.contrib.auth.password_validation.'
+            'CommonPasswordValidator'
+        ),
+    },
+    {
+        'NAME': (
+            'django.contrib.auth.password_validation.'
+            'NumericPasswordValidator'
+        ),
+    },
 ]
 
 # 5. INTERNACIONALIZACIÓN / INTERNATIONALIZATION
@@ -263,22 +303,23 @@ STORAGES = {
     },
 }
 
-MEDIA_URL  = '/media/'
+MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # 7. CELERY CONFIGURATION
 # Broker, result backend and periodic task schedule for Celery Beat.
-# Broker, backend de resultados y schedule de tareas periódicas para Celery Beat.
-from celery.schedules import crontab
-
-CELERY_BROKER_URL        = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
-CELERY_RESULT_BACKEND    = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
-CELERY_TIMEZONE          = TIME_ZONE
-CELERY_ENABLE_UTC        = True
+# Broker, backend de resultados y schedule de tareas periódicas para Celery
+# Beat.
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = os.getenv(
+    'CELERY_RESULT_BACKEND', 'redis://localhost:6379/0',
+)
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_ENABLE_UTC = True
 CELERY_TASK_TRACK_STARTED = True
-CELERY_TASK_DEFAULT_QUEUE  = 'work_orders'
+CELERY_TASK_DEFAULT_QUEUE = 'work_orders'
 
 # ---------------------------------------------------------------------------
 # Resiliencia ante caída del worker (S025) -- hallazgo real de Miguel
@@ -336,15 +377,19 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': crontab(minute='*/30'),
     },
 
-    # Sends presence reminders to CompanyUsers stuck in IN_MEETING for 3+ hours.
-    # Envía recordatorios de presencia a CompanyUsers en IN_MEETING durante 3+ horas.
+    # Sends presence reminders to CompanyUsers stuck in IN_MEETING for 3+
+    # hours.
+    # Envía recordatorios de presencia a CompanyUsers en IN_MEETING durante 3+
+    # horas.
     'check-in-meeting-reminders': {
         'task':     'whatsapp.tasks.check_in_meeting_reminders',
         'schedule': crontab(minute='*/15'),
     },
 
-    # Restores CompanyUsers to AVAILABLE when their PresenceStatus ends_at has passed.
-    # Restaura CompanyUsers a AVAILABLE cuando su PresenceStatus ends_at ha expirado.
+    # Restores CompanyUsers to AVAILABLE when their PresenceStatus ends_at has
+    # passed.
+    # Restaura CompanyUsers a AVAILABLE cuando su PresenceStatus ends_at ha
+    # expirado.
     'expire-presence-statuses': {
         'task':     'whatsapp.tasks.expire_presence_statuses',
         'schedule': crontab(minute='*/5'),
@@ -402,7 +447,10 @@ CELERY_BEAT_SCHEDULE = {
     # (reinicio del worker disparado por un despliegue, un fallo
     # puntual de Gemini, etc.) -- incidente real 2026-07-23 (S030).
     'self-heal-unassigned-personal-documents': {
-        'task':     'document_ingestion.tasks.self_heal_unassigned_personal_documents',
+        'task': (
+            'document_ingestion.tasks.'
+            'self_heal_unassigned_personal_documents'
+        ),
         'schedule': crontab(minute='*/15'),
     },
 

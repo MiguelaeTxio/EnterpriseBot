@@ -22,9 +22,7 @@ vez (`--log-file`). Solo cambia la plantilla, de tipo
 `twilio/call-to-action`: la variable del botón va al final de la URL,
 como exige WhatsApp, y lleva el resto de la ruta (`<pk>/albaran/`).
 """
-import os
-
-from django.core.management.base import CommandError
+from django.conf import settings
 
 from whatsapp.management.commands import (
     create_document_notice_whatsapp_templates as notice_templates,
@@ -42,17 +40,15 @@ BODY = (
 
 def _definition():
     """
-    Template definition, with the platform URL of this server.
+    Template definition, with the platform URL.
 
     ---
 
-    Definición de la plantilla, con la URL de la plataforma de este
-    servidor (`PLATFORM_BASE_URL`, la misma que usa
+    Definición de la plantilla, con la URL de la plataforma
+    (`settings.PLATFORM_BASE_URL`, la misma que usa
     `albaran_link_text()`).
     """
-    base_url = os.environ.get("PLATFORM_BASE_URL", "").rstrip("/")
-    if not base_url:
-        raise CommandError("Variable de entorno ausente: PLATFORM_BASE_URL")
+    base_url = settings.PLATFORM_BASE_URL
     return {
         "name": TEMPLATE_NAME,
         "variables": {
@@ -98,11 +94,10 @@ class Command(notice_templates.Command):
     @property
     def templates(self):
         """
-        Templates to create (built at run time, needs the environment).
+        Templates to create.
 
         ---
 
-        Plantillas a crear (se construyen al ejecutar: necesitan el
-        entorno del servidor).
+        Plantillas a crear.
         """
         return [_definition()]
