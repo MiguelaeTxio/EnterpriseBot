@@ -217,6 +217,57 @@ Lo que fija:
   como en el Laboratorio de Análisis. Su contenido está sin definir:
   depende del PDF que Pepe pasó a Miguel Ángel.
 
+### 4.4. Dossier de Pepe: especificación funcional de la aplicación (S132)
+
+Aportado por Miguel Ángel en S132:
+`DOCS_ATTACHED_2_ANNEX_V37/Dossier_Completo_App_Asistencia_Camiones_Gruas_Alvarez.pdf`
+(37 páginas, 35 apartados). Es el PDF que "Pepe me pasó" (4.3) y define
+la parte de control. Lo esencial, resumido:
+
+- **Idea central:** un panel de tráfico visual para la oficina, abierto
+  todo el día, que muestra de un vistazo qué conductores y máquinas
+  están libres y qué servicios están abiertos. No una tabla.
+- **Pantalla principal:** tres columnas de tarjetas grandes con color:
+  conductores (libres y ocupados), máquinas (libres, ocupadas,
+  regresando, en taller) y albaranes abiertos. Arriba, botones de nuevo
+  servicio, buscar albarán, mapa y estadísticas. Filtro por categoría de
+  máquina; orden por disponibilidad, hora o urgencia.
+- **Máquinas por nombre interno** (B30, B35, A30, A39, X02), con foto,
+  matrícula, categoría (ligera, pesada, rescate, plataforma, furgón
+  taller), estado, km y próximo mantenimiento.
+- **Conductores** como tarjetas con foto, teléfono, permisos por tipo de
+  máquina y estado (libre, asignado, en servicio, regresando, descanso,
+  baja, no disponible).
+- **Asignación arrastrando** la tarjeta del conductor y la de la máquina
+  al albarán. No se puede asignar algo ocupado ni una máquina en taller.
+- **Estados y colores del albarán:** rojo creado o pendiente; amarillo
+  enviado o en servicio; verde terminado, firmado y regresando a base;
+  gris cerrado; azul programado; naranja incidencia.
+- **Flujo:** entra el aviso, la oficina crea el albarán (rojo), asigna
+  máquina y conductor, pulsa enviar (amarillo), el conductor hace el
+  servicio y recoge la firma (verde, conductor y máquina "regresando"),
+  y en base mete los km finales y los litros repostados y cierra (gris,
+  conductor y máquina libres de nuevo).
+- **Dos hojas del mismo albarán:** la del conductor (operativa, sin
+  precios ni notas) y la interna de oficina (notas privadas para
+  facturación).
+- **Reglas:** no se envía sin conductor y máquina; no se cierra sin
+  firma o motivo de no firma; no se cierra en base sin km finales ni
+  sin indicar si repostó; cada cambio de estado guarda hora y usuario;
+  los albaranes no se borran, se corrigen con auditoría.
+- **Además:** control de km y gasoil con consumo por máquina, avisos de
+  mantenimiento y de documentación, historial y buscador, exportaciones,
+  alertas (servicio sin enviar, sin km de salida, demasiado tiempo en
+  amarillo, sin cerrar en base...), estadísticas y facturación.
+- **Fases que propone:** 1) datos de máquinas, conductores y servicios;
+  2) panel de tráfico y asignación; 3) vista del conductor y firma;
+  4) cierre en base con km y gasoil; 5) historial, buscador y PDF;
+  6) mantenimiento y avisos; 7) estadísticas y facturación.
+
+Ya decidido antes de recibirlo y que el dossier deja abierto: app nativa
+Android en tablets (4.1), entrada del albarán desde foto de TIREA
+(4.3), GPS continuo (4.1).
+
 ## 5. Hoja de Ruta para la Siguiente Sesión (S132) -- concertada con Miguel Ángel al cierre de S131
 
 Se hace en este orden.
