@@ -1,0 +1,46 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/work_order_create_direct.html #}
+{% extends "panel/base.html" %}
+
+{% block title %}Nueva orden de trabajo{% endblock %}
+{% block page_title %}Nueva orden de trabajo{% endblock %}
+
+{% block content %}
+{% comment %}
+H37 (S132). Formulario de WorkOrderCreateDirectView: la plantilla no
+existía desde H17 y la vista fallaba con TemplateDoesNotExist (Miguel
+Ángel, captura de pantalla). Pide lo mismo que valida la vista:
+aseguradora y fecha del servicio.
+{% endcomment %}
+<div class="container-fluid px-3 py-3">
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <form method="post" action="{% url 'budgets:work_order_create_direct' %}"
+                  class="row g-3">
+                {% csrf_token %}
+                <div class="col-12 col-md-6">
+                    <label for="wo-insurer" class="form-label small">Aseguradora o cliente</label>
+                    <select id="wo-insurer" name="insurer_id" class="form-select" required>
+                        <option value="">Elige la aseguradora</option>
+                        {% for insurer in insurers %}
+                        <option value="{{ insurer.pk }}">{{ insurer.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 col-md-6">
+                    <label for="wo-date" class="form-label small">Fecha del servicio</label>
+                    <input id="wo-date" name="service_date" type="date"
+                           class="form-control" required>
+                </div>
+                <div class="col-12 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-plus-lg me-1"></i>Crear orden
+                    </button>
+                    <a href="{% url 'budgets:services_hub' %}" class="btn btn-outline-secondary">
+                        Volver
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
