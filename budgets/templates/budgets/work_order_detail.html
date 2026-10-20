@@ -215,7 +215,7 @@
         <div class="card-body">
             <div class="row g-2 small">
                 <div class="col-12 col-md-6">
-                    <p class="fw-semibold mb-1 text-muted" style="font-size:.75rem;text-transform:uppercase;">Recogida</p>
+                    <p class="fw-semibold mb-1 text-muted small text-uppercase">Recogida</p>
                     <div class="row g-1">
                         <div class="col-6">
                             <span class="text-muted d-block">Tipo</span>
@@ -240,7 +240,7 @@
                     </div>
                 </div>
                 <div class="col-12 col-md-6">
-                    <p class="fw-semibold mb-1 text-muted" style="font-size:.75rem;text-transform:uppercase;">Entrega</p>
+                    <p class="fw-semibold mb-1 text-muted small text-uppercase">Entrega</p>
                     <div class="row g-1">
                         <div class="col-6">
                             <span class="text-muted d-block">Tipo</span>
@@ -288,11 +288,11 @@
         </div>
         <div class="card-body small">
             {% if work_order.insurer_comments %}
-            <p class="text-muted mb-1" style="font-size:.75rem;text-transform:uppercase;font-weight:700;">Aseguradora</p>
+            <p class="text-muted mb-1 small text-uppercase fw-bold">Aseguradora</p>
             <p class="mb-3">{{ work_order.insurer_comments }}</p>
             {% endif %}
             {% if work_order.company_observations %}
-            <p class="text-muted mb-1" style="font-size:.75rem;text-transform:uppercase;font-weight:700;">Compañía</p>
+            <p class="text-muted mb-1 small text-uppercase fw-bold">Compañía</p>
             <p class="mb-0">{{ work_order.company_observations }}</p>
             {% endif %}
         </div>
@@ -320,8 +320,12 @@
                             </span>
                             <span class="badge ms-1
                                 {% if unit.status == 'PENDING' %}bg-secondary
+                                {% elif unit.status == 'NOTIFIED' %}bg-info text-dark
+                                {% elif unit.status == 'DOWNLOADED' %}bg-info text-dark
                                 {% elif unit.status == 'IN_PROGRESS' %}bg-primary
                                 {% elif unit.status == 'COMPLETED' %}bg-success
+                                {% elif unit.status == 'CLOSED_UNSIGNED' %}bg-warning text-dark
+                                {% elif unit.status == 'SIGNED_RECEIVED' %}bg-success
                                 {% endif %}">
                                 {{ unit.get_status_display }}
                             </span>
@@ -349,6 +353,13 @@
                                 {% endif %}
                             </div>
                             {% endif %}
+                            {% if unit.notified_at %}
+                            <div class="small text-muted">
+                                <i class="bi bi-whatsapp me-1"></i>Avisado {{ unit.notified_at|date:"d/m/Y H:i" }}
+                                {% if unit.downloaded_at %}· abierto {{ unit.downloaded_at|date:"d/m/Y H:i" }}{% endif %}
+                                {% if unit.completed_at %}· completado {{ unit.completed_at|date:"d/m/Y H:i" }}{% endif %}
+                            </div>
+                            {% endif %}
                             {% if unit.phase1_km %}
                             <div class="small text-muted">
                                 <i class="bi bi-signpost me-1"></i>{{ unit.phase1_km }} km
@@ -357,6 +368,14 @@
                             {% endif %}
                         </div>
                         <div class="d-flex gap-2 flex-shrink-0">
+                            {% if unit.can_notify %}
+                            <form method="post" action="{% url 'budgets:work_order_unit_notify' pk=unit.pk %}">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-outline-success">
+                                    <i class="bi bi-whatsapp me-1"></i>{% if unit.notified_at %}Avisar de nuevo{% else %}Avisar por WhatsApp{% endif %}
+                                </button>
+                            </form>
+                            {% endif %}
                             <a href="{% url 'budgets:work_order_albaran' pk=unit.pk %}"
                                class="btn btn-sm btn-outline-primary">
                                 <i class="bi bi-pencil-square me-1"></i>Albarán
@@ -378,6 +397,45 @@
                 <i class="bi bi-info-circle me-1"></i>
                 No hay unidades asignadas a esta orden de trabajo.
             </div>
+            {% endif %}
+        </div>
+        {# Alta de unidad: operario de asistencia y máquina (H37, S132) #}
+        <div class="card-footer bg-transparent">
+            {% if assistance_operators %}
+            <form method="post" action="{% url 'budgets:work_order_unit_create' pk=work_order.pk %}"
+                  class="row g-2 align-items-end">
+                {% csrf_token %}
+                <div class="col-12 col-md-5">
+                    <label for="unit-operator" class="form-label small mb-1">Operario</label>
+                    <select id="unit-operator" name="operator_id" class="form-select form-select-sm" required>
+                        <option value="">Elige el operario</option>
+                        {% for operator in assistance_operators %}
+                        <option value="{{ operator.pk }}">{{ operator }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 col-md-5">
+                    <label for="unit-machine" class="form-label small mb-1">Máquina</label>
+                    <input id="unit-machine" name="machine" type="text" maxlength="100"
+                           class="form-control form-control-sm" list="unit-machine-options"
+                           placeholder="Código o matrícula">
+                    <datalist id="unit-machine-options">
+                        {% for option in machine_options %}
+                        <option value="{{ option.value }}">{{ option.brand_model }}</option>
+                        {% endfor %}
+                    </datalist>
+                </div>
+                <div class="col-12 col-md-2">
+                    <button type="submit" class="btn btn-sm btn-primary w-100">
+                        <i class="bi bi-plus-lg me-1"></i>Añadir unidad
+                    </button>
+                </div>
+            </form>
+            {% else %}
+            <p class="small text-muted mb-0">
+                <i class="bi bi-info-circle me-1"></i>
+                No hay ningún usuario activo con el rol Operario de Asistencia para asignar unidades.
+            </p>
             {% endif %}
         </div>
     </div>

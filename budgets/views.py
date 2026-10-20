@@ -19,7 +19,7 @@ from django import forms as django_forms
 from django.contrib import messages
 from django.db import transaction
 from django.db.models import DecimalField, ExpressionWrapper, F
-from django.db.models import Count, Q
+from django.db.models import Count, Max, Q
 from django.http import HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.timezone import localdate, now
@@ -5173,6 +5173,11 @@ class AlbaranDemoView(AssistanceRequiredMixin, View):
 # Vistas de órdenes de trabajo de asistencia (Hito 17)
 # ---------------------------------------------------------------------------
 
+# H37 (S132): unit states in which the operator can be notified again.
+# Estados de la unidad en los que se puede (re)avisar al operario.
+_NOTIFIABLE_UNIT_STATUSES = ("PENDING", "NOTIFIED", "DOWNLOADED")
+
+
 class WorkOrderCreateFromBudgetView(AssistanceRequiredMixin, View):
     """
     Creates a WorkOrderAssistance from an accepted Budget.
@@ -5344,12 +5349,189 @@ class WorkOrderDetailView(AssistanceRequiredMixin, View):
         ).prefetch_related(
             "signature", "incidence"
         ).order_by("unit_number")
+        units = list(units)
+        for unit in units:
+            unit.can_notify = unit.status in _NOTIFIABLE_UNIT_STATUSES
         ctx = _build_base_context(request, {
             "work_order": work_order,
             "units": units,
+            "assistance_operators": _assistance_operators(
+                company_user.company,
+            ),
+            "machine_options": _assistance_machine_options(
+                company_user.company,
+            ),
             "active_nav": "work_orders",
         })
         return render(request, self.template_name, ctx)
+
+
+def _assistance_operators(company):
+    """
+    Active ASSISTANCE operators of a company, for the unit selector.
+
+    ---
+
+    Operarios de asistencia activos de la empresa, para el selector de
+    la unidad. Necesitan cuenta de panel (`CompanyUser`, directriz 4.19:
+    el albarán se abre con su usuario) y rol ASSISTANCE, el único que
+    junto a ADMIN puede abrir el albarán.
+    """
+    return CompanyUser.objects.filter(
+        company=company,
+        is_active=True,
+        role=CompanyUser.ROLE_ASSISTANCE,
+    ).select_related("user").order_by(
+        "user__first_name", "user__last_name", "user__username",
+    )
+
+
+def _assistance_machine_options(company):
+    """
+    Active fleet machines, as suggestions for the unit machine field.
+
+    ---
+
+    Máquinas activas de la flota, como sugerencias para el campo de
+    texto `machine` de la unidad (código y matrícula).
+    """
+    from fleet.models import MachineAsset
+
+    options = []
+    for code, plate, brand_model in MachineAsset.objects.filter(
+        company=company, is_active=True,
+    ).order_by("code").values_list("code", "plate", "brand_model"):
+        label = " ".join(part for part in (code, plate) if part)
+        options.append({"value": label, "brand_model": brand_model})
+    return options
+
+
+class WorkOrderUnitCreateView(AssistanceRequiredMixin, View):
+    """
+    Add a unit (operator and machine) to a work order.
+
+    ---
+
+    H37 (S132). Añade una unidad (operario y máquina) a una orden de
+    trabajo. No existía ninguna forma de crear unidades desde el panel.
+    El número de unidad es el siguiente al último de la orden.
+    """
+
+    def post(self, request, pk):
+        """
+        Create the unit and go back to the work order detail.
+
+        ---
+
+        Crea la unidad y vuelve al detalle de la orden.
+        """
+        from budgets.models import (
+            WorkOrderAssistance,
+            WorkOrderAssistanceUnit,
+        )
+        company_user = _get_company_user(request)
+        if not company_user:
+            return redirect("panel:login")
+        work_order = get_object_or_404(
+            WorkOrderAssistance,
+            pk=pk,
+            company=company_user.company,
+        )
+        operator = _assistance_operators(company_user.company).filter(
+            pk=request.POST.get("operator_id") or 0,
+        ).first()
+        if operator is None:
+            messages.error(request, "Elige el operario de la unidad.")
+            return redirect("budgets:work_order_detail", pk=work_order.pk)
+        machine = request.POST.get("machine", "").strip()[:100]
+        with transaction.atomic():
+            # Lock the order row so two simultaneous additions cannot
+            # take the same unit number.
+            # Bloquear la fila de la orden para que dos altas a la vez no
+            # cojan el mismo número de unidad.
+            WorkOrderAssistance.objects.select_for_update().get(
+                pk=work_order.pk,
+            )
+            last = work_order.units.aggregate(
+                last=Max("unit_number"),
+            )["last"]
+            unit = WorkOrderAssistanceUnit.objects.create(
+                work_order=work_order,
+                operator=operator,
+                machine=machine,
+                unit_number=(last or 0) + 1,
+            )
+        messages.success(
+            request,
+            "Unidad %s-%02d creada."
+            % (work_order.work_order_number, unit.unit_number),
+        )
+        return redirect("budgets:work_order_detail", pk=work_order.pk)
+
+
+class WorkOrderUnitNotifyView(AssistanceRequiredMixin, View):
+    """
+    Send the WhatsApp albarán notice to the operator of a unit.
+
+    ---
+
+    H37 (S132). Envía al operario de la unidad el aviso de WhatsApp con
+    su albarán (`send_operator_albaran_notification`, plantilla
+    `assistance_albaran_notice`). No había ningún sitio que lo llamara.
+    Se puede repetir mientras el albarán no esté completado.
+    """
+
+    def post(self, request, pk):
+        """
+        Notify and go back to the work order detail.
+
+        ---
+
+        Avisa y vuelve al detalle de la orden.
+        """
+        from budgets.models import WorkOrderAssistanceUnit
+        from whatsapp.services import send_operator_albaran_notification
+
+        company_user = _get_company_user(request)
+        if not company_user:
+            return redirect("panel:login")
+        unit = get_object_or_404(
+            WorkOrderAssistanceUnit,
+            pk=pk,
+            work_order__company=company_user.company,
+        )
+        back = redirect("budgets:work_order_detail", pk=unit.work_order_id)
+        if unit.status not in _NOTIFIABLE_UNIT_STATUSES:
+            messages.error(
+                request,
+                "Este albarán ya está %s; no se avisa de nuevo."
+                % unit.get_status_display().lower(),
+            )
+            return back
+        sender = os.environ.get("TWILIO_WHATSAPP_SENDER", "")
+        if not sender:
+            logger.error(
+                "# [ALBARAN NOTIFY] TWILIO_WHATSAPP_SENDER no configurado."
+            )
+            messages.error(
+                request,
+                "No se ha podido enviar el aviso: falta el número de "
+                "WhatsApp de la plataforma.",
+            )
+            return back
+        if send_operator_albaran_notification(unit.pk, sender):
+            messages.success(
+                request,
+                "Aviso enviado por WhatsApp a %s." % unit.operator,
+            )
+        else:
+            messages.error(
+                request,
+                "No se ha podido enviar el aviso por WhatsApp. Revisa que "
+                "el operario tenga teléfono y que la plantilla esté "
+                "aprobada.",
+            )
+        return back
 
 
 class WorkOrderAlbaranView(AssistanceRequiredMixin, View):

@@ -664,6 +664,22 @@ urlpatterns = [
         name="work_order_detail",
     ),
 
+    # H37 (S132): add a unit to a work order — POST. ASSISTANCE + ADMIN.
+    # H37 (S132): añadir una unidad a la orden — POST. ASSISTANCE + ADMIN.
+    path(
+        "work-orders/<int:pk>/units/new/",
+        views.WorkOrderUnitCreateView.as_view(),
+        name="work_order_unit_create",
+    ),
+
+    # H37 (S132): WhatsApp notice to the unit operator — POST.
+    # H37 (S132): aviso por WhatsApp al operario de la unidad — POST.
+    path(
+        "work-orders/units/<int:pk>/notify/",
+        views.WorkOrderUnitNotifyView.as_view(),
+        name="work_order_unit_notify",
+    ),
+
     # Work order albarán — formulario mobile-first por unidad. ASSISTANCE + ADMIN.
     # Work order albarán — mobile-first form per unit. ASSISTANCE + ADMIN.
     path(
