@@ -2,9 +2,12 @@
 {% comment %}
 H30 (S131). Tabla de la pestaña Revisiones (se recarga sola al cambiar
 filtros u orden). Cabecera en dos niveles. Código fijo a la
-izquierda y Estado fijo a la derecha; "Última lectura" y "Última
-revisión" abren su grupo de casillas nuevas, y solo se ve uno (Miguel
-Ángel: "cuando se vea una, que no se vea la otra"). Orden múltiple por
+izquierda y Estado fijo a la derecha. En medio, dos grupos (lecturas:
+última lectura + lectura nueva; revisiones: última revisión + revisión
+nueva) y solo se ve uno: el otro queda plegado en una barra estrecha
+vertical con su flecha, que lo despliega al pulsarla (Miguel Ángel:
+"dos botones verticales para desplazar a un lado y a otro la
+información"). Orden múltiple por
 Código y Familia (mismas reglas que Centros de gasto). Sin columna de
 modelo y con anchos ajustados para que no haya scroll horizontal
 (Miguel Ángel, S131).
@@ -15,11 +18,13 @@ modelo y con anchos ajustados para que no haya scroll horizontal
         <tr class="small">
             <th rowspan="2" class="svc-fix-left"><input type="checkbox" class="form-check-input me-1" id="svc-select-all" aria-label="Seleccionar todos"><a href="#" class="svc-sort text-reset" data-sort="{{ sort_next.code }}">Código{% if sort_arrows.code %} <i class="bi bi-arrow-{{ sort_arrows.code }}"></i><sup>{{ sort_priority.code }}</sup>{% endif %}</a></th>
             <th rowspan="2"><a href="#" class="svc-sort text-reset" data-sort="{{ sort_next.family }}">Familia{% if sort_arrows.family %} <i class="bi bi-arrow-{{ sort_arrows.family }}"></i><sup>{{ sort_priority.family }}</sup>{% endif %}</a></th>
-            <th rowspan="2" title="Arriba horas, abajo km">Revisión cada<div class="fw-normal text-muted">h / km</div></th>
-            <th rowspan="2" class="svc-sep"><button type="button" class="btn btn-sm btn-link p-0 text-reset fw-bold svc-open" data-group="read" title="Ver lectura nueva">Última lectura <i class="bi bi-chevron-right svc-chevron"></i></button></th>
+            <th rowspan="2">Revisión cada<div class="fw-normal text-muted">horas · km</div></th>
+            <th rowspan="2" class="svc-bar svc-bar-read" data-group="read" title="Ver lecturas"><i class="bi bi-chevron-right"></i><span class="svc-bar-label">Lecturas</span></th>
+            <th rowspan="2" class="svc-sep svc-grp-read">Última lectura</th>
             <th colspan="4" class="text-center svc-grp-read">Lectura nueva</th>
-            <th rowspan="2" class="svc-sep"><button type="button" class="btn btn-sm btn-link p-0 text-reset fw-bold svc-open" data-group="svc" title="Ver revisión nueva">Última revisión <i class="bi bi-chevron-right svc-chevron"></i></button></th>
+            <th rowspan="2" class="svc-sep svc-grp-svc">Última revisión</th>
             <th colspan="4" class="text-center svc-grp-svc">Revisión nueva</th>
+            <th rowspan="2" class="svc-bar svc-bar-svc" data-group="svc" title="Ver revisiones"><i class="bi bi-chevron-left"></i><span class="svc-bar-label">Revisiones</span></th>
             <th rowspan="2" class="svc-fix-right">Estado</th>
         </tr>
         <tr class="small">
@@ -37,7 +42,7 @@ modelo y con anchos ajustados para que no haya scroll horizontal
         {% for machine in machines %}
         {% include "panel/service_tab/_row.html" %}
         {% empty %}
-        <tr><td colspan="12" class="text-muted small">Ningún centro de gasto con estos filtros.</td></tr>
+        <tr><td colspan="16" class="text-muted small">Ningún centro de gasto con estos filtros.</td></tr>
         {% endfor %}
     </tbody>
 </table>

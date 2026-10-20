@@ -194,7 +194,7 @@ nueva son un acordeón (solo una abierta, guardada por usuario).
         Array.from(rows[1].cells).forEach(function (cell) { cell.style.top = top + "px"; });
     }
     container.addEventListener("click", function (ev) {
-        const opener = ev.target.closest(".svc-open");
+        const opener = ev.target.closest(".svc-bar");
         if (opener) {
             openGroup(opener.dataset.group);
             return;

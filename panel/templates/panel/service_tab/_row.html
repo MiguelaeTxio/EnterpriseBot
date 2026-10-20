@@ -5,8 +5,9 @@ código (izquierda) y estado con "Guardar" (derecha). En medio: plan
 (horas y km), última lectura + lectura nueva (fecha -vacía = hoy-, km,
 horas, horas de grúa) y última revisión ("—" si no hay) + revisión
 nueva (con la misma fecha que la última, la completa). Lectura nueva y
-revisión nueva son un acordeón: solo se ve una (clases svc-grp-read y
-svc-grp-svc, que oculta la clase de la tabla). "Guardar" (o Intro en
+el grupo de lecturas y el de revisiones son un acordeón: solo se ve
+uno, y el otro queda en una barra estrecha (svc-bar) que lo despliega
+(clases svc-grp-*/svc-bar-*, que oculta la clase de la tabla). "Guardar" (o Intro en
 cualquier casilla) guarda la fila entera y vuelve ya pintada con los
 datos nuevos. Todo llega resuelto de la vista.
 {% endcomment %}
@@ -17,15 +18,18 @@ datos nuevos. Todo llega resuelto de la vista.
     </td>
     <td class="small svc-family" data-label="Familia">{{ machine.family|default:"—" }}</td>
     <td data-label="Revisión cada">
-        <select class="form-select form-select-sm svc-input svc-w-sel mb-1" name="hours_interval" {% if not can_edit %}disabled{% endif %} aria-label="Revisión por horas">
+        <div class="d-flex gap-1">
+        <select class="form-select form-select-sm svc-input svc-w-sel" name="hours_interval" {% if not can_edit %}disabled{% endif %} aria-label="Revisión por horas">
             <option value="">—</option>
             {% for value, label in hours_choices %}
             <option value="{{ value }}" {% if machine.service_hours_interval == value %}selected{% endif %}>{{ value }} h</option>
             {% endfor %}
         </select>
         <input type="number" min="1" class="form-control form-control-sm svc-input svc-w-sel" name="km_interval" list="svcKmSuggestions" placeholder="km" value="{{ machine.service_every_km|default_if_none:'' }}" {% if not can_edit %}disabled{% endif %} aria-label="Revisión cada N km">
+        </div>
     </td>
-    <td class="small text-nowrap svc-sep" data-label="Última lectura">
+    <td class="svc-bar svc-bar-read" data-group="read" title="Ver lecturas"><i class="bi bi-chevron-right"></i></td>
+    <td class="small text-nowrap svc-sep svc-grp-read" data-label="Última lectura">
         {% if machine.last_km %}<div>{{ machine.last_km_text }} km <span class="text-muted">{{ machine.last_km.reading_date|date:"d/m/y" }}</span></div>{% endif %}
         {% if machine.last_hours %}<div>{{ machine.last_hours_text }} h <span class="text-muted">{{ machine.last_hours.reading_date|date:"d/m/y" }}</span></div>{% endif %}
         {% if machine.last_crane_hours %}<div>{{ machine.last_crane_hours_text }} h grúa <span class="text-muted">{{ machine.last_crane_hours.reading_date|date:"d/m/y" }}</span></div>{% endif %}
@@ -35,7 +39,7 @@ datos nuevos. Todo llega resuelto de la vista.
     <td class="svc-grp-read" data-label="Km"><input type="number" min="0" class="form-control form-control-sm svc-input svc-w-num" name="reading_km" placeholder="{{ machine.last_km_text|default:'km' }}" {% if not can_edit %}disabled{% endif %} aria-label="Km de la lectura"></td>
     <td class="svc-grp-read" data-label="Horas"><input type="number" min="0" class="form-control form-control-sm svc-input svc-w-num" name="reading_hours" placeholder="{{ machine.last_hours_text|default:'horas' }}" {% if not can_edit %}disabled{% endif %} aria-label="Horas de la lectura"></td>
     <td class="svc-grp-read" data-label="Horas grúa">{% if machine.has_crane_hours %}<input type="number" min="0" class="form-control form-control-sm svc-input svc-w-num" name="reading_crane_hours" placeholder="{{ machine.last_crane_hours_text|default:'h grúa' }}" {% if not can_edit %}disabled{% endif %} aria-label="Horas de grúa de la lectura">{% else %}<span class="text-muted small">—</span>{% endif %}</td>
-    <td class="small text-nowrap svc-sep" data-label="Última revisión">
+    <td class="small text-nowrap svc-sep svc-grp-svc" data-label="Última revisión">
         {% if machine.last_record %}
         <div class="fw-semibold">{{ machine.last_record.service_date|date:"d/m/Y" }}</div>
         {% for part in machine.last_record_parts %}<div>{{ part }}</div>{% endfor %}
@@ -47,6 +51,7 @@ datos nuevos. Todo llega resuelto de la vista.
     <td class="svc-grp-svc" data-label="Horas revisión"><input type="number" min="0" class="form-control form-control-sm svc-input svc-w-num" name="service_hours" {% if not can_edit %}disabled{% endif %} aria-label="Horas en la revisión"></td>
     <td class="svc-grp-svc" data-label="H. grúa revisión">{% if machine.has_crane_hours %}<input type="number" min="0" class="form-control form-control-sm svc-input svc-w-num" name="service_crane_hours" {% if not can_edit %}disabled{% endif %} aria-label="Horas de grúa en la revisión">{% else %}<span class="text-muted small">—</span>{% endif %}</td>
     <td class="svc-grp-svc" data-label="Km revisión"><input type="number" min="0" class="form-control form-control-sm svc-input svc-w-num" name="service_km" {% if not can_edit %}disabled{% endif %} aria-label="Km en la revisión"></td>
+    <td class="svc-bar svc-bar-svc" data-group="svc" title="Ver revisiones"><i class="bi bi-chevron-left"></i></td>
     <td class="small svc-status svc-fix-right" data-label="Estado">
         <div class="d-flex gap-2 align-items-start">
             <div class="flex-grow-1">

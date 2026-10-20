@@ -1540,14 +1540,37 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
 .svc-w-num {
     width: 4.6rem;
 }
-/* S131: lectura nueva y revisión nueva como acordeón -- solo una. */
+/* S131: lecturas y revisiones como acordeón -- solo se ve un grupo; el
+   otro queda en una barra estrecha vertical que lo despliega. */
 .svc-open-read .svc-grp-svc,
-.svc-open-svc .svc-grp-read {
+.svc-open-read .svc-bar-read,
+.svc-open-svc .svc-grp-read,
+.svc-open-svc .svc-bar-svc {
     display: none;
 }
-.svc-open-read .svc-open[data-group="read"] .svc-chevron,
-.svc-open-svc .svc-open[data-group="svc"] .svc-chevron {
-    transform: rotate(180deg);
+.svc-table .svc-bar {
+    width: 1.6rem;
+    min-width: 1.6rem;
+    padding: 0;
+    text-align: center;
+    vertical-align: middle;
+    cursor: pointer;
+    background-color: #e9ecef;
+    color: #0d6efd;
+    border-left: 2px solid #dee2e6;
+    border-right: 2px solid #dee2e6;
+}
+.svc-table .svc-bar:hover {
+    background-color: #cfe2ff;
+}
+.svc-table thead th.svc-bar {
+    background-color: #dee2e6;
+}
+.svc-bar-label {
+    display: block;
+    writing-mode: vertical-rl;
+    margin: 0.25rem auto 0;
+    font-weight: 600;
 }
 /* S131: código fijo a la izquierda y estado fijo a la derecha al
    desplazar la tabla en horizontal (en el ordenador). */
