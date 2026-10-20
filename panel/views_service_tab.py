@@ -63,9 +63,12 @@ STATE_CLASS = {
 # más reciente a menos reciente"). Mismas reglas de prioridad que
 # Centros de gasto (fleet.views._build_sort_controls); la última
 # revisión no es columna de BD, así que todo el orden se aplica aquí.
-SORT_KEYS = ("code", "family", "last_service")
-# Primer clic en "Última revisión": la más reciente arriba.
-SORT_DESC_FIRST = ("last_service",)
+# S131: también "Última lectura" (fecha de la lectura más reciente, de
+# cualquier contador).
+SORT_KEYS = ("code", "family", "last_reading", "last_service")
+# Primer clic en "Última lectura" / "Última revisión": la más reciente
+# arriba.
+SORT_DESC_FIRST = ("last_reading", "last_service")
 MAX_SORT_KEYS = 4
 
 
@@ -144,6 +147,8 @@ def _sort_machines(machines, raw):
             return machine.code.upper()
         if key == "family":
             return (machine.family or "").upper()
+        if key == "last_reading":
+            return machine.last_reading_date
         record = machine.last_record
         return record.service_date if record else None
 
@@ -228,6 +233,10 @@ def _annotate_rows(machines):
         machine.last_crane_hours_text = (
             _fmt(last["crane_hours"].crane_hours)
             if last["crane_hours"] else ""
+        )
+        machine.last_reading_date = max(
+            (row.reading_date for row in last.values() if row is not None),
+            default=None,
         )
         machine.last_record = max(
             records, key=lambda row: (row.service_date, row.pk),

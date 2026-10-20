@@ -10,8 +10,8 @@ vertical, con una sola flecha en el centro de la parte visible
 pulsarla (Miguel Ángel:
 "dos botones verticales para desplazar a un lado y a otro la
 información"). Orden múltiple por
-Código, Familia y Última revisión (mismas reglas que Centros de gasto;
-sin revisión, siempre al final). Sin columna de
+Código, Familia, Última lectura y Última revisión (mismas reglas que
+Centros de gasto; sin lectura o sin revisión, siempre al final). Sin columna de
 modelo y con anchos ajustados para que no haya scroll horizontal
 (Miguel Ángel, S131).
 {% endcomment %}
@@ -23,7 +23,7 @@ modelo y con anchos ajustados para que no haya scroll horizontal
             <th rowspan="2"><a href="#" class="svc-sort text-reset" data-sort="{{ sort_next.family }}">Familia{% if sort_arrows.family %} <i class="bi bi-arrow-{{ sort_arrows.family }}"></i><sup>{{ sort_priority.family }}</sup>{% endif %}</a></th>
             <th rowspan="2">Revisión cada<div class="fw-normal text-muted">horas · km</div></th>
             <th rowspan="2" class="svc-bar svc-bar-read" data-group="read" title="Ver lecturas"><span class="svc-bar-label">Lecturas</span></th>
-            <th rowspan="2" class="svc-sep svc-grp-read">Última lectura</th>
+            <th rowspan="2" class="svc-sep svc-grp-read"><a href="#" class="svc-sort text-reset" data-sort="{{ sort_next.last_reading }}" title="Ordenar por fecha de la última lectura">Última lectura{% if sort_arrows.last_reading %} <i class="bi bi-arrow-{{ sort_arrows.last_reading }}"></i><sup>{{ sort_priority.last_reading }}</sup>{% endif %}</a></th>
             <th colspan="4" class="text-center svc-grp-read">Lectura nueva</th>
             <th rowspan="2" class="svc-sep svc-grp-svc"><a href="#" class="svc-sort text-reset" data-sort="{{ sort_next.last_service }}" title="Ordenar por fecha de la última revisión">Última revisión{% if sort_arrows.last_service %} <i class="bi bi-arrow-{{ sort_arrows.last_service }}"></i><sup>{{ sort_priority.last_service }}</sup>{% endif %}</a></th>
             <th colspan="4" class="text-center svc-grp-svc">Revisión nueva</th>
