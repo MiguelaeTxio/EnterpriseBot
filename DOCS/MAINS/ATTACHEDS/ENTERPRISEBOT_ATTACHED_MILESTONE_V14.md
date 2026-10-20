@@ -165,3 +165,24 @@ El detalle de lo que se construye y su criterio de cierre está en el
 punto 2 de la hoja de ruta S131 de
 `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`; lo hecho se anota aquí al
 cerrar esa sesión.
+
+### Hecho en S131 (desvío desde H30, commit `e669fd1`)
+
+- `chat/mechanic_tickets.py`: `open_tickets_by_mechanic(company)` --
+  tickets no cerrados en los que el mecánico tiene líneas de parte
+  (`WorkOrderEntryLine.breakdown_ticket`, partes subidos por él) o que
+  tiene asignados; con fecha del último trabajo, número de líneas y
+  máquina.
+- `chat/views_tickets.py` + `breakdown_ticket_list.html`: la tarjeta
+  del mecánico sale ocupada si le queda algún ticket abierto, con sus
+  máquinas y el botón "Tickets abiertos (N)", que abre la lista con
+  "¿Está cerrado? Sí / No"; "Sí" cierra el ticket por la vista de
+  ticket ya existente.
+- En producción al construirlo: 53 tickets no cerrados de 7 mecánicos
+  (Carlos Bas 15, Antonio Fontalba 13, Pablo Cañamero 10, Alejandro
+  García Luque 6, Estevao Veloso 6, David Contreras 2, José Antonio
+  Vargas 1).
+- Falta la prueba de cierre en producción: cerrar uno de los tickets de
+  Pablo desde la lista y comprobar en BD que queda `CLOSED` y deja de
+  salir. Queda anotada en "COMPLETADAS EN S131" de
+  `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`.

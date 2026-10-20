@@ -619,6 +619,20 @@ la fusión.)
 - Sin hoja de ruta más allá del arranque -- ver anexo para el punto de
   partida real dejado en S109.
 
+#### Hito 37: Albaranes Digitales y Órdenes de Trabajo ASISTENCIA
+(Ver anexo `ENTERPRISEBOT_ATTACHED_MILESTONE_V37.md`)
+- Hito nuevo, abierto en S131 (PCH desde H30). Recoge lo que el Hito 17
+  de esta hoja de ruta describía como "Albaranes y Órdenes de Trabajo
+  ASISTENCIA", cuyo anexo V17 contiene desde S014 la unificación IVR +
+  WhatsApp.
+- Orden de trabajo desde presupuesto aceptado (H16) o directa, con N
+  unidades (grúa + operario) por servicio y un albarán por unidad.
+- Albarán prellenado enviado al operario por WhatsApp, rellenado en el
+  móvil o la tablet y firmado por el cliente en pantalla; PDF y envío
+  al cliente.
+- Funcionamiento sin cobertura con envío al recuperar la conexión.
+- Aseguradora de referencia para validar los campos: Allianz.
+
 ---
 
 ### 4. Directrices Técnicas Vinculantes

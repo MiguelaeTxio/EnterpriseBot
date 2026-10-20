@@ -9630,3 +9630,72 @@ estos dos.
    BD como `CLOSED` y deja de salir, y el mecánico deja de salir
    ocupado cuando no le queda ninguno.
 
+---
+
+### COMPLETADAS EN S131 (20/10/2026, PEE PC; H30 -- puntos 1 y 2 de la
+### hoja de ruta S131 construidos y desplegados; pausado al cierre por
+### PCH a H37)
+
+**Punto 1 -- Revisiones por horas y km de los centros de gasto.**
+- Corrección de Miguel Ángel: no son dos revisiones (800 y 1200); cada
+  máquina pasa la suya a las 800 o a las 1200 horas. En
+  `fleet.MachineAsset`: `service_hours_interval` (800/1200, vacío =
+  sin revisión por horas) y `service_every_km`. Modelos nuevos
+  `MachineServiceRecord` (revisión hecha: fecha, horas, km, horas de
+  grúa, notas), `MachineMeterReading` (lectura con fecha: km, horas,
+  horas de grúa) y `MachineServiceAlertSettings` (antelación en horas
+  y en km por empresa). Migraciones `fleet/0017`, `0018` (pasa las dos
+  casillas a un solo campo conservando los datos) y `0019` (horas de
+  grúa), las tres comprobadas aplicadas en producción.
+- Las grúas tienen su propio aviso (Miguel Ángel): "Revisión grúa de N
+  horas" sobre las horas de grúa, con el mismo intervalo de horas.
+- `fleet/service_plan_service.py` calcula el estado de cada revisión
+  (sin revisión, sin lectura, al día, próxima, vencida). Vencida:
+  última lectura > revisión + intervalo. Próxima: solo si hay
+  antelación fijada. Una revisión con fecha y sin horas no avisa hasta
+  anotarlas.
+- Avisos (Documentación > Avisos): los de revisiones salen en
+  Pendientes con los de documentación y se envían con los mismos
+  destinatarios y ámbito. Antelación en horas y km en la configuración
+  de Avisos (solo ADMIN y DOCS_SUPERVISOR). Plantilla de WhatsApp
+  `machine_service_notice` creada por Comando S
+  (`create_machine_service_whatsapp_template`, log
+  `EnterpriseBot_001`), registrada en BD y enviada a Meta; Miguel Ángel
+  confirmó en Twilio que espera la aprobación.
+- Ficha del centro de gasto: sección "Revisiones" con estado, alta y
+  borrado de revisiones y lecturas; en el formulario, intervalo de
+  horas y de km.
+- Pestaña nueva **Documentación > Revisiones** (`panel/views_service_tab.py`,
+  `panel/templates/panel/service_tab/`), pedida por Miguel Ángel para
+  poner al día a mano km, horas, horas de grúa, fechas e intervalos:
+  mismos filtros que Centros de gasto (sin Requisito), código y estado
+  fijos a los lados, grupo Lecturas (última + nueva) y grupo
+  Revisiones (última + nueva) plegables en barra vertical con una sola
+  flecha, plan horas/km en un renglón, guardado por fila (botón o
+  Intro), acción masiva de intervalos sobre la selección, y orden por
+  Código, Familia, Última lectura y Última revisión (sin dato, al
+  final). Sin fecha precargada y "—" cuando no hay revisión.
+- Revisiones sacadas de los partes de trabajo
+  (`seed_service_records_s131`, log `EnterpriseBot_002`): 19 anotadas
+  (A44, A45 y A68 con horas reales; las otras 16 solo con fecha), A44 y
+  A68 a 800 h. Comprobado en BD. Las horas de los partes casi siempre
+  son las del catálogo (no sirven); Jerónimo aportará las fechas que
+  falten.
+
+**Punto 2 -- Tickets de avería abiertos por mecánico (desvío a H14,
+anotado en `ENTERPRISEBOT_ATTACHED_MILESTONE_V14.md`).** Construido y
+desplegado (`chat/mechanic_tickets.py`, lista de tickets): 53 tickets
+no cerrados de 7 mecánicos en producción al construirlo.
+
+**Pendiente de H30 al pausarlo (sin cambios en la hoja de ruta):**
+- Prueba de cierre del punto 1 de S131 en producción: centro de gasto
+  real con intervalo, revisión con horas y lectura que la pase; sale
+  como vencida en Avisos y uno sin revisión no sale (consulta a BD).
+- Prueba de cierre del punto 2 de S131: cerrar desde la lista uno de
+  los tickets de Pablo Cañamero y comprobar en BD que queda `CLOSED`.
+- Aprobación de Meta de `machine_service_notice`.
+- Puntos 7, 8 y 9 de la hoja de ruta de S128.
+
+Commits de S131 en H30: `ec50b64`, `0ee4c80`, `cbb9603`, `66278ef`,
+`70442d6`, `8d8b605`, `f794f88`, `6256bb2`, `d5e788c`, `88f5d33`,
+`5f73292`, `6603821`.

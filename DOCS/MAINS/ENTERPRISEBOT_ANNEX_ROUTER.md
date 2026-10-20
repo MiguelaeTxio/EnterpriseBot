@@ -53,13 +53,14 @@ Cumple dos funciones inseparables:
 | H27 | Ingesta de Documentación vía Correo Electrónico | `ENTERPRISEBOT_ATTACHED_MILESTONE_V27.md` |
 | H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` |
 | H29 | Explorador de Archivos y Gobierno Documental del Panel sobre GCS | `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md` |
-| H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` ← EN PROGRESO |
+| H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` |
 | H31 | Interfaz de Gestión Documental de Personal — Altas, Bajas, Sustituciones, EPIs y Circulares (título anterior: "Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares"; ampliado en S99 al fusionar H33) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` |
 | H32 | Migraciones de Infraestructura (Modelo IA, Python, Registro Android) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md` |
 | ~~H33~~ | ~~Subida de Documentación en Tiempo Real desde el Panel~~ — **FUSIONADO EN H31 el 2026-09-10 (S99)**, ver sección 6 | `ENTERPRISEBOT_ATTACHED_MILESTONE_V33.md` (conservado íntegro como archivo histórico) |
 | H34 | Modelo Propio de Clasificación de Documentos (entrenamiento) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V34.md` |
 | H35 | Retipado y Refechado Masivo de Documentación Histórica de Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V35.md` |
 | H36 | Retipado de Cursos de Formación (FORMACION genérico → 17 tipos por curso, solo trabajadores activos) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V36.md` |
+| H37 | Albaranes Digitales y Órdenes de Trabajo ASISTENCIA | `ENTERPRISEBOT_ATTACHED_MILESTONE_V37.md` ← EN PROGRESO |
 
 Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
@@ -67,7 +68,25 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ## 3. Resultado Actual
 
-**Hito EN PROGRESO:** H30 — Vinculación Documental Real: Centros de
+**Hito EN PROGRESO:** H37 — Albaranes Digitales y Órdenes de Trabajo
+ASISTENCIA → `ENTERPRISEBOT_ATTACHED_MILESTONE_V37.md`. Hito nuevo,
+abierto al cierre de S131 por Miguel Ángel (PCH CASO C desde H30). Los
+albaranes de ASISTENCIA se anotan aquí y no en H17 (cuyo anexo V17
+contiene "Unificación IVR + WhatsApp" desde S014). La sesión siguiente
+empieza por la hoja de ruta "S132" de la sección 5 del anexo: 1)
+decidir con Miguel Ángel app nativa Android o web como el fichaje; 2)
+prueba completa en producción con Allianz; 3) envío del albarán
+firmado al cliente; 4) modo sin conexión.
+
+**Hito PAUSADO en S131:** H30 — Vinculación Documental Real: Centros de
+Gasto y Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`. En S131
+se construyeron los puntos 1 (avisos de revisiones por horas y km,
+pestaña Revisiones) y 2 (tickets abiertos por mecánico, desvío a H14)
+de su hoja de ruta S131; quedan sus pruebas de cierre en producción y
+los puntos 7-9 de la hoja de ruta de S128. Ver "COMPLETADAS EN S131"
+del anexo.
+
+**Histórico S131:** H30 EN PROGRESO — Vinculación Documental Real: Centros de
 Gasto y Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`.
 Reactivado al cierre de S130 por Miguel Ángel (PCH desde H24). La
 sesión siguiente empieza por la hoja de ruta "S131" al final del anexo:
