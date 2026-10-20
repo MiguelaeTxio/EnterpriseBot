@@ -282,13 +282,14 @@ class AssistanceRequiredMixin(CompanyUserRequiredMixin):
 
         allowed_roles = {
             CompanyUser.ROLE_ASSISTANCE,
+            CompanyUser.ROLE_ASSIST_SUPERVISOR,
             CompanyUser.ROLE_ADMIN,
         }
         if company_user.role not in allowed_roles:
             messages.error(
                 request,
-                "Acceso denegado. Esta seccion requiere el rol de "
-                "Operario de Asistencia o Administrador.",
+                "Acceso denegado. Esta sección requiere el rol de "
+                "Operario o Supervisor de Asistencia, o Administrador.",
             )
             return redirect("/panel/")
 
@@ -339,14 +340,20 @@ class AssistanceWorkOrderAccessMixin(CompanyUserRequiredMixin):
 
 class AssistanceSupervisorAccessMixin(CompanyUserRequiredMixin):
     """
-    Access for ADMIN and ASSIST_SUPERVISOR only (Services page).
+    Access for ADMIN and ASSIST_SUPERVISOR only.
 
     ---
 
     H37 (S132). Acceso solo para ADMIN y supervisor de asistencia
-    (ASSIST_SUPERVISOR): la página Servicios y su gestión de albaranes,
-    mapa y control. Miguel Ángel: "esa página la van a poder ver única
-    y exclusivamente administradores y supervisores de asistencia".
+    (ASSIST_SUPERVISOR):
+    - La página Servicios (albaranes, mapa y control). Miguel Ángel:
+      "esa página la van a poder ver única y exclusivamente
+      administradores y supervisores de asistencia".
+    - Toda la gestión de Asistencia que antes era solo de ADMIN
+      (aseguradoras, tarifas, bases, calendarios, conceptos, franja
+      nocturna, peajes, exportaciones y borrado de presupuestos).
+      Miguel Ángel, S132: el supervisor de asistencia tiene que poder
+      entrar a todas las entradas de Asistencia.
     Rol comprobado antes de ejecutar la vista (S117).
     """
 
@@ -414,8 +421,11 @@ class BudgetAuditAccessMixin(CompanyUserRequiredMixin):
         if company_user is None:
             return super().dispatch(request, *args, **kwargs)
 
+        # H37 (S132): the assistance supervisor too (Paloma, S132).
+        # H37 (S132): también el supervisor de asistencia.
         has_access = (
             company_user.role == CompanyUser.ROLE_ADMIN
+            or company_user.role == CompanyUser.ROLE_ASSIST_SUPERVISOR
             or (
                 company_user.role == CompanyUser.ROLE_ASSISTANCE
                 and company_user.can_view_budget_breakdown

@@ -651,9 +651,9 @@
                     {# Orden alfabético dentro de la sección (a petición de #}
                     {# Miguel Ángel, 2026-07-15). Los gates de cada ítem no #}
                     {# han cambiado, solo el orden.                         #}
-                    {# Aseguradoras / Bases / Conceptos / Calendarios / Franja nocturna — solo ADMIN. #}
-                    {# Insurers / Bases / Concepts / Calendars / Night-shift window — ADMIN only.     #}
-                    {% if company_user.role == 'ADMIN' %}
+                    {# Aseguradoras / Bases / Conceptos / Calendarios / Franja nocturna — ADMIN y ASSIST_SUPERVISOR. #}
+                    {# Insurers / Bases / Concepts / Calendars / Night-shift window — ADMIN and ASSIST_SUPERVISOR. #}
+                    {% if company_user.role == 'ADMIN' or company_user.role == 'ASSIST_SUPERVISOR' %}
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'budgets_insurers' %}active{% endif %}"
                                href="{% url 'budgets:insurer_list' %}">
@@ -693,13 +693,13 @@
                             </a>
                         </li>
                     {% endif %}
-                    {# Historial — ADMIN, o ASSISTANCE con el flag por usuario  #}
+                    {# Historial — ADMIN, ASSIST_SUPERVISOR, o ASSISTANCE con el flag por usuario #}
                     {# can_view_budget_breakdown (usuarios especiales de       #}
                     {# auditoría, ej. juan.vazquez).                           #}
-                    {# History — ADMIN, or ASSISTANCE with the per-user flag   #}
+                    {# History — ADMIN, ASSIST_SUPERVISOR, or ASSISTANCE with the per-user flag #}
                     {# can_view_budget_breakdown (special audit users, e.g.    #}
                     {# juan.vazquez).                                          #}
-                    {% if company_user.role == 'ADMIN' or company_user.can_view_budget_breakdown %}
+                    {% if company_user.role == 'ADMIN' or company_user.role == 'ASSIST_SUPERVISOR' or company_user.can_view_budget_breakdown %}
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'budgets_history' %}active{% endif %}"
                                href="{% url 'budgets:history' %}">
@@ -707,8 +707,8 @@
                             </a>
                         </li>
                     {% endif %}
-                    {# Nuevo presupuesto — ASSISTANCE y ADMIN (el supervisor de asistencia solo ve Servicios). #}
-                    {% if company_user.role == 'ASSISTANCE' or company_user.role == 'ADMIN' %}
+                    {# Nuevo presupuesto — ASSISTANCE, ASSIST_SUPERVISOR y ADMIN. #}
+                    {% if company_user.role == 'ASSISTANCE' or company_user.role == 'ASSIST_SUPERVISOR' or company_user.role == 'ADMIN' %}
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'budgets_wizard' %}active{% endif %}"
                                href="{% url 'budgets:wizard' %}">
@@ -716,9 +716,9 @@
                             </a>
                         </li>
                     {% endif %}
-                    {% if company_user.role == 'ADMIN' %}
-                        {# Peajes — gestion de tramos de peaje MITMA. Solo ADMIN.                 #}
-                        {# Toll segments — MITMA toll segment management. ADMIN only.             #}
+                    {% if company_user.role == 'ADMIN' or company_user.role == 'ASSIST_SUPERVISOR' %}
+                        {# Peajes — tramos de peaje MITMA. ADMIN y ASSIST_SUPERVISOR. #}
+                        {# Toll segments — MITMA toll segments. ADMIN and ASSIST_SUPERVISOR. #}
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'budgets_toll_segments' %}active{% endif %}"
                                href="{% url 'budgets:toll_segment_list' %}">

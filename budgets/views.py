@@ -46,8 +46,8 @@ from budgets.models import (
 from budgets.services import calculate_budget, _resolve_toll_pricing
 from ivr_config.models import CompanyUser, PresenceStatus
 from panel.mixins import (
-    AdminRoleRequiredMixin,
     AssistanceRequiredMixin,
+    AssistanceSupervisorAccessMixin,
     AssistanceWorkOrderAccessMixin,
     BudgetAuditAccessMixin,
 )
@@ -1856,7 +1856,7 @@ def _insurer_list_qs(company):
     )
 
 
-class InsurerListView(AdminRoleRequiredMixin, View):
+class InsurerListView(AssistanceSupervisorAccessMixin, View):
     """
     Lists all insurers for the company. Supports live HTMX search by
     name/code and filter by active/inactive status.
@@ -1911,7 +1911,7 @@ class InsurerListView(AdminRoleRequiredMixin, View):
         return render(request, self.template_name, ctx)
 
 
-class InsurerCreateView(AdminRoleRequiredMixin, View):
+class InsurerCreateView(AssistanceSupervisorAccessMixin, View):
     """
     Renders and processes the insurer creation form.
     On GET: renders an empty InsurerForm.
@@ -1980,7 +1980,7 @@ class InsurerCreateView(AdminRoleRequiredMixin, View):
         return render(request, self.template_name, ctx)
 
 
-class InsurerUpdateView(AdminRoleRequiredMixin, View):
+class InsurerUpdateView(AssistanceSupervisorAccessMixin, View):
     """
     Renders and processes the insurer edit form for an existing insurer.
     On GET: renders InsurerForm pre-filled with the insurer data.
@@ -2220,7 +2220,7 @@ class TollSegmentForm(django_forms.ModelForm):
         }
 
 
-class NightScheduleListView(AdminRoleRequiredMixin, View):
+class NightScheduleListView(AssistanceSupervisorAccessMixin, View):
     """
     Lists all NightSchedule records for the company and renders the
     creation form for inline modal creation. On POST creates a new
@@ -2287,7 +2287,7 @@ class NightScheduleListView(AdminRoleRequiredMixin, View):
         )
 
 
-class NightScheduleUpdateView(AdminRoleRequiredMixin, View):
+class NightScheduleUpdateView(AssistanceSupervisorAccessMixin, View):
     """
     Renders and processes the edit form for an existing NightSchedule.
     On GET: renders the form pre-filled. On POST: validates, saves and
@@ -2352,7 +2352,7 @@ class NightScheduleUpdateView(AdminRoleRequiredMixin, View):
         return render(request, self.template_name, ctx)
 
 
-class NightScheduleDeleteView(AdminRoleRequiredMixin, View):
+class NightScheduleDeleteView(AssistanceSupervisorAccessMixin, View):
     """
     Deletes a NightSchedule if it has no linked Insurer records.
     ---
@@ -2385,7 +2385,7 @@ class NightScheduleDeleteView(AdminRoleRequiredMixin, View):
         return redirect("budgets:night_schedule_list")
 
 
-class InsurerToggleView(AdminRoleRequiredMixin, View):
+class InsurerToggleView(AssistanceSupervisorAccessMixin, View):
     """
     HTMX endpoint. Toggles the is_active flag of an insurer and returns
     the updated badge fragment for inline swap in the list table.
@@ -2415,7 +2415,7 @@ class InsurerToggleView(AdminRoleRequiredMixin, View):
         )
 
 
-class InsurerDeleteView(AdminRoleRequiredMixin, View):
+class InsurerDeleteView(AssistanceSupervisorAccessMixin, View):
     """
     Deletes an insurer and all its related data (vehicle types, tariffs,
     tariff lines) via CASCADE. Redirects to insurer list with a success
@@ -2497,7 +2497,7 @@ class InsurerDeleteView(AdminRoleRequiredMixin, View):
 # ---------------------------------------------------------------------------
 
 
-class TariffLineSaveView(AdminRoleRequiredMixin, View):
+class TariffLineSaveView(AssistanceSupervisorAccessMixin, View):
     """
     HTMX endpoint. Receives a POST with the full row field values for a
     TariffLine, saves them and returns the updated row fragment for swap.
@@ -2562,7 +2562,7 @@ class TariffLineSaveView(AdminRoleRequiredMixin, View):
 # ---------------------------------------------------------------------------
 
 
-class TariffLineDeleteView(AdminRoleRequiredMixin, View):
+class TariffLineDeleteView(AssistanceSupervisorAccessMixin, View):
     """
     HTMX endpoint. Deletes a TariffLine and returns an empty response
     so HTMX replaces the row with nothing (outerHTML swap).
@@ -2595,7 +2595,7 @@ class TariffLineDeleteView(AdminRoleRequiredMixin, View):
 # ---------------------------------------------------------------------------
 
 
-class TariffLineAddFormView(AdminRoleRequiredMixin, View):
+class TariffLineAddFormView(AssistanceSupervisorAccessMixin, View):
     """
     HTMX GET endpoint. Returns the inline add-line form fragment for the
     given active tariff. The form is injected into #new-line-row.
@@ -2645,7 +2645,7 @@ class TariffLineAddFormView(AdminRoleRequiredMixin, View):
 # ---------------------------------------------------------------------------
 
 
-class TariffLineAddView(AdminRoleRequiredMixin, View):
+class TariffLineAddView(AssistanceSupervisorAccessMixin, View):
     """
     HTMX POST endpoint. Creates a new TariffLine for the given active tariff
     and returns the new row fragment. Also clears the add form by returning
@@ -2719,7 +2719,7 @@ class TariffLineAddView(AdminRoleRequiredMixin, View):
 # ---------------------------------------------------------------------------
 
 
-class InsurerTariffCreateView(AdminRoleRequiredMixin, View):
+class InsurerTariffCreateView(AssistanceSupervisorAccessMixin, View):
     """
     Creates a new InsurerTariff version for the given insurer.
     Closes the currently active tariff (valid_to = valid_from - 1 day).
@@ -2790,7 +2790,7 @@ class InsurerTariffCreateView(AdminRoleRequiredMixin, View):
 # ---------------------------------------------------------------------------
 
 
-class TariffSaveNotesView(AdminRoleRequiredMixin, View):
+class TariffSaveNotesView(AssistanceSupervisorAccessMixin, View):
     """
     Saves the notes field of an InsurerTariff. Redirects back to the
     insurer edit view.
@@ -2823,7 +2823,7 @@ class TariffSaveNotesView(AdminRoleRequiredMixin, View):
 # Eliminacion masiva de presupuestos — solo ADMIN
 # ---------------------------------------------------------------------------
 
-class BudgetBulkDeleteView(AdminRoleRequiredMixin, View):
+class BudgetBulkDeleteView(AssistanceSupervisorAccessMixin, View):
     """
     Deletes multiple budgets selected from the history list.
     Only DRAFT and REJECTED budgets can be deleted.
@@ -2893,7 +2893,7 @@ class BudgetBulkDeleteView(AdminRoleRequiredMixin, View):
 # ---------------------------------------------------------------------------
 
 
-class InsurerCloneView(AdminRoleRequiredMixin, View):
+class InsurerCloneView(AssistanceSupervisorAccessMixin, View):
     """
     Clones an existing Insurer together with its active InsurerTariff,
     all TariffLine records, VehicleType catalogue, SpecialRateTariff,
@@ -3143,7 +3143,7 @@ class InsurerCloneView(AdminRoleRequiredMixin, View):
 # to an existing target insurer. ADMIN only.
 # ---------------------------------------------------------------------------
 
-class InsurerCopyTariffView(AdminRoleRequiredMixin, View):
+class InsurerCopyTariffView(AssistanceSupervisorAccessMixin, View):
     """
     Copies the active InsurerTariff (with all TariffLine, VehicleType,
     SpecialRateTariff and SpecialRateLine records) from a source insurer
@@ -3393,7 +3393,7 @@ class InsurerCopyTariffView(AdminRoleRequiredMixin, View):
 # Vista de detalle de aseguradora — solo lectura. Solo ADMIN.
 # ---------------------------------------------------------------------------
 
-class InsurerDetailView(AdminRoleRequiredMixin, View):
+class InsurerDetailView(AssistanceSupervisorAccessMixin, View):
     """
     Read-only view showing the full tariff detail for an insurer.
     Displays general data, vehicle types and all tariff lines grouped
@@ -3631,7 +3631,7 @@ class BaseForm(django_forms.ModelForm):
         }
 
 
-class BaseManageView(AdminRoleRequiredMixin, View):
+class BaseManageView(AssistanceSupervisorAccessMixin, View):
     """
     Dedicated base management view for a given insurer.
     Shows a read-only summary of active bases for the insurer at the top,
@@ -3724,7 +3724,7 @@ class BaseManageView(AdminRoleRequiredMixin, View):
         return render(request, self.template_name, ctx)
 
 
-class InsurerBaseToggleView(AdminRoleRequiredMixin, View):
+class InsurerBaseToggleView(AssistanceSupervisorAccessMixin, View):
     """
     HTMX endpoint. Toggles InsurerBase.is_active for a (insurer_pk, base_pk)
     pair.
@@ -3778,7 +3778,7 @@ class InsurerBaseToggleView(AdminRoleRequiredMixin, View):
         )
 
 
-class BaseCreateView(AdminRoleRequiredMixin, View):
+class BaseCreateView(AssistanceSupervisorAccessMixin, View):
     """
     Creates a new Base for the given insurer.
     Accepts POST only. Returns HTMX fragment with updated base list on success.
@@ -3838,7 +3838,7 @@ class BaseCreateView(AdminRoleRequiredMixin, View):
         )
 
 
-class BaseUpdateView(AdminRoleRequiredMixin, View):
+class BaseUpdateView(AssistanceSupervisorAccessMixin, View):
     """
     Updates an existing Base record.
     GET renders a dedicated edit page with Google Maps geolocation.
@@ -3895,7 +3895,7 @@ class BaseUpdateView(AdminRoleRequiredMixin, View):
         return render(request, self.template_name, ctx)
 
 
-class BaseToggleView(AdminRoleRequiredMixin, View):
+class BaseToggleView(AssistanceSupervisorAccessMixin, View):
     """
     Toggles the is_active flag of a Base record via HTMX POST.
     Returns the updated row fragment.
@@ -3923,7 +3923,7 @@ class BaseToggleView(AdminRoleRequiredMixin, View):
         )
 
 
-class BaseDeleteView(AdminRoleRequiredMixin, View):
+class BaseDeleteView(AssistanceSupervisorAccessMixin, View):
     """
     Deletes a Base record via POST with modal confirmation.
     Returns empty 200 response for HTMX swap-oob removal.
@@ -3957,7 +3957,7 @@ class BaseDeleteView(AdminRoleRequiredMixin, View):
 # ---------------------------------------------------------------------------
 
 
-class VehicleTypeCreateView(AdminRoleRequiredMixin, View):
+class VehicleTypeCreateView(AssistanceSupervisorAccessMixin, View):
     """
     Creates a new VehicleType for the given insurer via HTMX POST.
     sort_order is assigned automatically as max(existing) + 1 so the new
@@ -4032,7 +4032,7 @@ class VehicleTypeCreateView(AdminRoleRequiredMixin, View):
         )
 
 
-class VehicleTypeUpdateView(AdminRoleRequiredMixin, View):
+class VehicleTypeUpdateView(AssistanceSupervisorAccessMixin, View):
     """
     Updates an existing VehicleType name via HTMX POST.
     sort_order is managed exclusively via VehicleTypeReorderView (drag & drop).
@@ -4090,7 +4090,7 @@ class VehicleTypeUpdateView(AdminRoleRequiredMixin, View):
         )
 
 
-class VehicleTypeToggleView(AdminRoleRequiredMixin, View):
+class VehicleTypeToggleView(AssistanceSupervisorAccessMixin, View):
     """
     Toggles the is_active flag of a VehicleType via HTMX POST.
     Returns the updated row fragment.
@@ -4120,7 +4120,7 @@ class VehicleTypeToggleView(AdminRoleRequiredMixin, View):
         )
 
 
-class VehicleTypeDeleteView(AdminRoleRequiredMixin, View):
+class VehicleTypeDeleteView(AssistanceSupervisorAccessMixin, View):
     """
     Deactivates a VehicleType via HTMX POST with modal confirmation.
     "Delete" no longer performs a real database deletion — it sets
@@ -4159,7 +4159,7 @@ class VehicleTypeDeleteView(AdminRoleRequiredMixin, View):
         return HttpResponse(status=200)
 
 
-class VehicleTypeReorderView(AdminRoleRequiredMixin, View):
+class VehicleTypeReorderView(AssistanceSupervisorAccessMixin, View):
     """
     Persists a new sort_order for all VehicleType records of an insurer
     after a drag-and-drop reorder operation in the UI.
@@ -4232,7 +4232,7 @@ class VehicleTypeReorderView(AdminRoleRequiredMixin, View):
         return JsonResponse({"status": "ok"})
 
 
-class TariffConceptCreateView(AdminRoleRequiredMixin, View):
+class TariffConceptCreateView(AssistanceSupervisorAccessMixin, View):
     """
     Creates a new custom TariffConcept for the company owning the given
     insurer.
@@ -4304,7 +4304,7 @@ class TariffConceptCreateView(AdminRoleRequiredMixin, View):
         return HttpResponse(status=200)
 
 
-class TariffConceptCreateGlobalView(AdminRoleRequiredMixin, View):
+class TariffConceptCreateGlobalView(AssistanceSupervisorAccessMixin, View):
     """
     Creates a new custom TariffConcept for the authenticated user's company.
     Used from the dedicated concept list page (no insurer_pk needed).
@@ -4374,7 +4374,7 @@ class TariffConceptCreateGlobalView(AdminRoleRequiredMixin, View):
         )
 
 
-class TariffConceptListView(AdminRoleRequiredMixin, View):
+class TariffConceptListView(AssistanceSupervisorAccessMixin, View):
     """
     Dedicated page listing all TariffConcept available for the company:
     system concepts (read-only) and custom concepts (editable/deletable).
@@ -4405,7 +4405,7 @@ class TariffConceptListView(AdminRoleRequiredMixin, View):
         return render(request, self.template_name, ctx)
 
 
-class TariffConceptUpdateView(AdminRoleRequiredMixin, View):
+class TariffConceptUpdateView(AssistanceSupervisorAccessMixin, View):
     """
     Inline HTMX edit for a custom TariffConcept.
     GET returns the edit row fragment. POST saves and returns the updated row.
@@ -4473,7 +4473,7 @@ class TariffConceptUpdateView(AdminRoleRequiredMixin, View):
         )
 
 
-class TariffConceptDeleteView(AdminRoleRequiredMixin, View):
+class TariffConceptDeleteView(AssistanceSupervisorAccessMixin, View):
     """
     Deletes a custom TariffConcept via HTMX POST.
     Rejects deletion if the concept has associated tariff lines.
@@ -4644,7 +4644,7 @@ def _build_budget_qs(request, company):
     return qs
 
 
-class InsurerTariffExportCsvView(AdminRoleRequiredMixin, View):
+class InsurerTariffExportCsvView(AssistanceSupervisorAccessMixin, View):
     """
     Exports the active tariff of an insurer as a CSV file.
     ---
@@ -4681,7 +4681,7 @@ class InsurerTariffExportCsvView(AdminRoleRequiredMixin, View):
         return response
 
 
-class InsurerTariffExportExcelView(AdminRoleRequiredMixin, View):
+class InsurerTariffExportExcelView(AssistanceSupervisorAccessMixin, View):
     """
     Exports the active tariff of an insurer as an Excel file.
     ---
@@ -4749,7 +4749,7 @@ class InsurerTariffExportExcelView(AdminRoleRequiredMixin, View):
         return response
 
 
-class InsurerTariffExportPdfView(AdminRoleRequiredMixin, View):
+class InsurerTariffExportPdfView(AssistanceSupervisorAccessMixin, View):
     """
     Exports the active tariff of an insurer as a PDF file via WeasyPrint.
     ---
@@ -4812,7 +4812,7 @@ class InsurerTariffExportPdfView(AdminRoleRequiredMixin, View):
         return response
 
 
-class InsurerTariffExportWordView(AdminRoleRequiredMixin, View):
+class InsurerTariffExportWordView(AssistanceSupervisorAccessMixin, View):
     """
     Exports the active tariff of an insurer as a Word (.docx) file.
     ---
@@ -4879,7 +4879,7 @@ class InsurerTariffExportWordView(AdminRoleRequiredMixin, View):
         return response
 
 
-class BudgetExportCsvView(AdminRoleRequiredMixin, View):
+class BudgetExportCsvView(AssistanceSupervisorAccessMixin, View):
     """
     Exports the filtered budget history as a CSV file.
     ---
@@ -4912,7 +4912,7 @@ class BudgetExportCsvView(AdminRoleRequiredMixin, View):
         return response
 
 
-class BudgetExportExcelView(AdminRoleRequiredMixin, View):
+class BudgetExportExcelView(AssistanceSupervisorAccessMixin, View):
     """
     Exports the filtered budget history as an Excel file.
     ---
@@ -4975,7 +4975,7 @@ class BudgetExportExcelView(AdminRoleRequiredMixin, View):
         return response
 
 
-class BudgetExportPdfView(AdminRoleRequiredMixin, View):
+class BudgetExportPdfView(AssistanceSupervisorAccessMixin, View):
     """
     Exports the filtered budget history as a PDF file via WeasyPrint.
     ---
@@ -5032,7 +5032,7 @@ class BudgetExportPdfView(AdminRoleRequiredMixin, View):
         return response
 
 
-class BudgetExportWordView(AdminRoleRequiredMixin, View):
+class BudgetExportWordView(AssistanceSupervisorAccessMixin, View):
     """
     Exports the filtered budget history as a Word (.docx) file.
     ---
@@ -5100,7 +5100,7 @@ class BudgetExportWordView(AdminRoleRequiredMixin, View):
 # ---------------------------------------------------------------------------
 
 
-class BaseClearCoordsView(AdminRoleRequiredMixin, View):
+class BaseClearCoordsView(AssistanceSupervisorAccessMixin, View):
     """
     HTMX POST endpoint. Receives a list of base PKs and sets their
     latitude and longitude to null. Returns an HTML fragment with
@@ -5157,7 +5157,7 @@ class BaseClearCoordsView(AdminRoleRequiredMixin, View):
         )
 
 
-class BaseSyncCalendarsView(AdminRoleRequiredMixin, View):
+class BaseSyncCalendarsView(AssistanceSupervisorAccessMixin, View):
     """
     HTMX POST endpoint. Syncs the labour calendars of all active company
     bases via the calendariosnacionales.com public API. Returns an inline
@@ -5280,7 +5280,7 @@ class BaseSyncCalendarsView(AdminRoleRequiredMixin, View):
         return _HR("".join(html_parts))
 
 
-class BaseGlobalView(AdminRoleRequiredMixin, View):
+class BaseGlobalView(AssistanceSupervisorAccessMixin, View):
     """
     Lists all service bases for the company with optional filter by insurer.
     Shows per-base coordinates, labor calendar sync status and global is_active
@@ -5931,7 +5931,7 @@ class WorkOrderAlbaranView(AssistanceWorkOrderAccessMixin, View):
         return redirect("budgets:work_order_detail", pk=unit.work_order.pk)
 
 
-class TollSegmentListView(AdminRoleRequiredMixin, View):
+class TollSegmentListView(AssistanceSupervisorAccessMixin, View):
     """
     Lists all TollSegment records with filtering by road_code, tariff_level
     and active status. Creation is handled by TollSegmentCreateView.
@@ -5998,7 +5998,7 @@ class TollSegmentListView(AdminRoleRequiredMixin, View):
         return render(request, self.template_name, ctx)
 
 
-class TollSegmentConfigView(AdminRoleRequiredMixin, View):
+class TollSegmentConfigView(AssistanceSupervisorAccessMixin, View):
     """
     POST — saves toll configuration (vehicle type and markup percent) to
     the company record. Redirects back to the toll segment list.
@@ -6042,7 +6042,7 @@ class TollSegmentConfigView(AdminRoleRequiredMixin, View):
         return redirect("budgets:toll_segment_list")
 
 
-class TollSegmentCreateView(AdminRoleRequiredMixin, View):
+class TollSegmentCreateView(AssistanceSupervisorAccessMixin, View):
     """
     Renders and processes the creation form for a new TollSegment.
     GET: empty form. POST: validates and saves, redirects to list.
@@ -6088,7 +6088,7 @@ class TollSegmentCreateView(AdminRoleRequiredMixin, View):
         return render(request, self.template_name, ctx)
 
 
-class TollSegmentUpdateView(AdminRoleRequiredMixin, View):
+class TollSegmentUpdateView(AssistanceSupervisorAccessMixin, View):
     """
     Renders and processes the edit form for an existing TollSegment.
     Accessible to ADMIN role only.
@@ -6174,7 +6174,7 @@ class TollSegmentUpdateView(AdminRoleRequiredMixin, View):
         return render(request, self.template_name, ctx)
 
 
-class TollSegmentDeleteView(AdminRoleRequiredMixin, View):
+class TollSegmentDeleteView(AssistanceSupervisorAccessMixin, View):
     """
     Soft-deletes (is_active=False) or hard-deletes a TollSegment.
     POST with action=deactivate sets is_active=False.
@@ -6219,7 +6219,7 @@ class TollSegmentDeleteView(AdminRoleRequiredMixin, View):
         return redirect("budgets:toll_segment_list")
 
 
-class TollSegmentBulkToggleView(AdminRoleRequiredMixin, View):
+class TollSegmentBulkToggleView(AssistanceSupervisorAccessMixin, View):
     """
     Bulk activate or deactivate a set of TollSegment records.
     POST receives a list of PKs (pks[]) and an action ('activate' or
@@ -6330,7 +6330,7 @@ class WorkOrderPdfView(AssistanceWorkOrderAccessMixin, View):
 # Gestión de calendarios laborales de bases — solo ADMIN
 # ---------------------------------------------------------------------------
 
-class BaseCalendarView(AdminRoleRequiredMixin, View):
+class BaseCalendarView(AssistanceSupervisorAccessMixin, View):
     """
     List all active bases for the company with their labour calendar summary.
     Provides an entry point to manage each base's holiday dates manually.
@@ -6389,7 +6389,7 @@ class BaseCalendarView(AdminRoleRequiredMixin, View):
         return render(request, self.template_name, ctx)
 
 
-class BaseCalendarDetailView(AdminRoleRequiredMixin, View):
+class BaseCalendarDetailView(AssistanceSupervisorAccessMixin, View):
     """
     Manage the labour calendar of a single Base: view, add and remove
     individual holiday dates. Also provides an HTMX endpoint for adding
@@ -6530,7 +6530,7 @@ class BaseCalendarDetailView(AdminRoleRequiredMixin, View):
             return render(request, self.FRAGMENT_TEMPLATE, ctx)
 
 
-class BaseCalendarCopyView(AdminRoleRequiredMixin, View):
+class BaseCalendarCopyView(AssistanceSupervisorAccessMixin, View):
     """
     Copy the labour calendar of one Base to another Base of the same
     company. Only the target base's labor_calendar is overwritten —
@@ -6609,7 +6609,7 @@ class BaseCalendarCopyView(AdminRoleRequiredMixin, View):
 # ---------------------------------------------------------------------------
 
 
-class InsurerTariffPdfUploadView(AdminRoleRequiredMixin, View):
+class InsurerTariffPdfUploadView(AssistanceSupervisorAccessMixin, View):
     """
     Handles the upload of a tariff PDF for an existing Insurer.
     On POST:
@@ -6865,7 +6865,7 @@ class InsurerTariffPdfUploadView(AdminRoleRequiredMixin, View):
         return redirect("budgets:insurer_tariff_pdf_review", pk=pdf_import.pk)
 
 
-class InsurerTariffPdfReviewView(AdminRoleRequiredMixin, View):
+class InsurerTariffPdfReviewView(AssistanceSupervisorAccessMixin, View):
     """
     GET: Displays two groups of extracted data for human review:
       1. Matched lines — extracted prices that Gemini paired with an

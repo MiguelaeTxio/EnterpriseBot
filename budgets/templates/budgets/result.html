@@ -78,7 +78,7 @@
                         <i class="bi bi-plus-circle me-2"></i>Nuevo presupuesto
                     </a>
                 </div>
-                {% if company_user.role == 'ADMIN' or company_user.can_view_budget_breakdown %}
+                {% if company_user.role == 'ADMIN' or company_user.role == 'ASSIST_SUPERVISOR' or company_user.can_view_budget_breakdown %}
                     <div class="text-center mt-3">
                         <a href="{% url 'budgets:detail' budget.pk %}"
                            class="btn btn-outline-primary btn-sm">
