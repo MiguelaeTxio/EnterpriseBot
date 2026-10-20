@@ -10,11 +10,14 @@ Miguel Ángel: "tenemos avisos de documentación de maquinaria y de
 personal, pero no de revisiones por kilometraje y por horas".
 
 Decidido con él (hoja de ruta S131):
-- Cada centro de gasto puede tener "Revisión cada 800 horas", "Revisión
-  cada 1200 horas" (casillas independientes) y "Revisión cada N km".
+- Revisión por horas: cada centro de gasto pasa la suya a las 800 horas
+  o a las 1200 (Miguel Ángel, S131: "unas máquinas la pasan a las 800
+  horas y otras máquinas la pasan a las 1200"), nunca las dos. Además,
+  "Revisión cada N km".
 - Revisiones hechas y lecturas de horas/km se introducen a mano, con
-  fecha. Sin una revisión anterior anotada no hay aviso de esa
-  revisión.
+  fecha. Una revisión anotada con horas cuenta para la revisión por
+  horas, y con km para la de km. Sin una revisión anterior anotada no
+  hay aviso de esa revisión.
 - Aviso predefinido "revisión vencida": la última lectura pasa de la
   revisión anterior más el intervalo. Aviso configurable: antelación en
   horas y en km (`MachineServiceAlertSettings`); sin antelación fijada,
@@ -44,28 +47,33 @@ class Schedule:
 
     ---
 
-    Una revisión del plan: clave, etiqueta, unidad, campo de la
-    revisión que la marca y campo de valor (horas o km).
+    Una revisión del plan: clave, etiqueta, unidad y campo de valor
+    de revisiones y lecturas (horas o km).
     """
 
     key: str
     label: str
     unit: str
-    covers_field: str
     value_field: str
 
 
-SCHEDULE_800 = Schedule(
-    "H800", "Revisión de 800 horas", UNIT_HOURS, "covers_800_hours", "hours",
-)
-SCHEDULE_1200 = Schedule(
-    "H1200", "Revisión de 1200 horas", UNIT_HOURS, "covers_1200_hours",
-    "hours",
-)
-SCHEDULE_KM = Schedule(
-    "KM", "Revisión por kilómetros", UNIT_KM, "covers_km", "km",
-)
-SCHEDULES = (SCHEDULE_800, SCHEDULE_1200, SCHEDULE_KM)
+KEY_HOURS = "HOURS"
+KEY_KM = "KM"
+SCHEDULE_KM = Schedule(KEY_KM, "Revisión por kilómetros", UNIT_KM, "km")
+
+
+def hours_schedule(interval):
+    """
+    Hours schedule of a machine ("Revisión de 800 horas").
+
+    ---
+
+    La revisión por horas de una máquina, con su intervalo en la
+    etiqueta.
+    """
+    return Schedule(
+        KEY_HOURS, "Revisión de %d horas" % interval, UNIT_HOURS, "hours",
+    )
 
 
 @dataclass
@@ -112,10 +120,9 @@ def enabled_schedules(machine):
     Revisiones configuradas en el centro de gasto, con su intervalo.
     """
     pairs = []
-    if machine.service_every_800_hours:
-        pairs.append((SCHEDULE_800, 800))
-    if machine.service_every_1200_hours:
-        pairs.append((SCHEDULE_1200, 1200))
+    if machine.service_hours_interval:
+        interval = machine.service_hours_interval
+        pairs.append((hours_schedule(interval), interval))
     if machine.service_every_km:
         pairs.append((SCHEDULE_KM, machine.service_every_km))
     return pairs
@@ -182,12 +189,8 @@ def schedule_statuses(machine, records, readings, advance_of_unit=None):
     advance_of_unit = advance_of_unit or {}
     statuses = []
     for schedule, interval in enabled_schedules(machine):
-        covering = [
-            record for record in records
-            if getattr(record, schedule.covers_field)
-        ]
         record = _latest_with_value(
-            covering, schedule.value_field, "service_date",
+            records, schedule.value_field, "service_date",
         )
         status = ScheduleStatus(schedule, interval, STATE_NO_RECORD)
         if record is not None:
@@ -257,8 +260,7 @@ def compute_service_notices():
 
     machines = list(
         MachineAsset.objects.filter(is_active=True).filter(
-            Q(service_every_800_hours=True)
-            | Q(service_every_1200_hours=True)
+            Q(service_hours_interval__isnull=False)
             | Q(service_every_km__isnull=False, service_every_km__gt=0),
         ),
     )

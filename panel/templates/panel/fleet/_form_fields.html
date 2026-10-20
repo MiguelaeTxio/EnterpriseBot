@@ -105,22 +105,9 @@
         <h6 class="text-muted small fw-semibold text-uppercase mb-2">Revisiones</h6>
     </div>
 
-    <div class="col-12 col-sm-4 d-flex align-items-end">
-        <div class="form-check">
-            {{ form.service_every_800_hours }}
-            <label class="form-check-label" for="{{ form.service_every_800_hours.id_for_label }}">
-                {{ form.service_every_800_hours.label }}
-            </label>
-        </div>
-    </div>
-
-    <div class="col-12 col-sm-4 d-flex align-items-end">
-        <div class="form-check">
-            {{ form.service_every_1200_hours }}
-            <label class="form-check-label" for="{{ form.service_every_1200_hours.id_for_label }}">
-                {{ form.service_every_1200_hours.label }}
-            </label>
-        </div>
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.service_hours_interval.label }}</label>
+        {{ form.service_hours_interval }}
     </div>
 
     <div class="col-12 col-sm-4">

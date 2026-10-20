@@ -77,14 +77,6 @@ def machine_service_context(machine, company_user):
             plan.STATE_OVERDUE: "text-danger fw-bold",
             plan.STATE_UPCOMING: "text-warning-emphasis fw-bold",
         }.get(status.state, "text-muted")
-    for record in records:
-        record.covers_label = ", ".join(
-            label for flag, label in (
-                (record.covers_800_hours, "800 h"),
-                (record.covers_1200_hours, "1200 h"),
-                (record.covers_km, "km"),
-            ) if flag
-        )
     enabled = {
         schedule.key for schedule, _interval
         in plan.enabled_schedules(machine)
@@ -97,9 +89,8 @@ def machine_service_context(machine, company_user):
         "meter_readings_count": len(readings),
         "service_list_limit": SERVICE_LIST_LIMIT,
         "has_service_plan": machine.has_service_plan,
-        "service_has_800": plan.SCHEDULE_800.key in enabled,
-        "service_has_1200": plan.SCHEDULE_1200.key in enabled,
-        "service_has_km": plan.SCHEDULE_KM.key in enabled,
+        "service_has_hours": plan.KEY_HOURS in enabled,
+        "service_has_km": plan.KEY_KM in enabled,
         "can_edit_service": can_edit_service(company_user),
         "service_today": date.today().isoformat(),
     }
@@ -181,9 +172,9 @@ class MachineServiceRecordCreateView(_ServiceEditMixin, View):
 
     ---
 
-    POST: anota una revisión hecha. Fecha obligatoria; al menos una de
-    las revisiones del plan marcada; y el valor que esa revisión
-    necesita (horas para 800/1200 h, km para la de km).
+    POST: anota una revisión hecha. Fecha obligatoria y al menos las
+    horas o los km: con horas cuenta para la revisión por horas, con
+    km para la de km.
     """
 
     def post(self, request, pk):
@@ -197,28 +188,14 @@ class MachineServiceRecordCreateView(_ServiceEditMixin, View):
             )
             hours = _parse_count(request.POST.get("hours"), "Las horas")
             km = _parse_count(request.POST.get("km"), "Los kilómetros")
-            covers_800 = request.POST.get("covers_800_hours") == "1"
-            covers_1200 = request.POST.get("covers_1200_hours") == "1"
-            covers_km = request.POST.get("covers_km") == "1"
-            if not (covers_800 or covers_1200 or covers_km):
-                raise ValueError(
-                    "Marca qué revisión es (800 h, 1200 h o km).",
-                )
-            if (covers_800 or covers_1200) and hours is None:
-                raise ValueError(
-                    "Una revisión por horas necesita las horas.",
-                )
-            if covers_km and km is None:
-                raise ValueError(
-                    "Una revisión por kilómetros necesita los km.",
-                )
+            if hours is None and km is None:
+                raise ValueError("Indica las horas, los km o los dos.")
         except ValueError as exc:
             messages.error(request, str(exc))
             return _back_to_machine(request, machine)
         MachineServiceRecord.objects.create(
             machine=machine, service_date=service_date, hours=hours,
-            km=km, covers_800_hours=covers_800,
-            covers_1200_hours=covers_1200, covers_km=covers_km,
+            km=km,
             notes=(request.POST.get("notes") or "").strip()[:255],
             created_by=request.user.company_user,
         )

@@ -322,21 +322,28 @@ class MachineAsset(models.Model):
     )
 
     # ------------------------------------------------------------------
-    # H30 (S131) -- plan de revisiones por horas y kilómetros. Dos
-    # casillas independientes de horas y un intervalo en km; sin
-    # ninguna marcada y sin km, el centro de gasto no tiene revisión.
+    # H30 (S131) -- plan de revisiones por horas y kilómetros. Por
+    # horas, cada máquina pasa la suya a las 800 o a las 1200 (Miguel
+    # Ángel: "unas máquinas la pasan a las 800 horas y otras máquinas
+    # la pasan a las 1200"), nunca las dos; aparte, un intervalo en km.
+    # Sin ninguno de los dos, el centro de gasto no tiene revisión.
     # ---
-    # H30 (S131) -- service plan by hours and kilometres. Two
-    # independent hour checkboxes and a km interval; with none set,
-    # the cost centre has no service plan.
+    # H30 (S131) -- service plan: one hours interval (800 or 1200)
+    # and/or a km interval; with none set, there is no service plan.
     # ------------------------------------------------------------------
-    service_every_800_hours = models.BooleanField(
-        _("Revisión cada 800 horas"),
-        default=False,
-    )
-    service_every_1200_hours = models.BooleanField(
-        _("Revisión cada 1200 horas"),
-        default=False,
+    SERVICE_HOURS_CHOICES = [
+        (800, _("Cada 800 horas")),
+        (1200, _("Cada 1200 horas")),
+    ]
+    service_hours_interval = models.PositiveSmallIntegerField(
+        _("Revisión por horas"),
+        choices=SERVICE_HOURS_CHOICES,
+        null=True,
+        blank=True,
+        help_text=_(
+            "Cada cuántas horas pasa la revisión esta máquina. Vacío: "
+            "sin revisión por horas."
+        ),
     )
     service_every_km = models.PositiveIntegerField(
         _("Revisión cada N km"),
@@ -381,13 +388,9 @@ class MachineAsset(models.Model):
 
         ---
 
-        True si tiene alguna revisión configurada (800 h, 1200 h o km).
+        True si tiene alguna revisión configurada (por horas o por km).
         """
-        return bool(
-            self.service_every_800_hours
-            or self.service_every_1200_hours
-            or self.service_every_km
-        )
+        return bool(self.service_hours_interval or self.service_every_km)
 
 
 # ---------------------------------------------------------------------------
@@ -402,9 +405,9 @@ class MachineServiceRecord(models.Model):
     ---
 
     Una revisión ya hecha de un centro de gasto: fecha, horas y
-    kilómetros de la revisión, y a qué revisiones del plan corresponde
-    (800 h, 1200 h, km). Sin una revisión anotada para una de ellas,
-    ese centro de gasto no avisa de esa revisión.
+    kilómetros de la revisión. Con horas cuenta para la revisión por
+    horas y con km para la de km. Sin una revisión anotada, ese centro
+    de gasto no avisa de esa revisión.
     """
 
     machine = models.ForeignKey(
@@ -419,15 +422,6 @@ class MachineServiceRecord(models.Model):
     )
     km = models.PositiveIntegerField(
         _("Kilómetros en la revisión"), null=True, blank=True,
-    )
-    covers_800_hours = models.BooleanField(
-        _("Es la revisión de 800 horas"), default=False,
-    )
-    covers_1200_hours = models.BooleanField(
-        _("Es la revisión de 1200 horas"), default=False,
-    )
-    covers_km = models.BooleanField(
-        _("Es la revisión por kilómetros"), default=False,
     )
     notes = models.CharField(_("Observaciones"), max_length=255, blank=True)
     created_by = models.ForeignKey(

@@ -348,10 +348,11 @@ puede ser es que la interfaz no informe de lo que pasa."
     </div>
     {% comment %}
     H30 (S131) -- Revisiones por horas y km. Arriba, el estado de cada
-    revisión configurada en "Datos del centro de gasto" (800 h, 1200 h,
-    km); debajo, las revisiones hechas y las lecturas de horas/km,
-    anotadas a mano con su fecha. Sin una revisión anotada de un tipo
-    no hay aviso de ese tipo. Todo calculado en la vista.
+    revisión configurada en "Datos del centro de gasto" (por horas, a
+    las 800 o a las 1200, y por km); debajo, las revisiones hechas y
+    las lecturas de horas/km, anotadas a mano con su fecha. Una
+    revisión con horas cuenta para la de horas y con km para la de km.
+    Sin una revisión anotada no hay aviso. Todo calculado en la vista.
     {% endcomment %}
     <div class="accordion-item" id="machineServicePlan">
         <h2 class="accordion-header">
@@ -363,7 +364,7 @@ puede ser es que la interfaz no informe de lo que pasa."
         <div id="collapseMachineService" class="accordion-collapse collapse{% if service_open %} show{% endif %}">
             <div class="accordion-body">
                 {% if not has_service_plan %}
-                <p class="text-muted small">Este centro de gasto no tiene revisiones configuradas. Márcalas en "Datos del centro de gasto" (Revisión cada 800 horas, cada 1200 horas o cada N km).</p>
+                <p class="text-muted small">Este centro de gasto no tiene revisiones configuradas. Elígelas en "Datos del centro de gasto" (Revisión por horas: cada 800 o cada 1200; Revisión cada N km).</p>
                 {% else %}
                 <ul class="list-unstyled small mb-3">
                     {% for status in service_statuses %}
@@ -377,26 +378,20 @@ puede ser es que la interfaz no informe de lo que pasa."
                 <form method="post" action="{% url 'panel:machine_service_record_create' pk=machine.pk %}" class="row g-2 align-items-end mb-2">
                     {% csrf_token %}
                     <input type="hidden" name="back_url" value="{{ back_url }}">
-                    <div class="col-6 col-md-2">
+                    <div class="col-6 col-md-3">
                         <label class="form-label form-label-sm mb-0" for="serviceDate">Fecha</label>
                         <input type="date" class="form-control form-control-sm" id="serviceDate" name="service_date" max="{{ service_today }}" required>
                     </div>
-                    <div class="col-6 col-md-2">
+                    <div class="col-6 col-md-3">
                         <label class="form-label form-label-sm mb-0" for="serviceHours">Horas</label>
                         <input type="number" min="0" class="form-control form-control-sm" id="serviceHours" name="hours">
                     </div>
-                    <div class="col-6 col-md-2">
+                    <div class="col-6 col-md-3">
                         <label class="form-label form-label-sm mb-0" for="serviceKm">Kilómetros</label>
                         <input type="number" min="0" class="form-control form-control-sm" id="serviceKm" name="km">
                     </div>
-                    <div class="col-12 col-md-4 d-flex flex-wrap gap-2 small">
-                        <span class="w-100 form-label form-label-sm mb-0">Es la revisión de</span>
-                        <label class="form-check-label"><input type="checkbox" class="form-check-input me-1" name="covers_800_hours" value="1"{% if service_has_800 %} checked{% endif %}>800 h</label>
-                        <label class="form-check-label"><input type="checkbox" class="form-check-input me-1" name="covers_1200_hours" value="1"{% if service_has_1200 %} checked{% endif %}>1200 h</label>
-                        <label class="form-check-label"><input type="checkbox" class="form-check-input me-1" name="covers_km" value="1"{% if service_has_km %} checked{% endif %}>km</label>
-                    </div>
-                    <div class="col-6 col-md-2">
-                        <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-plus-lg me-1"></i>Anotar</button>
+                    <div class="col-6 col-md-3">
+                        <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-plus-lg me-1"></i>Anotar revisión</button>
                     </div>
                     <div class="col-12">
                         <input type="text" maxlength="255" class="form-control form-control-sm" name="notes" placeholder="Observaciones (opcional)" aria-label="Observaciones">
@@ -407,14 +402,13 @@ puede ser es que la interfaz no informe de lo que pasa."
                 {% if service_records_count > service_list_limit %}<p class="text-muted small mb-1">Se muestran las {{ service_list_limit }} más recientes.</p>{% endif %}
                 <div class="table-responsive mb-3">
                     <table class="table stack-mobile table-sm table-hover mb-0 mdet-table-sm">
-                        <thead><tr><th>Fecha</th><th class="text-end">Horas</th><th class="text-end">Km</th><th>Revisión</th><th>Observaciones</th><th>Anotada por</th><th></th></tr></thead>
+                        <thead><tr><th>Fecha</th><th class="text-end">Horas</th><th class="text-end">Km</th><th>Observaciones</th><th>Anotada por</th><th></th></tr></thead>
                         <tbody>
                             {% for record in service_records %}
                             <tr>
                                 <td class="text-nowrap stack-mobile-title">{{ record.service_date|date:"d/m/Y" }}</td>
                                 <td class="text-end" data-label="Horas">{{ record.hours|default_if_none:"—" }}</td>
                                 <td class="text-end" data-label="Km">{{ record.km|default_if_none:"—" }}</td>
-                                <td data-label="Revisión">{{ record.covers_label }}</td>
                                 <td data-label="Observaciones">{{ record.notes|default:"—" }}</td>
                                 <td data-label="Anotada por">{% if record.created_by %}{{ record.created_by.user.get_full_name|default:record.created_by.user.username }}{% else %}—{% endif %}</td>
                                 <td class="text-end stack-mobile-actions">

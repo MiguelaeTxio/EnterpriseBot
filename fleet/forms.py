@@ -49,8 +49,7 @@ class MachineAssetForm(forms.ModelForm):
             "hours",
             "is_active",
             # H30 (S131): plan de revisiones por horas y km.
-            "service_every_800_hours",
-            "service_every_1200_hours",
+            "service_hours_interval",
             "service_every_km",
         ]
         widgets = {
@@ -104,11 +103,8 @@ class MachineAssetForm(forms.ModelForm):
             "is_active": forms.CheckboxInput(attrs={
                 "class": "form-check-input",
             }),
-            "service_every_800_hours": forms.CheckboxInput(attrs={
-                "class": "form-check-input",
-            }),
-            "service_every_1200_hours": forms.CheckboxInput(attrs={
-                "class": "form-check-input",
+            "service_hours_interval": forms.Select(attrs={
+                "class": "form-select",
             }),
             "service_every_km": forms.NumberInput(attrs={
                 "class": "form-control",
@@ -130,9 +126,8 @@ class MachineAssetForm(forms.ModelForm):
             "mileage":        "Kilómetros",
             "hours":          "Horas",
             "is_active":      "Activo",
-            "service_every_800_hours":  "Revisión cada 800 horas",
-            "service_every_1200_hours": "Revisión cada 1200 horas",
-            "service_every_km":         "Revisión cada N km",
+            "service_hours_interval": "Revisión por horas",
+            "service_every_km":       "Revisión cada N km",
         }
 
     # S117 -- petición de Miguel Ángel: "Familia" deja de ser texto libre
