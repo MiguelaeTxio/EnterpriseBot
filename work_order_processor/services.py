@@ -106,8 +106,9 @@ logger = logging.getLogger(__name__)
 # (Vision field extraction in extract_work_order_page/_full, text
 # classification in classify_task/classify_fault) — neither uses image
 # segmentation (unsupported in Gemini 3.x) nor candidate_count (removed
-# in Gemini 3.x); thinking_budget=0 remains supported for backward
-# compatibility.
+# in Gemini 3.x). S132: thinking_budget is NOT supported by
+# gemini-3.5-flash (400 INVALID_ARGUMENT in production); every call uses
+# ThinkingConfig(thinking_level="low") instead.
 #
 # Inicialización del cliente Gemini — Hito S001/H10: migrado al helper
 # compartido ai_services.gemini_client (principio DRY, ver
@@ -122,8 +123,9 @@ logger = logging.getLogger(__name__)
 # (extracción de campos por Visión en extract_work_order_page/_full,
 # clasificación de texto en classify_task/classify_fault) — ninguno usa
 # segmentación de imagen (no soportada en Gemini 3.x) ni candidate_count
-# (retirado en Gemini 3.x); thinking_budget=0 sigue soportado por
-# compatibilidad hacia atrás.
+# (retirado en Gemini 3.x). S132: gemini-3.5-flash NO admite
+# thinking_budget (400 INVALID_ARGUMENT en producción); todas las
+# llamadas usan ThinkingConfig(thinking_level="low").
 # ---------------------------------------------------------------------------
 _GEMINI_MODEL = "gemini-3.5-flash"
 
@@ -2518,7 +2520,7 @@ def classify_task(
                 http_options       = HttpOptions(timeout=30_000),
                 response_mime_type = "application/json",
                 response_schema    = _CLASSIFY_TASK_RESPONSE_SCHEMA,
-                thinking_config    = ThinkingConfig(thinking_budget=0),
+                thinking_config    = ThinkingConfig(thinking_level="low"),
                 temperature        = 0.0,
                 max_output_tokens  = 128,
             ),
@@ -2588,7 +2590,7 @@ def classify_fault(
     whose values are guaranteed to be valid FaultCategory / FaultSubcategory
     codes. On any error or invalid response, falls back to ("", "").
 
-    Uses thinking_budget=0 and temperature=0.0 for deterministic, fast
+    Uses thinking_level="low" and temperature=0.0 for deterministic, fast
     classification. max_output_tokens=64 is sufficient for the two-field JSON.
     A single attempt is made — retries are delegated to the Celery task layer
     (classify_fault_line). The 429-retry loop (3 attempts, 60 s wait) defined
@@ -2601,7 +2603,7 @@ def classify_fault(
     cuyos valores están garantizados como códigos válidos de FaultCategory /
     FaultSubcategory. Ante cualquier error o respuesta inválida, retorna ("", "").
 
-    Usa thinking_budget=0 y temperature=0.0 para clasificación determinista
+    Usa thinking_level="low" y temperature=0.0 para clasificación determinista
     y rápida. max_output_tokens=64 es suficiente para el JSON de dos campos.
     Se realiza un único intento — los reintentos se delegan a la capa de tarea
     Celery (classify_fault_line). El bucle de reintento por 429 (3 intentos,
@@ -2623,7 +2625,7 @@ def classify_fault(
                 http_options       = HttpOptions(timeout=30_000),
                 response_mime_type = "application/json",
                 response_schema    = _CLASSIFY_RESPONSE_SCHEMA,
-                thinking_config    = ThinkingConfig(thinking_budget=0),
+                thinking_config    = ThinkingConfig(thinking_level="low"),
                 temperature        = 0.0,
                 max_output_tokens  = 64,
             ),

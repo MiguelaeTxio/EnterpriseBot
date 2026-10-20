@@ -159,7 +159,7 @@ def extract_tirea_albaran(file_bytes, mime_type):
             http_options=HttpOptions(timeout=90_000),
             response_mime_type="application/json",
             response_schema=_RESPONSE_SCHEMA,
-            thinking_config=ThinkingConfig(thinking_budget=0),
+            thinking_config=ThinkingConfig(thinking_level="low"),
             temperature=0.0,
         ),
     )

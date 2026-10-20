@@ -131,7 +131,8 @@ def _generate_content_with_retry(client, **kwargs):
                 attempt, _MAX_GEMINI_ATTEMPTS, _RETRY_DELAY_SECONDS,
             )
             time.sleep(_RETRY_DELAY_SECONDS)
-    raise last_exc  # pragma: no cover -- inalcanzable, el bucle siempre retorna o lanza
+    # Inalcanzable: el bucle siempre retorna o lanza.
+    raise last_exc  # pragma: no cover
 
 
 def parse_iso_date(value: str) -> date | None:
@@ -337,7 +338,7 @@ def assess_master_coverage(
                 http_options=HttpOptions(timeout=90_000),
                 response_mime_type="application/json",
                 response_schema=_COVERAGE_RESPONSE_SCHEMA,
-                thinking_config=ThinkingConfig(thinking_budget=0),
+                thinking_config=ThinkingConfig(thinking_level="low"),
                 temperature=0.0,
             ),
         )

@@ -84,11 +84,13 @@ import json
 import logging
 from datetime import date
 
-from ai_services.document_vision_service import (
+# assess_master_coverage y extract_pages se reexportan para
+# machine_documents/tasks.py (por eso el noqa de la importación).
+from ai_services.document_vision_service import (  # noqa: F401
     _generate_content_with_retry,
-    assess_master_coverage,  # noqa: F401 -- reexportado para machine_documents/tasks.py
+    assess_master_coverage,
     clean_display_name,
-    extract_pages,  # noqa: F401 -- reexportado para machine_documents/tasks.py
+    extract_pages,
     parse_iso_date,
 )
 from ai_services.gemini_client import DEFAULT_MODEL, get_gemini_client
@@ -171,7 +173,10 @@ def is_manual_by_filename(filename: str) -> bool:
     extraer... va directamente a la máquina y ya está" (Miguel Ángel).
     """
     upper_name = filename.upper()
-    return any(keyword in upper_name for keyword, _ in _FILENAME_HEURISTIC_RULES)
+    return any(
+        keyword in upper_name
+        for keyword, _ in _FILENAME_HEURISTIC_RULES
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -325,7 +330,8 @@ _CLASSIFY_RESPONSE_SCHEMA = {
     ],
 }
 
-_CLASSIFY_PROMPT = """Eres un sistema de clasificación de documentación oficial de
+_CLASSIFY_PROMPT = """Eres un sistema de clasificación de documentación \
+oficial de
 maquinaria industrial pesada (grúas, carretillas elevadoras, equipos de obra,
 camiones) para una empresa de servicios de grúa en España.
 
@@ -524,7 +530,7 @@ def classify_document(pdf_bytes: bytes, filename: str) -> dict:
                 http_options=HttpOptions(timeout=60_000),
                 response_mime_type="application/json",
                 response_schema=_CLASSIFY_RESPONSE_SCHEMA,
-                thinking_config=ThinkingConfig(thinking_budget=0),
+                thinking_config=ThinkingConfig(thinking_level="low"),
                 temperature=0.0,
             ),
         )
@@ -682,7 +688,7 @@ def compare_documents(
                 http_options=HttpOptions(timeout=60_000),
                 response_mime_type="application/json",
                 response_schema=_COMPARE_RESPONSE_SCHEMA,
-                thinking_config=ThinkingConfig(thinking_budget=0),
+                thinking_config=ThinkingConfig(thinking_level="low"),
                 temperature=0.0,
             ),
         )

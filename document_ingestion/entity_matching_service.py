@@ -151,7 +151,8 @@ _ROUTE_RESPONSE_SCHEMA = {
     ],
 }
 
-_ROUTE_PROMPT = """Eres un sistema de enrutado de documentación para una empresa de
+_ROUTE_PROMPT = """Eres un sistema de enrutado de documentación para una \
+empresa de
 servicios de grúa en España. Recibes un documento PDF llamado "{filename}" y
 debes determinar a qué DOMINIO pertenece, ANTES de que otro sistema lo
 clasifique en detalle.
@@ -265,7 +266,7 @@ def classify_and_route(pdf_bytes: bytes, filename: str) -> dict:
                 http_options=HttpOptions(timeout=60_000),
                 response_mime_type="application/json",
                 response_schema=_ROUTE_RESPONSE_SCHEMA,
-                thinking_config=ThinkingConfig(thinking_budget=0),
+                thinking_config=ThinkingConfig(thinking_level="low"),
                 temperature=0.0,
             ),
         )
@@ -350,7 +351,9 @@ def route_document(pdf_bytes: bytes, filename: str, company) -> dict:
         matched_machine = match_machine_asset_by_filename(company, filename)
         result = {
             "domain": DOMAIN_MACHINE,
-            "machine_reference_hint": matched_machine.code if matched_machine else "",
+            "machine_reference_hint": (
+                matched_machine.code if matched_machine else ""
+            ),
             "worker_dni_hint": "",
             "worker_name_hint": "",
             "is_confident": matched_machine is not None,
@@ -369,7 +372,8 @@ def route_document(pdf_bytes: bytes, filename: str, company) -> dict:
         logger.info(
             "# [route_document] %s -> MANUAL DE USO, sin llamada a "
             "Gemini -- maquina=%s.",
-            filename, matched_machine.code if matched_machine else "SIN ASIGNAR",
+            filename,
+            matched_machine.code if matched_machine else "SIN ASIGNAR",
         )
         return result
 
@@ -389,7 +393,9 @@ def route_document(pdf_bytes: bytes, filename: str, company) -> dict:
         matched_machine = match_machine_asset_by_filename(company, filename)
         result = {
             "domain": DOMAIN_MACHINE,
-            "machine_reference_hint": matched_machine.code if matched_machine else "",
+            "machine_reference_hint": (
+                matched_machine.code if matched_machine else ""
+            ),
             "worker_dni_hint": "",
             "worker_name_hint": "",
             "is_confident": matched_machine is not None,
@@ -406,7 +412,8 @@ def route_document(pdf_bytes: bytes, filename: str, company) -> dict:
             "# [route_document] %s -> POSIBLE MAESTRO/DOSSIER "
             "(heurística nombre+peso), sin llamada a Gemini -- "
             "maquina=%s.",
-            filename, matched_machine.code if matched_machine else "SIN ASIGNAR",
+            filename,
+            matched_machine.code if matched_machine else "SIN ASIGNAR",
         )
         return result
 
@@ -586,7 +593,10 @@ def match_machine_asset(company, machine_reference_hint: str):
                 machine_reference_hint, machine.pk, machine.code,
             )
             return machine
-        if machine.plate and _normalize_for_matching(machine.plate) == normalized_hint:
+        if (
+            machine.plate
+            and _normalize_for_matching(machine.plate) == normalized_hint
+        ):
             logger.info(
                 "# [match_machine_asset] Pista %r -> MachineAsset #%d "
                 "(%s) por matrícula normalizada.",
@@ -668,7 +678,9 @@ def _parse_worker_name_from_folder(folder_name: str):
         surnames_part, first_part = cleaned.split(",", 1)
         surname_words = surnames_part.split()
         last_name1 = surname_words[0] if surname_words else ""
-        last_name2 = " ".join(surname_words[1:]) if len(surname_words) > 1 else ""
+        last_name2 = (
+            " ".join(surname_words[1:]) if len(surname_words) > 1 else ""
+        )
         first_name = first_part.strip()
         return first_name, last_name1, last_name2
     return cleaned, "", ""
@@ -818,13 +830,22 @@ def match_company_user(company, worker_dni_hint: str):
     if not normalized_hint:
         return None
 
-    for company_user in CompanyUser.objects.filter(company=company).select_related("user"):
-        if company_user.dni and normalize_dni(company_user.dni) == normalized_hint:
+    company_users = CompanyUser.objects.filter(
+        company=company,
+    ).select_related("user")
+    for company_user in company_users:
+        if (
+            company_user.dni
+            and normalize_dni(company_user.dni) == normalized_hint
+        ):
             logger.info(
                 "# [match_company_user] DNI %r -> CompanyUser #%d (%s) "
                 "por coincidencia normalizada.",
                 worker_dni_hint, company_user.pk,
-                company_user.user.get_full_name() or company_user.user.username,
+                (
+                    company_user.user.get_full_name()
+                    or company_user.user.username
+                ),
             )
             return company_user
 

@@ -165,7 +165,8 @@ _CLASSIFY_RESPONSE_SCHEMA = {
     ],
 }
 
-_CLASSIFY_PROMPT = """Eres un sistema de clasificación de documentación oficial de
+_CLASSIFY_PROMPT = """Eres un sistema de clasificación de documentación \
+oficial de
 personal (identidad, contractual, permisos, formación, salud laboral) para una
 empresa de servicios de grúa en España. La mayoría de los trabajadores son
 chóferes y gruístas.
@@ -305,7 +306,7 @@ def classify_document(pdf_bytes: bytes, filename: str) -> dict:
                 http_options=HttpOptions(timeout=60_000),
                 response_mime_type="application/json",
                 response_schema=_CLASSIFY_RESPONSE_SCHEMA,
-                thinking_config=ThinkingConfig(thinking_budget=0),
+                thinking_config=ThinkingConfig(thinking_level="low"),
                 temperature=0.0,
             ),
         )
