@@ -160,11 +160,18 @@ class Command(BaseCommand):
             )
             return
 
+        # A definition may bring its own content types (S132, button
+        # templates); plain text otherwise.
+        # Una definición puede traer sus propios tipos de contenido
+        # (S132, plantillas con botón); si no, texto plano.
+        types = definition.get("types") or {
+            "twilio/text": {"body": definition["body"]},
+        }
         payload = {
             "friendly_name": name,
             "language": "es",
             "variables": definition["variables"],
-            "types": {"twilio/text": {"body": definition["body"]}},
+            "types": types,
         }
         resp = requests.post(
             CONTENT_API_BASE, json=payload, auth=auth, timeout=30,

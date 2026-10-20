@@ -1149,16 +1149,16 @@ def send_capture_notification(
 
 # ---------------------------------------------------------------------------
 # OPERATOR ALBARAN NOTIFICATION SERVICE
-# Sends the chat_session_renewal template to an operator's WhatsApp number
-# to open the 24-hour session window. Queues the WorkOrderAssistanceUnit PKs
-# in WhatsAppSession.pending_albaran_units so the opt_in webhook branch can
-# deliver the albarán link once the operator responds.
-# Envía el template chat_session_renewal al número WhatsApp del operario para
-# abrir la ventana de sesión de 24 horas. Encola los PKs de
-# WorkOrderAssistanceUnit en WhatsAppSession.pending_albaran_units para que
-# la rama opt_in del webhook pueda entregar el enlace al albarán cuando el
-# operario responda.
+# H37 (S132): sends the assistance_albaran_notice template (service data and
+# a button with the albarán link) to the operator of a
+# WorkOrderAssistanceUnit; inside the 24-hour window, the same as plain text.
+# H37 (S132): envía la plantilla assistance_albaran_notice (datos del
+# servicio y botón con el enlace al albarán) al operario de una
+# WorkOrderAssistanceUnit; dentro de la ventana de 24 h, lo mismo en texto.
 # ---------------------------------------------------------------------------
+
+ALBARAN_TEMPLATE_NAME = "assistance_albaran_notice"
+
 
 def albaran_link_text(unit) -> str:
     """
@@ -1183,41 +1183,62 @@ def albaran_link_text(unit) -> str:
     )
 
 
+def _albaran_template_variables(unit) -> dict:
+    """
+    Variables of the assistance_albaran_notice template for a unit.
+
+    ---
+
+    Variables de la plantilla assistance_albaran_notice para una unidad:
+    {{1}} operario, {{2}} número de albarán, {{3}} aseguradora,
+    {{4}} recogida y {{5}} el resto de la URL del botón.
+    """
+    work_order = unit.work_order
+    user = unit.operator.user
+    if work_order.base_pickup:
+        pickup = "base"
+    else:
+        pickup = work_order.pickup_location.strip() or "lugar sin indicar"
+    return {
+        "1": user.get_full_name() or user.username,
+        "2": f"{work_order.work_order_number}-{unit.unit_number:02d}",
+        "3": work_order.insurer.name,
+        "4": pickup,
+        "5": f"{unit.pk}/albaran/",
+    }
+
+
 def send_operator_albaran_notification(
     unit_pk: int,
     whatsapp_sender: str,
 ) -> bool:
     """
-    Sends the 'chat_session_renewal' WhatsApp template to the operator
-    assigned to the given WorkOrderAssistanceUnit. The template opens the
-    Meta 24-hour session window. The unit PK is queued in
-    WhatsAppSession.pending_albaran_units so the albarán link is delivered
-    automatically when the operator taps the opt_in button.
+    Notify the operator of a WorkOrderAssistanceUnit of his albarán.
 
-    Also marks WorkOrderAssistanceUnit.status as NOTIFIED and sets
-    notified_at to the current timestamp.
+    Sends the assistance_albaran_notice template (plain text with the
+    link inside the 24-hour window) and marks the unit as NOTIFIED. The
+    unit becomes DOWNLOADED when the operator opens the albarán
+    (WorkOrderAlbaranView). Returns True on successful Twilio dispatch,
+    False on any failure.
 
-    Returns True on successful Twilio dispatch, False on any failure.
     ---
-    Envía el template WhatsApp 'chat_session_renewal' al operario asignado
-    a la WorkOrderAssistanceUnit indicada. El template abre la ventana de
-    sesión Meta de 24 horas. El PK de la unidad se encola en
-    WhatsAppSession.pending_albaran_units para que el enlace al albarán se
-    entregue automáticamente cuando el operario pulse el botón opt_in.
 
-    También marca WorkOrderAssistanceUnit.status como NOTIFIED y establece
-    notified_at con la marca de tiempo actual.
+    Avisa al operario de una WorkOrderAssistanceUnit de su albarán.
 
-    Devuelve True en caso de despacho Twilio exitoso, False ante cualquier fallo.
+    Envía la plantilla assistance_albaran_notice (dentro de la ventana
+    de 24 h, texto libre con el enlace) y marca la unidad como NOTIFIED
+    con notified_at. Pasa a DOWNLOADED cuando el operario abre el
+    albarán (WorkOrderAlbaranView), ya no al contestar a la plantilla.
+    Devuelve True si Twilio acepta el envío, False ante cualquier fallo.
     """
     from budgets.models import WorkOrderAssistanceUnit
-    from .models import WhatsAppSession, WhatsAppTemplate
+    from whatsapp.window_service import send_notification
 
-    # ── Resolve unit and operator phone ─────────────────────────────────────
     try:
         unit = WorkOrderAssistanceUnit.objects.select_related(
-            "operator",
+            "operator__user",
             "work_order__company",
+            "work_order__insurer",
         ).get(pk=unit_pk)
     except WorkOrderAssistanceUnit.DoesNotExist:
         logger.error(
@@ -1226,10 +1247,9 @@ def send_operator_albaran_notification(
         )
         return False
 
-    operator        = unit.operator
-    company         = unit.work_order.company
-    operator_phone  = (operator.phone or "").strip()
-
+    operator = unit.operator
+    company = unit.work_order.company
+    operator_phone = (operator.phone or "").strip()
     if not operator_phone:
         logger.error(
             "# [ALBARAN NOTIFY] Operario %s sin teléfono registrado. "
@@ -1239,100 +1259,46 @@ def send_operator_albaran_notification(
         )
         return False
 
-    # ── Resolve chat_session_renewal template ────────────────────────────────
-    try:
-        template = WhatsAppTemplate.objects.get(
-            company=company,
-            name="chat_session_renewal",
-            is_active=True,
-        )
-    except WhatsAppTemplate.DoesNotExist:
+    template = WhatsAppTemplate.objects.filter(
+        company=company,
+        name=ALBARAN_TEMPLATE_NAME,
+        is_active=True,
+    ).first()
+    if template is None:
         logger.error(
-            "# [ALBARAN NOTIFY] Template chat_session_renewal no encontrado "
-            "para empresa %s. Abortando.",
+            "# [ALBARAN NOTIFY] Plantilla %s no encontrada para empresa "
+            "%s. Abortando.",
+            ALBARAN_TEMPLATE_NAME,
             company.name,
         )
         return False
 
-    # ── H30 (S127): window open -> the albarán link directly, no template ──
-    # Dentro de la ventana de 24 h no hace falta reabrirla con la
-    # plantilla: el enlace sale ya, como texto libre, y la unidad pasa
-    # directamente a DOWNLOADED (lo mismo que tras el opt_in).
-    from whatsapp.window_service import window_open
-
-    if window_open(company, operator_phone):
-        try:
-            WhatsAppChatService.send_reply(
-                from_number=whatsapp_sender,
-                to_number=operator_phone,
-                reply_text=albaran_link_text(unit),
-            )
-        except Exception as exc:
-            logger.error(
-                "# [ALBARAN NOTIFY] Error enviando el enlace a %s: %s",
-                operator_phone,
-                exc,
-            )
-            return False
-        unit.status        = WorkOrderAssistanceUnit.STATUS_DOWNLOADED
-        unit.notified_at   = now()
-        unit.downloaded_at = unit.notified_at
-        unit.save(update_fields=["status", "notified_at", "downloaded_at"])
-        logger.info(
-            "# [ALBARAN NOTIFY] Unidad pk=%s: enlace enviado sin plantilla "
-            "(ventana de 24 h abierta).",
-            unit_pk,
-        )
-        return True
-
-    # ── Send template via Twilio ─────────────────────────────────────────────
     try:
-        twilio_client = _build_twilio_client()
-        message = twilio_client.messages.create(
-            from_=f"whatsapp:{whatsapp_sender}",
-            to=f"whatsapp:{operator_phone}",
-            content_sid=template.content_sid,
-        )
-        logger.info(
-            "# [ALBARAN NOTIFY] Template enviado a operario %s (%s) — SID: %s",
-            operator,
+        message = send_notification(
+            _build_twilio_client(),
+            whatsapp_sender,
+            company,
             operator_phone,
-            message.sid,
+            template.content_sid,
+            variables=_albaran_template_variables(unit),
+            text=albaran_link_text(unit),
         )
     except Exception as exc:
         logger.error(
-            "# [ALBARAN NOTIFY] Error enviando template a %s: %s",
+            "# [ALBARAN NOTIFY] Error enviando el aviso a %s: %s",
             operator_phone,
             exc,
         )
         return False
 
-    # ── Queue unit PK in WhatsAppSession.pending_albaran_units ───────────────
-    # Resolve or create the active session for this operator phone.
-    # Resolver o crear la sesión activa para este teléfono de operario.
-    session, _ = WhatsAppSession.objects.get_or_create(
-        company=company,
-        phone_number=operator_phone,
-        is_active=True,
-        defaults={},
-    )
-    pending = session.pending_albaran_units or []
-    if unit_pk not in pending:
-        pending.append(unit_pk)
-    session.pending_albaran_units = pending
-    session.save(update_fields=["pending_albaran_units"])
-
-    # ── Mark unit as NOTIFIED ────────────────────────────────────────────────
-    unit.status      = WorkOrderAssistanceUnit.STATUS_NOTIFIED
+    unit.status = WorkOrderAssistanceUnit.STATUS_NOTIFIED
     unit.notified_at = now()
     unit.save(update_fields=["status", "notified_at"])
-
     logger.info(
-        "# [ALBARAN NOTIFY] Unidad pk=%s marcada como NOTIFIED. "
-        "pending_albaran_units sesión %s: %s",
+        "# [ALBARAN NOTIFY] Unidad pk=%s NOTIFIED (%s) -- SID: %s",
         unit_pk,
-        session.pk,
-        pending,
+        "texto libre" if message.sent_as_text else "plantilla",
+        message.sid,
     )
     return True
 

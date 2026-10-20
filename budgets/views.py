@@ -22,7 +22,7 @@ from django.db.models import DecimalField, ExpressionWrapper, F
 from django.db.models import Count, Q
 from django.http import HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
-from django.utils.timezone import now
+from django.utils.timezone import localdate, now
 from django.views import View
 
 import csv
@@ -41,18 +41,16 @@ logger = logging.getLogger(__name__)
 from budgets.models import (
     Base,
     Budget,
-    BudgetLine,
     Insurer,
     InsurerBase,
     InsurerTariff,
     NightSchedule,
     TariffConcept,
     TariffLine,
-    TariffPdfImport,
     TollSegment,
     VehicleType,
 )
-from budgets.services import calculate_budget, _is_holiday, _resolve_toll_pricing
+from budgets.services import calculate_budget, _resolve_toll_pricing
 from ivr_config.models import CompanyUser, PresenceStatus
 from panel.mixins import (
     AdminRoleRequiredMixin,
@@ -366,7 +364,6 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
         road_name              = data.get("road_name", "").strip()
         dest_location          = data.get("dest_location", "").strip()
         pk_km_raw              = data.get("pk_km", "").strip()
-        service_date_raw       = data.get("service_date", "").strip()
         # Resolve is_night automatically from the insurer's NightSchedule.
         # The operator no longer has a manual checkbox — the system decides.
         # Resolution: insurer.night_schedule if set, else company default.
@@ -1470,14 +1467,6 @@ class BudgetStepsView(AssistanceRequiredMixin, View):
         except InsurerTariff.DoesNotExist:
             no_tariff_lines = True
 
-        # Determine whether the operator has provided a service time (step 2b).
-        # Used by the template for step 6 badge and pre-check logic.
-        # Determinar si el operario ha introducido la hora del servicio (paso 2b).
-        # El template lo usa para el badge y el pre-marcado del paso 6.
-        service_time_str  = request.GET.get("service_time", "").strip()
-        service_date_str  = request.GET.get("service_date", "").strip()
-        insurer_id_str    = request.GET.get("insurer_id", "").strip()
-
         # Resolve toll segments for the Manual mode itemized toll table
         # (troncal/salida, AP-7 "Autopista del Sol" y AP-46 "Autopista de
         # las Pedrizas"). Price shown is informational — the real price
@@ -2422,7 +2411,7 @@ class InsurerDeleteView(AdminRoleRequiredMixin, View):
         ---
         Elimina la instancia de aseguradora. Redirige al listado.
         """
-        from budgets.models import InsurerTariff, SpecialRateTariff
+        from budgets.models import SpecialRateTariff
 
         company_user = _get_company_user(request)
         insurer = get_object_or_404(
@@ -2482,7 +2471,6 @@ class TariffLineSaveView(AdminRoleRequiredMixin, View):
         Guarda los campos de TariffLine desde POST y devuelve el fragmento
         de fila actualizado.
         """
-        from budgets.models import InsurerTariff
         company_user = _get_company_user(request)
         line = get_object_or_404(
             TariffLine,
@@ -2627,7 +2615,6 @@ class TariffLineAddView(AdminRoleRequiredMixin, View):
         Crea una nueva TariffLine desde los datos POST y devuelve la fila.
         """
         from budgets.models import InsurerTariff
-        from django.http import HttpResponse
         company_user = _get_company_user(request)
         tariff = get_object_or_404(
             InsurerTariff,
@@ -3127,7 +3114,7 @@ class InsurerCopyTariffView(AdminRoleRequiredMixin, View):
         import datetime as _dt
         from budgets.models import (
             InsurerTariff, TariffLine, VehicleType,
-            SpecialRateTariff, SpecialRateLine, TariffConcept,
+            SpecialRateTariff, SpecialRateLine,
         )
 
         company_user = _get_company_user(request)
@@ -5268,7 +5255,6 @@ class WorkOrderCreateDirectView(AssistanceRequiredMixin, View):
         ---
         Renderiza el formulario de creación directa de orden de trabajo.
         """
-        from budgets.models import WorkOrderAssistance
         company_user = _get_company_user(request)
         if not company_user:
             return redirect("panel:login")
@@ -5396,6 +5382,22 @@ class WorkOrderAlbaranView(AssistanceRequiredMixin, View):
             pk=pk,
             work_order__company=company_user.company,
         )
+        # H37 (S132): the albarán link now arrives in the template button,
+        # so the unit becomes DOWNLOADED when its own operator opens it
+        # (an office user opening it from the panel does not count).
+        # H37 (S132): el enlace llega ahora en el botón de la plantilla,
+        # así que la unidad pasa a DOWNLOADED cuando la abre su propio
+        # operario (si la abre la oficina desde el panel, no cuenta).
+        is_unit_operator = company_user.pk in (
+            unit.operator_id, unit.operator_2_id,
+        )
+        if (
+            is_unit_operator
+            and unit.status == WorkOrderAssistanceUnit.STATUS_NOTIFIED
+        ):
+            unit.status = WorkOrderAssistanceUnit.STATUS_DOWNLOADED
+            unit.downloaded_at = now()
+            unit.save(update_fields=["status", "downloaded_at"])
         ctx = _build_base_context(request, {
             "unit": unit,
             "work_order": unit.work_order,
@@ -5437,6 +5439,9 @@ class WorkOrderAlbaranView(AssistanceRequiredMixin, View):
             unit.rescue_hours  = rescue_hours
             unit.wait_hours    = wait_hours
             unit.status        = WorkOrderAssistanceUnit.STATUS_COMPLETED
+            # H37 (S132): completed_at was never filled.
+            # H37 (S132): completed_at no se rellenaba nunca.
+            unit.completed_at  = now()
             unit.save()
             if signature_data:
                 WorkOrderAssistanceSignature.objects.update_or_create(
@@ -5573,7 +5578,7 @@ class TollSegmentCreateView(AdminRoleRequiredMixin, View):
 
     def get(self, request):
         form = TollSegmentForm(
-            initial={"is_active": True, "valid_from": datetime.date.today()}
+            initial={"is_active": True, "valid_from": localdate()}
         )
         ctx = _build_base_context(request, {
             "form":                 form,
@@ -6163,7 +6168,6 @@ class InsurerTariffPdfUploadView(AdminRoleRequiredMixin, View):
 
     def post(self, request, pk):
         import datetime as _dt
-        import json as _json
         from budgets.models import (
             TariffPdfImport, InsurerTariff, TariffLine, VehicleType,
             InsurerBase, SpecialRateTariff, SpecialRateLine,
@@ -6448,8 +6452,8 @@ class InsurerTariffPdfReviewView(AdminRoleRequiredMixin, View):
         new_concept_groups (conceptos propuestos con sus filas de precio).
         """
         from budgets.models import (
-            InsurerTariff, TariffLine, TariffConcept,
-            SpecialRateTariff, SpecialRateLine, VehicleType,
+            InsurerTariff, TariffConcept,
+            SpecialRateTariff,
         )
 
         copy = pdf_import.insurer_copy
@@ -6605,7 +6609,7 @@ class InsurerTariffPdfReviewView(AdminRoleRequiredMixin, View):
         import re as _re
         from budgets.models import (
             TariffPdfImport, TariffLine, SpecialRateLine, TariffConcept,
-            InsurerTariff, SpecialRateTariff, VehicleType,
+            InsurerTariff, SpecialRateTariff,
         )
 
         pdf_import = get_object_or_404(TariffPdfImport, pk=pk)
