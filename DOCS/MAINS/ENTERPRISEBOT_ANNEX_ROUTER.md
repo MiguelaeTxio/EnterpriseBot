@@ -47,13 +47,13 @@ Cumple dos funciones inseparables:
 | H21 | Refactorización Arquitectónica Split views.py | `ENTERPRISEBOT_ATTACHED_MILESTONE_V21.md` |
 | H22 | Visor de Historial de Máquinas (Operario) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V22.md` |
 | H23 | Documentación de Centros de Gasto | `ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md` |
-| H24 | Vacaciones, Ausencias y Control Horario (título anterior: "Vacaciones y Calendario"; ampliado y renombrado en S127) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md` ← EN PROGRESO |
+| H24 | Vacaciones, Ausencias y Control Horario (título anterior: "Vacaciones y Calendario"; ampliado y renombrado en S127) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md` |
 | H25 | Documentación de Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V25.md` |
 | H26 | Infraestructura Documental Compartida (Alertas, PDF, Email, Sustitución) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V26.md` |
 | H27 | Ingesta de Documentación vía Correo Electrónico | `ENTERPRISEBOT_ATTACHED_MILESTONE_V27.md` |
 | H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` |
 | H29 | Explorador de Archivos y Gobierno Documental del Panel sobre GCS | `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md` |
-| H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` |
+| H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` ← EN PROGRESO |
 | H31 | Interfaz de Gestión Documental de Personal — Altas, Bajas, Sustituciones, EPIs y Circulares (título anterior: "Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares"; ampliado en S99 al fusionar H33) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` |
 | H32 | Migraciones de Infraestructura (Modelo IA, Python, Registro Android) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md` |
 | ~~H33~~ | ~~Subida de Documentación en Tiempo Real desde el Panel~~ — **FUSIONADO EN H31 el 2026-09-10 (S99)**, ver sección 6 | `ENTERPRISEBOT_ATTACHED_MILESTONE_V33.md` (conservado íntegro como archivo histórico) |
@@ -67,7 +67,24 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ## 3. Resultado Actual
 
-**Hito EN PROGRESO:** H24 — Vacaciones, Ausencias y Control Horario →
+**Hito EN PROGRESO:** H30 — Vinculación Documental Real: Centros de
+Gasto y Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`.
+Reactivado al cierre de S130 por Miguel Ángel (PCH desde H24). La
+sesión siguiente empieza por la hoja de ruta "S131" al final del anexo:
+1) avisos de revisiones por horas y kilómetros de los centros de gasto
+en Documentación > Avisos, con revisiones, horas y kilómetros
+introducidos a mano; 2) tickets de avería abiertos por mecánico, con
+cierre manual (desvío anotado en `ENTERPRISEBOT_ATTACHED_MILESTONE_V14.md`).
+Siguen pendientes de H30 los puntos 7-9 de la hoja de ruta de S128.
+
+**Hito PAUSADO en S130:** H24 — Vacaciones, Ausencias y Control
+Horario → `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md`. En S130 se
+cerraron los puntos 1 (fichaje con un solo botón y fichaje manual) y 4
+(ausencias) de su sección 7.5. Al reactivarlo quedan el punto 2 (prueba
+en iPhone, que hará Pablo en producción cuando empiece el fichaje del
+taller) y el 3 (datos de vacaciones de Carolina). Ver 7.7 del anexo.
+
+**Histórico S128-S129:** H24 EN PROGRESO — Vacaciones, Ausencias y Control Horario →
 `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md`. Reactivado al cierre de S128
 por Miguel Ángel (PCH desde H30). Se empieza por el punto 1 de su
 sección 7.5 ("Hoja de Ruta al reactivar H24": días de vacaciones que

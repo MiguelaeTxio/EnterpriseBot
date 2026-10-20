@@ -1006,6 +1006,13 @@ Orden de Miguel Ángel: primero la página de fichaje.
    empresa. **Cierre:** una ausencia real dada de alta en el panel, en
    BD y en el calendario de ese trabajador.
 
+**Situación de esta hoja de ruta al pausar el hito (S130, la hoja de
+ruta no se reescribe):** puntos 1 y 4 hechos y cerrados con datos
+reales (ver 7.7). Punto 2: Miguel Ángel lo pospone -- la prueba en
+iPhone la hará Pablo en producción cuando empiece el fichaje en el
+taller, y lo que falle se arregla sobre la marcha. Punto 3: a la espera
+de los datos de Carolina, que llegan esa semana.
+
 ### 7.6. COMPLETADAS EN S129 (2026-10-16 → 2026-10-19)
 
 **Punto 1 -- saldo de vacaciones (construido; faltan los datos de

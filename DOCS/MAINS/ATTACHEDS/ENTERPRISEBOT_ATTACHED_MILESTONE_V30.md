@@ -9555,3 +9555,78 @@ vacías.
 que no se pueden partir se corrigen a mano con el botón "Tipo". 13
 migraciones antiguas no se aplican sobre una BD vacía (para probar en
 local: `migrate --run-syncdb` con `MIGRATION_MODULES` vacío).
+
+---
+
+## Reactivación en S130 (PCH desde H24) y desvíos de S130 en H30
+
+Miguel Ángel reactivó H30 al cierre de S130. Durante S130 (hito activo
+H24) se trabajó en Documentación, todo desplegado y detallado en la
+sección 7.7 del anexo V24:
+- Dosieres por correo en un solo borrador de Outlook con trabajadores y
+  máquinas juntos (`panel/views_dossier_bundle.py`), con el mismo
+  bloque Dosieres (plantilla, formato, Descargar y Enviar) en Personal
+  y en Centros de gasto.
+- La selección de Personal se guarda como la de Centros de gasto.
+- Quitar el requisito a varias personas desde Personal.
+- "+ Subir" ofrece todos los tipos; comprobación de tipo y datos al
+  subir desde la ficha y desde Avisos (`document_check_service`);
+  "Cambiar tipo" renombra y rehace la sustitución.
+- 26 matrículas de centros de gasto rellenadas desde sus documentos
+  (`fill_machine_facts_s130`); quedan 53 sin documento que la acredite.
+- Ámbito Personal/Maquinaria en requisitos: hecho y revertido en la
+  misma sesión (no era lo que se pedía); el catálogo sigue siendo único.
+
+## Hoja de Ruta para la Siguiente Sesión (S131) -- concertada con Miguel Ángel al cierre de S130
+
+Se empieza por el 1 y después el 2. Los puntos 7, 8 y 9 de la hoja de
+ruta de S128 (más arriba) siguen pendientes, sin cambios, después de
+estos dos.
+
+1. **Avisos de revisiones por horas y kilómetros de los centros de
+   gasto, en Documentación > Avisos.** Miguel Ángel: tenemos avisos de
+   documentación de maquinaria y de personal, pero no de revisiones
+   por kilometraje y por horas. Decidido:
+   - En el centro de gasto (`fleet.MachineAsset`), dos casillas
+     independientes, "Revisión cada 800 horas" y "Revisión cada 1200
+     horas", y un campo numérico "Revisión cada N km". Sin ninguna
+     casilla marcada y sin kilómetros, el centro de gasto no tiene
+     revisión (personal y empresa nunca la tienen).
+   - Introducción manual de revisiones hechas: fecha, horas y
+     kilómetros de la revisión. Sin una revisión anterior anotada no
+     hay aviso de ese centro de gasto.
+   - Introducción manual de lecturas de horas y kilómetros, con fecha.
+     Hoy los kilómetros entran por el parte de trabajo, pero los
+     trabajadores no siempre los ponen; donde se apuntan de verdad es
+     al repostar. Más adelante se tomarán del programa del surtidor:
+     ese enlace NO se hace en esta sesión. Se trabaja a mano.
+   - Avisos como los de requisitos de documentación
+     (`RequirementAlertRule`, pestaña Avisos): unos predefinidos y
+     otros configurables. El predefinido es "revisión vencida" (la
+     última lectura pasa de la revisión anterior más el intervalo); el
+     configurable es la antelación en horas y en kilómetros, que
+     Miguel Ángel fija en la propia configuración de Avisos (sin
+     valores inventados por el modelo: mientras no la fije, solo avisa
+     de vencidas). Mismos destinatarios y mismo ámbito por supervisor
+     que el resto de avisos.
+   **Cierre:** en producción, un centro de gasto real con "800 horas"
+   marcado, una revisión anotada (fecha y horas) y una lectura que pase
+   de esa revisión + 800 aparece en Avisos como revisión vencida; otro
+   sin revisión anotada no aparece; consulta a BD con su revisión, su
+   lectura y las casillas.
+
+2. **Tickets de avería abiertos por mecánico, con cierre manual
+   (desvío a H14, anotado en su anexo).** Un mecánico que ha trabajado
+   en un ticket de avería no cerrado (`chat.BreakdownTicket` con
+   estado distinto de `CLOSED`, enlazado a sus líneas de parte por
+   `WorkOrderEntryLine.breakdown_ticket`) sale como ocupado y con las
+   máquinas en las que está. Lista por mecánico de sus tickets
+   abiertos, y en cada uno cerrarlo a mano ("¿Está cerrado? Sí / No")
+   sin pasar por el parte de trabajo. Ejemplo de Miguel Ángel: Pablo,
+   ocupado, con 4 tickets abiertos, se repasan uno a uno.
+   **Cierre:** en producción, la lista de un mecánico real con tickets
+   abiertos coincide con una consulta a BD (tickets no cerrados con
+   líneas de parte suyas); uno cerrado a mano desde esa lista queda en
+   BD como `CLOSED` y deja de salir, y el mecánico deja de salir
+   ocupado cuando no le queda ninguno.
+

@@ -152,3 +152,16 @@ son la base sobre la que construye H17.
 
 **No hay pasos pendientes en H14.** Todo el trabajo futuro de averías
 se ejecuta en H17.
+
+### Concertado al cierre de S130 -- se ejecuta en S131 como desvío desde H30
+
+Miguel Ángel: la idea original era que el ticket de avería marcase qué
+mecánicos están trabajando en una máquina. Con el ticket sin cerrar y
+el mecánico habiendo trabajado en él, el mecánico sale como ocupado y
+en qué máquinas está, para encontrar los tickets abiertos por error:
+*"oye, Pablo, tienes [...] 4 tickets abiertos. ¿Este está cerrado? Sí,
+no [...] y cerrarlos manualmente. Y no a través del parte de trabajo."*
+El detalle de lo que se construye y su criterio de cierre está en el
+punto 2 de la hoja de ruta S131 de
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`; lo hecho se anota aquí al
+cerrar esa sesión.
