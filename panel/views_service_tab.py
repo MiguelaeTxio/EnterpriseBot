@@ -45,7 +45,9 @@ from panel.navigation_persistence import (
 from panel.views_machine_service import can_edit_service
 
 SCREEN_KEY = "service_tab"
-FILTER_KEYS = ("search", "family", "is_active", "sort", "requirement")
+# S131: sin filtro de requisito (Miguel Ángel: "en esa vista no es
+# necesario").
+FILTER_KEYS = ("search", "family", "is_active", "sort")
 KM_INTERVAL_SUGGESTIONS = (20000, 30000, 40000)
 STATE_CLASS = {
     plan.STATE_OVERDUE: "text-danger fw-bold",
@@ -173,7 +175,6 @@ def _list_context(request):
         "machines": machines,
         "families": _get_families(company),
         "filter_family": _p("family"),
-        "filter_requirement": _p("requirement"),
         "filter_is_active": _p("is_active"),
         "filter_search": _p("search"),
         "can_edit": can_edit_service(company_user),
@@ -196,8 +197,6 @@ class ServiceTabPaneView(CompanyUserRequiredMixin, View):
     """
 
     def get(self, request):
-        from document_explorer.models import JobPosition
-
         apply_list_navigation(request, SCREEN_KEY, FILTER_KEYS)
         context = _list_context(request)
         if request.GET.get("fragment") == "1":
@@ -211,7 +210,6 @@ class ServiceTabPaneView(CompanyUserRequiredMixin, View):
             "saved_selection": (
                 selection if isinstance(selection, list) else []
             ),
-            "job_positions": JobPosition.objects.order_by("name"),
             "screen_key": SCREEN_KEY,
         })
         return render(request, "panel/service_tab/pane.html", context)

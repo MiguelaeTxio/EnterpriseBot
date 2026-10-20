@@ -2,8 +2,9 @@
 {% comment %}
 H30 (S131). Pestaña "Revisiones" del hub de Documentación. Miguel
 Ángel: "tenemos que alimentar al sistema de forma manual. Hay que
-facilitar al máximo esa tarea". Arriba, fijo: los mismos filtros que
-Centros de gasto y el plan de revisiones aplicado a la selección.
+facilitar al máximo esa tarea". Arriba, fijo: los filtros de
+Centros de gasto salvo Requisito (Miguel Ángel: "en esa vista no es
+necesario") y el plan de revisiones aplicado a la selección.
 Debajo, solo la lista hace scroll (directriz 4.24): cada fila se
 rellena en la propia tabla y se guarda con "Guardar" o con Intro.
 {% endcomment %}
@@ -36,16 +37,6 @@ rellena en la propia tabla y se guarda con "Guardar" o con Intro.
                             <option value="">Todas las familias</option>
                             {% for fam in families %}
                             <option value="{{ fam }}" {% if filter_family == fam %}selected{% endif %}>{{ fam }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="flex-grow-1">
-                        <label class="small fw-bold" for="svc-requirement">Requisito</label>
-                        <select id="svc-requirement" class="form-select form-select-sm" name="requirement">
-                            <option value="" {% if not filter_requirement %}selected{% endif %}>Todos</option>
-                            <option value="none" {% if filter_requirement == "none" %}selected{% endif %}>Sin requisito</option>
-                            {% for position in job_positions %}
-                            <option value="{{ position.pk }}" {% if filter_requirement == position.pk|stringformat:"s" %}selected{% endif %}>{{ position.name }}</option>
                             {% endfor %}
                         </select>
                     </div>
