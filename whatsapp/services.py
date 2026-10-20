@@ -1859,7 +1859,10 @@ class OnboardingService:
         ---
         Construye el system prompt de Gemini para la conversacion de onboarding.
         """
-        sections = list(company.sections.all().order_by("name"))
+        # S130: solo las secciones marcadas para el alta (Informática no).
+        sections = list(
+            company.sections.filter(onboarding_enabled=True).order_by("name"),
+        )
         section_list = "\n".join(f"  - {s.name}" for s in sections)
 
         bases = list(company.bases.all().order_by("name"))
@@ -2068,11 +2071,11 @@ class OnboardingService:
         # Resolve section — exact match first, then partial.
         # Resolver seccion — coincidencia exacta primero, luego parcial.
         section = _S.objects.filter(
-            company=company, name=section_name,
+            company=company, name=section_name, onboarding_enabled=True,
         ).first()
         if section is None:
             section = _S.objects.filter(
-                company=company,
+                company=company, onboarding_enabled=True,
                 name__icontains=section_name,
             ).first()
         if section is None:

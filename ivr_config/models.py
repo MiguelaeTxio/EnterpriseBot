@@ -911,6 +911,17 @@ class Section(models.Model):
         verbose_name="Activa",
         help_text="Indica si esta sección está operativa para el enrutamiento IVR.",
     )
+    # S130, Miguel Ángel: "Informática no debe ofrecerse" en el alta por
+    # WhatsApp. Independiente de `is_active` (sección operativa: chat,
+    # avisos de avería, usuarios) y de `ivr_transfer_enabled` (IVR).
+    onboarding_enabled = models.BooleanField(
+        default=True,
+        verbose_name="Se ofrece en el alta por WhatsApp",
+        help_text=(
+            "S130. Si está marcada, quien se da de alta por WhatsApp puede "
+            "elegir esta sección."
+        ),
+    )
     is_broadcast_enabled = models.BooleanField(
         default=False,
         verbose_name="Habilitada para circulares WhatsApp",

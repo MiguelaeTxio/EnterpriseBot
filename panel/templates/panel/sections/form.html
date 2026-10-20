@@ -667,6 +667,26 @@
                         </div>
                     </div>
 
+                    <!-- onboarding_enabled (S130) — se ofrece en el alta por WhatsApp -->
+                    <div class="mb-4">
+                        <div class="form-check">
+                            {{ form.onboarding_enabled }}
+                            <label class="form-check-label fw-medium"
+                                   for="{{ form.onboarding_enabled.id_for_label }}">
+                                {{ form.onboarding_enabled.label }}
+                            </label>
+                        </div>
+                        {% if form.onboarding_enabled.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.onboarding_enabled.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Desmárcala para que quien se da de alta por WhatsApp no pueda
+                            elegir esta sección. No cambia nada más de la sección.
+                        </div>
+                    </div>
+
                     <!-- is_broadcast_enabled field — Habilitada para circulares WhatsApp -->
                     <div class="mb-4">
                         <div class="form-check">
