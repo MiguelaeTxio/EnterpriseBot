@@ -159,6 +159,9 @@ MIDDLEWARE = [
     # S117: htmx + sesión caducada -> HX-Redirect al login completo en
     # vez de incrustar la página de login en el hueco del fragmento.
     'panel.middleware.HtmxLoginRedirectMiddleware',
+    # H37 (S132): historial de páginas por usuario en BD para el botón
+    # "Volver" (panel/navigation_history.py).
+    'panel.navigation_history.NavigationHistoryMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -187,6 +190,8 @@ TEMPLATES = [
                 # sidebar, sustituye sessionStorage. Ver
                 # panel/context_processors.sidebar_navigation_context.
                 'panel.context_processors.sidebar_navigation_context',
+                # H37 (S132): URL de "Volver" (panel_back_url).
+                'panel.navigation_history.back_url_context',
                 # H31 (S94): a dónde lleva el enlace "Documentación"
                 # del sidebar -- al hub o directo a la última ficha de
                 # persona abierta. Ver

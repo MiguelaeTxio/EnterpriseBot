@@ -1792,24 +1792,44 @@ list.html` + `fleet/views.py` (S117, las cinco reglas juntas);
 fijo + visor de selección); `delivery_notes/views.py` (orden múltiple,
 S116).
 
-#### 4.25. DIRECTRIZ CRÍTICA — Nada de botones "Volver" con URL fija: migas de pan (añadida S132)
+#### 4.25. DIRECTRIZ CRÍTICA — El botón "Volver" vuelve a la página desde la que se llegó, con el historial en base de datos (añadida S132, corregida en la misma sesión)
 
-**Origen, verbatim de Miguel Ángel (S132):** *"los botones volver no
-deben volver a una URL hardcodeada, porque ahora estés donde estés, le
-das a volver y en vez de volver a donde estabas, vuelves a los
-presupuestos de asistencia. Así que los botones volver que construyamos
-que sean con breadcrumb. No pueden ser con un volver hardcodeado."*
+**Origen, verbatim de Miguel Ángel (S132).** Primero: *"los botones
+volver no deben volver a una URL hardcodeada, porque ahora estés donde
+estés, le das a volver y en vez de volver a donde estabas, vuelves a
+los presupuestos de asistencia."* El modelo lo interpretó como quitar
+los botones "Volver" y poner migas de pan de jerarquía, y Miguel Ángel
+lo corrigió: *"No te he dicho que quites los botones volver. Lo que te
+he dicho es que el botón volver tiene que funcionar como volver. Es
+decir, si yo estoy en la habitación número 1 y voy a la habitación
+central y le doy a volver, tengo que volver a la habitación 1 [...]
+utilizas la técnica de breadcrumb para que al volver vuelvas a donde
+venías."* Y además: *"aquí se navega gracias a base de datos. No
+navegamos con punteros [...] si se cierra el navegador y se vuelve a
+abrir, la navegación se conserva porque la tenemos en base de datos
+[...] Tenemos que aplicar los mismos criterios."*
 
 **Regla, sin excepción, para toda pantalla nueva o que se toque:**
 
-1. No se pone ningún botón "Volver" que lleve a una URL fija.
-2. La navegación hacia arriba se hace con migas de pan (Bootstrap
-   `breadcrumb`) que construye la vista, nunca la plantilla (DUMB
-   TEMPLATES): lista de `{"label", "url"}`, la última sin enlace.
-3. Un "Cancelar" de formulario lleva a la miga inmediatamente
-   superior, no a una URL fija.
+1. Ningún botón "Volver" lleva a una URL fija: enlaza a
+   `{{ panel_back_url }}` y solo se pinta si hay página anterior
+   (`{% if panel_back_url %}`).
+2. El "Cancelar" de un formulario hace lo mismo: vuelve a la página de
+   la que se vino.
+3. Nunca `history.back()` ni nada guardado solo en el navegador: el
+   recorrido vive en BD, como el resto de la navegación (directriz
+   4.15).
 
-**Implementación de referencia (S132):** `budgets/breadcrumbs.py`
-(`assistance_breadcrumbs`, `parent_url`) y la plantilla
-`budgets/templates/budgets/services/_breadcrumbs.html`, usadas en
-Servicios, el detalle y el alta de órdenes de asistencia y el albarán.
+**Mecanismo, ya construido y global -- nunca reinventar:**
+`panel/navigation_history.py`. `NavigationHistoryMiddleware` guarda en
+`PanelNavigationState` (`screen_key` `back_stack`) la pila de páginas
+completas que abre cada usuario (GET, no htmx, respuesta HTML 200; las
+descargas y redirecciones no entran). Si se vuelve a una página que ya
+estaba en la pila, la pila se corta en ella. `request.panel_back_url`
+es la página anterior a la actual, y el procesador de contexto
+`back_url_context` la expone en todas las plantillas como
+`panel_back_url`.
+
+**Pendiente de extender:** el resto de botones "Volver" con URL fija
+que ya existían en el panel antes de S132 se pasan a `panel_back_url`
+cada vez que se toque su pantalla.

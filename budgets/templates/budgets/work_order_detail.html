@@ -7,7 +7,6 @@
 
 {% block content %}
 <div class="container-fluid px-3 py-3">
-    {% include "budgets/services/_breadcrumbs.html" %}
 
     {# ------------------------------------------------------------------ #}
     {# Cabecera — estado y acciones globales                               #}
@@ -28,6 +27,11 @@
                class="btn btn-outline-primary btn-sm">
                 <i class="bi bi-pencil me-1"></i>Editar datos
             </a>
+            {% if panel_back_url %}
+            <a href="{{ panel_back_url }}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-arrow-left me-1"></i>Volver
+            </a>
+            {% endif %}
         </div>
     </div>
 
