@@ -59,16 +59,13 @@ rellena en la propia tabla y se guarda con "Guardar" o con Intro.
             <div class="border rounded p-2 h-100">
                 <div class="fw-bold small mb-1">Revisión cada… a la selección (<span id="svc-selected-count">0</span>)</div>
                 {% if can_edit %}
-                <div class="d-flex flex-wrap align-items-center gap-2 small mb-2">
-                    <select class="form-select form-select-sm svc-w-sel" id="svc-bulk-hours" aria-label="Revisión por horas">
+                <div class="svc-bulk-grid mb-2">
+                    <select class="form-select form-select-sm" id="svc-bulk-hours" aria-label="Revisión por horas">
                         <option value="">Sin revisión por horas</option>
                         {% for value, label in hours_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
                     </select>
                     <button type="button" class="btn btn-sm btn-outline-primary" id="svc-bulk-hours-apply">Aplicar horas</button>
-                </div>
-                <div class="d-flex flex-wrap align-items-center gap-2 small mb-2">
-                    <input type="number" min="1" class="form-control form-control-sm svc-w-km" id="svc-bulk-km" list="svcKmSuggestions" placeholder="Sin revisión por km" aria-label="Revisión cada N km">
-                    <span>km</span>
+                    <input type="number" min="1" class="form-control form-control-sm" id="svc-bulk-km" list="svcKmSuggestions" placeholder="Sin revisión por km" aria-label="Revisión cada N km">
                     <button type="button" class="btn btn-sm btn-outline-primary" id="svc-bulk-km-apply">Aplicar km</button>
                 </div>
                 {% else %}

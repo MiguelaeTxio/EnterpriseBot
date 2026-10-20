@@ -1519,6 +1519,18 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
 .svc-w-num {
     width: 6.5rem;
 }
+/* Acción masiva: los dos campos igual de anchos y legibles, y los dos
+   botones alineados en la misma columna (S131). */
+.svc-bulk-grid {
+    display: grid;
+    grid-template-columns: minmax(13rem, 16rem) auto;
+    gap: 0.5rem;
+    align-items: center;
+    justify-content: start;
+}
+.svc-bulk-grid .btn {
+    width: 100%;
+}
 
 .alerts-column {
     display: flex;

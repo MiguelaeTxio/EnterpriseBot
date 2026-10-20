@@ -58,6 +58,7 @@ class Schedule:
 
 
 KEY_HOURS = "HOURS"
+KEY_CRANE = "CRANE"
 KEY_KM = "KM"
 SCHEDULE_KM = Schedule(KEY_KM, "Revisión por kilómetros", UNIT_KM, "km")
 
@@ -73,6 +74,22 @@ def hours_schedule(interval):
     """
     return Schedule(
         KEY_HOURS, "Revisión de %d horas" % interval, UNIT_HOURS, "hours",
+    )
+
+
+def crane_schedule(interval):
+    """
+    Crane-engine hours schedule ("Revisión grúa de 800 horas").
+
+    ---
+
+    La revisión del motor de la grúa, con sus propias horas (horómetro
+    de grúa) y su propio aviso -- Miguel Ángel, S131: "las grúas deben
+    de tener su propio aviso". Mismo intervalo que la de la máquina.
+    """
+    return Schedule(
+        KEY_CRANE, "Revisión grúa de %d horas" % interval, UNIT_HOURS,
+        "crane_hours",
     )
 
 
@@ -126,6 +143,9 @@ def enabled_schedules(machine):
     if machine.service_hours_interval:
         interval = machine.service_hours_interval
         pairs.append((hours_schedule(interval), interval))
+        # S131: con horómetro de grúa, la grúa tiene su propia revisión.
+        if machine.has_crane_hours:
+            pairs.append((crane_schedule(interval), interval))
     if machine.service_every_km:
         pairs.append((SCHEDULE_KM, machine.service_every_km))
     return pairs
@@ -161,10 +181,14 @@ def _status_text(status):
     unit = status.schedule.unit
     if status.state == STATE_NO_RECORD:
         if status.undated_value_record is not None:
-            what = (
-                "horas anotadas: no avisa hasta anotarlas"
-                if unit == UNIT_HOURS
-                else "kilómetros anotados: no avisa hasta anotarlos"
+            what = {
+                "hours": "horas anotadas: no avisa hasta anotarlas",
+                "crane_hours": (
+                    "horas de grúa anotadas: no avisa hasta anotarlas"
+                ),
+            }.get(
+                status.schedule.value_field,
+                "kilómetros anotados: no avisa hasta anotarlos",
             )
             return "Revisión del %s sin %s." % (
                 status.undated_value_record.service_date.strftime(
