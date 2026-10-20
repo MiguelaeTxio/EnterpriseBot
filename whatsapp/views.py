@@ -1268,9 +1268,12 @@ class PresenceWhatsAppView(View):
         return HttpResponse(status=200)
 
 
-# H37 (S132). Twilio delivery statuses meaning the notice never arrived.
-# Estados de entrega de Twilio que significan que el aviso no llegó.
+# H37 (S132). Twilio delivery statuses meaning the notice never arrived,
+# and those confirming it reached the phone.
+# Estados de entrega de Twilio que significan que el aviso no llegó, y
+# los que confirman que ha llegado al móvil.
 _NOTICE_FAILED_STATUSES = ("failed", "undelivered")
+_NOTICE_DELIVERED_STATUSES = ("delivered", "read")
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -1284,20 +1287,22 @@ class AlbaranNoticeStatusView(View):
     una unidad (POST /api/whatsapp/albaran-status/<token>/). Miguel
     Ángel, S132: la unidad salía como avisada aunque el WhatsApp no
     llegaba (plantilla sin aprobar), porque solo se miraba que Twilio
-    aceptara el envío. Si Twilio informa de que el mensaje ha fallado o
-    no se ha entregado, la unidad pasa de NOTIFIED a NOTIFY_FAILED con
-    el código de error. Solo cuenta el informe del último aviso
+    aceptara el envío. Ahora la unidad espera en NOTIFY_SENDING: si
+    Twilio confirma la entrega (delivered o read) pasa a NOTIFIED con la
+    hora de entrega; si informa de que ha fallado o no se ha entregado,
+    pasa a NOTIFY_FAILED con el código de error. Solo cuenta el informe
+    del último aviso
     (`notify_message_sid`), y el token de la URL lleva la unidad
     firmada, así que nadie puede tocar otra unidad.
     """
 
     def post(self, request, token):
         """
-        Apply a failed delivery status to the unit.
+        Apply a delivery status to the unit.
 
         ---
 
-        Aplica a la unidad un estado de entrega fallido.
+        Aplica a la unidad el estado de entrega del aviso.
         """
         from budgets.models import WorkOrderAssistanceUnit
 
@@ -1315,13 +1320,27 @@ class AlbaranNoticeStatusView(View):
             "# [ALBARAN STATUS] Unidad pk=%s, mensaje %s: %s %s",
             unit_pk, message_sid, message_status, error_code,
         )
+        if not message_sid:
+            return HttpResponse(status=204)
+        last_notice = WorkOrderAssistanceUnit.objects.filter(
+            pk=unit_pk, notify_message_sid=message_sid,
+        )
+        if message_status in _NOTICE_DELIVERED_STATUSES:
+            last_notice.filter(
+                status=WorkOrderAssistanceUnit.STATUS_NOTIFY_SENDING,
+            ).update(
+                status=WorkOrderAssistanceUnit.STATUS_NOTIFIED,
+                notified_at=now(),
+            )
+            return HttpResponse(status=204)
         if message_status not in _NOTICE_FAILED_STATUSES:
             return HttpResponse(status=204)
 
-        updated = WorkOrderAssistanceUnit.objects.filter(
-            pk=unit_pk,
-            notify_message_sid=message_sid,
-            status=WorkOrderAssistanceUnit.STATUS_NOTIFIED,
+        updated = last_notice.filter(
+            status__in=(
+                WorkOrderAssistanceUnit.STATUS_NOTIFY_SENDING,
+                WorkOrderAssistanceUnit.STATUS_NOTIFIED,
+            ),
         ).update(
             status=WorkOrderAssistanceUnit.STATUS_NOTIFY_FAILED,
             notify_error=(

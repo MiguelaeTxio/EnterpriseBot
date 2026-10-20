@@ -1332,10 +1332,11 @@ def send_operator_albaran_notification(
     con notified_at. Pasa a DOWNLOADED cuando el operario abre el
     albarán (WorkOrderAlbaranView), ya no al contestar a la plantilla.
     Devuelve True si Twilio acepta el envío, False ante cualquier fallo.
-    H37 (S132): aceptar el envío no es entregarlo. Se guarda el SID del
-    mensaje y Twilio informa de la entrega en
-    AlbaranNoticeStatusView; si no se entrega, o si el envío falla aquí
-    mismo, la unidad queda en NOTIFY_FAILED con el motivo.
+    H37 (S132): aceptar el envío no es entregarlo. La unidad queda en
+    NOTIFY_SENDING con el SID del mensaje, y Twilio informa de la
+    entrega en AlbaranNoticeStatusView: entregado o leído pasa a
+    NOTIFIED; no entregado, o si el envío falla aquí mismo, a
+    NOTIFY_FAILED con el motivo.
     """
     from budgets.models import WorkOrderAssistanceUnit
     from whatsapp.window_service import send_notification
@@ -1410,15 +1411,19 @@ def send_operator_albaran_notification(
         ])
         return False
 
-    unit.status = WorkOrderAssistanceUnit.STATUS_NOTIFIED
-    unit.notified_at = now()
+    # H37 (S132): accepted is not delivered. NOTIFIED (and notified_at)
+    # only when Twilio confirms the delivery (AlbaranNoticeStatusView).
+    # Aceptado no es entregado: NOTIFIED (y notified_at) solo cuando
+    # Twilio confirma la entrega (AlbaranNoticeStatusView).
+    unit.status = WorkOrderAssistanceUnit.STATUS_NOTIFY_SENDING
+    unit.notified_at = None
     unit.notify_message_sid = message.sid or ""
     unit.notify_error = ""
     unit.save(update_fields=[
         "status", "notified_at", "notify_message_sid", "notify_error",
     ])
     logger.info(
-        "# [ALBARAN NOTIFY] Unidad pk=%s NOTIFIED (%s) -- SID: %s",
+        "# [ALBARAN NOTIFY] Unidad pk=%s NOTIFY_SENDING (%s) -- SID: %s",
         unit_pk,
         "texto libre" if message.sent_as_text else "plantilla",
         message.sid,

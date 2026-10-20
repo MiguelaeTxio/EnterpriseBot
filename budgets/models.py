@@ -2714,12 +2714,16 @@ class WorkOrderAssistanceUnit(models.Model):
     STATUS_COMPLETED = "COMPLETED"
     STATUS_CLOSED_UNSIGNED = "CLOSED_UNSIGNED"
     STATUS_SIGNED_RECEIVED = "SIGNED_RECEIVED"
+    # H37 (S132): notice accepted by Twilio, delivery not confirmed yet.
+    # Aviso aceptado por Twilio, entrega aún sin confirmar.
+    STATUS_NOTIFY_SENDING = "NOTIFY_SENDING"
     # H37 (S132): Twilio reported the notice as not delivered.
     # Twilio ha informado de que el aviso no se ha entregado.
     STATUS_NOTIFY_FAILED = "NOTIFY_FAILED"
 
     STATUS_CHOICES = [
         (STATUS_PENDING,         "Pendiente"),
+        (STATUS_NOTIFY_SENDING,  "Enviando aviso"),
         (STATUS_NOTIFIED,        "Notificado"),
         (STATUS_NOTIFY_FAILED,   "Aviso fallido"),
         (STATUS_DOWNLOADED,      "Descargado"),
@@ -2906,7 +2910,9 @@ class WorkOrderAssistanceUnit(models.Model):
         verbose_name="Estado",
         help_text=(
             "PENDING: unidad creada, pendiente de notificar al operario. "
-            "NOTIFIED: template WhatsApp enviado al operario. "
+            "NOTIFY_SENDING: aviso aceptado por Twilio, entrega sin "
+            "confirmar. "
+            "NOTIFIED: WhatsApp confirma la entrega del aviso al operario. "
             "NOTIFY_FAILED: Twilio informa de que el aviso no se entregó. "
             "DOWNLOADED: operario ha abierto el albarán en la app. "
             "IN_PROGRESS: operario en servicio activo. "
