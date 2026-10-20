@@ -114,6 +114,8 @@
 .op-card.op-busy { border-left: 3px solid #fd7e14; }
 .op-card.op-locked { cursor: default; }
 .op-card.op-locked:active { cursor: default; }
+.op-badge-sm { font-size: 0.68rem; }
+.op-machines { font-size: 0.72rem; white-space: normal; }
 .tk-card {
     border: 1px solid var(--bs-border-color, #dee2e6);
     border-radius: 0.4rem;
@@ -373,23 +375,31 @@
       </div>
       <div id="tk-operators-body">
         {% for op in operators %}
-        <div class="op-card {% if op.active_ticket %}op-busy{% else %}op-free{% endif %}{% if company_user.role == "WORKSHOP" %} op-locked{% endif %}"
+        {% comment %}
+        H14 (S131): ocupado = algún ticket no cerrado en el que ha
+        trabajado (o asignado a él), con sus máquinas; "Tickets (N)" abre
+        la lista para cerrarlos a mano uno a uno.
+        {% endcomment %}
+        <div class="op-card {% if op.open_tickets %}op-busy{% else %}op-free{% endif %}{% if company_user.role == "WORKSHOP" %} op-locked{% endif %}"
              draggable="{% if company_user.role == "WORKSHOP" %}false{% else %}true{% endif %}"
              data-op-pk="{{ op.pk }}"
              data-op-name="{{ op.user.get_full_name|default:op.user.username }}">
           <div class="d-flex align-items-center justify-content-between">
             <span class="fw-semibold small">{{ op.user.get_full_name|default:op.user.username }}</span>
-            {% if op.active_ticket %}
-              <span class="badge bg-warning text-dark" style="font-size:0.68rem">Ocupado</span>
+            {% if op.open_tickets %}
+              <span class="badge bg-warning text-dark op-badge-sm">Ocupado</span>
             {% else %}
-              <span class="badge bg-success" style="font-size:0.68rem">Libre</span>
+              <span class="badge bg-success op-badge-sm">Libre</span>
             {% endif %}
           </div>
-          {% if op.active_ticket %}
-          <div class="text-muted mt-1" style="font-size:0.72rem">
-            <i class="bi bi-wrench me-1"></i>
-            {{ op.active_ticket.machine_raw|default:op.active_ticket.ticket_date_code }}
+          {% if op.open_tickets %}
+          <div class="text-muted mt-1 op-machines">
+            <i class="bi bi-wrench me-1"></i>{{ op.busy_machines|join:", " }}
           </div>
+          <button type="button" class="btn btn-xs btn-outline-secondary mt-1 op-tickets-btn"
+                  data-bs-toggle="modal" data-bs-target="#opTickets{{ op.pk }}">
+            Tickets abiertos ({{ op.open_tickets|length }})
+          </button>
           {% endif %}
         </div>
         {% empty %}
@@ -491,6 +501,48 @@
     </div>
   </div>
 </div>
+
+{% comment %}
+H14 (S131): tickets abiertos de cada mecánico, para repasarlos uno a
+uno ("¿Está cerrado? Sí / No") sin pasar por el parte de trabajo. "Sí"
+usa la acción "close" de siempre del detalle del ticket.
+{% endcomment %}
+{% for op in operators %}{% if op.open_tickets %}
+<div class="modal fade op-tickets-modal" id="opTickets{{ op.pk }}" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title">Tickets abiertos de {{ op.user.get_full_name|default:op.user.username }} (<span class="op-open-count">{{ op.open_tickets|length }}</span>)</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body p-0">
+        <table class="table table-sm table-hover align-middle mb-0 stack-mobile">
+          <thead><tr class="small"><th>Ticket</th><th>Máquina</th><th>Estado</th><th>Último día de trabajo</th><th class="text-end">¿Está cerrado?</th></tr></thead>
+          <tbody>
+            {% for ticket in op.open_tickets %}
+            <tr data-ticket-pk="{{ ticket.pk }}">
+              <td class="stack-mobile-title"><a href="{% url 'panel:breakdown_ticket_detail' pk=ticket.pk %}" class="font-monospace">{{ ticket.ticket_date_code|default:ticket.pk }}</a>
+                <div class="small text-muted">{{ ticket.fault_summary|default:""|truncatechars:70 }}</div></td>
+              <td data-label="Máquina">{{ ticket.machine_label }}</td>
+              <td data-label="Estado" class="small">{{ ticket.get_status_display }}{% if ticket.is_assigned %} · asignado{% endif %}</td>
+              <td data-label="Último día" class="small text-nowrap">{% if ticket.last_work_date %}{{ ticket.last_work_date|date:"d/m/Y" }} ({{ ticket.worked_lines }} parte{{ ticket.worked_lines|pluralize }}){% else %}—{% endif %}</td>
+              <td class="text-end text-nowrap stack-mobile-actions">
+                <span class="op-ticket-answer">
+                  <button type="button" class="btn btn-sm btn-success py-0 op-ticket-close">Sí</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary py-0 op-ticket-keep">No</button>
+                </span>
+                <span class="small text-muted d-none op-ticket-kept">Sigue abierto</span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="modal-footer py-1 small text-muted justify-content-start op-tickets-result">"Sí" cierra el ticket; "No" lo deja abierto.</div>
+    </div>
+  </div>
+</div>
+{% endif %}{% endfor %}
 
 <script>
 /* ================================================================
@@ -615,9 +667,50 @@ function tkDoAssign(opPk, ticketPk) {
     .catch(function () { alert('Error de red al asignar el ticket.'); });
 }
 
+/* ---- H14 (S131): cierre manual de tickets por mecánico ---- */
+var tkClosedSomething = false;
+function tkInitMechanicTickets() {
+    document.querySelectorAll('.op-tickets-modal').forEach(function (modal) {
+        modal.addEventListener('click', function (e) {
+            var row = e.target.closest('tr[data-ticket-pk]');
+            if (!row) return;
+            if (e.target.closest('.op-ticket-keep')) {
+                row.querySelector('.op-ticket-answer').classList.add('d-none');
+                row.querySelector('.op-ticket-kept').classList.remove('d-none');
+                return;
+            }
+            var button = e.target.closest('.op-ticket-close');
+            if (!button) return;
+            button.disabled = true;
+            var form = new FormData();
+            form.append('action', 'close');
+            form.append('csrfmiddlewaretoken', TK_CSRF);
+            fetch('/panel/chat/breakdowns/tickets/' + row.dataset.ticketPk + '/', {
+                method: 'POST', body: form, credentials: 'same-origin',
+            }).then(function (r) {
+                if (!(r.ok || r.redirected)) throw new Error();
+                tkClosedSomething = true;
+                row.remove();
+                var count = modal.querySelector('.op-open-count');
+                count.textContent = modal.querySelectorAll('tr[data-ticket-pk]').length;
+                modal.querySelector('.op-tickets-result').textContent = 'Ticket cerrado.';
+            }).catch(function () {
+                button.disabled = false;
+                modal.querySelector('.op-tickets-result').textContent = 'No se pudo cerrar el ticket. Inténtalo de nuevo.';
+            });
+        });
+        // Al cerrar la lista, la página se recarga si se cerró algo, para
+        // que "Ocupado/Libre" y los paneles reflejen el estado real.
+        modal.addEventListener('hidden.bs.modal', function () {
+            if (tkClosedSomething) window.location.reload();
+        });
+    });
+}
+
 document.addEventListener('DOMContentLoaded', function () {
     tkInitDivider();
     tkInitDragDrop();
+    tkInitMechanicTickets();
 });
 </script>
 

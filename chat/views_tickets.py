@@ -117,7 +117,7 @@ class BreakdownTicketListView(CompanyUserRequiredMixin, View):
         # role__in=[WORKSHOP, WORKSHOPBOSS] was leftover from the original
         # H14 design (commit 19666f0), never cleaned up; no real production
         # tickets assigned to a WORKSHOPBOSS.
-        operators_qs = (
+        operators_qs = list(
             CU.objects
             .filter(
                 company=company,
@@ -127,16 +127,17 @@ class BreakdownTicketListView(CompanyUserRequiredMixin, View):
             .select_related("user")
             .order_by("user__last_name", "user__first_name")
         )
-        active_tickets = {
-            bt.assigned_to_id: bt
-            for bt in BreakdownTicket.objects.filter(
-                company=company,
-                status=BreakdownTicket.STATUS_IN_PROGRESS,
-                assigned_to__isnull=False,
-            ).select_related("machine")
-        }
+        # H14 (S131): ocupado = con algún ticket no cerrado en el que ha
+        # trabajado (líneas de parte suyas) o asignado a él; con sus
+        # máquinas y la lista para cerrarlos a mano uno a uno.
+        from chat.mechanic_tickets import open_tickets_by_mechanic
+
+        open_by_mechanic = open_tickets_by_mechanic(company)
         for op in operators_qs:
-            op.active_ticket = active_tickets.get(op.pk)
+            op.open_tickets = open_by_mechanic.get(op.pk, [])
+            op.busy_machines = list(dict.fromkeys(
+                ticket.machine_label for ticket in op.open_tickets
+            ))
 
         # Assignable tickets panel: OPEN and PAUSED tickets available for assignment.
         # Panel de tickets asignables: tickets OPEN y PAUSED disponibles para asignar.
