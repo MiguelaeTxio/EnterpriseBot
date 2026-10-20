@@ -172,9 +172,11 @@ class MachineServiceRecordCreateView(_ServiceEditMixin, View):
 
     ---
 
-    POST: anota una revisión hecha. Fecha obligatoria y al menos las
-    horas o los km: con horas cuenta para la revisión por horas, con
-    km para la de km.
+    POST: anota una revisión hecha. Fecha obligatoria; horas y km
+    opcionales (S131, Miguel Ángel: hay que poder poner las fechas de
+    revisión aunque no estén las horas). Con horas cuenta para la
+    revisión por horas y con km para la de km; solo con fecha, no
+    avisa hasta que se anoten.
     """
 
     def post(self, request, pk):
@@ -187,15 +189,16 @@ class MachineServiceRecordCreateView(_ServiceEditMixin, View):
                 request.POST.get("service_date"), "fecha de la revisión",
             )
             hours = _parse_count(request.POST.get("hours"), "Las horas")
+            crane_hours = _parse_count(
+                request.POST.get("crane_hours"), "Las horas de grúa",
+            )
             km = _parse_count(request.POST.get("km"), "Los kilómetros")
-            if hours is None and km is None:
-                raise ValueError("Indica las horas, los km o los dos.")
         except ValueError as exc:
             messages.error(request, str(exc))
             return _back_to_machine(request, machine)
         MachineServiceRecord.objects.create(
             machine=machine, service_date=service_date, hours=hours,
-            km=km,
+            crane_hours=crane_hours, km=km,
             notes=(request.POST.get("notes") or "").strip()[:255],
             created_by=request.user.company_user,
         )
@@ -245,14 +248,18 @@ class MachineMeterReadingCreateView(_ServiceEditMixin, View):
                 request.POST.get("reading_date"), "fecha de la lectura",
             )
             hours = _parse_count(request.POST.get("hours"), "Las horas")
+            crane_hours = _parse_count(
+                request.POST.get("crane_hours"), "Las horas de grúa",
+            )
             km = _parse_count(request.POST.get("km"), "Los kilómetros")
-            if hours is None and km is None:
+            if hours is None and km is None and crane_hours is None:
                 raise ValueError("Indica las horas, los km o los dos.")
         except ValueError as exc:
             messages.error(request, str(exc))
             return _back_to_machine(request, machine)
         MachineMeterReading.objects.create(
-            machine=machine, reading_date=reading_date, hours=hours, km=km,
+            machine=machine, reading_date=reading_date, hours=hours,
+            crane_hours=crane_hours, km=km,
             created_by=request.user.company_user,
         )
         messages.success(request, "Lectura anotada.")

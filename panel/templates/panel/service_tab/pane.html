@@ -1,0 +1,258 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/service_tab/pane.html #}
+{% comment %}
+H30 (S131). Pestaña "Revisiones" del hub de Documentación. Miguel
+Ángel: "tenemos que alimentar al sistema de forma manual. Hay que
+facilitar al máximo esa tarea". Arriba, fijo: los mismos filtros que
+Centros de gasto y el plan de revisiones aplicado a la selección.
+Debajo, solo la lista hace scroll (directriz 4.24): cada fila se
+rellena en la propia tabla y se guarda con "Guardar" o con Intro.
+{% endcomment %}
+<div class="border rounded p-2 mb-2" id="svc-top-panel">
+    <div class="row g-2">
+        <div class="col-lg-7">
+            <form class="border rounded p-2 h-100" id="svc-filters"
+                  hx-get="{% url 'panel:service_tab_pane' %}?fragment=1"
+                  hx-target="#svc-table-container"
+                  hx-trigger="change, submit, input changed delay:400ms from:#svc-search">
+                <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                <input id="svc-search" type="search" class="form-control form-control-sm mb-2" name="search" value="{{ filter_search }}" placeholder="Buscar por código, marca/modelo, matrícula…" autocomplete="off">
+                <input type="hidden" name="sort" id="svc-sort" value="{{ current_sort }}">
+                <input type="hidden" name="is_active" id="svc-is-active" value="{{ filter_is_active }}">
+                <div class="d-flex flex-wrap gap-3">
+                    <div>
+                        <div class="small fw-bold">Estado</div>
+                        <div class="form-check">
+                            <input class="form-check-input svc-estado" type="checkbox" id="svc-estado-activos" data-estado="1" {% if filter_is_active == '' or filter_is_active == '1' %}checked{% endif %}>
+                            <label class="form-check-label small" for="svc-estado-activos">Activos</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input svc-estado" type="checkbox" id="svc-estado-inactivos" data-estado="0" {% if filter_is_active == '' or filter_is_active == '0' %}checked{% endif %}>
+                            <label class="form-check-label small" for="svc-estado-inactivos">Inactivos</label>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1">
+                        <label class="small fw-bold" for="svc-family">Familia</label>
+                        <select id="svc-family" class="form-select form-select-sm" name="family">
+                            <option value="">Todas las familias</option>
+                            {% for fam in families %}
+                            <option value="{{ fam }}" {% if filter_family == fam %}selected{% endif %}>{{ fam }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="flex-grow-1">
+                        <label class="small fw-bold" for="svc-requirement">Requisito</label>
+                        <select id="svc-requirement" class="form-select form-select-sm" name="requirement">
+                            <option value="" {% if not filter_requirement %}selected{% endif %}>Todos</option>
+                            <option value="none" {% if filter_requirement == "none" %}selected{% endif %}>Sin requisito</option>
+                            {% for position in job_positions %}
+                            <option value="{{ position.pk }}" {% if filter_requirement == position.pk|stringformat:"s" %}selected{% endif %}>{{ position.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="align-self-end">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="svc-clear-sort">Quitar orden</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="col-lg-5">
+            <div class="border rounded p-2 h-100">
+                <div class="fw-bold small mb-1">Revisión cada… a la selección (<span id="svc-selected-count">0</span>)</div>
+                {% if can_edit %}
+                <div class="d-flex flex-wrap align-items-center gap-2 small mb-2">
+                    <select class="form-select form-select-sm svc-w-sel" id="svc-bulk-hours" aria-label="Revisión por horas">
+                        <option value="">Sin revisión por horas</option>
+                        {% for value, label in hours_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                    </select>
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="svc-bulk-hours-apply">Aplicar horas</button>
+                </div>
+                <div class="d-flex flex-wrap align-items-center gap-2 small mb-2">
+                    <input type="number" min="1" class="form-control form-control-sm svc-w-km" id="svc-bulk-km" list="svcKmSuggestions" placeholder="Sin revisión por km" aria-label="Revisión cada N km">
+                    <span>km</span>
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="svc-bulk-km-apply">Aplicar km</button>
+                </div>
+                {% else %}
+                <p class="small text-muted mb-2">Solo lectura: no tienes permiso para anotar revisiones.</p>
+                {% endif %}
+                <button type="button" class="btn btn-sm btn-link p-0" id="svc-clear-selection">Vaciar selección</button>
+                <div class="alert small py-1 px-2 mt-2 mb-0 d-none" id="svc-result" role="status"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="border rounded p-2" id="svc-bottom-panel">
+    <div class="fixed-list-scroll h-100 overflow-auto" id="svc-table-container">
+        {% include "panel/service_tab/_table.html" %}
+    </div>
+</div>
+
+{{ saved_selection|json_script:"svc-saved-selection" }}
+{% include "panel/_fixed_list_layout.html" with top_id="svc-top-panel" bottom_id="svc-bottom-panel" %}
+
+<script>
+(function () {
+    "use strict";
+    const SCREEN_KEY = "{{ screen_key|escapejs }}";
+    const BULK_URL = "{% url 'panel:service_tab_bulk_plan' %}";
+    const filters = document.getElementById("svc-filters");
+    const container = document.getElementById("svc-table-container");
+    const result = document.getElementById("svc-result");
+    const selection = new Set(
+        (JSON.parse(document.getElementById("svc-saved-selection").textContent) || []).map(String)
+    );
+
+    function csrfToken() {
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        if (meta) return meta.getAttribute("content");
+        const match = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
+        return match ? decodeURIComponent(match[1]) : "";
+    }
+    function showResult(text, kind) {
+        result.className = "alert small py-1 px-2 mt-2 mb-0 alert-" + kind;
+        result.textContent = text;
+    }
+    function refreshFilters() {
+        htmx.trigger(filters, "submit");
+    }
+
+    // Estado en casillas -> valor único de is_active (mismo criterio
+    // que Centros de gasto: ambas = todos, ninguna = ninguno).
+    filters.querySelectorAll(".svc-estado").forEach(function (box) {
+        box.addEventListener("change", function () {
+            const on = Array.from(filters.querySelectorAll(".svc-estado:checked")).map(b => b.dataset.estado);
+            document.getElementById("svc-is-active").value =
+                on.length === 2 ? "" : (on.length === 1 ? on[0] : "none");
+        });
+    });
+    document.getElementById("svc-clear-sort").addEventListener("click", function () {
+        document.getElementById("svc-sort").value = "";
+        refreshFilters();
+    });
+
+    // Selección (persistida por usuario, directriz 4.24/4.15).
+    function saveSelection() {
+        if (window.EbNavState) window.EbNavState.save(SCREEN_KEY, {selection: Array.from(selection)});
+        document.getElementById("svc-selected-count").textContent = selection.size;
+    }
+    function syncChecks() {
+        const boxes = container.querySelectorAll(".svc-select");
+        boxes.forEach(function (box) { box.checked = selection.has(box.value); });
+        const all = document.getElementById("svc-select-all");
+        if (all) all.checked = boxes.length > 0 && Array.from(boxes).every(b => b.checked);
+        document.getElementById("svc-selected-count").textContent = selection.size;
+    }
+    document.getElementById("svc-clear-selection").addEventListener("click", function () {
+        selection.clear();
+        saveSelection();
+        syncChecks();
+    });
+
+    // Una fila: marcar cambios, guardar con el botón o con Intro.
+    function rowData(row) {
+        const data = new FormData();
+        row.querySelectorAll(".svc-input").forEach(function (input) {
+            data.append(input.name, input.value);
+        });
+        return data;
+    }
+    function saveRow(row) {
+        const button = row.querySelector(".svc-save");
+        if (button) button.disabled = true;
+        fetch(row.dataset.saveUrl, {
+            method: "POST",
+            headers: {"X-CSRFToken": csrfToken()},
+            body: rowData(row),
+        }).then(r => r.json()).then(function (data) {
+            if (!data.ok) {
+                const error = row.querySelector(".svc-row-error");
+                error.textContent = data.error || "No se pudo guardar.";
+                error.classList.remove("d-none");
+                if (button) button.disabled = false;
+                return;
+            }
+            const holder = document.createElement("tbody");
+            holder.innerHTML = data.html.trim();
+            const fresh = holder.firstElementChild;
+            row.replaceWith(fresh);
+            fresh.classList.add("table-success");
+            setTimeout(function () { fresh.classList.remove("table-success"); }, 1500);
+            syncChecks();
+        }).catch(function () {
+            const error = row.querySelector(".svc-row-error");
+            error.textContent = "No se pudo guardar.";
+            error.classList.remove("d-none");
+            if (button) button.disabled = false;
+        });
+    }
+    container.addEventListener("click", function (ev) {
+        const sort = ev.target.closest(".svc-sort");
+        if (sort) {
+            ev.preventDefault();
+            document.getElementById("svc-sort").value = sort.dataset.sort;
+            refreshFilters();
+            return;
+        }
+        const save = ev.target.closest(".svc-save");
+        if (save) saveRow(save.closest(".svc-row"));
+    });
+    container.addEventListener("change", function (ev) {
+        if (ev.target.id === "svc-select-all") {
+            container.querySelectorAll(".svc-select").forEach(function (box) {
+                box.checked = ev.target.checked;
+                if (box.checked) selection.add(box.value); else selection.delete(box.value);
+            });
+            saveSelection();
+            return;
+        }
+        if (ev.target.classList.contains("svc-select")) {
+            if (ev.target.checked) selection.add(ev.target.value); else selection.delete(ev.target.value);
+            saveSelection();
+            syncChecks();
+            return;
+        }
+        if (ev.target.classList.contains("svc-input")) {
+            ev.target.closest(".svc-row").classList.add("table-warning");
+        }
+    });
+    container.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter" && ev.target.classList.contains("svc-input")) {
+            ev.preventDefault();
+            saveRow(ev.target.closest(".svc-row"));
+        }
+    });
+    document.body.addEventListener("htmx:afterSettle", function (ev) {
+        if (ev.target === container) syncChecks();
+    });
+
+    // Plan aplicado a la selección.
+    function bulk(fields, label) {
+        if (!selection.size) {
+            showResult("Marca primero los centros de gasto.", "warning");
+            return;
+        }
+        const data = new FormData();
+        data.append("ids", JSON.stringify(Array.from(selection)));
+        Object.keys(fields).forEach(k => data.append(k, fields[k]));
+        fetch(BULK_URL, {method: "POST", headers: {"X-CSRFToken": csrfToken()}, body: data})
+            .then(r => r.json()).then(function (res) {
+                if (!res.ok) {
+                    showResult(res.error || "No se pudo aplicar.", "danger");
+                    return;
+                }
+                showResult(label + " aplicada a " + res.updated + " centro(s) de gasto.", "success");
+                refreshFilters();
+            }).catch(function () { showResult("No se pudo aplicar.", "danger"); });
+    }
+    const hoursApply = document.getElementById("svc-bulk-hours-apply");
+    if (hoursApply) {
+        hoursApply.addEventListener("click", function () {
+            bulk({apply_hours: "1", hours_interval: document.getElementById("svc-bulk-hours").value}, "Revisión por horas");
+        });
+        document.getElementById("svc-bulk-km-apply").addEventListener("click", function () {
+            bulk({apply_km: "1", km_interval: document.getElementById("svc-bulk-km").value}, "Revisión por km");
+        });
+    }
+    syncChecks();
+}());
+</script>

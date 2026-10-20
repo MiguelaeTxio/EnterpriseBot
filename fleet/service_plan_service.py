@@ -98,6 +98,9 @@ class ScheduleStatus:
     current_value: int = None
     remaining: int = None
     status_text: str = ""
+    # S131: revisión anotada solo con fecha (sin el valor de esta
+    # revisión): no avisa, pero se dice qué falta.
+    undated_value_record: object = None
 
 
 def format_number(value):
@@ -157,6 +160,18 @@ def _status_text(status):
     """
     unit = status.schedule.unit
     if status.state == STATE_NO_RECORD:
+        if status.undated_value_record is not None:
+            what = (
+                "horas anotadas: no avisa hasta anotarlas"
+                if unit == UNIT_HOURS
+                else "kilómetros anotados: no avisa hasta anotarlos"
+            )
+            return "Revisión del %s sin %s." % (
+                status.undated_value_record.service_date.strftime(
+                    "%d/%m/%Y",
+                ),
+                what,
+            )
         return "Sin revisión anotada: no avisa hasta anotar la primera."
     due = "%s %s" % (format_number(status.due_value), unit)
     if status.state == STATE_NO_READING:
@@ -193,6 +208,10 @@ def schedule_statuses(machine, records, readings, advance_of_unit=None):
             records, schedule.value_field, "service_date",
         )
         status = ScheduleStatus(schedule, interval, STATE_NO_RECORD)
+        if record is None and records:
+            status.undated_value_record = max(
+                records, key=lambda row: (row.service_date, row.pk),
+            )
         if record is not None:
             status.last_record = record
             status.last_value = getattr(record, schedule.value_field)

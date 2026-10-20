@@ -53,6 +53,20 @@ EbTypePicker.init() (ver panel/_doc_type_picker.html).
         </a>
     </li>
     <li class="nav-item">
+        {% comment %}
+        H30 (S131): poner al día a mano km, horas, horas de grúa,
+        revisiones y su plan (800/1200 h, cada N km) de todos los
+        centros de gasto -- Miguel Ángel: "hay que facilitar al máximo
+        esa tarea".
+        {% endcomment %}
+        <a class="nav-link {% if persisted_active_tab == 'revisiones' %}active{% endif %}" id="tab-revisiones" data-bs-toggle="tab" href="#pane-revisiones"
+           hx-get="{% url 'panel:service_tab_pane' %}"
+           hx-target="#pane-revisiones"
+           hx-trigger="{% if persisted_active_tab == 'revisiones' %}load once{% else %}click once{% endif %}">
+            <i class="bi bi-wrench-adjustable me-1"></i>Revisiones
+        </a>
+    </li>
+    <li class="nav-item">
         <a class="nav-link {% if persisted_active_tab == 'personal' %}active{% endif %}" id="tab-personal" data-bs-toggle="tab" href="#pane-personal"
            hx-get="{% url 'panel:documentation_personal_list' %}?{{ personal_tab_qs }}"
            hx-target="#pane-personal"
@@ -184,6 +198,9 @@ EbTypePicker.init() (ver panel/_doc_type_picker.html).
 
 <div class="tab-content">
     <div class="tab-pane fade {% if persisted_active_tab == 'maquinaria' %}show active{% endif %}" id="pane-maquinaria">
+        <div class="text-muted small py-3">Cargando…</div>
+    </div>
+    <div class="tab-pane fade {% if persisted_active_tab == 'revisiones' %}show active{% endif %}" id="pane-revisiones">
         <div class="text-muted small py-3">Cargando…</div>
     </div>
     <div class="tab-pane fade {% if persisted_active_tab == 'personal' %}show active{% endif %}" id="pane-personal">

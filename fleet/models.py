@@ -423,6 +423,9 @@ class MachineServiceRecord(models.Model):
     km = models.PositiveIntegerField(
         _("Kilómetros en la revisión"), null=True, blank=True,
     )
+    crane_hours = models.PositiveIntegerField(
+        _("Horas de grúa en la revisión"), null=True, blank=True,
+    )
     notes = models.CharField(_("Observaciones"), max_length=255, blank=True)
     created_by = models.ForeignKey(
         "ivr_config.CompanyUser",
@@ -463,6 +466,9 @@ class MachineMeterReading(models.Model):
     reading_date = models.DateField(_("Fecha de la lectura"))
     hours = models.PositiveIntegerField(_("Horas"), null=True, blank=True)
     km = models.PositiveIntegerField(_("Kilómetros"), null=True, blank=True)
+    crane_hours = models.PositiveIntegerField(
+        _("Horas de grúa"), null=True, blank=True,
+    )
     created_by = models.ForeignKey(
         "ivr_config.CompanyUser",
         null=True,

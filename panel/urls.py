@@ -29,6 +29,11 @@ from panel.views_circulars_h31 import (
     CircularSaveContentView,
     PersonalDocutenExportView,
 )
+from panel.views_service_tab import (
+    ServiceBulkPlanView,
+    ServiceRowSaveView,
+    ServiceTabPaneView,
+)
 from panel.views_machine_service import (
     MachineMeterReadingCreateView,
     MachineMeterReadingDeleteView,
@@ -593,6 +598,9 @@ urlpatterns = [
     path("documentacion/avisos/pendientes/", DocumentNoticesView.as_view(), name="document_notices"),
     path("documentacion/avisos/destinatarios/<int:supervisor_pk>/guardar/", NoticeScopeSaveView.as_view(), name="notice_scope_save"),
     path("documentacion/avisos/whatsapp/", DocumentAlertWhatsAppToggleView.as_view(), name="document_alerts_whatsapp_toggle"),
+    path("documentacion/revisiones/", ServiceTabPaneView.as_view(), name="service_tab_pane"),
+    path("documentacion/revisiones/fila/<int:pk>/", ServiceRowSaveView.as_view(), name="service_tab_row_save"),
+    path("documentacion/revisiones/plan/", ServiceBulkPlanView.as_view(), name="service_tab_bulk_plan"),
     path("documentacion/avisos/revisiones/antelacion/", MachineServiceAlertSettingsSaveView.as_view(), name="machine_service_alert_settings_save"),
     # H30 (S126), punto 2: subir desde el aviso lo que aporta la empresa y "Cita solicitada".
     path("documentacion/avisos/subir/", NoticeUploadView.as_view(), name="notice_upload"),

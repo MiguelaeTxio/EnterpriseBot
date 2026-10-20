@@ -386,6 +386,12 @@ puede ser es que la interfaz no informe de lo que pasa."
                         <label class="form-label form-label-sm mb-0" for="serviceHours">Horas</label>
                         <input type="number" min="0" class="form-control form-control-sm" id="serviceHours" name="hours">
                     </div>
+                    {% if machine.has_crane_hours %}
+                    <div class="col-6 col-md-3">
+                        <label class="form-label form-label-sm mb-0" for="serviceCraneHours">Horas de grúa</label>
+                        <input type="number" min="0" class="form-control form-control-sm" id="serviceCraneHours" name="crane_hours">
+                    </div>
+                    {% endif %}
                     <div class="col-6 col-md-3">
                         <label class="form-label form-label-sm mb-0" for="serviceKm">Kilómetros</label>
                         <input type="number" min="0" class="form-control form-control-sm" id="serviceKm" name="km">
@@ -402,12 +408,13 @@ puede ser es que la interfaz no informe de lo que pasa."
                 {% if service_records_count > service_list_limit %}<p class="text-muted small mb-1">Se muestran las {{ service_list_limit }} más recientes.</p>{% endif %}
                 <div class="table-responsive mb-3">
                     <table class="table stack-mobile table-sm table-hover mb-0 mdet-table-sm">
-                        <thead><tr><th>Fecha</th><th class="text-end">Horas</th><th class="text-end">Km</th><th>Observaciones</th><th>Anotada por</th><th></th></tr></thead>
+                        <thead><tr><th>Fecha</th><th class="text-end">Horas</th><th class="text-end">H. grúa</th><th class="text-end">Km</th><th>Observaciones</th><th>Anotada por</th><th></th></tr></thead>
                         <tbody>
                             {% for record in service_records %}
                             <tr>
                                 <td class="text-nowrap stack-mobile-title">{{ record.service_date|date:"d/m/Y" }}</td>
                                 <td class="text-end" data-label="Horas">{{ record.hours|default_if_none:"—" }}</td>
+                                <td class="text-end" data-label="H. grúa">{{ record.crane_hours|default_if_none:"—" }}</td>
                                 <td class="text-end" data-label="Km">{{ record.km|default_if_none:"—" }}</td>
                                 <td data-label="Observaciones">{{ record.notes|default:"—" }}</td>
                                 <td data-label="Anotada por">{% if record.created_by %}{{ record.created_by.user.get_full_name|default:record.created_by.user.username }}{% else %}—{% endif %}</td>
@@ -442,6 +449,12 @@ puede ser es que la interfaz no informe de lo que pasa."
                         <label class="form-label form-label-sm mb-0" for="readingHours">Horas</label>
                         <input type="number" min="0" class="form-control form-control-sm" id="readingHours" name="hours">
                     </div>
+                    {% if machine.has_crane_hours %}
+                    <div class="col-6 col-md-3">
+                        <label class="form-label form-label-sm mb-0" for="readingCraneHours">Horas de grúa</label>
+                        <input type="number" min="0" class="form-control form-control-sm" id="readingCraneHours" name="crane_hours">
+                    </div>
+                    {% endif %}
                     <div class="col-6 col-md-3">
                         <label class="form-label form-label-sm mb-0" for="readingKm">Kilómetros</label>
                         <input type="number" min="0" class="form-control form-control-sm" id="readingKm" name="km">
@@ -455,12 +468,13 @@ puede ser es que la interfaz no informe de lo que pasa."
                 {% if meter_readings_count > service_list_limit %}<p class="text-muted small mb-1">Se muestran las {{ service_list_limit }} más recientes.</p>{% endif %}
                 <div class="table-responsive">
                     <table class="table stack-mobile table-sm table-hover mb-0 mdet-table-sm">
-                        <thead><tr><th>Fecha</th><th class="text-end">Horas</th><th class="text-end">Km</th><th>Anotada por</th><th></th></tr></thead>
+                        <thead><tr><th>Fecha</th><th class="text-end">Horas</th><th class="text-end">H. grúa</th><th class="text-end">Km</th><th>Anotada por</th><th></th></tr></thead>
                         <tbody>
                             {% for reading in meter_readings %}
                             <tr>
                                 <td class="text-nowrap stack-mobile-title">{{ reading.reading_date|date:"d/m/Y" }}</td>
                                 <td class="text-end" data-label="Horas">{{ reading.hours|default_if_none:"—" }}</td>
+                                <td class="text-end" data-label="H. grúa">{{ reading.crane_hours|default_if_none:"—" }}</td>
                                 <td class="text-end" data-label="Km">{{ reading.km|default_if_none:"—" }}</td>
                                 <td data-label="Anotada por">{% if reading.created_by %}{{ reading.created_by.user.get_full_name|default:reading.created_by.user.username }}{% else %}—{% endif %}</td>
                                 <td class="text-end stack-mobile-actions">

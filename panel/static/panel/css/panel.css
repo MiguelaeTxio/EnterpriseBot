@@ -1490,6 +1490,36 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
     width: 6.5rem;
 }
 
+/* H30 (S131): pestaña Revisiones, tabla editable fila a fila. */
+.svc-table td,
+.svc-table th {
+    white-space: nowrap;
+}
+.svc-table .svc-sep {
+    border-left: 2px solid #dee2e6;
+}
+.svc-table .svc-status {
+    white-space: normal;
+    min-width: 14rem;
+}
+.svc-model {
+    max-width: 11rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.svc-w-sel {
+    width: 6.5rem;
+}
+.svc-w-km {
+    width: 7rem;
+}
+.svc-w-date {
+    width: 8.5rem;
+}
+.svc-w-num {
+    width: 6.5rem;
+}
+
 .alerts-column {
     display: flex;
     flex-direction: column;
