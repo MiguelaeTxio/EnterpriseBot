@@ -36,7 +36,7 @@ from fleet.models import (
     MachineAsset, MachineMeterReading, MachineServiceRecord,
 )
 from fleet.views import (
-    _build_queryset, _build_sort_controls, _get_families,
+    _build_queryset, _get_families,
 )
 from panel.mixins import CompanyUserRequiredMixin
 from panel.navigation_persistence import (
@@ -56,6 +56,104 @@ STATE_CLASS = {
     plan.STATE_OVERDUE: "text-danger fw-bold",
     plan.STATE_UPCOMING: "text-warning-emphasis fw-bold",
 }
+
+
+# S131: orden propio de la pestaña -- código, familia y última revisión
+# (Miguel Ángel: "poder ordenar la columna de última revisión [...] de
+# más reciente a menos reciente"). Mismas reglas de prioridad que
+# Centros de gasto (fleet.views._build_sort_controls); la última
+# revisión no es columna de BD, así que todo el orden se aplica aquí.
+SORT_KEYS = ("code", "family", "last_service")
+# Primer clic en "Última revisión": la más reciente arriba.
+SORT_DESC_FIRST = ("last_service",)
+MAX_SORT_KEYS = 4
+
+
+def _parse_sort(raw):
+    """
+    "key,-key" -> [(key, descending)] (valid keys only, max 4).
+
+    ---
+
+    "clave,-clave" -> [(clave, descendente)], solo claves válidas y
+    sin repetir, como mucho 4.
+    """
+    keys, seen = [], set()
+    for token in (raw or "").split(","):
+        token = token.strip()
+        key = token.lstrip("-")
+        if key in SORT_KEYS and key not in seen:
+            keys.append((key, token.startswith("-")))
+            seen.add(key)
+    return keys[:MAX_SORT_KEYS]
+
+
+def _sort_controls(raw):
+    """
+    Next "sort" value, arrow and priority of each sortable column.
+
+    ---
+
+    Para cada columna ordenable: el "sort" que envía un clic en su
+    cabecera (la promueve a principal; si ya lo es, invierte el
+    sentido), su flecha y su prioridad. Resuelto aquí, nunca en la
+    plantilla.
+    """
+    sort_keys = _parse_sort(raw)
+    active = [key for key, _desc in sort_keys]
+    sort_next, sort_arrows, sort_priority = {}, {}, {}
+    for key in SORT_KEYS:
+        if key in active:
+            index = active.index(key)
+            desc = sort_keys[index][1]
+            sort_arrows[key] = "down" if desc else "up"
+            sort_priority[key] = index + 1 if len(sort_keys) > 1 else ""
+            first = (key, (not desc) if index == 0 else desc)
+        else:
+            sort_arrows[key] = ""
+            sort_priority[key] = ""
+            first = (key, key in SORT_DESC_FIRST)
+        new_keys = [first] + [(k, d) for k, d in sort_keys if k != key]
+        sort_next[key] = ",".join(
+            ("-" if d else "") + k for k, d in new_keys[:MAX_SORT_KEYS]
+        )
+    return {
+        "sort_next": sort_next,
+        "sort_arrows": sort_arrows,
+        "sort_priority": sort_priority,
+        "sort_active": bool(sort_keys),
+        "current_sort": ",".join(
+            ("-" if d else "") + k for k, d in sort_keys
+        ),
+    }
+
+
+def _sort_machines(machines, raw):
+    """
+    Sort the annotated rows by the requested keys (code as tie-break).
+
+    ---
+
+    Ordena las filas ya anotadas por las claves pedidas, con el código
+    como último desempate. Sin fecha de revisión, siempre al final, en
+    los dos sentidos (Miguel Ángel: al ordenar "se deberían de ver las
+    que tienen").
+    """
+    def value(machine, key):
+        if key == "code":
+            return machine.code.upper()
+        if key == "family":
+            return (machine.family or "").upper()
+        record = machine.last_record
+        return record.service_date if record else None
+
+    machines = sorted(machines, key=lambda m: value(m, "code"))
+    for key, desc in reversed(_parse_sort(raw)):
+        present = [m for m in machines if value(m, key) not in (None, "")]
+        empty = [m for m in machines if value(m, key) in (None, "")]
+        present.sort(key=lambda m, k=key: value(m, k), reverse=desc)
+        machines = present + empty
+    return machines
 
 
 class RowError(Exception):
@@ -182,7 +280,17 @@ def _list_context(request):
     """
     company_user = request.user.company_user
     company = company_user.company
-    machines = _annotate_rows(list(_build_queryset(company, request)))
+    # El orden lo aplica _sort_machines: el queryset compartido se pide
+    # sin "sort" (su orden no conoce "last_service").
+    sort_raw = request.GET.get("sort", "")
+    unsorted = request.GET.copy()
+    unsorted.pop("sort", None)
+    original_get, request.GET = request.GET, unsorted
+    try:
+        machines = list(_build_queryset(company, request))
+    finally:
+        request.GET = original_get
+    machines = _sort_machines(_annotate_rows(machines), sort_raw)
 
     def _p(key):
         return request.GET.get(key, "")
@@ -201,7 +309,7 @@ def _list_context(request):
         "hours_choices": MachineAsset.SERVICE_HOURS_CHOICES,
         "km_suggestions": KM_INTERVAL_SUGGESTIONS,
         "today": date.today().isoformat(),
-        **_build_sort_controls(_p("sort")),
+        **_sort_controls(sort_raw),
     }
 
 
