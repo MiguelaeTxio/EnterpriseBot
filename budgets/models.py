@@ -8,6 +8,8 @@ Define el grafo completo de entidades para el motor de presupuestos ASISTENCIA:
 Insurer, VehicleType, InsurerTariff, TariffLine, Budget, BudgetLine.
 """
 
+import os as _os
+
 from django.db import models
 
 from ivr_config.models import Company, CompanyUser
@@ -68,45 +70,58 @@ class Insurer(models.Model):
         verbose_name="Empresa prestadora",
         help_text=(
             "Empresa que presta el servicio en campo "
-            "(ej: 'Transgrual', 'Grúas Alvarez', 'Asistencia y Grúas Granada'). "
-            "Junto con insurer_company_name conforma el name combinado del wizard."
+            "(ej: 'Transgrual', 'Grúas Alvarez', "
+            "'Asistencia y Grúas Granada'). "
+            "Junto con insurer_company_name conforma el name combinado "
+            "del wizard."
         ),
     )
     code = models.CharField(
         max_length=50,
         verbose_name="Código interno",
-        help_text="Código identificador interno (ej: AXA, RACE, MAPFRE). Sin espacios.",
+        help_text=(
+            "Código identificador interno (ej: AXA, RACE, MAPFRE). "
+            "Sin espacios."
+        ),
     )
     # Some insurers require a management fee percentage on top of the total.
-    # Algunas aseguradoras aplican un porcentaje de gastos de gestión sobre el total.
+    # Algunas aseguradoras aplican un porcentaje de gastos de gestión sobre
+    # el total.
     management_fee_percent = models.DecimalField(
         max_digits=5,
         decimal_places=2,
         default=0,
         verbose_name="Gastos de gestión (%)",
         help_text=(
-            "Porcentaje de gastos de gestión aplicado sobre el total del presupuesto. "
-            "0 si la aseguradora no aplica este concepto. Ejemplo: COVEI aplica 5%."
+            "Porcentaje de gastos de gestión aplicado sobre el total del "
+            "presupuesto. 0 si la aseguradora no aplica este concepto. "
+            "Ejemplo: COVEI aplica 5%."
         ),
     )
-    # Controls whether NYF and loaded surcharges are cumulative or mutually exclusive.
-    # Controla si los recargos NYF y vehículo cargado son acumulables o excluyentes.
+    # Controls whether NYF and loaded surcharges are cumulative or mutually
+    # exclusive.
+    # Controla si los recargos NYF y vehículo cargado son acumulables o
+    # excluyentes.
     surcharges_are_cumulative = models.BooleanField(
         default=False,
         verbose_name="Recargos acumulables",
         help_text=(
-            "Si está activo, el recargo nocturno/festivo y el recargo por vehículo "
-            "cargado se suman. Si está inactivo (por defecto), se aplica únicamente "
-            "el mayor de los dos, conforme a las condiciones generales de la mayoría "
-            "de aseguradoras."
+            "Si está activo, el recargo nocturno/festivo y el recargo por "
+            "vehículo cargado se suman. Si está inactivo (por defecto), se "
+            "aplica únicamente el mayor de los dos, conforme a las "
+            "condiciones generales de la mayoría de aseguradoras."
         ),
     )
     is_active = models.BooleanField(
         default=True,
         verbose_name="Activa",
-        help_text="Indica si esta aseguradora está disponible para generar presupuestos.",
+        help_text=(
+            "Indica si esta aseguradora está disponible para generar "
+            "presupuestos."
+        ),
     )
-    # Distinguishes insurance companies from direct clients with a custom tariff.
+    # Distinguishes insurance companies from direct clients with a custom
+    # tariff.
     # Distingue compañías aseguradoras de clientes directos con tarifa propia.
     is_insurance_company = models.BooleanField(
         default=True,
@@ -114,7 +129,8 @@ class Insurer(models.Model):
         help_text=(
             "True: compañía aseguradora. "
             "False: cliente particular con tarifa propia. "
-            "Controla el label mostrado en el desplegable del asistente de presupuestos."
+            "Controla el label mostrado en el desplegable del asistente de "
+            "presupuestos."
         ),
     )
     # When True, IVA is always applied on budgets for this insurer.
@@ -128,51 +144,61 @@ class Insurer(models.Model):
         verbose_name="Aplicar IVA siempre",
         help_text=(
             "Si está activo, el IVA se aplica obligatoriamente en todos los "
-            "presupuestos de esta aseguradora. El operario no puede desmarcarlo."
+            "presupuestos de esta aseguradora. El operario no puede "
+            "desmarcarlo."
         ),
     )
     # When True, this insurer has a special rate table for night/holiday
     # services instead of a simple percentage surcharge.
     # The engine resolves SpecialRateTariff linked to the active InsurerTariff.
     # Cuando es True, esta aseguradora tiene una tabla de tarifas especiales
-    # para servicios nocturnos/festivos en lugar de un recargo porcentual simple.
-    # El motor resuelve el SpecialRateTariff vinculado a la InsurerTariff activa.
+    # para servicios nocturnos/festivos en lugar de un recargo porcentual
+    # simple.
+    # El motor resuelve el SpecialRateTariff vinculado a la InsurerTariff
+    # activa.
     special_night_holiday_tariff = models.BooleanField(
         default=False,
         verbose_name="Tarifa especial nocturno/festivo",
         help_text=(
-            "Si está activo, el motor usa la tabla SpecialRateTariff vinculada "
-            "a la tarifa activa en lugar del recargo porcentual estándar. "
-            "Aplicable a aseguradoras como RACC/Zurich con precios diferenciados "
-            "por franja horaria."
+            "Si está activo, el motor usa la tabla SpecialRateTariff "
+            "vinculada a la tarifa activa en lugar del recargo porcentual "
+            "estándar. Aplicable a aseguradoras como RACC/Zurich con "
+            "precios diferenciados por franja horaria."
         ),
     )
-    # Km threshold below which a service is considered local (SERVICE_LOCAL forfait).
-    # Umbral de km por debajo del cual el servicio se considera local (forfait SERVICE_LOCAL).
+    # Km threshold below which a service is considered local
+    # (SERVICE_LOCAL forfait).
+    # Umbral de km por debajo del cual el servicio se considera local
+    # (forfait SERVICE_LOCAL).
     local_service_km_threshold = models.PositiveSmallIntegerField(
         default=20,
         null=True,
         blank=True,
         verbose_name="Umbral servicio local (km)",
         help_text=(
-            "Kilometraje total máximo (fase 1 + fase 2) para considerar el servicio "
-            "como local y aplicar el forfait SERVICE_LOCAL de la tarifa. "
-            "Valor por defecto: 20 km. "
-            "Dejar vacío (null) si esta aseguradora no contempla servicio local."
+            "Kilometraje total máximo (fase 1 + fase 2) para considerar el "
+            "servicio como local y aplicar el forfait SERVICE_LOCAL de la "
+            "tarifa. Valor por defecto: 20 km. "
+            "Dejar vacío (null) si esta aseguradora no contempla servicio "
+            "local."
         ),
     )
     notes = models.TextField(
         blank=True,
         default="",
         verbose_name="Notas internas",
-        help_text="Observaciones internas sobre esta aseguradora. No visible al operario.",
+        help_text=(
+            "Observaciones internas sobre esta aseguradora. "
+            "No visible al operario."
+        ),
     )
     # Night schedule assigned to this insurer. When null, the engine falls back
     # to the company default NightSchedule (is_default=True), and further to
     # Company.night_start / Company.night_end for full backwards compatibility.
-    # Horario nocturno asignado a esta aseguradora. Si es nulo, el motor usa el
-    # NightSchedule por defecto de la empresa (is_default=True) y, en su defecto,
-    # Company.night_start / Company.night_end para compatibilidad hacia atrás.
+    # Horario nocturno asignado a esta aseguradora. Si es nulo, el motor usa
+    # el NightSchedule por defecto de la empresa (is_default=True) y, en su
+    # defecto, Company.night_start / Company.night_end para compatibilidad
+    # hacia atrás.
     night_schedule = models.ForeignKey(
         "NightSchedule",
         on_delete=models.SET_NULL,
@@ -183,11 +209,16 @@ class Insurer(models.Model):
         help_text=(
             "Franja horaria nocturna asignada a esta aseguradora. "
             "Si no se asigna, el motor usa el horario nocturno por defecto "
-            "de la empresa. Si tampoco existe, usa Company.night_start/night_end."
+            "de la empresa. Si tampoco existe, usa "
+            "Company.night_start/night_end."
         ),
     )
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creación")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="Fecha de modificación")
+    created_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Fecha de creación"
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True, verbose_name="Fecha de modificación"
+    )
 
     class Meta:
         verbose_name = "Aseguradora"
@@ -208,15 +239,17 @@ class VehicleType(models.Model):
     """
     Defines a vehicle type entry within a specific insurer's catalogue.
     The name field uses the exact wording from the insurer's tariff document
-    (e.g. "Camiones hasta 8.000 KG" for RACE, "De 3.501 Kg hasta 6.000 kg de P.M.A."
-    for Inter Partner). This ensures the dropdown presented to the operator
-    mirrors the official tariff nomenclature exactly.
+    (e.g. "Camiones hasta 8.000 KG" for RACE,
+    "De 3.501 Kg hasta 6.000 kg de P.M.A." for Inter Partner). This ensures
+    the dropdown presented to the operator mirrors the official tariff
+    nomenclature exactly.
     ---
-    Define una entrada de tipo de vehículo dentro del catálogo de una aseguradora.
-    El campo name usa la nomenclatura exacta del documento de tarifa de la aseguradora
-    (ej: "Camiones hasta 8.000 KG" para RACE, "De 3.501 Kg hasta 6.000 kg de P.M.A."
-    para Inter Partner). Esto garantiza que el desplegable presentado al operario
-    refleja exactamente la nomenclatura oficial de la tarifa.
+    Define una entrada de tipo de vehículo dentro del catálogo de una
+    aseguradora. El campo name usa la nomenclatura exacta del documento de
+    tarifa de la aseguradora (ej: "Camiones hasta 8.000 KG" para RACE,
+    "De 3.501 Kg hasta 6.000 kg de P.M.A." para Inter Partner). Esto
+    garantiza que el desplegable presentado al operario refleja exactamente
+    la nomenclatura oficial de la tarifa.
     """
 
     insurer = models.ForeignKey(
@@ -224,14 +257,17 @@ class VehicleType(models.Model):
         on_delete=models.CASCADE,
         related_name="vehicle_types",
         verbose_name="Aseguradora",
-        help_text="Aseguradora a cuyo catálogo pertenece este tipo de vehículo.",
+        help_text=(
+            "Aseguradora a cuyo catálogo pertenece este tipo de vehículo."
+        ),
     )
     name = models.CharField(
         max_length=300,
         verbose_name="Nombre",
         help_text=(
-            "Nombre exacto del tipo de vehículo según la tarifa de la aseguradora. "
-            "Se muestra tal cual en el desplegable del formulario de presupuesto."
+            "Nombre exacto del tipo de vehículo según la tarifa de la "
+            "aseguradora. Se muestra tal cual en el desplegable del "
+            "formulario de presupuesto."
         ),
     )
     sort_order = models.PositiveSmallIntegerField(
@@ -242,7 +278,10 @@ class VehicleType(models.Model):
     is_active = models.BooleanField(
         default=True,
         verbose_name="Activo",
-        help_text="Indica si este tipo de vehículo está disponible en el formulario.",
+        help_text=(
+            "Indica si este tipo de vehículo está disponible en el "
+            "formulario."
+        ),
     )
 
     class Meta:
@@ -298,9 +337,14 @@ class InsurerTariff(models.Model):
         blank=True,
         default="",
         verbose_name="Notas",
-        help_text="Observaciones sobre esta versión de tarifa (ej: cambios respecto a la anterior).",
+        help_text=(
+            "Observaciones sobre esta versión de tarifa "
+            "(ej: cambios respecto a la anterior)."
+        ),
     )
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creación")
+    created_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Fecha de creación"
+    )
 
     class Meta:
         verbose_name = "Tarifa de aseguradora"
@@ -308,7 +352,9 @@ class InsurerTariff(models.Model):
         ordering = ["insurer__name", "-valid_from"]
 
     def __str__(self):
-        status = "activa" if self.valid_to is None else f"hasta {self.valid_to}"
+        status = (
+            "activa" if self.valid_to is None else f"hasta {self.valid_to}"
+        )
         return f"{self.insurer.name} — {self.year} ({status})"
 
 
@@ -336,23 +382,23 @@ class TariffConcept(models.Model):
 
     # System concept codes — referenced by the calculation engine.
     # Códigos de conceptos de sistema — referenciados por el motor de cálculo.
-    CODE_DEPARTURE       = "DEPARTURE"
-    CODE_SERVICE_LOCAL   = "SERVICE_LOCAL"
-    CODE_KM_NORMAL       = "KM_NORMAL"
-    CODE_KM_LONG         = "KM_LONG"
-    CODE_UNLOCK          = "UNLOCK"
-    CODE_RESCUE_HOUR     = "RESCUE_HOUR"
-    CODE_WAIT_HOUR       = "WAIT_HOUR"
-    CODE_WORKER_HOUR     = "WORKER_HOUR"
-    CODE_ASSISTANT_HOUR  = "ASSISTANT_HOUR"
-    CODE_CUSTODY_DAY     = "CUSTODY_DAY"
-    CODE_NYF_PERCENT     = "NYF_PERCENT"
-    CODE_LOADED_PERCENT  = "LOADED_PERCENT"
+    CODE_DEPARTURE = "DEPARTURE"
+    CODE_SERVICE_LOCAL = "SERVICE_LOCAL"
+    CODE_KM_NORMAL = "KM_NORMAL"
+    CODE_KM_LONG = "KM_LONG"
+    CODE_UNLOCK = "UNLOCK"
+    CODE_RESCUE_HOUR = "RESCUE_HOUR"
+    CODE_WAIT_HOUR = "WAIT_HOUR"
+    CODE_WORKER_HOUR = "WORKER_HOUR"
+    CODE_ASSISTANT_HOUR = "ASSISTANT_HOUR"
+    CODE_CUSTODY_DAY = "CUSTODY_DAY"
+    CODE_NYF_PERCENT = "NYF_PERCENT"
+    CODE_LOADED_PERCENT = "LOADED_PERCENT"
     # Toll breakdown codes — not TariffLine-backed; generated by the engine.
     # Códigos de desglose de peajes — no vinculados a TariffLine; los genera
     # el motor de cálculo dinámicamente.
-    CODE_TOLL_SEGMENT    = "TOLL_SEGMENT"
-    CODE_TOLL_MARKUP     = "TOLL_MARKUP"
+    CODE_TOLL_SEGMENT = "TOLL_SEGMENT"
+    CODE_TOLL_MARKUP = "TOLL_MARKUP"
 
     code = models.CharField(
         max_length=50,
@@ -376,22 +422,26 @@ class TariffConcept(models.Model):
         max_length=10,
         verbose_name="Unidad por defecto",
         help_text=(
-            "Tipo de unidad preseleccionado al crear una línea con este concepto. "
-            "El usuario puede cambiarlo."
+            "Tipo de unidad preseleccionado al crear una línea con este "
+            "concepto. El usuario puede cambiarlo."
         ),
     )
     # True = built-in system concept. Protected from edit/delete via UI.
-    # True = concepto de sistema incorporado. Protegido de edición/borrado en UI.
+    # True = concepto de sistema incorporado. Protegido de edición/borrado
+    # en UI.
     is_system = models.BooleanField(
         default=False,
         verbose_name="Concepto de sistema",
         help_text=(
-            "Si está activo, este concepto forma parte del catálogo base del motor "
-            "de cálculo y no puede editarse ni eliminarse desde el panel."
+            "Si está activo, este concepto forma parte del catálogo base "
+            "del motor de cálculo y no puede editarse ni eliminarse desde "
+            "el panel."
         ),
     )
-    # Null = global concept (system). FK = concept owned by a specific company.
-    # Null = concepto global (sistema). FK = concepto propio de una empresa concreta.
+    # Null = global concept (system). FK = concept owned by a specific
+    # company.
+    # Null = concepto global (sistema). FK = concepto propio de una empresa
+    # concreta.
     company = models.ForeignKey(
         "ivr_config.Company",
         on_delete=models.CASCADE,
@@ -432,17 +482,19 @@ class TariffLine(models.Model):
     and a price. Surcharge concepts (NYF, loaded vehicle) are stored as
     PERCENT unit lines with no vehicle_type — they apply to all vehicle types
     of the tariff. Optional fields (min_units, km_threshold) handle tariff
-    particularities such as minimum rescue hours or long-distance km thresholds.
+    particularities such as minimum rescue hours or long-distance km
+    thresholds.
 
     The concept field is a FK to TariffConcept. The calculation engine
     references concepts by their code (concept.code), not by PK.
     ---
-    Define un concepto facturable individual dentro de una tarifa de aseguradora.
-    Cada concepto tiene un tipo de unidad (fijo, por km, por hora, por día, porcentaje)
-    y un precio. Los conceptos de recargo (NYF, vehículo cargado) se almacenan como
-    líneas de tipo PERCENT sin vehicle_type — aplican a todos los tipos de vehículo
-    de la tarifa. Los campos opcionales (min_units, km_threshold) gestionan
-    particularidades como mínimos de horas de rescate o umbrales de largo recorrido.
+    Define un concepto facturable individual dentro de una tarifa de
+    aseguradora. Cada concepto tiene un tipo de unidad (fijo, por km, por
+    hora, por día, porcentaje) y un precio. Los conceptos de recargo (NYF,
+    vehículo cargado) se almacenan como líneas de tipo PERCENT sin
+    vehicle_type — aplican a todos los tipos de vehículo de la tarifa. Los
+    campos opcionales (min_units, km_threshold) gestionan particularidades
+    como mínimos de horas de rescate o umbrales de largo recorrido.
 
     El campo concept es un FK a TariffConcept. El motor de cálculo referencia
     los conceptos por su code (concept.code), no por PK.
@@ -450,11 +502,11 @@ class TariffLine(models.Model):
 
     # --- Unit types ---
     # --- Tipos de unidad ---
-    UNIT_FIXED    = "FIXED"
-    UNIT_PER_KM   = "PER_KM"
+    UNIT_FIXED = "FIXED"
+    UNIT_PER_KM = "PER_KM"
     UNIT_PER_HOUR = "PER_HOUR"
-    UNIT_PER_DAY  = "PER_DAY"
-    UNIT_PERCENT  = "PERCENT"
+    UNIT_PER_DAY = "PER_DAY"
+    UNIT_PERCENT = "PERCENT"
 
     UNIT_CHOICES = [
         (UNIT_FIXED,    "Importe fijo"),
@@ -471,8 +523,10 @@ class TariffLine(models.Model):
         verbose_name="Tarifa",
         help_text="Tarifa a la que pertenece esta linea de concepto.",
     )
-    # Null vehicle_type = concept applies to all vehicle types (surcharges, unlock, etc.)
-    # vehicle_type nulo = concepto aplica a todos los tipos de vehiculo (recargos, desbloqueo, etc.)
+    # Null vehicle_type = concept applies to all vehicle types (surcharges,
+    # unlock, etc.)
+    # vehicle_type nulo = concepto aplica a todos los tipos de vehiculo
+    # (recargos, desbloqueo, etc.)
     vehicle_type = models.ForeignKey(
         VehicleType,
         on_delete=models.CASCADE,
@@ -483,7 +537,8 @@ class TariffLine(models.Model):
         help_text=(
             "Tipo de vehiculo al que aplica esta linea. "
             "Dejar vacio para conceptos genericos de la tarifa "
-            "(recargos NYF, vehículo cargado, desbloqueo cuando es precio unico)."
+            "(recargos NYF, vehículo cargado, desbloqueo cuando es precio "
+            "unico)."
         ),
     )
     concept = models.ForeignKey(
@@ -493,14 +548,18 @@ class TariffLine(models.Model):
         verbose_name="Concepto",
         help_text=(
             "Tipo de concepto facturable que representa esta línea. "
-            "Selecciona un concepto del catálogo — sistema o personalizado de tu empresa."
+            "Selecciona un concepto del catálogo — sistema o personalizado "
+            "de tu empresa."
         ),
     )
     unit = models.CharField(
         max_length=10,
         choices=UNIT_CHOICES,
         verbose_name="Unidad",
-        help_text="Unidad de medida del concepto (fijo, por km, por hora, por dia, porcentaje).",
+        help_text=(
+            "Unidad de medida del concepto (fijo, por km, por hora, por dia, "
+            "porcentaje)."
+        ),
     )
     price = models.DecimalField(
         max_digits=10,
@@ -508,18 +567,22 @@ class TariffLine(models.Model):
         verbose_name="Precio",
         help_text=(
             "Importe unitario del concepto. Para PERCENT, es el porcentaje "
-            "(ej: 50 para un recargo del 50%). Para FIXED, es el importe fijo en euros."
+            "(ej: 50 para un recargo del 50%). Para FIXED, es el importe "
+            "fijo en euros."
         ),
     )
-    # For KM_LONG: threshold above which this km price applies instead of KM_NORMAL.
-    # Para KM_LONG: umbral a partir del cual aplica este precio en lugar de KM_NORMAL.
+    # For KM_LONG: threshold above which this km price applies instead of
+    # KM_NORMAL.
+    # Para KM_LONG: umbral a partir del cual aplica este precio en lugar de
+    # KM_NORMAL.
     km_threshold = models.PositiveIntegerField(
         null=True,
         blank=True,
         verbose_name="Umbral de km",
         help_text=(
-            "Solo para KM_LARGO. Kilometraje total (ida+vuelta) a partir del cual "
-            "aplica esta tarifa reducida. Habitualmente 200. Dejar vacio para KM_NORMAL."
+            "Solo para KM_LARGO. Kilometraje total (ida+vuelta) a partir del "
+            "cual aplica esta tarifa reducida. Habitualmente 200. Dejar "
+            "vacio para KM_NORMAL."
         ),
     )
     # Minimum billable units (e.g. rescue minimum 2 hours in some tariffs).
@@ -532,7 +595,8 @@ class TariffLine(models.Model):
         verbose_name="Minimo facturable",
         help_text=(
             "Minimo de unidades a facturar aunque el valor real sea inferior. "
-            "Ejemplo: hora de rescate con minimo 2 horas. Dejar vacio si no aplica."
+            "Ejemplo: hora de rescate con minimo 2 horas. Dejar vacio si no "
+            "aplica."
         ),
     )
     # Whether this concept requires prior authorization from the insurer.
@@ -541,15 +605,18 @@ class TariffLine(models.Model):
         default=False,
         verbose_name="Requiere autorizacion",
         help_text=(
-            "Si esta activo, este concepto debe haber sido autorizado previamente "
-            "por la central de la aseguradora antes de poder incluirse en el presupuesto."
+            "Si esta activo, este concepto debe haber sido autorizado "
+            "previamente por la central de la aseguradora antes de poder "
+            "incluirse en el presupuesto."
         ),
     )
 
     class Meta:
         verbose_name = "Linea de tarifa"
         verbose_name_plural = "Lineas de tarifa"
-        ordering = ["tariff", "vehicle_type__sort_order", "concept__sort_order"]
+        ordering = [
+            "tariff", "vehicle_type__sort_order", "concept__sort_order"
+        ]
 
     def __str__(self):
         vt = self.vehicle_type.name if self.vehicle_type else "General"
@@ -570,11 +637,12 @@ class Budget(models.Model):
     ---
     Representa un presupuesto generado por un operario de ASISTENCIA para una
     solicitud de servicio de una aseguradora. El campo total_amount es la unica
-    cifra visible para el operario. El desglose completo se almacena en registros
-    BudgetLine y es visible unicamente para ADMIN con fines de auditoria.
+    cifra visible para el operario. El desglose completo se almacena en
+    registros BudgetLine y es visible unicamente para ADMIN con fines de
+    auditoria.
     """
 
-    STATUS_DRAFT    = "DRAFT"
+    STATUS_DRAFT = "DRAFT"
     STATUS_ACCEPTED = "ACCEPTED"
     STATUS_REJECTED = "REJECTED"
 
@@ -596,16 +664,22 @@ class Budget(models.Model):
         on_delete=models.PROTECT,
         related_name="budgets",
         verbose_name="Aseguradora",
-        help_text="Aseguradora o cliente para el que se genera el presupuesto.",
+        help_text=(
+            "Aseguradora o cliente para el que se genera el presupuesto."
+        ),
     )
-    # Snapshot of the tariff used — preserved even if the tariff is later replaced.
-    # Snapshot de la tarifa usada — se conserva aunque la tarifa sea sustituida.
+    # Snapshot of the tariff used — preserved even if the tariff is later
+    # replaced.
+    # Snapshot de la tarifa usada — se conserva aunque la tarifa sea
+    # sustituida.
     tariff = models.ForeignKey(
         InsurerTariff,
         on_delete=models.PROTECT,
         related_name="budgets",
         verbose_name="Tarifa aplicada",
-        help_text="Version de tarifa que se uso para calcular este presupuesto.",
+        help_text=(
+            "Version de tarifa que se uso para calcular este presupuesto."
+        ),
     )
     operator = models.ForeignKey(
         CompanyUser,
@@ -627,12 +701,18 @@ class Budget(models.Model):
         on_delete=models.PROTECT,
         related_name="budgets",
         verbose_name="Tipo de vehiculo",
-        help_text="Tipo de vehiculo asistido segun la nomenclatura de la aseguradora.",
+        help_text=(
+            "Tipo de vehiculo asistido segun la nomenclatura de la "
+            "aseguradora."
+        ),
     )
     # Service base — selected from the insurer's active bases in the wizard.
-    # When the insurer has exactly one active base, it is assigned automatically.
-    # Base de servicio — seleccionada entre las bases activas de la aseguradora.
-    # Cuando la aseguradora tiene exactamente una base activa, se asigna automaticamente.
+    # When the insurer has exactly one active base, it is assigned
+    # automatically.
+    # Base de servicio — seleccionada entre las bases activas de la
+    # aseguradora.
+    # Cuando la aseguradora tiene exactamente una base activa, se asigna
+    # automaticamente.
     base = models.ForeignKey(
         "Base",
         on_delete=models.SET_NULL,
@@ -653,9 +733,9 @@ class Budget(models.Model):
         default=False,
         verbose_name="Pernocta",
         help_text=(
-            "Activo cuando el servicio se realiza en dos fases: recogida del vehiculo "
-            "el primer dia y traslado al destino al dia siguiente. Genera dos salidas "
-            "y dos tramos de kilometraje independientes."
+            "Activo cuando el servicio se realiza en dos fases: recogida del "
+            "vehiculo el primer dia y traslado al destino al dia siguiente. "
+            "Genera dos salidas y dos tramos de kilometraje independientes."
         ),
     )
     km_phase1 = models.DecimalField(
@@ -682,7 +762,10 @@ class Budget(models.Model):
         max_digits=8,
         decimal_places=2,
         verbose_name="Km totales",
-        help_text="Suma de km_phase1 + km_phase2. Calculado automaticamente al guardar.",
+        help_text=(
+            "Suma de km_phase1 + km_phase2. Calculado automaticamente al "
+            "guardar."
+        ),
     )
 
     # ---------------------------------------------------------------------------
@@ -698,7 +781,10 @@ class Budget(models.Model):
         blank=True,
         default="",
         verbose_name="Carretera",
-        help_text="Nombre de la via donde se encuentra el vehiculo (ej: A-45, N-331).",
+        help_text=(
+            "Nombre de la via donde se encuentra el vehiculo "
+            "(ej: A-45, N-331)."
+        ),
     )
     # Municipality or province of the destination, used to refine geocoding.
     # Municipio o provincia del destino, usado para refinar la geocodificacion.
@@ -709,8 +795,8 @@ class Budget(models.Model):
         verbose_name="Municipio / provincia destino",
         help_text=(
             "Municipio o provincia donde se encuentra el vehiculo averiado. "
-            "Opcional. Se usa para refinar la geocodificacion del punto kilometrico "
-            "en la llamada a la Routes API de Google."
+            "Opcional. Se usa para refinar la geocodificacion del punto "
+            "kilometrico en la llamada a la Routes API de Google."
         ),
     )
     # Kilometre marker on the road where the vehicle is located.
@@ -721,7 +807,10 @@ class Budget(models.Model):
         null=True,
         blank=True,
         verbose_name="Punto kilometrico",
-        help_text="Punto kilometrico de la via donde se encuentra el vehiculo averiado.",
+        help_text=(
+            "Punto kilometrico de la via donde se encuentra el vehiculo "
+            "averiado."
+        ),
     )
     # Distance in km calculated by the Routes API for this service.
     # Distancia en km calculada por la Routes API para este servicio.
@@ -747,17 +836,19 @@ class Budget(models.Model):
         blank=True,
         verbose_name="Coste de peajes",
         help_text=(
-            "Coste estimado de peajes en EUR. Alias de route_toll_budget_cost "
-            "mantenido por compatibilidad con presupuestos anteriores."
+            "Coste estimado de peajes en EUR. Alias de "
+            "route_toll_budget_cost mantenido por compatibilidad con "
+            "presupuestos anteriores."
         ),
     )
 
     # Budgeted toll cost: full tariff for each traversed TollSegment,
     # regardless of time of service (free-night windows are ignored).
     # This is the amount added to the budget total and the BudgetLine.
-    # Coste de peajes presupuestado: tarifa completa de cada tramo atravesado,
-    # ignorando los tramos gratuitos nocturnos. Es el importe que se suma
-    # al total del presupuesto y a la línea BudgetLine TOLL_COST.
+    # Coste de peajes presupuestado: tarifa completa de cada tramo
+    # atravesado, ignorando los tramos gratuitos nocturnos. Es el importe
+    # que se suma al total del presupuesto y a la línea BudgetLine
+    # TOLL_COST.
     route_toll_budget_cost = models.DecimalField(
         max_digits=8,
         decimal_places=2,
@@ -825,10 +916,11 @@ class Budget(models.Model):
         help_text=(
             "Lista ordenada de paradas del planificador multi-parada. "
             "Cada elemento: {label, address, lat, lng, is_base_return}. "
-            "is_base_return=True indica retorno intermedio a base (pernocta): "
-            "el motor divide los tramos en ese punto para calcular km_phase1 "
-            "y km_phase2 de forma independiente y activa is_overnight=True. "
-            "Null en presupuestos con modo MANUAL o ruta punto a punto legacy."
+            "is_base_return=True indica retorno intermedio a base "
+            "(pernocta): el motor divide los tramos en ese punto para "
+            "calcular km_phase1 y km_phase2 de forma independiente y activa "
+            "is_overnight=True. Null en presupuestos con modo MANUAL o ruta "
+            "punto a punto legacy."
         ),
     )
 
@@ -839,7 +931,8 @@ class Budget(models.Model):
     #
     # Polyline codificada Google de la ruta confirmada (o dos polylines
     # separadas por \x01 en servicios con pernocta). Se persiste para que
-    # calculate_budget() pueda cruzar con TollSegment sin nueva llamada API.
+    # calculate_budget() pueda cruzar con TollSegment sin nueva llamada
+    # API.
     # Null en modo MANUAL o presupuestos legacy sin polyline.
     encoded_polyline = models.TextField(
         null=True,
@@ -853,9 +946,10 @@ class Budget(models.Model):
     )
 
     # How km were calculated: MANUAL (operator input) or API (Routes API).
-    # Como se calcularon los km: MANUAL (entrada operario) o API (Routes API).
+    # Como se calcularon los km: MANUAL (entrada operario) o API
+    # (Routes API).
     ROUTE_MODE_MANUAL = "MANUAL"
-    ROUTE_MODE_API    = "API"
+    ROUTE_MODE_API = "API"
     ROUTE_MODE_CHOICES = [
         (ROUTE_MODE_MANUAL, "Manual"),
         (ROUTE_MODE_API,    "API Routes"),
@@ -867,19 +961,22 @@ class Budget(models.Model):
         verbose_name="Modo de calculo km",
         help_text=(
             "MANUAL: el operario introduce los km directamente. "
-            "API: distancia calculada automaticamente por la Routes API de Google."
+            "API: distancia calculada automaticamente por la Routes API de "
+            "Google."
         ),
     )
     # Time of service — used to build departureTime for toll calculation.
-    # Hora del servicio — usada para construir departureTime en el calculo de peajes.
+    # Hora del servicio — usada para construir departureTime en el calculo
+    # de peajes.
     service_time = models.TimeField(
         null=True,
         blank=True,
         verbose_name="Hora del servicio",
         help_text=(
-            "Hora en la que se realiza el servicio. Se combina con service_date "
-            "para construir el departureTime en la llamada a la Routes API, "
-            "necesario para el calculo de peajes con dependencia horaria."
+            "Hora en la que se realiza el servicio. Se combina con "
+            "service_date para construir el departureTime en la llamada a "
+            "la Routes API, necesario para el calculo de peajes con "
+            "dependencia horaria."
         ),
     )
 
@@ -887,12 +984,14 @@ class Budget(models.Model):
         default=False,
         verbose_name="Desbloqueo",
         help_text=(
-            "Indica si el servicio incluye desbloqueo o enganche con eslingas. "
-            "No aplica a remolques (se desenganchan/enganchan directamente en la quinta rueda)."
+            "Indica si el servicio incluye desbloqueo o enganche con "
+            "eslingas. No aplica a remolques (se desenganchan/enganchan "
+            "directamente en la quinta rueda)."
         ),
     )
-    # Marked manually by the operator when the service is performed at night.
-    # Independently of is_holiday, which is calculated automatically by the engine.
+    # Marked manually by the operator when the service is performed at
+    # night. Independently of is_holiday, which is calculated automatically
+    # by the engine.
     # Marcado manualmente por el operario cuando el servicio es nocturno.
     # Independiente de is_holiday, calculado automaticamente por el motor.
     is_night = models.BooleanField(
@@ -902,16 +1001,18 @@ class Budget(models.Model):
             "Indica si el servicio se realiza en horario nocturno. "
             "Marcado manualmente por el operario en el wizard. "
             "Independiente de is_holiday, que es calculado automaticamente "
-            "por el motor segun la fecha del servicio y el calendario laboral."
+            "por el motor segun la fecha del servicio y el calendario "
+            "laboral."
         ),
     )
     is_night_or_holiday = models.BooleanField(
         default=False,
         verbose_name="Nocturno / Festivo",
         help_text=(
-            "Calculado automaticamente por el motor: True si is_night OR is_holiday. "
-            "Activa el recargo NYF de la tarifa de la aseguradora. "
-            "No editar directamente — se recalcula en cada llamada a calculate_budget()."
+            "Calculado automaticamente por el motor: True si is_night OR "
+            "is_holiday. Activa el recargo NYF de la tarifa de la "
+            "aseguradora. No editar directamente — se recalcula en cada "
+            "llamada a calculate_budget()."
         ),
     )
     # Explicit manual override for is_night_or_holiday, set only from the
@@ -978,18 +1079,24 @@ class Budget(models.Model):
         verbose_name="Vehiculo cargado",
         help_text=(
             "Indica si el vehiculo asistido va cargado. "
-            "Activa el recargo por vehiculo cargado si la tarifa lo contempla."
+            "Activa el recargo por vehiculo cargado si la tarifa lo "
+            "contempla."
         ),
     )
-    # Optional service concepts — only shown in the form if the tariff includes them.
-    # Conceptos opcionales — solo aparecen en el formulario si la tarifa los contempla.
+    # Optional service concepts — only shown in the form if the tariff
+    # includes them.
+    # Conceptos opcionales — solo aparecen en el formulario si la tarifa los
+    # contempla.
     wait_hours = models.DecimalField(
         max_digits=5,
         decimal_places=2,
         null=True,
         blank=True,
         verbose_name="Horas de espera",
-        help_text="Numero de horas de espera facturables. Solo si la tarifa contempla este concepto.",
+        help_text=(
+            "Numero de horas de espera facturables. "
+            "Solo si la tarifa contempla este concepto."
+        ),
     )
     rescue_hours = models.DecimalField(
         max_digits=5,
@@ -997,7 +1104,10 @@ class Budget(models.Model):
         null=True,
         blank=True,
         verbose_name="Horas de rescate",
-        help_text="Numero de horas de rescate facturables. Solo si la tarifa contempla este concepto.",
+        help_text=(
+            "Numero de horas de rescate facturables. "
+            "Solo si la tarifa contempla este concepto."
+        ),
     )
     assistant_hours = models.DecimalField(
         max_digits=5,
@@ -1005,7 +1115,10 @@ class Budget(models.Model):
         null=True,
         blank=True,
         verbose_name="Horas de ayudante",
-        help_text="Numero de horas de ayudante facturables. Solo si la tarifa contempla este concepto.",
+        help_text=(
+            "Numero de horas de ayudante facturables. "
+            "Solo si la tarifa contempla este concepto."
+        ),
     )
     worker_hours = models.DecimalField(
         max_digits=5,
@@ -1013,19 +1126,28 @@ class Budget(models.Model):
         null=True,
         blank=True,
         verbose_name="Horas de mano de obra",
-        help_text="Numero de horas de mano de obra mecanica. Solo si la tarifa contempla este concepto.",
+        help_text=(
+            "Numero de horas de mano de obra mecanica. "
+            "Solo si la tarifa contempla este concepto."
+        ),
     )
     custody_days = models.PositiveSmallIntegerField(
         null=True,
         blank=True,
         verbose_name="Dias de custodia",
-        help_text="Numero de dias de custodia del vehiculo. Solo si la tarifa contempla este concepto.",
+        help_text=(
+            "Numero de dias de custodia del vehiculo. "
+            "Solo si la tarifa contempla este concepto."
+        ),
     )
     extra_notes = models.TextField(
         blank=True,
         default="",
         verbose_name="Notas adicionales",
-        help_text="Observaciones libres del operario sobre este presupuesto. Uso interno.",
+        help_text=(
+            "Observaciones libres del operario sobre este presupuesto. "
+            "Uso interno."
+        ),
     )
     # Whether IVA should be applied to the total amount.
     # Si el IVA debe aplicarse al importe total.
@@ -1033,20 +1155,25 @@ class Budget(models.Model):
         default=False,
         verbose_name="Aplicar IVA",
         help_text=(
-            "Indica si se debe aplicar el IVA vigente sobre el importe base del presupuesto. "
-            "El porcentaje de IVA se define como constante IVA_PERCENT en budgets/services.py."
+            "Indica si se debe aplicar el IVA vigente sobre el importe base "
+            "del presupuesto. El porcentaje de IVA se define como constante "
+            "IVA_PERCENT en budgets/services.py."
         ),
     )
     total_amount = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         verbose_name="Total presupuesto",
-        help_text="Importe total calculado por el motor. Es la unica cifra visible para el operario.",
+        help_text=(
+            "Importe total calculado por el motor. "
+            "Es la unica cifra visible para el operario."
+        ),
     )
     # Total amount including IVA. Null when apply_iva is False.
     # Persisted in DB so the result view does not need to recalculate.
     # Importe total con IVA incluido. Nulo cuando apply_iva es False.
-    # Persistido en BD para que la vista de resultado no necesite recalcular.
+    # Persistido en BD para que la vista de resultado no necesite
+    # recalcular.
     total_amount_with_iva = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -1056,7 +1183,8 @@ class Budget(models.Model):
         help_text=(
             "Importe total del presupuesto con IVA incluido. "
             "Solo se rellena cuando apply_iva es True. "
-            "El porcentaje de IVA aplicado se define en IVA_PERCENT en budgets/services.py."
+            "El porcentaje de IVA aplicado se define en IVA_PERCENT en "
+            "budgets/services.py."
         ),
     )
     status = models.CharField(
@@ -1078,9 +1206,11 @@ class Budget(models.Model):
 
     def save(self, *args, **kwargs):
         """
-        Overrides save to auto-calculate km_total from phase values before persisting.
+        Overrides save to auto-calculate km_total from phase values before
+        persisting.
         ---
-        Sobreescribe save para calcular km_total automaticamente desde las fases antes de persistir.
+        Sobreescribe save para calcular km_total automaticamente desde las
+        fases antes de persistir.
         """
         self.km_total = (self.km_phase1 or 0) + (self.km_phase2 or 0)
         super().save(*args, **kwargs)
@@ -1105,9 +1235,10 @@ class BudgetLine(models.Model):
     exclusively for ADMIN audit and verification of the calculation engine.
     ---
     Almacena el desglose individual del calculo de un Budget. Cada linea
-    representa un concepto aplicado con sus unidades, precio unitario y subtotal.
-    Estos registros nunca son visibles para el operario ASSISTANCE — existen
-    exclusivamente para la auditoria y verificacion ADMIN del motor de calculo.
+    representa un concepto aplicado con sus unidades, precio unitario y
+    subtotal. Estos registros nunca son visibles para el operario
+    ASSISTANCE — existen exclusivamente para la auditoria y verificacion
+    ADMIN del motor de calculo.
     """
 
     budget = models.ForeignKey(
@@ -1120,7 +1251,11 @@ class BudgetLine(models.Model):
     concept_code = models.CharField(
         max_length=50,
         verbose_name="Codigo de concepto",
-        help_text="Codigo interno del concepto aplicado (ej: DEPARTURE, KM_NORMAL, NYF_PERCENT). max_length=50 alineado con TariffConcept.code.",
+        help_text=(
+            "Codigo interno del concepto aplicado "
+            "(ej: DEPARTURE, KM_NORMAL, NYF_PERCENT). "
+            "max_length=50 alineado con TariffConcept.code."
+        ),
     )
     concept_label = models.CharField(
         max_length=200,
@@ -1131,7 +1266,10 @@ class BudgetLine(models.Model):
         max_digits=8,
         decimal_places=2,
         verbose_name="Unidades",
-        help_text="Cantidad de unidades aplicadas (ej: 2 salidas, 115 km, 1.5 horas).",
+        help_text=(
+            "Cantidad de unidades aplicadas "
+            "(ej: 2 salidas, 115 km, 1.5 horas)."
+        ),
     )
     unit_price = models.DecimalField(
         max_digits=10,
@@ -1146,12 +1284,14 @@ class BudgetLine(models.Model):
         help_text="Resultado de units x unit_price para esta linea.",
     )
     # Distinguishes surcharge lines (NYF, loaded) from base concept lines.
-    # Distingue las lineas de recargo (NYF, cargado) de las lineas de concepto base.
+    # Distingue las lineas de recargo (NYF, cargado) de las lineas de
+    # concepto base.
     is_surcharge = models.BooleanField(
         default=False,
         verbose_name="Es recargo",
         help_text=(
-            "Activo para lineas de recargo porcentual (nocturno/festivo, vehiculo cargado). "
+            "Activo para lineas de recargo porcentual "
+            "(nocturno/festivo, vehiculo cargado). "
             "Inactivo para conceptos base (salida, km, desbloqueo, etc.)."
         ),
     )
@@ -1188,13 +1328,15 @@ class BudgetLine(models.Model):
     def __str__(self):
         return (
             f"Presupuesto #{self.budget_id} — "
-            f"{self.concept_label} — {self.units} x {self.unit_price} = {self.subtotal}"
+            f"{self.concept_label} — {self.units} x {self.unit_price} "
+            f"= {self.subtotal}"
         )
 
 
 # ---------------------------------------------------------------------------
 # 7. SPECIAL RATE TARIFF — Night/holiday special rate table for an insurer.
-#    Tabla de tarifas especiales nocturno/festivo vinculada a una InsurerTariff.
+#    Tabla de tarifas especiales nocturno/festivo vinculada a una
+#    InsurerTariff.
 # ---------------------------------------------------------------------------
 
 class SpecialRateTariff(models.Model):
@@ -1208,9 +1350,9 @@ class SpecialRateTariff(models.Model):
     SpecialRateLine records instead of applying NIGHT_HOLIDAY_PERCENT.
     ---
     Almacena la tabla de tarifas especiales nocturno/festivo para una
-    aseguradora con precios diferenciados en lugar de recargo porcentual plano.
-    Vinculada a la InsurerTariff activa mediante OneToOneField para garantizar
-    exactamente una tabla especial por versión de tarifa.
+    aseguradora con precios diferenciados en lugar de recargo porcentual
+    plano. Vinculada a la InsurerTariff activa mediante OneToOneField para
+    garantizar exactamente una tabla especial por versión de tarifa.
     Cuando el flag insurer.special_night_holiday_tariff es True y existe un
     SpecialRateTariff para la tarifa activa, el motor usa los registros
     SpecialRateLine en lugar de aplicar NIGHT_HOLIDAY_PERCENT.
@@ -1230,7 +1372,9 @@ class SpecialRateTariff(models.Model):
         blank=True,
         default="",
         verbose_name="Notas internas",
-        help_text="Observaciones internas sobre esta tabla de tarifas especiales.",
+        help_text=(
+            "Observaciones internas sobre esta tabla de tarifas especiales."
+        ),
     )
     created_at = models.DateTimeField(
         auto_now_add=True,
@@ -1257,16 +1401,16 @@ class SpecialRateTariff(models.Model):
 class SpecialRateLine(models.Model):
     """
     Stores one price line within a SpecialRateTariff. Mirrors the structure
-    of TariffLine (concept, unit, price, vehicle_type) but applies exclusively
-    to night/holiday service conditions.
+    of TariffLine (concept, unit, price, vehicle_type) but applies
+    exclusively to night/holiday service conditions.
     When vehicle_type is None, the line applies to all vehicle types
     (generic concepts such as WAIT_HOUR, RESCUE_HOUR, UNLOCK).
     ---
     Almacena una línea de precio dentro de un SpecialRateTariff. Replica la
-    estructura de TariffLine (concepto, unidad, precio, tipo de vehículo) pero
-    aplica exclusivamente a condiciones de servicio nocturno/festivo.
-    Cuando vehicle_type es None, la línea aplica a todos los tipos de vehículo
-    (conceptos genéricos como WAIT_HOUR, RESCUE_HOUR, UNLOCK).
+    estructura de TariffLine (concepto, unidad, precio, tipo de vehículo)
+    pero aplica exclusivamente a condiciones de servicio nocturno/festivo.
+    Cuando vehicle_type es None, la línea aplica a todos los tipos de
+    vehículo (conceptos genéricos como WAIT_HOUR, RESCUE_HOUR, UNLOCK).
     """
 
     special_rate_tariff = models.ForeignKey(
@@ -1274,7 +1418,9 @@ class SpecialRateLine(models.Model):
         on_delete=models.CASCADE,
         related_name="lines",
         verbose_name="Tarifa especial",
-        help_text="Tabla de tarifas especiales a la que pertenece esta línea.",
+        help_text=(
+            "Tabla de tarifas especiales a la que pertenece esta línea."
+        ),
     )
     vehicle_type = models.ForeignKey(
         VehicleType,
@@ -1294,7 +1440,8 @@ class SpecialRateLine(models.Model):
         related_name="special_rate_lines",
         verbose_name="Concepto",
         help_text=(
-            "Tipo de concepto facturable que representa esta línea especial nocturno/festivo. "
+            "Tipo de concepto facturable que representa esta línea "
+            "especial nocturno/festivo. "
             "Referencia el mismo catálogo TariffConcept que TariffLine."
         ),
     )
@@ -1316,8 +1463,9 @@ class SpecialRateLine(models.Model):
         blank=True,
         verbose_name="Umbral km",
         help_text=(
-            "Umbral de km a partir del cual se aplica la tarifa de largo recorrido. "
-            "Solo relevante para conceptos KM_NORMAL que coexisten con KM_LONG."
+            "Umbral de km a partir del cual se aplica la tarifa de largo "
+            "recorrido. Solo relevante para conceptos KM_NORMAL que "
+            "coexisten con KM_LONG."
         ),
     )
     min_units = models.DecimalField(
@@ -1335,7 +1483,9 @@ class SpecialRateLine(models.Model):
     class Meta:
         verbose_name = "Línea de tarifa especial"
         verbose_name_plural = "Líneas de tarifa especial"
-        ordering = ["special_rate_tariff", "vehicle_type__sort_order", "concept"]
+        ordering = [
+            "special_rate_tariff", "vehicle_type__sort_order", "concept"
+        ]
 
     def __str__(self):
         vt = self.vehicle_type.name if self.vehicle_type else "Genérico"
@@ -1347,7 +1497,8 @@ class SpecialRateLine(models.Model):
 
 # ---------------------------------------------------------------------------
 # 9. BASE — Physical service base. Company-scoped, insurer-independent.
-#    Base fisica de servicio. Con ambito de empresa, independiente de aseguradora.
+#    Base fisica de servicio. Con ambito de empresa, independiente de
+#    aseguradora.
 # ---------------------------------------------------------------------------
 
 class Base(models.Model):
@@ -1374,12 +1525,12 @@ class Base(models.Model):
     aseguradoras con flags activa/inactiva individuales por aseguradora.
 
     Las coordenadas se usan como origen en la llamada a Routes API de Google
-    Maps. Si no se dan, se geocodifica el municipio y se persiste en la primera
-    llamada.
+    Maps. Si no se dan, se geocodifica el municipio y se persiste en la
+    primera llamada.
 
     El campo labor_calendar almacena los festivos de la localidad en formato
-    JSON, poblado por el comando sync_base_calendars. La funcion _is_holiday()
-    lo lee para determinar si una fecha activa el recargo NYF.
+    JSON, poblado por el comando sync_base_calendars. La funcion
+    _is_holiday() lo lee para determinar si una fecha activa el recargo NYF.
     """
 
     # Temporarily nullable to allow migration of existing rows.
@@ -1398,24 +1549,28 @@ class Base(models.Model):
     name = models.CharField(
         max_length=150,
         verbose_name="Nombre de la base",
-        help_text="Nombre identificativo de la base (ej: 'Sevilla', 'Granada Norte').",
+        help_text=(
+            "Nombre identificativo de la base "
+            "(ej: 'Sevilla', 'Granada Norte')."
+        ),
     )
     municipality = models.CharField(
         max_length=150,
         verbose_name="Municipio",
         help_text=(
             "Municipio donde se ubica la base. Se usa para geocodificar las "
-            "coordenadas y para consultar el calendario laboral local via API. "
-            "Debe coincidir con el nombre oficial del municipio en espanol "
-            "(ej: 'Sevilla', 'Granada', 'Jerez de la Frontera')."
+            "coordenadas y para consultar el calendario laboral local via "
+            "API. Debe coincidir con el nombre oficial del municipio en "
+            "espanol (ej: 'Sevilla', 'Granada', 'Jerez de la Frontera')."
         ),
     )
     # Optional precise coordinates. Populated by the geocoding pipeline
     # or entered manually from the panel. When null, municipality is used
     # as the geocoding source and the result is stored here on first call.
-    # Coordenadas precisas opcionales. Pobladas por el pipeline de geocodificacion
-    # o introducidas manualmente desde el panel. Cuando son nulas, municipality
-    # se usa como fuente de geocodificacion y el resultado se almacena aqui.
+    # Coordenadas precisas opcionales. Pobladas por el pipeline de
+    # geocodificacion o introducidas manualmente desde el panel. Cuando son
+    # nulas, municipality se usa como fuente de geocodificacion y el
+    # resultado se almacena aqui.
     latitude = models.DecimalField(
         max_digits=9,
         decimal_places=6,
@@ -1442,33 +1597,42 @@ class Base(models.Model):
     )
     # Public holiday calendar for this base locality in JSON format.
     # Populated by the management command sync_base_calendars.
-    # Format: list of ISO date strings, e.g. ["2026-01-01", "2026-01-06", ...]
-    # Calendario de festivos publicos de la localidad de la base en formato JSON.
+    # Format: list of ISO date strings, e.g.
+    # ["2026-01-01", "2026-01-06", ...]
+    # Calendario de festivos publicos de la localidad de la base en formato
+    # JSON.
     # Poblado por el comando de gestion sync_base_calendars.
-    # Formato: lista de cadenas de fecha ISO, ej: ["2026-01-01", "2026-01-06", ...]
+    # Formato: lista de cadenas de fecha ISO, ej:
+    # ["2026-01-01", "2026-01-06", ...]
     labor_calendar = models.TextField(
         blank=True,
         default="",
         verbose_name="Calendario laboral",
         help_text=(
-            "Festivos locales de la base en formato JSON (lista de fechas ISO). "
+            "Festivos locales de la base en formato JSON "
+            "(lista de fechas ISO). "
             "Poblado automaticamente por el comando sync_base_calendars. "
-            "Incluye festivos nacionales, autonomicos y locales del municipio."
+            "Incluye festivos nacionales, autonomicos y locales del "
+            "municipio."
         ),
     )
     # Calendar last synced timestamp — used to detect stale calendars.
-    # Timestamp de ultima sincronizacion del calendario — detecta calendarios obsoletos.
+    # Timestamp de ultima sincronizacion del calendario — detecta
+    # calendarios obsoletos.
     calendar_synced_at = models.DateTimeField(
         null=True,
         blank=True,
         verbose_name="Ultimo sync de calendario",
         help_text=(
             "Fecha y hora de la ultima sincronizacion del calendario laboral "
-            "con la API de calendariosnacionales.com. Null si nunca se ha sincronizado."
+            "con la API de calendariosnacionales.com. Null si nunca se ha "
+            "sincronizado."
         ),
     )
-    # Global active flag — when False, the base cannot be used by any insurer.
-    # Flag activa global — cuando es False, ninguna aseguradora puede usar la base.
+    # Global active flag — when False, the base cannot be used by any
+    # insurer.
+    # Flag activa global — cuando es False, ninguna aseguradora puede usar
+    # la base.
     is_active = models.BooleanField(
         default=True,
         verbose_name="Activa globalmente",
@@ -1478,8 +1642,12 @@ class Base(models.Model):
             "independientemente de su configuracion por aseguradora."
         ),
     )
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creacion")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="Fecha de modificacion")
+    created_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Fecha de creacion"
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True, verbose_name="Fecha de modificacion"
+    )
 
     class Meta:
         verbose_name = "Base"
@@ -1546,8 +1714,12 @@ class InsurerBase(models.Model):
             "flag sea True."
         ),
     )
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creacion")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="Fecha de modificacion")
+    created_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Fecha de creacion"
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True, verbose_name="Fecha de modificacion"
+    )
 
     class Meta:
         verbose_name = "Base de aseguradora"
@@ -1560,9 +1732,9 @@ class InsurerBase(models.Model):
         return f"{self.insurer.name} — {self.base.name} ({status})"
 
 
-
 # ---------------------------------------------------------------------------
-# 11. WORK ORDER ASSISTANCE — Service work order for the ASISTENCIA section.
+# 11. WORK ORDER ASSISTANCE — Service work order for the ASISTENCIA
+#     section.
 #     Orden de trabajo de asistencia. Entidad central del flujo H17.
 # ---------------------------------------------------------------------------
 
@@ -1595,10 +1767,10 @@ class WorkOrderAssistance(models.Model):
 
     # --- Status choices ---
     # --- Opciones de estado ---
-    STATUS_PENDING     = "PENDING"
+    STATUS_PENDING = "PENDING"
     STATUS_IN_PROGRESS = "IN_PROGRESS"
-    STATUS_COMPLETED   = "COMPLETED"
-    STATUS_INVOICED    = "INVOICED"
+    STATUS_COMPLETED = "COMPLETED"
+    STATUS_INVOICED = "INVOICED"
 
     STATUS_CHOICES = [
         (STATUS_PENDING,     "Pendiente"),
@@ -1613,7 +1785,9 @@ class WorkOrderAssistance(models.Model):
         on_delete=models.CASCADE,
         related_name="work_orders_assistance",
         verbose_name="Empresa",
-        help_text="Empresa cliente a la que pertenece esta orden de trabajo.",
+        help_text=(
+            "Empresa cliente a la que pertenece esta orden de trabajo."
+        ),
     )
     budget = models.ForeignKey(
         "Budget",
@@ -1624,7 +1798,8 @@ class WorkOrderAssistance(models.Model):
         verbose_name="Presupuesto de origen",
         help_text=(
             "Presupuesto aceptado del que se origina esta orden de trabajo. "
-            "Null cuando la orden se crea directamente sin presupuesto previo."
+            "Null cuando la orden se crea directamente sin presupuesto "
+            "previo."
         ),
     )
     insurer = models.ForeignKey(
@@ -1733,7 +1908,9 @@ class WorkOrderAssistance(models.Model):
         blank=True,
         default="",
         verbose_name="Máquina 1",
-        help_text="Identificador o matrícula de la primera máquina de servicio.",
+        help_text=(
+            "Identificador o matrícula de la primera máquina de servicio."
+        ),
     )
     machine_2 = models.CharField(
         max_length=100,
@@ -1854,7 +2031,9 @@ class WorkOrderAssistance(models.Model):
     base_pickup = models.BooleanField(
         default=False,
         verbose_name="Recogida en base",
-        help_text="Activo cuando el vehículo se recoge directamente en la base.",
+        help_text=(
+            "Activo cuando el vehículo se recoge directamente en la base."
+        ),
     )
     destination = models.CharField(
         max_length=300,
@@ -1871,9 +2050,11 @@ class WorkOrderAssistance(models.Model):
     # services, phase2_data holds the second column data independently.
     #
     # Cada fase corresponde a una columna de facturación del albarán físico.
-    # Para servicios de fase única (caso habitual), solo se informa phase1_data.
-    # Para pernoctas (is_overnight=True) o servicios con dos máquinas simultáneas,
-    # phase2_data recoge de forma independiente la segunda columna.
+    # Para servicios de fase única (caso habitual), solo se informa
+    # phase1_data.
+    # Para pernoctas (is_overnight=True) o servicios con dos máquinas
+    # simultáneas, phase2_data recoge de forma independiente la segunda
+    # columna.
     #
     # JSON schema (both phases share the same structure):
     # Esquema JSON (ambas fases comparten la misma estructura):
@@ -1903,8 +2084,9 @@ class WorkOrderAssistance(models.Model):
         default=dict,
         verbose_name="Datos fase 1",
         help_text=(
-            "JSON con todos los datos de servicio de la primera fase/máquina. "
-            "Siempre informado. Consultar docstring del modelo para el esquema."
+            "JSON con todos los datos de servicio de la primera "
+            "fase/máquina. Siempre informado. Consultar docstring del "
+            "modelo para el esquema."
         ),
     )
     phase2_data = models.JSONField(
@@ -1941,14 +2123,17 @@ class WorkOrderAssistance(models.Model):
         null=True,
         blank=True,
         verbose_name="Total servicio",
-        help_text="Importe total del servicio con IVA incluido (TOTAL SERVICIO).",
+        help_text=(
+            "Importe total del servicio con IVA incluido (TOTAL SERVICIO)."
+        ),
     )
 
     # ── Production report — PARTE DE PRODUCCIÓN ─────────────────────────────
     # Internal operational data filled by the operator on site.
     # Not customer-facing — used for internal cost and time control.
     # Datos internos de operación rellenados por el operario in situ.
-    # No visibles al cliente — usados para control interno de costes y tiempos.
+    # No visibles al cliente — usados para control interno de costes y
+    # tiempos.
     parte_operator_number = models.CharField(
         max_length=20,
         blank=True,
@@ -2048,7 +2233,10 @@ class WorkOrderAssistance(models.Model):
         blank=True,
         default="",
         verbose_name="Notas adicionales",
-        help_text="Observaciones internas ADMIN. No visibles en el albarán exportado.",
+        help_text=(
+            "Observaciones internas ADMIN. "
+            "No visibles en el albarán exportado."
+        ),
     )
     # ── TIREA service data — Datos del expediente TIREA ────────────────────
     # Provider code assigned by the insurer to Grúas Álvarez.
@@ -2058,7 +2246,10 @@ class WorkOrderAssistance(models.Model):
         blank=True,
         default="",
         verbose_name="Cód. proveedor",
-        help_text="Código de proveedor asignado por la aseguradora (ej: GP700101).",
+        help_text=(
+            "Código de proveedor asignado por la aseguradora "
+            "(ej: GP700101)."
+        ),
     )
     # Insurance policy number linked to the service request.
     # Número de póliza del asegurado vinculado a la solicitud de servicio.
@@ -2067,7 +2258,9 @@ class WorkOrderAssistance(models.Model):
         blank=True,
         default="",
         verbose_name="Nº póliza",
-        help_text="Número de póliza del asegurado facilitado por la aseguradora.",
+        help_text=(
+            "Número de póliza del asegurado facilitado por la aseguradora."
+        ),
     )
     # Full name of the insured person (driver or policy holder).
     # Nombre completo del asegurado (conductor o titular de la póliza).
@@ -2079,7 +2272,8 @@ class WorkOrderAssistance(models.Model):
         help_text="Nombre completo del asegurado o conductor del vehículo.",
     )
     # Datetime when the operator located the vehicle on site.
-    # Momento en que el operario localizó el vehículo en el lugar del servicio.
+    # Momento en que el operario localizó el vehículo en el lugar del
+    # servicio.
     arrival_time = models.DateTimeField(
         null=True,
         blank=True,
@@ -2100,7 +2294,9 @@ class WorkOrderAssistance(models.Model):
         null=True,
         blank=True,
         verbose_name="F. solicitud",
-        help_text="Fecha y hora de recepción de la solicitud de la aseguradora.",
+        help_text=(
+            "Fecha y hora de recepción de la solicitud de la aseguradora."
+        ),
     )
     # Datetime when the operator started travelling to the breakdown site.
     # Momento en que el operario inició el desplazamiento al punto de avería.
@@ -2118,42 +2314,60 @@ class WorkOrderAssistance(models.Model):
         verbose_name="F. finalizado",
         help_text="Fecha y hora de finalización completa del servicio.",
     )
-    # Elapsed time between request and vehicle location, as a formatted string.
-    # Tiempo transcurrido entre solicitud y localización del vehículo (cadena formateada).
+    # Elapsed time between request and vehicle location, as a formatted
+    # string.
+    # Tiempo transcurrido entre solicitud y localización del vehículo
+    # (cadena formateada).
     location_elapsed = models.CharField(
         max_length=20,
         blank=True,
         default="",
         verbose_name="Tiempo localizado",
-        help_text="Tiempo transcurrido hasta localizar el vehículo (ej: 01h53m).",
+        help_text=(
+            "Tiempo transcurrido hasta localizar el vehículo (ej: 01h53m)."
+        ),
     )
     # True when this is a follow-up second service for the same incident.
-    # True cuando este es un segundo servicio de seguimiento del mismo siniestro.
+    # True cuando este es un segundo servicio de seguimiento del mismo
+    # siniestro.
     second_service = models.BooleanField(
         default=False,
         verbose_name="Segundo servicio",
-        help_text="Indica si este servicio es un segundo servicio del mismo siniestro.",
+        help_text=(
+            "Indica si este servicio es un segundo servicio del mismo "
+            "siniestro."
+        ),
     )
-    # True when Grúas Álvarez manages the crane dispatch directly (no intermediary).
+    # True when Grúas Álvarez manages the crane dispatch directly
+    # (no intermediary).
     # True cuando Grúas Álvarez gestiona el envío de la grúa directamente.
     own_crane_management = models.BooleanField(
         default=False,
         verbose_name="Gestión propia grúa",
-        help_text="Indica si la gestión de la grúa es propia, sin intermediario.",
+        help_text=(
+            "Indica si la gestión de la grúa es propia, sin intermediario."
+        ),
     )
     # True when the service is related to a traffic accident.
     # True cuando el servicio está relacionado con un accidente de tráfico.
     is_accident = models.BooleanField(
         default=False,
         verbose_name="Accidente",
-        help_text="Indica si el servicio está relacionado con un accidente de tráfico.",
+        help_text=(
+            "Indica si el servicio está relacionado con un accidente de "
+            "tráfico."
+        ),
     )
-    # True when the service attempt failed (vehicle not found, no access, etc.).
+    # True when the service attempt failed (vehicle not found, no access,
+    # etc.).
     # True cuando el intento de servicio resultó fallido.
     is_failed = models.BooleanField(
         default=False,
         verbose_name="Fallido",
-        help_text="Indica si el servicio resultó fallido (vehículo no localizado, sin acceso, etc.).",
+        help_text=(
+            "Indica si el servicio resultó fallido "
+            "(vehículo no localizado, sin acceso, etc.)."
+        ),
     )
     # True when the service is billable to the insurer.
     # True cuando el servicio es facturable a la aseguradora.
@@ -2162,13 +2376,18 @@ class WorkOrderAssistance(models.Model):
         verbose_name="Facturable",
         help_text="Indica si el servicio es facturable. Por defecto True.",
     )
-    # Free-text comments from the insurer about coverage, authorisations, etc.
-    # Comentarios de texto libre de la aseguradora sobre cobertura, autorizaciones, etc.
+    # Free-text comments from the insurer about coverage, authorisations,
+    # etc.
+    # Comentarios de texto libre de la aseguradora sobre cobertura,
+    # autorizaciones, etc.
     insurer_comments = models.TextField(
         blank=True,
         default="",
         verbose_name="Comentarios aseguradora",
-        help_text="Comentarios de la aseguradora sobre cobertura, destino, autopista, etc.",
+        help_text=(
+            "Comentarios de la aseguradora sobre cobertura, destino, "
+            "autopista, etc."
+        ),
     )
     # Free-text observations from the company operating the service.
     # Observaciones de texto libre de la empresa que presta el servicio.
@@ -2176,7 +2395,9 @@ class WorkOrderAssistance(models.Model):
         blank=True,
         default="",
         verbose_name="Observaciones compañía",
-        help_text="Observaciones internas de la empresa prestadora del servicio.",
+        help_text=(
+            "Observaciones internas de la empresa prestadora del servicio."
+        ),
     )
 
     # ── TIREA vehicle data — Datos adicionales del vehículo ─────────────────
@@ -2205,7 +2426,9 @@ class WorkOrderAssistance(models.Model):
         blank=True,
         default="",
         verbose_name="Tipo vehículo",
-        help_text="Tipo de vehículo según TIREA (ej: Cabeza Tractora, Turismo).",
+        help_text=(
+            "Tipo de vehículo según TIREA (ej: Cabeza Tractora, Turismo)."
+        ),
     )
     # Free-text vehicle subtype label from TIREA.
     # Etiqueta de subtipo de vehículo en texto libre procedente de TIREA.
@@ -2250,7 +2473,9 @@ class WorkOrderAssistance(models.Model):
         null=True,
         blank=True,
         verbose_name="Ocupantes",
-        help_text="Número de ocupantes del vehículo en el momento del siniestro.",
+        help_text=(
+            "Número de ocupantes del vehículo en el momento del siniestro."
+        ),
     )
     # Free-text description of the breakdown as reported by the insured.
     # Descripción en texto libre de la avería según el asegurado.
@@ -2271,7 +2496,8 @@ class WorkOrderAssistance(models.Model):
         help_text="Código de avería asignado por la aseguradora.",
     )
     # True when the vehicle was repaired on site without towing.
-    # True cuando el vehículo fue reparado in situ sin necesidad de remolque.
+    # True cuando el vehículo fue reparado in situ sin necesidad de
+    # remolque.
     repair_on_site = models.BooleanField(
         default=False,
         verbose_name="Reparación in situ",
@@ -2324,7 +2550,9 @@ class WorkOrderAssistance(models.Model):
         blank=True,
         default="",
         verbose_name="Tipo entrega",
-        help_text="Tipo de punto de entrega (ej: In situ, Taller, Depósito).",
+        help_text=(
+            "Tipo de punto de entrega (ej: In situ, Taller, Depósito)."
+        ),
     )
     # Province of the delivery location.
     # Provincia del punto de entrega.
@@ -2367,7 +2595,8 @@ class WorkOrderAssistance(models.Model):
     # Motivo RIS — razón de la intervención en carretera.
     # Pendiente de completar con los valores reales del desplegable TIREA.
     RIS_MOTIVE_CHOICES = [
-        # Pendiente de completar con los valores reales del desplegable TIREA.
+        # Pendiente de completar con los valores reales del desplegable
+        # TIREA.
     ]
     ris_motive = models.CharField(
         max_length=50,
@@ -2375,7 +2604,9 @@ class WorkOrderAssistance(models.Model):
         blank=True,
         null=True,
         verbose_name="Motivo RIS",
-        help_text="Motivo de la intervención RIS según el desplegable de TIREA.",
+        help_text=(
+            "Motivo de la intervención RIS según el desplegable de TIREA."
+        ),
     )
     # Kilometres driven by the operator (chófer) as recorded in TIREA.
     # Kilómetros recorridos por el chófer según TIREA.
@@ -2399,8 +2630,12 @@ class WorkOrderAssistance(models.Model):
     )
 
     # ── Control ─────────────────────────────────────────────────────────────
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creación")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="Fecha de modificación")
+    created_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Fecha de creación"
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True, verbose_name="Fecha de modificación"
+    )
 
     class Meta:
         verbose_name = "Orden de trabajo (asistencia)"
@@ -2425,8 +2660,10 @@ class WorkOrderAssistance(models.Model):
             today = datetime.date.today()
             date_str = today.strftime("%Y%m%d")
             # Count today orders for this company to determine next ordinal.
-            # work_order_number starts with the 8-char date string (YYYYMMDD).
-            # Contamos las órdenes del día de esta empresa para el siguiente ordinal.
+            # work_order_number starts with the 8-char date string
+            # (YYYYMMDD).
+            # Contamos las órdenes del día de esta empresa para el siguiente
+            # ordinal.
             count = WorkOrderAssistance.objects.filter(
                 company=self.company,
                 work_order_number__startswith=date_str,
@@ -2459,8 +2696,9 @@ class WorkOrderAssistanceUnit(models.Model):
     ---
     Representa un albarán individual dentro de una orden de servicio
     WorkOrderAssistance. Cada vehículo enviado por Grúas Álvarez (grúa,
-    coche de taller, plataforma, etc.) genera su propia unidad independiente.
-    El número de albarán impreso se compone como: work_order_number-unit_number.
+    coche de taller, plataforma, etc.) genera su propia unidad
+    independiente. El número de albarán impreso se compone como:
+    work_order_number-unit_number.
 
     Una unidad puede ser a su vez un servicio diferido (is_overnight=True),
     en cuyo caso operator_2 y machine_2 representan el segundo tramo (base
@@ -2469,16 +2707,16 @@ class WorkOrderAssistanceUnit(models.Model):
 
     # --- Status choices ---
     # --- Opciones de estado ---
-    STATUS_PENDING            = "PENDING"
-    STATUS_NOTIFIED           = "NOTIFIED"
-    STATUS_DOWNLOADED         = "DOWNLOADED"
-    STATUS_IN_PROGRESS        = "IN_PROGRESS"
-    STATUS_COMPLETED          = "COMPLETED"
-    STATUS_CLOSED_UNSIGNED    = "CLOSED_UNSIGNED"
-    STATUS_SIGNED_RECEIVED    = "SIGNED_RECEIVED"
+    STATUS_PENDING = "PENDING"
+    STATUS_NOTIFIED = "NOTIFIED"
+    STATUS_DOWNLOADED = "DOWNLOADED"
+    STATUS_IN_PROGRESS = "IN_PROGRESS"
+    STATUS_COMPLETED = "COMPLETED"
+    STATUS_CLOSED_UNSIGNED = "CLOSED_UNSIGNED"
+    STATUS_SIGNED_RECEIVED = "SIGNED_RECEIVED"
     # H37 (S132): Twilio reported the notice as not delivered.
     # Twilio ha informado de que el aviso no se ha entregado.
-    STATUS_NOTIFY_FAILED      = "NOTIFY_FAILED"
+    STATUS_NOTIFY_FAILED = "NOTIFY_FAILED"
 
     STATUS_CHOICES = [
         (STATUS_PENDING,         "Pendiente"),
@@ -2497,7 +2735,9 @@ class WorkOrderAssistanceUnit(models.Model):
         on_delete=models.CASCADE,
         related_name="units",
         verbose_name="Orden de trabajo",
-        help_text="Orden de trabajo (expediente) a la que pertenece esta unidad.",
+        help_text=(
+            "Orden de trabajo (expediente) a la que pertenece esta unidad."
+        ),
     )
     # Operator assigned to phase 1 (pickup leg).
     # Operario asignado a la fase 1 (tramo de recogida).
@@ -2508,8 +2748,10 @@ class WorkOrderAssistanceUnit(models.Model):
         verbose_name="Chófer",
         help_text="Chófer asignado al primer tramo del servicio.",
     )
-    # Operator assigned to phase 2 (delivery leg). Only for deferred services.
-    # Operario asignado a la fase 2 (tramo de entrega). Solo en servicios diferidos.
+    # Operator assigned to phase 2 (delivery leg). Only for deferred
+    # services.
+    # Operario asignado a la fase 2 (tramo de entrega). Solo en servicios
+    # diferidos.
     operator_2 = models.ForeignKey(
         CompanyUser,
         on_delete=models.PROTECT,
@@ -2532,8 +2774,10 @@ class WorkOrderAssistanceUnit(models.Model):
     unit_number = models.PositiveSmallIntegerField(
         verbose_name="Nº unidad",
         help_text=(
-            "Ordinal de esta unidad dentro de la orden de trabajo (1, 2, 3...). "
-            "El albarán impreso se identifica como work_order_number-unit_number."
+            "Ordinal de esta unidad dentro de la orden de trabajo "
+            "(1, 2, 3...). "
+            "El albarán impreso se identifica como "
+            "work_order_number-unit_number."
         ),
     )
 
@@ -2545,7 +2789,10 @@ class WorkOrderAssistanceUnit(models.Model):
         blank=True,
         default="",
         verbose_name="Máquina",
-        help_text="Matrícula o identificador de la máquina asignada al primer tramo.",
+        help_text=(
+            "Matrícula o identificador de la máquina asignada al primer "
+            "tramo."
+        ),
     )
     # Machine or plate assigned to phase 2. Only for deferred services.
     # Máquina o matrícula asignada a la fase 2. Solo en servicios diferidos.
@@ -2556,25 +2803,30 @@ class WorkOrderAssistanceUnit(models.Model):
         verbose_name="Máquina (fase 2)",
         help_text=(
             "Matrícula o identificador de la máquina del segundo tramo. "
-            "Solo en servicios diferidos. Puede coincidir con la máquina del primer tramo."
+            "Solo en servicios diferidos. Puede coincidir con la máquina "
+            "del primer tramo."
         ),
     )
 
     # ── Service flags ───────────────────────────────────────────────────────
-    # True when this unit performs a deferred service (two legs on different days).
-    # True cuando esta unidad realiza un servicio diferido (dos tramos en días distintos).
+    # True when this unit performs a deferred service (two legs on different
+    # days).
+    # True cuando esta unidad realiza un servicio diferido (dos tramos en
+    # días distintos).
     is_overnight = models.BooleanField(
         default=False,
         verbose_name="Pernocta",
         help_text=(
-            "Indica si esta unidad realiza un servicio diferido: recoge el vehículo "
-            "un día y lo traslada a destino en otro momento. "
-            "Cuando es True, operator_2, machine_2 y phase2_km deben estar informados."
+            "Indica si esta unidad realiza un servicio diferido: recoge el "
+            "vehículo un día y lo traslada a destino en otro momento. "
+            "Cuando es True, operator_2, machine_2 y phase2_km deben estar "
+            "informados."
         ),
     )
 
     # ── Kilometre data ──────────────────────────────────────────────────────
-    # Kilometres for phase 1 (base to pickup and back, or base to destination).
+    # Kilometres for phase 1 (base to pickup and back, or base to
+    # destination).
     # Kilómetros de la fase 1 (base a recogida y vuelta, o base a destino).
     phase1_km = models.DecimalField(
         max_digits=8,
@@ -2631,14 +2883,17 @@ class WorkOrderAssistanceUnit(models.Model):
     )
 
     # ── Synchronisation ─────────────────────────────────────────────────────
-    # Timestamp of last successful sync from the Android app (null = not synced yet).
-    # Momento de la última sincronización exitosa desde la app Android (null = sin sync).
+    # Timestamp of last successful sync from the Android app
+    # (null = not synced yet).
+    # Momento de la última sincronización exitosa desde la app Android
+    # (null = sin sync).
     synced_at = models.DateTimeField(
         null=True,
         blank=True,
         verbose_name="Sincronizado",
         help_text=(
-            "Fecha y hora de la última sincronización exitosa desde la app Android. "
+            "Fecha y hora de la última sincronización exitosa desde la app "
+            "Android. "
             "Null indica que la unidad aún no ha sido sincronizada."
         ),
     )
@@ -2656,14 +2911,17 @@ class WorkOrderAssistanceUnit(models.Model):
             "DOWNLOADED: operario ha abierto el albarán en la app. "
             "IN_PROGRESS: operario en servicio activo. "
             "COMPLETED: albarán recibido en plataforma con firma. "
-            "CLOSED_UNSIGNED: albarán recibido sin firma — pendiente de gestión. "
+            "CLOSED_UNSIGNED: albarán recibido sin firma — pendiente de "
+            "gestión. "
             "SIGNED_RECEIVED: supervisor confirma firma recibida del cliente."
         ),
     )
 
     # ── Traceability timestamps — Marcas de tiempo de trazabilidad ───────────
-    # Datetime when the WhatsApp session renewal template was sent to the operator.
-    # Momento en que se envió el template de renovación de sesión WhatsApp al operario.
+    # Datetime when the WhatsApp session renewal template was sent to the
+    # operator.
+    # Momento en que se envió el template de renovación de sesión WhatsApp
+    # al operario.
     notified_at = models.DateTimeField(
         null=True,
         blank=True,
@@ -2691,15 +2949,18 @@ class WorkOrderAssistanceUnit(models.Model):
         verbose_name="Error del aviso",
         help_text="Motivo por el que el último aviso no se entregó.",
     )
-    # Datetime when the operator opened the albarán in the Android app or panel.
-    # Momento en que el operario abrió el albarán en la app Android o el panel.
+    # Datetime when the operator opened the albarán in the Android app or
+    # panel.
+    # Momento en que el operario abrió el albarán en la app Android o el
+    # panel.
     downloaded_at = models.DateTimeField(
         null=True,
         blank=True,
         verbose_name="Descargado en",
         help_text=(
             "Fecha y hora en que el operario descargó o abrió el albarán. "
-            "Registrado por la app Android al cargar el albarán por primera vez."
+            "Registrado por la app Android al cargar el albarán por primera "
+            "vez."
         ),
     )
     # Datetime when the operator started the active service leg.
@@ -2709,7 +2970,8 @@ class WorkOrderAssistanceUnit(models.Model):
         blank=True,
         verbose_name="Iniciado en",
         help_text=(
-            "Fecha y hora en que el operario marcó inicio del servicio en la app Android."
+            "Fecha y hora en que el operario marcó inicio del servicio en "
+            "la app Android."
         ),
     )
     # Datetime when the signed albarán was received by the platform.
@@ -2719,7 +2981,8 @@ class WorkOrderAssistanceUnit(models.Model):
         blank=True,
         verbose_name="Completado en",
         help_text=(
-            "Fecha y hora en que la plataforma recibió el albarán firmado desde la app Android."
+            "Fecha y hora en que la plataforma recibió el albarán firmado "
+            "desde la app Android."
         ),
     )
     # Datetime when the unsigned albarán was closed by the operator.
@@ -2729,7 +2992,8 @@ class WorkOrderAssistanceUnit(models.Model):
         blank=True,
         verbose_name="Cerrado en",
         help_text=(
-            "Fecha y hora en que el operario cerró el albarán sin firma del cliente."
+            "Fecha y hora en que el operario cerró el albarán sin firma del "
+            "cliente."
         ),
     )
     # Mandatory justification when closing without signature.
@@ -2739,19 +3003,24 @@ class WorkOrderAssistanceUnit(models.Model):
         default="",
         verbose_name="Motivo cierre sin firma",
         help_text=(
-            "Justificación obligatoria cuando el albarán se cierra sin firma del cliente. "
+            "Justificación obligatoria cuando el albarán se cierra sin "
+            "firma del cliente. "
             "Vacío en albaranes cerrados con firma."
         ),
     )
-    # Datetime when the supervisor confirmed the signed copy was received from the client.
-    # Momento en que el supervisor confirmó la recepción de la copia firmada del cliente.
+    # Datetime when the supervisor confirmed the signed copy was received
+    # from the client.
+    # Momento en que el supervisor confirmó la recepción de la copia firmada
+    # del cliente.
     signed_received_at = models.DateTimeField(
         null=True,
         blank=True,
         verbose_name="Firma recibida en",
         help_text=(
-            "Fecha y hora en que el supervisor confirmó la recepción de la firma del cliente. "
-            "Solo aplica a albaranes cerrados sin firma (CLOSED_UNSIGNED → SIGNED_RECEIVED)."
+            "Fecha y hora en que el supervisor confirmó la recepción de la "
+            "firma del cliente. "
+            "Solo aplica a albaranes cerrados sin firma "
+            "(CLOSED_UNSIGNED → SIGNED_RECEIVED)."
         ),
     )
     # Supervisor who confirmed the signed copy reception.
@@ -2769,8 +3038,12 @@ class WorkOrderAssistanceUnit(models.Model):
         ),
     )
 
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creación")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="Fecha de modificación")
+    created_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Fecha de creación"
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True, verbose_name="Fecha de modificación"
+    )
 
     class Meta:
         verbose_name = "Unidad de orden de trabajo (asistencia)"
@@ -2799,10 +3072,10 @@ class WorkOrderAssistanceSignature(models.Model):
     was captured without network coverage and synced later.
     ---
     Almacena la firma digital capturada del cliente en el dispositivo Android
-    del operario en el momento de la entrega del servicio. Una firma por unidad.
-    El campo signature_data almacena el PNG en base64 producido por el canvas
-    de AlbaranApp. El flag signed_offline indica que la firma fue capturada
-    sin cobertura y sincronizada posteriormente.
+    del operario en el momento de la entrega del servicio. Una firma por
+    unidad. El campo signature_data almacena el PNG en base64 producido por
+    el canvas de AlbaranApp. El flag signed_offline indica que la firma fue
+    capturada sin cobertura y sincronizada posteriormente.
     """
 
     # One-to-one relation: each unit has at most one client signature.
@@ -2814,7 +3087,8 @@ class WorkOrderAssistanceSignature(models.Model):
         verbose_name="Unidad",
         help_text="Unidad de albarán a la que pertenece esta firma.",
     )
-    # Base64-encoded PNG of the client signature captured on the Android canvas.
+    # Base64-encoded PNG of the client signature captured on the Android
+    # canvas.
     # PNG en base64 de la firma del cliente capturada en el canvas Android.
     signature_data = models.TextField(
         verbose_name="Firma (base64)",
@@ -2877,7 +3151,8 @@ class WorkOrderAssistanceIncidence(models.Model):
     """
 
     # One-to-one relation: each unit has at most one incidence record.
-    # Relación uno a uno: cada unidad tiene como máximo un registro de incidencia.
+    # Relación uno a uno: cada unidad tiene como máximo un registro de
+    # incidencia.
     unit = models.OneToOneField(
         WorkOrderAssistanceUnit,
         on_delete=models.CASCADE,
@@ -2992,7 +3267,8 @@ class WorkOrderAssistanceIncidence(models.Model):
 # ---------------------------------------------------------------------------
 # 21. NIGHT SCHEDULE — Configurable night-time window per company, assignable
 #     to individual insurers.
-#     Franja horaria nocturna configurable por empresa, asignable por aseguradora.
+#     Franja horaria nocturna configurable por empresa, asignable por
+#     aseguradora.
 # ---------------------------------------------------------------------------
 
 class NightSchedule(models.Model):
@@ -3034,8 +3310,10 @@ class NightSchedule(models.Model):
             "(ej: \"Nocturno estándar 18h–06h\", \"Nocturno amplio 20h–08h\")."
         ),
     )
-    # Start of the night window. Services at or after this time are night services.
-    # Inicio de la franja nocturna. Servicios a esta hora o después son nocturnos.
+    # Start of the night window. Services at or after this time are night
+    # services.
+    # Inicio de la franja nocturna. Servicios a esta hora o después son
+    # nocturnos.
     night_start = models.TimeField(
         verbose_name="Inicio franja nocturna",
         help_text=(
@@ -3061,8 +3339,9 @@ class NightSchedule(models.Model):
         default=False,
         verbose_name="Horario por defecto",
         help_text=(
-            "Si está activo, este horario se aplica a las aseguradoras de la empresa "
-            "que no tengan horario nocturno explícitamente asignado. "
+            "Si está activo, este horario se aplica a las aseguradoras de "
+            "la empresa que no tengan horario nocturno explícitamente "
+            "asignado. "
             "Solo puede haber un horario por defecto activo por empresa."
         ),
     )
@@ -3071,7 +3350,8 @@ class NightSchedule(models.Model):
         verbose_name="Activo",
         help_text=(
             "Desactivar para retirar el horario del motor sin eliminarlo. "
-            "Un horario inactivo no se usa aunque sea el asignado de una aseguradora."
+            "Un horario inactivo no se usa aunque sea el asignado de una "
+            "aseguradora."
         ),
     )
     created_at = models.DateTimeField(
@@ -3094,9 +3374,10 @@ class NightSchedule(models.Model):
         with is_default=True, all other NightSchedule records of the same
         company are set to is_default=False before persisting.
         ---
-        Impone la restricción de horario único por defecto: cuando esta instancia
-        se guarda con is_default=True, todos los demás registros NightSchedule
-        de la misma empresa se ponen a is_default=False antes de persistir.
+        Impone la restricción de horario único por defecto: cuando esta
+        instancia se guarda con is_default=True, todos los demás registros
+        NightSchedule de la misma empresa se ponen a is_default=False antes
+        de persistir.
         """
         if self.is_default:
             NightSchedule.objects.filter(
@@ -3110,7 +3391,8 @@ class NightSchedule(models.Model):
         active_marker = "" if self.is_active else " [inactivo]"
         return (
             f"{self.company.name} — {self.name} "
-            f"({self.night_start.strftime('%H:%M')}–{self.night_end.strftime('%H:%M')})"
+            f"({self.night_start.strftime('%H:%M')}–"
+            f"{self.night_end.strftime('%H:%M')})"
             f"{default_marker}{active_marker}"
         )
 
@@ -3253,7 +3535,8 @@ class TollSegment(models.Model):
         decimal_places=2,
         verbose_name="Precio pesados 1 (€)",
         help_text=(
-            "Tarifa para camiones/autocares de 2-3 ejes (categorías 2.1 y 2.2)."
+            "Tarifa para camiones/autocares de 2-3 ejes "
+            "(categorías 2.1 y 2.2)."
         ),
     )
 
@@ -3359,8 +3642,8 @@ class TollSegment(models.Model):
     # The engine uses these when the service date falls within the high-season
     # range defined by season_high_start / season_high_end.
     # Tarifas de temporada alta — null cuando no hay distinción estacional.
-    # El motor las usa cuando la fecha del servicio cae en el rango de temporada
-    # alta definido por season_high_start / season_high_end.
+    # El motor las usa cuando la fecha del servicio cae en el rango de
+    # temporada alta definido por season_high_start / season_high_end.
     price_light_high = models.DecimalField(
         max_digits=8,
         decimal_places=2,
@@ -3368,8 +3651,8 @@ class TollSegment(models.Model):
         blank=True,
         verbose_name="Precio ligeros temporada alta (€)",
         help_text=(
-            "Tarifa para turismos, motos y furgonetas ligeras en temporada alta. "
-            "Dejar vacío si no hay distinción estacional."
+            "Tarifa para turismos, motos y furgonetas ligeras en temporada "
+            "alta. Dejar vacío si no hay distinción estacional."
         ),
     )
     price_heavy_1_high = models.DecimalField(
@@ -3468,13 +3751,11 @@ class TollSegment(models.Model):
 
 # ---------------------------------------------------------------------------
 # 17. TARIFF PDF IMPORT — Tracks a tariff-PDF upload, its Gemini extraction
-#     result, the copy Insurer created for comparison, and the processing status.
+#     result, the copy Insurer created for comparison, and the processing
+#     status.
 #     Registra la subida de un PDF de tarifa, el resultado de la extracción
 #     de Gemini, la Insurer copia creada para comparación y el estado.
 # ---------------------------------------------------------------------------
-
-import os as _os
-
 
 def _tariff_pdf_upload_to(instance, filename):
     """
@@ -3554,7 +3835,8 @@ class TariffPdfImport(models.Model):
     )
 
     # Raw JSON extraction result from Gemini (stored for audit/debug).
-    # Resultado JSON bruto de la extracción de Gemini (guardado para auditoría/depuración).
+    # Resultado JSON bruto de la extracción de Gemini (guardado para
+    # auditoría/depuración).
     extraction_raw = models.JSONField(
         null=True,
         blank=True,
@@ -3591,10 +3873,3 @@ class TariffPdfImport(models.Model):
             f"PDF import #{self.pk} — {self.insurer.name} "
             f"[{self.get_status_display()}]"
         )
-
-
-
-
-
-
-
