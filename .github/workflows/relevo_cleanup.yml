@@ -1,0 +1,33 @@
+# .github/workflows/relevo_cleanup.yml
+# S130: vacía la release privada "relevo-imagenes" (páginas que publica
+# file_fetch.yml en modo gcs_image / gcs_unrar). Las sesiones del modelo
+# no pueden borrar adjuntos de releases con su propio acceso; el
+# GITHUB_TOKEN del workflow sí. Se lanza al cierre de sesión
+# (nfs-enterprisebot-pcs, PASO 7bis).
+name: Vaciar la release relevo-imagenes
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Borrar todos los adjuntos de relevo-imagenes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -e
+          ids=$(gh api "repos/$REPO/releases/tags/relevo-imagenes" -q '.assets[].id' || true)
+          count=0
+          for id in $ids; do
+            gh api -X DELETE "repos/$REPO/releases/assets/$id"
+            count=$((count+1))
+          done
+          left=$(gh api "repos/$REPO/releases/tags/relevo-imagenes" -q '.assets|length' || echo 0)
+          echo "Adjuntos borrados: $count. Quedan: $left" | tee -a "$GITHUB_STEP_SUMMARY"
+          test "$left" = "0"
