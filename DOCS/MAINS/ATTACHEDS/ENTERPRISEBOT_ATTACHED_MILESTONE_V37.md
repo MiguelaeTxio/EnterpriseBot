@@ -126,6 +126,50 @@ esa decisión en la siguiente sesión."*
    (`android-build`/`android-deploy`), instalar el APK en cada tablet
    y actualizarlo en cada cambio.
 
+### 4.1. Decisión de Miguel Ángel (S132): app nativa Android en Kotlin
+
+Primero eligió la web "si se puede", pero solo si podía hacerlo todo.
+En la misma conversación se le explicó que una página web no puede
+enviar la posición de forma continua. Solo la envía mientras está
+abierta en primer plano. Con la pantalla apagada puede dejar de
+hacerlo, y ningún navegador permite seguir la ubicación con la página
+cerrada. Su decisión final, verbatim:
+
+*"El hecho de que no podamos enviar la posición de continuo me hace
+decantarme por Kotlin de primera. Esta aplicación tiene que ser para
+que trabaje en segundo plano y abierta de principio. Como voy a ser yo
+quien instalará [...] sobre todo la primera tablet, la instalaré yo
+directamente y las actualizaciones las haré yo, tanto en esa como en
+las demás tablets que se hagan una vez que comprobemos que funciona.
+Por tanto, vamos a ir a Kotlin y las primeras pruebas las vamos a
+hacer desde mi propio móvil [...] Vamos a Kotlin directamente."*
+
+Requisitos que fijó al decidir:
+
+- La app es solo para tablets Android. Que no funcione en iPhone no
+  afecta, en sus palabras: *"da igual. No nos afecta"*.
+- Trabaja en segundo plano y queda abierta desde el principio.
+- Envía la posición de la tablet de forma continua. El objetivo, en
+  sus palabras: *"saber en todo momento dónde está el operario, el
+  vehículo, en qué carreteras, tener una situación en el mapa de los
+  servicios"*.
+- Miguel Ángel instala la primera tablet y hace él las
+  actualizaciones de todas. Las primeras pruebas se hacen en su
+  propio móvil.
+- Más adelante podría hacerse también la versión web; no entra en
+  este hito por ahora.
+
+### 4.2. Aviso por WhatsApp: plantilla específica de asistencia (S132)
+
+`send_operator_albaran_notification()` usa hoy `chat_session_renewal`,
+la plantilla genérica de renovación de sesión que comparten el chat y
+las circulares. El operario recibe un mensaje sin mención al servicio,
+y el enlace al albarán solo le llega cuando pulsa el botón de
+respuesta. Miguel Ángel, S132: *"si es una genérica para retomar o
+reabrir una conversación, lo suyo es que hagamos una específica de lo
+que tenemos para que el operario, cuando reciba el mensaje, sepa
+exactamente a lo que se refiere."*
+
 ## 5. Hoja de Ruta para la Siguiente Sesión (S132) -- concertada con Miguel Ángel al cierre de S131
 
 Se hace en este orden.
@@ -135,7 +179,15 @@ Se hace en este orden.
    construir según la que elija. **Cierre:** la decisión anotada en
    este anexo, con sus palabras, y el punto 4 de esta hoja de ruta
    redactado según ella.
-2. **Prueba completa en producción con Allianz.** Con un presupuesto
+   **Hecho en S132:** Kotlin, ver 4.1.
+2. **Prueba completa en producción con Allianz.** Primero, la
+   plantilla específica de aviso de asistencia (ver 4.2), de categoría
+   UTILITY. Lleva los datos del servicio y el enlace al albarán, y
+   sustituye a `chat_session_renewal` en
+   `send_operator_albaran_notification()`. Se crea por Comando S, con
+   el mismo patrón que `create_machine_service_whatsapp_template`.
+   Esta prueba valida el servidor con el albarán web que ya existe; la
+   app Kotlin llega en el punto 4. Con un presupuesto
    real de Allianz aceptado: crear la orden desde el botón del
    resultado, una unidad con operario y grúa reales, aviso por
    WhatsApp al operario, abrir el albarán desde el enlace, rellenarlo,
@@ -154,7 +206,20 @@ Se hace en este orden.
    plantilla registrada en BD con su Content SID y, una vez aprobada
    por Meta, el envío real al teléfono de prueba que indique Miguel
    Ángel con el albarán firmado del punto 2.
-4. **Modo sin conexión según la decisión del punto 1.** **Cierre:** un
-   albarán rellenado y firmado con el dispositivo en modo avión llega
-   al servidor al recuperar la conexión, con `signed_offline=True` en
-   su firma y `synced_at` relleno en la unidad (consulta a BD).
+4. **App nativa Android en Kotlin para las tablets (decisión del punto
+   1, ver 4.1).** La app necesita:
+   - Repositorio propio en flujo NewFlow Android.
+   - Compilación por GitHub Actions (`android-build`/`android-deploy`).
+   - Albarán rellenable y firmable sin conexión, que se envía solo al
+     volver la cobertura.
+   - Funcionamiento en segundo plano, abierta desde el principio, con
+     envío continuo de la posición de la tablet al servidor.
+   - Situación de los servicios en un mapa del panel.
+
+   Miguel Ángel instala y actualiza la app él mismo, y las primeras
+   pruebas se hacen en su propio móvil. **Cierre:** dos consultas a BD.
+   - Un albarán rellenado y firmado en modo avión llega al servidor al
+     recuperar la conexión, con `signed_offline=True` en su firma y
+     `synced_at` relleno en la unidad.
+   - Las posiciones enviadas por el móvil de Miguel Ángel llegan
+     registradas con la pantalla apagada.
