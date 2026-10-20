@@ -170,6 +170,53 @@ reabrir una conversación, lo suyo es que hagamos una específica de lo
 que tenemos para que el operario, cuando reciba el mensaje, sepa
 exactamente a lo que se refiere."*
 
+### 4.3. Sección "Servicios" del panel (S132)
+
+Miguel Ángel, S132, verbatim (dictado, solo limpiado de muletillas):
+*"vamos a crear una entrada nueva. Tenemos una que es la que enlaza con
+una prueba que hicimos, el tema de Albarán. Vamos a crear una o
+modificar esa [...] que se va a llamar ahora servicios. En servicios
+vamos a utilizar el mismo formato que estamos utilizando en
+documentación. Esos servicios de asistencia [...] los va a poder
+visionar supervisores y administradores. Supervisores de asistencia.
+Vamos a crear el supervisor de asistencia y esa página la van a poder
+ver única y exclusivamente administradores y supervisores de
+asistencia. Vamos a navegar con el tema de pestañas. Y ahí tendremos
+que tener la gestión de los albaranes, porque los albaranes no van a
+entrar a partir de los presupuestos aceptados, que podrán hacerlo,
+sino van a entrar a través de una imagen sacada del propio TIREA. Es
+decir, el supervisor sacará una foto del albarán, la sube y a partir
+de ahí es cuando empezamos a generar el albarán. Tenemos que tener una
+parte de mapa para controlar los servicios que hay, los conductores
+que están asignados, los camiones, los vehículos que hay libres,
+furgonetas, remolcadores, en fin, los vehículos que están asignados a
+la asistencia, bases, etcétera. Lo que es el control gráfico del mapa
+con los servicios y vehículos y operarios. Y luego tendremos la parte
+para gestionar en ese mismo mapa una parte, tal como hicimos también
+con el laboratorio de análisis, con ampliar el mapa o ampliar [...] la
+pestaña de control. Es que no sé cómo hacerlo. Como no sé todavía
+tampoco todas las cosas que hay que controlar. A mí Pepe me pasó un
+PDF."*
+
+Lo que fija:
+
+- La entrada de menú "Albarán (demo)" (`budgets:albaran_demo`, sección
+  de Asistencia del menú) pasa a llamarse **Servicios**.
+- Rol nuevo **Supervisor de asistencia**. La página la ven única y
+  exclusivamente los administradores y los supervisores de asistencia.
+- Mismo formato que Documentación, con navegación por pestañas.
+- **Gestión de albaranes**: la vía principal de entrada es una foto del
+  albarán de TIREA que sube el supervisor; desde ella se genera el
+  albarán. Desde un presupuesto aceptado se podrá seguir haciendo. Ya
+  decidido en H17-S002 (2026-06-03): fuente de entrada única, foto JPG
+  del albarán TIREA procesada por Gemini Vision.
+- **Mapa**: servicios en curso, conductores asignados, vehículos de
+  asistencia (camiones, furgonetas, remolcadores...) libres y
+  asignados, y bases.
+- **Control**: una parte de gestión sobre el mismo mapa, ampliable
+  como en el Laboratorio de Análisis. Su contenido está sin definir:
+  depende del PDF que Pepe pasó a Miguel Ángel.
+
 ## 5. Hoja de Ruta para la Siguiente Sesión (S132) -- concertada con Miguel Ángel al cierre de S131
 
 Se hace en este orden.
@@ -177,20 +224,32 @@ Se hace en este orden.
 1. **Decidir con Miguel Ángel la forma de la app del operario.** Antes
    de tocar código, exponerle las dos opciones de la sección 4 y
    construir según la que elija. **Cierre:** la decisión anotada en
-   este anexo, con sus palabras, y el punto 4 de esta hoja de ruta
+   este anexo, con sus palabras, y el punto 7 de esta hoja de ruta
    redactado según ella.
    **Hecho en S132:** Kotlin, ver 4.1.
-2. **Prueba completa en producción con Allianz.** Primero, la
+2. **Sección Servicios (ver 4.3).** Rol Supervisor de asistencia;
+   entrada "Albarán (demo)" convertida en "Servicios"; página con
+   pestañas en el formato de Documentación, visible solo para
+   administradores y supervisores de asistencia. **Cierre:** la página
+   abre con un usuario supervisor de asistencia y devuelve acceso
+   denegado con cualquier otro rol que no sea administrador.
+3. **Pestaña de albaranes.** Listado de órdenes en el formato de la
+   directriz 4.24, alta desde foto del albarán de TIREA (Gemini Vision)
+   y desde presupuesto aceptado, edición de los datos de la orden,
+   alta de unidades y aviso al operario. **Cierre:** una orden creada
+   en producción a partir de una foto real de TIREA, con sus datos
+   extraídos en BD.
+4. **Prueba completa en producción con Allianz.** Primero, la
    plantilla específica de aviso de asistencia (ver 4.2), de categoría
    UTILITY. Lleva los datos del servicio y el enlace al albarán, y
    sustituye a `chat_session_renewal` en
    `send_operator_albaran_notification()`. Se crea por Comando S, con
    el mismo patrón que `create_machine_service_whatsapp_template`.
-   Esta prueba valida el servidor con el albarán web que ya existe; la
-   app Kotlin llega en el punto 4. Con un presupuesto
-   real de Allianz aceptado: crear la orden desde el botón del
-   resultado, una unidad con operario y grúa reales, aviso por
-   WhatsApp al operario, abrir el albarán desde el enlace, rellenarlo,
+   (Plantilla y aviso hechos en S132, commit `fb354db`; alta de
+   unidades y botón de aviso en `45c5ea4`.) Esta prueba valida el servidor con el albarán web que ya existe; la
+   app Kotlin llega en el punto 7. Con un albarán real de Allianz
+   en TIREA: crear la orden desde su foto, una unidad con operario y
+   grúa reales, aviso por WhatsApp al operario, abrir el albarán desde el enlace, rellenarlo,
    firmarlo y sacar el PDF. Corregir lo que falle por el camino y
    cotejar los campos de Allianz de la sección 3.1 con un albarán o
    parte real de Allianz que aporte Miguel Ángel. **Cierre:** consulta
@@ -199,14 +258,19 @@ Se hace en este orden.
    `signed_received_at` rellenos, una fila en
    `budgets_workorderassistancesignature` para esa unidad, y el PDF
    abierto con los datos y la firma.
-3. **Envío del albarán firmado al cliente.** Plantilla
+5. **Envío del albarán firmado al cliente.** Plantilla
    `albaran_customer_delivery` creada por Comando S (mismo patrón que
    `create_machine_service_whatsapp_template`) y envío al teléfono del
    cliente con el enlace o el PDF al quedar firmado. **Cierre:** la
    plantilla registrada en BD con su Content SID y, una vez aprobada
    por Meta, el envío real al teléfono de prueba que indique Miguel
-   Ángel con el albarán firmado del punto 2.
-4. **App nativa Android en Kotlin para las tablets (decisión del punto
+   Ángel con el albarán firmado del punto 4.
+6. **Pestaña de mapa y control (ver 4.3).** Servicios, conductores
+   asignados, vehículos de asistencia libres y asignados, y bases en el
+   mapa. La parte de control, ampliable como en el Laboratorio de
+   Análisis, se define con el PDF de Pepe. **Cierre:** el mapa en
+   producción con los servicios y vehículos reales.
+7. **App nativa Android en Kotlin para las tablets (decisión del punto
    1, ver 4.1).** La app necesita:
    - Repositorio propio en flujo NewFlow Android.
    - Compilación por GitHub Actions (`android-build`/`android-deploy`).

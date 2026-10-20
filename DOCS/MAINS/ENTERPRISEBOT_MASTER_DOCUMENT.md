@@ -991,6 +991,15 @@ pasar el linter sobre un archivo tocado en la sesión aparece un aviso
 de este tipo, se repara igualmente en la misma sesión, sin dejarlo
 anotado para más adelante, exista o no relación con la tarea en curso.
 
+**Reincidencia S132 -- PEP8 incluido.** El modelo corrigió los errores
+reales de flake8 de dos archivos tocados, pero dejó sin corregir sus
+294 líneas de más de 79 caracteres y lo anotó como pendiente. Miguel
+Ángel, verbatim: *"Tenemos que tener la buena costumbre de, cuando
+encontremos errores de ese tipo, que no estamos cumpliendo con el PEP
+8, hay que modificar lo que esté mal."* Todo incumplimiento de PEP8 en
+un archivo tocado (longitud de línea incluida) se corrige en la misma
+sesión, antes del commit del bloque.
+
 **Origen:** incidente S019 — el modelo detectó que el patrón de mostrar
 `{exc}` (texto crudo de excepción) directamente en mensajes de usuario
 existía ya en varios archivos de producción desplegados
