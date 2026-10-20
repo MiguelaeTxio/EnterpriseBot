@@ -742,6 +742,16 @@ urlpatterns = [
         name="work_order_unit_notify",
     ),
 
+    # H37 (S132): row of a unit, polled by htmx while its notice is
+    # being delivered — GET.
+    # H37 (S132): fila de una unidad, que htmx pide mientras se espera
+    # la entrega de su aviso — GET.
+    path(
+        "work-orders/units/<int:pk>/row/",
+        views.WorkOrderUnitRowView.as_view(),
+        name="work_order_unit_row",
+    ),
+
     # Work order albarán — formulario mobile-first por unidad. ASSISTANCE +
     # ADMIN.
     # Work order albarán — mobile-first form per unit. ASSISTANCE + ADMIN.

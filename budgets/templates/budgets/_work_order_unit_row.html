@@ -1,0 +1,119 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/_work_order_unit_row.html #}
+{% comment %}
+H37 (S132). Fila de una unidad en el detalle de la orden. Se pinta en
+el detalle y como respuesta htmx al avisar por WhatsApp, sin recargar
+la página (Miguel Ángel, S132: "cuando le demos a enviar, no haya que
+recargar la página"). Mientras el aviso espera la confirmación de
+entrega, la fila se pide a sí misma cada 3 segundos y se sustituye;
+deja de hacerlo en cuanto cambia de estado.
+{% endcomment %}
+<div class="list-group-item px-3 py-3" id="unit-row-{{ unit.pk }}"{% if unit.status == 'NOTIFY_SENDING' %}
+     hx-get="{% url 'budgets:work_order_unit_row' pk=unit.pk %}"
+     hx-trigger="every 3s"
+     hx-swap="outerHTML"{% endif %}>
+    <div class="d-flex align-items-start justify-content-between gap-2 flex-wrap">
+        <div>
+            <span class="fw-semibold">
+                {{ work_order.work_order_number }}-{{ unit.unit_number|stringformat:"02d" }}
+            </span>
+            <span class="badge ms-1
+                {% if unit.status == 'PENDING' %}bg-secondary
+                {% elif unit.status == 'NOTIFY_SENDING' %}bg-light text-dark border
+                {% elif unit.status == 'NOTIFIED' %}bg-info text-dark
+                {% elif unit.status == 'NOTIFY_FAILED' %}bg-danger
+                {% elif unit.status == 'DOWNLOADED' %}bg-info text-dark
+                {% elif unit.status == 'IN_PROGRESS' %}bg-primary
+                {% elif unit.status == 'COMPLETED' %}bg-success
+                {% elif unit.status == 'CLOSED_UNSIGNED' %}bg-warning text-dark
+                {% elif unit.status == 'SIGNED_RECEIVED' %}bg-success
+                {% endif %}">
+                {{ unit.get_status_display }}
+            </span>
+            {% if unit.is_overnight %}
+            <span class="badge bg-warning text-dark ms-1">
+                <i class="bi bi-moon-fill"></i> Pernocta
+            </span>
+            {% endif %}
+            {% if unit.signature %}
+            <span class="badge bg-success ms-1">
+                <i class="bi bi-pen-fill"></i> Firmado
+            </span>
+            {% endif %}
+            <div class="small text-muted mt-1">
+                <i class="bi bi-person me-1"></i>{{ unit.operator.user.get_full_name|default:unit.operator.user.username }}
+                {% if unit.machine %}
+                — <i class="bi bi-truck ms-1 me-1"></i>{{ unit.machine }}
+                {% endif %}
+            </div>
+            {% if unit.is_overnight and unit.operator_2 %}
+            <div class="small text-muted">
+                <i class="bi bi-person me-1"></i>Fase 2: {{ unit.operator_2.user.get_full_name|default:unit.operator_2.user.username }}
+                {% if unit.machine_2 %}
+                — <i class="bi bi-truck ms-1 me-1"></i>{{ unit.machine_2 }}
+                {% endif %}
+            </div>
+            {% endif %}
+            {% if unit.notified_at %}
+            <div class="small text-muted">
+                <i class="bi bi-whatsapp me-1"></i>Avisado {{ unit.notified_at|date:"d/m/Y H:i" }}
+                {% if unit.downloaded_at %}· abierto {{ unit.downloaded_at|date:"d/m/Y H:i" }}{% endif %}
+                {% if unit.completed_at %}· completado {{ unit.completed_at|date:"d/m/Y H:i" }}{% endif %}
+            </div>
+            {% endif %}
+            {% if unit.status == 'NOTIFY_SENDING' %}
+            <div class="small text-muted">
+                <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>Esperando la confirmación de entrega de WhatsApp
+            </div>
+            {% endif %}
+            {% if unit.status == 'NOTIFY_FAILED' and unit.notify_error %}
+            <div class="small text-danger">
+                <i class="bi bi-exclamation-triangle me-1"></i>{{ unit.notify_error }}
+            </div>
+            {% endif %}
+            {% if row_message %}
+            <div class="small text-success">
+                <i class="bi bi-check2 me-1"></i>{{ row_message }}
+            </div>
+            {% endif %}
+            {% if row_error %}
+            <div class="small text-danger">
+                <i class="bi bi-exclamation-triangle me-1"></i>{{ row_error }}
+            </div>
+            {% endif %}
+            {% if unit.phase1_km %}
+            <div class="small text-muted">
+                <i class="bi bi-signpost me-1"></i>{{ unit.phase1_km }} km
+                {% if unit.phase2_km %}+ {{ unit.phase2_km }} km (fase 2){% endif %}
+            </div>
+            {% endif %}
+        </div>
+        <div class="d-flex gap-2 flex-shrink-0">
+            {% if unit.can_notify %}
+            <form method="post"
+                  action="{% url 'budgets:work_order_unit_notify' pk=unit.pk %}"
+                  hx-post="{% url 'budgets:work_order_unit_notify' pk=unit.pk %}"
+                  hx-target="#unit-row-{{ unit.pk }}"
+                  hx-swap="outerHTML"
+                  hx-disabled-elt="#unit-notify-{{ unit.pk }}">
+                {% csrf_token %}
+                <button type="submit"
+                        class="btn btn-sm btn-outline-success"
+                        id="unit-notify-{{ unit.pk }}">
+                    <i class="bi bi-whatsapp me-1"></i>{% if unit.notified_at or unit.notify_message_sid or unit.notify_error %}Avisar de nuevo{% else %}Avisar por WhatsApp{% endif %}
+                </button>
+            </form>
+            {% endif %}
+            <a href="{% url 'budgets:work_order_albaran' pk=unit.pk %}"
+               class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-pencil-square me-1"></i>Albarán
+            </a>
+            {% if unit.status == 'COMPLETED' %}
+            <a href="{% url 'budgets:work_order_pdf' pk=unit.pk %}"
+               class="btn btn-sm btn-outline-success"
+               target="_blank">
+                <i class="bi bi-filetype-pdf me-1"></i>PDF
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>

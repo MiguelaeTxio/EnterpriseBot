@@ -5653,9 +5653,6 @@ class WorkOrderDetailView(AssistanceWorkOrderAccessMixin, View):
         ctx = _build_base_context(request, {
             "work_order": work_order,
             "units": units,
-            "units_sending": any(
-                unit.status == "NOTIFY_SENDING" for unit in units
-            ),
             "assistance_operators": _assistance_operators(
                 company_user.company,
             ),
@@ -5765,6 +5762,70 @@ class WorkOrderUnitCreateView(AssistanceWorkOrderAccessMixin, View):
         return redirect("budgets:work_order_detail", pk=work_order.pk)
 
 
+def _render_unit_row(request, unit, row_message="", row_error=""):
+    """
+    Render the detail-page row of a unit (htmx fragment).
+
+    ---
+
+    H37 (S132). Pinta la fila de la unidad del detalle de la orden, como
+    fragmento htmx: al avisar por WhatsApp y mientras se espera la
+    confirmación de entrega, sin recargar la página.
+    """
+    unit.can_notify = unit.status in _NOTIFIABLE_UNIT_STATUSES
+    return render(request, "budgets/_work_order_unit_row.html", {
+        "unit": unit,
+        "work_order": unit.work_order,
+        "row_message": row_message,
+        "row_error": row_error,
+    })
+
+
+def _unit_of_company(request, pk):
+    """
+    Unit of the user's company with what its row needs, or 404.
+
+    ---
+
+    Unidad de la empresa del usuario con lo que necesita su fila, o 404.
+    """
+    from budgets.models import WorkOrderAssistanceUnit
+
+    company_user = _get_company_user(request)
+    return get_object_or_404(
+        WorkOrderAssistanceUnit.objects.select_related(
+            "work_order", "operator__user", "operator_2__user",
+            "signature",
+        ),
+        pk=pk,
+        work_order__company=company_user.company,
+    )
+
+
+class WorkOrderUnitRowView(AssistanceWorkOrderAccessMixin, View):
+    """
+    Current row of a unit, polled while its notice is being delivered.
+
+    ---
+
+    H37 (S132). Fila actual de una unidad. La propia fila la pide cada
+    3 segundos mientras está en "Enviando aviso" y se sustituye con la
+    respuesta; al cambiar de estado deja de pedirla.
+    """
+
+    def get(self, request, pk):
+        """
+        Return the row fragment.
+
+        ---
+
+        Devuelve el fragmento de la fila.
+        """
+        if not _get_company_user(request):
+            return redirect("panel:login")
+        return _render_unit_row(request, _unit_of_company(request, pk))
+
+
 class WorkOrderUnitNotifyView(AssistanceWorkOrderAccessMixin, View):
     """
     Send the WhatsApp albarán notice to the operator of a unit.
@@ -5773,67 +5834,62 @@ class WorkOrderUnitNotifyView(AssistanceWorkOrderAccessMixin, View):
 
     H37 (S132). Envía al operario de la unidad el aviso de WhatsApp con
     su albarán (`send_operator_albaran_notification`, plantilla
-    `assistance_albaran_notice`). No había ningún sitio que lo llamara.
-    Se puede repetir mientras el albarán no esté completado.
+    `assistance_albaran_notice`). Se puede repetir mientras el albarán
+    no esté completado. Desde el detalle de la orden llega por htmx y
+    devuelve solo la fila de la unidad, sin recargar la página; sin
+    htmx, mensaje y vuelta al detalle como antes.
     """
 
     def post(self, request, pk):
         """
-        Notify and go back to the work order detail.
+        Notify and return the unit row (htmx) or the detail page.
 
         ---
 
-        Avisa y vuelve al detalle de la orden.
+        Avisa y devuelve la fila de la unidad (htmx) o el detalle.
         """
-        from budgets.models import WorkOrderAssistanceUnit
         from whatsapp.services import send_operator_albaran_notification
 
-        company_user = _get_company_user(request)
-        if not company_user:
+        if not _get_company_user(request):
             return redirect("panel:login")
-        unit = get_object_or_404(
-            WorkOrderAssistanceUnit,
-            pk=pk,
-            work_order__company=company_user.company,
-        )
-        back = redirect("budgets:work_order_detail", pk=unit.work_order_id)
-        if unit.status not in _NOTIFIABLE_UNIT_STATUSES:
-            messages.error(
-                request,
-                "Este albarán ya está %s; no se avisa de nuevo."
-                % unit.get_status_display().lower(),
-            )
-            return back
+        unit = _unit_of_company(request, pk)
+        row_message, row_error = "", ""
         sender = os.environ.get("TWILIO_WHATSAPP_SENDER", "")
-        if not sender:
+        if unit.status not in _NOTIFIABLE_UNIT_STATUSES:
+            row_error = (
+                "Este albarán ya está %s; no se avisa de nuevo."
+                % unit.get_status_display().lower()
+            )
+        elif not sender:
             logger.error(
                 "# [ALBARAN NOTIFY] TWILIO_WHATSAPP_SENDER no configurado."
             )
-            messages.error(
-                request,
+            row_error = (
                 "No se ha podido enviar el aviso: falta el número de "
-                "WhatsApp de la plataforma.",
+                "WhatsApp de la plataforma."
             )
-            return back
-        if send_operator_albaran_notification(unit.pk, sender):
-            messages.success(
-                request,
-                "Aviso enviado por WhatsApp a %s. La unidad pasará a "
-                "\"Notificado\" cuando WhatsApp confirme la entrega, o a "
-                "\"Aviso fallido\" si no se entrega."
-                % (
+        elif send_operator_albaran_notification(unit.pk, sender):
+            row_message = (
+                "Aviso enviado a %s. Falta que WhatsApp confirme la "
+                "entrega." % (
                     unit.operator.user.get_full_name()
                     or unit.operator.user.username
-                ),
+                )
             )
         else:
-            messages.error(
-                request,
+            row_error = (
                 "No se ha podido enviar el aviso por WhatsApp. Revisa que "
-                "el operario tenga teléfono y que la plantilla esté "
-                "aprobada.",
+                "el operario tenga teléfono."
             )
-        return back
+
+        if request.headers.get("HX-Request"):
+            unit = _unit_of_company(request, pk)
+            return _render_unit_row(request, unit, row_message, row_error)
+        if row_error:
+            messages.error(request, row_error)
+        else:
+            messages.success(request, row_message)
+        return redirect("budgets:work_order_detail", pk=unit.work_order_id)
 
 
 class WorkOrderAlbaranView(AssistanceAlbaranAccessMixin, View):
