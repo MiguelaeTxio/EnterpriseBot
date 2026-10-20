@@ -1,8 +1,8 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/service_tab/_table.html #}
 {% comment %}
 H30 (S131). Tabla de la pestaña Revisiones (se recarga sola al cambiar
-filtros u orden). Cabecera en dos niveles: Plan, Lectura nueva y
-Última revisión. Orden múltiple por Código, Familia y Marca/Modelo
+filtros u orden). Cabecera en dos niveles: Plan, Última lectura,
+Lectura nueva, Última revisión y Revisión nueva. Orden múltiple por Código, Familia y Marca/Modelo
 (mismas reglas que Centros de gasto).
 {% endcomment %}
 <input type="hidden" id="svc-current-sort" value="{{ current_sort }}">
@@ -15,7 +15,8 @@ filtros u orden). Cabecera en dos niveles: Plan, Lectura nueva y
             <th colspan="2" class="text-center">Revisión cada</th>
             <th rowspan="2" class="svc-sep">Última lectura</th>
             <th colspan="4" class="text-center">Lectura nueva</th>
-            <th colspan="4" class="text-center svc-sep">Última revisión</th>
+            <th rowspan="2" class="svc-sep">Última revisión</th>
+            <th colspan="4" class="text-center">Revisión nueva</th>
             <th rowspan="2" class="svc-sep">Estado</th>
             <th rowspan="2"></th>
         </tr>
@@ -26,7 +27,7 @@ filtros u orden). Cabecera en dos niveles: Plan, Lectura nueva y
             <th>Km</th>
             <th>Horas</th>
             <th>H. grúa</th>
-            <th class="svc-sep">Fecha</th>
+            <th>Fecha</th>
             <th>Horas</th>
             <th>H. grúa</th>
             <th>Km</th>

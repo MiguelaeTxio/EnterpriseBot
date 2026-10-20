@@ -131,6 +131,19 @@ def _annotate_rows(machines):
         machine.last_record = max(
             records, key=lambda row: (row.service_date, row.pk),
         ) if records else None
+        # S131: la última revisión se muestra como texto ("—" si no hay
+        # ninguna); las casillas de revisión nacen siempre vacías.
+        machine.last_record_parts = []
+        if machine.last_record is not None:
+            record = machine.last_record
+            for value, unit in (
+                (record.hours, "h"), (record.crane_hours, "h grúa"),
+                (record.km, "km"),
+            ):
+                if value is not None:
+                    machine.last_record_parts.append(
+                        "%s %s" % (_fmt(value), unit),
+                    )
         statuses = plan.schedule_statuses(
             machine, records, readings, advances.get(machine.company_id),
         )
@@ -282,8 +295,9 @@ def _save_row(machine, data, company_user):
       (hoy por defecto). Si ya hay una lectura de ese mismo día, se
       completa esa en vez de duplicarla.
     - Revisión: si trae fecha, y es la de la última revisión, se
-      corrigen sus valores; si es otra fecha, se anota una revisión
-      nueva. Horas y km son opcionales (solo con fecha no avisa).
+      completan o corrigen los valores escritos (los vacíos no borran
+      nada); si es otra fecha, se anota una revisión nueva. Horas y km
+      son opcionales (solo con fecha no avisa).
     """
     hours_interval = _hours_interval(data.get("hours_interval"))
     km_interval = _count(data.get("km_interval"), "La revisión por km")
@@ -333,8 +347,11 @@ def _save_row(machine, data, company_user):
                 machine=machine,
             ).order_by("-service_date", "-id").first()
             if latest is not None and latest.service_date == service_date:
+                # S131: las casillas nacen vacías -- solo se cambia lo
+                # que se escribe, nunca se borra un valor ya anotado.
                 for name, value in service.items():
-                    setattr(latest, name, value)
+                    if value is not None:
+                        setattr(latest, name, value)
                 latest.save()
             else:
                 MachineServiceRecord.objects.create(
