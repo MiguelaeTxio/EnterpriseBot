@@ -604,6 +604,7 @@ explícitamente no abordada por decisión de Miguel Ángel.
 | S127 | 2026-10-16 | Hito reabierto desde H30, ampliado y renombrado a "Vacaciones, Ausencias y Control Horario" por los requisitos de Alejandro (ver sección 7 y `ENTERPRISEBOT_ANNEX_ROUTER.md`, sección 6). Sin código: contexto real comprobado en el repositorio, reglas de vacaciones decididas con Carolina y hoja de ruta acordada. Aplazado en la misma sesión por Miguel Ángel; el marcador vuelve a H30. |
 | S128 | 2026-10-16 | Sin trabajo propio de H24 (la sesión cerró la incidencia del agente H28 y los puntos 1-6 de H30, ver anexo V30). **PCH al cierre: H30 → H24**, por decisión de Miguel Ángel. La hoja de ruta 7.5 queda tal cual: se empieza por el punto 1. |
 | S129 | 2026-10-16 → 2026-10-19 | Punto 1 (saldo de vacaciones) construido y a la espera de los datos de Carolina; punto 3 (fichaje) construido entero y cerrado con el fichaje real de Miguel Ángel del 17/10 (entrada 12:33 y salida 18:27 con GPS, Loja), salvo la prueba en iPhone. Partes y fichajes integrados (el parte se cierra con la salida, redondeo a hora/media), pestaña Fichajes de supervisores con municipio, mapa en el panel, incidencias y Excel, y fichajes en la ficha del trabajador. Ver 7.4bis y "COMPLETADAS EN S129" (7.6). |
+| S130 | 2026-10-19 → 2026-10-20 | Puntos 1 (fichaje con un solo botón y fichaje manual por olvido) y 4 (ausencias) cerrados con datos reales; punto 2 (iPhone) postergado por Miguel Ángel a producción con Pablo; punto 3 a la espera de los datos de Carolina. Base del trabajador editable y festivos por base en Fichajes. Desvíos a H30/H31: dosieres por correo en un solo borrador (trabajadores y máquinas juntos, desde Personal y Centros de gasto), comprobación de tipo y datos al subir desde la ficha, 26 matrículas de centros de gasto rellenadas, secciones del alta por WhatsApp. Ver "COMPLETADAS EN S130" (7.7). |
 
 ---
 
@@ -1065,3 +1066,142 @@ el iPhone).** Detalle completo en 7.4bis:
 **Migraciones aplicadas en producción (comprobado en
 `django_migrations`):** `ivr_config` 0045-0047, `hr_calendar`
 0008-0010, `work_order_processor` 0032-0033, `document_explorer` 0186.
+
+### 7.7. COMPLETADAS EN S130 (2026-10-19 → 2026-10-20)
+
+Sesión iniciada en `6b8e11a` (cierre de S129). 23 commits de trabajo,
+40 archivos, todos desplegados por `deploy.yml` y comprobados.
+
+**Punto 1 -- fichaje con un solo botón y fichaje manual por olvido
+(CERRADO).**
+- `dbed1a5`: `/fichaje/` con un único botón "Fichar". Con cobertura y
+  sin pulsaciones pendientes decide el servidor (`clockin._decide_kind`,
+  `select_for_update` sobre el `CompanyUser` y el último evento hasta
+  `pressed_at`: SALIDA si hay una ENTRADA abierta dentro de
+  `MAX_SHIFT_HOURS`, si no ENTRADA); sin cobertura decide el móvil
+  (`decideKind` con lo guardado y lo último conocido del servidor) y el
+  servidor respeta la pulsación (idempotente por `client_id`).
+  `status()` devuelve `next_kind`. Fichaje manual en la misma página
+  (`<details id="manual">`: tipo, día, hora), `sent_by=MANUAL` sin GPS
+  ("Fichaje manual"), rechazado si es más de 2 min futuro
+  (`MANUAL_FUTURE_MARGIN`). Incidencia "Fichaje manual: entrada HH:MM,
+  registrada el dd/mm a las HH:MM" (`clock_report._manual_label`) en
+  listado, detalle, ficha y Excel; en el detalle de Fichajes, "fichaje
+  manual, apuntado dd/mm H:i" y nunca cuenta como retraso. Migración
+  `hr_calendar 0011` (etiquetas de `sent_by`). Service worker
+  `fichaje-v2`.
+- `2ed0997`: Miguel Ángel: *"cuando se ficha y tenga un parte [...] sin
+  cerrar y coincida con el ticaje manual, cierre el parte"*. Una ENTRADA
+  manual apuntada después de su SALIDA vuelve a mirar el parte
+  (`clock_parts.on_clock_press` / `closing_out_of`, `build_shifts` en
+  ±`MAX_SHIFT_HOURS`).
+- **Cierre comprobado en BD:** cuatro pulsaciones seguidas de Miguel
+  Ángel (usuario #1) quedaron SALIDA, ENTRADA, SALIDA, ENTRADA (tenía
+  una ENTRADA abierta de las 08:10, así que la secuencia es la
+  correcta); la entrada manual del 18/10 09:00 quedó con
+  `sent_by='MANUAL'` y sin GPS, y sale como incidencia en el detalle
+  01/10-19/10 (captura de Miguel Ángel). Los envíos dobles se
+  deduplicaron por `client_id`.
+
+**Punto 4 -- ausencias (CERRADO).**
+- `914d5dc`: modelo `hr_calendar.AbsencePeriod` (persona, empresa,
+  categoría `ivr_config.AbsenceCategory` PROTECT, inicio, fin, nota,
+  creado por; restricción fin >= inicio), migración `hr_calendar 0012`.
+  `services.absence_categories` (activas, sin VACATION),
+  `create_absence_period` (nota obligatoria si la categoría la pide),
+  `absence_days_by_date`; el calendario las pinta en naranja
+  "Ausencia: <categoría>" tras vacaciones y tarea real. Alta y borrado
+  en el desglose de Vacaciones (`AbsencePeriodCreateView` /
+  `RemoveView`, rutas `documentacion/vacaciones/<pk>/ausencia/` y
+  `.../ausencia/<pk>/borrar/`) y acordeón "Ausencias" en la ficha.
+- **Cierre comprobado:** cita médica real de Miguel Ángel (persona 250)
+  el 20/10/2026 en BD (log `[ausencias]`), en el calendario (foto con
+  el globo) y en su ficha.
+
+**Fichajes sin horario en fin de semana y festivos (decisión de Miguel
+Ángel, opción 2).** `45144ef`: `_schedule_times_by_user` devuelve
+también qué días se comparan (`_day_rule`): guardas nocturnos todos; el
+resto, no en sábado, domingo ni festivo de su base
+(`budgets.services._is_holiday` + `Base.labor_calendar`; Maqueda =
+festivos de Málaga, Loja 25/04 y 04/09, Huelva 03/08). La base pasa a
+editarse en Usuarios (`CompanyUserUpdateView`, limitada a las bases de
+la empresa) y en el alta (`6ec7764`, `CompanyUserCreateForm.base`).
+Foto de Miguel Ángel: el 12/10 sale festivo.
+
+**Desvíos de H24 dentro de la sesión (todos cerrados):**
+- `47471df`: cambiar la contraseña desde Mi perfil (vuelve a Mi
+  perfil; el cambio obligatorio sigue yendo a /panel/).
+- `ba15722`: editar la propia cuenta en Usuarios (para ponerse la
+  base) con rol y activo bloqueados; "Tu cuenta" en el listado.
+- Carlos Carlín (`carlos.carlin`, CompanyUser 43, ya ADMIN): ficha
+  enlazada a su usuario (Comando S `EnterpriseBot_001`); alta hecha
+  desde el panel por alvarez_admin el 19/10 08:45.
+- Manuel Alonso: preregistro inactivo del 23/07/2026 (onboarding
+  pendiente). Documento "Alta de trabajadores" en Claude Docs con el
+  flujo de alta (panel y WhatsApp).
+- Veloso Sampaio "133 días": correcto (alta 21/08 a 31/12), sale "sin
+  regla" porque no hay `VacationRule`; las reglas se quedan en la
+  pestaña Vacaciones (Miguel Ángel: *"lo podemos dejar tal como
+  está"*).
+
+**Desvíos a H30/H31 (Documentación), todos desplegados:**
+- `1b0af8b`: quitar el requisito a varias personas en Personal (el JS
+  bloqueaba la opción vacía).
+- Dosieres por correo: `b02a822` el .eml sale como BORRADOR de Outlook
+  (`X-Unsent: 1`), sin destinatario ni From, con cuerpo por defecto y
+  sin exigir correo del trabajador (antes el ZIP masivo salía vacío);
+  `a26fa79` + `e807346` un solo correo con trabajadores y máquinas
+  juntos (`panel/views_dossier_bundle.py`, `DossierBundleEmailView`:
+  un PDF con todo / un PDF por cada uno / ZIP; mismo endpoint para
+  descargar), bloque Dosieres igual en Personal y en Centros de gasto
+  con plantilla y formato compartidos (`hub.html`, estado en window,
+  modal solo si falta una plantilla), aviso > 20 MB. Retirada
+  `PersonalDossierMassGenerateView`.
+- `46c285c` + `1215459`: ámbito Personal/Maquinaria en requisitos,
+  REVERTIDO (Miguel Ángel se refería a dosieres, que ya estaban bien);
+  migraciones `document_explorer 0187` (añade) y `0188` (retira),
+  aplicadas.
+- `9511a5b`: la selección de Personal se guarda en
+  `PanelNavigationState` ("personal_selection") como la de Centros de
+  gasto.
+- `57cb454`: "+ Subir" ofrece todos los tipos de la familia aunque el
+  sujeto ya tenga uno (la X12 no dejaba elegir "Recibo del seguro").
+- `f751b8c`, `c37cbab`: `document_explorer/document_check_service.py`.
+  Al subir desde la ficha o desde Avisos, Gemini comprueba el tipo
+  (aviso con botón "Cambiar a ...", nunca bloquea) y, en máquinas,
+  rellena solo campos VACÍOS con los datos que acredita cada tipo
+  (`MACHINE_FACTS_BY_TYPE`: permiso, ficha técnica, ITV y autorización
+  provisional dan matrícula, bastidor y marca/modelo; los de seguro,
+  matrícula y aseguradora/póliza). "Cambiar tipo" ahora renombra al
+  nombre canónico, deshace la sustitución del tipo viejo y aplica la
+  del nuevo (`subject_upload_service.change_document_type`,
+  `apply_substitution`). X12: `X12_SEGURO_20271002.pdf` vigente,
+  aseguradora MAPFRE (`EnterpriseBot_003`).
+- Matrículas (`fill_machine_facts_s130`, `EnterpriseBot_002`, 004,
+  005, 006 y 007): de 79 centros sin matrícula quedan 53 (26
+  rellenadas; R3, R4 y A68 a mano tras ver los documentos: SE01978R,
+  MA01520R y P9876BDS, esta temporal hasta 24-11-2026). Los que quedan
+  no tienen documento que la acredite (EMPRESA_*, Z135-Z140, S16/S17/
+  S20...), A70 solo tiene matrícula alemana de fábrica y BARCA es una
+  embarcación. Incidencias: el comando nació mudo (Miguel Ángel lo
+  señaló; corregido en `0a46503` según com-standards 0bis/0ter) y
+  Gemini daba 504 con PDF escaneados (`3af4d3e`, `250af40`: 3
+  primeras páginas como JPEG 150 ppp y un reintento); el patrón de
+  matrícula admite temporales y remolques antiguos (`fb481ef`).
+- `1893812`: `Section.onboarding_enabled` (migración `ivr_config
+  0048`): Informática ya no se ofrece en el alta por WhatsApp; Taller
+  Mecánico activada (`is_active` es operativa general; el IVR tiene
+  `ivr_transfer_enabled`, que sigue apagado en Taller Mecánico) --
+  Comando S `EnterpriseBot_008`.
+
+**Migraciones aplicadas en producción (comprobado en
+`django_migrations`):** `hr_calendar` 0011-0012, `document_explorer`
+0187-0188, `ivr_config` 0048.
+
+**Hallazgo para la siguiente sesión (dicho por Miguel Ángel al
+cierre):** los kilómetros y horas se meten hoy por el parte de trabajo
+y los trabajadores no siempre lo hacen; donde de verdad se apuntan es
+al repostar. Habrá que tomar kilómetros y horas del programa de
+repostaje, pero ese enlace NO se hace todavía (decisión de Miguel
+Ángel).
+
