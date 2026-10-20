@@ -1313,6 +1313,7 @@ def unit_pk_from_notice_token(token):
 def send_operator_albaran_notification(
     unit_pk: int,
     whatsapp_sender: str,
+    changed_by=None,
 ) -> bool:
     """
     Notify the operator of a WorkOrderAssistanceUnit of his albarán.
@@ -1337,8 +1338,14 @@ def send_operator_albaran_notification(
     entrega en AlbaranNoticeStatusView: entregado o leído pasa a
     NOTIFIED; no entregado, o si el envío falla aquí mismo, a
     NOTIFY_FAILED con el motivo.
+    H37 (S133): cada cambio de estado queda registrado con su hora y
+    `changed_by`, el usuario del panel que envía
+    (WorkOrderAssistanceUnitEvent). Sin chófer asignado no se envía.
     """
-    from budgets.models import WorkOrderAssistanceUnit
+    from budgets.models import (
+        WorkOrderAssistanceUnit,
+        WorkOrderAssistanceUnitEvent,
+    )
     from whatsapp.window_service import send_notification
 
     try:
@@ -1358,6 +1365,14 @@ def send_operator_albaran_notification(
 
     operator = unit.operator
     company = unit.work_order.company
+    if operator is None:
+        logger.error(
+            "# [ALBARAN NOTIFY] Unidad pk=%s sin chófer asignado. "
+            "Abortando.",
+            unit_pk,
+        )
+        return False
+    previous_status = unit.status
     # H37 (S132): CompanyUser.phone is empty in production; the phone
     # lives in the driver's Contact.
     # CompanyUser.phone está vacío en producción; el teléfono está en
@@ -1409,6 +1424,10 @@ def send_operator_albaran_notification(
         unit.save(update_fields=[
             "status", "notify_message_sid", "notify_error",
         ])
+        WorkOrderAssistanceUnitEvent.status_change(
+            unit, previous_status, unit.status, by=changed_by,
+            detail=unit.notify_error,
+        )
         return False
 
     # H37 (S132): accepted is not delivered. NOTIFIED (and notified_at)
@@ -1422,6 +1441,10 @@ def send_operator_albaran_notification(
     unit.save(update_fields=[
         "status", "notified_at", "notify_message_sid", "notify_error",
     ])
+    WorkOrderAssistanceUnitEvent.status_change(
+        unit, previous_status, unit.status, by=changed_by,
+        detail="Aviso enviado por WhatsApp a %s." % operator_phone,
+    )
     logger.info(
         "# [ALBARAN NOTIFY] Unidad pk=%s NOTIFY_SENDING (%s) -- SID: %s",
         unit_pk,

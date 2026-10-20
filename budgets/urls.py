@@ -708,6 +708,24 @@ urlpatterns = [
         views_services.ServicesDeliveryNotesPaneView.as_view(),
         name="services_delivery_notes_pane",
     ),
+    # H37 (S133): traffic panel tab, its board and its actions
+    # (assign, unassign, send) — POST for the actions.
+    # Pestaña del panel de tráfico, su tablero y sus acciones.
+    path(
+        "services/traffic/",
+        views_services.ServicesTrafficPaneView.as_view(),
+        name="services_traffic_pane",
+    ),
+    path(
+        "services/traffic/board/",
+        views_services.ServicesTrafficBoardView.as_view(),
+        name="services_traffic_board",
+    ),
+    path(
+        "services/traffic/<slug:action>/",
+        views_services.ServicesTrafficActionView.as_view(),
+        name="services_traffic_action",
+    ),
     # H37 (S132): order from the TIREA photo, manual order and editing.
     # Orden desde la foto de TIREA, orden a mano y edición.
     path(

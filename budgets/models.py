@@ -2743,14 +2743,23 @@ class WorkOrderAssistanceUnit(models.Model):
             "Orden de trabajo (expediente) a la que pertenece esta unidad."
         ),
     )
-    # Operator assigned to phase 1 (pickup leg).
-    # Operario asignado a la fase 1 (tramo de recogida).
+    # Operator assigned to phase 1 (pickup leg). H37 (S133): empty
+    # until the office drags a driver onto the albarán in the traffic
+    # panel; it cannot be sent without one.
+    # Operario asignado a la fase 1 (tramo de recogida). H37 (S133):
+    # vacío hasta que la oficina arrastra un conductor al albarán en
+    # el panel de tráfico; sin conductor no se puede enviar.
     operator = models.ForeignKey(
         CompanyUser,
         on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name="assistance_units_primary",
         verbose_name="Chófer",
-        help_text="Chófer asignado al primer tramo del servicio.",
+        help_text=(
+            "Chófer asignado al primer tramo del servicio. Vacío "
+            "mientras el albarán está sin asignar."
+        ),
     )
     # Operator assigned to phase 2 (delivery leg). Only for deferred
     # services.
@@ -2796,6 +2805,23 @@ class WorkOrderAssistanceUnit(models.Model):
         help_text=(
             "Matrícula o identificador de la máquina asignada al primer "
             "tramo."
+        ),
+    )
+    # H37 (S133): fleet machine assigned in the traffic panel. The
+    # text field `machine` keeps its label ("X11 9237LGN") for the
+    # albarán and the PDF.
+    # Máquina de la flota asignada en el panel de tráfico. El campo de
+    # texto `machine` conserva su etiqueta para el albarán y el PDF.
+    machine_asset = models.ForeignKey(
+        "fleet.MachineAsset",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="assistance_units",
+        verbose_name="Máquina de la flota",
+        help_text=(
+            "Máquina de la familia ASISTENCIA asignada al primer tramo "
+            "desde el panel de tráfico."
         ),
     )
     # Machine or plate assigned to phase 2. Only for deferred services.
@@ -3060,7 +3086,119 @@ class WorkOrderAssistanceUnit(models.Model):
     def __str__(self):
         return (
             f"{self.work_order.work_order_number}-{self.unit_number:02d} — "
-            f"{self.operator} — {self.get_status_display()}"
+            f"{self.operator or 'sin chófer'} — "
+            f"{self.get_status_display()}"
+        )
+
+    @property
+    def albaran_number(self):
+        """
+        Printed albarán number (work order number and unit).
+
+        ---
+
+        Número de albarán impreso: número de orden y unidad.
+        """
+        return f"{self.work_order.work_order_number}-{self.unit_number:02d}"
+
+
+class WorkOrderAssistanceUnitEvent(models.Model):
+    """
+    H37 (S133). Audit trail of an albarán: every status change and
+    every assignment, with its time and the panel user who made it.
+
+    ---
+
+    H37 (S133). Registro de auditoría de un albarán: cada cambio de
+    estado y cada asignación, con la hora y el usuario del panel que
+    lo hizo (dossier de Pepe: "cada cambio de estado guarda hora y
+    usuario"). `created_by` vacío significa que lo hizo el sistema
+    (informe de entrega de WhatsApp, el propio operario desde el
+    albarán).
+    """
+
+    KIND_CREATED = "CREATED"
+    KIND_STATUS = "STATUS"
+    KIND_ASSIGN = "ASSIGN"
+    KIND_UNASSIGN = "UNASSIGN"
+    KIND_CHOICES = [
+        (KIND_CREATED, "Albarán creado"),
+        (KIND_STATUS, "Cambio de estado"),
+        (KIND_ASSIGN, "Asignación"),
+        (KIND_UNASSIGN, "Asignación retirada"),
+    ]
+
+    unit = models.ForeignKey(
+        WorkOrderAssistanceUnit,
+        on_delete=models.CASCADE,
+        related_name="events",
+        verbose_name="Unidad",
+    )
+    kind = models.CharField(
+        max_length=10,
+        choices=KIND_CHOICES,
+        verbose_name="Tipo",
+    )
+    from_status = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name="Estado anterior",
+    )
+    to_status = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name="Estado nuevo",
+    )
+    detail = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Detalle",
+        help_text="Qué se asignó o retiró, o el motivo del cambio.",
+    )
+    created_by = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="assistance_unit_events",
+        verbose_name="Usuario",
+        help_text="Usuario del panel. Vacío: lo hizo el sistema.",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha y hora",
+    )
+
+    class Meta:
+        verbose_name = "Evento de albarán (asistencia)"
+        verbose_name_plural = "Eventos de albarán (asistencia)"
+        ordering = ["unit", "created_at", "pk"]
+
+    def __str__(self):
+        return f"{self.unit_id} {self.kind} {self.created_at:%d/%m %H:%M}"
+
+    @classmethod
+    def status_change(cls, unit, from_status, to_status, by=None,
+                      detail=""):
+        """
+        Record a status change of a unit (nothing if it did not change).
+
+        ---
+
+        Registra un cambio de estado de la unidad (nada si no cambió).
+        """
+        if from_status == to_status:
+            return None
+        return cls.objects.create(
+            unit=unit,
+            kind=cls.KIND_STATUS,
+            from_status=from_status or "",
+            to_status=to_status or "",
+            detail=(detail or "")[:255],
+            created_by=by,
         )
 
 

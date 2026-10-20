@@ -1,0 +1,137 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/services/_traffic_board.html #}
+{% comment %}
+H37 (S133). Tablero del panel de tráfico: tres columnas de tarjetas
+(conductores, máquinas, albaranes abiertos). Lo pinta la pestaña al
+abrirse y lo devuelven el refresco periódico y cada acción
+(asignar, quitar, enviar), con su mensaje o su error arriba. Toda la
+lógica (estados, colores, qué se puede asignar o enviar) llega
+resuelta desde assistance_traffic.build_board.
+{% endcomment %}
+<div class="tb-columns">
+    <section class="tb-column">
+        <div class="tb-column-head d-flex justify-content-between">
+            <span><i class="bi bi-person-badge me-1"></i>Conductores</span>
+            <span class="small text-muted fw-normal">{{ free_drivers }} libre{{ free_drivers|pluralize }} de {{ drivers|length }}</span>
+        </div>
+        <div class="tb-column-body">
+            {% for driver in drivers %}
+            <div class="tb-card tb-state-{{ driver.state }}{% if driver.is_assignable %} tb-draggable{% else %} tb-locked{% endif %}"
+                 {% if driver.is_assignable %}draggable="true" data-kind="driver" data-resource="{{ driver.pk }}"{% endif %}>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="tb-avatar">{{ driver.user.first_name|slice:":1" }}{{ driver.user.last_name|slice:":1" }}</span>
+                    <div class="flex-grow-1 min-w-0">
+                        <div class="fw-semibold text-truncate">{{ driver.display_name }}</div>
+                        <div class="small text-muted">
+                            {{ driver.state_label }}
+                            {% if driver.current_unit %}· {{ driver.current_unit.albaran_number }}{% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% empty %}
+            <p class="small text-muted mb-0">No hay conductores en la sección Asistencia.</p>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="tb-column">
+        <div class="tb-column-head d-flex justify-content-between">
+            <span><i class="bi bi-truck me-1"></i>Máquinas</span>
+            <span class="small text-muted fw-normal">{{ free_machines }} libre{{ free_machines|pluralize }} de {{ machines|length }}</span>
+        </div>
+        <div class="tb-column-body">
+            {% for machine in machines %}
+            <div class="tb-card tb-state-{{ machine.state }}{% if machine.is_assignable %} tb-draggable{% else %} tb-locked{% endif %}"
+                 {% if machine.is_assignable %}draggable="true" data-kind="machine" data-resource="{{ machine.pk }}"{% endif %}>
+                <div class="d-flex justify-content-between gap-2">
+                    <span class="fw-semibold">{{ machine.code }}</span>
+                    <span class="small text-muted">{{ machine.plate }}</span>
+                </div>
+                <div class="small text-muted text-truncate">
+                    {{ machine.type_name|default:machine.brand_model }}
+                </div>
+                <div class="small">
+                    {{ machine.state_label }}
+                    {% if machine.current_unit %}· {{ machine.current_unit.albaran_number }}{% endif %}
+                    {% if machine.mileage %}<span class="text-muted">· {{ machine.mileage }} km</span>{% endif %}
+                </div>
+            </div>
+            {% empty %}
+            <p class="small text-muted mb-0">No hay máquinas de asistencia{% if category %} de esta categoría{% endif %}.</p>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="tb-column tb-column-wide">
+        <div class="tb-column-head d-flex justify-content-between">
+            <span><i class="bi bi-file-earmark-text me-1"></i>Albaranes abiertos</span>
+            <span class="small text-muted fw-normal">{{ open_count }}</span>
+        </div>
+        <div class="tb-column-body">
+            {% if board_message %}
+            <div class="alert alert-success py-1 px-2 small mb-2" role="status">
+                <i class="bi bi-check2 me-1"></i>{{ board_message }}
+            </div>
+            {% endif %}
+            {% if board_error %}
+            <div class="alert alert-danger py-1 px-2 small mb-2" role="alert">
+                <i class="bi bi-exclamation-triangle me-1"></i>{{ board_error }}
+            </div>
+            {% endif %}
+
+            {% for work_order in empty_orders %}
+            <div class="tb-card tb-{{ work_order.colour }}" data-drop-order="{{ work_order.pk }}">
+                <div class="d-flex justify-content-between gap-2">
+                    <a class="fw-semibold" href="{% url 'budgets:work_order_detail' pk=work_order.pk %}">{{ work_order.work_order_number }}</a>
+                    <span class="small">{{ work_order.service_date|date:"d/m/Y" }}</span>
+                </div>
+                <div class="small text-truncate">{{ work_order.insurer.name }}{% if work_order.expediente %} · {{ work_order.expediente }}{% endif %}</div>
+                <div class="small text-muted text-truncate">{{ work_order.pickup_location|default:"Recogida sin indicar" }}{% if work_order.destination %} → {{ work_order.destination }}{% endif %}</div>
+                <div class="tb-slot tb-slot-empty mt-1">Sin albarán: suelta aquí un conductor o una máquina.</div>
+            </div>
+            {% endfor %}
+
+            {% for unit in units %}
+            <div class="tb-card tb-{{ unit.colour }}" {% if unit.is_assignable %}data-drop-unit="{{ unit.pk }}"{% endif %}>
+                <div class="d-flex justify-content-between gap-2">
+                    <a class="fw-semibold" href="{% url 'budgets:work_order_detail' pk=unit.work_order_id %}">{{ unit.albaran_number }}</a>
+                    <span class="small">{{ unit.get_status_display }}</span>
+                </div>
+                <div class="small text-truncate">{{ unit.work_order.insurer.name }}{% if unit.work_order.expediente %} · {{ unit.work_order.expediente }}{% endif %} · {{ unit.work_order.service_date|date:"d/m/Y" }}</div>
+                <div class="small text-muted text-truncate">{{ unit.work_order.pickup_location|default:"Recogida sin indicar" }}{% if unit.work_order.destination %} → {{ unit.work_order.destination }}{% endif %}</div>
+                <div class="d-flex flex-wrap gap-3 mt-1">
+                    <div class="tb-slot{% if not unit.operator_id %} tb-slot-empty{% endif %}">
+                        <i class="bi bi-person"></i>
+                        {% if unit.operator_id %}{{ unit.driver_name }}{% else %}Sin conductor{% endif %}
+                        {% if unit.operator_id and unit.is_assignable %}
+                        <button type="button" class="btn btn-link btn-sm p-0 text-danger" title="Quitar conductor"
+                                data-action="unassign" data-kind="driver" data-unit="{{ unit.pk }}"><i class="bi bi-x-circle"></i></button>
+                        {% endif %}
+                    </div>
+                    <div class="tb-slot{% if not unit.machine %} tb-slot-empty{% endif %}">
+                        <i class="bi bi-truck"></i>
+                        {% if unit.machine %}{{ unit.machine }}{% else %}Sin máquina{% endif %}
+                        {% if unit.machine and unit.is_assignable %}
+                        <button type="button" class="btn btn-link btn-sm p-0 text-danger" title="Quitar máquina"
+                                data-action="unassign" data-kind="machine" data-unit="{{ unit.pk }}"><i class="bi bi-x-circle"></i></button>
+                        {% endif %}
+                    </div>
+                </div>
+                {% if unit.status == 'NOTIFY_FAILED' and unit.notify_error %}
+                <div class="small text-danger mt-1"><i class="bi bi-exclamation-triangle me-1"></i>{{ unit.notify_error }}</div>
+                {% endif %}
+                {% if unit.can_send %}
+                <button type="button" class="btn btn-sm btn-success mt-2"
+                        data-action="send" data-unit="{{ unit.pk }}">
+                    <i class="bi bi-send me-1"></i>{% if unit.status == 'NOTIFY_FAILED' %}Enviar de nuevo{% else %}Enviar{% endif %}
+                </button>
+                {% endif %}
+            </div>
+            {% endfor %}
+
+            {% if not units and not empty_orders %}
+            <p class="small text-muted mb-0">No hay servicios abiertos.</p>
+            {% endif %}
+        </div>
+    </section>
+</div>

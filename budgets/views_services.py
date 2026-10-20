@@ -12,6 +12,7 @@ usuario (directriz 4.15, `PanelNavigationState`, screen_key
 `services_hub`).
 """
 import logging
+import os
 
 from django.contrib import messages
 from django.db.models import Q
@@ -31,8 +32,26 @@ from panel.models import PanelNavigationState
 logger = logging.getLogger(__name__)
 
 SCREEN_KEY = "services_hub"
-TABS = ("albaranes",)
-DEFAULT_TAB = "albaranes"
+# H37 (S133): the traffic panel is the main tab (dossier, 4.4).
+# El panel de tráfico es la pestaña principal (dossier, 4.4).
+TABS = ("trafico", "albaranes")
+DEFAULT_TAB = "trafico"
+
+
+def _nav_state(company_user):
+    """
+    Saved navigation state of the Services page for the user.
+
+    ---
+
+    Estado de navegación guardado de la página Servicios del usuario
+    (directriz 4.15), siempre como diccionario.
+    """
+    nav_state = PanelNavigationState.objects.filter(
+        company_user=company_user, screen_key=SCREEN_KEY,
+    ).first()
+    state = nav_state.state if nav_state else {}
+    return state if isinstance(state, dict) else {}
 
 
 class ServicesHubView(AssistanceSupervisorAccessMixin, View):
@@ -55,13 +74,7 @@ class ServicesHubView(AssistanceSupervisorAccessMixin, View):
 
         Pinta la página en la pestaña guardada.
         """
-        company_user = request.user.company_user
-        nav_state = PanelNavigationState.objects.filter(
-            company_user=company_user, screen_key=SCREEN_KEY,
-        ).first()
-        state = nav_state.state if nav_state else {}
-        if not isinstance(state, dict):
-            state = {}
+        state = _nav_state(request.user.company_user)
         active_tab = state.get("active_tab")
         if active_tab not in TABS:
             active_tab = DEFAULT_TAB
@@ -103,6 +116,190 @@ class ServicesDeliveryNotesPaneView(AssistanceSupervisorAccessMixin, View):
         return render(request, self.template_name, {
             "work_orders": work_orders,
         })
+
+
+# ---------------------------------------------------------------------------
+# H37 (S133). Traffic panel: drivers, machines and open albaranes, with
+# drag-and-drop assignment and sending (dossier phase 2).
+# Panel de tráfico: conductores, máquinas y albaranes abiertos, con
+# asignación arrastrando y envío (fase 2 del dossier).
+# ---------------------------------------------------------------------------
+
+TRAFFIC_ACTIONS = ("assign", "unassign", "send")
+
+
+def _traffic_filters(request):
+    """
+    Category and order of the board: request first, then saved state.
+
+    ---
+
+    Categoría de máquina y orden del panel: los de la petición si
+    llegan; si no, los guardados del usuario (directriz 4.15).
+    """
+    from budgets.assistance_traffic import SORT_AVAILABILITY, SORT_OPTIONS
+
+    saved = _nav_state(request.user.company_user).get("traffic")
+    saved = saved if isinstance(saved, dict) else {}
+    if "sort" in request.GET:
+        source = request.GET
+    elif "sort" in request.POST:
+        source = request.POST
+    else:
+        source = saved
+    category = str(source.get("category") or "")
+    sort = source.get("sort")
+    if sort not in dict(SORT_OPTIONS):
+        sort = SORT_AVAILABILITY
+    return category, sort
+
+
+def _render_board(request, message="", error=""):
+    """
+    Render the board fragment with the current data.
+
+    ---
+
+    Pinta el fragmento del panel con los datos del momento.
+    """
+    from budgets.assistance_traffic import build_board
+
+    category, sort = _traffic_filters(request)
+    ctx = build_board(
+        request.user.company_user.company, category=category, sort=sort,
+    )
+    ctx.update({"board_message": message, "board_error": error})
+    return render(request, "budgets/services/_traffic_board.html", ctx)
+
+
+class ServicesTrafficPaneView(AssistanceSupervisorAccessMixin, View):
+    """
+    Traffic tab: fixed top bar and the board below.
+
+    ---
+
+    Pestaña Tráfico: barra fija arriba (altas, categoría, orden) y el
+    panel de tres columnas debajo, que se refresca solo.
+    """
+
+    template_name = "budgets/services/_traffic_pane.html"
+
+    def get(self, request):
+        """
+        Render the tab.
+
+        ---
+
+        Pinta la pestaña.
+        """
+        from budgets.assistance_traffic import SORT_OPTIONS, build_board
+
+        category, sort = _traffic_filters(request)
+        ctx = build_board(
+            request.user.company_user.company,
+            category=category, sort=sort,
+        )
+        ctx.update({
+            "sort_options": SORT_OPTIONS,
+            "screen_key": SCREEN_KEY,
+            "board_message": "",
+            "board_error": "",
+        })
+        return render(request, self.template_name, ctx)
+
+
+class ServicesTrafficBoardView(AssistanceSupervisorAccessMixin, View):
+    """
+    Board fragment, for the periodic refresh and the filters.
+
+    ---
+
+    Fragmento del panel, para el refresco periódico y los filtros.
+    """
+
+    def get(self, request):
+        """
+        Return the board fragment.
+
+        ---
+
+        Devuelve el fragmento del panel.
+        """
+        return _render_board(request)
+
+
+class ServicesTrafficActionView(AssistanceSupervisorAccessMixin, View):
+    """
+    Assign, unassign or send an albarán from the board.
+
+    ---
+
+    Asigna (conductor o máquina soltados sobre un albarán o una
+    orden), quita una asignación o envía el albarán. Las reglas están
+    en `assistance_traffic`; si no se cumplen, el panel lo dice.
+    Devuelve el panel actualizado.
+    """
+
+    def post(self, request, action):
+        """
+        Apply the action and return the board.
+
+        ---
+
+        Aplica la acción y devuelve el panel.
+        """
+        from budgets import assistance_traffic as traffic
+
+        company_user = request.user.company_user
+        company = company_user.company
+        data = request.POST
+        message = ""
+        try:
+            if action not in TRAFFIC_ACTIONS:
+                raise traffic.TrafficError("Acción desconocida.")
+            if action == "assign":
+                unit = traffic.assign(
+                    company, company_user,
+                    resource_kind=data.get("kind", ""),
+                    resource_pk=_int(data.get("resource")),
+                    unit_pk=_int(data.get("unit")),
+                    order_pk=_int(data.get("order")),
+                )
+                message = "Asignado al albarán %s." % unit.albaran_number
+            elif action == "unassign":
+                unit = traffic.unassign(
+                    company, company_user, _int(data.get("unit")),
+                    data.get("kind", ""),
+                )
+                message = "Asignación retirada del albarán %s." % (
+                    unit.albaran_number
+                )
+            else:
+                unit = traffic.send(
+                    company, company_user, _int(data.get("unit")),
+                    os.environ.get("TWILIO_WHATSAPP_SENDER", ""),
+                )
+                message = (
+                    "Albarán %s enviado. Falta que WhatsApp confirme la "
+                    "entrega." % unit.albaran_number
+                )
+        except traffic.TrafficError as exc:
+            return _render_board(request, error=str(exc))
+        return _render_board(request, message=message)
+
+
+def _int(value):
+    """
+    Integer from a form value, or None.
+
+    ---
+
+    Entero de un valor de formulario, o None.
+    """
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 # ---------------------------------------------------------------------------

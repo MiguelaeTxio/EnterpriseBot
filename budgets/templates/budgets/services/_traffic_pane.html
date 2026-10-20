@@ -1,0 +1,265 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/services/_traffic_pane.html #}
+{% comment %}
+H37 (S133). Pestaña Tráfico de Servicios: panel de tráfico del dossier
+de Pepe (fase 2, anexo V37 sección 4.4). Barra fija arriba (altas,
+categoría de máquina, orden) y debajo tres columnas de tarjetas:
+conductores, máquinas y albaranes abiertos, cada una con su propio
+scroll (directriz 4.24, panel/_fixed_list_layout.html).
+
+Asignación: se arrastra la tarjeta de un conductor o de una máquina
+libre y se suelta sobre un albarán (o sobre una orden sin albaranes).
+En pantallas táctiles, tocar la tarjeta la selecciona y tocar después
+el albarán la asigna. El tablero (#traffic-board) se refresca solo
+cada 20 segundos, salvo mientras se arrastra o hay algo seleccionado.
+La categoría y el orden se guardan por usuario (directriz 4.15,
+screen_key services_hub, clave "traffic").
+{% endcomment %}
+<style>
+#traffic-bottom-panel { display: flex; min-height: 240px; }
+#traffic-board { display: flex; flex: 1; min-height: 0; width: 100%; }
+.tb-columns { display: flex; gap: .75rem; flex: 1; min-height: 0; width: 100%; }
+.tb-column { flex: 1 1 0; display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid #dee2e6; border-radius: .5rem; background: #f8f9fa; }
+.tb-column-wide { flex: 1.4 1 0; }
+.tb-column-head { padding: .5rem .75rem; border-bottom: 1px solid #dee2e6; font-weight: 600; background: #fff; border-radius: .5rem .5rem 0 0; }
+.tb-column-body { flex: 1; min-height: 0; overflow: auto; padding: .5rem; }
+.tb-card { background: #fff; border: 1px solid #dee2e6; border-left-width: 6px; border-radius: .5rem; padding: .5rem .65rem; margin-bottom: .5rem; }
+.tb-card.tb-draggable { cursor: grab; }
+.tb-card.tb-draggable:active { cursor: grabbing; }
+.tb-card.tb-selected { outline: 3px solid #0d6efd; }
+.tb-card.tb-drop-over { outline: 3px dashed #0d6efd; }
+.tb-card.tb-locked { opacity: .65; }
+.tb-state-free { border-left-color: #198754; }
+.tb-state-assigned { border-left-color: #dc3545; }
+.tb-state-in_service { border-left-color: #ffc107; }
+.tb-state-returning { border-left-color: #20c997; }
+.tb-state-unavailable, .tb-state-workshop { border-left-color: #6c757d; }
+.tb-red { border-left-color: #dc3545; background: #fdf2f3; }
+.tb-yellow { border-left-color: #ffc107; background: #fffbea; }
+.tb-green { border-left-color: #198754; background: #f0f8f3; }
+.tb-blue { border-left-color: #0d6efd; background: #eef4ff; }
+.tb-orange { border-left-color: #fd7e14; background: #fff4ea; }
+.tb-badge-red { background: #dc3545; color: #fff; }
+.tb-badge-blue { background: #0d6efd; color: #fff; }
+.tb-badge-yellow { background: #ffc107; color: #212529; }
+.tb-badge-green { background: #198754; color: #fff; }
+.tb-badge-orange { background: #fd7e14; color: #fff; }
+.tb-slot { display: flex; align-items: center; gap: .35rem; font-size: .85rem; }
+.tb-slot-empty { color: #dc3545; font-style: italic; }
+.tb-avatar { width: 2rem; height: 2rem; border-radius: 50%; background: #e9ecef; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: .8rem; flex-shrink: 0; }
+@media (max-width: 991.98px) {
+    .tb-columns { flex-direction: column; }
+    .tb-column-body { max-height: 60vh; }
+}
+</style>
+
+<div id="traffic-top-panel">
+    <form id="traffic-filters" class="d-flex flex-wrap align-items-end gap-2 mb-2"
+          hx-get="{% url 'budgets:services_traffic_board' %}"
+          hx-target="#traffic-board"
+          hx-trigger="change">
+        <a href="{% url 'budgets:services_tirea_upload' %}"
+           class="btn btn-sm btn-primary">
+            <i class="bi bi-camera me-1"></i>Nuevo servicio desde foto de TIREA
+        </a>
+        <a href="{% url 'budgets:work_order_save' %}"
+           class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-plus-lg me-1"></i>Nuevo servicio a mano
+        </a>
+        <div class="ms-lg-3">
+            <label class="form-label small mb-0" for="traffic-category">Categoría de máquina</label>
+            <select class="form-select form-select-sm" name="category" id="traffic-category">
+                <option value="">Todas</option>
+                {% for value in categories %}
+                <option value="{{ value }}" {% if value == category %}selected{% endif %}>{{ value }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="form-label small mb-0" for="traffic-sort">Ordenar conductores y máquinas por</label>
+            <select class="form-select form-select-sm" name="sort" id="traffic-sort">
+                {% for value, label in sort_options %}
+                <option value="{{ value }}" {% if value == sort %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="small text-muted ms-lg-auto">
+            Arrastra un conductor o una máquina libre hasta un albarán. Colores:
+            <span class="badge tb-badge-red">pendiente</span>
+            <span class="badge tb-badge-blue">programado</span>
+            <span class="badge tb-badge-yellow">enviado / en servicio</span>
+            <span class="badge tb-badge-green">firmado, regresando</span>
+            <span class="badge tb-badge-orange">incidencia</span>
+        </div>
+    </form>
+</div>
+
+<div id="traffic-bottom-panel">
+    <div id="traffic-board"
+         hx-get="{% url 'budgets:services_traffic_board' %}"
+         hx-include="#traffic-filters"
+         hx-trigger="tbRefresh"
+         hx-swap="innerHTML">
+        {% include "budgets/services/_traffic_board.html" %}
+    </div>
+</div>
+
+{{ screen_key|json_script:"traffic-screen-key" }}
+<form id="traffic-action-urls" class="d-none"
+      data-assign="{% url 'budgets:services_traffic_action' action='assign' %}"
+      data-unassign="{% url 'budgets:services_traffic_action' action='unassign' %}"
+      data-send="{% url 'budgets:services_traffic_action' action='send' %}"></form>
+
+{% include "panel/_fixed_list_layout.html" with top_id="traffic-top-panel" bottom_id="traffic-bottom-panel" %}
+
+<script>
+(function () {
+    "use strict";
+    const REFRESH_MS = 20000;
+    const pane = document.getElementById("traffic-bottom-panel");
+    const board = document.getElementById("traffic-board");
+    const filters = document.getElementById("traffic-filters");
+    const urls = document.getElementById("traffic-action-urls").dataset;
+    const screenKey = JSON.parse(
+        document.getElementById("traffic-screen-key").textContent
+    );
+    let dragging = null;
+    let selected = null;
+
+    function filterValues() {
+        return {
+            category: filters.elements.category.value,
+            sort: filters.elements.sort.value
+        };
+    }
+
+    // Acción sobre el tablero: POST y sustituye el tablero entero con
+    // la respuesta (datos del momento, con el mensaje o el error).
+    function post(url, values) {
+        clearSelection();
+        htmx.ajax("POST", url, {
+            target: "#traffic-board",
+            swap: "innerHTML",
+            values: Object.assign(values, filterValues())
+        });
+    }
+
+    function clearSelection() {
+        if (selected) {
+            selected.classList.remove("tb-selected");
+        }
+        selected = null;
+    }
+
+    function resourceOf(card) {
+        return {kind: card.dataset.kind, resource: card.dataset.resource};
+    }
+
+    function targetOf(el) {
+        return el.closest("[data-drop-unit], [data-drop-order]");
+    }
+
+    function assignTo(target, res) {
+        const values = {kind: res.kind, resource: res.resource};
+        if (target.dataset.dropUnit) {
+            values.unit = target.dataset.dropUnit;
+        } else {
+            values.order = target.dataset.dropOrder;
+        }
+        post(urls.assign, values);
+    }
+
+    // Arrastrar y soltar (ordenador).
+    pane.addEventListener("dragstart", function (ev) {
+        const card = ev.target.closest(".tb-draggable");
+        if (!card) {
+            return;
+        }
+        dragging = resourceOf(card);
+        ev.dataTransfer.effectAllowed = "move";
+        ev.dataTransfer.setData("text/plain", card.dataset.resource);
+    });
+    pane.addEventListener("dragend", function () {
+        dragging = null;
+        pane.querySelectorAll(".tb-drop-over").forEach(function (el) {
+            el.classList.remove("tb-drop-over");
+        });
+    });
+    pane.addEventListener("dragover", function (ev) {
+        const target = targetOf(ev.target);
+        if (dragging && target) {
+            ev.preventDefault();
+            target.classList.add("tb-drop-over");
+        }
+    });
+    pane.addEventListener("dragleave", function (ev) {
+        const target = targetOf(ev.target);
+        if (target && !target.contains(ev.relatedTarget)) {
+            target.classList.remove("tb-drop-over");
+        }
+    });
+    pane.addEventListener("drop", function (ev) {
+        const target = targetOf(ev.target);
+        if (!dragging || !target) {
+            return;
+        }
+        ev.preventDefault();
+        const res = dragging;
+        dragging = null;
+        assignTo(target, res);
+    });
+
+    // Tocar para seleccionar y tocar el albarán (pantallas táctiles),
+    // y los botones de quitar y enviar.
+    pane.addEventListener("click", function (ev) {
+        const button = ev.target.closest("[data-action]");
+        if (button) {
+            ev.preventDefault();
+            const values = {unit: button.dataset.unit};
+            if (button.dataset.kind) {
+                values.kind = button.dataset.kind;
+            }
+            if (button.dataset.action === "send") {
+                button.disabled = true;
+            }
+            post(urls[button.dataset.action], values);
+            return;
+        }
+        if (ev.target.closest("a")) {
+            return;
+        }
+        const card = ev.target.closest(".tb-draggable");
+        if (card) {
+            const same = selected === card;
+            clearSelection();
+            if (!same) {
+                selected = card;
+                card.classList.add("tb-selected");
+            }
+            return;
+        }
+        const target = targetOf(ev.target);
+        if (selected && target) {
+            assignTo(target, resourceOf(selected));
+        }
+    });
+
+    // Categoría y orden guardados por usuario (directriz 4.15).
+    filters.addEventListener("change", function () {
+        window.EbNavState.save(screenKey, {traffic: filterValues()});
+    });
+
+    // Refresco periódico del tablero, salvo mientras se arrastra, hay
+    // algo seleccionado o la pestaña no se ve.
+    const timer = setInterval(function () {
+        if (!board.isConnected) {
+            clearInterval(timer);
+            return;
+        }
+        if (dragging || selected || document.hidden
+                || board.offsetParent === null) {
+            return;
+        }
+        htmx.trigger(board, "tbRefresh");
+    }, REFRESH_MS);
+}());
+</script>

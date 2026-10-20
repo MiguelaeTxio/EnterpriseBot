@@ -19,7 +19,7 @@ from django import forms as django_forms
 from django.contrib import messages
 from django.db import transaction
 from django.db.models import DecimalField, ExpressionWrapper, F
-from django.db.models import Count, Max, Q
+from django.db.models import Count, Q
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.timezone import localdate, now
@@ -5649,7 +5649,10 @@ class WorkOrderDetailView(AssistanceWorkOrderAccessMixin, View):
         ).order_by("unit_number")
         units = list(units)
         for unit in units:
-            unit.can_notify = unit.status in _NOTIFIABLE_UNIT_STATUSES
+            unit.can_notify = bool(
+                unit.operator_id
+                and unit.status in _NOTIFIABLE_UNIT_STATUSES
+            )
         ctx = _build_base_context(request, {
             "work_order": work_order,
             "units": units,
@@ -5718,10 +5721,11 @@ class WorkOrderUnitCreateView(AssistanceWorkOrderAccessMixin, View):
 
         Crea la unidad y vuelve al detalle de la orden.
         """
-        from budgets.models import (
-            WorkOrderAssistance,
-            WorkOrderAssistanceUnit,
+        from budgets.assistance_traffic import (
+            create_unit,
+            machine_from_text,
         )
+        from budgets.models import WorkOrderAssistance
         company_user = _get_company_user(request)
         if not company_user:
             return redirect("panel:login")
@@ -5736,24 +5740,20 @@ class WorkOrderUnitCreateView(AssistanceWorkOrderAccessMixin, View):
         if operator is None:
             messages.error(request, "Elige el operario de la unidad.")
             return redirect("budgets:work_order_detail", pk=work_order.pk)
-        machine = request.POST.get("machine", "").strip()[:100]
-        with transaction.atomic():
-            # Lock the order row so two simultaneous additions cannot
-            # take the same unit number.
-            # Bloquear la fila de la orden para que dos altas a la vez no
-            # cojan el mismo número de unidad.
-            WorkOrderAssistance.objects.select_for_update().get(
-                pk=work_order.pk,
-            )
-            last = work_order.units.aggregate(
-                last=Max("unit_number"),
-            )["last"]
-            unit = WorkOrderAssistanceUnit.objects.create(
-                work_order=work_order,
-                operator=operator,
-                machine=machine,
-                unit_number=(last or 0) + 1,
-            )
+        machine_text = request.POST.get("machine", "").strip()[:100]
+        # H37 (S133): the machine is linked to the fleet when the text
+        # is one of the suggestions, and the creation is recorded
+        # (assistance_traffic.create_unit, which also locks the order
+        # so two additions cannot take the same unit number).
+        # La máquina se enlaza con la flota si el texto es una de las
+        # sugerencias, y el alta queda registrada.
+        unit = create_unit(
+            work_order,
+            company_user,
+            operator=operator,
+            machine=machine_from_text(company_user.company, machine_text),
+            machine_text=machine_text,
+        )
         messages.success(
             request,
             "Unidad %s-%02d creada."
@@ -5772,7 +5772,10 @@ def _render_unit_row(request, unit, row_message="", row_error=""):
     fragmento htmx: al avisar por WhatsApp y mientras se espera la
     confirmación de entrega, sin recargar la página.
     """
-    unit.can_notify = unit.status in _NOTIFIABLE_UNIT_STATUSES
+    unit.can_notify = bool(
+        unit.operator_id
+        and unit.status in _NOTIFIABLE_UNIT_STATUSES
+    )
     return render(request, "budgets/_work_order_unit_row.html", {
         "unit": unit,
         "work_order": unit.work_order,
@@ -5850,7 +5853,8 @@ class WorkOrderUnitNotifyView(AssistanceWorkOrderAccessMixin, View):
         """
         from whatsapp.services import send_operator_albaran_notification
 
-        if not _get_company_user(request):
+        company_user = _get_company_user(request)
+        if not company_user:
             return redirect("panel:login")
         unit = _unit_of_company(request, pk)
         row_message, row_error = "", ""
@@ -5860,6 +5864,8 @@ class WorkOrderUnitNotifyView(AssistanceWorkOrderAccessMixin, View):
                 "Este albarán ya está %s; no se avisa de nuevo."
                 % unit.get_status_display().lower()
             )
+        elif unit.operator is None:
+            row_error = "Este albarán no tiene chófer asignado."
         elif not sender:
             logger.error(
                 "# [ALBARAN NOTIFY] TWILIO_WHATSAPP_SENDER no configurado."
@@ -5868,7 +5874,9 @@ class WorkOrderUnitNotifyView(AssistanceWorkOrderAccessMixin, View):
                 "No se ha podido enviar el aviso: falta el número de "
                 "WhatsApp de la plataforma."
             )
-        elif send_operator_albaran_notification(unit.pk, sender):
+        elif send_operator_albaran_notification(
+            unit.pk, sender, changed_by=company_user,
+        ):
             row_message = (
                 "Aviso enviado a %s. Falta que WhatsApp confirme la "
                 "entrega." % (
@@ -5913,7 +5921,10 @@ class WorkOrderAlbaranView(AssistanceAlbaranAccessMixin, View):
         ---
         Renderiza el formulario de albarán para la unidad indicada.
         """
-        from budgets.models import WorkOrderAssistanceUnit
+        from budgets.models import (
+            WorkOrderAssistanceUnit,
+            WorkOrderAssistanceUnitEvent,
+        )
         company_user = _get_company_user(request)
         if not company_user:
             return redirect("panel:login")
@@ -5936,9 +5947,14 @@ class WorkOrderAlbaranView(AssistanceAlbaranAccessMixin, View):
             WorkOrderAssistanceUnit.STATUS_NOTIFIED,
             WorkOrderAssistanceUnit.STATUS_NOTIFY_FAILED,
         ):
+            previous_status = unit.status
             unit.status = WorkOrderAssistanceUnit.STATUS_DOWNLOADED
             unit.downloaded_at = now()
             unit.save(update_fields=["status", "downloaded_at"])
+            WorkOrderAssistanceUnitEvent.status_change(
+                unit, previous_status, unit.status, by=company_user,
+                detail="El chófer abre el albarán.",
+            )
         ctx = _build_base_context(request, {
             "unit": unit,
             "work_order": unit.work_order,
@@ -5957,7 +5973,9 @@ class WorkOrderAlbaranView(AssistanceAlbaranAccessMixin, View):
         Redirige a WorkOrderDetailView en éxito.
         """
         from budgets.models import (
-            WorkOrderAssistanceUnit, WorkOrderAssistanceSignature,
+            WorkOrderAssistanceSignature,
+            WorkOrderAssistanceUnit,
+            WorkOrderAssistanceUnitEvent,
         )
         company_user = _get_company_user(request)
         if not company_user:
@@ -5975,6 +5993,7 @@ class WorkOrderAlbaranView(AssistanceAlbaranAccessMixin, View):
         signature_data = request.POST.get("signature_data", "").strip()
         signer_name = request.POST.get("signer_name", "").strip()
         signed_offline = request.POST.get("signed_offline", "false") == "true"
+        previous_status = unit.status
         with transaction.atomic():
             unit.phase1_km = phase1_km
             unit.phase2_km = phase2_km
@@ -5986,6 +6005,13 @@ class WorkOrderAlbaranView(AssistanceAlbaranAccessMixin, View):
             # H37 (S132): completed_at no se rellenaba nunca.
             unit.completed_at = now()
             unit.save()
+            WorkOrderAssistanceUnitEvent.status_change(
+                unit, previous_status, unit.status, by=company_user,
+                detail=(
+                    "Albarán firmado." if signature_data
+                    else "Albarán guardado sin firma."
+                ),
+            )
             if signature_data:
                 WorkOrderAssistanceSignature.objects.update_or_create(
                     unit=unit,

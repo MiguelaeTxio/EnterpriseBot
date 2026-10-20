@@ -433,10 +433,20 @@ class IncomingWhatsAppView(View):
                             # the link.
                             # Marcar la unidad como DOWNLOADED cuando el
                             # operario recibe el enlace.
+                            _previous_status = _unit.status
                             _unit.status = _WAU.STATUS_DOWNLOADED
                             _unit.downloaded_at = now()
                             _unit.save(
                                 update_fields=["status", "downloaded_at"]
+                            )
+                            # H37 (S133): audit trail of the change.
+                            # Registro de auditoría del cambio.
+                            from budgets.models import (
+                                WorkOrderAssistanceUnitEvent as _WAUE,
+                            )
+                            _WAUE.status_change(
+                                _unit, _previous_status, _unit.status,
+                                detail="Enlace del albarán entregado.",
                             )
                             _delivered_pks.append(_unit_pk)
                             logger.info(
@@ -1304,7 +1314,10 @@ class AlbaranNoticeStatusView(View):
 
         Aplica a la unidad el estado de entrega del aviso.
         """
-        from budgets.models import WorkOrderAssistanceUnit
+        from budgets.models import (
+            WorkOrderAssistanceUnit,
+            WorkOrderAssistanceUnitEvent,
+        )
 
         from .services import unit_pk_from_notice_token
 
@@ -1325,17 +1338,37 @@ class AlbaranNoticeStatusView(View):
         last_notice = WorkOrderAssistanceUnit.objects.filter(
             pk=unit_pk, notify_message_sid=message_sid,
         )
+        # H37 (S133): each change is recorded (WorkOrderAssistanceUnit
+        # Event, no panel user: WhatsApp reported it). The previous
+        # status is read first so the event says where it came from.
+        # Cada cambio queda registrado (sin usuario del panel: lo
+        # informa WhatsApp). Se lee antes el estado de partida.
+        unit = last_notice.first()
+        if unit is None:
+            return HttpResponse(status=204)
+        previous_status = unit.status
         if message_status in _NOTICE_DELIVERED_STATUSES:
-            last_notice.filter(
+            updated = last_notice.filter(
                 status=WorkOrderAssistanceUnit.STATUS_NOTIFY_SENDING,
             ).update(
                 status=WorkOrderAssistanceUnit.STATUS_NOTIFIED,
                 notified_at=now(),
             )
+            if updated:
+                WorkOrderAssistanceUnitEvent.status_change(
+                    unit, previous_status,
+                    WorkOrderAssistanceUnit.STATUS_NOTIFIED,
+                    detail="WhatsApp confirma la entrega (%s)."
+                    % message_status,
+                )
             return HttpResponse(status=204)
         if message_status not in _NOTICE_FAILED_STATUSES:
             return HttpResponse(status=204)
 
+        notify_error = (
+            "WhatsApp no entregado (Twilio: %s, error %s)"
+            % (message_status, error_code or "sin código")
+        )[:255]
         updated = last_notice.filter(
             status__in=(
                 WorkOrderAssistanceUnit.STATUS_NOTIFY_SENDING,
@@ -1343,12 +1376,14 @@ class AlbaranNoticeStatusView(View):
             ),
         ).update(
             status=WorkOrderAssistanceUnit.STATUS_NOTIFY_FAILED,
-            notify_error=(
-                "WhatsApp no entregado (Twilio: %s, error %s)"
-                % (message_status, error_code or "sin código")
-            )[:255],
+            notify_error=notify_error,
         )
         if updated:
+            WorkOrderAssistanceUnitEvent.status_change(
+                unit, previous_status,
+                WorkOrderAssistanceUnit.STATUS_NOTIFY_FAILED,
+                detail=notify_error,
+            )
             logger.warning(
                 "# [ALBARAN STATUS] Unidad pk=%s: aviso no entregado "
                 "(%s, error %s).",

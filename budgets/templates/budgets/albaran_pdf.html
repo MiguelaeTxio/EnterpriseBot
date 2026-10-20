@@ -321,7 +321,7 @@
     <div class="field-grid cols-4">
         <div class="field-block">
             <span class="label">Chófer</span>
-            <span class="value">{{ unit.operator.user.get_full_name|default:unit.operator.user.username }}</span>
+            <span class="value">{% if unit.operator %}{{ unit.operator.user.get_full_name|default:unit.operator.user.username }}{% else %}—{% endif %}</span>
         </div>
         <div class="field-block">
             <span class="label">Máquina</span>
