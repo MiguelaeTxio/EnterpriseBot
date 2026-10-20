@@ -1312,9 +1312,15 @@ def send_operator_albaran_notification(
         )
         return False
 
+    from budgets.assistance_resources import operator_phone as phone_of
+
     operator = unit.operator
     company = unit.work_order.company
-    operator_phone = (operator.phone or "").strip()
+    # H37 (S132): CompanyUser.phone is empty in production; the phone
+    # lives in the driver's Contact.
+    # CompanyUser.phone está vacío en producción; el teléfono está en
+    # el Contact del conductor.
+    operator_phone = phone_of(operator)
     if not operator_phone:
         logger.error(
             "# [ALBARAN NOTIFY] Operario %s sin teléfono registrado. "

@@ -64,6 +64,7 @@ Jerarquía de mixins:
 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib import messages
+from django.db.models import Q
 from django.http import HttpResponseForbidden
 from django.shortcuts import redirect
 
@@ -332,6 +333,57 @@ class AssistanceWorkOrderAccessMixin(CompanyUserRequiredMixin):
                 request,
                 "Acceso denegado. Esta sección requiere el rol de "
                 "Operario o Supervisor de Asistencia, o Administrador.",
+            )
+            return redirect("/panel/")
+
+        return super().dispatch(request, *args, **kwargs)
+
+
+class AssistanceAlbaranAccessMixin(CompanyUserRequiredMixin):
+    """
+    Albarán of a unit: work order roles, or the unit's own driver.
+
+    ---
+
+    H37 (S132). Albarán y PDF de una unidad (`pk` de
+    WorkOrderAssistanceUnit): los roles de las órdenes de trabajo
+    (ADMIN, ASSISTANCE, ASSIST_SUPERVISOR) y, además, el conductor de
+    esa unidad sea cual sea su rol. Los conductores de asistencia son
+    trabajadores de la sección (DRIVER, WORKSHOP...) y abren su albarán
+    desde el aviso de WhatsApp. Rol comprobado antes de ejecutar la
+    vista (S117).
+    """
+
+    def dispatch(self, request, *args, **kwargs):
+        """
+        Check the role or the unit driver, then run the view.
+
+        ---
+
+        Comprueba el rol o que sea el conductor de la unidad y después
+        ejecuta la vista.
+        """
+        from budgets.models import WorkOrderAssistanceUnit
+
+        company_user = _company_user_for_role_check(request)
+        if company_user is None:
+            return super().dispatch(request, *args, **kwargs)
+
+        allowed_roles = {
+            CompanyUser.ROLE_ADMIN,
+            CompanyUser.ROLE_ASSISTANCE,
+            CompanyUser.ROLE_ASSIST_SUPERVISOR,
+        }
+        is_unit_driver = WorkOrderAssistanceUnit.objects.filter(
+            pk=kwargs.get("pk"),
+            work_order__company=company_user.company,
+        ).filter(
+            Q(operator=company_user) | Q(operator_2=company_user),
+        ).exists()
+        if company_user.role not in allowed_roles and not is_unit_driver:
+            messages.error(
+                request,
+                "Acceso denegado. Este albarán es de otro conductor.",
             )
             return redirect("/panel/")
 

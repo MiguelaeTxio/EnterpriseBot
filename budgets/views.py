@@ -46,6 +46,7 @@ from budgets.models import (
 from budgets.services import calculate_budget, _resolve_toll_pricing
 from ivr_config.models import CompanyUser, PresenceStatus
 from panel.mixins import (
+    AssistanceAlbaranAccessMixin,
     AssistanceRequiredMixin,
     AssistanceSupervisorAccessMixin,
     AssistanceWorkOrderAccessMixin,
@@ -5461,6 +5462,9 @@ class AlbaranDemoView(AssistanceRequiredMixin, View):
 # H37 (S132): unit states in which the operator can be notified again.
 # Estados de la unidad en los que se puede (re)avisar al operario.
 _NOTIFIABLE_UNIT_STATUSES = ("PENDING", "NOTIFIED", "DOWNLOADED")
+# H37 (S132): roles that manage the work orders (detail page).
+# Roles que gestionan las órdenes de trabajo (página de detalle).
+_WORK_ORDER_STAFF_ROLES = ("ADMIN", "ASSISTANCE", "ASSIST_SUPERVISOR")
 
 
 class WorkOrderCreateFromBudgetView(AssistanceWorkOrderAccessMixin, View):
@@ -5659,39 +5663,34 @@ class WorkOrderDetailView(AssistanceWorkOrderAccessMixin, View):
 
 def _assistance_operators(company):
     """
-    Active ASSISTANCE operators of a company, for the unit selector.
+    Drivers of the assistance section, for the unit selector.
 
     ---
 
-    Operarios de asistencia activos de la empresa, para el selector de
-    la unidad. Necesitan cuenta de panel (`CompanyUser`, directriz 4.19:
-    el albarán se abre con su usuario) y rol ASSISTANCE, el único que
-    junto a ADMIN puede abrir el albarán.
+    Conductores de la sección Asistencia, para el selector de la unidad
+    (H37, S132: `assistance_resources.assistance_drivers`). Antes se
+    tomaba el rol ASSISTANCE, que no tiene ningún conductor real.
     """
-    return CompanyUser.objects.filter(
-        company=company,
-        is_active=True,
-        role=CompanyUser.ROLE_ASSISTANCE,
-    ).select_related("user").order_by(
-        "user__first_name", "user__last_name", "user__username",
-    )
+    from budgets.assistance_resources import assistance_drivers
+
+    return assistance_drivers(company)
 
 
 def _assistance_machine_options(company):
     """
-    Active fleet machines, as suggestions for the unit machine field.
+    Assistance machines, as suggestions for the unit machine field.
 
     ---
 
-    Máquinas activas de la flota, como sugerencias para el campo de
-    texto `machine` de la unidad (código y matrícula).
+    Máquinas de la familia ASISTENCIA, como sugerencias para el campo
+    de texto `machine` de la unidad (código interno y matrícula).
     """
-    from fleet.models import MachineAsset
+    from budgets.assistance_resources import assistance_machines
 
     options = []
-    for code, plate, brand_model in MachineAsset.objects.filter(
-        company=company, is_active=True,
-    ).order_by("code").values_list("code", "plate", "brand_model"):
+    for code, plate, brand_model in assistance_machines(
+        company,
+    ).values_list("code", "plate", "brand_model"):
         label = " ".join(part for part in (code, plate) if part)
         options.append({"value": label, "brand_model": brand_model})
     return options
@@ -5825,7 +5824,7 @@ class WorkOrderUnitNotifyView(AssistanceWorkOrderAccessMixin, View):
         return back
 
 
-class WorkOrderAlbaranView(AssistanceWorkOrderAccessMixin, View):
+class WorkOrderAlbaranView(AssistanceAlbaranAccessMixin, View):
     """
     Renders the mobile-first albarán form for a WorkOrderAssistanceUnit.
     Used by the operator on the Android app or mobile browser to fill in
@@ -5875,6 +5874,9 @@ class WorkOrderAlbaranView(AssistanceWorkOrderAccessMixin, View):
             "unit": unit,
             "work_order": unit.work_order,
             "active_nav": "work_orders",
+            "show_work_order_link": (
+                company_user.role in _WORK_ORDER_STAFF_ROLES
+            ),
         })
         return render(request, self.template_name, ctx)
 
@@ -5928,6 +5930,12 @@ class WorkOrderAlbaranView(AssistanceWorkOrderAccessMixin, View):
                     },
                 )
         messages.success(request, "Albarán guardado y firmado correctamente.")
+        # H37 (S132): the driver cannot open the work order detail; he
+        # goes back to his own albarán.
+        # El conductor no puede abrir el detalle de la orden: vuelve a
+        # su propio albarán.
+        if company_user.role not in _WORK_ORDER_STAFF_ROLES:
+            return redirect("budgets:work_order_albaran", pk=unit.pk)
         return redirect("budgets:work_order_detail", pk=unit.work_order.pk)
 
 
@@ -6276,7 +6284,7 @@ class TollSegmentBulkToggleView(AssistanceSupervisorAccessMixin, View):
         return redirect("budgets:toll_segment_list")
 
 
-class WorkOrderPdfView(AssistanceWorkOrderAccessMixin, View):
+class WorkOrderPdfView(AssistanceAlbaranAccessMixin, View):
     """
     Generates and streams a PDF export of a WorkOrderAssistanceUnit albarán.
     Uses weasyprint to render albaran_pdf.html as a PDF response.

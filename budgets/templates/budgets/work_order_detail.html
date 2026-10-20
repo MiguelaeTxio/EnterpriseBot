@@ -406,9 +406,9 @@
                   class="row g-2 align-items-end">
                 {% csrf_token %}
                 <div class="col-12 col-md-5">
-                    <label for="unit-operator" class="form-label small mb-1">Operario</label>
+                    <label for="unit-operator" class="form-label small mb-1">Conductor</label>
                     <select id="unit-operator" name="operator_id" class="form-select form-select-sm" required>
-                        <option value="">Elige el operario</option>
+                        <option value="">Elige el conductor</option>
                         {% for operator in assistance_operators %}
                         <option value="{{ operator.pk }}">{{ operator }}</option>
                         {% endfor %}
@@ -434,7 +434,7 @@
             {% else %}
             <p class="small text-muted mb-0">
                 <i class="bi bi-info-circle me-1"></i>
-                No hay ningún usuario activo con el rol Operario de Asistencia para asignar unidades.
+                No hay ningún conductor activo en la sección Asistencia para asignar unidades.
             </p>
             {% endif %}
         </div>
