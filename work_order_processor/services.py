@@ -48,12 +48,39 @@ import logging
 import os
 import re
 import time as _time
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
 
-def _parse_period_from_pdf_name(pdf_name: str) -> tuple[date | None, date | None]:
+import openpyxl
+from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
+from openpyxl.utils import get_column_letter
+from django.core.files.base import ContentFile
+from django.utils import timezone
+from google.genai.types import (
+    GenerateContentConfig,
+    HttpOptions,
+    Part,
+    ThinkingConfig,
+)
+
+from ai_services.gemini_client import get_gemini_client as _get_gemini_client
+from fleet.models import MachineAsset
+from .models import (
+    WorkOrder,
+    WorkOrderEntry,
+    WorkOrderEntryLine,
+    FaultCategory,
+    FaultSubcategory,
+)
+
+logger = logging.getLogger(__name__)
+
+
+def _parse_period_from_pdf_name(
+    pdf_name: str,
+) -> tuple[date | None, date | None]:
     """
     Minimal period parser for Excel title generation.
     Canonical format: NAME DD-MM-YY AL DD-MM-YY[.pdf]
@@ -67,31 +94,21 @@ def _parse_period_from_pdf_name(pdf_name: str) -> tuple[date | None, date | None
     Acepta espacios o guiones bajos como separadores de tokens.
     Devuelve (None, None) si el nombre no coincide.
     """
-    stem    = os.path.splitext(os.path.basename(pdf_name))[0]
-    pattern = r'(\d{2})-(\d{2})-(\d{2})[_\s]+[Aa][Ll][_\s]+(\d{2})-(\d{2})-(\d{2})'
-    m       = re.search(pattern, stem)
+    stem = os.path.splitext(os.path.basename(pdf_name))[0]
+    pattern = (
+        r'(\d{2})-(\d{2})-(\d{2})[_\s]+[Aa][Ll]'
+        r'[_\s]+(\d{2})-(\d{2})-(\d{2})'
+    )
+    m = re.search(pattern, stem)
     if not m:
         return None, None
     try:
         start = date(2000 + int(m.group(3)), int(m.group(2)), int(m.group(1)))
-        end   = date(2000 + int(m.group(6)), int(m.group(5)), int(m.group(4)))
+        end = date(2000 + int(m.group(6)), int(m.group(5)), int(m.group(4)))
         return start, end
     except ValueError:
         return None, None
 
-import openpyxl
-from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
-from openpyxl.utils import get_column_letter
-from django.core.files.base import ContentFile
-from django.utils import timezone
-from google import genai
-from google.genai.types import GenerateContentConfig, HttpOptions, Part, ThinkingConfig
-
-from ai_services.gemini_client import get_gemini_client as _get_gemini_client
-from fleet.models import MachineAsset
-from .models import WorkOrder, WorkOrderEntry, WorkOrderEntryLine, FaultCategory, FaultSubcategory
-
-logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Gemini client initialisation — Hito S001/H10: migrated to the shared
@@ -129,17 +146,20 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 _GEMINI_MODEL = "gemini-3.5-flash"
 
-# Per-request timeout in milliseconds passed via GenerateContentConfig.http_options.
-# With vertexai=True the client-level HttpOptions.timeout is not reliably forwarded
-# to httpx on a per-request basis; the only guaranteed mechanism is to pass
-# HttpOptions directly inside GenerateContentConfig on every generate_content call.
+# Per-request timeout in milliseconds passed via
+# GenerateContentConfig.http_options. With vertexai=True the client-level
+# HttpOptions.timeout is not reliably forwarded to httpx on a per-request
+# basis; the only guaranteed mechanism is to pass HttpOptions directly inside
+# GenerateContentConfig on every generate_content call.
 # 360 000 ms = 6 minutes — sufficient margin for complex handwritten pages.
 #
-# Timeout por petición en milisegundos, pasado mediante GenerateContentConfig.http_options.
-# Con vertexai=True el HttpOptions.timeout a nivel de cliente no se propaga de forma
-# fiable a httpx por petición; el único mecanismo garantizado es pasar HttpOptions
-# directamente dentro de GenerateContentConfig en cada llamada a generate_content.
-# 360 000 ms = 6 minutos — margen suficiente para páginas manuscritas complejas.
+# Timeout por petición en milisegundos, pasado mediante
+# GenerateContentConfig.http_options. Con vertexai=True el HttpOptions.timeout
+# a nivel de cliente no se propaga de forma fiable a httpx por petición; el
+# único mecanismo garantizado es pasar HttpOptions directamente dentro de
+# GenerateContentConfig en cada llamada a generate_content.
+# 360 000 ms = 6 minutos — margen suficiente para páginas manuscritas
+# complejas.
 _GEMINI_TIMEOUT_MS = 60_000
 
 # GenerateContentConfig reutilizable con timeout por petición garantizado.
@@ -273,18 +293,24 @@ Formato de respuesta (claves exactas):
   ]
 }
 
-TAXONOMÍA DE AVERÍAS — usa estos códigos exactos en fault_category y fault_subcategory:
+TAXONOMÍA DE AVERÍAS — usa estos códigos exactos en fault_category y \
+fault_subcategory:
 
 Categorías (fault_category):
-  ENGINE_TRANSMISSION        — Motor, transmisión, PTO, refrigeración, combustible
-  HYDRAULIC                  — Bomba hidráulica, cilindros, válvulas, aceite, central
+  ENGINE_TRANSMISSION        — Motor, transmisión, PTO, refrigeración, \
+combustible
+  HYDRAULIC                  — Bomba hidráulica, cilindros, válvulas, aceite, \
+central
   ELECTRICAL_ELECTRONIC      — Cableado, sensores, mandos, iluminación, batería
   BRAKES_STEERING_SUSPENSION — Frenos, dirección, suspensión
   TYRES_RUNNING_GEAR         — Neumáticos, ejes, cadenas y rodadura oruga
-  LIFTING_STRUCTURE          — Pluma, gancho/poleas, cable, rotación, estabilizadores,
-                               mástil/horquillas, plataforma, quinta rueda, chasis semirremolque
+  LIFTING_STRUCTURE          — Pluma, gancho/poleas, cable, rotación, \
+estabilizadores,
+                               mástil/horquillas, plataforma, quinta rueda, \
+chasis semirremolque
   BODYWORK_CHASSIS           — Carrocería, chasis estructural
-  OTHER                      — Cualquier avería que no encaje en los grupos anteriores
+  OTHER                      — Cualquier avería que no encaje en los grupos \
+anteriores
 
 Subcategorías (fault_subcategory):
   ET_ENGINE | ET_TRANSMISSION | ET_PTO | ET_COOLING | ET_FUEL
@@ -297,9 +323,12 @@ Subcategorías (fault_subcategory):
   BC_BODYWORK | BC_CHASSIS
   OT_OTHER
 
-Regla: la subcategoría debe pertenecer a la categoría elegida (mismos prefijos).
-Si la información es insuficiente o no encaja en ningún grupo, usa OTHER / OT_OTHER.
-Si el campo fault_description y repair_notes son ambos nulos o ilegibles, usa null
+Regla: la subcategoría debe pertenecer a la categoría elegida (mismos \
+prefijos).
+Si la información es insuficiente o no encaja en ningún grupo, usa OTHER / \
+OT_OTHER.
+Si el campo fault_description y repair_notes son ambos nulos o ilegibles, usa \
+null
 en ambos campos de clasificación.
 """
 
@@ -348,7 +377,9 @@ def extract_work_order_page(image_bytes: bytes) -> dict[str, Any]:
                 _response = client.models.generate_content(
                     model=_GEMINI_MODEL,
                     contents=[
-                        Part.from_bytes(data=image_bytes, mime_type="image/png"),
+                        Part.from_bytes(
+                            data=image_bytes, mime_type="image/png"
+                        ),
                         _EXTRACTION_PROMPT_FULL,
                     ],
                     config=_GEMINI_REQUEST_CONFIG,
@@ -379,18 +410,20 @@ def extract_work_order_page(image_bytes: bytes) -> dict[str, Any]:
         match = re.search(r"\{.*\}", cleaned, re.DOTALL)
         if not match:
             raise ValueError(
-                f"No se encontró ningún objeto JSON en la respuesta de Gemini: "
-                f"{raw_text[:200]}"
+                f"No se encontró ningún objeto JSON en la respuesta "
+                f"de Gemini: {raw_text[:200]}"
             )
 
         extracted: dict[str, Any] = json.loads(match.group())
 
-        # Ensure entradas is always a list / Garantizar que entradas es siempre lista.
+        # Ensure entradas is always a list / Garantizar que entradas es siempre
+        # lista.
         if not isinstance(extracted.get("entradas"), list):
             extracted["entradas"] = []
 
         logger.info(
-            "# Gemini Vision: extracción completada. Confianza: %s | Entradas: %d",
+            "# Gemini Vision: extracción completada. "
+            "Confianza: %s | Entradas: %d",
             extracted.get("extraction_confidence", "DESCONOCIDA"),
             len(extracted.get("entradas", [])),
         )
@@ -426,7 +459,9 @@ def extract_work_order_page(image_bytes: bytes) -> dict[str, Any]:
 
     except Exception as exc:
         logger.error(
-            "# Error crítico en extract_work_order_page: %s", exc, exc_info=True
+            "# Error crítico en extract_work_order_page: %s",
+            exc,
+            exc_info=True,
         )
         return {
             "fecha":                None,
@@ -449,7 +484,9 @@ def extract_work_order_page(image_bytes: bytes) -> dict[str, Any]:
 # El pipeline histórico (tasks.py / Celery) sigue usando _EXTRACTION_PROMPT
 # y extract_work_order_page() sin ninguna modificación.
 
-_EXTRACTION_PROMPT_FULL = """Eres un asistente especializado en la extracción de datos de partes de trabajo
+
+_EXTRACTION_PROMPT_FULL = """Eres un asistente especializado en la extracción \
+de datos de partes de trabajo
 manuscritos de una empresa de grúas y maquinaria industrial (grúas móviles,
 plataformas elevadoras, autocargantes, cabezas tractoras, semirremolques,
 carretillas elevadoras). El parte tiene DOS caras:
@@ -476,7 +513,8 @@ REGLAS OBLIGATORIAS (aplican a ambas caras):
 6. En "machine_raw" copia exactamente lo que lees tras aplicar las reglas de
    caligrafía. Si aparece cualquier variante del alias Larios en contexto de
    máquina, normalízalo a "Larios". El tipo de vehículo que precede al alias
-   va separado por un espacio (ej. "Furgon Larios"). NUNCA concatenar sin espacio.
+   va separado por un espacio (ej. "Furgon Larios"). NUNCA concatenar sin \
+espacio.
    "Salida polígonos" NO es una máquina: deja machine_raw null en ese caso.
 7. Interpreta abreviaturas técnicas en contexto de vehículos pesados:
    "hid." → hidráulico, "trans." → transmisión, "dir." → dirección,
@@ -501,13 +539,15 @@ R1. "referencia" es el código o número de referencia del albarán del proveedo
     Puede ser alfanumérico. Si no aparece, usa null.
 R2. "vehiculo_raw" es el código o descripción de la máquina a la que se imputa
     el repuesto. Aplica las mismas reglas de caligrafía que para machine_raw.
-R3. "material" es la descripción textual del repuesto o material. Puede inferirse
+R3. "material" es la descripción textual del repuesto o material. Puede \
+inferirse
     de la referencia si el campo está vacío pero la referencia es descriptiva.
 R4. "unidades" es un número (entero o decimal). Usa null si no es legible.
 R5. "origen" debe ser exactamente "SUPPLIER" si el material proviene de un
     proveedor externo, o "WAREHOUSE" si proviene del almacén interno.
     Indicadores de proveedor: nombre de empresa, número de albarán externo.
-    Indicadores de almacén: "almacén", "stock", "almacen", sin nombre de empresa.
+    Indicadores de almacén: "almacén", "stock", "almacen", sin nombre de \
+empresa.
     Si no se puede determinar con certeza, usa "WAREHOUSE" por defecto y añade
     "PROCEDENCIA" a flags.
 R6. "proveedor" es el nombre del proveedor externo. Solo se rellena cuando
@@ -611,18 +651,24 @@ Formato de respuesta (claves exactas):
   ]
 }
 
-TAXONOMÍA DE AVERÍAS — usa estos códigos exactos en fault_category y fault_subcategory:
+TAXONOMÍA DE AVERÍAS — usa estos códigos exactos en fault_category y \
+fault_subcategory:
 
 Categorías (fault_category):
-  ENGINE_TRANSMISSION        — Motor, transmisión, PTO, refrigeración, combustible
-  HYDRAULIC                  — Bomba hidráulica, cilindros, válvulas, aceite, central
+  ENGINE_TRANSMISSION        — Motor, transmisión, PTO, refrigeración, \
+combustible
+  HYDRAULIC                  — Bomba hidráulica, cilindros, válvulas, aceite, \
+central
   ELECTRICAL_ELECTRONIC      — Cableado, sensores, mandos, iluminación, batería
   BRAKES_STEERING_SUSPENSION — Frenos, dirección, suspensión
   TYRES_RUNNING_GEAR         — Neumáticos, ejes, cadenas y rodadura oruga
-  LIFTING_STRUCTURE          — Pluma, gancho/poleas, cable, rotación, estabilizadores,
-                               mástil/horquillas, plataforma, quinta rueda, chasis semirremolque
+  LIFTING_STRUCTURE          — Pluma, gancho/poleas, cable, rotación, \
+estabilizadores,
+                               mástil/horquillas, plataforma, quinta rueda, \
+chasis semirremolque
   BODYWORK_CHASSIS           — Carrocería, chasis estructural
-  OTHER                      — Cualquier avería que no encaje en los grupos anteriores
+  OTHER                      — Cualquier avería que no encaje en los grupos \
+anteriores
 
 Subcategorías (fault_subcategory):
   ET_ENGINE | ET_TRANSMISSION | ET_PTO | ET_COOLING | ET_FUEL
@@ -635,9 +681,12 @@ Subcategorías (fault_subcategory):
   BC_BODYWORK | BC_CHASSIS
   OT_OTHER
 
-Regla: la subcategoría debe pertenecer a la categoría elegida (mismos prefijos).
-Si la información es insuficiente o no encaja en ningún grupo, usa OTHER / OT_OTHER.
-Si el campo fault_description y repair_notes son ambos nulos o ilegibles, usa null
+Regla: la subcategoría debe pertenecer a la categoría elegida (mismos \
+prefijos).
+Si la información es insuficiente o no encaja en ningún grupo, usa OTHER / \
+OT_OTHER.
+Si el campo fault_description y repair_notes son ambos nulos o ilegibles, usa \
+null
 en ambos campos de clasificación.
 """
 
@@ -695,7 +744,9 @@ def extract_work_order_page_full(image_bytes: bytes) -> dict:
                 _response = client.models.generate_content(
                     model=_GEMINI_MODEL,
                     contents=[
-                        Part.from_bytes(data=image_bytes, mime_type="image/png"),
+                        Part.from_bytes(
+                            data=image_bytes, mime_type="image/png"
+                        ),
                         _EXTRACTION_PROMPT_FULL,
                     ],
                     config=_GEMINI_REQUEST_CONFIG,
@@ -728,8 +779,8 @@ def extract_work_order_page_full(image_bytes: bytes) -> dict:
         match = re.search(r"\{.*\}", cleaned, re.DOTALL)
         if not match:
             raise ValueError(
-                f"No se encontró ningún objeto JSON en la respuesta de Gemini: "
-                f"{raw_text[:200]}"
+                f"No se encontró ningún objeto JSON en la respuesta "
+                f"de Gemini: {raw_text[:200]}"
             )
 
         extracted: dict = json.loads(match.group())
@@ -853,16 +904,19 @@ def _coerce_confidence(value: str | None) -> str:
 # block) by _resolve_machine_asset when the exact lookup fails.
 # Each entry maps ONE character to its list of visually similar alternatives.
 # Direction is fully bidirectional: digit↔letter and letter↔digit alike.
-# Validated against the full MachineAsset catalogue (313 records, Hito 8 / S008).
+# Validated against the full MachineAsset catalogue (313 records, Hito 8 /
+# S008).
 #
 # Mapa de confusión morfológica simétrico para caracteres de código de máquina.
 # Se aplica carácter a carácter en CUALQUIER posición del código (prefijo o
 # bloque numérico) por _resolve_machine_asset cuando la búsqueda exacta falla.
-# Cada entrada mapea UN carácter a su lista de alternativas visualmente similares.
-# La dirección es totalmente bidireccional: dígito↔letra y letra↔dígito.
+# Cada entrada mapea UN carácter a su lista de alternativas visualmente
+# similares. La dirección es totalmente bidireccional: dígito↔letra y
+# letra↔dígito.
 _OCR_CONFUSION_MAP: dict[str, list[str]] = {
-    # T written quickly degenerates to 7 (crossbar too low) or 4 (short vertical).
-    # La T escrita rápido degenera a 7 (barra demasiado baja) o a 4 (vertical corta).
+    # T written quickly degenerates to 7 (crossbar too low) or 4 (short
+    # vertical). La T escrita rápido degenera a 7 (barra demasiado baja) o a 4
+    # (vertical corta).
     "T": ["7", "4"],
     "7": ["T"],
     "4": ["T"],
@@ -949,10 +1003,11 @@ def _normalise_machine_code(raw: str | None) -> str:
       5. Apply _OCR_DIGIT_MAP substitutions to the numeric block (right of
          hyphen) when the block contains exclusively digits.
       6. Purely-numeric codes (no letter prefix found after step 4): attempt
-         to reinterpret the first digit as a letter via _OCR_DIGIT_TO_LETTER_MAP.
-         If a mapping exists, return the candidate LETTER-REST form so the
-         resolver can try it against the catalogue. If no mapping exists,
-         return the numeric string as-is and let the resolver handle it.
+         to reinterpret the first digit as a letter via
+         _OCR_DIGIT_TO_LETTER_MAP. If a mapping exists, return the candidate
+         LETTER-REST form so the resolver can try it against the catalogue. If
+         no mapping exists, return the numeric string as-is and let the
+         resolver handle it.
 
     ---
 
@@ -965,7 +1020,8 @@ def _normalise_machine_code(raw: str | None) -> str:
     Pasos de procesamiento:
       1. Strip y mayúsculas.
       2. Eliminar espacios internos y signos igual.
-      3. Alias de múltiples palabras: devolver en mayúsculas conservando espacio.
+      3. Alias de múltiples palabras: devolver en mayúsculas conservando
+         espacio.
       4. Insertar guion entre letras iniciales y bloque numérico si no está.
       5. Aplicar sustituciones _OCR_DIGIT_MAP al bloque numérico (derecha del
          guion) cuando el bloque contiene exclusivamente dígitos.
@@ -1032,8 +1088,9 @@ def _normalise_machine_code(raw: str | None) -> str:
 # Covers: "MERCEDES LARIOS", "FURGON LARIOS", "MERCEDES LORIOL", etc.
 #
 # Regex para detectar cualquier variante del alias Larios como segunda palabra
-# de machine_norm. Todas estas combinaciones se mapean a FURGLAR independientemente
-# del tipo de vehículo. Cubre: "MERCEDES LARIOS", "FURGON LARIOS", etc.
+# de machine_norm. Todas estas combinaciones se mapean a FURGLAR
+# independientemente del tipo de vehículo. Cubre: "MERCEDES LARIOS", "FURGON
+# LARIOS", etc.
 _LARIOS_TWO_WORD_RE = re.compile(
     r'(?i)^\S+\s+L[ao]r[aio][a-z]*$'
 )
@@ -1045,8 +1102,8 @@ def _resolve_machine_asset(
 ) -> MachineAsset | None:
     """
     Attempts to resolve a normalised machine code to a MachineAsset record.
-    Tries exact match first, then zero-padded variants (G-8 → G-08, G-08 → G-8).
-    Returns None if no match is found.
+    Tries exact match first, then zero-padded variants (G-8 → G-08, G-08 →
+    G-8). Returns None if no match is found.
 
     When 'company' is provided, all queries are scoped to that company.
     This is mandatory in multicompany contexts (panel views) to prevent
@@ -1055,14 +1112,15 @@ def _resolve_machine_asset(
 
     ---
 
-    Intenta resolver un código de máquina normalizado a un registro MachineAsset.
-    Prueba primero coincidencia exacta, luego variantes con ceros (G-8 → G-08,
-    G-08 → G-8). Devuelve None si no se encuentra coincidencia.
+    Intenta resolver un código de máquina normalizado a un registro
+    MachineAsset. Prueba primero coincidencia exacta, luego variantes con ceros
+    (G-8 → G-08, G-08 → G-8). Devuelve None si no se encuentra coincidencia.
 
-    Cuando se proporciona 'company', todas las consultas se acotan a esa empresa.
-    Esto es obligatorio en contextos multiempresa (vistas del panel) para evitar
-    la resolución de activos entre empresas. Las llamadas internas del pipeline
-    (tasks.py, services.py) pueden omitir 'company' por compatibilidad.
+    Cuando se proporciona 'company', todas las consultas se acotan a esa
+    empresa. Esto es obligatorio en contextos multiempresa (vistas del panel)
+    para evitar la resolución de activos entre empresas. Las llamadas internas
+    del pipeline (tasks.py, services.py) pueden omitir 'company' por
+    compatibilidad.
     """
     if not machine_norm:
         return None
@@ -1080,7 +1138,10 @@ def _resolve_machine_asset(
     if _LARIOS_TWO_WORD_RE.match(machine_norm):
         try:
             return qs.get(code="FURGLAR")
-        except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
+        except (
+            MachineAsset.DoesNotExist,
+            MachineAsset.MultipleObjectsReturned,
+        ):
             pass
 
     # Exact match / Coincidencia exacta.
@@ -1090,7 +1151,8 @@ def _resolve_machine_asset(
         pass
     except MachineAsset.MultipleObjectsReturned:
         logger.warning(
-            "# _resolve_machine_asset: múltiples coincidencias para '%s'.", machine_norm
+            "# _resolve_machine_asset: múltiples coincidencias para '%s'.",
+            machine_norm,
         )
         return None
 
@@ -1124,13 +1186,17 @@ def _resolve_machine_asset(
                 candidates.add(f"{letters}{sep}{digits[2:]}")
 
         # Remove the already-tried exact match to avoid redundant queries.
-        # Eliminar la coincidencia exacta ya intentada para evitar consultas redundantes.
+        # Eliminar la coincidencia exacta ya intentada para evitar consultas
+        # redundantes.
         candidates.discard(machine_norm)
 
         for candidate in sorted(candidates):
             try:
                 return MachineAsset.objects.get(code=candidate)
-            except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
+            except (
+                MachineAsset.DoesNotExist,
+                MachineAsset.MultipleObjectsReturned,
+            ):
                 continue
 
     # ------------------------------------------------------------------
@@ -1161,12 +1227,19 @@ def _resolve_machine_asset(
         Genera todas las variantes de `code` obtenidas sustituyendo hasta
         `max_subs` caracteres usando _OCR_CONFUSION_MAP. Cada sustitución
         reemplaza exactamente un carácter en una posición por una alternativa.
-        Devuelve un conjunto plano de cadenas candidatas (el original excluido).
+        Devuelve un conjunto plano de cadenas candidatas (el original
+        excluido).
         """
         results: set[str] = set()
 
         def _apply_single(base: str) -> set[str]:
-            """One-substitution pass over base. / Pasada de una sustitución sobre base."""
+            """
+            One-substitution pass over base.
+
+            ---
+
+            Pasada de una sustitución sobre base.
+            """
             variants: set[str] = set()
             for idx, ch in enumerate(base):
                 for alt in _OCR_CONFUSION_MAP.get(ch, []):
@@ -1217,7 +1290,10 @@ def _resolve_machine_asset(
                     machine_norm, candidate, max_subs,
                 )
                 return asset
-            except (MachineAsset.DoesNotExist, MachineAsset.MultipleObjectsReturned):
+            except (
+                MachineAsset.DoesNotExist,
+                MachineAsset.MultipleObjectsReturned,
+            ):
                 continue
 
     return None
@@ -1273,12 +1349,12 @@ def _compute_delta_hours(
     if deduct_lunch:
         # Lunch break deduction: 13:30–15:00 = 90 minutes (PDF pipeline only).
         # Descuento pausa comida: 13:30–15:00 = 90 min (solo pipeline PDF).
-        lunch_start   = 13 * 60 + 30   # 810
-        lunch_end     = 15 * 60        # 900
+        lunch_start = 13 * 60 + 30   # 810
+        lunch_end = 15 * 60        # 900
         overlap_start = max(hc_min, lunch_start)
-        overlap_end   = min(hf_min, lunch_end)
-        deduction     = max(0, overlap_end - overlap_start)
-        total_min     = total_min - deduction
+        overlap_end = min(hf_min, lunch_end)
+        deduction = max(0, overlap_end - overlap_start)
+        total_min = total_min - deduction
 
     net_h = Decimal(total_min) / Decimal(60)
     return net_h.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -1301,13 +1377,16 @@ def _worker_name_from_pdf_path(pdf_name: str) -> str:
     o cualquier variante donde el nombre ocupa los tokens iniciales separados
     por guion bajo antes de un token con formato DD-MM o AL.
 
-    Devuelve el nombre en mayúsculas con espacios, ej: "ALEJANDRO GARCIA LUQUE".
-    Devuelve el stem del nombre de fichero bruto si el formato no se reconoce.
+    Devuelve el nombre en mayúsculas con espacios, ej: "ALEJANDRO GARCIA
+    LUQUE". Devuelve el stem del nombre de fichero bruto si el formato no se
+    reconoce.
     """
     import os
     stem = os.path.splitext(os.path.basename(pdf_name))[0]
-    # Normalise separators: replace underscores with spaces for uniform splitting.
-    # Normalizar separadores: reemplazar guiones bajos por espacios para split uniforme.
+    # Normalise separators: replace underscores with spaces for uniform
+    # splitting.
+    # Normalizar separadores: reemplazar guiones bajos por espacios para
+    # split uniforme.
     tokens = stem.replace("_", " ").split(" ")
 
     # Collect tokens until the first one that starts with a digit.
@@ -1330,22 +1409,22 @@ def _worker_name_from_pdf_path(pdf_name: str) -> str:
 # ---------------------------------------------------------------------------
 
 # Colour palette / Paleta de colores
-_CLR_HEADER_BG    = "1F4E79"   # Azul oscuro — cabecera de columnas
-_CLR_HEADER_FG    = "FFFFFF"   # Blanco — texto cabecera
+_CLR_HEADER_BG = "1F4E79"   # Azul oscuro — cabecera de columnas
+_CLR_HEADER_FG = "FFFFFF"   # Blanco — texto cabecera
 _CLR_CONFIG_LABEL = "D6E4F0"   # Azul muy claro — etiquetas área config
 _CLR_CONFIG_INPUT = "FFFF99"   # Amarillo — celdas de entrada C2 y C3
-_CLR_DATE_FIRST   = "BDD7EE"   # Azul claro — primera entrada del día (col FECHA)
-_CLR_DATE_UNCERT  = "FFD700"   # Dorado — fecha incierta
+_CLR_DATE_FIRST = "BDD7EE"   # Azul claro — primera entrada del día (col FECHA)
+_CLR_DATE_UNCERT = "FFD700"   # Dorado — fecha incierta
 _CLR_MACHINE_UNKN = "FFD700"   # Dorado — máquina no identificada
 _CLR_MACHINE_EMPT = "D9D9D9"   # Gris — máquina vacía
-_CLR_REV_GREEN    = "70AD47"   # Verde — jornada estándar (= 8h)
-_CLR_REV_BLUE     = "9DC3E6"   # Azul claro — horas extra (8–12h)
-_CLR_REV_YELLOW   = "FFFF00"   # Amarillo — por debajo mínimo (7–8h)
-_CLR_REV_ORANGE   = "F4B942"   # Naranja — jornada excesiva (12–16h)
-_CLR_REV_RED      = "FF0000"   # Rojo — fuera de rango (< 7h ó > 16h)
-_CLR_MANIFEST_BG  = "1F4E79"   # Azul oscuro — cabecera manifiesto
-_CLR_MANIFEST_FG  = "FFFFFF"   # Blanco — texto cabecera manifiesto
-_CLR_DAY_SHADE    = "EBF3FB"   # Azul muy claro — sombreado alterno de día
+_CLR_REV_GREEN = "70AD47"   # Verde — jornada estándar (= 8h)
+_CLR_REV_BLUE = "9DC3E6"   # Azul claro — horas extra (8–12h)
+_CLR_REV_YELLOW = "FFFF00"   # Amarillo — por debajo mínimo (7–8h)
+_CLR_REV_ORANGE = "F4B942"   # Naranja — jornada excesiva (12–16h)
+_CLR_REV_RED = "FF0000"   # Rojo — fuera de rango (< 7h ó > 16h)
+_CLR_MANIFEST_BG = "1F4E79"   # Azul oscuro — cabecera manifiesto
+_CLR_MANIFEST_FG = "FFFFFF"   # Blanco — texto cabecera manifiesto
+_CLR_DAY_SHADE = "EBF3FB"   # Azul muy claro — sombreado alterno de día
 
 # Column definitions: (header, width)
 # Definición de columnas: (cabecera, ancho)
@@ -1355,7 +1434,7 @@ _COLS = [
     ("MARCA / MODELO",    28),   # C  3
     ("KM",                10),   # D  4
     ("HORAS VEH.",        10),   # E  5
-    ("DESCRIPCIÓN AVERÍA",44),   # F  6  — ganamos ancho al eliminar OPERARIO
+    ("DESCRIPCIÓN AVERÍA", 44),   # F  6  — ganamos ancho al eliminar OPERARIO
     ("REPARACIÓN",        44),   # G  7  — ganamos ancho al eliminar OPERARIO
     ("H.C.",               8),   # H  8
     ("H.F.",               8),   # I  9
@@ -1365,10 +1444,12 @@ _COLS = [
     ("HORAS EXTRAS",     12),   # M 13
     ("SALARIO EXTRAS",   14),   # N 14
     ("REVISIÓN HORARIO", 16),   # O 15
-    ("COSTE M.O.",        14),   # P 16  — delta_hours × C3 (coste hora ordinaria)
+    # P 16 — delta_hours × C3 (coste hora ordinaria)
+    ("COSTE M.O.",        14),   # P 16
 ]
 
-_DATA_ROW_START = 5   # Datos comienzan en fila 5 (filas 1-3 config, 4 cabecera)
+# Datos comienzan en fila 5 (filas 1-3 config, 4 cabecera)
+_DATA_ROW_START = 5
 
 
 def _make_fill(hex_color: str) -> PatternFill:
@@ -1462,7 +1543,8 @@ def generate_work_order_excel(work_order_id: int) -> None:
       Fila 3 — COSTE HORA ORDINARIA (C3, celda amarilla de entrada)
       Fila 4 — Cabeceras de columna (azul oscuro)
       Fila 5+ — Filas de datos (una por WorkOrderEntryLine)
-      Pie    — Bloque MANIFIESTO DE INCIDENCIAS (2 filas separación + cabecera + filas)
+      Pie    — Bloque MANIFIESTO DE INCIDENCIAS (2 filas separación +
+               cabecera + filas)
     Segunda hoja: LEYENDA
     """
     work_order = WorkOrder.objects.get(pk=work_order_id)
@@ -1484,7 +1566,9 @@ def generate_work_order_excel(work_order_id: int) -> None:
 
         worker_name = ""
         if work_order.source_pdf:
-            worker_name = _worker_name_from_pdf_path(work_order.source_pdf.name)
+            worker_name = _worker_name_from_pdf_path(
+                work_order.source_pdf.name
+            )
 
         # Build a flat list of row data grouped by day for HORAS NETAS DÍA.
         # Construir una lista plana de datos de fila agrupados por día para
@@ -1493,8 +1577,10 @@ def generate_work_order_excel(work_order_id: int) -> None:
         # Structure: list of dicts, one per WorkOrderEntryLine, enriched with:
         #   - date_key      : date object (for day grouping)
         #   - is_first_day  : True for the first line of a new day
-        #   - is_last_day   : True for the last line of a day (set in post-pass)
-        #   - day_net_hours : Decimal total net hours for the day (set in post-pass)
+        #   - is_last_day   : True for the last line of a day (set in
+        #                     post-pass)
+        #   - day_net_hours : Decimal total net hours for the day (set in
+        #                     post-pass)
         #   - uncertain_date: bool from parent WorkOrderEntry
 
         # H24 (S018+, paso 1 hoja de ruta) — hora fantasma de vacaciones:
@@ -1545,12 +1631,15 @@ def generate_work_order_excel(work_order_id: int) -> None:
             for idx, row in enumerate(flat_rows):
                 day_indices[row["date_key"]].append(idx)
 
-            for day_ordinal, (day_key, indices) in enumerate(day_indices.items()):
+            for day_ordinal, (day_key, indices) in enumerate(
+                day_indices.items()
+            ):
                 flat_rows[indices[0]]["is_first_day"] = True
-                flat_rows[indices[-1]]["is_last_day"]  = True
+                flat_rows[indices[-1]]["is_last_day"] = True
 
                 # Alternating day shade: even ordinal days get shaded.
-                # Sombreado alterno: los días con índice ordinal par se sombrean.
+                # Sombreado alterno: los días con índice ordinal par se
+                # sombrean.
                 shade = (day_ordinal % 2 == 1)
 
                 # Sum delta_hours for the day.
@@ -1572,7 +1661,7 @@ def generate_work_order_excel(work_order_id: int) -> None:
                 day_net = day_total if all_valid or day_total > 0 else None
                 for idx in indices:
                     flat_rows[idx]["day_net_hours"] = day_net
-                    flat_rows[idx]["day_shade"]     = shade
+                    flat_rows[idx]["day_shade"] = shade
 
         # ------------------------------------------------------------------
         # Build workbook / Construir libro
@@ -1584,16 +1673,19 @@ def generate_work_order_excel(work_order_id: int) -> None:
         num_data_cols = len(_COLS)
 
         # --- Row 1: Title / Fila 1: Título ---
-        # Period is read from the PDF filename (canonical format DD-MM-YY AL DD-MM-YY)
-        # to avoid OCR year misreads polluting the title.
+        # Period is read from the PDF filename (canonical format DD-MM-YY AL
+        # DD-MM-YY) to avoid OCR year misreads polluting the title.
         # El periodo se lee del nombre del PDF (formato DD-MM-AA AL DD-MM-AA)
         # para evitar que errores de OCR en el año contaminen el título.
         period = ""
         if work_order.source_pdf:
-            _p_start, _p_end = _parse_period_from_pdf_name(work_order.source_pdf.name)
+            _p_start, _p_end = _parse_period_from_pdf_name(
+                work_order.source_pdf.name
+            )
             if _p_start and _p_end:
                 period = (
-                    f"{_p_start.strftime('%d/%m/%Y')} — {_p_end.strftime('%d/%m/%Y')}"
+                    f"{_p_start.strftime('%d/%m/%Y')} — "
+                    f"{_p_end.strftime('%d/%m/%Y')}"
                 )
         if not period and flat_rows:
             # Fallback: derive from data if filename parse fails.
@@ -1601,15 +1693,20 @@ def generate_work_order_excel(work_order_id: int) -> None:
             dates = [r["date_key"] for r in flat_rows if r["date_key"]]
             if dates:
                 period = (
-                    f"{min(dates).strftime('%d/%m/%Y')} — {max(dates).strftime('%d/%m/%Y')}"
+                    f"{min(dates).strftime('%d/%m/%Y')} — "
+                    f"{max(dates).strftime('%d/%m/%Y')}"
                 )
 
-        title_val = f"PARTES DE TRABAJO — {worker_name} — {period}".strip(" —")
+        title_val = (
+            f"PARTES DE TRABAJO — {worker_name} — {period}".strip(" —")
+        )
         ws.merge_cells(start_row=1, start_column=1,
                        end_row=1,   end_column=num_data_cols)
-        title_cell       = ws.cell(row=1, column=1, value=title_val)
-        title_cell.font  = Font(bold=True, size=13, color=_CLR_HEADER_BG)
-        title_cell.alignment = Alignment(horizontal="center", vertical="center")
+        title_cell = ws.cell(row=1, column=1, value=title_val)
+        title_cell.font = Font(bold=True, size=13, color=_CLR_HEADER_BG)
+        title_cell.alignment = Alignment(
+            horizontal="center", vertical="center"
+        )
         ws.row_dimensions[1].height = 22
 
         # --- Row 2: Precio hora extra / Fila 2: Precio hora extra ---
@@ -1617,32 +1714,34 @@ def generate_work_order_excel(work_order_id: int) -> None:
             _make_fill(_CLR_CONFIG_LABEL)
         )
         ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=2)
-        c2_cell       = ws.cell(row=2, column=3)
-        c2_cell.fill  = _make_fill(_CLR_CONFIG_INPUT)
+        c2_cell = ws.cell(row=2, column=3)
+        c2_cell.fill = _make_fill(_CLR_CONFIG_INPUT)
         c2_cell.number_format = '#,##0.00 "€"'
         c2_cell.alignment = Alignment(horizontal="center")
 
         # --- Row 3: Coste hora ordinaria / Fila 3: Coste hora ordinaria ---
-        ws.cell(row=3, column=1, value="COSTE HORA ORDINARIA (euros/h):").fill = (
-            _make_fill(_CLR_CONFIG_LABEL)
-        )
+        ws.cell(
+            row=3, column=1, value="COSTE HORA ORDINARIA (euros/h):"
+        ).fill = _make_fill(_CLR_CONFIG_LABEL)
         ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=2)
-        c3_cell       = ws.cell(row=3, column=3)
-        c3_cell.fill  = _make_fill(_CLR_CONFIG_INPUT)
+        c3_cell = ws.cell(row=3, column=3)
+        c3_cell.fill = _make_fill(_CLR_CONFIG_INPUT)
         c3_cell.number_format = '#,##0.00 "€"'
         c3_cell.alignment = Alignment(horizontal="center")
 
         # --- Row 4: Column headers / Fila 4: Cabeceras de columna ---
         hdr_font = Font(bold=True, color=_CLR_HEADER_FG)
         hdr_fill = _make_fill(_CLR_HEADER_BG)
-        hdr_aln  = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        hdr_aln = Alignment(
+            horizontal="center", vertical="center", wrap_text=True
+        )
 
         for col_idx, (hdr, width) in enumerate(_COLS, start=1):
-            cell           = ws.cell(row=4, column=col_idx, value=hdr)
-            cell.font      = hdr_font
-            cell.fill      = hdr_fill
+            cell = ws.cell(row=4, column=col_idx, value=hdr)
+            cell.font = hdr_font
+            cell.fill = hdr_fill
             cell.alignment = hdr_aln
-            cell.border    = _make_border_thin()
+            cell.border = _make_border_thin()
             ws.column_dimensions[get_column_letter(col_idx)].width = width
 
         ws.row_dimensions[4].height = 30
@@ -1651,14 +1750,14 @@ def generate_work_order_excel(work_order_id: int) -> None:
         incidences: list[dict] = []   # Accumulated for the manifest.
 
         for row_offset, row_data in enumerate(flat_rows):
-            r          = _DATA_ROW_START + row_offset
+            r = _DATA_ROW_START + row_offset
             line: WorkOrderEntryLine = row_data["line"]
-            date_key   = row_data["date_key"]
-            is_first   = row_data["is_first_day"]
-            is_last    = row_data["is_last_day"]
-            day_net    = row_data["day_net_hours"]
-            fecha_inc  = row_data["uncertain_date"]
-            day_shade  = row_data.get("day_shade", False)
+            date_key = row_data["date_key"]
+            is_first = row_data["is_first_day"]
+            is_last = row_data["is_last_day"]
+            day_net = row_data["day_net_hours"]
+            fecha_inc = row_data["uncertain_date"]
+            day_shade = row_data.get("day_shade", False)
 
             # Pre-fill shaded rows: apply alternating day background to all
             # columns before individual cell values are written. Cells with
@@ -1669,7 +1768,9 @@ def generate_work_order_excel(work_order_id: int) -> None:
             # sobreescriben este fondo.
             if day_shade:
                 for _sc in range(1, num_data_cols + 1):
-                    ws.cell(row=r, column=_sc).fill = _make_fill(_CLR_DAY_SHADE)
+                    ws.cell(row=r, column=_sc).fill = _make_fill(
+                        _CLR_DAY_SHADE
+                    )
 
             # Col A — FECHA (first entry of day only)
             # Col A — FECHA (solo primera entrada del día)
@@ -1677,11 +1778,13 @@ def generate_work_order_excel(work_order_id: int) -> None:
                 date_str = (
                     date_key.strftime("%d/%m/%Y") if date_key else "SIN FECHA"
                 )
-                a_cell        = ws.cell(row=r, column=1, value=date_str)
-                a_cell.fill   = _make_fill(
+                a_cell = ws.cell(row=r, column=1, value=date_str)
+                a_cell.fill = _make_fill(
                     _CLR_DATE_UNCERT if fecha_inc else _CLR_DATE_FIRST
                 )
-                a_cell.alignment = Alignment(horizontal="center", vertical="center")
+                a_cell.alignment = Alignment(
+                    horizontal="center", vertical="center"
+                )
                 a_cell.border = _make_border_thin()
 
                 # Incidencia de fecha — solo una vez por día (D1).
@@ -1689,26 +1792,35 @@ def generate_work_order_excel(work_order_id: int) -> None:
                 if fecha_inc and date_key:
                     incidences.append({
                         "fecha": date_str,
-                        "tramo": f"{line.hc.strftime('%H:%M') if line.hc else '?'}–"
-                                 f"{line.hf.strftime('%H:%M') if line.hf else '?'}",
+                        "tramo": (
+                            f"{line.hc.strftime('%H:%M') if line.hc else '?'}–"
+                            f"{line.hf.strftime('%H:%M') if line.hf else '?'}"
+                        ),
                         "campo": "FECHA",
-                        "descripcion": "Fecha incierta — verificar manuscrito original.",
+                        "descripcion": (
+                            "Fecha incierta — verificar manuscrito original."
+                        ),
                     })
             else:
                 ws.cell(row=r, column=1).border = _make_border_thin()
 
             # Col B — CÓDIGO / VEH.
-            code_val  = line.machine_norm or line.machine_raw or ""
-            c_cell      = ws.cell(row=r, column=2, value=code_val)
+            code_val = line.machine_norm or line.machine_raw or ""
+            c_cell = ws.cell(row=r, column=2, value=code_val)
             c_cell.border = _make_border_thin()
             if not code_val:
                 c_cell.fill = _make_fill(_CLR_MACHINE_EMPT)
             elif not line.machine_asset:
                 c_cell.fill = _make_fill(_CLR_MACHINE_UNKN)
                 incidences.append({
-                    "fecha": date_key.strftime("%d/%m/%Y") if date_key else "SIN FECHA",
-                    "tramo": f"{line.hc.strftime('%H:%M') if line.hc else '?'}–"
-                             f"{line.hf.strftime('%H:%M') if line.hf else '?'}",
+                    "fecha": (
+                        date_key.strftime("%d/%m/%Y")
+                        if date_key else "SIN FECHA"
+                    ),
+                    "tramo": (
+                        f"{line.hc.strftime('%H:%M') if line.hc else '?'}–"
+                        f"{line.hf.strftime('%H:%M') if line.hf else '?'}"
+                    ),
                     "campo": "MAQUINA",
                     "descripcion": (
                         f"Código '{code_val}' no encontrado en catálogo "
@@ -1738,54 +1850,80 @@ def generate_work_order_excel(work_order_id: int) -> None:
             g_cell = ws.cell(row=r, column=6,
                              value=line.fault_description or "")
             g_cell.alignment = Alignment(wrap_text=True, vertical="top")
-            g_cell.border    = _make_border_thin()
+            g_cell.border = _make_border_thin()
             if "DESCRIPCION" in (line.flags or []):
                 incidences.append({
-                    "fecha": date_key.strftime("%d/%m/%Y") if date_key else "SIN FECHA",
-                    "tramo": f"{line.hc.strftime('%H:%M') if line.hc else '?'}–"
-                             f"{line.hf.strftime('%H:%M') if line.hf else '?'}",
+                    "fecha": (
+                        date_key.strftime("%d/%m/%Y")
+                        if date_key else "SIN FECHA"
+                    ),
+                    "tramo": (
+                        f"{line.hc.strftime('%H:%M') if line.hc else '?'}–"
+                        f"{line.hf.strftime('%H:%M') if line.hf else '?'}"
+                    ),
                     "campo": "DESCRIPCIÓN",
-                    "descripcion": "Descripción de difícil lectura — verificar manuscrito.",
+                    "descripcion": (
+                        "Descripción de difícil lectura — "
+                        "verificar manuscrito."
+                    ),
                 })
 
             # Col G — REPARACIÓN
             h_cell = ws.cell(row=r, column=7, value=line.repair_notes or "")
             h_cell.alignment = Alignment(wrap_text=True, vertical="top")
-            h_cell.border    = _make_border_thin()
+            h_cell.border = _make_border_thin()
 
             # Col H — H.C.
-            hc_str  = line.hc.strftime("%H:%M") if line.hc else ""
-            i_cell  = ws.cell(row=r, column=8, value=hc_str)
+            hc_str = line.hc.strftime("%H:%M") if line.hc else ""
+            i_cell = ws.cell(row=r, column=8, value=hc_str)
             i_cell.alignment = Alignment(horizontal="center")
-            i_cell.border    = _make_border_thin()
+            i_cell.border = _make_border_thin()
             if "H.C." in (line.flags or []):
                 incidences.append({
-                    "fecha": date_key.strftime("%d/%m/%Y") if date_key else "SIN FECHA",
-                    "tramo": f"{hc_str or '?'}–{line.hf.strftime('%H:%M') if line.hf else '?'}",
+                    "fecha": (
+                        date_key.strftime("%d/%m/%Y")
+                        if date_key else "SIN FECHA"
+                    ),
+                    "tramo": (
+                        f"{hc_str or '?'}–"
+                        f"{line.hf.strftime('%H:%M') if line.hf else '?'}"
+                    ),
                     "campo": "H.C.",
-                    "descripcion": "H.C. de difícil lectura — verificar manuscrito.",
+                    "descripcion": (
+                        "H.C. de difícil lectura — verificar manuscrito."
+                    ),
                 })
 
             # Col I — H.F.
-            hf_str  = line.hf.strftime("%H:%M") if line.hf else ""
-            j_cell  = ws.cell(row=r, column=9, value=hf_str)
+            hf_str = line.hf.strftime("%H:%M") if line.hf else ""
+            j_cell = ws.cell(row=r, column=9, value=hf_str)
             j_cell.alignment = Alignment(horizontal="center")
-            j_cell.border    = _make_border_thin()
+            j_cell.border = _make_border_thin()
             if "H.F." in (line.flags or []):
                 incidences.append({
-                    "fecha": date_key.strftime("%d/%m/%Y") if date_key else "SIN FECHA",
+                    "fecha": (
+                        date_key.strftime("%d/%m/%Y")
+                        if date_key else "SIN FECHA"
+                    ),
                     "tramo": f"{hc_str or '?'}–{hf_str or '?'}",
                     "campo": "H.F.",
-                    "descripcion": "H.F. de difícil lectura — verificar manuscrito.",
+                    "descripcion": (
+                        "H.F. de difícil lectura — verificar manuscrito."
+                    ),
                 })
 
             # Horario inválido: HF <= HC / Invalid schedule: HF <= HC
             if line.hc and line.hf and line.hf <= line.hc:
                 incidences.append({
-                    "fecha": date_key.strftime("%d/%m/%Y") if date_key else "SIN FECHA",
+                    "fecha": (
+                        date_key.strftime("%d/%m/%Y")
+                        if date_key else "SIN FECHA"
+                    ),
                     "tramo": f"{hc_str}–{hf_str}",
                     "campo": "HORARIO",
-                    "descripcion": "H.F. igual o anterior a H.C. — horario inválido.",
+                    "descripcion": (
+                        "H.F. igual o anterior a H.C. — horario inválido."
+                    ),
                 })
 
             # Col J — O.R.
@@ -1795,20 +1933,23 @@ def generate_work_order_excel(work_order_id: int) -> None:
             # Col K — Δ HORAS (neta)
             l_cell = ws.cell(
                 row=r, column=11,
-                value=float(line.delta_hours) if line.delta_hours is not None else "",
+                value=(
+                    float(line.delta_hours)
+                    if line.delta_hours is not None else ""
+                ),
             )
             l_cell.number_format = '0.00" h"'
-            l_cell.alignment     = Alignment(horizontal="center")
-            l_cell.border        = _make_border_thin()
+            l_cell.alignment = Alignment(horizontal="center")
+            l_cell.border = _make_border_thin()
 
             # Col L — HORAS NETAS DÍA (last entry of day only)
             # Col L — HORAS NETAS DÍA (solo última entrada del día)
             if is_last and day_net is not None:
                 m_cell = ws.cell(row=r, column=12, value=float(day_net))
                 m_cell.number_format = '0.00" h"'
-                m_cell.alignment     = Alignment(horizontal="center")
-                m_cell.border        = _make_border_thin()
-                m_cell.font          = Font(bold=True)
+                m_cell.alignment = Alignment(horizontal="center")
+                m_cell.border = _make_border_thin()
+                m_cell.font = Font(bold=True)
 
                 # Incidencia D5: jornada < 8h / D5 incidence: shift < 8h
                 if day_net < Decimal("8.00") and date_key:
@@ -1817,7 +1958,8 @@ def generate_work_order_excel(work_order_id: int) -> None:
                         "tramo": f"{hc_str or '?'}–{hf_str or '?'}",
                         "campo": "JORNADA",
                         "descripcion": (
-                            f"Jornada diaria neta ({float(day_net):.2f} h) inferior "
+                            "Jornada diaria neta "
+                            f"({float(day_net):.2f} h) inferior "
                             "a 8 h — verificar con el operario."
                         ),
                     })
@@ -1832,14 +1974,15 @@ def generate_work_order_excel(work_order_id: int) -> None:
                     value=f'=IF(OR(L{r}="",L{r}<=0),"",L{r}-8)',
                 )
                 n_cell.number_format = '0.00" h"'
-                n_cell.alignment     = Alignment(horizontal="center")
-                n_cell.border        = _make_border_thin()
+                n_cell.alignment = Alignment(horizontal="center")
+                n_cell.border = _make_border_thin()
                 # Red font if negative / Fuente roja si negativo.
             else:
                 ws.cell(row=r, column=13).border = _make_border_thin()
 
             # Col N — SALARIO EXTRAS (formula, last entry only)
-            # Only populated when HORAS EXTRAS > 0 to avoid negative salary values.
+            # Only populated when HORAS EXTRAS > 0 to avoid negative salary
+            # values.
             # Col N — SALARIO EXTRAS (fórmula, solo última entrada)
             if is_last and day_net is not None:
                 _or_formula = f'=IF(OR(M{r}="",M{r}<=0),"",M{r}*$C$2)'
@@ -1848,8 +1991,8 @@ def generate_work_order_excel(work_order_id: int) -> None:
                     value=_or_formula,
                 )
                 o_cell.number_format = '#,##0.00 "€"'
-                o_cell.alignment     = Alignment(horizontal="center")
-                o_cell.border        = _make_border_thin()
+                o_cell.alignment = Alignment(horizontal="center")
+                o_cell.border = _make_border_thin()
             else:
                 ws.cell(row=r, column=14).border = _make_border_thin()
 
@@ -1860,10 +2003,12 @@ def generate_work_order_excel(work_order_id: int) -> None:
                     row=r, column=15,
                     value=_revision_text(day_net),
                 )
-                p_cell.fill      = _make_fill(_revision_color(day_net))
-                p_cell.alignment = Alignment(horizontal="center", vertical="center")
-                p_cell.border    = _make_border_thin()
-                p_cell.font      = Font(bold=True)
+                p_cell.fill = _make_fill(_revision_color(day_net))
+                p_cell.alignment = Alignment(
+                    horizontal="center", vertical="center"
+                )
+                p_cell.border = _make_border_thin()
+                p_cell.font = Font(bold=True)
             else:
                 ws.cell(row=r, column=15).border = _make_border_thin()
 
@@ -1875,8 +2020,8 @@ def generate_work_order_excel(work_order_id: int) -> None:
                     value=f'=IFERROR(IF($C$3=0,"",K{r}*$C$3),"")',
                 )
                 q_cell.number_format = '#,##0.00 "€"'
-                q_cell.alignment     = Alignment(horizontal="center")
-                q_cell.border        = _make_border_thin()
+                q_cell.alignment = Alignment(horizontal="center")
+                q_cell.border = _make_border_thin()
             else:
                 ws.cell(row=r, column=16).border = _make_border_thin()
 
@@ -1889,7 +2034,7 @@ def generate_work_order_excel(work_order_id: int) -> None:
         # Una fila por debajo de la última fila de datos, 16 columnas.
         # ------------------------------------------------------------------
         last_data_row = _DATA_ROW_START + len(flat_rows) - 1
-        totals_row    = last_data_row + 1
+        totals_row = last_data_row + 1
 
         tot_font = Font(bold=True, color=_CLR_HEADER_FG)
         tot_fill = _make_fill(_CLR_MANIFEST_BG)
@@ -1899,15 +2044,16 @@ def generate_work_order_excel(work_order_id: int) -> None:
             start_row=totals_row, start_column=1,
             end_row=totals_row,   end_column=10,
         )
-        tot_label           = ws.cell(row=totals_row, column=1, value="TOTALES")
-        tot_label.font      = tot_font
-        tot_label.fill      = tot_fill
+        tot_label = ws.cell(row=totals_row, column=1, value="TOTALES")
+        tot_label.font = tot_font
+        tot_label.fill = tot_fill
         tot_label.alignment = Alignment(horizontal="center", vertical="center")
-        tot_label.border    = _make_border_thin()
+        tot_label.border = _make_border_thin()
 
-        # Build SUMPRODUCT range strings / Construir cadenas de rango SUMPRODUCT
+        # Build SUMPRODUCT range strings / Construir cadenas de rango
+        # SUMPRODUCT
         _dr_start = _DATA_ROW_START
-        _dr_end   = last_data_row
+        _dr_end = last_data_row
 
         def _sumif(col_letter):
             """Returns a SUMPRODUCT formula summing only numeric cells.
@@ -1921,57 +2067,61 @@ def generate_work_order_excel(work_order_id: int) -> None:
             return '=SUMPRODUCT(ISNUMBER(' + rng + ')*(' + rng + '+0))'
 
         # Col K — Total Δ HORAS (neta) / Total Δ HORAS (neta)
-        tot_l               = ws.cell(row=totals_row, column=11, value=_sumif("K"))
+        tot_l = ws.cell(row=totals_row, column=11, value=_sumif("K"))
         tot_l.number_format = '0.00" h"'
-        tot_l.alignment     = Alignment(horizontal="center")
-        tot_l.font          = tot_font
-        tot_l.fill          = tot_fill
-        tot_l.border        = _make_border_thin()
+        tot_l.alignment = Alignment(horizontal="center")
+        tot_l.font = tot_font
+        tot_l.fill = tot_fill
+        tot_l.border = _make_border_thin()
 
         # Col L — Total HORAS NETAS DÍA / Total HORAS NETAS DÍA
-        tot_m               = ws.cell(row=totals_row, column=12, value=_sumif("L"))
+        tot_m = ws.cell(row=totals_row, column=12, value=_sumif("L"))
         tot_m.number_format = '0.00" h"'
-        tot_m.alignment     = Alignment(horizontal="center")
-        tot_m.font          = tot_font
-        tot_m.fill          = tot_fill
-        tot_m.border        = _make_border_thin()
+        tot_m.alignment = Alignment(horizontal="center")
+        tot_m.font = tot_font
+        tot_m.fill = tot_fill
+        tot_m.border = _make_border_thin()
 
         # Col M — Total HORAS EXTRAS / Total HORAS EXTRAS
-        tot_n               = ws.cell(row=totals_row, column=13, value=_sumif("M"))
+        tot_n = ws.cell(row=totals_row, column=13, value=_sumif("M"))
         tot_n.number_format = '0.00" h"'
-        tot_n.alignment     = Alignment(horizontal="center")
-        tot_n.font          = tot_font
-        tot_n.fill          = tot_fill
-        tot_n.border        = _make_border_thin()
+        tot_n.alignment = Alignment(horizontal="center")
+        tot_n.font = tot_font
+        tot_n.fill = tot_fill
+        tot_n.border = _make_border_thin()
 
         # Col N — Total SALARIO EXTRAS / Total SALARIO EXTRAS
-        tot_o               = ws.cell(row=totals_row, column=14, value=_sumif("N"))
+        tot_o = ws.cell(row=totals_row, column=14, value=_sumif("N"))
         tot_o.number_format = '#,##0.00 "€"'
-        tot_o.alignment     = Alignment(horizontal="center")
-        tot_o.font          = tot_font
-        tot_o.fill          = tot_fill
-        tot_o.border        = _make_border_thin()
+        tot_o.alignment = Alignment(horizontal="center")
+        tot_o.font = tot_font
+        tot_o.fill = tot_fill
+        tot_o.border = _make_border_thin()
 
         # Col O — Leyenda dinámica precio hora extra.
         # Warns if B2=0 (price not entered), else shows applied price.
-        # Avisa si B2=0 (precio no introducido), si no muestra el precio aplicado.
-        _leg_warn   = ("ATENCIÓN: introduzca el precio de la hora extra "
-                       "en C2 para calcular el salario total.")
-        _leg_ok_str = '=IF($C$2=0,"' + _leg_warn + '","Precio hora extra aplicado: "&TEXT($C$2,"#,##0.00")&" EUR/h")'
-        tot_p               = ws.cell(row=totals_row, column=15, value=_leg_ok_str)
-        tot_p.alignment     = Alignment(horizontal="left", vertical="center",
-                                        wrap_text=True)
-        tot_p.font          = Font(italic=True, bold=True, color=_CLR_HEADER_FG)
-        tot_p.fill          = tot_fill
-        tot_p.border        = _make_border_thin()
+        # Avisa si B2=0 (precio no introducido), si no muestra el precio
+        # aplicado.
+        _leg_warn = ("ATENCIÓN: introduzca el precio de la hora extra "
+                     "en C2 para calcular el salario total.")
+        _leg_ok_str = (
+            '=IF($C$2=0,"' + _leg_warn + '","Precio hora extra aplicado: "'
+            '&TEXT($C$2,"#,##0.00")&" EUR/h")'
+        )
+        tot_p = ws.cell(row=totals_row, column=15, value=_leg_ok_str)
+        tot_p.alignment = Alignment(horizontal="left", vertical="center",
+                                    wrap_text=True)
+        tot_p.font = Font(italic=True, bold=True, color=_CLR_HEADER_FG)
+        tot_p.fill = tot_fill
+        tot_p.border = _make_border_thin()
 
         # Col P — Total COSTE M.O. / Total COSTE M.O.
-        tot_q               = ws.cell(row=totals_row, column=16, value=_sumif("P"))
+        tot_q = ws.cell(row=totals_row, column=16, value=_sumif("P"))
         tot_q.number_format = '#,##0.00 "€"'
-        tot_q.alignment     = Alignment(horizontal="center")
-        tot_q.font          = tot_font
-        tot_q.fill          = tot_fill
-        tot_q.border        = _make_border_thin()
+        tot_q.alignment = Alignment(horizontal="center")
+        tot_q.font = tot_font
+        tot_q.fill = tot_fill
+        tot_q.border = _make_border_thin()
 
         ws.row_dimensions[totals_row].height = 30
 
@@ -1993,33 +2143,36 @@ def generate_work_order_excel(work_order_id: int) -> None:
         )
         mhdr = ws.cell(
             row=manifest_start, column=1,
-            value=f"MANIFIESTO DE INCIDENCIAS  —  {num_inc} incidencia(s) detectada(s)",
+            value=(
+                f"MANIFIESTO DE INCIDENCIAS  —  {num_inc} "
+                "incidencia(s) detectada(s)"
+            ),
         )
-        mhdr.font      = Font(bold=True, color=_CLR_MANIFEST_FG, size=11)
-        mhdr.fill      = _make_fill(_CLR_MANIFEST_BG)
+        mhdr.font = Font(bold=True, color=_CLR_MANIFEST_FG, size=11)
+        mhdr.fill = _make_fill(_CLR_MANIFEST_BG)
         mhdr.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[manifest_start].height = 22
 
         # Column headers row / Fila de cabeceras del manifiesto
         manifest_col_row = manifest_start + 1
         for ci, ch in enumerate(["#", "FECHA", "TRAMO", "CAMPO"], start=1):
-            cell           = ws.cell(row=manifest_col_row, column=ci, value=ch)
-            cell.font      = Font(bold=True, color=_CLR_MANIFEST_FG)
-            cell.fill      = _make_fill(_CLR_MANIFEST_BG)
+            cell = ws.cell(row=manifest_col_row, column=ci, value=ch)
+            cell.font = Font(bold=True, color=_CLR_MANIFEST_FG)
+            cell.fill = _make_fill(_CLR_MANIFEST_BG)
             cell.alignment = Alignment(horizontal="center", vertical="center")
-            cell.border    = _make_border_thin()
+            cell.border = _make_border_thin()
         # Description header merged from col 5 to 17
         # Cabecera descripción fusionada de col 5 a 17
         ws.merge_cells(
             start_row=manifest_col_row, start_column=5,
             end_row=manifest_col_row,   end_column=num_data_cols,
         )
-        desc_hdr           = ws.cell(row=manifest_col_row, column=5,
-                                     value="DESCRIPCIÓN DE LA INCIDENCIA")
-        desc_hdr.font      = Font(bold=True, color=_CLR_MANIFEST_FG)
-        desc_hdr.fill      = _make_fill(_CLR_MANIFEST_BG)
+        desc_hdr = ws.cell(row=manifest_col_row, column=5,
+                           value="DESCRIPCIÓN DE LA INCIDENCIA")
+        desc_hdr.font = Font(bold=True, color=_CLR_MANIFEST_FG)
+        desc_hdr.fill = _make_fill(_CLR_MANIFEST_BG)
         desc_hdr.alignment = Alignment(horizontal="center", vertical="center")
-        desc_hdr.border    = _make_border_thin()
+        desc_hdr.border = _make_border_thin()
         ws.row_dimensions[manifest_col_row].height = 20
 
         if incidences:
@@ -2039,12 +2192,12 @@ def generate_work_order_excel(work_order_id: int) -> None:
                     start_row=inc_row, start_column=5,
                     end_row=inc_row,   end_column=num_data_cols,
                 )
-                desc_cell           = ws.cell(row=inc_row, column=5,
-                                              value=inc["descripcion"])
+                desc_cell = ws.cell(row=inc_row, column=5,
+                                    value=inc["descripcion"])
                 desc_cell.alignment = Alignment(horizontal="left",
                                                 vertical="center",
                                                 wrap_text=False)
-                desc_cell.border    = _make_border_thin()
+                desc_cell.border = _make_border_thin()
                 ws.row_dimensions[inc_row].height = 16
         else:
             no_inc_row = manifest_col_row + 1
@@ -2052,9 +2205,9 @@ def generate_work_order_excel(work_order_id: int) -> None:
                 start_row=no_inc_row, start_column=1,
                 end_row=no_inc_row,   end_column=num_data_cols,
             )
-            no_inc           = ws.cell(row=no_inc_row, column=1,
-                                       value="Sin incidencias registradas.")
-            no_inc.font      = Font(italic=True)
+            no_inc = ws.cell(row=no_inc_row, column=1,
+                             value="Sin incidencias registradas.")
+            no_inc.font = Font(italic=True)
             no_inc.alignment = Alignment(horizontal="center")
             ws.row_dimensions[no_inc_row].height = 16
 
@@ -2066,9 +2219,9 @@ def generate_work_order_excel(work_order_id: int) -> None:
         # if merge_cells is called before the cell value is set.
         # Escribir el valor ANTES de fusionar — openpyxl genera sheet2.xml
         # inválido si merge_cells se llama antes de establecer el valor.
-        ley_title           = ws_ley.cell(row=1, column=1,
-                                          value="LEYENDA — REVISIÓN HORARIO")
-        ley_title.font      = Font(bold=True, size=12, color=_CLR_HEADER_BG)
+        ley_title = ws_ley.cell(row=1, column=1,
+                                value="LEYENDA — REVISIÓN HORARIO")
+        ley_title.font = Font(bold=True, size=12, color=_CLR_HEADER_BG)
         ley_title.alignment = Alignment(horizontal="center", vertical="center")
         ws_ley.merge_cells("A1:C1")
         ws_ley.row_dimensions[1].height = 20
@@ -2077,15 +2230,21 @@ def generate_work_order_excel(work_order_id: int) -> None:
             (_CLR_REV_GREEN,  "8 h",      "Jornada estándar"),
             (_CLR_REV_BLUE,   "8 h – 12 h", "Horas extraordinarias"),
             (_CLR_REV_YELLOW, "7 h – 8 h",  "Por debajo del mínimo"),
-            (_CLR_REV_ORANGE, "12 h – 16 h","Jornada excesiva — revisar"),
-            (_CLR_REV_RED,    "< 7 h ó > 16 h", "Fuera de rango — error probable"),
+            (_CLR_REV_ORANGE, "12 h – 16 h", "Jornada excesiva — revisar"),
+            (
+                _CLR_REV_RED,
+                "< 7 h ó > 16 h",
+                "Fuera de rango — error probable",
+            ),
         ]
-        for ley_idx, (color, rango, significado) in enumerate(leyenda_rows, start=2):
-            color_cell           = ws_ley.cell(row=ley_idx, column=1, value="")
-            color_cell.fill      = _make_fill(color)
-            color_cell.border    = _make_border_thin()
+        for ley_idx, (color, rango, significado) in enumerate(
+            leyenda_rows, start=2
+        ):
+            color_cell = ws_ley.cell(row=ley_idx, column=1, value="")
+            color_cell.fill = _make_fill(color)
+            color_cell.border = _make_border_thin()
             ws_ley.cell(row=ley_idx, column=2,
-                        value=rango).border      = _make_border_thin()
+                        value=rango).border = _make_border_thin()
             ws_ley.cell(row=ley_idx, column=3,
                         value=significado).border = _make_border_thin()
 
@@ -2138,23 +2297,23 @@ def generate_work_order_excel(work_order_id: int) -> None:
             ]
             rep_hdr_font = Font(bold=True, color=_CLR_HEADER_FG)
             rep_hdr_fill = _make_fill(_CLR_HEADER_BG)
-            rep_hdr_aln  = Alignment(horizontal="center", vertical="center",
-                                     wrap_text=True)
+            rep_hdr_aln = Alignment(horizontal="center", vertical="center",
+                                    wrap_text=True)
 
             for ci, (hdr, width) in enumerate(_REP_COLS, start=1):
-                cell           = ws_rep.cell(row=1, column=ci, value=hdr)
-                cell.font      = rep_hdr_font
-                cell.fill      = rep_hdr_fill
+                cell = ws_rep.cell(row=1, column=ci, value=hdr)
+                cell.font = rep_hdr_font
+                cell.fill = rep_hdr_fill
                 cell.alignment = rep_hdr_aln
-                cell.border    = _make_border_thin()
+                cell.border = _make_border_thin()
                 ws_rep.column_dimensions[get_column_letter(ci)].width = width
 
             ws_rep.row_dimensions[1].height = 24
 
             # -- Data rows / Filas de datos --
             for rep_offset, spl in enumerate(spare_parts, start=2):
-                entry      = spl.entry_line.entry
-                date_str   = (
+                entry = spl.entry_line.entry
+                date_str = (
                     entry.work_date.strftime("%d/%m/%Y")
                     if entry.work_date else ""
                 )
@@ -2165,36 +2324,44 @@ def generate_work_order_excel(work_order_id: int) -> None:
                 # VEHICULO: preferir código MachineAsset resuelto; si no,
                 # usar el nombre de vehículo crudo almacenado en SparePartLine.
                 if spl.vehicle:
-                    vehiculo_val = spl.vehicle.code or spl.vehicle.brand_model or ""
+                    vehiculo_val = (
+                        spl.vehicle.code or spl.vehicle.brand_model or ""
+                    )
                 else:
                     # vehicle_raw is not stored on SparePartLine; use reference
-                    # as fallback since it may carry the vehicle code in some cases.
-                    # vehicle_raw no se almacena en SparePartLine; usar referencia
-                    # como fallback ya que puede contener el código de vehículo.
+                    # as fallback since it may carry the vehicle code in some
+                    # cases.
+                    # vehicle_raw no se almacena en SparePartLine; usar
+                    # referencia como fallback ya que puede contener el código
+                    # de vehículo.
                     vehiculo_val = ""
 
-                origen_val   = spl.get_source_display()
-                proveedor_val = spl.supplier if spl.source == SparePartLine.Source.SUPPLIER else ""
+                origen_val = spl.get_source_display()
+                proveedor_val = (
+                    spl.supplier
+                    if spl.source == SparePartLine.Source.SUPPLIER
+                    else ""
+                )
 
                 row_vals = [
                     date_str,
                     bloque_val,
-                    spl.reference  or "",
+                    spl.reference or "",
                     vehiculo_val,
-                    spl.material   or "",
+                    spl.material or "",
                     float(spl.quantity) if spl.quantity is not None else "",
                     origen_val,
                     proveedor_val,
                 ]
                 for ci, val in enumerate(row_vals, start=1):
-                    cell           = ws_rep.cell(row=rep_offset, column=ci, value=val)
-                    cell.border    = _make_border_thin()
+                    cell = ws_rep.cell(row=rep_offset, column=ci, value=val)
+                    cell.border = _make_border_thin()
                     cell.alignment = Alignment(vertical="center")
                     if ci == 6:
                         # UNIDADES — right-aligned, 2 decimal places.
                         # UNIDADES — alineación derecha, 2 decimales.
-                        cell.alignment    = Alignment(horizontal="right",
-                                                      vertical="center")
+                        cell.alignment = Alignment(horizontal="right",
+                                                   vertical="center")
                         cell.number_format = "0.00"
 
                 ws_rep.row_dimensions[rep_offset].height = 16
@@ -2220,36 +2387,45 @@ def generate_work_order_excel(work_order_id: int) -> None:
             f"{work_order_id}_"
             f"{timezone.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         )
-        work_order.excel_file.save(filename, ContentFile(buffer.read()), save=False)
+        work_order.excel_file.save(
+            filename, ContentFile(buffer.read()), save=False
+        )
         work_order.status = WorkOrder.Status.DONE
         work_order.save(update_fields=["excel_file", "status"])
 
         logger.info(
-            "# Excel: informe generado correctamente para WorkOrder #%d → %s.",
+            "# Excel: informe generado correctamente para "
+            "WorkOrder #%d → %s.",
             work_order_id,
             filename,
         )
 
     except Exception as exc:
         logger.error(
-            "# Error crítico en generate_work_order_excel para WorkOrder #%d: %s",
+            "# Error crítico en generate_work_order_excel para "
+            "WorkOrder #%d: %s",
             work_order_id,
             exc,
             exc_info=True,
         )
-        work_order.status    = WorkOrder.Status.ERROR
-        work_order.error_log = "Error en la generación del Excel. Revisa el registro del servidor."
+        work_order.status = WorkOrder.Status.ERROR
+        work_order.error_log = (
+            "Error en la generación del Excel. "
+            "Revisa el registro del servidor."
+        )
         work_order.save(update_fields=["status", "error_log"])
         raise
 
 
 # ---------------------------------------------------------------------------
 # classify_fault — automatic fault classification via Gemini Flash (text-only)
-# classify_fault — clasificación automática de avería vía Gemini Flash (solo texto)
+# classify_fault — clasificación automática de avería vía Gemini Flash (solo
+# texto)
 # ---------------------------------------------------------------------------
 
-# Response schema for classify_fault — guarantees both fields are always present
-# in the JSON output. Values must be valid FaultCategory / FaultSubcategory codes.
+# Response schema for classify_fault — guarantees both fields are always
+# present in the JSON output. Values must be valid FaultCategory /
+# FaultSubcategory codes.
 #
 # Esquema de respuesta para classify_fault — garantiza que ambos campos estén
 # siempre presentes en el JSON de salida. Los valores deben ser códigos válidos
@@ -2269,7 +2445,8 @@ _CLASSIFY_RESPONSE_SCHEMA = {
 # Prompt de clasificación — construido una vez a nivel de módulo para evitar
 # construcción repetida de cadenas. Embebe la taxonomía completa para que
 # Gemini pueda elegir los códigos exactos.
-_CLASSIFY_PROMPT = """Eres un sistema de clasificación automática de averías en maquinaria industrial
+_CLASSIFY_PROMPT = """Eres un sistema de clasificación automática de averías \
+en maquinaria industrial
 pesada (grúas, carretillas elevadoras, equipos de obra, camiones).
 
 Se te proporciona la descripción de una avería y las notas de reparación de un
@@ -2277,15 +2454,20 @@ parte de trabajo de taller. Tu tarea es asignar el par de códigos más preciso
 de la taxonomía siguiente.
 
 TAXONOMÍA — Categorías principales (fault_category):
-  ENGINE_TRANSMISSION        — Motor, transmisión, PTO, refrigeración, combustible
-  HYDRAULIC                  — Bomba hidráulica, cilindros, válvulas, aceite, central
+  ENGINE_TRANSMISSION        — Motor, transmisión, PTO, refrigeración, \
+combustible
+  HYDRAULIC                  — Bomba hidráulica, cilindros, válvulas, aceite, \
+central
   ELECTRICAL_ELECTRONIC      — Cableado, sensores, mandos, iluminación, batería
   BRAKES_STEERING_SUSPENSION — Frenos, dirección, suspensión
   TYRES_RUNNING_GEAR         — Neumáticos, ejes, cadenas y rodadura oruga
-  LIFTING_STRUCTURE          — Pluma, gancho/poleas, cable, rotación, estabilizadores,
-                               mástil/horquillas, plataforma, quinta rueda, chasis semirremolque
+  LIFTING_STRUCTURE          — Pluma, gancho/poleas, cable, rotación, \
+estabilizadores,
+                               mástil/horquillas, plataforma, quinta rueda, \
+chasis semirremolque
   BODYWORK_CHASSIS           — Carrocería, chasis estructural
-  OTHER                      — Cualquier avería que no encaje en los grupos anteriores
+  OTHER                      — Cualquier avería que no encaje en los grupos \
+anteriores
 
 TAXONOMÍA — Subcategorías (fault_subcategory):
   ET_ENGINE | ET_TRANSMISSION | ET_PTO | ET_COOLING | ET_FUEL
@@ -2301,7 +2483,8 @@ TAXONOMÍA — Subcategorías (fault_subcategory):
 REGLAS OBLIGATORIAS:
 1. Responde ÚNICAMENTE con un objeto JSON válido. Sin texto adicional, sin
    bloques de código markdown, sin explicaciones.
-2. Los dos campos son obligatorios. Usa exactamente los códigos de la taxonomía.
+2. Los dos campos son obligatorios. Usa exactamente los códigos de la \
+taxonomía.
 3. La subcategoría debe pertenecer a la categoría elegida (mismos prefijos).
 4. Si la información es insuficiente o no encaja, usa OTHER / OT_OTHER.
 
@@ -2317,7 +2500,7 @@ Notas de reparación: {repair_notes}
 
 # Valid code sets — used for post-extraction validation.
 # Conjuntos de códigos válidos — usados para validación post-extracción.
-_VALID_CATEGORIES    = {c.value for c in FaultCategory}
+_VALID_CATEGORIES = {c.value for c in FaultCategory}
 _VALID_SUBCATEGORIES = {s.value for s in FaultSubcategory}
 
 
@@ -2345,8 +2528,10 @@ _CLASSIFY_TASK_RESPONSE_SCHEMA = {
     ],
 }
 
-_CLASSIFY_TASK_PROMPT = """Eres un sistema de clasificación automática de tareas de taller sobre
-maquinaria industrial pesada (grúas, carretillas elevadoras, equipos de obra, camiones).
+_CLASSIFY_TASK_PROMPT = """Eres un sistema de clasificación automática de \
+tareas de taller sobre
+maquinaria industrial pesada (grúas, carretillas elevadoras, equipos de obra, \
+camiones).
 
 Se te proporciona la descripción de una tarea y las notas de reparación de un
 parte de trabajo de taller. Primero decide qué tipo de tarea es, y después
@@ -2362,15 +2547,20 @@ SI tipo_tarea=AVERIA: clasifica fault_category y fault_subcategory con la
 taxonomía siguiente, y deja task_category_free en cadena vacía ("").
 
 TAXONOMÍA — Categorías principales (fault_category):
-  ENGINE_TRANSMISSION        — Motor, transmisión, PTO, refrigeración, combustible, bloque motor
-  HYDRAULIC                  — Bomba hidráulica, cilindros, válvulas, aceite, central
+  ENGINE_TRANSMISSION        — Motor, transmisión, PTO, refrigeración, \
+combustible, bloque motor
+  HYDRAULIC                  — Bomba hidráulica, cilindros, válvulas, aceite, \
+central
   ELECTRICAL_ELECTRONIC      — Cableado, sensores, mandos, iluminación, batería
   BRAKES_STEERING_SUSPENSION — Frenos, dirección, suspensión
   TYRES_RUNNING_GEAR         — Neumáticos, ejes, cadenas y rodadura oruga
-  LIFTING_STRUCTURE          — Pluma, gancho/poleas, cable, rotación, estabilizadores,
-                               mástil/horquillas, plataforma, quinta rueda, chasis semirremolque
+  LIFTING_STRUCTURE          — Pluma, gancho/poleas, cable, rotación, \
+estabilizadores,
+                               mástil/horquillas, plataforma, quinta rueda, \
+chasis semirremolque
   BODYWORK_CHASSIS           — Carrocería, chasis estructural
-  OTHER                      — Cualquier avería que no encaje en los grupos anteriores
+  OTHER                      — Cualquier avería que no encaje en los grupos \
+anteriores
 
 TAXONOMÍA — Subcategorías (fault_subcategory):
   ET_ENGINE | ET_TRANSMISSION | ET_PTO | ET_COOLING | ET_FUEL
@@ -2440,7 +2630,8 @@ Formato de respuesta exacto:
   "tipo_tarea": "<TIPO_TAREA>",
   "fault_category": "<CODIGO_CATEGORIA o cadena vacia>",
   "fault_subcategory": "<CODIGO_SUBCATEGORIA o cadena vacia>",
-  "task_category_free": "<texto libre, uno de los literales especiales, o cadena vacia>"
+  "task_category_free": "<texto libre, uno de los literales especiales, o \
+cadena vacia>"
 }}
 
 Descripción de la tarea: {fault_description}
@@ -2514,25 +2705,25 @@ def classify_task(
         client = _get_gemini_client()
 
         response = client.models.generate_content(
-            model    = _GEMINI_MODEL,
-            contents = [prompt],
-            config   = GenerateContentConfig(
-                http_options       = HttpOptions(timeout=30_000),
-                response_mime_type = "application/json",
-                response_schema    = _CLASSIFY_TASK_RESPONSE_SCHEMA,
-                thinking_config    = ThinkingConfig(thinking_level="low"),
-                temperature        = 0.0,
-                max_output_tokens  = 128,
+            model=_GEMINI_MODEL,
+            contents=[prompt],
+            config=GenerateContentConfig(
+                http_options=HttpOptions(timeout=30_000),
+                response_mime_type="application/json",
+                response_schema=_CLASSIFY_TASK_RESPONSE_SCHEMA,
+                thinking_config=ThinkingConfig(thinking_level="low"),
+                temperature=0.0,
+                max_output_tokens=128,
             ),
         )
 
-        raw    = response.text.strip()
+        raw = response.text.strip()
         parsed = json.loads(raw)
 
         tipo_tarea = str(parsed.get("tipo_tarea", "")).strip()
-        category   = str(parsed.get("fault_category", "")).strip()
-        subcat     = str(parsed.get("fault_subcategory", "")).strip()
-        free_text  = str(parsed.get("task_category_free", "")).strip()
+        category = str(parsed.get("fault_category", "")).strip()
+        subcat = str(parsed.get("fault_subcategory", "")).strip()
+        free_text = str(parsed.get("task_category_free", "")).strip()
 
         if tipo_tarea not in _VALID_TIPO_TAREA:
             logger.warning(
@@ -2543,7 +2734,10 @@ def classify_task(
             return dict(_empty)
 
         if tipo_tarea == "AVERIA":
-            if category not in _VALID_CATEGORIES or subcat not in _VALID_SUBCATEGORIES:
+            if (
+                category not in _VALID_CATEGORIES
+                or subcat not in _VALID_SUBCATEGORIES
+            ):
                 logger.warning(
                     "# [classify_task] AVERIA con códigos fuera de "
                     "taxonomía: category=%r subcategory=%r. Fallback vacío.",
@@ -2601,7 +2795,8 @@ def classify_fault(
     Envía fault_description y repair_notes a Gemini Flash (solo texto,
     Vertex AI) y devuelve una tupla (fault_category, fault_subcategory)
     cuyos valores están garantizados como códigos válidos de FaultCategory /
-    FaultSubcategory. Ante cualquier error o respuesta inválida, retorna ("", "").
+    FaultSubcategory. Ante cualquier error o respuesta inválida, retorna ("",
+    "").
 
     Usa thinking_level="low" y temperature=0.0 para clasificación determinista
     y rápida. max_output_tokens=64 es suficiente para el JSON de dos campos.
@@ -2619,28 +2814,32 @@ def classify_fault(
         client = _get_gemini_client()
 
         response = client.models.generate_content(
-            model    = _GEMINI_MODEL,
-            contents = [prompt],
-            config   = GenerateContentConfig(
-                http_options       = HttpOptions(timeout=30_000),
-                response_mime_type = "application/json",
-                response_schema    = _CLASSIFY_RESPONSE_SCHEMA,
-                thinking_config    = ThinkingConfig(thinking_level="low"),
-                temperature        = 0.0,
-                max_output_tokens  = 64,
+            model=_GEMINI_MODEL,
+            contents=[prompt],
+            config=GenerateContentConfig(
+                http_options=HttpOptions(timeout=30_000),
+                response_mime_type="application/json",
+                response_schema=_CLASSIFY_RESPONSE_SCHEMA,
+                thinking_config=ThinkingConfig(thinking_level="low"),
+                temperature=0.0,
+                max_output_tokens=64,
             ),
         )
 
-        raw      = response.text.strip()
-        parsed   = json.loads(raw)
+        raw = response.text.strip()
+        parsed = json.loads(raw)
         category = str(parsed.get("fault_category", "")).strip()
-        subcat   = str(parsed.get("fault_subcategory", "")).strip()
+        subcat = str(parsed.get("fault_subcategory", "")).strip()
 
         # Validate that both codes belong to the taxonomy.
         # Validar que ambos códigos pertenecen a la taxonomía.
-        if category not in _VALID_CATEGORIES or subcat not in _VALID_SUBCATEGORIES:
+        if (
+            category not in _VALID_CATEGORIES
+            or subcat not in _VALID_SUBCATEGORIES
+        ):
             logger.warning(
-                "# [classify_fault] Códigos fuera de taxonomía devueltos por Gemini: "
+                "# [classify_fault] Códigos fuera de taxonomía devueltos "
+                "por Gemini: "
                 "category=%r subcategory=%r. Se usará fallback vacío.",
                 category,
                 subcat,
@@ -2648,7 +2847,8 @@ def classify_fault(
             return "", ""
 
         logger.info(
-            "# [classify_fault] Clasificación completada: category=%s subcategory=%s.",
+            "# [classify_fault] Clasificación completada: "
+            "category=%s subcategory=%s.",
             category,
             subcat,
         )
@@ -2665,7 +2865,8 @@ def classify_fault(
 
 # ---------------------------------------------------------------------------
 # find_cached_classification — exact-match lookup within the same company
-# find_cached_classification — búsqueda por coincidencia exacta en la misma empresa
+# find_cached_classification — búsqueda por coincidencia exacta en la misma
+# empresa
 # ---------------------------------------------------------------------------
 
 def find_cached_classification(
@@ -2681,11 +2882,12 @@ def find_cached_classification(
     Returns a (fault_category, fault_subcategory) tuple if a match with a
     non-empty fault_category is found, or None otherwise.
 
-    This function is called as a pre-enqueue gate in the three WorkOrderEntryLine
-    INSERT points (WorkOrderEntryConfirmView, WorkOrderEntryFormView,
-    WorkOrderEntryMergeView). When a match is found the classification is copied
-    directly, avoiding a Gemini Flash inference call. When no match is found,
-    the caller enqueues classify_fault_line for asynchronous classification.
+    This function is called as a pre-enqueue gate in the three
+    WorkOrderEntryLine INSERT points (WorkOrderEntryConfirmView,
+    WorkOrderEntryFormView, WorkOrderEntryMergeView). When a match is found the
+    classification is copied directly, avoiding a Gemini Flash inference call.
+    When no match is found, the caller enqueues classify_fault_line for
+    asynchronous classification.
 
     Scope is deliberately limited to the same company: fault taxonomy varies
     significantly across companies (e.g. crane repairs vs. assembly work vs.
@@ -2717,7 +2919,7 @@ def find_cached_classification(
     # Normalise inputs — strip and lower for case-insensitive exact match.
     # Normalizar entradas — strip y lower para coincidencia exacta sin case.
     norm_description = (fault_description or "").strip().lower()
-    norm_notes       = (repair_notes or "").strip().lower()
+    norm_notes = (repair_notes or "").strip().lower()
 
     try:
         match = (
@@ -2798,7 +3000,8 @@ def _build_export_columns(template):
       familia     — WorkOrderEntryLine.fault_category / task_category_free
       origen      — WorkOrder.source
       horas_extra — horas sobre jornada estándar de 8h (por entry)
-      dietas      — 1 si el entry (día) tiene has_diet=True, 0 si no (por entry)
+      dietas      — 1 si el entry (día) tiene has_diet=True, 0 si no
+                    (por entry)
     ---
     Devuelve (active_cols, NUMERIC_KEYS) para la ExportTemplate dada,
     resueltos en el orden de template.columns. Claves válidas y sus
@@ -2807,62 +3010,98 @@ def _build_export_columns(template):
     from decimal import Decimal
 
     COLUMN_DEFS = {
-        "fecha":       ("Fecha",            lambda wo, entry, line: entry.work_date),
-        "operario":    ("Operario",         lambda wo, entry, line: (
-                                                wo.uploaded_by.user.get_full_name()
-                                                or wo.uploaded_by.user.username
-                                            ) if wo.uploaded_by else ""),
-        "maquina":     ("Máquina / CdG",    lambda wo, entry, line: (
-                                                line.machine_asset.code
-                                                if line.machine_asset
-                                                else line.machine_raw or ""
-                                            )),
-        "descripcion": ("Descripción avería", lambda wo, entry, line: line.fault_description or ""),
-        "notas":       ("Notas reparación", lambda wo, entry, line: line.repair_notes or ""),
-        "hc":          ("H. inicio",        lambda wo, entry, line: (
-                                                line.hc.strftime("%H:%M") if line.hc else ""
-                                            )),
-        "hf":          ("H. fin",           lambda wo, entry, line: (
-                                                line.hf.strftime("%H:%M") if line.hf else ""
-                                            )),
-        "delta_horas": ("Δ Horas",          lambda wo, entry, line: (
-                                                float(line.delta_hours)
-                                                if line.delta_hours is not None else ""
-                                            )),
-        "estado":      ("Estado",           lambda wo, entry, line: (
-                                                "Revisado" if wo.reviewed else "Pendiente"
-                                            )),
+        "fecha": ("Fecha", lambda wo, entry, line: entry.work_date),
+        "operario": (
+            "Operario",
+            lambda wo, entry, line: (
+                wo.uploaded_by.user.get_full_name()
+                or wo.uploaded_by.user.username
+            ) if wo.uploaded_by else "",
+        ),
+        "maquina": (
+            "Máquina / CdG",
+            lambda wo, entry, line: (
+                line.machine_asset.code
+                if line.machine_asset
+                else line.machine_raw or ""
+            ),
+        ),
+        "descripcion": (
+            "Descripción avería",
+            lambda wo, entry, line: line.fault_description or "",
+        ),
+        "notas": (
+            "Notas reparación",
+            lambda wo, entry, line: line.repair_notes or "",
+        ),
+        "hc": (
+            "H. inicio",
+            lambda wo, entry, line: (
+                line.hc.strftime("%H:%M") if line.hc else ""
+            ),
+        ),
+        "hf": (
+            "H. fin",
+            lambda wo, entry, line: (
+                line.hf.strftime("%H:%M") if line.hf else ""
+            ),
+        ),
+        "delta_horas": (
+            "Δ Horas",
+            lambda wo, entry, line: (
+                float(line.delta_hours)
+                if line.delta_hours is not None else ""
+            ),
+        ),
+        "estado": (
+            "Estado",
+            lambda wo, entry, line: (
+                "Revisado" if wo.reviewed else "Pendiente"
+            ),
+        ),
         # Fix H07 (2026-08-14): fault_category/source son códigos internos en
         # inglés (FaultCategory/WorkOrder.Source, choices=) usados para
         # analítica y filtrado -- la exportación debe mostrar siempre el
         # label en castellano ya declarado en el propio choices=, nunca el
         # código crudo. get_FOO_display() ya existe sin tocar el modelo.
-        "familia":     ("Familia avería",   lambda wo, entry, line: line.get_fault_category_display() or ""),
-        "origen":      ("Origen",           lambda wo, entry, line: wo.get_source_display() or ""),
-        "horas_extra": ("H. Extra",          lambda wo, entry, line: (
-                                                # H24 — excluye la hora fantasma de
-                                                # vacaciones (VacationPeriod.
-                                                # generated_entry_line) del cómputo
-                                                # de horas extra del día.
-                                                float(max(
-                                                    Decimal("0"),
-                                                    sum(
-                                                        (l.delta_hours for l in entry.lines.exclude(
-                                                            vacation_period__isnull=False,
-                                                        )
-                                                         if l.delta_hours is not None),
-                                                        Decimal("0"),
-                                                    ) - Decimal("8")
-                                                ))
-                                            )),
+        "familia": (
+            "Familia avería",
+            lambda wo, entry, line: line.get_fault_category_display() or "",
+        ),
+        "origen": (
+            "Origen",
+            lambda wo, entry, line: wo.get_source_display() or "",
+        ),
+        "horas_extra": (
+            "H. Extra",
+            lambda wo, entry, line: (
+                # H24 — excluye la hora fantasma de vacaciones
+                # (VacationPeriod.generated_entry_line) del cómputo de
+                # horas extra del día.
+                float(max(
+                    Decimal("0"),
+                    sum(
+                        (
+                            line.delta_hours
+                            for line in entry.lines.exclude(
+                                vacation_period__isnull=False,
+                            )
+                            if line.delta_hours is not None
+                        ),
+                        Decimal("0"),
+                    ) - Decimal("8")
+                ))
+            ),
+        ),
         # Dietas — 1 si el entry (dia) tiene has_diet=True, 0 si no. Metrica
         # de entry, no de linea -- igual que delta_horas/horas_extra, se
         # acumula una sola vez por entry en la fila TOTAL (2026-07-07,
         # solicitado por Miguel Angel: "sumar el numero de dietas por
         # operario y periodo").
-        "dietas":      ("Dietas",            lambda wo, entry, line: (
-                                                1 if entry.has_diet else 0
-                                            )),
+        "dietas": (
+            "Dietas",
+            lambda wo, entry, line: 1 if entry.has_diet else 0,
+        ),
     }
 
     active_cols = [
@@ -2904,7 +3143,8 @@ def build_export_from_template(template, work_orders_qs):
     la configuración almacenada en la instancia ExportTemplate dada.
 
     Valores de template.sheet_format soportados:
-      single_sheet — todas las filas en una hoja, agrupadas por operario y fecha.
+      single_sheet — todas las filas en una hoja, agrupadas por operario
+                     y fecha.
                      Una fila separadora azul oscuro marca cada nuevo operario.
       multi_sheet  — una hoja por operario distinto.
 
@@ -2916,17 +3156,16 @@ def build_export_from_template(template, work_orders_qs):
     """
     import openpyxl
     from openpyxl.styles import Alignment, Font, PatternFill
-    from .models import WorkOrderEntry, WorkOrderEntryLine
 
     active_cols, NUMERIC_KEYS = _build_export_columns(template)
     # Styles / Estilos
     # ------------------------------------------------------------------
     header_fill = PatternFill("solid", fgColor="1F3864")
     header_font = Font(bold=True, color="FFFFFF", size=10)
-    sep_fill    = PatternFill("solid", fgColor="2F5496")
-    sep_font    = Font(bold=True, color="FFFFFF", size=10)
-    total_fill  = PatternFill("solid", fgColor="D6E4F0")
-    total_font  = Font(bold=True, color="1F3864", size=10)
+    sep_fill = PatternFill("solid", fgColor="2F5496")
+    sep_font = Font(bold=True, color="FFFFFF", size=10)
+    total_fill = PatternFill("solid", fgColor="D6E4F0")
+    total_font = Font(bold=True, color="1F3864", size=10)
     center_align = Alignment(horizontal="center", vertical="center")
     # H07 punto 4 (2026-08-14): sombreado alterno de filas de datos, para
     # facilitar la lectura -- mismo criterio que el listado del panel
@@ -2959,7 +3198,6 @@ def build_export_from_template(template, work_orders_qs):
                 val = accumulators[key]
                 cell.value = round(val, 2) if val else 0.0
 
-
     # ------------------------------------------------------------------
     # Build flat line list enriched with wo and entry references.
     # Construir lista plana de líneas enriquecidas con referencias wo y entry.
@@ -2973,10 +3211,10 @@ def build_export_from_template(template, work_orders_qs):
     # Row layout — two price-input rows before the column header row,
     # same pattern as generate_work_order_excel.
     # ------------------------------------------------------------------
-    _PRICE_ROW_EXTRA     = 1
-    _PRICE_ROW_ORDINARY  = 2
-    _HEADER_ROW          = 3
-    _FIRST_DATA_ROW      = 4
+    _PRICE_ROW_EXTRA = 1
+    _PRICE_ROW_ORDINARY = 2
+    _HEADER_ROW = 3
+    _FIRST_DATA_ROW = 4
 
     # ------------------------------------------------------------------
     # Helper: write the two price-input cells at the top of a sheet.
@@ -2995,19 +3233,33 @@ def build_export_from_template(template, work_orders_qs):
         (fila 1) y 'COSTE HORA ORDINARIA' (fila 2), replicando el
         mecanismo C2/C3 de generate_work_order_excel.
         """
-        ws.cell(row=_PRICE_ROW_EXTRA, column=1, value="PRECIO HORA EXTRA (euros/h):").fill = (
-            _make_fill(_CLR_CONFIG_LABEL)
+        ws.cell(
+            row=_PRICE_ROW_EXTRA,
+            column=1,
+            value="PRECIO HORA EXTRA (euros/h):",
+        ).fill = _make_fill(_CLR_CONFIG_LABEL)
+        ws.merge_cells(
+            start_row=_PRICE_ROW_EXTRA,
+            start_column=1,
+            end_row=_PRICE_ROW_EXTRA,
+            end_column=2,
         )
-        ws.merge_cells(start_row=_PRICE_ROW_EXTRA, start_column=1, end_row=_PRICE_ROW_EXTRA, end_column=2)
         price_extra_cell = ws.cell(row=_PRICE_ROW_EXTRA, column=3)
         price_extra_cell.fill = _make_fill(_CLR_CONFIG_INPUT)
         price_extra_cell.number_format = '#,##0.00 "€"'
         price_extra_cell.alignment = center_align
 
-        ws.cell(row=_PRICE_ROW_ORDINARY, column=1, value="COSTE HORA ORDINARIA (euros/h):").fill = (
-            _make_fill(_CLR_CONFIG_LABEL)
+        ws.cell(
+            row=_PRICE_ROW_ORDINARY,
+            column=1,
+            value="COSTE HORA ORDINARIA (euros/h):",
+        ).fill = _make_fill(_CLR_CONFIG_LABEL)
+        ws.merge_cells(
+            start_row=_PRICE_ROW_ORDINARY,
+            start_column=1,
+            end_row=_PRICE_ROW_ORDINARY,
+            end_column=2,
         )
-        ws.merge_cells(start_row=_PRICE_ROW_ORDINARY, start_column=1, end_row=_PRICE_ROW_ORDINARY, end_column=2)
         price_ord_cell = ws.cell(row=_PRICE_ROW_ORDINARY, column=3)
         price_ord_cell.fill = _make_fill(_CLR_CONFIG_INPUT)
         price_ord_cell.number_format = '#,##0.00 "€"'
@@ -3025,10 +3277,12 @@ def build_export_from_template(template, work_orders_qs):
         Escribe la fila de cabecera (fila _HEADER_ROW, debajo de las dos
         celdas de precio) con las etiquetas de columna activas.
         """
-        for col_idx, (key, (label, _extractor)) in enumerate(col_defs, start=1):
-            cell           = ws.cell(row=_HEADER_ROW, column=col_idx, value=label)
-            cell.fill      = header_fill
-            cell.font      = header_font
+        for col_idx, (key, (label, _extractor)) in enumerate(
+            col_defs, start=1
+        ):
+            cell = ws.cell(row=_HEADER_ROW, column=col_idx, value=label)
+            cell.fill = header_fill
+            cell.font = header_font
             cell.alignment = center_align
 
     # ------------------------------------------------------------------
@@ -3038,7 +3292,8 @@ def build_export_from_template(template, work_orders_qs):
     def _autofit_columns(ws):
         """
         Sets each column width to the maximum of its header length and the
-        longest cell value in that column, with a minimum of 10 and a cap of 60.
+        longest cell value in that column, with a minimum of 10 and a cap of
+        60.
         ---
         Ajusta el ancho de cada columna al máximo entre la longitud de la
         cabecera y el valor más largo de la columna, con mínimo 10 y máximo 60.
@@ -3065,27 +3320,31 @@ def build_export_from_template(template, work_orders_qs):
         _write_price_cells(ws)
         _write_header(ws, active_cols)
 
-        current_row      = _FIRST_DATA_ROW
+        current_row = _FIRST_DATA_ROW
         current_operator = None
         # Accumulators for numeric columns (global, single sheet).
         # Acumuladores para columnas numéricas (global, hoja única).
-        accumulators = {key: 0.0 for key, _ in active_cols if key in NUMERIC_KEYS}
+        accumulators = {
+            key: 0.0 for key, _ in active_cols if key in NUMERIC_KEYS
+        }
         # Guard: NUMERIC_KEYS values (delta_horas, horas_extra) are entry-level
         # metrics stored redundantly on every line of the same entry. We must
         # only accumulate them once per entry, not once per line.
         # Guarda: los valores NUMERIC_KEYS (delta_horas, horas_extra) son
         # métricas de entry almacenadas de forma redundante en cada línea de
-        # la misma entry. Solo deben acumularse una vez por entry, no por línea.
+        # la misma entry. Solo deben acumularse una vez por entry, no por
+        # línea.
         seen_entry_pks: set = set()
         # H07 punto 4: alterna en cada entry (día) nuevo, independiente del
         # separador de operario -- da una lectura clara por bloques.
         stripe_on = False
 
         for line in rows:
-            wo    = line.entry.work_order
+            wo = line.entry.work_order
             entry = line.entry
             op_name = (
-                wo.uploaded_by.user.get_full_name() or wo.uploaded_by.user.username
+                wo.uploaded_by.user.get_full_name()
+                or wo.uploaded_by.user.username
                 if wo.uploaded_by else ""
             )
 
@@ -3093,9 +3352,9 @@ def build_export_from_template(template, work_orders_qs):
             # Insertar fila separadora cuando cambia el operario.
             if op_name != current_operator:
                 current_operator = op_name
-                sep_cell       = ws.cell(row=current_row, column=1, value=op_name)
-                sep_cell.fill  = sep_fill
-                sep_cell.font  = sep_font
+                sep_cell = ws.cell(row=current_row, column=1, value=op_name)
+                sep_cell.fill = sep_fill
+                sep_cell.font = sep_font
                 # Merge separator across all active columns.
                 # Fusionar separador a lo largo de todas las columnas activas.
                 if len(active_cols) > 1:
@@ -3110,14 +3369,17 @@ def build_export_from_template(template, work_orders_qs):
                 stripe_on = not stripe_on
             seen_entry_pks.add(entry.pk)
 
-            for col_idx, (key, (label, extractor)) in enumerate(active_cols, start=1):
+            for col_idx, (key, (label, extractor)) in enumerate(
+                active_cols, start=1
+            ):
                 val = extractor(wo, entry, line)
-                # NUMERIC_KEYS are entry-level metrics (delta_horas, horas_extra).
-                # On subsequent lines of the same entry write blank so the
-                # value appears only once per day (Opción B).
-                # NUMERIC_KEYS son métricas de entry (delta_horas, horas_extra).
-                # En líneas posteriores de la misma entry se escribe en blanco
-                # para que el valor aparezca solo una vez por día (Opción B).
+                # NUMERIC_KEYS are entry-level metrics (delta_horas,
+                # horas_extra). On subsequent lines of the same entry write
+                # blank so the value appears only once per day (Opción B).
+                # NUMERIC_KEYS son métricas de entry (delta_horas,
+                # horas_extra). En líneas posteriores de la misma entry se
+                # escribe en blanco para que el valor aparezca solo una vez
+                # por día (Opción B).
                 if key in NUMERIC_KEYS and not is_first_line_of_entry:
                     val = ""
                 cell = ws.cell(row=current_row, column=col_idx, value=val)
@@ -3151,8 +3413,8 @@ def build_export_from_template(template, work_orders_qs):
     wb.remove(wb.active)
 
     current_operator = None
-    ws               = None
-    current_row      = _FIRST_DATA_ROW
+    ws = None
+    current_row = _FIRST_DATA_ROW
     # Per-sheet accumulators reset when a new sheet opens.
     # Acumuladores por hoja, reiniciados al abrir cada hoja nueva.
     sheet_accumulators = {}
@@ -3166,7 +3428,7 @@ def build_export_from_template(template, work_orders_qs):
     stripe_on = False
 
     for line in rows:
-        wo    = line.entry.work_order
+        wo = line.entry.work_order
         entry = line.entry
         op_name = (
             wo.uploaded_by.user.get_full_name() or wo.uploaded_by.user.username
@@ -3179,10 +3441,12 @@ def build_export_from_template(template, work_orders_qs):
             # Write TOTAL row on the previous sheet before switching.
             # Escribir fila TOTAL en la hoja anterior antes de cambiar.
             if ws is not None and sheet_accumulators:
-                _write_totals_row(ws, current_row, active_cols, sheet_accumulators)
-            current_operator   = op_name
-            ws                 = wb.create_sheet(title=op_name[:31])
-            current_row        = _FIRST_DATA_ROW
+                _write_totals_row(
+                    ws, current_row, active_cols, sheet_accumulators
+                )
+            current_operator = op_name
+            ws = wb.create_sheet(title=op_name[:31])
+            current_row = _FIRST_DATA_ROW
             sheet_accumulators = {
                 key: 0.0 for key, _ in active_cols if key in NUMERIC_KEYS
             }
@@ -3196,7 +3460,9 @@ def build_export_from_template(template, work_orders_qs):
             stripe_on = not stripe_on
         seen_entry_pks_sheet.add(entry.pk)
 
-        for col_idx, (key, (label, extractor)) in enumerate(active_cols, start=1):
+        for col_idx, (key, (label, extractor)) in enumerate(
+            active_cols, start=1
+        ):
             val = extractor(wo, entry, line)
             # NUMERIC_KEYS are entry-level metrics (delta_horas, horas_extra).
             # On subsequent lines of the same entry write blank (Opción B).
@@ -3308,7 +3574,6 @@ def build_pdf_from_template(template, work_orders_qs):
     Devuelve los bytes crudos del PDF listos para streaming.
     """
     import fitz
-    from decimal import Decimal
     from django.utils.timezone import now as _tz_now
 
     active_cols, NUMERIC_KEYS = _build_export_columns(template)
@@ -3319,23 +3584,23 @@ def build_pdf_from_template(template, work_orders_qs):
     # Layout constants — landscape A4, in points.
     # ------------------------------------------------------------------
     PAGE_W, PAGE_H = 842, 595
-    MARGIN         = 24
-    ROW_H          = 16
-    TITLE_H        = 34
-    HEADER_H       = 20
-    FONT_SIZE      = 7.5
+    MARGIN = 24
+    ROW_H = 16
+    TITLE_H = 34
+    HEADER_H = 20
+    FONT_SIZE = 7.5
     HEADER_FONT_SIZE = 8.5
-    USABLE_W       = PAGE_W - 2 * MARGIN
+    USABLE_W = PAGE_W - 2 * MARGIN
 
     # Colores -- mismos que build_export_from_template, en RGB 0-1 (fitz).
     # Colors -- same as build_export_from_template, in 0-1 RGB (fitz).
     HEADER_FILL = (0x1F / 255, 0x38 / 255, 0x64 / 255)
-    SEP_FILL    = (0x2F / 255, 0x54 / 255, 0x96 / 255)
-    TOTAL_FILL  = (0xD6 / 255, 0xE4 / 255, 0xF0 / 255)
+    SEP_FILL = (0x2F / 255, 0x54 / 255, 0x96 / 255)
+    TOTAL_FILL = (0xD6 / 255, 0xE4 / 255, 0xF0 / 255)
     STRIPE_FILL = (0xF2 / 255, 0xF2 / 255, 0xF2 / 255)
-    WHITE       = (1, 1, 1)
-    BLACK       = (0, 0, 0)
-    DARK_BLUE   = HEADER_FILL
+    WHITE = (1, 1, 1)
+    BLACK = (0, 0, 0)
+    DARK_BLUE = HEADER_FILL
 
     # Columnas con más texto (descripción/notas) reciben doble peso de
     # ancho frente al resto -- mismo criterio visual que las columnas
@@ -3372,7 +3637,8 @@ def build_pdf_from_template(template, work_orders_qs):
         rect = fitz.Rect(MARGIN, y, MARGIN + USABLE_W, y + HEADER_H)
         page.draw_rect(rect, color=None, fill=HEADER_FILL)
         for idx, (key, (label, _extractor)) in enumerate(active_cols):
-            cell = fitz.Rect(col_x[idx] + 2, y + 2, col_x[idx + 1] - 2, y + HEADER_H - 2)
+            cell = fitz.Rect(col_x[idx] + 2, y + 2,
+                             col_x[idx + 1] - 2, y + HEADER_H - 2)
             page.insert_textbox(
                 cell, label, fontsize=HEADER_FONT_SIZE, fontname="hebo",
                 color=WHITE, align=0,
@@ -3383,7 +3649,8 @@ def build_pdf_from_template(template, work_orders_qs):
             rect = fitz.Rect(MARGIN, y, MARGIN + USABLE_W, y + ROW_H)
             page.draw_rect(rect, color=None, fill=fill)
         for idx, val in enumerate(values):
-            cell = fitz.Rect(col_x[idx] + 2, y + 1, col_x[idx + 1] - 2, y + ROW_H - 1)
+            cell = fitz.Rect(col_x[idx] + 2, y + 1,
+                             col_x[idx + 1] - 2, y + ROW_H - 1)
             page.insert_textbox(
                 cell, str(val) if val not in (None, "") else "",
                 fontsize=FONT_SIZE, fontname="hebo" if bold else "helv",
@@ -3398,7 +3665,7 @@ def build_pdf_from_template(template, work_orders_qs):
     stripe_on = False
 
     for line in rows:
-        wo    = line.entry.work_order
+        wo = line.entry.work_order
         entry = line.entry
         op_name = (
             wo.uploaded_by.user.get_full_name() or wo.uploaded_by.user.username
@@ -3417,7 +3684,9 @@ def build_pdf_from_template(template, work_orders_qs):
             rect = fitz.Rect(MARGIN, y, MARGIN + USABLE_W, y + ROW_H)
             page.draw_rect(rect, color=None, fill=SEP_FILL)
             page.insert_textbox(
-                fitz.Rect(MARGIN + 4, y + 1, MARGIN + USABLE_W - 4, y + ROW_H - 1),
+                fitz.Rect(
+                    MARGIN + 4, y + 1, MARGIN + USABLE_W - 4, y + ROW_H - 1
+                ),
                 op_name, fontsize=FONT_SIZE + 0.5, fontname="hebo",
                 color=WHITE, align=0,
             )
@@ -3458,12 +3727,16 @@ def build_pdf_from_template(template, work_orders_qs):
                 total_values.append(round(val, 2) if val else 0.0)
             else:
                 total_values.append("")
-        _draw_row(page, y, total_values, fill=TOTAL_FILL, text_color=DARK_BLUE, bold=True)
+        _draw_row(
+            page,
+            y,
+            total_values,
+            fill=TOTAL_FILL,
+            text_color=DARK_BLUE,
+            bold=True,
+        )
         y += ROW_H
 
     output = doc.tobytes()
     doc.close()
     return output
-
-
-
