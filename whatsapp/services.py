@@ -71,14 +71,14 @@ def _build_genai_client() -> genai.Client:
     and GOOGLE_CLOUD_PROJECT from the environment; location is
     GEMINI_TEXT_LOCATION ("global", S117).
     ---
-    Construye y devuelve una instancia autenticada de google-genai Client usando
-    credenciales Service Account JSON de Vertex AI. Lee GCP_CREDENTIALS_PATH
-    y GOOGLE_CLOUD_PROJECT del entorno; la region es GEMINI_TEXT_LOCATION
-    ("global", S117).
+    Construye y devuelve una instancia autenticada de google-genai Client
+    usando credenciales Service Account JSON de Vertex AI. Lee
+    GCP_CREDENTIALS_PATH y GOOGLE_CLOUD_PROJECT del entorno; la region es
+    GEMINI_TEXT_LOCATION ("global", S117).
     """
     credentials_path = os.environ["GCP_CREDENTIALS_PATH"]
-    project          = os.environ["GOOGLE_CLOUD_PROJECT"]
-    location         = GEMINI_TEXT_LOCATION
+    project = os.environ["GOOGLE_CLOUD_PROJECT"]
+    location = GEMINI_TEXT_LOCATION
 
     credentials = service_account.Credentials.from_service_account_file(
         credentials_path,
@@ -119,8 +119,8 @@ def _build_genai_client_maps() -> genai.Client:
     get_gemini_reply() cuando se activa Maps Grounding.
     """
     credentials_path = os.environ["GCP_CREDENTIALS_PATH"]
-    project          = os.environ["GOOGLE_CLOUD_PROJECT"]
-    location         = GEMINI_TEXT_LOCATION
+    project = os.environ["GOOGLE_CLOUD_PROJECT"]
+    location = GEMINI_TEXT_LOCATION
 
     credentials = service_account.Credentials.from_service_account_file(
         credentials_path,
@@ -173,15 +173,19 @@ class WhatsAppChatService:
     Stateless service that handles the full chatbot pipeline for an inbound
     WhatsApp message. On each invocation it:
       1. Builds a dynamic system prompt from the company's live configuration.
-      2. Reconstructs the Gemini chat history from persisted WhatsAppMessage records.
+      2. Reconstructs the Gemini chat history from persisted WhatsAppMessage
+         records.
       3. Sends the user message to Gemini 3.5 Flash and obtains a reply.
       4. Dispatches the reply to the user via the Twilio Messaging API.
     ---
     Servicio sin estado que gestiona el pipeline completo del chatbot para un
     mensaje entrante de WhatsApp. En cada invocación:
-      1. Construye un system prompt dinámico desde la configuración viva de la empresa.
-      2. Reconstruye el historial de chat de Gemini desde los registros WhatsAppMessage persistidos.
-      3. Envía el mensaje del usuario a Gemini 3.5 Flash y obtiene una respuesta.
+      1. Construye un system prompt dinámico desde la configuración viva de la
+         empresa.
+      2. Reconstruye el historial de chat de Gemini desde los registros
+         WhatsAppMessage persistidos.
+      3. Envía el mensaje del usuario a Gemini 3.5 Flash y obtiene una
+         respuesta.
       4. Despacha la respuesta al usuario vía la API de Mensajería de Twilio.
     """
 
@@ -225,17 +229,21 @@ class WhatsAppChatService:
             company: Instancia de Company — empresa destino de la sesión.
             to_number (str): Número Twilio destino en formato E.164.
             session (WhatsAppSession | None): Sesión activa del cliente. Si se
-                proporciona y tiene coordenadas, se inyecta el bloque de ubicación.
+                proporciona y tiene coordenadas, se inyecta el bloque de
+                ubicación.
         """
         lines = []
 
         # Company identity block.
         # Bloque de identidad de empresa.
-        lines.append(f"Eres el asistente virtual de {company.name} por WhatsApp.")
+        lines.append(
+            f"Eres el asistente virtual de {company.name} por WhatsApp."
+        )
         lines.append(
             "Atiendes consultas de clientes por mensajería. "
             "Tu tono es profesional, cálido y conciso. "
-            "Respondes siempre en castellano salvo que el cliente se dirija a ti en otro idioma."
+            "Respondes siempre en castellano salvo que el cliente se dirija a "
+            "ti en otro idioma."
         )
 
         # Corporate voice profile — tone guidelines and forbidden phrases.
@@ -243,10 +251,16 @@ class WhatsAppChatService:
         try:
             profile = company.voice_profile
             if profile.is_active:
-                lines.append(f"\nDIRECTRICES DE TONO:\n{profile.tone_guidelines}")
+                lines.append(
+                    f"\nDIRECTRICES DE TONO:\n{profile.tone_guidelines}"
+                )
                 if profile.forbidden_phrases:
-                    forbidden = ", ".join(f'"{p}"' for p in profile.forbidden_phrases)
-                    lines.append(f"\nFRASES PROHIBIDAS (nunca uses): {forbidden}")
+                    forbidden = ", ".join(
+                        f'"{p}"' for p in profile.forbidden_phrases
+                    )
+                    lines.append(
+                        f"\nFRASES PROHIBIDAS (nunca uses): {forbidden}"
+                    )
         except Exception:
             # CorporateVoiceProfile may not exist for all companies.
             # CorporateVoiceProfile puede no existir para todas las empresas.
@@ -279,14 +293,15 @@ class WhatsAppChatService:
 
         # Geographic location context block — Paso 19 (2026-04-16).
         # Injected only when the session contains valid coordinates. The agent
-        # uses this information to provide location-aware responses (e.g. nearest
-        # workshop, estimated travel distance). The location_address field is
-        # included when available — it may be populated by Grounding with Google
-        # Maps in Paso 20.
+        # uses this information to provide location-aware responses (e.g.
+        # nearest workshop, estimated travel distance). The location_address
+        # field is included when available — it may be populated by Grounding
+        # with Google Maps in Paso 20.
         # Bloque de contexto de ubicación geográfica — Paso 19 (2026-04-16).
         # Se inyecta únicamente cuando la sesión contiene coordenadas válidas.
         # El agente usa esta información para proporcionar respuestas con
-        # conciencia de ubicación (p. ej. taller más cercano, distancia estimada).
+        # conciencia de ubicación (p. ej. taller más cercano, distancia
+        # estimada).
         # El campo location_address se incluye cuando está disponible — puede
         # rellenarse mediante Grounding con Google Maps en el Paso 20.
         if session is not None and session.latitude is not None:
@@ -300,7 +315,8 @@ class WhatsAppChatService:
                 )
             if session.location_captured_at:
                 location_lines.append(
-                    f"— Capturada en: {session.location_captured_at.strftime('%H:%M')}"
+                    "— Capturada en: "
+                    f"{session.location_captured_at.strftime('%H:%M')}"
                 )
             location_lines.append(
                 "Usa esta información para dar respuestas orientadas a la "
@@ -320,11 +336,11 @@ class WhatsAppChatService:
         lines.append(
             "\nREGLAS GENERALES:"
             "\n- Nunca inventes información que no figure en este contexto."
-            "\n- Nunca menciones que eres una inteligencia artificial salvo que "
-            "el cliente te lo pregunte directamente."
+            "\n- Nunca menciones que eres una inteligencia artificial salvo "
+            "que el cliente te lo pregunte directamente."
             "\n- Sé conciso: no des explicaciones innecesarias."
-            "\n- Si no puedes resolver la consulta, ofrece tomar nota y que un "
-            "responsable se ponga en contacto."
+            "\n- Si no puedes resolver la consulta, ofrece tomar nota y que "
+            "un responsable se ponga en contacto."
         )
 
         # Target section detection instruction block — Paso 21 (2026-04-20).
@@ -334,27 +350,34 @@ class WhatsAppChatService:
         # IncomingWhatsAppView before the reply is sent to the user.
         # The list of valid section names is injected here so the agent does
         # not hallucinate section names outside those defined in the company.
-        # Bloque de instrucción de detección de sección destino — Paso 21 (2026-04-20).
+        # Bloque de instrucción de detección de sección destino — Paso 21
+        # (2026-04-20).
         # Cuando el agente identifica que el cliente desea ser dirigido a una
         # sección concreta de la empresa, debe añadir un marcador JSON estricto
         # al final de su respuesta. El marcador es parseado y eliminado por
         # IncomingWhatsAppView antes de enviar la respuesta al usuario.
         # La lista de nombres de sección válidos se inyecta aquí para que el
-        # agente no invente nombres de sección fuera de los definidos en la empresa.
+        # agente no invente nombres de sección fuera de los definidos en la
+        # empresa.
         section_names = [s.name for s in sections] if sections.exists() else []
         if section_names:
             valid_names_str = ", ".join(f'"{n}"' for n in section_names)
             lines.append(
                 "\nDETECCIÓN DE SECCIÓN DESTINO:"
-                "\nCuando el cliente exprese con claridad que desea ser atendido "
-                "por o dirigido a una sección concreta de la empresa, añade AL FINAL "
+                "\nCuando el cliente exprese con claridad que desea ser "
+                "atendido "
+                "por o dirigido a una sección concreta de la empresa, añade "
+                "AL FINAL "
                 "de tu respuesta — y solo al final, sin texto posterior — el "
                 "siguiente marcador JSON en una línea propia:"
                 "\n[TARGET_SECTION:{\"name\": \"NOMBRE_SECCIÓN\"}]"
-                f"\nSecciones válidas (usa el nombre exacto): {valid_names_str}."
-                "\nSolo incluye el marcador cuando la intención del cliente sea "
-                "inequívoca. No lo incluyas en respuestas informativas generales."
-                "\nEjemplo correcto: si el cliente dice 'quiero hablar con Grúas' "
+                "\nSecciones válidas (usa el nombre exacto): "
+                f"{valid_names_str}."
+                "\nSolo incluye el marcador cuando la intención del cliente "
+                "sea inequívoca. No lo incluyas en respuestas informativas "
+                "generales."
+                "\nEjemplo correcto: si el cliente dice 'quiero hablar con "
+                "Grúas' "
                 "y existe una sección llamada 'Grúas', añade al final:"
                 "\n[TARGET_SECTION:{\"name\": \"Grúas\"}]"
             )
@@ -367,8 +390,8 @@ class WhatsAppChatService:
         Returns a human-readable availability label for an internal contact
         based on their most recent active PresenceStatus record.
         ---
-        Devuelve una etiqueta de disponibilidad legible para un contacto interno
-        basada en su registro PresenceStatus activo más reciente.
+        Devuelve una etiqueta de disponibilidad legible para un contacto
+        interno basada en su registro PresenceStatus activo más reciente.
         """
         try:
             status = PresenceStatus.objects.filter(
@@ -379,10 +402,16 @@ class WhatsAppChatService:
                 Q(ends_at__isnull=True) | Q(ends_at__gt=now())
             ).latest("starts_at")
 
+            busy_until = (
+                status.ends_at.strftime('%H:%M')
+                if status.ends_at else 'hora desconocida'
+            )
             label_map = {
                 PresenceStatus.STATUS_AVAILABLE:        "Disponible",
                 PresenceStatus.STATUS_IN_MEETING:       "Reunido/a",
-                PresenceStatus.STATUS_BUSY_UNTIL:       f"Ocupado/a hasta {status.ends_at.strftime('%H:%M') if status.ends_at else 'hora desconocida'}",
+                PresenceStatus.STATUS_BUSY_UNTIL: (
+                    f"Ocupado/a hasta {busy_until}"
+                ),
                 PresenceStatus.STATUS_ABSENT_SCHEDULED: "Ausente (programado)",
                 PresenceStatus.STATUS_ABSENT_VACATION:  "De vacaciones",
             }
@@ -396,7 +425,8 @@ class WhatsAppChatService:
         """
         Reconstructs the Gemini chat history from all WhatsAppMessage records
         belonging to the given session, ordered chronologically. Returns a list
-        of genai_types.Content objects compatible with client.chats.create(history=...).
+        of genai_types.Content objects compatible with
+        client.chats.create(history=...).
 
         Excludes the current inbound turn when it is the most recent message
         in the session: every caller of this method persists the incoming
@@ -408,7 +438,8 @@ class WhatsAppChatService:
         as "written twice" during onboarding, when it had only been sent once.
         ---
         Reconstruye el historial de chat de Gemini desde todos los registros
-        WhatsAppMessage pertenecientes a la sesión dada, ordenados cronológicamente.
+        WhatsAppMessage pertenecientes a la sesión dada, ordenados
+        cronológicamente.
         Devuelve una lista de objetos genai_types.Content compatible con
         client.chats.create(history=...).
 
@@ -431,7 +462,10 @@ class WhatsAppChatService:
         for msg in messages:
             # Map WhatsApp direction to Gemini role.
             # Mapear dirección de WhatsApp al rol de Gemini.
-            role = "user" if msg.direction == WhatsAppMessage.DIRECTION_IN else "model"
+            role = (
+                "user" if msg.direction == WhatsAppMessage.DIRECTION_IN
+                else "model"
+            )
             history.append(
                 genai_types.Content(
                     role=role,
@@ -442,7 +476,8 @@ class WhatsAppChatService:
         return history
 
     # Keywords that trigger Maps Grounding even without explicit coordinates.
-    # Palabras clave que activan Maps Grounding incluso sin coordenadas explícitas.
+    # Palabras clave que activan Maps Grounding incluso sin coordenadas
+    # explícitas.
     GEO_KEYWORDS = (
         "dónde", "donde", "cómo llegar", "como llegar", "dirección",
         "ubicación", "ubicacion", "cerca", "cercano", "mapa", "ruta",
@@ -465,12 +500,13 @@ class WhatsAppChatService:
             defined in GEO_KEYWORDS.
         Both conditions are evaluated independently (OR logic).
         ---
-        Determina si Grounding con Google Maps debe activarse para la invocación
+        Determina si Grounding con Google Maps debe activarse para la
+        invocación
         actual. Devuelve True cuando:
           - La sesión contiene coordenadas geográficas válidas (latitude no es
             None), O
-          - El mensaje del usuario contiene una o más palabras clave de referencia
-            geográfica definidas en GEO_KEYWORDS.
+          - El mensaje del usuario contiene una o más palabras clave de
+            referencia geográfica definidas en GEO_KEYWORDS.
         Ambas condiciones se evalúan de forma independiente (lógica OR).
 
         Args:
@@ -478,7 +514,8 @@ class WhatsAppChatService:
             user_message (str): Texto del mensaje entrante del usuario.
 
         Returns:
-            bool: True si Maps Grounding debe activarse, False en caso contrario.
+            bool: True si Maps Grounding debe activarse, False en caso
+            contrario.
         """
         if session is not None and session.latitude is not None:
             return True
@@ -525,7 +562,8 @@ class WhatsAppChatService:
             history (list): Historial de chat reconstruido por build_history().
             user_message (str): Texto del mensaje entrante del usuario.
             session (WhatsAppSession | None): Sesión activa. Se usa para
-                determinar si activar Maps Grounding y para extraer coordenadas.
+                determinar si activar Maps Grounding y para extraer
+                coordenadas.
 
         Returns:
             str: Texto plano de la respuesta del modelo.
@@ -535,7 +573,8 @@ class WhatsAppChatService:
         if use_maps:
             # ------------------------------------------------------------------
             # Maps Grounding branch: api_version="v1" client + GoogleMaps tool.
-            # Rama Maps Grounding: cliente con api_version="v1" + tool GoogleMaps.
+            # Rama Maps Grounding: cliente con api_version="v1" + tool
+            # GoogleMaps.
             # ------------------------------------------------------------------
             logger.info(
                 "# [WHATSAPP] Activando Maps Grounding para sesión %s — "
@@ -552,10 +591,10 @@ class WhatsAppChatService:
             # available in the session. Keyword-only activation uses the Maps
             # tool without explicit coordinates — Gemini infers location from
             # context.
-            # Construir tool_config: incluir lat/lng solo cuando hay coordenadas
-            # disponibles en la sesión. La activación solo por keywords usa el
-            # tool Maps sin coordenadas explícitas — Gemini infiere ubicación
-            # del contexto.
+            # Construir tool_config: incluir lat/lng solo cuando hay
+            # coordenadas disponibles en la sesión. La activación solo por
+            # keywords usa el tool Maps sin coordenadas explícitas — Gemini
+            # infiere ubicación del contexto.
             if session is not None and session.latitude is not None:
                 tool_config = ToolConfig(
                     retrieval_config=RetrievalConfig(
@@ -577,7 +616,11 @@ class WhatsAppChatService:
                 model=cls.GEMINI_MODEL,
                 config=genai_types.GenerateContentConfig(
                     system_instruction=system_prompt,
-                    tools=[genai_types.Tool(google_maps=GoogleMaps(enable_widget=False))],
+                    tools=[
+                        genai_types.Tool(
+                            google_maps=GoogleMaps(enable_widget=False)
+                        )
+                    ],
                     tool_config=tool_config,
                 ),
                 history=history,
@@ -784,8 +827,8 @@ class WhatsAppChatService:
             ).first()
             if tpl is None:
                 logger.warning(
-                    "# [BROADCAST] Plantilla breakdown_broadcast no encontrada "
-                    "para empresa pk=%s — broadcast omitido.",
+                    "# [BROADCAST] Plantilla breakdown_broadcast no "
+                    "encontrada para empresa pk=%s — broadcast omitido.",
                     ticket.company_id,
                 )
                 return
@@ -883,7 +926,8 @@ class WhatsAppChatService:
 
 
 # Processes inbound presence webhook responses (1h / 2h / disponible).
-# Procesa las respuestas entrantes del webhook de presencia (1h / 2h / disponible).
+# Procesa las respuestas entrantes del webhook de presencia (1h / 2h /
+# disponible).
 # ---------------------------------------------------------------------------
 
 class PresenceResponseService:
@@ -894,16 +938,17 @@ class PresenceResponseService:
     CompanyUser's active PresenceStatus accordingly.
     ---
     Servicio sin estado que procesa la respuesta del usuario a un recordatorio
-    de presencia enviado por la tarea Celery check_in_meeting_reminders. Analiza
-    el cuerpo del mensaje entrante de WhatsApp ('1h', '2h' o 'disponible') y
-    actualiza el PresenceStatus activo del CompanyUser en consecuencia.
+    de presencia enviado por la tarea Celery check_in_meeting_reminders.
+    Analiza el cuerpo del mensaje entrante de WhatsApp ('1h', '2h' o
+    'disponible') y actualiza el PresenceStatus activo del CompanyUser en
+    consecuencia.
     """
 
     # Canonical recognised responses and their hour deltas.
     # Respuestas canónicas reconocidas y sus deltas en horas.
-    RESPONSE_1H          = "1h"
-    RESPONSE_2H          = "2h"
-    RESPONSE_AVAILABLE   = "disponible"
+    RESPONSE_1H = "1h"
+    RESPONSE_2H = "2h"
+    RESPONSE_AVAILABLE = "disponible"
 
     VALID_RESPONSES = {RESPONSE_1H, RESPONSE_2H, RESPONSE_AVAILABLE}
 
@@ -946,7 +991,10 @@ class PresenceResponseService:
                 "# [PRESENCE] Contact interno no encontrado para número: %s",
                 from_number,
             )
-            return "No se ha podido identificar tu usuario. Contacta con el administrador."
+            return (
+                "No se ha podido identificar tu usuario. Contacta con el "
+                "administrador."
+            )
         except Contact.MultipleObjectsReturned:
             logger.error(
                 "# [PRESENCE] Múltiples Contact internos para número: %s",
@@ -978,7 +1026,8 @@ class PresenceResponseService:
         current_time = now()
 
         # Close any currently open PresenceStatus for this user.
-        # Cerrar cualquier PresenceStatus abierto actualmente para este usuario.
+        # Cerrar cualquier PresenceStatus abierto actualmente para este
+        # usuario.
         open_statuses = PresenceStatus.objects.filter(
             company_user=company_user,
             ends_at__isnull=True,
@@ -1018,8 +1067,8 @@ class PresenceResponseService:
             new_ends_at.strftime("%H:%M"),
         )
         return (
-            f"⏳ Entendido, seguirás como ocupado/a durante {hours} hora(s) más. "
-            f"Te avisaremos de nuevo si es necesario."
+            f"⏳ Entendido, seguirás como ocupado/a durante {hours} hora(s) "
+            "más. Te avisaremos de nuevo si es necesario."
         )
 
 # ---------------------------------------------------------------------------
@@ -1027,8 +1076,10 @@ class PresenceResponseService:
 # Sends a structured IVR capture summary to the section's referent contact
 # via WhatsApp using the ivr_capture_notification Meta-approved template.
 # Envia un resumen estructurado de captura IVR al contacto referente de la
-# seccion via WhatsApp usando el template aprobado por Meta ivr_capture_notification.
+# seccion via WhatsApp usando el template aprobado por Meta
+# ivr_capture_notification.
 # ---------------------------------------------------------------------------
+
 
 def send_capture_notification(
     call_data_capture,
@@ -1049,8 +1100,8 @@ def send_capture_notification(
     Envia una notificacion WhatsApp al contacto referente de la seccion
     usando el template UTILITY aprobado por Meta 'ivr_capture_notification'.
     Las variables del template se rellenan desde la instancia CallDataCapture:
-      {{1}} nombre de seccion, {{2}} nombre capturado, {{3}} telefono capturado,
-      {{4}} motivo capturado.
+      {{1}} nombre de seccion, {{2}} nombre capturado, {{3}} telefono
+      capturado, {{4}} motivo capturado.
     Actualiza CallDataCapture.notified_via_whatsapp y whatsapp_sent_at
     en caso de entrega exitosa. Devuelve True en exito, False en fallo.
     Esta funcion es sincrona y esta disenada para ser invocada mediante
@@ -1065,7 +1116,8 @@ def send_capture_notification(
     # Guardia: el contacto debe existir y tener numero de telefono.
     if not contact or not contact.phone_number:
         logger.warning(
-            "# [CAPTURE NOTIFY] CallDataCapture %s sin contacto o telefono. Abortando.",
+            ("# [CAPTURE NOTIFY] CallDataCapture %s sin contacto o telefono. "
+             "Abortando."),
             call_data_capture.pk,
         )
         return False
@@ -1080,8 +1132,8 @@ def send_capture_notification(
         )
     except WhatsAppTemplate.DoesNotExist:
         logger.error(
-            "# [CAPTURE NOTIFY] Template ivr_capture_notification no encontrado "
-            "para empresa %s. Abortando.",
+            "# [CAPTURE NOTIFY] Template ivr_capture_notification no "
+            "encontrado para empresa %s. Abortando.",
             contact.company.name,
         )
         return False
@@ -1089,10 +1141,16 @@ def send_capture_notification(
     # Extract captured data fields with safe fallbacks.
     # Extraer campos de datos capturados con fallbacks seguros.
     captured = call_data_capture.captured_data or {}
-    section_name    = section.name if section else "sin seccion"
-    captured_name   = captured.get("nombre",   captured.get("name",   "No informado"))
-    captured_phone  = captured.get("telefono", captured.get("phone",  "No informado"))
-    captured_motive = captured.get("motivo",   captured.get("motive", "No informado"))
+    section_name = section.name if section else "sin seccion"
+    captured_name = captured.get(
+        "nombre",   captured.get("name",   "No informado")
+    )
+    captured_phone = captured.get(
+        "telefono", captured.get("phone",  "No informado")
+    )
+    captured_motive = captured.get(
+        "motivo",   captured.get("motive", "No informado")
+    )
 
     # Build Twilio Content Template API payload.
     # Construir el payload de la API Content Template de Twilio.
@@ -1142,7 +1200,9 @@ def send_capture_notification(
     # Marcar la captura como notificada.
     call_data_capture.notified_via_whatsapp = True
     call_data_capture.whatsapp_sent_at = now()
-    call_data_capture.save(update_fields=["notified_via_whatsapp", "whatsapp_sent_at"])
+    call_data_capture.save(
+        update_fields=["notified_via_whatsapp", "whatsapp_sent_at"]
+    )
 
     return True
 
@@ -1316,6 +1376,7 @@ def send_operator_albaran_notification(
 # respuestas de Gemini para poblar los campos del ticket progresivamente.
 # ---------------------------------------------------------------------------
 
+
 class BreakdownAgentService:
     """
     Stateless service that handles the full breakdown conversation pipeline
@@ -1348,7 +1409,8 @@ class BreakdownAgentService:
         exists. Never returns PAUSED or CLOSED tickets — those are historical.
         ---
         Devuelve el BreakdownTicket abierto mas reciente (OPEN o IN_PROGRESS)
-        para el contacto y empresa dados. Crea un nuevo ticket OPEN si no existe.
+        para el contacto y empresa dados. Crea un nuevo ticket OPEN si no
+        existe.
         Nunca devuelve tickets PAUSED o CLOSED — son historicos.
         """
         from chat.models import BreakdownTicket
@@ -1368,7 +1430,7 @@ class BreakdownAgentService:
             # Auto-assign if the contact is a workshop operator or boss.
             # Autoasignar si el contacto es operario o jefe de taller.
             company_user = getattr(contact, "company_user", None)
-            auto_assign  = (
+            auto_assign = (
                 company_user is not None
                 and company_user.role in (
                     _CU.ROLE_WORKSHOP,
@@ -1441,7 +1503,8 @@ class BreakdownAgentService:
             information to populate the ticket fields.
           - Keep the conversation natural and concise.
         ---
-        Construye el system prompt de mecanico experto para el agente de averias.
+        Construye el system prompt de mecanico experto para el agente de
+        averias.
         """
         lines = [
             f"Eres Alia, mecanica experta de {company.name} especializada en "
@@ -1449,45 +1512,54 @@ class BreakdownAgentService:
             "carretillas. Tu rol es recoger los datos de una averia de forma "
             "natural y eficiente.",
             "",
-            f"Estas hablando con {contact.name}, trabajador interno de la empresa.",
+            (f"Estas hablando con {contact.name}, trabajador interno de la "
+             "empresa."),
             "",
             "OBJETIVO: Recoger los siguientes datos de la averia:",
-            "1. Maquina o vehiculo afectado (modelo, matricula o codigo interno)",
-            "2. Descripcion de la averia (que falla, como falla, desde cuando)",
-            "3. Ubicacion de la averia en la maquina (zona especifica afectada)",
-            "4. Ubicacion fisica actual de la maquina (base, ruta, lugar exacto)",
+            ("1. Maquina o vehiculo afectado (modelo, matricula o codigo "
+             "interno)"),
+            ("2. Descripcion de la averia (que falla, como falla, desde "
+             "cuando)"),
+            ("3. Ubicacion de la averia en la maquina (zona especifica "
+             "afectada)"),
+            ("4. Ubicacion fisica actual de la maquina (base, ruta, lugar "
+             "exacto)"),
             "5. Nivel de urgencia (baja, media, alta o critica)",
             "",
             "INSTRUCCIONES:",
             "- Haz las preguntas de forma natural, no como un formulario.",
-            "- Puedes agrupar varias preguntas en un mismo mensaje si tiene sentido.",
-            "- Cuando tengas suficiente informacion para identificar la averia, "
-            "resume los datos al trabajador y pide confirmacion.",
-            "- Una vez confirmado, cierra el dialogo con un mensaje de confirmacion "
-            "indicando el codigo del ticket.",
-            "- Si el trabajador menciona que ya no hay averia o que fue un error, "
-            "indicalo claramente.",
+            ("- Puedes agrupar varias preguntas en un mismo mensaje si tiene "
+             "sentido."),
+            "- Cuando tengas suficiente informacion para identificar la "
+            "averia, resume los datos al trabajador y pide confirmacion.",
+            "- Una vez confirmado, cierra el dialogo con un mensaje de "
+            "confirmacion indicando el codigo del ticket.",
+            "- Si el trabajador menciona que ya no hay averia o que fue un "
+            "error, indicalo claramente.",
             "",
             "ESTADO ACTUAL DEL TICKET:",
             f"  Codigo: {ticket.ticket_date_code or 'pendiente de asignar'}",
             f"  Maquina: {ticket.machine_raw or 'no identificada aun'}",
             f"  Averia: {ticket.fault_summary or 'no descrita aun'}",
-            f"  Ubicacion maquina: {ticket.fault_location or 'no indicada aun'}",
+            ("  Ubicacion maquina: "
+             f"{ticket.fault_location or 'no indicada aun'}"),
             f"  Ubicacion fisica: {ticket.location or 'no indicada aun'}",
             f"  Urgencia: {ticket.urgency or 'no indicada aun'}",
             "",
             "MARCADOR DE DATOS (uso interno — el trabajador no lo ve):",
-            "Cuando hayas recopilado suficiente informacion, añade AL FINAL de tu "
-            "respuesta — y SOLO al final — el siguiente marcador JSON:",
+            "Cuando hayas recopilado suficiente informacion, añade AL FINAL "
+            "de tu respuesta — y SOLO al final — el siguiente marcador JSON:",
             '[TICKET_DATA:{"machine": "...", "fault": "...", '
             '"fault_location": "...", "location": "...", '
             '"urgency": "LOW|MEDIUM|HIGH|CRITICAL", "category": "...",'
-            ' "reported_by": "nombre completo del conductor/maquinista o null"}]',
-            "Categorias validas: MECHANICAL, ELECTRICAL_ELECTRONIC, HYDRAULIC, "
-            "PNEUMATIC, BODYWORK, TYRES, OTHER.",
+            ' "reported_by": "nombre completo del conductor/maquinista o '
+            'null"}]',
+            "Categorias validas: MECHANICAL, ELECTRICAL_ELECTRONIC, "
+            "HYDRAULIC, PNEUMATIC, BODYWORK, TYRES, OTHER.",
             "Solo incluye el marcador cuando los datos esten suficientemente "
             "completos. Omite campos que aun no esten claros.",
-            "NUNCA muestres el marcador al trabajador — sera procesado internamente.",
+            ("NUNCA muestres el marcador al trabajador — sera procesado "
+             "internamente."),
         ]
 
         # If the contact is a manager/admin, ask who is operating the machine.
@@ -1543,7 +1615,9 @@ class BreakdownAgentService:
         return history
 
     @classmethod
-    def append_log(cls, ticket, role: str, content: str, source: str = "WHATSAPP"):
+    def append_log(
+            cls, ticket, role: str, content: str, source: str = "WHATSAPP"
+    ):
         """
         Appends a single turn to ticket.conversation_log and saves the field.
         role: 'USER' | 'MODEL'
@@ -1583,7 +1657,8 @@ class BreakdownAgentService:
         ---
         Busca un marcador [TICKET_DATA:{...}] en la respuesta de Gemini.
         Si se encuentra, elimina el marcador del texto visible y actualiza
-        los campos del ticket con los valores no vacios. Devuelve el texto limpio.
+        los campos del ticket con los valores no vacios. Devuelve el texto
+        limpio.
         """
         import json as _json
 
@@ -1592,7 +1667,8 @@ class BreakdownAgentService:
             return reply_text
 
         # Strip marker from visible reply regardless of parse success.
-        # Eliminar marcador del texto visible independientemente del exito del parseo.
+        # Eliminar marcador del texto visible independientemente del exito del
+        # parseo.
         clean_text = cls._TICKET_DATA_PATTERN.sub("", reply_text).strip()
 
         try:
@@ -1635,7 +1711,10 @@ class BreakdownAgentService:
             updated_fields.append("urgency")
 
         category = (data.get("category") or "").strip().upper()
-        if category in cls.FAULT_CATEGORIES and category != ticket.fault_category:
+        if (
+            category in cls.FAULT_CATEGORIES
+            and category != ticket.fault_category
+        ):
             ticket.fault_category = category
             updated_fields.append("fault_category")
 
@@ -1701,7 +1780,8 @@ class BreakdownAgentService:
         Envia el mensaje del usuario a Gemini 2.5 Flash via Vertex AI usando
         el system prompt del agente de averias y el historial del ticket log.
         Devuelve el texto plano de la respuesta (el marcador TICKET_DATA aun
-        no se elimina — el llamador lo gestiona via parse_and_apply_ticket_data).
+        no se elimina — el llamador lo gestiona via
+        parse_and_apply_ticket_data).
         """
         client = _build_genai_client()
         chat = client.chats.create(
@@ -1751,7 +1831,6 @@ class BreakdownAgentService:
 # }
 
 
-
 _ONBOARDING_SENTINEL = "__onboarding__"
 
 
@@ -1770,10 +1849,11 @@ class OnboardingService:
     Conversation history is reconstructed from WhatsAppSession.messages,
     identical to the generic chatbot pipeline.
     ---
-    Servicio de onboarding dirigido por Gemini para numeros WhatsApp desconocidos.
-    Gemini gestiona la conversacion completa de forma natural. Cuando tiene todos
-    los datos confirmados emite el marcador ONBOARDING_DATA. El webhook lo detecta,
-    crea el usuario y envia la confirmacion.
+    Servicio de onboarding dirigido por Gemini para numeros WhatsApp
+    desconocidos.
+    Gemini gestiona la conversacion completa de forma natural. Cuando tiene
+    todos los datos confirmados emite el marcador ONBOARDING_DATA. El webhook
+    lo detecta, crea el usuario y envia la confirmacion.
     """
 
     GEMINI_MODEL = "gemini-3.5-flash"
@@ -1823,7 +1903,8 @@ class OnboardingService:
         confirm each piece of data with the user, and emit ONBOARDING_DATA
         when everything is confirmed.
         ---
-        Construye el system prompt de Gemini para la conversacion de onboarding.
+        Construye el system prompt de Gemini para la conversacion de
+        onboarding.
         """
         # S130: solo las secciones marcadas para el alta (Informática no).
         sections = list(
@@ -1835,33 +1916,41 @@ class OnboardingService:
         base_list = "\n".join(f"  - {b.name}" for b in bases)
 
         return (
-            f"Eres el asistente de registro de nuevos empleados de {company.name}. "
+            "Eres el asistente de registro de nuevos empleados de "
+            f"{company.name}. "
             "Tu objetivo es registrar al trabajador en la plataforma de forma "
             "natural y amigable.\n\n"
-            "DATOS QUE DEBES RECOGER (en cualquier orden, de forma conversacional):\n"
+            "DATOS QUE DEBES RECOGER (en cualquier orden, de forma "
+            "conversacional):\n"
             "1. Nombre de pila\n"
             "2. Apellidos (primer apellido y segundo apellido)\n"
             "3. DNI completo con letra (p.ej. 12345678Z — acepta minúsculas, "
             "indícale que no importa)\n"
-            f"4. Sección a la que pertenece. Secciones disponibles:\n{section_list}\n\n"
+            "4. Sección a la que pertenece. Secciones "
+            f"disponibles:\n{section_list}\n\n"
             f"5. Base a la que pertenece. Bases disponibles:\n{base_list}\n\n"
             "INSTRUCCIONES:\n"
             "- Recoge los datos de forma natural, no como un formulario.\n"
             "- Después de recoger cada dato, confírmalo con el usuario "
             "(p.ej. 'Tu nombre es Miguel Ángel, ¿correcto?').\n"
-            "- Si el usuario corrige algún dato, acéptalo y confirma el nuevo valor.\n"
-            "- Cuando tengas TODOS los datos confirmados, haz un resumen final "
-            "y pregunta si todo es correcto antes de registrar.\n"
-            "- Solo cuando el usuario confirme el resumen final, emite AL FINAL "
-            "de tu respuesta — y SOLO al final, sin texto posterior — el marcador:\n"
-            '[ONBOARDING_DATA:{"first_name":"...","last_name1":"...","last_name2":"...",'
+            "- Si el usuario corrige algún dato, acéptalo y confirma el nuevo "
+            "valor.\n"
+            "- Cuando tengas TODOS los datos confirmados, haz un resumen "
+            "final y pregunta si todo es correcto antes de registrar.\n"
+            "- Solo cuando el usuario confirme el resumen final, emite AL "
+            "FINAL "
+            "de tu respuesta — y SOLO al final, sin texto posterior — el "
+            "marcador:\n"
+            '[ONBOARDING_DATA:{"first_name":"...","last_name1":"...",'
+            '"last_name2":"...",'
             '"dni":"...","section":"...","base":"..."}]\n'
             "- El campo 'dni' debe estar en mayúsculas (tú lo conviertes).\n"
-            "- El campo 'section' debe ser el nombre EXACTO de una de las secciones "
-            "listadas arriba.\n"
+            "- El campo 'section' debe ser el nombre EXACTO de una de las "
+            "secciones listadas arriba.\n"
             "- El campo 'base' debe ser el nombre EXACTO de una de las bases "
             "listadas arriba.\n"
-            "- NUNCA muestres el marcador al usuario — será procesado internamente.\n"
+            "- NUNCA muestres el marcador al usuario — será procesado "
+            "internamente.\n"
             "- Si el usuario dice algo que no tiene que ver con el registro, "
             "redirige amablemente la conversación al proceso de alta.\n"
             "- Mantén un tono cálido, profesional y conciso."
@@ -1998,10 +2087,10 @@ class OnboardingService:
         import unicodedata
         import re as _re
 
-        first_name  = (data.get("first_name") or "").strip()
-        last_name1  = (data.get("last_name1") or "").strip()
-        last_name2  = (data.get("last_name2") or "").strip()
-        dni         = (data.get("dni") or "").strip().upper()
+        first_name = (data.get("first_name") or "").strip()
+        last_name1 = (data.get("last_name1") or "").strip()
+        last_name2 = (data.get("last_name2") or "").strip()
+        dni = (data.get("dni") or "").strip().upper()
         from document_ingestion.entity_matching_service import (
             normalize_dni as _normalize_dni_signup,
         )
@@ -2032,7 +2121,7 @@ class OnboardingService:
             )
 
         section_name = (data.get("section") or "").strip()
-        base_name    = (data.get("base") or "").strip()
+        base_name = (data.get("base") or "").strip()
 
         # Resolve section — exact match first, then partial.
         # Resolver seccion — coincidencia exacta primero, luego parcial.
@@ -2107,7 +2196,7 @@ class OnboardingService:
         def _clean(s: str) -> str:
             return _re.sub(r"[^a-z0-9.]", "", s)
 
-        fn  = _normalize(first_name)
+        fn = _normalize(first_name)
         ln1 = _normalize(last_name1)
         ln2 = _normalize(last_name2)
 
@@ -2132,7 +2221,9 @@ class OnboardingService:
 
         # Derive password from last 4 numeric digits of DNI.
         dni_digits = _re.sub(r"[^0-9]", "", dni)
-        password   = dni_digits[-4:] if len(dni_digits) >= 4 else dni_digits.zfill(4)
+        password = (
+            dni_digits[-4:] if len(dni_digits) >= 4 else dni_digits.zfill(4)
+        )
 
         # Pre-registro pendiente (2026-07-23, H25): si la ingesta de
         # documentación ya creó un CompanyUser para este DNI al subir
@@ -2295,7 +2386,8 @@ class OnboardingService:
                 f"🏠 Base: {base.name}\n\n"
                 f"🔗 Accede al panel aquí: {panel_url}\n\n"
                 "Guarda estos datos. Si necesitas ayuda para acceder o "
-                "tienes cualquier problema con tu cuenta, escríbeme aquí mismo. "
+                "tienes cualquier problema con tu cuenta, escríbeme aquí "
+                "mismo. "
                 "Y si tienes alguna avería que reportar, también puedes "
                 "hacerlo por este chat."
             )

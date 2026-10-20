@@ -1,9 +1,4 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/views.py
-
-
-
-
-# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/views.py
 """
 View definitions for the budgets application.
 Implements the sequential budget wizard, HTMX partial endpoints,
@@ -15,28 +10,26 @@ visualizacion de resultado, actualizacion de estado y vistas de historial
 y detalle exclusivas para ADMIN.
 """
 
+import csv
+import io
+import logging
+import os
+
 from django import forms as django_forms
 from django.contrib import messages
 from django.db import transaction
 from django.db.models import DecimalField, ExpressionWrapper, F
 from django.db.models import Count, Max, Q
-from django.http import HttpResponseBadRequest
+from django.http import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.timezone import localdate, now
 from django.views import View
-
-import csv
-import io
-import logging
-import os
 
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 import weasyprint
 from docx import Document
 from docx.shared import Pt, RGBColor
-
-logger = logging.getLogger(__name__)
 
 from budgets.models import (
     Base,
@@ -55,8 +48,11 @@ from ivr_config.models import CompanyUser, PresenceStatus
 from panel.mixins import (
     AdminRoleRequiredMixin,
     AssistanceRequiredMixin,
+    AssistanceWorkOrderAccessMixin,
     BudgetAuditAccessMixin,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -308,7 +304,8 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
         # when the operator selects an insurer with always_apply_iva=True.
         # Construye un mapa pk->always_apply_iva para la capa JS.
         # El template lo usa para marcar y bloquear el checkbox de IVA
-        # cuando el operario selecciona una aseguradora con always_apply_iva=True.
+        # cuando el operario selecciona una aseguradora con
+        # always_apply_iva=True.
         # Build pk->always_apply_iva map for the JS IVA enforcement.
         # Construye mapa pk->always_apply_iva para el bloqueo de IVA en JS.
         import json
@@ -342,13 +339,13 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
         import datetime as _dt
         from decimal import Decimal as _Dec
         try:
-            insurer_id      = int(data["insurer_id"])
+            insurer_id = int(data["insurer_id"])
             vehicle_type_id = int(data["vehicle_type_id"])
             service_date_str = data["service_date"]
             service_date = _dt.date.fromisoformat(service_date_str)
             is_overnight = data.get("is_overnight") == "1"
-            has_unlock   = data.get("has_unlock") == "1"
-            is_loaded       = data.get("is_loaded") == "1"
+            has_unlock = data.get("has_unlock") == "1"
+            is_loaded = data.get("is_loaded") == "1"
             base_id = data.get("base_id") or None
             if base_id:
                 base_id = int(base_id)
@@ -361,9 +358,9 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
 
         # --- Read route fields and resolve km ---
         # --- Leer campos de ruta y resolver km ---
-        road_name              = data.get("road_name", "").strip()
-        dest_location          = data.get("dest_location", "").strip()
-        pk_km_raw              = data.get("pk_km", "").strip()
+        road_name = data.get("road_name", "").strip()
+        dest_location = data.get("dest_location", "").strip()
+        pk_km_raw = data.get("pk_km", "").strip()
         # Resolve is_night automatically from the insurer's NightSchedule.
         # The operator no longer has a manual checkbox — the system decides.
         # Resolution: insurer.night_schedule if set, else company default.
@@ -372,19 +369,23 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
         # decide. Resolución: insurer.night_schedule si tiene, si no el
         # horario por defecto de la empresa.
         is_night = False
-        route_distance_km_raw  = data.get("route_distance_km", "").strip()
-        route_toll_cost_raw    = data.get("route_toll_cost", "").strip()
+        route_distance_km_raw = data.get("route_distance_km", "").strip()
+        route_toll_cost_raw = data.get("route_toll_cost", "").strip()
         route_calculation_mode = data.get(
             "route_calculation_mode", "MANUAL"
         ).strip()
 
-        # --- Read multi-stop planner fields (Modo B / route_calculation_mode=API) ---
+        # --- Read multi-stop planner fields (Modo B /
+        # route_calculation_mode=API) ---
         # --- Leer campos del planificador multi-parada (Modo B / mode=API) ---
-        # waypoints_json: JSON string serialised by wizard_map.js confirmRoute().
+        # waypoints_json: JSON string serialised by wizard_map.js
+        # confirmRoute().
         # is_overnight_route: "true"/"false" string set by the modal, overrides
         #   the manual is_overnight checkbox when mode=API.
-        # km_phase2_route: phase-2 distance set by the modal for overnight routes.
-        # route_toll_budget_cost_raw: budget toll cost returned by BudgetWaypointView.
+        # km_phase2_route: phase-2 distance set by the modal for overnight
+        # routes.
+        # route_toll_budget_cost_raw: budget toll cost returned by
+        # BudgetWaypointView.
         import json as _json
         waypoints_json_raw = data.get("waypoints_json", "").strip()
         waypoints_json = None
@@ -394,7 +395,9 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
             except _json.JSONDecodeError:
                 waypoints_json = None
             # Override is_overnight from the modal hidden input.
-            _is_overnight_api = data.get("is_overnight_route", "false").strip().lower()
+            _is_overnight_api = (
+                data.get("is_overnight_route", "false").strip().lower()
+            )
             is_overnight = _is_overnight_api == "true"
 
         # encoded_polyline: Google Encoded Polyline of the confirmed route.
@@ -405,7 +408,9 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
         # Se persiste para que calculate_budget() cruce con TollSegment.
         # Servicios de pernocta: dos polylines unidas por \x01.
         encoded_polyline_raw = data.get("encoded_polyline", "").strip()
-        encoded_polyline = encoded_polyline_raw if encoded_polyline_raw else None
+        encoded_polyline = (
+            encoded_polyline_raw if encoded_polyline_raw else None
+        )
 
         route_toll_budget_cost_raw = data.get(
             "route_toll_budget_cost", ""
@@ -416,7 +421,8 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
         )
 
         # --- Nocturno/Festivo forzado — compartido por ambos modos (S005) ---
-        # --- Forced nocturno/festivo — shared by both calculation modes (S005) ---
+        # --- Forced nocturno/festivo — shared by both calculation modes
+        # (S005) ---
         # manual_is_night_holiday: operator checkbox, shown once in the
         #   wizard regardless of calculation mode (API or MANUAL). FORCES
         #   is_night_or_holiday to True when checked — the automatic
@@ -439,8 +445,10 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
             data.get("manual_is_night_holiday") == "1"
         )
 
-        # --- Manual calculation mode fields (route_calculation_mode=MANUAL) ---
-        # --- Campos del modo de cálculo Manual (route_calculation_mode=MANUAL) ---
+        # --- Manual calculation mode fields
+        # (route_calculation_mode=MANUAL) ---
+        # --- Campos del modo de cálculo Manual
+        # (route_calculation_mode=MANUAL) ---
         # manual_toll_total: operator-entered "Otros peajes" catch-all amount,
         #   fed into route_toll_budget_cost. Additive with the itemized toll
         #   segment table below — not a replacement for it.
@@ -502,7 +510,8 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
         # service_time is now required, so service_time_obj should always
         # be set at this point. Defensive None check kept for safety.
         # service_time es ahora obligatorio, por lo que service_time_obj
-        # debería estar siempre disponible. Se mantiene el None check defensivo.
+        # debería estar siempre disponible. Se mantiene el None check
+        # defensivo.
         if service_time_obj is not None:
             from budgets.services import _resolve_night_schedule
             _insurer_for_night = get_object_or_404(Insurer, pk=insurer_id)
@@ -553,11 +562,15 @@ class BudgetWizardView(AssistanceRequiredMixin, View):
         km_phase2 = None
         if is_overnight:
             if route_calculation_mode == "API":
-                # km_phase2 is set by the modal into the hidden input km_phase2_route.
-                # km_phase2 lo vuelca el modal en el hidden input km_phase2_route.
+                # km_phase2 is set by the modal into the hidden input
+                # km_phase2_route.
+                # km_phase2 lo vuelca el modal en el hidden input
+                # km_phase2_route.
                 try:
                     _km2_raw = str(data.get("km_phase2_route", "")).strip()
-                    km_phase2 = float(_km2_raw.replace(",", ".")) if _km2_raw else None
+                    km_phase2 = (
+                        float(_km2_raw.replace(",", ".")) if _km2_raw else None
+                    )
                 except (KeyError, ValueError):
                     km_phase2 = None
             else:
@@ -665,7 +678,8 @@ def _get_concept_choices(company):
     """
     Return a list of (code, label) tuples for TariffConcept available for the
     given company: system concepts (company=None) plus concepts owned by this
-    company. Used to populate the concept dropdown when adding or editing lines.
+    company. Used to populate the concept dropdown when adding or editing
+    lines.
     ---
     Devuelve una lista de tuplas (code, label) de TariffConcept disponibles
     para la empresa dada: conceptos de sistema (company=None) más los propios.
@@ -740,24 +754,33 @@ class BudgetRouteCalcView(AssistanceRequiredMixin, View):
         company_user = _get_company_user(request)
         data = request.POST
 
-        base_id          = data.get("base_id", "").strip()
-        road_name        = data.get("road_name", "").strip()
-        dest_location    = data.get("dest_location", "").strip()
-        pk_km_raw        = data.get("pk_km", "").strip()
+        base_id = data.get("base_id", "").strip()
+        road_name = data.get("road_name", "").strip()
+        dest_location = data.get("dest_location", "").strip()
+        pk_km_raw = data.get("pk_km", "").strip()
         service_date_str = data.get("service_date", "").strip()
         service_time_str = data.get("service_time", "").strip()
 
-        if not all([base_id, road_name, pk_km_raw, service_date_str, service_time_str]):
+        if not all(
+            [base_id, road_name, pk_km_raw, service_date_str, service_time_str]
+        ):
             return render(request, self.template_name, {
-                "error": "Rellena carretera, punto kilómetrico, fecha y hora del servicio.",
+                "error": (
+                    "Rellena carretera, punto kilómetrico, fecha y hora del "
+                    "servicio."
+                ),
             })
 
         try:
-            base             = Base.objects.get(pk=int(base_id), company=company_user.company)
-            pk_km            = Decimal(pk_km_raw.replace(",", "."))
-            service_date     = _dt.date.fromisoformat(service_date_str)
+            base = Base.objects.get(
+                pk=int(base_id), company=company_user.company
+            )
+            pk_km = Decimal(pk_km_raw.replace(",", "."))
+            service_date = _dt.date.fromisoformat(service_date_str)
             service_time_obj = _dt.time.fromisoformat(service_time_str)
-            service_datetime = _dt.datetime.combine(service_date, service_time_obj)
+            service_datetime = _dt.datetime.combine(
+                service_date, service_time_obj
+            )
         except Exception as exc:
             logger.warning(
                 "# [budgets] Datos inválidos en formulario de ruta. "
@@ -853,12 +876,12 @@ class BudgetRouteDualView(AssistanceRequiredMixin, View):
         company_user = _get_company_user(request)
         params = request.GET
 
-        base_id           = params.get("base_id", "").strip()
-        road_name         = params.get("road_name", "").strip()
-        dest_location     = params.get("dest_location", "").strip()
-        pk_km_raw         = params.get("pk_km", "").strip()
-        service_date_str  = params.get("service_date", "").strip()
-        service_time_str  = params.get("service_time", "").strip()
+        base_id = params.get("base_id", "").strip()
+        road_name = params.get("road_name", "").strip()
+        dest_location = params.get("dest_location", "").strip()
+        pk_km_raw = params.get("pk_km", "").strip()
+        service_date_str = params.get("service_date", "").strip()
+        service_time_str = params.get("service_time", "").strip()
 
         if not all([
             base_id,
@@ -959,7 +982,8 @@ class BudgetRouteDualView(AssistanceRequiredMixin, View):
 
         # Serialise route dicts to JSON for data attributes in the template.
         # The JS layer reads these to avoid Django/JS interpolation conflicts.
-        # Serializar los dicts de ruta a JSON para data attributes en el template.
+        # Serializar los dicts de ruta a JSON para data attributes en el
+        # template.
         # La capa JS los lee para evitar conflictos de interpolacion Django/JS.
         # Use float() for distance_km so json.dumps always serialises
         # with a decimal point regardless of Django locale settings.
@@ -1123,10 +1147,10 @@ class BudgetWaypointView(AssistanceRequiredMixin, View):
                 {"error": "Cuerpo de la petición inválido."}, status=400
             )
 
-        base_id            = str(body.get("base_id", "")).strip()
+        base_id = str(body.get("base_id", "")).strip()
         waypoints_json_str = body.get("waypoints_json", "")
-        service_date_str   = str(body.get("service_date", "")).strip()
-        service_time_str   = str(body.get("service_time", "")).strip()
+        service_date_str = str(body.get("service_date", "")).strip()
+        service_time_str = str(body.get("service_time", "")).strip()
 
         # Validate required fields.
         # Validar campos obligatorios.
@@ -1170,7 +1194,7 @@ class BudgetWaypointView(AssistanceRequiredMixin, View):
         # Parse service datetime.
         # Parsear fecha y hora del servicio.
         try:
-            service_date     = _dt.date.fromisoformat(service_date_str)
+            service_date = _dt.date.fromisoformat(service_date_str)
             service_time_obj = _dt.time.fromisoformat(service_time_str)
             service_datetime = _dt.datetime.combine(
                 service_date, service_time_obj,
@@ -1307,7 +1331,8 @@ class BudgetOptionalConceptsView(AssistanceRequiredMixin, View):
     the selected insurer + vehicle type combination.
     ---
     Vista parcial HTMX. Devuelve el fragmento de formulario de conceptos
-    opcionales para la combinacion de aseguradora y tipo de vehiculo seleccionados.
+    opcionales para la combinacion de aseguradora y tipo de vehiculo
+    seleccionados.
     """
 
     template_name = "budgets/_optional_concepts_fragment.html"
@@ -1371,16 +1396,20 @@ class BudgetStepsView(AssistanceRequiredMixin, View):
         base_id y vehicle_type_id y devuelve el fragmento de pasos renderizado.
         """
         company_user = _get_company_user(request)
-        insurer_id      = request.GET.get("insurer_id", "").strip()
-        base_id         = request.GET.get("base_id", "").strip()
+        insurer_id = request.GET.get("insurer_id", "").strip()
+        base_id = request.GET.get("base_id", "").strip()
         vehicle_type_id = request.GET.get("vehicle_type_id", "").strip()
 
         if not insurer_id or not vehicle_type_id:
-            return HttpResponseBadRequest("insurer_id y vehicle_type_id requeridos.")
+            return HttpResponseBadRequest(
+                "insurer_id y vehicle_type_id requeridos."
+            )
 
         # Resolve optional concepts and loaded surcharge.
         # Resolver conceptos opcionales y recargo de cargado.
-        available_codes = _get_optional_concepts(int(insurer_id), int(vehicle_type_id))
+        available_codes = _get_optional_concepts(
+            int(insurer_id), int(vehicle_type_id)
+        )
         concepts = [
             OPTIONAL_CONCEPT_META[code]
             for code in available_codes
@@ -1432,9 +1461,9 @@ class BudgetStepsView(AssistanceRequiredMixin, View):
                 )
                 base_has_coords = bool(base.latitude and base.longitude)
                 if base_has_coords:
-                    base_lat    = float(base.latitude)
-                    base_lng    = float(base.longitude)
-                    base_name   = base.name
+                    base_lat = float(base.latitude)
+                    base_lng = float(base.longitude)
+                    base_name = base.name
                     base_id_int = base.pk
             except Base.DoesNotExist:
                 pass
@@ -1507,7 +1536,10 @@ class BudgetStepsView(AssistanceRequiredMixin, View):
         toll_segments = [
             {
                 "id": seg.pk,
-                "label": f"{seg.road_code} | {seg.origin_name} \u2192 {seg.dest_name}",
+                "label": (
+                    f"{seg.road_code} | {seg.origin_name} \u2192 "
+                    f"{seg.dest_name}"
+                ),
                 "price": getattr(seg, price_field, None),
             }
             for seg in sorted(
@@ -1720,15 +1752,17 @@ class BudgetDetailView(BudgetAuditAccessMixin, View):
         )
         lines = budget.lines.exclude(concept_code="IVA").order_by("sort_order")
         # Calculate iva_amount for the fiscal summary in the tfoot.
-        # Only populated when apply_iva is True and total_amount_with_iva is set.
+        # Only populated when apply_iva is True and total_amount_with_iva is
+        # set.
         # Calcula iva_amount para el resumen fiscal en el tfoot.
-        # Solo se rellena cuando apply_iva es True y total_amount_with_iva esta establecido.
+        # Solo se rellena cuando apply_iva es True y total_amount_with_iva esta
+        # establecido.
         from decimal import Decimal
         iva_amount = None
         if budget.apply_iva and budget.total_amount_with_iva is not None:
-            iva_amount = (budget.total_amount_with_iva - budget.total_amount).quantize(
-                Decimal("0.01")
-            )
+            iva_amount = (
+                budget.total_amount_with_iva - budget.total_amount
+            ).quantize(Decimal("0.01"))
         ctx = _build_base_context(request, {
             "budget": budget,
             "lines": lines,
@@ -1771,8 +1805,10 @@ class InsurerForm(django_forms.ModelForm):
         decimal_places=2,
         label="Gastos de gestión (%)",
         help_text=(
-            "Porcentaje de gastos de gestión aplicado sobre el total del presupuesto. "
-            "0 si la aseguradora no aplica este concepto. Ejemplo: COVEI aplica 5%."
+            "Porcentaje de gastos de gestión aplicado sobre el total del "
+            "presupuesto. "
+            "0 si la aseguradora no aplica este concepto. Ejemplo: COVEI "
+            "aplica 5%."
         ),
     )
 
@@ -1800,7 +1836,6 @@ class InsurerForm(django_forms.ModelForm):
         Normaliza el campo code a mayusculas y elimina espacios.
         """
         return self.cleaned_data.get("code", "").strip().upper()
-
 
 
 def _insurer_list_qs(company):
@@ -1966,7 +2001,8 @@ class InsurerUpdateView(AdminRoleRequiredMixin, View):
         ---
         Construye el contexto completo del acordeon para la vista de edicion:
         tarifa activa, historial de tarifas con conteo de lineas, grupos de
-        lineas de tarifa y listas de choices para los selects de edicion inline.
+        lineas de tarifa y listas de choices para los selects de edicion
+        inline.
         """
         from budgets.models import InsurerTariff
         from django.db.models import Count as _Count
@@ -1996,7 +2032,9 @@ class InsurerUpdateView(AdminRoleRequiredMixin, View):
             lines = (
                 active_tariff.lines
                 .select_related('vehicle_type')
-                .order_by('vehicle_type__sort_order', 'vehicle_type__name', 'concept')
+                .order_by(
+                    'vehicle_type__sort_order', 'vehicle_type__name', 'concept'
+                )
             )
             vehicle_types = (
                 insurer.vehicle_types
@@ -2040,7 +2078,9 @@ class InsurerUpdateView(AdminRoleRequiredMixin, View):
             'tariff_history': tariff_history,
             'tariff_line_groups': tariff_line_groups,
             'vehicle_types': vehicle_types,
-            'vehicle_types_all': insurer.vehicle_types.order_by('sort_order', 'name'),
+            'vehicle_types_all': insurer.vehicle_types.order_by(
+                'sort_order', 'name'
+            ),
             'concept_choices': _get_concept_choices(insurer.company),
             'unit_choices': TariffLine.UNIT_CHOICES,
             'night_schedules': night_schedules,
@@ -2069,8 +2109,8 @@ class InsurerUpdateView(AdminRoleRequiredMixin, View):
         so the user can continue editing tariff and lines.
         ---
         Valida y guarda los datos actualizados de la aseguradora.
-        En caso de exito redirige de vuelta a la vista de edicion (no al listado)
-        para que el usuario pueda continuar editando tarifa y lineas.
+        En caso de exito redirige de vuelta a la vista de edicion (no al
+        listado) para que el usuario pueda continuar editando tarifa y lineas.
         """
         company_user = _get_company_user(request)
         insurer = get_object_or_404(
@@ -2116,7 +2156,9 @@ class NightScheduleForm(django_forms.ModelForm):
 
     class Meta:
         model = NightSchedule
-        fields = ["name", "night_start", "night_end", "is_default", "is_active"]
+        fields = [
+            "name", "night_start", "night_end", "is_default", "is_active"
+        ]
         widgets = {
             "night_start": django_forms.TimeInput(
                 attrs={"type": "time"},
@@ -2486,7 +2528,9 @@ class TariffLineSaveView(AdminRoleRequiredMixin, View):
             line.concept = get_object_or_404(TariffConcept, code=concept_code)
         line.unit = data.get("unit", line.unit)
         line.price = _parse_decimal(data.get("price", ""), default="0")
-        km_threshold_raw = data.get("km_threshold", "").strip().replace(",", ".")
+        km_threshold_raw = (
+            data.get("km_threshold", "").strip().replace(",", ".")
+        )
         line.km_threshold = km_threshold_raw if km_threshold_raw else None
         min_units_raw = data.get("min_units", "").strip().replace(",", ".")
         line.min_units = min_units_raw if min_units_raw else None
@@ -2497,7 +2541,9 @@ class TariffLineSaveView(AdminRoleRequiredMixin, View):
 
         ctx = {
             "line": line,
-            "concept_choices": _get_concept_choices(line.tariff.insurer.company),
+            "concept_choices": _get_concept_choices(
+                line.tariff.insurer.company
+            ),
             "unit_choices": TariffLine.UNIT_CHOICES,
             "csrf_token": request.META.get("CSRF_COOKIE", ""),
         }
@@ -2555,14 +2601,16 @@ class TariffLineAddFormView(AdminRoleRequiredMixin, View):
     given active tariff. The form is injected into #new-line-row.
     ---
     Endpoint HTMX GET. Devuelve el fragmento de formulario inline de nueva
-    linea para la tarifa activa dada. El formulario se inyecta en #new-line-row.
+    linea para la tarifa activa dada. El formulario se inyecta en
+    #new-line-row.
     """
 
     def get(self, request, pk):
         """
         Return the add-line form fragment for the given tariff pk.
         ---
-        Devuelve el fragmento de formulario de nueva linea para el pk de tarifa.
+        Devuelve el fragmento de formulario de nueva linea para el pk de
+        tarifa.
         """
         from budgets.models import InsurerTariff
         company_user = _get_company_user(request)
@@ -2666,7 +2714,8 @@ class TariffLineAddView(AdminRoleRequiredMixin, View):
 
 # ---------------------------------------------------------------------------
 # Insurer tariff create — creates a new tariff version, closes the active one.
-# Creacion de nueva version de tarifa — crea una nueva version y cierra la activa.
+# Creacion de nueva version de tarifa — crea una nueva version y cierra la
+# activa.
 # ---------------------------------------------------------------------------
 
 
@@ -2698,7 +2747,9 @@ class InsurerTariffCreateView(AdminRoleRequiredMixin, View):
         year_raw = request.POST.get("year", "").strip()
         valid_from_raw = request.POST.get("valid_from", "").strip()
         if not year_raw or not valid_from_raw:
-            messages.error(request, "El ano y la fecha de inicio son obligatorios.")
+            messages.error(
+                request, "El ano y la fecha de inicio son obligatorios."
+            )
             return redirect("budgets:insurer_update", pk=pk)
         try:
             year = int(year_raw)
@@ -2781,7 +2832,8 @@ class BudgetBulkDeleteView(AdminRoleRequiredMixin, View):
     ---
     Elimina multiples presupuestos seleccionados desde el listado de historial.
     Solo se pueden eliminar presupuestos en estado DRAFT o REJECTED.
-    Los presupuestos ACCEPTED se omiten silenciosamente aunque su pk sea enviado.
+    Los presupuestos ACCEPTED se omiten silenciosamente aunque su pk sea
+    enviado.
     Redirige de vuelta al historial con un mensaje resumen.
     """
 
@@ -2802,7 +2854,9 @@ class BudgetBulkDeleteView(AdminRoleRequiredMixin, View):
             pk_list = []
 
         if not pk_list:
-            messages.warning(request, "No se ha seleccionado ningún presupuesto.")
+            messages.warning(
+                request, "No se ha seleccionado ningún presupuesto."
+            )
             return redirect("budgets:history")
 
         # Filter to company scope and exclude ACCEPTED budgets.
@@ -2834,7 +2888,8 @@ class BudgetBulkDeleteView(AdminRoleRequiredMixin, View):
 
 # ---------------------------------------------------------------------------
 # Insurer clone — clones an insurer with all its tariff data. ADMIN only.
-# Clonado de aseguradora — clona una aseguradora con toda su tarifa. Solo ADMIN.
+# Clonado de aseguradora — clona una aseguradora con toda su tarifa. Solo
+# ADMIN.
 # ---------------------------------------------------------------------------
 
 
@@ -2870,12 +2925,14 @@ class InsurerCloneView(AdminRoleRequiredMixin, View):
         Strips spaces, hyphens, dots and parentheses; uppercases the result.
         Example: 'Europ Assistance' + 'Transgrual' -> 'EUROP_TRANSGRUAL'
         ---
-        Deriva el código a partir de insurer_company_name y service_company_name
-        siguiendo la convención del proyecto: ASEGURADORA_PRESTADORA.
+        Deriva el código a partir de insurer_company_name y
+        service_company_name siguiendo la convención del proyecto:
+        ASEGURADORA_PRESTADORA.
         Elimina espacios, guiones, puntos y paréntesis; convierte a mayúsculas.
         Ejemplo: 'Europ Assistance' + 'Transgrual' -> 'EUROP_TRANSGRUAL'
         """
         import re as _re
+
         def _normalize(s):
             s = s.upper()
             s = _re.sub(r"[\s\-\.\(\)\/]+", "_", s)
@@ -2883,7 +2940,10 @@ class InsurerCloneView(AdminRoleRequiredMixin, View):
             return s.strip("_")
 
         insurer_part = _normalize(insurer_company_name)[:25]
-        service_part = _normalize(service_company_name)[:20] if service_company_name else ""
+        service_part = (
+            _normalize(service_company_name)[:20] if service_company_name
+            else ""
+        )
         if service_part:
             return f"{insurer_part}_{service_part}"
         return insurer_part
@@ -2936,7 +2996,8 @@ class InsurerCloneView(AdminRoleRequiredMixin, View):
         ).exists():
             messages.error(
                 request,
-                f"Ya existe una aseguradora con el nombre '{new_name}' en esta empresa.",
+                (f"Ya existe una aseguradora con el nombre '{new_name}' en "
+                 "esta empresa."),
             )
             return redirect("budgets:insurer_detail", pk=pk)
 
@@ -2944,7 +3005,9 @@ class InsurerCloneView(AdminRoleRequiredMixin, View):
         # If collision, append numeric suffix until unique.
         # Derivar código de insurer_company_name + service_company_name.
         # Si hay colisión, añadir sufijo numérico hasta encontrar uno libre.
-        new_code_base = self._derive_code(new_insurer_name, new_service_name)[:45]
+        new_code_base = (
+            self._derive_code(new_insurer_name, new_service_name)[:45]
+        )
         new_code = new_code_base
         suffix = 1
         while Insurer.objects.filter(
@@ -2968,7 +3031,9 @@ class InsurerCloneView(AdminRoleRequiredMixin, View):
                 is_active=True,
                 is_insurance_company=source.is_insurance_company,
                 always_apply_iva=source.always_apply_iva,
-                special_night_holiday_tariff=source.special_night_holiday_tariff,
+                special_night_holiday_tariff=(
+                    source.special_night_holiday_tariff
+                ),
                 local_service_km_threshold=source.local_service_km_threshold,
                 notes=source.notes,
             )
@@ -2980,7 +3045,9 @@ class InsurerCloneView(AdminRoleRequiredMixin, View):
             # Mapa source_vt_pk -> clone_vt para las FK de TariffLine
             # y SpecialRateLine.
             vt_map = {}
-            for vt in source.vehicle_types.all().order_by("sort_order", "name"):
+            for vt in source.vehicle_types.all().order_by(
+                "sort_order", "name"
+            ):
                 clone_vt = VehicleType.objects.create(
                     insurer=clone,
                     name=vt.name,
@@ -3020,11 +3087,13 @@ class InsurerCloneView(AdminRoleRequiredMixin, View):
                         requires_authorization=line.requires_authorization,
                     )
 
-                # --- Clone SpecialRateTariff + SpecialRateLines (if present) ---
+                # --- Clone SpecialRateTariff + SpecialRateLines (if
+                # present) ---
                 # SpecialRateTariff is a OneToOneField on InsurerTariff
                 # (related_name='special_rate'). Only exists when
                 # insurer.special_night_holiday_tariff is True.
-                # --- Clonar SpecialRateTariff + SpecialRateLines (si existe) ---
+                # --- Clonar SpecialRateTariff + SpecialRateLines (si
+                # existe) ---
                 # SpecialRateTariff es un OneToOneField sobre InsurerTariff
                 # (related_name='special_rate'). Solo existe cuando
                 # insurer.special_night_holiday_tariff es True.
@@ -3061,7 +3130,8 @@ class InsurerCloneView(AdminRoleRequiredMixin, View):
 
         messages.success(
             request,
-            f"Aseguradora '{new_name}' creada correctamente como clon de '{source.name}'.",
+            (f"Aseguradora '{new_name}' creada correctamente como clon de "
+             f"'{source.name}'."),
         )
         return redirect("budgets:insurer_update", pk=clone.pk)
 
@@ -3126,7 +3196,9 @@ class InsurerCopyTariffView(AdminRoleRequiredMixin, View):
 
         target_pk = request.POST.get("target_insurer_pk", "").strip()
         if not target_pk:
-            messages.error(request, "Debes seleccionar una aseguradora destino.")
+            messages.error(
+                request, "Debes seleccionar una aseguradora destino."
+            )
             return redirect("budgets:insurer_detail", pk=pk)
 
         try:
@@ -3159,7 +3231,8 @@ class InsurerCopyTariffView(AdminRoleRequiredMixin, View):
         if source_tariff is None:
             messages.error(
                 request,
-                f"La aseguradora '{source.name}' no tiene tarifa activa para copiar.",
+                (f"La aseguradora '{source.name}' no tiene tarifa activa para "
+                 "copiar."),
             )
             return redirect("budgets:insurer_detail", pk=pk)
 
@@ -3251,7 +3324,10 @@ class InsurerCopyTariffView(AdminRoleRequiredMixin, View):
             for line in source_tariff.lines.select_related(
                 "vehicle_type", "concept"
             ).all():
-                new_vt = vt_map.get(line.vehicle_type_id) if line.vehicle_type_id else None
+                new_vt = (
+                    vt_map.get(line.vehicle_type_id)
+                    if line.vehicle_type_id else None
+                )
                 TariffLine.objects.create(
                     tariff=new_tariff,
                     vehicle_type=new_vt,
@@ -3282,7 +3358,10 @@ class InsurerCopyTariffView(AdminRoleRequiredMixin, View):
                 for sline in source_special.lines.select_related(
                     "vehicle_type", "concept"
                 ).all():
-                    new_vt = vt_map.get(sline.vehicle_type_id) if sline.vehicle_type_id else None
+                    new_vt = (
+                        vt_map.get(sline.vehicle_type_id)
+                        if sline.vehicle_type_id else None
+                    )
                     SpecialRateLine.objects.create(
                         special_rate_tariff=new_special,
                         vehicle_type=new_vt,
@@ -3351,7 +3430,8 @@ class InsurerDetailView(AdminRoleRequiredMixin, View):
         ).first()
 
         # Build vehicle_type -> lines mapping for clean template rendering.
-        # Construir mapa tipo_vehiculo -> lineas para renderizado limpio en template.
+        # Construir mapa tipo_vehiculo -> lineas para renderizado limpio en
+        # template.
         vehicle_types = []
         generic_lines = []
         if tariff:
@@ -3453,7 +3533,8 @@ class InsurerDetailView(AdminRoleRequiredMixin, View):
                 # Ni la aseguradora ni la empresa tienen horario configurado.
                 night_schedule_display = {"source": "none"}
 
-        # Other insurers of the same company for the copy-tariff modal selector.
+        # Other insurers of the same company for the copy-tariff modal
+        # selector.
         # Excluye la aseguradora actual para no permitir copiar sobre sí misma.
         # Otras aseguradoras de la misma empresa para el selector del modal de
         # copia de tarifa. Excluye la aseguradora actual.
@@ -3467,7 +3548,9 @@ class InsurerDetailView(AdminRoleRequiredMixin, View):
         ctx = _build_base_context(request, {
             "insurer": insurer,
             "insurer_bases": insurer_bases,
-            "insurer_vehicle_types": insurer.vehicle_types.order_by("sort_order", "name"),
+            "insurer_vehicle_types": insurer.vehicle_types.order_by(
+                "sort_order", "name"
+            ),
             "tariff": tariff,
             "vehicle_types": vehicle_types,
             "generic_lines": generic_lines,
@@ -3484,7 +3567,8 @@ class InsurerDetailView(AdminRoleRequiredMixin, View):
 
 # ---------------------------------------------------------------------------
 # Base management views — CRUD for service bases linked to insurers
-# Vistas de gestion de bases — CRUD para bases de servicio vinculadas a aseguradoras
+# Vistas de gestion de bases — CRUD para bases de servicio vinculadas a
+# aseguradoras
 # ---------------------------------------------------------------------------
 
 
@@ -3506,19 +3590,43 @@ class BaseForm(django_forms.ModelForm):
             "is_active",
         ]
         widgets = {
-            "name": django_forms.TextInput(attrs={"class": "form-control form-control-sm"}),
-            "municipality": django_forms.TextInput(attrs={"class": "form-control form-control-sm"}),
-            "latitude": django_forms.NumberInput(attrs={"class": "form-control form-control-sm", "step": "0.000001"}),
-            "longitude": django_forms.NumberInput(attrs={"class": "form-control form-control-sm", "step": "0.000001"}),
-            "labor_calendar": django_forms.Textarea(attrs={"class": "form-control form-control-sm", "rows": 4, "readonly": True}),
-            "is_active": django_forms.CheckboxInput(attrs={"class": "form-check-input"}),
+            "name": django_forms.TextInput(
+                attrs={"class": "form-control form-control-sm"}
+            ),
+            "municipality": django_forms.TextInput(
+                attrs={"class": "form-control form-control-sm"}
+            ),
+            "latitude": django_forms.NumberInput(
+                attrs={
+                    "class": "form-control form-control-sm",
+                    "step": "0.000001",
+                }
+            ),
+            "longitude": django_forms.NumberInput(
+                attrs={
+                    "class": "form-control form-control-sm",
+                    "step": "0.000001",
+                }
+            ),
+            "labor_calendar": django_forms.Textarea(
+                attrs={
+                    "class": "form-control form-control-sm",
+                    "rows": 4,
+                    "readonly": True,
+                }
+            ),
+            "is_active": django_forms.CheckboxInput(
+                attrs={"class": "form-check-input"}
+            ),
         }
         labels = {
             "name": "Nombre de la base",
             "municipality": "Municipio",
             "latitude": "Latitud",
             "longitude": "Longitud",
-            "labor_calendar": "Calendario laboral (JSON — gestionado automaticamente)",
+            "labor_calendar": (
+                "Calendario laboral (JSON — gestionado automaticamente)"
+            ),
             "is_active": "Activa",
         }
 
@@ -3528,13 +3636,15 @@ class BaseManageView(AdminRoleRequiredMixin, View):
     Dedicated base management view for a given insurer.
     Shows a read-only summary of active bases for the insurer at the top,
     and a full list of all company bases with per-insurer InsurerBase toggle
-    at the bottom. Implements the design agreed in H18 S001 (annex section 2.7).
+    at the bottom. Implements the design agreed in H18 S001 (annex section
+    2.7).
     ADMIN only.
     ---
     Vista dedicada de gestion de bases para una aseguradora dada.
     Muestra un resumen de solo lectura de las bases activas de la aseguradora
     arriba, y el listado completo de bases de la empresa con toggle InsurerBase
-    por aseguradora abajo. Implementa el diseno acordado en H18 S001 (anexo 2.7).
+    por aseguradora abajo. Implementa el diseno acordado en H18 S001 (anexo
+    2.7).
     Solo ADMIN.
     """
 
@@ -3545,12 +3655,15 @@ class BaseManageView(AdminRoleRequiredMixin, View):
         Render the base management page for the given insurer pk.
         Builds two querysets:
         - active_insurer_bases: InsurerBase records active for this insurer.
-        - all_company_bases: all company bases annotated with has_active_ib flag.
+        - all_company_bases: all company bases annotated with has_active_ib
+          flag.
         ---
         Renderiza la pagina de gestion de bases para el pk de aseguradora dado.
         Construye dos querysets:
-        - active_insurer_bases: registros InsurerBase activos para esta aseguradora.
-        - all_company_bases: todas las bases de la empresa con flag has_active_ib.
+        - active_insurer_bases: registros InsurerBase activos para esta
+          aseguradora.
+        - all_company_bases: todas las bases de la empresa con flag
+          has_active_ib.
         """
         company_user = _get_company_user(request)
         insurer = get_object_or_404(
@@ -3559,7 +3672,8 @@ class BaseManageView(AdminRoleRequiredMixin, View):
             company=company_user.company,
         )
         # Top section: active bases for this insurer (read-only summary).
-        # Seccion superior: bases activas de esta aseguradora (resumen solo lectura).
+        # Seccion superior: bases activas de esta aseguradora (resumen solo
+        # lectura).
         active_insurer_bases = (
             InsurerBase.objects.filter(
                 insurer=insurer,
@@ -3569,13 +3683,17 @@ class BaseManageView(AdminRoleRequiredMixin, View):
             .select_related("base")
             .order_by("base__name")
         )
-        # Bottom section: all company bases, annotated with per-insurer active flag.
+        # Bottom section: all company bases, annotated with per-insurer active
+        # flag.
         # Build a dict {base_pk: InsurerBase} for efficient annotation.
-        # Seccion inferior: todas las bases de la empresa, anotadas con flag activa
-        # por aseguradora. Construir dict {base_pk: InsurerBase} para anotacion eficiente.
+        # Seccion inferior: todas las bases de la empresa, anotadas con flag
+        # activa por aseguradora. Construir dict {base_pk: InsurerBase} para
+        # anotacion eficiente.
         ib_map = {
             ib.base_id: ib
-            for ib in InsurerBase.objects.filter(insurer=insurer).select_related("base")
+            for ib in InsurerBase.objects.filter(
+                insurer=insurer
+            ).select_related("base")
         }
         all_company_bases_qs = (
             Base.objects.filter(
@@ -3584,8 +3702,10 @@ class BaseManageView(AdminRoleRequiredMixin, View):
             )
             .order_by("name")
         )
-        # Annotate each base with its InsurerBase record (or None) for this insurer.
-        # Anotar cada base con su registro InsurerBase (o None) para esta aseguradora.
+        # Annotate each base with its InsurerBase record (or None) for this
+        # insurer.
+        # Anotar cada base con su registro InsurerBase (o None) para esta
+        # aseguradora.
         all_company_bases = []
         for base in all_company_bases_qs:
             ib = ib_map.get(base.pk)
@@ -3606,20 +3726,24 @@ class BaseManageView(AdminRoleRequiredMixin, View):
 
 class InsurerBaseToggleView(AdminRoleRequiredMixin, View):
     """
-    HTMX endpoint. Toggles InsurerBase.is_active for a (insurer_pk, base_pk) pair.
+    HTMX endpoint. Toggles InsurerBase.is_active for a (insurer_pk, base_pk)
+    pair.
     Creates the InsurerBase record if it does not exist yet (first activation).
     Returns the updated toggle button fragment for HTMX outerHTML swap.
     ---
-    Endpoint HTMX. Alterna InsurerBase.is_active para el par (insurer_pk, base_pk).
+    Endpoint HTMX. Alterna InsurerBase.is_active para el par (insurer_pk,
+    base_pk).
     Crea el registro InsurerBase si no existe (primera activacion).
-    Devuelve el fragmento del boton toggle actualizado para swap HTMX outerHTML.
+    Devuelve el fragmento del boton toggle actualizado para swap HTMX
+    outerHTML.
     """
 
     def post(self, request, insurer_pk, base_pk):
         """
         Toggle InsurerBase.is_active and return the updated toggle fragment.
         ---
-        Alterna InsurerBase.is_active y devuelve el fragmento toggle actualizado.
+        Alterna InsurerBase.is_active y devuelve el fragmento toggle
+        actualizado.
         """
         company_user = _get_company_user(request)
         insurer = get_object_or_404(
@@ -3643,7 +3767,8 @@ class InsurerBaseToggleView(AdminRoleRequiredMixin, View):
             ib.is_active = not ib.is_active
             ib.save(update_fields=["is_active", "updated_at"])
         # Annotate base with the updated insurer_base for template rendering.
-        # Anotar base con insurer_base actualizado para el renderizado del template.
+        # Anotar base con insurer_base actualizado para el renderizado del
+        # template.
         base.insurer_base = ib
         base.has_active_ib = ib.is_active
         return render(
@@ -3659,26 +3784,33 @@ class BaseCreateView(AdminRoleRequiredMixin, View):
     Accepts POST only. Returns HTMX fragment with updated base list on success.
     ---
     Crea una nueva Base para la aseguradora dada.
-    Solo acepta POST. Devuelve fragmento HTMX con la lista actualizada en exito.
+    Solo acepta POST. Devuelve fragmento HTMX con la lista actualizada en
+    exito.
     """
 
     def post(self, request, pk):
         """
         Validate form and create Base. Returns HTMX fragment or error response.
         ---
-        Valida el formulario y crea la Base. Devuelve fragmento HTMX o respuesta de error.
+        Valida el formulario y crea la Base. Devuelve fragmento HTMX o
+        respuesta de error.
         """
         company_user = _get_company_user(request)
-        insurer = get_object_or_404(Insurer, pk=pk, company=company_user.company)
+        insurer = get_object_or_404(
+            Insurer, pk=pk, company=company_user.company
+        )
         form = BaseForm(request.POST)
         if form.is_valid():
             base = form.save(commit=False)
-            # Assign company from the insurer — Base is no longer insurer-scoped.
-            # Asignar company desde la aseguradora — Base ya no tiene ambito de aseguradora.
+            # Assign company from the insurer — Base is no longer
+            # insurer-scoped.
+            # Asignar company desde la aseguradora — Base ya no tiene ambito de
+            # aseguradora.
             base.company = insurer.company
             base.save()
             # Create the InsurerBase relation linking base to this insurer.
-            # Crear la relacion InsurerBase vinculando la base a esta aseguradora.
+            # Crear la relacion InsurerBase vinculando la base a esta
+            # aseguradora.
             InsurerBase.objects.get_or_create(
                 insurer=insurer,
                 base=base,
@@ -3697,7 +3829,12 @@ class BaseCreateView(AdminRoleRequiredMixin, View):
         return render(
             request,
             "budgets/partials/base_list_fragment.html",
-            {"insurer": insurer, "bases": company_bases, "base_form": form, "form_errors": True},
+            {
+                "insurer": insurer,
+                "bases": company_bases,
+                "base_form": form,
+                "form_errors": True
+            },
         )
 
 
@@ -3708,7 +3845,8 @@ class BaseUpdateView(AdminRoleRequiredMixin, View):
     POST saves the form and redirects back to the global base list.
     ---
     Actualiza un registro Base existente.
-    GET renderiza una pagina de edicion dedicada con geolocalizacion Google Maps.
+    GET renderiza una pagina de edicion dedicada con geolocalizacion Google
+    Maps.
     POST guarda el formulario y redirige al listado global de bases.
     """
 
@@ -4096,13 +4234,18 @@ class VehicleTypeReorderView(AdminRoleRequiredMixin, View):
 
 class TariffConceptCreateView(AdminRoleRequiredMixin, View):
     """
-    Creates a new custom TariffConcept for the company owning the given insurer.
+    Creates a new custom TariffConcept for the company owning the given
+    insurer.
     Accepts HTMX POST only. Returns empty 200 on success — the caller reloads.
-    Rejects creation if a concept with the same label already exists for the company.
+    Rejects creation if a concept with the same label already exists for the
+    company.
     ---
-    Crea un nuevo TariffConcept personalizado para la empresa de la aseguradora dada.
-    Solo acepta HTMX POST. Devuelve 200 vacío en éxito — el llamador recarga la página.
-    Rechaza la creación si ya existe un concepto con el mismo nombre para la empresa.
+    Crea un nuevo TariffConcept personalizado para la empresa de la aseguradora
+    dada.
+    Solo acepta HTMX POST. Devuelve 200 vacío en éxito — el llamador recarga la
+    página.
+    Rechaza la creación si ya existe un concepto con el mismo nombre para la
+    empresa.
     """
 
     def post(self, request, pk):
@@ -4114,14 +4257,20 @@ class TariffConceptCreateView(AdminRoleRequiredMixin, View):
         from django.http import HttpResponse
         import re
         company_user = _get_company_user(request)
-        insurer = get_object_or_404(Insurer, pk=pk, company=company_user.company)
+        insurer = get_object_or_404(
+            Insurer, pk=pk, company=company_user.company
+        )
         company = insurer.company
 
         label = request.POST.get("label", "").strip()
-        default_unit = request.POST.get("default_unit", TariffLine.UNIT_FIXED).strip()
+        default_unit = (
+            request.POST.get("default_unit", TariffLine.UNIT_FIXED).strip()
+        )
 
         if not label:
-            return HttpResponseBadRequest("El nombre del concepto es obligatorio.")
+            return HttpResponseBadRequest(
+                "El nombre del concepto es obligatorio."
+            )
 
         # Generate a unique code from the label.
         # Generar un código único a partir del nombre.
@@ -4132,11 +4281,16 @@ class TariffConceptCreateView(AdminRoleRequiredMixin, View):
             code = f"{base_code}_{counter}"
             counter += 1
 
-        # Reject if a concept with the same label already exists for this company.
-        # Rechazar si ya existe un concepto con el mismo nombre para esta empresa.
-        if TariffConcept.objects.filter(company=company, label__iexact=label).exists():
+        # Reject if a concept with the same label already exists for this
+        # company.
+        # Rechazar si ya existe un concepto con el mismo nombre para esta
+        # empresa.
+        if TariffConcept.objects.filter(
+            company=company, label__iexact=label
+        ).exists():
             return HttpResponseBadRequest(
-                f"Ya existe un concepto con el nombre '{label}' para esta empresa."
+                f"Ya existe un concepto con el nombre '{label}' para esta "
+                "empresa."
             )
 
         TariffConcept.objects.create(
@@ -4156,7 +4310,8 @@ class TariffConceptCreateGlobalView(AdminRoleRequiredMixin, View):
     Used from the dedicated concept list page (no insurer_pk needed).
     Returns the new row fragment for HTMX beforeend swap.
     ---
-    Crea un nuevo TariffConcept personalizado para la empresa del usuario autenticado.
+    Crea un nuevo TariffConcept personalizado para la empresa del usuario
+    autenticado.
     Usado desde la página dedicada de conceptos (sin insurer_pk).
     Devuelve el fragmento de fila nuevo para swap HTMX beforeend.
     """
@@ -4172,11 +4327,15 @@ class TariffConceptCreateGlobalView(AdminRoleRequiredMixin, View):
         company = company_user.company
 
         label = request.POST.get("label", "").strip()
-        default_unit = request.POST.get("default_unit", TariffLine.UNIT_FIXED).strip()
+        default_unit = (
+            request.POST.get("default_unit", TariffLine.UNIT_FIXED).strip()
+        )
         sort_order_raw = request.POST.get("sort_order", "100").strip()
 
         if not label:
-            return HttpResponseBadRequest("El nombre del concepto es obligatorio.")
+            return HttpResponseBadRequest(
+                "El nombre del concepto es obligatorio."
+            )
 
         try:
             sort_order = int(sort_order_raw)
@@ -4192,9 +4351,12 @@ class TariffConceptCreateGlobalView(AdminRoleRequiredMixin, View):
             code = f"{base_code}_{counter}"
             counter += 1
 
-        if TariffConcept.objects.filter(company=company, label__iexact=label).exists():
+        if TariffConcept.objects.filter(
+            company=company, label__iexact=label
+        ).exists():
             return HttpResponseBadRequest(
-                f"Ya existe un concepto con el nombre '{label}' para esta empresa."
+                f"Ya existe un concepto con el nombre '{label}' para esta "
+                "empresa."
             )
 
         concept = TariffConcept.objects.create(
@@ -4217,8 +4379,9 @@ class TariffConceptListView(AdminRoleRequiredMixin, View):
     Dedicated page listing all TariffConcept available for the company:
     system concepts (read-only) and custom concepts (editable/deletable).
     ---
-    Página dedicada que lista todos los TariffConcept disponibles para la empresa:
-    conceptos de sistema (solo lectura) y personalizados (editables/eliminables).
+    Página dedicada que lista todos los TariffConcept disponibles para la
+    empresa: conceptos de sistema (solo lectura) y personalizados
+    (editables/eliminables).
     """
 
     template_name = "budgets/tariff_concept_list.html"
@@ -4249,7 +4412,8 @@ class TariffConceptUpdateView(AdminRoleRequiredMixin, View):
     System concepts (is_system=True) cannot be edited.
     ---
     Edición inline HTMX de un TariffConcept personalizado.
-    GET devuelve el fragmento de fila de edición. POST guarda y devuelve la fila.
+    GET devuelve el fragmento de fila de edición. POST guarda y devuelve la
+    fila.
     Los conceptos de sistema (is_system=True) no pueden editarse.
     """
 
@@ -4286,10 +4450,14 @@ class TariffConceptUpdateView(AdminRoleRequiredMixin, View):
             is_system=False,
         )
         label = request.POST.get("label", "").strip()
-        default_unit = request.POST.get("default_unit", concept.default_unit).strip()
+        default_unit = (
+            request.POST.get("default_unit", concept.default_unit).strip()
+        )
         sort_order_raw = request.POST.get("sort_order", "0").strip()
         if not label:
-            return HttpResponseBadRequest("El nombre del concepto es obligatorio.")
+            return HttpResponseBadRequest(
+                "El nombre del concepto es obligatorio."
+            )
         try:
             sort_order = int(sort_order_raw)
         except ValueError:
@@ -4330,21 +4498,23 @@ class TariffConceptDeleteView(AdminRoleRequiredMixin, View):
             company=company_user.company,
             is_system=False,
         )
-        if concept.tariff_lines.exists() or concept.special_rate_lines.exists():
+        if (
+            concept.tariff_lines.exists()
+            or concept.special_rate_lines.exists()
+        ):
             return HttpResponseBadRequest(
-                "No se puede eliminar un concepto con líneas de tarifa asociadas. "
-                "Elimina primero las líneas que usan este concepto."
+                "No se puede eliminar un concepto con líneas de tarifa "
+                "asociadas. Elimina primero las líneas que usan este concepto."
             )
         concept.delete()
         return HttpResponse(status=200)
 
 
 # ---------------------------------------------------------------------------
-# Export views — Insurer tariff and budget history exports (CSV, Excel, PDF, Word)
+# Export views — Insurer tariff and budget history exports (CSV, Excel, PDF,
+# Word)
 # Vistas de exportacion — tarifas de aseguradora e historial de presupuestos
 # ---------------------------------------------------------------------------
-
-from django.http import HttpResponse
 
 
 def _insurer_tariff_rows(insurer, tariff):
@@ -4368,13 +4538,22 @@ def _insurer_tariff_rows(insurer, tariff):
             "Codigo": insurer.code,
             "Ano tarifa": tariff.year,
             "Valida desde": tariff.valid_from.strftime("%d/%m/%Y"),
-            "Valida hasta": tariff.valid_to.strftime("%d/%m/%Y") if tariff.valid_to else "Activa",
-            "Tipo de vehiculo": line.vehicle_type.name if line.vehicle_type else "General",
+            "Valida hasta": (
+                tariff.valid_to.strftime("%d/%m/%Y") if tariff.valid_to
+                else "Activa"
+            ),
+            "Tipo de vehiculo": (
+                line.vehicle_type.name if line.vehicle_type else "General"
+            ),
             "Concepto": line.concept.label,
             "Unidad": line.get_unit_display(),
             "Precio": str(line.price),
-            "Umbral km": str(line.km_threshold) if line.km_threshold is not None else "",
-            "Unidades minimas": str(line.min_units) if line.min_units is not None else "",
+            "Umbral km": (
+                str(line.km_threshold) if line.km_threshold is not None else ""
+            ),
+            "Unidades minimas": (
+                str(line.min_units) if line.min_units is not None else ""
+            ),
         })
     return rows
 
@@ -4391,7 +4570,10 @@ def _budget_rows(qs):
     for budget in qs.prefetch_related("lines"):
         base = {
             "ID": budget.pk,
-            "Fecha servicio": budget.service_date.strftime("%d/%m/%Y") if budget.service_date else "",
+            "Fecha servicio": (
+                budget.service_date.strftime("%d/%m/%Y")
+                if budget.service_date else ""
+            ),
             "Fecha creacion": budget.created_at.strftime("%d/%m/%Y %H:%M"),
             "Aseguradora": budget.insurer.name,
             "Tipo de vehiculo": budget.vehicle_type.name,
@@ -4400,7 +4582,10 @@ def _budget_rows(qs):
             "Cargado": "Si" if budget.is_loaded else "No",
             "Total": str(budget.total_amount),
             "IVA aplicado": "Si" if budget.apply_iva else "No",
-            "Total con IVA": str(budget.total_amount_with_iva) if budget.total_amount_with_iva else "",
+            "Total con IVA": (
+                str(budget.total_amount_with_iva)
+                if budget.total_amount_with_iva else ""
+            ),
             "Estado": budget.get_status_display(),
         }
         lines = budget.lines.exclude(concept_code="IVA").order_by("sort_order")
@@ -4438,7 +4623,8 @@ def _build_budget_qs(request, company):
     """
     Replicate BudgetHistoryView filters from GET params and return queryset.
     ---
-    Replica los filtros de BudgetHistoryView desde GET params y devuelve el queryset.
+    Replica los filtros de BudgetHistoryView desde GET params y devuelve el
+    queryset.
     """
     qs = Budget.objects.filter(company=company).select_related(
         "insurer", "vehicle_type", "operator__user", "tariff",
@@ -4472,12 +4658,17 @@ class InsurerTariffExportCsvView(AdminRoleRequiredMixin, View):
         Construye y devuelve la respuesta CSV para la tarifa de la aseguradora.
         """
         company_user = _get_company_user(request)
-        insurer = get_object_or_404(Insurer, pk=pk, company=company_user.company)
+        insurer = get_object_or_404(
+            Insurer, pk=pk, company=company_user.company
+        )
         tariff = _build_tariff_qs(insurer)
         rows = _insurer_tariff_rows(insurer, tariff)
 
         response = HttpResponse(content_type="text/csv; charset=utf-8-sig")
-        filename = f"tarifa_{insurer.code}_{tariff.year if tariff else 'sin_tarifa'}.csv"
+        filename = (
+            f"tarifa_{insurer.code}_"
+            f"{tariff.year if tariff else 'sin_tarifa'}.csv"
+        )
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
 
         if not rows:
@@ -4501,10 +4692,13 @@ class InsurerTariffExportExcelView(AdminRoleRequiredMixin, View):
         """
         Build and return the Excel response for the insurer tariff.
         ---
-        Construye y devuelve la respuesta Excel para la tarifa de la aseguradora.
+        Construye y devuelve la respuesta Excel para la tarifa de la
+        aseguradora.
         """
         company_user = _get_company_user(request)
-        insurer = get_object_or_404(Insurer, pk=pk, company=company_user.company)
+        insurer = get_object_or_404(
+            Insurer, pk=pk, company=company_user.company
+        )
         tariff = _build_tariff_qs(insurer)
         rows = _insurer_tariff_rows(insurer, tariff)
 
@@ -4514,7 +4708,9 @@ class InsurerTariffExportExcelView(AdminRoleRequiredMixin, View):
 
         header_font = Font(bold=True, color="FFFFFF", size=10)
         header_fill = PatternFill(fill_type="solid", fgColor="1F4E79")
-        header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        header_alignment = Alignment(
+            horizontal="center", vertical="center", wrap_text=True
+        )
 
         if not rows:
             ws.append(["Sin datos de tarifa disponibles."])
@@ -4530,19 +4726,28 @@ class InsurerTariffExportExcelView(AdminRoleRequiredMixin, View):
                 ws.append(list(row.values()))
             for col in ws.columns:
                 max_len = max(len(str(c.value or "")) for c in col)
-                ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 40)
+                ws.column_dimensions[col[0].column_letter].width = min(
+                    max_len + 4, 40
+                )
 
         buffer = io.BytesIO()
         wb.save(buffer)
         buffer.seek(0)
 
-        filename = f"tarifa_{insurer.code}_{tariff.year if tariff else 'sin_tarifa'}.xlsx"
+        filename = (
+            f"tarifa_{insurer.code}_"
+            f"{tariff.year if tariff else 'sin_tarifa'}.xlsx"
+        )
         response = HttpResponse(
             buffer.read(),
-            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            content_type=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
         )
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
+
 
 class InsurerTariffExportPdfView(AdminRoleRequiredMixin, View):
     """
@@ -4558,11 +4763,16 @@ class InsurerTariffExportPdfView(AdminRoleRequiredMixin, View):
         Construye y devuelve la respuesta PDF para la tarifa de la aseguradora.
         """
         company_user = _get_company_user(request)
-        insurer = get_object_or_404(Insurer, pk=pk, company=company_user.company)
+        insurer = get_object_or_404(
+            Insurer, pk=pk, company=company_user.company
+        )
         tariff = _build_tariff_qs(insurer)
         rows = _insurer_tariff_rows(insurer, tariff)
 
-        title = f"Tarifa {insurer.name} - {tariff.year if tariff else 'Sin tarifa activa'}"
+        title = (
+            f"Tarifa {insurer.name} - "
+            f"{tariff.year if tariff else 'Sin tarifa activa'}"
+        )
         if rows:
             headers = list(rows[0].keys())
             thead = "".join(f"<th>{h}</th>" for h in headers)
@@ -4571,7 +4781,10 @@ class InsurerTariffExportPdfView(AdminRoleRequiredMixin, View):
                 bg = "#f0f4f8" if i % 2 == 0 else "#ffffff"
                 cells = "".join(f"<td>{v}</td>" for v in row.values())
                 tbody += f"<tr style='background:{bg}'>{cells}</tr>"
-            table_html = f"<table><thead><tr>{thead}</tr></thead><tbody>{tbody}</tbody></table>"
+            table_html = (
+                f"<table><thead><tr>{thead}</tr></thead>"
+                f"<tbody>{tbody}</tbody></table>"
+            )
         else:
             table_html = "<p>Sin datos de tarifa disponibles.</p>"
 
@@ -4581,7 +4794,8 @@ class InsurerTariffExportPdfView(AdminRoleRequiredMixin, View):
             "body{font-family:Arial,sans-serif;font-size:8pt;margin:20px}"
             "h1{color:#1F4E79;font-size:12pt;margin-bottom:10px}"
             "table{width:100%;border-collapse:collapse}"
-            "th{background:#1F4E79;color:white;padding:4px 6px;font-size:7pt;text-align:left}"
+            "th{background:#1F4E79;color:white;padding:4px "
+            "6px;font-size:7pt;text-align:left}"
             "td{padding:3px 6px;font-size:7pt;border-bottom:1px solid #e0e0e0}"
             "</style></head><body>"
             f"<h1>{title}</h1>{table_html}"
@@ -4589,7 +4803,10 @@ class InsurerTariffExportPdfView(AdminRoleRequiredMixin, View):
         )
 
         pdf_file = weasyprint.HTML(string=html_content).write_pdf()
-        filename = f"tarifa_{insurer.code}_{tariff.year if tariff else 'sin_tarifa'}.pdf"
+        filename = (
+            f"tarifa_{insurer.code}_"
+            f"{tariff.year if tariff else 'sin_tarifa'}.pdf"
+        )
         response = HttpResponse(pdf_file, content_type="application/pdf")
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
@@ -4606,17 +4823,21 @@ class InsurerTariffExportWordView(AdminRoleRequiredMixin, View):
         """
         Build and return the Word response for the insurer tariff.
         ---
-        Construye y devuelve la respuesta Word para la tarifa de la aseguradora.
+        Construye y devuelve la respuesta Word para la tarifa de la
+        aseguradora.
         """
         company_user = _get_company_user(request)
-        insurer = get_object_or_404(Insurer, pk=pk, company=company_user.company)
+        insurer = get_object_or_404(
+            Insurer, pk=pk, company=company_user.company
+        )
         tariff = _build_tariff_qs(insurer)
         rows = _insurer_tariff_rows(insurer, tariff)
 
         doc = Document()
         title_para = doc.add_heading(level=1)
         title_run = title_para.add_run(
-            f"Tarifa {insurer.name} - {tariff.year if tariff else 'Sin tarifa activa'}"
+            f"Tarifa {insurer.name} - "
+            f"{tariff.year if tariff else 'Sin tarifa activa'}"
         )
         title_run.font.color.rgb = RGBColor(0x1F, 0x4E, 0x79)
 
@@ -4643,10 +4864,16 @@ class InsurerTariffExportWordView(AdminRoleRequiredMixin, View):
         doc.save(buffer)
         buffer.seek(0)
 
-        filename = f"tarifa_{insurer.code}_{tariff.year if tariff else 'sin_tarifa'}.docx"
+        filename = (
+            f"tarifa_{insurer.code}_"
+            f"{tariff.year if tariff else 'sin_tarifa'}.docx"
+        )
         response = HttpResponse(
             buffer.read(),
-            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            content_type=(
+                "application/vnd.openxmlformats-officedocument."
+                "wordprocessingml.document"
+            ),
         )
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
@@ -4663,14 +4890,17 @@ class BudgetExportCsvView(AdminRoleRequiredMixin, View):
         """
         Build and return the CSV response for the budget history.
         ---
-        Construye y devuelve la respuesta CSV para el historial de presupuestos.
+        Construye y devuelve la respuesta CSV para el historial de
+        presupuestos.
         """
         company_user = _get_company_user(request)
         qs = _build_budget_qs(request, company_user.company)
         rows = _budget_rows(qs)
 
         response = HttpResponse(content_type="text/csv; charset=utf-8-sig")
-        response["Content-Disposition"] = 'attachment; filename="presupuestos.csv"'
+        response["Content-Disposition"] = (
+            'attachment; filename="presupuestos.csv"'
+        )
 
         if not rows:
             response.write("Sin presupuestos para los filtros seleccionados.")
@@ -4693,7 +4923,8 @@ class BudgetExportExcelView(AdminRoleRequiredMixin, View):
         """
         Build and return the Excel response for the budget history.
         ---
-        Construye y devuelve la respuesta Excel para el historial de presupuestos.
+        Construye y devuelve la respuesta Excel para el historial de
+        presupuestos.
         """
         company_user = _get_company_user(request)
         qs = _build_budget_qs(request, company_user.company)
@@ -4705,7 +4936,9 @@ class BudgetExportExcelView(AdminRoleRequiredMixin, View):
 
         header_font = Font(bold=True, color="FFFFFF", size=10)
         header_fill = PatternFill(fill_type="solid", fgColor="1F4E79")
-        header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        header_alignment = Alignment(
+            horizontal="center", vertical="center", wrap_text=True
+        )
 
         if not rows:
             ws.append(["Sin presupuestos para los filtros seleccionados."])
@@ -4721,7 +4954,9 @@ class BudgetExportExcelView(AdminRoleRequiredMixin, View):
                 ws.append(list(row.values()))
             for col in ws.columns:
                 max_len = max(len(str(c.value or "")) for c in col)
-                ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 40)
+                ws.column_dimensions[col[0].column_letter].width = min(
+                    max_len + 4, 40
+                )
 
         buffer = io.BytesIO()
         wb.save(buffer)
@@ -4729,9 +4964,14 @@ class BudgetExportExcelView(AdminRoleRequiredMixin, View):
 
         response = HttpResponse(
             buffer.read(),
-            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            content_type=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
         )
-        response["Content-Disposition"] = 'attachment; filename="presupuestos.xlsx"'
+        response["Content-Disposition"] = (
+            'attachment; filename="presupuestos.xlsx"'
+        )
         return response
 
 
@@ -4746,7 +4986,8 @@ class BudgetExportPdfView(AdminRoleRequiredMixin, View):
         """
         Build and return the PDF response for the budget history.
         ---
-        Construye y devuelve la respuesta PDF para el historial de presupuestos.
+        Construye y devuelve la respuesta PDF para el historial de
+        presupuestos.
         """
         company_user = _get_company_user(request)
         qs = _build_budget_qs(request, company_user.company)
@@ -4760,9 +5001,14 @@ class BudgetExportPdfView(AdminRoleRequiredMixin, View):
                 bg = "#f0f4f8" if i % 2 == 0 else "#ffffff"
                 cells = "".join(f"<td>{v}</td>" for v in row.values())
                 tbody += f"<tr style='background:{bg}'>{cells}</tr>"
-            table_html = f"<table><thead><tr>{thead}</tr></thead><tbody>{tbody}</tbody></table>"
+            table_html = (
+                f"<table><thead><tr>{thead}</tr></thead>"
+                f"<tbody>{tbody}</tbody></table>"
+            )
         else:
-            table_html = "<p>Sin presupuestos para los filtros seleccionados.</p>"
+            table_html = (
+                "<p>Sin presupuestos para los filtros seleccionados.</p>"
+            )
 
         html_content = (
             "<!DOCTYPE html><html lang='es'><head><meta charset='utf-8'>"
@@ -4770,7 +5016,8 @@ class BudgetExportPdfView(AdminRoleRequiredMixin, View):
             "body{font-family:Arial,sans-serif;font-size:8pt;margin:20px}"
             "h1{color:#1F4E79;font-size:12pt;margin-bottom:10px}"
             "table{width:100%;border-collapse:collapse}"
-            "th{background:#1F4E79;color:white;padding:4px 6px;font-size:7pt;text-align:left}"
+            "th{background:#1F4E79;color:white;padding:4px "
+            "6px;font-size:7pt;text-align:left}"
             "td{padding:3px 6px;font-size:7pt;border-bottom:1px solid #e0e0e0}"
             "</style></head><body>"
             f"<h1>Historial de presupuestos</h1>{table_html}"
@@ -4779,7 +5026,9 @@ class BudgetExportPdfView(AdminRoleRequiredMixin, View):
 
         pdf_file = weasyprint.HTML(string=html_content).write_pdf()
         response = HttpResponse(pdf_file, content_type="application/pdf")
-        response["Content-Disposition"] = 'attachment; filename="presupuestos.pdf"'
+        response["Content-Disposition"] = (
+            'attachment; filename="presupuestos.pdf"'
+        )
         return response
 
 
@@ -4794,7 +5043,8 @@ class BudgetExportWordView(AdminRoleRequiredMixin, View):
         """
         Build and return the Word response for the budget history.
         ---
-        Construye y devuelve la respuesta Word para el historial de presupuestos.
+        Construye y devuelve la respuesta Word para el historial de
+        presupuestos.
         """
         company_user = _get_company_user(request)
         qs = _build_budget_qs(request, company_user.company)
@@ -4806,7 +5056,9 @@ class BudgetExportWordView(AdminRoleRequiredMixin, View):
         title_run.font.color.rgb = RGBColor(0x1F, 0x4E, 0x79)
 
         if not rows:
-            doc.add_paragraph("Sin presupuestos para los filtros seleccionados.")
+            doc.add_paragraph(
+                "Sin presupuestos para los filtros seleccionados."
+            )
         else:
             headers = list(rows[0].keys())
             table = doc.add_table(rows=1, cols=len(headers))
@@ -4830,9 +5082,14 @@ class BudgetExportWordView(AdminRoleRequiredMixin, View):
 
         response = HttpResponse(
             buffer.read(),
-            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            content_type=(
+                "application/vnd.openxmlformats-officedocument."
+                "wordprocessingml.document"
+            ),
         )
-        response["Content-Disposition"] = 'attachment; filename="presupuestos.docx"'
+        response["Content-Disposition"] = (
+            'attachment; filename="presupuestos.docx"'
+        )
         return response
 
 
@@ -4861,7 +5118,7 @@ class BaseClearCoordsView(AdminRoleRequiredMixin, View):
         Limpia las coordenadas de las bases con los PKs indicados.
         """
         company_user = _get_company_user(request)
-        company      = company_user.company
+        company = company_user.company
 
         # Parse PKs from POST — sent as repeated 'base_pks' values.
         # Parsear PKs del POST — enviados como valores repetidos 'base_pks'.
@@ -4889,11 +5146,13 @@ class BaseClearCoordsView(AdminRoleRequiredMixin, View):
 
         from django.http import HttpResponse as _HR
         return _HR(
-            f'<div class="alert alert-success alert-dismissible fade show py-2 small mb-2" role="alert">'
+            '<div class="alert alert-success alert-dismissible fade show '
+            'py-2 small mb-2" role="alert">'
             f'<i class="bi bi-check2-circle me-1"></i>'
             f'<strong>Coordenadas limpiadas en {updated} base(s).</strong> '
             f'Recarga la página para ver los cambios reflejados en la tabla.'
-            f'<button type="button" class="btn-close btn-sm" data-bs-dismiss="alert"></button>'
+            '<button type="button" class="btn-close btn-sm" '
+            'data-bs-dismiss="alert"></button>'
             f'</div>'
         )
 
@@ -4906,7 +5165,8 @@ class BaseSyncCalendarsView(AdminRoleRequiredMixin, View):
     Reuses _fetch_holidays() and MUNICIPALITY_MAP from the management command.
     ---
     Endpoint POST HTMX. Sincroniza los calendarios laborales de todas las
-    bases activas de la empresa via la API publica de calendariosnacionales.com.
+    bases activas de la empresa via la API publica de
+    calendariosnacionales.com.
     Devuelve un fragmento HTML inline con los resultados de la sincronizacion.
     Reutiliza _fetch_holidays() del management command sync_base_calendars.
     """
@@ -4922,27 +5182,37 @@ class BaseSyncCalendarsView(AdminRoleRequiredMixin, View):
         import json as _json
         import datetime as _dt
         from django.utils import timezone as _tz
-        from budgets.management.commands.sync_base_calendars import _fetch_holidays
+        from budgets.management.commands.sync_base_calendars import (
+            _fetch_holidays,
+        )
 
         company_user = _get_company_user(request)
-        company      = company_user.company
+        company = company_user.company
 
         # Target year: next year if Q4, otherwise current year.
         # Año objetivo: siguiente si Q4, si no el actual.
         today = _dt.date.today()
-        year  = today.year + 1 if today.month >= 10 else today.year
+        year = today.year + 1 if today.month >= 10 else today.year
 
-        bases         = list(Base.objects.filter(company=company, is_active=True))
-        ok_results    = []
+        bases = list(
+            Base.objects.filter(company=company, is_active=True)
+        )
+        ok_results = []
         error_results = []
 
         for base in bases:
             try:
                 holidays = _fetch_holidays(base.municipality, year)
-                base.labor_calendar     = _json.dumps(holidays, ensure_ascii=False)
+                base.labor_calendar = _json.dumps(
+                    holidays, ensure_ascii=False
+                )
                 base.calendar_synced_at = _tz.now()
-                base.save(update_fields=["labor_calendar", "calendar_synced_at"])
-                ok_results.append({"name": base.name, "count": len(holidays), "year": year})
+                base.save(
+                    update_fields=["labor_calendar", "calendar_synced_at"]
+                )
+                ok_results.append(
+                    {"name": base.name, "count": len(holidays), "year": year}
+                )
             except KeyError as exc:
                 logger.warning(
                     "# [budgets] sync_base_calendars: falta clave en la "
@@ -4961,30 +5231,43 @@ class BaseSyncCalendarsView(AdminRoleRequiredMixin, View):
                 )
                 error_results.append({
                     "name": base.name,
-                    "error": "Error inesperado. Revisa el registro del servidor.",
+                    "error": (
+                        "Error inesperado. Revisa el registro del servidor."
+                    ),
                 })
 
         html_parts = []
         if ok_results:
             html_parts.append(
-                '<div class="alert alert-success alert-dismissible fade show py-2 small mb-2" role="alert">'
+                '<div class="alert alert-success alert-dismissible fade show '
+                'py-2 small mb-2" role="alert">'
                 f'<i class="bi bi-check2-circle me-1"></i>'
-                f'<strong>{len(ok_results)} base(s) sincronizada(s)</strong> para {year}:'
+                f'<strong>{len(ok_results)} base(s) sincronizada(s)</strong> '
+                f'para {year}:'
                 '<ul class="mb-0 mt-1">'
             )
             for r in ok_results:
-                html_parts.append(f'<li>{r["name"]} &mdash; {r["count"]} festivos</li>')
-            html_parts.append('</ul><button type="button" class="btn-close btn-sm" data-bs-dismiss="alert"></button></div>')
+                html_parts.append(
+                    f'<li>{r["name"]} &mdash; {r["count"]} festivos</li>'
+                )
+            html_parts.append(
+                '</ul><button type="button" class="btn-close btn-sm" '
+                'data-bs-dismiss="alert"></button></div>'
+            )
         if error_results:
             html_parts.append(
-                '<div class="alert alert-warning alert-dismissible fade show py-2 small mb-2" role="alert">'
+                '<div class="alert alert-warning alert-dismissible fade show '
+                'py-2 small mb-2" role="alert">'
                 f'<i class="bi bi-exclamation-triangle me-1"></i>'
                 f'<strong>{len(error_results)} base(s) con error:</strong>'
                 '<ul class="mb-0 mt-1">'
             )
             for r in error_results:
                 html_parts.append(f'<li>{r["name"]}: {r["error"]}</li>')
-            html_parts.append('</ul><button type="button" class="btn-close btn-sm" data-bs-dismiss="alert"></button></div>')
+            html_parts.append(
+                '</ul><button type="button" class="btn-close btn-sm" '
+                'data-bs-dismiss="alert"></button></div>'
+            )
         if not ok_results and not error_results:
             html_parts.append(
                 '<div class="alert alert-info py-2 small mb-2">'
@@ -5035,7 +5318,8 @@ class BaseGlobalView(AdminRoleRequiredMixin, View):
                     pk=int(insurer_id), company=company
                 )
                 # Filter to bases linked to this insurer via InsurerBase.
-                # Filtrar a bases vinculadas a esta aseguradora via InsurerBase.
+                # Filtrar a bases vinculadas a esta aseguradora via
+                # InsurerBase.
                 linked_base_ids = InsurerBase.objects.filter(
                     insurer=selected_insurer
                 ).values_list("base_id", flat=True)
@@ -5079,7 +5363,8 @@ class BaseGlobalView(AdminRoleRequiredMixin, View):
         Redirects to the global base list on success.
         Re-renders the form with errors on failure.
         ---
-        Crea una nueva Base para la empresa (sin aseguradora asociada en el alta).
+        Crea una nueva Base para la empresa (sin aseguradora asociada en el
+        alta).
         Redirige al listado global en exito. Vuelve a renderizar el formulario
         con errores en caso de fallo.
         """
@@ -5178,7 +5463,7 @@ class AlbaranDemoView(AssistanceRequiredMixin, View):
 _NOTIFIABLE_UNIT_STATUSES = ("PENDING", "NOTIFIED", "DOWNLOADED")
 
 
-class WorkOrderCreateFromBudgetView(AssistanceRequiredMixin, View):
+class WorkOrderCreateFromBudgetView(AssistanceWorkOrderAccessMixin, View):
     """
     Creates a WorkOrderAssistance from an accepted Budget.
     Accessible via the 'Generar orden de trabajo' button on BudgetResultView
@@ -5211,7 +5496,8 @@ class WorkOrderCreateFromBudgetView(AssistanceRequiredMixin, View):
         if budget.status != Budget.STATUS_ACCEPTED:
             messages.error(
                 request,
-                "Solo se puede generar una orden de trabajo desde un presupuesto aceptado.",
+                ("Solo se puede generar una orden de trabajo desde un "
+                 "presupuesto aceptado."),
             )
             return redirect("budgets:result", pk=budget.pk)
         # Guard: avoid creating duplicate work orders for the same budget.
@@ -5236,12 +5522,13 @@ class WorkOrderCreateFromBudgetView(AssistanceRequiredMixin, View):
             )
         messages.success(
             request,
-            f"Orden de trabajo {work_order.work_order_number} creada correctamente.",
+            (f"Orden de trabajo {work_order.work_order_number} creada "
+             "correctamente."),
         )
         return redirect("budgets:work_order_detail", pk=work_order.pk)
 
 
-class WorkOrderCreateDirectView(AssistanceRequiredMixin, View):
+class WorkOrderCreateDirectView(AssistanceWorkOrderAccessMixin, View):
     """
     Creates a WorkOrderAssistance directly, without a prior Budget.
     Renders a form pre-populated with the company's active insurers.
@@ -5287,10 +5574,13 @@ class WorkOrderCreateDirectView(AssistanceRequiredMixin, View):
         company_user = _get_company_user(request)
         if not company_user:
             return redirect("panel:login")
-        insurer_id  = request.POST.get("insurer_id", "").strip()
+        insurer_id = request.POST.get("insurer_id", "").strip()
         service_date = request.POST.get("service_date", "").strip()
         if not insurer_id or not service_date:
-            messages.error(request, "La aseguradora y la fecha del servicio son obligatorias.")
+            messages.error(
+                request,
+                "La aseguradora y la fecha del servicio son obligatorias."
+            )
             return redirect("budgets:work_order_create_direct")
         insurer = get_object_or_404(
             Insurer,
@@ -5311,12 +5601,13 @@ class WorkOrderCreateDirectView(AssistanceRequiredMixin, View):
             )
         messages.success(
             request,
-            f"Orden de trabajo {work_order.work_order_number} creada correctamente.",
+            (f"Orden de trabajo {work_order.work_order_number} creada "
+             "correctamente."),
         )
         return redirect("budgets:work_order_detail", pk=work_order.pk)
 
 
-class WorkOrderDetailView(AssistanceRequiredMixin, View):
+class WorkOrderDetailView(AssistanceWorkOrderAccessMixin, View):
     """
     Displays the full detail of a WorkOrderAssistance record.
     Shows all TIREA fields, linked units and their status.
@@ -5406,7 +5697,7 @@ def _assistance_machine_options(company):
     return options
 
 
-class WorkOrderUnitCreateView(AssistanceRequiredMixin, View):
+class WorkOrderUnitCreateView(AssistanceWorkOrderAccessMixin, View):
     """
     Add a unit (operator and machine) to a work order.
 
@@ -5469,7 +5760,7 @@ class WorkOrderUnitCreateView(AssistanceRequiredMixin, View):
         return redirect("budgets:work_order_detail", pk=work_order.pk)
 
 
-class WorkOrderUnitNotifyView(AssistanceRequiredMixin, View):
+class WorkOrderUnitNotifyView(AssistanceWorkOrderAccessMixin, View):
     """
     Send the WhatsApp albarán notice to the operator of a unit.
 
@@ -5534,7 +5825,7 @@ class WorkOrderUnitNotifyView(AssistanceRequiredMixin, View):
         return back
 
 
-class WorkOrderAlbaranView(AssistanceRequiredMixin, View):
+class WorkOrderAlbaranView(AssistanceWorkOrderAccessMixin, View):
     """
     Renders the mobile-first albarán form for a WorkOrderAssistanceUnit.
     Used by the operator on the Android app or mobile browser to fill in
@@ -5597,7 +5888,9 @@ class WorkOrderAlbaranView(AssistanceRequiredMixin, View):
         Marca la unidad como COMPLETED y crea el registro de firma.
         Redirige a WorkOrderDetailView en éxito.
         """
-        from budgets.models import WorkOrderAssistanceUnit, WorkOrderAssistanceSignature
+        from budgets.models import (
+            WorkOrderAssistanceUnit, WorkOrderAssistanceSignature,
+        )
         company_user = _get_company_user(request)
         if not company_user:
             return redirect("panel:login")
@@ -5606,24 +5899,24 @@ class WorkOrderAlbaranView(AssistanceRequiredMixin, View):
             pk=pk,
             work_order__company=company_user.company,
         )
-        phase1_km     = request.POST.get("phase1_km", "").strip() or None
-        phase2_km     = request.POST.get("phase2_km", "").strip() or None
+        phase1_km = request.POST.get("phase1_km", "").strip() or None
+        phase2_km = request.POST.get("phase2_km", "").strip() or None
         departure_fee = request.POST.get("departure_fee", "").strip() or None
-        rescue_hours  = request.POST.get("rescue_hours", "").strip() or None
-        wait_hours    = request.POST.get("wait_hours", "").strip() or None
+        rescue_hours = request.POST.get("rescue_hours", "").strip() or None
+        wait_hours = request.POST.get("wait_hours", "").strip() or None
         signature_data = request.POST.get("signature_data", "").strip()
-        signer_name    = request.POST.get("signer_name", "").strip()
+        signer_name = request.POST.get("signer_name", "").strip()
         signed_offline = request.POST.get("signed_offline", "false") == "true"
         with transaction.atomic():
-            unit.phase1_km     = phase1_km
-            unit.phase2_km     = phase2_km
+            unit.phase1_km = phase1_km
+            unit.phase2_km = phase2_km
             unit.departure_fee = departure_fee
-            unit.rescue_hours  = rescue_hours
-            unit.wait_hours    = wait_hours
-            unit.status        = WorkOrderAssistanceUnit.STATUS_COMPLETED
+            unit.rescue_hours = rescue_hours
+            unit.wait_hours = wait_hours
+            unit.status = WorkOrderAssistanceUnit.STATUS_COMPLETED
             # H37 (S132): completed_at was never filled.
             # H37 (S132): completed_at no se rellenaba nunca.
-            unit.completed_at  = now()
+            unit.completed_at = now()
             unit.save()
             if signature_data:
                 WorkOrderAssistanceSignature.objects.update_or_create(
@@ -5690,8 +5983,12 @@ class TollSegmentListView(AdminRoleRequiredMixin, View):
             "tariff_level_choices": TollSegment.TARIFF_LEVEL_CHOICES,
             "active_nav":           "budgets_toll_segments",
             "total":                qs.count(),
-            "toll_vehicle_type":    _get_company_user(request).company.toll_vehicle_type,
-            "toll_markup_percent":  _get_company_user(request).company.toll_markup_percent,
+            "toll_vehicle_type": (
+                _get_company_user(request).company.toll_vehicle_type
+            ),
+            "toll_markup_percent": (
+                _get_company_user(request).company.toll_markup_percent
+            ),
             "toll_vehicle_choices": [
                 ("LIGHT",   "Ligero"),
                 ("HEAVY_1", "Pesado 1"),
@@ -5979,7 +6276,7 @@ class TollSegmentBulkToggleView(AdminRoleRequiredMixin, View):
         return redirect("budgets:toll_segment_list")
 
 
-class WorkOrderPdfView(AssistanceRequiredMixin, View):
+class WorkOrderPdfView(AssistanceWorkOrderAccessMixin, View):
     """
     Generates and streams a PDF export of a WorkOrderAssistanceUnit albarán.
     Uses weasyprint to render albaran_pdf.html as a PDF response.
@@ -6232,6 +6529,7 @@ class BaseCalendarDetailView(AdminRoleRequiredMixin, View):
             })
             return render(request, self.FRAGMENT_TEMPLATE, ctx)
 
+
 class BaseCalendarCopyView(AdminRoleRequiredMixin, View):
     """
     Copy the labour calendar of one Base to another Base of the same
@@ -6304,19 +6602,12 @@ class BaseCalendarCopyView(AdminRoleRequiredMixin, View):
         )
 
 
-
-
-
-
-
-
-
-
 # Bloque a AÑADIR al final de budgets/views.py
 
 # ---------------------------------------------------------------------------
 # Insurer tariff PDF import — upload + Gemini extraction + clone + review
 # ---------------------------------------------------------------------------
+
 
 class InsurerTariffPdfUploadView(AdminRoleRequiredMixin, View):
     """
@@ -6402,7 +6693,8 @@ class InsurerTariffPdfUploadView(AdminRoleRequiredMixin, View):
             copy_suffix += 1
 
         # Derive code for the copy using same logic as InsurerCloneView.
-        # Derivar código de la copia usando la misma lógica que InsurerCloneView.
+        # Derivar código de la copia usando la misma lógica que
+        # InsurerCloneView.
         import re as _re
 
         def _norm(s):
@@ -6440,15 +6732,23 @@ class InsurerTariffPdfUploadView(AdminRoleRequiredMixin, View):
                     is_active=False,
                     is_insurance_company=source.is_insurance_company,
                     always_apply_iva=source.always_apply_iva,
-                    special_night_holiday_tariff=source.special_night_holiday_tariff,
-                    local_service_km_threshold=source.local_service_km_threshold,
+                    special_night_holiday_tariff=(
+                        source.special_night_holiday_tariff
+                    ),
+                    local_service_km_threshold=(
+                        source.local_service_km_threshold
+                    ),
                     notes=source.notes,
                 )
 
-                # Clone VehicleType catalogue, building pk map for TariffLine FKs.
-                # Clonar catálogo VehicleType, construyendo mapa pk para FK de TariffLine.
+                # Clone VehicleType catalogue, building pk map for TariffLine
+                # FKs.
+                # Clonar catálogo VehicleType, construyendo mapa pk para FK de
+                # TariffLine.
                 vt_map = {}
-                for vt in source.vehicle_types.all().order_by("sort_order", "name"):
+                for vt in source.vehicle_types.all().order_by(
+                    "sort_order", "name"
+                ):
                     clone_vt = VehicleType.objects.create(
                         insurer=copy_insurer,
                         name=vt.name,
@@ -6673,7 +6973,8 @@ class InsurerTariffPdfReviewView(AdminRoleRequiredMixin, View):
                 srt = copy_tariff.special_rate
                 for srl in srt.lines.all():
                     vt_norm = self._norm(
-                        srl.vehicle_type.name if srl.vehicle_type else "GENERAL"
+                        srl.vehicle_type.name if srl.vehicle_type
+                        else "GENERAL"
                     )
                     spe_line_index[(vt_norm, srl.concept.code)] = srl
             except SpecialRateTariff.DoesNotExist:
@@ -6689,7 +6990,9 @@ class InsurerTariffPdfReviewView(AdminRoleRequiredMixin, View):
         def _process(raw_lines, period, line_index):
             for item in raw_lines:
                 vt_name = item.get("vehicle_type_name") or ""
-                vt_norm = self._norm(vt_name) if vt_name else self._norm("GENERAL")
+                vt_norm = (
+                    self._norm(vt_name) if vt_name else self._norm("GENERAL")
+                )
                 price = item.get("price") or ""
                 code_match = item.get("concept_code_match")
 
@@ -6725,7 +7028,9 @@ class InsurerTariffPdfReviewView(AdminRoleRequiredMixin, View):
                         "rows": [],
                     })
                     row_idx = len(group["rows"])
-                    field_name = f"newconcept_{key}_{period}_{vt_norm}_{row_idx}"
+                    field_name = (
+                        f"newconcept_{key}_{period}_{vt_norm}_{row_idx}"
+                    )
                     group["rows"].append({
                         "vt_name": vt_name or "General",
                         "vt_norm": vt_norm,
@@ -6742,8 +7047,11 @@ class InsurerTariffPdfReviewView(AdminRoleRequiredMixin, View):
         )
 
         # Night/holiday percent surcharge (percent-surcharge insurers only).
-        # Recargo porcentual nocturno/festivo (solo aseguradoras sin tabla completa).
-        nyf_percent_extracted = extraction.get("night_holiday_surcharge_percent")
+        # Recargo porcentual nocturno/festivo (solo aseguradoras sin tabla
+        # completa).
+        nyf_percent_extracted = extraction.get(
+            "night_holiday_surcharge_percent"
+        )
         nyf_current_line = lab_line_index.get(
             (self._norm("GENERAL"), "NYF_PERCENT")
         )
@@ -6752,7 +7060,9 @@ class InsurerTariffPdfReviewView(AdminRoleRequiredMixin, View):
             "pdf_import": pdf_import,
             "source_insurer": pdf_import.insurer,
             "copy_insurer": copy,
-            "detected_insurer_name": extraction.get("detected_insurer_name", ""),
+            "detected_insurer_name": extraction.get(
+                "detected_insurer_name", ""
+            ),
             "uses_full_night_holiday_table": bool(
                 pdf_import.insurer.special_night_holiday_tariff
             ),
@@ -6822,7 +7132,8 @@ class InsurerTariffPdfReviewView(AdminRoleRequiredMixin, View):
                     copy.delete()
             messages.info(
                 request,
-                "Importación cancelada. La aseguradora copia ha sido eliminada.",
+                ("Importación cancelada. La aseguradora copia ha sido "
+                 "eliminada."),
             )
             return redirect("budgets:insurer_update", pk=source_pk)
 
@@ -6846,8 +7157,10 @@ class InsurerTariffPdfReviewView(AdminRoleRequiredMixin, View):
         created_concepts = 0
 
         with transaction.atomic():
-            # --- 1. Matched lines: update existing TariffLine/SpecialRateLine ---
-            # --- 1. Líneas coincidentes: actualizar TariffLine/SpecialRateLine existentes ---
+            # --- 1. Matched lines: update existing
+            # TariffLine/SpecialRateLine ---
+            # --- 1. Líneas coincidentes: actualizar TariffLine/SpecialRateLine
+            # existentes ---
             for key, raw_val in request.POST.items():
                 if not raw_val:
                     continue
@@ -6865,7 +7178,9 @@ class InsurerTariffPdfReviewView(AdminRoleRequiredMixin, View):
                         line.save(update_fields=["price"])
                         updated_count += 1
                     except (TariffLine.DoesNotExist, ValueError):
-                        errors.append(f"TariffLine pk={line_pk} no encontrada.")
+                        errors.append(
+                            f"TariffLine pk={line_pk} no encontrada."
+                        )
 
                 elif key.startswith("match_festivo_"):
                     srl_pk = request.POST.get(f"srl_pk_{key}")
@@ -6877,7 +7192,9 @@ class InsurerTariffPdfReviewView(AdminRoleRequiredMixin, View):
                         srl.save(update_fields=["price"])
                         updated_count += 1
                     except (SpecialRateLine.DoesNotExist, ValueError):
-                        errors.append(f"SpecialRateLine pk={srl_pk} no encontrada.")
+                        errors.append(
+                            f"SpecialRateLine pk={srl_pk} no encontrada."
+                        )
 
             # --- 2. Night/holiday percent surcharge (if applicable) ---
             # --- 2. Recargo porcentual nocturno/festivo (si aplica) ---
@@ -6915,7 +7232,8 @@ class InsurerTariffPdfReviewView(AdminRoleRequiredMixin, View):
                         )
 
             # --- 3. New concept proposals: create TariffConcept + lines ---
-            # --- 3. Propuestas de concepto nuevo: crear TariffConcept + líneas ---
+            # --- 3. Propuestas de concepto nuevo: crear TariffConcept +
+            # líneas ---
             new_group_keys = set()
             for key in request.POST:
                 if key.startswith("newconcept_label_"):
@@ -6936,7 +7254,9 @@ class InsurerTariffPdfReviewView(AdminRoleRequiredMixin, View):
             }
 
             for group_key in new_group_keys:
-                create_flag = request.POST.get(f"newconcept_create_{group_key}")
+                create_flag = request.POST.get(
+                    f"newconcept_create_{group_key}"
+                )
                 if not create_flag:
                     # Operator unchecked / did not confirm creation for
                     # this proposed concept — skip entirely.
@@ -6947,13 +7267,17 @@ class InsurerTariffPdfReviewView(AdminRoleRequiredMixin, View):
                 label = (
                     request.POST.get(f"newconcept_label_{group_key}") or ""
                 ).strip()
-                unit = request.POST.get(f"newconcept_unit_{group_key}") or "FIXED"
+                unit = (
+                    request.POST.get(f"newconcept_unit_{group_key}") or "FIXED"
+                )
                 if not label:
                     continue
 
                 # Auto-generate a unique code from the label.
                 # Auto-generar un código único a partir del nombre.
-                base_code = _re.sub(r"[^A-Z0-9]+", "_", label.upper()).strip("_")[:40]
+                base_code = (
+                    _re.sub(r"[^A-Z0-9]+", "_", label.upper()).strip("_")[:40]
+                )
                 code = base_code
                 suffix = 1
                 while TariffConcept.objects.filter(code=code).exists():
@@ -7037,4 +7361,3 @@ class InsurerTariffPdfReviewView(AdminRoleRequiredMixin, View):
             )
 
         return redirect("budgets:insurer_update", pk=copy.pk)
-
