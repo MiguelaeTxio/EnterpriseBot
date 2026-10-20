@@ -1,0 +1,55 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/services/hub.html #}
+{% extends "panel/base.html" %}
+
+{% block title %}Servicios{% endblock %}
+{% block page_title %}Servicios{% endblock %}
+
+{% block content %}
+{% comment %}
+H37 (S132). Página Servicios del servicio de asistencia, con pestañas
+en el formato de Documentación (panel/documentation_h30/hub.html).
+Cada pestaña carga su contenido por htmx; la que el usuario dejó
+activa carga al abrir la página, el resto al pulsarlas.
+{% endcomment %}
+<ul class="nav nav-tabs mb-3" id="servicesTabs">
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'albaranes' %}active{% endif %}"
+           id="tab-albaranes"
+           data-bs-toggle="tab"
+           href="#pane-albaranes"
+           hx-get="{% url 'budgets:services_delivery_notes_pane' %}"
+           hx-target="#pane-albaranes"
+           hx-trigger="{% if active_tab == 'albaranes' %}load once{% else %}click once{% endif %}">
+            <i class="bi bi-file-earmark-text me-1"></i>Albaranes
+        </a>
+    </li>
+</ul>
+
+<div class="tab-content">
+    <div class="tab-pane fade {% if active_tab == 'albaranes' %}show active{% endif %}"
+         id="pane-albaranes">
+        <div class="text-muted small p-3">Cargando…</div>
+    </div>
+</div>
+
+{{ screen_key|json_script:"services-screen-key" }}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+    'use strict';
+    // Pestaña activa por usuario (directriz 4.15). Igual que en
+    // Documentación: 'click' nativo, no 'shown.bs.tab' (S94).
+    const screenKey = JSON.parse(
+        document.getElementById('services-screen-key').textContent
+    );
+    document.querySelectorAll('#servicesTabs a[data-bs-toggle="tab"]').forEach(function (tabLink) {
+        tabLink.addEventListener('click', function (ev) {
+            const tabKey = ev.currentTarget.id.replace('tab-', '');
+            window.EbNavState.save(screenKey, {active_tab: tabKey});
+        });
+    });
+})();
+</script>
+{% endblock %}

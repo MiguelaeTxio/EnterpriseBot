@@ -1,0 +1,49 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/services/_delivery_notes_pane.html #}
+{% comment %}
+H37 (S132). Pestaña Albaranes de Servicios: órdenes de trabajo de
+asistencia. El alta desde foto de TIREA y el formato de listado de la
+directriz 4.24 llegan con el punto 3 de la hoja de ruta del anexo V37.
+{% endcomment %}
+<div class="d-flex flex-wrap gap-2 mb-3">
+    <a href="{% url 'budgets:work_order_create_direct' %}"
+       class="btn btn-sm btn-primary">
+        <i class="bi bi-plus-lg me-1"></i>Nueva orden
+    </a>
+</div>
+
+{% if work_orders %}
+<div class="table-responsive">
+    <table class="table table-sm table-hover align-middle small mb-0">
+        <thead class="table-light">
+            <tr>
+                <th>Nº orden</th>
+                <th>Fecha</th>
+                <th>Aseguradora</th>
+                <th>Expediente</th>
+                <th>Recogida</th>
+                <th>Estado</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for work_order in work_orders %}
+            <tr>
+                <td>
+                    <a href="{% url 'budgets:work_order_detail' pk=work_order.pk %}">
+                        {{ work_order.work_order_number }}
+                    </a>
+                </td>
+                <td>{{ work_order.service_date|date:"d/m/Y" }}</td>
+                <td>{{ work_order.insurer.name }}</td>
+                <td>{{ work_order.expediente|default:"—" }}</td>
+                <td>{{ work_order.pickup_location|default:"—" }}</td>
+                <td>{{ work_order.get_status_display }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<p class="text-muted small mb-0">
+    <i class="bi bi-info-circle me-1"></i>Todavía no hay órdenes de trabajo.
+</p>
+{% endif %}

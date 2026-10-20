@@ -5,12 +5,15 @@ Authentication and authorisation mixins for the panel application.
 Provides layered access control for CompanyUser accounts.
 
 Mixin hierarchy:
-  PanelLoginRequiredMixin      — authentication gate (redirects to /panel/login/).
-  CompanyUserRequiredMixin     — active CompanyUser + password-change enforcement.
+  PanelLoginRequiredMixin      — authentication gate (redirects to
+  /panel/login/).
+  CompanyUserRequiredMixin     — active CompanyUser + password-change
+  enforcement.
   AdminRoleRequiredMixin       — restricts to ADMIN role only.
   WorkshopRequiredMixin        — restricts to WORKSHOP and ADMIN roles.
   SupervisorAccessMixin        — restricts to SUPERVISOR and ADMIN roles.
-                                 Introduced in Hito 8 / Bloque G for PDF work-order
+                                 Introduced in Hito 8 / Bloque G for PDF
+                                 work-order
                                  review and export workflow.
   AssistanceRequiredMixin      — restricts to ASSISTANCE and ADMIN roles.
                                  Introduced in Hito 16 for the budget wizard.
@@ -29,21 +32,29 @@ Mixins de autenticación y autorización para la aplicación panel.
 Proporciona control de acceso por capas para las cuentas CompanyUser.
 
 Jerarquía de mixins:
-  PanelLoginRequiredMixin      — barrera de autenticación (redirige a /panel/login/).
-  CompanyUserRequiredMixin     — CompanyUser activo + forzado de cambio de contraseña.
+  PanelLoginRequiredMixin      — barrera de autenticación (redirige a
+  /panel/login/).
+  CompanyUserRequiredMixin     — CompanyUser activo + forzado de cambio de
+  contraseña.
   AdminRoleRequiredMixin       — restringe al rol ADMIN exclusivamente.
   WorkshopRequiredMixin        — restringe a los roles WORKSHOP y ADMIN.
   SupervisorAccessMixin        — restringe a los roles SUPERVISOR y ADMIN.
-                                 Introducido en Hito 8 / Bloque G para el flujo de
-                                 revisión y exportación de partes de trabajo PDF.
+                                 Introducido en Hito 8 / Bloque G para el flujo
+                                 de
+                                 revisión y exportación de partes de trabajo
+                                 PDF.
   AssistanceRequiredMixin      — restringe a los roles ASSISTANCE y ADMIN.
-                                 Introducido en Hito 16 para el asistente de presupuestos.
+                                 Introducido en Hito 16 para el asistente de
+                                 presupuestos.
   BudgetAuditAccessMixin       — restringe a ADMIN, o ASSISTANCE con el flag
                                  por usuario can_view_budget_breakdown.
-                                 Introducido para usuarios ASISTENCIA especiales
-                                 que necesitan visibilidad de historial/desglose.
+                                 Introducido para usuarios ASISTENCIA
+                                 especiales
+                                 que necesitan visibilidad de
+                                 historial/desglose.
   SuperuserRequiredMixin       — restringe a is_superuser=True de Django, no a
-                                 un rol de CompanyUser. Introducido en S021 para
+                                 un rol de CompanyUser. Introducido en S021
+                                 para
                                  secciones pensadas para una única cuenta de
                                  confianza (p. ej. borradores de partes),
                                  sustituyendo el antipatrón de username
@@ -73,20 +84,27 @@ class PanelLoginRequiredMixin(LoginRequiredMixin):
 
 class CompanyUserRequiredMixin(PanelLoginRequiredMixin):
     """
-    Mixin that requires the authenticated user to have an active CompanyUser record.
-    Redirects to /panel/login/ with an error message if no active CompanyUser is found.
+    Mixin that requires the authenticated user to have an active CompanyUser
+    record.
+    Redirects to /panel/login/ with an error message if no active CompanyUser
+    is found.
     ---
-    Mixin que requiere que el usuario autenticado tenga un registro CompanyUser activo.
-    Redirige a /panel/login/ con un mensaje de error si no se encuentra un CompanyUser activo.
+    Mixin que requiere que el usuario autenticado tenga un registro CompanyUser
+    activo.
+    Redirige a /panel/login/ con un mensaje de error si no se encuentra un
+    CompanyUser activo.
     """
 
     def dispatch(self, request, *args, **kwargs):
         """
         Verify that the authenticated user has an active linked CompanyUser.
-        Unauthenticated users are redirected to login before the CompanyUser check.
+        Unauthenticated users are redirected to login before the CompanyUser
+        check.
         ---
-        Verifica que el usuario autenticado tiene un CompanyUser activo vinculado.
-        Los usuarios no autenticados son redirigidos al login antes de la comprobación.
+        Verifica que el usuario autenticado tiene un CompanyUser activo
+        vinculado.
+        Los usuarios no autenticados son redirigidos al login antes de la
+        comprobación.
         """
         # Redirect unauthenticated users to login immediately.
         # Redirigir a usuarios no autenticados al login de inmediato.
@@ -94,19 +112,25 @@ class CompanyUserRequiredMixin(PanelLoginRequiredMixin):
             return redirect(self.login_url)
 
         # Verify the user has an active CompanyUser record linked.
-        # Verificar que el usuario tiene un registro CompanyUser activo vinculado.
+        # Verificar que el usuario tiene un registro CompanyUser activo
+        # vinculado.
         company_user = getattr(request.user, "company_user", None)
         if company_user is None or not company_user.is_active:
             messages.error(
                 request,
-                "Tu cuenta no tiene acceso al panel. Contacta con tu administrador."
+                "Tu cuenta no tiene acceso al panel. Contacta con tu "
+                "administrador."
             )
             return redirect(self.login_url)
 
         # Force password change on first login or after admin reset.
-        # Forzar cambio de contraseña en el primer acceso o tras reset del ADMIN.
+        # Forzar cambio de contraseña en el primer acceso o tras reset del
+        # ADMIN.
         password_change_url = "/panel/password/change/"
-        if company_user.must_change_password and request.path != password_change_url:
+        if (
+            company_user.must_change_password
+            and request.path != password_change_url
+        ):
             return redirect(password_change_url)
 
         return super().dispatch(request, *args, **kwargs)
@@ -156,12 +180,14 @@ class WorkshopRequiredMixin(CompanyUserRequiredMixin):
     ---
     Mixin que concede acceso a CompanyUsers con rol WORKSHOP o ADMIN.
     Cualquier otro rol recibe HTTP 403 Forbidden.
-    Destinado a las vistas de entrada de partes de taller introducidas en el Hito 7.
+    Destinado a las vistas de entrada de partes de taller introducidas en el
+    Hito 7.
     """
 
     def dispatch(self, request, *args, **kwargs):
         """
-        Verify that the authenticated CompanyUser holds the WORKSHOP or ADMIN role.
+        Verify that the authenticated CompanyUser holds the WORKSHOP or ADMIN
+        role.
         Role is checked before running the view (S117).
         ---
         Verifica que el CompanyUser autenticado posee el rol WORKSHOP o ADMIN.
@@ -185,7 +211,8 @@ class WorkshopRequiredMixin(CompanyUserRequiredMixin):
         }
         if company_user.role not in allowed_roles:
             return HttpResponseForbidden(
-                "Acceso denegado. Esta sección requiere el rol de Operario o Jefe de taller."
+                "Acceso denegado. Esta sección requiere el rol de Operario o "
+                "Jefe de taller."
             )
 
         return super().dispatch(request, *args, **kwargs)
@@ -220,7 +247,8 @@ class AdminRoleRequiredMixin(CompanyUserRequiredMixin):
         # Bloquear el acceso si el usuario no posee el rol ADMIN.
         if company_user.role != "ADMIN":
             return HttpResponseForbidden(
-                "Acceso denegado. Esta sección requiere el rol de Administrador."
+                "Acceso denegado. Esta sección requiere el rol de "
+                "Administrador."
             )
 
         return super().dispatch(request, *args, **kwargs)
@@ -234,7 +262,8 @@ class AssistanceRequiredMixin(CompanyUserRequiredMixin):
     ---
     Mixin que concede acceso a CompanyUsers con rol ASSISTANCE o ADMIN.
     Introducido en el Hito 16 para el asistente de presupuestos de ASISTENCIA.
-    Cualquier otro rol recibe una redireccion al dashboard con mensaje de error.
+    Cualquier otro rol recibe una redireccion al dashboard con mensaje de
+    error.
     """
 
     def dispatch(self, request, *args, **kwargs):
@@ -260,6 +289,88 @@ class AssistanceRequiredMixin(CompanyUserRequiredMixin):
                 request,
                 "Acceso denegado. Esta seccion requiere el rol de "
                 "Operario de Asistencia o Administrador.",
+            )
+            return redirect("/panel/")
+
+        return super().dispatch(request, *args, **kwargs)
+
+
+class AssistanceWorkOrderAccessMixin(CompanyUserRequiredMixin):
+    """
+    Access to the assistance work orders: ADMIN, ASSISTANCE and
+    ASSIST_SUPERVISOR.
+
+    ---
+
+    H37 (S132). Acceso a las órdenes de trabajo de asistencia (detalle,
+    alta, unidades, aviso, albarán y PDF): ADMIN, operario de asistencia
+    (como hasta ahora con AssistanceRequiredMixin) y supervisor de
+    asistencia, que las gestiona desde la página Servicios. Rol
+    comprobado antes de ejecutar la vista (S117).
+    """
+
+    def dispatch(self, request, *args, **kwargs):
+        """
+        Check the role, then run the view.
+
+        ---
+
+        Comprueba el rol y después ejecuta la vista.
+        """
+        company_user = _company_user_for_role_check(request)
+        if company_user is None:
+            return super().dispatch(request, *args, **kwargs)
+
+        allowed_roles = {
+            CompanyUser.ROLE_ADMIN,
+            CompanyUser.ROLE_ASSISTANCE,
+            CompanyUser.ROLE_ASSIST_SUPERVISOR,
+        }
+        if company_user.role not in allowed_roles:
+            messages.error(
+                request,
+                "Acceso denegado. Esta sección requiere el rol de "
+                "Operario o Supervisor de Asistencia, o Administrador.",
+            )
+            return redirect("/panel/")
+
+        return super().dispatch(request, *args, **kwargs)
+
+
+class AssistanceSupervisorAccessMixin(CompanyUserRequiredMixin):
+    """
+    Access for ADMIN and ASSIST_SUPERVISOR only (Services page).
+
+    ---
+
+    H37 (S132). Acceso solo para ADMIN y supervisor de asistencia
+    (ASSIST_SUPERVISOR): la página Servicios y su gestión de albaranes,
+    mapa y control. Miguel Ángel: "esa página la van a poder ver única
+    y exclusivamente administradores y supervisores de asistencia".
+    Rol comprobado antes de ejecutar la vista (S117).
+    """
+
+    def dispatch(self, request, *args, **kwargs):
+        """
+        Check the role, then run the view.
+
+        ---
+
+        Comprueba el rol y después ejecuta la vista.
+        """
+        company_user = _company_user_for_role_check(request)
+        if company_user is None:
+            return super().dispatch(request, *args, **kwargs)
+
+        allowed_roles = {
+            CompanyUser.ROLE_ADMIN,
+            CompanyUser.ROLE_ASSIST_SUPERVISOR,
+        }
+        if company_user.role not in allowed_roles:
+            messages.error(
+                request,
+                "Acceso denegado. Esta sección requiere el rol de "
+                "Supervisor de Asistencia o Administrador.",
             )
             return redirect("/panel/")
 
@@ -326,14 +437,17 @@ class SupervisorAccessMixin(CompanyUserRequiredMixin):
     """
     Mixin that grants access to CompanyUsers with the SUPERVISOR or ADMIN role.
     Introduced in Hito 8 / Bloque G for the PDF work-order review and export
-    workflow. Covers: WorkOrderUploadView, WorkOrderListView, WorkOrderExportView
+    workflow. Covers: WorkOrderUploadView, WorkOrderListView,
+    WorkOrderExportView
     and WorkOrderMarkReviewedView.
 
     Access matrix:
       ADMIN      — full access (upload, list, review, export).
       SUPERVISOR — same as ADMIN for work-order views only; no access to IVR
-                   configuration views (sections, contacts, users, call flows…).
-      Any other role — HTTP 403 Forbidden, redirected to dashboard with error message.
+                   configuration views (sections, contacts, users, call
+                   flows…).
+      Any other role — HTTP 403 Forbidden, redirected to dashboard with error
+      message.
     ---
     Mixin que concede acceso a CompanyUsers con rol SUPERVISOR o ADMIN.
     Introducido en el Hito 8 / Bloque G para el flujo de revisión y exportación
@@ -345,21 +459,27 @@ class SupervisorAccessMixin(CompanyUserRequiredMixin):
       SUPERVISOR — igual que ADMIN únicamente en vistas de partes; sin acceso a
                    vistas de configuración IVR (secciones, contactos, usuarios,
                    flujos de llamada…).
-      Cualquier otro rol — HTTP 403 Forbidden, redirigido al dashboard con mensaje
+      Cualquier otro rol — HTTP 403 Forbidden, redirigido al dashboard con
+      mensaje
                            de error.
     """
 
     def dispatch(self, request, *args, **kwargs):
         """
-        Verify that the authenticated CompanyUser holds the SUPERVISOR or ADMIN role.
+        Verify that the authenticated CompanyUser holds the SUPERVISOR or ADMIN
+        role.
         Role is checked before running the view (S117).
         On insufficient role, redirects to the dashboard with an error message
-        instead of returning a bare 403, to provide a better UX within the panel.
+        instead of returning a bare 403, to provide a better UX within the
+        panel.
         ---
-        Verifica que el CompanyUser autenticado posee el rol SUPERVISOR o ADMIN.
+        Verifica que el CompanyUser autenticado posee el rol SUPERVISOR o
+        ADMIN.
         El rol se comprueba antes de ejecutar la vista (S117).
-        En caso de rol insuficiente, redirige al dashboard con un mensaje de error
-        en lugar de devolver un 403 desnudo, para mejorar la experiencia en el panel.
+        En caso de rol insuficiente, redirige al dashboard con un mensaje de
+        error
+        en lugar de devolver un 403 desnudo, para mejorar la experiencia en el
+        panel.
         """
         # Role check BEFORE running the view -- see
         # _company_user_for_role_check().
@@ -380,7 +500,8 @@ class SupervisorAccessMixin(CompanyUserRequiredMixin):
         if company_user.role not in allowed_roles:
             messages.error(
                 request,
-                "Acceso denegado. Esta sección requiere el rol de Supervisor, Jefe de taller o Administrador.",
+                "Acceso denegado. Esta sección requiere el rol de Supervisor, "
+                "Jefe de taller o Administrador.",
             )
             return redirect("/panel/")
 
@@ -596,8 +717,10 @@ class WorkOrderFormAccessMixin(CompanyUserRequiredMixin):
 
 class SuperuserRequiredMixin(CompanyUserRequiredMixin):
     """
-    Mixin that restricts access to Django superusers (request.user.is_superuser).
-    Unlike every other mixin in this module, this does NOT check CompanyUser.role
+    Mixin that restricts access to Django superusers
+    (request.user.is_superuser).
+    Unlike every other mixin in this module, this does NOT check
+    CompanyUser.role
     -- it checks the underlying Django auth.User flag directly. Introduced in
     S021 as the replacement for the hardcoded-username antipattern
     (request.user.username == 'alvarez_admin') previously used in
@@ -635,5 +758,3 @@ class SuperuserRequiredMixin(CompanyUserRequiredMixin):
             return redirect("/panel/")
 
         return super().dispatch(request, *args, **kwargs)
-
-

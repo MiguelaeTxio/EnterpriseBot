@@ -138,6 +138,10 @@
                                 <span class="badge badge-supervisor">
                                     <i class="bi bi-calculator me-1"></i>Operario de Asistencia
                                 </span>
+                            {% elif cu.role == 'ASSIST_SUPERVISOR' %}
+                                <span class="badge badge-supervisor">
+                                    <i class="bi bi-truck-flatbed me-1"></i>Supervisor de Asistencia
+                                </span>
                             {% elif cu.role == 'DOCS_SUPERVISOR' %}
                                 <span class="badge badge-supervisor">
                                     <i class="bi bi-folder2-open me-1"></i>Supervisor de Documentación

@@ -10,6 +10,7 @@ Todas las rutas tienen el prefijo /panel/budgets/ via enterprise_core/urls.py.
 from django.urls import path
 
 from budgets import views
+from budgets import views_services
 
 app_name = "budgets"
 
@@ -25,7 +26,8 @@ urlpatterns = [
     ),
 
     # HTMX endpoint — resuelve pasos 3-9 del wizard server-side y devuelve
-    # el fragmento completo de pasos segun insurer_id, base_id y vehicle_type_id.
+    # el fragmento completo de pasos segun insurer_id, base_id y
+    # vehicle_type_id.
     # HTMX endpoint — resolves wizard steps 3-9 server-side and returns
     # the full steps fragment based on insurer_id, base_id and vehicle_type_id.
     path(
@@ -118,7 +120,8 @@ urlpatterns = [
         name="result",
     ),
 
-    # Budget status update — acepta o rechaza el presupuesto (ACCEPTED/REJECTED).
+    # Budget status update — acepta o rechaza el presupuesto
+    # (ACCEPTED/REJECTED).
     # Budget status update — accepts or rejects the budget (ACCEPTED/REJECTED).
     path(
         "<int:pk>/status/",
@@ -126,8 +129,10 @@ urlpatterns = [
         name="status_update",
     ),
 
-    # Albarán demo — prototipo offline H17. Formulario mobile-first con firma canvas.
-    # Delivery note demo — H17 offline prototype. Mobile-first form with canvas signature.
+    # Albarán demo — prototipo offline H17. Formulario mobile-first con firma
+    # canvas.
+    # Delivery note demo — H17 offline prototype. Mobile-first form with canvas
+    # signature.
     path(
         "albaran-demo/",
         views.AlbaranDemoView.as_view(),
@@ -143,7 +148,8 @@ urlpatterns = [
         name="history",
     ),
 
-    # Budget bulk delete — elimina multiples presupuestos seleccionados. Solo ADMIN.
+    # Budget bulk delete — elimina multiples presupuestos seleccionados. Solo
+    # ADMIN.
     # Excluye presupuestos en estado ACCEPTED.
     # Budget bulk delete — deletes multiple selected budgets. ADMIN only.
     # Excludes budgets with ACCEPTED status.
@@ -257,16 +263,20 @@ urlpatterns = [
     # Rutas de gestión de tipos de vehículo — solo ADMIN
     # ---------------------------------------------------------------------------
 
-    # Vehicle type create — HTMX POST, crea nuevo tipo de vehículo para la aseguradora.
-    # Vehicle type create — HTMX POST, creates new vehicle type for the insurer.
+    # Vehicle type create — HTMX POST, crea nuevo tipo de vehículo para la
+    # aseguradora.
+    # Vehicle type create — HTMX POST, creates new vehicle type for the
+    # insurer.
     path(
         "insurers/<int:pk>/vehicle-types/new/",
         views.VehicleTypeCreateView.as_view(),
         name="vehicle_type_create",
     ),
 
-    # Vehicle type update — GET devuelve form inline; POST guarda y devuelve fila.
-    # Vehicle type update — GET returns inline form; POST saves and returns row.
+    # Vehicle type update — GET devuelve form inline; POST guarda y devuelve
+    # fila.
+    # Vehicle type update — GET returns inline form; POST saves and returns
+    # row.
     path(
         "vehicle-types/<int:pk>/edit/",
         views.VehicleTypeUpdateView.as_view(),
@@ -281,7 +291,8 @@ urlpatterns = [
         name="vehicle_type_toggle",
     ),
 
-    # Vehicle type delete — HTMX POST con confirmación modal, elimina si es seguro.
+    # Vehicle type delete — HTMX POST con confirmación modal, elimina si es
+    # seguro.
     # Vehicle type delete — HTMX POST with modal confirmation, deletes if safe.
     path(
         "vehicle-types/<int:pk>/delete/",
@@ -289,31 +300,38 @@ urlpatterns = [
         name="vehicle_type_delete",
     ),
 
-    # Vehicle type reorder — JSON POST, persiste nuevo sort_order tras drag & drop.
-    # Vehicle type reorder — JSON POST, persists new sort_order after drag & drop.
+    # Vehicle type reorder — JSON POST, persiste nuevo sort_order tras drag &
+    # drop.
+    # Vehicle type reorder — JSON POST, persists new sort_order after drag &
+    # drop.
     path(
         "vehicle-types/reorder/",
         views.VehicleTypeReorderView.as_view(),
         name="vehicle_type_reorder",
     ),
 
-    # Tariff concept create — HTMX POST, crea nuevo concepto personalizado para la empresa.
-    # Tariff concept create — HTMX POST, creates new custom concept for the company.
+    # Tariff concept create — HTMX POST, crea nuevo concepto personalizado para
+    # la empresa.
+    # Tariff concept create — HTMX POST, creates new custom concept for the
+    # company.
     path(
         "insurers/<int:pk>/concepts/new/",
         views.TariffConceptCreateView.as_view(),
         name="tariff_concept_create",
     ),
 
-    # Tariff concept create global — POST desde página de conceptos (sin insurer_pk).
-    # Tariff concept create global — POST from concept list page (no insurer_pk).
+    # Tariff concept create global — POST desde página de conceptos (sin
+    # insurer_pk).
+    # Tariff concept create global — POST from concept list page (no
+    # insurer_pk).
     path(
         "concepts/new/",
         views.TariffConceptCreateGlobalView.as_view(),
         name="tariff_concept_create_global",
     ),
 
-    # Tariff concept list — página dedicada de gestión de conceptos. Solo ADMIN.
+    # Tariff concept list — página dedicada de gestión de conceptos. Solo
+    # ADMIN.
     # Tariff concept list — dedicated concept management page. ADMIN only.
     path(
         "concepts/",
@@ -444,7 +462,8 @@ urlpatterns = [
         name="tariff_save_notes",
     ),
 
-    # Tariff line add form — HTMX GET, devuelve formulario inline de nueva linea.
+    # Tariff line add form — HTMX GET, devuelve formulario inline de nueva
+    # linea.
     # Tariff line add form — HTMX GET, returns inline add-line form fragment.
     path(
         "tariffs/<int:pk>/lines/add-form/",
@@ -452,7 +471,8 @@ urlpatterns = [
         name="tariff_line_add_form",
     ),
 
-    # Tariff line add — HTMX POST, crea nueva linea y devuelve fragmento de fila.
+    # Tariff line add — HTMX POST, crea nueva linea y devuelve fragmento de
+    # fila.
     # Tariff line add — HTMX POST, creates new line and returns row fragment.
     path(
         "tariffs/<int:pk>/lines/add/",
@@ -461,7 +481,8 @@ urlpatterns = [
     ),
 
     # Tariff line save — HTMX POST, guarda campo editado y devuelve fila.
-    # Tariff line save — HTMX POST, saves edited field and returns row fragment.
+    # Tariff line save — HTMX POST, saves edited field and returns row
+    # fragment.
     path(
         "lines/<int:pk>/save/",
         views.TariffLineSaveView.as_view(),
@@ -513,7 +534,8 @@ urlpatterns = [
         name="base_toggle",
     ),
 
-    # Base delete — POST con confirmacion modal, elimina si no hay presupuestos.
+    # Base delete — POST con confirmacion modal, elimina si no hay
+    # presupuestos.
     # Base delete — POST with modal confirmation, deletes if no linked budgets.
     path(
         "bases/<int:pk>/delete/",
@@ -521,8 +543,10 @@ urlpatterns = [
         name="base_delete",
     ),
 
-    # InsurerBase toggle — HTMX POST, alterna InsurerBase.is_active por aseguradora.
-    # InsurerBase toggle — HTMX POST, toggles InsurerBase.is_active per insurer.
+    # InsurerBase toggle — HTMX POST, alterna InsurerBase.is_active por
+    # aseguradora.
+    # InsurerBase toggle — HTMX POST, toggles InsurerBase.is_active per
+    # insurer.
     path(
         "insurers/<int:insurer_pk>/bases/<int:base_pk>/toggle/",
         views.InsurerBaseToggleView.as_view(),
@@ -537,8 +561,10 @@ urlpatterns = [
         name="base_global",
     ),
 
-    # Base sync calendars — HTMX POST, sincroniza calendarios laborales de todas
-    # las bases activas de la empresa via calendariosnacionales.com. Solo ADMIN.
+    # Base sync calendars — HTMX POST, sincroniza calendarios laborales de
+    # todas
+    # las bases activas de la empresa via calendariosnacionales.com. Solo
+    # ADMIN.
     # Base sync calendars — HTMX POST, syncs labour calendars for all active
     # company bases via calendariosnacionales.com. ADMIN only.
     path(
@@ -575,10 +601,12 @@ urlpatterns = [
         name="base_calendar_copy",
     ),
 
-    # Base clear coords — HTMX POST, limpia coordenadas de las bases seleccionadas.
+    # Base clear coords — HTMX POST, limpia coordenadas de las bases
+    # seleccionadas.
     # Recibe lista de PKs via POST. Pone latitude/longitude a null. Solo ADMIN.
     # Base clear coords — HTMX POST, clears coordinates of selected bases.
-    # Receives list of PKs via POST. Sets latitude/longitude to null. ADMIN only.
+    # Receives list of PKs via POST. Sets latitude/longitude to null. ADMIN
+    # only.
     path(
         "bases/clear-coords/",
         views.BaseClearCoordsView.as_view(),
@@ -640,7 +668,8 @@ urlpatterns = [
     # Rutas de órdenes de trabajo de asistencia (Hito 17)
     # ---------------------------------------------------------------------------
 
-    # Work order create from budget — POST, crea orden desde presupuesto aceptado.
+    # Work order create from budget — POST, crea orden desde presupuesto
+    # aceptado.
     # Work order create from budget — POST, creates order from accepted budget.
     path(
         "budgets/<int:pk>/work-order/create/",
@@ -656,12 +685,28 @@ urlpatterns = [
         name="work_order_create_direct",
     ),
 
-    # Work order detail — vista de detalle completa de la orden. ASSISTANCE + ADMIN.
-    # Work order detail — full detail view of the work order. ASSISTANCE + ADMIN.
+    # Work order detail — vista de detalle completa de la orden. ASSISTANCE +
+    # ADMIN.
+    # Work order detail — full detail view of the work order. ASSISTANCE +
+    # ADMIN.
     path(
         "work-orders/<int:pk>/",
         views.WorkOrderDetailView.as_view(),
         name="work_order_detail",
+    ),
+
+    # H37 (S132): Services page and its tabs. ADMIN + ASSIST_SUPERVISOR.
+    # H37 (S132): página Servicios y sus pestañas. ADMIN + supervisor de
+    # asistencia.
+    path(
+        "services/",
+        views_services.ServicesHubView.as_view(),
+        name="services_hub",
+    ),
+    path(
+        "services/delivery-notes/",
+        views_services.ServicesDeliveryNotesPaneView.as_view(),
+        name="services_delivery_notes_pane",
     ),
 
     # H37 (S132): add a unit to a work order — POST. ASSISTANCE + ADMIN.
@@ -680,7 +725,8 @@ urlpatterns = [
         name="work_order_unit_notify",
     ),
 
-    # Work order albarán — formulario mobile-first por unidad. ASSISTANCE + ADMIN.
+    # Work order albarán — formulario mobile-first por unidad. ASSISTANCE +
+    # ADMIN.
     # Work order albarán — mobile-first form per unit. ASSISTANCE + ADMIN.
     path(
         "work-orders/units/<int:pk>/albaran/",
@@ -688,7 +734,8 @@ urlpatterns = [
         name="work_order_albaran",
     ),
 
-    # Work order PDF — exportación PDF del albarán de una unidad. ASSISTANCE + ADMIN.
+    # Work order PDF — exportación PDF del albarán de una unidad. ASSISTANCE +
+    # ADMIN.
     # Work order PDF — PDF export of a unit albarán. ASSISTANCE + ADMIN.
     path(
         "work-orders/units/<int:pk>/pdf/",
@@ -696,10 +743,3 @@ urlpatterns = [
         name="work_order_pdf",
     ),
 ]
-
-
-
-
-
-
-

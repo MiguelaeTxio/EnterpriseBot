@@ -633,7 +633,7 @@
     {# Section: ASISTENCIA Budgets — ASSISTANCE and ADMIN roles            #}
     {# Hito 16 (2026-05-26)                                               #}
     {# ------------------------------------------------------------------ #}
-    {% if company_user.role == 'ASSISTANCE' or company_user.role == 'ADMIN' %}
+    {% if company_user.role == 'ASSISTANCE' or company_user.role == 'ASSIST_SUPERVISOR' or company_user.role == 'ADMIN' %}
         <li class="nav-item sidebar-accordion-section">
             <button class="nav-link sidebar-accordion-toggle w-100 text-start"
                     type="button"
@@ -651,14 +651,6 @@
                     {# Orden alfabético dentro de la sección (a petición de #}
                     {# Miguel Ángel, 2026-07-15). Los gates de cada ítem no #}
                     {# han cambiado, solo el orden.                         #}
-                    {# Albarán demo — prototipo offline H17. ASSISTANCE y ADMIN.              #}
-                    {# Delivery note demo — H17 offline prototype. ASSISTANCE and ADMIN.      #}
-                    <li class="nav-item">
-                        <a class="nav-link {% if active_nav == 'albaran_demo' %}active{% endif %}"
-                           href="{% url 'budgets:albaran_demo' %}">
-                            <i class="bi bi-file-earmark-text"></i>Albarán (demo)
-                        </a>
-                    </li>
                     {# Aseguradoras / Bases / Conceptos / Calendarios / Franja nocturna — solo ADMIN. #}
                     {# Insurers / Bases / Concepts / Calendars / Night-shift window — ADMIN only.     #}
                     {% if company_user.role == 'ADMIN' %}
@@ -715,12 +707,15 @@
                             </a>
                         </li>
                     {% endif %}
-                    <li class="nav-item">
-                        <a class="nav-link {% if active_nav == 'budgets_wizard' %}active{% endif %}"
-                           href="{% url 'budgets:wizard' %}">
-                            <i class="bi bi-calculator"></i>Nuevo presupuesto
-                        </a>
-                    </li>
+                    {# Nuevo presupuesto — ASSISTANCE y ADMIN (el supervisor de asistencia solo ve Servicios). #}
+                    {% if company_user.role == 'ASSISTANCE' or company_user.role == 'ADMIN' %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'budgets_wizard' %}active{% endif %}"
+                               href="{% url 'budgets:wizard' %}">
+                                <i class="bi bi-calculator"></i>Nuevo presupuesto
+                            </a>
+                        </li>
+                    {% endif %}
                     {% if company_user.role == 'ADMIN' %}
                         {# Peajes — gestion de tramos de peaje MITMA. Solo ADMIN.                 #}
                         {# Toll segments — MITMA toll segment management. ADMIN only.             #}
@@ -728,6 +723,15 @@
                             <a class="nav-link {% if active_nav == 'budgets_toll_segments' %}active{% endif %}"
                                href="{% url 'budgets:toll_segment_list' %}">
                                 <i class="bi bi-signpost-split"></i>Peajes
+                            </a>
+                        </li>
+                    {% endif %}
+                    {# Servicios (H37, S132): sustituye a "Albarán (demo)". ADMIN y ASSIST_SUPERVISOR. #}
+                    {% if company_user.role == 'ADMIN' or company_user.role == 'ASSIST_SUPERVISOR' %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'services_hub' %}active{% endif %}"
+                               href="{% url 'budgets:services_hub' %}">
+                                <i class="bi bi-truck-flatbed"></i>Servicios
                             </a>
                         </li>
                     {% endif %}
@@ -823,6 +827,7 @@
         'budgets_insurers':         'acc-asistencia',
         'budgets_bases':            'acc-asistencia',
         'albaran_demo':             'acc-asistencia',
+        'services_hub':             'acc-asistencia',
         'budgets_toll_segments':    'acc-asistencia',
         'budgets_concepts':         'acc-asistencia',
         'budgets_calendars':        'acc-asistencia',
