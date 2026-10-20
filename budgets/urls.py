@@ -708,6 +708,23 @@ urlpatterns = [
         views_services.ServicesDeliveryNotesPaneView.as_view(),
         name="services_delivery_notes_pane",
     ),
+    # H37 (S132): order from the TIREA photo, manual order and editing.
+    # Orden desde la foto de TIREA, orden a mano y edición.
+    path(
+        "services/tirea/",
+        views_services.ServicesTireaUploadView.as_view(),
+        name="services_tirea_upload",
+    ),
+    path(
+        "work-orders/save/",
+        views_services.WorkOrderSaveView.as_view(),
+        name="work_order_save",
+    ),
+    path(
+        "work-orders/<int:pk>/edit/",
+        views_services.WorkOrderEditView.as_view(),
+        name="work_order_edit",
+    ),
 
     # H37 (S132): add a unit to a work order — POST. ASSISTANCE + ADMIN.
     # H37 (S132): añadir una unidad a la orden — POST. ASSISTANCE + ADMIN.

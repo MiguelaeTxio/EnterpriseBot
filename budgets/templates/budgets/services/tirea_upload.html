@@ -1,0 +1,55 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/services/tirea_upload.html #}
+{% extends "panel/base.html" %}
+
+{% block title %}Nueva orden desde TIREA{% endblock %}
+{% block page_title %}Nueva orden desde TIREA{% endblock %}
+
+{% block content %}
+{% comment %}
+H37 (S132). Subida de la foto del albarán de TIREA. La foto se lee con
+Gemini y se abre el formulario de alta ya relleno; no se guarda nada
+hasta confirmar ese formulario.
+{% endcomment %}
+<div class="container-fluid px-3 py-3">
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <p class="small text-muted">
+                Haz una foto o captura del albarán en TIREA y súbela. Los datos se
+                rellenan solos en el formulario de alta para que los revises antes
+                de crear la orden.
+            </p>
+            <form method="post" enctype="multipart/form-data"
+                  action="{% url 'budgets:services_tirea_upload' %}"
+                  class="row g-3" id="tirea-upload-form">
+                {% csrf_token %}
+                <div class="col-12 col-md-8">
+                    <label for="tirea-photo" class="form-label small">Foto o PDF del albarán</label>
+                    <input id="tirea-photo" name="photo" type="file" class="form-control"
+                           accept="image/jpeg,image/png,image/webp,application/pdf" required>
+                </div>
+                <div class="col-12 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary" id="tirea-submit">
+                        <i class="bi bi-magic me-1"></i>Leer datos
+                    </button>
+                    <a href="{% url 'budgets:services_hub' %}" class="btn btn-outline-secondary">Volver</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+    'use strict';
+    // La lectura tarda unos segundos: el botón avisa y no se pulsa dos veces.
+    const form = document.getElementById('tirea-upload-form');
+    form.addEventListener('submit', function () {
+        const button = document.getElementById('tirea-submit');
+        button.disabled = true;
+        button.textContent = 'Leyendo la foto…';
+    });
+})();
+</script>
+{% endblock %}

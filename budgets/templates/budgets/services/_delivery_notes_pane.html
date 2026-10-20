@@ -1,13 +1,17 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/services/_delivery_notes_pane.html #}
 {% comment %}
 H37 (S132). Pestaña Albaranes de Servicios: órdenes de trabajo de
-asistencia. El alta desde foto de TIREA y el formato de listado de la
-directriz 4.24 llegan con el punto 3 de la hoja de ruta del anexo V37.
+asistencia, con el alta desde foto de TIREA o a mano. El formato de
+listado de la directriz 4.24 llega con el panel de tráfico (anexo V37).
 {% endcomment %}
 <div class="d-flex flex-wrap gap-2 mb-3">
-    <a href="{% url 'budgets:work_order_create_direct' %}"
+    <a href="{% url 'budgets:services_tirea_upload' %}"
        class="btn btn-sm btn-primary">
-        <i class="bi bi-plus-lg me-1"></i>Nueva orden
+        <i class="bi bi-camera me-1"></i>Nueva orden desde foto de TIREA
+    </a>
+    <a href="{% url 'budgets:work_order_save' %}"
+       class="btn btn-sm btn-outline-primary">
+        <i class="bi bi-plus-lg me-1"></i>Nueva orden a mano
     </a>
 </div>
 
