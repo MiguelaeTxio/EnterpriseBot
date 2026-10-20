@@ -75,14 +75,19 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
     <div class="row g-2 alerts-notices-body" id="alertsNoticesBody">
         <div class="col-12 col-lg-7 alerts-column">
             <div class="card alerts-panel">
-                <div class="card-header py-1 small fw-bold text-danger">Caducados <span class="badge text-bg-danger">{{ expired|length }}</span></div>
+                <div class="card-header py-1 small fw-bold text-danger">Caducados{% if not is_personal %} y revisiones vencidas{% endif %} <span class="badge text-bg-danger">{{ expired|length }}</span></div>
                 <div class="list-group list-group-flush alerts-panel-list">
                     {% for notice in expired %}
                     <div class="list-group-item list-group-item-action py-1 small d-flex gap-2 align-items-start">
                         {% if notice.is_requestable %}<input type="checkbox" class="form-check-input mt-1 notice-request-check" value="{{ notice.request_key }}" title="Pedir al trabajador por WhatsApp" aria-label="Pedir al trabajador por WhatsApp">{% endif %}
                         <a class="flex-grow-1 text-reset text-decoration-none" href="{{ notice.detail_url }}">
+                        {% if notice.is_service %}
+                        <div class="d-flex justify-content-between gap-2"><span class="fw-bold">{{ notice.subject_label }}</span><span class="text-danger text-nowrap"><i class="bi bi-wrench-adjustable me-1"></i>revisión vencida</span></div>
+                        <div>{{ notice.document_label }} — {{ notice.service_text }}</div>
+                        {% else %}
                         <div class="d-flex justify-content-between gap-2"><span class="fw-bold">{{ notice.subject_label }}</span><span class="text-danger text-nowrap">hace {{ notice.days_ago }} día{{ notice.days_ago|pluralize }}</span></div>
                         <div>{{ notice.document_label }} — caducó el {{ notice.expiry_date|date:"d/m/Y" }}</div>
+                        {% endif %}
                         <div class="small">{% if notice.recipient_names %}<span class="text-muted"><i class="bi bi-person-check me-1"></i>{{ notice.recipient_names }}</span>{% else %}<span class="badge text-bg-danger">Sin destinatario</span>{% endif %}</div>
                             {% if notice.request_state %}<div><span class="badge {{ notice.request_state_class }} text-wrap text-start">{{ notice.request_state }}</span></div>{% endif %}
                             {% if notice.appointment_state %}<div><span class="badge text-bg-primary text-wrap text-start">{{ notice.appointment_state }}</span></div>{% endif %}
@@ -95,14 +100,19 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
                 </div>
             </div>
             <div class="card alerts-panel">
-                <div class="card-header py-1 small fw-bold text-warning-emphasis">Próximos a caducar <span class="badge text-bg-warning">{{ upcoming|length }}</span></div>
+                <div class="card-header py-1 small fw-bold text-warning-emphasis">Próximos a caducar{% if not is_personal %} y revisiones próximas{% endif %} <span class="badge text-bg-warning">{{ upcoming|length }}</span></div>
                 <div class="list-group list-group-flush alerts-panel-list">
                     {% for notice in upcoming %}
                     <div class="list-group-item list-group-item-action py-1 small d-flex gap-2 align-items-start">
                         {% if notice.is_requestable %}<input type="checkbox" class="form-check-input mt-1 notice-request-check" value="{{ notice.request_key }}" title="Pedir al trabajador por WhatsApp" aria-label="Pedir al trabajador por WhatsApp">{% endif %}
                         <a class="flex-grow-1 text-reset text-decoration-none" href="{{ notice.detail_url }}">
+                        {% if notice.is_service %}
+                        <div class="d-flex justify-content-between gap-2"><span class="fw-bold">{{ notice.subject_label }}</span><span class="text-nowrap"><i class="bi bi-wrench-adjustable me-1"></i>revisión próxima</span></div>
+                        <div>{{ notice.document_label }} — {{ notice.service_text }}</div>
+                        {% else %}
                         <div class="d-flex justify-content-between gap-2"><span class="fw-bold">{{ notice.subject_label }}</span><span class="text-nowrap">faltan {{ notice.days_left }} día{{ notice.days_left|pluralize }}</span></div>
                         <div>{{ notice.document_label }} — caduca el {{ notice.expiry_date|date:"d/m/Y" }} <span class="text-muted">(aviso de {{ notice.reached_step.label }})</span></div>
+                        {% endif %}
                         <div class="small">{% if notice.recipient_names %}<span class="text-muted"><i class="bi bi-person-check me-1"></i>{{ notice.recipient_names }}</span>{% else %}<span class="badge text-bg-danger">Sin destinatario</span>{% endif %}</div>
                             {% if notice.request_state %}<div><span class="badge {{ notice.request_state_class }} text-wrap text-start">{{ notice.request_state }}</span></div>{% endif %}
                             {% if notice.appointment_state %}<div><span class="badge text-bg-primary text-wrap text-start">{{ notice.appointment_state }}</span></div>{% endif %}

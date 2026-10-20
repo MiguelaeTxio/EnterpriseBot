@@ -321,6 +321,33 @@ class MachineAsset(models.Model):
         verbose_name=_("Documento-imagen usado como foto de la máquina"),
     )
 
+    # ------------------------------------------------------------------
+    # H30 (S131) -- plan de revisiones por horas y kilómetros. Dos
+    # casillas independientes de horas y un intervalo en km; sin
+    # ninguna marcada y sin km, el centro de gasto no tiene revisión.
+    # ---
+    # H30 (S131) -- service plan by hours and kilometres. Two
+    # independent hour checkboxes and a km interval; with none set,
+    # the cost centre has no service plan.
+    # ------------------------------------------------------------------
+    service_every_800_hours = models.BooleanField(
+        _("Revisión cada 800 horas"),
+        default=False,
+    )
+    service_every_1200_hours = models.BooleanField(
+        _("Revisión cada 1200 horas"),
+        default=False,
+    )
+    service_every_km = models.PositiveIntegerField(
+        _("Revisión cada N km"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "Kilómetros entre revisiones. Vacío: sin revisión por "
+            "kilómetros."
+        ),
+    )
+
     class Meta:
         verbose_name        = _("Centro de gasto")
         verbose_name_plural = _("Centros de gasto")
@@ -346,6 +373,160 @@ class MachineAsset(models.Model):
         """
         self.code = self.code.strip().upper()
         super().save(*args, **kwargs)
+
+    @property
+    def has_service_plan(self) -> bool:
+        """
+        True if any service interval is configured.
+
+        ---
+
+        True si tiene alguna revisión configurada (800 h, 1200 h o km).
+        """
+        return bool(
+            self.service_every_800_hours
+            or self.service_every_1200_hours
+            or self.service_every_km
+        )
+
+
+# ---------------------------------------------------------------------------
+# H30 (S131) -- revisiones y lecturas de horas/km, introducidas a mano
+# H30 (S131) -- services and hour/km readings, entered by hand
+# ---------------------------------------------------------------------------
+
+class MachineServiceRecord(models.Model):
+    """
+    One service already done on a cost centre (date, hours, km).
+
+    ---
+
+    Una revisión ya hecha de un centro de gasto: fecha, horas y
+    kilómetros de la revisión, y a qué revisiones del plan corresponde
+    (800 h, 1200 h, km). Sin una revisión anotada para una de ellas,
+    ese centro de gasto no avisa de esa revisión.
+    """
+
+    machine = models.ForeignKey(
+        MachineAsset,
+        on_delete=models.CASCADE,
+        related_name="service_records",
+        verbose_name=_("Centro de gasto"),
+    )
+    service_date = models.DateField(_("Fecha de la revisión"))
+    hours = models.PositiveIntegerField(
+        _("Horas en la revisión"), null=True, blank=True,
+    )
+    km = models.PositiveIntegerField(
+        _("Kilómetros en la revisión"), null=True, blank=True,
+    )
+    covers_800_hours = models.BooleanField(
+        _("Es la revisión de 800 horas"), default=False,
+    )
+    covers_1200_hours = models.BooleanField(
+        _("Es la revisión de 1200 horas"), default=False,
+    )
+    covers_km = models.BooleanField(
+        _("Es la revisión por kilómetros"), default=False,
+    )
+    notes = models.CharField(_("Observaciones"), max_length=255, blank=True)
+    created_by = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name=_("Anotada por"),
+    )
+    created_at = models.DateTimeField(_("Anotada el"), auto_now_add=True)
+
+    class Meta:
+        verbose_name        = _("Revisión de centro de gasto")
+        verbose_name_plural = _("Revisiones de centros de gasto")
+        ordering            = ["-service_date", "-id"]
+
+    def __str__(self) -> str:
+        return f"{self.machine.code} -- revisión {self.service_date}"
+
+
+class MachineMeterReading(models.Model):
+    """
+    One manual hours/km reading of a cost centre, with its date.
+
+    ---
+
+    Una lectura manual de horas y/o kilómetros de un centro de gasto,
+    con su fecha. Hoy se apuntan a mano (más adelante vendrán del
+    programa del surtidor, S131).
+    """
+
+    machine = models.ForeignKey(
+        MachineAsset,
+        on_delete=models.CASCADE,
+        related_name="meter_readings",
+        verbose_name=_("Centro de gasto"),
+    )
+    reading_date = models.DateField(_("Fecha de la lectura"))
+    hours = models.PositiveIntegerField(_("Horas"), null=True, blank=True)
+    km = models.PositiveIntegerField(_("Kilómetros"), null=True, blank=True)
+    created_by = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name=_("Anotada por"),
+    )
+    created_at = models.DateTimeField(_("Anotada el"), auto_now_add=True)
+
+    class Meta:
+        verbose_name        = _("Lectura de horas y kilómetros")
+        verbose_name_plural = _("Lecturas de horas y kilómetros")
+        ordering            = ["-reading_date", "-id"]
+
+    def __str__(self) -> str:
+        return f"{self.machine.code} -- lectura {self.reading_date}"
+
+
+class MachineServiceAlertSettings(models.Model):
+    """
+    Advance notice of the service notices of one company.
+
+    ---
+
+    Antelación de los avisos de revisión de una empresa, en horas y en
+    kilómetros. La fija Miguel Ángel en Avisos > Configuración; vacía,
+    solo se avisa de revisiones vencidas (S131).
+    """
+
+    company = models.OneToOneField(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="machine_service_alert_settings",
+        verbose_name=_("Empresa"),
+    )
+    hours_advance = models.PositiveIntegerField(
+        _("Avisar con antelación de (horas)"), null=True, blank=True,
+    )
+    km_advance = models.PositiveIntegerField(
+        _("Avisar con antelación de (km)"), null=True, blank=True,
+    )
+    updated_by = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name=_("Último cambio por"),
+    )
+    updated_at = models.DateTimeField(_("Último cambio"), auto_now=True)
+
+    class Meta:
+        verbose_name        = _("Antelación de avisos de revisión")
+        verbose_name_plural = _("Antelación de avisos de revisión")
+
+    def __str__(self) -> str:
+        return f"Avisos de revisión -- {self.company}"
 
 
 # ---------------------------------------------------------------------------

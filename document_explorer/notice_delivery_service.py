@@ -34,6 +34,10 @@ logger = logging.getLogger(__name__)
 
 EXPIRY_TEMPLATE_NAME = "document_expiry_notice"
 MISSING_TEMPLATE_NAME = "document_missing_notice"
+# H30 (S131): avisos de revisión por horas/km de centros de gasto. Sin
+# esta plantilla activa (pendiente de Meta), esos avisos no salen por
+# WhatsApp pero el resto sigue igual.
+SERVICE_TEMPLATE_NAME = "machine_service_notice"
 REMINDER_INTERVAL = timedelta(days=7)
 
 
@@ -66,7 +70,9 @@ def _content_variables(notice, company_user):
         "2": notice.document_label,
         "3": notice.subject_label,
     }
-    if notice.kind != notices.KIND_MISSING:
+    if notice.is_service:
+        variables["4"] = notice.service_text
+    elif notice.kind != notices.KIND_MISSING:
         variables["4"] = notice.expiry_date.strftime("%d/%m/%Y")
     return variables
 
@@ -82,6 +88,11 @@ def _notice_text(notice):
     este mensaje porque consta como trabajador..."), que dentro de la
     ventana sobra y hacía parecer que había salido la plantilla.
     """
+    if notice.is_service:
+        return "Aviso de %s de %s: %s" % (
+            notice.document_label, notice.subject_label,
+            notice.service_text,
+        )
     if notice.kind == notices.KIND_MISSING:
         return "Falta el documento obligatorio %s de %s." % (
             notice.document_label, notice.subject_label,
@@ -150,20 +161,25 @@ def send_due_notices():
     pending = []
     for domain in (notices.DOMAIN_PERSONAL, notices.DOMAIN_MACHINE):
         domain_pending, _scheduled, _calendar = notices.compute_notices(
-            domain,
+            domain, include_service=True,
         )
         pending.extend(domain_pending)
 
     now = timezone.now()
-    sent = skipped = errors = 0
+    sent = skipped = errors = no_template = 0
     for company in enabled:
         templates = {
             t.name: t for t in WhatsAppTemplate.objects.filter(
                 company=company, is_active=True,
-                name__in=(EXPIRY_TEMPLATE_NAME, MISSING_TEMPLATE_NAME),
+                name__in=(
+                    EXPIRY_TEMPLATE_NAME, MISSING_TEMPLATE_NAME,
+                    SERVICE_TEMPLATE_NAME,
+                ),
             )
         }
-        if len(templates) < 2:
+        if not {EXPIRY_TEMPLATE_NAME, MISSING_TEMPLATE_NAME} <= set(
+            templates,
+        ):
             logger.error(
                 "# [send_due_notices] %s: faltan plantillas activas (%s) "
                 "-- no se envía nada.", company, sorted(templates),
@@ -205,11 +221,17 @@ def send_due_notices():
                         key,
                     )
                     continue
-                template = templates[
-                    MISSING_TEMPLATE_NAME
-                    if notice.kind == notices.KIND_MISSING
-                    else EXPIRY_TEMPLATE_NAME
-                ]
+                if notice.is_service:
+                    template_name = SERVICE_TEMPLATE_NAME
+                elif notice.kind == notices.KIND_MISSING:
+                    template_name = MISSING_TEMPLATE_NAME
+                else:
+                    template_name = EXPIRY_TEMPLATE_NAME
+                template = templates.get(template_name)
+                if template is None:
+                    # S131: plantilla de revisiones sin aprobar todavía.
+                    no_template += 1
+                    continue
                 try:
                     # Dentro de la ventana de 24 h, texto libre (S127).
                     send_notification(
@@ -242,6 +264,7 @@ def send_due_notices():
                     )
 
     return (
-        "Avisos enviados: %d; sin teléfono: %d; con error: %d."
-        % (sent, skipped, errors)
+        "Avisos enviados: %d; sin teléfono: %d; con error: %d; "
+        "revisiones sin plantilla activa: %d."
+        % (sent, skipped, errors, no_template)
     )

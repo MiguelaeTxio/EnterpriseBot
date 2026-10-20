@@ -79,7 +79,63 @@ window.saveDocAlertsNav = function (patch) {
                 {% if whatsapp_enabled %}Activo: tus avisos te llegan cada día a las 8:00. Solo te afecta a ti.{% else %}Apagado: no te llega ningún aviso por WhatsApp. Solo te afecta a ti.{% endif %}
             </span>
         </div>
+        {% comment %}
+        H30 (S131): avisos de revisión por horas y km de los centros de
+        gasto. "Revisión vencida" es fijo; la antelación la fija aquí
+        quien configura los avisos. Vacía, solo se avisa de vencidas.
+        {% endcomment %}
+        <div class="card-body py-2 border-top d-flex flex-wrap align-items-center gap-2 small">
+            <span class="fw-bold"><i class="bi bi-wrench-adjustable me-1"></i>Revisiones de centros de gasto:</span>
+            <span>siempre la revisión vencida; además, avisar con antelación de</span>
+            <input type="number" min="1" class="form-control form-control-sm alerts-service-input" id="serviceHoursAdvance" value="{{ service_settings.hours_advance|default_if_none:'' }}" placeholder="—" aria-label="Antelación en horas" {% if not can_edit_service_settings %}disabled{% endif %}>
+            <span>horas y</span>
+            <input type="number" min="1" class="form-control form-control-sm alerts-service-input" id="serviceKmAdvance" value="{{ service_settings.km_advance|default_if_none:'' }}" placeholder="—" aria-label="Antelación en kilómetros" {% if not can_edit_service_settings %}disabled{% endif %}>
+            <span>km.</span>
+            {% if can_edit_service_settings %}
+            <button type="button" class="btn btn-sm btn-primary py-0" id="serviceAdvanceSave">Guardar</button>
+            {% endif %}
+            <span class="text-muted" id="serviceAdvanceResult">Vacío: solo se avisa de las vencidas.</span>
+        </div>
     </div>
+    {% if can_edit_service_settings %}
+    <script>
+    (function () {
+        const button = document.getElementById('serviceAdvanceSave');
+        const result = document.getElementById('serviceAdvanceResult');
+        button.addEventListener('click', function () {
+            const meta = document.querySelector('meta[name="csrf-token"]');
+            const match = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
+            const token = meta ? meta.getAttribute('content') : (match ? match[1] : '');
+            const body = new URLSearchParams();
+            body.append('hours_advance', document.getElementById('serviceHoursAdvance').value);
+            body.append('km_advance', document.getElementById('serviceKmAdvance').value);
+            button.disabled = true;
+            result.className = 'text-muted';
+            result.textContent = 'Guardando…';
+            fetch("{% url 'panel:machine_service_alert_settings_save' %}", {
+                method: 'POST',
+                headers: {'X-CSRFToken': token},
+                body: body,
+            }).then(function (response) {
+                return response.json();
+            }).then(function (data) {
+                if (!data.ok) {
+                    result.className = 'text-danger';
+                    result.textContent = data.error || 'No se pudo guardar.';
+                    return;
+                }
+                result.className = 'text-success';
+                result.textContent = 'Guardado.';
+            }).catch(function () {
+                result.className = 'text-danger';
+                result.textContent = 'No se pudo guardar.';
+            }).finally(function () {
+                button.disabled = false;
+            });
+        });
+    }());
+    </script>
+    {% endif %}
 
     {% comment %}
     H30 (S122). Directriz 4.24 -- Miguel Ángel: "tenemos ahora mismo

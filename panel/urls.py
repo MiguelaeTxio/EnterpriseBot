@@ -29,6 +29,13 @@ from panel.views_circulars_h31 import (
     CircularSaveContentView,
     PersonalDocutenExportView,
 )
+from panel.views_machine_service import (
+    MachineMeterReadingCreateView,
+    MachineMeterReadingDeleteView,
+    MachineServiceAlertSettingsSaveView,
+    MachineServiceRecordCreateView,
+    MachineServiceRecordDeleteView,
+)
 from panel.views_document_alerts import (
     DocumentAlertRulesSaveView,
     DocumentAlertsPaneView,
@@ -523,6 +530,11 @@ urlpatterns = [
     # H31 (S75): persistencia de pestaña/filtros -- genérica por screen_key.
     path("navegacion/estado/<str:screen_key>/", NavigationStateSaveView.as_view(), name="navigation_state_save"),
     path("documentacion/maquinaria/<int:pk>/", MachineDetailView.as_view(), name="documentation_machine_detail"),
+    # H30 (S131): revisiones y lecturas de horas/km del centro de gasto.
+    path("documentacion/maquinaria/<int:pk>/revisiones/nueva/", MachineServiceRecordCreateView.as_view(), name="machine_service_record_create"),
+    path("documentacion/maquinaria/<int:pk>/revisiones/<int:record_pk>/borrar/", MachineServiceRecordDeleteView.as_view(), name="machine_service_record_delete"),
+    path("documentacion/maquinaria/<int:pk>/lecturas/nueva/", MachineMeterReadingCreateView.as_view(), name="machine_meter_reading_create"),
+    path("documentacion/maquinaria/<int:pk>/lecturas/<int:reading_pk>/borrar/", MachineMeterReadingDeleteView.as_view(), name="machine_meter_reading_delete"),
     # H30 (S118) punto 1: historial completo de un tipo documental de una máquina.
     path("documentacion/maquinaria/<int:pk>/historial/<str:type_code>/", MachineDocumentTypeHistoryView.as_view(), name="documentation_machine_type_history"),
     # H30 (S118): foto de la máquina (documento-imagen ya indexado).
@@ -581,6 +593,7 @@ urlpatterns = [
     path("documentacion/avisos/pendientes/", DocumentNoticesView.as_view(), name="document_notices"),
     path("documentacion/avisos/destinatarios/<int:supervisor_pk>/guardar/", NoticeScopeSaveView.as_view(), name="notice_scope_save"),
     path("documentacion/avisos/whatsapp/", DocumentAlertWhatsAppToggleView.as_view(), name="document_alerts_whatsapp_toggle"),
+    path("documentacion/avisos/revisiones/antelacion/", MachineServiceAlertSettingsSaveView.as_view(), name="machine_service_alert_settings_save"),
     # H30 (S126), punto 2: subir desde el aviso lo que aporta la empresa y "Cita solicitada".
     path("documentacion/avisos/subir/", NoticeUploadView.as_view(), name="notice_upload"),
     path("documentacion/avisos/cita/", NoticeAppointmentView.as_view(), name="notice_appointment"),

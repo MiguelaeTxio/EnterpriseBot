@@ -95,6 +95,12 @@ class DocumentNotice:
     entry_id: int = None
     steps: list = field(default_factory=list)
     reached_step: NoticeStep = None
+    # H30 (S131): avisos de revisión por horas/km de centros de gasto
+    # (fleet.service_plan_service). `service_due` (lectura a la que
+    # toca) entra en la clave: una revisión nueva cambia el aviso.
+    is_service: bool = False
+    service_due: str = ""
+    service_text: str = ""
 
     @property
     def notice_key(self):
@@ -114,6 +120,8 @@ class DocumentNotice:
         ]
         if self.kind == KIND_UPCOMING and self.reached_step is not None:
             parts.append(self.reached_step.label)
+        if self.is_service:
+            parts.append(self.service_due)
         return "|".join(parts)[:255]
 
     @property
@@ -290,7 +298,7 @@ def _latest(entries):
     )
 
 
-def compute_notices(domain):
+def compute_notices(domain, include_service=False):
     """
     Compute (pending, scheduled, calendar) for one domain.
 
@@ -304,6 +312,28 @@ def compute_notices(domain):
     - `scheduled`: documentos con avisos configurados que todavía no
       han alcanzado ninguna fecha de aviso.
     - `calendar`: todas las fechas de aviso futuras (> hoy), ordenadas.
+
+    Con `include_service` (S131), en centros de gasto se añaden a
+    `pending` los avisos de revisión por horas/km
+    (`fleet.service_plan_service`), que no dependen del requisito de
+    documentación ni de sus avisos.
+    """
+    pending, scheduled, calendar_items = _compute_document_notices(domain)
+    if include_service and domain == DOMAIN_MACHINE:
+        from fleet.service_plan_service import compute_service_notices
+
+        pending.extend(compute_service_notices())
+        pending.sort(key=_pending_sort_key)
+    return pending, scheduled, calendar_items
+
+
+def _compute_document_notices(domain):
+    """
+    Document notices of one domain (see compute_notices).
+
+    ---
+
+    Avisos de documentación de un dominio (ver compute_notices).
     """
     from document_explorer.models import (
         DocumentIndexEntry, DocumentTypeCatalog, DrivingLicenceGrant,

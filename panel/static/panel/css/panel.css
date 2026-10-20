@@ -1485,6 +1485,11 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
     max-width: 18rem;
 }
 
+/* H30 (S131): antelación de los avisos de revisión (horas, km). */
+.alerts-service-input {
+    width: 6.5rem;
+}
+
 .alerts-column {
     display: flex;
     flex-direction: column;

@@ -100,6 +100,37 @@
         {{ form.hours }}
     </div>
 
+    {# H30 (S131): plan de revisiones por horas y km #}
+    <div class="col-12 mt-1">
+        <h6 class="text-muted small fw-semibold text-uppercase mb-2">Revisiones</h6>
+    </div>
+
+    <div class="col-12 col-sm-4 d-flex align-items-end">
+        <div class="form-check">
+            {{ form.service_every_800_hours }}
+            <label class="form-check-label" for="{{ form.service_every_800_hours.id_for_label }}">
+                {{ form.service_every_800_hours.label }}
+            </label>
+        </div>
+    </div>
+
+    <div class="col-12 col-sm-4 d-flex align-items-end">
+        <div class="form-check">
+            {{ form.service_every_1200_hours }}
+            <label class="form-check-label" for="{{ form.service_every_1200_hours.id_for_label }}">
+                {{ form.service_every_1200_hours.label }}
+            </label>
+        </div>
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.service_every_km.label }}</label>
+        {{ form.service_every_km }}
+        {% if form.service_every_km.errors %}
+        <div class="invalid-feedback d-block">{{ form.service_every_km.errors.0 }}</div>
+        {% endif %}
+    </div>
+
     {# Estado #}
     <div class="col-12 mt-1">
         <div class="form-check">

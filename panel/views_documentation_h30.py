@@ -825,8 +825,14 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
         from panel.views_lifting_accessories import _annotate
 
         lifting_accessories = _annotate(accessories_for_machine(machine))
+        # H30 (S131): revisiones por horas y km (plan, revisiones hechas
+        # y lecturas), apartado propio de la ficha.
+        from panel.views_machine_service import machine_service_context
+
         return render(request, "panel/documentation_h30/_machine_detail.html", {
             **_machine_workshop_context(machine, entries_list),
+            **machine_service_context(machine, request.user.company_user),
+            "service_open": request.GET.get("service_open") == "1",
             "lifting_accessories": lifting_accessories,
             "lifting_accessories_expired": any(
                 accessory.is_expired for accessory in lifting_accessories

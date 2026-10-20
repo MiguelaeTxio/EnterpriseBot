@@ -24,6 +24,7 @@ from urllib.parse import urlencode
 
 from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
+from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
@@ -52,6 +53,9 @@ from panel.mixins import (
     CompanyUserRequiredMixin, DocsUploadAccessMixin,
 )
 from panel.models import PanelNavigationState
+from panel.views_machine_service import (
+    SERVICE_SETTINGS_ROLES, service_alert_settings_dict,
+)
 
 NAV_SCREEN_KEY = "documentation_hub"
 NAV_TAB_KEY = "avisos"
@@ -485,6 +489,13 @@ class DocumentAlertsPaneView(CompanyUserRequiredMixin, View):
             ).exists(),
             "can_toggle_whatsapp": company_user.role in RECIPIENT_ROLES,
             "recipients_data": _recipients_context(company_user),
+            # H30 (S131): antelación de los avisos de revisión.
+            "service_settings": service_alert_settings_dict(
+                company_user.company,
+            ),
+            "can_edit_service_settings": (
+                company_user.role in SERVICE_SETTINGS_ROLES
+            ),
         })
 
 
@@ -978,8 +989,10 @@ class DocumentNoticesView(CompanyUserRequiredMixin, View):
         if who not in valid_who:
             who = "mine" if is_supervisor else "all"
 
+        # S131: en centros de gasto, también los avisos de revisión
+        # por horas y km (fleet.service_plan_service).
         pending, _scheduled, calendar_items = notices.compute_notices(
-            domain,
+            domain, include_service=True,
         )
 
         requirement_names = sorted({n.requirement_name for n in pending} | {
@@ -1077,13 +1090,21 @@ class DocumentNoticesView(CompanyUserRequiredMixin, View):
             # Plantillas tontas: días ya calculados en positivo.
             if notice.days_left is not None and notice.days_left < 0:
                 notice.days_ago = -notice.days_left
-        if domain == notices.DOMAIN_PERSONAL:
+        is_personal = domain == notices.DOMAIN_PERSONAL
+        has_service_plans = False
+        if is_personal:
             has_subjects = PersonIdentity.objects.filter(
                 is_active_employee=True, job_position__isnull=False,
                 job_position__is_active=True,
             ).exists()
         else:
-            has_subjects = MachineAsset.objects.filter(
+            has_service_plans = MachineAsset.objects.filter(
+                Q(service_every_800_hours=True)
+                | Q(service_every_1200_hours=True)
+                | Q(service_every_km__gt=0),
+                is_active=True,
+            ).exists()
+            has_subjects = has_service_plans or MachineAsset.objects.filter(
                 is_active=True, document_requirement__isnull=False,
                 document_requirement__is_active=True,
             ).exists()
@@ -1111,7 +1132,10 @@ class DocumentNoticesView(CompanyUserRequiredMixin, View):
             "missing": missing,
             "calendar_months": calendar_months,
             "calendar_count": len(calendar_items),
-            "has_any_rules": RequirementAlertRule.objects.exists(),
+            "has_any_rules": (
+                RequirementAlertRule.objects.exists()
+                or (not is_personal and has_service_plans)
+            ),
             "has_subjects": has_subjects,
             "who": who,
             "can_filter_mine": can_filter_mine,

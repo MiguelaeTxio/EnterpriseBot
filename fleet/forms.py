@@ -48,6 +48,10 @@ class MachineAssetForm(forms.ModelForm):
             "mileage",
             "hours",
             "is_active",
+            # H30 (S131): plan de revisiones por horas y km.
+            "service_every_800_hours",
+            "service_every_1200_hours",
+            "service_every_km",
         ]
         widgets = {
             "code": forms.TextInput(attrs={
@@ -100,6 +104,17 @@ class MachineAssetForm(forms.ModelForm):
             "is_active": forms.CheckboxInput(attrs={
                 "class": "form-check-input",
             }),
+            "service_every_800_hours": forms.CheckboxInput(attrs={
+                "class": "form-check-input",
+            }),
+            "service_every_1200_hours": forms.CheckboxInput(attrs={
+                "class": "form-check-input",
+            }),
+            "service_every_km": forms.NumberInput(attrs={
+                "class": "form-control",
+                "min": "1",
+                "placeholder": "Sin revisión por km",
+            }),
         }
         labels = {
             "code":           "Código",
@@ -115,6 +130,9 @@ class MachineAssetForm(forms.ModelForm):
             "mileage":        "Kilómetros",
             "hours":          "Horas",
             "is_active":      "Activo",
+            "service_every_800_hours":  "Revisión cada 800 horas",
+            "service_every_1200_hours": "Revisión cada 1200 horas",
+            "service_every_km":         "Revisión cada N km",
         }
 
     # S117 -- petición de Miguel Ángel: "Familia" deja de ser texto libre
@@ -186,5 +204,8 @@ class MachineAssetForm(forms.ModelForm):
                     "Escribe el nombre de la nueva familia.",
                 )
             cleaned["family"] = new_family
+        # H30 (S131): 0 km equivale a "sin revisión por kilómetros".
+        if not cleaned.get("service_every_km"):
+            cleaned["service_every_km"] = None
         return cleaned
 
