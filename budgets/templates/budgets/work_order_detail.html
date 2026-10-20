@@ -326,6 +326,7 @@
                             <span class="badge ms-1
                                 {% if unit.status == 'PENDING' %}bg-secondary
                                 {% elif unit.status == 'NOTIFIED' %}bg-info text-dark
+                                {% elif unit.status == 'NOTIFY_FAILED' %}bg-danger
                                 {% elif unit.status == 'DOWNLOADED' %}bg-info text-dark
                                 {% elif unit.status == 'IN_PROGRESS' %}bg-primary
                                 {% elif unit.status == 'COMPLETED' %}bg-success
@@ -363,6 +364,11 @@
                                 <i class="bi bi-whatsapp me-1"></i>Avisado {{ unit.notified_at|date:"d/m/Y H:i" }}
                                 {% if unit.downloaded_at %}· abierto {{ unit.downloaded_at|date:"d/m/Y H:i" }}{% endif %}
                                 {% if unit.completed_at %}· completado {{ unit.completed_at|date:"d/m/Y H:i" }}{% endif %}
+                            </div>
+                            {% endif %}
+                            {% if unit.status == 'NOTIFY_FAILED' and unit.notify_error %}
+                            <div class="small text-danger">
+                                <i class="bi bi-exclamation-triangle me-1"></i>{{ unit.notify_error }}
                             </div>
                             {% endif %}
                             {% if unit.phase1_km %}

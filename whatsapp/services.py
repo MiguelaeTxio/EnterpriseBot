@@ -19,7 +19,9 @@ import os
 from datetime import timedelta
 
 from django.conf import settings
+from django.core import signing
 from django.db.models import Q
+from django.urls import reverse
 from django.utils.timezone import now
 from google import genai
 from google.auth.transport.requests import Request
@@ -1273,6 +1275,41 @@ def _albaran_template_variables(unit) -> dict:
     }
 
 
+ALBARAN_NOTICE_STATUS_SALT = "albaran-notice-status"
+
+
+def albaran_notice_status_url(unit):
+    """
+    Twilio status callback URL for the notice of a unit.
+
+    ---
+
+    H37 (S132). URL a la que Twilio manda el estado de entrega del aviso
+    de una unidad. Lleva la unidad firmada con la SECRET_KEY de Django
+    (`signing`), para que nadie pueda marcar otra unidad: la cuenta usa
+    API Key y no hay Auth Token con el que validar la firma de Twilio.
+    """
+    token = signing.dumps(unit.pk, salt=ALBARAN_NOTICE_STATUS_SALT)
+    return settings.PLATFORM_BASE_URL + reverse(
+        "whatsapp:albaran_notice_status", kwargs={"token": token},
+    )
+
+
+def unit_pk_from_notice_token(token):
+    """
+    Unit pk signed in the status callback URL, or None if not valid.
+
+    ---
+
+    pk de la unidad firmada en la URL del informe de entrega, o None si
+    la firma no es válida.
+    """
+    try:
+        return signing.loads(token, salt=ALBARAN_NOTICE_STATUS_SALT)
+    except signing.BadSignature:
+        return None
+
+
 def send_operator_albaran_notification(
     unit_pk: int,
     whatsapp_sender: str,
@@ -1295,6 +1332,10 @@ def send_operator_albaran_notification(
     con notified_at. Pasa a DOWNLOADED cuando el operario abre el
     albarán (WorkOrderAlbaranView), ya no al contestar a la plantilla.
     Devuelve True si Twilio acepta el envío, False ante cualquier fallo.
+    H37 (S132): aceptar el envío no es entregarlo. Se guarda el SID del
+    mensaje y Twilio informa de la entrega en
+    AlbaranNoticeStatusView; si no se entrega, o si el envío falla aquí
+    mismo, la unidad queda en NOTIFY_FAILED con el motivo.
     """
     from budgets.models import WorkOrderAssistanceUnit
     from whatsapp.window_service import send_notification
@@ -1353,6 +1394,7 @@ def send_operator_albaran_notification(
             template.content_sid,
             variables=_albaran_template_variables(unit),
             text=albaran_link_text(unit),
+            status_callback=albaran_notice_status_url(unit),
         )
     except Exception as exc:
         logger.error(
@@ -1360,11 +1402,21 @@ def send_operator_albaran_notification(
             operator_phone,
             exc,
         )
+        unit.status = WorkOrderAssistanceUnit.STATUS_NOTIFY_FAILED
+        unit.notify_message_sid = ""
+        unit.notify_error = str(exc)[:255]
+        unit.save(update_fields=[
+            "status", "notify_message_sid", "notify_error",
+        ])
         return False
 
     unit.status = WorkOrderAssistanceUnit.STATUS_NOTIFIED
     unit.notified_at = now()
-    unit.save(update_fields=["status", "notified_at"])
+    unit.notify_message_sid = message.sid or ""
+    unit.notify_error = ""
+    unit.save(update_fields=[
+        "status", "notified_at", "notify_message_sid", "notify_error",
+    ])
     logger.info(
         "# [ALBARAN NOTIFY] Unidad pk=%s NOTIFIED (%s) -- SID: %s",
         unit_pk,

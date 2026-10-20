@@ -172,7 +172,7 @@ def render_template_text(client, content_sid, variables):
 
 def send_notification(
     client, sender, company, phone, content_sid, variables=None,
-    text=None,
+    text=None, status_callback=None,
 ):
     """
     Send a notification: plain text inside the window, else template.
@@ -185,6 +185,8 @@ def send_notification(
     botones, la plantilla. Devuelve el mensaje de Twilio; su atributo
     `sent_as_text` dice cómo salió. Las excepciones de Twilio se
     propagan, como antes, para que cada llamador las trate igual.
+    `status_callback` (H37, S132), si se da, es la URL a la que Twilio
+    manda el estado de entrega del mensaje.
     """
     to_number = to_e164(phone)
     from_number = sender if sender.startswith("whatsapp:") else (
@@ -193,9 +195,11 @@ def send_notification(
     body = None
     if window_open(company, to_number):
         body = text or render_template_text(client, content_sid, variables)
+    extra = {"status_callback": status_callback} if status_callback else {}
     if body:
         message = client.messages.create(
             from_=from_number, to="whatsapp:%s" % to_number, body=body,
+            **extra,
         )
         message.sent_as_text = True
         logger.info(
@@ -207,6 +211,7 @@ def send_notification(
         "from_": from_number,
         "to": "whatsapp:%s" % to_number,
         "content_sid": content_sid,
+        **extra,
     }
     if variables:
         kwargs["content_variables"] = (

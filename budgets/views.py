@@ -5461,7 +5461,9 @@ class AlbaranDemoView(AssistanceRequiredMixin, View):
 
 # H37 (S132): unit states in which the operator can be notified again.
 # Estados de la unidad en los que se puede (re)avisar al operario.
-_NOTIFIABLE_UNIT_STATUSES = ("PENDING", "NOTIFIED", "DOWNLOADED")
+_NOTIFIABLE_UNIT_STATUSES = (
+    "PENDING", "NOTIFIED", "NOTIFY_FAILED", "DOWNLOADED",
+)
 # H37 (S132): roles that manage the work orders (detail page).
 # Roles que gestionan las órdenes de trabajo (página de detalle).
 _WORK_ORDER_STAFF_ROLES = ("ADMIN", "ASSISTANCE", "ASSIST_SUPERVISOR")
@@ -5812,7 +5814,12 @@ class WorkOrderUnitNotifyView(AssistanceWorkOrderAccessMixin, View):
         if send_operator_albaran_notification(unit.pk, sender):
             messages.success(
                 request,
-                "Aviso enviado por WhatsApp a %s." % unit.operator,
+                "Aviso enviado por WhatsApp a %s. Si no se entrega, la "
+                "unidad pasará a \"Aviso fallido\"."
+                % (
+                    unit.operator.user.get_full_name()
+                    or unit.operator.user.username
+                ),
             )
         else:
             messages.error(
@@ -5863,9 +5870,9 @@ class WorkOrderAlbaranView(AssistanceAlbaranAccessMixin, View):
         is_unit_operator = company_user.pk in (
             unit.operator_id, unit.operator_2_id,
         )
-        if (
-            is_unit_operator
-            and unit.status == WorkOrderAssistanceUnit.STATUS_NOTIFIED
+        if is_unit_operator and unit.status in (
+            WorkOrderAssistanceUnit.STATUS_NOTIFIED,
+            WorkOrderAssistanceUnit.STATUS_NOTIFY_FAILED,
         ):
             unit.status = WorkOrderAssistanceUnit.STATUS_DOWNLOADED
             unit.downloaded_at = now()

@@ -2476,10 +2476,14 @@ class WorkOrderAssistanceUnit(models.Model):
     STATUS_COMPLETED          = "COMPLETED"
     STATUS_CLOSED_UNSIGNED    = "CLOSED_UNSIGNED"
     STATUS_SIGNED_RECEIVED    = "SIGNED_RECEIVED"
+    # H37 (S132): Twilio reported the notice as not delivered.
+    # Twilio ha informado de que el aviso no se ha entregado.
+    STATUS_NOTIFY_FAILED      = "NOTIFY_FAILED"
 
     STATUS_CHOICES = [
         (STATUS_PENDING,         "Pendiente"),
         (STATUS_NOTIFIED,        "Notificado"),
+        (STATUS_NOTIFY_FAILED,   "Aviso fallido"),
         (STATUS_DOWNLOADED,      "Descargado"),
         (STATUS_IN_PROGRESS,     "En curso"),
         (STATUS_COMPLETED,       "Completado"),
@@ -2648,6 +2652,7 @@ class WorkOrderAssistanceUnit(models.Model):
         help_text=(
             "PENDING: unidad creada, pendiente de notificar al operario. "
             "NOTIFIED: template WhatsApp enviado al operario. "
+            "NOTIFY_FAILED: Twilio informa de que el aviso no se entregó. "
             "DOWNLOADED: operario ha abierto el albarán en la app. "
             "IN_PROGRESS: operario en servicio activo. "
             "COMPLETED: albarán recibido en plataforma con firma. "
@@ -2667,6 +2672,24 @@ class WorkOrderAssistanceUnit(models.Model):
             "Fecha y hora en que se envió el template WhatsApp al operario. "
             "Null hasta que se ejecuta send_operator_albaran_notification()."
         ),
+    )
+    # H37 (S132): Twilio SID of the last notice, to match its delivery
+    # status callback, and the reason when it was not delivered.
+    # SID de Twilio del último aviso, para casar el informe de entrega
+    # que manda Twilio, y el motivo cuando no se ha entregado.
+    notify_message_sid = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        verbose_name="SID del aviso",
+        help_text="SID de Twilio del último aviso por WhatsApp.",
+    )
+    notify_error = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Error del aviso",
+        help_text="Motivo por el que el último aviso no se entregó.",
     )
     # Datetime when the operator opened the albarán in the Android app or panel.
     # Momento en que el operario abrió el albarán en la app Android o el panel.
