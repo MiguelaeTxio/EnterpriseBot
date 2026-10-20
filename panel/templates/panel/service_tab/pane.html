@@ -7,6 +7,8 @@ Centros de gasto salvo Requisito (Miguel Ángel: "en esa vista no es
 necesario") y el plan de revisiones aplicado a la selección.
 Debajo, solo la lista hace scroll (directriz 4.24): cada fila se
 rellena en la propia tabla y se guarda con "Guardar" o con Intro.
+Código y Estado quedan fijos a los lados; lectura nueva y revisión
+nueva son un acordeón (solo una abierta, guardada por usuario).
 {% endcomment %}
 <div class="border rounded p-2 mb-2" id="svc-top-panel">
     <div class="row g-2">
@@ -173,7 +175,30 @@ rellena en la propia tabla y se guarda con "Guardar" o con Intro.
             if (button) button.disabled = false;
         });
     }
+    // S131: acordeón lectura nueva / revisión nueva (solo una a la vez),
+    // guardado por usuario.
+    function openGroup(group) {
+        const table = document.getElementById("svc-table");
+        if (!table) return;
+        table.classList.toggle("svc-open-read", group === "read");
+        table.classList.toggle("svc-open-svc", group === "svc");
+        if (window.EbNavState) window.EbNavState.save(SCREEN_KEY, {open_group: group});
+    }
+    // Segunda fila de cabecera pegada justo debajo de la primera.
+    function stickSecondHeaderRow() {
+        const table = document.getElementById("svc-table");
+        if (!table) return;
+        const rows = table.tHead.rows;
+        if (rows.length < 2) return;
+        const top = rows[0].getBoundingClientRect().height;
+        Array.from(rows[1].cells).forEach(function (cell) { cell.style.top = top + "px"; });
+    }
     container.addEventListener("click", function (ev) {
+        const opener = ev.target.closest(".svc-open");
+        if (opener) {
+            openGroup(opener.dataset.group);
+            return;
+        }
         const sort = ev.target.closest(".svc-sort");
         if (sort) {
             ev.preventDefault();
@@ -210,8 +235,12 @@ rellena en la propia tabla y se guarda con "Guardar" o con Intro.
         }
     });
     document.body.addEventListener("htmx:afterSettle", function (ev) {
-        if (ev.target === container) syncChecks();
+        if (ev.target === container) {
+            syncChecks();
+            stickSecondHeaderRow();
+        }
     });
+    window.addEventListener("resize", stickSecondHeaderRow);
 
     // Plan aplicado a la selección.
     function bulk(fields, label) {
@@ -242,5 +271,6 @@ rellena en la propia tabla y se guarda con "Guardar" o con Intro.
         });
     }
     syncChecks();
+    stickSecondHeaderRow();
 }());
 </script>

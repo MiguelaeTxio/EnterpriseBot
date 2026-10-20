@@ -49,6 +49,9 @@ SCREEN_KEY = "service_tab"
 # necesario").
 FILTER_KEYS = ("search", "family", "is_active", "sort")
 KM_INTERVAL_SUGGESTIONS = (20000, 30000, 40000)
+# S131: grupo de casillas abierto en la tabla ("read" = lectura nueva,
+# "svc" = revisión nueva); solo se ve uno.
+OPEN_GROUPS = ("read", "svc")
 STATE_CLASS = {
     plan.STATE_OVERDUE: "text-danger fw-bold",
     plan.STATE_UPCOMING: "text-warning-emphasis fw-bold",
@@ -184,8 +187,12 @@ def _list_context(request):
     def _p(key):
         return request.GET.get(key, "")
 
+    open_group = get_saved_state_key(
+        company_user, SCREEN_KEY, "open_group", "read",
+    )
     return {
         "machines": machines,
+        "open_group": open_group if open_group in OPEN_GROUPS else "read",
         "families": _get_families(company),
         "filter_family": _p("family"),
         "filter_is_active": _p("is_active"),

@@ -1519,6 +1519,47 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
 .svc-w-num {
     width: 6.5rem;
 }
+/* S131: lectura nueva y revisión nueva como acordeón -- solo una. */
+.svc-open-read .svc-grp-svc,
+.svc-open-svc .svc-grp-read {
+    display: none;
+}
+.svc-open-read .svc-open[data-group="read"] .svc-chevron,
+.svc-open-svc .svc-open[data-group="svc"] .svc-chevron {
+    transform: rotate(180deg);
+}
+/* S131: código fijo a la izquierda y estado fijo a la derecha al
+   desplazar la tabla en horizontal (en el ordenador). */
+@media (min-width: 992px) {
+    .svc-table .svc-fix-left,
+    .svc-table .svc-fix-right {
+        position: sticky;
+        z-index: 1;
+        background-color: var(--bs-body-bg, #fff);
+    }
+    .svc-table .svc-fix-left {
+        left: 0;
+        box-shadow: inset -1px 0 0 #dee2e6;
+    }
+    .svc-table .svc-fix-right {
+        right: 0;
+        box-shadow: inset 1px 0 0 #dee2e6;
+    }
+    .svc-table thead th.svc-fix-left,
+    .svc-table thead th.svc-fix-right {
+        z-index: 3;
+        background-color: #f8f9fa;
+    }
+    .svc-table tr.table-warning > td.svc-fix-left,
+    .svc-table tr.table-warning > td.svc-fix-right {
+        background-color: #fff3cd;
+    }
+    .svc-table tr.table-success > td.svc-fix-left,
+    .svc-table tr.table-success > td.svc-fix-right {
+        background-color: #d1e7dd;
+    }
+}
+
 /* Acción masiva: los dos campos igual de anchos y legibles, y los dos
    botones alineados en la misma columna (S131). */
 .svc-bulk-grid {

@@ -1,15 +1,18 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/service_tab/_row.html #}
 {% comment %}
-H30 (S131). Una fila de la pestaña Revisiones: plan (horas y km),
-última lectura y lectura nueva (fecha -vacía = hoy-, km, horas, horas
-de grúa), última revisión ("—" si no hay) y revisión nueva (con la
-misma fecha que la última, la corrige). "Guardar" (o Intro en cualquier
-casilla) la guarda entera y la fila vuelve ya pintada con los datos
-nuevos. Todo llega resuelto de la vista.
+H30 (S131). Una fila de la pestaña Revisiones. Fijas a los lados:
+código (izquierda) y estado con "Guardar" (derecha). En medio: plan
+(horas y km), última lectura + lectura nueva (fecha -vacía = hoy-, km,
+horas, horas de grúa) y última revisión ("—" si no hay) + revisión
+nueva (con la misma fecha que la última, la completa). Lectura nueva y
+revisión nueva son un acordeón: solo se ve una (clases svc-grp-read y
+svc-grp-svc, que oculta la clase de la tabla). "Guardar" (o Intro en
+cualquier casilla) guarda la fila entera y vuelve ya pintada con los
+datos nuevos. Todo llega resuelto de la vista.
 {% endcomment %}
 <tr class="svc-row" data-pk="{{ machine.pk }}" data-save-url="{% url 'panel:service_tab_row_save' pk=machine.pk %}">
-    <td><input type="checkbox" class="form-check-input svc-select" value="{{ machine.pk }}" aria-label="Seleccionar {{ machine.code }}"></td>
-    <td class="text-nowrap stack-mobile-title">
+    <td class="text-nowrap stack-mobile-title svc-fix-left">
+        <input type="checkbox" class="form-check-input svc-select me-1" value="{{ machine.pk }}" aria-label="Seleccionar {{ machine.code }}">
         <a href="{% url 'panel:documentation_machine_detail' pk=machine.pk %}?service_open=1#machineServicePlan" class="fw-semibold">{{ machine.code }}</a>
         <div class="small text-muted svc-model">{{ machine.brand_model|default:"" }}</div>
     </td>
@@ -31,10 +34,10 @@ nuevos. Todo llega resuelto de la vista.
         {% if machine.last_crane_hours %}<div>{{ machine.last_crane_hours_text }} h grúa <span class="text-muted">{{ machine.last_crane_hours.reading_date|date:"d/m/y" }}</span></div>{% endif %}
         {% if not machine.last_km and not machine.last_hours and not machine.last_crane_hours %}<span class="text-muted">—</span>{% endif %}
     </td>
-    <td data-label="Fecha lectura"><input type="date" class="form-control form-control-sm svc-input svc-w-date" name="reading_date" max="{{ today }}" title="Vacía: hoy" {% if not can_edit %}disabled{% endif %} aria-label="Fecha de la lectura"></td>
-    <td data-label="Km"><input type="number" min="0" class="form-control form-control-sm svc-input svc-w-num" name="reading_km" placeholder="{{ machine.last_km_text|default:'km' }}" {% if not can_edit %}disabled{% endif %} aria-label="Km de la lectura"></td>
-    <td data-label="Horas"><input type="number" min="0" class="form-control form-control-sm svc-input svc-w-num" name="reading_hours" placeholder="{{ machine.last_hours_text|default:'horas' }}" {% if not can_edit %}disabled{% endif %} aria-label="Horas de la lectura"></td>
-    <td data-label="Horas grúa">{% if machine.has_crane_hours %}<input type="number" min="0" class="form-control form-control-sm svc-input svc-w-num" name="reading_crane_hours" placeholder="{{ machine.last_crane_hours_text|default:'h grúa' }}" {% if not can_edit %}disabled{% endif %} aria-label="Horas de grúa de la lectura">{% else %}<span class="text-muted small">—</span>{% endif %}</td>
+    <td class="svc-grp-read" data-label="Fecha lectura"><input type="date" class="form-control form-control-sm svc-input svc-w-date" name="reading_date" max="{{ today }}" title="Vacía: hoy" {% if not can_edit %}disabled{% endif %} aria-label="Fecha de la lectura"></td>
+    <td class="svc-grp-read" data-label="Km"><input type="number" min="0" class="form-control form-control-sm svc-input svc-w-num" name="reading_km" placeholder="{{ machine.last_km_text|default:'km' }}" {% if not can_edit %}disabled{% endif %} aria-label="Km de la lectura"></td>
+    <td class="svc-grp-read" data-label="Horas"><input type="number" min="0" class="form-control form-control-sm svc-input svc-w-num" name="reading_hours" placeholder="{{ machine.last_hours_text|default:'horas' }}" {% if not can_edit %}disabled{% endif %} aria-label="Horas de la lectura"></td>
+    <td class="svc-grp-read" data-label="Horas grúa">{% if machine.has_crane_hours %}<input type="number" min="0" class="form-control form-control-sm svc-input svc-w-num" name="reading_crane_hours" placeholder="{{ machine.last_crane_hours_text|default:'h grúa' }}" {% if not can_edit %}disabled{% endif %} aria-label="Horas de grúa de la lectura">{% else %}<span class="text-muted small">—</span>{% endif %}</td>
     <td class="small text-nowrap svc-sep" data-label="Última revisión">
         {% if machine.last_record %}
         <div class="fw-semibold">{{ machine.last_record.service_date|date:"d/m/Y" }}</div>
@@ -43,21 +46,23 @@ nuevos. Todo llega resuelto de la vista.
         <span class="text-muted" title="Sin fecha de revisión">—</span>
         {% endif %}
     </td>
-    <td data-label="Fecha revisión"><input type="date" class="form-control form-control-sm svc-input svc-w-date" name="service_date" max="{{ today }}" {% if not can_edit %}disabled{% endif %} aria-label="Fecha de la revisión"></td>
-    <td data-label="Horas revisión"><input type="number" min="0" class="form-control form-control-sm svc-input svc-w-num" name="service_hours" {% if not can_edit %}disabled{% endif %} aria-label="Horas en la revisión"></td>
-    <td data-label="H. grúa revisión">{% if machine.has_crane_hours %}<input type="number" min="0" class="form-control form-control-sm svc-input svc-w-num" name="service_crane_hours" {% if not can_edit %}disabled{% endif %} aria-label="Horas de grúa en la revisión">{% else %}<span class="text-muted small">—</span>{% endif %}</td>
-    <td data-label="Km revisión"><input type="number" min="0" class="form-control form-control-sm svc-input svc-w-num" name="service_km" {% if not can_edit %}disabled{% endif %} aria-label="Km en la revisión"></td>
-    <td class="small svc-sep svc-status" data-label="Estado">
-        {% for status in machine.service_statuses %}
-        <div class="{{ status.css_class }}">{{ status.schedule.label }}: {{ status.status_text }}</div>
-        {% empty %}
-        <span class="text-muted">Sin revisiones configuradas.</span>
-        {% endfor %}
-        <div class="text-danger svc-row-error d-none"></div>
-    </td>
-    <td class="text-end stack-mobile-actions">
-        {% if can_edit %}
-        <button type="button" class="btn btn-sm btn-primary py-0 svc-save" title="Guardar esta fila"><i class="bi bi-check-lg"></i><span class="d-lg-none ms-1">Guardar</span></button>
-        {% endif %}
+    <td class="svc-grp-svc" data-label="Fecha revisión"><input type="date" class="form-control form-control-sm svc-input svc-w-date" name="service_date" max="{{ today }}" {% if not can_edit %}disabled{% endif %} aria-label="Fecha de la revisión"></td>
+    <td class="svc-grp-svc" data-label="Horas revisión"><input type="number" min="0" class="form-control form-control-sm svc-input svc-w-num" name="service_hours" {% if not can_edit %}disabled{% endif %} aria-label="Horas en la revisión"></td>
+    <td class="svc-grp-svc" data-label="H. grúa revisión">{% if machine.has_crane_hours %}<input type="number" min="0" class="form-control form-control-sm svc-input svc-w-num" name="service_crane_hours" {% if not can_edit %}disabled{% endif %} aria-label="Horas de grúa en la revisión">{% else %}<span class="text-muted small">—</span>{% endif %}</td>
+    <td class="svc-grp-svc" data-label="Km revisión"><input type="number" min="0" class="form-control form-control-sm svc-input svc-w-num" name="service_km" {% if not can_edit %}disabled{% endif %} aria-label="Km en la revisión"></td>
+    <td class="small svc-status svc-fix-right" data-label="Estado">
+        <div class="d-flex gap-2 align-items-start">
+            <div class="flex-grow-1">
+                {% for status in machine.service_statuses %}
+                <div class="{{ status.css_class }}">{{ status.schedule.label }}: {{ status.status_text }}</div>
+                {% empty %}
+                <span class="text-muted">Sin revisiones configuradas.</span>
+                {% endfor %}
+                <div class="text-danger svc-row-error d-none"></div>
+            </div>
+            {% if can_edit %}
+            <button type="button" class="btn btn-sm btn-primary py-0 svc-save" title="Guardar esta fila"><i class="bi bi-check-lg"></i><span class="d-lg-none ms-1">Guardar</span></button>
+            {% endif %}
+        </div>
     </td>
 </tr>
