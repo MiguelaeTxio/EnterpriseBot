@@ -268,44 +268,122 @@ Ya decidido antes de recibirlo y que el dossier deja abierto: app nativa
 Android en tablets (4.1), entrada del albarán desde foto de TIREA
 (4.3), GPS continuo (4.1).
 
-## 5. Hoja de Ruta (S132) -- concertada con Miguel Ángel al cierre de S131, reordenada en S132
+## 5. COMPLETADAS EN S132 (20/10/2026, PEE PC; H37 -- puntos 1, 2 y 3 de la hoja de ruta y prueba completa del albarán en producción)
 
-**Reordenada en S132 con las fases del dossier de Pepe (4.4), a
-petición de Miguel Ángel** (respuesta "1. (a)" a la propuesta). Los
-puntos 1 y 2 son los de antes; del 3 al 9, una fase del dossier cada
-uno. La prueba con Allianz, el envío al cliente, la app Kotlin y el
-mapa quedan dentro de la fase que les toca.
+### 5.1. Punto 1 -- app del operario (cerrado)
 
-Decisiones de Miguel Ángel en S132 que fijan los datos de partida:
+Decisión de Miguel Ángel: app nativa Android en Kotlin, sin pasar por
+una versión web previa, por el envío continuo de la posición en
+segundo plano (ver 4.1). La instala y actualiza él; primeras pruebas
+en su móvil. Aviso por WhatsApp con plantilla específica de asistencia
+(ver 4.2).
+
+### 5.2. Punto 2 -- sección Servicios y rol Supervisor de Asistencia (cerrado)
+
+- Rol `ASSIST_SUPERVISOR` ("Supervisor de Asistencia") en
+  `ivr_config.CompanyUser` (migración `ivr_config` 0049, aplicada).
+- "Albarán (demo)" sustituida por "Servicios" (`ServicesHubView`,
+  pestañas en el formato de Documentación), visible solo para ADMIN y
+  ASSIST_SUPERVISOR (`AssistanceSupervisorAccessMixin`). El supervisor
+  entra también a todo lo de Asistencia que antes era solo de
+  administradores (56 vistas de `budgets/views.py`).
+- **Cierre:** Miguel Ángel confirmó en el chat que Paloma ya tiene el
+  rol de supervisora de asistencia y entra.
+
+### 5.3. Punto 3 -- Fase 1: alta desde la foto de TIREA (cerrado)
+
+- `budgets/tirea_extraction.py`: Gemini Vision lee la foto o PDF del
+  albarán de TIREA con un esquema JSON y rellena el formulario de alta
+  (`WorkOrderAssistanceForm`, `budgets/forms_services.py`); nada se
+  guarda hasta confirmar. Alta a mano y edición de la orden en el
+  mismo formulario.
+- `budgets/assistance_resources.py`: conductores = usuarios activos de
+  la sección "Asistencia" (default_role de la sección cambiado a
+  DRIVER, decisión "2. (a)"); máquinas = familia ASISTENCIA de la
+  flota; teléfono del conductor desde su `Contact` (el
+  `CompanyUser.phone` está vacío en producción).
+- **Cierre (verificado con consulta a BD):** orden **20261020002**
+  creada desde una foto real de TIREA: Europ Assistance / Asistencia y
+  Grúas Granada (aseguradora 80, tipo de vehículo 634, elegidos a
+  mano), expediente ET26739160, cliente E.A.S.I.G., S.A.U., Mercedes
+  Actros 2501JSP, código de proveedor GP700101, avería "BLOQUE MOTOR",
+  fechas de solicitud, inicio, localizado y finalizado extraídas.
+- La aseguradora no se elige sola con Europ Assistance porque hay dos
+  con ese nombre (80, `EUROP_AGG`, y 81, `EUROP_TRANSGRUAL`) y TIREA
+  solo pone "EUROP ASSISTANCE"; `_match_insurer` nunca adivina. El dato
+  que las distingue lo aporta Pepe (responsable de asistencia).
+- La orden 20261020001 (COVEI, sin datos) es una prueba anterior de la
+  misma sesión.
+
+### 5.4. Prueba completa del albarán en producción
+
+Orden 20261020002, unidad 01 (José Antonio Zafra Peralta, grúa X11
+9237LGN): aviso, albarán rellenado y firmado por Miguel Ángel en su
+móvil (firma PNG de 38 KB en `WorkOrderAssistanceSignature`, estado
+COMPLETED) y PDF descargado. Correcciones salidas de la prueba:
+- PDF (`albaran_pdf.html`): la rejilla CSS grid se descolocaba en
+  weasyprint; pasa a flex con anchos fijos. El chófer sale por su
+  nombre completo (también en el detalle, el albarán y el
+  desplegable). La avería no repite el código si es igual.
+- Aviso por WhatsApp: "Notificado" significaba solo "Twilio lo
+  aceptó". Ahora el aviso queda en **"Enviando aviso"**
+  (`NOTIFY_SENDING`), Twilio informa por `status_callback` a
+  `AlbaranNoticeStatusView` (`/api/whatsapp/albaran-status/<token>/`,
+  token con la unidad firmada con la SECRET_KEY) y la unidad pasa a
+  **"Notificado"** solo con *delivered*/*read*, o a **"Aviso fallido"**
+  (`NOTIFY_FAILED`) con el código de error. Migraciones `budgets` 0031
+  y 0032, aplicadas. El botón "Avisar" va por htmx y solo se
+  sustituye la fila de la unidad (`_work_order_unit_row.html`), que se
+  refresca cada 3 s mientras espera la confirmación.
+- **Verificado en producción:** unidad 02 de la misma orden en "Aviso
+  fallido" con "Twilio: undelivered, error 63016" (la plantilla
+  `assistance_albaran_notice`, Content SID
+  `HXa984de23fae56cb4afbeb1b6458f693c`, sigue pendiente de aprobación
+  de Meta), visto por Miguel Ángel sin recargar la página.
+
+### 5.5. Otros trabajos de la sesión
+
+- **Botón "Volver"** (directriz 4.25 del documento maestro): vuelve a
+  la página de la que se vino, con la pila de navegación de cada
+  usuario en BD (`panel/navigation_history.py`,
+  `PanelNavigationState` con `screen_key="back_stack"`). Aplicado a 36
+  plantillas antiguas.
+- **Gemini 3.5 Flash** rechaza `thinking_budget`: las 8 llamadas pasan
+  a `ThinkingConfig(thinking_level="low")`.
+- **PEP8** completo (flake8 a 0) en todos los archivos tocados,
+  incluidos `budgets/views.py`, `budgets/models.py`,
+  `whatsapp/views.py`, `whatsapp/services.py` y
+  `work_order_processor/services.py`, con comprobación de AST
+  idéntico.
+- `PLATFORM_BASE_URL` como ajuste de `settings.py`; plantilla
+  `work_order_create_direct.html` que faltaba desde H17.
+
+## 6. Hoja de Ruta para la Siguiente Sesión (S133) -- reescrita al cierre de S132, sustituye a la de S132
+
+Ordenada con las fases del dossier de Pepe (4.4), a petición de Miguel
+Ángel en S132. Los puntos 1 a 3 quedaron cerrados en S132 (ver 5.1 a
+5.3); se mantiene la numeración para no perder la correspondencia con
+el dossier.
+
+Datos de partida fijados por Miguel Ángel en S132:
 - **Máquinas de asistencia:** las de la familia ASISTENCIA de la flota
-  (`fleet.MachineAsset.family`), según la captura del filtro de familias
-  que aportó en su respuesta.
+  (`fleet.MachineAsset.family`).
 - **Conductores de asistencia**, verbatim: *"Conforme se vayan dando de
   alta trabajadores irán entrando en la sección. Ya debería de haber un
-  trabajador."* Son los trabajadores de la sección Asistencia
-  (`ivr_config.Section.contacts`, con su `Contact.company_user`), que
-  entran por el alta de WhatsApp.
+  trabajador."* Son los trabajadores de la sección Asistencia.
 
 Se hace en este orden.
 
-1. **Decidir con Miguel Ángel la forma de la app del operario.**
-   **Hecho en S132:** Kotlin, ver 4.1.
-2. **Sección Servicios (ver 4.3).** Rol Supervisor de asistencia;
-   entrada "Albarán (demo)" convertida en "Servicios"; página con
-   pestañas en el formato de Documentación, visible solo para
-   administradores y supervisores de asistencia. **Hecho en S132**
-   (`9d9450f`, `0cefe84`, `2508e9d`), salvo el cierre. **Cierre:** la
-   página abre con el usuario de Paloma ya como supervisora de
-   asistencia, y devuelve acceso denegado con cualquier otro rol que no
-   sea administrador.
-3. **Fase 1 del dossier: datos de máquinas, conductores y servicios.**
-   Máquinas de la familia ASISTENCIA con nombre interno (su código de
-   flota), matrícula, categoría y estado. Conductores de la sección
-   Asistencia con foto, teléfono y estado. Alta del servicio desde la
-   foto del albarán de TIREA (Gemini Vision rellena el formulario) o a
-   mano, con los bloques del apartado 9 del dossier, y edición de los
-   datos de la orden. **Cierre:** una orden creada en producción desde
-   una foto real de TIREA, con sus datos extraídos en BD.
+1. **Forma de la app del operario.** Cerrado en S132 (5.1).
+2. **Sección Servicios.** Cerrado en S132 (5.2).
+3. **Fase 1 del dossier.** Cerrado en S132 (5.3).
+   Queda una mejora atada a un dato externo: cuando Miguel Ángel
+   aporte el dato de Pepe que distingue en el albarán de TIREA un
+   servicio de Asistencia y Grúas Granada de uno de Transgrual, usarlo
+   en `_match_insurer` (`budgets/views_services.py`) para elegir solo
+   entre las aseguradoras 80 y 81. **Cierre:** una foto de TIREA de
+   Europ Assistance que deja la aseguradora correcta y su tipo de
+   vehículo ya elegidos en el formulario.
 4. **Fase 2: panel de tráfico y asignación.** Pestaña principal de
    Servicios: columnas de tarjetas de conductores, máquinas y
    albaranes abiertos con los colores del dossier (4.4), asignación
@@ -313,14 +391,23 @@ Se hace en este orden.
    y botón de enviar, que manda el aviso por WhatsApp con la plantilla
    `assistance_albaran_notice` (4.2, creada en S132, Content SID
    `HXa984de23fae56cb4afbeb1b6458f693c`, pendiente de aprobación de
-   Meta). Cada cambio de estado guarda hora y usuario. **Cierre:** un
-   servicio asignado arrastrando y enviado en producción, con conductor
-   y máquina en estado ocupado y el aviso recibido en el teléfono.
+   Meta). Ya hecho en S132: el aviso con su confirmación de entrega
+   ("Enviando aviso" → "Notificado" / "Aviso fallido", 5.4); el botón
+   de enviar del panel reutiliza `send_operator_albaran_notification`.
+   Cada cambio de estado guarda hora y usuario. **Primera tarea de
+   S133:** si Miguel Ángel indica que Meta ya aprobó la plantilla,
+   pulsar "Avisar de nuevo" en la unidad 20261020002-02. **Cierre de
+   esa tarea:** consulta a BD con la unidad en NOTIFIED, `notified_at`
+   relleno y `notify_error` vacío. **Cierre del punto:** un servicio
+   asignado arrastrando y enviado en producción, con conductor y
+   máquina en estado ocupado y la unidad en NOTIFIED en BD.
 5. **Fase 3: vista del conductor y firma.** Hoja del conductor sin
    notas internas ni importes, km de salida, fotos, firma del cliente
    o motivo de no firma; al firmar, albarán en verde y conductor y
    máquina regresando. Aquí va la prueba completa con un albarán real
-   de Allianz, cotejando los campos de la sección 3.1. Después, la app
+   de Allianz, cotejando los campos de la sección 3.1 (en S132 ya se
+   probó la cadena completa con un servicio real de Europ Assistance:
+   albarán rellenado y firmado en el móvil y PDF, ver 5.4). Después, la app
    nativa Android en Kotlin (4.1): repositorio propio NewFlow,
    compilación por GitHub Actions, albarán sin conexión que se envía
    al volver la cobertura, segundo plano con envío continuo de la
@@ -352,5 +439,7 @@ Se hace en este orden.
    las alertas del apartado 25 del dossier. **Cierre:** una alerta real
    generada en producción.
 9. **Fase 7: estadísticas y facturación.** Apartados 17 y 18 del
-   dossier. **Cierre:** a concretar con Miguel Ángel al llegar a esta
-   fase.
+   dossier. **Cierre:** las estadísticas del apartado 17 calculadas en
+   el panel sobre los servicios reales de BD, coincidentes con una
+   consulta a BD de los mismos servicios, y la facturación del
+   apartado 18 de un servicio real cerrado, con su importe en BD.
