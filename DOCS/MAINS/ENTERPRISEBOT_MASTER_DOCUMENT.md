@@ -1791,3 +1791,25 @@ list.html` + `fleet/views.py` (S117, las cinco reglas juntas);
 `panel/templates/panel/documentation_h30/_personal_pane.html` (panel
 fijo + visor de selección); `delivery_notes/views.py` (orden múltiple,
 S116).
+
+#### 4.25. DIRECTRIZ CRÍTICA — Nada de botones "Volver" con URL fija: migas de pan (añadida S132)
+
+**Origen, verbatim de Miguel Ángel (S132):** *"los botones volver no
+deben volver a una URL hardcodeada, porque ahora estés donde estés, le
+das a volver y en vez de volver a donde estabas, vuelves a los
+presupuestos de asistencia. Así que los botones volver que construyamos
+que sean con breadcrumb. No pueden ser con un volver hardcodeado."*
+
+**Regla, sin excepción, para toda pantalla nueva o que se toque:**
+
+1. No se pone ningún botón "Volver" que lleve a una URL fija.
+2. La navegación hacia arriba se hace con migas de pan (Bootstrap
+   `breadcrumb`) que construye la vista, nunca la plantilla (DUMB
+   TEMPLATES): lista de `{"label", "url"}`, la última sin enlace.
+3. Un "Cancelar" de formulario lleva a la miga inmediatamente
+   superior, no a una URL fija.
+
+**Implementación de referencia (S132):** `budgets/breadcrumbs.py`
+(`assistance_breadcrumbs`, `parent_url`) y la plantilla
+`budgets/templates/budgets/services/_breadcrumbs.html`, usadas en
+Servicios, el detalle y el alta de órdenes de asistencia y el albarán.

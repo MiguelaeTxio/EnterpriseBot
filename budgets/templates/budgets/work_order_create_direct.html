@@ -12,6 +12,7 @@ existía desde H17 y la vista fallaba con TemplateDoesNotExist (Miguel
 aseguradora y fecha del servicio.
 {% endcomment %}
 <div class="container-fluid px-3 py-3">
+    {% include "budgets/services/_breadcrumbs.html" %}
     <div class="card shadow-sm">
         <div class="card-body">
             <form method="post" action="{% url 'budgets:work_order_create_direct' %}"
@@ -35,9 +36,6 @@ aseguradora y fecha del servicio.
                     <button type="submit" class="btn btn-primary">
                         <i class="bi bi-plus-lg me-1"></i>Crear orden
                     </button>
-                    <a href="{% url 'budgets:services_hub' %}" class="btn btn-outline-secondary">
-                        Volver
-                    </a>
                 </div>
             </form>
         </div>

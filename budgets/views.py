@@ -43,6 +43,7 @@ from budgets.models import (
     TollSegment,
     VehicleType,
 )
+from budgets.breadcrumbs import assistance_breadcrumbs
 from budgets.services import calculate_budget, _resolve_toll_pricing
 from ivr_config.models import CompanyUser, PresenceStatus
 from panel.mixins import (
@@ -5561,6 +5562,9 @@ class WorkOrderCreateDirectView(AssistanceWorkOrderAccessMixin, View):
         ctx = _build_base_context(request, {
             "insurers": insurers,
             "active_nav": "work_orders",
+            "breadcrumbs": assistance_breadcrumbs(
+                company_user, current="Nueva orden",
+            ),
         })
         return render(request, self.template_name, ctx)
 
@@ -5657,6 +5661,9 @@ class WorkOrderDetailView(AssistanceWorkOrderAccessMixin, View):
                 company_user.company,
             ),
             "active_nav": "work_orders",
+            "breadcrumbs": assistance_breadcrumbs(
+                company_user, work_order=work_order,
+            ),
         })
         return render(request, self.template_name, ctx)
 
@@ -5874,8 +5881,8 @@ class WorkOrderAlbaranView(AssistanceAlbaranAccessMixin, View):
             "unit": unit,
             "work_order": unit.work_order,
             "active_nav": "work_orders",
-            "show_work_order_link": (
-                company_user.role in _WORK_ORDER_STAFF_ROLES
+            "breadcrumbs": assistance_breadcrumbs(
+                company_user, work_order=unit.work_order, unit=unit,
             ),
         })
         return render(request, self.template_name, ctx)

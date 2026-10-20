@@ -19,6 +19,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views import View
 
+from budgets.breadcrumbs import assistance_breadcrumbs, parent_url
 from budgets.forms_services import WorkOrderAssistanceForm
 from budgets.models import Insurer, WorkOrderAssistance
 from budgets.views import _build_base_context
@@ -204,13 +205,17 @@ def _render_order_form(request, form, title, action_url, hints=None):
 
     Pinta la página del formulario de la orden.
     """
+    crumbs = assistance_breadcrumbs(
+        request.user.company_user, current=title,
+    )
     return render(request, "budgets/services/work_order_form.html",
                   _build_base_context(request, {
                       "active_nav": "services_hub",
                       "form": form,
                       "page_heading": title,
                       "form_action": reverse(action_url),
-                      "cancel_url": reverse("budgets:services_hub"),
+                      "cancel_url": parent_url(crumbs),
+                      "breadcrumbs": crumbs,
                       "hints": hints or {},
                   }))
 
@@ -238,7 +243,13 @@ class ServicesTireaUploadView(AssistanceSupervisorAccessMixin, View):
         Pinta el formulario de subida.
         """
         return render(request, self.template_name, _build_base_context(
-            request, {"active_nav": "services_hub"},
+            request, {
+                "active_nav": "services_hub",
+                "breadcrumbs": assistance_breadcrumbs(
+                    request.user.company_user,
+                    current="Nueva orden desde TIREA",
+                ),
+            },
         ))
 
     def post(self, request):
@@ -411,6 +422,10 @@ class WorkOrderEditView(AssistanceWorkOrderAccessMixin, View):
                 ),
                 "cancel_url": reverse(
                     "budgets:work_order_detail", args=[work_order.pk],
+                ),
+                "breadcrumbs": assistance_breadcrumbs(
+                    request.user.company_user, work_order=work_order,
+                    current="Editar datos",
                 ),
                 "hints": {},
             }),

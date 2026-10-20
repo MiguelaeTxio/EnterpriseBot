@@ -11,6 +11,7 @@ Gemini y se abre el formulario de alta ya relleno; no se guarda nada
 hasta confirmar ese formulario.
 {% endcomment %}
 <div class="container-fluid px-3 py-3">
+    {% include "budgets/services/_breadcrumbs.html" %}
     <div class="card shadow-sm">
         <div class="card-body">
             <p class="small text-muted">
@@ -31,7 +32,6 @@ hasta confirmar ese formulario.
                     <button type="submit" class="btn btn-primary" id="tirea-submit">
                         <i class="bi bi-magic me-1"></i>Leer datos
                     </button>
-                    <a href="{% url 'budgets:services_hub' %}" class="btn btn-outline-secondary">Volver</a>
                 </div>
             </form>
         </div>
