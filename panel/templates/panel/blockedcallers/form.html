@@ -10,7 +10,7 @@
     <div class="col-12 col-lg-6">
 
         <div class="mb-3">
-            <a href="{% url 'panel:blockedcaller_list' %}" class="text-muted text-decoration-none text-nav">
+            {% url 'panel:blockedcaller_list' as back_fallback %}<a href="{{ panel_back_url|default:back_fallback }}" class="text-muted text-decoration-none text-nav">
                 <i class="bi bi-arrow-left me-1"></i>Volver al listado
             </a>
         </div>

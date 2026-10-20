@@ -24,7 +24,7 @@
         {# Back link / Enlace de retorno                                       #}
         {# ------------------------------------------------------------------ #}
         <div class="mb-3">
-            <a href="{% if back_url %}{{ back_url }}{% else %}{% url 'panel:work_order_admin_history' %}{% endif %}"
+            <a href="{% if panel_back_url %}{{ panel_back_url }}{% elif back_url %}{{ back_url }}{% else %}{% url 'panel:work_order_admin_history' %}{% endif %}"
                class="text-muted text-decoration-none">
                 <i class="bi bi-arrow-left me-1"></i>Volver al historial
             </a>
@@ -705,7 +705,6 @@ window.EB_CONFIG = {
 <script src="{% static 'panel/js/form_entry_modal.js' %}"></script>
 <script src="{% static 'panel/js/form_entry_tour.js' %}"></script>
 <script src="{% static 'panel/js/form_entry_clock.js' %}"></script>
-
 
 {# ================================================================ #}
 {# Modales                                                           #}

@@ -4,12 +4,18 @@
 {% block title %}Subir parte{% endblock %}
 {% block page_title %}Subir parte{% endblock %}
 
+{% block extra_head %}
+<style>
+  .operator-camera-stream { max-height: 60vh; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-12 col-lg-7">
 
         <div class="mb-3">
-            <a href="{% url 'panel:operator_dashboard' %}"
+            {% url 'panel:operator_dashboard' as back_fallback %}<a href="{{ panel_back_url|default:back_fallback }}"
                class="text-muted text-decoration-none">
                 <i class="bi bi-arrow-left me-1"></i>Volver al selector
             </a>
@@ -88,8 +94,8 @@
                                 <div class="modal-body p-0 bg-black text-center">
                                     <video id="camera-stream"
                                            autoplay playsinline
-                                           class="w-100"
-                                           style="max-height:60vh;object-fit:contain;">
+                                           class="w-100 operator-camera-stream object-fit-contain">
+                                        <track kind="captions">
                                     </video>
                                     <canvas id="camera-canvas" class="d-none"></canvas>
                                 </div>
@@ -113,7 +119,6 @@
                     <div id="preview-area" class="mb-4 d-none">
                         <p class="form-label fw-medium mb-2">Previsualización</p>
                         <img id="preview-img"
-                             src=""
                              alt="Vista previa del parte"
                              class="img-fluid rounded border operator-preview-img"
                              width="100%"

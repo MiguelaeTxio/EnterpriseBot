@@ -564,7 +564,7 @@ er hx-trigger="change".
 <div class="text-center text-muted py-5">
     <i class="bi bi-file-earmark-x fs-1 d-block mb-3"></i>
     <p class="mb-1">Este PDF no tiene entradas procesadas todavía.</p>
-    <a href="{{ back_url }}" class="btn btn-outline-secondary btn-sm mt-2">
+    <a href="{{ panel_back_url|default:back_url }}" class="btn btn-outline-secondary btn-sm mt-2">
         <i class="bi bi-arrow-left me-1"></i>Volver a la lista
     </a>
 </div>
@@ -687,5 +687,3 @@ er hx-trigger="change".
 {% block extra_scripts %}
 {% include "panel/_time_picker_widget.html" %}
 {% endblock %}
-
-

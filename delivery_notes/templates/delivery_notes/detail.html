@@ -10,7 +10,7 @@
         Albarán {{ note.delivery_number|default:"s/n" }}
         <span class="badge bg-success ms-2">Asignado</span>
     </h5>
-    <a href="{% url 'delivery_notes:list' %}" class="btn btn-outline-secondary btn-sm">
+    {% url 'delivery_notes:list' as back_fallback %}<a href="{{ panel_back_url|default:back_fallback }}" class="btn btn-outline-secondary btn-sm">
         <i class="bi bi-arrow-left me-1"></i>Volver al listado
     </a>
 </div>

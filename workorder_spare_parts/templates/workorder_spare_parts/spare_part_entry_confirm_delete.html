@@ -16,7 +16,7 @@
                     movimientos de stock registrados -- eliminarlo afectaría al
                     historial de analítica de costes (Hito 9).
                 </div>
-                <a href="{% url 'workorder_spare_parts:catalog_list' %}" class="btn btn-outline-secondary">
+                {% url 'workorder_spare_parts:catalog_list' as back_fallback %}<a href="{{ panel_back_url|default:back_fallback }}" class="btn btn-outline-secondary">
                     Volver
                 </a>
                 {% else %}

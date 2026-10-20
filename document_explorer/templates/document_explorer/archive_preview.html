@@ -26,7 +26,7 @@
             ver directamente; el resto solo se lista.
         </p>
         <a class="btn btn-sm btn-outline-secondary"
-           href="{% url 'document_explorer:explorer' %}?bucket={{ entry.bucket }}&path={{ entry.parent_path }}">
+           href="{% if panel_back_url %}{{ panel_back_url }}{% else %}{% url 'document_explorer:explorer' %}?bucket={{ entry.bucket }}&path={{ entry.parent_path }}{% endif %}">
             <i class="bi bi-arrow-left"></i> Volver a la carpeta
         </a>
     </div>

@@ -6,6 +6,12 @@
 
 {% block page_title %}Detalle del parte{% endblock %}
 
+{% block extra_head %}
+<style>
+  .workorders-family-select { min-width: 170px; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
     <h5 class="mb-0 fw-semibold">
@@ -18,7 +24,7 @@
             <span class="badge bg-warning-subtle text-warning-emphasis ms-2">Pendiente</span>
         {% endif %}
     </h5>
-    <a href="{{ back_url }}" class="btn btn-outline-secondary btn-sm">
+    <a href="{{ panel_back_url|default:back_url }}" class="btn btn-outline-secondary btn-sm">
         <i class="bi bi-arrow-left me-1"></i>Volver al historial
     </a>
 </div>
@@ -135,7 +141,7 @@
                             <form method="post" class="d-flex align-items-center gap-1 family-edit-form">
                                 {% csrf_token %}
                                 <input type="hidden" name="entry_line_pk" value="{{ line.pk }}">
-                                <select name="new_family" class="form-select form-select-sm" style="min-width: 170px;">
+                                <select name="new_family" class="form-select form-select-sm workorders-family-select">
                                     <option value="" {% if not line.current_family_value %}selected{% endif %}>
                                         — Sin clasificar —
                                     </option>

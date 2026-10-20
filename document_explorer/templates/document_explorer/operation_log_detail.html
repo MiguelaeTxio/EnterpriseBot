@@ -41,8 +41,8 @@
                 {% if log.bytes_recovered %}({{ log.bytes_recovered_display }} recuperables){% endif %}
             {% endif %}.
         </p>
-        <a class="btn btn-sm btn-outline-secondary"
-           href="{% url 'document_explorer:operation_log_list' %}">
+        {% url 'document_explorer:operation_log_list' as back_fallback %}<a class="btn btn-sm btn-outline-secondary"
+           href="{{ panel_back_url|default:back_fallback }}">
             <i class="bi bi-arrow-left"></i> Volver al historial
         </a>
     </div>

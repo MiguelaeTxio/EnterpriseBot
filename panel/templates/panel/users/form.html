@@ -11,7 +11,7 @@
     <div class="col-12 col-lg-6">
 
         <div class="mb-3">
-            <a href="{{ next_url }}" class="text-muted text-decoration-none">
+            <a href="{{ panel_back_url|default:next_url }}" class="text-muted text-decoration-none">
                 <i class="bi bi-arrow-left me-1"></i>Volver atrás
             </a>
         </div>

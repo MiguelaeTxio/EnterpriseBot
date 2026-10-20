@@ -35,7 +35,7 @@ CircularImportDocumentView/CircularExportPdfView/CircularExportWordView.
             <h5 class="mb-0">{{ document_type.label }}</h5>
             <span class="text-muted small font-monospace">{{ document_type.code }}</span>
         </div>
-        <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:documentation_hub' %}?tab=circulares">
+        <a class="btn btn-sm btn-outline-secondary" href="{% if panel_back_url %}{{ panel_back_url }}{% else %}{% url 'panel:documentation_hub' %}?tab=circulares{% endif %}">
             <i class="bi bi-arrow-left"></i> Volver al listado
         </a>
     </div>

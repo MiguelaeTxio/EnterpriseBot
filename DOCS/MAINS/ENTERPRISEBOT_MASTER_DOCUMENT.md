@@ -1830,6 +1830,10 @@ es la página anterior a la actual, y el procesador de contexto
 `back_url_context` la expone en todas las plantillas como
 `panel_back_url`.
 
-**Pendiente de extender:** el resto de botones "Volver" con URL fija
-que ya existían en el panel antes de S132 se pasan a `panel_back_url`
-cada vez que se toque su pantalla.
+**Extendido en S132 a todo el panel:** los 36 botones "Volver" con URL
+fija que ya existían usan `{{ panel_back_url|default:<su URL de
+siempre> }}`: vuelven a la página de la que se vino y, si no hay
+historial, a su destino de antes. Excepción deliberada:
+`hr_calendar/clockin.html` ("Volver al panel"), página que guarda en
+caché un service worker para el fichaje sin conexión; una URL por
+usuario quedaría congelada en la copia guardada.

@@ -14,6 +14,12 @@ CircularGenerateView/CircularGeneratePersonSearchView.
 {% block title %}Generar documento -- {{ document_type.label }}{% endblock %}
 {% block page_title %}Generar documento{% endblock %}
 
+{% block extra_head %}
+<style>
+  .circulars-generate-box { max-width: 640px; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid px-3 pt-3">
 
@@ -22,12 +28,12 @@ CircularGenerateView/CircularGeneratePersonSearchView.
             <h5 class="mb-0">{{ document_type.label }}</h5>
             <span class="text-muted small font-monospace">{{ document_type.code }}</span>
         </div>
-        <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:circulars_edit' pk=document_type.pk %}">
+        {% url 'panel:circulars_edit' pk=document_type.pk as back_fallback %}<a class="btn btn-sm btn-outline-secondary" href="{{ panel_back_url|default:back_fallback }}">
             <i class="bi bi-arrow-left"></i> Volver a editar
         </a>
     </div>
 
-    <div class="border rounded p-3" style="max-width: 640px;">
+    <div class="border rounded p-3 circulars-generate-box">
         <p class="text-muted small">
             Elige la empresa y el trabajador. El documento se genera
             sustituyendo las variables que hayas insertado en la

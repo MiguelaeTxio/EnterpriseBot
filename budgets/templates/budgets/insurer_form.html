@@ -93,14 +93,14 @@
                 </h4>
                 <div class="d-flex gap-2">
                     {% if active_tariff %}
-                        <button class="btn btn-primary btn-sm"
+                        <button type="button" class="btn btn-primary btn-sm"
                                 data-bs-toggle="modal"
                                 data-bs-target="#modalTariffPdfUpload"
                                 title="Actualizar toda la tarifa a partir de un PDF de la aseguradora">
                             <i class="bi bi-file-earmark-arrow-up me-1"></i>Actualizar con PDF
                         </button>
                     {% endif %}
-                    <a href="{% url 'budgets:insurer_list' %}"
+                    {% url 'budgets:insurer_list' as back_fallback %}<a href="{{ panel_back_url|default:back_fallback }}"
                        class="btn btn-outline-secondary btn-sm">
                         <i class="bi bi-arrow-left me-1"></i>Volver al listado
                     </a>
@@ -322,7 +322,7 @@
                                 {# Action button — add line #}
                                 {# Botón de acción — añadir línea #}
                                 <div class="d-flex justify-content-end gap-2 p-3 pb-2">
-                                    <button class="btn btn-outline-success btn-sm"
+                                    <button type="button" class="btn btn-outline-success btn-sm"
                                             hx-get="{% url 'budgets:tariff_line_add_form' active_tariff.pk %}"
                                             hx-target="#new-line-row"
                                             hx-swap="innerHTML">
@@ -440,7 +440,7 @@
                                                                        hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
                                                             </td>
                                                             <td class="text-end pe-3">
-                                                                <button class="btn btn-outline-danger btn-sm"
+                                                                <button type="button" class="btn btn-outline-danger btn-sm"
                                                                         title="Eliminar linea"
                                                                         hx-post="{% url 'budgets:tariff_line_delete' line.pk %}"
                                                                         hx-target="#tariff-line-{{ line.pk }}"
@@ -483,7 +483,7 @@
                          aria-labelledby="headingVehicleTypes">
                         <div class="accordion-body p-0">
                             <div class="d-flex justify-content-end p-2 border-bottom">
-                                <button class="btn btn-outline-secondary btn-sm"
+                                <button type="button" class="btn btn-outline-secondary btn-sm"
                                         data-bs-toggle="modal"
                                         data-bs-target="#addVehicleTypeModal">
                                     <i class="bi bi-plus-lg me-1"></i>Añadir tipo de vehículo

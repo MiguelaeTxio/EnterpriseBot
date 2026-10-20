@@ -5,12 +5,19 @@
 {% block title %}Ticket {{ ticket.ticket_date_code|default:ticket.pk }}{% endblock %}
 {% block page_title %}Ticket {{ ticket.ticket_date_code|default:ticket.pk }}{% endblock %}
 
+{% block extra_head %}
+<style>
+  .chat-ticket-log-scroll { max-height: 520px; }
+  .chat-ticket-pre-wrap { white-space: pre-wrap; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid px-0">
 
   {# ---- Cabecera ---- #}
   <div class="d-flex align-items-center gap-3 px-3 px-md-4 pt-4 pb-3 flex-wrap">
-    <a href="{% url 'panel:breakdown_ticket_list' %}" class="btn btn-sm btn-outline-secondary">
+    {% url 'panel:breakdown_ticket_list' as back_fallback %}<a href="{{ panel_back_url|default:back_fallback }}" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-arrow-left me-1"></i>Volver
     </a>
     <h6 class="fw-semibold mb-0">
@@ -165,7 +172,7 @@
             <form method="post" class="d-flex gap-2 align-items-center flex-wrap">
               {% csrf_token %}
               <input type="hidden" name="action" value="assign">
-              <select name="assignee_pk" class="form-select form-select-sm" style="width:auto">
+              <select name="assignee_pk" class="form-select form-select-sm w-auto">
                 <option value="">— Sin asignar —</option>
                 {% for op in assignable_operators %}
                 <option value="{{ op.pk }}"
@@ -189,7 +196,7 @@
             <form method="post" class="d-flex gap-2 align-items-center flex-wrap">
               {% csrf_token %}
               <input type="hidden" name="action" value="set_urgency">
-              <select name="urgency" class="form-select form-select-sm" style="width:auto">
+              <select name="urgency" class="form-select form-select-sm w-auto">
                 <option value="">— Sin urgencia —</option>
                 {% for value, label in URGENCY_CHOICES %}
                 <option value="{{ value }}"
@@ -297,8 +304,7 @@
           </span>
           {% endif %}
         </div>
-        <div class="card-body p-0"
-             style="max-height:520px;overflow-y:auto;"
+        <div class="card-body p-0 chat-ticket-log-scroll overflow-y-auto"
              id="conversation-log-body">
           {% if ticket.conversation_log %}
           <ul class="list-group list-group-flush">
@@ -343,7 +349,7 @@
               </div>
 
               {# Contenido #}
-              <p class="mb-0 small" style="white-space:pre-wrap;">
+              <p class="mb-0 small chat-ticket-pre-wrap">
                 {{ entry.content|default:"" }}
               </p>
 
@@ -363,5 +369,3 @@
   </div>
 </div>
 {% endblock %}
-
-

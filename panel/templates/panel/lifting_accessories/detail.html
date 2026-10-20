@@ -15,7 +15,7 @@ tontas); cada formulario vuelve aquí (PRG).
 
 {% block content %}
 <div class="d-flex align-items-center gap-2 mb-3">
-    <a href="{{ back_url }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Volver</a>
+    <a href="{{ panel_back_url|default:back_url }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Volver</a>
     <h5 class="mb-0">{{ accessory.accessory_type.label }} <span class="fw-bold">{{ accessory.identifier }}</span></h5>
     {% if accessory.is_active %}
     <span class="badge text-bg-success">En servicio</span>

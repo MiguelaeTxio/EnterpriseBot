@@ -27,8 +27,8 @@
             Lo que borras deja de verse para todos los demás al instante.
             Aquí puedes devolverlo a su carpeta.
         </p>
-        <a class="btn btn-sm btn-outline-secondary"
-           href="{% url 'document_explorer:explorer' %}">
+        {% url 'document_explorer:explorer' as back_fallback %}<a class="btn btn-sm btn-outline-secondary"
+           href="{{ panel_back_url|default:back_fallback }}">
             <i class="bi bi-arrow-left"></i> Volver al explorador
         </a>
     </div>

@@ -41,7 +41,7 @@ H30 (S123): breadcrumb hacia la pantalla de origen (mismo destino que
         <li class="breadcrumb-item active" aria-current="page">{{ machine.code }} — {{ machine.brand_model }}</li>
     </ol>
 </nav>
-<a href="{{ back_url }}" class="btn btn-sm btn-outline-secondary mb-0">
+<a href="{{ panel_back_url|default:back_url }}" class="btn btn-sm btn-outline-secondary mb-0">
     <i class="bi bi-arrow-left"></i> Volver
 </a>
 <button type="button" class="btn btn-sm btn-outline-primary mb-0 ms-2" onclick="openSelectionPreview()">
@@ -112,10 +112,10 @@ sube una nueva con la cámara (se sube como IMAGEN y queda fijada).
                     </fieldset>
                     {% if can_edit_machine %}
                     <div class="d-flex justify-content-end gap-2 mt-3">
-                        <button type="button" id="machineEditModeBtn" class="btn btn-sm btn-outline-primary"{% if start_in_edit_mode %} style="display:none;"{% endif %} onclick="requestMachineEditMode()">
+                        <button type="button" id="machineEditModeBtn" class="btn btn-sm btn-outline-primary{% if start_in_edit_mode %} d-none{% endif %}" onclick="requestMachineEditMode()">
                             <i class="bi bi-pencil me-1"></i>Modo edición
                         </button>
-                        <button type="submit" id="machineSaveBtn" class="btn btn-sm btn-primary"{% if not start_in_edit_mode %} style="display:none;"{% endif %}>
+                        <button type="submit" id="machineSaveBtn" class="btn btn-sm btn-primary{% if not start_in_edit_mode %} d-none{% endif %}">
                             <i class="bi bi-check-lg me-1"></i>Guardar datos
                         </button>
                     </div>
@@ -638,7 +638,7 @@ puede ser es que la interfaz no informe de lo que pasa."
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-0 mdet-viewer-body">
-                <iframe id="documentViewerFrame" src="" class="mdet-viewer-frame"></iframe>
+                <iframe id="documentViewerFrame" src="about:blank" title="Visor de documento" class="mdet-viewer-frame"></iframe>
             </div>
         </div>
     </div>
@@ -865,6 +865,7 @@ function confirmMachineEditMode() {
     document.getElementById('machineDataFieldset').disabled = false;
     document.getElementById('machineEditModeBtn').style.display = 'none';
     document.getElementById('machineSaveBtn').style.display = '';
+    document.getElementById('machineSaveBtn').classList.remove('d-none');
     if (machineEditModeModal) machineEditModeModal.hide();
 }
 </script>

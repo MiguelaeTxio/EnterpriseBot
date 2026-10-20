@@ -37,7 +37,7 @@
             Define los campos de datos que el agente IVR recopilará durante las llamadas.
         </p>
     </div>
-    <a href="{% url 'panel:datacaptureset_list' %}"
+    {% url 'panel:datacaptureset_list' as back_fallback %}<a href="{{ panel_back_url|default:back_fallback }}"
        class="btn btn-outline-secondary btn-sm">
         <i class="bi bi-arrow-left me-1"></i>Volver
     </a>
