@@ -268,73 +268,89 @@ Ya decidido antes de recibirlo y que el dossier deja abierto: app nativa
 Android en tablets (4.1), entrada del albarán desde foto de TIREA
 (4.3), GPS continuo (4.1).
 
-## 5. Hoja de Ruta para la Siguiente Sesión (S132) -- concertada con Miguel Ángel al cierre de S131
+## 5. Hoja de Ruta (S132) -- concertada con Miguel Ángel al cierre de S131, reordenada en S132
+
+**Reordenada en S132 con las fases del dossier de Pepe (4.4), a
+petición de Miguel Ángel** (respuesta "1. (a)" a la propuesta). Los
+puntos 1 y 2 son los de antes; del 3 al 9, una fase del dossier cada
+uno. La prueba con Allianz, el envío al cliente, la app Kotlin y el
+mapa quedan dentro de la fase que les toca.
+
+Decisiones de Miguel Ángel en S132 que fijan los datos de partida:
+- **Máquinas de asistencia:** las de la familia ASISTENCIA de la flota
+  (`fleet.MachineAsset.family`), según la captura del filtro de familias
+  que aportó en su respuesta.
+- **Conductores de asistencia**, verbatim: *"Conforme se vayan dando de
+  alta trabajadores irán entrando en la sección. Ya debería de haber un
+  trabajador."* Son los trabajadores de la sección Asistencia
+  (`ivr_config.Section.contacts`, con su `Contact.company_user`), que
+  entran por el alta de WhatsApp.
 
 Se hace en este orden.
 
-1. **Decidir con Miguel Ángel la forma de la app del operario.** Antes
-   de tocar código, exponerle las dos opciones de la sección 4 y
-   construir según la que elija. **Cierre:** la decisión anotada en
-   este anexo, con sus palabras, y el punto 7 de esta hoja de ruta
-   redactado según ella.
+1. **Decidir con Miguel Ángel la forma de la app del operario.**
    **Hecho en S132:** Kotlin, ver 4.1.
 2. **Sección Servicios (ver 4.3).** Rol Supervisor de asistencia;
    entrada "Albarán (demo)" convertida en "Servicios"; página con
    pestañas en el formato de Documentación, visible solo para
-   administradores y supervisores de asistencia. **Cierre:** la página
-   abre con un usuario supervisor de asistencia y devuelve acceso
-   denegado con cualquier otro rol que no sea administrador.
-3. **Pestaña de albaranes.** Listado de órdenes en el formato de la
-   directriz 4.24, alta desde foto del albarán de TIREA (Gemini Vision)
-   y desde presupuesto aceptado, edición de los datos de la orden,
-   alta de unidades y aviso al operario. **Cierre:** una orden creada
-   en producción a partir de una foto real de TIREA, con sus datos
-   extraídos en BD.
-4. **Prueba completa en producción con Allianz.** Primero, la
-   plantilla específica de aviso de asistencia (ver 4.2), de categoría
-   UTILITY. Lleva los datos del servicio y el enlace al albarán, y
-   sustituye a `chat_session_renewal` en
-   `send_operator_albaran_notification()`. Se crea por Comando S, con
-   el mismo patrón que `create_machine_service_whatsapp_template`.
-   (Plantilla y aviso hechos en S132, commit `fb354db`; alta de
-   unidades y botón de aviso en `45c5ea4`.) Esta prueba valida el servidor con el albarán web que ya existe; la
-   app Kotlin llega en el punto 7. Con un albarán real de Allianz
-   en TIREA: crear la orden desde su foto, una unidad con operario y
-   grúa reales, aviso por WhatsApp al operario, abrir el albarán desde el enlace, rellenarlo,
-   firmarlo y sacar el PDF. Corregir lo que falle por el camino y
-   cotejar los campos de Allianz de la sección 3.1 con un albarán o
-   parte real de Allianz que aporte Miguel Ángel. **Cierre:** consulta
-   a BD con la orden, su unidad en `SIGNED_RECEIVED` con
-   `notified_at`, `downloaded_at`, `completed_at` y
-   `signed_received_at` rellenos, una fila en
-   `budgets_workorderassistancesignature` para esa unidad, y el PDF
-   abierto con los datos y la firma.
-5. **Envío del albarán firmado al cliente.** Plantilla
-   `albaran_customer_delivery` creada por Comando S (mismo patrón que
-   `create_machine_service_whatsapp_template`) y envío al teléfono del
-   cliente con el enlace o el PDF al quedar firmado. **Cierre:** la
-   plantilla registrada en BD con su Content SID y, una vez aprobada
-   por Meta, el envío real al teléfono de prueba que indique Miguel
-   Ángel con el albarán firmado del punto 4.
-6. **Pestaña de mapa y control (ver 4.3).** Servicios, conductores
-   asignados, vehículos de asistencia libres y asignados, y bases en el
-   mapa. La parte de control, ampliable como en el Laboratorio de
-   Análisis, se define con el PDF de Pepe. **Cierre:** el mapa en
-   producción con los servicios y vehículos reales.
-7. **App nativa Android en Kotlin para las tablets (decisión del punto
-   1, ver 4.1).** La app necesita:
-   - Repositorio propio en flujo NewFlow Android.
-   - Compilación por GitHub Actions (`android-build`/`android-deploy`).
-   - Albarán rellenable y firmable sin conexión, que se envía solo al
-     volver la cobertura.
-   - Funcionamiento en segundo plano, abierta desde el principio, con
-     envío continuo de la posición de la tablet al servidor.
-   - Situación de los servicios en un mapa del panel.
-
-   Miguel Ángel instala y actualiza la app él mismo, y las primeras
-   pruebas se hacen en su propio móvil. **Cierre:** dos consultas a BD.
-   - Un albarán rellenado y firmado en modo avión llega al servidor al
-     recuperar la conexión, con `signed_offline=True` en su firma y
-     `synced_at` relleno en la unidad.
-   - Las posiciones enviadas por el móvil de Miguel Ángel llegan
-     registradas con la pantalla apagada.
+   administradores y supervisores de asistencia. **Hecho en S132**
+   (`9d9450f`, `0cefe84`, `2508e9d`), salvo el cierre. **Cierre:** la
+   página abre con el usuario de Paloma ya como supervisora de
+   asistencia, y devuelve acceso denegado con cualquier otro rol que no
+   sea administrador.
+3. **Fase 1 del dossier: datos de máquinas, conductores y servicios.**
+   Máquinas de la familia ASISTENCIA con nombre interno (su código de
+   flota), matrícula, categoría y estado. Conductores de la sección
+   Asistencia con foto, teléfono y estado. Alta del servicio desde la
+   foto del albarán de TIREA (Gemini Vision rellena el formulario) o a
+   mano, con los bloques del apartado 9 del dossier, y edición de los
+   datos de la orden. **Cierre:** una orden creada en producción desde
+   una foto real de TIREA, con sus datos extraídos en BD.
+4. **Fase 2: panel de tráfico y asignación.** Pestaña principal de
+   Servicios: columnas de tarjetas de conductores, máquinas y
+   albaranes abiertos con los colores del dossier (4.4), asignación
+   arrastrando, sin dejar asignar lo ocupado ni lo que está en taller,
+   y botón de enviar, que manda el aviso por WhatsApp con la plantilla
+   `assistance_albaran_notice` (4.2, creada en S132, Content SID
+   `HXa984de23fae56cb4afbeb1b6458f693c`, pendiente de aprobación de
+   Meta). Cada cambio de estado guarda hora y usuario. **Cierre:** un
+   servicio asignado arrastrando y enviado en producción, con conductor
+   y máquina en estado ocupado y el aviso recibido en el teléfono.
+5. **Fase 3: vista del conductor y firma.** Hoja del conductor sin
+   notas internas ni importes, km de salida, fotos, firma del cliente
+   o motivo de no firma; al firmar, albarán en verde y conductor y
+   máquina regresando. Aquí va la prueba completa con un albarán real
+   de Allianz, cotejando los campos de la sección 3.1. Después, la app
+   nativa Android en Kotlin (4.1): repositorio propio NewFlow,
+   compilación por GitHub Actions, albarán sin conexión que se envía
+   al volver la cobertura, segundo plano con envío continuo de la
+   posición, y el mapa del panel con servicios, vehículos y bases.
+   Miguel Ángel instala y actualiza la app; primeras pruebas en su
+   propio móvil. **Cierre:** tres consultas a BD. Un albarán de Allianz
+   firmado en producción. Otro rellenado y firmado en modo avión que
+   llega al recuperar la conexión, con `signed_offline=True` y
+   `synced_at` relleno. Posiciones del móvil de Miguel Ángel
+   registradas con la pantalla apagada.
+6. **Fase 4: cierre en base con km y gasoil.** El conductor mete km
+   finales y si repostó y cuántos litros; el albarán pasa a cerrado
+   (gris) y conductor y máquina vuelven a libres. Sin km finales ni la
+   indicación de repostaje no se puede cerrar. Decisión S132: el
+   estado final de un albarán firmado en pantalla es este cierre en
+   base; *Firma recibida* queda solo para el albarán cerrado sin firma
+   cuyo papel firmado llega después. **Cierre:** un servicio real
+   cerrado en base, con sus km y litros en BD y conductor y máquina de
+   nuevo libres.
+7. **Fase 5: historial, buscador, PDF y envío al cliente.** Servicios
+   cerrados archivados, buscador del apartado 26 del dossier,
+   exportaciones del 27, y el envío del albarán firmado al cliente con
+   la plantilla `albaran_customer_delivery`. Los albaranes no se
+   borran: se corrigen con registro de auditoría. **Cierre:** un
+   albarán real encontrado con el buscador, su PDF descargado y el
+   envío recibido en el teléfono de prueba que indique Miguel Ángel.
+8. **Fase 6: mantenimiento y avisos.** Km y próximo mantenimiento de
+   cada máquina de asistencia, sobre los avisos de revisiones de H30, y
+   las alertas del apartado 25 del dossier. **Cierre:** una alerta real
+   generada en producción.
+9. **Fase 7: estadísticas y facturación.** Apartados 17 y 18 del
+   dossier. **Cierre:** a concretar con Miguel Ángel al llegar a esta
+   fase.
