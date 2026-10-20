@@ -72,7 +72,7 @@ nueva son un acordeón (solo una abierta, guardada por usuario).
 </div>
 
 <div class="border rounded p-2" id="svc-bottom-panel">
-    <div class="fixed-list-scroll h-100 overflow-auto" id="svc-table-container">
+    <div class="fixed-list-scroll h-100 overflow-auto position-relative" id="svc-table-container">
         {% include "panel/service_tab/_table.html" %}
     </div>
 </div>
@@ -183,7 +183,37 @@ nueva son un acordeón (solo una abierta, guardada por usuario).
         table.classList.toggle("svc-open-read", group === "read");
         table.classList.toggle("svc-open-svc", group === "svc");
         if (window.EbNavState) window.EbNavState.save(SCREEN_KEY, {open_group: group});
+        placeBarArrow();
     }
+    // S131: una sola flecha en el centro de la barra plegada (Miguel
+    // Ángel: "con que esté en el medio del botón, con eso es
+    // suficiente"), no una por fila. Se recoloca al desplazar, al
+    // redimensionar, al cambiar de grupo y al recargar la tabla.
+    function placeBarArrow() {
+        let arrow = document.getElementById("svc-bar-arrow");
+        if (!arrow) {
+            arrow = document.createElement("i");
+            arrow.id = "svc-bar-arrow";
+            arrow.className = "bi svc-bar-arrow";
+        }
+        if (arrow.parentNode !== container) container.appendChild(arrow);
+        const bar = Array.from(container.querySelectorAll("thead th.svc-bar"))
+            .find(th => th.offsetParent !== null);
+        if (!bar) {
+            arrow.style.display = "none";
+            return;
+        }
+        const pointsRight = bar.dataset.group === "read";
+        arrow.className = "bi svc-bar-arrow " + (pointsRight ? "bi-chevron-right" : "bi-chevron-left");
+        const barRect = bar.getBoundingClientRect();
+        const boxRect = container.getBoundingClientRect();
+        arrow.style.display = "";
+        arrow.style.left = (barRect.left - boxRect.left + container.scrollLeft + barRect.width / 2) + "px";
+        arrow.style.top = (container.scrollTop + container.clientHeight / 2) + "px";
+    }
+    container.addEventListener("scroll", placeBarArrow);
+    window.addEventListener("resize", placeBarArrow);
+
     // Segunda fila de cabecera pegada justo debajo de la primera.
     function stickSecondHeaderRow() {
         const table = document.getElementById("svc-table");
@@ -238,6 +268,7 @@ nueva son un acordeón (solo una abierta, guardada por usuario).
         if (ev.target === container) {
             syncChecks();
             stickSecondHeaderRow();
+            placeBarArrow();
         }
     });
     window.addEventListener("resize", stickSecondHeaderRow);
@@ -272,5 +303,6 @@ nueva son un acordeón (solo una abierta, guardada por usuario).
     }
     syncChecks();
     stickSecondHeaderRow();
+    placeBarArrow();
 }());
 </script>

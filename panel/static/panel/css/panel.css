@@ -1560,8 +1560,20 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
     border-left: 2px solid #dee2e6;
     border-right: 2px solid #dee2e6;
 }
-.svc-table .svc-bar:hover {
-    background-color: #cfe2ff;
+/* Barra continua: sin rayas entre filas ni resaltado de fila. */
+.svc-table tbody td.svc-bar,
+.svc-table.table-hover > tbody > tr:hover > td.svc-bar {
+    border-bottom-color: #e9ecef;
+    box-shadow: none;
+}
+/* Una sola flecha, en el centro de la parte visible de la barra. */
+.svc-bar-arrow {
+    position: absolute;
+    z-index: 2;
+    transform: translate(-50%, -50%);
+    font-size: 1.25rem;
+    color: #0d6efd;
+    pointer-events: none;
 }
 .svc-table thead th.svc-bar {
     background-color: #dee2e6;
