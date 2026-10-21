@@ -536,6 +536,27 @@ lo que dependa de ellas.
    `albaran_customer_delivery`) y cuándo (al completarse o a mano).
    Es el punto 7 de 6.1 (fase 5 del dossier).
 
+4. **Hoja de servicio (modelo que pasó Pepe, S133).** Implementada en
+   S133 (servidor `5d20122`/`b3e61fd`, app `3565e15`). Dudas abiertas:
+   1. **Km salida:** en el modelo viene como opcional; Miguel Ángel
+      cree que es un fallo y se ha puesto obligatorio y como puerta de
+      la hoja (*"si no mete la información inicial no le da acceso a
+      la hoja de servicio [...] en principio ponlos obligatorios"*).
+      Confirmar con Pepe.
+   2. **"Base" (obligatorio, en la fila de Recogida y Destino):** se ha
+      tomado como la base de llegada, junto a km y hora de llegada a
+      base en el cierre. Confirmar.
+   3. **Fotos:** en el modelo no llevan marca; se han hecho
+      obligatorias las tres (antes de cargar, cargado en altura,
+      descargado) antes de la firma, por la decisión E de la reunión,
+      salvo reparación en el sitio (`repair_on_site`). Confirmar si
+      "antes de cargar" también es obligatoria.
+   4. **Matrícula y expediente opcionales y PMA obligatorio:** así
+      viene en el modelo; se ha respetado tal cual.
+   5. **Nocturno:** se calcula con la hora de salida de base y el
+      horario nocturno de la aseguradora (o el de la empresa).
+      Confirmar si cuenta la salida o la hora del servicio.
+
 ### 6.3. Reunión de Miguel Ángel con Pepe (S133, 21/10/2026) -- decisiones
 
 Cambian el enfoque de la entrada de servicios y de la app del
