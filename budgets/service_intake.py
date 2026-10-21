@@ -97,6 +97,31 @@ IMPORTANT_FIELDS = (
     ("breakdown_description", "avería"),
     ("client_phone", "teléfono del cliente"),
 )
+CIF_HELP = (
+    "CIF de la empresa del grupo que da el servicio (decide la ficha de "
+    "aseguradora: Mondial / Transgrual o Mondial / Gruas Alvarez...)."
+)
+VEHICLE_TYPE_HELP = (
+    "Categoría de tarifa del vehículo ASISTIDO (el del cliente: turismo, "
+    "furgoneta, camión, semirremolque...), nunca nuestra grúa o máquina."
+)
+
+# Orientative criteria of the dispatcher (Miguel Ángel, S133: Alia must
+# act as head of traffic). Whoever gives the service always prevails.
+# Criterios orientativos de jefa de tráfico (Miguel Ángel, S133: un
+# semirremolque se lleva con una tractora, no se pregunta). Manda
+# siempre quien da el servicio.
+DISPATCH_CRITERIA = (
+    "- Semirremolque o remolque suelto (o tractora averiada con el "
+    "remolque bien): CABEZA TRACTORA, que engancha el semirremolque.\n"
+    "- Turismo, todoterreno, moto o furgoneta: ASISTENCIA EN "
+    "CARRETERA (grúa de plataforma).\n"
+    "- Camión rígido, tractora sola o autobús: RESCATE CON GRÚA MÓVIL "
+    "o GRÚA MÓVIL según peso (20 TM o 30 TM).\n"
+    "- Vuelco, salida de vía o carga caída: GRÚA MÓVIL / RESCATE.\n"
+    "- Reparación en el sitio sin remolcar (rueda, batería, manguito "
+    "sin remolque): VEHÍCULO DE PERSONAL o ASISTENCIA EN CARRETERA.\n"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -216,9 +241,18 @@ def _set_insurer(intake, name):
     Guarda la aseguradora nombrada en la conversación. Devuelve un aviso
     si no se reconoce o hay varias candidatas.
     """
-    from budgets.views_services import _match_insurer
+    from budgets.views_services import (
+        _match_insurer,
+        _match_insurer_by_tax_id,
+    )
 
-    insurer = _match_insurer(intake.company, name)
+    insurer = None
+    if intake.data.get("company_tax_id"):
+        insurer = _match_insurer_by_tax_id(
+            intake.company, intake.data["company_tax_id"], name,
+        )
+    if insurer is None:
+        insurer = _match_insurer(intake.company, name)
     if insurer is None:
         wanted = _norm(name)
         candidates = [
@@ -233,6 +267,34 @@ def _set_insurer(intake, name):
         intake.data.pop("vehicle_type_name", None)
     intake.data["insurer"] = insurer.pk
     intake.data["insurer_name"] = insurer.name
+    return ""
+
+
+def _set_tax_id(intake, tax_id):
+    """
+    Store the CIF of the service and resolve the insurer card with it.
+
+    ---
+
+    Guarda el CIF del servicio (reunión con Pepe, S133: "la aseguradora
+    va por el CIF") y con él la empresa del grupo. Si ya se sabe el
+    nombre de la aseguradora, elige su ficha de esa empresa ("Mondial /
+    Transgrual" frente a "Mondial / Gruas Alvarez"). Devuelve un aviso
+    si el CIF no es de ninguna empresa del grupo.
+    """
+    from budgets.views_services import own_company_for_tax_id
+
+    profile = own_company_for_tax_id(tax_id)
+    intake.data["company_tax_id"] = str(tax_id).strip()
+    if profile is None:
+        intake.data.pop("own_company_name", None)
+        return "El CIF «%s» no es de ninguna empresa del grupo." % tax_id
+    intake.data["own_company_name"] = profile.legal_name
+    name = intake.data.get("insurer_name") or intake.data.get(
+        "insurer_name_read",
+    )
+    if name:
+        _set_insurer(intake, name)
     return ""
 
 
@@ -302,6 +364,13 @@ def apply_photo(intake, file_bytes, mime_type):
         intake.data[key] = _json_value(value)
     if extracted.get("insurer_name") and not intake.data.get("insurer"):
         intake.data["insurer_name_read"] = extracted["insurer_name"]
+    if extracted.get("company_tax_id"):
+        from budgets.views_services import own_company_for_tax_id
+
+        intake.data["company_tax_id"] = extracted["company_tax_id"]
+        profile = own_company_for_tax_id(extracted["company_tax_id"])
+        if profile is not None:
+            intake.data["own_company_name"] = profile.legal_name
     if initial.get("insurer"):
         from budgets.models import Insurer, VehicleType
 
@@ -328,6 +397,16 @@ def data_summary(intake):
     """
     data = intake.data
     known = []
+    if data.get("own_company_name"):
+        known.append(
+            "empresa del grupo (por el CIF %s): %s"
+            % (data.get("company_tax_id", ""), data["own_company_name"])
+        )
+    elif data.get("company_tax_id"):
+        known.append(
+            "CIF leído, no es de ninguna empresa del grupo: %s"
+            % data["company_tax_id"]
+        )
     if data.get("insurer_name"):
         known.append("aseguradora: %s" % data["insurer_name"])
     elif data.get("insurer_name_read"):
@@ -360,6 +439,10 @@ def save_data(intake, args):
     Herramienta: guarda los datos dichos en la conversación.
     """
     warnings = []
+    if args.get("cif"):
+        warning = _set_tax_id(intake, args["cif"])
+        if warning:
+            warnings.append(warning)
     if args.get("aseguradora"):
         warning = _set_insurer(intake, args["aseguradora"])
         if warning:
@@ -679,12 +762,14 @@ def _tool_declarations():
 
     string = types.Schema(type=types.Type.STRING)
     data_props = {
+        "cif": types.Schema(
+            type=types.Type.STRING, description=CIF_HELP,
+        ),
         "aseguradora": types.Schema(
             type=types.Type.STRING, description="Nombre de la aseguradora.",
         ),
         "tipo_vehiculo": types.Schema(
-            type=types.Type.STRING,
-            description="Tipo de vehículo según la tarifa de la aseguradora.",
+            type=types.Type.STRING, description=VEHICLE_TYPE_HELP,
         ),
     }
     for arg, (_field, help_text) in DATA_FIELDS.items():
@@ -786,24 +871,49 @@ def _system_prompt(intake):
         for insurer in _insurers(company)
     )
     return (
-        "Eres Alia, de %(company)s. Hablas por WhatsApp con %(name)s, que "
-        "da un servicio de asistencia en carretera (grúa). Tu trabajo es "
-        "quitarle todo el trabajo administrativo: recoger los datos, "
-        "proponer quién va y lanzar el servicio.\n\n"
+        "Eres Alia, la jefa de tráfico de %(company)s. Hablas por "
+        "WhatsApp con %(name)s, que da un servicio de asistencia en "
+        "carretera. Tu trabajo es quitarle todo el trabajo: recoger los "
+        "datos, DECIDIR tú qué máquina y qué equipo van, proponerlo y "
+        "lanzarlo. Piensa como una jefa de tráfico con experiencia: no "
+        "preguntes lo que puedes deducir de los datos.\n\n"
         "Hoy es %(today)s.\n\n"
+        "DOS COSAS QUE NO DEBES CONFUNDIR:\n"
+        "- «Tipo de vehículo» es la categoría de tarifa del vehículo "
+        "ASISTIDO (el del cliente). Dedúcelo tú de modelo, tipo, "
+        "comentarios y avería (p. ej. un «SEMIRREMOLQUE» es el tipo "
+        "semirremolque/remolque de la aseguradora) y guárdalo con "
+        "guardar_datos. Pregunta solo si de verdad hay dos opciones "
+        "posibles.\n"
+        "- La «máquina» es NUESTRO vehículo, el que va a hacer el "
+        "servicio. La eliges tú con estos criterios orientativos:\n"
+        "%(criteria)s"
+        "Lee bien los comentarios: «tractora averiada, remolque sin "
+        "problema» significa que hay que llevarse el semirremolque con "
+        "una cabeza tractora nuestra.\n\n"
+        "EMPRESA Y ASEGURADORA: van por el CIF. Si guardar_datos ya "
+        "devuelve la aseguradora (la ficha de la empresa del grupo del "
+        "CIF), no la preguntes. Si falta, pregunta solo la empresa del "
+        "grupo o el CIF (guárdalo con el argumento cif), nunca una "
+        "lista de fichas.\n\n"
         "CÓMO TRABAJAS:\n"
         "1. Cada vez que te den datos (o llegue una foto ya leída), "
-        "llama a guardar_datos. No inventes nada.\n"
-        "2. Pide de una sola vez todo lo que falte de lo importante "
-        "(aseguradora, tipo de vehículo, expediente, matrícula, "
-        "recogida, destino, avería, teléfono del cliente). Si no lo "
-        "tienen, sigue: solo aseguradora y tipo de vehículo son "
-        "obligatorios.\n"
-        "3. Llama a consultar_disponibilidad y di brevemente quién está "
-        "libre o volviendo (equipos y conductores), para que elijan.\n"
+        "llama a guardar_datos, incluido el tipo de vehículo que hayas "
+        "deducido. No inventes datos del servicio.\n"
+        "2. Llama a consultar_disponibilidad y PROPÓN un equipo concreto "
+        "(conductor + máquina del tipo que toca) libre o regresando, el "
+        "más adecuado. Si no hay ninguno de ese tipo libre, propón el "
+        "que quedará libre antes (el servicio quedará en cola) o un "
+        "conductor libre con una máquina de ese tipo sin conductor. "
+        "No preguntes «¿qué vehículo asigno?»: propón tú.\n"
+        "3. En el mismo mensaje pide de una sola vez lo importante que "
+        "falte (expediente, matrícula, recogida, destino, avería, "
+        "teléfono del cliente). Si no lo tienen, sigue: solo aseguradora "
+        "y tipo de vehículo son obligatorios.\n"
         "4. Antes de lanzar, resume en pocas líneas (aseguradora, "
-        "vehículo, recogida → destino, conductor y máquina) y pregunta "
-        "si lo lanzas. Solo con un sí claro llama a lanzar_servicio.\n"
+        "vehículo asistido, recogida → destino, conductor y máquina) y "
+        "pregunta si lo lanzas. Si te cambian el equipo o la máquina, "
+        "obedece. Solo con un sí claro llama a lanzar_servicio.\n"
         "5. Manda quien da el servicio: si elige un conductor o una "
         "máquina que figuran en taller, de baja, de vacaciones o "
         "ausentes, avísale UNA vez. Si te confirma que sí están "
@@ -817,11 +927,12 @@ def _system_prompt(intake):
         "pregunta lo necesario.\n\n"
         "ESTILO: mensajes cortos de WhatsApp, en español, sin "
         "formularios ni listas largas. Tutea.\n\n"
-        "ASEGURADORAS Y SUS TIPOS DE VEHÍCULO:\n%(insurers)s\n"
+        "ASEGURADORAS Y SUS TIPOS DE VEHÍCULO (ASISTIDO):\n%(insurers)s\n"
     ) % {
         "company": company.name,
         "name": user.get_full_name() or user.username,
         "today": timezone.localdate().strftime("%A %d/%m/%Y"),
+        "criteria": DISPATCH_CRITERIA,
         "insurers": insurers or "(ninguna dada de alta)",
     }
 
@@ -1091,29 +1202,40 @@ def voice_instruction(company_user):
     return (
         "\n\nDAR UN SERVICIO DE ASISTENCIA POR TELÉFONO:\n"
         "Quien llama es %(name)s, que puede dar servicios de asistencia "
-        "(grúa). Si dice que va a dar un servicio, encárgate tú de todo:\n"
+        "(grúa). Si dice que va a dar un servicio, actúa como su jefa de "
+        "tráfico y encárgate tú de todo, sin preguntar lo que puedas "
+        "deducir:\n"
         "1. Pregunta los datos de forma natural y guárdalos con "
-        "servicio_guardar_datos cada vez que te den alguno: aseguradora "
-        "(obligatoria), tipo de vehículo (obligatorio; la herramienta te "
-        "dice las opciones), expediente, matrícula, marca y modelo, "
-        "recogida, destino, avería y teléfono del cliente. Las "
-        "matrículas y expedientes, repítelos para confirmar.\n"
-        "2. Consulta servicio_disponibilidad y di quién está libre o "
-        "volviendo, en pocas palabras.\n"
-        "3. Antes de lanzar, resume (aseguradora, vehículo, de dónde a "
-        "dónde, conductor y máquina) y pregunta si lo lanzas. Solo con "
-        "un sí claro llama a servicio_lanzar.\n"
-        "4. Manda quien llama: si elige un conductor o una máquina que "
+        "servicio_guardar_datos cada vez que te den alguno: empresa del "
+        "grupo o CIF (decide la ficha de aseguradora), aseguradora, "
+        "expediente, matrícula, marca y modelo, recogida, destino, "
+        "avería y teléfono del cliente. Las matrículas y expedientes, "
+        "repítelos para confirmar.\n"
+        "2. El tipo de vehículo es la tarifa del vehículo ASISTIDO (el "
+        "del cliente): dedúcelo tú (un semirremolque es tipo "
+        "semirremolque o remolque) y guárdalo; pregunta solo si hay "
+        "duda real. No lo confundas con nuestra máquina.\n"
+        "3. Nuestra máquina la eliges tú con estos criterios "
+        "orientativos:\n%(criteria)s"
+        "Consulta servicio_disponibilidad y PROPÓN un equipo concreto "
+        "de ese tipo, libre o regresando. Nunca preguntes qué vehículo "
+        "asignar.\n"
+        "4. Antes de lanzar, resume (aseguradora, vehículo, de dónde a "
+        "dónde, conductor y máquina) y pregunta si lo lanzas. Si te "
+        "cambia el equipo, obedece. Solo con un sí claro llama a "
+        "servicio_lanzar.\n"
+        "5. Manda quien llama: si elige un conductor o una máquina que "
         "figuran en taller, de baja, de vacaciones o ausentes, avísale "
         "una vez; si confirma que sí están disponibles, lanza con "
         "nota_prevalencia con lo que te ha dicho. Si están ocupados, el "
         "servicio queda en cola y sale solo al terminar el actual.\n"
-        "5. Al lanzar, di el número de albarán y si se ha enviado o queda "
+        "6. Al lanzar, di el número de albarán y si se ha enviado o queda "
         "en cola. Si una herramienta da error, explícalo y pregunta.\n"
         "Frases cortas: quien llama puede ir conduciendo.\n"
         "Aseguradoras: %(insurers)s."
     ) % {
         "name": user.get_full_name() or user.username,
+        "criteria": DISPATCH_CRITERIA,
         "insurers": insurers or "ninguna dada de alta",
     }
 
@@ -1129,14 +1251,12 @@ def voice_tool_declarations():
     herramientas).
     """
     data_props = {
+        "cif": {"type": "string", "description": CIF_HELP},
         "aseguradora": {
             "type": "string", "description": "Nombre de la aseguradora.",
         },
         "tipo_vehiculo": {
-            "type": "string",
-            "description": (
-                "Tipo de vehículo según la tarifa de la aseguradora."
-            ),
+            "type": "string", "description": VEHICLE_TYPE_HELP,
         },
     }
     for arg, (_field, help_text) in DATA_FIELDS.items():

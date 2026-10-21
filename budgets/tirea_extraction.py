@@ -49,7 +49,7 @@ TEXT_FIELDS = (
     "pickup_location", "delivery_type", "delivery_province",
     "delivery_locality", "delivery_country", "delivery_address",
     "ris_motive", "insurer_comments", "company_observations",
-    "tirea_driver", "tirea_machine",
+    "tirea_driver", "tirea_machine", "company_tax_id",
 )
 DATETIME_FIELDS = (
     "request_time", "service_datetime", "service_start_time",
@@ -87,6 +87,10 @@ está vacío o no se ve, devuelve una cadena vacía "".
 
 Correspondencia de campos (etiqueta en TIREA -> clave):
 - Compañía -> insurer_name
+- TODOS los CIF/NIF que se lean en cualquier parte de la imagen (debajo
+  de Compañía, en el bloque Servicio, en la cabecera, en el proveedor,
+  donde sea) -> company_tax_id: cada uno solo con letras y cifras, sin
+  espacios ni guiones, separados por comas (p. ej. "B92493022,A12345678")
 - Cod. proveedor -> provider_code
 - Cliente -> client_name
 - Compañía cliente -> client_company

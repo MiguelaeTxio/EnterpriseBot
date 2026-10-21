@@ -690,7 +690,8 @@ ACCEPTED_UPLOAD_TYPES = (
 )
 # Keys of the extraction that are not model fields (hints for the form).
 # Claves de la extracción que no son campos del modelo (pistas).
-_HINT_KEYS = ("insurer_name", "client_company", "tirea_driver",
+_HINT_KEYS = ("insurer_name", "company_tax_id", "client_company",
+              "tirea_driver",
               "tirea_machine", "service_datetime", "ris_motive")
 
 
@@ -725,6 +726,111 @@ def _match_insurer(company, name):
     return None
 
 
+# Names under which an insurer appears in the service documents, when
+# they are not the one of the catalogue (S133: TIREA shows "ALLIANZ
+# PARTNERS" for the Mondial insurers).
+# Nombres con que aparece una aseguradora en los documentos del servicio
+# cuando no son los del catálogo (S133: TIREA pone "ALLIANZ PARTNERS"
+# para las aseguradoras Mondial).
+INSURER_NAME_ALIASES = {
+    "allianz partners": "mondial",
+    "allianz global assistance": "mondial",
+    "awp": "mondial",
+}
+
+
+def _plain(text):
+    """
+    Lower case without accents or punctuation, for name matching.
+
+    ---
+
+    Minúsculas sin tildes ni signos, para comparar nombres.
+    """
+    import re
+    import unicodedata
+
+    text = unicodedata.normalize("NFKD", str(text or ""))
+    text = "".join(c for c in text if not unicodedata.combining(c)).lower()
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", text).split())
+
+
+def own_company_for_tax_id(tax_id):
+    """
+    Group company (fiscal profile) of a CIF, or None.
+
+    ---
+
+    Empresa del grupo (perfil fiscal) que tiene ese CIF, o None.
+    """
+    import re
+
+    from document_explorer.models import CompanyFiscalProfile
+
+    # The extraction returns every CIF it reads, separated by commas.
+    # La extracción devuelve todos los CIF que lee, separados por comas.
+    wanted = {
+        _plain(part).replace(" ", "")
+        for part in re.split(r"[,;/\s]+", str(tax_id or ""))
+    } - {""}
+    if not wanted:
+        return None
+    for profile in CompanyFiscalProfile.objects.all():
+        if _plain(profile.tax_id).replace(" ", "") in wanted:
+            return profile
+    return None
+
+
+def _match_insurer_by_tax_id(company, tax_id, insurer_name):
+    """
+    Insurer card of the service by the CIF of the document.
+
+    ---
+
+    Ficha de aseguradora del servicio según el CIF del documento
+    (reunión con Pepe, S133: "va por el CIF"). Cada aseguradora tiene
+    una ficha por empresa del grupo ("Mondial / Gruas Alvarez",
+    "Mondial / Transgrual"...): el CIF dice la empresa y el nombre leído
+    dice la aseguradora. None si no hay una sola ficha que encaje.
+    """
+    profile = own_company_for_tax_id(tax_id)
+    if profile is None:
+        return None
+    own_names = [_plain(profile.legal_name)] + [
+        _plain(alias) for alias in profile.name_aliases.splitlines()
+        if alias.strip()
+    ]
+    stop = {"y", "s", "l", "sl", "sa", "slu"}
+
+    def is_ours(service_name):
+        for alternative in str(service_name or "").split("/"):
+            words = [w for w in _plain(alternative).split() if w not in stop]
+            if words and any(
+                all(word in own.split() for word in words)
+                for own in own_names
+            ):
+                return True
+        return False
+
+    candidates = [
+        insurer for insurer in Insurer.objects.filter(
+            company=company, is_active=True,
+        )
+        if is_ours(insurer.service_company_name)
+    ]
+    read = _plain(insurer_name)
+    for alias, catalogue_name in INSURER_NAME_ALIASES.items():
+        if alias in read:
+            read = catalogue_name
+    if read:
+        candidates = [
+            insurer for insurer in candidates
+            if _plain(insurer.insurer_company_name) in read
+            or read in _plain(insurer.insurer_company_name)
+        ]
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def _match_vehicle_type(insurer, label):
     """
     Vehicle type of the insurer named like the TIREA vehicle type.
@@ -756,7 +862,9 @@ def _initial_from_extraction(company, data):
     initial = {
         key: value for key, value in data.items() if key not in _HINT_KEYS
     }
-    insurer = _match_insurer(company, data.get("insurer_name"))
+    insurer = _match_insurer_by_tax_id(
+        company, data.get("company_tax_id"), data.get("insurer_name"),
+    ) or _match_insurer(company, data.get("insurer_name"))
     if insurer:
         initial["insurer"] = insurer.pk
         vehicle_type = _match_vehicle_type(
