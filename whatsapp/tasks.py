@@ -364,6 +364,17 @@ def service_intake_reply(intake_pk, body, media_url, content_type,
     from whatsapp.models import WhatsAppMessage
     from whatsapp.services import WhatsAppChatService
 
+    # S133: reading the photo can take a while; say so at once.
+    # Leer la foto puede tardar: se avisa en el acto.
+    if media_url:
+        try:
+            WhatsAppChatService.send_reply(
+                from_number=platform_number, to_number=from_number,
+                reply_text="Recibido. Estoy leyendo el documento, me lleva "
+                           "unos segundos…",
+            )
+        except Exception as exc:  # noqa: BLE001 -- el aviso no es crítico
+            logger.warning("# [SERVICE INTAKE] Aviso no enviado: %s", exc)
     try:
         text = process_whatsapp(
             intake_pk, body, media_url, content_type,

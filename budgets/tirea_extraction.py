@@ -135,7 +135,7 @@ Formatos:
 """
 
 
-def extract_tirea_albaran(file_bytes, mime_type):
+def extract_tirea_albaran(file_bytes, mime_type, timeout_ms=90_000):
     """
     Extract the TIREA albarán fields from an image or PDF.
 
@@ -146,6 +146,8 @@ def extract_tirea_albaran(file_bytes, mime_type):
     hora como `datetime`, números como `Decimal`/`int`, sí/no como
     booleanos); lo que no se lee queda fuera. Lanza la excepción de
     Gemini si la llamada falla, para que la vista avise al usuario.
+    `timeout_ms`: plazo de la llamada (S133: el alta por WhatsApp, en
+    segundo plano, le da más margen que la vista del panel).
     """
     client = get_gemini_client()
     response = _generate_content_with_retry(
@@ -156,7 +158,7 @@ def extract_tirea_albaran(file_bytes, mime_type):
             _PROMPT,
         ],
         config=GenerateContentConfig(
-            http_options=HttpOptions(timeout=90_000),
+            http_options=HttpOptions(timeout=timeout_ms),
             response_mime_type="application/json",
             response_schema=_RESPONSE_SCHEMA,
             thinking_config=ThinkingConfig(thinking_level="low"),

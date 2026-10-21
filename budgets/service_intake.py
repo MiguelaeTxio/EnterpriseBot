@@ -54,6 +54,14 @@ SERVICE_GIVER_ROLES = (
 # Una conversación sin mensajes en este tiempo se da por abandonada.
 INTAKE_IDLE_LIMIT = datetime.timedelta(hours=2)
 MAX_TOOL_ROUNDS = 6
+# S133, real incident: Vertex cut the reading of the photo with a 504
+# (DEADLINE_EXCEEDED) at 88 s, intermittently. In the background the
+# photo gets more time and one more try.
+# Incidencia real S133: Vertex cortaba la lectura de la foto con un 504
+# a los 88 s, de forma intermitente. En segundo plano, más plazo y un
+# reintento.
+PHOTO_TIMEOUT_MS = 150_000
+PHOTO_ATTEMPTS = 2
 
 # Data the agent can fill: tool argument -> order form field.
 # Datos que puede rellenar el agente: argumento -> campo del formulario.
@@ -270,7 +278,23 @@ def apply_photo(intake, file_bytes, mime_type):
     from budgets.tirea_extraction import extract_tirea_albaran
     from budgets.views_services import _initial_from_extraction
 
-    extracted = extract_tirea_albaran(file_bytes, mime_type)
+    for attempt in range(1, PHOTO_ATTEMPTS + 1):
+        try:
+            extracted = extract_tirea_albaran(
+                file_bytes, mime_type, timeout_ms=PHOTO_TIMEOUT_MS,
+            )
+            break
+        except Exception as exc:  # noqa: BLE001 -- 5xx de Vertex: reintento
+            transient = any(
+                code in str(exc)
+                for code in ("500", "502", "503", "504", "DEADLINE")
+            )
+            if attempt == PHOTO_ATTEMPTS or not transient:
+                raise
+            logger.warning(
+                "# [SERVICE INTAKE] Lectura de la foto cortada (%s); "
+                "reintento %d.", exc, attempt + 1,
+            )
     initial = _initial_from_extraction(intake.company, extracted)
     for key, value in initial.items():
         if value in (None, ""):
@@ -598,6 +622,33 @@ def launch(intake, args, whatsapp_sender):
     return result
 
 
+def reread_photo(intake):
+    """
+    Tool: read again the last photo of the service.
+
+    ---
+
+    Herramienta: vuelve a leer la última foto del servicio que llegó por
+    WhatsApp (cuando la lectura falló o la piden otra vez).
+    """
+    from document_explorer.worker_request_service import _download_media
+
+    photo = intake.data.get("last_photo") or {}
+    if not photo.get("url"):
+        return {"error": "No ha llegado ninguna foto en este servicio."}
+    try:
+        return apply_photo(
+            intake, _download_media(photo["url"]), photo["content_type"],
+        )
+    except Exception as exc:  # noqa: BLE001 -- se informa al agente
+        logger.exception("# [SERVICE INTAKE] Relectura fallida: %s", exc)
+        return {"error": (
+            "Tampoco se ha podido leer ahora (el servicio de lectura de "
+            "Google no responde a tiempo). Que la manden de nuevo más "
+            "tarde, o que den los datos escritos."
+        )}
+
+
 def cancel(intake):
     """
     Tool: drop the service being given.
@@ -700,6 +751,15 @@ def _tool_declarations():
             ),
         ),
         types.FunctionDeclaration(
+            name="volver_a_leer_foto",
+            description=(
+                "Vuelve a leer la última foto o PDF del servicio que llegó "
+                "por WhatsApp. Úsala si la lectura falló o te piden "
+                "leerla otra vez."
+            ),
+            parameters=types.Schema(type=types.Type.OBJECT, properties={}),
+        ),
+        types.FunctionDeclaration(
             name="cancelar_servicio",
             description="Abandona este servicio si lo piden.",
             parameters=types.Schema(type=types.Type.OBJECT, properties={}),
@@ -750,6 +810,8 @@ def _system_prompt(intake):
         "disponibles, lanza con nota_prevalencia con lo que te ha "
         "dicho. Si están ocupados (asignado o en servicio), dile que "
         "el servicio quedará en cola y saldrá al terminar el actual.\n"
+        "Si la foto no se pudo leer y te piden intentarlo otra vez, "
+        "usa volver_a_leer_foto.\n"
         "6. Tras lanzar, di el nº de albarán y si se ha enviado o queda "
         "en cola. Si una herramienta devuelve un error, explícalo y "
         "pregunta lo necesario.\n\n"
@@ -798,6 +860,8 @@ def _run_tool(intake, name, args, whatsapp_sender):
         return availability(intake.company)
     if name == "lanzar_servicio":
         return launch(intake, args, whatsapp_sender)
+    if name == "volver_a_leer_foto":
+        return reread_photo(intake)
     if name == "cancelar_servicio":
         return cancel(intake)
     return {"error": "Herramienta desconocida."}
@@ -955,6 +1019,10 @@ def process_whatsapp(intake_pk, body, media_url, content_type,
     if media_url and _is_document(content_type):
         from document_explorer.worker_request_service import _download_media
 
+        intake.data["last_photo"] = {
+            "url": media_url, "content_type": content_type,
+        }
+        intake.save(update_fields=["data", "updated_at"])
         try:
             summary = apply_photo(
                 intake, _download_media(media_url), content_type,
