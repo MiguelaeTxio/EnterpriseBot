@@ -1,0 +1,157 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/_albaran_pdf_styles.html #}
+{% comment %}
+H37 (S133). Estilos de impresión de los PDF de albarán (weasyprint),
+compartidos por el albarán de cada unidad (albaran_pdf.html) y el
+albarán resumen de la orden (albaran_resumen_pdf.html).
+{% endcomment %}
+    <style>
+        /*
+         * Print stylesheet for the ASISTENCIA delivery note PDF.
+         * Rendered by weasyprint — no external CSS dependencies.
+         * ---
+         * Hoja de estilos de impresión para el albarán PDF de ASISTENCIA.
+         * Renderizado por weasyprint — sin dependencias CSS externas.
+         */
+        @page {
+            size: A4 portrait;
+            margin: 15mm 12mm 15mm 12mm;
+        }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 9pt;
+            color: #212529;
+            line-height: 1.4;
+        }
+        /* ── Header ── */
+        .pdf-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 2px solid #212529;
+            padding-bottom: 6pt;
+            margin-bottom: 8pt;
+        }
+        .pdf-header .company-name {
+            font-size: 14pt;
+            font-weight: 700;
+        }
+        .pdf-header .doc-title {
+            font-size: 12pt;
+            font-weight: 700;
+            text-align: right;
+        }
+        .pdf-header .doc-subtitle {
+            font-size: 8pt;
+            color: #6c757d;
+            text-align: right;
+        }
+        /* ── Section titles ── */
+        .section-title {
+            font-size: 7pt;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            color: #495057;
+            border-bottom: 1px solid #dee2e6;
+            padding-bottom: 2pt;
+            margin-bottom: 5pt;
+            margin-top: 8pt;
+        }
+        /* ── Field grid ── */
+        /*
+         * Rejilla de campos con flex y anchos fijos: el CSS grid con
+         * campos a lo ancho (grid-column 1 / -1) se descolocaba en
+         * weasyprint (S132, primer albarán real).
+         */
+        .field-grid {
+            display: flex;
+            flex-wrap: wrap;
+            margin: 0 -4pt;
+        }
+        .field-grid > * {
+            padding: 0 4pt 4pt 4pt;
+        }
+        .field-grid.cols-2 > * { width: 49.9%; }
+        .field-grid.cols-3 > * { width: 33.3%; }
+        .field-grid.cols-4 > * { width: 24.9%; }
+        .field-block .label {
+            font-size: 7pt;
+            color: #6c757d;
+            display: block;
+        }
+        .field-block .value {
+            font-size: 9pt;
+            font-weight: 600;
+        }
+        .field-grid > .field-block.full { width: 100%; }
+        /* ── Badges ── */
+        .badge-row {
+            margin-top: 4pt;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4pt;
+        }
+        .badge {
+            display: inline-block;
+            font-size: 7pt;
+            font-weight: 700;
+            padding: 1pt 5pt;
+            border-radius: 3pt;
+            border: 1px solid #212529;
+        }
+        .badge-warning { border-color: #ffc107; background: #fff3cd; color: #856404; }
+        .badge-danger  { border-color: #dc3545; background: #f8d7da; color: #842029; }
+        .badge-info    { border-color: #0dcaf0; background: #cff4fc; color: #055160; }
+        /* ── Divider ── */
+        hr.pdf-divider {
+            border: none;
+            border-top: 1px solid #dee2e6;
+            margin: 6pt 0;
+        }
+        /* ── Signature ── */
+        .signature-block {
+            margin-top: 12pt;
+            border: 1px solid #dee2e6;
+            border-radius: 4pt;
+            padding: 6pt;
+            min-height: 80pt;
+        }
+        .signature-block img {
+            max-width: 100%;
+            max-height: 70pt;
+            display: block;
+        }
+        .signature-block .sig-label {
+            font-size: 7pt;
+            color: #6c757d;
+            margin-bottom: 4pt;
+        }
+        .signature-block .sig-name {
+            font-size: 8pt;
+            font-weight: 700;
+            margin-top: 4pt;
+            border-top: 1px solid #dee2e6;
+            padding-top: 3pt;
+        }
+        /* ── Comentarios ── */
+        .insurer-comments {
+            font-size: 8pt;
+        }
+        /* ── Footer ── */
+        .pdf-footer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            font-size: 7pt;
+            color: #6c757d;
+            text-align: center;
+            border-top: 1px solid #dee2e6;
+            padding-top: 3pt;
+        }
+    </style>

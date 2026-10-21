@@ -132,6 +132,12 @@
                         <span class="text-muted">Máquina</span><br>
                         <strong>{{ unit.machine|default:"—" }}</strong>
                     </div>
+                    {% if unit.helper_names %}
+                    <div class="col-12">
+                        <span class="text-muted">Ayudantes</span><br>
+                        <strong>{{ unit.helper_names|join:", " }}</strong>
+                    </div>
+                    {% endif %}
                     {% if unit.is_overnight %}
                     <div class="col-6">
                         <span class="text-muted">Chófer fase 2</span><br>

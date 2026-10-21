@@ -1,0 +1,114 @@
+<!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/albaran_resumen_pdf.html -->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Albarán resumen {{ work_order.work_order_number }}</title>
+    {% include "budgets/_albaran_pdf_styles.html" %}
+    <style>
+        /* Resumen: tabla de unidades y firmas de cada una. */
+        .units-table { width: 100%; border-collapse: collapse; font-size: 8pt; margin-bottom: 6pt; }
+        .units-table th, .units-table td { border: 1px solid #dee2e6; padding: 3pt 4pt; text-align: left; vertical-align: top; }
+        .units-table th { background: #f1f3f5; }
+        .units-table .num { text-align: right; }
+        .summary-state { font-size: 9pt; font-weight: bold; margin: 4pt 0 6pt; }
+        .summary-state.partial { color: #b45309; }
+        .summary-state.complete { color: #15803d; }
+        .sig-grid { display: flex; flex-wrap: wrap; gap: 8pt; }
+        .sig-grid .signature-block { width: 48%; }
+    </style>
+</head>
+<body>
+
+    <div class="pdf-footer">
+        Albarán resumen {{ work_order.work_order_number }} —
+        {{ work_order.service_date|date:"d/m/Y" }} —
+        {{ company.name }}
+    </div>
+
+    <div class="pdf-header">
+        <div>
+            <div class="company-name">{{ company.name }}</div>
+        </div>
+        <div>
+            <div class="doc-title">ALBARÁN RESUMEN DEL SERVICIO</div>
+            <div class="doc-subtitle">
+                Nº {{ work_order.work_order_number }} — {{ work_order.service_date|date:"d/m/Y" }}
+            </div>
+        </div>
+    </div>
+
+    {% if is_complete %}
+    <div class="summary-state complete">Completo: {{ rows|length }} albarán{{ rows|length|pluralize:"es" }}, todos firmados o cerrados.</div>
+    {% else %}
+    <div class="summary-state partial">Parcial: {{ done_count }} de {{ rows|length }} albarán{{ rows|length|pluralize:"es" }} firmados o cerrados (generado el {{ generated_at|date:"d/m/Y H:i" }}).</div>
+    {% endif %}
+
+    {% include "budgets/_albaran_pdf_order.html" %}
+
+    <div class="section-title">Unidades del servicio</div>
+    {% if rows %}
+    <table class="units-table">
+        <thead>
+            <tr>
+                <th>Albarán</th>
+                <th>Conductor</th>
+                <th>Ayudantes</th>
+                <th>Máquina</th>
+                <th class="num">Km</th>
+                <th class="num">H. rescate</th>
+                <th class="num">H. espera</th>
+                <th>Firma</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in rows %}
+            <tr>
+                <td>{{ row.number }}</td>
+                <td>{{ row.driver|default:"—" }}</td>
+                <td>{{ row.helpers|default:"—" }}</td>
+                <td>{{ row.machine|default:"—" }}</td>
+                <td class="num">{{ row.km|default:"—" }}</td>
+                <td class="num">{{ row.rescue_hours|default:"—" }}</td>
+                <td class="num">{{ row.wait_hours|default:"—" }}</td>
+                <td>{{ row.sign_label }}</td>
+            </tr>
+            {% endfor %}
+            <tr>
+                <th colspan="4">Total</th>
+                <th class="num">{{ total_km|default:"—" }}</th>
+                <th class="num">{{ total_rescue|default:"—" }}</th>
+                <th class="num">{{ total_wait|default:"—" }}</th>
+                <th></th>
+            </tr>
+        </tbody>
+    </table>
+    {% else %}
+    <p>Esta orden todavía no tiene albaranes.</p>
+    {% endif %}
+
+    {% if rows %}
+    <div class="section-title">Firmas del cliente</div>
+    <div class="sig-grid">
+        {% for row in rows %}
+        <div class="signature-block">
+            <div class="sig-label">Albarán {{ row.number }} — {{ row.driver|default:"sin conductor" }}</div>
+            {% if row.signature_data %}
+            <div class="sig-label">Firma capturada el {{ row.signed_at|date:"d/m/Y H:i" }}</div>
+            <img src="{{ row.signature_data }}" alt="Firma del cliente">
+            {% if row.signer_name %}<div class="sig-name">{{ row.signer_name }}</div>{% endif %}
+            {% else %}
+            <div class="sig-label">{{ row.sign_label }}{% if row.unsigned_reason %}: {{ row.unsigned_reason }}{% endif %}</div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if work_order.insurer_comments %}
+    <div class="section-title">Comentarios aseguradora</div>
+    <p class="insurer-comments">{{ work_order.insurer_comments }}</p>
+    {% endif %}
+
+</body>
+</html>

@@ -265,6 +265,7 @@ def _unit_payload(unit):
         "vehicle_plate": work_order.vehicle_plate,
         "breakdown": work_order.breakdown_description,
         "machine": unit.machine,
+        "helpers": unit.helper_names,
         "albaran_url": settings.PLATFORM_BASE_URL + reverse(
             "budgets:work_order_albaran", args=[unit.pk],
         ),

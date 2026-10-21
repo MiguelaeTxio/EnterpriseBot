@@ -281,6 +281,55 @@ class ServicesDeliveryNotesZipView(AssistanceSupervisorAccessMixin, View):
         return response
 
 
+class WorkOrderSummaryPdfView(AssistanceWorkOrderAccessMixin, View):
+    """
+    Summary albarán of an order, as a PDF.
+
+    ---
+
+    Albarán resumen de la orden en PDF (Miguel Ángel, S133): todos sus
+    albaranes con conductor, ayudantes, máquina, km, horas y la firma
+    de cada uno. Se saca en cualquier momento; dice si está completo o
+    parcial.
+    """
+
+    def get(self, request, pk):
+        """
+        Render and return the PDF.
+
+        ---
+
+        Pinta y devuelve el PDF.
+        """
+        import weasyprint
+        from django.http import HttpResponse
+        from django.template.loader import render_to_string
+        from django.utils import timezone
+
+        from budgets.assistance_albaranes import summary_context
+
+        company = request.user.company_user.company
+        work_order = get_object_or_404(
+            WorkOrderAssistance.objects.select_related("insurer"),
+            pk=pk, company=company,
+        )
+        html = render_to_string("budgets/albaran_resumen_pdf.html", {
+            **summary_context(work_order),
+            "work_order": work_order,
+            "company": company,
+            "generated_at": timezone.localtime(),
+        }, request=request)
+        response = HttpResponse(
+            weasyprint.HTML(string=html).write_pdf(),
+            content_type="application/pdf",
+        )
+        response["Content-Disposition"] = (
+            'attachment; filename="albaran_resumen_%s.pdf"'
+            % work_order.work_order_number
+        )
+        return response
+
+
 ALBARANES_EXPORT_COLUMNS = (
     "Albarán", "Fecha", "Aseguradora", "Expediente", "Matrícula",
     "Cliente", "Recogida", "Destino", "Conductor", "Máquina", "Estado",
@@ -389,6 +438,7 @@ class ServicesDeliveryNotesExportView(
 
 TRAFFIC_ACTIONS = (
     "pair", "separate", "assign", "unassign", "send", "close",
+    "add_helper", "remove_helper",
 )
 
 
@@ -526,7 +576,8 @@ class ServicesTrafficActionView(AssistanceSupervisorAccessMixin, View):
 
     Acciones del panel: formar o cambiar un equipo (conductor soltado
     sobre una máquina o un equipo), separarlo, asignar un equipo a un
-    albarán o a una orden, quitarlo, enviar el albarán y cerrarlo en
+    albarán o a una orden, quitarlo, añadir o quitar ayudantes, enviar
+    el albarán y cerrarlo en
     base con los km y el gasoil estimados. Las reglas
     están en `assistance_traffic`; si no se cumplen, el panel lo dice.
     Devuelve el panel actualizado.
@@ -573,6 +624,22 @@ class ServicesTrafficActionView(AssistanceSupervisorAccessMixin, View):
                     company, company_user, _int(data.get("unit")),
                 )
                 message = "Equipo retirado del albarán %s." % (
+                    unit.albaran_number
+                )
+            elif action == "add_helper":
+                unit = traffic.add_helper(
+                    company, company_user, _int(data.get("unit")),
+                    _int(data.get("driver")),
+                )
+                message = "Ayudante añadido al albarán %s." % (
+                    unit.albaran_number
+                )
+            elif action == "remove_helper":
+                unit = traffic.remove_helper(
+                    company, company_user, _int(data.get("unit")),
+                    _int(data.get("driver")),
+                )
+                message = "Ayudante retirado del albarán %s." % (
                     unit.albaran_number
                 )
             elif action == "close":

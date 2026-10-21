@@ -12,7 +12,9 @@ Arrastres (los resuelve el script de _traffic_pane.html):
   o cambia de conductor;
 - máquina suelta sobre un conductor suelto o un equipo: igual;
 - conductor o máquina de un equipo sobre otro equipo: intercambio;
-- equipo entero sobre un albarán o una orden: asignación.
+- equipo entero sobre un albarán o una orden: asignación;
+- conductor sin máquina sobre un albarán aún sin enviar: ayudante
+  (S133, va en el mismo vehículo y solo sale en el albarán).
 Los albaranes firmados (verde) se cierran en base desde aquí con los km
 y el gasoil estimados del servicio, de base a base.
 {% endcomment %}
@@ -162,6 +164,15 @@ y el gasoil estimados del servicio, de base a base.
                         <i class="bi bi-truck"></i>
                         {% if unit.machine %}{{ unit.machine }}{% else %}Sin máquina{% endif %}
                     </div>
+                    {% for helper_pk, helper_name in unit.helper_list %}
+                    <div class="tb-slot">
+                        <i class="bi bi-person-plus"></i>{{ helper_name }} <span class="text-muted">(ayudante)</span>
+                        {% if unit.is_assignable %}
+                        <button type="button" class="btn btn-link btn-sm p-0 text-danger" title="Quitar ayudante"
+                                data-action="remove_helper" data-unit="{{ unit.pk }}" data-driver="{{ helper_pk }}"><i class="bi bi-x-circle"></i></button>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
                     {% if unit.is_assignable and unit.operator_id or unit.is_assignable and unit.machine %}
                     <button type="button" class="btn btn-link btn-sm p-0 text-danger" title="Quitar el equipo"
                             data-action="unassign" data-unit="{{ unit.pk }}"><i class="bi bi-x-circle"></i></button>

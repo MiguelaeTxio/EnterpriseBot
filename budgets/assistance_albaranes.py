@@ -277,3 +277,97 @@ def selected_units(company, keys):
         "work_order__service_date", "work_order__work_order_number",
         "unit_number",
     )
+
+
+# Albaranes whose part of the service is finished: signed on the phone,
+# closed without signature or with the paper signature received.
+# Albaranes cuya parte del servicio está terminada: firmados en el
+# móvil, cerrados sin firma o con la firma en papel recibida.
+DONE_STATUSES = (
+    Unit.STATUS_COMPLETED,
+    Unit.STATUS_CLOSED_UNSIGNED,
+    Unit.STATUS_SIGNED_RECEIVED,
+    Unit.STATUS_CLOSED_BASE,
+)
+
+
+def _sign_label(unit, signature):
+    """
+    How the signature of an albarán is described in the summary.
+
+    ---
+
+    Cómo se describe la firma de un albarán en el resumen.
+    """
+    if signature is not None and signature.signature_data:
+        return "Firmado"
+    if unit.status == Unit.STATUS_SIGNED_RECEIVED:
+        return "Firma en papel recibida"
+    if unit.unsigned_reason or unit.status == Unit.STATUS_CLOSED_UNSIGNED:
+        return "Cerrado sin firma"
+    if unit.status in DONE_STATUSES:
+        return "Terminado sin firma"
+    return "Pendiente de firma"
+
+
+def summary_context(work_order):
+    """
+    Data of the summary albarán of an order.
+
+    ---
+
+    Datos del albarán resumen de la orden (Miguel Ángel, S133): una fila
+    por albarán (conductor, ayudantes, máquina, km, horas y firma) con
+    los totales, y la firma de cada uno. Se puede sacar en cualquier
+    momento: es "parcial" mientras quede algún albarán sin terminar y
+    "completo" cuando todos están firmados o cerrados.
+    """
+    from decimal import Decimal
+
+    from django.core.exceptions import ObjectDoesNotExist
+
+    units = work_order.units.select_related(
+        "operator__user",
+    ).prefetch_related("helpers__user").order_by("unit_number")
+    rows = []
+    totals = {"km": Decimal("0"), "rescue": Decimal("0"),
+              "wait": Decimal("0")}
+    for unit in units:
+        try:
+            signature = unit.signature
+        except ObjectDoesNotExist:
+            signature = None
+        km = sum(
+            (k for k in (unit.phase1_km, unit.phase2_km) if k is not None),
+            Decimal("0"),
+        )
+        user = unit.operator.user if unit.operator_id else None
+        rows.append({
+            "number": unit.albaran_number,
+            "driver": (
+                (user.get_full_name() or user.username) if user else ""
+            ),
+            "helpers": ", ".join(unit.helper_names),
+            "machine": unit.machine,
+            "km": km or "",
+            "rescue_hours": unit.rescue_hours or "",
+            "wait_hours": unit.wait_hours or "",
+            "sign_label": _sign_label(unit, signature),
+            "signature_data": signature.signature_data if signature else "",
+            "signed_at": signature.signed_at if signature else None,
+            "signer_name": signature.signer_name if signature else "",
+            "unsigned_reason": unit.unsigned_reason,
+            "is_done": unit.status in DONE_STATUSES,
+        })
+        totals["km"] += km
+        totals["rescue"] += unit.rescue_hours or 0
+        totals["wait"] += unit.wait_hours or 0
+    done = sum(1 for row in rows if row["is_done"])
+    return {
+        "rows": rows,
+        "done_count": done,
+        "is_complete": bool(rows) and done == len(rows),
+        "total_km": totals["km"] or "",
+        "total_rescue": totals["rescue"] or "",
+        "total_wait": totals["wait"] or "",
+    }

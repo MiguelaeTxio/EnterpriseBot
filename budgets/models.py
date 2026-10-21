@@ -2785,6 +2785,20 @@ class WorkOrderAssistanceUnit(models.Model):
         ),
     )
 
+    # H37 (S133): helpers that go with the driver in this vehicle
+    # (e.g. a service car with two workers). Chosen for each service;
+    # they do not use the app, they only appear on the albarán.
+    # Ayudantes que van con el conductor en este vehículo (p. ej. un
+    # coche de servicio con dos operarios). Se eligen en cada servicio
+    # (Miguel Ángel, S133); no usan la app, solo salen en el albarán.
+    helpers = models.ManyToManyField(
+        CompanyUser,
+        blank=True,
+        related_name="assistance_units_helper",
+        verbose_name="Ayudantes",
+        help_text="Operarios que acompañan al conductor en este vehículo.",
+    )
+
     # ── Unit identifier ─────────────────────────────────────────────────────
     # Ordinal position of this unit within the work order (1, 2, 3...).
     # The printed albarán number is: work_order_number-unit_number.
@@ -3171,6 +3185,20 @@ class WorkOrderAssistanceUnit(models.Model):
         Número de albarán impreso: número de orden y unidad.
         """
         return f"{self.work_order.work_order_number}-{self.unit_number:02d}"
+
+    @property
+    def helper_names(self):
+        """
+        Names of the helpers of the albarán (S133).
+
+        ---
+
+        Nombres de los ayudantes del albarán (S133).
+        """
+        return [
+            helper.user.get_full_name() or helper.user.username
+            for helper in self.helpers.all()
+        ]
 
 
 class WorkOrderAssistanceUnitEvent(models.Model):

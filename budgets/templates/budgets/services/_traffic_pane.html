@@ -10,7 +10,8 @@ derecha.
 Equipos (Miguel Ángel, S133): al albarán va siempre el equipo entero,
 conductor y máquina juntos. Se forma soltando un conductor sobre una
 máquina (o al revés); soltar el conductor o la máquina de un equipo
-sobre otro equipo los intercambia. En pantallas táctiles, tocar una
+sobre otro equipo los intercambia. Un conductor sin máquina soltado
+sobre un albarán aún sin enviar va de ayudante (S133). En pantallas táctiles, tocar una
 tarjeta la selecciona y tocar después el destino hace lo mismo que
 soltarla. El tablero (#traffic-board) se refresca solo cada 20
 segundos, salvo mientras se arrastra o hay algo seleccionado.
@@ -160,7 +161,9 @@ screen_key services_hub, clave "traffic").
       data-assign="{% url 'budgets:services_traffic_action' action='assign' %}"
       data-unassign="{% url 'budgets:services_traffic_action' action='unassign' %}"
       data-send="{% url 'budgets:services_traffic_action' action='send' %}"
-      data-close="{% url 'budgets:services_traffic_action' action='close' %}"></form>
+      data-close="{% url 'budgets:services_traffic_action' action='close' %}"
+      data-add_helper="{% url 'budgets:services_traffic_action' action='add_helper' %}"
+      data-remove_helper="{% url 'budgets:services_traffic_action' action='remove_helper' %}"></form>
 
 {% include "panel/_fixed_list_layout.html" with top_id="traffic-top-panel" bottom_id="traffic-bottom-panel" %}
 
@@ -190,7 +193,7 @@ if (!(window.google && window.google.maps && window.google.maps.importLibrary)) 
     // Dónde se puede soltar cada cosa.
     const TARGETS = {
         crew: "[data-drop-unit], [data-drop-order]",
-        driver: "[data-drop-crew], [data-drop-machine]",
+        driver: "[data-drop-crew], [data-drop-machine], [data-drop-unit]",
         machine: "[data-drop-crew], [data-drop-driver]"
     };
 
@@ -236,6 +239,10 @@ if (!(window.google && window.google.maps && window.google.maps.importLibrary)) 
         if (src.crew && target.dataset.dropCrew === src.crew) {
             return null;
         }
+        // De ayudante solo va un conductor sin máquina (S133).
+        if (src.kind === "driver" && src.crew && target.dataset.dropUnit) {
+            return null;
+        }
         if (src.kind === "driver" && target.dataset.dropDriver === src.resource) {
             return null;
         }
@@ -255,6 +262,8 @@ if (!(window.google && window.google.maps && window.google.maps.importLibrary)) 
                 values.order = t.dropOrder;
             }
             post(urls.assign, values);
+        } else if (src.kind === "driver" && t.dropUnit) {
+            post(urls.add_helper, {unit: t.dropUnit, driver: src.resource});
         } else if (src.kind === "driver") {
             post(urls.pair, {
                 driver: src.resource,
@@ -363,6 +372,9 @@ if (!(window.google && window.google.maps && window.google.maps.importLibrary)) 
             }
             if (button.dataset.crew) {
                 values.crew = button.dataset.crew;
+            }
+            if (button.dataset.driver) {
+                values.driver = button.dataset.driver;
             }
             if (button.dataset.action === "close") {
                 const form = button.closest(".tb-close-form");

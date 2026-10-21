@@ -23,6 +23,9 @@ asignación:
 - Solo se asigna o se cambia la asignación de un albarán que no se ha
   enviado todavía (pendiente o con el aviso fallido).
 - No se envía sin conductor y máquina.
+- Ayudantes (S133): un conductor sin máquina soltado sobre un albarán
+  aún sin enviar va de ayudante en ese vehículo; queda ocupado igual
+  que el conductor.
 - Cada asignación, cada retirada y cada cambio de estado guardan hora
   y usuario (`WorkOrderAssistanceUnitEvent`).
 
@@ -181,7 +184,7 @@ def board_units(company):
         status=Unit.STATUS_CLOSED_BASE,
     ).select_related(
         "work_order__insurer", "operator__user", "machine_asset",
-    )
+    ).prefetch_related("helpers__user")
 
 
 def unit_resource_state(unit):
@@ -308,10 +311,13 @@ def _resources(company, units, today):
     driver_units = {}
     machine_units = {}
     for unit in units:
-        for key, table in (
+        # S133: a helper is as busy as the driver of the albarán.
+        # Un ayudante está tan ocupado como el conductor del albarán.
+        pairs = [
             (unit.operator_id, driver_units),
             (unit.machine_asset_id, machine_units),
-        ):
+        ] + [(helper.pk, driver_units) for helper in unit.helpers.all()]
+        for key, table in pairs:
             if not key:
                 continue
             current = table.get(key)
@@ -483,6 +489,9 @@ def build_board(company, category="", sort=SORT_AVAILABILITY):
             _driver_name(unit.operator) if unit.operator_id else ""
         )
         unit.can_close_base = unit.status in RETURNING_STATUSES
+        unit.helper_list = [
+            (helper.pk, _driver_name(helper)) for helper in unit.helpers.all()
+        ]
         unit.km_hint = _km_hint(unit)
 
     empty_orders = list(WorkOrderAssistance.objects.filter(
@@ -510,6 +519,68 @@ def build_board(company, category="", sort=SORT_AVAILABILITY):
         "open_count": len(units) + len(empty_orders),
         "free_crews": sum(1 for c in crews if c.is_assignable),
     }
+
+
+def add_helper(company, by, unit_pk, driver_pk):
+    """
+    Add a helper to an albarán not sent yet.
+
+    ---
+
+    Añade un ayudante a un albarán aún sin enviar (Miguel Ángel, S133:
+    p. ej. un coche de servicio con dos operarios). Se elige en cada
+    servicio: un conductor sin máquina, libre o regresando, sin
+    ausencia hoy. No usa la app; solo sale en el albarán.
+    """
+    with transaction.atomic():
+        unit = _locked_unit(company, unit_pk)
+        drivers, _machines, _crews_list = _current(company)
+        driver = next((d for d in drivers if d.pk == driver_pk), None)
+        if driver is None:
+            raise TrafficError("Ese operario ya no es de asistencia.")
+        if driver.pk == unit.operator_id:
+            raise TrafficError(
+                "%s ya es el conductor del albarán %s." % (
+                    driver.display_name, unit.albaran_number,
+                )
+            )
+        if unit.helpers.filter(pk=driver.pk).exists():
+            raise TrafficError("%s ya va de ayudante en el albarán %s." % (
+                driver.display_name, unit.albaran_number,
+            ))
+        if not driver.is_assignable:
+            raise TrafficError("%s no está disponible: %s." % (
+                driver.display_name, driver.state_label.lower(),
+            ))
+        unit.helpers.add(driver)
+        Event.objects.create(
+            unit=unit, kind=Event.KIND_ASSIGN, created_by=by,
+            detail="Ayudante añadido: %s." % driver.display_name,
+        )
+    return unit
+
+
+def remove_helper(company, by, unit_pk, driver_pk):
+    """
+    Take a helper off an albarán not sent yet.
+
+    ---
+
+    Quita un ayudante de un albarán aún sin enviar.
+    """
+    with transaction.atomic():
+        unit = _locked_unit(company, unit_pk)
+        helper = unit.helpers.filter(pk=driver_pk).select_related(
+            "user",
+        ).first()
+        if helper is None:
+            raise TrafficError("Ese ayudante ya no está en el albarán.")
+        unit.helpers.remove(helper)
+        Event.objects.create(
+            unit=unit, kind=Event.KIND_UNASSIGN, created_by=by,
+            detail="Ayudante retirado: %s." % _driver_name(helper),
+        )
+    return unit
 
 
 def _km_hint(unit):
@@ -916,10 +987,11 @@ def assign(company, by, crew_pk, unit_pk=None, order_pk=None):
         # Regresando no bloquea: el equipo puede ir directamente al
         # siguiente servicio.
         busy = board_units(company).filter(
-            Q(operator=driver) | Q(machine_asset=machine),
+            Q(operator=driver) | Q(helpers=driver)
+            | Q(machine_asset=machine),
         ).exclude(pk=unit.pk).exclude(
             status__in=RETURNING_STATUSES,
-        ).first()
+        ).distinct().first()
         if busy is not None:
             raise TrafficError("El equipo %s ya está en el albarán %s." % (
                 _crew_name(crew), busy.albaran_number,

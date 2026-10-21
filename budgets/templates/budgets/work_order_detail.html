@@ -312,6 +312,12 @@
             <span class="fw-semibold small">
                 <i class="bi bi-truck-flatbed me-1"></i>Unidades
             </span>
+            {% if units %}
+            {# H37 (S133): albarán resumen de la orden, completo o parcial #}
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'budgets:work_order_summary_pdf' pk=work_order.pk %}">
+                <i class="bi bi-files me-1"></i>Albarán resumen (PDF)
+            </a>
+            {% endif %}
         </div>
         <div class="card-body p-0">
             {% if units %}

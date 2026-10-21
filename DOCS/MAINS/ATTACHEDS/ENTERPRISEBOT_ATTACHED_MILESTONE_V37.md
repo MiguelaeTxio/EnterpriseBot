@@ -525,3 +525,13 @@ lo que dependa de ellas.
    3. Cada albarán por separado, cada uno con sus km y su repostaje.
    Relacionado: si los km finales de un albarán encadenado deben ser
    los del momento de terminar ese servicio o los de llegada a base.
+3. **Envío al cliente del albarán resumen y de las copias firmadas.**
+   Miguel Ángel, S133, verbatim: *"este albarán se puede enviar por
+   correo junto con las copias firmadas al cliente una vez que esté.
+   Otra cosa que tenemos que hacer que el albarán se pueda enviar al
+   cliente. Es importante esto, tengo que consultarlo con Pepe."* Ya
+   existe el albarán resumen de la orden (PDF, completo o parcial,
+   S133); falta decidir con Pepe a quién se envía (cliente, aseguradora
+   o los dos), por qué vía (correo, WhatsApp con la plantilla
+   `albaran_customer_delivery`) y cuándo (al completarse o a mano).
+   Es el punto 7 de 6.1 (fase 5 del dossier).

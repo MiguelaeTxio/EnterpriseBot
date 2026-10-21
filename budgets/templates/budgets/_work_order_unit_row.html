@@ -44,6 +44,9 @@ deja de hacerlo en cuanto cambia de estado.
                 {% if unit.machine %}
                 — <i class="bi bi-truck ms-1 me-1"></i>{{ unit.machine }}
                 {% endif %}
+                {% if unit.helper_names %}
+                — <i class="bi bi-person-plus ms-1 me-1"></i>{{ unit.helper_names|join:", " }}
+                {% endif %}
             </div>
             {% if unit.is_overnight and unit.operator_2 %}
             <div class="small text-muted">

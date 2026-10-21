@@ -67,6 +67,7 @@ y una por cada orden abierta aún sin albarán.
                         {% if row.unit %}
                         <li><a class="dropdown-item" href="{% url 'budgets:work_order_albaran' pk=row.unit.pk %}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-text me-2"></i>Ver el albarán</a></li>
                         <li><a class="dropdown-item" href="{% url 'budgets:work_order_pdf' pk=row.unit.pk %}"><i class="bi bi-file-earmark-pdf me-2"></i>Descargar PDF</a></li>
+                        <li><a class="dropdown-item" href="{% url 'budgets:work_order_summary_pdf' pk=row.work_order.pk %}"><i class="bi bi-files me-2"></i>Albarán resumen de la orden</a></li>
                         {% endif %}
                     </ul>
                 </div>

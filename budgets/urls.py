@@ -712,6 +712,11 @@ urlpatterns = [
     # ZIP and Excel of the selection.
     # Listado de albaranes: fragmento, ZIP de PDF y Excel de la selección.
     path(
+        "work-orders/<int:pk>/summary/pdf/",
+        views_services.WorkOrderSummaryPdfView.as_view(),
+        name="work_order_summary_pdf",
+    ),
+    path(
         "services/delivery-notes/table/",
         views_services.ServicesDeliveryNotesFragmentView.as_view(),
         name="services_delivery_notes_table",
