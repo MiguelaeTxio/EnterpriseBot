@@ -213,7 +213,7 @@ class IncomingWhatsAppView(View):
         # Un supervisor de asistencia (o administrador) que da un servicio
         # por WhatsApp: texto o foto del servicio. Se decide aquí y se
         # contesta en Celery (budgets.service_intake).
-        from budgets.service_intake import claim_whatsapp
+        from budgets.service_intake import claim_whatsapp, service_giver
         from ivr_config.models import Contact as _ServiceContact
 
         _service_contact = _ServiceContact.objects.filter(
@@ -223,12 +223,38 @@ class IncomingWhatsAppView(View):
             "" if body and _ATTACHMENT_NAME_RE.match(body) else body
         )
         _intake = (
-            claim_whatsapp(
-                company, _service_contact, from_number, _service_body,
-                request.POST, num_media,
-            )
+            claim_whatsapp(company, _service_contact, from_number)
             if _service_contact is not None else None
         )
+        _service_media = (
+            request.POST.get("MediaContentType0", "") if num_media else ""
+        )
+        if (
+            _intake is None and _service_contact is not None
+            and service_giver(_service_contact.company_user)
+            and (
+                _service_media.startswith("image/")
+                or _service_media == "application/pdf"
+            )
+        ):
+            # A photo or PDF of whoever gives services: Gemini looks at
+            # it (in Celery) and decides if it is a service or a document
+            # for Documentación. Never by keywords.
+            # Foto o PDF de quien da servicios: Gemini lo mira (en
+            # Celery) y decide si es un servicio o un documento para
+            # Documentación. Nunca por palabras clave.
+            from whatsapp.tasks import service_document_route
+
+            service_document_route.delay(
+                company.pk, _service_contact.company_user_id,
+                _service_body,
+                {
+                    key: request.POST.get(key, "")
+                    for key in ("MediaUrl0", "MediaContentType0")
+                },
+                to_number, from_number,
+            )
+            return HttpResponse(status=200)
         if _intake is not None:
             from whatsapp.tasks import service_intake_reply
 
@@ -937,6 +963,20 @@ class IncomingWhatsAppView(View):
                     "procesado "
                     "internamente."
                 )
+                # H37 (S133): whoever gives services can ask for one in
+                # any words; Gemini decides and answers with the marker.
+                # Quien da servicios puede pedirlo con cualquier palabra:
+                # Gemini lo decide y contesta con el marcador.
+                from budgets import service_intake as _si
+
+                _gives_services = _si.service_giver(
+                    _internal_contact.company_user,
+                )
+                if _gives_services:
+                    _b_system_prompt += (
+                        "\n\nDAR SERVICIOS:\n"
+                        + _si.general_assistant_instruction()
+                    )
                 _b_history = WhatsAppChatService.build_history(session)
                 try:
                     reply_text = WhatsAppChatService.get_gemini_reply(
@@ -955,6 +995,23 @@ class IncomingWhatsAppView(View):
                         "Lo sentimos, ha habido un problema. "
                         "Por favor, inténtalo de nuevo."
                     )
+
+                if _gives_services and _si.SERVICE_MARKER in reply_text:
+                    from whatsapp.tasks import service_intake_reply
+
+                    _handover = _si.start_from_assistant(
+                        _internal_contact.company_user, from_number,
+                    )
+                    logger.info(
+                        "# [WHATSAPP H37] %s quiere dar un servicio: pasa "
+                        "a la conversación de servicio pk=%s.",
+                        from_number, _handover.pk,
+                    )
+                    service_intake_reply.delay(
+                        _handover.pk, _effective_msg, "", "",
+                        to_number, from_number,
+                    )
+                    return HttpResponse(status=200)
 
                 # If Gemini's reply signals enough breakdown data, create
                 # ticket.

@@ -403,3 +403,31 @@ def service_intake_reply(intake_pk, body, media_url, content_type,
             body=text, message_sid=sid,
         )
     return text
+
+
+@shared_task(name="whatsapp.tasks.service_document_route")
+def service_document_route(company_pk, company_user_pk, body, post,
+                           platform_number, from_number):
+    """
+    Decide what a document of a service giver is for, and act.
+
+    ---
+
+    H37 (S133). Un documento (foto o PDF) de quien da servicios, sin
+    conversación de servicio abierta: Gemini lo mira y decide si es un
+    servicio (pasa a Alia, que lo lee y contesta) o cualquier otra cosa
+    (pasa a Documentación como un adjunto más). En segundo plano: mirar
+    el documento puede pasar del tiempo que espera Twilio.
+    """
+    from budgets.service_intake import route_document
+    from ivr_config.models import Company
+
+    company = Company.objects.get(pk=company_pk)
+    intake_pk = route_document(
+        company, company_user_pk, from_number, body, post,
+    )
+    if intake_pk is not None:
+        service_intake_reply(
+            intake_pk, body, post.get("MediaUrl0", ""),
+            post.get("MediaContentType0", ""), platform_number, from_number,
+        )

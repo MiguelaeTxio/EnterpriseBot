@@ -29,7 +29,6 @@ conversa y se traduce a sus funciones.
 import datetime
 import json
 import logging
-import re
 import unicodedata
 from decimal import Decimal
 
@@ -1054,64 +1053,106 @@ def reply(intake, user_text, whatsapp_sender):
 # ---------------------------------------------------------------------------
 
 # "voy a dar un servicio", "tengo otro servicio", "servicio: ...".
-# Verb stems with any ending: "voy a darte un servicio" (incidencia
-# real S133: "darte" no entraba y contestaba el asistente general),
-# "te paso otro servicio", "tenemos servicio", "lánzame un servicio"...
-# Raíces con cualquier terminación (darte, dale, pasarte, tenemos...).
-START_RE = re.compile(
-    r"\b(da|doy|dam|dar|met|nuev|otr|ten|teng|hay|lanz|mand|apunt|sac|"
-    r"pas|abr|cre|ent)\w*\b.{0,30}\bservicio"
-    r"|^\s*servicio\b"
-)
-
-
-def claim_whatsapp(company, contact, from_number, body, post, num_media):
+def claim_whatsapp(company, contact, from_number):
     """
-    Whether a WhatsApp message belongs to giving a service.
+    Open service conversation of the sender, or None.
 
     ---
 
-    Decide al momento (dentro del webhook) si un mensaje de WhatsApp es
-    de dar un servicio y devuelve su conversación (abierta o nueva); si
-    no lo es, None y el mensaje sigue su camino de siempre (averías,
-    ayuda, documentos). Lo es cuando quien escribe puede darlos
-    (supervisor de asistencia o administrador) y: ya tiene una
-    conversación de servicio abierta, o dice que va a dar un servicio, o
-    manda una foto o un PDF sin tener documentos pendientes de enviar
-    (la foto del servicio de TIREA u otra plataforma). La respuesta se
-    prepara después, en segundo plano (`process_whatsapp`).
+    Conversación de servicio abierta de quien escribe, o None. Decidir
+    si un mensaje NUEVO es dar un servicio no se hace aquí ni con
+    palabras clave (Miguel Ángel, S133: "tiene que ser que Gemini lea el
+    mensaje y sepa qué es lo que le estamos diciendo"): el texto lo
+    decide el asistente general (marcador SERVICE_MARKER, ver
+    whatsapp/views.py) y un documento lo mira Gemini en segundo plano
+    (`route_document`).
     """
     company_user = getattr(contact, "company_user", None)
     if not service_giver(company_user):
         return None
-    channel = ServiceIntake.CHANNEL_WHATSAPP
-    intake = open_intake(company_user, channel)
-    if intake is not None:
-        return intake
-    starts = bool(START_RE.search(_norm(body)))
-    content_type = post.get("MediaContentType0", "") if num_media else ""
-    if not starts and _is_document(content_type):
-        from document_explorer.person_phone_service import (
-            resolve_person_by_phone,
-        )
-        from document_explorer.worker_request_service import (
-            _recent_accepted,
-            open_requests,
-        )
+    return open_intake(company_user, ServiceIntake.CHANNEL_WHATSAPP)
 
-        # Whoever gives services always has panel access, so a photo or
-        # PDF is a service unless we asked them for a document.
-        # Quien da servicios siempre tiene acceso al panel (incidencia
-        # real S133: el PDF del servicio acabó en Documentación como
-        # "Parte de asistencia en carretera"): una foto o un PDF es un
-        # servicio salvo que le hayamos pedido un documento.
-        person = resolve_person_by_phone(company, from_number)
-        starts = person is None or not (
-            open_requests(person) or _recent_accepted(person)
+
+# Marker the general assistant answers with when the person wants to
+# give a service; the message is handed over to the service agent.
+# Marcador con el que contesta el asistente general cuando la persona
+# quiere dar un servicio: el mensaje pasa al agente de servicios.
+SERVICE_MARKER = "[DAR_SERVICIO]"
+
+
+def general_assistant_instruction():
+    """
+    Line added to the general assistant for those who give services.
+
+    ---
+
+    Línea que se añade al asistente general de WhatsApp cuando quien
+    escribe puede dar servicios: Gemini decide por el sentido del
+    mensaje, no por palabras.
+    """
+    return (
+        "- Esta persona puede DAR servicios de asistencia en carretera. "
+        "Si por lo que dice quiere dar, pasar, meter o lanzar un servicio "
+        "(que salga una grúa o una asistencia a por un vehículo, un "
+        "servicio de una aseguradora, de TIREA...), sea como sea que lo "
+        "diga, responde ÚNICAMENTE con %s y nada más: otra compañera "
+        "se encarga.\n" % SERVICE_MARKER
+    )
+
+
+def start_from_assistant(company_user, from_number):
+    """
+    Open the service conversation the general assistant handed over.
+
+    ---
+
+    Abre la conversación de servicio que el asistente general ha pasado.
+    """
+    return open_intake(
+        company_user, ServiceIntake.CHANNEL_WHATSAPP,
+    ) or start_intake(
+        company_user, ServiceIntake.CHANNEL_WHATSAPP, from_number,
+    )
+
+
+def route_document(company, company_user_pk, from_number, body, post):
+    """
+    Decide with Gemini what a document of a service giver is for.
+
+    ---
+
+    Decide con Gemini para qué es un documento (foto o PDF) que manda
+    quien da servicios sin conversación abierta: si son los datos de un
+    servicio, abre la conversación y devuelve su pk; si no, lo pasa a
+    Documentación como cualquier adjunto y devuelve None. Si Gemini no
+    contesta, se toma como servicio (quien da servicios casi siempre
+    manda eso, y Alia lo dice si no lo es).
+    """
+    from budgets.tirea_extraction import is_service_document
+    from document_explorer.person_phone_service import (
+        resolve_person_by_phone,
+    )
+    from document_explorer.worker_request_service import (
+        _download_media,
+        expects_media,
+        register_incoming_media,
+    )
+
+    content_type = post.get("MediaContentType0", "")
+    try:
+        is_service, _why = is_service_document(
+            _download_media(post.get("MediaUrl0", "")), content_type, body,
         )
-    if not starts:
-        return None
-    return start_intake(company_user, channel, from_number)
+    except Exception as exc:  # noqa: BLE001 -- ver docstring
+        logger.warning("# [SERVICE INTAKE] Sin clasificar: %s", exc)
+        is_service = True
+    if is_service:
+        company_user = CompanyUser.objects.get(pk=company_user_pk)
+        return start_from_assistant(company_user, from_number).pk
+    person = resolve_person_by_phone(company, from_number)
+    if person is not None and expects_media(person):
+        register_incoming_media(person, from_number, post)
+    return None
 
 
 def _is_document(content_type):
