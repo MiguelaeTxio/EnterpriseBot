@@ -30,4 +30,9 @@ urlpatterns = [
         api_driver.DriverAlbaranSubmitView.as_view(),
         name="albaran_submit",
     ),
+    path(
+        "albaranes/<int:pk>/close-base/",
+        api_driver.DriverAlbaranCloseBaseView.as_view(),
+        name="albaran_close_base",
+    ),
 ]

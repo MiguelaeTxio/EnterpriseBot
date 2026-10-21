@@ -19,10 +19,9 @@ asignación:
 - Cada asignación, cada retirada y cada cambio de estado guardan hora
   y usuario (`WorkOrderAssistanceUnitEvent`).
 
-Un albarán sigue ocupando a su conductor y su máquina mientras su
-orden está abierta: el cierre en base que los deja libres es la fase 4
-del dossier (punto 6 de la hoja de ruta). Hasta entonces, el albarán
-firmado sale en verde ("regresando").
+Un albarán ocupa a su conductor y su máquina hasta que el conductor lo
+cierra en base desde la app (fase 4 del dossier, S133): mientras tanto
+el albarán firmado sale en verde ("regresando").
 """
 from django.db import transaction
 from django.db.models import Max, Q
@@ -130,15 +129,20 @@ def _today():
 
 def board_units(company):
     """
-    Albaranes on the board: every unit of the open orders.
+    Albaranes on the board: the units of the open orders not closed in
+    base yet.
 
     ---
 
-    Albaranes del panel: todas las unidades de las órdenes abiertas.
+    Albaranes del panel: las unidades de las órdenes abiertas que aún
+    no se han cerrado en base. Al cerrarse en base (fase 4 del dossier)
+    salen del panel y su conductor y su máquina quedan libres.
     """
     return Unit.objects.filter(
         work_order__company=company,
         work_order__status__in=OPEN_ORDER_STATUSES,
+    ).exclude(
+        status=Unit.STATUS_CLOSED_BASE,
     ).select_related(
         "work_order__insurer", "operator__user", "machine_asset",
     )

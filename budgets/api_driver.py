@@ -283,9 +283,14 @@ def _driver_units(company_user):
         work_order__company=company_user.company,
         work_order__status__in=OPEN_ORDER_STATUSES,
     ).exclude(
-        # Not sent yet by the office: the driver does not see it.
-        # Aún sin enviar por la oficina: el conductor no lo ve.
-        status=WorkOrderAssistanceUnit.STATUS_PENDING,
+        # Not sent yet by the office, or already closed in base: the
+        # driver does not see it.
+        # Aún sin enviar por la oficina, o ya cerrado en base: el
+        # conductor no lo ve.
+        status__in=(
+            WorkOrderAssistanceUnit.STATUS_PENDING,
+            WorkOrderAssistanceUnit.STATUS_CLOSED_BASE,
+        ),
     ).select_related("work_order__insurer")
 
 
@@ -340,6 +345,14 @@ OPENED_FROM = (
     Unit.STATUS_NOTIFIED,
     Unit.STATUS_NOTIFY_FAILED,
 )
+# States from which the driver closes in base (signed, or closed
+# without signature).
+# Estados desde los que el conductor cierra en base.
+CLOSABLE_IN_BASE = (
+    Unit.STATUS_COMPLETED,
+    Unit.STATUS_CLOSED_UNSIGNED,
+    Unit.STATUS_SIGNED_RECEIVED,
+)
 SIGNATURE_PREFIX = "data:image/png;base64,"
 MAX_SIGNATURE_CHARS = 2_000_000
 
@@ -384,6 +397,7 @@ def _detail_payload(unit):
         "signed": signature is not None,
         "unsigned_reason": unit.unsigned_reason,
         "editable": unit.status in EDITABLE_STATUSES,
+        "can_close_base": unit.status in CLOSABLE_IN_BASE,
     })
     return payload
 
@@ -563,3 +577,78 @@ class DriverAlbaranSubmitView(View):
         )
         unit = _unit_of_driver(company_user, pk) or unit
         return JsonResponse({"albaran": _detail_payload(unit)})
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class DriverAlbaranCloseBaseView(View):
+    """
+    Close the albarán in base: final km and refuelling.
+
+    ---
+
+    Cierre en base (fase 4 del dossier): el conductor, ya en base, mete
+    los km finales y si repostó y cuántos litros. El albarán pasa a
+    "Cerrado en base" y conductor y máquina quedan libres en el panel de
+    tráfico. Reglas del dossier: no se cierra en base sin km finales ni
+    sin indicar si repostó.
+    """
+
+    def post(self, request, pk):
+        """
+        Validate and close.
+
+        ---
+
+        Valida y cierra.
+        """
+        company_user, _token = _token_user(request)
+        if company_user is None:
+            return _error("Sesión no válida.", 401)
+        data = _json_body(request)
+        try:
+            km_end = _decimal(data, "km_end", "Km finales")
+            liters = _decimal(data, "liters", "Litros")
+        except ValueError as exc:
+            return _error(str(exc), 400)
+        refueled = data.get("refueled")
+        if km_end is None:
+            return _error("Faltan los km finales.", 400)
+        if not isinstance(refueled, bool):
+            return _error("Indica si has repostado.", 400)
+        if refueled and not liters:
+            return _error("Indica cuántos litros has repostado.", 400)
+
+        with transaction.atomic():
+            unit = _driver_units(company_user).select_for_update().filter(
+                pk=pk,
+            ).first()
+            if unit is None:
+                return _error("Este albarán ya no está asignado a ti.", 404)
+            if unit.status not in CLOSABLE_IN_BASE:
+                return _error(
+                    "Este albarán no se puede cerrar en base: está %s."
+                    % unit.get_status_display().lower(),
+                    409,
+                )
+            previous = unit.status
+            unit.base_km_end = km_end
+            unit.refueled = refueled
+            unit.refuel_liters = liters if refueled else None
+            unit.base_closed_at = timezone.now()
+            unit.status = Unit.STATUS_CLOSED_BASE
+            unit.save()
+            WorkOrderAssistanceUnitEvent.status_change(
+                unit, previous, unit.status, by=company_user,
+                detail=(
+                    "Cerrado en base: %s km, %s." % (
+                        km_end,
+                        "repostó %s l" % liters if refueled
+                        else "sin repostar",
+                    )
+                ),
+            )
+        logger.info(
+            "# [DRIVER API] Albarán %s cerrado en base por %s.",
+            unit.albaran_number, company_user.user.username,
+        )
+        return JsonResponse({"ok": True, "number": unit.albaran_number})

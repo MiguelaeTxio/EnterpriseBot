@@ -2720,6 +2720,11 @@ class WorkOrderAssistanceUnit(models.Model):
     # H37 (S132): Twilio reported the notice as not delivered.
     # Twilio ha informado de que el aviso no se ha entregado.
     STATUS_NOTIFY_FAILED = "NOTIFY_FAILED"
+    # H37 (S133): closed in base by the driver (final km and refuelling);
+    # driver and machine are free again. Dossier phase 4.
+    # Cerrado en base por el conductor (km finales y repostaje);
+    # conductor y máquina vuelven a estar libres. Fase 4 del dossier.
+    STATUS_CLOSED_BASE = "CLOSED_BASE"
 
     STATUS_CHOICES = [
         (STATUS_PENDING,         "Pendiente"),
@@ -2731,6 +2736,7 @@ class WorkOrderAssistanceUnit(models.Model):
         (STATUS_COMPLETED,       "Completado"),
         (STATUS_CLOSED_UNSIGNED, "Cerrado sin firma"),
         (STATUS_SIGNED_RECEIVED, "Firma recibida"),
+        (STATUS_CLOSED_BASE,     "Cerrado en base"),
     ]
 
     # ── Relations ───────────────────────────────────────────────────────────
@@ -2945,7 +2951,9 @@ class WorkOrderAssistanceUnit(models.Model):
             "COMPLETED: albarán recibido en plataforma con firma. "
             "CLOSED_UNSIGNED: albarán recibido sin firma — pendiente de "
             "gestión. "
-            "SIGNED_RECEIVED: supervisor confirma firma recibida del cliente."
+            "SIGNED_RECEIVED: supervisor confirma firma recibida del cliente. "
+            "CLOSED_BASE: el conductor cierra en base con km finales y "
+            "repostaje; conductor y máquina quedan libres."
         ),
     )
 
@@ -3068,6 +3076,35 @@ class WorkOrderAssistanceUnit(models.Model):
             "Supervisor que marcó la recepción de la firma del cliente. "
             "Null en todos los estados salvo SIGNED_RECEIVED."
         ),
+    )
+    # H37 (S133): base closing (dossier phase 4).
+    # Cierre en base (fase 4 del dossier).
+    base_km_end = models.DecimalField(
+        max_digits=10,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        verbose_name="Km finales",
+        help_text="Cuentakilómetros de la máquina al llegar a base.",
+    )
+    refueled = models.BooleanField(
+        null=True,
+        blank=True,
+        verbose_name="Ha repostado",
+        help_text="Si el conductor repostó en el servicio. Vacío hasta "
+                  "el cierre en base.",
+    )
+    refuel_liters = models.DecimalField(
+        max_digits=7,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Litros repostados",
+    )
+    base_closed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Cerrado en base en",
     )
 
     created_at = models.DateTimeField(
