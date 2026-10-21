@@ -42,6 +42,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from budgets.assistance_resources import assistance_drivers
 from budgets.assistance_traffic import OPEN_ORDER_STATUSES, driver_is_out
+from budgets import service_sheet as sheet
 from budgets.models import (
     DriverDeviceToken,
     DriverPosition,
@@ -387,6 +388,37 @@ def _detail_payload(unit):
     work_order = unit.work_order
     signature = getattr(unit, "signature", None)
     payload = _unit_payload(unit)
+    operator = unit.operator
+    # H37 (S133): Pepe's service sheet. "started" is the gate: without
+    # the km at departure the app only shows the header.
+    # Hoja de servicio de Pepe. "started" es la puerta: sin los km de
+    # salida la app solo enseña la cabecera.
+    payload.update({
+        "operator": _display_name(operator) if operator else "",
+        "started": unit.km_start is not None,
+        "km_start": _number(unit.km_start),
+        "arrived": unit.arrived_at is not None,
+        "vehicle_pma": _number(work_order.vehicle_pma),
+        "vehicle_tare": _number(work_order.vehicle_tare),
+        "vehicle_length": _number(work_order.vehicle_length),
+        "vehicle_height": _number(work_order.vehicle_height),
+        "vehicle_load": work_order.vehicle_load,
+        "pickup_location": work_order.pickup_location,
+        "work_hours": _number(unit.work_hours),
+        "driver_notes": unit.driver_notes,
+        "repair_on_site": work_order.repair_on_site,
+        "photo_counts": sheet.photo_counts(unit),
+        "required_photos": sheet.required_photo_kinds(unit),
+        "missing": sheet.missing_for_signature(unit),
+        "bases": [
+            {"id": base.pk, "name": base.name}
+            for base in sheet.bases_of(work_order.company)
+        ],
+        "default_base": (
+            unit.arrival_base_id or unit.departure_base_id
+            or getattr(operator, "base_id", None) or work_order.base_id
+        ),
+    })
     payload.update({
         "client_address": work_order.client_address,
         "vehicle_color": work_order.vehicle_color,
@@ -511,6 +543,7 @@ class DriverAlbaranSubmitView(View):
                 data, "rescue_hours", "Horas de rescate",
             )
             wait_hours = _decimal(data, "wait_hours", "Horas de espera")
+            work_hours = _decimal(data, "work_hours", "Horas de trabajo")
         except ValueError as exc:
             return _error(str(exc), 400)
         signature_data = str(data.get("signature_data", "") or "").strip()
@@ -546,12 +579,31 @@ class DriverAlbaranSubmitView(View):
                     % unit.get_status_display().lower(),
                     409,
                 )
+            # S133: the service sheet is filled before the signature.
+            # La hoja de servicio se rellena antes de la firma.
+            try:
+                sheet.apply_order_fields(unit, data)
+            except sheet.SheetError as exc:
+                return _error(str(exc), 400)
+            missing = sheet.missing_for_signature(unit)
+            if missing:
+                # What was filled is kept; only the signature waits.
+                # Lo rellenado se guarda; solo la firma espera.
+                return _error(
+                    "Falta en la hoja de servicio: %s." % ", ".join(missing),
+                    400,
+                )
             previous = unit.status
             now = timezone.now()
-            unit.phase1_km = phase1_km
-            unit.phase2_km = phase2_km if unit.is_overnight else None
+            if "phase1_km" in data:
+                unit.phase1_km = phase1_km
+            if "phase2_km" in data:
+                unit.phase2_km = phase2_km if unit.is_overnight else None
             unit.rescue_hours = rescue_hours
             unit.wait_hours = wait_hours
+            unit.work_hours = work_hours
+            if "driver_notes" in data:
+                unit.driver_notes = str(data.get("driver_notes") or "").strip()
             unit.synced_at = now
             if signature_data:
                 unit.status = Unit.STATUS_COMPLETED
@@ -619,6 +671,14 @@ class DriverAlbaranCloseBaseView(View):
         refueled = data.get("refueled")
         if km_end is None:
             return _error("Faltan los km finales.", 400)
+        # S133: Pepe's sheet: base, time of arrival and litres too.
+        # Hoja de Pepe: también base y hora de llegada y litros.
+        arrival_base = sheet.bases_of(company_user.company).filter(
+            pk=data.get("base") or 0,
+        ).first()
+        if arrival_base is None:
+            return _error("Indica la base a la que llegas.", 400)
+        arrived_at = sheet.client_time(data.get("arrived_at"))
         if not isinstance(refueled, bool):
             return _error("Indica si has repostado.", 400)
         if refueled and not liters:
@@ -636,8 +696,19 @@ class DriverAlbaranCloseBaseView(View):
                     % unit.get_status_display().lower(),
                     409,
                 )
+            if unit.km_start is not None and km_end < unit.km_start:
+                return _error(
+                    "Los km de llegada (%s) no pueden ser menos que los de "
+                    "salida (%s)." % (km_end, unit.km_start),
+                    400,
+                )
             previous = unit.status
             unit.base_km_end = km_end
+            unit.arrival_base = arrival_base
+            unit.base_arrived_at = arrived_at
+            if (unit.phase1_km is None and unit.km_start is not None
+                    and not unit.is_overnight):
+                unit.phase1_km = km_end - unit.km_start
             unit.refueled = refueled
             unit.refuel_liters = liters if refueled else None
             unit.base_closed_at = timezone.now()
@@ -659,6 +730,127 @@ class DriverAlbaranCloseBaseView(View):
             unit.albaran_number, company_user.user.username,
         )
         return JsonResponse({"ok": True, "number": unit.albaran_number})
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class DriverAlbaranStartView(View):
+    """
+    Open the service sheet with the km at departure.
+
+    ---
+
+    Abre la hoja de servicio con los km de salida (la puerta de la hoja:
+    Miguel Ángel, S133). El sistema apunta la hora y la base de salida y
+    si es nocturno. Se puede repetir para corregir los km.
+    """
+
+    def post(self, request, pk):
+        """
+        Validate and save.
+
+        ---
+
+        Valida y guarda.
+        """
+        company_user, _token = _token_user(request)
+        if company_user is None:
+            return _error("Sesión no válida.", 401)
+        data = _json_body(request)
+        with transaction.atomic():
+            unit = _driver_units(company_user).select_for_update().filter(
+                pk=pk,
+            ).first()
+            if unit is None:
+                return _error("Este albarán ya no está asignado a ti.", 404)
+            if unit.status not in EDITABLE_STATUSES:
+                return _error(
+                    "Este albarán ya está %s."
+                    % unit.get_status_display().lower(),
+                    409,
+                )
+            try:
+                previous = sheet.start(
+                    unit, company_user, data.get("km_start"), data.get("at"),
+                )
+            except sheet.SheetError as exc:
+                return _error(str(exc), 400)
+            if previous != unit.status:
+                WorkOrderAssistanceUnitEvent.status_change(
+                    unit, previous, unit.status, by=company_user,
+                    detail="Sale de base con %s km." % unit.km_start,
+                )
+        unit = _unit_of_driver(company_user, pk) or unit
+        return JsonResponse({"albaran": _detail_payload(unit)})
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class DriverAlbaranArriveView(View):
+    """
+    Mark the arrival at the service.
+
+    ---
+
+    Marca la llegada al servicio (hora de entrada, solo oficina).
+    """
+
+    def post(self, request, pk):
+        """
+        Save the time.
+
+        ---
+
+        Guarda la hora.
+        """
+        company_user, _token = _token_user(request)
+        if company_user is None:
+            return _error("Sesión no válida.", 401)
+        data = _json_body(request)
+        unit = _unit_of_driver(company_user, pk)
+        if unit is None:
+            return _error("Este albarán ya no está asignado a ti.", 404)
+        try:
+            sheet.arrive(unit, data.get("at"))
+        except sheet.SheetError as exc:
+            return _error(str(exc), 400)
+        return JsonResponse({"albaran": _detail_payload(unit)})
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class DriverAlbaranPhotoView(View):
+    """
+    Upload a photo of the service sheet.
+
+    ---
+
+    Sube una foto de la hoja (antes de cargar, cargado o descargado),
+    en JSON con la imagen en base64. Repetir el envío con el mismo id
+    del móvil no la duplica.
+    """
+
+    def post(self, request, pk):
+        """
+        Store the photo.
+
+        ---
+
+        Guarda la foto.
+        """
+        company_user, _token = _token_user(request)
+        if company_user is None:
+            return _error("Sesión no válida.", 401)
+        data = _json_body(request)
+        unit = _unit_of_driver(company_user, pk)
+        if unit is None:
+            return _error("Este albarán ya no está asignado a ti.", 404)
+        try:
+            sheet.save_photo(
+                unit, company_user, data.get("kind"), data.get("uid"),
+                data.get("image"), data.get("taken_at"),
+            )
+        except sheet.SheetError as exc:
+            return _error(str(exc), 400)
+        unit = _unit_of_driver(company_user, pk) or unit
+        return JsonResponse({"albaran": _detail_payload(unit)})
 
 
 def _coordinate(data, key, label, limit):

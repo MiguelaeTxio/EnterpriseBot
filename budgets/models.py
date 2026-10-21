@@ -2489,6 +2489,16 @@ class WorkOrderAssistance(models.Model):
         verbose_name="Tara (kg)",
         help_text="Tara del vehículo en kilogramos.",
     )
+    # H37 (S133): "Vehículo / carga" of Pepe's service sheet.
+    # "Vehículo / carga" de la hoja de servicio de Pepe.
+    vehicle_load = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Vehículo / carga",
+        help_text="Qué es el vehículo asistido o qué carga lleva, según "
+                  "lo apunta el conductor en la hoja de servicio.",
+    )
     # Number of passengers in the vehicle at the time of the incident.
     # Número de ocupantes en el vehículo en el momento del siniestro.
     num_passengers = models.PositiveSmallIntegerField(
@@ -3190,6 +3200,73 @@ class WorkOrderAssistanceUnit(models.Model):
         blank=True,
         related_name="+",
         verbose_name="Cerrado en base por",
+    )
+
+    # H37 (S133): service sheet of Pepe (hoja de servicio). The driver
+    # cannot see the sheet until he enters the km at departure; the
+    # departure time (`started_at`), the departure base and the night
+    # flag are recorded by the system and only the office sees them.
+    # Hoja de servicio de Pepe. El conductor no ve la hoja hasta meter
+    # los km de salida; la hora de salida (`started_at`), la base de
+    # salida y el nocturno los apunta el sistema y solo los ve la
+    # oficina.
+    km_start = models.DecimalField(
+        max_digits=10,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        verbose_name="Km salida",
+        help_text="Cuentakilómetros de la máquina al salir de base. "
+                  "Obligatorio para abrir la hoja de servicio.",
+    )
+    departure_base = models.ForeignKey(
+        "budgets.Base",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Base de salida",
+        help_text="Base del conductor (o de la máquina) al salir. Solo "
+                  "oficina.",
+    )
+    is_night = models.BooleanField(
+        null=True,
+        blank=True,
+        verbose_name="Nocturno",
+        help_text="Si la salida cae en el horario nocturno de la "
+                  "aseguradora (o el de la empresa). Solo oficina.",
+    )
+    arrived_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Hora entrada servicio",
+        help_text="Cuando el conductor llega al servicio. Solo oficina.",
+    )
+    work_hours = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Horas trabajo",
+    )
+    driver_notes = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Observaciones del conductor",
+    )
+    arrival_base = models.ForeignKey(
+        "budgets.Base",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Base de llegada",
+        help_text="Base a la que vuelve el conductor al terminar.",
+    )
+    base_arrived_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Hora llegada base",
     )
 
     created_at = models.DateTimeField(
@@ -4473,3 +4550,72 @@ class ServiceIntake(models.Model):
 
     def __str__(self):
         return f"{self.get_channel_display()} — {self.requested_by}"
+
+
+class WorkOrderAssistanceUnitPhoto(models.Model):
+    """
+    Photo of a service sheet taken by the driver.
+
+    ---
+
+    H37 (S133). Foto de la hoja de servicio que hace el conductor con la
+    app: antes de cargar, cargado en altura y descargado (hoja de
+    servicio de Pepe). Sin las de cargado y descargado no aparece la
+    firma del cliente, salvo reparación en el sitio. La imagen va al
+    cubo de GCS; aquí queda su ruta.
+    """
+
+    KIND_BEFORE = "BEFORE"
+    KIND_LOADED = "LOADED"
+    KIND_UNLOADED = "UNLOADED"
+    KIND_CHOICES = [
+        (KIND_BEFORE, "Antes de cargar"),
+        (KIND_LOADED, "Cargado en altura"),
+        (KIND_UNLOADED, "Descargado"),
+    ]
+
+    unit = models.ForeignKey(
+        WorkOrderAssistanceUnit,
+        on_delete=models.CASCADE,
+        related_name="photos",
+        verbose_name="Albarán",
+    )
+    kind = models.CharField(
+        max_length=10, choices=KIND_CHOICES, verbose_name="Tipo",
+    )
+    blob_name = models.CharField(
+        max_length=300, verbose_name="Ruta en GCS",
+    )
+    content_type = models.CharField(
+        max_length=40, default="image/jpeg", verbose_name="Tipo MIME",
+    )
+    # Id made by the phone: a retried upload (lost answer without
+    # coverage) does not duplicate the photo.
+    # Id que pone el móvil: un reenvío (respuesta perdida sin
+    # cobertura) no duplica la foto.
+    client_uid = models.CharField(
+        max_length=64, verbose_name="Id del móvil",
+    )
+    taken_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Hecha en",
+    )
+    uploaded_by = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Subida por",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Recibida en",
+    )
+
+    class Meta:
+        verbose_name = "Foto de albarán (asistencia)"
+        verbose_name_plural = "Fotos de albarán (asistencia)"
+        ordering = ["unit", "kind", "taken_at", "pk"]
+        unique_together = [("unit", "client_uid")]
+
+    def __str__(self):
+        return "%s — %s" % (self.unit.albaran_number, self.get_kind_display())
