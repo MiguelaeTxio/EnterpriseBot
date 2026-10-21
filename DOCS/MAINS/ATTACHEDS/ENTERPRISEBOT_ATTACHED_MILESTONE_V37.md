@@ -535,3 +535,64 @@ lo que dependa de ellas.
    o los dos), por qué vía (correo, WhatsApp con la plantilla
    `albaran_customer_delivery`) y cuándo (al completarse o a mano).
    Es el punto 7 de 6.1 (fase 5 del dossier).
+
+### 6.3. Reunión de Miguel Ángel con Pepe (S133, 21/10/2026) -- decisiones
+
+Cambian el enfoque de la entrada de servicios y de la app del
+conductor. Verbatim de Miguel Ángel donde importa.
+
+**A. Entrada de servicios: tres puertas, sin correo ni web scraping.**
+*"vamos a tener las tres entradas. Por foto, por llamada y por
+WhatsApp. Nos olvidamos de controlar los correos."* El correo de TIREA
+solo trae un enlace a su web (FlotaWEB) y el web scraping se descarta.
+Lo que llegue de TIREA o de otra plataforma se mete por **foto**
+(pantallazo, extractor ya hecho en S132); lo que llegue por teléfono,
+quien lo recibe lo pasa **por WhatsApp o llamando al robot**.
+Objetivo: *"el lanzamiento del albarán y del servicio debe ser
+automático para quitar toda la carga de trabajo a la persona que da el
+servicio [...] Todo el trabajo administrativo lo vamos a eliminar al
+máximo."* Conversación natural: *"voy a enviar a Pepe, no, están
+libres Antonio, Manolo y Fernando. Perfecto, pues Fernando."*
+
+**B. Quién puede dar servicios por llamada o WhatsApp.** De momento,
+los supervisores de asistencia (y los administradores). *"Nos
+centramos solamente en que compruebe que la persona tiene servicios de
+supervisión, de asistencia [...] luego ya si tenemos que dar más
+permisos lo haremos."* Más adelante, una marca para trabajadores sin
+acceso al panel.
+
+**C. Manda quien da el servicio.** *"La orden de la persona que llama
+prevalece sobre lo que tengamos en base de datos."* Si una máquina
+figura en taller y quien da el servicio confirma explícitamente que ya
+no lo está, se asigna igual y queda anotado.
+
+**D. Servicios en cola.** *"Poder darle otro servicio para cuando
+acabe el primero. O darle tres servicios."*
+
+**E. WhatsApp sin plantilla:** la conversación la empieza siempre quien
+da el servicio, dentro de la ventana de 24 h.
+
+**F. Aseguradora por CIF.** El dato que distingue la aseguradora
+(incluido el caso 80/81 de 6.2.1) es el CIF que trae el servicio
+(pendiente de concretar con el documento).
+
+**G. App del conductor (cambia la entrega del albarán):**
+1. Km y hora de salida obligatorios **antes** de ver el albarán: *"No
+   te puede aparecer el albarán hasta que introduzcas los datos que te
+   estamos solicitando del vehículo. Y la hora de salida."* Sin ellos no
+   ve ni la ubicación ni nada.
+2. Fotos de la carga y de la descarga obligatorias **antes** de que
+   aparezca la firma del cliente, y guardadas con el albarán.
+3. Pepe dará una hoja con los datos que el albarán necesita.
+
+**H. Histórico permanente por matrícula.** *"Importantísimo tener los
+datos persistidos de los servicios"*: dentro de años, saber si ese
+vehículo ya se llevó, cuándo, adónde, y si está cobrado.
+
+**I. Exportación a TIREA y Prologic:** más adelante; *"De momento nos
+vamos a centrar en la toma de datos."*
+
+**Orden de trabajo acordado:** núcleo común de alta de servicios
+(origen, regla de C, cola de D) → agente de WhatsApp → agente de voz
+(IVR) → app del conductor (G) → histórico por matrícula (H).
+
