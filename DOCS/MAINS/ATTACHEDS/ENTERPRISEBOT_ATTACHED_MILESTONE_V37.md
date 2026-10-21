@@ -612,3 +612,12 @@ vamos a centrar en la toma de datos."*
 (origen, regla de C, cola de D) → agente de WhatsApp → agente de voz
 (IVR) → app del conductor (G) → consulta de servicios (H).
 
+**Pendiente técnico anotado en S133 (directriz 4.9):**
+`vox_bridge/services.py` pasó de ~750 avisos de flake8 a 68 (repaso
+automático con AST idéntico más imports sin uso retirados). Las 68
+restantes son líneas largas dentro de los manejadores de herramientas
+de la llamada, con ~10 niveles de anidación: arreglarlas bien exige
+sacar cada manejador a su propio método, y eso hay que validarlo con
+llamadas reales al robot. Se hace en la sesión en que se pruebe la
+llamada para dar servicios.
+

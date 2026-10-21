@@ -967,3 +967,209 @@ def process_whatsapp(intake_pk, body, media_url, content_type,
             note = "[Llegó una foto del servicio pero no se ha podido leer.]"
         user_text = "%s\n%s" % (body, note) if body else note
     return reply(intake, user_text, whatsapp_sender)
+
+
+# ---------------------------------------------------------------------------
+# Phone call to the robot (Gemini Live, vox_bridge).
+# Llamada al robot (Gemini Live, vox_bridge).
+# ---------------------------------------------------------------------------
+
+VOICE_TOOL_PREFIX = "servicio_"
+
+
+def service_giver_for_call(twilio_number, caller_number):
+    """
+    Panel user calling who can give services, or None.
+
+    ---
+
+    Usuario del panel que llama y puede dar servicios (supervisor de
+    asistencia o administrador), por el número del que llama y la
+    empresa del número llamado; None si no.
+    """
+    from ivr_config.models import Contact, PhoneNumber
+
+    if not caller_number:
+        return None
+    phone = PhoneNumber.objects.filter(
+        number=twilio_number, is_active=True,
+    ).select_related("company").first()
+    if phone is None:
+        return None
+    contact = Contact.objects.filter(
+        company=phone.company, phone_number=caller_number,
+    ).select_related("company_user__user").first()
+    company_user = getattr(contact, "company_user", None)
+    return company_user if service_giver(company_user) else None
+
+
+def voice_instruction(company_user):
+    """
+    Block of the call instructions for giving a service.
+
+    ---
+
+    Bloque de instrucciones de la llamada para dar un servicio: se
+    añade a las de siempre cuando quien llama puede darlos.
+    """
+    from budgets.models import Insurer
+
+    user = company_user.user
+    insurers = ", ".join(
+        Insurer.objects.filter(
+            company=company_user.company, is_active=True,
+        ).order_by("name").values_list("name", flat=True)
+    )
+    return (
+        "\n\nDAR UN SERVICIO DE ASISTENCIA POR TELÉFONO:\n"
+        "Quien llama es %(name)s, que puede dar servicios de asistencia "
+        "(grúa). Si dice que va a dar un servicio, encárgate tú de todo:\n"
+        "1. Pregunta los datos de forma natural y guárdalos con "
+        "servicio_guardar_datos cada vez que te den alguno: aseguradora "
+        "(obligatoria), tipo de vehículo (obligatorio; la herramienta te "
+        "dice las opciones), expediente, matrícula, marca y modelo, "
+        "recogida, destino, avería y teléfono del cliente. Las "
+        "matrículas y expedientes, repítelos para confirmar.\n"
+        "2. Consulta servicio_disponibilidad y di quién está libre o "
+        "volviendo, en pocas palabras.\n"
+        "3. Antes de lanzar, resume (aseguradora, vehículo, de dónde a "
+        "dónde, conductor y máquina) y pregunta si lo lanzas. Solo con "
+        "un sí claro llama a servicio_lanzar.\n"
+        "4. Manda quien llama: si elige un conductor o una máquina que "
+        "figuran en taller, de baja, de vacaciones o ausentes, avísale "
+        "una vez; si confirma que sí están disponibles, lanza con "
+        "nota_prevalencia con lo que te ha dicho. Si están ocupados, el "
+        "servicio queda en cola y sale solo al terminar el actual.\n"
+        "5. Al lanzar, di el número de albarán y si se ha enviado o queda "
+        "en cola. Si una herramienta da error, explícalo y pregunta.\n"
+        "Frases cortas: quien llama puede ir conduciendo.\n"
+        "Aseguradoras: %(insurers)s."
+    ) % {
+        "name": user.get_full_name() or user.username,
+        "insurers": insurers or "ninguna dada de alta",
+    }
+
+
+def voice_tool_declarations():
+    """
+    Tools of the call, as plain dictionaries for vox_bridge.
+
+    ---
+
+    Herramientas de la llamada, como diccionarios para que vox_bridge
+    construya sus FunctionDeclaration (mismo formato que sus otras
+    herramientas).
+    """
+    data_props = {
+        "aseguradora": {
+            "type": "string", "description": "Nombre de la aseguradora.",
+        },
+        "tipo_vehiculo": {
+            "type": "string",
+            "description": (
+                "Tipo de vehículo según la tarifa de la aseguradora."
+            ),
+        },
+    }
+    for arg, (_field, help_text) in DATA_FIELDS.items():
+        data_props[arg] = {"type": "string", "description": help_text}
+    return [
+        {
+            "name": VOICE_TOOL_PREFIX + "guardar_datos",
+            "description": (
+                "Guarda los datos del servicio que te han dado. Devuelve lo "
+                "que se sabe, lo que falta y, si hace falta, las opciones "
+                "de tipo de vehículo."
+            ),
+            "parameters": {"type": "object", "properties": data_props},
+        },
+        {
+            "name": VOICE_TOOL_PREFIX + "disponibilidad",
+            "description": (
+                "Equipos (conductor con su máquina), conductores sin "
+                "máquina y máquinas sin conductor, con su estado."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+        {
+            "name": VOICE_TOOL_PREFIX + "lanzar",
+            "description": (
+                "Crea la orden y el albarán, asigna conductor y máquina y "
+                "envía el albarán al conductor (o lo deja en cola). Solo "
+                "con la confirmación de quien llama."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "conductor": {
+                        "type": "string",
+                        "description": "Nombre del conductor elegido.",
+                    },
+                    "maquina": {
+                        "type": "string",
+                        "description": (
+                            "Código de la máquina (p. ej. A49); vacío si va "
+                            "con la de su equipo."
+                        ),
+                    },
+                    "ayudantes": {
+                        "type": "array", "items": {"type": "string"},
+                        "description": "Nombres de los ayudantes, si van.",
+                    },
+                    "nota_prevalencia": {
+                        "type": "string",
+                        "description": (
+                            "Solo si figuran ausentes o en taller y quien "
+                            "llama confirma que sí están disponibles: lo "
+                            "que ha dicho."
+                        ),
+                    },
+                },
+                "required": ["conductor"],
+            },
+        },
+        {
+            "name": VOICE_TOOL_PREFIX + "cancelar",
+            "description": "Abandona el servicio si lo piden.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    ]
+
+
+def run_voice_tool(company_user_pk, caller_number, name, args):
+    """
+    Execute a tool of the call.
+
+    ---
+
+    Ejecuta una herramienta de la llamada sobre la conversación de
+    servicio abierta de quien llama (la crea con la primera). Devuelve
+    el resultado para Gemini.
+    """
+    import os
+
+    company_user = CompanyUser.objects.select_related(
+        "company", "user",
+    ).get(pk=company_user_pk)
+    channel = ServiceIntake.CHANNEL_PHONE
+    intake = open_intake(company_user, channel) or start_intake(
+        company_user, channel, caller_number,
+    )
+    tool = name[len(VOICE_TOOL_PREFIX):]
+    args = dict(args or {})
+    intake.conversation = intake.conversation + [{
+        "role": "tool",
+        "text": "%s %s" % (tool, json.dumps(args, ensure_ascii=False)),
+    }]
+    intake.save(update_fields=["conversation", "updated_at"])
+    if tool == "guardar_datos":
+        return save_data(intake, args)
+    if tool == "disponibilidad":
+        return availability(intake.company)
+    if tool == "lanzar":
+        return launch(
+            intake, args, os.environ.get("TWILIO_WHATSAPP_SENDER", ""),
+        )
+    if tool == "cancelar":
+        return cancel(intake)
+    return {"error": "Herramienta desconocida."}

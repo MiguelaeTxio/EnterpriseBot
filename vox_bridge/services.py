@@ -72,14 +72,19 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 # Gemini Live 2.5 Flash Native Audio — GA stable model on Vertex AI.
-# Migrated from gemini-3.1-flash-live-preview (Gemini API Preview) on 2026-04-05
-# due to Preview infrastructure instability causing silent audio generation failures.
+# Migrated from gemini-3.1-flash-live-preview (Gemini API Preview) on
+# 2026-04-05
+# due to Preview infrastructure instability causing silent audio generation
+# failures.
 # gemini-live-2.5-flash-native-audio is GA on Vertex AI with no published
 # deprecation date and production-grade SLA guarantees.
 # Gemini Live 2.5 Flash Native Audio — modelo GA estable en Vertex AI.
-# Migrado desde gemini-3.1-flash-live-preview (Gemini API Preview) el 2026-04-05
-# debido a inestabilidad de la infraestructura Preview que causaba fallos silenciosos
-# en la generación de audio. gemini-live-2.5-flash-native-audio es GA en Vertex AI
+# Migrado desde gemini-3.1-flash-live-preview (Gemini API Preview) el
+# 2026-04-05
+# debido a inestabilidad de la infraestructura Preview que causaba fallos
+# silenciosos
+# en la generación de audio. gemini-live-2.5-flash-native-audio es GA en Vertex
+# AI
 # sin fecha de deprecación publicada y con garantías SLA de producción.
 GEMINI_MODEL = "gemini-live-2.5-flash-native-audio"
 
@@ -96,48 +101,59 @@ SYSTEM_INSTRUCTION_FALLBACK = (
     "Eres María, la asistente virtual del Grupo Álvarez. "
     "Atiendes llamadas de voz en tiempo real. "
     "Tu tono es profesional, cálido y conciso. "
-    "Habla siempre en castellano, salvo que el llamante se dirija a ti en otro idioma. "
+    "Habla siempre en castellano, salvo que el llamante se dirija a ti en "
+    "otro idioma. "
     "\n\n"
     "ORGANIGRAMA DE ATENCIÓN:\n"
     "\n"
     "1. ELEVACIÓN (alquiler de plataformas elevadoras):\n"
-    "   Si el llamante pregunta por el departamento de Elevación o por el alquiler "
-    "de plataformas elevadoras, infórmale de que el horario de atención es de lunes "
+    "   Si el llamante pregunta por el departamento de Elevación o por el "
+    "alquiler "
+    "de plataformas elevadoras, infórmale de que el horario de atención es de "
+    "lunes "
     "a viernes de 8:00 a 18:00 horas, y despídete amablemente.\n"
     "\n"
     "2. ASISTENCIA (rescate de vehículos pesados):\n"
-    "   Si el llamante pregunta por el departamento de Asistencia o por el rescate "
-    "de vehículos pesados, infórmale de que el servicio está disponible las 24 horas "
+    "   Si el llamante pregunta por el departamento de Asistencia o por el "
+    "rescate "
+    "de vehículos pesados, infórmale de que el servicio está disponible las "
+    "24 horas "
     "del día, los 7 días de la semana, y despídete amablemente.\n"
     "\n"
     "3. PREGUNTA POR ALGUIEN CON APELLIDO ÁLVAREZ:\n"
-    "   Si el llamante pregunta por cualquier persona cuyo apellido sea Álvarez, "
+    "   Si el llamante pregunta por cualquier persona cuyo apellido sea "
+    "Álvarez, "
     "indícale que en estos momentos está reunida. "
     "Ofrécete a tomar nota del recado. "
-    "Pídele su nombre y, una vez que te lo facilite, confirma que transmitirás el "
+    "Pídele su nombre y, una vez que te lo facilite, confirma que "
+    "transmitirás el "
     "mensaje y despídete amablemente.\n"
     "\n"
     "4. PREGUNTA POR ALGUIEN SIN APELLIDO ÁLVAREZ:\n"
     "   Si el llamante pregunta por una persona cuyo apellido NO es Álvarez, "
-    "pregúntale el motivo de su llamada y redirígele según su respuesta conforme "
+    "pregúntale el motivo de su llamada y redirígele según su respuesta "
+    "conforme "
     "a las categorías anteriores (Elevación o Asistencia). "
     "Si el motivo no encaja en ninguna categoría, pasa a la regla 5.\n"
     "\n"
     "5. MOTIVO AMBIGUO O SIN CATEGORÍA:\n"
-    "   Si el motivo de la llamada no encaja en ninguna de las categorías anteriores, "
-    "indícale al llamante que un comercial se pondrá en contacto con él a la mayor "
+    "   Si el motivo de la llamada no encaja en ninguna de las categorías "
+    "anteriores, "
+    "indícale al llamante que un comercial se pondrá en contacto con él a la "
+    "mayor "
     "brevedad posible. "
     "Solicítale sus datos de contacto (nombre y número de teléfono) y, "
     "una vez recogidos, despídete amablemente.\n"
     "\n"
     "REGLAS GENERALES:\n"
     "- Nunca inventes información que no figure en este organigrama.\n"
-    "- Nunca menciones que eres una inteligencia artificial salvo que el llamante "
+    "- Nunca menciones que eres una inteligencia artificial salvo que el "
+    "llamante "
     "te lo pregunte directamente.\n"
-    "- Mantén siempre un tono sereno y profesional, independientemente del tono "
+    "- Mantén siempre un tono sereno y profesional, independientemente del "
+    "tono "
     "del llamante.\n"
-    "- Sé concisa: no des explicaciones innecesarias.\n"
-)
+    "- Sé concisa: no des explicaciones innecesarias.\n")
 
 # Timeout values aligned with the V01 roadmap directive:
 # The Preview infrastructure of Gemini 3.1 Live has a documented TTFT
@@ -168,7 +184,8 @@ TWILIO_OUTPUT_SAMPLE_RATE = 8000  # Hz — Twilio expects 8kHz mu-law back
 # 200 RMS (~-44 dBFS) is a conservative threshold that reliably separates
 # background line noise from actual speech in telephony conditions.
 # Umbral de energía RMS por debajo del cual un frame PCM se considera silencio.
-# El mu-law G.711 de Twilio decodificado a PCM 16-bit da valores en [-32768, 32767].
+# El mu-law G.711 de Twilio decodificado a PCM 16-bit da valores en [-32768,
+# 32767].
 # 200 RMS (~-44 dBFS) es un umbral conservador que separa de forma fiable el
 # ruido de línea de fondo del habla real en condiciones de telefonía.
 SILENCE_THRESHOLD_RMS = 300
@@ -239,79 +256,111 @@ class VoiceOrchestrationService:
           which guarantees the Setup-First protocol (SDK 1.69.0 compliant).
         - Sending the initial greeting text immediately upon session entry.
         - Concurrently: forwarding inbound PCM audio from Twilio to Gemini,
-          and receiving PCM audio responses from Gemini to forward back to Twilio.
+          and receiving PCM audio responses from Gemini to forward back to
+          Twilio.
         - Handling graceful shutdown and error recovery.
     ---
-    Gestiona el ciclo de vida completo de una sesión de voz en tiempo real entre
+    Gestiona el ciclo de vida completo de una sesión de voz en tiempo real
+    entre
     un llamante de Twilio y la API Gemini 3.1 Live.
 
     Responsabilidades:
         - Inicializar el cliente Gemini GenAI con la clave de API del proyecto.
-        - Inicializar el cliente REST de Twilio para el control de llamadas salientes.
+        - Inicializar el cliente REST de Twilio para el control de llamadas
+        salientes.
         - Establecer la sesión Gemini Live mediante el context manager del SDK,
           que garantiza el protocolo Setup-First (conforme a SDK 1.69.0).
-        - Enviar el texto del saludo inicial de forma inmediata al entrar en la sesión.
-        - De forma concurrente: reenviar el audio PCM entrante de Twilio a Gemini,
-          y recibir las respuestas de audio PCM de Gemini para reenviarlas a Twilio.
+        - Enviar el texto del saludo inicial de forma inmediata al entrar en la
+        sesión.
+        - De forma concurrente: reenviar el audio PCM entrante de Twilio a
+        Gemini,
+          y recibir las respuestas de audio PCM de Gemini para reenviarlas a
+          Twilio.
         - Gestionar el apagado elegante y la recuperación de errores.
     """
 
     def __init__(self, twilio_number: str = "", caller_number: str = ""):
         """
-        Initialises the service by loading credentials from environment variables,
+        Initialises the service by loading credentials from environment
+        variables,
         constructing the Gemini and Twilio client instances, and resolving the
         dynamic IVR configuration for the inbound call via build_live_config().
 
         If build_live_config() raises any exception (e.g. the Twilio number is
-        not yet registered in the database, or has no active CallFlow assigned),
-        the service falls back silently to the hardcoded SYSTEM_INSTRUCTION_FALLBACK
-        and INITIAL_GREETING_FALLBACK constants, logging the failure at ERROR level
+        not yet registered in the database, or has no active CallFlow
+        assigned),
+        the service falls back silently to the hardcoded
+        SYSTEM_INSTRUCTION_FALLBACK
+        and INITIAL_GREETING_FALLBACK constants, logging the failure at ERROR
+        level
         so it is visible in the PythonAnywhere error log for diagnosis.
 
         Args:
-            twilio_number (str): The Twilio E.164 number that received the inbound
-                                 call (e.g. '+12603466780'). Passed by InboundCallView
-                                 from request.POST.get('To', ''). Defaults to empty
+            twilio_number (str): The Twilio E.164 number that received the
+            inbound
+                                 call (e.g. '+12603466780'). Passed by
+                                 InboundCallView
+                                 from request.POST.get('To', ''). Defaults to
+                                 empty
                                  string, which will trigger the fallback path.
-            caller_number (str): The caller's E.164 number (From field). Used by
-                                 build_live_config() to verify the caller against the
-                                 BlockedCaller registry. Defaults to empty string,
+            caller_number (str): The caller's E.164 number (From field). Used
+            by
+                                 build_live_config() to verify the caller
+                                 against the
+                                 BlockedCaller registry. Defaults to empty
+                                 string,
                                  which skips the blocked caller check.
 
         Gemini client: Vertex AI service account JSON — GCP_CREDENTIALS_PATH.
         Twilio client: TWILIO_ACCOUNT_SID + TWILIO_API_KEY_SID +
-                       TWILIO_API_KEY_SECRET (API Key auth, not Auth Token auth).
+                       TWILIO_API_KEY_SECRET (API Key auth, not Auth Token
+                       auth).
         ---
         Inicializa el servicio cargando las credenciales desde las variables de
         entorno, construyendo las instancias de los clientes Gemini y Twilio, y
-        resolviendo la configuración IVR dinámica para la llamada entrante mediante
+        resolviendo la configuración IVR dinámica para la llamada entrante
+        mediante
         build_live_config().
 
-        Si build_live_config() lanza cualquier excepción (p. ej. el número Twilio
+        Si build_live_config() lanza cualquier excepción (p. ej. el número
+        Twilio
         aún no está registrado en la base de datos, o no tiene ningún CallFlow
         activo asignado), el servicio cae silenciosamente al fallback de las
-        constantes hardcodeadas SYSTEM_INSTRUCTION_FALLBACK e INITIAL_GREETING_FALLBACK,
-        registrando el fallo a nivel ERROR para que sea visible en el log de errores
+        constantes hardcodeadas SYSTEM_INSTRUCTION_FALLBACK e
+        INITIAL_GREETING_FALLBACK,
+        registrando el fallo a nivel ERROR para que sea visible en el log de
+        errores
         de PythonAnywhere para su diagnóstico.
 
         Args:
             twilio_number (str): El número Twilio E.164 que recibió la llamada
                                  entrante (p. ej. '+12603466780'). Pasado por
-                                 InboundCallView desde request.POST.get('To', '').
-                                 Por defecto cadena vacía, que activará el fallback.
-            caller_number (str): El número E.164 del llamante (campo From). Usado
-                                 por build_live_config() para verificar al llamante
-                                 contra el registro de BlockedCaller. Por defecto
-                                 cadena vacía, que omite la comprobación de bloqueo.
+                                 InboundCallView desde request.POST.get('To',
+                                 '').
+                                 Por defecto cadena vacía, que activará el
+                                 fallback.
+            caller_number (str): El número E.164 del llamante (campo From).
+            Usado
+                                 por build_live_config() para verificar al
+                                 llamante
+                                 contra el registro de BlockedCaller. Por
+                                 defecto
+                                 cadena vacía, que omite la comprobación de
+                                 bloqueo.
 
-        Cliente Gemini: Service account JSON de Vertex AI — GCP_CREDENTIALS_PATH.
+        Cliente Gemini: Service account JSON de Vertex AI —
+        GCP_CREDENTIALS_PATH.
         Cliente Twilio: TWILIO_ACCOUNT_SID + TWILIO_API_KEY_SID +
-                        TWILIO_API_KEY_SECRET (autenticación por API Key, no Auth Token).
+                        TWILIO_API_KEY_SECRET (autenticación por API Key, no
+                        Auth Token).
         """
-        # --- Gemini Client Initialisation / Inicialización del Cliente Gemini ---
+        # --- Gemini Client Initialisation / Inicialización del Cliente Gemini
+        # ---
         # The GenAI client is instantiated once per service instance and reused
-        # across all session lifecycle methods. The API key is sourced exclusively
-        # from the GEMINI_API_KEY environment variable loaded by Django's settings.py.
+        # across all session lifecycle methods. The API key is sourced
+        # exclusively
+        # from the GEMINI_API_KEY environment variable loaded by Django's
+        # settings.py.
         # El cliente GenAI se instancia una vez por instancia de servicio y se
         # reutiliza en todos los métodos del ciclo de vida de la sesión.
         # VERTEX AI AUTHENTICATION — SERVICE ACCOUNT JSON:
@@ -323,7 +372,8 @@ class VoiceOrchestrationService:
         # with gemini-3.1-flash-live-preview (migrated 2026-04-05).
         #
         # AUTENTICACIÓN VERTEX AI — SERVICE ACCOUNT JSON:
-        # La autenticación usa un fichero JSON de cuenta de servicio de Google Cloud.
+        # La autenticación usa un fichero JSON de cuenta de servicio de Google
+        # Cloud.
         # La ruta se obtiene de GCP_CREDENTIALS_PATH en el .env del proyecto.
         # El cliente se inicializa con vertexai=True, proyecto y ubicación
         # desde las variables GOOGLE_CLOUD_PROJECT y GOOGLE_CLOUD_LOCATION.
@@ -356,41 +406,60 @@ class VoiceOrchestrationService:
             credentials=gcp_credentials
         )
         logger.info(
-            f"[INIT] Cliente Gemini GenAI (Vertex AI) inicializado correctamente. "
+            "[INIT] Cliente Gemini GenAI (Vertex AI) inicializado "
+            "correctamente. "
             f"Proyecto: {gcp_project} | Ubicación: {gcp_location}"
         )
 
-        # --- Twilio Client Initialisation / Inicialización del Cliente Twilio ---
-        # Uses IE1 regional API Key credentials (SID + Secret) with edge="dublin"
-        # and region="ie1" so that all REST API calls target the Ireland data center
+        # --- Twilio Client Initialisation / Inicialización del Cliente Twilio
+        # ---
+        # Uses IE1 regional API Key credentials (SID + Secret) with
+        # edge="dublin"
+        # and region="ie1" so that all REST API calls target the Ireland data
+        # center
         # where Spanish numbers (+34) are processed. Using US1 credentials or
-        # omitting edge/region causes HTTP 404 when updating or querying calls that
-        # were created in IE1, because call records only exist in their origin region.
-        # Note: specifying only region= without edge= routes to US1 — both parameters
+        # omitting edge/region causes HTTP 404 when updating or querying calls
+        # that
+        # were created in IE1, because call records only exist in their origin
+        # region.
+        # Note: specifying only region= without edge= routes to US1 — both
+        # parameters
         # must always be provided together per Twilio SDK documentation.
-        # Deadline: api.ie1.twilio.com stops working on 2026-04-28 — the SDK approach
+        # Deadline: api.ie1.twilio.com stops working on 2026-04-28 — the SDK
+        # approach
         # with edge+region is the correct migration path.
         # ---
-        # Usa credenciales de API Key regional IE1 (SID + Secret) con edge="dublin"
-        # y region="ie1" para que todas las llamadas REST API apunten al centro de datos
-        # de Irlanda donde se procesan los números españoles (+34). Usar credenciales
-        # US1 u omitir edge/region provoca HTTP 404 al actualizar o consultar llamadas
-        # creadas en IE1, ya que los registros de llamada solo existen en su región de origen.
-        # Nota: especificar solo region= sin edge= enruta a US1 — ambos parámetros deben
-        # proporcionarse siempre juntos según la documentación del SDK de Twilio.
-        # Fecha límite: api.ie1.twilio.com deja de funcionar el 2026-04-28 — el enfoque
+        # Usa credenciales de API Key regional IE1 (SID + Secret) con
+        # edge="dublin"
+        # y region="ie1" para que todas las llamadas REST API apunten al centro
+        # de datos
+        # de Irlanda donde se procesan los números españoles (+34). Usar
+        # credenciales
+        # US1 u omitir edge/region provoca HTTP 404 al actualizar o consultar
+        # llamadas
+        # creadas en IE1, ya que los registros de llamada solo existen en su
+        # región de origen.
+        # Nota: especificar solo region= sin edge= enruta a US1 — ambos
+        # parámetros deben
+        # proporcionarse siempre juntos según la documentación del SDK de
+        # Twilio.
+        # Fecha límite: api.ie1.twilio.com deja de funcionar el 2026-04-28 — el
+        # enfoque
         # SDK con edge+region es la ruta de migración correcta.
-        twilio_account_sid    = os.getenv("TWILIO_ACCOUNT_SID")
-        twilio_api_key_sid    = os.getenv("TWILIO_API_KEY_SID_IE1")
+        twilio_account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+        twilio_api_key_sid = os.getenv("TWILIO_API_KEY_SID_IE1")
         twilio_api_key_secret = os.getenv("TWILIO_API_KEY_SECRET_IE1")
 
-        if not all([twilio_account_sid, twilio_api_key_sid, twilio_api_key_secret]):
+        if not all([twilio_account_sid,
+                    twilio_api_key_sid,
+                    twilio_api_key_secret]):
             logger.error(
                 "[INIT] Credenciales de Twilio IE1 incompletas. Se requieren: "
-                "TWILIO_ACCOUNT_SID, TWILIO_API_KEY_SID_IE1, TWILIO_API_KEY_SECRET_IE1."
-            )
+                "TWILIO_ACCOUNT_SID, TWILIO_API_KEY_SID_IE1, "
+                "TWILIO_API_KEY_SECRET_IE1.")
             raise EnvironmentError(
-                "Twilio IE1 credentials are incomplete. Cannot initialise VoiceOrchestrationService."
+                "Twilio IE1 credentials are incomplete. Cannot initialise "
+                "VoiceOrchestrationService."
             )
         self.twilio_client = TwilioClient(
             twilio_api_key_sid,
@@ -405,35 +474,48 @@ class VoiceOrchestrationService:
         )
 
         # --- Session State / Estado de Sesión ---
-        # Queue for inbound audio chunks arriving from Twilio via the WebSocket view.
-        # The queue decouples the Django WebSocket receiver from the Gemini sender
-        # coroutine, preventing back-pressure from blocking the WebSocket handler.
-        # Cola para los fragmentos de audio entrantes que llegan desde Twilio a través
-        # de la vista WebSocket. La cola desacopla el receptor WebSocket de Django de
-        # la corrutina emisora de Gemini, evitando que la contrapresión bloquee el
+        # Queue for inbound audio chunks arriving from Twilio via the WebSocket
+        # view.
+        # The queue decouples the Django WebSocket receiver from the Gemini
+        # sender
+        # coroutine, preventing back-pressure from blocking the WebSocket
+        # handler.
+        # Cola para los fragmentos de audio entrantes que llegan desde Twilio a
+        # través
+        # de la vista WebSocket. La cola desacopla el receptor WebSocket de
+        # Django de
+        # la corrutina emisora de Gemini, evitando que la contrapresión bloquee
+        # el
         # manejador WebSocket.
         self.audio_input_queue: asyncio.Queue = asyncio.Queue()
 
         # Queue for outbound audio chunks to be sent back to Twilio.
-        # PCM 24kHz responses from Gemini are placed here by the listener coroutine
+        # PCM 24kHz responses from Gemini are placed here by the listener
+        # coroutine
         # and consumed by the Twilio sender coroutine.
-        # Cola para los fragmentos de audio salientes que se enviarán de vuelta a Twilio.
-        # Las respuestas PCM 24kHz de Gemini se colocan aquí por la corrutina escuchadora
+        # Cola para los fragmentos de audio salientes que se enviarán de vuelta
+        # a Twilio.
+        # Las respuestas PCM 24kHz de Gemini se colocan aquí por la corrutina
+        # escuchadora
         # y son consumidas por la corrutina emisora de Twilio.
         self.audio_output_queue: asyncio.Queue = asyncio.Queue()
 
         # Flag to signal all coroutines to terminate gracefully.
-        # Flag para señalizar a todas las corrutinas que terminen de forma elegante.
+        # Flag para señalizar a todas las corrutinas que terminen de forma
+        # elegante.
         self.session_active: bool = False
         self._pending_transfer_section_id: int | None = None
 
         # Stream SID assigned by Twilio for this Media Stream session.
         # This value is populated via set_stream_sid() when the Twilio 'start'
-        # event is received, and must be included in every outbound 'media' message
+        # event is received, and must be included in every outbound 'media'
+        # message
         # to comply with the Twilio Media Streams bidirectional protocol.
         # SID del stream asignado por Twilio para esta sesión de Media Stream.
-        # Este valor se rellena mediante set_stream_sid() cuando se recibe el evento
-        # 'start' de Twilio, y debe incluirse en cada mensaje 'media' saliente para
+        # Este valor se rellena mediante set_stream_sid() cuando se recibe el
+        # evento
+        # 'start' de Twilio, y debe incluirse en cada mensaje 'media' saliente
+        # para
         # cumplir con el protocolo bidireccional de Twilio Media Streams.
         self.stream_sid: str = ""
 
@@ -453,20 +535,26 @@ class VoiceOrchestrationService:
         # This executes the ORM queries in a dedicated thread pool thread,
         # fully satisfying Django's async safety requirements.
         #
-        # NOTA DE ARQUITECTURA (2026-04-11 — corrección SynchronousOnlyOperation):
+        # NOTA DE ARQUITECTURA (2026-04-11 — corrección
+        # SynchronousOnlyOperation):
         # build_live_config() ejecuta queries ORM síncronas de Django. Llamarla
-        # aquí desde __init__() lanzaría SynchronousOnlyOperation porque __init__()
-        # se invoca desde dentro de handle_websocket_stream(), que es una corrutina
+        # aquí desde __init__() lanzaría SynchronousOnlyOperation porque
+        # __init__()
+        # se invoca desde dentro de handle_websocket_stream(), que es una
+        # corrutina
         # async ejecutándose en el bucle de eventos de aiohttp.
         #
         # Solución: almacenar twilio_number e inicializar system_instruction /
-        # initial_greeting_text con los valores de fallback hardcodeados aquí para
+        # initial_greeting_text con los valores de fallback hardcodeados aquí
+        # para
         # que el servicio esté siempre en un estado consistente y llamable tras
-        # __init__(). La configuración dinámica real se carga de forma asíncrona al
+        # __init__(). La configuración dinámica real se carga de forma
+        # asíncrona al
         # inicio de run_voice_session() usando:
         #     await sync_to_async(build_live_config)(self.twilio_number)
         # Esto ejecuta las queries ORM en un hilo dedicado del pool de hilos,
-        # satisfaciendo completamente los requisitos de seguridad async de Django.
+        # satisfaciendo completamente los requisitos de seguridad async de
+        # Django.
         self.twilio_number: str = twilio_number
         self.caller_number: str = caller_number
         self.system_instruction: str = SYSTEM_INSTRUCTION_FALLBACK
@@ -484,27 +572,34 @@ class VoiceOrchestrationService:
         # path (build_live_config() failure) leaves it as {} and the session
         # continues without section-level routing capability.
         # section_callflow_map mapea Section.pk → instancia de CallFlow para
-        # todas las secciones activas con CallFlow activo asignado (Estrategia B).
+        # todas las secciones activas con CallFlow activo asignado (Estrategia
+        # B).
         # Se puebla en run_voice_session() desde el 4º elemento de la tupla
         # retornada por build_live_config(). Dict vacío hasta entonces — la
         # ruta de fallback (fallo de build_live_config()) lo deja como {} y
         # la sesión continúa sin capacidad de enrutamiento por sección.
         self.section_callflow_map: dict = {}
 
-        # general_call_flow stores the CallFlow instance linked to the PhoneNumber
+        # general_call_flow stores the CallFlow instance linked to the
+        # PhoneNumber
         # (the welcome/routing flow). Populated in run_voice_session() from
         # build_live_config(). Required by _activate_fallback_section() to
         # resolve the fallback_section FK of the general flow.
-        # general_call_flow almacena la instancia de CallFlow vinculada al PhoneNumber
-        # (el flujo de bienvenida/enrutamiento). Se puebla en run_voice_session()
-        # desde build_live_config(). Necesario por _activate_fallback_section() para
+        # general_call_flow almacena la instancia de CallFlow vinculada al
+        # PhoneNumber
+        # (el flujo de bienvenida/enrutamiento). Se puebla en
+        # run_voice_session()
+        # desde build_live_config(). Necesario por _activate_fallback_section()
+        # para
         # resolver el FK fallback_section del flujo general.
         self.general_call_flow = None
 
         logger.info(
             f"[INIT] VoiceOrchestrationService inicializado. "
-            f"Número destino: '{twilio_number}' | Número llamante: '{caller_number}'. "
-            "Configuración IVR dinámica se cargará al inicio de run_voice_session()."
+            f"Número destino: '{twilio_number}' | Número llamante: "
+            f"'{caller_number}'. "
+            "Configuración IVR dinámica se cargará al inicio de "
+            "run_voice_session()."
         )
 
     # -----------------------------------------------------------------------
@@ -530,10 +625,12 @@ class VoiceOrchestrationService:
                - _receive_gemini_audio: reads from session.receive() and
                  places PCM audio chunks into audio_output_queue.
                - _forward_gemini_audio_to_twilio: reads from audio_output_queue
-                 and sends mu-law encoded audio back through the Twilio WebSocket.
+                 and sends mu-law encoded audio back through the Twilio
+                 WebSocket.
 
         Args:
-            twilio_websocket: The active WebSocket connection to Twilio Media Streams.
+            twilio_websocket: The active WebSocket connection to Twilio Media
+            Streams.
         ---
         Punto de entrada para el ciclo de vida completo de una sesión de voz.
 
@@ -545,7 +642,8 @@ class VoiceOrchestrationService:
 
         Al entrar en la sesión:
             1. El texto del saludo inicial se envía inmediatamente a Gemini,
-               indicando al modelo que produzca la respuesta hablada de apertura.
+               indicando al modelo que produzca la respuesta hablada de
+               apertura.
             2. Tres corrutinas concurrentes se lanzan mediante asyncio.gather:
                - _forward_twilio_audio_to_gemini: lee de audio_input_queue
                  y transmite fragmentos PCM a Gemini Live.
@@ -556,28 +654,38 @@ class VoiceOrchestrationService:
                  WebSocket de Twilio.
 
         Args:
-            twilio_websocket: La conexión WebSocket activa con Twilio Media Streams.
+            twilio_websocket: La conexión WebSocket activa con Twilio Media
+            Streams.
         """
         self.session_active = True
         logger.info(
-            "[SESSION] Iniciando sesión de voz. Conectando con Gemini 3.1 Live API..."
+            "[SESSION] Iniciando sesión de voz. Conectando con Gemini 3.1 "
+            "Live API..."
         )
 
-        # --- Async Dynamic IVR Configuration Load / Carga Asíncrona de Config IVR ---
+        # --- Async Dynamic IVR Configuration Load / Carga Asíncrona de Config
+        # IVR ---
         # build_live_config() performs synchronous Django ORM queries. It is
-        # wrapped with sync_to_async() so it executes in a dedicated thread pool
-        # thread, fully satisfying Django's async safety requirements (Django 5.2.x).
-        # On success, self.system_instruction and self.initial_greeting_text are
+        # wrapped with sync_to_async() so it executes in a dedicated thread
+        # pool
+        # thread, fully satisfying Django's async safety requirements (Django
+        # 5.2.x).
+        # On success, self.system_instruction and self.initial_greeting_text
+        # are
         # updated with the real database values for this call. On any exception
         # (number not in DB, no active CallFlow, DB unreachable), the fallback
         # constants set in __init__() are preserved and the session continues.
         #
-        # build_live_config() realiza queries ORM síncronas de Django. Se envuelve
-        # con sync_to_async() para que se ejecute en un hilo dedicado del pool de
-        # hilos, satisfaciendo completamente los requisitos de seguridad async de
+        # build_live_config() realiza queries ORM síncronas de Django. Se
+        # envuelve
+        # con sync_to_async() para que se ejecute en un hilo dedicado del pool
+        # de
+        # hilos, satisfaciendo completamente los requisitos de seguridad async
+        # de
         # Django (Django 5.2.x). Si tiene éxito, self.system_instruction y
         # self.initial_greeting_text se actualizan con los valores reales de la
-        # base de datos para esta llamada. Ante cualquier excepción (número no en
+        # base de datos para esta llamada. Ante cualquier excepción (número no
+        # en
         # BD, sin CallFlow activo, BD inaccesible), las constantes de fallback
         # establecidas en __init__() se preservan y la sesión continúa.
         try:
@@ -597,17 +705,54 @@ class VoiceOrchestrationService:
                 f"[CONFIG] Configuración IVR dinámica cargada correctamente "
                 f"para el número '{self.twilio_number}' "
                 f"(llamante: '{self.caller_number}'). "
-                f"Secciones con flujo propio: {len(self.section_callflow_map)}."
+                "Secciones con flujo propio: "
+                f"{len(self.section_callflow_map)}."
             )
         except Exception as config_exc:
             logger.error(
                 f"[CONFIG] No se pudo cargar la configuración dinámica para "
-                f"'{self.twilio_number}': {type(config_exc).__name__}: {config_exc}. "
-                "Usando SYSTEM_INSTRUCTION_FALLBACK e INITIAL_GREETING_FALLBACK."
+                f"'{self.twilio_number}': {type(config_exc).__name__}: "
+                f"{config_exc}. "
+                "Usando SYSTEM_INSTRUCTION_FALLBACK e "
+                "INITIAL_GREETING_FALLBACK."
             )
-            # Fallback values were already set in __init__() — no reassignment needed.
-            # Los valores de fallback ya fueron establecidos en __init__() — no se
+            # Fallback values were already set in __init__() — no reassignment
+            # needed.
+            # Los valores de fallback ya fueron establecidos en __init__() — no
+            # se
             # necesita reasignación.
+
+        # H37 (S133): giving a service by phone. If the caller is an
+        # assistance supervisor (or admin), the call can also give
+        # services: instructions and tools of budgets.service_intake.
+        # Dar un servicio por teléfono. Si quien llama es supervisor de
+        # asistencia (o administrador), la llamada también puede dar
+        # servicios: instrucciones y herramientas de
+        # budgets.service_intake (reunión con Pepe, anexo V37 6.3).
+        self.service_user_pk = None
+        try:
+            from asgiref.sync import sync_to_async as _s2a_si
+            from budgets.service_intake import (
+                service_giver_for_call,
+                voice_instruction,
+            )
+            _service_user = await _s2a_si(service_giver_for_call)(
+                self.twilio_number, self.caller_number,
+            )
+            if _service_user is not None:
+                self.service_user_pk = _service_user.pk
+                self.system_instruction += await _s2a_si(
+                    voice_instruction
+                )(_service_user)
+                logger.info(
+                    f"[H37-SERVICIO] Llama {self.caller_number}, puede dar "
+                    f"servicios (CompanyUser {self.service_user_pk})."
+                )
+        except Exception as service_exc:
+            logger.error(
+                f"[H37-SERVICIO] No se pudo preparar el alta de servicios: "
+                f"{type(service_exc).__name__}: {service_exc}"
+            )
 
         # Build the tools list before the LiveConnectConfig constructor.
         # LiveConnectConfig is a Pydantic BaseModel and only accepts explicit
@@ -615,28 +760,38 @@ class VoiceOrchestrationService:
         # a Pydantic constructor. Tools are built conditionally here and passed
         # as the tools= keyword argument.
         #
-        # Construir la lista de tools ANTES del constructor de LiveConnectConfig.
+        # Construir la lista de tools ANTES del constructor de
+        # LiveConnectConfig.
         # LiveConnectConfig es un BaseModel de Pydantic y solo acepta keyword
-        # arguments explícitos — el operador de desempaquetado *(...) NO es válido
-        # dentro de un constructor Pydantic. Las tools se construyen condicionalmente
+        # arguments explícitos — el operador de desempaquetado *(...) NO es
+        # válido
+        # dentro de un constructor Pydantic. Las tools se construyen
+        # condicionalmente
         # aquí y se pasan como keyword argument tools=.
         if self.section_callflow_map:
             live_tools = [
                 types.Tool(
                     function_declarations=[
                         # TOOL 1: route_to_section — Estrategia B, Paso 38
-                        # María invoca esta función cuando identifica la sección destino.
-                        # El handler recarga el system_instruction con el CallFlow de sección.
+                        # María invoca esta función cuando identifica la
+                        # sección destino.
+                        # El handler recarga el system_instruction con el
+                        # CallFlow de sección.
                         # TOOL 1: route_to_section — Estrategia B, Step 38
-                        # María invokes this when it identifies the target section.
-                        # The handler reloads system_instruction with the section CallFlow.
+                        # María invokes this when it identifies the target
+                        # section.
+                        # The handler reloads system_instruction with the
+                        # section CallFlow.
                         types.FunctionDeclaration(
                             name="route_to_section",
                             description=(
-                                "Invoca esta función en cuanto identifiques con certeza "
+                                "Invoca esta función en cuanto identifiques "
+                                "con certeza "
                                 "la sección a la que pertenece la llamada. "
-                                "Proporciona el section_id de la sección correspondiente "
-                                "según la tabla IDENTIFICADORES DE SECCIÓN del "
+                                "Proporciona el section_id de la sección "
+                                "correspondiente "
+                                "según la tabla IDENTIFICADORES DE SECCIÓN "
+                                "del "
                                 "system_instruction. "
                                 "Solo invoca esta función una vez por llamada."
                             ),
@@ -646,7 +801,8 @@ class VoiceOrchestrationService:
                                     "section_id": {
                                         "type": "integer",
                                         "description": (
-                                            "El identificador numérico de la sección "
+                                            "El identificador numérico de la "
+                                            "sección "
                                             "destino, según la tabla "
                                             "IDENTIFICADORES DE SECCIÓN."
                                         ),
@@ -656,20 +812,27 @@ class VoiceOrchestrationService:
                             },
                         ),
                         # TOOL 2: transfer_to_section_contact — Paso 39
-                        # María invoca esta función cuando está lista para transferir
+                        # María invoca esta función cuando está lista para
+                        # transferir
                         # la llamada al responsable de la sección identificada.
-                        # El handler cierra el Media Stream y ejecuta Dial Conference.
+                        # El handler cierra el Media Stream y ejecuta Dial
+                        # Conference.
                         # TOOL 2: transfer_to_section_contact — Step 39
-                        # María invokes this when ready to transfer the call to the
-                        # section responsible. Handler closes Media Stream + Dial Conference.
+                        # María invokes this when ready to transfer the call to
+                        # the
+                        # section responsible. Handler closes Media Stream +
+                        # Dial Conference.
                         types.FunctionDeclaration(
                             name="transfer_to_section_contact",
                             description=(
-                                "Invoca esta función cuando estés listo para transferir "
+                                "Invoca esta función cuando estés listo para "
+                                "transferir "
                                 "la llamada al responsable de la sección. "
-                                "Antes de invocarla, informa al llamante de que le vas "
+                                "Antes de invocarla, informa al llamante de "
+                                "que le vas "
                                 "a transferir y que espere un momento. "
-                                "Proporciona el section_id de la sección destino. "
+                                "Proporciona el section_id de la sección "
+                                "destino. "
                                 "Solo invoca esta función una vez por llamada."
                             ),
                             parameters={
@@ -678,8 +841,10 @@ class VoiceOrchestrationService:
                                     "section_id": {
                                         "type": "integer",
                                         "description": (
-                                            "El identificador numérico de la sección "
-                                            "cuyo responsable debe recibir la transferencia."
+                                            "El identificador numérico de la "
+                                            "sección "
+                                            "cuyo responsable debe recibir la "
+                                            "transferencia."
                                         ),
                                     }
                                 },
@@ -687,24 +852,36 @@ class VoiceOrchestrationService:
                             },
                         ),
                         # TOOL 3: submit_captured_data — Paso 7 (Hito 5)
-                        # María invoca esta función cuando ha recogido todos los
-                        # datos requeridos por el DataCaptureSet activo de la sección,
-                        # ya sea por inferencia del contexto o por pregunta directa.
+                        # María invoca esta función cuando ha recogido todos
+                        # los
+                        # datos requeridos por el DataCaptureSet activo de la
+                        # sección,
+                        # ya sea por inferencia del contexto o por pregunta
+                        # directa.
                         # El handler persiste un CallDataCapture y dispara la
-                        # notificación WhatsApp al contacto referente de la sección.
+                        # notificación WhatsApp al contacto referente de la
+                        # sección.
                         # TOOL 3: submit_captured_data — Step 7 (Milestone 5)
-                        # María invokes this when all required DataCaptureSet fields
-                        # have been collected, either inferred from context or asked.
-                        # Handler persists a CallDataCapture and fires WhatsApp notification.
+                        # María invokes this when all required DataCaptureSet
+                        # fields
+                        # have been collected, either inferred from context or
+                        # asked.
+                        # Handler persists a CallDataCapture and fires WhatsApp
+                        # notification.
                         types.FunctionDeclaration(
                             name="submit_captured_data",
                             description=(
-                                "Invoca esta función cuando hayas recogido todos los "
-                                "datos indicados en las instrucciones de captura de la "
-                                "sección. Infiere los datos del contexto natural de la "
-                                "conversación — no vuelvas a preguntar datos que el "
+                                "Invoca esta función cuando hayas recogido "
+                                "todos los "
+                                "datos indicados en las instrucciones de "
+                                "captura de la "
+                                "sección. Infiere los datos del contexto "
+                                "natural de la "
+                                "conversación — no vuelvas a preguntar datos "
+                                "que el "
                                 "llamante ya haya mencionado. "
-                                "Proporciona todos los campos capturados en el parámetro "
+                                "Proporciona todos los campos capturados en "
+                                "el parámetro "
                                 "captured_fields como un objeto clave-valor. "
                                 "Solo invoca esta función una vez por sección."
                             ),
@@ -714,17 +891,23 @@ class VoiceOrchestrationService:
                                     "section_id": {
                                         "type": "integer",
                                         "description": (
-                                            "El identificador numérico de la sección "
-                                            "para la que se han capturado los datos."
+                                            "El identificador numérico de la "
+                                            "sección "
+                                            "para la que se han capturado los "
+                                            "datos."
                                         ),
                                     },
                                     "captured_fields": {
                                         "type": "object",
                                         "description": (
-                                            "Diccionario clave-valor con todos los datos "
-                                            "capturados durante la conversación. "
-                                            "Las claves deben coincidir con los nombres "
-                                            "de campo indicados en las instrucciones "
+                                            "Diccionario clave-valor con "
+                                            "todos los datos "
+                                            "capturados durante la "
+                                            "conversación. "
+                                            "Las claves deben coincidir con "
+                                            "los nombres "
+                                            "de campo indicados en las "
+                                            "instrucciones "
                                             "de captura de la sección."
                                         ),
                                         "additionalProperties": True,
@@ -733,20 +916,31 @@ class VoiceOrchestrationService:
                                 "required": ["section_id", "captured_fields"],
                             },
                         ),
-                        # TOOL 4: report_breakdown — Avería interna de flota (H03)
-                        # María invoca esta función cuando ha recogido todos los
-                        # datos de la avería del chófer y ha recibido confirmación
-                        # expresa. Crea un BreakdownTicket en BD e invita al chófer
-                        # a enviar su ubicación por WhatsApp si no está en una base.
-                        # TOOL 4: report_breakdown — Internal fleet breakdown (H03)
-                        # María invokes this when all breakdown data has been collected
-                        # and the caller has confirmed. Creates a BreakdownTicket in DB.
+                        # TOOL 4: report_breakdown — Avería interna de flota
+                        # (H03)
+                        # María invoca esta función cuando ha recogido todos
+                        # los
+                        # datos de la avería del chófer y ha recibido
+                        # confirmación
+                        # expresa. Crea un BreakdownTicket en BD e invita al
+                        # chófer
+                        # a enviar su ubicación por WhatsApp si no está en una
+                        # base.
+                        # TOOL 4: report_breakdown — Internal fleet breakdown
+                        # (H03)
+                        # María invokes this when all breakdown data has been
+                        # collected
+                        # and the caller has confirmed. Creates a
+                        # BreakdownTicket in DB.
                         types.FunctionDeclaration(
                             name="report_breakdown",
                             description=(
-                                "Invoca esta función ÚNICAMENTE cuando el llamante haya "
-                                "confirmado expresamente todos los datos de la avería. "
-                                "No la invoques hasta tener: código de máquina, descripción "
+                                "Invoca esta función ÚNICAMENTE cuando el "
+                                "llamante haya "
+                                "confirmado expresamente todos los datos de "
+                                "la avería. "
+                                "No la invoques hasta tener: código de "
+                                "máquina, descripción "
                                 "de la avería y confirmación del llamante. "
                                 "Solo se invoca una vez por llamada."
                             ),
@@ -756,22 +950,27 @@ class VoiceOrchestrationService:
                                     "machine_code": {
                                         "type": "string",
                                         "description": (
-                                            "Código de la máquina tal como lo ha indicado "
-                                            "el llamante (p. ej. 'G12', 'B43')."
+                                            "Código de la máquina tal como lo "
+                                            "ha indicado "
+                                            "el llamante (p. ej. 'G12', "
+                                            "'B43')."
                                         ),
                                     },
                                     "fault_summary": {
                                         "type": "string",
                                         "description": (
-                                            "Descripción breve de la avería, en las palabras "
+                                            "Descripción breve de la avería, "
+                                            "en las palabras "
                                             "del llamante."
                                         ),
                                     },
                                     "fault_location": {
                                         "type": "string",
                                         "description": (
-                                            "Ubicación exacta de la avería en la máquina "
-                                            "(p. ej. 'rueda delantera lado conductor'). "
+                                            "Ubicación exacta de la avería en "
+                                            "la máquina "
+                                            "(p. ej. 'rueda delantera lado "
+                                            "conductor'). "
                                             "Vacío si no se especificó."
                                         ),
                                     },
@@ -779,38 +978,49 @@ class VoiceOrchestrationService:
                                         "type": "string",
                                         "enum": ["BAJA", "MEDIA", "ALTA", "CRITICA"],
                                         "description": (
-                                            "Urgencia inferida por el agente según la "
-                                            "conversación. NUNCA preguntar directamente "
-                                            "al llamante — inferir de si la máquina puede "
-                                            "moverse, circular, tiene luces, etc."
+                                            "Urgencia inferida por el agente "
+                                            "según la "
+                                            "conversación. NUNCA preguntar "
+                                            "directamente "
+                                            "al llamante — inferir de si la "
+                                            "máquina puede "
+                                            "moverse, circular, tiene luces, "
+                                            "etc."
                                         ),
                                     },
                                     "caller_name": {
                                         "type": "string",
                                         "description": (
-                                            "Nombre del chófer o llamante, si se ha "
-                                            "identificado durante la conversación."
+                                            "Nombre del chófer o llamante, si "
+                                            "se ha "
+                                            "identificado durante la "
+                                            "conversación."
                                         ),
                                     },
                                     "caller_phone_reported": {
                                         "type": "string",
                                         "description": (
-                                            "Teléfono de contacto facilitado verbalmente "
-                                            "por el llamante, si difiere del número de llamada "
-                                            "o si llamó desde un teléfono ajeno."
+                                            "Teléfono de contacto facilitado "
+                                            "verbalmente "
+                                            "por el llamante, si difiere del "
+                                            "número de llamada "
+                                            "o si llamó desde un teléfono "
+                                            "ajeno."
                                         ),
                                     },
                                     "at_base": {
                                         "type": "boolean",
                                         "description": (
-                                            "True si el chófer ha confirmado estar en una "
+                                            "True si el chófer ha confirmado "
+                                            "estar en una "
                                             "base conocida de la empresa."
                                         ),
                                     },
                                     "base_name": {
                                         "type": "string",
                                         "description": (
-                                            "Nombre de la base si at_base=True. "
+                                            "Nombre de la base si "
+                                            "at_base=True. "
                                             "Vacío en caso contrario."
                                         ),
                                     },
@@ -823,20 +1033,29 @@ class VoiceOrchestrationService:
                                 ],
                             },
                         ),
-                        # TOOL 5: submit_call_summary — Resumen final de llamada (H03)
-                        # María invoca esta función al despedirse del llamante, siempre,
-                        # independientemente del resultado (ticket, transferencia, info).
-                        # Persiste un InboundCallLog con todos los datos capturados.
-                        # TOOL 5: submit_call_summary — End-of-call summary (H03)
-                        # María invokes this on farewell, always, regardless of outcome.
+                        # TOOL 5: submit_call_summary — Resumen final de
+                        # llamada (H03)
+                        # María invoca esta función al despedirse del llamante,
+                        # siempre,
+                        # independientemente del resultado (ticket,
+                        # transferencia, info).
+                        # Persiste un InboundCallLog con todos los datos
+                        # capturados.
+                        # TOOL 5: submit_call_summary — End-of-call summary
+                        # (H03)
+                        # María invokes this on farewell, always, regardless of
+                        # outcome.
                         # Persists an InboundCallLog with all captured data.
                         types.FunctionDeclaration(
                             name="submit_call_summary",
                             description=(
-                                "Invoca esta función SIEMPRE al finalizar la llamada, "
+                                "Invoca esta función SIEMPRE al finalizar la "
+                                "llamada, "
                                 "justo antes de despedirte del llamante. "
-                                "Registra un resumen de la conversación en el sistema. "
-                                "Es obligatoria en todas las llamadas sin excepción."
+                                "Registra un resumen de la conversación en el "
+                                "sistema. "
+                                "Es obligatoria en todas las llamadas sin "
+                                "excepción."
                             ),
                             parameters={
                                 "type": "object",
@@ -844,22 +1063,28 @@ class VoiceOrchestrationService:
                                     "caller_name": {
                                         "type": "string",
                                         "description": (
-                                            "Nombre del llamante si se identificó "
-                                            "durante la conversación. Vacío si no."
+                                            "Nombre del llamante si se "
+                                            "identificó "
+                                            "durante la conversación. Vacío "
+                                            "si no."
                                         ),
                                     },
                                     "caller_phone_reported": {
                                         "type": "string",
                                         "description": (
-                                            "Teléfono facilitado verbalmente por el "
-                                            "llamante, si difiere del CLI o si llamó "
-                                            "desde teléfono ajeno. Vacío si no aplica."
+                                            "Teléfono facilitado verbalmente "
+                                            "por el "
+                                            "llamante, si difiere del CLI o "
+                                            "si llamó "
+                                            "desde teléfono ajeno. Vacío si "
+                                            "no aplica."
                                         ),
                                     },
                                     "call_reason": {
                                         "type": "string",
                                         "description": (
-                                            "Motivo principal de la llamada en una "
+                                            "Motivo principal de la llamada "
+                                            "en una "
                                             "frase breve."
                                         ),
                                     },
@@ -872,9 +1097,11 @@ class VoiceOrchestrationService:
                                             "OTHER",
                                         ],
                                         "description": (
-                                            "Tipo de llamada: BREAKDOWN si avería "
+                                            "Tipo de llamada: BREAKDOWN si "
+                                            "avería "
                                             "interna de flota, TRANSFER si se "
-                                            "transfirió, INFO si solo informativa, "
+                                            "transfirió, INFO si solo "
+                                            "informativa, "
                                             "OTHER en cualquier otro caso."
                                         ),
                                     },
@@ -892,9 +1119,12 @@ class VoiceOrchestrationService:
                                     "raw_summary": {
                                         "type": "string",
                                         "description": (
-                                            "Resumen libre de la conversación en 2-4 "
-                                            "frases: quién llamó, por qué, qué se "
-                                            "resolvió y cualquier dato relevante."
+                                            "Resumen libre de la conversación "
+                                            "en 2-4 "
+                                            "frases: quién llamó, por qué, "
+                                            "qué se "
+                                            "resolvió y cualquier dato "
+                                            "relevante."
                                         ),
                                     },
                                 },
@@ -920,11 +1150,31 @@ class VoiceOrchestrationService:
                 "[SESSION] Sin secciones cualificadas — no se registran tools."
             )
 
+        # H37 (S133): tools to give a service, only for whoever can.
+        # Herramientas para dar un servicio, solo para quien puede.
+        if self.service_user_pk:
+            from budgets.service_intake import voice_tool_declarations
+
+            _service_decls = [
+                types.FunctionDeclaration(**declaration)
+                for declaration in voice_tool_declarations()
+            ]
+            if live_tools:
+                live_tools[0].function_declarations.extend(_service_decls)
+            else:
+                live_tools = [types.Tool(function_declarations=_service_decls)]
+            logger.info(
+                "[H37-SERVICIO] Tools de servicio registradas: "
+                + ", ".join(d.name for d in _service_decls)
+            )
+
         # Build the Gemini Live session configuration.
-        # The response modality is AUDIO — we want raw PCM audio back, not text.
+        # The response modality is AUDIO — we want raw PCM audio back, not
+        # text.
         # The system instruction defines the IVR agent's persona.
         # Construir la configuración de la sesión Gemini Live.
-        # La modalidad de respuesta es AUDIO — queremos PCM sin procesar de vuelta,
+        # La modalidad de respuesta es AUDIO — queremos PCM sin procesar de
+        # vuelta,
         # no texto. La instrucción de sistema define la persona del agente IVR.
         live_config = types.LiveConnectConfig(
             response_modalities=["AUDIO"],
@@ -936,8 +1186,10 @@ class VoiceOrchestrationService:
             # in speech_config to guarantee audio generation. Without it the
             # model may generate silence or text instead of audio.
             # Voice 'Aoede' is a female voice suitable for IVR telephony.
-            # Language is selected automatically from system_instruction content.
-            # Source: googleapis/python-genai issue #1725 + Live API capabilities
+            # Language is selected automatically from system_instruction
+            # content.
+            # Source: googleapis/python-genai issue #1725 + Live API
+            # capabilities
             # guide, verified 2026-04-05.
             #
             # SPEECH CONFIG — VOZ OBLIGATORIA PARA MODELO DE AUDIO NATIVO:
@@ -945,8 +1197,10 @@ class VoiceOrchestrationService:
             # speech_config para garantizar la generación de audio. Sin ella el
             # modelo puede generar silencio o texto en lugar de audio.
             # La voz 'Aoede' es una voz femenina adecuada para telefonía IVR.
-            # El idioma se selecciona automáticamente del contenido del system_instruction.
-            # Fuente: issue #1725 de googleapis/python-genai + guía de capacidades
+            # El idioma se selecciona automáticamente del contenido del
+            # system_instruction.
+            # Fuente: issue #1725 de googleapis/python-genai + guía de
+            # capacidades
             # de Live API, verificado 2026-04-05.
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(
@@ -955,22 +1209,34 @@ class VoiceOrchestrationService:
                     )
                 )
             ),
-            # THINKING CONFIG: Not supported by gemini-live-2.5-flash-native-audio.
+            # THINKING CONFIG: Not supported by
+            # gemini-live-2.5-flash-native-audio.
             # Gemini 2.5 models use thinkingBudget (token count) instead of
             # thinkingLevel. Omitting thinking_config uses the model default,
             # which is optimised for low latency in native audio sessions.
-            # Source: Vertex AI Live API capabilities guide, verified 2026-04-05.
-            # THINKING CONFIG: No soportado por gemini-live-2.5-flash-native-audio.
-            # Los modelos Gemini 2.5 usan thinkingBudget (número de tokens) en lugar
-            # de thinkingLevel. Omitir thinking_config usa el valor por defecto del
-            # modelo, optimizado para baja latencia en sesiones de audio nativo.
-            # Fuente: guía de capacidades de Live API en Vertex AI, verificado 2026-04-05.
-            # TOOLS — passed as explicit keyword argument (Pydantic-safe pattern).
+            # Source: Vertex AI Live API capabilities guide, verified
+            # 2026-04-05.
+            # THINKING CONFIG: No soportado por
+            # gemini-live-2.5-flash-native-audio.
+            # Los modelos Gemini 2.5 usan thinkingBudget (número de tokens) en
+            # lugar
+            # de thinkingLevel. Omitir thinking_config usa el valor por defecto
+            # del
+            # modelo, optimizado para baja latencia en sesiones de audio
+            # nativo.
+            # Fuente: guía de capacidades de Live API en Vertex AI, verificado
+            # 2026-04-05.
+            # TOOLS — passed as explicit keyword argument (Pydantic-safe
+            # pattern).
             # live_tools is None when section_callflow_map is empty — Pydantic
-            # accepts None for optional list fields and omits them from the payload.
-            # TOOLS — pasadas como keyword argument explícito (patrón seguro para Pydantic).
-            # live_tools es None cuando section_callflow_map está vacío — Pydantic
-            # acepta None para campos de lista opcionales y los omite del payload.
+            # accepts None for optional list fields and omits them from the
+            # payload.
+            # TOOLS — pasadas como keyword argument explícito (patrón seguro
+            # para Pydantic).
+            # live_tools es None cuando section_callflow_map está vacío —
+            # Pydantic
+            # acepta None para campos de lista opcionales y los omite del
+            # payload.
             tools=live_tools,
             # REALTIME INPUT CONFIG — VAD DISABLED FOR TELEPHONY:
             # Server-side automatic VAD must be disabled for telephony
@@ -1005,19 +1271,26 @@ class VoiceOrchestrationService:
 
         try:
             # SETUP-FIRST PROTOCOL (SDK 1.69.0 COMPLIANT):
-            # The async context manager `client.aio.live.connect()` performs the
+            # The async context manager `client.aio.live.connect()` performs
+            # the
             # full WebSocket handshake with Google's Live API infrastructure.
-            # By the time execution reaches the first line inside the `async with`
+            # By the time execution reaches the first line inside the `async
+            # with`
             # block, the session is fully established and ready to accept data.
             # There is no need for — and the SDK does not expose — an explicit
             # setup_complete event in the session.receive() stream.
             #
             # PROTOCOLO SETUP-FIRST (CONFORME A SDK 1.69.0):
-            # El context manager asíncrono `client.aio.live.connect()` realiza el
-            # handshake WebSocket completo con la infraestructura de Live API de Google.
-            # En el momento en que la ejecución alcanza la primera línea dentro del
-            # bloque `async with`, la sesión está completamente establecida y lista
-            # para aceptar datos. No hay necesidad de — y el SDK no expone — ningún
+            # El context manager asíncrono `client.aio.live.connect()` realiza
+            # el
+            # handshake WebSocket completo con la infraestructura de Live API
+            # de Google.
+            # En el momento en que la ejecución alcanza la primera línea dentro
+            # del
+            # bloque `async with`, la sesión está completamente establecida y
+            # lista
+            # para aceptar datos. No hay necesidad de — y el SDK no expone —
+            # ningún
             # evento setup_complete explícito en el flujo session.receive().
             async with self.gemini_client.aio.live.connect(
                 model=GEMINI_MODEL,
@@ -1025,22 +1298,31 @@ class VoiceOrchestrationService:
             ) as session:
 
                 logger.info(
-                    "[SDK] Handshake Gemini 3.1 (SetupComplete: True) VALIDADO. "
-                    "Sesión lista para recibir datos."
-                )
+                    "[SDK] Handshake Gemini 3.1 (SetupComplete: True) "
+                    "VALIDADO. "
+                    "Sesión lista para recibir datos.")
 
-                # STEP 1: Send the initial greeting immediately upon session entry.
-                # This is safe because the context manager guarantees the session
+                # STEP 1: Send the initial greeting immediately upon session
+                # entry.
+                # This is safe because the context manager guarantees the
+                # session
                 # is ready. The correct SDK 1.69.0 signature for text input is:
                 #     await session.send_realtime_input(text="...")
-                # The end_of_turn argument is NOT valid for text sends in SDK 1.69.0
-                # and causes a 1007 invalid argument error that closes the WebSocket.
-                # PASO 1: Enviar el saludo inicial de forma inmediata al entrar en la sesión.
-                # Esto es seguro porque el context manager garantiza que la sesión
-                # está lista. La firma correcta del SDK 1.69.0 para entrada de texto es:
+                # The end_of_turn argument is NOT valid for text sends in SDK
+                # 1.69.0
+                # and causes a 1007 invalid argument error that closes the
+                # WebSocket.
+                # PASO 1: Enviar el saludo inicial de forma inmediata al entrar
+                # en la sesión.
+                # Esto es seguro porque el context manager garantiza que la
+                # sesión
+                # está lista. La firma correcta del SDK 1.69.0 para entrada de
+                # texto es:
                 #     await session.send_realtime_input(text="...")
-                # El argumento end_of_turn NO es válido para envíos de texto en SDK 1.69.0
-                # y provoca un error 1007 invalid argument que cierra el WebSocket.
+                # El argumento end_of_turn NO es válido para envíos de texto en
+                # SDK 1.69.0
+                # y provoca un error 1007 invalid argument que cierra el
+                # WebSocket.
                 logger.info(
                     "[SESSION] Enviando saludo inicial a Gemini..."
                 )
@@ -1057,7 +1339,8 @@ class VoiceOrchestrationService:
                 # TRIGGER DE SALUDO — send_client_content PARA GEMINI 2.5:
                 # A diferencia de Gemini 3.1 (donde send_client_content estaba
                 # restringido al sembrado de historial inicial), Gemini 2.5
-                # soporta send_client_content con turn_complete=True para enviar
+                # soporta send_client_content con turn_complete=True para
+                # enviar
                 # texto y disparar una respuesta de audio inmediata del modelo.
                 # Este es el patrón documentado para Live API en Vertex AI
                 # con gemini-live-2.5-flash-native-audio.
@@ -1080,13 +1363,17 @@ class VoiceOrchestrationService:
                 )
 
                 # STEP 2: Launch all three concurrent coroutines.
-                # asyncio.gather runs them concurrently and propagates the first
+                # asyncio.gather runs them concurrently and propagates the
+                # first
                 # exception raised. return_exceptions=False means any coroutine
                 # failure will cancel the others and propagate to this level.
                 # PASO 2: Lanzar las tres corrutinas concurrentes.
-                # asyncio.gather las ejecuta de forma concurrente y propaga la primera
-                # excepción lanzada. return_exceptions=False significa que cualquier
-                # fallo de una corrutina cancelará las otras y propagará a este nivel.
+                # asyncio.gather las ejecuta de forma concurrente y propaga la
+                # primera
+                # excepción lanzada. return_exceptions=False significa que
+                # cualquier
+                # fallo de una corrutina cancelará las otras y propagará a este
+                # nivel.
                 # return_exceptions=True prevents a single coroutine failure
                 # from cancelling its siblings. Each coroutine handles its own
                 # errors internally; gather collects results/exceptions without
@@ -1122,9 +1409,12 @@ class VoiceOrchestrationService:
 
         except asyncio.TimeoutError:
             logger.error(
-                "[SESSION] Timeout al intentar conectar o enviar el saludo inicial "
-                f"a Gemini Live (límite: {TIMEOUT_INITIAL_GREETING_SECONDS}s). "
-                "La infraestructura Preview puede estar experimentando alta latencia."
+                "[SESSION] Timeout al intentar conectar o enviar el saludo "
+                "inicial "
+                "a Gemini Live (límite: "
+                f"{TIMEOUT_INITIAL_GREETING_SECONDS}s). "
+                "La infraestructura Preview puede estar experimentando alta "
+                "latencia."
             )
         except Exception as exc:
             logger.error(
@@ -1141,7 +1431,8 @@ class VoiceOrchestrationService:
 
     async def receive_twilio_audio(self, raw_payload: str) -> None:
         """
-        Public interface for the Django WebSocket view to deliver inbound audio.
+        Public interface for the Django WebSocket view to deliver inbound
+        audio.
 
         The WebSocket view calls this method each time a Twilio Media Streams
         'media' event arrives. The raw base64-encoded mu-law audio payload is
@@ -1149,17 +1440,24 @@ class VoiceOrchestrationService:
         the audio_input_queue for the Gemini sender coroutine to consume.
 
         Args:
-            raw_payload (str): The raw JSON string from the Twilio WebSocket event.
+            raw_payload (str): The raw JSON string from the Twilio WebSocket
+            event.
         ---
-        Interfaz pública para que la vista WebSocket de Django entregue audio entrante.
+        Interfaz pública para que la vista WebSocket de Django entregue audio
+        entrante.
 
-        La vista WebSocket llama a este método cada vez que llega un evento 'media'
-        de Twilio Media Streams. El payload de audio mu-law codificado en base64 se
-        decodifica, se transcodifica a PCM 16kHz mediante el sidecar bridge, y se
-        coloca en audio_input_queue para que la corrutina emisora de Gemini lo consuma.
+        La vista WebSocket llama a este método cada vez que llega un evento
+        'media'
+        de Twilio Media Streams. El payload de audio mu-law codificado en
+        base64 se
+        decodifica, se transcodifica a PCM 16kHz mediante el sidecar bridge, y
+        se
+        coloca en audio_input_queue para que la corrutina emisora de Gemini lo
+        consuma.
 
         Args:
-            raw_payload (str): La cadena JSON bruta del evento WebSocket de Twilio.
+            raw_payload (str): La cadena JSON bruta del evento WebSocket de
+            Twilio.
         """
         try:
             data = json.loads(raw_payload)
@@ -1168,38 +1466,49 @@ class VoiceOrchestrationService:
                 # forwarded to Gemini.
                 # Los eventos no-media (start, stop, mark) se reconocen pero no
                 # se reenvían a Gemini.
-                logger.debug(f"[TWILIO-RX] Evento no-media recibido: {data.get('event')}")
+                logger.debug(
+                    "[TWILIO-RX] Evento no-media recibido: "
+                    f"{data.get('event')}")
                 return
 
-            # Extract the base64-encoded mu-law audio chunk from the Twilio payload.
-            # Extraer el fragmento de audio mu-law codificado en base64 del payload de Twilio.
+            # Extract the base64-encoded mu-law audio chunk from the Twilio
+            # payload.
+            # Extraer el fragmento de audio mu-law codificado en base64 del
+            # payload de Twilio.
             mulaw_b64 = data["media"]["payload"]
             mulaw_bytes = base64.b64decode(mulaw_b64)
 
             # Transcode mu-law 8kHz → PCM 16kHz via audioop sidecar.
             # This is the mandatory conversion for Gemini Live compatibility.
-            # Transcodificar mu-law 8kHz → PCM 16kHz mediante el sidecar audioop.
-            # Esta es la conversión obligatoria para la compatibilidad con Gemini Live.
+            # Transcodificar mu-law 8kHz → PCM 16kHz mediante el sidecar
+            # audioop.
+            # Esta es la conversión obligatoria para la compatibilidad con
+            # Gemini Live.
             pcm_16khz_bytes = self._transcode_mulaw_to_pcm16k(mulaw_bytes)
 
-            # Place the PCM chunk onto the queue. The queue is non-blocking here;
-            # if the consumer is slow, chunks accumulate in memory. For a production
-            # system a bounded queue with overflow handling would be appropriate.
-            # Colocar el fragmento PCM en la cola. La cola no es bloqueante aquí;
+            # Place the PCM chunk onto the queue. The queue is non-blocking
+            # here;
+            # if the consumer is slow, chunks accumulate in memory. For a
+            # production
+            # system a bounded queue with overflow handling would be
+            # appropriate.
+            # Colocar el fragmento PCM en la cola. La cola no es bloqueante
+            # aquí;
             # si el consumidor es lento, los fragmentos se acumulan en memoria.
-            # Para un sistema de producción sería apropiada una cola acotada con
+            # Para un sistema de producción sería apropiada una cola acotada
+            # con
             # gestión de desbordamiento.
             await self.audio_input_queue.put(pcm_16khz_bytes)
 
         except (json.JSONDecodeError, KeyError) as exc:
             logger.warning(
-                f"[TWILIO-RX] Payload de Twilio malformado o con clave ausente: {exc}"
-            )
+                "[TWILIO-RX] Payload de Twilio malformado o con clave "
+                f"ausente: {exc}")
         except Exception as exc:
             logger.error(
-                f"[TWILIO-RX] Error inesperado al procesar audio entrante de Twilio: {exc}",
-                exc_info=True
-            )
+                "[TWILIO-RX] Error inesperado al procesar audio entrante de "
+                f"Twilio: {exc}",
+                exc_info=True)
 
     async def _forward_twilio_audio_to_gemini(self, session) -> None:
         """
@@ -1209,10 +1518,14 @@ class VoiceOrchestrationService:
         pattern with explicit activity_start / activity_end signals.
 
         Activity Management (VAD disabled=True):
-            When server-side VAD is disabled (mandatory for telephony to prevent
-            acoustic echo self-interruption), the client MUST signal manually when
-            the user starts and stops speaking. Without these signals Gemini never
-            knows a new caller turn has begun and produces no response after turn 1.
+            When server-side VAD is disabled (mandatory for telephony to
+            prevent
+            acoustic echo self-interruption), the client MUST signal manually
+            when
+            the user starts and stops speaking. Without these signals Gemini
+            never
+            knows a new caller turn has begun and produces no response after
+            turn 1.
 
             The detection algorithm:
                 - Computes RMS energy of each PCM frame.
@@ -1221,44 +1534,58 @@ class VoiceOrchestrationService:
                 - Silence confirmed: SILENCE_FRAMES_TO_END_ACTIVITY consecutive
                   frames below SILENCE_THRESHOLD_RMS → emit activity_end.
                 - Audio is streamed continuously regardless of activity state;
-                  the signals bracket the speech segment for Gemini's turn logic.
+                  the signals bracket the speech segment for Gemini's turn
+                  logic.
 
         This coroutine runs concurrently with _receive_gemini_audio and
         _forward_gemini_audio_to_twilio for the duration of the session.
-        It terminates when session_active is set to False and the queue is drained.
+        It terminates when session_active is set to False and the queue is
+        drained.
         ---
         Corrutina: lee continuamente audio PCM 16kHz de audio_input_queue,
         detecta actividad de voz mediante análisis de energía RMS, y transmite
         el audio a la sesión Gemini Live activa usando el patrón oficial
-        send_realtime_input con señales explícitas activity_start / activity_end.
+        send_realtime_input con señales explícitas activity_start /
+        activity_end.
 
         Gestión de Actividad (VAD disabled=True):
-            Cuando el VAD del servidor está deshabilitado (obligatorio para telefonía
-            para evitar la auto-interrupción por eco acústico), el cliente DEBE señalizar
-            manualmente cuándo el usuario empieza y termina de hablar. Sin estas señales
-            Gemini nunca sabe que ha comenzado un nuevo turno del llamante y no produce
+            Cuando el VAD del servidor está deshabilitado (obligatorio para
+            telefonía
+            para evitar la auto-interrupción por eco acústico), el cliente DEBE
+            señalizar
+            manualmente cuándo el usuario empieza y termina de hablar. Sin
+            estas señales
+            Gemini nunca sabe que ha comenzado un nuevo turno del llamante y no
+            produce
             respuesta tras el turno 1.
 
             El algoritmo de detección:
                 - Calcula la energía RMS de cada frame PCM.
-                - Voz confirmada: SPEECH_FRAMES_TO_START_ACTIVITY frames consecutivos
+                - Voz confirmada: SPEECH_FRAMES_TO_START_ACTIVITY frames
+                consecutivos
                   por encima de SILENCE_THRESHOLD_RMS → emitir activity_start.
-                - Silencio confirmado: SILENCE_FRAMES_TO_END_ACTIVITY frames consecutivos
+                - Silencio confirmado: SILENCE_FRAMES_TO_END_ACTIVITY frames
+                consecutivos
                   por debajo de SILENCE_THRESHOLD_RMS → emitir activity_end.
-                - El audio se transmite continuamente independientemente del estado de
-                  actividad; las señales delimitan el segmento de voz para la lógica
+                - El audio se transmite continuamente independientemente del
+                estado de
+                  actividad; las señales delimitan el segmento de voz para la
+                  lógica
                   de turnos de Gemini.
 
-        Esta corrutina se ejecuta de forma concurrente con _receive_gemini_audio y
+        Esta corrutina se ejecuta de forma concurrente con
+        _receive_gemini_audio y
         _forward_gemini_audio_to_twilio durante la duración de la sesión.
         Termina cuando session_active se establece en False y la cola se vacía.
         """
-        logger.info("[GEMINI-TX] Corrutina de envío de audio a Gemini iniciada.")
+        logger.info(
+            "[GEMINI-TX] Corrutina de envío de audio a Gemini iniciada.")
 
         # --- Activity Detection State / Estado de Detección de Actividad ---
         # Tracks whether an activity_start has been sent to Gemini and not yet
         # closed with activity_end. Essential to avoid duplicate signals.
-        # Rastrea si se ha enviado un activity_start a Gemini que aún no ha sido
+        # Rastrea si se ha enviado un activity_start a Gemini que aún no ha
+        # sido
         # cerrado con activity_end. Esencial para evitar señales duplicadas.
         is_speaking: bool = False
 
@@ -1266,8 +1593,10 @@ class VoiceOrchestrationService:
         #   - speech_frame_count: frames above threshold since last silence.
         #   - silence_frame_count: frames below threshold since last speech.
         # Contadores de frames consecutivos para histéresis:
-        #   - speech_frame_count: frames por encima del umbral desde el último silencio.
-        #   - silence_frame_count: frames por debajo del umbral desde la última voz.
+        # - speech_frame_count: frames por encima del umbral desde el último
+        # silencio.
+        # - silence_frame_count: frames por debajo del umbral desde la última
+        # voz.
         speech_frame_count: int = 0
         silence_frame_count: int = 0
 
@@ -1285,26 +1614,35 @@ class VoiceOrchestrationService:
                         timeout=TIMEOUT_AUDIO_RECEIVE_SECONDS
                     )
                 except asyncio.TimeoutError:
-                    # No audio in the timeout window — normal inter-utterance silence.
-                    # If an activity window is open, the extended silence should
-                    # close it to avoid Gemini waiting indefinitely for activity_end.
-                    # Sin audio en la ventana de timeout — silencio normal entre turnos.
-                    # Si hay una ventana de actividad abierta, el silencio extendido
-                    # debe cerrarla para evitar que Gemini espere indefinidamente.
+                    # No audio in the timeout window — normal inter-utterance
+                    # silence.
+                    # If an activity window is open, the extended silence
+                    # should
+                    # close it to avoid Gemini waiting indefinitely for
+                    # activity_end.
+                    # Sin audio en la ventana de timeout — silencio normal
+                    # entre turnos.
+                    # Si hay una ventana de actividad abierta, el silencio
+                    # extendido
+                    # debe cerrarla para evitar que Gemini espere
+                    # indefinidamente.
                     if is_speaking:
                         logger.info(
-                            "[GEMINI-TX] Silencio extendido detectado (timeout de cola). "
-                            "Cerrando ventana de actividad con activity_end..."
-                        )
+                            "[GEMINI-TX] Silencio extendido detectado "
+                            "(timeout de cola). "
+                            "Cerrando ventana de actividad con "
+                            "activity_end...")
                         try:
                             await session.send_realtime_input(
                                 activity_end=types.ActivityEnd()
                             )
-                            logger.info("[GEMINI-TX] activity_end enviado (timeout de cola).")
+                            logger.info(
+                                "[GEMINI-TX] activity_end enviado (timeout de "
+                                "cola).")
                         except Exception as ae_exc:
                             logger.warning(
-                                f"[GEMINI-TX] Error al enviar activity_end por timeout: {ae_exc}"
-                            )
+                                "[GEMINI-TX] Error al enviar activity_end "
+                                f"por timeout: {ae_exc}")
                         is_speaking = False
                         speech_frame_count = 0
                         silence_frame_count = 0
@@ -1313,16 +1651,21 @@ class VoiceOrchestrationService:
                 # -----------------------------------------------------------
                 # RMS ENERGY COMPUTATION / CÁLCULO DE ENERGÍA RMS
                 # -----------------------------------------------------------
-                # PCM 16kHz audio is 16-bit signed little-endian (2 bytes/sample).
-                # struct.unpack reads the raw bytes as an array of signed shorts.
-                # El audio PCM 16kHz es signed little-endian de 16-bit (2 bytes/muestra).
-                # struct.unpack lee los bytes brutos como un array de shorts con signo.
+                # PCM 16kHz audio is 16-bit signed little-endian (2
+                # bytes/sample).
+                # struct.unpack reads the raw bytes as an array of signed
+                # shorts.
+                # El audio PCM 16kHz es signed little-endian de 16-bit (2
+                # bytes/muestra).
+                # struct.unpack lee los bytes brutos como un array de shorts
+                # con signo.
                 num_samples = len(pcm_chunk) // 2
                 if num_samples == 0:
                     self.audio_input_queue.task_done()
                     continue
 
-                samples = struct.unpack(f"<{num_samples}h", pcm_chunk[:num_samples * 2])
+                samples = struct.unpack(
+                    f"<{num_samples}h", pcm_chunk[:num_samples * 2])
                 rms = math.sqrt(sum(s * s for s in samples) / num_samples)
 
                 # -----------------------------------------------------------
@@ -1335,34 +1678,48 @@ class VoiceOrchestrationService:
                     speech_frame_count += 1
 
                     if not is_speaking and speech_frame_count >= SPEECH_FRAMES_TO_START_ACTIVITY:
-                        # Sufficient consecutive speech frames — open activity window.
-                        # Suficientes frames consecutivos de voz — abrir ventana de actividad.
+                        # Sufficient consecutive speech frames — open activity
+                        # window.
+                        # Suficientes frames consecutivos de voz — abrir
+                        # ventana de actividad.
                         logger.info(
-                            f"[GEMINI-TX] Voz detectada ({speech_frame_count} frames). "
+                            f"[GEMINI-TX] Voz detectada ({speech_frame_count} "
+                            "frames). "
                             "Enviando activity_start a Gemini..."
                         )
                         try:
                             await session.send_realtime_input(
                                 activity_start=types.ActivityStart()
                             )
-                            # LATENCY-P5: Timestamp when next caller turn starts.
-                            # Measures inter-turn gap: from Gemini turn_complete to next
-                            # caller speech. Confirms whether VAD thresholds add delay
-                            # before Gemini can start processing the next utterance.
-                            # LATENCIA-P5: Marca cuando el siguiente turno del llamante comienza.
-                            # Mide el intervalo entre turnos: desde turn_complete de Gemini
-                            # hasta la siguiente voz del llamante. Confirma si los umbrales VAD
-                            # añaden retardo antes de que Gemini pueda procesar el siguiente turno.
+                            # LATENCY-P5: Timestamp when next caller turn
+                            # starts.
+                            # Measures inter-turn gap: from Gemini
+                            # turn_complete to next
+                            # caller speech. Confirms whether VAD thresholds
+                            # add delay
+                            # before Gemini can start processing the next
+                            # utterance.
+                            # LATENCIA-P5: Marca cuando el siguiente turno del
+                            # llamante comienza.
+                            # Mide el intervalo entre turnos: desde
+                            # turn_complete de Gemini
+                            # hasta la siguiente voz del llamante. Confirma si
+                            # los umbrales VAD
+                            # añaden retardo antes de que Gemini pueda procesar
+                            # el siguiente turno.
                             _t_next_start = time.monotonic()
                             logger.info(
-                                f"[LATENCY-P5] activity_start siguiente turno — "
+                                "[LATENCY-P5] activity_start siguiente turno "
+                                "— "
                                 f"t={_t_next_start:.3f}s"
                             )
-                            logger.info("[GEMINI-TX] activity_start enviado correctamente.")
+                            logger.info(
+                                "[GEMINI-TX] activity_start enviado "
+                                "correctamente.")
                         except Exception as as_exc:
                             logger.warning(
-                                f"[GEMINI-TX] Error al enviar activity_start: {as_exc}"
-                            )
+                                "[GEMINI-TX] Error al enviar activity_start: "
+                                f"{as_exc}")
                         is_speaking = True
                 else:
                     # Frame with silence energy detected.
@@ -1371,10 +1728,13 @@ class VoiceOrchestrationService:
                     silence_frame_count += 1
 
                     if is_speaking and silence_frame_count >= SILENCE_FRAMES_TO_END_ACTIVITY:
-                        # Sufficient consecutive silence frames — close activity window.
-                        # Suficientes frames consecutivos de silencio — cerrar ventana.
+                        # Sufficient consecutive silence frames — close
+                        # activity window.
+                        # Suficientes frames consecutivos de silencio — cerrar
+                        # ventana.
                         logger.info(
-                            f"[GEMINI-TX] Silencio detectado ({silence_frame_count} frames). "
+                            "[GEMINI-TX] Silencio detectado "
+                            f"({silence_frame_count} frames). "
                             "Enviando activity_end a Gemini..."
                         )
                         try:
@@ -1383,10 +1743,14 @@ class VoiceOrchestrationService:
                             )
                             # LATENCY-P1: Timestamp when activity_end is sent.
                             # Marks the end of the detected caller speech turn.
-                            # Also stored on self for cross-coroutine TTFT calculation (P2).
-                            # LATENCIA-P1: Marca de tiempo al enviar activity_end.
-                            # Marca el fin del turno de voz detectado del llamante.
-                            # Se almacena en self para el cálculo de TTFT entre corrutinas (P2).
+                            # Also stored on self for cross-coroutine TTFT
+                            # calculation (P2).
+                            # LATENCIA-P1: Marca de tiempo al enviar
+                            # activity_end.
+                            # Marca el fin del turno de voz detectado del
+                            # llamante.
+                            # Se almacena en self para el cálculo de TTFT entre
+                            # corrutinas (P2).
                             _t_activity_end = time.monotonic()
                             self._t_last_activity_end = _t_activity_end
                             self._t_first_audio_logged = False  # reset for next turn
@@ -1396,8 +1760,8 @@ class VoiceOrchestrationService:
                             )
                         except Exception as ae_exc:
                             logger.warning(
-                                f"[GEMINI-TX] Error al enviar activity_end: {ae_exc}"
-                            )
+                                "[GEMINI-TX] Error al enviar activity_end: "
+                                f"{ae_exc}")
                         is_speaking = False
                         silence_frame_count = 0
 
@@ -1407,9 +1771,12 @@ class VoiceOrchestrationService:
                 # Audio is sent to Gemini regardless of activity state.
                 # The activity signals bracket the speech for turn logic;
                 # the audio stream must be continuous to avoid buffer gaps.
-                # El audio se envía a Gemini independientemente del estado de actividad.
-                # Las señales de actividad delimitan la voz para la lógica de turnos;
-                # el stream de audio debe ser continuo para evitar huecos en el buffer.
+                # El audio se envía a Gemini independientemente del estado de
+                # actividad.
+                # Las señales de actividad delimitan la voz para la lógica de
+                # turnos;
+                # el stream de audio debe ser continuo para evitar huecos en el
+                # buffer.
                 await session.send_realtime_input(
                     audio=types.Blob(
                         data=pcm_chunk,
@@ -1429,9 +1796,11 @@ class VoiceOrchestrationService:
                 exc_info=True
             )
         finally:
-            # If the session ends while an activity window is open, close it cleanly
+            # If the session ends while an activity window is open, close it
+            # cleanly
             # to avoid leaving Gemini in a waiting state.
-            # Si la sesión termina con una ventana de actividad abierta, cerrarla
+            # Si la sesión termina con una ventana de actividad abierta,
+            # cerrarla
             # limpiamente para evitar dejar a Gemini en estado de espera.
             if is_speaking:
                 try:
@@ -1439,11 +1808,13 @@ class VoiceOrchestrationService:
                         activity_end=types.ActivityEnd()
                     )
                     logger.info(
-                        "[GEMINI-TX] activity_end enviado en finally (cierre de sesión)."
+                        "[GEMINI-TX] activity_end enviado en finally (cierre "
+                        "de sesión)."
                     )
                 except Exception:
                     pass
-            logger.info("[GEMINI-TX] Corrutina de envío de audio a Gemini finalizada.")
+            logger.info(
+                "[GEMINI-TX] Corrutina de envío de audio a Gemini finalizada.")
 
     # -----------------------------------------------------------------------
     # OUTBOUND AUDIO PIPELINE / PIPELINE DE AUDIO SALIENTE
@@ -1455,54 +1826,73 @@ class VoiceOrchestrationService:
         and places audio chunks onto audio_output_queue for delivery to Twilio.
 
         Iterates over session.receive() which yields LiveServerMessage objects.
-        Audio data is found in response.server_content.model_turn.parts[n].inline_data.
+        Audio data is found in
+        response.server_content.model_turn.parts[n].inline_data.
         Interruption signals from Gemini (VAD-driven) are handled by flushing
         the output queue to stop playback immediately.
         ---
         Corrutina: lee continuamente las respuestas de la sesión Gemini Live y
-        coloca fragmentos de audio en audio_output_queue para su entrega a Twilio.
+        coloca fragmentos de audio en audio_output_queue para su entrega a
+        Twilio.
 
         Itera sobre session.receive() que produce objetos LiveServerMessage.
         Los datos de audio se encuentran en
         response.server_content.model_turn.parts[n].inline_data.
         Las señales de interrupción de Gemini (dirigidas por VAD) se gestionan
-        vaciando la cola de salida para detener la reproducción de forma inmediata.
+        vaciando la cola de salida para detener la reproducción de forma
+        inmediata.
         """
-        logger.info("[GEMINI-RX] Corrutina de recepción de audio de Gemini iniciada.")
+        logger.info(
+            "[GEMINI-RX] Corrutina de recepción de audio de Gemini iniciada.")
         try:
-            # OUTER LOOP: The google-genai SDK's session.receive() async iterator
-            # is exhausted and terminates after each `turn_complete` or `interrupted`
-            # signal from Gemini (documented in googleapis/python-genai issue #1224).
-            # To maintain continuous listening across multiple turns, we re-enter
-            # the iterator on each exhaustion by wrapping it in this outer while loop.
+            # OUTER LOOP: The google-genai SDK's session.receive() async
+            # iterator
+            # is exhausted and terminates after each `turn_complete` or
+            # `interrupted`
+            # signal from Gemini (documented in googleapis/python-genai issue
+            # #1224).
+            # To maintain continuous listening across multiple turns, we
+            # re-enter
+            # the iterator on each exhaustion by wrapping it in this outer
+            # while loop.
             # BUCLE EXTERNO: El iterador asíncrono session.receive() del SDK
             # google-genai se agota y termina tras cada señal `turn_complete` o
             # `interrupted` de Gemini (documentado en el issue #1224 de
-            # googleapis/python-genai). Para mantener la escucha continua a través
-            # de múltiples turnos, re-entramos en el iterador en cada agotamiento
+            # googleapis/python-genai). Para mantener la escucha continua a
+            # través
+            # de múltiples turnos, re-entramos en el iterador en cada
+            # agotamiento
             # envolviendo el bucle interno en este while externo.
             while self.session_active:
                 async for response in session.receive():
 
-                # --- Interruption Handling / Gestión de Interrupciones ---
-                # If Gemini's VAD detects the user is speaking while the model
-                # is responding, it sends an interrupted signal. We must flush
-                # the output queue immediately to stop sending stale audio to Twilio.
-                # Si el VAD de Gemini detecta que el usuario está hablando mientras
-                # el modelo está respondiendo, envía una señal de interrupción.
-                # Debemos vaciar la cola de salida inmediatamente para dejar de
-                # enviar audio obsoleto a Twilio.
+                    # --- Interruption Handling / Gestión de Interrupciones ---
+                    # If Gemini's VAD detects the user is speaking while the
+                    # model
+                    # is responding, it sends an interrupted signal. We must
+                    # flush
+                    # the output queue immediately to stop sending stale audio
+                    # to Twilio.
+                    # Si el VAD de Gemini detecta que el usuario está hablando
+                    # mientras
+                    # el modelo está respondiendo, envía una señal de
+                    # interrupción.
+                    # Debemos vaciar la cola de salida inmediatamente para
+                    # dejar de
+                    # enviar audio obsoleto a Twilio.
                     if (
                         response.server_content
                         and response.server_content.interrupted is True
                     ):
                         logger.info(
-                            "[GEMINI-RX] Señal de interrupción recibida de Gemini. "
-                            "Vaciando cola de audio de salida..."
-                        )
-                        # Drain the output queue to discard buffered audio from the
+                            "[GEMINI-RX] Señal de interrupción recibida de "
+                            "Gemini. "
+                            "Vaciando cola de audio de salida...")
+                        # Drain the output queue to discard buffered audio from
+                        # the
                         # interrupted response.
-                        # Vaciar la cola de salida para descartar el audio en buffer
+                        # Vaciar la cola de salida para descartar el audio en
+                        # buffer
                         # de la respuesta interrumpida.
                         while not self.audio_output_queue.empty():
                             try:
@@ -1512,37 +1902,107 @@ class VoiceOrchestrationService:
                                 break
                         continue
 
-                    # --- Tool Call Handler — route_to_section (Estrategia B, Paso 38) ---
-                    # Gemini invokes route_to_section() when it identifies the caller's
-                    # intended section. We capture the tool_call, execute the section
-                    # reload, and respond with tool_response so the model can continue.
-                    # Gemini invoca route_to_section() cuando identifica la sección
-                    # destino del llamante. Capturamos el tool_call, ejecutamos la
-                    # recarga de sección y respondemos con tool_response para que
+                    # --- Tool Call Handler — route_to_section (Estrategia B,
+                    # Paso 38) ---
+                    # Gemini invokes route_to_section() when it identifies the
+                    # caller's
+                    # intended section. We capture the tool_call, execute the
+                    # section
+                    # reload, and respond with tool_response so the model can
+                    # continue.
+                    # Gemini invoca route_to_section() cuando identifica la
+                    # sección
+                    # destino del llamante. Capturamos el tool_call, ejecutamos
+                    # la
+                    # recarga de sección y respondemos con tool_response para
+                    # que
                     # el modelo pueda continuar.
                     if response.tool_call:
                         for fn_call in response.tool_call.function_calls:
-                            if fn_call.name == "route_to_section":
-                                section_id = int(fn_call.args.get("section_id", -1))
+                            # --- Tool Call Handler: servicio_* (H37, S133) ---
+                            # Dar un servicio por teléfono: se ejecuta la
+                            # herramienta de budgets.service_intake y se le
+                            # devuelve el resultado a Gemini.
+                            if fn_call.name.startswith("servicio_"):
+                                try:
+                                    from asgiref.sync import (
+                                        sync_to_async as _s2a_svc,
+                                    )
+                                    from budgets.service_intake import (
+                                        run_voice_tool,
+                                    )
+                                    _svc_result = await _s2a_svc(
+                                        run_voice_tool
+                                    )(
+                                        self.service_user_pk,
+                                        self.caller_number,
+                                        fn_call.name,
+                                        dict(fn_call.args or {}),
+                                    ) if self.service_user_pk else {
+                                        "error": "Quien llama no puede dar "
+                                                 "servicios.",
+                                    }
+                                except Exception as svc_exc:
+                                    logger.error(
+                                        f"[H37-SERVICIO] Error en "
+                                        f"{fn_call.name}: "
+                                        f"{type(svc_exc).__name__}: {svc_exc}"
+                                    )
+                                    _svc_result = {
+                                        "error": "Error interno: %s" % svc_exc,
+                                    }
                                 logger.info(
-                                    f"[ESTRATEGIA-B] tool_call route_to_section recibido. "
+                                    f"[H37-SERVICIO] {fn_call.name} -> "
+                                    f"{str(_svc_result)[:300]}"
+                                )
+                                try:
+                                    await session.send_tool_response(
+                                        function_responses=types.FunctionResponse(
+                                            id=fn_call.id,
+                                            name=fn_call.name,
+                                            response={"result": _svc_result},
+                                        )
+                                    )
+                                except Exception as svc_tr_exc:
+                                    logger.error(
+                                        f"[H37-SERVICIO] Error enviando "
+                                        f"tool_response: {svc_tr_exc}"
+                                    )
+                                continue
+                            if fn_call.name == "route_to_section":
+                                section_id = int(
+                                    fn_call.args.get("section_id", -1))
+                                logger.info(
+                                    "[ESTRATEGIA-B] tool_call "
+                                    "route_to_section recibido. "
                                     f"section_id={section_id}. "
-                                    "Ejecutando _reload_session_for_section()..."
+                                    "Ejecutando "
+                                    "_reload_session_for_section()..."
                                 )
                                 success = await self._reload_session_for_section(
                                     session, section_id
                                 )
-                                # Respond to Gemini with the tool result so it can
-                                # continue the conversation with the new context.
-                                # Responder a Gemini con el resultado de la tool para
-                                # que continúe la conversación con el nuevo contexto.
+                                # Respond to Gemini with the tool result so it
+                                # can
+                                # continue the conversation with the new
+                                # context.
+                                # Responder a Gemini con el resultado de la
+                                # tool para
+                                # que continúe la conversación con el nuevo
+                                # contexto.
                                 try:
-                                    # H17 FIX (2026-07-09): la Live API exige responder
-                                    # a un tool_call con session.send_tool_response() —
-                                    # send_client_content(role="tool") no es el metodo
-                                    # documentado y deja la sesion sin avanzar de turno.
-                                    # El id del function_call original es obligatorio
-                                    # para que Gemini correlacione la respuesta.
+                                    # H17 FIX (2026-07-09): la Live API exige
+                                    # responder
+                                    # a un tool_call con
+                                    # session.send_tool_response() —
+                                    # send_client_content(role="tool") no es el
+                                    # metodo
+                                    # documentado y deja la sesion sin avanzar
+                                    # de turno.
+                                    # El id del function_call original es
+                                    # obligatorio
+                                    # para que Gemini correlacione la
+                                    # respuesta.
                                     await session.send_tool_response(
                                         function_responses=types.FunctionResponse(
                                             id=fn_call.id,
@@ -1554,38 +2014,47 @@ class VoiceOrchestrationService:
                                         )
                                     )
                                     logger.info(
-                                        f"[ESTRATEGIA-B] tool_response route_to_section "
-                                        f"enviado correctamente (success={success})."
+                                        "[ESTRATEGIA-B] tool_response "
+                                        "route_to_section "
+                                        "enviado correctamente "
+                                        f"(success={success})."
                                     )
                                 except Exception as tr_exc:
                                     logger.error(
-                                        f"[ESTRATEGIA-B] Error al enviar tool_response: "
+                                        "[ESTRATEGIA-B] Error al enviar "
+                                        "tool_response: "
                                         f"{type(tr_exc).__name__}: {tr_exc}",
                                         exc_info=True,
                                     )
                             elif fn_call.name == "submit_captured_data":
-                                # --- Tool Call Handler: submit_captured_data (Paso 7, Hito 5) ---
-                                # Persist CallDataCapture and fire WhatsApp notification.
-                                # Persistir CallDataCapture y disparar notificación WhatsApp.
-                                _section_id_cap = int(fn_call.args.get("section_id", -1))
-                                _captured_fields = fn_call.args.get("captured_fields", {})
+                                # --- Tool Call Handler: submit_captured_data
+                                # (Paso 7, Hito 5) ---
+                                # Persist CallDataCapture and fire WhatsApp
+                                # notification.
+                                # Persistir CallDataCapture y disparar
+                                # notificación WhatsApp.
+                                _section_id_cap = int(
+                                    fn_call.args.get("section_id", -1))
+                                _captured_fields = fn_call.args.get(
+                                    "captured_fields", {})
                                 logger.info(
-                                    f"[PASO-7] tool_call submit_captured_data recibido. "
+                                    "[PASO-7] tool_call submit_captured_data "
+                                    "recibido. "
                                     f"section_id={_section_id_cap} | "
                                     f"campos={list(_captured_fields.keys())}"
                                 )
                                 try:
-                                    from django.utils.timezone import now as _now
                                     from ivr_config.models import (
                                         CallDataCapture as _CDC,
                                         Section as _Section,
-                                        Contact as _Contact,
                                     )
                                     from whatsapp.services import send_capture_notification
                                     from asgiref.sync import sync_to_async
 
-                                    # Resolve section and referent contact from DB.
-                                    # Resolver sección y contacto referente desde BD.
+                                    # Resolve section and referent contact from
+                                    # DB.
+                                    # Resolver sección y contacto referente
+                                    # desde BD.
                                     def _persist_capture():
                                         section_obj = _Section.objects.filter(
                                             pk=_section_id_cap
@@ -1605,7 +2074,8 @@ class VoiceOrchestrationService:
                                             captured_data=_captured_fields,
                                         )
                                         logger.info(
-                                            f"[PASO-7] CallDataCapture persistido — "
+                                            "[PASO-7] CallDataCapture "
+                                            "persistido — "
                                             f"pk={cdc.pk} | "
                                             f"section={section_obj} | "
                                             f"contact={contact_obj}"
@@ -1614,11 +2084,15 @@ class VoiceOrchestrationService:
 
                                     cdc_instance = await sync_to_async(_persist_capture)()
 
-                                    # Fire WhatsApp notification asynchronously.
-                                    # No se espera confirmación — el transfer no
+                                    # Fire WhatsApp notification
+                                    # asynchronously.
+                                    # No se espera confirmación — el transfer
+                                    # no
                                     # debe bloquearse por el envío WhatsApp.
-                                    # Disparar notificación WhatsApp de forma asíncrona.
-                                    # No se espera confirmación — la transferencia
+                                    # Disparar notificación WhatsApp de forma
+                                    # asíncrona.
+                                    # No se espera confirmación — la
+                                    # transferencia
                                     # no debe bloquearse por el envío WhatsApp.
                                     _wa_sender = os.getenv(
                                         "TWILIO_WHATSAPP_SENDER", ""
@@ -1632,17 +2106,19 @@ class VoiceOrchestrationService:
                                             )
                                         )
                                         logger.info(
-                                            "[PASO-7] Tarea WhatsApp notification "
-                                            "disparada de forma asíncrona."
-                                        )
+                                            "[PASO-7] Tarea WhatsApp "
+                                            "notification "
+                                            "disparada de forma asíncrona.")
                                     else:
                                         logger.warning(
-                                            "[PASO-7] TWILIO_WHATSAPP_SENDER no "
-                                            "configurado — notificación WhatsApp omitida."
-                                        )
+                                            "[PASO-7] TWILIO_WHATSAPP_SENDER "
+                                            "no "
+                                            "configurado — notificación "
+                                            "WhatsApp omitida.")
                                 except Exception as cap_exc:
                                     logger.error(
-                                        f"[PASO-7] Error al persistir CallDataCapture "
+                                        "[PASO-7] Error al persistir "
+                                        "CallDataCapture "
                                         f"o disparar notificación: "
                                         f"{type(cap_exc).__name__}: {cap_exc}",
                                         exc_info=True,
@@ -1651,7 +2127,8 @@ class VoiceOrchestrationService:
                                 # Respond to Gemini with tool_response.
                                 # Responder a Gemini con tool_response.
                                 try:
-                                    # H17 FIX (2026-07-09): ver nota en route_to_section.
+                                    # H17 FIX (2026-07-09): ver nota en
+                                    # route_to_section.
                                     await session.send_tool_response(
                                         function_responses=types.FunctionResponse(
                                             id=fn_call.id,
@@ -1663,34 +2140,48 @@ class VoiceOrchestrationService:
                                         )
                                     )
                                     logger.info(
-                                        "[PASO-7] tool_response submit_captured_data "
-                                        "enviado correctamente."
-                                    )
+                                        "[PASO-7] tool_response "
+                                        "submit_captured_data "
+                                        "enviado correctamente.")
                                 except Exception as tr_cap_exc:
                                     logger.error(
-                                        f"[PASO-7] Error al enviar tool_response "
+                                        "[PASO-7] Error al enviar "
+                                        "tool_response "
                                         f"submit_captured_data: "
-                                        f"{type(tr_cap_exc).__name__}: {tr_cap_exc}",
+                                        f"{type(tr_cap_exc).__name__}: "
+                                        f"{tr_cap_exc}",
                                         exc_info=True,
                                     )
 
                             elif fn_call.name == "report_breakdown":
-                                # --- Tool Call Handler: report_breakdown (H03) ---
+                                # --- Tool Call Handler: report_breakdown (H03)
+                                # ---
                                 # Creates a BreakdownTicket in DB via ORM (same
                                 # process — no HTTP round-trip needed).
                                 # Crea un BreakdownTicket en BD vía ORM (mismo
                                 # proceso — sin round-trip HTTP necesario).
-                                _machine_code     = str(fn_call.args.get("machine_code", "")).strip()
-                                _fault_summary    = str(fn_call.args.get("fault_summary", "")).strip()
-                                _fault_location   = str(fn_call.args.get("fault_location", "")).strip()
-                                _urgency          = str(fn_call.args.get("urgency_inferred", "MEDIA")).strip()
-                                _caller_name      = str(fn_call.args.get("caller_name", "")).strip()
-                                _caller_phone     = str(fn_call.args.get("caller_phone_reported", "")).strip()
-                                _at_base          = bool(fn_call.args.get("at_base", False))
-                                _base_name        = str(fn_call.args.get("base_name", "")).strip()
+                                _machine_code = str(fn_call.args.get(
+                                    "machine_code", "")).strip()
+                                _fault_summary = str(fn_call.args.get(
+                                    "fault_summary", "")).strip()
+                                _fault_location = str(fn_call.args.get(
+                                    "fault_location", "")).strip()
+                                _urgency = str(
+                                    fn_call.args.get(
+                                        "urgency_inferred",
+                                        "MEDIA")).strip()
+                                _caller_name = str(fn_call.args.get(
+                                    "caller_name", "")).strip()
+                                _at_base = bool(
+                                    fn_call.args.get("at_base", False))
+                                _base_name = str(
+                                    fn_call.args.get(
+                                        "base_name", "")).strip()
                                 logger.info(
-                                    f"[H03-BREAKDOWN] tool_call report_breakdown recibido — "
-                                    f"máquina='{_machine_code}' | urgencia='{_urgency}' | "
+                                    "[H03-BREAKDOWN] tool_call "
+                                    "report_breakdown recibido — "
+                                    f"máquina='{_machine_code}' | "
+                                    f"urgencia='{_urgency}' | "
                                     f"at_base={_at_base}"
                                 )
                                 _breakdown_ticket_code = None
@@ -1699,12 +2190,14 @@ class VoiceOrchestrationService:
                                     from ivr_config.models import Section as _Sec
                                     from chat.models import BreakdownTicket as _BT
 
-                                    # Map urgency string → BreakdownTicket urgency choices.
-                                    # Mapear cadena de urgencia → choices de BreakdownTicket.
+                                    # Map urgency string → BreakdownTicket
+                                    # urgency choices.
+                                    # Mapear cadena de urgencia → choices de
+                                    # BreakdownTicket.
                                     _urgency_map = {
-                                        "BAJA":    _BT.URGENCY_LOW,
-                                        "MEDIA":   _BT.URGENCY_MEDIUM,
-                                        "ALTA":    _BT.URGENCY_HIGH,
+                                        "BAJA": _BT.URGENCY_LOW,
+                                        "MEDIA": _BT.URGENCY_MEDIUM,
+                                        "ALTA": _BT.URGENCY_HIGH,
                                         "CRITICA": _BT.URGENCY_CRITICAL,
                                     }
                                     _urgency_val = _urgency_map.get(
@@ -1712,20 +2205,29 @@ class VoiceOrchestrationService:
                                     )
 
                                     def _create_breakdown():
-                                        # H17 Paso 3 — Simplified security gate.
-                                        # Rule: if caller_number is a Contact registered
-                                        # in the company → it is a breakdown. No ChatRoom
+                                        # H17 Paso 3 — Simplified security
+                                        # gate.
+                                        # Rule: if caller_number is a Contact
+                                        # registered
+                                        # in the company → it is a breakdown.
+                                        # No ChatRoom
                                         # lookup. No section membership check.
                                         #
-                                        # H17 Paso 3 — Puerta de seguridad simplificada.
-                                        # Regla: si caller_number es un Contact registrado
-                                        # en la empresa → es avería. Sin lookup de ChatRoom.
-                                        # Sin comprobación de pertenencia a sección.
+                                        # H17 Paso 3 — Puerta de seguridad
+                                        # simplificada.
+                                        # Regla: si caller_number es un Contact
+                                        # registrado
+                                        # en la empresa → es avería. Sin lookup
+                                        # de ChatRoom.
+                                        # Sin comprobación de pertenencia a
+                                        # sección.
                                         from ivr_config.models import PhoneNumber as _PN
                                         from ivr_config.models import Contact as _Ct
 
-                                        # Step 1: Resolve company from Twilio number.
-                                        # Paso 1: Resolver empresa desde número Twilio.
+                                        # Step 1: Resolve company from Twilio
+                                        # number.
+                                        # Paso 1: Resolver empresa desde número
+                                        # Twilio.
                                         try:
                                             _pn = _PN.objects.select_related(
                                                 "company"
@@ -1739,57 +2241,64 @@ class VoiceOrchestrationService:
 
                                         if not _company:
                                             logger.warning(
-                                                f"[H03-BREAKDOWN] Número Twilio "
-                                                f"'{self.twilio_number}' no resuelve "
+                                                "[H03-BREAKDOWN] Número "
+                                                "Twilio "
+                                                f"'{self.twilio_number}' no "
+                                                "resuelve "
                                                 "empresa. Ticket rechazado."
                                             )
                                             return None
 
-                                        # Step 2: Security gate — caller must be a
+                                        # Step 2: Security gate — caller must
+                                        # be a
                                         # registered Contact of the company.
-                                        # Paso 2: Puerta de seguridad — el llamante
-                                        # debe ser un Contact registrado en la empresa.
+                                        # Paso 2: Puerta de seguridad — el
+                                        # llamante
+                                        # debe ser un Contact registrado en la
+                                        # empresa.
                                         _contact = None
                                         if self.caller_number:
                                             _contact = _Ct.objects.filter(
-                                                company=_company,
-                                                phone_number=self.caller_number,
-                                            ).first()
+                                                company=_company, phone_number=self.caller_number, ).first()
 
                                         if _contact is None:
                                             logger.warning(
                                                 f"[H03-BREAKDOWN] Llamante "
-                                                f"'{self.caller_number}' no es un "
-                                                "Contact registrado en la empresa. "
+                                                f"'{self.caller_number}' no "
+                                                "es un "
+                                                "Contact registrado en la "
+                                                "empresa. "
                                                 "Ticket rechazado."
                                             )
                                             return None
 
-                                        # Step 3: Resolve section for ticket tagging.
-                                        # Paso 3: Resolver sección para etiquetar el ticket.
+                                        # Step 3: Resolve section for ticket
+                                        # tagging.
+                                        # Paso 3: Resolver sección para
+                                        # etiquetar el ticket.
                                         _section = _Sec.objects.filter(
                                             company=_company,
                                             is_active=True,
                                             ivr_breakdown_enabled=True,
                                         ).first()
 
-                                        # Step 4: Resolve MachineAsset from machine_code.
-                                        # Paso 4: Resolver MachineAsset desde machine_code.
+                                        # Step 4: Resolve MachineAsset from
+                                        # machine_code.
+                                        # Paso 4: Resolver MachineAsset desde
+                                        # machine_code.
                                         _machine = None
                                         try:
                                             from fleet.models import MachineAsset as _MA
                                             _machine = (
                                                 _MA.objects.filter(
-                                                    code__iexact=_machine_code
-                                                ).first()
-                                                or _MA.objects.filter(
-                                                    code__iexact=_machine_code.upper()
-                                                ).first()
-                                            )
+                                                    code__iexact=_machine_code).first() or _MA.objects.filter(
+                                                    code__iexact=_machine_code.upper()).first())
                                         except Exception as ma_exc:
                                             logger.warning(
-                                                f"[H03-BREAKDOWN] No se pudo resolver "
-                                                f"MachineAsset '{_machine_code}': "
+                                                "[H03-BREAKDOWN] No se pudo "
+                                                "resolver "
+                                                "MachineAsset "
+                                                f"'{_machine_code}': "
                                                 f"{ma_exc}"
                                             )
 
@@ -1803,7 +2312,6 @@ class VoiceOrchestrationService:
                                         # conversation_log con los datos
                                         # estructurados capturados por Alia
                                         # durante la sesión IVR.
-                                        import json as _json
                                         _log_entry = {
                                             "source": "IVR",
                                             "role": "SYSTEM",
@@ -1836,7 +2344,8 @@ class VoiceOrchestrationService:
                                             conversation_log=[_log_entry],
                                         )
                                         logger.info(
-                                            f"[H03-BREAKDOWN] BreakdownTicket creado — "
+                                            "[H03-BREAKDOWN] BreakdownTicket "
+                                            "creado — "
                                             f"pk={ticket.pk} | "
                                             f"code='{ticket.ticket_date_code}' | "
                                             f"máquina='{_machine_code}' | "
@@ -1859,26 +2368,29 @@ class VoiceOrchestrationService:
                                                 )
                                             except Exception as _bc_exc:
                                                 logger.error(
-                                                    "[H03-BREAKDOWN] Error broadcast "
-                                                    "WA ticket pk=%s: %s",
-                                                    ticket.pk,
-                                                    _bc_exc,
-                                                )
+                                                    "[H03-BREAKDOWN] Error "
+                                                    "broadcast "
+                                                    "WA ticket pk=%s: %s", ticket.pk, _bc_exc, )
                                         else:
                                             logger.warning(
-                                                "[H03-BREAKDOWN] TWILIO_WHATSAPP_SENDER "
-                                                "no configurado — broadcast omitido "
-                                                "ticket pk=%s.",
-                                                ticket.pk,
-                                            )
+                                                "[H03-BREAKDOWN] "
+                                                "TWILIO_WHATSAPP_SENDER "
+                                                "no configurado — broadcast "
+                                                "omitido "
+                                                "ticket pk=%s.", ticket.pk, )
 
-                                        # H17 Paso 5 — Geolocalización post-IVR.
-                                        # Si el conductor está en ruta (at_base=False),
-                                        # enviar plantilla de solicitud de ubicación
+                                        # H17 Paso 5 — Geolocalización
+                                        # post-IVR.
+                                        # Si el conductor está en ruta
+                                        # (at_base=False),
+                                        # enviar plantilla de solicitud de
+                                        # ubicación
                                         # al número desde el que llamó.
                                         # H17 Step 5 — Post-IVR geolocation.
-                                        # If the driver is on the road (at_base=False),
-                                        # send the location request template to the
+                                        # If the driver is on the road
+                                        # (at_base=False),
+                                        # send the location request template to
+                                        # the
                                         # caller's number.
                                         if (
                                             not _at_base
@@ -1893,10 +2405,7 @@ class VoiceOrchestrationService:
                                                     WhatsAppChatService as _WACS2,
                                                 )
                                                 _loc_tpl = _WATpl.objects.filter(
-                                                    company=_company,
-                                                    name="breakdown_location_request",
-                                                    is_active=True,
-                                                ).first()
+                                                    company=_company, name="breakdown_location_request", is_active=True, ).first()
                                                 if _loc_tpl:
                                                     _caller_name_geo = (
                                                         _contact.name
@@ -1904,47 +2413,38 @@ class VoiceOrchestrationService:
                                                         else "conductor"
                                                     )
                                                     _WACS2.send_template(
-                                                        from_number=_wa_sender_ivr,
-                                                        to_number=(
-                                                            self.caller_number
-                                                        ),
-                                                        content_sid=(
-                                                            _loc_tpl.content_sid
-                                                        ),
-                                                        content_variables={
-                                                            "1": _caller_name_geo,
-                                                            "2": (
-                                                                ticket
-                                                                .ticket_date_code
-                                                                or ""
-                                                            ),
-                                                        },
-                                                    )
+                                                        from_number=_wa_sender_ivr, to_number=(
+                                                            self.caller_number), content_sid=(
+                                                            _loc_tpl.content_sid), content_variables={
+                                                            "1": _caller_name_geo, "2": (
+                                                                ticket .ticket_date_code or ""), }, )
                                                     logger.info(
-                                                        "[H03-BREAKDOWN] Plantilla "
+                                                        "[H03-BREAKDOWN] "
+                                                        "Plantilla "
                                                         "breakdown_location_request "
-                                                        "enviada a %s para ticket "
+                                                        "enviada a %s para "
+                                                        "ticket "
                                                         "pk=%s.",
                                                         self.caller_number,
                                                         ticket.pk,
                                                     )
                                                 else:
                                                     logger.warning(
-                                                        "[H03-BREAKDOWN] Plantilla "
+                                                        "[H03-BREAKDOWN] "
+                                                        "Plantilla "
                                                         "breakdown_location_request "
                                                         "no encontrada — "
-                                                        "geoloc omitida ticket "
+                                                        "geoloc omitida "
+                                                        "ticket "
                                                         "pk=%s.",
                                                         ticket.pk,
                                                     )
                                             except Exception as _geo_exc:
                                                 logger.error(
-                                                    "[H03-BREAKDOWN] Error enviando "
+                                                    "[H03-BREAKDOWN] Error "
+                                                    "enviando "
                                                     "breakdown_location_request a "
-                                                    "%s: %s",
-                                                    self.caller_number,
-                                                    _geo_exc,
-                                                )
+                                                    "%s: %s", self.caller_number, _geo_exc, )
 
                                         return ticket
 
@@ -1953,17 +2453,23 @@ class VoiceOrchestrationService:
 
                                 except Exception as bd_exc:
                                     logger.error(
-                                        f"[H03-BREAKDOWN] Error al crear BreakdownTicket: "
+                                        "[H03-BREAKDOWN] Error al crear "
+                                        "BreakdownTicket: "
                                         f"{type(bd_exc).__name__}: {bd_exc}",
                                         exc_info=True,
                                     )
 
-                                # Respond to Gemini with tool_response including ticket code.
-                                # Responder a Gemini con tool_response incluyendo el código del ticket.
+                                # Respond to Gemini with tool_response
+                                # including ticket code.
+                                # Responder a Gemini con tool_response
+                                # incluyendo el código del ticket.
                                 try:
-                                    # H17 FIX (2026-07-09): ver nota en route_to_section.
-                                    # Bug diagnosticado en S010 el 2026-07-09: sin este
-                                    # fix, la llamada quedaba muda tras crear el ticket
+                                    # H17 FIX (2026-07-09): ver nota en
+                                    # route_to_section.
+                                    # Bug diagnosticado en S010 el 2026-07-09:
+                                    # sin este
+                                    # fix, la llamada quedaba muda tras crear
+                                    # el ticket
                                     # hasta que Twilio cortaba por inactividad.
                                     await session.send_tool_response(
                                         function_responses=types.FunctionResponse(
@@ -1977,35 +2483,48 @@ class VoiceOrchestrationService:
                                         )
                                     )
                                     logger.info(
-                                        f"[H03-BREAKDOWN] tool_response report_breakdown "
-                                        f"enviado (ticket={_breakdown_ticket_code}, "
+                                        "[H03-BREAKDOWN] tool_response "
+                                        "report_breakdown "
+                                        "enviado "
+                                        f"(ticket={_breakdown_ticket_code}, "
                                         f"location_needed={not _at_base})."
                                     )
                                 except Exception as tr_bd_exc:
                                     logger.error(
-                                        f"[H03-BREAKDOWN] Error al enviar tool_response: "
-                                        f"{type(tr_bd_exc).__name__}: {tr_bd_exc}",
+                                        "[H03-BREAKDOWN] Error al enviar "
+                                        "tool_response: "
+                                        f"{type(tr_bd_exc).__name__}: "
+                                        f"{tr_bd_exc}",
                                         exc_info=True,
                                     )
 
                             elif fn_call.name == "submit_call_summary":
-                                # --- Tool Call Handler: submit_call_summary (H03) ---
+                                # --- Tool Call Handler: submit_call_summary
+                                # (H03) ---
                                 # Persists InboundCallLog at end of every call.
-                                # Persiste InboundCallLog al final de cada llamada.
-                                _cs_caller_name   = str(fn_call.args.get("caller_name", "")).strip()
-                                _cs_caller_phone  = str(fn_call.args.get("caller_phone_reported", "")).strip()
-                                _cs_call_reason   = str(fn_call.args.get("call_reason", "")).strip()
-                                _cs_call_type     = str(fn_call.args.get("call_type", "OTHER")).strip()
-                                _cs_outcome       = str(fn_call.args.get("outcome", "OTHER")).strip()
-                                _cs_raw_summary   = str(fn_call.args.get("raw_summary", "")).strip()
+                                # Persiste InboundCallLog al final de cada
+                                # llamada.
+                                _cs_caller_name = str(
+                                    fn_call.args.get("caller_name", "")).strip()
+                                _cs_caller_phone = str(fn_call.args.get(
+                                    "caller_phone_reported", "")).strip()
+                                _cs_call_reason = str(
+                                    fn_call.args.get("call_reason", "")).strip()
+                                _cs_call_type = str(fn_call.args.get(
+                                    "call_type", "OTHER")).strip()
+                                _cs_outcome = str(fn_call.args.get(
+                                    "outcome", "OTHER")).strip()
+                                _cs_raw_summary = str(
+                                    fn_call.args.get("raw_summary", "")).strip()
                                 logger.info(
-                                    f"[H03-SUMMARY] tool_call submit_call_summary — "
-                                    f"tipo='{_cs_call_type}' | outcome='{_cs_outcome}'"
+                                    "[H03-SUMMARY] tool_call "
+                                    "submit_call_summary — "
+                                    f"tipo='{_cs_call_type}' | "
+                                    f"outcome='{_cs_outcome}'"
                                 )
                                 try:
                                     from asgiref.sync import sync_to_async as _s2a_cs
                                     from ivr_config.models import InboundCallLog as _ICL
-                                    from ivr_config.models import Section as _SecCS
 
                                     def _persist_summary():
                                         from ivr_config.models import PhoneNumber as _PN2
@@ -2013,8 +2532,7 @@ class VoiceOrchestrationService:
                                         _section2 = None
                                         try:
                                             _pn2 = _PN2.objects.select_related("company").get(
-                                                number=self.twilio_number, is_active=True
-                                            )
+                                                number=self.twilio_number, is_active=True)
                                             _company2 = _pn2.company
                                         except Exception:
                                             pass
@@ -2035,24 +2553,30 @@ class VoiceOrchestrationService:
                                             section=_section2,
                                         )
                                         logger.info(
-                                            f"[H03-SUMMARY] InboundCallLog creado — "
+                                            "[H03-SUMMARY] InboundCallLog "
+                                            "creado — "
                                             f"caller='{_cs_caller_name or self.caller_number}' | "
-                                            f"tipo='{_cs_call_type}' | outcome='{_cs_outcome}'"
+                                            f"tipo='{_cs_call_type}' | "
+                                            f"outcome='{_cs_outcome}'"
                                         )
 
                                     await _s2a_cs(_persist_summary)()
 
                                 except Exception as cs_exc:
                                     logger.error(
-                                        f"[H03-SUMMARY] Error al crear InboundCallLog: "
+                                        "[H03-SUMMARY] Error al crear "
+                                        "InboundCallLog: "
                                         f"{type(cs_exc).__name__}: {cs_exc}",
                                         exc_info=True,
                                     )
 
-                                # Respond to Gemini so it can proceed with farewell.
-                                # Responder a Gemini para que pueda continuar con la despedida.
+                                # Respond to Gemini so it can proceed with
+                                # farewell.
+                                # Responder a Gemini para que pueda continuar
+                                # con la despedida.
                                 try:
-                                    # H17 FIX (2026-07-09): ver nota en route_to_section.
+                                    # H17 FIX (2026-07-09): ver nota en
+                                    # route_to_section.
                                     await session.send_tool_response(
                                         function_responses=types.FunctionResponse(
                                             id=fn_call.id,
@@ -2060,42 +2584,68 @@ class VoiceOrchestrationService:
                                             response={"success": True},
                                         )
                                     )
-                                    logger.info("[H03-SUMMARY] tool_response submit_call_summary enviado.")
+                                    logger.info(
+                                        "[H03-SUMMARY] tool_response "
+                                        "submit_call_summary enviado.")
                                 except Exception as cs_tr_exc:
                                     logger.error(
-                                        f"[H03-SUMMARY] Error al enviar tool_response: "
-                                        f"{type(cs_tr_exc).__name__}: {cs_tr_exc}",
+                                        "[H03-SUMMARY] Error al enviar "
+                                        "tool_response: "
+                                        f"{type(cs_tr_exc).__name__}: "
+                                        f"{cs_tr_exc}",
                                         exc_info=True,
                                     )
 
                             elif fn_call.name == "transfer_to_section_contact":
-                                section_id = int(fn_call.args.get("section_id", -1))
+                                section_id = int(
+                                    fn_call.args.get("section_id", -1))
                                 logger.info(
-                                    f"[PASO-39] tool_call transfer_to_section_contact "
+                                    "[PASO-39] tool_call "
+                                    "transfer_to_section_contact "
                                     f"recibido. section_id={section_id}. "
-                                    "Iniciando secuencia de transferencia con drenado de audio."
+                                    "Iniciando secuencia de transferencia con "
+                                    "drenado de audio."
                                 )
-                                # Send the tool_response to Gemini FIRST so the session
-                                # protocol is satisfied before we block on the audio drain.
-                                # With function calling, Gemini Live does NOT send
-                                # turn_complete after a tool_call event — the tool_call
-                                # IS the end of the model turn. Therefore the deferred
-                                # turn_complete approach does not work here. Instead we
-                                # send the tool_response immediately and then drain the
-                                # audio_output_queue + apply a fixed safety pause before
-                                # calling _execute_transfer() which sets session_active=False.
-                                # Enviar el tool_response a Gemini PRIMERO para que el
-                                # protocolo de sesión quede satisfecho antes de bloquear
-                                # en el drenado de audio. Con function calling, Gemini Live
-                                # NO envía turn_complete tras un evento tool_call — el
-                                # tool_call ES el fin del turno del modelo. Por tanto el
-                                # enfoque de deferido hasta turn_complete no funciona aquí.
-                                # En su lugar enviamos el tool_response inmediatamente y
-                                # luego drenamos audio_output_queue + aplicamos una pausa
-                                # fija antes de llamar a _execute_transfer() que establece
+                                # Send the tool_response to Gemini FIRST so the
+                                # session
+                                # protocol is satisfied before we block on the
+                                # audio drain.
+                                # With function calling, Gemini Live does NOT
+                                # send
+                                # turn_complete after a tool_call event — the
+                                # tool_call
+                                # IS the end of the model turn. Therefore the
+                                # deferred
+                                # turn_complete approach does not work here.
+                                # Instead we
+                                # send the tool_response immediately and then
+                                # drain the
+                                # audio_output_queue + apply a fixed safety
+                                # pause before
+                                # calling _execute_transfer() which sets
+                                # session_active=False.
+                                # Enviar el tool_response a Gemini PRIMERO para
+                                # que el
+                                # protocolo de sesión quede satisfecho antes de
+                                # bloquear
+                                # en el drenado de audio. Con function calling,
+                                # Gemini Live
+                                # NO envía turn_complete tras un evento
+                                # tool_call — el
+                                # tool_call ES el fin del turno del modelo. Por
+                                # tanto el
+                                # enfoque de deferido hasta turn_complete no
+                                # funciona aquí.
+                                # En su lugar enviamos el tool_response
+                                # inmediatamente y
+                                # luego drenamos audio_output_queue + aplicamos
+                                # una pausa
+                                # fija antes de llamar a _execute_transfer()
+                                # que establece
                                 # session_active=False.
                                 try:
-                                    # H17 FIX (2026-07-09): ver nota en route_to_section.
+                                    # H17 FIX (2026-07-09): ver nota en
+                                    # route_to_section.
                                     await session.send_tool_response(
                                         function_responses=types.FunctionResponse(
                                             id=fn_call.id,
@@ -2107,21 +2657,27 @@ class VoiceOrchestrationService:
                                         )
                                     )
                                     logger.info(
-                                        f"[PASO-39] tool_response transfer_to_section_contact "
-                                        f"enviado antes del drenado de audio."
+                                        "[PASO-39] tool_response "
+                                        "transfer_to_section_contact "
+                                        "enviado antes del drenado de audio."
                                     )
                                 except Exception as tr_pre_exc:
                                     logger.error(
-                                        f"[PASO-39] Error al enviar tool_response previo: "
-                                        f"{type(tr_pre_exc).__name__}: {tr_pre_exc}",
+                                        "[PASO-39] Error al enviar "
+                                        "tool_response previo: "
+                                        f"{type(tr_pre_exc).__name__}: "
+                                        f"{tr_pre_exc}",
                                         exc_info=True,
                                     )
-                                # Drain the audio output queue so María finishes speaking
+                                # Drain the audio output queue so María
+                                # finishes speaking
                                 # before the Gemini Live session is terminated.
-                                # Drenar la cola de salida para que María termine de hablar
-                                # antes de que la sesión Gemini Live se termine.
-                                _drain_timeout  = 8.0
-                                _drain_elapsed  = 0.0
+                                # Drenar la cola de salida para que María
+                                # termine de hablar
+                                # antes de que la sesión Gemini Live se
+                                # termine.
+                                _drain_timeout = 8.0
+                                _drain_elapsed = 0.0
                                 _drain_interval = 0.05
                                 while (
                                     not self.audio_output_queue.empty()
@@ -2129,28 +2685,35 @@ class VoiceOrchestrationService:
                                 ):
                                     await asyncio.sleep(_drain_interval)
                                     _drain_elapsed += _drain_interval
-                                # Fixed safety pause to allow last dequeued fragments
+                                # Fixed safety pause to allow last dequeued
+                                # fragments
                                 # to finish transmitting to Twilio.
-                                # Pausa fija para que los últimos fragmentos desencollados
+                                # Pausa fija para que los últimos fragmentos
+                                # desencollados
                                 # terminen de transmitirse a Twilio.
                                 await asyncio.sleep(3.5)
                                 logger.info(
-                                    f"[PASO-39] Audio drenado ({_drain_elapsed:.2f}s) + "
-                                    "pausa completada. Ejecutando _execute_transfer()."
+                                    "[PASO-39] Audio drenado "
+                                    f"({_drain_elapsed:.2f}s) + "
+                                    "pausa completada. Ejecutando "
+                                    "_execute_transfer()."
                                 )
                                 transfer_success = await self._execute_transfer(section_id)
                                 logger.info(
-                                    f"[PASO-39] _execute_transfer() completado "
+                                    "[PASO-39] _execute_transfer() "
+                                    "completado "
                                     f"(success={transfer_success})."
                                 )
                             else:
                                 logger.warning(
-                                    f"[GEMINI-RX] tool_call desconocido recibido: "
+                                    "[GEMINI-RX] tool_call desconocido "
+                                    "recibido: "
                                     f"'{fn_call.name}'. Se ignora."
                                 )
                         continue
 
-                    # --- Audio Response Extraction / Extracción de Respuesta de Audio ---
+                    # --- Audio Response Extraction / Extracción de Respuesta
+                    # de Audio ---
                     if not response.server_content:
                         continue
                     if not response.server_content.model_turn:
@@ -2158,116 +2721,159 @@ class VoiceOrchestrationService:
 
                     for part in response.server_content.model_turn.parts:
                         if part.inline_data and part.inline_data.data:
-                            # Raw PCM 24kHz audio bytes from Gemini Live output.
-                            # These must be transcoded to mu-law 8kHz before sending
+                            # Raw PCM 24kHz audio bytes from Gemini Live
+                            # output.
+                            # These must be transcoded to mu-law 8kHz before
+                            # sending
                             # back to Twilio.
-                            # Bytes de audio PCM 24kHz sin procesar de la salida de Gemini Live.
-                            # Deben transcodificarse a mu-law 8kHz antes de enviarlos
+                            # Bytes de audio PCM 24kHz sin procesar de la
+                            # salida de Gemini Live.
+                            # Deben transcodificarse a mu-law 8kHz antes de
+                            # enviarlos
                             # de vuelta a Twilio.
                             pcm_24khz_bytes = part.inline_data.data
-                            # LATENCY-P2: Timestamp of first audio chunk from Gemini.
-                            # Measures TTFT (Time To First Token) from activity_end to
-                            # first audio byte. Calculated only on the first chunk per turn.
-                            # LATENCIA-P2: Marca del primer chunk de audio de Gemini.
-                            # Mide TTFT desde activity_end hasta el primer byte de audio.
+                            # LATENCY-P2: Timestamp of first audio chunk from
+                            # Gemini.
+                            # Measures TTFT (Time To First Token) from
+                            # activity_end to
+                            # first audio byte. Calculated only on the first
+                            # chunk per turn.
+                            # LATENCIA-P2: Marca del primer chunk de audio de
+                            # Gemini.
+                            # Mide TTFT desde activity_end hasta el primer byte
+                            # de audio.
                             # Se calcula solo en el primer chunk de cada turno.
-                            if not getattr(self, '_t_first_audio_logged', False):
+                            if not getattr(
+                                    self, '_t_first_audio_logged', False):
                                 _t_first_audio = time.monotonic()
-                                _t_activity_end_ref = getattr(self, '_t_last_activity_end', None)
+                                _t_activity_end_ref = getattr(
+                                    self, '_t_last_activity_end', None)
                                 if _t_activity_end_ref:
                                     logger.info(
-                                        f"[LATENCY-P2] Primer chunk PCM de Gemini recibido — "
+                                        "[LATENCY-P2] Primer chunk PCM de "
+                                        "Gemini recibido — "
                                         f"t={_t_first_audio:.3f}s | "
                                         f"TTFT desde activity_end: "
                                         f"{_t_first_audio - _t_activity_end_ref:.3f}s"
                                     )
                                 else:
                                     logger.info(
-                                        f"[LATENCY-P2] Primer chunk PCM de Gemini recibido — "
-                                        f"t={_t_first_audio:.3f}s (sin ref activity_end)"
+                                        "[LATENCY-P2] Primer chunk PCM de "
+                                        "Gemini recibido — "
+                                        f"t={_t_first_audio:.3f}s (sin ref "
+                                        "activity_end)"
                                     )
                                 self._t_first_audio_logged = True
                             await self.audio_output_queue.put(pcm_24khz_bytes)
                             logger.debug(
-                                f"[GEMINI-RX] Fragmento de audio recibido de Gemini: "
+                                "[GEMINI-RX] Fragmento de audio recibido de "
+                                "Gemini: "
                                 f"{len(pcm_24khz_bytes)} bytes PCM 24kHz."
                             )
 
                     # Log turn completion and send audioStreamEnd to flush
                     # cached audio on the server side. This is MANDATORY when
                     # using automatic VAD: after Gemini finishes speaking, the
-                    # audio stream from Twilio is effectively paused (the caller
-                    # has been listening, not speaking). Without audioStreamEnd,
+                    # audio stream from Twilio is effectively paused (the
+                    # caller
+                    # has been listening, not speaking). Without
+                    # audioStreamEnd,
                     # the server VAD gets stuck waiting for the end of the
                     # caller's 'utterance' and never triggers a new response.
-                    # Source: Vertex AI Live API reference + Google AI Developers
-                    # Forum 'Turn 1 works, Turn 2 dies' pattern, verified 2026-04-05.
+                    # Source: Vertex AI Live API reference + Google AI
+                    # Developers
+                    # Forum 'Turn 1 works, Turn 2 dies' pattern, verified
+                    # 2026-04-05.
                     #
-                    # Registrar fin de turno y enviar audioStreamEnd para vaciar
-                    # el audio en caché del lado del servidor. Esto es OBLIGATORIO
+                    # Registrar fin de turno y enviar audioStreamEnd para
+                    # vaciar
+                    # el audio en caché del lado del servidor. Esto es
+                    # OBLIGATORIO
                     # con VAD automático: tras que Gemini termina de hablar, el
                     # stream de audio de Twilio está efectivamente pausado (el
-                    # llamante ha estado escuchando, no hablando). Sin audioStreamEnd,
+                    # llamante ha estado escuchando, no hablando). Sin
+                    # audioStreamEnd,
                     # el VAD del servidor queda bloqueado esperando el fin del
                     # 'turno' del llamante y nunca dispara una nueva respuesta.
                     # Fuente: referencia Live API Vertex AI + foro Google AI
-                    # Developers patrón 'Turn 1 works, Turn 2 dies', 2026-04-05.
+                    # Developers patrón 'Turn 1 works, Turn 2 dies',
+                    # 2026-04-05.
                     if response.server_content and response.server_content.turn_complete:
-                        # LATENCY-P4: Timestamp at turn_complete — total Gemini turn duration.
-                        # LATENCIA-P4: Marca en turn_complete — duración total del turno Gemini.
+                        # LATENCY-P4: Timestamp at turn_complete — total Gemini
+                        # turn duration.
+                        # LATENCIA-P4: Marca en turn_complete — duración total
+                        # del turno Gemini.
                         _t_turn_complete = time.monotonic()
-                        _t_activity_end_ref = getattr(self, '_t_last_activity_end', None)
+                        _t_activity_end_ref = getattr(
+                            self, '_t_last_activity_end', None)
                         if _t_activity_end_ref:
                             logger.info(
-                                f"[LATENCY-P4] turn_complete de Gemini recibido — "
+                                "[LATENCY-P4] turn_complete de Gemini "
+                                "recibido — "
                                 f"t={_t_turn_complete:.3f}s | "
-                                f"Duración total del turno desde activity_end: "
+                                "Duración total del turno desde "
+                                "activity_end: "
                                 f"{_t_turn_complete - _t_activity_end_ref:.3f}s"
                             )
                         else:
                             logger.info(
-                                f"[LATENCY-P4] turn_complete de Gemini recibido — "
-                                f"t={_t_turn_complete:.3f}s (sin ref activity_end)"
+                                "[LATENCY-P4] turn_complete de Gemini "
+                                "recibido — "
+                                f"t={_t_turn_complete:.3f}s (sin ref "
+                                "activity_end)"
                             )
                         # Reset per-turn flags for the next turn.
                         # Reiniciar flags de turno para el siguiente turno.
                         self._t_first_twilio_logged = False
-                        logger.info("[GEMINI-RX] Turno de Gemini completado. "
-                                    "Enviando audioStreamEnd para flush del VAD...")
+                        logger.info(
+                            "[GEMINI-RX] Turno de Gemini completado. "
+                            "Enviando audioStreamEnd para flush del VAD...")
                         try:
                             await session.send_realtime_input(
                                 audio_stream_end=True
                             )
                             logger.info(
-                                "[GEMINI-RX] audioStreamEnd enviado correctamente. "
-                                "VAD listo para escuchar al llamante."
-                            )
+                                "[GEMINI-RX] audioStreamEnd enviado "
+                                "correctamente. "
+                                "VAD listo para escuchar al llamante.")
                         except Exception as ase_exc:
                             logger.warning(
-                                f"[GEMINI-RX] Error al enviar audioStreamEnd: {ase_exc}"
-                            )
+                                "[GEMINI-RX] Error al enviar audioStreamEnd: "
+                                f"{ase_exc}")
 
-                        # Execute a deferred transfer if one was registered by the
+                        # Execute a deferred transfer if one was registered by
+                        # the
                         # transfer_to_section_contact tool_call handler above.
-                        # At this point all audio fragments of the current turn have
-                        # been enqueued in audio_output_queue, so María has finished
-                        # speaking her farewell phrase. We add a short fixed pause to
-                        # allow _forward_gemini_audio_to_twilio to dequeue and transmit
-                        # the last fragments before session_active is set to False.
-                        # Ejecutar la transferencia diferida si fue registrada por el
-                        # handler de tool_call transfer_to_section_contact arriba.
-                        # En este punto todos los fragmentos de audio del turno actual
-                        # han sido encolados en audio_output_queue, por lo que María ha
-                        # terminado de pronunciar su frase de despedida. Añadimos una
-
+                        # At this point all audio fragments of the current turn
+                        # have
+                        # been enqueued in audio_output_queue, so María has
+                        # finished
+                        # speaking her farewell phrase. We add a short fixed
+                        # pause to
+                        # allow _forward_gemini_audio_to_twilio to dequeue and
+                        # transmit
+                        # the last fragments before session_active is set to
+                        # False.
+                        # Ejecutar la transferencia diferida si fue registrada
+                        # por el
+                        # handler de tool_call transfer_to_section_contact
+                        # arriba.
+                        # En este punto todos los fragmentos de audio del turno
+                        # actual
+                        # han sido encolados en audio_output_queue, por lo que
+                        # María ha
+                        # terminado de pronunciar su frase de despedida.
+                        # Añadimos una
 
         except Exception as exc:
             logger.error(
-                f"[GEMINI-RX] Error en la corrutina de recepción de Gemini: {exc}",
-                exc_info=True
-            )
+                "[GEMINI-RX] Error en la corrutina de recepción de Gemini: "
+                f"{exc}",
+                exc_info=True)
         finally:
-            logger.info("[GEMINI-RX] Corrutina de recepción de audio de Gemini finalizada.")
+            logger.info(
+                "[GEMINI-RX] Corrutina de recepción de audio de Gemini "
+                "finalizada.")
 
     async def _forward_gemini_audio_to_twilio(self, twilio_websocket) -> None:
         """
@@ -2278,13 +2884,15 @@ class VoiceOrchestrationService:
         base64-encoded mu-law payload embedded in the JSON message structure.
         ---
         Corrutina: lee audio PCM 24kHz de audio_output_queue, lo transcodifica
-        a G.711 mu-law 8kHz, y lo envía de vuelta a Twilio a través del WebSocket.
+        a G.711 mu-law 8kHz, y lo envía de vuelta a Twilio a través del
+        WebSocket.
 
         El audio se codifica como un evento 'media' de Twilio Media Streams con
         el payload mu-law codificado en base64 embebido en la estructura de
         mensaje JSON.
         """
-        logger.info("[TWILIO-TX] Corrutina de envío de audio a Twilio iniciada.")
+        logger.info(
+            "[TWILIO-TX] Corrutina de envío de audio a Twilio iniciada.")
         try:
             while self.session_active:
                 try:
@@ -2300,39 +2908,47 @@ class VoiceOrchestrationService:
                     continue
 
                 # Transcode PCM 24kHz → mu-law 8kHz for Twilio compatibility.
-                # Transcodificar PCM 24kHz → mu-law 8kHz para compatibilidad con Twilio.
+                # Transcodificar PCM 24kHz → mu-law 8kHz para compatibilidad
+                # con Twilio.
                 mulaw_chunk = self._transcode_pcm24k_to_mulaw(pcm_24khz_chunk)
 
                 # LATENCY-P3: Timestamp of first mu-law chunk sent to Twilio.
                 # Measures output pipeline delay: queue wait + transcode time.
                 # LATENCIA-P3: Marca del primer chunk mu-law enviado a Twilio.
-                # Mide la latencia del pipeline de salida: espera en cola + transcodificación.
+                # Mide la latencia del pipeline de salida: espera en cola +
+                # transcodificación.
                 if not getattr(self, '_t_first_twilio_logged', False):
                     _t_first_twilio = time.monotonic()
-                    _t_activity_end_ref = getattr(self, '_t_last_activity_end', None)
+                    _t_activity_end_ref = getattr(
+                        self, '_t_last_activity_end', None)
                     if _t_activity_end_ref:
                         logger.info(
-                            f"[LATENCY-P3] Primer chunk mu-law enviado a Twilio — "
+                            "[LATENCY-P3] Primer chunk mu-law enviado a "
+                            "Twilio — "
                             f"t={_t_first_twilio:.3f}s | "
                             f"Latencia total desde activity_end: "
                             f"{_t_first_twilio - _t_activity_end_ref:.3f}s"
                         )
                     else:
                         logger.info(
-                            f"[LATENCY-P3] Primer chunk mu-law enviado a Twilio — "
+                            "[LATENCY-P3] Primer chunk mu-law enviado a "
+                            "Twilio — "
                             f"t={_t_first_twilio:.3f}s (sin ref activity_end)"
                         )
                     self._t_first_twilio_logged = True
 
-                # Encode the mu-law bytes as base64 for the Twilio JSON payload.
-                # Codificar los bytes mu-law como base64 para el payload JSON de Twilio.
+                # Encode the mu-law bytes as base64 for the Twilio JSON
+                # payload.
+                # Codificar los bytes mu-law como base64 para el payload JSON
+                # de Twilio.
                 mulaw_b64 = base64.b64encode(mulaw_chunk).decode("utf-8")
 
                 # Build the Twilio Media Streams 'media' event message.
                 # The 'streamSid' field at the root level is MANDATORY for
                 # bidirectional Media Streams. Its absence causes Twilio to
                 # silently discard the audio and emit Warning 31951.
-                # Construir el mensaje de evento 'media' de Twilio Media Streams.
+                # Construir el mensaje de evento 'media' de Twilio Media
+                # Streams.
                 # El campo 'streamSid' en el nivel raíz es OBLIGATORIO para
                 # Media Streams bidireccionales. Su ausencia hace que Twilio
                 # descarte silenciosamente el audio y emita el Warning 31951.
@@ -2344,7 +2960,8 @@ class VoiceOrchestrationService:
                     }
                 })
 
-                # Send the encoded audio back to the caller via the Twilio WebSocket.
+                # Send the encoded audio back to the caller via the Twilio
+                # WebSocket.
                 # Enviar el audio codificado de vuelta al llamante a través del
                 # WebSocket de Twilio.
                 await twilio_websocket.send_str(twilio_media_message)
@@ -2360,7 +2977,8 @@ class VoiceOrchestrationService:
                 exc_info=True
             )
         finally:
-            logger.info("[TWILIO-TX] Corrutina de envío de audio a Twilio finalizada.")
+            logger.info(
+                "[TWILIO-TX] Corrutina de envío de audio a Twilio finalizada.")
 
     # -----------------------------------------------------------------------
     # AUDIO TRANSCODING HELPERS / HELPERS DE TRANSCODIFICACIÓN DE AUDIO
@@ -2399,14 +3017,16 @@ class VoiceOrchestrationService:
         # Step 1: Decode mu-law to linear PCM 16-bit at 8kHz.
         # audioop.ulaw2lin(fragment, width) — width=2 means 16-bit samples.
         # Paso 1: Decodificar mu-law a PCM lineal 16-bit a 8kHz.
-        # audioop.ulaw2lin(fragmento, ancho) — ancho=2 significa muestras de 16-bit.
+        # audioop.ulaw2lin(fragmento, ancho) — ancho=2 significa muestras de
+        # 16-bit.
         pcm_8khz = audioop.ulaw2lin(mulaw_bytes, 2)
 
         # Step 2: Upsample from 8kHz to 16kHz.
         # audioop.ratecv(fragment, width, nchannels, inrate, outrate, state)
         # nchannels=1 (mono), state=None (no previous conversion state).
         # Paso 2: Sobremuestrear de 8kHz a 16kHz.
-        # audioop.ratecv(fragmento, ancho, ncanales, tasa_entrada, tasa_salida, estado)
+        # audioop.ratecv(fragmento, ancho, ncanales, tasa_entrada, tasa_salida,
+        # estado)
         # ncanales=1 (mono), estado=None (sin estado de conversión previo).
         pcm_16khz, _ = audioop.ratecv(
             pcm_8khz, 2, 1,
@@ -2427,7 +3047,8 @@ class VoiceOrchestrationService:
             2. Encode PCM 16-bit 8kHz to mu-law using audioop.lin2ulaw.
 
         Args:
-            pcm_24khz_bytes (bytes): Raw PCM 16-bit little-endian audio at 24kHz.
+            pcm_24khz_bytes (bytes): Raw PCM 16-bit little-endian audio at
+            24kHz.
 
         Returns:
             bytes: Raw G.711 mu-law encoded audio at 8kHz.
@@ -2440,7 +3061,8 @@ class VoiceOrchestrationService:
             2. Codificar PCM 16-bit 8kHz a mu-law usando audioop.lin2ulaw.
 
         Args:
-            pcm_24khz_bytes (bytes): Audio PCM 16-bit little-endian sin procesar a 24kHz.
+            pcm_24khz_bytes (bytes): Audio PCM 16-bit little-endian sin
+            procesar a 24kHz.
 
         Returns:
             bytes: Audio G.711 mu-law sin procesar a 8kHz.
@@ -2459,7 +3081,8 @@ class VoiceOrchestrationService:
         # Step 2: Encode linear PCM 16-bit to mu-law.
         # audioop.lin2ulaw(fragment, width) — width=2 means 16-bit samples.
         # Paso 2: Codificar PCM lineal 16-bit a mu-law.
-        # audioop.lin2ulaw(fragmento, ancho) — ancho=2 significa muestras de 16-bit.
+        # audioop.lin2ulaw(fragmento, ancho) — ancho=2 significa muestras de
+        # 16-bit.
         mulaw_bytes = audioop.lin2ulaw(pcm_8khz, 2)
 
         return mulaw_bytes
@@ -2530,12 +3153,14 @@ class VoiceOrchestrationService:
                   excepción durante la llamada a send_client_content().
         """
         # Guard: verify the section has a registered CallFlow in the map.
-        # Guardia: verificar que la sección tiene un CallFlow registrado en el mapa.
+        # Guardia: verificar que la sección tiene un CallFlow registrado en el
+        # mapa.
         call_flow = self.section_callflow_map.get(section_pk)
         if call_flow is None:
             logger.warning(
                 f"[ESTRATEGIA-B] section_pk={section_pk} no encontrado en "
-                f"section_callflow_map ({list(self.section_callflow_map.keys())}). "
+                "section_callflow_map "
+                f"({list(self.section_callflow_map.keys())}). "
                 "No se puede reinyectar instrucción de sección."
             )
             return False
@@ -2545,24 +3170,32 @@ class VoiceOrchestrationService:
         new_system_instruction = (call_flow.system_instruction or "").strip()
         if not new_system_instruction:
             logger.warning(
-                f"[ESTRATEGIA-B] El CallFlow '{call_flow.name}' (id={call_flow.pk}) "
-                f"de la sección (pk={section_pk}) tiene system_instruction vacío. "
+                f"[ESTRATEGIA-B] El CallFlow '{call_flow.name}' "
+                f"(id={call_flow.pk}) "
+                f"de la sección (pk={section_pk}) tiene system_instruction "
+                "vacío. "
                 "No se puede reinyectar instrucción de sección."
             )
             return False
 
         logger.info(
             f"[ESTRATEGIA-B] Reinyectando system_instruction de sección "
-            f"(pk={section_pk}, CallFlow='{call_flow.name}') en sesión Gemini Live activa."
+            f"(pk={section_pk}, CallFlow='{call_flow.name}') en sesión Gemini "
+            "Live activa."
         )
 
         try:
-            # Inject the section-specific system_instruction into the live session.
+            # Inject the section-specific system_instruction into the live
+            # session.
             # The 'user' role causes Gemini to treat this as a high-priority
-            # context update applied immediately to subsequent audio generation.
-            # Inyectar el system_instruction específico de la sección en la sesión
-            # live. El rol 'user' hace que Gemini lo trate como una actualización
-            # de contexto de alta prioridad aplicada de inmediato a la generación
+            # context update applied immediately to subsequent audio
+            # generation.
+            # Inyectar el system_instruction específico de la sección en la
+            # sesión
+            # live. El rol 'user' hace que Gemini lo trate como una
+            # actualización
+            # de contexto de alta prioridad aplicada de inmediato a la
+            # generación
             # de audio subsiguiente.
             await session.send_client_content(
                 turns=types.Content(
@@ -2572,20 +3205,24 @@ class VoiceOrchestrationService:
                 turn_complete=False,
             )
 
-            # Update the stored system_instruction to reflect the active context.
-            # Actualizar el system_instruction almacenado para reflejar el contexto activo.
+            # Update the stored system_instruction to reflect the active
+            # context.
+            # Actualizar el system_instruction almacenado para reflejar el
+            # contexto activo.
             self.system_instruction = new_system_instruction
 
             logger.info(
                 f"[ESTRATEGIA-B] Reinyección completada correctamente para "
                 f"sección pk={section_pk} (CallFlow='{call_flow.name}'). "
-                f"Longitud nuevo system_instruction: {len(new_system_instruction)} caracteres."
+                "Longitud nuevo system_instruction: "
+                f"{len(new_system_instruction)} caracteres."
             )
             return True
 
         except Exception as exc:
             logger.error(
-                f"[ESTRATEGIA-B] Error durante send_client_content() para sección "
+                "[ESTRATEGIA-B] Error durante send_client_content() para "
+                "sección "
                 f"pk={section_pk}: {type(exc).__name__}: {exc}. "
                 "La sesión continúa con el system_instruction anterior.",
                 exc_info=True,
@@ -2601,15 +3238,20 @@ class VoiceOrchestrationService:
         Activates the fallback section routing when no qualifying section can
         attend the caller (Estrategia B — Step 37.B).
 
-        This method is called when all active sections with a call_flow assigned
-        are unavailable (e.g. all closed by schedule), or when no section intent
-        was detected. It injects the system_instruction of the CallFlow associated
-        with the fallback_section of the general CallFlow into the active Gemini
+        This method is called when all active sections with a call_flow
+        assigned
+        are unavailable (e.g. all closed by schedule), or when no section
+        intent
+        was detected. It injects the system_instruction of the CallFlow
+        associated
+        with the fallback_section of the general CallFlow into the active
+        Gemini
         Live session, instructing the agent to route the call to the designated
         human responsible.
 
         If the general CallFlow has no fallback_section configured, the method
-        logs a warning and returns False — the session continues with the current
+        logs a warning and returns False — the session continues with the
+        current
         general system_instruction.
 
         Args:
@@ -2629,7 +3271,8 @@ class VoiceOrchestrationService:
 
         Este método se invoca cuando todas las secciones activas con call_flow
         asignado están no disponibles (p. ej. todas cerradas por horario), o
-        cuando no se detectó intención de sección. Inyecta el system_instruction
+        cuando no se detectó intención de sección. Inyecta el
+        system_instruction
         del CallFlow asociado a la fallback_section del CallFlow general en la
         sesión Gemini Live activa, instruyendo al agente a derivar la llamada
         al responsable humano designado.
@@ -2640,9 +3283,11 @@ class VoiceOrchestrationService:
 
         Args:
             session: El objeto de sesión Gemini Live activo.
-            general_call_flow: La instancia de CallFlow general cargada al inicio
+            general_call_flow: La instancia de CallFlow general cargada al
+            inicio
                                de la sesión (vinculada al PhoneNumber mediante
-                               PhoneNumber.call_flow). Su FK fallback_section es
+                               PhoneNumber.call_flow). Su FK fallback_section
+                               es
                                la fuente del destino de enrutamiento fallback.
 
         Returns:
@@ -2659,40 +3304,52 @@ class VoiceOrchestrationService:
             )
             return False
 
-        # Guard: verify that a fallback_section is assigned to the general CallFlow.
-        # Guardia: verificar que hay fallback_section asignada al CallFlow general.
+        # Guard: verify that a fallback_section is assigned to the general
+        # CallFlow.
+        # Guardia: verificar que hay fallback_section asignada al CallFlow
+        # general.
         fallback_section = getattr(general_call_flow, "fallback_section", None)
         if fallback_section is None:
             logger.warning(
-                f"[ESTRATEGIA-B] El CallFlow general '{general_call_flow.name}' "
-                f"(id={general_call_flow.pk}) no tiene fallback_section configurada. "
+                "[ESTRATEGIA-B] El CallFlow general "
+                f"'{general_call_flow.name}' "
+                f"(id={general_call_flow.pk}) no tiene fallback_section "
+                "configurada. "
                 "La sesión continúa con el system_instruction general actual."
             )
             return False
 
-        # Obtain the CallFlow of the fallback section via the section_callflow_map.
+        # Obtain the CallFlow of the fallback section via the
+        # section_callflow_map.
         # If the fallback section is not in the map (no call_flow assigned or
         # inactive), log a warning and return False.
-        # Obtener el CallFlow de la sección fallback mediante section_callflow_map.
+        # Obtener el CallFlow de la sección fallback mediante
+        # section_callflow_map.
         # Si la sección fallback no está en el mapa (sin call_flow asignado o
         # inactiva), registrar advertencia y devolver False.
         fallback_call_flow = self.section_callflow_map.get(fallback_section.pk)
         if fallback_call_flow is None:
             logger.warning(
-                f"[ESTRATEGIA-B] La fallback_section '{fallback_section.name}' "
+                "[ESTRATEGIA-B] La fallback_section "
+                f"'{fallback_section.name}' "
                 f"(pk={fallback_section.pk}) no está en section_callflow_map. "
                 "Puede que no tenga CallFlow activo asignado. "
                 "La sesión continúa con el system_instruction general actual."
             )
             return False
 
-        # Guard: verify that the fallback CallFlow has a non-empty system_instruction.
-        # Guardia: verificar que el CallFlow fallback tiene system_instruction no vacío.
-        fallback_instruction = (fallback_call_flow.system_instruction or "").strip()
+        # Guard: verify that the fallback CallFlow has a non-empty
+        # system_instruction.
+        # Guardia: verificar que el CallFlow fallback tiene system_instruction
+        # no vacío.
+        fallback_instruction = (
+            fallback_call_flow.system_instruction or "").strip()
         if not fallback_instruction:
             logger.warning(
-                f"[ESTRATEGIA-B] El CallFlow fallback '{fallback_call_flow.name}' "
-                f"(id={fallback_call_flow.pk}) tiene system_instruction vacío. "
+                "[ESTRATEGIA-B] El CallFlow fallback "
+                f"'{fallback_call_flow.name}' "
+                f"(id={fallback_call_flow.pk}) tiene system_instruction "
+                "vacío. "
                 "La sesión continúa con el system_instruction general actual."
             )
             return False
@@ -2700,11 +3357,13 @@ class VoiceOrchestrationService:
         logger.info(
             f"[ESTRATEGIA-B] Activando fallback hacia sección "
             f"'{fallback_section.name}' (pk={fallback_section.pk}), "
-            f"CallFlow='{fallback_call_flow.name}' (id={fallback_call_flow.pk})."
+            f"CallFlow='{fallback_call_flow.name}' "
+            f"(id={fallback_call_flow.pk})."
         )
 
         try:
-            # Inject the fallback system_instruction into the active live session.
+            # Inject the fallback system_instruction into the active live
+            # session.
             # Inyectar el system_instruction fallback en la sesión live activa.
             await session.send_client_content(
                 turns=types.Content(
@@ -2721,14 +3380,17 @@ class VoiceOrchestrationService:
             logger.info(
                 f"[ESTRATEGIA-B] Fallback activado correctamente hacia "
                 f"'{fallback_section.name}'. "
-                f"Longitud system_instruction fallback: {len(fallback_instruction)} caracteres."
+                "Longitud system_instruction fallback: "
+                f"{len(fallback_instruction)} caracteres."
             )
             return True
 
         except Exception as exc:
             logger.error(
-                f"[ESTRATEGIA-B] Error durante send_client_content() en fallback "
-                f"hacia '{fallback_section.name}': {type(exc).__name__}: {exc}. "
+                "[ESTRATEGIA-B] Error durante send_client_content() en "
+                "fallback "
+                f"hacia '{fallback_section.name}': {type(exc).__name__}: "
+                f"{exc}. "
                 "La sesión continúa con el system_instruction general actual.",
                 exc_info=True,
             )
@@ -2742,14 +3404,17 @@ class VoiceOrchestrationService:
         """
         Stores the Twilio Call SID for this Media Stream session.
 
-        Called by voice_sidecar_bridge.py immediately after service instantiation
-        when the Twilio 'start' event is received. Required by _execute_transfer()
+        Called by voice_sidecar_bridge.py immediately after service
+        instantiation
+        when the Twilio 'start' event is received. Required by
+        _execute_transfer()
         to update the live call via Twilio REST API when the
         transfer_to_section_contact tool is invoked by María.
         ---
         Almacena el Call SID de Twilio para esta sesión de Media Stream.
 
-        Invocado desde voice_sidecar_bridge.py inmediatamente tras instanciar el
+        Invocado desde voice_sidecar_bridge.py inmediatamente tras instanciar
+        el
         servicio al recibir el evento 'start' de Twilio. Necesario por
         _execute_transfer() para actualizar la llamada en curso vía REST API de
         Twilio cuando María invoca la tool transfer_to_section_contact.
@@ -2760,13 +3425,15 @@ class VoiceOrchestrationService:
         """
         self.call_sid = call_sid
         logger.info(
-            f"[SESSION] Call SID de Twilio almacenado correctamente: {call_sid}"
-        )
+            "[SESSION] Call SID de Twilio almacenado correctamente: "
+            f"{call_sid}")
 
     async def _execute_transfer(self, section_id: int) -> bool:
         """
-        Initiates a resilient multi-contact call transfer to the highest-priority
-        Contact assigned to the given section via SectionContact.priority (Paso 39).
+        Initiates a resilient multi-contact call transfer to the
+        highest-priority
+        Contact assigned to the given section via SectionContact.priority (Paso
+        39).
 
         The caller is placed into a named Twilio Conference room and hears hold
         music (HoldMusicView) while the bridge places an outbound call to the
@@ -2776,11 +3443,14 @@ class VoiceOrchestrationService:
         session state and contact index.
 
         Contact selection criteria:
-            - Ordered by SectionContact.priority ASC (lower = higher preference).
+            - Ordered by SectionContact.priority ASC (lower = higher
+            preference).
             - contact_index=0 is always the first attempt.
             - Contacts without a phone_number are excluded at query time.
-            - is_internal is NOT a filter criterion — external contacts are valid
-              transfer targets (e.g. an external admin managing supplier relations).
+            - is_internal is NOT a filter criterion — external contacts are
+            valid
+              transfer targets (e.g. an external admin managing supplier
+              relations).
 
         Args:
             section_id (int): Section pk whose contact receives the transfer.
@@ -2788,29 +3458,41 @@ class VoiceOrchestrationService:
         Returns:
             bool: True if transfer initiated. False on error or missing data.
         ---
-        Inicia una transferencia de llamada resiliente multi-contacto al Contact de mayor
-        prioridad asignado a la sección dada vía SectionContact.priority (Paso 39).
+        Inicia una transferencia de llamada resiliente multi-contacto al
+        Contact de mayor
+        prioridad asignado a la sección dada vía SectionContact.priority (Paso
+        39).
 
-        El llamante se coloca en una sala Twilio Conference con nombre y escucha música
-        de espera (HoldMusicView) mientras el bridge realiza una llamada saliente al
-        primer contacto ordenado por SectionContact.priority ASC. Se persiste un registro
-        TransferAttempt en la base de datos antes de cualquier llamada a la API de Twilio
-        para que TransferStatusView pueda correlacionar el webhook action con el estado
+        El llamante se coloca en una sala Twilio Conference con nombre y
+        escucha música
+        de espera (HoldMusicView) mientras el bridge realiza una llamada
+        saliente al
+        primer contacto ordenado por SectionContact.priority ASC. Se persiste
+        un registro
+        TransferAttempt en la base de datos antes de cualquier llamada a la API
+        de Twilio
+        para que TransferStatusView pueda correlacionar el webhook action con
+        el estado
         de sesión correcto y el índice de contacto.
 
         Criterios de selección de contacto:
-            - Ordenados por SectionContact.priority ASC (menor = mayor preferencia).
+            - Ordenados por SectionContact.priority ASC (menor = mayor
+            preferencia).
             - contact_index=0 es siempre el primer intento.
             - Los contactos sin phone_number se excluyen en tiempo de consulta.
-            - is_internal NO es criterio de filtro — los contactos externos son destinos
-              de transferencia válidos (p. ej. un administrador externo que gestiona
+            - is_internal NO es criterio de filtro — los contactos externos son
+            destinos
+              de transferencia válidos (p. ej. un administrador externo que
+              gestiona
               relaciones con proveedores).
 
         Args:
-            section_id (int): pk de la Section cuyo contacto recibe la transferencia.
+            section_id (int): pk de la Section cuyo contacto recibe la
+            transferencia.
 
         Returns:
-            bool: True si la transferencia se inició. False en error o datos ausentes.
+            bool: True si la transferencia se inició. False en error o datos
+            ausentes.
         """
         # Guard: call_sid must be set.
         # Guardia: call_sid debe estar establecido.
@@ -2830,17 +3512,22 @@ class VoiceOrchestrationService:
             )
             return False
 
-        # Resolve the prioritised contact list for this section via SectionContact.
-        # Contacts without phone_number are excluded — they cannot receive calls.
+        # Resolve the prioritised contact list for this section via
+        # SectionContact.
+        # Contacts without phone_number are excluded — they cannot receive
+        # calls.
         # is_internal is NOT a filter criterion per Paso 39 design decision.
-        # Resolver la lista de contactos priorizada para esta sección vía SectionContact.
-        # Los contactos sin phone_number se excluyen — no pueden recibir llamadas.
-        # is_internal NO es criterio de filtro según la decisión de diseño del Paso 39.
+        # Resolver la lista de contactos priorizada para esta sección vía
+        # SectionContact.
+        # Los contactos sin phone_number se excluyen — no pueden recibir
+        # llamadas.
+        # is_internal NO es criterio de filtro según la decisión de diseño del
+        # Paso 39.
         try:
             from asgiref.sync import sync_to_async
             from ivr_config.models import (
-                Section         as _Section,
-                SectionContact  as _SectionContact,
+                Section as _Section,
+                SectionContact as _SectionContact,
                 TransferAttempt as _TransferAttempt,
             )
 
@@ -2848,8 +3535,10 @@ class VoiceOrchestrationService:
                 lambda: _Section.objects.get(pk=section_id)
             )()
 
-            # Fetch contacts ordered by priority ASC, excluding those without phone.
-            # Obtener contactos ordenados por priority ASC, excluyendo los sin teléfono.
+            # Fetch contacts ordered by priority ASC, excluding those without
+            # phone.
+            # Obtener contactos ordenados por priority ASC, excluyendo los sin
+            # teléfono.
             section_contacts = await sync_to_async(
                 lambda: list(
                     _SectionContact.objects.select_related("contact")
@@ -2861,21 +3550,23 @@ class VoiceOrchestrationService:
 
             if not section_contacts:
                 logger.error(
-                    f"[PASO-39] Sección pk={section_id} sin contactos con teléfono. "
+                    f"[PASO-39] Sección pk={section_id} sin contactos con "
+                    "teléfono. "
                     "No se puede ejecutar la transferencia."
                 )
                 return False
 
             # Select the first contact (index 0 — highest priority).
             # Seleccionar el primer contacto (índice 0 — mayor prioridad).
-            first_sc      = section_contacts[0]
-            contact       = first_sc.contact
+            first_sc = section_contacts[0]
+            contact = first_sc.contact
             contact_phone = contact.phone_number
-            section_name  = section_obj.name
+            section_name = section_obj.name
 
         except Exception as db_exc:
             logger.error(
-                f"[PASO-39] Error al resolver contactos de sección pk={section_id}: "
+                "[PASO-39] Error al resolver contactos de sección "
+                f"pk={section_id}: "
                 f"{type(db_exc).__name__}: {db_exc}",
                 exc_info=True,
             )
@@ -2906,10 +3597,14 @@ class VoiceOrchestrationService:
                 f"Usando base_url por defecto: {base_url}"
             )
 
-        action_url = f"https://enterprisebot-miguelaetxio.pythonanywhere.com/api/vox/transfer_status/{self.call_sid}/"
+        action_url = (
+            "https://enterprisebot-miguelaetxio.pythonanywhere.com"
+            f"/api/vox/transfer_status/{self.call_sid}/"
+        )
 
         # TwiML for the caller: enter Conference and hear hold music.
-        # TwiML para el llamante: entrar en la Conference y escuchar música de espera.
+        # TwiML para el llamante: entrar en la Conference y escuchar música de
+        # espera.
         caller_twiml = (
             '<?xml version="1.0" encoding="UTF-8"?>'
             '<Response>'
@@ -2940,11 +3635,16 @@ class VoiceOrchestrationService:
             # Step 1: Persist TransferAttempt in DB BEFORE any Twilio API call.
             # This record is the state bridge between this process and the
             # TransferStatusView webhook — Twilio provides no session context
-            # in the action webhook POST, so the DB is the only viable mechanism.
-            # Paso 1: Persistir TransferAttempt en BD ANTES de cualquier llamada a la API de Twilio.
-            # Este registro es el puente de estado entre este proceso y el webhook
-            # TransferStatusView — Twilio no proporciona contexto de sesión en el
-            # POST del webhook action, por lo que la BD es el único mecanismo viable.
+            # in the action webhook POST, so the DB is the only viable
+            # mechanism.
+            # Paso 1: Persistir TransferAttempt en BD ANTES de cualquier
+            # llamada a la API de Twilio.
+            # Este registro es el puente de estado entre este proceso y el
+            # webhook
+            # TransferStatusView — Twilio no proporciona contexto de sesión en
+            # el
+            # POST del webhook action, por lo que la BD es el único mecanismo
+            # viable.
             await sync_to_async(
                 lambda: _TransferAttempt.objects.create(
                     call_sid=self.call_sid,
@@ -2961,33 +3661,38 @@ class VoiceOrchestrationService:
             )
 
             # Step 2: Update the caller's live call with Conference TwiML.
-            # Paso 2: Actualizar la llamada en curso del llamante con TwiML de Conference.
+            # Paso 2: Actualizar la llamada en curso del llamante con TwiML de
+            # Conference.
             self.twilio_client.calls(self.call_sid).update(twiml=caller_twiml)
             logger.info(
-                f"[PASO-39] Llamada {self.call_sid} actualizada con Conference TwiML. "
+                f"[PASO-39] Llamada {self.call_sid} actualizada con "
+                "Conference TwiML. "
                 f"Sala: '{conference_name}'."
             )
 
             # Step 3: Terminate Gemini Live session — Media Stream ends.
             # Caller is now in Conference hearing hold music.
             # Paso 3: Terminar la sesión Gemini Live — el Media Stream termina.
-            # El llamante está ahora en la Conference escuchando música de espera.
+            # El llamante está ahora en la Conference escuchando música de
+            # espera.
             self.session_active = False
             logger.info(
                 "[PASO-39] Sesión Gemini Live terminada. "
-                "El llamante está en la Conference escuchando música de espera."
-            )
+                "El llamante está en la Conference escuchando música de "
+                "espera.")
 
             # Step 4: Place outbound call to the first section contact.
             # Register ContactStatusView as statusCallback to detect whether
             # the contact actually answered (DialCallStatus on the caller
             # <Dial><Conference> action URL is always 'answered' — unsuitable
             # for outcome detection per Twilio documentation, 2026).
-            # Paso 4: Realizar llamada saliente al primer contacto de la sección.
+            # Paso 4: Realizar llamada saliente al primer contacto de la
+            # sección.
             # Registrar ContactStatusView como statusCallback para detectar si
             # el contacto realmente contestó (DialCallStatus en el action URL
             # del <Dial><Conference> del llamante siempre es 'answered' —
-            # no apto para detección de resultado según documentación Twilio, 2026).
+            # no apto para detección de resultado según documentación Twilio,
+            # 2026).
             contact_status_url = (
                 "https://enterprisebot-miguelaetxio.pythonanywhere.com"
                 f"/api/vox/contact_status/{self.call_sid}/"
@@ -3014,9 +3719,11 @@ class VoiceOrchestrationService:
                 f"{type(twilio_exc).__name__}: {twilio_exc}",
                 exc_info=True,
             )
-            # Restore Gemini session if the transfer failed before the conference
+            # Restore Gemini session if the transfer failed before the
+            # conference
             # was established so the caller is not left in silence.
-            # Restaurar la sesión Gemini si la transferencia falló antes de establecer
+            # Restaurar la sesión Gemini si la transferencia falló antes de
+            # establecer
             # la conference para que el llamante no quede en silencio.
             self.session_active = True
             return False
@@ -3045,8 +3752,8 @@ class VoiceOrchestrationService:
         """
         self.stream_sid = stream_sid
         logger.info(
-            f"[SESSION] Stream SID de Twilio almacenado correctamente: {stream_sid}"
-        )
+            "[SESSION] Stream SID de Twilio almacenado correctamente: "
+            f"{stream_sid}")
 
     def terminate_session(self) -> None:
         """
@@ -3059,7 +3766,8 @@ class VoiceOrchestrationService:
         Señaliza a todas las corrutinas activas que terminen de forma elegante
         estableciendo el flag session_active en False.
 
-        Este método es llamado por la vista WebSocket de Django cuando se recibe
+        Este método es llamado por la vista WebSocket de Django cuando se
+        recibe
         el evento 'stop' de Twilio, indicando que el llamante ha colgado.
         """
         logger.info(
@@ -3067,6 +3775,3 @@ class VoiceOrchestrationService:
             "Señalizando fin de sesión a todas las corrutinas..."
         )
         self.session_active = False
-
-
-
