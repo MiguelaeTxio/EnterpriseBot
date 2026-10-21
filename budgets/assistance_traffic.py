@@ -873,7 +873,7 @@ def _check_movable(crew):
         )
 
 
-def pair(company, by, driver_pk, machine_pk):
+def pair(company, by, driver_pk, machine_pk, force_note=""):
     """
     Put a driver on a machine.
 
@@ -903,11 +903,20 @@ def pair(company, by, driver_pk, machine_pk):
         for crew in (crew_a, crew_b):
             if crew is not None:
                 _check_movable(crew)
-        if crew_a is None and not driver.is_assignable:
+        # S133: with a note from whoever gives the service, an absence
+        # or a workshop on record does not stop the pairing (busy does).
+        # Con la nota de quien da el servicio, una ausencia o un taller
+        # anotados no impiden formar el equipo (estar ocupado sí).
+        forceable = (STATE_UNAVAILABLE, STATE_WORKSHOP)
+        if crew_a is None and not driver.is_assignable and not (
+            force_note and driver.state in forceable
+        ):
             raise TrafficError("%s no está disponible: %s." % (
                 driver.display_name, driver.state_label.lower(),
             ))
-        if crew_b is None and not machine.is_assignable:
+        if crew_b is None and not machine.is_assignable and not (
+            force_note and machine.state in forceable
+        ):
             raise TrafficError("La %s no está disponible: %s." % (
                 machine.code, machine.state_label.lower(),
             ))

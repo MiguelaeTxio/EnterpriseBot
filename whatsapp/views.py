@@ -205,6 +205,56 @@ class IncomingWhatsAppView(View):
 
         record_inbound(company, from_number)
 
+        # --- Step 2a-bis (H37, S133): giving a service. ---
+        # An assistance supervisor (or admin) giving a service by
+        # WhatsApp: text or photo of the service. Decided here, answered
+        # in Celery (budgets.service_intake).
+        # --- Paso 2a-bis (H37, S133): dar un servicio. ---
+        # Un supervisor de asistencia (o administrador) que da un servicio
+        # por WhatsApp: texto o foto del servicio. Se decide aquí y se
+        # contesta en Celery (budgets.service_intake).
+        from budgets.service_intake import claim_whatsapp
+        from ivr_config.models import Contact as _ServiceContact
+
+        _service_contact = _ServiceContact.objects.filter(
+            company=company, phone_number=from_number,
+        ).select_related("company_user").first()
+        _service_body = (
+            "" if body and _ATTACHMENT_NAME_RE.match(body) else body
+        )
+        _intake = (
+            claim_whatsapp(
+                company, _service_contact, from_number, _service_body,
+                request.POST, num_media,
+            )
+            if _service_contact is not None else None
+        )
+        if _intake is not None:
+            from whatsapp.tasks import service_intake_reply
+
+            _service_session = WhatsAppSession.objects.filter(
+                company=company, phone_number=from_number, is_active=True,
+            ).order_by("-session_start").first()
+            if _service_session is None:
+                _service_session = WhatsAppSession.objects.create(
+                    company=company, phone_number=from_number,
+                    is_active=True,
+                )
+            WhatsAppMessage.objects.create(
+                session=_service_session,
+                direction=WhatsAppMessage.DIRECTION_IN,
+                body=_service_body or "[adjunto]",
+                message_type=WhatsAppMessage.MESSAGE_TYPE_TEXT,
+            )
+            service_intake_reply.delay(
+                _intake.pk, _service_body,
+                request.POST.get("MediaUrl0", "") if num_media else "",
+                request.POST.get("MediaContentType0", "") if num_media
+                else "",
+                to_number, from_number,
+            )
+            return HttpResponse(status=200)
+
         # --- Step 2b (H30, S125): worker attachments, before anything
         # else. ---
         # Every attachment from a phone that belongs to a worker is recorded

@@ -4374,3 +4374,102 @@ class DriverPosition(models.Model):
 
     def __str__(self):
         return f"{self.company_user} {self.recorded_at:%d/%m %H:%M}"
+
+
+class ServiceIntake(models.Model):
+    """
+    A service being given by WhatsApp or by phone.
+
+    Holds the data collected by the agent and the conversation until the
+    service is launched or cancelled (meeting with Pepe, S133: services
+    come in by photo, phone call or WhatsApp, and launching them must be
+    automatic).
+
+    ---
+
+    Un servicio que se está dando por WhatsApp o por teléfono.
+
+    Guarda los datos que va recogiendo el agente y la conversación hasta
+    que el servicio se lanza o se cancela (reunión con Pepe, S133: los
+    servicios entran por foto, llamada o WhatsApp, y su lanzamiento tiene
+    que ser automático).
+    """
+
+    CHANNEL_WHATSAPP = "WHATSAPP"
+    CHANNEL_PHONE = "PHONE"
+    CHANNEL_CHOICES = [
+        (CHANNEL_WHATSAPP, "WhatsApp"),
+        (CHANNEL_PHONE, "Llamada"),
+    ]
+    STATUS_OPEN = "OPEN"
+    STATUS_LAUNCHED = "LAUNCHED"
+    STATUS_CANCELLED = "CANCELLED"
+    STATUS_CHOICES = [
+        (STATUS_OPEN, "En curso"),
+        (STATUS_LAUNCHED, "Lanzado"),
+        (STATUS_CANCELLED, "Cancelado"),
+    ]
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="service_intakes",
+        verbose_name="Empresa",
+    )
+    requested_by = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.CASCADE,
+        related_name="service_intakes",
+        verbose_name="Quién da el servicio",
+    )
+    channel = models.CharField(
+        max_length=10,
+        choices=CHANNEL_CHOICES,
+        verbose_name="Canal",
+    )
+    phone_number = models.CharField(
+        max_length=30,
+        blank=True,
+        default="",
+        verbose_name="Teléfono",
+    )
+    status = models.CharField(
+        max_length=10,
+        choices=STATUS_CHOICES,
+        default=STATUS_OPEN,
+        verbose_name="Estado",
+    )
+    data = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="Datos recogidos",
+    )
+    conversation = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="Conversación",
+    )
+    work_order = models.ForeignKey(
+        WorkOrderAssistance,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="intakes",
+        verbose_name="Orden creada",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Empezado",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Último mensaje",
+    )
+
+    class Meta:
+        verbose_name = "Alta de servicio por conversación"
+        verbose_name_plural = "Altas de servicio por conversación"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.get_channel_display()} — {self.requested_by}"

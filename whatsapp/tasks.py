@@ -9,9 +9,12 @@ The latter two close the presence system loop deferred from Hito 3.
 ---
 Tareas Celery para la app del canal WhatsApp.
 Implementa tres tareas periódicas gestionadas por Celery Beat:
-  - expire_whatsapp_sessions: desactiva sesiones con más de 24 horas de antigüedad.
-  - check_in_meeting_reminders: envía recordatorios de presencia vía template WhatsApp.
-  - expire_presence_statuses: cierra registros PresenceStatus que han superado su ends_at.
+  - expire_whatsapp_sessions: desactiva sesiones con más de 24 horas de
+  antigüedad.
+  - check_in_meeting_reminders: envía recordatorios de presencia vía template
+  WhatsApp.
+  - expire_presence_statuses: cierra registros PresenceStatus que han superado
+  su ends_at.
 Las dos últimas cierran el bucle del sistema de presencia diferido del Hito 3.
 """
 
@@ -110,9 +113,12 @@ def expire_whatsapp_sessions() -> str:
 # ---------------------------------------------------------------------------
 # TASK 2 — check_in_meeting_reminders
 # Sends WhatsApp presence reminders to users stuck in IN_MEETING status.
-# Envía recordatorios de presencia por WhatsApp a usuarios en estado IN_MEETING.
-# Closes the presence system loop deferred from Hito 3 (V03DOC_PRESENCE_SYSTEM).
-# Cierra el bucle del sistema de presencia diferido del Hito 3 (V03DOC_PRESENCE_SYSTEM).
+# Envía recordatorios de presencia por WhatsApp a usuarios en estado
+# IN_MEETING.
+# Closes the presence system loop deferred from Hito 3
+# (V03DOC_PRESENCE_SYSTEM).
+# Cierra el bucle del sistema de presencia diferido del Hito 3
+# (V03DOC_PRESENCE_SYSTEM).
 # ---------------------------------------------------------------------------
 
 @shared_task(name="whatsapp.tasks.check_in_meeting_reminders")
@@ -137,10 +143,10 @@ def check_in_meeting_reminders() -> str:
     envíos duplicados.
     Implementa el punto pendiente de la sección 3 de V03DOC_PRESENCE_SYSTEM.md.
     """
-    current_time  = now()
+    current_time = now()
     reminder_threshold = current_time - timedelta(hours=3)
-    sent_count    = 0
-    error_count   = 0
+    sent_count = 0
+    error_count = 0
 
     # Fetch eligible IN_MEETING statuses.
     # Obtener los estados IN_MEETING elegibles.
@@ -155,21 +161,25 @@ def check_in_meeting_reminders() -> str:
     )
 
     if not candidates.exists():
-        result = "# [CELERY] check_in_meeting_reminders: sin candidatos elegibles."
+        result = (
+            "# [CELERY] check_in_meeting_reminders: sin candidatos "
+            "elegibles."
+        )
         logger.info(result)
         return result
 
-    twilio_client  = _build_twilio_client()
-    sender_number  = _get_whatsapp_sender()
+    twilio_client = _build_twilio_client()
+    sender_number = _get_whatsapp_sender()
 
     for status in candidates:
         company_user = status.company_user
-        company      = company_user.company
+        company = company_user.company
 
         # Resolve the internal Contact for this CompanyUser.
         # Resolver el Contact interno para este CompanyUser.
         try:
-            contact = Contact.objects.get(company_user=company_user, is_internal=True)
+            contact = Contact.objects.get(
+                company_user=company_user, is_internal=True)
         except Exception:
             logger.warning(
                 "# [CELERY] check_in_meeting_reminders: "
@@ -199,7 +209,8 @@ def check_in_meeting_reminders() -> str:
         except WhatsAppTemplate.DoesNotExist:
             logger.warning(
                 "# [CELERY] check_in_meeting_reminders: "
-                "Plantilla 'presence_reminder' no encontrada para %s. Omitiendo.",
+                "Plantilla 'presence_reminder' no encontrada para %s. "
+                "Omitiendo.",
                 company.name,
             )
             error_count += 1
@@ -207,8 +218,10 @@ def check_in_meeting_reminders() -> str:
 
         # Send the reminder via Twilio ContentSid template (production).
         # ContentSid values are now real HX SIDs approved by Meta (Paso 22).
-        # Enviar el recordatorio vía plantilla ContentSid de Twilio (producción).
-        # Los valores ContentSid son ahora HX SIDs reales aprobados por Meta (Paso 22).
+        # Enviar el recordatorio vía plantilla ContentSid de Twilio
+        # (producción).
+        # Los valores ContentSid son ahora HX SIDs reales aprobados por Meta
+        # (Paso 22).
         try:
             # H30 (S127): dentro de la ventana de 24 h, texto libre.
             from whatsapp.window_service import send_notification
@@ -219,7 +232,8 @@ def check_in_meeting_reminders() -> str:
             )
 
             # Mark reminder as sent to prevent duplicate dispatch.
-            # Marcar el recordatorio como enviado para evitar despacho duplicado.
+            # Marcar el recordatorio como enviado para evitar despacho
+            # duplicado.
             status.reminder_sent_at = current_time
             status.save(update_fields=["reminder_sent_at"])
 
@@ -252,8 +266,10 @@ def check_in_meeting_reminders() -> str:
 # TASK 3 — expire_presence_statuses
 # Closes PresenceStatus records that have passed their ends_at timestamp.
 # Cierra registros PresenceStatus que han superado su timestamp ends_at.
-# Closes the presence system loop deferred from Hito 3 (V03DOC_PRESENCE_SYSTEM).
-# Cierra el bucle del sistema de presencia diferido del Hito 3 (V03DOC_PRESENCE_SYSTEM).
+# Closes the presence system loop deferred from Hito 3
+# (V03DOC_PRESENCE_SYSTEM).
+# Cierra el bucle del sistema de presencia diferido del Hito 3
+# (V03DOC_PRESENCE_SYSTEM).
 # ---------------------------------------------------------------------------
 
 @shared_task(name="whatsapp.tasks.expire_presence_statuses")
@@ -276,7 +292,7 @@ def expire_presence_statuses() -> str:
     mayor de solo adición del sistema de presencia.
     Implementa el punto pendiente de la sección 3 de V03DOC_PRESENCE_SYSTEM.md.
     """
-    current_time  = now()
+    current_time = now()
     expired_count = 0
 
     # Find PresenceStatus records with ends_at in the past that have not yet
@@ -294,7 +310,8 @@ def expire_presence_statuses() -> str:
         company_user = status.company_user
 
         # Check whether a newer PresenceStatus already exists for this user.
-        # Comprobar si ya existe un PresenceStatus más reciente para este usuario.
+        # Comprobar si ya existe un PresenceStatus más reciente para este
+        # usuario.
         newer_exists = PresenceStatus.objects.filter(
             company_user=company_user,
             starts_at__gt=status.ends_at,
@@ -306,7 +323,8 @@ def expire_presence_statuses() -> str:
             continue
 
         # Create a new AVAILABLE status to restore the user's availability.
-        # Crear un nuevo estado AVAILABLE para restaurar la disponibilidad del usuario.
+        # Crear un nuevo estado AVAILABLE para restaurar la disponibilidad del
+        # usuario.
         PresenceStatus.objects.create(
             company_user=company_user,
             status=PresenceStatus.STATUS_AVAILABLE,
@@ -327,3 +345,50 @@ def expire_presence_statuses() -> str:
     )
     logger.info(result)
     return result
+
+
+@shared_task(name="whatsapp.tasks.service_intake_reply")
+def service_intake_reply(intake_pk, body, media_url, content_type,
+                         platform_number, from_number):
+    """
+    Answer a message of somebody giving a service by WhatsApp.
+
+    ---
+
+    H37 (S133). Contesta un mensaje de quien da un servicio por WhatsApp
+    (budgets.service_intake): prepara la respuesta con el agente, la
+    envía y la guarda en la sesión. En segundo plano porque leer la foto
+    y consultar los datos puede pasar del tiempo que espera Twilio.
+    """
+    from budgets.service_intake import process_whatsapp
+    from whatsapp.models import WhatsAppMessage
+    from whatsapp.services import WhatsAppChatService
+
+    try:
+        text = process_whatsapp(
+            intake_pk, body, media_url, content_type,
+            os.environ.get("TWILIO_WHATSAPP_SENDER", ""),
+        )
+    except Exception as exc:  # noqa: BLE001 -- se avisa al usuario
+        logger.exception("# [SERVICE INTAKE] Error: %s", exc)
+        text = (
+            "Perdona, ha habido un problema al preparar el servicio. "
+            "Repíteme el último mensaje."
+        )
+    session = WhatsAppSession.objects.filter(
+        phone_number=from_number, is_active=True,
+    ).order_by("-session_start").first()
+    try:
+        sid = WhatsAppChatService.send_reply(
+            from_number=platform_number, to_number=from_number,
+            reply_text=text,
+        )
+    except Exception as exc:  # noqa: BLE001 -- se registra sin SID
+        logger.error("# [SERVICE INTAKE] Error enviando respuesta: %s", exc)
+        sid = ""
+    if session is not None:
+        WhatsAppMessage.objects.create(
+            session=session, direction=WhatsAppMessage.DIRECTION_OUT,
+            body=text, message_sid=sid,
+        )
+    return text
