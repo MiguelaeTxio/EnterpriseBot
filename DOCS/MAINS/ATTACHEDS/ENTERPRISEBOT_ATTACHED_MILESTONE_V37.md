@@ -499,3 +499,29 @@ Se hace en este orden.
    el panel sobre los servicios reales de BD, coincidentes con una
    consulta a BD de los mismos servicios, y la facturación del
    apartado 18 de un servicio real cerrado, con su importe en BD.
+
+### 6.2. Dudas para Pepe (anotadas en S133)
+
+Miguel Ángel, S133 (2026-10-21), verbatim: *"ahora ya anotamos todas
+las dudas porque eso habrá que preguntarle a Pepe."* Se resuelven
+cuando Miguel Ángel traiga las respuestas; hasta entonces no se toca
+lo que dependa de ellas.
+
+1. **Europ Assistance: Asistencia y Grúas Granada (80) o Transgrual
+   (81).** Qué dato del albarán de TIREA distingue un servicio de una
+   empresa y de la otra. Se aplica en `_match_insurer`
+   (`budgets/views_services.py`). Es el dato del punto 3 de 6.1.
+2. **Servicios encadenados: cómo se cierra en base el albarán
+   anterior.** Desde S133 (commit `ab67c89`), un conductor y una
+   máquina en "Regresando" se pueden asignar a otro servicio cercano
+   sin volver a base (caso de Miguel Ángel: termina en Marbella y sale
+   un servicio al lado, en Ojén). El albarán anterior se queda en
+   "Regresando" sin cierre en base. Opciones planteadas:
+   1. Cierre conjunto al llegar a base: una sola vez km finales y
+      repostaje, y se cierran todos sus albaranes pendientes de cierre.
+   2. Se cierra solo al encadenar: al asignar el siguiente servicio el
+      anterior pasa a cerrado sin km ni repostaje; esos datos van en el
+      último.
+   3. Cada albarán por separado, cada uno con sus km y su repostaje.
+   Relacionado: si los km finales de un albarán encadenado deben ser
+   los del momento de terminar ese servicio o los de llegada a base.
