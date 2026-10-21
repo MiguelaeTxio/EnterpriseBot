@@ -4017,3 +4017,70 @@ class TariffPdfImport(models.Model):
             f"PDF import #{self.pk} — {self.insurer.name} "
             f"[{self.get_status_display()}]"
         )
+
+
+# ---------------------------------------------------------------------------
+# H37 (S133). Device token of the driver app (EBotDeliveryNotes).
+# Token de dispositivo de la app del conductor (EBotDeliveryNotes).
+# ---------------------------------------------------------------------------
+
+class DriverDeviceToken(models.Model):
+    """
+    Access token of one device of the driver app.
+
+    The app signs in with the panel username and password once and
+    keeps the token. Only the SHA-256 of the token is stored, so a
+    copy of the database does not give access. Each device has its own
+    token: signing out on one tablet does not sign out the others.
+
+    ---
+
+    Token de acceso de un dispositivo de la app del conductor.
+
+    La app entra una vez con el usuario y la contraseña del panel y
+    guarda el token. En BD solo se guarda su SHA-256: una copia de la
+    BD no da acceso. Cada dispositivo tiene su token: cerrar sesión en
+    una tablet no cierra las demás.
+    """
+
+    company_user = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.CASCADE,
+        related_name="driver_device_tokens",
+        verbose_name="Usuario",
+    )
+    key_hash = models.CharField(
+        max_length=64,
+        unique=True,
+        verbose_name="Huella del token",
+        help_text="SHA-256 del token; el token en claro no se guarda.",
+    )
+    device_name = models.CharField(
+        max_length=120,
+        blank=True,
+        default="",
+        verbose_name="Dispositivo",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Creado",
+    )
+    last_used_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Último uso",
+    )
+    revoked_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Revocado",
+        help_text="Vacío mientras el token es válido.",
+    )
+
+    class Meta:
+        verbose_name = "Token de la app del conductor"
+        verbose_name_plural = "Tokens de la app del conductor"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.company_user} — {self.device_name or 'dispositivo'}"

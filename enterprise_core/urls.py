@@ -5,7 +5,8 @@ Registers all application URL namespaces under their canonical prefixes.
 Cleaned: Removed legacy test_live application routes (April 2026).
 ---
 Configuracion principal de enrutamiento para EnterpriseBot Core.
-Registra todos los espacios de nombres URL de aplicacion bajo sus prefijos canonicos.
+Registra todos los espacios de nombres URL de aplicacion bajo sus prefijos
+canonicos.
 Saneado: Eliminadas las rutas de la aplicacion legada test_live (Abril 2026).
 """
 
@@ -18,22 +19,30 @@ from hr_calendar import clockin as clockin_views
 urlpatterns = [
 
     # Web App Manifest — served from root so Chrome can detect the PWA.
-    # Manifiesto de app web — servido desde la raiz para que Chrome detecte la PWA.
+    # Manifiesto de app web — servido desde la raiz para que Chrome detecte la
+    # PWA.
     path(
         "albaran-manifest.json",
         _never_cache(lambda request: HttpResponse(
-            open("/home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/static/panel/albaran_manifest.json").read(),
+            open(
+                "/home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/static/"
+                "panel/albaran_manifest.json"
+            ).read(),
             content_type="application/manifest+json; charset=utf-8",
         )),
         name="albaran_manifest",
     ),
 
-    # Service Worker — served from root scope so SW can control all panel routes.
+    # Service Worker — served from root scope so SW can control all panel
+    # routes.
     # Servido desde la raiz para que el SW controle todas las rutas del panel.
     path(
         "sw.js",
         _never_cache(lambda request: HttpResponse(
-            open("/home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/static/panel/js/sw_albaran.js").read(),
+            open(
+                "/home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/static/"
+                "panel/js/sw_albaran.js"
+            ).read(),
             content_type="application/javascript; charset=utf-8",
         )),
         name="sw_js",
@@ -52,13 +61,21 @@ urlpatterns = [
     path('api/vox/', include('vox_bridge.urls')),
     # WhatsApp channel — canal WhatsApp (chatbot + presencia).
     path('api/whatsapp/', include('whatsapp.urls')),
-    # Custom administration panel for CompanyUser accounts — panel de administracion personalizado para cuentas CompanyUser.
+    # H37 (S133): API of the driver app (EBotDeliveryNotes).
+    # API de la app del conductor.
+    path(
+        'api/driver/',
+        include('budgets.urls_driver_api', namespace='driver_api'),
+    ),
+    # Custom administration panel for CompanyUser accounts — panel de
+    # administracion personalizado para cuentas CompanyUser.
     path('panel/', include('panel.urls')),
     # ASISTENCIA budget module — motor de presupuestos ASISTENCIA (Hito 16).
     path('panel/budgets/', include('budgets.urls', namespace='budgets')),
     # IRC-style section chat rooms — salas de chat IRC por seccion (Hito 13).
     path('panel/chat/', include('chat.urls', namespace='chat')),
-    # Unified Analytics Laboratory — Laboratorio de Analisis Unificado (Hito 20).
+    # Unified Analytics Laboratory — Laboratorio de Analisis Unificado (Hito
+    # 20).
     path(
         'panel/analytics/',
         include('analytics.urls', namespace='analytics'),
@@ -78,7 +95,10 @@ urlpatterns = [
     # puente entre partes digitales y almacén de repuestos (Hito 10, Paso 4).
     path(
         'panel/repuestos/',
-        include('workorder_spare_parts.urls', namespace='workorder_spare_parts'),
+        include(
+            'workorder_spare_parts.urls',
+            namespace='workorder_spare_parts',
+        ),
     ),
     # Admin CRUD for supplier delivery notes — CRUD de administración de
     # albaranes de proveedor (Hito 10, gap 2026-07-08).
