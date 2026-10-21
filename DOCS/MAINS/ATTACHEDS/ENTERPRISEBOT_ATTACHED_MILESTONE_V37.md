@@ -360,6 +360,62 @@ COMPLETED) y PDF descargado. Correcciones salidas de la prueba:
 
 ## 6. Hoja de Ruta para la Siguiente Sesión (S133) -- reescrita al cierre de S132, sustituye a la de S132
 
+### 6.0. Incidencias de Partes Digitales anotadas en S133 -- primera tarea de la siguiente sesión
+
+Son de Partes Digitales (H07/H20), no de H37. Se anotan aquí porque
+Miguel Ángel pidió resolverlas en la siguiente sesión, antes de seguir
+con la hoja de ruta de abajo (Caso A del enrutador: al resolverlas, el
+trabajo se registra en el anexo del hito donde vive el error).
+
+**A. Periodos liquidados con partes pendientes, y partes que no salen
+en el historial.** Miguel Ángel, S133 (2026-10-21), verbatim: *"anota
+esta incidencia de periodos liquidados y partes que no están en el
+historial, para resolverla en la siguiente sesión."* Lo que enseñan
+sus capturas de Partes Digitales
+(`/panel/work-orders/history/`):
+- Pestaña **Períodos**, operario Estevao Veloso Sampaio: los seis
+  periodos salen **Liquidado** (Septiembre-Octubre 2026, 21/09-20/10;
+  Agosto-Septiembre; Julio-Agosto; Junio-Julio; Mayo-Junio; y
+  "anteriores", 01/01/2000-20/05/2026), con columna Operarios 9/9,
+  8/9, 3/9, 5/9, 5/9 y 3/9. Contadores de Sampaio en ese filtro:
+  Pendientes 23, Revisados 11.
+- Pestaña **Pendientes**, todos los operarios, 01/01/2026-21/10/2026:
+  **190** partes pendientes, con fechas de mayo a julio de 2026 (p. ej.
+  David Contreras Marquez desde el 21/05/2026, Jose Antonio Vargas Mora
+  18/06/2026), es decir, dentro de periodos que ya salen liquidados.
+- Pestaña **Revisados**: 92 (p. ej. Carlos Bas Blanco junio-julio,
+  revisados por Alejandro Sergio el 13/08/2026).
+Qué hay que averiguar: cómo puede estar liquidado un periodo con
+partes sin revisar dentro (y qué significan 3/9, 5/9...), y qué partes
+faltan en la pestaña **Histórico** y por qué. Antes de tocar nada,
+consulta a BD de los periodos (`WorkPeriodGroup` y relacionados,
+`panel/views_workorders.py`) y de los partes de esas fechas, y
+pregunta a Miguel Ángel qué esperaba ver en cada pestaña si no queda
+claro con los datos (directriz 4.8).
+
+**B. Parte 702 de Sampaio (domingo 18 mezclado con martes 20).** El
+borrador del domingo 18 (bloque B43, 08:00-15:30, 6 h, creado el 19 a
+las 19:04 con "Guardar bloques") no se pudo cerrar por el mínimo de 8 h
+en festivo (corregido en S133, commit `d6ab7bc`). El formulario
+siempre abre el borrador pendiente del operario y, al hacer el parte
+del martes 20, Sampaio cambió la fecha y añadió el bloque B12
+(15:30-18:30, 3 h): el parte 702 quedó con fecha 20/10 y los dos
+bloques. Pendiente: su respuesta a las preguntas enviadas por WhatsApp
+el 20/10 (qué hizo el domingo y el martes completos) y la decisión de
+Miguel Ángel entre (1) separar el parte con un Comando S, (2) que lo
+corrija Sampaio desde el panel o (3) dejarlo.
+
+**C. Borrador que arrastra cualquier parte nuevo.** Con un borrador
+abierto, guardar bloques o cerrar escribe siempre en ese borrador,
+aunque el operario cambie la fecha (`WorkOrderEntryFormView`, búsqueda
+del `IN_PROGRESS` del operario en guardar y cerrar). Decisión
+pendiente de Miguel Ángel: (a) avisar y dejar elegir entre seguir el
+borrador o empezar un parte nuevo, con el borrador conservado aparte
+(cambio de vista y de servidor), o (b) no dejar cambiar la fecha de un
+borrador guardado.
+
+### 6.1. Hoja de ruta de H37
+
 Ordenada con las fases del dossier de Pepe (4.4), a petición de Miguel
 Ángel en S132. Los puntos 1 a 3 quedaron cerrados en S132 (ver 5.1 a
 5.3); se mantiene la numeración para no perder la correspondencia con
