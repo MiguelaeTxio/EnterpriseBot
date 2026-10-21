@@ -100,26 +100,44 @@ CIF_HELP = (
     "CIF de la empresa del grupo que da el servicio (decide la ficha de "
     "aseguradora: Mondial / Transgrual o Mondial / Gruas Alvarez...)."
 )
+TEAMS_HELP = (
+    "Si van varios equipos al mismo servicio (p. ej. una grúa para la "
+    "tractora averiada y una cabeza tractora para el semirremolque): uno "
+    "por equipo, con su conductor, su máquina y sus ayudantes. Con un "
+    "solo equipo basta conductor y maquina."
+)
 VEHICLE_TYPE_HELP = (
     "Categoría de tarifa del vehículo ASISTIDO (el del cliente: turismo, "
     "furgoneta, camión, semirremolque...), nunca nuestra grúa o máquina."
 )
 
-# Orientative criteria of the dispatcher (Miguel Ángel, S133: Alia must
-# act as head of traffic). Whoever gives the service always prevails.
-# Criterios orientativos de jefa de tráfico (Miguel Ángel, S133: un
-# semirremolque se lleva con una tractora, no se pregunta). Manda
-# siempre quien da el servicio.
+# How a head of traffic thinks (Miguel Ángel, S133: "plantéatelo desde
+# el punto de vista del conductor... ¿dejamos tirado al camionero con
+# su camión y un manguito roto?"). Orientative: the giver prevails.
+# Cómo piensa una jefa de tráfico: desde el cliente que está parado en
+# la carretera. Orientativo: manda siempre quien da el servicio.
 DISPATCH_CRITERIA = (
-    "- Semirremolque o remolque suelto (o tractora averiada con el "
-    "remolque bien): CABEZA TRACTORA, que engancha el semirremolque.\n"
-    "- Turismo, todoterreno, moto o furgoneta: ASISTENCIA EN "
-    "CARRETERA (grúa de plataforma).\n"
-    "- Camión rígido, tractora sola o autobús: RESCATE CON GRÚA MÓVIL "
-    "o GRÚA MÓVIL según peso (20 TM o 30 TM).\n"
-    "- Vuelco, salida de vía o carga caída: GRÚA MÓVIL / RESCATE.\n"
-    "- Reparación en el sitio sin remolcar (rueda, batería, manguito "
-    "sin remolque): VEHÍCULO DE PERSONAL o ASISTENCIA EN CARRETERA.\n"
+    "Ponte en el lugar del conductor que está parado en la carretera: "
+    "el objetivo es que él y TODO lo que lleva (vehículo, remolque, "
+    "carga) acaben resueltos. Nunca dejes a nadie tirado con parte de "
+    "su vehículo. Lee los comentarios de la aseguradora antes que los "
+    "campos sueltos: ahí está lo que pasa de verdad (qué está averiado, "
+    "qué está bien, adónde quiere ir, el tope de importe...).\n"
+    "1. ¿Se puede arreglar en el sitio? Averías pequeñas (manguito, "
+    "rueda, batería, gasoil, correa, una manguera de aire...): lo "
+    "primero es mandar una ASISTENCIA EN CARRETERA o un VEHÍCULO DE "
+    "PERSONAL con mecánico para que siga su viaje. Si no está claro, "
+    "pregúntalo a quien da el servicio en una sola frase.\n"
+    "2. Si no se puede arreglar, se remolca lo averiado al taller: "
+    "turismo, furgoneta o moto con ASISTENCIA EN CARRETERA (plataforma); "
+    "camión, tractora o autobús con RESCATE / GRÚA MÓVIL según peso "
+    "(20 TM o 30 TM). Vuelco, salida de vía o carga caída: GRÚA MÓVIL / "
+    "RESCATE.\n"
+    "3. Si es un camión con semirremolque y la tractora no puede seguir, "
+    "son DOS cosas: la tractora averiada (reparar en el sitio o "
+    "remolcarla al taller) y el semirremolque (una CABEZA TRACTORA "
+    "nuestra lo lleva a su destino). Propón los dos equipos en el mismo "
+    "servicio, salvo que quien lo da diga otra cosa.\n"
 )
 
 
@@ -612,34 +630,31 @@ def launch(intake, args, whatsapp_sender):
         )}
 
     drivers, machines, _crews = traffic._current(company)
-    driver, error = _find_driver(drivers, args.get("conductor", ""))
-    if error:
-        return {"error": error}
-    machine = None
-    if args.get("maquina"):
-        machine, error = _find_machine(machines, args["maquina"])
+    teams = []
+    for team in args.get("equipos") or [args]:
+        driver, error = _find_driver(drivers, team.get("conductor", ""))
         if error:
             return {"error": error}
-    elif driver.crew is not None:
-        machine = driver.crew.machine_card
-    else:
-        return {"error": "%s no lleva máquina: ¿con cuál va?" % (
-            driver.display_name
-        )}
+        if team.get("maquina"):
+            machine, error = _find_machine(machines, team["maquina"])
+            if error:
+                return {"error": error}
+        elif driver.crew is not None:
+            machine = driver.crew.machine_card
+        else:
+            return {"error": "%s no lleva máquina: ¿con cuál va?" % (
+                driver.display_name
+            )}
+        teams.append((driver, machine, team.get("ayudantes") or []))
+    if len({d.pk for d, _m, _h in teams}) < len(teams) or len(
+        {m.pk for _d, m, _h in teams}
+    ) < len(teams):
+        return {"error": "Hay un conductor o una máquina repetidos."}
 
+    launched = []
+    helper_errors = []
     try:
         with transaction.atomic():
-            crew = AssistanceCrew.objects.filter(
-                driver=driver, machine=machine,
-            ).first()
-            if crew is None:
-                traffic.pair(
-                    company, by, driver.pk, machine.pk,
-                    force_note=force_note,
-                )
-                crew = AssistanceCrew.objects.get(
-                    driver=driver, machine=machine,
-                )
             work_order = form.save(commit=False)
             work_order.company = company
             work_order.operator = by
@@ -654,53 +669,71 @@ def launch(intake, args, whatsapp_sender):
                     work_order.delivery_address or ""
                 )[:255]
             form.save()
-            unit = traffic.assign(
-                company, by, crew.pk, order_pk=work_order.pk,
-                force_note=force_note,
-            )
-            helper_errors = []
-            for name in args.get("ayudantes") or []:
-                helper, error = _find_driver(drivers, name)
-                if error:
-                    helper_errors.append(error)
-                    continue
-                try:
-                    traffic.add_helper(company, by, unit.pk, helper.pk)
-                except traffic.TrafficError as exc:
-                    helper_errors.append(str(exc))
+            for driver, machine, helpers in teams:
+                crew = AssistanceCrew.objects.filter(
+                    driver=driver, machine=machine,
+                ).first()
+                if crew is None:
+                    traffic.pair(
+                        company, by, driver.pk, machine.pk,
+                        force_note=force_note,
+                    )
+                    crew = AssistanceCrew.objects.get(
+                        driver=driver, machine=machine,
+                    )
+                unit = traffic.assign(
+                    company, by, crew.pk, order_pk=work_order.pk,
+                    force_note=force_note,
+                )
+                for name in helpers:
+                    helper, error = _find_driver(drivers, name)
+                    if error:
+                        helper_errors.append(error)
+                        continue
+                    try:
+                        traffic.add_helper(company, by, unit.pk, helper.pk)
+                    except traffic.TrafficError as exc:
+                        helper_errors.append(str(exc))
+                launched.append((unit, driver, machine))
     except traffic.TrafficError as exc:
         return {"error": str(exc)}
 
     intake.status = ServiceIntake.STATUS_LAUNCHED
     intake.work_order = work_order
     intake.save(update_fields=["status", "work_order", "updated_at"])
-    unit.refresh_from_db()
-    result = {
-        "albaran": unit.albaran_number,
-        "conductor": driver.display_name,
-        "maquina": machine.code,
-    }
-    if unit.queued_at is not None:
-        result["estado"] = (
-            "En cola: se enviará solo cuando %s termine el servicio en "
-            "curso." % driver.display_name
-        )
-    else:
-        try:
-            traffic.send(company, by, unit.pk, whatsapp_sender)
-            result["estado"] = "Enviado al conductor por WhatsApp."
-        except traffic.TrafficError as exc:
-            result["estado"] = (
-                "Creado y asignado, pero no se ha podido enviar: %s "
-                "Se puede enviar desde el panel de tráfico." % exc
+    albaranes = []
+    for unit, driver, machine in launched:
+        unit.refresh_from_db()
+        row = {
+            "albaran": unit.albaran_number,
+            "conductor": driver.display_name,
+            "maquina": machine.code,
+        }
+        if unit.queued_at is not None:
+            row["estado"] = (
+                "En cola: se enviará solo cuando %s termine el servicio "
+                "en curso." % driver.display_name
             )
+        else:
+            try:
+                traffic.send(company, by, unit.pk, whatsapp_sender)
+                row["estado"] = "Enviado al conductor por WhatsApp."
+            except traffic.TrafficError as exc:
+                row["estado"] = (
+                    "Creado y asignado, pero no se ha podido enviar: %s "
+                    "Se puede enviar desde el panel de tráfico." % exc
+                )
+        logger.info(
+            "# [SERVICE INTAKE] %s lanza %s (%s): %s.",
+            by.user.username, unit.albaran_number, intake.channel,
+            row["estado"],
+        )
+        albaranes.append(row)
+    result = albaranes[0] if len(albaranes) == 1 else {
+        "orden": work_order.work_order_number, "albaranes": albaranes,
+    }
     if helper_errors:
         result["ayudantes_no_añadidos"] = helper_errors
-    logger.info(
-        "# [SERVICE INTAKE] %s lanza %s (%s): %s.",
-        by.user.username, unit.albaran_number, intake.channel,
-        result["estado"],
-    )
     return result
 
 
@@ -806,6 +839,21 @@ def _tool_declarations():
             parameters=types.Schema(
                 type=types.Type.OBJECT,
                 properties={
+                    "equipos": types.Schema(
+                        type=types.Type.ARRAY,
+                        items=types.Schema(
+                            type=types.Type.OBJECT,
+                            properties={
+                                "conductor": string,
+                                "maquina": string,
+                                "ayudantes": types.Schema(
+                                    type=types.Type.ARRAY, items=string,
+                                ),
+                            },
+                            required=["conductor"],
+                        ),
+                        description=TEAMS_HELP,
+                    ),
                     "conductor": types.Schema(
                         type=types.Type.STRING,
                         description="Nombre del conductor elegido.",
@@ -831,7 +879,6 @@ def _tool_declarations():
                         ),
                     ),
                 },
-                required=["conductor"],
             ),
         ),
         types.FunctionDeclaration(
@@ -887,9 +934,9 @@ def _system_prompt(intake):
         "- La «máquina» es NUESTRO vehículo, el que va a hacer el "
         "servicio. La eliges tú con estos criterios orientativos:\n"
         "%(criteria)s"
-        "Lee bien los comentarios: «tractora averiada, remolque sin "
-        "problema» significa que hay que llevarse el semirremolque con "
-        "una cabeza tractora nuestra.\n\n"
+        "Si los comentarios corrigen o precisan los campos (punto exacto "
+        "de recogida, destino real, la avería de verdad), guarda lo "
+        "correcto con guardar_datos.\n\n"
         "EMPRESA Y ASEGURADORA: van por el CIF. Si guardar_datos ya "
         "devuelve la aseguradora (la ficha de la empresa del grupo del "
         "CIF), no la preguntes. Si falta, pregunta solo la empresa del "
@@ -899,10 +946,13 @@ def _system_prompt(intake):
         "1. Cada vez que te den datos (o llegue una foto ya leída), "
         "llama a guardar_datos, incluido el tipo de vehículo que hayas "
         "deducido. No inventes datos del servicio.\n"
-        "2. Llama a consultar_disponibilidad y PROPÓN un equipo concreto "
-        "(conductor + máquina del tipo que toca) libre o regresando, el "
-        "más adecuado. Si no hay ninguno de ese tipo libre, propón el "
-        "que quedará libre antes (el servicio quedará en cola) o un "
+        "2. Llama a consultar_disponibilidad y PROPÓN el equipo o los "
+        "equipos concretos (conductor + máquina del tipo que toca) libres "
+        "o regresando, los más adecuados, explicando en una línea qué "
+        "hace cada uno. Si van varios, lánzalos juntos en el mismo "
+        "servicio con el argumento equipos. Si no hay ninguno de ese "
+        "tipo libre, propón el que quedará libre antes (el servicio "
+        "quedará en cola) o un "
         "conductor libre con una máquina de ese tipo sin conductor. "
         "No preguntes «¿qué vehículo asigno?»: propón tú.\n"
         "3. En el mismo mensaje pide de una sola vez lo importante que "
@@ -925,7 +975,9 @@ def _system_prompt(intake):
         "en cola. Si una herramienta devuelve un error, explícalo y "
         "pregunta lo necesario.\n\n"
         "ESTILO: mensajes cortos de WhatsApp, en español, sin "
-        "formularios ni listas largas. Tutea.\n\n"
+        "formularios ni listas largas. Tutea. Formato de WhatsApp: "
+        "negrita con UN asterisco a cada lado (*así*), nunca dos; sin "
+        "almohadillas ni viñetas con asterisco (usa guiones).\n\n"
         "ASEGURADORAS Y SUS TIPOS DE VEHÍCULO (ASISTIDO):\n%(insurers)s\n"
     ) % {
         "company": company.name,
@@ -1270,11 +1322,12 @@ def voice_instruction(company_user):
         "del cliente): dedúcelo tú (un semirremolque es tipo "
         "semirremolque o remolque) y guárdalo; pregunta solo si hay "
         "duda real. No lo confundas con nuestra máquina.\n"
-        "3. Nuestra máquina la eliges tú con estos criterios "
-        "orientativos:\n%(criteria)s"
-        "Consulta servicio_disponibilidad y PROPÓN un equipo concreto "
-        "de ese tipo, libre o regresando. Nunca preguntes qué vehículo "
-        "asignar.\n"
+        "3. Lo que se manda lo decides tú, como jefa de tráfico:\n"
+        "%(criteria)s"
+        "Consulta servicio_disponibilidad y PROPÓN el equipo o los "
+        "equipos concretos, libres o regresando. Nunca preguntes qué "
+        "vehículo asignar. Si van varios, lánzalos juntos con el "
+        "argumento equipos.\n"
         "4. Antes de lanzar, resume (aseguradora, vehículo, de dónde a "
         "dónde, conductor y máquina) y pregunta si lo lanzas. Si te "
         "cambia el equipo, obedece. Solo con un sí claro llama a "
@@ -1344,6 +1397,22 @@ def voice_tool_declarations():
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "equipos": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "conductor": {"type": "string"},
+                                "maquina": {"type": "string"},
+                                "ayudantes": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                },
+                            },
+                            "required": ["conductor"],
+                        },
+                        "description": TEAMS_HELP,
+                    },
                     "conductor": {
                         "type": "string",
                         "description": "Nombre del conductor elegido.",
@@ -1368,7 +1437,6 @@ def voice_tool_declarations():
                         ),
                     },
                 },
-                "required": ["conductor"],
             },
         },
         {
