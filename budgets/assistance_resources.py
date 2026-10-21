@@ -11,12 +11,15 @@ máquinas. Decisiones de Miguel Ángel en S132 (anexo V37, sección 5):
   ahí al darse de alta por WhatsApp (*"Conforme se vayan dando de alta
   trabajadores irán entrando en la sección"*). Se toman los
   `CompanyUser` activos con rol de trabajador (`WORKER_ROLES`) cuyo
-  `Contact` pertenece a esa sección.
+  `Contact` pertenece a esa sección. Desde S133 también los
+  administradores, para poder hacer las pruebas.
 - Máquinas: las de la familia ASISTENCIA de la flota.
 
 El teléfono del conductor vive en su `Contact` (`phone_number`); el
 campo `CompanyUser.phone` está vacío en producción (consulta S132).
 """
+from django.db.models import Q
+
 from document_explorer.person_phone_service import whatsapp_address
 from fleet.models import MachineAsset
 from ivr_config.models import CompanyUser
@@ -27,18 +30,26 @@ ASSISTANCE_MACHINE_FAMILY = "ASISTENCIA"
 
 def assistance_drivers(company):
     """
-    Active drivers of the assistance section of a company.
+    Active drivers of the assistance section of a company, plus the
+    administrators.
 
     ---
 
-    Conductores activos de la sección Asistencia de la empresa.
+    Conductores activos de la sección Asistencia de la empresa, más
+    los administradores activos. H37 (S133), Miguel Ángel: *"en el
+    listado de conductores permite también a los administradores y no
+    solamente a los choferes. Si no, no vamos a poder hacer las
+    pruebas."*
     """
     return CompanyUser.objects.filter(
+        Q(
+            role__in=CompanyUser.WORKER_ROLES,
+            contact_profile__sections__company=company,
+            contact_profile__sections__name__iexact=ASSISTANCE_SECTION_NAME,
+        )
+        | Q(role=CompanyUser.ROLE_ADMIN),
         company=company,
         is_active=True,
-        role__in=CompanyUser.WORKER_ROLES,
-        contact_profile__sections__company=company,
-        contact_profile__sections__name__iexact=ASSISTANCE_SECTION_NAME,
     ).select_related("user").distinct().order_by(
         "user__first_name", "user__last_name", "user__username",
     )
