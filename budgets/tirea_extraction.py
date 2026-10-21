@@ -24,6 +24,7 @@ revisa antes de crear la orden.
 """
 import json
 import logging
+import re
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
@@ -174,7 +175,126 @@ def extract_tirea_albaran(file_bytes, mime_type, timeout_ms=90_000):
         "# [TIREA] Extracción: %d campos con valor.",
         sum(1 for value in raw.values() if str(value).strip()),
     )
-    return _convert(raw)
+    data = _convert(raw)
+    tax_ids = _tax_ids_in(data.get("company_tax_id", ""))
+    if not _has_group_tax_id(tax_ids):
+        tax_ids += _pdf_tax_ids(file_bytes, mime_type)
+    if not _has_group_tax_id(tax_ids):
+        tax_ids += _vision_tax_ids(client, file_bytes, mime_type, timeout_ms)
+    tax_ids = list(dict.fromkeys(tax_ids))
+    if tax_ids:
+        data["company_tax_id"] = ",".join(tax_ids)
+    logger.info("# [TIREA] CIF leídos: %s", tax_ids or "ninguno")
+    return data
+
+
+# Spanish CIF/NIF: a letter, seven digits and a control character,
+# possibly written with dots, dashes or spaces.
+# CIF/NIF español: letra, siete cifras y control, con o sin puntos,
+# guiones o espacios.
+_TAX_ID_RE = re.compile(
+    r"(?<![A-Z0-9])([A-HJ-NP-SUVW])[\s.-]?(\d{2})[\s.-]?(\d{3})"
+    r"[\s.-]?(\d{2})[\s.-]?([0-9A-J])(?![A-Z0-9])"
+)
+
+_TAX_ID_PROMPT = """En la imagen (un albarán de asistencia en carretera de
+TIREA) busca TODOS los CIF o NIF de empresa que aparezcan, en cualquier
+parte: debajo del nombre de la compañía, en la cabecera, en el
+proveedor, en el pie... Un CIF es una letra y ocho caracteres (p. ej.
+B92493022 o B-29.405.040). Devuélvelos sin espacios, puntos ni guiones.
+Si no hay ninguno, devuelve la lista vacía. No inventes nada."""
+
+
+def _tax_ids_in(text):
+    """
+    Normalized CIFs found in a text.
+
+    ---
+
+    CIF normalizados (sin signos) que aparecen en un texto.
+    """
+    return [
+        "".join(match.groups())
+        for match in _TAX_ID_RE.finditer(str(text or "").upper())
+    ]
+
+
+def _has_group_tax_id(tax_ids):
+    """
+    Whether one of the CIFs is of a company of the group.
+
+    ---
+
+    Si alguno de los CIF es de una empresa del grupo.
+    """
+    from document_explorer.models import CompanyFiscalProfile
+
+    own = {
+        re.sub(r"[^A-Z0-9]", "", tax_id.upper())
+        for tax_id in CompanyFiscalProfile.objects.values_list(
+            "tax_id", flat=True,
+        )
+    }
+    return any(tax_id in own for tax_id in tax_ids)
+
+
+def _pdf_tax_ids(file_bytes, mime_type):
+    """
+    CIFs of the text layer of a PDF, if it has one.
+
+    ---
+
+    CIF de la capa de texto del PDF (exacta, sin IA), si la tiene.
+    """
+    if "pdf" not in (mime_type or ""):
+        return []
+    try:
+        import fitz
+
+        with fitz.open(stream=file_bytes, filetype="pdf") as doc:
+            text = "\n".join(page.get_text() for page in doc)
+    except Exception as exc:
+        logger.warning("# [TIREA] PDF sin texto legible: %s", exc)
+        return []
+    return _tax_ids_in(text)
+
+
+def _vision_tax_ids(client, file_bytes, mime_type, timeout_ms):
+    """
+    CIFs read by a call that only looks for them.
+
+    ---
+
+    CIF leídos con una llamada que solo busca eso (incidencia real S133:
+    la extracción completa, con 60 campos, se saltaba el CIF).
+    """
+    try:
+        response = _generate_content_with_retry(
+            client,
+            model=DEFAULT_MODEL,
+            contents=[
+                Part.from_bytes(data=file_bytes, mime_type=mime_type),
+                _TAX_ID_PROMPT,
+            ],
+            config=GenerateContentConfig(
+                http_options=HttpOptions(timeout=timeout_ms),
+                response_mime_type="application/json",
+                response_schema={
+                    "type": "object",
+                    "properties": {"cif": {
+                        "type": "array", "items": {"type": "string"},
+                    }},
+                    "required": ["cif"],
+                },
+                thinking_config=ThinkingConfig(thinking_level="low"),
+                temperature=0.0,
+            ),
+        )
+        found = json.loads(response.text.strip()).get("cif") or []
+    except Exception as exc:
+        logger.warning("# [TIREA] Lectura del CIF fallida: %s", exc)
+        return []
+    return _tax_ids_in(" ".join(str(item) for item in found))
 
 
 def _convert(raw):
