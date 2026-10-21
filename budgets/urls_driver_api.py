@@ -35,4 +35,9 @@ urlpatterns = [
         api_driver.DriverAlbaranCloseBaseView.as_view(),
         name="albaran_close_base",
     ),
+    path(
+        "position/",
+        api_driver.DriverPositionView.as_view(),
+        name="position",
+    ),
 ]

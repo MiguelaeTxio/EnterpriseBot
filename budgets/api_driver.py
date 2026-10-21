@@ -22,6 +22,7 @@ administradores y supervisores de asistencia.
 """
 import base64
 import binascii
+import datetime
 import hashlib
 import json
 import logging
@@ -40,9 +41,10 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
 from budgets.assistance_resources import assistance_drivers
-from budgets.assistance_traffic import OPEN_ORDER_STATUSES
+from budgets.assistance_traffic import OPEN_ORDER_STATUSES, driver_is_out
 from budgets.models import (
     DriverDeviceToken,
+    DriverPosition,
     WorkOrderAssistanceSignature,
     WorkOrderAssistanceUnit,
     WorkOrderAssistanceUnitEvent,
@@ -322,6 +324,9 @@ class DriverAlbaranesView(View):
         return JsonResponse({
             "driver": _display_name(company_user),
             "albaranes": [_unit_payload(unit) for unit in units],
+            # S133: whether the app sends the phone position (map).
+            # Si la app envía la posición del móvil (mapa de tráfico).
+            "tracking": driver_is_out(company_user),
         })
 
 
@@ -652,3 +657,83 @@ class DriverAlbaranCloseBaseView(View):
             unit.albaran_number, company_user.user.username,
         )
         return JsonResponse({"ok": True, "number": unit.albaran_number})
+
+
+def _coordinate(data, key, label, limit):
+    """
+    Coordinate of the request, checked against its range.
+
+    ---
+
+    Coordenada de la petición, dentro de su rango (±90 la latitud,
+    ±180 la longitud), o ValueError.
+    """
+    try:
+        value = Decimal(str(data.get(key))).quantize(Decimal("0.000001"))
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValueError("Falta la %s." % label)
+    if not value.is_finite() or abs(value) > limit:
+        raise ValueError("La %s no es válida." % label)
+    return value
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class DriverPositionView(View):
+    """
+    Position of the driver's phone.
+
+    ---
+
+    Posición del móvil del conductor para el mapa de tráfico (H37,
+    S133). Solo se guarda mientras el conductor tiene un albarán en
+    curso (enviado, en servicio o regresando): fuera de servicio no se
+    le sigue. La respuesta dice a la app si debe seguir enviando
+    (`tracking`); con `false` la app deja de enviar.
+    """
+
+    def post(self, request):
+        """
+        Store the position if the driver is on a service.
+
+        ---
+
+        Guarda la posición si el conductor está en un servicio.
+        """
+        company_user, _token = _token_user(request)
+        if company_user is None:
+            return _error("Sesión no válida.", 401)
+        if not driver_is_out(company_user):
+            return JsonResponse({"tracking": False})
+        data = _json_body(request)
+        try:
+            latitude = _coordinate(data, "latitude", "latitud", 90)
+            longitude = _coordinate(data, "longitude", "longitud", 180)
+        except ValueError as exc:
+            return _error(str(exc), 400)
+        # Phone time if it is sane (not in the future); else now.
+        # Hora del móvil si es razonable (no futura); si no, la de ahora.
+        recorded_at = timezone.now()
+        millis = data.get("recorded_at")
+        if isinstance(millis, (int, float)) and not isinstance(millis, bool):
+            try:
+                taken = datetime.datetime.fromtimestamp(
+                    millis / 1000, tz=datetime.timezone.utc,
+                )
+            except (OverflowError, OSError, ValueError):
+                taken = None
+            if taken is not None and taken <= recorded_at:
+                recorded_at = taken
+        accuracy = data.get("accuracy")
+        DriverPosition.objects.create(
+            company_user=company_user,
+            latitude=latitude,
+            longitude=longitude,
+            accuracy_m=(
+                int(accuracy)
+                if isinstance(accuracy, (int, float))
+                and not isinstance(accuracy, bool) and 0 <= accuracy < 100000
+                else None
+            ),
+            recorded_at=recorded_at,
+        )
+        return JsonResponse({"tracking": True})

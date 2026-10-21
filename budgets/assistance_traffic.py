@@ -10,10 +10,16 @@ dossier de Pepe, anexo V37 sección 4.4): qué conductores y máquinas
 están libres, los albaranes abiertos con su color, y las reglas de
 asignación:
 
-- No se asigna un conductor ni una máquina ocupados (con otro albarán
-  asignado o en servicio), ni un conductor de vacaciones, de baja o
-  ausente hoy, ni una máquina en taller (con una avería abierta). Los
-  que regresan a base sí se pueden asignar (S133).
+- Al albarán va siempre un equipo (conductor + máquina,
+  `AssistanceCrew`), nunca un conductor o una máquina sueltos
+  (Miguel Ángel, S133). El equipo se forma soltando un conductor sobre
+  una máquina; soltar el conductor de un equipo sobre otro equipo los
+  intercambia de máquina. Solo se cambian equipos libres o que
+  regresan, nunca uno asignado o en servicio.
+- No se asigna un equipo ocupado (con otro albarán asignado o en
+  servicio), ni con el conductor de vacaciones, de baja o ausente hoy,
+  ni con la máquina en taller (con una avería abierta). Los que
+  regresan a base sí se pueden asignar (S133).
 - Solo se asigna o se cambia la asignación de un albarán que no se ha
   enviado todavía (pendiente o con el aviso fallido).
 - No se envía sin conductor y máquina.
@@ -24,6 +30,8 @@ Un albarán ocupa a su conductor y su máquina hasta que el conductor lo
 cierra en base desde la app (fase 4 del dossier, S133): mientras tanto
 el albarán firmado sale en verde ("regresando").
 """
+import datetime
+
 from django.db import transaction
 from django.db.models import Max, Q
 from django.utils import timezone
@@ -33,6 +41,8 @@ from budgets.assistance_resources import (
     assistance_machines,
 )
 from budgets.models import (
+    AssistanceCrew,
+    DriverPosition,
     WorkOrderAssistance,
     WorkOrderAssistanceUnit,
     WorkOrderAssistanceUnitEvent,
@@ -105,6 +115,17 @@ STATE_ORDER = {
 # los que regresan (Miguel Ángel, S133: el conductor que acaba de
 # terminar un servicio cerca de otro va directamente a él).
 ASSIGNABLE_RESOURCE_STATES = (STATE_FREE, STATE_RETURNING)
+# Crews that can be split or change driver: never one with an albarán
+# assigned or in service (it would no longer match the albarán sent).
+# Equipos que se pueden separar o cambiar de conductor: nunca uno con
+# un albarán asignado o en servicio (dejaría de cuadrar con el albarán).
+CREW_LOCKED_STATES = (STATE_ASSIGNED, STATE_IN_SERVICE)
+# Crews out of base, shown on the map at the driver's position.
+# Equipos fuera de base, en el mapa en la posición del conductor.
+CREW_OUT_STATES = (STATE_IN_SERVICE, STATE_RETURNING)
+# Older positions are not used: the crew goes to "no position".
+# Posiciones más antiguas no se usan: el equipo sale "sin posición".
+POSITION_MAX_AGE = datetime.timedelta(hours=12)
 RESOURCE_PRIORITY = {
     STATE_IN_SERVICE: 0,
     STATE_ASSIGNED: 1,
@@ -300,7 +321,7 @@ def _resources(company, units, today):
                 table[key] = unit
 
     drivers = list(assistance_drivers(company).select_related(
-        "person_identity",
+        "person_identity", "base",
     ))
     away = _absences_today(company, today)
     for driver in drivers:
@@ -336,15 +357,93 @@ def _resources(company, units, today):
     return drivers, machines
 
 
+def _crew_state(driver, machine):
+    """
+    State and current albarán of a crew.
+
+    ---
+
+    Estado y albarán actual de un equipo: manda el albarán más activo
+    de su conductor o de su máquina; sin albarán, el conductor ausente
+    o la máquina en taller; si no, libre.
+    """
+    units = [
+        unit for unit in (driver.current_unit, machine.current_unit)
+        if unit is not None
+    ]
+    if units:
+        unit = min(units, key=lambda u: RESOURCE_PRIORITY[
+            unit_resource_state(u)
+        ])
+        state = unit_resource_state(unit)
+        return state, unit, STATE_LABELS[state]
+    if driver.state == STATE_UNAVAILABLE:
+        return STATE_UNAVAILABLE, None, driver.state_label
+    if machine.state == STATE_WORKSHOP:
+        return STATE_WORKSHOP, None, machine.state_label
+    return STATE_FREE, None, STATE_LABELS[STATE_FREE]
+
+
+def _crews(company, drivers, machines):
+    """
+    Crews of the company with their state, and the loose resources.
+
+    ---
+
+    Equipos de la empresa con su estado. Marca en cada conductor y
+    máquina su equipo (`crew`, None si va suelto). Un equipo cuyo
+    conductor o máquina ya no es de asistencia no sale: los dos quedan
+    sueltos en el panel.
+    """
+    by_driver = {driver.pk: driver for driver in drivers}
+    by_machine = {machine.pk: machine for machine in machines}
+    for resource in (*drivers, *machines):
+        resource.crew = None
+    crews = []
+    for crew in AssistanceCrew.objects.filter(company=company):
+        driver = by_driver.get(crew.driver_id)
+        machine = by_machine.get(crew.machine_id)
+        if driver is None or machine is None:
+            continue
+        crew.driver_card = driver
+        crew.machine_card = machine
+        crew.state, crew.current_unit, crew.state_label = _crew_state(
+            driver, machine,
+        )
+        crew.is_assignable = crew.state in ASSIGNABLE_RESOURCE_STATES
+        crew.is_movable = crew.state not in CREW_LOCKED_STATES
+        driver.crew = crew
+        machine.crew = crew
+        crews.append(crew)
+    return crews
+
+
+def _current(company, today=None):
+    """
+    Drivers, machines and crews as they are now.
+
+    ---
+
+    Conductores, máquinas y equipos con los datos del momento, para
+    comprobar las reglas de cada acción.
+    """
+    today = today or _today()
+    units = list(board_units(company))
+    drivers, machines = _resources(company, units, today)
+    crews = _crews(company, drivers, machines)
+    return drivers, machines, crews
+
+
 def build_board(company, category="", sort=SORT_AVAILABILITY):
     """
     Everything the traffic board shows.
 
     ---
 
-    Todo lo que muestra el panel de tráfico: conductores, máquinas
-    (filtradas por categoría) y albaranes abiertos, más las órdenes
-    abiertas que aún no tienen ningún albarán.
+    Todo lo que muestra el panel de tráfico: equipos, conductores y
+    máquinas sueltos (filtrados por categoría de máquina) y albaranes
+    abiertos, más las órdenes abiertas que aún no tienen ningún
+    albarán.
     """
     today = _today()
     units = list(board_units(company).order_by(
@@ -352,18 +451,26 @@ def build_board(company, category="", sort=SORT_AVAILABILITY):
         "unit_number",
     ))
     drivers, machines = _resources(company, units, today)
+    crews = _crews(company, drivers, machines)
 
     categories = sorted({m.type_name for m in machines if m.type_name})
     if category:
         machines = [m for m in machines if m.type_name == category]
+        crews = [c for c in crews if c.machine_card.type_name == category]
+    loose_drivers = [d for d in drivers if d.crew is None]
+    loose_machines = [m for m in machines if m.crew is None]
     if sort == SORT_NAME:
-        drivers.sort(key=lambda d: d.display_name.lower())
-        machines.sort(key=lambda m: m.code)
+        loose_drivers.sort(key=lambda d: d.display_name.lower())
+        loose_machines.sort(key=lambda m: m.code)
+        crews.sort(key=lambda c: c.machine_card.code)
     else:
-        drivers.sort(key=lambda d: (
+        loose_drivers.sort(key=lambda d: (
             STATE_ORDER[d.state], d.display_name.lower(),
         ))
-        machines.sort(key=lambda m: (STATE_ORDER[m.state], m.code))
+        loose_machines.sort(key=lambda m: (STATE_ORDER[m.state], m.code))
+        crews.sort(key=lambda c: (
+            STATE_ORDER[c.state], c.machine_card.code,
+        ))
 
     for unit in units:
         unit.colour = unit_colour(unit, today)
@@ -388,8 +495,9 @@ def build_board(company, category="", sort=SORT_AVAILABILITY):
         )
 
     return {
-        "drivers": drivers,
-        "machines": machines,
+        "crews": crews,
+        "drivers": loose_drivers,
+        "machines": loose_machines,
         "units": units,
         "empty_orders": empty_orders,
         "categories": categories,
@@ -397,8 +505,7 @@ def build_board(company, category="", sort=SORT_AVAILABILITY):
         "sort": sort,
         "sort_options": SORT_OPTIONS,
         "open_count": len(units) + len(empty_orders),
-        "free_drivers": sum(1 for d in drivers if d.is_assignable),
-        "free_machines": sum(1 for m in machines if m.is_assignable),
+        "free_crews": sum(1 for c in crews if c.is_assignable),
     }
 
 
@@ -541,36 +648,162 @@ def _locked_unit(company, unit_pk):
     return unit
 
 
-def assign(company, by, resource_kind, resource_pk, unit_pk=None,
-           order_pk=None):
+def _crew_name(crew):
     """
-    Assign a driver or a machine to an albarán (or to a new albarán
-    of an order).
+    How a crew is named in the panel messages.
 
     ---
 
-    Asigna un conductor o una máquina a un albarán. Si se suelta sobre
-    una orden, va a su primer albarán sin ese hueco ocupado que aún no
-    se ha enviado, o a uno nuevo. Comprueba que el recurso esté libre
-    con los datos del momento, no con lo que pintaba el panel.
-    Devuelve el albarán.
+    Cómo se nombra un equipo en los mensajes del panel.
     """
-    today = _today()
+    return "%s con %s" % (_driver_name(crew.driver), crew.machine.code)
+
+
+def _lock_crews(company):
+    """
+    Lock the crews of the company for a change.
+
+    ---
+
+    Bloquea los equipos de la empresa para un cambio: dos personas
+    moviendo a la vez no dejan un conductor en dos máquinas.
+    """
+    list(AssistanceCrew.objects.select_for_update().filter(
+        company=company,
+    ).values_list("pk", flat=True))
+
+
+def _check_movable(crew):
+    """
+    Refuse changing a crew with an albarán assigned or in service.
+
+    ---
+
+    No deja cambiar un equipo con un albarán asignado o en servicio.
+    """
+    if not crew.is_movable:
+        raise TrafficError(
+            "El equipo %s está %s con el albarán %s: no se puede cambiar "
+            "hasta que termine." % (
+                _crew_name(crew), crew.state_label.lower(),
+                crew.current_unit.albaran_number,
+            )
+        )
+
+
+def pair(company, by, driver_pk, machine_pk):
+    """
+    Put a driver on a machine.
+
+    ---
+
+    Pone un conductor en una máquina. Si los dos iban en equipos
+    distintos, se intercambian: el otro conductor se queda con la
+    máquina que deja este (caso de Miguel Ángel, S133: la grúa de 10 t
+    y la de 35 t que se cruzan volviendo). Si solo uno iba en equipo,
+    su compañero queda suelto. Devuelve el mensaje para el panel.
+    """
     with transaction.atomic():
-        if resource_kind == "driver":
-            resource = assistance_drivers(company).filter(
-                pk=resource_pk,
-            ).first()
-            field = "operator"
-        elif resource_kind == "machine":
-            resource = assistance_machines(company).filter(
-                pk=resource_pk,
-            ).first()
-            field = "machine_asset"
-        else:
-            raise TrafficError("No se sabe qué se ha soltado.")
-        if resource is None:
-            raise TrafficError("Ese recurso ya no es de asistencia.")
+        _lock_crews(company)
+        drivers, machines, crews = _current(company)
+        driver = next((d for d in drivers if d.pk == driver_pk), None)
+        machine = next((m for m in machines if m.pk == machine_pk), None)
+        if driver is None:
+            raise TrafficError("Ese conductor ya no es de asistencia.")
+        if machine is None:
+            raise TrafficError("Esa máquina ya no es de asistencia.")
+        crew_a = driver.crew
+        crew_b = machine.crew
+        if crew_a is not None and crew_a is crew_b:
+            raise TrafficError("%s ya lleva la %s." % (
+                driver.display_name, machine.code,
+            ))
+        for crew in (crew_a, crew_b):
+            if crew is not None:
+                _check_movable(crew)
+        if crew_a is None and not driver.is_assignable:
+            raise TrafficError("%s no está disponible: %s." % (
+                driver.display_name, driver.state_label.lower(),
+            ))
+        if crew_b is None and not machine.is_assignable:
+            raise TrafficError("La %s no está disponible: %s." % (
+                machine.code, machine.state_label.lower(),
+            ))
+
+        AssistanceCrew.objects.filter(
+            Q(driver=driver) | Q(machine=machine),
+        ).delete()
+        AssistanceCrew.objects.create(
+            company=company, driver=driver, machine=machine, created_by=by,
+        )
+        if crew_a is not None and crew_b is not None:
+            partner = crew_b.driver_card
+            AssistanceCrew.objects.create(
+                company=company, driver=partner,
+                machine=crew_a.machine_card, created_by=by,
+            )
+            return "Cambio: %s pasa a la %s y %s a la %s." % (
+                driver.display_name, machine.code,
+                partner.display_name, crew_a.machine_card.code,
+            )
+        message = "%s lleva la %s." % (driver.display_name, machine.code)
+        if crew_a is not None:
+            message += " La %s queda sin conductor." % crew_a.machine_card.code
+        if crew_b is not None:
+            message += " %s queda sin máquina." % (
+                crew_b.driver_card.display_name
+            )
+        return message
+
+
+def separate(company, by, crew_pk):
+    """
+    Split a crew: driver and machine stay loose.
+
+    ---
+
+    Separa un equipo: conductor y máquina quedan sueltos.
+    """
+    with transaction.atomic():
+        _lock_crews(company)
+        _drivers, _machines, crews = _current(company)
+        crew = next((c for c in crews if c.pk == crew_pk), None)
+        if crew is None:
+            raise TrafficError("Ese equipo ya no existe.")
+        _check_movable(crew)
+        name = _crew_name(crew)
+        crew.delete()
+    return "Equipo %s separado." % name
+
+
+def assign(company, by, crew_pk, unit_pk=None, order_pk=None):
+    """
+    Assign a crew to an albarán (or to a new albarán of an order).
+
+    ---
+
+    Asigna un equipo (conductor y máquina juntos) a un albarán. Si se
+    suelta sobre una orden, va a su primer albarán aún sin enviar y sin
+    nadie asignado, o a uno nuevo. Comprueba las reglas con los datos
+    del momento, no con lo que pintaba el panel. Devuelve el albarán.
+    """
+    with transaction.atomic():
+        _lock_crews(company)
+        _drivers, _machines, crews = _current(company)
+        crew = next((c for c in crews if c.pk == crew_pk), None)
+        if crew is None:
+            raise TrafficError("Ese equipo ya no existe.")
+        if not crew.is_assignable:
+            detail = crew.state_label.lower()
+            if crew.current_unit is not None:
+                detail += " con el albarán %s" % (
+                    crew.current_unit.albaran_number
+                )
+            raise TrafficError("El equipo %s no está libre: %s." % (
+                _crew_name(crew), detail,
+            ))
+        driver = crew.driver_card
+        machine = crew.machine_card
 
         if unit_pk:
             unit = _locked_unit(company, unit_pk)
@@ -583,91 +816,59 @@ def assign(company, by, resource_kind, resource_pk, unit_pk=None,
                 raise TrafficError("Esa orden ya no está abierta.")
             unit = work_order.units.select_for_update().filter(
                 status__in=ASSIGNABLE_STATUSES,
-                **{"%s__isnull" % field: True}
+                operator__isnull=True,
+                machine_asset__isnull=True,
             ).order_by("unit_number").first()
             if unit is None:
                 unit = _create_unit(work_order, by)
 
-        # Returning (signed, back to base) does not block: the driver
-        # and the machine can be sent straight to the next service.
-        # Regresando no bloquea: conductor y máquina pueden ir
-        # directamente al siguiente servicio.
+        # Returning (signed, back to base) does not block: the crew can
+        # go straight to the next service.
+        # Regresando no bloquea: el equipo puede ir directamente al
+        # siguiente servicio.
         busy = board_units(company).filter(
-            **{field: resource}
+            Q(operator=driver) | Q(machine_asset=machine),
         ).exclude(pk=unit.pk).exclude(
             status__in=RETURNING_STATUSES,
         ).first()
         if busy is not None:
-            raise TrafficError(
-                "%s ya está en el albarán %s." % (
-                    _resource_name(resource_kind, resource),
-                    busy.albaran_number,
-                )
-            )
-        if resource_kind == "driver":
-            person = getattr(resource, "person_identity", None)
-            reason = (
-                _absences_today(company, today).get(person.pk)
-                if person is not None else None
-            )
-            if reason:
-                raise TrafficError("%s: %s hoy." % (
-                    _driver_name(resource), reason.lower(),
-                ))
-            _set_driver(unit, resource, by)
-        else:
-            if resource.pk in _machines_in_workshop(company):
-                raise TrafficError(
-                    "La máquina %s está en taller (avería abierta)."
-                    % resource.code
-                )
-            _set_machine(unit, resource, by)
+            raise TrafficError("El equipo %s ya está en el albarán %s." % (
+                _crew_name(crew), busy.albaran_number,
+            ))
+        _set_driver(unit, driver, by)
+        _set_machine(unit, machine, by)
     return unit
 
 
-def _resource_name(resource_kind, resource):
+def unassign(company, by, unit_pk):
     """
-    How a resource is named in the panel messages.
+    Take the crew off an albarán not sent yet.
 
     ---
 
-    Cómo se nombra un recurso en los mensajes del panel.
-    """
-    if resource_kind == "driver":
-        return _driver_name(resource)
-    return "La máquina %s" % resource.code
-
-
-def unassign(company, by, unit_pk, resource_kind):
-    """
-    Take the driver or the machine off an albarán not sent yet.
-
-    ---
-
-    Quita el conductor o la máquina de un albarán aún sin enviar.
+    Quita el equipo (conductor y máquina) de un albarán aún sin enviar.
     """
     with transaction.atomic():
         unit = _locked_unit(company, unit_pk)
-        if resource_kind == "driver" and unit.operator_id:
+        fields = []
+        if unit.operator_id:
             Event.objects.create(
                 unit=unit, kind=Event.KIND_UNASSIGN, created_by=by,
                 detail="Conductor retirado: %s."
                 % _driver_name(unit.operator),
             )
             unit.operator = None
-            unit.save(update_fields=["operator", "updated_at"])
-        elif resource_kind == "machine" and (
-            unit.machine_asset_id or unit.machine
-        ):
+            fields.append("operator")
+        if unit.machine_asset_id or unit.machine:
             Event.objects.create(
                 unit=unit, kind=Event.KIND_UNASSIGN, created_by=by,
                 detail="Máquina retirada: %s." % unit.machine,
             )
             unit.machine_asset = None
             unit.machine = ""
-            unit.save(update_fields=[
-                "machine_asset", "machine", "updated_at",
-            ])
+            fields += ["machine_asset", "machine"]
+        if fields:
+            unit.save(update_fields=fields + ["updated_at"])
     return unit
 
 
@@ -705,3 +906,160 @@ def send(company, by, unit_pk, whatsapp_sender):
             "que tenga teléfono." % _driver_name(unit.operator)
         )
     return unit
+
+
+def _point(latitude, longitude):
+    """
+    Coordinates as floats, or None.
+
+    ---
+
+    Coordenadas como números, o None si falta alguna.
+    """
+    if latitude is None or longitude is None:
+        return None
+    return {"lat": float(latitude), "lng": float(longitude)}
+
+
+def _last_positions(drivers, now):
+    """
+    Last recent position of each driver.
+
+    ---
+
+    Última posición de cada conductor que no tenga más de
+    `POSITION_MAX_AGE`.
+    """
+    positions = {}
+    for position in DriverPosition.objects.filter(
+        company_user__in=drivers,
+        recorded_at__gte=now - POSITION_MAX_AGE,
+    ).order_by("company_user_id", "-recorded_at"):
+        positions.setdefault(position.company_user_id, position)
+    return positions
+
+
+def build_map(company):
+    """
+    Data of the traffic map.
+
+    ---
+
+    Datos del mapa de tráfico (Miguel Ángel, S133):
+    - Equipos fuera (en servicio o regresando): en la última posición
+      que mandó el móvil del conductor; sin posición reciente, en la
+      lista "sin posición".
+    - Equipos en base y conductores libres sin máquina: agrupados en
+      la base del conductor, sin posición.
+    - Recogidas de los albaranes abiertos: la dirección tal cual, la
+      sitúa el mapa.
+    Las máquinas sin conductor no salen.
+    """
+    now = timezone.now()
+    today = timezone.localdate()
+    units = list(board_units(company).order_by(
+        "work_order__service_date", "work_order__work_order_number",
+        "unit_number",
+    ))
+    drivers, machines = _resources(company, units, today)
+    crews = _crews(company, drivers, machines)
+    positions = _last_positions(
+        [crew.driver_card for crew in crews if crew.state in CREW_OUT_STATES],
+        now,
+    )
+
+    bases = {}
+
+    def base_entry(driver):
+        base = getattr(driver, "base", None)
+        key = base.pk if base is not None else 0
+        if key not in bases:
+            bases[key] = {
+                "name": base.name if base is not None else "Sin base",
+                "point": (
+                    _point(base.latitude, base.longitude)
+                    if base is not None else None
+                ),
+                "crews": [],
+                "drivers": [],
+            }
+        return bases[key]
+
+    crews_out = []
+    for crew in crews:
+        entry = {
+            "driver": crew.driver_card.display_name,
+            "machine": crew.machine_card.code,
+            "plate": crew.machine_card.plate,
+            "state": crew.state,
+            "state_label": crew.state_label,
+            "albaran": (
+                crew.current_unit.albaran_number
+                if crew.current_unit is not None else ""
+            ),
+        }
+        if crew.state in CREW_OUT_STATES:
+            position = positions.get(crew.driver_id)
+            if position is not None:
+                entry["point"] = _point(position.latitude, position.longitude)
+                entry["accuracy"] = position.accuracy_m
+                entry["at"] = timezone.localtime(
+                    position.recorded_at,
+                ).strftime("%H:%M")
+            crews_out.append(entry)
+        else:
+            base_entry(crew.driver_card)["crews"].append(entry)
+    for driver in drivers:
+        if driver.crew is None and driver.state == STATE_FREE:
+            base_entry(driver)["drivers"].append(driver.display_name)
+
+    services = []
+    for unit in units:
+        if unit.status in RETURNING_STATUSES:
+            continue
+        services.append({
+            "label": unit.albaran_number,
+            "address": unit.work_order.pickup_location,
+            "colour": unit_colour(unit, today),
+            "status": unit.get_status_display(),
+            "driver": (
+                _driver_name(unit.operator) if unit.operator_id else ""
+            ),
+        })
+    for work_order in WorkOrderAssistance.objects.filter(
+        company=company,
+        status__in=OPEN_ORDER_STATUSES,
+        units__isnull=True,
+    ):
+        services.append({
+            "label": work_order.work_order_number,
+            "address": work_order.pickup_location,
+            "colour": (
+                COLOUR_BLUE if work_order.service_date > today
+                else COLOUR_RED
+            ),
+            "status": "Sin albarán",
+            "driver": "",
+        })
+
+    return {
+        "bases": [entry for entry in bases.values()],
+        "crews_out": crews_out,
+        "services": [s for s in services if s["address"]],
+    }
+
+
+def driver_is_out(company_user):
+    """
+    Whether the driver has an albarán in progress.
+
+    ---
+
+    Si el conductor tiene un albarán en curso (enviado, en servicio o
+    regresando): solo entonces se guarda su posición.
+    """
+    return Unit.objects.filter(
+        operator=company_user,
+        status__in=IN_SERVICE_STATUSES + RETURNING_STATUSES,
+        work_order__status__in=OPEN_ORDER_STATUSES,
+    ).exists()

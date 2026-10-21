@@ -2,21 +2,50 @@
 {% comment %}
 H37 (S133). Pestaña Tráfico de Servicios: panel de tráfico del dossier
 de Pepe (fase 2, anexo V37 sección 4.4). Barra fija arriba (altas,
-categoría de máquina, orden) y debajo tres columnas de tarjetas:
-conductores, máquinas y albaranes abiertos, cada una con su propio
-scroll (directriz 4.24, panel/_fixed_list_layout.html).
+categoría de máquina, orden) y debajo tres columnas de tarjetas (sin
+equipo, equipos, albaranes abiertos), cada una con su propio scroll
+(directriz 4.24, panel/_fixed_list_layout.html), y el mapa a la
+derecha.
 
-Asignación: se arrastra la tarjeta de un conductor o de una máquina
-libre y se suelta sobre un albarán (o sobre una orden sin albaranes).
-En pantallas táctiles, tocar la tarjeta la selecciona y tocar después
-el albarán la asigna. El tablero (#traffic-board) se refresca solo
-cada 20 segundos, salvo mientras se arrastra o hay algo seleccionado.
+Equipos (Miguel Ángel, S133): al albarán va siempre el equipo entero,
+conductor y máquina juntos. Se forma soltando un conductor sobre una
+máquina (o al revés); soltar el conductor o la máquina de un equipo
+sobre otro equipo los intercambia. En pantallas táctiles, tocar una
+tarjeta la selecciona y tocar después el destino hace lo mismo que
+soltarla. El tablero (#traffic-board) se refresca solo cada 20
+segundos, salvo mientras se arrastra o hay algo seleccionado.
+
+Mapa: equipos fuera en la última posición del móvil del conductor,
+equipos en base agrupados en su base, recogidas de los albaranes
+abiertos (datos de services/traffic/map/, con cada refresco del
+tablero). Pantalla
+completa para el mapa, para el tablero entero y para cada columna,
+como en el laboratorio de análisis.
 La categoría y el orden se guardan por usuario (directriz 4.15,
 screen_key services_hub, clave "traffic").
 {% endcomment %}
 <style>
 #traffic-bottom-panel { display: flex; min-height: 240px; }
-#traffic-board { display: flex; flex: 1; min-height: 0; width: 100%; }
+#traffic-bottom-panel { gap: .75rem; }
+#traffic-board { display: flex; flex: 3 1 0; min-height: 0; min-width: 0; }
+#traffic-map-wrap { flex: 1.6 1 0; display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid #dee2e6; border-radius: .5rem; background: #fff; }
+#traffic-map { flex: 1; min-height: 240px; border-radius: 0 0 .5rem .5rem; }
+#traffic-map-wrap:fullscreen { border-radius: 0; }
+#traffic-map-wrap:fullscreen #traffic-map { border-radius: 0; }
+#traffic-bottom-panel:fullscreen { height: 100vh !important; background: var(--bs-body-bg, #fff); padding: 1rem; }
+#traffic-bottom-panel[data-solo] #traffic-map-wrap { display: none; }
+#traffic-bottom-panel[data-solo="loose"] .tb-column:not([data-col="loose"]),
+#traffic-bottom-panel[data-solo="crews"] .tb-column:not([data-col="crews"]),
+#traffic-bottom-panel[data-solo="units"] .tb-column:not([data-col="units"]) { display: none; }
+.tb-subhead { font-size: .8rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: .35rem; }
+.tb-chip { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .45rem; border-radius: 1rem; background: #f1f3f5; font-size: .85rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tb-chip.tb-draggable { cursor: grab; border: 1px dashed #adb5bd; }
+.tb-locked-soft { opacity: .85; }
+.tb-map-pin { display: inline-flex; align-items: center; gap: .25rem; padding: .15rem .45rem; border-radius: 1rem; font-size: .75rem; font-weight: 600; color: #212529; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35); white-space: nowrap; }
+.tb-map-pin-in_service { background: #ffc107; }
+.tb-map-pin-returning { background: #20c997; color: #fff; }
+.tb-map-pin-base { background: #212529; color: #fff; }
+.tb-map-info { font-size: .85rem; max-width: 260px; }
 .tb-columns { display: flex; gap: .75rem; flex: 1; min-height: 0; width: 100%; }
 .tb-column { flex: 1 1 0; display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid #dee2e6; border-radius: .5rem; background: #f8f9fa; }
 .tb-column-wide { flex: 1.4 1 0; }
@@ -47,8 +76,10 @@ screen_key services_hub, clave "traffic").
 .tb-slot-empty { color: #dc3545; font-style: italic; }
 .tb-avatar { width: 2rem; height: 2rem; border-radius: 50%; background: #e9ecef; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: .8rem; flex-shrink: 0; }
 @media (max-width: 991.98px) {
+    #traffic-bottom-panel { flex-direction: column; }
     .tb-columns { flex-direction: column; }
     .tb-column-body { max-height: 60vh; }
+    #traffic-map { height: 50vh; }
 }
 </style>
 
@@ -82,8 +113,11 @@ screen_key services_hub, clave "traffic").
                 {% endfor %}
             </select>
         </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-solo="board" title="Tablero a pantalla completa">
+            <i class="bi bi-fullscreen me-1"></i>Tablero
+        </button>
         <div class="small text-muted ms-lg-auto">
-            Arrastra un conductor o una máquina libre hasta un albarán. Colores:
+            Suelta un conductor sobre una máquina para formar el equipo y el equipo sobre un albarán. Colores:
             <span class="badge tb-badge-red">pendiente</span>
             <span class="badge tb-badge-blue">programado</span>
             <span class="badge tb-badge-yellow">enviado / en servicio</span>
@@ -101,16 +135,41 @@ screen_key services_hub, clave "traffic").
          hx-swap="innerHTML">
         {% include "budgets/services/_traffic_board.html" %}
     </div>
+    <section id="traffic-map-wrap">
+        <div class="tb-column-head d-flex justify-content-between align-items-center gap-2">
+            <span><i class="bi bi-geo-alt me-1"></i>Mapa</span>
+            <span class="d-flex align-items-center gap-2">
+                <span class="small text-muted fw-normal text-truncate" id="traffic-map-nopos"></span>
+                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" id="traffic-map-full" title="Mapa a pantalla completa">
+                    <i class="bi bi-fullscreen"></i>
+                </button>
+            </span>
+        </div>
+        <div id="traffic-map"
+             data-url="{% url 'budgets:services_traffic_map' %}"
+             data-map-id="{{ google_maps_map_id|default:'DEMO_MAP_ID' }}"></div>
+    </section>
 </div>
 
 {{ screen_key|json_script:"traffic-screen-key" }}
 <form id="traffic-action-urls" class="d-none"
+      data-pair="{% url 'budgets:services_traffic_action' action='pair' %}"
+      data-separate="{% url 'budgets:services_traffic_action' action='separate' %}"
       data-assign="{% url 'budgets:services_traffic_action' action='assign' %}"
       data-unassign="{% url 'budgets:services_traffic_action' action='unassign' %}"
       data-send="{% url 'budgets:services_traffic_action' action='send' %}"></form>
 
 {% include "panel/_fixed_list_layout.html" with top_id="traffic-top-panel" bottom_id="traffic-bottom-panel" %}
 
+{% if google_maps_api_key %}
+<script>
+if (!(window.google && window.google.maps && window.google.maps.importLibrary)) {
+{# Maps JS API -- Dynamic Library Import (mismo patrón que budgets/detail.html). #}
+(g=>{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={});var d=b.maps||(b.maps={}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`https://maps.${c}apis.com/maps/api/js?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))})
+({key: "{{ google_maps_api_key|escapejs }}", v: "weekly"});
+}
+</script>
+{% endif %}
 <script>
 (function () {
     "use strict";
@@ -124,6 +183,13 @@ screen_key services_hub, clave "traffic").
     );
     let dragging = null;
     let selected = null;
+
+    // Dónde se puede soltar cada cosa.
+    const TARGETS = {
+        crew: "[data-drop-unit], [data-drop-order]",
+        driver: "[data-drop-crew], [data-drop-machine]",
+        machine: "[data-drop-crew], [data-drop-driver]"
+    };
 
     function filterValues() {
         return {
@@ -150,31 +216,63 @@ screen_key services_hub, clave "traffic").
         selected = null;
     }
 
-    function resourceOf(card) {
-        return {kind: card.dataset.kind, resource: card.dataset.resource};
+    function sourceOf(card) {
+        return {
+            kind: card.dataset.kind,
+            resource: card.dataset.resource,
+            crew: card.dataset.crew || ""
+        };
     }
 
-    function targetOf(el) {
-        return el.closest("[data-drop-unit], [data-drop-order]");
-    }
-
-    function assignTo(target, res) {
-        const values = {kind: res.kind, resource: res.resource};
-        if (target.dataset.dropUnit) {
-            values.unit = target.dataset.dropUnit;
-        } else {
-            values.order = target.dataset.dropOrder;
+    function targetOf(el, src) {
+        const target = el.closest(TARGETS[src.kind]);
+        if (!target) {
+            return null;
         }
-        post(urls.assign, values);
+        // Soltar sobre sí mismo o sobre su propio equipo no hace nada.
+        if (src.crew && target.dataset.dropCrew === src.crew) {
+            return null;
+        }
+        if (src.kind === "driver" && target.dataset.dropDriver === src.resource) {
+            return null;
+        }
+        if (src.kind === "machine" && target.dataset.dropMachine === src.resource) {
+            return null;
+        }
+        return target;
+    }
+
+    function drop(target, src) {
+        const t = target.dataset;
+        if (src.kind === "crew") {
+            const values = {crew: src.resource};
+            if (t.dropUnit) {
+                values.unit = t.dropUnit;
+            } else {
+                values.order = t.dropOrder;
+            }
+            post(urls.assign, values);
+        } else if (src.kind === "driver") {
+            post(urls.pair, {
+                driver: src.resource,
+                machine: t.dropCrew ? t.crewMachine : t.dropMachine
+            });
+        } else if (src.kind === "machine") {
+            post(urls.pair, {
+                machine: src.resource,
+                driver: t.dropCrew ? t.crewDriver : t.dropDriver
+            });
+        }
     }
 
     // Arrastrar y soltar (ordenador).
     pane.addEventListener("dragstart", function (ev) {
         const card = ev.target.closest(".tb-draggable");
-        if (!card) {
+        if (!card || !card.dataset.kind) {
             return;
         }
-        dragging = resourceOf(card);
+        ev.stopPropagation();
+        dragging = sourceOf(card);
         ev.dataTransfer.effectAllowed = "move";
         ev.dataTransfer.setData("text/plain", card.dataset.resource);
     });
@@ -185,38 +283,83 @@ screen_key services_hub, clave "traffic").
         });
     });
     pane.addEventListener("dragover", function (ev) {
-        const target = targetOf(ev.target);
-        if (dragging && target) {
+        const target = dragging && targetOf(ev.target, dragging);
+        if (target) {
             ev.preventDefault();
             target.classList.add("tb-drop-over");
         }
     });
     pane.addEventListener("dragleave", function (ev) {
-        const target = targetOf(ev.target);
+        const target = ev.target.closest(".tb-drop-over");
         if (target && !target.contains(ev.relatedTarget)) {
             target.classList.remove("tb-drop-over");
         }
     });
     pane.addEventListener("drop", function (ev) {
-        const target = targetOf(ev.target);
-        if (!dragging || !target) {
+        const target = dragging && targetOf(ev.target, dragging);
+        if (!target) {
             return;
         }
         ev.preventDefault();
-        const res = dragging;
+        const src = dragging;
         dragging = null;
-        assignTo(target, res);
+        drop(target, src);
     });
 
-    // Tocar para seleccionar y tocar el albarán (pantallas táctiles),
-    // y los botones de quitar y enviar.
+    // Pantalla completa: el tablero entero, una columna o el mapa.
+    // La columna sola se hace con el panel inferior (que no se
+    // sustituye al refrescar) y data-solo, para no salir de pantalla
+    // completa cada vez que se refresca el tablero.
+    const mapWrap = document.getElementById("traffic-map-wrap");
+    function toggleSolo(solo) {
+        if (document.fullscreenElement) {
+            document.exitFullscreen();
+            return;
+        }
+        pane.dataset.solo = solo;
+        pane.requestFullscreen().catch(function (err) {
+            delete pane.dataset.solo;
+            console.warn("Pantalla completa no disponible:", err);
+        });
+    }
+    document.getElementById("traffic-top-panel").addEventListener("click", function (ev) {
+        const button = ev.target.closest("[data-solo]");
+        if (button) {
+            toggleSolo(button.dataset.solo);
+        }
+    });
+    document.getElementById("traffic-map-full").addEventListener("click", function () {
+        if (document.fullscreenElement) {
+            document.exitFullscreen();
+            return;
+        }
+        mapWrap.requestFullscreen().catch(function (err) {
+            console.warn("Pantalla completa no disponible:", err);
+        });
+    });
+    document.addEventListener("fullscreenchange", function () {
+        if (!document.fullscreenElement) {
+            delete pane.dataset.solo;
+        }
+    });
+
+    // Tocar para seleccionar y tocar el destino (pantallas táctiles),
+    // y los botones de separar, quitar, enviar y pantalla completa.
     pane.addEventListener("click", function (ev) {
+        const solo = ev.target.closest("[data-solo]");
+        if (solo) {
+            toggleSolo(solo.dataset.solo);
+            return;
+        }
         const button = ev.target.closest("[data-action]");
         if (button) {
             ev.preventDefault();
-            const values = {unit: button.dataset.unit};
-            if (button.dataset.kind) {
-                values.kind = button.dataset.kind;
+            const values = {};
+            if (button.dataset.unit) {
+                values.unit = button.dataset.unit;
+            }
+            if (button.dataset.crew) {
+                values.crew = button.dataset.crew;
             }
             if (button.dataset.action === "send") {
                 button.disabled = true;
@@ -227,8 +370,15 @@ screen_key services_hub, clave "traffic").
         if (ev.target.closest("a")) {
             return;
         }
+        if (selected) {
+            const target = targetOf(ev.target, sourceOf(selected));
+            if (target) {
+                drop(target, sourceOf(selected));
+                return;
+            }
+        }
         const card = ev.target.closest(".tb-draggable");
-        if (card) {
+        if (card && card.dataset.kind) {
             const same = selected === card;
             clearSelection();
             if (!same) {
@@ -237,10 +387,7 @@ screen_key services_hub, clave "traffic").
             }
             return;
         }
-        const target = targetOf(ev.target);
-        if (selected && target) {
-            assignTo(target, resourceOf(selected));
-        }
+        clearSelection();
     });
 
     // Categoría y orden guardados por usuario (directriz 4.15).
@@ -261,5 +408,171 @@ screen_key services_hub, clave "traffic").
         }
         htmx.trigger(board, "tbRefresh");
     }, REFRESH_MS);
+
+    // ------------------------------------------------------------
+    // Mapa.
+    // ------------------------------------------------------------
+    const mapEl = document.getElementById("traffic-map");
+    const noPos = document.getElementById("traffic-map-nopos");
+    const PIN_COLOURS = {
+        red: "#dc3545", yellow: "#ffc107", green: "#198754",
+        blue: "#0d6efd", orange: "#fd7e14"
+    };
+    const GEO_KEY = "tbTrafficGeo";
+    let geoCache = {};
+    try {
+        geoCache = JSON.parse(sessionStorage.getItem(GEO_KEY) || "{}");
+    } catch (e) {
+        geoCache = {};
+    }
+    const mapState = {map: null, info: null, geocoder: null, lib: null, markers: [], fitted: false};
+
+    function esc(text) {
+        const div = document.createElement("div");
+        div.textContent = text == null ? "" : String(text);
+        return div.innerHTML;
+    }
+
+    function pin(className, html) {
+        const el = document.createElement("div");
+        el.className = "tb-map-pin " + className;
+        el.innerHTML = html;
+        return el;
+    }
+
+    async function initMap() {
+        const g = window.google;
+        if (!g || !g.maps || !g.maps.importLibrary) {
+            mapEl.innerHTML = '<p class="small text-muted p-3 mb-0">El mapa no está disponible: falta la clave de Google Maps.</p>';
+            return false;
+        }
+        const mapsLib = await g.maps.importLibrary("maps");
+        mapState.lib = await g.maps.importLibrary("marker");
+        const geoLib = await g.maps.importLibrary("geocoding");
+        mapState.map = new mapsLib.Map(mapEl, {
+            center: {lat: 36.72, lng: -4.42}, zoom: 9,
+            mapId: mapEl.dataset.mapId || "DEMO_MAP_ID",
+            streetViewControl: false, fullscreenControl: false
+        });
+        mapState.info = new mapsLib.InfoWindow();
+        mapState.geocoder = new geoLib.Geocoder();
+        return true;
+    }
+
+    async function geocode(address) {
+        if (Object.prototype.hasOwnProperty.call(geoCache, address)) {
+            return geoCache[address];
+        }
+        let point = null;
+        try {
+            const res = await mapState.geocoder.geocode({address: address, region: "es"});
+            const loc = res.results[0] && res.results[0].geometry.location;
+            point = loc ? {lat: loc.lat(), lng: loc.lng()} : null;
+        } catch (e) {
+            point = null;
+        }
+        geoCache[address] = point;
+        try {
+            sessionStorage.setItem(GEO_KEY, JSON.stringify(geoCache));
+        } catch (e) { /* sin almacenamiento: se vuelve a buscar */ }
+        return point;
+    }
+
+    function addMarker(bounds, point, content, title, html) {
+        const marker = new mapState.lib.AdvancedMarkerElement({
+            map: mapState.map, position: point, content: content, title: title
+        });
+        marker.addListener("click", function () {
+            mapState.info.setContent('<div class="tb-map-info">' + html + "</div>");
+            mapState.info.open({map: mapState.map, anchor: marker});
+        });
+        mapState.markers.push(marker);
+        bounds.extend(point);
+    }
+
+    function crewLine(crew) {
+        return "<div><strong>" + esc(crew.machine) + "</strong> " + esc(crew.driver)
+            + ' <span class="text-muted">' + esc(crew.state_label)
+            + (crew.albaran ? " · " + esc(crew.albaran) : "") + "</span></div>";
+    }
+
+    async function refreshMap() {
+        let data;
+        try {
+            const resp = await fetch(mapEl.dataset.url, {credentials: "same-origin"});
+            if (!resp.ok) {
+                return;
+            }
+            data = await resp.json();
+        } catch (e) {
+            return;
+        }
+        mapState.markers.forEach(function (m) { m.map = null; });
+        mapState.markers = [];
+        const bounds = new window.google.maps.LatLngBounds();
+
+        data.bases.forEach(function (base) {
+            if (!base.point) {
+                return;
+            }
+            const count = base.crews.length;
+            let html = "<div class=\"fw-semibold mb-1\">" + esc(base.name) + "</div>";
+            html += count ? base.crews.map(crewLine).join("") : "<div class=\"text-muted\">Sin equipos en base.</div>";
+            if (base.drivers.length) {
+                html += "<div class=\"mt-1 text-muted\">Sin máquina: " + base.drivers.map(esc).join(", ") + "</div>";
+            }
+            addMarker(bounds, base.point,
+                pin("tb-map-pin-base", '<i class="bi bi-house-door"></i>' + esc(base.name) + " · " + count),
+                base.name, html);
+        });
+
+        const missing = [];
+        data.crews_out.forEach(function (crew) {
+            if (!crew.point) {
+                missing.push(crew.machine + " " + crew.driver);
+                return;
+            }
+            const html = crewLine(crew)
+                + "<div class=\"text-muted\">" + esc(crew.plate) + " · posición de las " + esc(crew.at)
+                + (crew.accuracy ? " (±" + esc(crew.accuracy) + " m)" : "") + "</div>";
+            addMarker(bounds, crew.point,
+                pin("tb-map-pin-" + crew.state, '<i class="bi bi-truck"></i>' + esc(crew.machine)),
+                crew.machine + " " + crew.driver, html);
+        });
+        noPos.textContent = missing.length ? "Sin posición: " + missing.join(", ") : "";
+        noPos.title = noPos.textContent;
+
+        for (const service of data.services) {
+            const point = await geocode(service.address);
+            if (!point) {
+                continue;
+            }
+            const marker = new mapState.lib.PinElement({
+                background: PIN_COLOURS[service.colour] || "#6c757d",
+                borderColor: "#fff", glyphColor: "#fff", scale: 0.85
+            });
+            addMarker(bounds, point, marker.element, service.label,
+                "<div class=\"fw-semibold\">" + esc(service.label) + "</div>"
+                + "<div>" + esc(service.status) + (service.driver ? " · " + esc(service.driver) : "") + "</div>"
+                + "<div class=\"text-muted\">" + esc(service.address) + "</div>");
+        }
+
+        if (!mapState.fitted && !bounds.isEmpty()) {
+            mapState.map.fitBounds(bounds, 40);
+            mapState.fitted = true;
+        }
+    }
+
+    initMap().then(function (ok) {
+        if (!ok) {
+            return;
+        }
+        refreshMap();
+        // Con cada refresco del tablero (cada 20 s y tras cada acción)
+        // se refresca también el mapa.
+        board.addEventListener("htmx:afterSwap", function () {
+            refreshMap();
+        });
+    });
 }());
 </script>

@@ -709,7 +709,8 @@ urlpatterns = [
         name="services_delivery_notes_pane",
     ),
     # H37 (S133): traffic panel tab, its board and its actions
-    # (assign, unassign, send) — POST for the actions.
+    # (pair, separate, assign, unassign, send) — POST for the actions —
+    # and the map data.
     # Pestaña del panel de tráfico, su tablero y sus acciones.
     path(
         "services/traffic/",
@@ -720,6 +721,11 @@ urlpatterns = [
         "services/traffic/board/",
         views_services.ServicesTrafficBoardView.as_view(),
         name="services_traffic_board",
+    ),
+    path(
+        "services/traffic/map/",
+        views_services.ServicesTrafficMapView.as_view(),
+        name="services_traffic_map",
     ),
     path(
         "services/traffic/<slug:action>/",

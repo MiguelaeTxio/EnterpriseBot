@@ -1,22 +1,32 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/services/_traffic_board.html #}
 {% comment %}
 H37 (S133). Tablero del panel de tráfico: tres columnas de tarjetas
-(conductores, máquinas, albaranes abiertos). Lo pinta la pestaña al
-abrirse y lo devuelven el refresco periódico y cada acción
-(asignar, quitar, enviar), con su mensaje o su error arriba. Toda la
-lógica (estados, colores, qué se puede asignar o enviar) llega
-resuelta desde assistance_traffic.build_board.
+(sin equipo, equipos, albaranes abiertos). Lo pinta la pestaña al
+abrirse y lo devuelven el refresco periódico y cada acción (formar o
+cambiar equipo, separar, asignar, quitar, enviar), con su mensaje o su
+error arriba. Toda la lógica (estados, colores, qué se puede mover,
+asignar o enviar) llega resuelta desde assistance_traffic.build_board.
+
+Arrastres (los resuelve el script de _traffic_pane.html):
+- conductor suelto sobre una máquina suelta o un equipo: forma equipo
+  o cambia de conductor;
+- máquina suelta sobre un conductor suelto o un equipo: igual;
+- conductor o máquina de un equipo sobre otro equipo: intercambio;
+- equipo entero sobre un albarán o una orden: asignación.
 {% endcomment %}
 <div class="tb-columns">
-    <section class="tb-column">
-        <div class="tb-column-head d-flex justify-content-between">
-            <span><i class="bi bi-person-badge me-1"></i>Conductores</span>
-            <span class="small text-muted fw-normal">{{ free_drivers }} libre{{ free_drivers|pluralize }} de {{ drivers|length }}</span>
+    <section class="tb-column" data-col="loose">
+        <div class="tb-column-head d-flex justify-content-between align-items-center gap-2">
+            <span><i class="bi bi-puzzle me-1"></i>Sin equipo</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" data-solo="loose" title="Pantalla completa">
+                <i class="bi bi-fullscreen"></i>
+            </button>
         </div>
         <div class="tb-column-body">
+            <div class="tb-subhead"><i class="bi bi-person-badge me-1"></i>Conductores</div>
             {% for driver in drivers %}
             <div class="tb-card tb-state-{{ driver.state }}{% if driver.is_assignable %} tb-draggable{% else %} tb-locked{% endif %}"
-                 {% if driver.is_assignable %}draggable="true" data-kind="driver" data-resource="{{ driver.pk }}"{% endif %}>
+                 {% if driver.is_assignable %}draggable="true" data-kind="driver" data-resource="{{ driver.pk }}" data-drop-driver="{{ driver.pk }}"{% endif %}>
                 <div class="d-flex align-items-center gap-2">
                     <span class="tb-avatar">{{ driver.user.first_name|slice:":1" }}{{ driver.user.last_name|slice:":1" }}</span>
                     <div class="flex-grow-1 min-w-0">
@@ -29,20 +39,13 @@ resuelta desde assistance_traffic.build_board.
                 </div>
             </div>
             {% empty %}
-            <p class="small text-muted mb-0">No hay conductores en la sección Asistencia.</p>
+            <p class="small text-muted">Todos los conductores llevan máquina.</p>
             {% endfor %}
-        </div>
-    </section>
 
-    <section class="tb-column">
-        <div class="tb-column-head d-flex justify-content-between">
-            <span><i class="bi bi-truck me-1"></i>Máquinas</span>
-            <span class="small text-muted fw-normal">{{ free_machines }} libre{{ free_machines|pluralize }} de {{ machines|length }}</span>
-        </div>
-        <div class="tb-column-body">
+            <div class="tb-subhead mt-2"><i class="bi bi-truck me-1"></i>Máquinas</div>
             {% for machine in machines %}
             <div class="tb-card tb-state-{{ machine.state }}{% if machine.is_assignable %} tb-draggable{% else %} tb-locked{% endif %}"
-                 {% if machine.is_assignable %}draggable="true" data-kind="machine" data-resource="{{ machine.pk }}"{% endif %}>
+                 {% if machine.is_assignable %}draggable="true" data-kind="machine" data-resource="{{ machine.pk }}" data-drop-machine="{{ machine.pk }}"{% endif %}>
                 <div class="d-flex justify-content-between gap-2">
                     <span class="fw-semibold">{{ machine.code }}</span>
                     <span class="small text-muted">{{ machine.plate }}</span>
@@ -57,15 +60,64 @@ resuelta desde assistance_traffic.build_board.
                 </div>
             </div>
             {% empty %}
-            <p class="small text-muted mb-0">No hay máquinas de asistencia{% if category %} de esta categoría{% endif %}.</p>
+            <p class="small text-muted mb-0">No hay máquinas sin conductor{% if category %} de esta categoría{% endif %}.</p>
             {% endfor %}
         </div>
     </section>
 
-    <section class="tb-column tb-column-wide">
-        <div class="tb-column-head d-flex justify-content-between">
+    <section class="tb-column" data-col="crews">
+        <div class="tb-column-head d-flex justify-content-between align-items-center gap-2">
+            <span><i class="bi bi-people me-1"></i>Equipos</span>
+            <span class="d-flex align-items-center gap-2">
+                <span class="small text-muted fw-normal">{{ free_crews }} libre{{ free_crews|pluralize }} de {{ crews|length }}</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" data-solo="crews" title="Pantalla completa">
+                    <i class="bi bi-fullscreen"></i>
+                </button>
+            </span>
+        </div>
+        <div class="tb-column-body">
+            {% for crew in crews %}
+            <div class="tb-card tb-state-{{ crew.state }}{% if crew.is_assignable %} tb-draggable{% else %} tb-locked-soft{% endif %}"
+                 data-drop-crew="{{ crew.pk }}" data-crew-driver="{{ crew.driver_id }}" data-crew-machine="{{ crew.machine_id }}"
+                 {% if crew.is_assignable %}draggable="true" data-kind="crew" data-resource="{{ crew.pk }}"{% endif %}>
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                    <div class="min-w-0 d-flex flex-column gap-1">
+                        <span class="tb-chip{% if crew.is_movable %} tb-draggable{% endif %}"
+                              {% if crew.is_movable %}draggable="true" data-kind="driver" data-resource="{{ crew.driver_id }}" data-crew="{{ crew.pk }}" title="Arrastra a otro equipo o a una máquina para cambiarlo"{% endif %}>
+                            <i class="bi bi-person"></i>{{ crew.driver_card.display_name }}
+                        </span>
+                        <span class="tb-chip{% if crew.is_movable %} tb-draggable{% endif %}"
+                              {% if crew.is_movable %}draggable="true" data-kind="machine" data-resource="{{ crew.machine_id }}" data-crew="{{ crew.pk }}" title="Arrastra a otro equipo o a un conductor para cambiarla"{% endif %}>
+                            <i class="bi bi-truck"></i>{{ crew.machine_card.code }}
+                            <span class="text-muted">{{ crew.machine_card.plate }}</span>
+                        </span>
+                    </div>
+                    {% if crew.is_movable %}
+                    <button type="button" class="btn btn-link btn-sm p-0 text-danger" title="Separar el equipo"
+                            data-action="separate" data-crew="{{ crew.pk }}"><i class="bi bi-scissors"></i></button>
+                    {% endif %}
+                </div>
+                <div class="small mt-1">
+                    {{ crew.state_label }}
+                    {% if crew.current_unit %}· {{ crew.current_unit.albaran_number }}{% endif %}
+                    <span class="text-muted">· {{ crew.machine_card.type_name|default:crew.machine_card.brand_model }}</span>
+                </div>
+            </div>
+            {% empty %}
+            <p class="small text-muted mb-0">Sin equipos. Suelta un conductor sobre una máquina para formar uno.</p>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="tb-column tb-column-wide" data-col="units">
+        <div class="tb-column-head d-flex justify-content-between align-items-center gap-2">
             <span><i class="bi bi-file-earmark-text me-1"></i>Albaranes abiertos</span>
-            <span class="small text-muted fw-normal">{{ open_count }}</span>
+            <span class="d-flex align-items-center gap-2">
+                <span class="small text-muted fw-normal">{{ open_count }}</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" data-solo="units" title="Pantalla completa">
+                    <i class="bi bi-fullscreen"></i>
+                </button>
+            </span>
         </div>
         <div class="tb-column-body">
             {% if board_message %}
@@ -87,7 +139,7 @@ resuelta desde assistance_traffic.build_board.
                 </div>
                 <div class="small text-truncate">{{ work_order.insurer.name }}{% if work_order.expediente %} · {{ work_order.expediente }}{% endif %}</div>
                 <div class="small text-muted text-truncate">{{ work_order.pickup_location|default:"Recogida sin indicar" }}{% if work_order.destination %} → {{ work_order.destination }}{% endif %}</div>
-                <div class="tb-slot tb-slot-empty mt-1">Sin albarán: suelta aquí un conductor o una máquina.</div>
+                <div class="tb-slot tb-slot-empty mt-1">Sin albarán: suelta aquí un equipo.</div>
             </div>
             {% endfor %}
 
@@ -99,23 +151,19 @@ resuelta desde assistance_traffic.build_board.
                 </div>
                 <div class="small text-truncate">{{ unit.work_order.insurer.name }}{% if unit.work_order.expediente %} · {{ unit.work_order.expediente }}{% endif %} · {{ unit.work_order.service_date|date:"d/m/Y" }}</div>
                 <div class="small text-muted text-truncate">{{ unit.work_order.pickup_location|default:"Recogida sin indicar" }}{% if unit.work_order.destination %} → {{ unit.work_order.destination }}{% endif %}</div>
-                <div class="d-flex flex-wrap gap-3 mt-1">
+                <div class="d-flex flex-wrap align-items-center gap-3 mt-1">
                     <div class="tb-slot{% if not unit.operator_id %} tb-slot-empty{% endif %}">
                         <i class="bi bi-person"></i>
                         {% if unit.operator_id %}{{ unit.driver_name }}{% else %}Sin conductor{% endif %}
-                        {% if unit.operator_id and unit.is_assignable %}
-                        <button type="button" class="btn btn-link btn-sm p-0 text-danger" title="Quitar conductor"
-                                data-action="unassign" data-kind="driver" data-unit="{{ unit.pk }}"><i class="bi bi-x-circle"></i></button>
-                        {% endif %}
                     </div>
                     <div class="tb-slot{% if not unit.machine %} tb-slot-empty{% endif %}">
                         <i class="bi bi-truck"></i>
                         {% if unit.machine %}{{ unit.machine }}{% else %}Sin máquina{% endif %}
-                        {% if unit.machine and unit.is_assignable %}
-                        <button type="button" class="btn btn-link btn-sm p-0 text-danger" title="Quitar máquina"
-                                data-action="unassign" data-kind="machine" data-unit="{{ unit.pk }}"><i class="bi bi-x-circle"></i></button>
-                        {% endif %}
                     </div>
+                    {% if unit.is_assignable and unit.operator_id or unit.is_assignable and unit.machine %}
+                    <button type="button" class="btn btn-link btn-sm p-0 text-danger" title="Quitar el equipo"
+                            data-action="unassign" data-unit="{{ unit.pk }}"><i class="bi bi-x-circle"></i></button>
+                    {% endif %}
                 </div>
                 {% if unit.status == 'NOTIFY_FAILED' and unit.notify_error %}
                 <div class="small text-danger mt-1"><i class="bi bi-exclamation-triangle me-1"></i>{{ unit.notify_error }}</div>

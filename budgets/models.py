@@ -4121,3 +4121,131 @@ class DriverDeviceToken(models.Model):
 
     def __str__(self):
         return f"{self.company_user} — {self.device_name or 'dispositivo'}"
+
+
+class AssistanceCrew(models.Model):
+    """
+    Assistance crew: a driver with the machine he drives.
+
+    In the traffic panel the driver is put on a machine and the crew
+    as a whole goes to the albarán, so driver and machine never travel
+    apart. A driver has at most one machine and a machine at most one
+    driver. Drivers can swap machines while their crews are free or
+    returning (a crew finishing a 10 t service swaps with one coming
+    back with a 35 t truck).
+
+    ---
+
+    Equipo de asistencia: un conductor con la máquina que lleva.
+
+    En el panel de tráfico el conductor se pone en una máquina y al
+    albarán va el equipo entero: conductor y máquina nunca van por
+    separado. Un conductor lleva como mucho una máquina y una máquina
+    como mucho un conductor. Los conductores se pueden cambiar de
+    máquina mientras sus equipos están libres o regresando (Miguel
+    Ángel, S133: el de la grúa de 10 t que termina se cambia con el
+    que vuelve con la de 35 t).
+    """
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="assistance_crews",
+        verbose_name="Empresa",
+    )
+    driver = models.OneToOneField(
+        CompanyUser,
+        on_delete=models.CASCADE,
+        related_name="assistance_crew",
+        verbose_name="Conductor",
+    )
+    machine = models.OneToOneField(
+        "fleet.MachineAsset",
+        on_delete=models.CASCADE,
+        related_name="assistance_crew",
+        verbose_name="Máquina",
+    )
+    created_by = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Formado por",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Formado",
+    )
+
+    class Meta:
+        verbose_name = "Equipo de asistencia"
+        verbose_name_plural = "Equipos de asistencia"
+        ordering = ["machine__code"]
+
+    def __str__(self):
+        return f"{self.driver} — {self.machine}"
+
+
+class DriverPosition(models.Model):
+    """
+    Position sent by the driver app.
+
+    The app only sends it while the driver has an albarán in progress
+    (sent, in service or returning to base): drivers are not followed
+    outside their services. The traffic map puts each crew out of base
+    on the last position of its driver.
+
+    ---
+
+    Posición enviada por la app del conductor.
+
+    La app solo la envía mientras el conductor tiene un albarán en
+    curso (enviado, en servicio o regresando): fuera de servicio no se
+    le sigue. El mapa de tráfico pone cada equipo que está fuera en la
+    última posición de su conductor.
+    """
+
+    company_user = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.CASCADE,
+        related_name="driver_positions",
+        verbose_name="Conductor",
+    )
+    latitude = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        verbose_name="Latitud",
+    )
+    longitude = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        verbose_name="Longitud",
+    )
+    accuracy_m = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Precisión (m)",
+    )
+    recorded_at = models.DateTimeField(
+        verbose_name="Tomada",
+        help_text="Hora del móvil al tomar la posición.",
+    )
+    received_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Recibida",
+    )
+
+    class Meta:
+        verbose_name = "Posición del conductor"
+        verbose_name_plural = "Posiciones de los conductores"
+        ordering = ["-recorded_at"]
+        indexes = [
+            models.Index(
+                fields=["company_user", "-recorded_at"],
+                name="drvpos_user_recorded_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.company_user} {self.recorded_at:%d/%m %H:%M}"

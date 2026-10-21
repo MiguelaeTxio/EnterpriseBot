@@ -16,6 +16,7 @@ import os
 
 from django.contrib import messages
 from django.db.models import Q
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views import View
@@ -125,7 +126,7 @@ class ServicesDeliveryNotesPaneView(AssistanceSupervisorAccessMixin, View):
 # asignación arrastrando y envío (fase 2 del dossier).
 # ---------------------------------------------------------------------------
 
-TRAFFIC_ACTIONS = ("assign", "unassign", "send")
+TRAFFIC_ACTIONS = ("pair", "separate", "assign", "unassign", "send")
 
 
 def _traffic_filters(request):
@@ -204,6 +205,8 @@ class ServicesTrafficPaneView(AssistanceSupervisorAccessMixin, View):
             "screen_key": SCREEN_KEY,
             "board_message": "",
             "board_error": "",
+            "google_maps_api_key": os.environ.get("GOOGLE_MAPS_API_KEY", ""),
+            "google_maps_map_id": os.environ.get("GOOGLE_MAPS_MAP_ID", ""),
         })
         return render(request, self.template_name, ctx)
 
@@ -228,15 +231,40 @@ class ServicesTrafficBoardView(AssistanceSupervisorAccessMixin, View):
         return _render_board(request)
 
 
-class ServicesTrafficActionView(AssistanceSupervisorAccessMixin, View):
+class ServicesTrafficMapView(AssistanceSupervisorAccessMixin, View):
     """
-    Assign, unassign or send an albarán from the board.
+    Data of the traffic map, as JSON.
 
     ---
 
-    Asigna (conductor o máquina soltados sobre un albarán o una
-    orden), quita una asignación o envía el albarán. Las reglas están
-    en `assistance_traffic`; si no se cumplen, el panel lo dice.
+    Datos del mapa de tráfico en JSON: bases con sus equipos, equipos
+    fuera con su última posición y recogidas de los albaranes abiertos
+    (`assistance_traffic.build_map`).
+    """
+
+    def get(self, request):
+        """
+        Return the map data.
+
+        ---
+
+        Devuelve los datos del mapa.
+        """
+        from budgets.assistance_traffic import build_map
+
+        return JsonResponse(build_map(request.user.company_user.company))
+
+
+class ServicesTrafficActionView(AssistanceSupervisorAccessMixin, View):
+    """
+    Crew changes, assignment and sending from the board.
+
+    ---
+
+    Acciones del panel: formar o cambiar un equipo (conductor soltado
+    sobre una máquina o un equipo), separarlo, asignar un equipo a un
+    albarán o a una orden, quitarlo y enviar el albarán. Las reglas
+    están en `assistance_traffic`; si no se cumplen, el panel lo dice.
     Devuelve el panel actualizado.
     """
 
@@ -253,25 +281,34 @@ class ServicesTrafficActionView(AssistanceSupervisorAccessMixin, View):
         company_user = request.user.company_user
         company = company_user.company
         data = request.POST
-        message = ""
         try:
             if action not in TRAFFIC_ACTIONS:
                 raise traffic.TrafficError("Acción desconocida.")
-            if action == "assign":
+            if action == "pair":
+                message = traffic.pair(
+                    company, company_user,
+                    driver_pk=_int(data.get("driver")),
+                    machine_pk=_int(data.get("machine")),
+                )
+            elif action == "separate":
+                message = traffic.separate(
+                    company, company_user, _int(data.get("crew")),
+                )
+            elif action == "assign":
                 unit = traffic.assign(
                     company, company_user,
-                    resource_kind=data.get("kind", ""),
-                    resource_pk=_int(data.get("resource")),
+                    crew_pk=_int(data.get("crew")),
                     unit_pk=_int(data.get("unit")),
                     order_pk=_int(data.get("order")),
                 )
-                message = "Asignado al albarán %s." % unit.albaran_number
+                message = "Equipo asignado al albarán %s." % (
+                    unit.albaran_number
+                )
             elif action == "unassign":
                 unit = traffic.unassign(
                     company, company_user, _int(data.get("unit")),
-                    data.get("kind", ""),
                 )
-                message = "Asignación retirada del albarán %s." % (
+                message = "Equipo retirado del albarán %s." % (
                     unit.albaran_number
                 )
             else:
