@@ -1,0 +1,20 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/services/_alb_sort_th.html #}
+{% comment %}
+H37 (S133). Cabecera ordenable del listado de albaranes (directriz
+4.24): `col` (siguiente orden, flecha y prioridad, resueltos en la vista,
+sort_cols) y `label` llegan del include.
+{% endcomment %}
+<a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
+   hx-get="{% url 'budgets:services_delivery_notes_table' %}"
+   hx-target="#alb-table-container"
+   hx-include="#alb-filters"
+   hx-trigger="click"
+   hx-vals='{"sort": "{{ col.next }}"}'
+   role="button">
+    {{ label }}
+    {% if col.arrow %}
+        <i class="bi bi-arrow-{{ col.arrow }}-short"></i>{% if col.priority %}<sup class="small">{{ col.priority }}</sup>{% endif %}
+    {% else %}
+        <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
+    {% endif %}
+</a>

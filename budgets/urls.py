@@ -708,6 +708,24 @@ urlpatterns = [
         views_services.ServicesDeliveryNotesPaneView.as_view(),
         name="services_delivery_notes_pane",
     ),
+    # H37 (S133): albaranes list (directive 4.24): table fragment, PDF
+    # ZIP and Excel of the selection.
+    # Listado de albaranes: fragmento, ZIP de PDF y Excel de la selección.
+    path(
+        "services/delivery-notes/table/",
+        views_services.ServicesDeliveryNotesFragmentView.as_view(),
+        name="services_delivery_notes_table",
+    ),
+    path(
+        "services/delivery-notes/zip/",
+        views_services.ServicesDeliveryNotesZipView.as_view(),
+        name="services_delivery_notes_zip",
+    ),
+    path(
+        "services/delivery-notes/export/",
+        views_services.ServicesDeliveryNotesExportView.as_view(),
+        name="services_delivery_notes_export",
+    ),
     # H37 (S133): traffic panel tab, its board and its actions
     # (pair, separate, assign, unassign, send) — POST for the actions —
     # and the map data.

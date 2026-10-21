@@ -1,53 +1,347 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/services/_delivery_notes_pane.html #}
 {% comment %}
-H37 (S132). Pestaña Albaranes de Servicios: órdenes de trabajo de
-asistencia, con el alta desde foto de TIREA o a mano. El formato de
-listado de la directriz 4.24 llega con el panel de tráfico (anexo V37).
+H37 (S133). Pestaña Albaranes de Servicios, con el formato único de
+listado de la directriz 4.24 (referencia: Centros de gasto,
+panel/fleet/_fleet_pane.html):
+- #alb-top-panel (fijo, nunca hace scroll): "Buscar y filtrar"
+  (búsqueda, Abiertos/Cerrados en casillas, aseguradora, fechas,
+  "Mostrar solo la selección actual", "Quitar orden") y las acciones,
+  siempre visibles (altas y, sobre la selección, ZIP de PDF y Excel).
+- #alb-bottom-panel (altura calculada, panel/_fixed_list_layout.html):
+  la lista con su propio scroll y cabecera fija, y el visor de la
+  selección actual. La lista se puede ver a pantalla completa como en
+  el laboratorio de análisis (Element.requestFullscreen).
+Filtros, orden y selección se guardan por usuario (directriz 4.15,
+screen_key services_albaranes). Miguel Ángel, S133: "he cerrado uno y
+ya no se puede ver en ningún sitio".
 {% endcomment %}
-<div class="d-flex flex-wrap gap-2 mb-3">
-    <a href="{% url 'budgets:services_tirea_upload' %}"
-       class="btn btn-sm btn-primary">
-        <i class="bi bi-camera me-1"></i>Nueva orden desde foto de TIREA
-    </a>
-    <a href="{% url 'budgets:work_order_save' %}"
-       class="btn btn-sm btn-outline-primary">
-        <i class="bi bi-plus-lg me-1"></i>Nueva orden a mano
-    </a>
+<style>
+#alb-results-scroll table td,
+#alb-results-scroll table th { white-space: nowrap; }
+#alb-results-scroll thead th { position: sticky; top: 0; background-color: #f8f9fa; z-index: 2; }
+#alb-list-box:fullscreen { background: var(--bs-body-bg, #fff); padding: 1rem; }
+#alb-list-box:fullscreen #alb-results-scroll { height: calc(100vh - 4rem); }
+</style>
+
+<div class="border rounded p-2 mb-2" id="alb-top-panel">
+    <div class="row g-2">
+        <div class="col-lg-6">
+            <div class="border rounded p-2 h-100" id="alb-filters">
+                <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                <input id="alb-filter-search" type="search" class="form-control form-control-sm mb-2"
+                       placeholder="Buscar por albarán, expediente, matrícula, cliente, lugar, conductor, máquina…"
+                       name="search" value="{{ filter_search }}" autocomplete="off"
+                       hx-get="{% url 'budgets:services_delivery_notes_table' %}"
+                       hx-target="#alb-table-container"
+                       hx-include="#alb-filters, #alb-sort"
+                       hx-trigger="input changed delay:300ms, search">
+                <div class="d-flex flex-wrap gap-3">
+                    <div>
+                        <div class="small fw-bold">Estado</div>
+                        {% comment %}
+                        Casillas sin "name": el JS traduce la combinación al
+                        valor único de state -- ambas = todos, ninguna =
+                        ninguno (semántica literal de casilla, como Centros
+                        de gasto).
+                        {% endcomment %}
+                        <div class="form-check">
+                            <input class="form-check-input alb-state-check" type="checkbox" id="alb-state-open" data-state="open" autocomplete="off"
+                                   {% if filter_state == '' or filter_state == 'open' %}checked{% endif %}>
+                            <label class="form-check-label small" for="alb-state-open">Abiertos</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input alb-state-check" type="checkbox" id="alb-state-closed" data-state="closed" autocomplete="off"
+                                   {% if filter_state == '' or filter_state == 'closed' %}checked{% endif %}>
+                            <label class="form-check-label small" for="alb-state-closed">Cerrados</label>
+                        </div>
+                        <input type="hidden" id="alb-filter-state" name="state" value="{{ filter_state }}"
+                               hx-get="{% url 'budgets:services_delivery_notes_table' %}"
+                               hx-target="#alb-table-container"
+                               hx-include="#alb-filters, #alb-sort"
+                               hx-trigger="alb-state-change">
+                    </div>
+                    <div class="flex-grow-1">
+                        <div class="small fw-bold">Aseguradora</div>
+                        <select id="alb-filter-insurer" class="form-select form-select-sm" name="insurer" autocomplete="off"
+                                hx-get="{% url 'budgets:services_delivery_notes_table' %}"
+                                hx-target="#alb-table-container"
+                                hx-include="#alb-filters, #alb-sort"
+                                hx-trigger="change">
+                            <option value="">Todas</option>
+                            {% for insurer in insurers %}
+                            <option value="{{ insurer.pk }}" {% if filter_insurer == insurer.pk|stringformat:"s" %}selected{% endif %}>{{ insurer.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <div class="small fw-bold">Fecha del servicio</div>
+                        <div class="d-flex gap-1">
+                            <input type="date" class="form-control form-control-sm" name="date_from" value="{{ filter_date_from }}" title="Desde"
+                                   hx-get="{% url 'budgets:services_delivery_notes_table' %}"
+                                   hx-target="#alb-table-container"
+                                   hx-include="#alb-filters, #alb-sort"
+                                   hx-trigger="change">
+                            <input type="date" class="form-control form-control-sm" name="date_to" value="{{ filter_date_to }}" title="Hasta"
+                                   hx-get="{% url 'budgets:services_delivery_notes_table' %}"
+                                   hx-target="#alb-table-container"
+                                   hx-include="#alb-filters, #alb-sort"
+                                   hx-trigger="change">
+                        </div>
+                    </div>
+                </div>
+                <div class="small fw-bold mt-2">Selección</div>
+                <div class="d-flex align-items-center justify-content-between gap-2">
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" id="alb-only-selected" name="only_selected" value="1" autocomplete="off"
+                               {% if only_selected %}checked{% endif %}
+                               hx-get="{% url 'budgets:services_delivery_notes_table' %}"
+                               hx-target="#alb-table-container"
+                               hx-include="#alb-filters, #alb-sort"
+                               hx-trigger="change, alb-selection-refresh">
+                        <label class="form-check-label small" for="alb-only-selected">Mostrar solo la selección actual</label>
+                    </div>
+                    <input type="hidden" id="alb-selected-ids" name="selected_ids" value="">
+                    <button type="button"
+                            class="btn btn-sm btn-outline-secondary{% if not sort_active %} d-none{% endif %}"
+                            id="alb-clear-sort"
+                            hx-get="{% url 'budgets:services_delivery_notes_table' %}"
+                            hx-target="#alb-table-container"
+                            hx-include="#alb-filters"
+                            hx-vals='{"sort": ""}'
+                            title="Deshacer todos los órdenes aplicados">
+                        <i class="bi bi-x-circle me-1"></i>Quitar orden
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="border rounded p-2 h-100">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <strong class="small"><span id="alb-mass-count">0</span> seleccionados</strong>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="alb-mass-clear">Limpiar</button>
+                </div>
+                <div class="row g-1">
+                    <div class="col-md-6 border-end pe-2">
+                        <div class="small text-muted fw-bold">Nuevo servicio</div>
+                        <div class="d-flex gap-1 flex-wrap">
+                            <a href="{% url 'budgets:services_tirea_upload' %}" class="btn btn-sm btn-primary">
+                                <i class="bi bi-camera me-1"></i>Desde foto de TIREA
+                            </a>
+                            <a href="{% url 'budgets:work_order_save' %}" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-plus-lg me-1"></i>A mano
+                            </a>
+                        </div>
+                    </div>
+                    <div class="col-md-6 ps-2">
+                        <div class="small text-muted fw-bold">Descargar la selección</div>
+                        <div class="d-flex gap-1 flex-wrap">
+                            <button type="button" class="btn btn-sm btn-outline-danger alb-needs-selection" id="alb-mass-zip" disabled>
+                                <i class="bi bi-file-earmark-pdf me-1"></i>PDF (ZIP)
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-success alb-needs-selection" id="alb-mass-export" disabled>
+                                <i class="bi bi-file-earmark-excel me-1"></i>Excel
+                            </button>
+                        </div>
+                        <div class="small text-muted mt-1">Las órdenes sin albarán no entran.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
-{% if work_orders %}
-<div class="table-responsive">
-    <table class="table table-sm table-hover align-middle small mb-0">
-        <thead class="table-light">
-            <tr>
-                <th>Nº orden</th>
-                <th>Fecha</th>
-                <th>Aseguradora</th>
-                <th>Expediente</th>
-                <th>Recogida</th>
-                <th>Estado</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for work_order in work_orders %}
-            <tr>
-                <td>
-                    <a href="{% url 'budgets:work_order_detail' pk=work_order.pk %}">
-                        {{ work_order.work_order_number }}
-                    </a>
-                </td>
-                <td>{{ work_order.service_date|date:"d/m/Y" }}</td>
-                <td>{{ work_order.insurer.name }}</td>
-                <td>{{ work_order.expediente|default:"—" }}</td>
-                <td>{{ work_order.pickup_location|default:"—" }}</td>
-                <td>{{ work_order.get_status_display }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+<div class="border rounded p-2" id="alb-bottom-panel">
+    <div class="row g-2 h-100">
+        <div class="col-lg-9 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column" id="alb-list-box">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <div class="fw-bold small">
+                        <span id="alb-row-count">{{ rows|length }}</span> albaranes
+                        <span id="alb-row-filtered" class="text-muted fw-normal{% if not is_filtered %} d-none{% endif %}">(filtrado)</span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" id="alb-fullscreen" title="Pantalla completa">
+                        <i class="bi bi-fullscreen"></i>
+                    </button>
+                </div>
+                <div id="alb-results-scroll" class="fixed-list-scroll flex-scroll-xy">
+                    <div id="alb-table-container">
+                        {% include "budgets/services/_delivery_notes_table.html" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1">Selección actual (<span id="alb-selection-count">0</span>)</div>
+                <div class="flex-scroll-y">
+                    <ul class="mb-0 small ps-0 list-unstyled" id="alb-selection-list">
+                        <li class="text-muted">Nada seleccionado todavía.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
-{% else %}
-<p class="text-muted small mb-0">
-    <i class="bi bi-info-circle me-1"></i>Todavía no hay órdenes de trabajo.
-</p>
-{% endif %}
+
+<span id="alb-sort" class="d-none"><input type="hidden" name="sort" value="{{ current_sort }}"></span>
+<form id="alb-download-urls" class="d-none"
+      data-zip="{% url 'budgets:services_delivery_notes_zip' %}"
+      data-export="{% url 'budgets:services_delivery_notes_export' %}"></form>
+{{ saved_selection|json_script:"alb-saved-selection" }}
+{{ screen_key|json_script:"alb-screen-key" }}
+{% include "panel/_fixed_list_layout.html" with top_id="alb-top-panel" bottom_id="alb-bottom-panel" %}
+<script>
+(function () {
+    "use strict";
+    const container = document.getElementById("alb-table-container");
+    const urls = document.getElementById("alb-download-urls").dataset;
+    const screenKey = JSON.parse(document.getElementById("alb-screen-key").textContent);
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute("content");
+
+    // Selección (clave de fila -> etiqueta): sobrevive a cada repintado
+    // del fragmento y se guarda por usuario (directriz 4.15).
+    const selection = new Map();
+    try {
+        JSON.parse(document.getElementById("alb-saved-selection").textContent).forEach(function (item) {
+            if (item && item.key) {
+                selection.set(String(item.key), item.label || "");
+            }
+        });
+    } catch (e) { /* estado guardado ilegible: se empieza sin selección */ }
+    let lastSaved = "";
+    function saveSelection() {
+        const payload = Array.from(selection.entries()).map(function ([key, label]) {
+            return {key: key, label: label};
+        });
+        const serialized = JSON.stringify(payload);
+        if (serialized === lastSaved) return;
+        lastSaved = serialized;
+        window.EbNavState.save(screenKey, {selection: payload});
+    }
+
+    function refreshFromFragment() {
+        const state = document.getElementById("alb-fragment-state");
+        if (state) {
+            document.getElementById("alb-row-count").textContent = state.dataset.count;
+            document.getElementById("alb-row-filtered").classList.toggle("d-none", !state.dataset.filtered);
+            document.getElementById("alb-clear-sort").classList.toggle("d-none", !state.dataset.sortActive);
+            document.querySelector("#alb-sort input[name=sort]").value = state.dataset.sort || "";
+        }
+        container.querySelectorAll(".alb-row-check").forEach(function (cb) {
+            cb.checked = selection.has(cb.dataset.key);
+        });
+        updateSelectionUi();
+    }
+
+    function updateSelectionUi() {
+        saveSelection();
+        document.getElementById("alb-mass-count").textContent = selection.size;
+        document.getElementById("alb-selection-count").textContent = selection.size;
+        const list = document.getElementById("alb-selection-list");
+        list.innerHTML = "";
+        if (!selection.size) {
+            const empty = document.createElement("li");
+            empty.className = "text-muted";
+            empty.textContent = "Nada seleccionado todavía.";
+            list.appendChild(empty);
+        } else {
+            Array.from(selection.values()).sort().forEach(function (label) {
+                const li = document.createElement("li");
+                li.textContent = label;
+                list.appendChild(li);
+            });
+        }
+        const idsInput = document.getElementById("alb-selected-ids");
+        const newIds = Array.from(selection.keys()).join(",");
+        if (idsInput.value !== newIds) {
+            idsInput.value = newIds;
+            const onlySel = document.getElementById("alb-only-selected");
+            if (onlySel.checked) htmx.trigger(onlySel, "alb-selection-refresh");
+        }
+        document.querySelectorAll(".alb-needs-selection").forEach(function (btn) {
+            btn.disabled = selection.size === 0;
+        });
+        const all = document.getElementById("alb-check-all");
+        if (!all) return;
+        const rows = container.querySelectorAll(".alb-row-check");
+        const checked = container.querySelectorAll(".alb-row-check:checked");
+        all.checked = rows.length > 0 && checked.length === rows.length;
+        all.indeterminate = checked.length > 0 && checked.length < rows.length;
+    }
+
+    // Estado (casillas) -> valor único: "" ambas, "open", "closed", "none".
+    const stateHidden = document.getElementById("alb-filter-state");
+    document.querySelectorAll(".alb-state-check").forEach(function (cb) {
+        cb.addEventListener("change", function () {
+            const open = document.getElementById("alb-state-open").checked;
+            const closed = document.getElementById("alb-state-closed").checked;
+            stateHidden.value = open && closed ? "" : (open ? "open" : (closed ? "closed" : "none"));
+            htmx.trigger(stateHidden, "alb-state-change");
+        });
+    });
+
+    container.addEventListener("change", function (evt) {
+        const target = evt.target;
+        if (target.classList.contains("alb-row-check")) {
+            if (target.checked) selection.set(target.dataset.key, target.dataset.label);
+            else selection.delete(target.dataset.key);
+            updateSelectionUi();
+        } else if (target.id === "alb-check-all") {
+            container.querySelectorAll(".alb-row-check").forEach(function (cb) {
+                cb.checked = target.checked;
+                if (target.checked) selection.set(cb.dataset.key, cb.dataset.label);
+                else selection.delete(cb.dataset.key);
+            });
+            updateSelectionUi();
+        }
+    });
+
+    document.getElementById("alb-mass-clear").addEventListener("click", function () {
+        selection.clear();
+        refreshFromFragment();
+    });
+
+    // Descargas de la selección: formulario POST temporal, para que el
+    // navegador gestione la descarga como cualquier otra.
+    function download(url) {
+        if (!selection.size) return;
+        const form = document.createElement("form");
+        form.method = "post";
+        form.action = url;
+        form.style.display = "none";
+        const csrf = document.createElement("input");
+        csrf.type = "hidden"; csrf.name = "csrfmiddlewaretoken"; csrf.value = csrfToken;
+        form.appendChild(csrf);
+        selection.forEach(function (_label, key) {
+            const input = document.createElement("input");
+            input.type = "hidden"; input.name = "selected"; input.value = key;
+            form.appendChild(input);
+        });
+        document.body.appendChild(form);
+        form.submit();
+        form.remove();
+    }
+    document.getElementById("alb-mass-zip").addEventListener("click", function () { download(urls.zip); });
+    document.getElementById("alb-mass-export").addEventListener("click", function () { download(urls.export); });
+
+    // Pantalla completa de la lista (formato del laboratorio de análisis).
+    document.getElementById("alb-fullscreen").addEventListener("click", function () {
+        if (document.fullscreenElement) {
+            document.exitFullscreen();
+            return;
+        }
+        document.getElementById("alb-list-box").requestFullscreen().catch(function (err) {
+            console.warn("Pantalla completa no disponible:", err);
+        });
+    });
+
+    document.body.addEventListener("htmx:afterSwap", function (evt) {
+        if (evt.detail.target && evt.detail.target.id === "alb-table-container") {
+            refreshFromFragment();
+        }
+    });
+
+    refreshFromFragment();
+}());
+</script>

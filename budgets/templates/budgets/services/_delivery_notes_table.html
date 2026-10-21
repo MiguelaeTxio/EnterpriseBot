@@ -1,0 +1,92 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/services/_delivery_notes_table.html #}
+{% comment %}
+H37 (S133). Fragmento de tabla del listado de albaranes (directriz
+4.24, mismo formato que Centros de gasto): orden múltiple con
+prioridad (resuelto en la vista), casilla por fila y "todos",
+cabecera fija dentro del contenedor con scroll. Lo devuelven los
+filtros, el orden y "mostrar solo la selección". Una fila por albarán
+y una por cada orden abierta aún sin albarán.
+{% endcomment %}
+{% if rows %}
+<table class="table table-sm table-hover align-middle mb-0 small" id="alb-table">
+    <thead class="table-light">
+        <tr>
+            <th><input class="form-check-input" type="checkbox" id="alb-check-all" title="Marcar/desmarcar todos los visibles"></th>
+            <th>{% include "budgets/services/_alb_sort_th.html" with col=sort_cols.number label="Albarán" %}</th>
+            <th>{% include "budgets/services/_alb_sort_th.html" with col=sort_cols.date label="Fecha" %}</th>
+            <th>{% include "budgets/services/_alb_sort_th.html" with col=sort_cols.insurer label="Aseguradora" %}</th>
+            <th>{% include "budgets/services/_alb_sort_th.html" with col=sort_cols.expediente label="Expediente" %}</th>
+            <th>{% include "budgets/services/_alb_sort_th.html" with col=sort_cols.pickup label="Recogida → destino" %}</th>
+            <th>{% include "budgets/services/_alb_sort_th.html" with col=sort_cols.driver label="Conductor" %}</th>
+            <th>{% include "budgets/services/_alb_sort_th.html" with col=sort_cols.machine label="Máquina" %}</th>
+            <th>{% include "budgets/services/_alb_sort_th.html" with col=sort_cols.status label="Estado" %}</th>
+            <th>{% include "budgets/services/_alb_sort_th.html" with col=sort_cols.closed label="Cerrado en base" %}</th>
+            <th class="text-end">Acciones</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr class="{% if row.is_closed %}text-muted{% endif %}">
+            <td>
+                <input class="form-check-input alb-row-check" type="checkbox"
+                       data-key="{{ row.key }}" data-label="{{ row.label }}">
+            </td>
+            <td class="fw-semibold">
+                <a href="{% url 'budgets:work_order_detail' pk=row.work_order.pk %}">{{ row.number }}</a>
+            </td>
+            <td>{{ row.service_date|date:"d/m/Y" }}</td>
+            <td>{{ row.insurer|default:"—" }}</td>
+            <td>{{ row.expediente|default:"—" }}</td>
+            <td class="alb-col-place" title="{{ row.pickup }}{% if row.destination %} → {{ row.destination }}{% endif %}">
+                {{ row.pickup|default:"—"|truncatechars:40 }}{% if row.destination %} → {{ row.destination|truncatechars:30 }}{% endif %}
+            </td>
+            <td>{{ row.driver|default:"—" }}</td>
+            <td>{{ row.machine|default:"—" }}</td>
+            <td>
+                {% if row.is_closed %}
+                <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">{{ row.status_label }}</span>
+                {% elif not row.unit %}
+                <span class="badge bg-danger-subtle text-danger border border-danger-subtle">{{ row.status_label }}</span>
+                {% else %}
+                <span class="badge bg-primary-subtle text-primary border border-primary-subtle">{{ row.status_label }}</span>
+                {% endif %}
+            </td>
+            <td>
+                {% if row.closed_at %}
+                {{ row.closed_at|date:"d/m/Y H:i" }}
+                {% if row.estimated_km %}<span class="text-muted">· {{ row.estimated_km }} km · {{ row.estimated_fuel }} l</span>{% endif %}
+                {% else %}—{% endif %}
+            </td>
+            <td class="text-end">
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-secondary border-0 px-2" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                        <li><a class="dropdown-item" href="{% url 'budgets:work_order_detail' pk=row.work_order.pk %}"><i class="bi bi-folder2-open me-2"></i>Ver la orden</a></li>
+                        {% if row.unit %}
+                        <li><a class="dropdown-item" href="{% url 'budgets:work_order_albaran' pk=row.unit.pk %}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-text me-2"></i>Ver el albarán</a></li>
+                        <li><a class="dropdown-item" href="{% url 'budgets:work_order_pdf' pk=row.unit.pk %}"><i class="bi bi-file-earmark-pdf me-2"></i>Descargar PDF</a></li>
+                        {% endif %}
+                    </ul>
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="text-center text-muted py-5">
+    <i class="bi bi-file-earmark-text fs-1 d-block mb-2 opacity-25"></i>
+    <p class="mb-0">No hay albaranes que coincidan con los filtros aplicados.</p>
+</div>
+{% endif %}
+{% comment %}
+Estado del fragmento para el panel fijo (que no se repinta): nº de
+filas, si hay filtro y el orden vigente, que viaja con los filtros.
+{% endcomment %}
+<span id="alb-fragment-state" class="d-none"
+      data-count="{{ rows|length }}"
+      data-filtered="{% if is_filtered %}1{% endif %}"
+      data-sort-active="{% if sort_active %}1{% endif %}"
+      data-sort="{{ current_sort }}"></span>

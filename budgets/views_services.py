@@ -87,15 +87,75 @@ class ServicesHubView(AssistanceSupervisorAccessMixin, View):
         return render(request, self.template_name, ctx)
 
 
-class ServicesDeliveryNotesPaneView(AssistanceSupervisorAccessMixin, View):
+ALBARANES_SCREEN_KEY = "services_albaranes"
+
+
+def _albaranes_params(request):
     """
-    Delivery notes tab: the assistance work orders.
+    Filters of the albaranes list: GET, then POST (_f_ prefix).
 
     ---
 
-    Pestaña Albaranes: las órdenes de trabajo de asistencia de la
-    empresa, de la más reciente a la más antigua, con enlace a su
-    detalle (alta de unidades y aviso al operario).
+    Filtros del listado de albaranes: los de GET y, en las acciones por
+    POST, los vigentes con el prefijo _f_ (mismo criterio que Centros
+    de gasto).
+    """
+    from budgets.assistance_albaranes import FILTER_KEYS
+
+    return {
+        key: request.GET.get(key) or request.POST.get("_f_" + key, "")
+        for key in FILTER_KEYS
+    }
+
+
+def _albaranes_context(request):
+    """
+    Context of the albaranes table fragment.
+
+    ---
+
+    Contexto del fragmento de tabla de albaranes: filas, filtros
+    vigentes y controles de orden, resueltos aquí (plantillas tontas).
+    """
+    from budgets import assistance_albaranes as albaranes
+
+    company = request.user.company_user.company
+    params = _albaranes_params(request)
+    only_selected = request.GET.get("only_selected") == "1"
+    only_keys = None
+    if only_selected:
+        only_keys = {
+            key for key in request.GET.get("selected_ids", "").split(",")
+            if key
+        }
+    rows = albaranes.build_rows(company, params, only_keys=only_keys)
+    return {
+        "rows": rows,
+        "filter_search": params["search"],
+        "filter_state": params["state"],
+        "filter_insurer": params["insurer"],
+        "filter_date_from": params["date_from"],
+        "filter_date_to": params["date_to"],
+        "only_selected": only_selected,
+        "is_filtered": bool(
+            params["search"] or params["state"] or params["insurer"]
+            or params["date_from"] or params["date_to"] or only_selected
+        ),
+        **albaranes.sort_controls(params["sort"]),
+    }
+
+
+class ServicesDeliveryNotesPaneView(AssistanceSupervisorAccessMixin, View):
+    """
+    Albaranes tab: every assistance albarán, open and closed.
+
+    ---
+
+    Pestaña Albaranes: todos los albaranes de asistencia, abiertos y
+    cerrados, con el formato de la directriz 4.24 (panel fijo con
+    filtros y acciones, lista con scroll propio, orden múltiple,
+    casillas y visor de selección), filtros y selección guardados por
+    usuario (directriz 4.15).
     """
 
     template_name = "budgets/services/_delivery_notes_pane.html"
@@ -108,15 +168,216 @@ class ServicesDeliveryNotesPaneView(AssistanceSupervisorAccessMixin, View):
 
         Pinta el contenido de la pestaña.
         """
+        from budgets.assistance_albaranes import FILTER_KEYS
+        from panel.navigation_persistence import (
+            apply_list_navigation,
+            get_saved_state_key,
+        )
+
         company_user = request.user.company_user
-        work_orders = WorkOrderAssistance.objects.filter(
-            company=company_user.company,
-        ).select_related("insurer").order_by(
-            "-service_date", "-work_order_number",
+        apply_list_navigation(request, ALBARANES_SCREEN_KEY, FILTER_KEYS)
+        saved_selection = get_saved_state_key(
+            company_user, ALBARANES_SCREEN_KEY, "selection", [],
         )
         return render(request, self.template_name, {
-            "work_orders": work_orders,
+            **_albaranes_context(request),
+            "insurers": Insurer.objects.filter(
+                company=company_user.company,
+            ).order_by("name"),
+            "screen_key": ALBARANES_SCREEN_KEY,
+            "saved_selection": (
+                saved_selection if isinstance(saved_selection, list) else []
+            ),
         })
+
+
+class ServicesDeliveryNotesFragmentView(
+    AssistanceSupervisorAccessMixin, View,
+):
+    """
+    Albaranes table fragment (filters, order, selection).
+
+    ---
+
+    Fragmento de tabla de albaranes, para filtros, orden y "mostrar
+    solo la selección". Guarda filtros y orden por usuario.
+    """
+
+    def get(self, request):
+        """
+        Return the table fragment.
+
+        ---
+
+        Devuelve el fragmento de tabla.
+        """
+        from budgets.assistance_albaranes import FILTER_KEYS
+        from panel.navigation_persistence import apply_list_navigation
+
+        apply_list_navigation(request, ALBARANES_SCREEN_KEY, FILTER_KEYS)
+        return render(
+            request, "budgets/services/_delivery_notes_table.html",
+            _albaranes_context(request),
+        )
+
+
+class ServicesDeliveryNotesZipView(AssistanceSupervisorAccessMixin, View):
+    """
+    PDF of the selected albaranes, in one ZIP.
+
+    ---
+
+    PDF de los albaranes seleccionados en un ZIP (POST selected=u<pk>),
+    el mismo PDF que la descarga individual (albaran_pdf.html).
+    """
+
+    def post(self, request):
+        """
+        Build and return the ZIP.
+
+        ---
+
+        Construye y devuelve el ZIP.
+        """
+        import io
+        import zipfile
+
+        import weasyprint
+        from django.http import HttpResponse
+        from django.template.loader import render_to_string
+        from django.utils import timezone
+
+        from budgets.assistance_albaranes import selected_units
+
+        company = request.user.company_user.company
+        units = list(selected_units(
+            company, request.POST.getlist("selected"),
+        ))
+        if not units:
+            return HttpResponse(
+                "No hay ningún albarán seleccionado.", status=400,
+            )
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+            for unit in units:
+                html = render_to_string("budgets/albaran_pdf.html", {
+                    "unit": unit,
+                    "work_order": unit.work_order,
+                    "company": company,
+                }, request=request)
+                archive.writestr(
+                    "albaran_%s.pdf" % unit.albaran_number,
+                    weasyprint.HTML(string=html).write_pdf(),
+                )
+        filename = "albaranes_%s.zip" % (
+            timezone.localtime().strftime("%Y%m%d_%H%M")
+        )
+        response = HttpResponse(
+            buffer.getvalue(), content_type="application/zip",
+        )
+        response["Content-Disposition"] = (
+            'attachment; filename="%s"' % filename
+        )
+        return response
+
+
+ALBARANES_EXPORT_COLUMNS = (
+    "Albarán", "Fecha", "Aseguradora", "Expediente", "Matrícula",
+    "Cliente", "Recogida", "Destino", "Conductor", "Máquina", "Estado",
+    "Km albarán", "Km estimados", "Gasoil estimado (l)", "Cerrado en base",
+)
+
+
+class ServicesDeliveryNotesExportView(
+    AssistanceSupervisorAccessMixin, View,
+):
+    """
+    Selected albaranes as an Excel workbook.
+
+    ---
+
+    Los albaranes seleccionados en un Excel (POST selected=u<pk>), una
+    fila por albarán.
+    """
+
+    def post(self, request):
+        """
+        Build and return the workbook.
+
+        ---
+
+        Construye y devuelve el libro.
+        """
+        import io
+
+        from django.http import HttpResponse
+        from django.utils import timezone
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+
+        from budgets.assistance_albaranes import selected_units
+
+        company = request.user.company_user.company
+        units = list(selected_units(
+            company, request.POST.getlist("selected"),
+        ))
+        if not units:
+            return HttpResponse(
+                "No hay ningún albarán seleccionado.", status=400,
+            )
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "ALBARANES"
+        sheet.append(list(ALBARANES_EXPORT_COLUMNS))
+        for cell in sheet[1]:
+            cell.font = Font(bold=True)
+        for unit in units:
+            order = unit.work_order
+            user = unit.operator.user if unit.operator_id else None
+            km = [k for k in (unit.phase1_km, unit.phase2_km) if k]
+            sheet.append([
+                unit.albaran_number,
+                order.service_date,
+                order.insurer.name if order.insurer else "",
+                order.expediente or "",
+                order.vehicle_plate or "",
+                order.client_name or "",
+                order.pickup_location or "",
+                order.destination or "",
+                (user.get_full_name() or user.username) if user else "",
+                unit.machine or "",
+                unit.get_status_display(),
+                float(sum(km)) if km else None,
+                float(unit.estimated_km) if unit.estimated_km else None,
+                (
+                    float(unit.estimated_fuel_liters)
+                    if unit.estimated_fuel_liters else None
+                ),
+                (
+                    timezone.localtime(unit.base_closed_at).replace(
+                        tzinfo=None,
+                    ) if unit.base_closed_at else None
+                ),
+            ])
+        for cell in sheet["B"][1:]:
+            cell.number_format = "DD/MM/YYYY"
+        for cell in sheet["O"][1:]:
+            cell.number_format = "DD/MM/YYYY HH:MM"
+        sheet.freeze_panes = "A2"
+        buffer = io.BytesIO()
+        workbook.save(buffer)
+        response = HttpResponse(
+            buffer.getvalue(),
+            content_type=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
+        )
+        response["Content-Disposition"] = (
+            'attachment; filename="albaranes_%s.xlsx"'
+            % timezone.localtime().strftime("%Y%m%d_%H%M")
+        )
+        return response
 
 
 # ---------------------------------------------------------------------------
