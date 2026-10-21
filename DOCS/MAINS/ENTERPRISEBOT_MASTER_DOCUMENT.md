@@ -1792,6 +1792,46 @@ list.html` + `fleet/views.py` (S117, las cinco reglas juntas);
 fijo + visor de selección); `delivery_notes/views.py` (orden múltiple,
 S116).
 
+**Ratificado y ampliado en S133 (H37).** Miguel Ángel, verbatim, al
+pedir el listado de albaranes de asistencia: *"siguiendo el mismo
+formato que tenemos siempre [...] el mismo formato que ya estamos
+utilizando en documentación, que va muy bien, me gusta mucho cómo
+queda la interfaz así. Con una interfaz fija, los scrollables van
+dentro de esa ventana fija y todo ordenable, con filtros, con casillas
+de selección, las acciones que se puedan realizar [...] Ya tenemos que
+fijar esa manera de ese formato de CRUD que tenemos, ese formato de
+listar cosas, ese formato de pestaña, teníamos que tenerlo ya muy
+claro para seguirlo siempre."* Desde S133 este formato es el **único**
+para cualquier CRUD, listado o pestaña de listado del panel, nuevo o
+que se toque, sin preguntar ni proponer alternativas. Además de las
+cinco reglas de arriba:
+
+6. **Composición fija del panel superior** (como Centros de gasto y
+   Personal): a la izquierda, el subpanel **"Buscar y filtrar"**
+   (búsqueda de texto a lo ancho; estados en casillas con semántica
+   literal -- las dos marcadas = todos, ninguna = ninguno --;
+   desplegables y fechas; "Mostrar solo la selección actual";
+   "Quitar orden"); a la derecha, las **acciones** agrupadas por
+   categoría con un contador "N seleccionados" y "Limpiar". Las
+   altas (crear) van en el panel de acciones, nunca como botón
+   suelto en la cabecera.
+7. **Panel inferior: lista (2/3 o 3/4) + visor "Selección actual"**
+   con su propio scroll, para ver lo marcado aunque el filtro lo
+   oculte.
+8. **Nada se pierde de vista:** un registro cerrado, archivado o
+   finalizado sigue en el listado (filtrable con las casillas de
+   estado), nunca desaparece de la única pantalla que lo muestra.
+9. **Acciones de fila** en un menú de tres puntos al final de la
+   fila (ver, descargar, editar...), además de las masivas.
+10. **Pantalla completa** del panel de la lista con el formato de la
+    directriz 4.26.
+
+**Implementación de referencia añadida en S133:**
+`budgets/templates/budgets/services/_delivery_notes_pane.html` +
+`_delivery_notes_table.html` + `budgets/assistance_albaranes.py`
+(pestaña Albaranes de Servicios, cargada por htmx dentro de un hub de
+pestañas: el mismo formato vale para una pestaña que para una página).
+
 #### 4.25. DIRECTRIZ CRÍTICA — El botón "Volver" vuelve a la página desde la que se llegó, con el historial en base de datos (añadida S132, corregida en la misma sesión)
 
 **Origen, verbatim de Miguel Ángel (S132).** Primero: *"los botones
@@ -1837,3 +1877,41 @@ historial, a su destino de antes. Excepción deliberada:
 `hr_calendar/clockin.html` ("Volver al panel"), página que guarda en
 caché un service worker para el fichaje sin conexión; una URL por
 usuario quedaría congelada en la copia guardada.
+
+#### 4.26. DIRECTRIZ CRÍTICA — Pantalla completa con el formato del laboratorio de análisis (añadida S133)
+
+**Origen, verbatim de Miguel Ángel (S133, H37):** *"tenemos que
+incluir el visor de mapa ampliable [...] Un visor que pille una parte
+de la pantalla y que se pueda ampliar a pantalla completa. Y como
+hicimos también en el laboratorio de análisis, todas las [...]
+pantalla de la parte de selección de conductor, máquina y servicio,
+también que sea ampliable a que ocupe toda la pantalla"*; y al pedir el
+listado de albaranes: *"Igual que cuando se ponen cosas susceptibles
+de poder ser ampliadas a pantalla completa, seguir también ese formato
+del laboratorio de análisis."*
+
+**Regla, para toda pantalla nueva o que se toque:** todo panel que
+gane al verse grande (mapa, gráfico, informe, lista, tablero de
+tarjetas, columna de un tablero) lleva su botón de pantalla completa,
+con el formato del laboratorio de análisis
+(`panel/templates/panel/analytics_lab.html`, `labFullscreen`):
+
+1. Botón pequeño `btn-outline-secondary` con el icono
+   `bi-fullscreen`, en la cabecera del propio panel, a la derecha.
+2. `Element.requestFullscreen()` del contenedor del panel; un segundo
+   clic (o Esc) sale con `document.exitFullscreen()`. Nunca una página
+   aparte ni un modal.
+3. CSS `#panel:fullscreen` con fondo `var(--bs-body-bg)`, `padding:
+   1rem` y la zona de contenido a `calc(100vh - …)`; los gráficos y
+   mapas se redimensionan en `fullscreenchange`.
+4. **El elemento que entra en pantalla completa nunca es uno que se
+   sustituya al refrescar** (htmx `innerHTML`): si se repinta, el
+   navegador sale de pantalla completa. Se pone en pantalla completa un
+   contenedor estable y, si hace falta mostrar solo una parte, se marca
+   con un atributo (`data-solo`) que el CSS usa para ocultar el resto
+   (implementación de referencia: panel de tráfico,
+   `budgets/templates/budgets/services/_traffic_pane.html`, S133).
+
+**Implementaciones de referencia:** laboratorio de análisis (origen);
+panel de tráfico de Servicios (mapa, tablero entero y cada columna,
+S133); listado de albaranes de Servicios (S133).
