@@ -11,8 +11,9 @@ están libres, los albaranes abiertos con su color, y las reglas de
 asignación:
 
 - No se asigna un conductor ni una máquina ocupados (con otro albarán
-  abierto), ni un conductor de vacaciones, de baja o ausente hoy, ni
-  una máquina en taller (con una avería abierta).
+  asignado o en servicio), ni un conductor de vacaciones, de baja o
+  ausente hoy, ni una máquina en taller (con una avería abierta). Los
+  que regresan a base sí se pueden asignar (S133).
 - Solo se asigna o se cambia la asignación de un albarán que no se ha
   enviado todavía (pendiente o con el aviso fallido).
 - No se envía sin conductor y máquina.
@@ -95,6 +96,19 @@ STATE_ORDER = {
     STATE_RETURNING: 3,
     STATE_UNAVAILABLE: 4,
     STATE_WORKSHOP: 4,
+}
+
+# Drivers and machines that can be dragged onto an albarán. Returning
+# ones too (Miguel Ángel, S133: the driver who has just finished a
+# service near another one goes straight to it instead of returning).
+# Conductores y máquinas que se pueden arrastrar a un albarán. También
+# los que regresan (Miguel Ángel, S133: el conductor que acaba de
+# terminar un servicio cerca de otro va directamente a él).
+ASSIGNABLE_RESOURCE_STATES = (STATE_FREE, STATE_RETURNING)
+RESOURCE_PRIORITY = {
+    STATE_IN_SERVICE: 0,
+    STATE_ASSIGNED: 1,
+    STATE_RETURNING: 2,
 }
 
 SORT_AVAILABILITY = "availability"
@@ -263,13 +277,27 @@ def _resources(company, units, today):
 
     Conductores y máquinas con su estado y su albarán actual.
     """
+    # With several albaranes, the most active one gives the state: in
+    # service, then assigned, then returning (S133: a returning driver
+    # can already have the next service).
+    # Con varios albaranes manda el más activo: en servicio, después
+    # asignado y por último regresando (S133: un conductor que regresa
+    # puede tener ya el siguiente servicio).
     driver_units = {}
     machine_units = {}
     for unit in units:
-        if unit.operator_id:
-            driver_units.setdefault(unit.operator_id, unit)
-        if unit.machine_asset_id:
-            machine_units.setdefault(unit.machine_asset_id, unit)
+        for key, table in (
+            (unit.operator_id, driver_units),
+            (unit.machine_asset_id, machine_units),
+        ):
+            if not key:
+                continue
+            current = table.get(key)
+            if current is None or (
+                RESOURCE_PRIORITY[unit_resource_state(unit)]
+                < RESOURCE_PRIORITY[unit_resource_state(current)]
+            ):
+                table[key] = unit
 
     drivers = list(assistance_drivers(company).select_related(
         "person_identity",
@@ -290,7 +318,7 @@ def _resources(company, units, today):
         driver.state_label = (
             driver.away_reason or STATE_LABELS[driver.state]
         )
-        driver.is_assignable = driver.state == STATE_FREE
+        driver.is_assignable = driver.state in ASSIGNABLE_RESOURCE_STATES
 
     machines = list(assistance_machines(company))
     workshop = _machines_in_workshop(company)
@@ -304,7 +332,7 @@ def _resources(company, units, today):
         else:
             machine.state = STATE_FREE
         machine.state_label = STATE_LABELS[machine.state]
-        machine.is_assignable = machine.state == STATE_FREE
+        machine.is_assignable = machine.state in ASSIGNABLE_RESOURCE_STATES
     return drivers, machines
 
 
@@ -560,9 +588,15 @@ def assign(company, by, resource_kind, resource_pk, unit_pk=None,
             if unit is None:
                 unit = _create_unit(work_order, by)
 
+        # Returning (signed, back to base) does not block: the driver
+        # and the machine can be sent straight to the next service.
+        # Regresando no bloquea: conductor y máquina pueden ir
+        # directamente al siguiente servicio.
         busy = board_units(company).filter(
             **{field: resource}
-        ).exclude(pk=unit.pk).first()
+        ).exclude(pk=unit.pk).exclude(
+            status__in=RETURNING_STATUSES,
+        ).first()
         if busy is not None:
             raise TrafficError(
                 "%s ya está en el albarán %s." % (
