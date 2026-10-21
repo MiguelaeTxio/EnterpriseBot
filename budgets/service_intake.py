@@ -1054,10 +1054,13 @@ def reply(intake, user_text, whatsapp_sender):
 # ---------------------------------------------------------------------------
 
 # "voy a dar un servicio", "tengo otro servicio", "servicio: ...".
+# Verb stems with any ending: "voy a darte un servicio" (incidencia
+# real S133: "darte" no entraba y contestaba el asistente general),
+# "te paso otro servicio", "tenemos servicio", "lánzame un servicio"...
+# Raíces con cualquier terminación (darte, dale, pasarte, tenemos...).
 START_RE = re.compile(
-    r"\b(dar|doy|dame|damos|meter|meto|nuevo|nueva|otro|tengo|hay|lanza|"
-    r"lanzar|lanzame|mandar|mando|manda|apunta|apuntar|apuntame|sacar)\b"
-    r".{0,30}\bservicio"
+    r"\b(da|doy|dam|dar|met|nuev|otr|ten|teng|hay|lanz|mand|apunt|sac|"
+    r"pas|abr|cre|ent)\w*\b.{0,30}\bservicio"
     r"|^\s*servicio\b"
 )
 
@@ -1091,10 +1094,21 @@ def claim_whatsapp(company, contact, from_number, body, post, num_media):
         from document_explorer.person_phone_service import (
             resolve_person_by_phone,
         )
-        from document_explorer.worker_request_service import expects_media
+        from document_explorer.worker_request_service import (
+            _recent_accepted,
+            open_requests,
+        )
 
+        # Whoever gives services always has panel access, so a photo or
+        # PDF is a service unless we asked them for a document.
+        # Quien da servicios siempre tiene acceso al panel (incidencia
+        # real S133: el PDF del servicio acabó en Documentación como
+        # "Parte de asistencia en carretera"): una foto o un PDF es un
+        # servicio salvo que le hayamos pedido un documento.
         person = resolve_person_by_phone(company, from_number)
-        starts = person is None or not expects_media(person)
+        starts = person is None or not (
+            open_requests(person) or _recent_accepted(person)
+        )
     if not starts:
         return None
     return start_intake(company_user, channel, from_number)
