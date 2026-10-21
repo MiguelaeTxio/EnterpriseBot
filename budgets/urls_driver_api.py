@@ -20,4 +20,14 @@ urlpatterns = [
         api_driver.DriverAlbaranesView.as_view(),
         name="albaranes",
     ),
+    path(
+        "albaranes/<int:pk>/",
+        api_driver.DriverAlbaranDetailView.as_view(),
+        name="albaran_detail",
+    ),
+    path(
+        "albaranes/<int:pk>/submit/",
+        api_driver.DriverAlbaranSubmitView.as_view(),
+        name="albaran_submit",
+    ),
 ]

@@ -20,13 +20,17 @@ Pueden entrar los conductores de la sección Asistencia
 (`assistance_resources.assistance_drivers`) y, para las pruebas, los
 administradores y supervisores de asistencia.
 """
+import base64
+import binascii
 import hashlib
 import json
 import logging
 import secrets
+from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.contrib.auth import authenticate
+from django.db import transaction
 from django.db.models import Q
 from django.http import JsonResponse
 from django.urls import reverse
@@ -37,7 +41,12 @@ from django.views.decorators.csrf import csrf_exempt
 
 from budgets.assistance_resources import assistance_drivers
 from budgets.assistance_traffic import OPEN_ORDER_STATUSES
-from budgets.models import DriverDeviceToken, WorkOrderAssistanceUnit
+from budgets.models import (
+    DriverDeviceToken,
+    WorkOrderAssistanceSignature,
+    WorkOrderAssistanceUnit,
+    WorkOrderAssistanceUnitEvent,
+)
 from ivr_config.models import CompanyUser
 
 logger = logging.getLogger(__name__)
@@ -260,6 +269,26 @@ def _unit_payload(unit):
     }
 
 
+def _driver_units(company_user):
+    """
+    Albaranes of the open orders assigned to the driver and sent.
+
+    ---
+
+    Albaranes de las órdenes abiertas asignados al conductor (primer o
+    segundo tramo) que la oficina ya le ha enviado.
+    """
+    return WorkOrderAssistanceUnit.objects.filter(
+        Q(operator=company_user) | Q(operator_2=company_user),
+        work_order__company=company_user.company,
+        work_order__status__in=OPEN_ORDER_STATUSES,
+    ).exclude(
+        # Not sent yet by the office: the driver does not see it.
+        # Aún sin enviar por la oficina: el conductor no lo ve.
+        status=WorkOrderAssistanceUnit.STATUS_PENDING,
+    ).select_related("work_order__insurer")
+
+
 class DriverAlbaranesView(View):
     """
     Albaranes assigned to the driver.
@@ -281,15 +310,7 @@ class DriverAlbaranesView(View):
         company_user, _token = _token_user(request)
         if company_user is None:
             return _error("Sesión no válida.", 401)
-        units = WorkOrderAssistanceUnit.objects.filter(
-            Q(operator=company_user) | Q(operator_2=company_user),
-            work_order__company=company_user.company,
-            work_order__status__in=OPEN_ORDER_STATUSES,
-        ).exclude(
-            # Not sent yet by the office: the driver does not see it.
-            # Aún sin enviar por la oficina: el conductor no lo ve.
-            status=WorkOrderAssistanceUnit.STATUS_PENDING,
-        ).select_related("work_order__insurer").order_by(
+        units = _driver_units(company_user).order_by(
             "work_order__service_date", "work_order__work_order_number",
             "unit_number",
         )
@@ -297,3 +318,248 @@ class DriverAlbaranesView(View):
             "driver": _display_name(company_user),
             "albaranes": [_unit_payload(unit) for unit in units],
         })
+
+
+# ---------------------------------------------------------------------------
+# H37 (S133). Driver sheet: detail of one albarán and its delivery.
+# Hoja del conductor: detalle de un albarán y su entrega firmada.
+# ---------------------------------------------------------------------------
+
+Unit = WorkOrderAssistanceUnit
+# States in which the driver can still fill and send the albarán.
+# Estados en los que el conductor aún puede rellenar y enviar.
+EDITABLE_STATUSES = (
+    Unit.STATUS_NOTIFY_SENDING,
+    Unit.STATUS_NOTIFIED,
+    Unit.STATUS_NOTIFY_FAILED,
+    Unit.STATUS_DOWNLOADED,
+    Unit.STATUS_IN_PROGRESS,
+)
+OPENED_FROM = (
+    Unit.STATUS_NOTIFY_SENDING,
+    Unit.STATUS_NOTIFIED,
+    Unit.STATUS_NOTIFY_FAILED,
+)
+SIGNATURE_PREFIX = "data:image/png;base64,"
+MAX_SIGNATURE_CHARS = 2_000_000
+
+
+def _number(value):
+    """
+    String of a decimal for the app, or "".
+
+    ---
+
+    Cadena de un decimal para la app, o "" si está vacío.
+    """
+    return "" if value is None else format(value, "f")
+
+
+def _detail_payload(unit):
+    """
+    Full JSON of one albarán for the driver sheet.
+
+    ---
+
+    JSON completo de un albarán para la hoja del conductor: lo que
+    necesita para el servicio, sin importes ni notas internas (dossier
+    de Pepe, hoja del conductor).
+    """
+    work_order = unit.work_order
+    signature = getattr(unit, "signature", None)
+    payload = _unit_payload(unit)
+    payload.update({
+        "client_address": work_order.client_address,
+        "vehicle_color": work_order.vehicle_color,
+        "pickup_province": work_order.pickup_province,
+        "delivery_address": work_order.delivery_address,
+        "delivery_locality": work_order.delivery_locality,
+        "insurer_comments": work_order.insurer_comments,
+        "is_overnight": unit.is_overnight,
+        "phase1_km": _number(unit.phase1_km),
+        "phase2_km": _number(unit.phase2_km),
+        "rescue_hours": _number(unit.rescue_hours),
+        "wait_hours": _number(unit.wait_hours),
+        "signer_name": signature.signer_name if signature else "",
+        "signed": signature is not None,
+        "unsigned_reason": unit.unsigned_reason,
+        "editable": unit.status in EDITABLE_STATUSES,
+    })
+    return payload
+
+
+def _unit_of_driver(company_user, pk):
+    """
+    Albarán of the driver, or None.
+
+    ---
+
+    Albarán del conductor, o None si no es suyo o no está enviado.
+    """
+    return _driver_units(company_user).select_related(
+        "signature",
+    ).filter(pk=pk).first()
+
+
+class DriverAlbaranDetailView(View):
+    """
+    Detail of one albarán (opening it marks it as opened).
+
+    ---
+
+    Detalle de un albarán. Abrirlo lo marca como "Descargado", igual
+    que la página web del albarán cuando la abre su conductor.
+    """
+
+    def get(self, request, pk):
+        """
+        Return the albarán.
+
+        ---
+
+        Devuelve el albarán.
+        """
+        company_user, _token = _token_user(request)
+        if company_user is None:
+            return _error("Sesión no válida.", 401)
+        unit = _unit_of_driver(company_user, pk)
+        if unit is None:
+            return _error("Este albarán ya no está asignado a ti.", 404)
+        if unit.status in OPENED_FROM:
+            previous = unit.status
+            unit.status = Unit.STATUS_DOWNLOADED
+            unit.downloaded_at = timezone.now()
+            unit.save(update_fields=["status", "downloaded_at"])
+            WorkOrderAssistanceUnitEvent.status_change(
+                unit, previous, unit.status, by=company_user,
+                detail="El chófer abre el albarán en la app.",
+            )
+        return JsonResponse({"albaran": _detail_payload(unit)})
+
+
+def _decimal(data, key, label):
+    """
+    Non-negative decimal of the body, None if empty.
+
+    ---
+
+    Decimal no negativo del cuerpo, None si viene vacío. Lanza
+    ValueError con el mensaje para el conductor si no es válido.
+    """
+    raw = str(data.get(key, "") or "").strip().replace(",", ".")
+    if not raw:
+        return None
+    try:
+        value = Decimal(raw)
+    except InvalidOperation:
+        raise ValueError("%s: no es un número válido." % label)
+    if value < 0 or value != value:
+        raise ValueError("%s: no puede ser negativo." % label)
+    return value
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class DriverAlbaranSubmitView(View):
+    """
+    Send the filled albarán: signed by the client, or closed without
+    signature with a reason.
+
+    ---
+
+    Envía el albarán relleno: firmado por el cliente (pasa a
+    Completado) o cerrado sin firma con su motivo (pasa a Cerrado sin
+    firma). Regla del dossier: no se cierra sin firma o motivo de no
+    firma. Guarda hora y usuario del cambio.
+    """
+
+    def post(self, request, pk):
+        """
+        Validate and save.
+
+        ---
+
+        Valida y guarda.
+        """
+        company_user, _token = _token_user(request)
+        if company_user is None:
+            return _error("Sesión no válida.", 401)
+        data = _json_body(request)
+        try:
+            phase1_km = _decimal(data, "phase1_km", "Km")
+            phase2_km = _decimal(data, "phase2_km", "Km del 2º tramo")
+            rescue_hours = _decimal(
+                data, "rescue_hours", "Horas de rescate",
+            )
+            wait_hours = _decimal(data, "wait_hours", "Horas de espera")
+        except ValueError as exc:
+            return _error(str(exc), 400)
+        signature_data = str(data.get("signature_data", "") or "").strip()
+        signer_name = str(data.get("signer_name", "") or "").strip()[:120]
+        unsigned_reason = str(data.get("unsigned_reason", "") or "").strip()
+        signed_offline = bool(data.get("signed_offline", False))
+        if signature_data:
+            if (not signature_data.startswith(SIGNATURE_PREFIX)
+                    or len(signature_data) > MAX_SIGNATURE_CHARS):
+                return _error("La firma no es válida.", 400)
+            try:
+                base64.b64decode(
+                    signature_data[len(SIGNATURE_PREFIX):], validate=True,
+                )
+            except (binascii.Error, ValueError):
+                return _error("La firma no es válida.", 400)
+        elif not unsigned_reason:
+            return _error(
+                "Falta la firma del cliente o el motivo por el que no "
+                "firma.",
+                400,
+            )
+
+        with transaction.atomic():
+            unit = _driver_units(company_user).select_for_update().filter(
+                pk=pk,
+            ).first()
+            if unit is None:
+                return _error("Este albarán ya no está asignado a ti.", 404)
+            if unit.status not in EDITABLE_STATUSES:
+                return _error(
+                    "Este albarán ya está %s."
+                    % unit.get_status_display().lower(),
+                    409,
+                )
+            previous = unit.status
+            now = timezone.now()
+            unit.phase1_km = phase1_km
+            unit.phase2_km = phase2_km if unit.is_overnight else None
+            unit.rescue_hours = rescue_hours
+            unit.wait_hours = wait_hours
+            unit.synced_at = now
+            if signature_data:
+                unit.status = Unit.STATUS_COMPLETED
+                unit.completed_at = now
+                unit.unsigned_reason = ""
+                detail = "Albarán firmado en la app."
+            else:
+                unit.status = Unit.STATUS_CLOSED_UNSIGNED
+                unit.closed_at = now
+                unit.unsigned_reason = unsigned_reason
+                detail = "Cerrado sin firma: %s" % unsigned_reason
+            unit.save()
+            if signature_data:
+                WorkOrderAssistanceSignature.objects.update_or_create(
+                    unit=unit,
+                    defaults={
+                        "signature_data": signature_data,
+                        "signer_name": signer_name,
+                        "signed_offline": signed_offline,
+                    },
+                )
+            WorkOrderAssistanceUnitEvent.status_change(
+                unit, previous, unit.status, by=company_user,
+                detail=detail,
+            )
+        logger.info(
+            "# [DRIVER API] Albarán %s enviado por %s (%s).",
+            unit.albaran_number, company_user.user.username, unit.status,
+        )
+        unit = _unit_of_driver(company_user, pk) or unit
+        return JsonResponse({"albaran": _detail_payload(unit)})
