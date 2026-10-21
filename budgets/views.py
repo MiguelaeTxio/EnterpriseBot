@@ -5829,6 +5829,43 @@ class WorkOrderUnitRowView(AssistanceWorkOrderAccessMixin, View):
         return _render_unit_row(request, _unit_of_company(request, pk))
 
 
+class WorkOrderUnitPhotoView(AssistanceWorkOrderAccessMixin, View):
+    """
+    Photo of a service sheet, read from GCS.
+
+    ---
+
+    H37 (S133). Foto de la hoja de servicio de un albarán de la empresa,
+    leída del cubo de GCS.
+    """
+
+    def get(self, request, pk):
+        """
+        Return the image.
+
+        ---
+
+        Devuelve la imagen.
+        """
+        from budgets.models import WorkOrderAssistanceUnitPhoto
+        from budgets.service_sheet import PHOTO_BUCKET
+        from spare_parts.gcs_service import download_bytes
+
+        company_user = _get_company_user(request)
+        if not company_user:
+            return redirect("panel:login")
+        photo = get_object_or_404(
+            WorkOrderAssistanceUnitPhoto,
+            pk=pk, unit__work_order__company=company_user.company,
+        )
+        response = HttpResponse(
+            download_bytes(PHOTO_BUCKET, photo.blob_name),
+            content_type=photo.content_type,
+        )
+        response["Cache-Control"] = "private, max-age=86400"
+        return response
+
+
 class WorkOrderUnitNotifyView(AssistanceWorkOrderAccessMixin, View):
     """
     Send the WhatsApp albarán notice to the operator of a unit.

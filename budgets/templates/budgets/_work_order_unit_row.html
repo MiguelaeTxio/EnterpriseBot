@@ -89,6 +89,9 @@ deja de hacerlo en cuanto cambia de estado.
                 {% if unit.phase2_km %}+ {{ unit.phase2_km }} km (fase 2){% endif %}
             </div>
             {% endif %}
+            {% if unit.km_start is not None %}
+            {% include "budgets/_service_sheet.html" %}
+            {% endif %}
         </div>
         <div class="d-flex gap-2 flex-shrink-0">
             {% if unit.can_notify %}

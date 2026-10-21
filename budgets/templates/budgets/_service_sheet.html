@@ -1,0 +1,58 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/_service_sheet.html #}
+{% comment %}
+H37 (S133). Hoja de servicio del albarán, con el modelo de Pepe: lo que
+rellena el conductor en la app y, en rojo, lo que solo ve la oficina
+(hora y base de salida, hora de entrada al servicio y nocturno), más
+las fotos. Dentro de la fila de la unidad, plegada.
+{% endcomment %}
+<details class="mt-2 small">
+    <summary class="fw-semibold">
+        <i class="bi bi-clipboard-check me-1"></i>Hoja de servicio
+    </summary>
+    <div class="row g-2 mt-1">
+        <div class="col-6 col-md-3"><span class="text-muted">Km salida</span><br>{{ unit.km_start }}</div>
+        <div class="col-6 col-md-3 text-danger"><span>Hora salida base</span><br>{{ unit.started_at|date:"d/m/Y H:i"|default:"—" }}</div>
+        <div class="col-6 col-md-3 text-danger"><span>Base de salida</span><br>{{ unit.departure_base.name|default:"—" }}</div>
+        <div class="col-6 col-md-3 text-danger"><span>Nocturno</span><br>{% if unit.is_night %}Sí{% elif unit.is_night is False %}No{% else %}—{% endif %}</div>
+
+        <div class="col-6 col-md-3"><span class="text-muted">Cliente</span><br>{{ work_order.client_name|default:"—" }}</div>
+        <div class="col-6 col-md-3"><span class="text-muted">Expediente</span><br>{{ work_order.expediente|default:"—" }}</div>
+        <div class="col-6 col-md-3"><span class="text-muted">Matrícula</span><br>{{ work_order.vehicle_plate|default:"—" }}</div>
+        <div class="col-6 col-md-3"><span class="text-muted">PMA / Tara</span><br>{{ work_order.vehicle_pma|default:"—" }} / {{ work_order.vehicle_tare|default:"—" }}</div>
+        <div class="col-6 col-md-3"><span class="text-muted">Largo / Alto</span><br>{{ work_order.vehicle_length|default:"—" }} / {{ work_order.vehicle_height|default:"—" }}</div>
+        <div class="col-6 col-md-3"><span class="text-muted">Vehículo / carga</span><br>{{ work_order.vehicle_load|default:"—" }}</div>
+        <div class="col-12 col-md-6"><span class="text-muted">Avería</span><br>{{ work_order.breakdown_description|default:"—" }}</div>
+
+        <div class="col-4 col-md-2"><span class="text-muted">H. espera</span><br>{{ unit.wait_hours|default:"—" }}</div>
+        <div class="col-4 col-md-2"><span class="text-muted">H. trabajo</span><br>{{ unit.work_hours|default:"—" }}</div>
+        <div class="col-4 col-md-2"><span class="text-muted">H. rescate</span><br>{{ unit.rescue_hours|default:"—" }}</div>
+        <div class="col-6 col-md-3 text-danger"><span>Hora entrada servicio</span><br>{{ unit.arrived_at|date:"d/m/Y H:i"|default:"—" }}</div>
+        <div class="col-6 col-md-3"><span class="text-muted">Recogida → destino</span><br>{{ work_order.pickup_location|default:"—" }} → {{ work_order.destination|default:"—" }}</div>
+
+        <div class="col-6 col-md-3"><span class="text-muted">Base de llegada</span><br>{{ unit.arrival_base.name|default:"—" }}</div>
+        <div class="col-6 col-md-3"><span class="text-muted">Km llegada base</span><br>{{ unit.base_km_end|default:"—" }}</div>
+        <div class="col-6 col-md-3"><span class="text-muted">Hora llegada base</span><br>{{ unit.base_arrived_at|date:"d/m/Y H:i"|default:"—" }}</div>
+        <div class="col-6 col-md-3"><span class="text-muted">Litros gasoil</span><br>{% if unit.refueled %}{{ unit.refuel_liters }}{% elif unit.refueled is False %}0{% else %}—{% endif %}</div>
+
+        {% if unit.driver_notes %}
+        <div class="col-12"><span class="text-muted">Observaciones</span><br>{{ unit.driver_notes|linebreaksbr }}</div>
+        {% endif %}
+        {% with photos=unit.photos.all %}
+        {% if photos %}
+        <div class="col-12">
+            <span class="text-muted">Fotos</span>
+            <div class="d-flex flex-wrap gap-2 mt-1">
+                {% for photo in photos %}
+                <a href="{% url 'budgets:work_order_unit_photo' pk=photo.pk %}" target="_blank" title="{{ photo.get_kind_display }} · {{ photo.taken_at|date:'d/m H:i' }}">
+                    <img src="{% url 'budgets:work_order_unit_photo' pk=photo.pk %}" alt="{{ photo.get_kind_display }}" loading="lazy"
+                         class="rounded border" style="width: 96px; height: 72px; object-fit: cover;">
+                    <div class="text-center text-muted" style="font-size: .7rem;">{{ photo.get_kind_display }}</div>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+        {% endwith %}
+    </div>
+    <div class="text-danger mt-1" style="font-size: .75rem;">En rojo: solo lo ve la oficina.</div>
+</details>

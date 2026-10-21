@@ -799,6 +799,14 @@ urlpatterns = [
         name="work_order_unit_row",
     ),
 
+    # H37 (S133): photo of the service sheet (from GCS) — GET.
+    # Foto de la hoja de servicio (desde GCS) — GET.
+    path(
+        "work-orders/units/photos/<int:pk>/",
+        views.WorkOrderUnitPhotoView.as_view(),
+        name="work_order_unit_photo",
+    ),
+
     # Work order albarán — formulario mobile-first por unidad. ASSISTANCE +
     # ADMIN.
     # Work order albarán — mobile-first form per unit. ASSISTANCE + ADMIN.
