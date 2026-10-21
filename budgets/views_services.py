@@ -126,7 +126,9 @@ class ServicesDeliveryNotesPaneView(AssistanceSupervisorAccessMixin, View):
 # asignación arrastrando y envío (fase 2 del dossier).
 # ---------------------------------------------------------------------------
 
-TRAFFIC_ACTIONS = ("pair", "separate", "assign", "unassign", "send")
+TRAFFIC_ACTIONS = (
+    "pair", "separate", "assign", "unassign", "send", "close",
+)
 
 
 def _traffic_filters(request):
@@ -263,7 +265,8 @@ class ServicesTrafficActionView(AssistanceSupervisorAccessMixin, View):
 
     Acciones del panel: formar o cambiar un equipo (conductor soltado
     sobre una máquina o un equipo), separarlo, asignar un equipo a un
-    albarán o a una orden, quitarlo y enviar el albarán. Las reglas
+    albarán o a una orden, quitarlo, enviar el albarán y cerrarlo en
+    base con los km y el gasoil estimados. Las reglas
     están en `assistance_traffic`; si no se cumplen, el panel lo dice.
     Devuelve el panel actualizado.
     """
@@ -309,6 +312,14 @@ class ServicesTrafficActionView(AssistanceSupervisorAccessMixin, View):
                     company, company_user, _int(data.get("unit")),
                 )
                 message = "Equipo retirado del albarán %s." % (
+                    unit.albaran_number
+                )
+            elif action == "close":
+                unit = traffic.close_base(
+                    company, company_user, _int(data.get("unit")),
+                    data.get("km"), data.get("liters"),
+                )
+                message = "Albarán %s cerrado en base." % (
                     unit.albaran_number
                 )
             else:

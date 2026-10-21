@@ -640,6 +640,7 @@ class DriverAlbaranCloseBaseView(View):
             unit.refueled = refueled
             unit.refuel_liters = liters if refueled else None
             unit.base_closed_at = timezone.now()
+            unit.base_closed_by = company_user
             unit.status = Unit.STATUS_CLOSED_BASE
             unit.save()
             WorkOrderAssistanceUnitEvent.status_change(

@@ -31,6 +31,7 @@ cierra en base desde la app (fase 4 del dossier, S133): mientras tanto
 el albarán firmado sale en verde ("regresando").
 """
 import datetime
+from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
 from django.db.models import Max, Q
@@ -481,6 +482,8 @@ def build_board(company, category="", sort=SORT_AVAILABILITY):
         unit.driver_name = (
             _driver_name(unit.operator) if unit.operator_id else ""
         )
+        unit.can_close_base = unit.status in RETURNING_STATUSES
+        unit.km_hint = _km_hint(unit)
 
     empty_orders = list(WorkOrderAssistance.objects.filter(
         company=company,
@@ -507,6 +510,92 @@ def build_board(company, category="", sort=SORT_AVAILABILITY):
         "open_count": len(units) + len(empty_orders),
         "free_crews": sum(1 for c in crews if c.is_assignable),
     }
+
+
+def _km_hint(unit):
+    """
+    Km to suggest when closing from the office.
+
+    ---
+
+    Km que se proponen al cerrar desde la oficina: los del albarán
+    (tramo 1 más tramo 2), que ya son de base a base. Vacío si el
+    albarán no los tiene.
+    """
+    total = sum(
+        (km for km in (unit.phase1_km, unit.phase2_km) if km is not None),
+        Decimal("0"),
+    )
+    return total if total else ""
+
+
+def _parse_amount(raw, label, required=True):
+    """
+    Non-negative decimal typed in the panel.
+
+    ---
+
+    Decimal no negativo escrito en el panel (admite coma decimal), o
+    TrafficError con el mensaje para el panel.
+    """
+    raw = str(raw or "").strip().replace(",", ".")
+    if not raw:
+        if required:
+            raise TrafficError("Falta %s." % label)
+        return None
+    try:
+        value = Decimal(raw)
+    except InvalidOperation:
+        raise TrafficError("%s no es un número válido." % label.capitalize())
+    if not value.is_finite() or value < 0:
+        raise TrafficError("%s no puede ser negativo." % label.capitalize())
+    return value
+
+
+def close_base(company, by, unit_pk, km, liters):
+    """
+    Close a returning albarán in base from the office.
+
+    ---
+
+    Cierra en base desde la oficina un albarán firmado (regresando),
+    con los km y el gasoil estimados del servicio metidos a mano: de
+    base al servicio y vuelta, aunque la máquina haya encadenado otro
+    servicio (Miguel Ángel, S133: al cliente se le cobra como si
+    volviera a base). Sin los dos datos no se cierra. El albarán sale
+    del panel y, si su equipo no tiene otro albarán, queda libre.
+    """
+    estimated_km = _parse_amount(km, "los km estimados")
+    estimated_liters = _parse_amount(liters, "el gasoil estimado")
+    with transaction.atomic():
+        unit = Unit.objects.select_for_update().select_related(
+            "work_order",
+        ).filter(pk=unit_pk, work_order__company=company).first()
+        if unit is None:
+            raise TrafficError("Ese albarán ya no existe.")
+        if unit.status not in RETURNING_STATUSES:
+            raise TrafficError(
+                "El albarán %s no se puede cerrar en base: está %s." % (
+                    unit.albaran_number,
+                    unit.get_status_display().lower(),
+                )
+            )
+        previous = unit.status
+        unit.estimated_km = estimated_km
+        unit.estimated_fuel_liters = estimated_liters
+        unit.base_closed_at = timezone.now()
+        unit.base_closed_by = by
+        unit.status = Unit.STATUS_CLOSED_BASE
+        unit.save(update_fields=[
+            "estimated_km", "estimated_fuel_liters", "base_closed_at",
+            "base_closed_by", "status", "updated_at",
+        ])
+        Event.status_change(
+            unit, previous, unit.status, by=by,
+            detail="Cerrado en base desde la oficina: %s km y %s l "
+                   "estimados." % (estimated_km, estimated_liters),
+        )
+    return unit
 
 
 def _create_unit(work_order, by):

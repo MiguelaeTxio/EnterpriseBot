@@ -13,6 +13,8 @@ Arrastres (los resuelve el script de _traffic_pane.html):
 - máquina suelta sobre un conductor suelto o un equipo: igual;
 - conductor o máquina de un equipo sobre otro equipo: intercambio;
 - equipo entero sobre un albarán o una orden: asignación.
+Los albaranes firmados (verde) se cierran en base desde aquí con los km
+y el gasoil estimados del servicio, de base a base.
 {% endcomment %}
 <div class="tb-columns">
     <section class="tb-column" data-col="loose">
@@ -167,6 +169,27 @@ Arrastres (los resuelve el script de _traffic_pane.html):
                 </div>
                 {% if unit.status == 'NOTIFY_FAILED' and unit.notify_error %}
                 <div class="small text-danger mt-1"><i class="bi bi-exclamation-triangle me-1"></i>{{ unit.notify_error }}</div>
+                {% endif %}
+                {% if unit.can_close_base %}
+                <details class="tb-close mt-2">
+                    <summary class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-house-check me-1"></i>Cerrar en base
+                    </summary>
+                    <div class="tb-close-form mt-2">
+                        <div class="small text-muted mb-1">Estimado de base a base (como se cobra), aunque la máquina haya encadenado otro servicio.</div>
+                        <div class="d-flex flex-wrap gap-2 align-items-end">
+                            <label class="small">Km
+                                <input type="text" inputmode="decimal" class="form-control form-control-sm" name="km" value="{{ unit.km_hint }}" style="width: 6.5rem;">
+                            </label>
+                            <label class="small">Gasoil (l)
+                                <input type="text" inputmode="decimal" class="form-control form-control-sm" name="liters" style="width: 6.5rem;">
+                            </label>
+                            <button type="button" class="btn btn-sm btn-secondary" data-action="close" data-unit="{{ unit.pk }}">
+                                <i class="bi bi-check2 me-1"></i>Cerrar
+                            </button>
+                        </div>
+                    </div>
+                </details>
                 {% endif %}
                 {% if unit.can_send %}
                 <button type="button" class="btn btn-sm btn-success mt-2"

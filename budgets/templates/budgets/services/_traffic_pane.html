@@ -41,6 +41,8 @@ screen_key services_hub, clave "traffic").
 .tb-chip { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .45rem; border-radius: 1rem; background: #f1f3f5; font-size: .85rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tb-chip.tb-draggable { cursor: grab; border: 1px dashed #adb5bd; }
 .tb-locked-soft { opacity: .85; }
+.tb-close > summary { list-style: none; }
+.tb-close > summary::-webkit-details-marker { display: none; }
 .tb-map-pin { display: inline-flex; align-items: center; gap: .25rem; padding: .15rem .45rem; border-radius: 1rem; font-size: .75rem; font-weight: 600; color: #212529; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35); white-space: nowrap; }
 .tb-map-pin-in_service { background: #ffc107; }
 .tb-map-pin-returning { background: #20c997; color: #fff; }
@@ -157,7 +159,8 @@ screen_key services_hub, clave "traffic").
       data-separate="{% url 'budgets:services_traffic_action' action='separate' %}"
       data-assign="{% url 'budgets:services_traffic_action' action='assign' %}"
       data-unassign="{% url 'budgets:services_traffic_action' action='unassign' %}"
-      data-send="{% url 'budgets:services_traffic_action' action='send' %}"></form>
+      data-send="{% url 'budgets:services_traffic_action' action='send' %}"
+      data-close="{% url 'budgets:services_traffic_action' action='close' %}"></form>
 
 {% include "panel/_fixed_list_layout.html" with top_id="traffic-top-panel" bottom_id="traffic-bottom-panel" %}
 
@@ -361,7 +364,12 @@ if (!(window.google && window.google.maps && window.google.maps.importLibrary)) 
             if (button.dataset.crew) {
                 values.crew = button.dataset.crew;
             }
-            if (button.dataset.action === "send") {
+            if (button.dataset.action === "close") {
+                const form = button.closest(".tb-close-form");
+                values.km = form.querySelector("[name=km]").value;
+                values.liters = form.querySelector("[name=liters]").value;
+            }
+            if (button.dataset.action === "send" || button.dataset.action === "close") {
                 button.disabled = true;
             }
             post(urls[button.dataset.action], values);
@@ -402,8 +410,10 @@ if (!(window.google && window.google.maps && window.google.maps.importLibrary)) 
             clearInterval(timer);
             return;
         }
+        // Tampoco con un cierre en base a medio escribir.
         if (dragging || selected || document.hidden
-                || board.offsetParent === null) {
+                || board.offsetParent === null
+                || board.querySelector("details.tb-close[open]")) {
             return;
         }
         htmx.trigger(board, "tbRefresh");

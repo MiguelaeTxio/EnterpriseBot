@@ -3106,6 +3106,40 @@ class WorkOrderAssistanceUnit(models.Model):
         blank=True,
         verbose_name="Cerrado en base en",
     )
+    # H37 (S133): estimate of the service for the fuel cost, entered by
+    # hand when the office closes it. The client is charged as if the
+    # truck went from base to the service and back, even when it chains
+    # services, so these figures are base-service-base, not the real
+    # ones of the machine.
+    # Estimado del servicio para repercutir el gasoil, metido a mano al
+    # cerrar desde la oficina. Al cliente se le cobra como si el camión
+    # volviera a base aunque encadene servicios (Miguel Ángel, S133),
+    # así que son km y gasoil de base-servicio-base, no los reales.
+    estimated_km = models.DecimalField(
+        max_digits=8,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        verbose_name="Km estimados del servicio",
+        help_text="De base al servicio y vuelta, aunque la máquina "
+                  "encadenara otro servicio.",
+    )
+    estimated_fuel_liters = models.DecimalField(
+        max_digits=7,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Gasoil estimado (l)",
+        help_text="Consumo estimado del servicio, de base a base.",
+    )
+    base_closed_by = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Cerrado en base por",
+    )
 
     created_at = models.DateTimeField(
         auto_now_add=True, verbose_name="Fecha de creación"
