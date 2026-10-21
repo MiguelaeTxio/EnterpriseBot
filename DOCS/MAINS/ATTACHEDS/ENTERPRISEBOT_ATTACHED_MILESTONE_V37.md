@@ -585,14 +585,27 @@ da el servicio, dentro de la ventana de 24 h.
    aparezca la firma del cliente, y guardadas con el albarán.
 3. Pepe dará una hoja con los datos que el albarán necesita.
 
-**H. Histórico permanente por matrícula.** *"Importantísimo tener los
-datos persistidos de los servicios"*: dentro de años, saber si ese
-vehículo ya se llevó, cuándo, adónde, y si está cobrado.
+**H. Todo el servicio guardado en base de datos y consultable por
+cualquier dato, años después.** (Corrección de Miguel Ángel en S133:
+*"Histórico por matrícula no. Error. [...] Es guardar el servicio en
+base de datos. Toda la información. El albarán, número albarán que está
+en el servicio, el operario, todo, todo, todo guardado en base de
+datos."*) Cada servicio queda completo en BD: albarán y su número,
+operario, ayudantes, máquina, aseguradora, vehículo asistido (con
+tara, peso máximo autorizado...), km de salida y de llegada del camión,
+horas, fotos, firma, incidencias, estado de cobro... Y se tiene que
+poder buscar dentro de cinco años por cualquiera de esos datos, por
+ejemplo:
+- los servicios de una matrícula;
+- los servicios que hizo un operario;
+- los servicios hechos con uno de nuestros vehículos;
+- las incidencias de los últimos años;
+- todos los servicios de una aseguradora.
 
 **I. Exportación a TIREA y Prologic:** más adelante; *"De momento nos
 vamos a centrar en la toma de datos."*
 
 **Orden de trabajo acordado:** núcleo común de alta de servicios
 (origen, regla de C, cola de D) → agente de WhatsApp → agente de voz
-(IVR) → app del conductor (G) → histórico por matrícula (H).
+(IVR) → app del conductor (G) → consulta de servicios (H).
 
