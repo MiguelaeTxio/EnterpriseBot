@@ -586,21 +586,24 @@ da el servicio, dentro de la ventana de 24 h.
 3. Pepe dará una hoja con los datos que el albarán necesita.
 
 **H. Todo el servicio guardado en base de datos y consultable por
-cualquier dato, años después.** (Corrección de Miguel Ángel en S133:
-*"Histórico por matrícula no. Error. [...] Es guardar el servicio en
-base de datos. Toda la información. El albarán, número albarán que está
-en el servicio, el operario, todo, todo, todo guardado en base de
-datos."*) Cada servicio queda completo en BD: albarán y su número,
-operario, ayudantes, máquina, aseguradora, vehículo asistido (con
-tara, peso máximo autorizado...), km de salida y de llegada del camión,
-horas, fotos, firma, incidencias, estado de cobro... Y se tiene que
-poder buscar dentro de cinco años por cualquiera de esos datos, por
-ejemplo:
-- los servicios de una matrícula;
-- los servicios que hizo un operario;
-- los servicios hechos con uno de nuestros vehículos;
-- las incidencias de los últimos años;
-- todos los servicios de una aseguradora.
+cualquier dato, años después.** Regla, en palabras de Miguel Ángel
+(S133): *"¿Qué se guarda? Todos los datos del albarán. ¿Por dónde se
+busca? Por todos los datos del albarán."* Los datos que nombre
+(número de albarán, operario, ayudantes, máquina, aseguradora, vehículo
+asistido, tara, peso máximo autorizado, km de salida y de llegada,
+horas de espera, fotos, firma, incidencias, cobro...) y las búsquedas
+que ponga de ejemplo (por matrícula, por operario, por vehículo propio,
+por incidencias, por aseguradora...) son **ejemplos, nunca una lista
+cerrada**: *"cuando te doy un ejemplo [...] no es que te ciñas
+solamente a lo que te estoy diciendo, como si fuera una lista
+cerrada"*. Caso que lo ilustra: *"me acuerdo que un servicio
+estuvimos 7 horas para sacar el camión"* → buscar "7 horas de espera"
+tiene que dar los servicios con 7 horas de espera, y entre ellos se
+reconoce el que se buscaba (por ejemplo, por el nombre del cliente).
+
+Estado al anotarlo: nada se borra (los datos ya quedan guardados), pero
+la búsqueda del listado de Albaranes (S133) solo mira unos pocos campos
+de texto; la búsqueda por cualquier dato está por hacer.
 
 **I. Exportación a TIREA y Prologic:** más adelante; *"De momento nos
 vamos a centrar en la toma de datos."*
