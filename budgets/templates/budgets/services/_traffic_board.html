@@ -13,7 +13,9 @@ Arrastres (los resuelve el script de _traffic_pane.html):
   o cambia de conductor;
 - máquina suelta sobre un conductor suelto o un equipo: igual;
 - conductor o máquina de un equipo sobre otro equipo: intercambio;
-- equipo entero sobre un albarán o una orden: asignación;
+- equipo entero sobre un albarán o una orden: asignación; si el equipo
+  está ocupado, el albarán queda en cola y se envía solo al terminar
+  el servicio en curso (S133);
 - conductor sin máquina sobre un albarán aún sin enviar: ayudante
   (S133, va en el mismo vehículo y solo sale en el albarán).
 Los albaranes firmados (verde) se cierran en base desde aquí con los km
@@ -83,9 +85,9 @@ y el gasoil estimados del servicio, de base a base.
         </div>
         <div class="tb-column-body">
             {% for crew in crews %}
-            <div class="tb-card tb-state-{{ crew.state }}{% if crew.is_assignable %} tb-draggable{% else %} tb-locked-soft{% endif %}"
+            <div class="tb-card tb-state-{{ crew.state }}{% if crew.is_assignable or crew.is_queueable %} tb-draggable{% else %} tb-locked-soft{% endif %}"
                  data-drop-crew="{{ crew.pk }}" data-crew-driver="{{ crew.driver_id }}" data-crew-machine="{{ crew.machine_id }}"
-                 {% if crew.is_assignable %}draggable="true" data-kind="crew" data-resource="{{ crew.pk }}"{% endif %}>
+                 {% if crew.is_assignable or crew.is_queueable %}draggable="true" data-kind="crew" data-resource="{{ crew.pk }}"{% if crew.is_queueable %} title="Ocupado: lo que le asignes queda en cola"{% endif %}{% endif %}>
                 <div class="d-flex justify-content-between align-items-start gap-2">
                     <div class="min-w-0 d-flex flex-column gap-1">
                         <span class="tb-chip{% if crew.is_movable %} tb-draggable{% endif %}"
@@ -108,6 +110,9 @@ y el gasoil estimados del servicio, de base a base.
                     {% if crew.current_unit %}· {{ crew.current_unit.albaran_number }}{% endif %}
                     <span class="text-muted">· {{ crew.machine_card.type_name|default:crew.machine_card.brand_model }}</span>
                 </div>
+                {% if crew.queue %}
+                <div class="small text-primary"><i class="bi bi-hourglass-split me-1"></i>{{ crew.queue|length }} en cola: {% for queued in crew.queue %}{{ queued.albaran_number }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
+                {% endif %}
             </div>
             {% empty %}
             <p class="small text-muted mb-0">Sin equipos. Suelta un conductor sobre una máquina para formar uno.</p>
@@ -177,6 +182,9 @@ y el gasoil estimados del servicio, de base a base.
                             data-action="unassign" data-unit="{{ unit.pk }}"><i class="bi bi-x-circle"></i></button>
                     {% endif %}
                 </div>
+                {% if unit.is_queued %}
+                <div class="small text-primary mt-1"><i class="bi bi-hourglass-split me-1"></i>En cola: se envía solo cuando {{ unit.driver_name }} termine el servicio en curso.</div>
+                {% endif %}
                 {% if unit.status == 'NOTIFY_FAILED' and unit.notify_error %}
                 <div class="small text-danger mt-1"><i class="bi bi-exclamation-triangle me-1"></i>{{ unit.notify_error }}</div>
                 {% endif %}

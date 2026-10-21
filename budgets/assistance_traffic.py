@@ -23,6 +23,10 @@ asignación:
 - Solo se asigna o se cambia la asignación de un albarán que no se ha
   enviado todavía (pendiente o con el aviso fallido).
 - No se envía sin conductor y máquina.
+- Cola (S133): un equipo ocupado puede recibir más albaranes; quedan
+  en cola y se envían solos cuando termina el servicio en curso.
+- Prevalece quien da el servicio (S133): con una nota, se asigna un
+  equipo con el conductor ausente o la máquina en taller.
 - Ayudantes (S133): un conductor sin máquina soltado sobre un albarán
   aún sin enviar va de ayudante en ese vehículo; queda ocupado igual
   que el conductor.
@@ -310,7 +314,15 @@ def _resources(company, units, today):
     # puede tener ya el siguiente servicio).
     driver_units = {}
     machine_units = {}
+    queues = {}
     for unit in units:
+        # S133: a queued albarán does not occupy anybody yet; it waits
+        # for its driver to finish the current service.
+        # Un albarán en cola aún no ocupa a nadie: espera a que su
+        # conductor termine el servicio en curso.
+        if unit.queued_at is not None:
+            queues.setdefault(unit.operator_id, []).append(unit)
+            continue
         # S133: a helper is as busy as the driver of the albarán.
         # Un ayudante está tan ocupado como el conductor del albarán.
         pairs = [
@@ -334,6 +346,9 @@ def _resources(company, units, today):
     for driver in drivers:
         driver.display_name = _driver_name(driver)
         driver.current_unit = driver_units.get(driver.pk)
+        driver.queue = sorted(
+            queues.get(driver.pk, []), key=lambda u: u.queued_at,
+        )
         driver.away_reason = ""
         person = getattr(driver, "person_identity", None)
         if driver.current_unit:
@@ -418,7 +433,13 @@ def _crews(company, drivers, machines):
             driver, machine,
         )
         crew.is_assignable = crew.state in ASSIGNABLE_RESOURCE_STATES
-        crew.is_movable = crew.state not in CREW_LOCKED_STATES
+        crew.is_movable = (
+            crew.state not in CREW_LOCKED_STATES and not driver.queue
+        )
+        # S133: a busy crew can take more services, in queue.
+        # Un equipo ocupado puede llevar más servicios, en cola.
+        crew.is_queueable = crew.state in CREW_LOCKED_STATES
+        crew.queue = driver.queue
         driver.crew = crew
         machine.crew = crew
         crews.append(crew)
@@ -482,7 +503,8 @@ def build_board(company, category="", sort=SORT_AVAILABILITY):
     for unit in units:
         unit.colour = unit_colour(unit, today)
         unit.is_assignable = unit.status in ASSIGNABLE_STATUSES
-        unit.can_send = unit.is_assignable and bool(
+        unit.is_queued = unit.queued_at is not None
+        unit.can_send = unit.is_assignable and not unit.is_queued and bool(
             unit.operator_id and unit.machine_asset_id
         )
         unit.driver_name = (
@@ -936,7 +958,8 @@ def separate(company, by, crew_pk):
     return "Equipo %s separado." % name
 
 
-def assign(company, by, crew_pk, unit_pk=None, order_pk=None):
+def assign(company, by, crew_pk, unit_pk=None, order_pk=None,
+           force_note=""):
     """
     Assign a crew to an albarán (or to a new albarán of an order).
 
@@ -946,6 +969,16 @@ def assign(company, by, crew_pk, unit_pk=None, order_pk=None):
     suelta sobre una orden, va a su primer albarán aún sin enviar y sin
     nadie asignado, o a uno nuevo. Comprueba las reglas con los datos
     del momento, no con lo que pintaba el panel. Devuelve el albarán.
+
+    S133 (reunión con Pepe):
+    - Si el equipo está ocupado (asignado o en servicio), el albarán
+      queda **en cola** y se envía solo cuando el conductor termine
+      (`release_queue`).
+    - `force_note`: quien da el servicio confirma que el conductor o la
+      máquina sí están disponibles aunque la base de datos diga lo
+      contrario (ausencia, taller); se asigna igual y queda anotado con
+      la nota. *"La orden de la persona que llama prevalece sobre lo que
+      tengamos en base de datos."*
     """
     with transaction.atomic():
         _lock_crews(company)
@@ -953,15 +986,15 @@ def assign(company, by, crew_pk, unit_pk=None, order_pk=None):
         crew = next((c for c in crews if c.pk == crew_pk), None)
         if crew is None:
             raise TrafficError("Ese equipo ya no existe.")
-        if not crew.is_assignable:
+        queued = crew.is_queueable
+        overridden = ""
+        if not crew.is_assignable and not queued:
             detail = crew.state_label.lower()
-            if crew.current_unit is not None:
-                detail += " con el albarán %s" % (
-                    crew.current_unit.albaran_number
-                )
-            raise TrafficError("El equipo %s no está libre: %s." % (
-                _crew_name(crew), detail,
-            ))
+            if not force_note:
+                raise TrafficError("El equipo %s no está libre: %s." % (
+                    _crew_name(crew), detail,
+                ))
+            overridden = detail
         driver = crew.driver_card
         machine = crew.machine_card
 
@@ -992,12 +1025,32 @@ def assign(company, by, crew_pk, unit_pk=None, order_pk=None):
         ).exclude(pk=unit.pk).exclude(
             status__in=RETURNING_STATUSES,
         ).distinct().first()
-        if busy is not None:
+        if busy is not None and not queued:
             raise TrafficError("El equipo %s ya está en el albarán %s." % (
                 _crew_name(crew), busy.albaran_number,
             ))
         _set_driver(unit, driver, by)
         _set_machine(unit, machine, by)
+        if overridden:
+            Event.objects.create(
+                unit=unit, kind=Event.KIND_ASSIGN, created_by=by,
+                detail=(
+                    "Asignado pese a figurar %s: %s" % (
+                        overridden, force_note,
+                    )
+                )[:255],
+            )
+        if queued and unit.queued_at is None:
+            unit.queued_at = timezone.now()
+            unit.save(update_fields=["queued_at", "updated_at"])
+            Event.objects.create(
+                unit=unit, kind=Event.KIND_ASSIGN, created_by=by,
+                detail="En cola: se enviará cuando %s termine el servicio "
+                       "en curso." % _driver_name(driver),
+            )
+        elif not queued and unit.queued_at is not None:
+            unit.queued_at = None
+            unit.save(update_fields=["queued_at", "updated_at"])
     return unit
 
 
@@ -1028,6 +1081,9 @@ def unassign(company, by, unit_pk):
             unit.machine_asset = None
             unit.machine = ""
             fields += ["machine_asset", "machine"]
+        if unit.queued_at is not None:
+            unit.queued_at = None
+            fields.append("queued_at")
         if fields:
             unit.save(update_fields=fields + ["updated_at"])
     return unit
@@ -1055,6 +1111,13 @@ def send(company, by, unit_pk, whatsapp_sender):
             raise TrafficError(
                 "El albarán %s no tiene máquina." % unit.albaran_number
             )
+        if unit.queued_at is not None:
+            raise TrafficError(
+                "El albarán %s está en cola: se enviará solo cuando %s "
+                "termine el servicio en curso." % (
+                    unit.albaran_number, _driver_name(unit.operator),
+                )
+            )
     if not whatsapp_sender:
         raise TrafficError(
             "No se ha podido enviar: falta el número de WhatsApp de la "
@@ -1066,6 +1129,52 @@ def send(company, by, unit_pk, whatsapp_sender):
             "No se ha podido enviar el aviso por WhatsApp a %s. Revisa "
             "que tenga teléfono." % _driver_name(unit.operator)
         )
+    return unit
+
+
+def release_queue(company, driver_pk, whatsapp_sender=None):
+    """
+    Send the next queued albarán of a driver who has just finished.
+
+    ---
+
+    Envía el siguiente albarán en cola de un conductor que acaba de
+    terminar (firmado, cerrado sin firma o cerrado en base), si ya no
+    tiene ningún otro albarán asignado o en servicio. Lo llama
+    `WorkOrderAssistanceUnitEvent.status_change` al terminar un
+    albarán. Devuelve el albarán enviado o None.
+    """
+    import os
+
+    from whatsapp.services import send_operator_albaran_notification
+
+    whatsapp_sender = whatsapp_sender or os.environ.get(
+        "TWILIO_WHATSAPP_SENDER", "",
+    )
+    with transaction.atomic():
+        active = board_units(company).filter(
+            operator_id=driver_pk, queued_at__isnull=True,
+        ).exclude(status__in=RETURNING_STATUSES)
+        if active.exists():
+            return None
+        unit = Unit.objects.select_for_update().filter(
+            work_order__company=company,
+            work_order__status__in=OPEN_ORDER_STATUSES,
+            operator_id=driver_pk,
+            queued_at__isnull=False,
+            status__in=ASSIGNABLE_STATUSES,
+        ).order_by("queued_at").first()
+        if unit is None:
+            return None
+        unit.queued_at = None
+        unit.save(update_fields=["queued_at", "updated_at"])
+        Event.objects.create(
+            unit=unit, kind=Event.KIND_ASSIGN,
+            detail="Sale de la cola: el conductor ha terminado el servicio "
+                   "anterior.",
+        )
+    if whatsapp_sender:
+        send_operator_albaran_notification(unit.pk, whatsapp_sender)
     return unit
 
 

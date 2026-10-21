@@ -616,9 +616,11 @@ class ServicesTrafficActionView(AssistanceSupervisorAccessMixin, View):
                     unit_pk=_int(data.get("unit")),
                     order_pk=_int(data.get("order")),
                 )
-                message = "Equipo asignado al albarán %s." % (
-                    unit.albaran_number
-                )
+                message = (
+                    "Equipo en cola en el albarán %s: se enviará solo "
+                    "cuando termine el servicio en curso."
+                    if unit.queued_at else "Equipo asignado al albarán %s."
+                ) % unit.albaran_number
             elif action == "unassign":
                 unit = traffic.unassign(
                     company, company_user, _int(data.get("unit")),
@@ -769,7 +771,8 @@ def _initial_from_extraction(company, data):
     return initial
 
 
-def _render_order_form(request, form, title, action_url, hints=None):
+def _render_order_form(request, form, title, action_url, hints=None,
+                       origin=""):
     """
     Render the order form page.
 
@@ -784,6 +787,7 @@ def _render_order_form(request, form, title, action_url, hints=None):
                       "page_heading": title,
                       "form_action": reverse(action_url),
                       "hints": hints or {},
+                      "origin": origin,
                   }))
 
 
@@ -849,6 +853,7 @@ class ServicesTireaUploadView(AssistanceSupervisorAccessMixin, View):
         return _render_order_form(
             request, form, "Nueva orden desde TIREA",
             "budgets:work_order_save", hints,
+            origin=WorkOrderAssistance.ORIGIN_PHOTO,
         )
 
 
@@ -889,11 +894,16 @@ class WorkOrderSaveView(AssistanceSupervisorAccessMixin, View):
         form = WorkOrderAssistanceForm(
             request.POST, company=company_user.company,
         )
+        origin = request.POST.get("origin", "")
+        if origin not in dict(WorkOrderAssistance.ORIGIN_CHOICES):
+            origin = WorkOrderAssistance.ORIGIN_PANEL
         if not form.is_valid():
             return _render_order_form(
                 request, form, "Nueva orden", "budgets:work_order_save",
+                origin=origin,
             )
         work_order = form.save(commit=False)
+        work_order.origin = origin
         work_order.company = company_user.company
         work_order.operator = company_user
         work_order.created_by = company_user

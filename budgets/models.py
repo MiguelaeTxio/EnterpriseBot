@@ -1859,6 +1859,28 @@ class WorkOrderAssistance(models.Model):
         help_text="Base de salida del servicio de asistencia.",
     )
 
+    # H37 (S133): how the service came in (meeting with Pepe: photo of
+    # TIREA or another platform, phone call to the robot or WhatsApp).
+    # Por dónde entró el servicio (reunión con Pepe, S133: foto de TIREA
+    # u otra plataforma, llamada al robot o WhatsApp).
+    ORIGIN_PANEL = "PANEL"
+    ORIGIN_PHOTO = "PHOTO"
+    ORIGIN_WHATSAPP = "WHATSAPP"
+    ORIGIN_PHONE = "PHONE"
+    ORIGIN_CHOICES = [
+        (ORIGIN_PANEL, "Panel (a mano)"),
+        (ORIGIN_PHOTO, "Foto (TIREA u otra plataforma)"),
+        (ORIGIN_WHATSAPP, "WhatsApp"),
+        (ORIGIN_PHONE, "Llamada"),
+    ]
+    origin = models.CharField(
+        max_length=10,
+        choices=ORIGIN_CHOICES,
+        default=ORIGIN_PANEL,
+        verbose_name="Origen",
+        help_text="Por dónde entró el servicio.",
+    )
+
     # ── Reference / status ─────────────────────────────────────────────────
     work_order_number = models.CharField(
         max_length=11,
@@ -2785,6 +2807,21 @@ class WorkOrderAssistanceUnit(models.Model):
         ),
     )
 
+    # H37 (S133): queued service. The albarán already has its crew, but
+    # the driver is still on another service; it is sent by itself when
+    # that one finishes (meeting with Pepe: "darle otro servicio para
+    # cuando acabe el primero"). Empty when it is not queued.
+    # Servicio en cola: el albarán ya tiene su equipo, pero el conductor
+    # sigue en otro servicio; se envía solo cuando termina ese. Vacío si
+    # no está en cola.
+    queued_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="En cola desde",
+        help_text="Se envía solo cuando el conductor termina el servicio "
+                  "anterior.",
+    )
+
     # H37 (S133): helpers that go with the driver in this vehicle
     # (e.g. a service car with two workers). Chosen for each service;
     # they do not use the app, they only appear on the albarán.
@@ -3291,7 +3328,7 @@ class WorkOrderAssistanceUnitEvent(models.Model):
         """
         if from_status == to_status:
             return None
-        return cls.objects.create(
+        event = cls.objects.create(
             unit=unit,
             kind=cls.KIND_STATUS,
             from_status=from_status or "",
@@ -3299,6 +3336,32 @@ class WorkOrderAssistanceUnitEvent(models.Model):
             detail=(detail or "")[:255],
             created_by=by,
         )
+        # S133: when a driver finishes, his next queued albarán is sent
+        # (after the commit, so the finished one is already saved).
+        # Al terminar un conductor se envía su siguiente albarán en cola
+        # (tras el commit, con el terminado ya guardado).
+        finished = (
+            WorkOrderAssistanceUnit.STATUS_COMPLETED,
+            WorkOrderAssistanceUnit.STATUS_CLOSED_UNSIGNED,
+            WorkOrderAssistanceUnit.STATUS_SIGNED_RECEIVED,
+            WorkOrderAssistanceUnit.STATUS_CLOSED_BASE,
+        )
+        if to_status in finished and unit.operator_id:
+            from django.db import transaction
+
+            company_id = unit.work_order.company_id
+            driver_id = unit.operator_id
+
+            def _release():
+                from budgets.assistance_traffic import release_queue
+                from ivr_config.models import Company
+
+                company = Company.objects.filter(pk=company_id).first()
+                if company is not None:
+                    release_queue(company, driver_id)
+
+            transaction.on_commit(_release)
+        return event
 
 
 # ---------------------------------------------------------------------------
