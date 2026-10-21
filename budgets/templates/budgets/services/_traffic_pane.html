@@ -2,8 +2,9 @@
 {% comment %}
 H37 (S133). Pestaña Tráfico de Servicios: panel de tráfico del dossier
 de Pepe (fase 2, anexo V37 sección 4.4). Barra fija arriba (altas,
-categoría de máquina, orden) y debajo tres columnas de tarjetas (sin
-equipo, equipos, albaranes abiertos), cada una con su propio scroll
+categoría de máquina, orden) y debajo cuatro columnas de tarjetas
+(conductores sin máquina, máquinas sin conductor, equipos, albaranes
+abiertos), cada una con su propio scroll
 (directriz 4.24, panel/_fixed_list_layout.html), y el mapa a la
 derecha.
 
@@ -20,7 +21,8 @@ Mapa: equipos fuera en la última posición del móvil del conductor,
 equipos en base agrupados en su base, recogidas de los albaranes
 abiertos (datos de services/traffic/map/, con cada refresco del
 tablero). Pantalla
-completa para el mapa, para el tablero entero y para cada columna,
+completa para el mapa y para el tablero entero (S133: las columnas
+sueltas no, a petición de Miguel Ángel),
 como en el laboratorio de análisis.
 La categoría y el orden se guardan por usuario (directriz 4.15,
 screen_key services_hub, clave "traffic").
@@ -35,9 +37,6 @@ screen_key services_hub, clave "traffic").
 #traffic-map-wrap:fullscreen #traffic-map { border-radius: 0; }
 #traffic-bottom-panel:fullscreen { height: 100vh !important; background: var(--bs-body-bg, #fff); padding: 1rem; }
 #traffic-bottom-panel[data-solo] #traffic-map-wrap { display: none; }
-#traffic-bottom-panel[data-solo="loose"] .tb-column:not([data-col="loose"]),
-#traffic-bottom-panel[data-solo="crews"] .tb-column:not([data-col="crews"]),
-#traffic-bottom-panel[data-solo="units"] .tb-column:not([data-col="units"]) { display: none; }
 .tb-subhead { font-size: .8rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: .35rem; }
 .tb-chip { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .45rem; border-radius: 1rem; background: #f1f3f5; font-size: .85rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tb-chip.tb-draggable { cursor: grab; border: 1px dashed #adb5bd; }
@@ -318,10 +317,10 @@ if (!(window.google && window.google.maps && window.google.maps.importLibrary)) 
         drop(target, src);
     });
 
-    // Pantalla completa: el tablero entero, una columna o el mapa.
-    // La columna sola se hace con el panel inferior (que no se
-    // sustituye al refrescar) y data-solo, para no salir de pantalla
-    // completa cada vez que se refresca el tablero.
+    // Pantalla completa: el tablero entero o el mapa. El tablero se
+    // hace con el panel inferior (que no se sustituye al refrescar) y
+    // data-solo, que oculta el mapa, para no salir de pantalla completa
+    // cada vez que se refresca el tablero.
     const mapWrap = document.getElementById("traffic-map-wrap");
     function toggleSolo(solo) {
         if (document.fullscreenElement) {
@@ -356,13 +355,8 @@ if (!(window.google && window.google.maps && window.google.maps.importLibrary)) 
     });
 
     // Tocar para seleccionar y tocar el destino (pantallas táctiles),
-    // y los botones de separar, quitar, enviar y pantalla completa.
+    // y los botones de separar, quitar, enviar y cerrar.
     pane.addEventListener("click", function (ev) {
-        const solo = ev.target.closest("[data-solo]");
-        if (solo) {
-            toggleSolo(solo.dataset.solo);
-            return;
-        }
         const button = ev.target.closest("[data-action]");
         if (button) {
             ev.preventDefault();

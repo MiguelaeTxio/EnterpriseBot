@@ -1913,5 +1913,8 @@ con el formato del laboratorio de análisis
    `budgets/templates/budgets/services/_traffic_pane.html`, S133).
 
 **Implementaciones de referencia:** laboratorio de análisis (origen);
-panel de tráfico de Servicios (mapa, tablero entero y cada columna,
-S133); listado de albaranes de Servicios (S133).
+panel de tráfico de Servicios (mapa y tablero entero, S133; las
+columnas sueltas del tablero no, Miguel Ángel: *"no le veo mucho
+sentido ampliar ya esas columnas en concreto"* -- el criterio es que
+el panel gane de verdad al verse grande); listado de albaranes de
+Servicios (S133).

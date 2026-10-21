@@ -1,7 +1,8 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/services/_traffic_board.html #}
 {% comment %}
-H37 (S133). Tablero del panel de tráfico: tres columnas de tarjetas
-(sin equipo, equipos, albaranes abiertos). Lo pinta la pestaña al
+H37 (S133). Tablero del panel de tráfico: cuatro columnas de tarjetas
+(conductores sin máquina, máquinas sin conductor, equipos, albaranes
+abiertos), separadas para formar los equipos cómodamente. Lo pinta la pestaña al
 abrirse y lo devuelven el refresco periódico y cada acción (formar o
 cambiar equipo, separar, asignar, quitar, enviar), con su mensaje o su
 error arriba. Toda la lógica (estados, colores, qué se puede mover,
@@ -19,15 +20,12 @@ Los albaranes firmados (verde) se cierran en base desde aquí con los km
 y el gasoil estimados del servicio, de base a base.
 {% endcomment %}
 <div class="tb-columns">
-    <section class="tb-column" data-col="loose">
+    <section class="tb-column" data-col="drivers">
         <div class="tb-column-head d-flex justify-content-between align-items-center gap-2">
-            <span><i class="bi bi-puzzle me-1"></i>Sin equipo</span>
-            <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" data-solo="loose" title="Pantalla completa">
-                <i class="bi bi-fullscreen"></i>
-            </button>
+            <span><i class="bi bi-person-badge me-1"></i>Conductores</span>
+            <span class="small text-muted fw-normal">sin máquina</span>
         </div>
         <div class="tb-column-body">
-            <div class="tb-subhead"><i class="bi bi-person-badge me-1"></i>Conductores</div>
             {% for driver in drivers %}
             <div class="tb-card tb-state-{{ driver.state }}{% if driver.is_assignable %} tb-draggable{% else %} tb-locked{% endif %}"
                  {% if driver.is_assignable %}draggable="true" data-kind="driver" data-resource="{{ driver.pk }}" data-drop-driver="{{ driver.pk }}"{% endif %}>
@@ -43,10 +41,17 @@ y el gasoil estimados del servicio, de base a base.
                 </div>
             </div>
             {% empty %}
-            <p class="small text-muted">Todos los conductores llevan máquina.</p>
+            <p class="small text-muted mb-0">Todos los conductores llevan máquina.</p>
             {% endfor %}
+        </div>
+    </section>
 
-            <div class="tb-subhead mt-2"><i class="bi bi-truck me-1"></i>Máquinas</div>
+    <section class="tb-column" data-col="machines">
+        <div class="tb-column-head d-flex justify-content-between align-items-center gap-2">
+            <span><i class="bi bi-truck me-1"></i>Máquinas</span>
+            <span class="small text-muted fw-normal">sin conductor</span>
+        </div>
+        <div class="tb-column-body">
             {% for machine in machines %}
             <div class="tb-card tb-state-{{ machine.state }}{% if machine.is_assignable %} tb-draggable{% else %} tb-locked{% endif %}"
                  {% if machine.is_assignable %}draggable="true" data-kind="machine" data-resource="{{ machine.pk }}" data-drop-machine="{{ machine.pk }}"{% endif %}>
@@ -74,9 +79,6 @@ y el gasoil estimados del servicio, de base a base.
             <span><i class="bi bi-people me-1"></i>Equipos</span>
             <span class="d-flex align-items-center gap-2">
                 <span class="small text-muted fw-normal">{{ free_crews }} libre{{ free_crews|pluralize }} de {{ crews|length }}</span>
-                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" data-solo="crews" title="Pantalla completa">
-                    <i class="bi bi-fullscreen"></i>
-                </button>
             </span>
         </div>
         <div class="tb-column-body">
@@ -118,9 +120,6 @@ y el gasoil estimados del servicio, de base a base.
             <span><i class="bi bi-file-earmark-text me-1"></i>Albaranes abiertos</span>
             <span class="d-flex align-items-center gap-2">
                 <span class="small text-muted fw-normal">{{ open_count }}</span>
-                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" data-solo="units" title="Pantalla completa">
-                    <i class="bi bi-fullscreen"></i>
-                </button>
             </span>
         </div>
         <div class="tb-column-body">
