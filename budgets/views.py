@@ -5866,6 +5866,15 @@ class WorkOrderUnitNotifyView(AssistanceWorkOrderAccessMixin, View):
             )
         elif unit.operator is None:
             row_error = "Este albarán no tiene chófer asignado."
+        elif unit.machine_asset_id is None:
+            # H37 (S133): same rule as the traffic panel (dossier: it is
+            # not sent without driver and machine).
+            # Misma regla que el panel de tráfico: no se envía sin
+            # conductor y máquina de la flota.
+            row_error = (
+                "Este albarán no tiene máquina de la flota. Asígnasela "
+                "en Servicios o elige una de la lista al crear la unidad."
+            )
         elif not sender:
             logger.error(
                 "# [ALBARAN NOTIFY] TWILIO_WHATSAPP_SENDER no configurado."
