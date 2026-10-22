@@ -29,20 +29,87 @@ logger = logging.getLogger(__name__)
 
 class OperatorDashboardView(WorkshopRequiredMixin, TemplateView):
     """
-    Landing view for CompanyUsers with the WORKSHOP role.
-    Displays a selector with the two remaining work-order entry paths:
-    Form (structured web form) and Upload (photo or PDF with Gemini Vision
-    extraction). Via B (STT) was removed in Hito 7 / S023.
-    Accessible to WORKSHOP and ADMIN roles (WorkshopRequiredMixin).
+    "Nuevo parte": information view before the parte form (S133). The
+    notice for the workers (WorkshopNotice) shows as a modal and
+    "Aceptar" opens the form; without a notice the worker goes straight
+    to the form. ADMIN and WORKSHOPBOSS write the notice here. Only the
+    form path is left (STT removed in H7, photo upload in H07/S051).
     ---
-    Vista de aterrizaje para CompanyUsers con rol WORKSHOP.
-    Muestra un selector con las dos vías de entrada de partes disponibles:
-    Form (formulario web estructurado) y Upload (foto o PDF con extracción
-    Gemini Vision). La Vía B (STT) fue eliminada en Hito 7 / S023.
-    Accesible para los roles WORKSHOP y ADMIN (WorkshopRequiredMixin).
+    "Nuevo parte": vista de información previa al formulario del parte
+    (S133). El aviso para los operarios (WorkshopNotice) sale como
+    ventana y "Aceptar" abre el formulario; sin aviso, el operario va
+    directo al formulario. El administrador y el jefe de taller
+    escriben aquí el aviso. Solo queda la vía del formulario.
     """
 
     template_name = "panel/operator/dashboard.html"
+
+    # S133: who writes the notice for the workers.
+    # Quién escribe el aviso para los operarios.
+    NOTICE_EDITOR_ROLES = (
+        CompanyUser.ROLE_ADMIN,
+        CompanyUser.ROLE_WORKSHOPBOSS,
+    )
+
+    def _notice(self):
+        from work_order_processor.models import WorkshopNotice
+
+        return WorkshopNotice.objects.filter(
+            company=self.request.user.company_user.company,
+        ).first()
+
+    def _can_edit_notice(self):
+        return (
+            self.request.user.company_user.role in self.NOTICE_EDITOR_ROLES
+        )
+
+    def get(self, request, *args, **kwargs):
+        """
+        S133: information view before the parte form. A worker with no
+        notice to read goes straight to the form.
+
+        ---
+
+        S133 (Miguel Ángel): vista de información previa al formulario
+        del parte, "para enviar mensajes a los operarios". Sin aviso que
+        leer, el operario va directo al formulario; quien escribe el
+        aviso ve siempre la página para poder cambiarlo.
+        """
+        notice = self._notice()
+        if (notice is None or not notice.is_shown) and (
+            not self._can_edit_notice()
+        ):
+            return redirect("panel:operator_form")
+        return super().get(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        """
+        Save the notice (ADMIN and WORKSHOPBOSS).
+
+        ---
+
+        Guarda el aviso (administrador y jefe de taller).
+        """
+        from work_order_processor.models import WorkshopNotice
+
+        if not self._can_edit_notice():
+            return redirect("panel:operator_dashboard")
+        company_user = request.user.company_user
+        notice, _created = WorkshopNotice.objects.get_or_create(
+            company=company_user.company,
+        )
+        notice.text = request.POST.get("text", "").strip()
+        notice.is_active = request.POST.get("is_active") == "1"
+        notice.updated_by = company_user
+        notice.save()
+        django_messages.success(
+            request,
+            "Aviso guardado: lo verán los operarios al entrar en Nuevo "
+            "parte." if notice.is_shown else
+            "Aviso guardado. No se muestra: los operarios van directos al "
+            "formulario.",
+        )
+        return redirect("panel:operator_dashboard")
 
     def get_context_data(self, **kwargs):
         """
@@ -90,6 +157,8 @@ class OperatorDashboardView(WorkshopRequiredMixin, TemplateView):
         context["company_user"] = company_user
         context["own_presence"] = own_presence
         context["active_nav"] = "operator_dashboard"
+        context["notice"] = self._notice()
+        context["can_edit_notice"] = self._can_edit_notice()
 
         return context
 

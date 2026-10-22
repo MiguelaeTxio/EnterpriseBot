@@ -1,14 +1,13 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/operator/dashboard.html #}
 {#                                                                                          #}
-{# Operator dashboard — landing view for WORKSHOP role users.                               #}
-{# Displays the work-order entry card (Vía A — Form only).                                 #}
-{# Vía B (STT) removed in Hito 7 / S023.                                                   #}
-{# Vía C (Upload/Gemini Vision) deactivated in H07/S051 — code preserved for reactivation.#}
+{# S133: information view before the parte form. The notice for the workers shows as a     #}
+{# modal; "Aceptar" opens the form. Without a notice the worker goes straight to the form   #}
+{# (OperatorDashboardView.get). ADMIN and WORKSHOPBOSS write the notice here.               #}
+{# Only the form path is left (Vía B STT removed in H7/S023, Vía C photo in H07/S051).      #}
 {#                                                                                          #}
-{# Dashboard de operario — vista de aterrizaje para usuarios con rol WORKSHOP.             #}
-{# Muestra únicamente la tarjeta de entrada por formulario (Vía A).                        #}
-{# Vía B (STT) eliminada en Hito 7 / S023.                                                 #}
-{# Vía C (Upload/Gemini Vision) desactivada en H07/S051 — código preservado para reactivar.#}
+{# S133: vista de información previa al formulario del parte. El aviso para los operarios  #}
+{# sale como ventana; "Aceptar" abre el formulario. Sin aviso, el operario va directo al    #}
+{# formulario. El administrador y el jefe de taller escriben aquí el aviso.                 #}
 {% extends "panel/base.html" %}
 
 {% block title %}Nuevo parte{% endblock %}
@@ -18,49 +17,94 @@
 {% block content %}
 <div class="container-fluid px-0">
 
-    {# ------------------------------------------------------------------ #}
-    {# Greeting header — Cabecera de bienvenida                           #}
-    {# ------------------------------------------------------------------ #}
-    <div class="mb-4">
-        <h4 class="fw-semibold mb-1">
-            Bienvenido, {{ request.user.get_full_name|default:request.user.username }}
-        </h4>
-        <p class="text-muted text-sm mb-0">
-            Introduce tu parte de hoy usando el formulario.
-        </p>
-    </div>
-
-    {# ------------------------------------------------------------------ #}
-    {# Entry path selector — Selector de vía de entrada                   #}
-    {# Vía C (Upload) desactivada en H07/S051. Solo Vía A (Form) activa. #}
-    {# ------------------------------------------------------------------ #}
-    <div class="row g-3 mb-5">
-
-        {# Vía A — Form #}
-        <div class="col-12 col-md-4" id="tour-via-form">
-            <div class="card h-100 border-0 shadow-sm">
-                <div class="card-body d-flex flex-column align-items-start p-4">
-                    <div class="rounded-3 p-3 mb-3 stat-bg-green">
-                        <i class="bi bi-pencil-square fs-3 text-success"></i>
-                    </div>
-                    <h5 class="fw-semibold mb-1">Formulario</h5>
-                    <p class="text-muted text-sm flex-grow-1 mb-3">
-                        Rellena el parte directamente campo a campo. La opción más
-                        rápida y precisa. Sin esperas ni dependencias externas.
-                    </p>
-                    <a href="{% url 'panel:operator_form' %}"
-                       class="btn btn-success btn-sm px-3">
-                        <i class="bi bi-arrow-right-circle me-1"></i>Usar formulario
-                    </a>
-                </div>
-            </div>
+    <div class="mb-4 d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <div>
+            <h4 class="fw-semibold mb-1">
+                Bienvenido, {{ request.user.get_full_name|default:request.user.username }}
+            </h4>
+            <p class="text-muted text-sm mb-0">Introduce tu parte de hoy usando el formulario.</p>
         </div>
-
+        <a href="{% url 'panel:operator_form' %}" class="btn btn-success btn-sm px-3">
+            <i class="bi bi-arrow-right-circle me-1"></i>Ir al formulario
+        </a>
     </div>
+
+    {% if can_edit_notice %}
+    <div class="card border-0 shadow-sm mb-4" style="max-width: 48rem;">
+        <div class="card-header bg-light border-bottom py-2 px-4">
+            <span class="fw-semibold text-sm">
+                <i class="bi bi-megaphone me-2 text-muted"></i>Aviso para los operarios
+            </span>
+        </div>
+        <div class="card-body px-4 py-3">
+            <p class="text-muted text-sm mb-2">
+                Lo leen al entrar en <strong>Nuevo parte</strong>, en una ventana con
+                <strong>Aceptar</strong>; al aceptar se abre el formulario. Sin texto o sin
+                marcar <em>Mostrar</em>, van directos al formulario.
+            </p>
+            <form method="post">
+                {% csrf_token %}
+                <textarea name="text" rows="6" class="form-control form-control-sm mb-2"
+                          placeholder="Por ejemplo: los fichajes funcionan así...">{{ notice.text|default:"" }}</textarea>
+                <div class="d-flex flex-wrap align-items-center gap-3">
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" name="is_active" value="1"
+                               id="notice-active"{% if not notice or notice.is_active %} checked{% endif %}>
+                        <label class="form-check-label text-sm" for="notice-active">Mostrar</label>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm">
+                        <i class="bi bi-check2 me-1"></i>Guardar
+                    </button>
+                    {% if notice.is_shown %}
+                    <button type="button" class="btn btn-outline-secondary btn-sm"
+                            data-bs-toggle="modal" data-bs-target="#notice-modal">
+                        <i class="bi bi-eye me-1"></i>Ver como operario
+                    </button>
+                    {% endif %}
+                    {% if notice.updated_at %}
+                    <span class="text-muted small">
+                        Cambiado el {{ notice.updated_at|date:"d/m/Y H:i" }}{% if notice.updated_by %} por {{ notice.updated_by.user.get_full_name|default:notice.updated_by.user.username }}{% endif %}
+                    </span>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+    </div>
+    {% endif %}
 
 </div>
+
+{% if notice.is_shown %}
+<div class="modal fade" id="notice-modal" tabindex="-1" aria-labelledby="notice-modal-title"
+     data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="notice-modal-title">
+                    <i class="bi bi-megaphone me-2 text-warning"></i>Aviso
+                </h5>
+            </div>
+            <div class="modal-body">{{ notice.text|linebreaks }}</div>
+            <div class="modal-footer">
+                {% if can_edit_notice %}
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
+                {% endif %}
+                <a href="{% url 'panel:operator_form' %}" class="btn btn-success px-4">Aceptar</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 {% endblock %}
 
-{% block extra_scripts %}{% endblock %}
-
-
+{% block extra_scripts %}
+{% if notice.is_shown and not can_edit_notice %}
+<script>
+(function () {
+    // El operario ve el aviso nada más entrar; Aceptar abre el formulario.
+    var el = document.getElementById("notice-modal");
+    if (el && window.bootstrap) { new bootstrap.Modal(el).show(); }
+}());
+</script>
+{% endif %}
+{% endblock %}

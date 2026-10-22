@@ -2067,3 +2067,58 @@ class TaskPhoto(models.Model):
 
     def __str__(self) -> str:
         return f"Foto #{self.pk} — {self.line} ({self.machine_asset or 'sin máquina'})"
+
+class WorkshopNotice(models.Model):
+    """
+    Notice for the workers, shown before the parte form (S133).
+
+    ---
+
+    Aviso para los operarios que hacen los partes (S133). Miguel Ángel:
+    la antigua vista de "Usar formulario" pasa a ser una vista de
+    información previa al formulario del parte, "para enviar mensajes a
+    los operarios" (p. ej. cómo funcionan los fichajes): sale como
+    ventana con Aceptar y, al aceptar, se abre el formulario. Uno por
+    empresa; sin texto o desactivado, se va directo al formulario.
+    """
+
+    company = models.OneToOneField(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="workshop_notice",
+        verbose_name=_("Empresa"),
+    )
+    text = models.TextField(
+        _("Aviso"),
+        blank=True,
+        default="",
+        help_text=_("Lo que leen los operarios antes de hacer el parte."),
+    )
+    is_active = models.BooleanField(
+        _("Mostrar"),
+        default=True,
+        help_text=_("Si no, se va directo al formulario del parte."),
+    )
+    updated_by = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name=_("Cambiado por"),
+    )
+    updated_at = models.DateTimeField(
+        _("Cambiado el"),
+        auto_now=True,
+    )
+
+    class Meta:
+        verbose_name = _("Aviso para los operarios")
+        verbose_name_plural = _("Avisos para los operarios")
+
+    def __str__(self) -> str:
+        return f"Aviso de {self.company}"
+
+    @property
+    def is_shown(self) -> bool:
+        return self.is_active and bool(self.text.strip())
