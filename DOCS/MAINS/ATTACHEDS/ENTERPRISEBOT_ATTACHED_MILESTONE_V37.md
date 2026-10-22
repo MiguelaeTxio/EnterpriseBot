@@ -654,6 +654,18 @@ permisos alvarez_admin (B), carlos.carlin (C/CE + CAP + gruista) y
 joseantonio.zafra (CE + CAP); el resto de usuarios que salen como
 conductores no tiene ficha de persona enlazada y Alia no los propone.
 
+**Fuera de H37 (S133, 22/10/2026) -- Herramientas de contabilidad:**
+entrada propia en la barra lateral (mismos roles que Costes de
+operarios) con dos uniones de CSV: carpeta, lista alfabética
+reordenable arrastrando, Generar y Descargar
+(`analytics/accounting_csv.py`, `analytics/views_accounting.py`).
+Asientos: B correlativa por asiento original, C renumerada 1, 2, 3
+dentro de cada asiento sin mover filas, K vacía. Facturas: una
+cabecera, ORDEN correlativo, ASIENTO como contador de facturas según
+la columna Factura, y una sola línea resumen final con BASE, CUOTA y
+TOTAL sumados. Probadas y dadas por correctas por Miguel Ángel y
+Jerónimo.
+
 **Pendiente técnico anotado en S133 (directriz 4.9):**
 `vox_bridge/services.py` pasó de ~750 avisos de flake8 a 68 (repaso
 automático con AST idéntico más imports sin uso retirados). Las 68
