@@ -134,10 +134,17 @@ DISPATCH_CRITERIA = (
     "(20 TM o 30 TM). Vuelco, salida de vía o carga caída: GRÚA MÓVIL / "
     "RESCATE.\n"
     "3. Si es un camión con semirremolque y la tractora no puede seguir, "
-    "son DOS cosas: la tractora averiada (reparar en el sitio o "
-    "remolcarla al taller) y el semirremolque (una CABEZA TRACTORA "
-    "nuestra lo lleva a su destino). Propón los dos equipos en el mismo "
-    "servicio, salvo que quien lo da diga otra cosa.\n"
+    "son DOS cosas y cualquier opción de remolcar las lleva SIEMPRE "
+    "juntas: la tractora averiada al taller (RESCATE / GRÚA MÓVIL) y el "
+    "semirremolque a su destino (una CABEZA TRACTORA nuestra). Nunca "
+    "propongas llevarse solo el semirremolque: el camionero se quedaría "
+    "tirado con su tractora. Son dos equipos en el mismo servicio "
+    "(argumento equipos), salvo que quien lo da diga otra cosa.\n"
+    "4. Si no hay conductores libres suficientes, cuenta también con "
+    "los que cumplen los permisos pero están Asignados o En servicio: "
+    "su albarán queda en cola y sale al terminar el actual. Dilo en la "
+    "opción (\"Zafra en cola, tras su servicio actual\"). Un mismo "
+    "conductor no puede ir en dos equipos a la vez.\n"
 )
 
 
@@ -614,6 +621,10 @@ def availability(company):
         missing = checker.missing(crew.driver_card, crew.machine_card)
         if missing:
             row += "; NO PUEDE llevarla: %s" % ", ".join(missing)
+        types = checker.machine_types_for(crew.driver_card)
+        row += "; el conductor puede llevar: %s" % (
+            ", ".join(types) if types else "ningún tipo"
+        )
         crew_rows.append(row)
     driver_rows = []
     for driver in drivers:
