@@ -1,5 +1,3 @@
-
-
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/views_workorders.py
 
 
@@ -12,7 +10,13 @@ from django.forms import modelformset_factory
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 
-from panel.mixins import SupervisorAccessMixin, AdminRoleRequiredMixin, WorkOrderFormAccessMixin, CompanyUserRequiredMixin, SuperuserRequiredMixin
+from panel.mixins import (
+    SupervisorAccessMixin,
+    AdminRoleRequiredMixin,
+    WorkOrderFormAccessMixin,
+    CompanyUserRequiredMixin,
+    SuperuserRequiredMixin,
+)
 from ivr_config.models import (
     CompanyUser,
     PresenceStatus,
@@ -38,10 +42,16 @@ import plotly.io as pio
 
 logger = logging.getLogger(__name__)
 
-class WorkOrderListView (SupervisorAccessMixin ,View ):
+XLSX_CONTENT_TYPE = (
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+
+
+class WorkOrderListView(SupervisorAccessMixin, View):
     """
     Lists WorkOrder records belonging to the authenticated user's company,
-    split into four querysets for the tabbed UI introduced in Hito 8 / Bloque H:
+    split into four querysets for the tabbed UI introduced in Hito 8 / Bloque
+    H:
       wo_queue    — PENDING or PROCESSING (polling tab).
       wo_error    — ERROR.
       wo_pending  — DONE, not yet reviewed (pending supervisor sign-off).
@@ -60,25 +70,29 @@ class WorkOrderListView (SupervisorAccessMixin ,View ):
     Accesible para los roles SUPERVISOR y ADMIN (SupervisorAccessMixin).
     """
 
-    template_name ="panel/work_orders/list.html"
+    template_name = "panel/work_orders/list.html"
 
-    def _get_own_presence (self ,company_user ):
+    def _get_own_presence(self, company_user):
         """
         Returns the current active PresenceStatus for the authenticated user.
         ---
         Retorna el PresenceStatus activo actual del usuario autenticado.
         """
-        from django .db .models import Q 
-        from django .utils .timezone import now 
-        from ivr_config .models import PresenceStatus 
-        return PresenceStatus .objects .filter (
-        company_user =company_user ,
-        starts_at__lte =now (),
-        ).filter (
-        Q (ends_at__isnull =True )|Q (ends_at__gt =now ())
-        ).order_by ("-starts_at").first ()
+        from django.db.models import Q
+        from django.utils.timezone import now
+        from ivr_config.models import PresenceStatus
 
-    def get (self ,request ):
+        return (
+            PresenceStatus.objects.filter(
+                company_user=company_user,
+                starts_at__lte=now(),
+            )
+            .filter(Q(ends_at__isnull=True) | Q(ends_at__gt=now()))
+            .order_by("-starts_at")
+            .first()
+        )
+
+    def get(self, request):
         """
         Renders the tabbed work order list with four filtered querysets.
         The active tab defaults to "Pendiente revisión" when there are pending
@@ -94,153 +108,133 @@ class WorkOrderListView (SupervisorAccessMixin ,View ):
         (mismo mecanismo que WorkOrderAdminHistoryView). Columnas ordenables
         desde la lista PDF: upload_date, pdf_display_name, uploaded_by_name.
         """
-        company_user =request .user .company_user 
-        company =company_user .company 
+        company_user = request.user.company_user
+        company = company_user.company
 
-
-
-
-
-
-
-
-
-        _VALID_SORT_COLS =frozenset (
-        ("upload_date","pdf_display_name","uploaded_by_name")
+        _VALID_SORT_COLS = frozenset(
+            ("upload_date", "pdf_display_name", "uploaded_by_name")
         )
-        _VALID_SORT_DIRS =frozenset (("asc","desc"))
+        _VALID_SORT_DIRS = frozenset(("asc", "desc"))
 
-
-
-        _ORM_FIELD_MAP ={
-        "upload_date":[("upload_date",)],
-        "pdf_display_name":[("source_pdf__name",)],
-        "uploaded_by_name":[
-        ("uploaded_by__user__last_name",),
-        ("uploaded_by__user__first_name",),
-        ],
+        _ORM_FIELD_MAP = {
+            "upload_date": [("upload_date",)],
+            "pdf_display_name": [("source_pdf__name",)],
+            "uploaded_by_name": [
+                ("uploaded_by__user__last_name",),
+                ("uploaded_by__user__first_name",),
+            ],
         }
 
-        raw_stack =request .GET .get ("sort_stack","").strip ()
+        raw_stack = request.GET.get("sort_stack", "").strip()
 
-        sort_stack =[]
-        if raw_stack :
-            for token in raw_stack .split (","):
-                token =token .strip ()
-                if ":"not in token :
-                    continue 
-                col ,_ ,direction =token .partition (":")
-                col =col .strip ()
-                direction =direction .strip ()
-                if col in _VALID_SORT_COLS and direction in _VALID_SORT_DIRS :
-                    if not any (s [0 ]==col for s in sort_stack ):
-                        sort_stack .append ((col ,direction ))
-                        if len (sort_stack )>=3 :
-                            break 
+        sort_stack = []
+        if raw_stack:
+            for token in raw_stack.split(","):
+                token = token.strip()
+                if ":" not in token:
+                    continue
+                col, _, direction = token.partition(":")
+                col = col.strip()
+                direction = direction.strip()
+                if col in _VALID_SORT_COLS and direction in _VALID_SORT_DIRS:
+                    if not any(s[0] == col for s in sort_stack):
+                        sort_stack.append((col, direction))
+                        if len(sort_stack) >= 3:
+                            break
 
-        if not sort_stack :
-            sort_stack =[("upload_date","desc")]
+        if not sort_stack:
+            sort_stack = [("upload_date", "desc")]
 
-        sort_primary_col =sort_stack [0 ][0 ]
-        sort_primary_dir =sort_stack [0 ][1 ]
-        sort_stack_str =",".join (f"{col}:{direction}"for col ,direction in sort_stack )
+        sort_primary_col = sort_stack[0][0]
+        sort_primary_dir = sort_stack[0][1]
+        sort_stack_str = ",".join(
+            f"{col}:{direction}" for col, direction in sort_stack
+        )
 
-        def _build_order_by (stack ):
+        def _build_order_by(stack):
             """
             Builds an order_by tuple from the sort stack, applying the
             correct direction prefix ("-") for each column and its ORM fields.
             Secondary and tertiary columns act as tiebreakers in order.
             ---
             Construye una tupla order_by desde la pila de ordenación, aplicando
-            el prefijo de dirección ("-") correcto a cada columna y sus campos ORM.
+            el prefijo de dirección ("-") correcto a cada columna y sus campos
+            ORM.
             Las columnas secundaria y terciaria actúan como desempate en orden.
             """
-            order_fields =[]
-            for col ,direction in stack :
-                prefix ="-"if direction =="desc"else ""
-                for field_tuple in _ORM_FIELD_MAP .get (col ,[(col ,)]):
-                    for field in field_tuple :
-                        order_fields .append (f"{prefix}{field}")
-            return order_fields 
+            order_fields = []
+            for col, direction in stack:
+                prefix = "-" if direction == "desc" else ""
+                for field_tuple in _ORM_FIELD_MAP.get(col, [(col,)]):
+                    for field in field_tuple:
+                        order_fields.append(f"{prefix}{field}")
+            return order_fields
 
-        orm_order =_build_order_by (sort_stack )
+        orm_order = _build_order_by(sort_stack)
 
-
-
-
-
-
-        wo_queue =(
-        WorkOrder .objects 
-        .filter (
-        company =company ,
-        source =WorkOrder .Source .PDF_UPLOAD ,
-        status__in =[
-        WorkOrder .Status .PENDING ,
-        WorkOrder .Status .PROCESSING ,
-        ],
+        wo_queue = WorkOrder.objects.filter(
+            company=company,
+            source=WorkOrder.Source.PDF_UPLOAD,
+            status__in=[
+                WorkOrder.Status.PENDING,
+                WorkOrder.Status.PROCESSING,
+            ],
+        ).order_by("-upload_date")
+        wo_error = WorkOrder.objects.filter(
+            company=company,
+            source=WorkOrder.Source.PDF_UPLOAD,
+            status=WorkOrder.Status.ERROR,
+        ).order_by("-upload_date")
+        wo_pending = (
+            WorkOrder.objects.filter(
+                company=company,
+                source=WorkOrder.Source.PDF_UPLOAD,
+                status=WorkOrder.Status.DONE,
+                reviewed=False,
+            )
+            .select_related("uploaded_by__user")
+            .order_by(*orm_order)
         )
-        .order_by ("-upload_date")
-        )
-        wo_error =(
-        WorkOrder .objects 
-        .filter (
-        company =company ,
-        source =WorkOrder .Source .PDF_UPLOAD ,
-        status =WorkOrder .Status .ERROR ,
-        )
-        .order_by ("-upload_date")
-        )
-        wo_pending =(
-        WorkOrder .objects 
-        .filter (
-        company =company ,
-        source =WorkOrder .Source .PDF_UPLOAD ,
-        status =WorkOrder .Status .DONE ,
-        reviewed =False ,
-        )
-        .select_related ("uploaded_by__user")
-        .order_by (*orm_order )
-        )
-        wo_reviewed =(
-        WorkOrder .objects 
-        .filter (
-        company =company ,
-        source =WorkOrder .Source .PDF_UPLOAD ,
-        status =WorkOrder .Status .DONE ,
-        reviewed =True ,
-        )
-        .select_related ("reviewed_by__user","uploaded_by__user")
-        .order_by (*orm_order )
+        wo_reviewed = (
+            WorkOrder.objects.filter(
+                company=company,
+                source=WorkOrder.Source.PDF_UPLOAD,
+                status=WorkOrder.Status.DONE,
+                reviewed=True,
+            )
+            .select_related("reviewed_by__user", "uploaded_by__user")
+            .order_by(*orm_order)
         )
 
+        default_tab = "pending" if wo_pending.exists() else "queue"
 
+        return render(
+            request,
+            self.template_name,
+            {
+                "company": company,
+                "company_user": company_user,
+                "own_presence": self._get_own_presence(company_user),
+                "active_nav": "work_orders",
+                "wo_queue": wo_queue,
+                "wo_error": wo_error,
+                "wo_pending": wo_pending,
+                "wo_reviewed": wo_reviewed,
+                "default_tab": default_tab,
+                "sort_stack_str": sort_stack_str,
+                "sort_primary_col": sort_primary_col,
+                "sort_primary_dir": sort_primary_dir,
+            },
+        )
 
-
-
-        default_tab ="pending"if wo_pending .exists ()else "queue"
-
-        return render (request ,self .template_name ,{
-        "company":company ,
-        "company_user":company_user ,
-        "own_presence":self ._get_own_presence (company_user ),
-        "active_nav":"work_orders",
-        "wo_queue":wo_queue ,
-        "wo_error":wo_error ,
-        "wo_pending":wo_pending ,
-        "wo_reviewed":wo_reviewed ,
-        "default_tab":default_tab ,
-        "sort_stack_str":sort_stack_str ,
-        "sort_primary_col":sort_primary_col ,
-        "sort_primary_dir":sort_primary_dir ,
-        })
-
-    def post (self ,request ):
+    def post(self, request):
         """
         Handles bulk actions submitted from the PDF pipeline list tabs.
         Supported bulk_op values:
-          mark_reviewed   — sets reviewed=True on selected PDF_UPLOAD WorkOrders.
-          unmark_reviewed — sets reviewed=False on selected PDF_UPLOAD WorkOrders.
+          mark_reviewed   — sets reviewed=True on selected PDF_UPLOAD
+          WorkOrders.
+          unmark_reviewed — sets reviewed=False on selected PDF_UPLOAD
+          WorkOrders.
           delete          — deletes selected PDF_UPLOAD WorkOrders (CASCADE).
         All operations are scoped to the authenticated user's company.
 
@@ -248,114 +242,111 @@ class WorkOrderListView (SupervisorAccessMixin ,View ):
 
         Gestiona acciones en lote enviadas desde las pestañas de la lista PDF.
         Valores de bulk_op soportados:
-          mark_reviewed   — establece reviewed=True en los WorkOrders seleccionados.
-          unmark_reviewed — establece reviewed=False en los WorkOrders seleccionados.
+          mark_reviewed   — establece reviewed=True en los WorkOrders
+          seleccionados.
+          unmark_reviewed — establece reviewed=False en los WorkOrders
+          seleccionados.
           delete          — elimina los WorkOrders seleccionados (CASCADE).
-        Todas las operaciones están acotadas a la empresa del usuario autenticado.
+        Todas las operaciones están acotadas a la empresa del usuario
+        autenticado.
         """
-        from django .utils .timezone import now as _now 
-        from django .contrib import messages as django_messages 
+        from django.utils.timezone import now as _now
+        from django.contrib import messages as django_messages
 
-        company_user =request .user .company_user 
-        company =company_user .company 
-        active_tab =request .POST .get ("active_tab","pending")
-        bulk_op =request .POST .get ("bulk_op","")
-        raw_pks =request .POST .getlist ("pks")
+        company_user = request.user.company_user
+        company = company_user.company
+        active_tab = request.POST.get("active_tab", "pending")
+        bulk_op = request.POST.get("bulk_op", "")
+        raw_pks = request.POST.getlist("pks")
 
+        try:
+            pk_list = [int(p) for p in raw_pks if str(p).strip().isdigit()]
+        except (ValueError, AttributeError):
+            pk_list = []
 
+        if not pk_list:
+            django_messages.warning(
+                request, "No se ha seleccionado ningún parte."
+            )
+            return redirect(f"{request.path}?tab={active_tab}")
 
-        try :
-            pk_list =[int (p )for p in raw_pks if str (p ).strip ().isdigit ()]
-        except (ValueError ,AttributeError ):
-            pk_list =[]
-
-        if not pk_list :
-            django_messages .warning (request ,"No se ha seleccionado ningún parte.")
-            return redirect (f"{request.path}?tab={active_tab}")
-
-        qs =(
-        WorkOrder .objects 
-        .filter (
-        company =company ,
-        source =WorkOrder .Source .PDF_UPLOAD ,
-        pk__in =pk_list ,
-        )
+        qs = WorkOrder.objects.filter(
+            company=company,
+            source=WorkOrder.Source.PDF_UPLOAD,
+            pk__in=pk_list,
         )
 
-        if bulk_op =="mark_reviewed":
+        if bulk_op == "mark_reviewed":
 
-            updated =qs .filter (status =WorkOrder .Status .DONE ).update (
-            reviewed =True ,
-            reviewed_by =company_user ,
-            reviewed_at =_now (),
+            updated = qs.filter(status=WorkOrder.Status.DONE).update(
+                reviewed=True,
+                reviewed_by=company_user,
+                reviewed_at=_now(),
             )
-            django_messages .success (
-            request ,
-            f"{updated} parte{'s' if updated != 1 else ''} "
-            f"marcado{'s' if updated != 1 else ''} como revisado{'s' if updated != 1 else ''}."
-            )
-
-        elif bulk_op =="unmark_reviewed":
-
-            updated =qs .filter (status =WorkOrder .Status .DONE ,reviewed =True ).update (
-            reviewed =False ,
-            reviewed_by =None ,
-            reviewed_at =None ,
-            )
-            django_messages .success (
-            request ,
-            f"Revisión desmarcada en {updated} parte{'s' if updated != 1 else ''}."
+            django_messages.success(
+                request,
+                f"{updated} parte{'s' if updated != 1 else ''} "
+                f"marcado{'s' if updated != 1 else ''} "
+                f"como revisado{'s' if updated != 1 else ''}.",
             )
 
-        elif bulk_op =="delete":
+        elif bulk_op == "unmark_reviewed":
 
-            count =qs .count ()
-            _wo_pks =list (qs .values_list ("pk",flat =True ))
+            updated = qs.filter(
+                status=WorkOrder.Status.DONE, reviewed=True
+            ).update(
+                reviewed=False,
+                reviewed_by=None,
+                reviewed_at=None,
+            )
+            django_messages.success(
+                request,
+                f"Revisión desmarcada en {updated} "
+                f"parte{'s' if updated != 1 else ''}.",
+            )
+
+        elif bulk_op == "delete":
+
+            count = qs.count()
+            _wo_pks = list(qs.values_list("pk", flat=True))
             # S116-H07/H10: antes de borrar -- devolver los repuestos que
             # estos partes hubieran consumido, borrar de GCS/índice las
             # fotos que hubieran tenido, y capturar los tickets que
             # hubieran originado.
-            _line_pks =list (
-            WorkOrderEntryLine .objects .filter (
-            entry__work_order__pk__in =_wo_pks 
-            ).values_list ("pk",flat =True )
+            _line_pks = list(
+                WorkOrderEntryLine.objects.filter(
+                    entry__work_order__pk__in=_wo_pks
+                ).values_list("pk", flat=True)
             )
-            _revert_spare_parts_for_lines (_line_pks ,company_user )
-            _delete_task_photo_files (work_order_pks =_wo_pks )
-            _ticket_pks =_ticket_pks_linked_to_work_orders (_wo_pks )
-            qs .delete ()
-            _deleted_tickets =_delete_orphaned_tickets (_ticket_pks )
-            _msg =(
-            f"{count} parte{'s' if count != 1 else ''} "
-            f"eliminado{'s' if count != 1 else ''} correctamente."
+            _revert_spare_parts_for_lines(_line_pks, company_user)
+            _delete_task_photo_files(work_order_pks=_wo_pks)
+            _ticket_pks = _ticket_pks_linked_to_work_orders(_wo_pks)
+            qs.delete()
+            _deleted_tickets = _delete_orphaned_tickets(_ticket_pks)
+            _msg = (
+                f"{count} parte{'s' if count != 1 else ''} "
+                f"eliminado{'s' if count != 1 else ''} correctamente."
             )
-            if _deleted_tickets :
-                _msg +=(
-                f" También se ha eliminado "
-                f"{'el ticket de avería que' if _deleted_tickets == 1 else f'{_deleted_tickets} tickets de avería que'} "
-                f"esos partes habían originado y que no seguía en ningún otro parte."
+            if _deleted_tickets:
+                _msg += (
+                    f" También se ha eliminado "
+                    f"{'el' if _deleted_tickets == 1 else _deleted_tickets} "
+                    f"ticket{'' if _deleted_tickets == 1 else 's'} "
+                    "de avería que "
+                    "esos partes habían originado y que no seguía en ningún "
+                    "otro parte."
                 )
-            django_messages .success (
-            request ,
-            _msg
+            django_messages.success(request, _msg)
+
+        else:
+            django_messages.warning(
+                request, f"Operación en lote desconocida: '{bulk_op}'."
             )
 
-        else :
-            django_messages .warning (
-            request ,
-            f"Operación en lote desconocida: '{bulk_op}'."
-            )
-
-        return redirect (f"{request.path}?tab={active_tab}")
+        return redirect(f"{request.path}?tab={active_tab}")
 
 
-
-
-
-
-
-
-class WorkOrderUploadView (SupervisorAccessMixin ,View ):
+class WorkOrderUploadView(SupervisorAccessMixin, View):
     """
     Handles PDF upload for work order processing.
     On POST: validates the file, runs a duplicate detection check before
@@ -382,7 +373,8 @@ class WorkOrderUploadView (SupervisorAccessMixin ,View ):
     Detección de duplicado (Hito 8, Paso 5, Bloque E):
       Antes de crear un nuevo WorkOrder la vista extrae el nombre del operario
       y el periodo de trabajo del nombre del PDF cargado y comprueba si existe
-      un WorkOrder de la misma empresa con el mismo operario y periodo solapado.
+      un WorkOrder de la misma empresa con el mismo operario y periodo
+      solapado.
       Si se detecta un duplicado y el POST no incluye confirm_overwrite=1, el
       formulario de carga se vuelve a renderizar con la variable de contexto
       duplicate_wo para que la plantilla muestre un modal de advertencia.
@@ -392,39 +384,47 @@ class WorkOrderUploadView (SupervisorAccessMixin ,View ):
     Accesible para los roles SUPERVISOR y ADMIN (SupervisorAccessMixin).
     """
 
-    template_name ="panel/work_orders/upload.html"
+    template_name = "panel/work_orders/upload.html"
 
-    def _get_own_presence (self ,company_user ):
+    def _get_own_presence(self, company_user):
         """
         Returns the current active PresenceStatus for the authenticated user.
         ---
         Retorna el PresenceStatus activo actual del usuario autenticado.
         """
-        from django .db .models import Q 
-        from django .utils .timezone import now 
-        from ivr_config .models import PresenceStatus 
-        return PresenceStatus .objects .filter (
-        company_user =company_user ,
-        starts_at__lte =now (),
-        ).filter (
-        Q (ends_at__isnull =True )|Q (ends_at__gt =now ())
-        ).order_by ("-starts_at").first ()
+        from django.db.models import Q
+        from django.utils.timezone import now
+        from ivr_config.models import PresenceStatus
 
-    def get (self ,request ):
+        return (
+            PresenceStatus.objects.filter(
+                company_user=company_user,
+                starts_at__lte=now(),
+            )
+            .filter(Q(ends_at__isnull=True) | Q(ends_at__gt=now()))
+            .order_by("-starts_at")
+            .first()
+        )
+
+    def get(self, request):
         """
         Renders the PDF upload form.
         ---
         Renderiza el formulario de carga de PDF.
         """
-        company_user =request .user .company_user 
-        return render (request ,self .template_name ,{
-        "company":company_user .company ,
-        "company_user":company_user ,
-        "own_presence":self ._get_own_presence (company_user ),
-        "active_nav":"work_orders",
-        })
+        company_user = request.user.company_user
+        return render(
+            request,
+            self.template_name,
+            {
+                "company": company_user.company,
+                "company_user": company_user,
+                "own_presence": self._get_own_presence(company_user),
+                "active_nav": "work_orders",
+            },
+        )
 
-    def post (self ,request ):
+    def post(self, request):
         """
         Processes the uploaded PDF: validates the file, computes its SHA-256
         hash, runs a two-level duplicate detection check, optionally deletes
@@ -460,9 +460,11 @@ class WorkOrderUploadView (SupervisorAccessMixin ,View ):
             de todos los WorkOrders de la misma empresa. Un match de hash
             significa que se ha subido exactamente el mismo fichero antes,
             con independencia del nombre.
-          NIVEL 2 — Operario + solapamiento de periodo (solo si no hay hash match):
+          NIVEL 2 — Operario + solapamiento de periodo (solo si no hay hash
+          match):
             El nombre del PDF se usa para derivar el nombre del operario y,
-            cuando es posible, el periodo de trabajo. Se consultan los registros
+            cuando es posible, el periodo de trabajo. Se consultan los
+            registros
             WorkOrderEntry de la misma empresa + worker_name + rango work_date
             solapado. Un match aquí significa que un fichero diferente pero con
             los mismos datos ya ha sido procesado.
@@ -470,261 +472,193 @@ class WorkOrderUploadView (SupervisorAccessMixin ,View ):
           duplicate_reason transporta "exact" o "content" para que la plantilla
           muestre un mensaje diferenciado en el modal.
 
-          Al confirmar la sobrescritura el WorkOrder duplicado (y todos sus hijos
+          Al confirmar la sobrescritura el WorkOrder duplicado (y todos sus
+          hijos
           eliminados en cascada) se elimina antes de crear el nuevo.
         """
-        import hashlib 
+        import hashlib
 
-        from django .contrib import messages as django_messages 
-        from work_order_processor .services import _worker_name_from_pdf_path 
-        from work_order_processor .tasks import _extract_period_from_pdf_name 
-        from work_order_processor .models import WorkOrderEntry 
+        from django.contrib import messages as django_messages
+        from work_order_processor.services import _worker_name_from_pdf_path
+        from work_order_processor.tasks import _extract_period_from_pdf_name
+        from work_order_processor.models import WorkOrderEntry
 
-        company_user =request .user .company_user 
-        company =company_user .company 
-        pdf_file =request .FILES .get ("source_pdf")
+        company_user = request.user.company_user
+        company = company_user.company
+        pdf_file = request.FILES.get("source_pdf")
 
+        if not pdf_file:
+            django_messages.error(request, "Debes seleccionar un archivo PDF.")
+            return render(
+                request,
+                self.template_name,
+                {
+                    "company": company,
+                    "company_user": company_user,
+                    "own_presence": self._get_own_presence(company_user),
+                    "active_nav": "work_orders",
+                },
+            )
 
+        if not pdf_file.name.lower().endswith(".pdf"):
+            django_messages.error(
+                request, "El archivo debe tener extensión .pdf."
+            )
+            return render(
+                request,
+                self.template_name,
+                {
+                    "company": company,
+                    "company_user": company_user,
+                    "own_presence": self._get_own_presence(company_user),
+                    "active_nav": "work_orders",
+                },
+            )
 
+        pdf_file.seek(0)
+        incoming_hash = hashlib.sha256(pdf_file.read()).hexdigest()
+        pdf_file.seek(0)
 
+        incoming_name = pdf_file.name
+        incoming_worker = _worker_name_from_pdf_path(incoming_name)
+        date_from, date_to = _extract_period_from_pdf_name(incoming_name)
 
-        if not pdf_file :
-            django_messages .error (request ,"Debes seleccionar un archivo PDF.")
-            return render (request ,self .template_name ,{
-            "company":company ,
-            "company_user":company_user ,
-            "own_presence":self ._get_own_presence (company_user ),
-            "active_nav":"work_orders",
-            })
+        duplicate_wo = None
+        duplicate_reason = None
 
-        if not pdf_file .name .lower ().endswith (".pdf"):
-            django_messages .error (request ,"El archivo debe tener extensión .pdf.")
-            return render (request ,self .template_name ,{
-            "company":company ,
-            "company_user":company_user ,
-            "own_presence":self ._get_own_presence (company_user ),
-            "active_nav":"work_orders",
-            })
-
-
-
-
-
-
-
-
-
-
-
-        pdf_file .seek (0 )
-        incoming_hash =hashlib .sha256 (pdf_file .read ()).hexdigest ()
-        pdf_file .seek (0 )
-
-
-
-
-
-
-
-
-
-
-
-
-
-        incoming_name =pdf_file .name 
-        incoming_worker =_worker_name_from_pdf_path (incoming_name )
-        date_from ,date_to =_extract_period_from_pdf_name (incoming_name )
-
-        duplicate_wo =None 
-        duplicate_reason =None 
-
-
-
-        hash_duplicate =(
-        WorkOrder .objects 
-        .filter (company =company ,source_pdf_hash =incoming_hash )
-        .exclude (source_pdf_hash ="")
-        .first ()
+        hash_duplicate = (
+            WorkOrder.objects.filter(
+                company=company, source_pdf_hash=incoming_hash
+            )
+            .exclude(source_pdf_hash="")
+            .first()
         )
-        if hash_duplicate :
-            duplicate_wo =hash_duplicate 
-            duplicate_reason ="exact"
+        if hash_duplicate:
+            duplicate_wo = hash_duplicate
+            duplicate_reason = "exact"
 
+        if not duplicate_wo and incoming_worker:
+            entry_qs = WorkOrderEntry.objects.filter(
+                work_order__company=company,
+                worker_name=incoming_worker,
+            ).select_related("work_order")
 
+            if date_from and date_to:
 
-        if not duplicate_wo and incoming_worker :
-            entry_qs =WorkOrderEntry .objects .filter (
-            work_order__company =company ,
-            worker_name =incoming_worker ,
-            ).select_related ("work_order")
-
-            if date_from and date_to :
-
-
-
-
-                entry_qs =entry_qs .filter (
-                work_date__gte =date_from ,
-                work_date__lte =date_to ,
+                entry_qs = entry_qs.filter(
+                    work_date__gte=date_from,
+                    work_date__lte=date_to,
                 )
 
+            existing_entry = entry_qs.first()
+            if existing_entry:
+                duplicate_wo = existing_entry.work_order
+                duplicate_reason = "content"
 
-
-            existing_entry =entry_qs .first ()
-            if existing_entry :
-                duplicate_wo =existing_entry .work_order 
-                duplicate_reason ="content"
-
-
-
-
-
-
-
-        if not duplicate_wo and incoming_worker and date_from and date_to :
-            conflicting_entries =(
-            WorkOrderEntry .objects 
-            .filter (
-            work_order__company =company ,
-            worker_name =incoming_worker ,
-            work_date__gte =date_from ,
-            work_date__lte =date_to ,
+        if not duplicate_wo and incoming_worker and date_from and date_to:
+            conflicting_entries = (
+                WorkOrderEntry.objects.filter(
+                    work_order__company=company,
+                    worker_name=incoming_worker,
+                    work_date__gte=date_from,
+                    work_date__lte=date_to,
+                )
+                .exclude(work_order__source_pdf_hash=incoming_hash)
+                .exclude(work_order__source_pdf_hash="")
+                .select_related("work_order")
+                .order_by("work_date")
             )
-            .exclude (work_order__source_pdf_hash =incoming_hash )
-            .exclude (work_order__source_pdf_hash ="")
-            .select_related ("work_order")
-            .order_by ("work_date")
-            )
-            if conflicting_entries .exists ():
+            if conflicting_entries.exists():
 
+                seen_dates = set()
+                duplicate_dates = []
+                for entry in conflicting_entries:
+                    if entry.work_date:
+                        date_key = entry.work_date.strftime("%d/%m/%y")
+                        if date_key not in seen_dates:
+                            seen_dates.add(date_key)
+                            duplicate_dates.append(date_key)
 
-                seen_dates =set ()
-                duplicate_dates =[]
-                for entry in conflicting_entries :
-                    if entry .work_date :
-                        date_key =entry .work_date .strftime ("%d/%m/%y")
-                        if date_key not in seen_dates :
-                            seen_dates .add (date_key )
-                            duplicate_dates .append (date_key )
+                first_entry = conflicting_entries.first()
+                duplicate_wo = first_entry.work_order
+                duplicate_reason = "duplicate_entries"
 
-                first_entry =conflicting_entries .first ()
-                duplicate_wo =first_entry .work_order 
-                duplicate_reason ="duplicate_entries"
-
-
-
-
-
-        if duplicate_wo and not request .POST .get ("confirm_overwrite"):
-            ctx ={
-            "company":company ,
-            "company_user":company_user ,
-            "own_presence":self ._get_own_presence (company_user ),
-            "active_nav":"work_orders",
-            "duplicate_wo":duplicate_wo ,
-            "duplicate_reason":duplicate_reason ,
-            "pdf_file_name":incoming_name ,
+        if duplicate_wo and not request.POST.get("confirm_overwrite"):
+            ctx = {
+                "company": company,
+                "company_user": company_user,
+                "own_presence": self._get_own_presence(company_user),
+                "active_nav": "work_orders",
+                "duplicate_wo": duplicate_wo,
+                "duplicate_reason": duplicate_reason,
+                "pdf_file_name": incoming_name,
             }
 
+            if duplicate_reason == "duplicate_entries":
+                ctx["duplicate_dates"] = duplicate_dates
+            return render(request, self.template_name, ctx)
 
-            if duplicate_reason =="duplicate_entries":
-                ctx ["duplicate_dates"]=duplicate_dates 
-            return render (request ,self .template_name ,ctx )
-
-
-
-        if duplicate_wo and request .POST .get ("confirm_overwrite"):
-            dup_pk =duplicate_wo .pk 
+        if duplicate_wo and request.POST.get("confirm_overwrite"):
+            dup_pk = duplicate_wo.pk
             # S116-H07/H10: mismo criterio -- devolver los repuestos,
             # borrar de GCS/índice las fotos, y borrar también los
             # tickets que este parte duplicado había originado y que no
             # seguían en ningún otro parte.
-            _dup_line_pks =list (
-            WorkOrderEntryLine .objects .filter (
-            entry__work_order =duplicate_wo 
-            ).values_list ("pk",flat =True )
+            _dup_line_pks = list(
+                WorkOrderEntryLine.objects.filter(
+                    entry__work_order=duplicate_wo
+                ).values_list("pk", flat=True)
             )
-            _revert_spare_parts_for_lines (_dup_line_pks ,company_user )
-            _delete_task_photo_files (work_order_pks =[dup_pk ])
-            _ticket_pks =_ticket_pks_linked_to_work_orders ([dup_pk ])
-            duplicate_wo .delete ()
-            _delete_orphaned_tickets (_ticket_pks )
-            django_messages .warning (
-            request ,
-            f"El parte duplicado #{dup_pk} y todos sus datos han sido "
-            f"eliminados. Procesando el nuevo PDF."
+            _revert_spare_parts_for_lines(_dup_line_pks, company_user)
+            _delete_task_photo_files(work_order_pks=[dup_pk])
+            _ticket_pks = _ticket_pks_linked_to_work_orders([dup_pk])
+            duplicate_wo.delete()
+            _delete_orphaned_tickets(_ticket_pks)
+            django_messages.warning(
+                request,
+                f"El parte duplicado #{dup_pk} y todos sus datos han sido "
+                f"eliminados. Procesando el nuevo PDF.",
             )
 
+        from django.db import transaction
 
+        with transaction.atomic():
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        from django .db import transaction 
-
-        with transaction .atomic ():
-
-
-
-
-
-
-
-
-
-            race_duplicate =(
-            WorkOrder .objects 
-            .filter (company =company ,source_pdf_hash =incoming_hash )
-            .exclude (source_pdf_hash ="")
-            .select_for_update ()
-            .first ()
-            )
-            if race_duplicate :
-                django_messages .info (
-                request ,
-                f"El fichero ya había sido registrado como Parte "
-                f"#{race_duplicate.pk}. No se ha creado un duplicado."
+            race_duplicate = (
+                WorkOrder.objects.filter(
+                    company=company, source_pdf_hash=incoming_hash
                 )
-                return redirect ("panel:work_order_list")
+                .exclude(source_pdf_hash="")
+                .select_for_update()
+                .first()
+            )
+            if race_duplicate:
+                django_messages.info(
+                    request,
+                    f"El fichero ya había sido registrado como Parte "
+                    f"#{race_duplicate.pk}. No se ha creado un duplicado.",
+                )
+                return redirect("panel:work_order_list")
 
-            work_order =WorkOrder .objects .create (
-            company =company ,
-            uploaded_by =company_user ,
-            source_pdf =pdf_file ,
-            source_pdf_hash =incoming_hash ,
-            source_pdf_name =incoming_name ,
+            work_order = WorkOrder.objects.create(
+                company=company,
+                uploaded_by=company_user,
+                source_pdf=pdf_file,
+                source_pdf_hash=incoming_hash,
+                source_pdf_name=incoming_name,
             )
 
-        process_work_order_pdf .delay_on_commit (work_order .pk )
+        process_work_order_pdf.delay_on_commit(work_order.pk)
 
-        django_messages .success (
-        request ,
-        f"PDF cargado correctamente (Parte #{work_order.pk}). "
-        f"El procesamiento ha sido encolado y comenzará en instantes."
+        django_messages.success(
+            request,
+            f"PDF cargado correctamente (Parte #{work_order.pk}). "
+            f"El procesamiento ha sido encolado y comenzará en instantes.",
         )
-        return redirect ("panel:work_order_list")
+        return redirect("panel:work_order_list")
 
 
-class WorkOrderEditView (SupervisorAccessMixin ,View ):
+class WorkOrderEditView(SupervisorAccessMixin, View):
     """
     Displays and processes inline edits for all WorkOrderEntryLine records
     belonging to a given WorkOrder. Lines are grouped by their parent
@@ -732,11 +666,14 @@ class WorkOrderEditView (SupervisorAccessMixin ,View ):
 
     GET  — Renders the editable table grouped by page.
     POST — Two actions dispatched via hidden input `action`:
-      "save_line"      : Saves a single WorkOrderEntryLine identified by `line_pk`.
+      "save_line"      : Saves a single WorkOrderEntryLine identified by
+      `line_pk`.
                          Recomputes delta_hours from hc/hf and re-resolves
                          machine_asset from the updated machine_norm.
-      "regenerate"     : Re-enqueues the Excel generation task for this WorkOrder
-                         (status reset to PENDING) and redirects to the appropriate list.
+      "regenerate"     : Re-enqueues the Excel generation task for this
+      WorkOrder
+                         (status reset to PENDING) and redirects to the
+                         appropriate list.
 
     ⚠️ EXCLUSIVE TO PDF_UPLOAD PARTS. This view exists only to collate the
     historical PDF-derived data against what Gemini extracted from the
@@ -751,17 +688,22 @@ class WorkOrderEditView (SupervisorAccessMixin ,View ):
 
     ---
 
-    Muestra y procesa ediciones inline para todos los registros WorkOrderEntryLine
+    Muestra y procesa ediciones inline para todos los registros
+    WorkOrderEntryLine
     de un WorkOrder dado. Las líneas se agrupan por su WorkOrderEntry padre
     (página / fecha) para facilitar la lectura.
 
     GET  — Renderiza la tabla editable agrupada por página.
     POST — Dos acciones despachadas mediante el input oculto `action`:
-      "save_line"      : Guarda un único WorkOrderEntryLine identificado por `line_pk`.
-                         Recalcula delta_hours desde hc/hf y re-resuelve machine_asset
+      "save_line"      : Guarda un único WorkOrderEntryLine identificado por
+      `line_pk`.
+                         Recalcula delta_hours desde hc/hf y re-resuelve
+                         machine_asset
                          desde el machine_norm actualizado.
-      "regenerate"     : Re-encola la tarea de generación de Excel para este WorkOrder
-                         (estado reseteado a PENDING) y redirige a la lista apropiada.
+      "regenerate"     : Re-encola la tarea de generación de Excel para este
+      WorkOrder
+                         (estado reseteado a PENDING) y redirige a la lista
+                         apropiada.
 
     ⚠️ EXCLUSIVA DE PARTES PDF_UPLOAD. Esta vista existe únicamente para
     cotejar los datos históricos extraídos del PDF contra lo que leyó
@@ -776,32 +718,37 @@ class WorkOrderEditView (SupervisorAccessMixin ,View ):
     El acceso está restringido a la empresa autenticada (guardia multiempresa).
     """
 
-    template_name ="panel/work_orders/edit.html"
+    template_name = "panel/work_orders/edit.html"
 
-    def _get_own_presence (self ,company_user ):
+    def _get_own_presence(self, company_user):
         """
         Returns the current active PresenceStatus for the authenticated user.
         ---
         Retorna el PresenceStatus activo actual del usuario autenticado.
         """
-        return PresenceStatus .objects .filter (
-        company_user =company_user ,
-        starts_at__lte =now (),
-        ).filter (
-        Q (ends_at__isnull =True )|Q (ends_at__gt =now ())
-        ).order_by ("-starts_at").first ()
+        return (
+            PresenceStatus.objects.filter(
+                company_user=company_user,
+                starts_at__lte=now(),
+            )
+            .filter(Q(ends_at__isnull=True) | Q(ends_at__gt=now()))
+            .order_by("-starts_at")
+            .first()
+        )
 
-    def _get_work_order (self ,pk ,company ):
+    def _get_work_order(self, pk, company):
         """
         Retrieves a WorkOrder scoped to the given company.
-        Raises WorkOrder.DoesNotExist if not found or belongs to another company.
+        Raises WorkOrder.DoesNotExist if not found or belongs to another
+        company.
         ---
         Recupera un WorkOrder acotado a la empresa dada.
-        Lanza WorkOrder.DoesNotExist si no se encuentra o pertenece a otra empresa.
+        Lanza WorkOrder.DoesNotExist si no se encuentra o pertenece a otra
+        empresa.
         """
-        return WorkOrder .objects .get (pk =pk ,company =company )
+        return WorkOrder.objects.get(pk=pk, company=company)
 
-    def _build_groups (self ,work_order ):
+    def _build_groups(self, work_order):
         """
         Returns a list of dicts grouping WorkOrderEntryLine records by their
         parent WorkOrderEntry, ordered by page number.
@@ -811,70 +758,58 @@ class WorkOrderEditView (SupervisorAccessMixin ,View ):
 
         ---
 
-        Devuelve una lista de dicts que agrupan los registros WorkOrderEntryLine
+        Devuelve una lista de dicts que agrupan los registros
+        WorkOrderEntryLine
         por su WorkOrderEntry padre, ordenados por número de página.
         Cada dict contiene:
           - entry  : instancia de WorkOrderEntry.
           - lines  : lista de instancias WorkOrderEntryLine de esa entrada.
         """
-        entries =(
-        WorkOrderEntry .objects 
-        .filter (work_order =work_order )
-        .prefetch_related ("lines__machine_asset")
-        .order_by ("page_number")
+        entries = (
+            WorkOrderEntry.objects.filter(work_order=work_order)
+            .prefetch_related("lines__machine_asset")
+            .order_by("page_number")
         )
-        groups =[]
-        for entry in entries :
-            lines =list (entry .lines .order_by ("line_number"))
+        groups = []
+        for entry in entries:
+            lines = list(entry.lines.order_by("line_number"))
 
-
-
-
-
-
-
-
-            day_total_raw =sum (
-            (l .delta_hours for l in lines if l .delta_hours is not None ),
-            0 ,
+            day_total_raw = sum(
+                (
+                    line.delta_hours
+                    for line in lines
+                    if line.delta_hours is not None
+                ),
+                0,
             )
-            day_total =round (day_total_raw ,2 )if any (
-            l .delta_hours is not None for l in lines 
-            )else None 
+            day_total = (
+                round(day_total_raw, 2)
+                if any(line.delta_hours is not None for line in lines)
+                else None
+            )
 
+            if day_total is None:
+                day_css = ""
+            elif day_total < 8:
+                day_css = "day-total-short"
+            elif day_total <= 12:
+                day_css = "day-total-normal"
+            elif day_total <= 16:
+                day_css = "day-total-warning"
+            else:
+                day_css = "day-total-danger"
 
+            groups.append(
+                {
+                    "entry": entry,
+                    "lines": lines,
+                    "day_total": day_total,
+                    "day_css": day_css,
+                }
+            )
+        return groups
 
-
-
-
-
-
-
-
-
-
-
-
-            if day_total is None :
-                day_css =""
-            elif day_total <8 :
-                day_css ="day-total-short"
-            elif day_total <=12 :
-                day_css ="day-total-normal"
-            elif day_total <=16 :
-                day_css ="day-total-warning"
-            else :
-                day_css ="day-total-danger"
-
-            groups .append ({
-            "entry":entry ,
-            "lines":lines ,
-            "day_total":day_total ,
-            "day_css":day_css ,
-            })
-        return groups 
-
-    def get (self ,request ,pk ):
+    def get(self, request, pk):
         """
         Renders the inline edit table for the given WorkOrder.
         Hard-blocks DIGITAL/GENERATED WorkOrders — see class docstring.
@@ -883,77 +818,94 @@ class WorkOrderEditView (SupervisorAccessMixin ,View ):
         Bloquea sin excepción los WorkOrder DIGITAL/GENERATED — ver
         docstring de la clase.
         """
-        from work_order_processor .models import WorkOrderEntry 
-        from django .urls import reverse as _reverse_get 
-        company_user =request .user .company_user 
-        company =company_user .company 
+        from work_order_processor.models import WorkOrderEntry
+        from django.urls import reverse as _reverse_get
 
-        try :
-            work_order =self ._get_work_order (pk ,company )
-        except WorkOrder .DoesNotExist :
-            django_messages .error (request ,"Parte de trabajo no encontrado.")
-            return redirect (_reverse_get ("panel:work_order_list"))
+        company_user = request.user.company_user
+        company = company_user.company
+
+        try:
+            work_order = self._get_work_order(pk, company)
+        except WorkOrder.DoesNotExist:
+            django_messages.error(request, "Parte de trabajo no encontrado.")
+            return redirect(_reverse_get("panel:work_order_list"))
 
         # Guardia absoluta: un parte DIGITAL/GENERATED jamás se ve ni se
         # edita desde esta vista, sea cual sea el rol o el enlace de origen.
         # Única vía permitida: operator_form_edit.
-        if work_order .source in (WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ):
-            django_messages .error (
-            request ,
-            "Los partes digitales se editan única y exclusivamente desde "
-            "su formulario de creación y edición."
+        if work_order.source in (
+            WorkOrder.Source.DIGITAL,
+            WorkOrder.Source.GENERATED,
+        ):
+            django_messages.error(
+                request,
+                "Los partes digitales se editan única y exclusivamente desde "
+                "su formulario de creación y edición.",
             )
-            return redirect (_reverse_get ("panel:operator_form_edit",kwargs ={"wo_pk":pk }))
+            return redirect(
+                _reverse_get("panel:operator_form_edit", kwargs={"wo_pk": pk})
+            )
 
         # Guard: block editing if work order belongs to a locked period.
-        # Guardia: bloquear edición si el parte pertenece a un periodo liquidado.
-        _first_entry_g =work_order .entries .order_by ("work_date").first ()
-        if _first_entry_g and _first_entry_g .work_date :
-            from ivr_config .models import WorkPeriod as _WP_G
-            _locked_g =_WP_G .objects .filter (
-                company_user =work_order .uploaded_by ,
-                is_closed =True ,
-                start_date__lte =_first_entry_g .work_date ,
-                end_date__gte =_first_entry_g .work_date ,
-            ).exists ()
-            if _locked_g :
-                django_messages .error (
-                    request ,
+        # Guardia: bloquear edición si el parte pertenece a un periodo
+        # liquidado.
+        _first_entry_g = work_order.entries.order_by("work_date").first()
+        if _first_entry_g and _first_entry_g.work_date:
+            from ivr_config.models import WorkPeriod as _WP_G
+
+            _locked_g = _WP_G.objects.filter(
+                company_user=work_order.uploaded_by,
+                is_closed=True,
+                start_date__lte=_first_entry_g.work_date,
+                end_date__gte=_first_entry_g.work_date,
+            ).exists()
+            if _locked_g:
+                django_messages.error(
+                    request,
                     "Este parte pertenece a un periodo ya liquidado y "
                     "no puede editarse.",
                 )
-                _back_g =request .GET .get ("back","")
-                if _back_g :
+                _back_g = request.GET.get("back", "")
+                if _back_g:
                     from urllib.parse import unquote as _uq_g
-                    return redirect (_uq_g (_back_g ))
-                return redirect (_reverse_get ("panel:work_order_list"))
 
-        groups =self ._build_groups (work_order )
+                    return redirect(_uq_g(_back_g))
+                return redirect(_reverse_get("panel:work_order_list"))
+
+        groups = self._build_groups(work_order)
 
         # Prefer explicit back= param (carries active filters).
         # Si viene back= explícito (con filtros activos) usarlo directamente.
-        _back_param =request .GET .get ("back","").strip ()
-        if _back_param :
+        _back_param = request.GET.get("back", "").strip()
+        if _back_param:
             from urllib.parse import unquote as _unquote
-            back_url =_unquote (_back_param )
-        else :
-            from_param =request .GET .get ("from","")
-            if from_param =="taller":
-                back_url =_reverse_get ("panel:work_order_admin_history")+"?tab=pending"
-            else :
-                back_url =_reverse_get ("panel:work_order_list")
 
-        return render (request ,self .template_name ,{
-        "company":company ,
-        "company_user":company_user ,
-        "own_presence":self ._get_own_presence (company_user ),
-        "active_nav":"work_orders",
-        "work_order":work_order ,
-        "groups":groups ,
-        "back_url":back_url ,
-        })
+            back_url = _unquote(_back_param)
+        else:
+            from_param = request.GET.get("from", "")
+            if from_param == "taller":
+                back_url = (
+                    _reverse_get("panel:work_order_admin_history")
+                    + "?tab=pending"
+                )
+            else:
+                back_url = _reverse_get("panel:work_order_list")
 
-    def post (self ,request ,pk ):
+        return render(
+            request,
+            self.template_name,
+            {
+                "company": company,
+                "company_user": company_user,
+                "own_presence": self._get_own_presence(company_user),
+                "active_nav": "work_orders",
+                "work_order": work_order,
+                "groups": groups,
+                "back_url": back_url,
+            },
+        )
+
+    def post(self, request, pk):
         """
         Dispatches POST actions: save_line or regenerate.
         Hard-blocks DIGITAL/GENERATED WorkOrders — see class docstring.
@@ -962,195 +914,221 @@ class WorkOrderEditView (SupervisorAccessMixin ,View ):
         Bloquea sin excepción los WorkOrder DIGITAL/GENERATED — ver
         docstring de la clase.
         """
-        from work_order_processor .models import WorkOrderEntry ,WorkOrderEntryLine 
-        from work_order_processor .services import (
-        _compute_delta_hours ,
-        _normalise_machine_code ,
-        _resolve_machine_asset ,
+        from work_order_processor.models import (
+            WorkOrderEntry,
+            WorkOrderEntryLine,
         )
-        from datetime import time as dt_time 
-        from django .urls import reverse as _reverse_post 
-        import json 
+        from work_order_processor.services import (
+            _compute_delta_hours,
+            _normalise_machine_code,
+            _resolve_machine_asset,
+        )
+        from datetime import time as dt_time
+        from django.urls import reverse as _reverse_post
+        import json
 
-        company_user =request .user .company_user 
-        company =company_user .company 
+        company_user = request.user.company_user
+        company = company_user.company
 
-        try :
-            work_order =self ._get_work_order (pk ,company )
-        except WorkOrder .DoesNotExist :
-            django_messages .error (request ,"Parte de trabajo no encontrado.")
-            return redirect (_reverse_post ("panel:work_order_list"))
+        try:
+            work_order = self._get_work_order(pk, company)
+        except WorkOrder.DoesNotExist:
+            django_messages.error(request, "Parte de trabajo no encontrado.")
+            return redirect(_reverse_post("panel:work_order_list"))
 
         # Guardia absoluta: un parte DIGITAL/GENERATED jamás se ve ni se
         # edita desde esta vista, sea cual sea el rol o el enlace de origen.
         # Única vía permitida: operator_form_edit.
-        if work_order .source in (WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ):
-            django_messages .error (
-            request ,
-            "Los partes digitales se editan única y exclusivamente desde "
-            "su formulario de creación y edición."
+        if work_order.source in (
+            WorkOrder.Source.DIGITAL,
+            WorkOrder.Source.GENERATED,
+        ):
+            django_messages.error(
+                request,
+                "Los partes digitales se editan única y exclusivamente desde "
+                "su formulario de creación y edición.",
             )
-            return redirect (_reverse_post ("panel:operator_form_edit",kwargs ={"wo_pk":pk }))
+            return redirect(
+                _reverse_post("panel:operator_form_edit", kwargs={"wo_pk": pk})
+            )
 
         # Use back_url hidden field if present (carries active filters).
         # Usar el campo hidden back_url si viene (preserva filtros activos).
-        _back_hidden =request .POST .get ("back_url","").strip ()
-        if _back_hidden :
+        _back_hidden = request.POST.get("back_url", "").strip()
+        if _back_hidden:
             from urllib.parse import unquote as _unquote_post
-            _list_url =_unquote_post (_back_hidden )
-        else :
-            _list_url =_reverse_post ("panel:work_order_list")
 
-        action =request .POST .get ("action","")
+            _list_url = _unquote_post(_back_hidden)
+        else:
+            _list_url = _reverse_post("panel:work_order_list")
 
+        action = request.POST.get("action", "")
 
-
-
-
-        if action =="regenerate":
-            work_order .status =WorkOrder .Status .PENDING 
-            work_order .excel_file =None 
-            work_order .error_log =""
-            work_order .save (update_fields =["status","excel_file","error_log"])
-            from work_order_processor .services import generate_work_order_excel 
-            from work_order_processor .tasks import process_work_order_pdf 
-            generate_work_order_excel (work_order .pk )
-            django_messages .success (
-            request ,
-            f"Excel regenerado correctamente para el Parte #{work_order.pk}."
+        if action == "regenerate":
+            work_order.status = WorkOrder.Status.PENDING
+            work_order.excel_file = None
+            work_order.error_log = ""
+            work_order.save(
+                update_fields=["status", "excel_file", "error_log"]
             )
-            return redirect (_list_url )
+            from work_order_processor.services import generate_work_order_excel
+            from work_order_processor.tasks import process_work_order_pdf
 
+            generate_work_order_excel(work_order.pk)
+            django_messages.success(
+                request,
+                "Excel regenerado correctamente para el Parte "
+                f"#{work_order.pk}.",
+            )
+            return redirect(_list_url)
 
+        if action == "save_line":
+            line_pk = request.POST.get("line_pk")
+            try:
+                line = WorkOrderEntryLine.objects.select_related(
+                    "entry__work_order"
+                ).get(pk=line_pk, entry__work_order=work_order)
+            except WorkOrderEntryLine.DoesNotExist:
+                django_messages.error(request, "Línea no encontrada.")
+                return redirect("panel:work_order_edit", pk=pk)
 
+            raw_norm = request.POST.get("machine_norm", "").strip()
+            norm = _normalise_machine_code(raw_norm) if raw_norm else raw_norm
+            asset = (
+                _resolve_machine_asset(norm, company=company) if norm else None
+            )
 
-
-        if action =="save_line":
-            line_pk =request .POST .get ("line_pk")
-            try :
-                line =WorkOrderEntryLine .objects .select_related (
-                "entry__work_order"
-                ).get (pk =line_pk ,entry__work_order =work_order )
-            except WorkOrderEntryLine .DoesNotExist :
-                django_messages .error (request ,"Línea no encontrada.")
-                return redirect ("panel:work_order_edit",pk =pk )
-
-
-
-            raw_norm =request .POST .get ("machine_norm","").strip ()
-            norm =_normalise_machine_code (raw_norm )if raw_norm else raw_norm 
-            asset =_resolve_machine_asset (norm ,company =company )if norm else None 
-
-
-
-            def _parse_time_str (val ):
+            def _parse_time_str(val):
                 """Parses HH:MM string into time, returns None on failure.
                 --- Parsea cadena HH:MM a time, devuelve None si falla."""
-                if not val :
-                    return None 
-                try :
-                    parts =val .strip ().split (":")
-                    return dt_time (int (parts [0 ]),int (parts [1 ]))
-                except (ValueError ,IndexError ):
-                    return None 
+                if not val:
+                    return None
+                try:
+                    parts = val.strip().split(":")
+                    return dt_time(int(parts[0]), int(parts[1]))
+                except (ValueError, IndexError):
+                    return None
 
-            hc =_parse_time_str (request .POST .get ("hc",""))
-            hf =_parse_time_str (request .POST .get ("hf",""))
-            delta =_compute_delta_hours (hc ,hf )
+            hc = _parse_time_str(request.POST.get("hc", ""))
+            hf = _parse_time_str(request.POST.get("hf", ""))
+            delta = _compute_delta_hours(hc, hf)
 
-
-
-            flags_raw =request .POST .get ("flags","").strip ()
-            flags =[f .strip ()for f in flags_raw .split (",")if f .strip ()]if flags_raw else []
-
-
-
-            line .machine_norm =norm 
-            line .machine_asset =asset 
-            line .fault_description =request .POST .get ("fault_description","").strip ()
-            line .repair_notes =request .POST .get ("repair_notes","").strip ()
-            line .hc =hc 
-            line .hf =hf 
-            line .or_val =request .POST .get ("or_val","").strip ()
-            line .delta_hours =delta 
-            line .flags =flags 
-            line .save (update_fields =[
-            "machine_norm","machine_asset","fault_description",
-            "repair_notes","hc","hf","or_val","delta_hours","flags",
-            ])
-
-            django_messages .success (
-            request ,
-            f"Bloque {line.line_number} de la página "
-            f"{line.entry.page_number} guardado correctamente."
+            flags_raw = request.POST.get("flags", "").strip()
+            flags = (
+                [f.strip() for f in flags_raw.split(",") if f.strip()]
+                if flags_raw
+                else []
             )
-            return redirect ("panel:work_order_edit",pk =pk )
+
+            line.machine_norm = norm
+            line.machine_asset = asset
+            line.fault_description = request.POST.get(
+                "fault_description", ""
+            ).strip()
+            line.repair_notes = request.POST.get("repair_notes", "").strip()
+            line.hc = hc
+            line.hf = hf
+            line.or_val = request.POST.get("or_val", "").strip()
+            line.delta_hours = delta
+            line.flags = flags
+            line.save(
+                update_fields=[
+                    "machine_norm",
+                    "machine_asset",
+                    "fault_description",
+                    "repair_notes",
+                    "hc",
+                    "hf",
+                    "or_val",
+                    "delta_hours",
+                    "flags",
+                ]
+            )
+
+            django_messages.success(
+                request,
+                f"Bloque {line.line_number} de la página "
+                f"{line.entry.page_number} guardado correctamente.",
+            )
+            return redirect("panel:work_order_edit", pk=pk)
+
+        django_messages.warning(request, "Acción no reconocida.")
+        return redirect("panel:work_order_edit", pk=pk)
 
 
-
-        django_messages .warning (request ,"Acción no reconocida.")
-        return redirect ("panel:work_order_edit",pk =pk )
-
-
-
-class WorkOrderStatusFragmentView (SupervisorAccessMixin ,View ):
+class WorkOrderStatusFragmentView(SupervisorAccessMixin, View):
     """
-    Returns the HTML status fragment for a single WorkOrder, used by HTMX polling.
+    Returns the HTML status fragment for a single WorkOrder, used by HTMX
+    polling.
 
     GET /panel/work-orders/<pk>/status/
-        Renders only the _status_fragment.html partial for the WorkOrder identified
+        Renders only the _status_fragment.html partial for the WorkOrder
+        identified
         by pk and scoped to the authenticated user's company. If the status is
-        PENDING or PROCESSING the partial includes HTMX polling attributes so the
-        browser continues polling every 4 seconds. When the status reaches DONE or
-        ERROR the returned fragment contains no HTMX attributes and polling stops
+        PENDING or PROCESSING the partial includes HTMX polling attributes so
+        the
+        browser continues polling every 4 seconds. When the status reaches DONE
+        or
+        ERROR the returned fragment contains no HTMX attributes and polling
+        stops
         automatically.
 
     Restricted to the ADMIN role (AdminRoleRequiredMixin).
 
     ---
 
-    Devuelve el fragmento HTML de estado de un WorkOrder, consumido por el polling HTMX.
+    Devuelve el fragmento HTML de estado de un WorkOrder, consumido por el
+    polling HTMX.
 
     GET /panel/work-orders/<pk>/status/
         Renderiza únicamente el parcial _status_fragment.html para el WorkOrder
-        identificado por pk, acotado a la empresa del usuario autenticado. Si el
-        estado es PENDING o PROCESSING el parcial incluye atributos HTMX de polling
-        para que el navegador siga consultando cada 4 segundos. Cuando el estado
-        alcanza DONE o ERROR el fragmento devuelto no contiene atributos HTMX y el
+        identificado por pk, acotado a la empresa del usuario autenticado. Si
+        el
+        estado es PENDING o PROCESSING el parcial incluye atributos HTMX de
+        polling
+        para que el navegador siga consultando cada 4 segundos. Cuando el
+        estado
+        alcanza DONE o ERROR el fragmento devuelto no contiene atributos HTMX y
+        el
         polling se detiene automáticamente.
 
     Restringido al rol ADMIN (AdminRoleRequiredMixin).
     """
 
-    def get (self ,request ,pk ):
+    def get(self, request, pk):
         """
-        Returns the rendered _status_fragment.html partial for the requested WorkOrder.
-        Raises HTTP 404 if the WorkOrder does not exist or belongs to another company.
+        Returns the rendered _status_fragment.html partial for the requested
+        WorkOrder.
+        Raises HTTP 404 if the WorkOrder does not exist or belongs to another
+        company.
         ---
-        Devuelve el parcial _status_fragment.html renderizado para el WorkOrder solicitado.
+        Devuelve el parcial _status_fragment.html renderizado para el WorkOrder
+        solicitado.
         Lanza HTTP 404 si el WorkOrder no existe o pertenece a otra empresa.
         """
-        from django .shortcuts import get_object_or_404 
+        from django.shortcuts import get_object_or_404
 
-        wo =get_object_or_404 (
-        WorkOrder ,
-        pk =pk ,
-        company =request .user .company_user .company ,
+        wo = get_object_or_404(
+            WorkOrder,
+            pk=pk,
+            company=request.user.company_user.company,
         )
-        return render (
-        request ,
-        "panel/work_orders/_status_fragment.html",
-        {"wo":wo },
+        return render(
+            request,
+            "panel/work_orders/_status_fragment.html",
+            {"wo": wo},
         )
 
 
-class WorkOrderLineSaveView (SupervisorAccessMixin ,View ):
+class WorkOrderLineSaveView(SupervisorAccessMixin, View):
     """
-    HTMX endpoint that saves a single WorkOrderEntryLine and returns the updated
+    HTMX endpoint that saves a single WorkOrderEntryLine and returns the
+    updated
     <tr> row as an HTML fragment consumed by the inline editor.
 
     POST /panel/work-orders/<wo_pk>/lines/<line_pk>/save/
-         Expected POST fields (all optional — missing fields are treated as empty):
+         Expected POST fields (all optional — missing fields are treated as
+         empty):
            machine_norm        : str  — normalised machine code.
            fault_description  : str  — fault description.
            repair_notes          : str  — repair description.
@@ -1159,20 +1137,24 @@ class WorkOrderLineSaveView (SupervisorAccessMixin ,View ):
            or_val              : str  — repair order reference.
            flags               : str  — comma-separated flag list.
          Server recomputes delta_hours from hc/hf and re-resolves machine_asset
-         from the updated machine_norm. Returns the rendered _line_row.html partial
+         from the updated machine_norm. Returns the rendered _line_row.html
+         partial
          (a single <tr> element) with HTTP 200.
-         Returns HTTP 404 if the WorkOrder or line do not exist or belong to another
+         Returns HTTP 404 if the WorkOrder or line do not exist or belong to
+         another
          company. Returns HTTP 400 on an unexpected processing error.
 
     Restricted to the ADMIN role (AdminRoleRequiredMixin).
 
     ---
 
-    Endpoint HTMX que guarda un único WorkOrderEntryLine y devuelve la fila <tr>
+    Endpoint HTMX que guarda un único WorkOrderEntryLine y devuelve la fila
+    <tr>
     actualizada como fragmento HTML consumido por el editor inline.
 
     POST /panel/work-orders/<wo_pk>/lines/<line_pk>/save/
-         Campos POST esperados (todos opcionales — los ausentes se tratan como vacíos):
+         Campos POST esperados (todos opcionales — los ausentes se tratan como
+         vacíos):
            machine_norm        : str  — código de máquina normalizado.
            fault_description  : str  — descripción de la avería.
            repair_notes          : str  — descripción de la reparación.
@@ -1180,128 +1162,117 @@ class WorkOrderLineSaveView (SupervisorAccessMixin ,View ):
            hf                  : str  — hora de fin      HH:MM.
            or_val              : str  — referencia de orden de reparación.
            flags               : str  — lista de flags separada por comas.
-         El servidor recalcula delta_hours desde hc/hf y re-resuelve machine_asset
+         El servidor recalcula delta_hours desde hc/hf y re-resuelve
+         machine_asset
          desde el machine_norm actualizado. Devuelve el parcial _line_row.html
          renderizado (un único elemento <tr>) con HTTP 200.
          Devuelve HTTP 404 si el WorkOrder o la línea no existen o pertenecen a
-         otra empresa. Devuelve HTTP 400 ante un error de procesamiento inesperado.
+         otra empresa. Devuelve HTTP 400 ante un error de procesamiento
+         inesperado.
 
     Restringido al rol ADMIN (AdminRoleRequiredMixin).
     """
 
-    def post (self ,request ,wo_pk ,line_pk ):
+    def post(self, request, wo_pk, line_pk):
         """
         Saves the WorkOrderEntryLine identified by line_pk, recomputes derived
         fields and returns the updated <tr> row as an HTMX fragment.
         ---
-        Guarda el WorkOrderEntryLine identificado por line_pk, recalcula los campos
+        Guarda el WorkOrderEntryLine identificado por line_pk, recalcula los
+        campos
         derivados y devuelve la fila <tr> actualizada como fragmento HTMX.
         """
-        from django .shortcuts import get_object_or_404 
-        from work_order_processor .models import WorkOrderEntryLine 
-        from work_order_processor .services import (
-        _compute_delta_hours ,
-        _normalise_machine_code ,
-        _resolve_machine_asset ,
+        from django.shortcuts import get_object_or_404
+        from work_order_processor.models import WorkOrderEntryLine
+        from work_order_processor.services import (
+            _compute_delta_hours,
+            _normalise_machine_code,
+            _resolve_machine_asset,
         )
-        from datetime import time as dt_time 
+        from datetime import time as dt_time
 
+        company = request.user.company_user.company
+        wo = get_object_or_404(WorkOrder, pk=wo_pk, company=company)
+        if wo.source in (WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED):
+            from django.http import HttpResponseForbidden
 
-
-
-
-        company =request .user .company_user .company 
-        wo =get_object_or_404 (WorkOrder ,pk =wo_pk ,company =company )
-        if wo .source in (WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ):
-            from django .http import HttpResponseForbidden 
-            return HttpResponseForbidden (
-            "Los partes digitales se editan única y exclusivamente desde "
-            "su formulario de creación y edición."
+            return HttpResponseForbidden(
+                "Los partes digitales se editan única y exclusivamente desde "
+                "su formulario de creación y edición."
             )
 
-
-
-
-
-        line =get_object_or_404 (
-        WorkOrderEntryLine .objects .select_related (
-        "entry__work_order",
-        "machine_asset",
-        ),
-        pk =line_pk ,
-        entry__work_order =wo ,
+        line = get_object_or_404(
+            WorkOrderEntryLine.objects.select_related(
+                "entry__work_order",
+                "machine_asset",
+            ),
+            pk=line_pk,
+            entry__work_order=wo,
         )
 
+        raw_norm = request.POST.get("machine_norm", "").strip()
+        norm = _normalise_machine_code(raw_norm) if raw_norm else raw_norm
+        asset = _resolve_machine_asset(norm, company=company) if norm else None
 
-
-
-
-        raw_norm =request .POST .get ("machine_norm","").strip ()
-        norm =_normalise_machine_code (raw_norm )if raw_norm else raw_norm 
-        asset =_resolve_machine_asset (norm ,company =company )if norm else None 
-
-
-
-
-
-        def _parse_time_str (val ):
+        def _parse_time_str(val):
             """Parses HH:MM string into time object, returns None on failure.
             --- Parsea cadena HH:MM a objeto time, devuelve None si falla."""
-            if not val :
-                return None 
-            try :
-                parts =val .strip ().split (":")
-                return dt_time (int (parts [0 ]),int (parts [1 ]))
-            except (ValueError ,IndexError ):
-                return None 
+            if not val:
+                return None
+            try:
+                parts = val.strip().split(":")
+                return dt_time(int(parts[0]), int(parts[1]))
+            except (ValueError, IndexError):
+                return None
 
-        hc =_parse_time_str (request .POST .get ("hc",""))
-        hf =_parse_time_str (request .POST .get ("hf",""))
-        delta =_compute_delta_hours (hc ,hf )
+        hc = _parse_time_str(request.POST.get("hc", ""))
+        hf = _parse_time_str(request.POST.get("hf", ""))
+        delta = _compute_delta_hours(hc, hf)
 
+        flags_raw = request.POST.get("flags", "").strip()
+        flags = (
+            [f.strip() for f in flags_raw.split(",") if f.strip()]
+            if flags_raw
+            else []
+        )
 
+        line.machine_norm = norm
+        line.machine_asset = asset
+        line.fault_description = request.POST.get(
+            "fault_description", ""
+        ).strip()
+        line.repair_notes = request.POST.get("repair_notes", "").strip()
+        line.hc = hc
+        line.hf = hf
+        line.or_val = request.POST.get("or_val", "").strip()
+        line.delta_hours = delta
+        line.flags = flags
+        line.save(
+            update_fields=[
+                "machine_norm",
+                "machine_asset",
+                "fault_description",
+                "repair_notes",
+                "hc",
+                "hf",
+                "or_val",
+                "delta_hours",
+                "flags",
+            ]
+        )
 
-
-
-        flags_raw =request .POST .get ("flags","").strip ()
-        flags =[f .strip ()for f in flags_raw .split (",")if f .strip ()]if flags_raw else []
-
-
-
-
-
-        line .machine_norm =norm 
-        line .machine_asset =asset 
-        line .fault_description =request .POST .get ("fault_description","").strip ()
-        line .repair_notes =request .POST .get ("repair_notes","").strip ()
-        line .hc =hc 
-        line .hf =hf 
-        line .or_val =request .POST .get ("or_val","").strip ()
-        line .delta_hours =delta 
-        line .flags =flags 
-        line .save (update_fields =[
-        "machine_norm","machine_asset","fault_description",
-        "repair_notes","hc","hf","or_val","delta_hours","flags",
-        ])
-
-
-
-
-
-        return render (
-        request ,
-        "panel/work_orders/_line_row.html",
-        {
-        "line":line ,
-        "wo_pk":wo .pk ,
-        "entry":line .entry ,
-        },
+        return render(
+            request,
+            "panel/work_orders/_line_row.html",
+            {
+                "line": line,
+                "wo_pk": wo.pk,
+                "entry": line.entry,
+            },
         )
 
 
-
-
-class WorkOrderEntrySaveDateView (SupervisorAccessMixin ,View ):
+class WorkOrderEntrySaveDateView(SupervisorAccessMixin, View):
     """
     HTMX endpoint that saves the work_date of a WorkOrderEntry and returns
     the updated group header fragment so the inline editor reflects the change
@@ -1329,13 +1300,16 @@ class WorkOrderEntrySaveDateView (SupervisorAccessMixin ,View ):
            work_date : str — fecha en formato YYYY-MM-DD. Cadena vacía limpia
                              la fecha y deja uncertain_date sin cambios.
          Con una fecha válida no vacía, uncertain_date se pone automáticamente
-         a False — la corrección explícita del supervisor elimina la incertidumbre.
-         Devuelve el parcial _entry_group_fragment.html renderizado con HTTP 200.
+         a False — la corrección explícita del supervisor elimina la
+         incertidumbre.
+         Devuelve el parcial _entry_group_fragment.html renderizado con HTTP
+         200.
          Devuelve HTTP 400 ante un formato de fecha inválido.
-         Devuelve HTTP 404 si el WorkOrder o entry no existen o son de otra empresa.
+         Devuelve HTTP 404 si el WorkOrder o entry no existen o son de otra
+         empresa.
     """
 
-    def post (self ,request ,wo_pk ,entry_pk ):
+    def post(self, request, wo_pk, entry_pk):
         """
         Persists the corrected work_date on the WorkOrderEntry and returns
         the group header fragment as an HTMX response.
@@ -1343,89 +1317,83 @@ class WorkOrderEntrySaveDateView (SupervisorAccessMixin ,View ):
         Persiste el work_date corregido en el WorkOrderEntry y devuelve el
         fragmento de cabecera del grupo como respuesta HTMX.
         """
-        from django .shortcuts import get_object_or_404 
-        from django .http import HttpResponse 
-        from work_order_processor .models import WorkOrderEntry 
-        from datetime import date as dt_date 
+        from django.shortcuts import get_object_or_404
+        from django.http import HttpResponse
+        from work_order_processor.models import WorkOrderEntry
+        from datetime import date as dt_date
 
-        company =request .user .company_user .company 
-        wo =get_object_or_404 (WorkOrder ,pk =wo_pk ,company =company )
-        if wo .source in (WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ):
-            from django .http import HttpResponseForbidden 
-            return HttpResponseForbidden (
-            "Los partes digitales se editan única y exclusivamente desde "
-            "su formulario de creación y edición."
+        company = request.user.company_user.company
+        wo = get_object_or_404(WorkOrder, pk=wo_pk, company=company)
+        if wo.source in (WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED):
+            from django.http import HttpResponseForbidden
+
+            return HttpResponseForbidden(
+                "Los partes digitales se editan única y exclusivamente desde "
+                "su formulario de creación y edición."
             )
-        entry =get_object_or_404 (WorkOrderEntry ,pk =entry_pk ,work_order =wo )
+        entry = get_object_or_404(WorkOrderEntry, pk=entry_pk, work_order=wo)
 
-        raw_date =request .POST .get ("work_date","").strip ()
+        raw_date = request.POST.get("work_date", "").strip()
 
-        if raw_date :
+        if raw_date:
 
-
-            try :
-                parsed =dt_date .fromisoformat (raw_date )
-            except ValueError :
-                return HttpResponse (
-                "Formato de fecha inválido. Use YYYY-MM-DD.",
-                status =400 ,
+            try:
+                parsed = dt_date.fromisoformat(raw_date)
+            except ValueError:
+                return HttpResponse(
+                    "Formato de fecha inválido. Use YYYY-MM-DD.",
+                    status=400,
                 )
-            entry .work_date =parsed 
+            entry.work_date = parsed
 
+            entry.uncertain_date = False
+        else:
+            entry.work_date = None
 
-            entry .uncertain_date =False 
-        else :
-            entry .work_date =None 
+        entry.save(update_fields=["work_date", "uncertain_date"])
 
+        from decimal import Decimal
 
-
-        entry .save (update_fields =["work_date","uncertain_date"])
-
-
-
-
-
-        from decimal import Decimal 
-        lines =list (
-        entry .lines .select_related ("machine_asset").order_by ("line_number")
+        lines = list(
+            entry.lines.select_related("machine_asset").order_by("line_number")
         )
-        delta_sum =sum (
-        (ln .delta_hours for ln in lines if ln .delta_hours is not None ),
-        Decimal ("0"),
+        delta_sum = sum(
+            (ln.delta_hours for ln in lines if ln.delta_hours is not None),
+            Decimal("0"),
         )
-        if delta_sum >0 :
-            total_hours =float (delta_sum )
-            if total_hours <8 :
-                day_css ="day-total-short"
-            elif total_hours <=12 :
-                day_css ="day-total-normal"
-            elif total_hours <=16 :
-                day_css ="day-total-warning"
-            else :
-                day_css ="day-total-danger"
-            day_total =round (total_hours ,2 )
-        else :
-            day_total =None 
-            day_css =""
+        if delta_sum > 0:
+            total_hours = float(delta_sum)
+            if total_hours < 8:
+                day_css = "day-total-short"
+            elif total_hours <= 12:
+                day_css = "day-total-normal"
+            elif total_hours <= 16:
+                day_css = "day-total-warning"
+            else:
+                day_css = "day-total-danger"
+            day_total = round(total_hours, 2)
+        else:
+            day_total = None
+            day_css = ""
 
-        group ={
-        "entry":entry ,
-        "lines":lines ,
-        "day_total":day_total ,
-        "day_css":day_css ,
+        group = {
+            "entry": entry,
+            "lines": lines,
+            "day_total": day_total,
+            "day_css": day_css,
         }
 
-        return render (
-        request ,
-        "panel/work_orders/_entry_group_fragment.html",
-        {
-        "group":group ,
-        "wo_pk":wo .pk ,
-        },
+        return render(
+            request,
+            "panel/work_orders/_entry_group_fragment.html",
+            {
+                "group": group,
+                "wo_pk": wo.pk,
+            },
         )
 
 
-class MachineAssetAutocompleteView (SupervisorAccessMixin ,View ):
+class MachineAssetAutocompleteView(SupervisorAccessMixin, View):
     """
     Lightweight JSON autocomplete endpoint for MachineAsset records.
     Returns up to 10 active assets matching the query string against
@@ -1456,42 +1424,43 @@ class MachineAssetAutocompleteView (SupervisorAccessMixin ,View ):
     Usado por el autocompletado del campo machine_norm en _line_row.html.
     """
 
-    def get (self ,request ,*args ,**kwargs ):
+    def get(self, request, *args, **kwargs):
         """
-        Returns a JSON list of matching MachineAsset records for the given query.
+        Returns a JSON list of matching MachineAsset records for the given
+        query.
         ---
-        Devuelve un JSON con los MachineAsset coincidentes para la consulta dada.
+        Devuelve un JSON con los MachineAsset coincidentes para la consulta
+        dada.
         """
-        from django .http import JsonResponse 
-        from fleet .models import MachineAsset 
+        from django.http import JsonResponse
+        from fleet.models import MachineAsset
 
-        company =request .user .company_user .company 
-        q =request .GET .get ("q","").strip ()
+        company = request.user.company_user.company
+        q = request.GET.get("q", "").strip()
 
-        qs =MachineAsset .objects .filter (
-        company =company ,
-        is_active =True ,
-        ).order_by ("code")
+        qs = MachineAsset.objects.filter(
+            company=company,
+            is_active=True,
+        ).order_by("code")
 
-        if q :
-            qs =qs .filter (
-            Q (code__icontains =q )
-            |Q (brand_model__icontains =q )
-            |Q (plate__icontains =q )
+        if q:
+            qs = qs.filter(
+                Q(code__icontains=q)
+                | Q(brand_model__icontains=q)
+                | Q(plate__icontains=q)
             )
 
-        results =[]
-        for asset in qs [:10 ]:
-            label =asset .code 
-            if asset .brand_model :
-                label =f"{asset.code} — {asset.brand_model}"
-            results .append ({"code":asset .code ,"label":label })
+        results = []
+        for asset in qs[:10]:
+            label = asset.code
+            if asset.brand_model:
+                label = f"{asset.code} — {asset.brand_model}"
+            results.append({"code": asset.code, "label": label})
 
-        return JsonResponse ({"results":results })
+        return JsonResponse({"results": results})
 
 
-
-class WorkOrderLineInsertView (SupervisorAccessMixin ,View ):
+class WorkOrderLineInsertView(SupervisorAccessMixin, View):
     """
     Creates a new empty WorkOrderEntryLine after a given line within the same
     WorkOrderEntry group and returns the new row as an HTMX fragment.
@@ -1500,10 +1469,14 @@ class WorkOrderLineInsertView (SupervisorAccessMixin ,View ):
          Expected POST fields:
            after_line_pk : int — pk of the line after which to insert.
            entry_pk      : int — pk of the WorkOrderEntry group.
-         Creates a new WorkOrderEntryLine with line_number = after_line.line_number + 1,
-         shifting the line_number of all subsequent lines in the same entry up by 1.
-         Returns the rendered _line_row.html partial for the new line with HTTP 200.
-         Returns HTTP 404 if the WorkOrder, entry or reference line do not belong
+         Creates a new WorkOrderEntryLine with line_number =
+         after_line.line_number + 1,
+         shifting the line_number of all subsequent lines in the same entry up
+         by 1.
+         Returns the rendered _line_row.html partial for the new line with HTTP
+         200.
+         Returns HTTP 404 if the WorkOrder, entry or reference line do not
+         belong
          to the authenticated company.
 
     Restricted to the ADMIN role (AdminRoleRequiredMixin).
@@ -1517,64 +1490,62 @@ class WorkOrderLineInsertView (SupervisorAccessMixin ,View ):
          Campos POST esperados:
            after_line_pk : int — pk de la línea tras la que insertar.
            entry_pk      : int — pk del grupo WorkOrderEntry.
-         Crea un nuevo WorkOrderEntryLine con line_number = after_line.line_number + 1,
-         desplazando el line_number de todas las líneas posteriores del mismo entry
-         en +1. Devuelve el parcial _line_row.html renderizado para la nueva línea
-         con HTTP 200. Devuelve HTTP 404 si el WorkOrder, entry o línea de referencia
+         Crea un nuevo WorkOrderEntryLine con line_number =
+         after_line.line_number + 1,
+         desplazando el line_number de todas las líneas posteriores del mismo
+         entry
+         en +1. Devuelve el parcial _line_row.html renderizado para la nueva
+         línea
+         con HTTP 200. Devuelve HTTP 404 si el WorkOrder, entry o línea de
+         referencia
          no pertenecen a la empresa autenticada.
 
     Restringido al rol ADMIN (AdminRoleRequiredMixin).
     """
 
-    def post (self ,request ,wo_pk ):
+    def post(self, request, wo_pk):
         """
-        Inserts a new empty WorkOrderEntryLine after the specified reference line
+        Inserts a new empty WorkOrderEntryLine after the specified reference
+        line
         and returns the rendered _line_row.html fragment for the new row.
         ---
         Inserta un nuevo WorkOrderEntryLine vacío tras la línea de referencia
-        especificada y devuelve el fragmento _line_row.html renderizado para la fila.
+        especificada y devuelve el fragmento _line_row.html renderizado para la
+        fila.
         """
-        from django .shortcuts import get_object_or_404 
-        from django .http import HttpResponseBadRequest 
+        from django.shortcuts import get_object_or_404
+        from django.http import HttpResponseBadRequest
 
-        company =request .user .company_user .company 
+        company = request.user.company_user.company
 
+        wo = get_object_or_404(WorkOrder, pk=wo_pk, company=company)
+        if wo.source in (WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED):
+            from django.http import HttpResponseForbidden
 
-
-        wo =get_object_or_404 (WorkOrder ,pk =wo_pk ,company =company )
-        if wo .source in (WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ):
-            from django .http import HttpResponseForbidden 
-            return HttpResponseForbidden (
-            "Los partes digitales se editan única y exclusivamente desde "
-            "su formulario de creación y edición."
+            return HttpResponseForbidden(
+                "Los partes digitales se editan única y exclusivamente desde "
+                "su formulario de creación y edición."
             )
 
+        try:
+            after_line_pk = int(request.POST.get("after_line_pk", ""))
+            entry_pk = int(request.POST.get("entry_pk", ""))
+        except (TypeError, ValueError):
+            return HttpResponseBadRequest(
+                "# [INSERT] Parámetros after_line_pk / entry_pk inválidos."
+            )
 
-
-        try :
-            after_line_pk =int (request .POST .get ("after_line_pk",""))
-            entry_pk =int (request .POST .get ("entry_pk",""))
-        except (TypeError ,ValueError ):
-            return HttpResponseBadRequest ("# [INSERT] Parámetros after_line_pk / entry_pk inválidos.")
-
-
-
-        after_line =get_object_or_404 (
-        WorkOrderEntryLine ,
-        pk =after_line_pk ,
-        entry__work_order =wo ,
-        entry__pk =entry_pk ,
+        after_line = get_object_or_404(
+            WorkOrderEntryLine,
+            pk=after_line_pk,
+            entry__work_order=wo,
+            entry__pk=entry_pk,
         )
-        entry =after_line .entry 
+        entry = after_line.entry
 
+        from django.db import transaction
 
-
-
-
-
-
-        from django .db import transaction 
-        with transaction .atomic ():
+        with transaction.atomic():
 
             # Shift line_number of subsequent lines DESCENDING (highest
             # first), one row at a time -- a bulk .update(F()+1) races
@@ -1596,45 +1567,43 @@ class WorkOrderLineInsertView (SupervisorAccessMixin ,View ):
             # Diagnosticado via error.log (2026-07-06): IntegrityError
             # Duplicate entry '1299-3' para la clave
             # ..._entry_id_line_number_..._uniq.
-            lines_to_shift =list (
-            WorkOrderEntryLine .objects .filter (
-            entry =entry ,
-            line_number__gt =after_line .line_number ,
-            ).order_by ("-line_number")
+            lines_to_shift = list(
+                WorkOrderEntryLine.objects.filter(
+                    entry=entry,
+                    line_number__gt=after_line.line_number,
+                ).order_by("-line_number")
             )
-            for line_to_shift in lines_to_shift :
-                line_to_shift .line_number =line_to_shift .line_number +1 
-                line_to_shift .save (update_fields =["line_number"])
+            for line_to_shift in lines_to_shift:
+                line_to_shift.line_number = line_to_shift.line_number + 1
+                line_to_shift.save(update_fields=["line_number"])
 
-
-
-            new_line =WorkOrderEntryLine .objects .create (
-            entry =entry ,
-            line_number =after_line .line_number +1 ,
-            machine_norm ="",
-            machine_raw ="",
-            fault_description ="",
-            repair_notes ="",
-            hc =None ,
-            hf =None ,
-            or_val ="",
-            delta_hours =None ,
-            flags =[],
-            machine_asset =None ,
+            new_line = WorkOrderEntryLine.objects.create(
+                entry=entry,
+                line_number=after_line.line_number + 1,
+                machine_norm="",
+                machine_raw="",
+                fault_description="",
+                repair_notes="",
+                hc=None,
+                hf=None,
+                or_val="",
+                delta_hours=None,
+                flags=[],
+                machine_asset=None,
             )
 
-        return render (
-        request ,
-        "panel/work_orders/_line_row.html",
-        {
-        "line":new_line ,
-        "wo_pk":wo .pk ,
-        "entry":entry ,
-        },
+        return render(
+            request,
+            "panel/work_orders/_line_row.html",
+            {
+                "line": new_line,
+                "wo_pk": wo.pk,
+                "entry": entry,
+            },
         )
 
 
-class WorkOrderEntryAddView (SupervisorAccessMixin ,View ):
+class WorkOrderEntryAddView(SupervisorAccessMixin, View):
     """
     Creates a new empty WorkOrderEntry (day) for a given WorkOrder and
     returns the rendered _entry_group_fragment.html for the new group.
@@ -1661,7 +1630,7 @@ class WorkOrderEntryAddView (SupervisorAccessMixin ,View ):
          Devuelve HTTP 404 si el WorkOrder no pertenece a la empresa.
     """
 
-    def post (self ,request ,wo_pk ):
+    def post(self, request, wo_pk):
         """
         Creates a new WorkOrderEntry + one empty WorkOrderEntryLine
         and returns the _entry_group_fragment.html partial.
@@ -1678,6 +1647,7 @@ class WorkOrderEntryAddView (SupervisorAccessMixin ,View ):
         wo = get_object_or_404(WorkOrder, pk=wo_pk, company=company)
         if wo.source in (WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED):
             from django.http import HttpResponseForbidden
+
             return HttpResponseForbidden(
                 "Los partes digitales se editan única y exclusivamente desde "
                 "su formulario de creación y edición."
@@ -1692,13 +1662,12 @@ class WorkOrderEntryAddView (SupervisorAccessMixin ,View ):
             work_date = _dt.strptime(raw_date, "%Y-%m-%d").date()
         except ValueError:
             return HttpResponseBadRequest(
-                "# [ENTRY ADD] Formato de fecha invalido. Se esperaba YYYY-MM-DD."
+                "# [ENTRY ADD] Formato de fecha invalido. Se esperaba "
+                "YYYY-MM-DD."
             )
 
         worker_name = (
-            wo.entries.first().worker_name
-            if wo.entries.exists()
-            else ""
+            wo.entries.first().worker_name if wo.entries.exists() else ""
         )
 
         with transaction.atomic():
@@ -1727,14 +1696,17 @@ class WorkOrderEntryAddView (SupervisorAccessMixin ,View ):
             )
 
         logger.info(
-            "# [ENTRY ADD] WorkOrderEntry pk=%s (fecha=%s) creado en WO pk=%s.",
-            entry.pk, work_date, wo.pk,
+            "# [ENTRY ADD] WorkOrderEntry pk=%s (fecha=%s) creado en WO "
+            "pk=%s.",
+            entry.pk,
+            work_date,
+            wo.pk,
         )
 
         lines = list(entry.lines.order_by("line_number"))
         group = {
-            "entry":          entry,
-            "lines":          lines,
+            "entry": entry,
+            "lines": lines,
             "day_total_hours": None,
             "day_total_class": "day-total-short",
         }
@@ -1745,7 +1717,7 @@ class WorkOrderEntryAddView (SupervisorAccessMixin ,View ):
         )
 
 
-class WorkOrderLineReorderView (SupervisorAccessMixin ,View ):
+class WorkOrderLineReorderView(SupervisorAccessMixin, View):
     """
     Accepts a new ordering for WorkOrderEntryLine records within a single
     WorkOrderEntry group and persists the updated line_number values.
@@ -1753,26 +1725,31 @@ class WorkOrderLineReorderView (SupervisorAccessMixin ,View ):
     POST /panel/work-orders/<wo_pk>/lines/reorder/
          Expected POST fields:
            entry_pk        : int         — pk of the WorkOrderEntry group.
-           line_pks[]      : list[int]   — ordered list of WorkOrderEntryLine pks
+           line_pks[]      : list[int]   — ordered list of WorkOrderEntryLine
+           pks
                                            in the desired new order.
          Updates line_number for each line to match the position in line_pks[].
          Returns HTTP 200 with JSON {"ok": true} on success.
          Returns HTTP 400 on invalid parameters.
-         Returns HTTP 404 if the WorkOrder or entry do not belong to the company.
+         Returns HTTP 404 if the WorkOrder or entry do not belong to the
+         company.
 
     Restricted to the ADMIN role (AdminRoleRequiredMixin).
 
     ---
 
-    Acepta un nuevo orden para los registros WorkOrderEntryLine dentro de un único
+    Acepta un nuevo orden para los registros WorkOrderEntryLine dentro de un
+    único
     grupo WorkOrderEntry y persiste los valores line_number actualizados.
 
     POST /panel/work-orders/<wo_pk>/lines/reorder/
          Campos POST esperados:
            entry_pk        : int         — pk del grupo WorkOrderEntry.
-           line_pks[]      : list[int]   — lista ordenada de pks de WorkOrderEntryLine
+           line_pks[]      : list[int]   — lista ordenada de pks de
+           WorkOrderEntryLine
                                            en el nuevo orden deseado.
-         Actualiza line_number de cada línea para que coincida con su posición en
+         Actualiza line_number de cada línea para que coincida con su posición
+         en
          line_pks[]. Devuelve HTTP 200 con JSON {"ok": true} en caso de éxito.
          Devuelve HTTP 400 ante parámetros inválidos. Devuelve HTTP 404 si el
          WorkOrder o entry no pertenecen a la empresa.
@@ -1780,79 +1757,84 @@ class WorkOrderLineReorderView (SupervisorAccessMixin ,View ):
     Restringido al rol ADMIN (AdminRoleRequiredMixin).
     """
 
-    def post (self ,request ,wo_pk ):
+    def post(self, request, wo_pk):
         """
-        Persists the new line_number ordering for the lines of a WorkOrderEntry.
+        Persists the new line_number ordering for the lines of a
+        WorkOrderEntry.
         ---
-        Persiste el nuevo orden de line_number para las líneas de un WorkOrderEntry.
+        Persiste el nuevo orden de line_number para las líneas de un
+        WorkOrderEntry.
         """
-        from django .shortcuts import get_object_or_404 
-        from django .http import JsonResponse ,HttpResponseBadRequest 
+        from django.shortcuts import get_object_or_404
+        from django.http import JsonResponse, HttpResponseBadRequest
 
-        company =request .user .company_user .company 
-        wo =get_object_or_404 (WorkOrder ,pk =wo_pk ,company =company )
-        if wo .source in (WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ):
-            from django .http import HttpResponseForbidden 
-            return HttpResponseForbidden (
-            "Los partes digitales se editan única y exclusivamente desde "
-            "su formulario de creación y edición."
+        company = request.user.company_user.company
+        wo = get_object_or_404(WorkOrder, pk=wo_pk, company=company)
+        if wo.source in (WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED):
+            from django.http import HttpResponseForbidden
+
+            return HttpResponseForbidden(
+                "Los partes digitales se editan única y exclusivamente desde "
+                "su formulario de creación y edición."
             )
 
+        try:
+            entry_pk = int(request.POST.get("entry_pk", ""))
+        except (TypeError, ValueError):
+            return HttpResponseBadRequest(
+                "# [REORDER] Parámetro entry_pk inválido."
+            )
 
+        entry = get_object_or_404(WorkOrderEntry, pk=entry_pk, work_order=wo)
 
-        try :
-            entry_pk =int (request .POST .get ("entry_pk",""))
-        except (TypeError ,ValueError ):
-            return HttpResponseBadRequest ("# [REORDER] Parámetro entry_pk inválido.")
+        try:
+            line_pks = [int(pk) for pk in request.POST.getlist("line_pks[]")]
+        except (TypeError, ValueError):
+            return HttpResponseBadRequest(
+                "# [REORDER] Parámetro line_pks[] inválido."
+            )
 
-        entry =get_object_or_404 (WorkOrderEntry ,pk =entry_pk ,work_order =wo )
+        if not line_pks:
+            return HttpResponseBadRequest(
+                "# [REORDER] Lista line_pks[] vacía."
+            )
 
-
-
-        try :
-            line_pks =[int (pk )for pk in request .POST .getlist ("line_pks[]")]
-        except (TypeError ,ValueError ):
-            return HttpResponseBadRequest ("# [REORDER] Parámetro line_pks[] inválido.")
-
-        if not line_pks :
-            return HttpResponseBadRequest ("# [REORDER] Lista line_pks[] vacía.")
-
-
-
-        lines_map ={
-        line .pk :line 
-        for line in WorkOrderEntryLine .objects .filter (entry =entry )
+        lines_map = {
+            line.pk: line
+            for line in WorkOrderEntryLine.objects.filter(entry=entry)
         }
 
+        bulk_update = []
+        for position, pk in enumerate(line_pks, start=1):
+            line = lines_map.get(pk)
+            if line is None:
+                continue
+            line.line_number = position
+            bulk_update.append(line)
+
+        WorkOrderEntryLine.objects.bulk_update(bulk_update, ["line_number"])
+
+        return JsonResponse({"ok": True})
 
 
-        bulk_update =[]
-        for position ,pk in enumerate (line_pks ,start =1 ):
-            line =lines_map .get (pk )
-            if line is None :
-                continue 
-            line .line_number =position 
-            bulk_update .append (line )
-
-        WorkOrderEntryLine .objects .bulk_update (bulk_update ,["line_number"])
-
-        return JsonResponse ({"ok":True })
-
-
-class WorkOrderLineRestoreView (SupervisorAccessMixin ,View ):
+class WorkOrderLineRestoreView(SupervisorAccessMixin, View):
     """
     Restores a single WorkOrderEntryLine to its original Gemini-extracted
     values by looking up the corresponding block in the parent WorkOrderEntry's
     raw_gemini_response using the line's line_number as the index.
 
     POST /panel/work-orders/<wo_pk>/lines/<line_pk>/restore/
-         Locates the bloque at raw_gemini_response["entradas"][line_number - 1],
-         overwrites only the fields of the target line (machine_raw, machine_norm,
+         Locates the bloque at raw_gemini_response["entradas"][line_number -
+         1],
+         overwrites only the fields of the target line (machine_raw,
+         machine_norm,
          machine_asset, fault_description, repair_notes, hc, hf, or_val,
          delta_hours, flags) and returns the rendered _line_row.html partial
          for that single row with HTTP 200.
-         Returns HTTP 404 if the WorkOrder or line do not belong to the company.
-         Returns HTTP 400 if no raw_gemini_response is stored or the block index
+         Returns HTTP 404 if the WorkOrder or line do not belong to the
+         company.
+         Returns HTTP 400 if no raw_gemini_response is stored or the block
+         index
          is out of range.
 
     Restricted to the ADMIN role (AdminRoleRequiredMixin).
@@ -1864,19 +1846,21 @@ class WorkOrderLineRestoreView (SupervisorAccessMixin ,View ):
     WorkOrderEntry padre usando el line_number de la línea como índice.
 
     POST /panel/work-orders/<wo_pk>/lines/<line_pk>/restore/
-         Localiza el bloque en raw_gemini_response["entradas"][line_number - 1],
+         Localiza el bloque en raw_gemini_response["entradas"][line_number -
+         1],
          sobreescribe únicamente los campos de la línea objetivo (machine_raw,
          machine_norm, machine_asset, fault_description, repair_notes, hc, hf,
          or_val, delta_hours, flags) y devuelve el parcial _line_row.html
          renderizado para esa única fila con HTTP 200.
-         Devuelve HTTP 404 si el WorkOrder o la línea no pertenecen a la empresa.
+         Devuelve HTTP 404 si el WorkOrder o la línea no pertenecen a la
+         empresa.
          Devuelve HTTP 400 si no hay raw_gemini_response almacenado o el índice
          de bloque está fuera de rango.
 
     Restringido al rol ADMIN (AdminRoleRequiredMixin).
     """
 
-    def post (self ,request ,wo_pk ,line_pk ):
+    def post(self, request, wo_pk, line_pk):
         """
         Restores the single WorkOrderEntryLine identified by line_pk from its
         corresponding block in raw_gemini_response and returns the updated row
@@ -1886,119 +1870,121 @@ class WorkOrderLineRestoreView (SupervisorAccessMixin ,View ):
         bloque correspondiente en raw_gemini_response y devuelve la fila
         actualizada como fragmento HTMX.
         """
-        from django .shortcuts import get_object_or_404 
-        from django .http import HttpResponseBadRequest 
-        from work_order_processor .services import (
-        _normalise_machine_code ,
-        _resolve_machine_asset ,
-        _compute_delta_hours ,
-        _parse_time ,
+        from django.shortcuts import get_object_or_404
+        from django.http import HttpResponseBadRequest
+        from work_order_processor.services import (
+            _normalise_machine_code,
+            _resolve_machine_asset,
+            _compute_delta_hours,
+            _parse_time,
         )
 
-        company =request .user .company_user .company 
-        wo =get_object_or_404 (WorkOrder ,pk =wo_pk ,company =company )
-        if wo .source in (WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ):
-            from django .http import HttpResponseForbidden 
-            return HttpResponseForbidden (
-            "Los partes digitales se editan única y exclusivamente desde "
-            "su formulario de creación y edición."
+        company = request.user.company_user.company
+        wo = get_object_or_404(WorkOrder, pk=wo_pk, company=company)
+        if wo.source in (WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED):
+            from django.http import HttpResponseForbidden
+
+            return HttpResponseForbidden(
+                "Los partes digitales se editan única y exclusivamente desde "
+                "su formulario de creación y edición."
             )
 
-
-
-        line =get_object_or_404 (
-        WorkOrderEntryLine .objects .select_related ("entry","machine_asset"),
-        pk =line_pk ,
-        entry__work_order =wo ,
+        line = get_object_or_404(
+            WorkOrderEntryLine.objects.select_related(
+                "entry", "machine_asset"
+            ),
+            pk=line_pk,
+            entry__work_order=wo,
         )
-        entry =line .entry 
+        entry = line.entry
 
+        raw = entry.raw_gemini_response
 
+        if not raw or not isinstance(raw, dict):
 
+            machine_norm = _normalise_machine_code(line.machine_raw or "")
+            machine_asset = (
+                _resolve_machine_asset(machine_norm, company=company)
+                if machine_norm
+                else None
+            )
+            delta = _compute_delta_hours(line.hc, line.hf, deduct_lunch=False)
 
+            line.machine_norm = machine_norm
+            line.machine_asset = machine_asset
+            line.delta_hours = delta
+            line.save(
+                update_fields=["machine_norm", "machine_asset", "delta_hours"]
+            )
 
+            return render(
+                request,
+                "panel/work_orders/_line_row.html",
+                {
+                    "line": line,
+                    "wo_pk": wo.pk,
+                    "entry": entry,
+                },
+            )
 
+        entradas = raw.get("entradas") or []
+        block_index = line.line_number - 1
 
+        if block_index < 0 or block_index >= len(entradas):
+            return HttpResponseBadRequest(
+                f"# [RESTORE] Índice de bloque {block_index} fuera de rango "
+                f"(entradas disponibles: {len(entradas)})."
+            )
 
+        bloque = entradas[block_index]
 
+        machine_raw = (bloque.get("machine_raw") or "").strip()
+        machine_norm = _normalise_machine_code(machine_raw)
+        machine_asset = _resolve_machine_asset(machine_norm, company=company)
+        hc = _parse_time(bloque.get("hc"))
+        hf = _parse_time(bloque.get("hf"))
+        delta = _compute_delta_hours(hc, hf)
+        flags = bloque.get("flags") or []
+        if not isinstance(flags, list):
+            flags = []
 
-        raw =entry .raw_gemini_response 
+        line.machine_raw = machine_raw
+        line.machine_norm = machine_norm
+        line.machine_asset = machine_asset
+        line.fault_description = bloque.get("fault_description") or ""
+        line.repair_notes = bloque.get("repair_notes") or ""
+        line.hc = hc
+        line.hf = hf
+        line.or_val = bloque.get("or_val") or ""
+        line.delta_hours = delta
+        line.flags = flags
+        line.save(
+            update_fields=[
+                "machine_raw",
+                "machine_norm",
+                "machine_asset",
+                "fault_description",
+                "repair_notes",
+                "hc",
+                "hf",
+                "or_val",
+                "delta_hours",
+                "flags",
+            ]
+        )
 
-        if not raw or not isinstance (raw ,dict ):
-
-
-            machine_norm =_normalise_machine_code (line .machine_raw or "")
-            machine_asset =_resolve_machine_asset (machine_norm ,company =company )if machine_norm else None 
-            delta =_compute_delta_hours (line .hc ,line .hf ,deduct_lunch =False )
-
-            line .machine_norm =machine_norm 
-            line .machine_asset =machine_asset 
-            line .delta_hours =delta 
-            line .save (update_fields =["machine_norm","machine_asset","delta_hours"])
-
-            return render (
-            request ,
+        return render(
+            request,
             "panel/work_orders/_line_row.html",
             {
-            "line":line ,
-            "wo_pk":wo .pk ,
-            "entry":entry ,
+                "line": line,
+                "wo_pk": wo.pk,
+                "entry": entry,
             },
-            )
-
-
-
-        entradas =raw .get ("entradas")or []
-        block_index =line .line_number -1 
-
-        if block_index <0 or block_index >=len (entradas ):
-            return HttpResponseBadRequest (
-            f"# [RESTORE] Índice de bloque {block_index} fuera de rango "
-            f"(entradas disponibles: {len(entradas)})."
-            )
-
-        bloque =entradas [block_index ]
-
-
-
-        machine_raw =(bloque .get ("machine_raw")or "").strip ()
-        machine_norm =_normalise_machine_code (machine_raw )
-        machine_asset =_resolve_machine_asset (machine_norm ,company =company )
-        hc =_parse_time (bloque .get ("hc"))
-        hf =_parse_time (bloque .get ("hf"))
-        delta =_compute_delta_hours (hc ,hf )
-        flags =bloque .get ("flags")or []
-        if not isinstance (flags ,list ):
-            flags =[]
-
-        line .machine_raw =machine_raw 
-        line .machine_norm =machine_norm 
-        line .machine_asset =machine_asset 
-        line .fault_description =(bloque .get ("fault_description")or "")
-        line .repair_notes =(bloque .get ("repair_notes")or "")
-        line .hc =hc 
-        line .hf =hf 
-        line .or_val =(bloque .get ("or_val")or "")
-        line .delta_hours =delta 
-        line .flags =flags 
-        line .save (update_fields =[
-        "machine_raw","machine_norm","machine_asset",
-        "fault_description","repair_notes","hc","hf",
-        "or_val","delta_hours","flags",
-        ])
-
-        return render (
-        request ,
-        "panel/work_orders/_line_row.html",
-        {
-        "line":line ,
-        "wo_pk":wo .pk ,
-        "entry":entry ,
-        },
         )
 
 
-def _ticket_pks_linked_to_work_orders (work_order_pks ):
+def _ticket_pks_linked_to_work_orders(work_order_pks):
     """
     S116-H07: BreakdownTicket pks currently linked to any real
     WorkOrderEntryLine belonging to any of these WorkOrders --
@@ -2017,15 +2003,18 @@ def _ticket_pks_linked_to_work_orders (work_order_pks ):
     _delete_orphaned_tickets() can tell afterwards which ones this
     left with zero real lines anywhere.
     """
-    from chat .models import BreakdownTicket 
-    return set (
-    BreakdownTicket .objects .filter (
-    work_entry_lines__entry__work_order__pk__in =work_order_pks ,
-    ).values_list ("pk",flat =True ).distinct ()
+    from chat.models import BreakdownTicket
+
+    return set(
+        BreakdownTicket.objects.filter(
+            work_entry_lines__entry__work_order__pk__in=work_order_pks,
+        )
+        .values_list("pk", flat=True)
+        .distinct()
     )
 
 
-def _delete_orphaned_tickets (ticket_pks ):
+def _delete_orphaned_tickets(ticket_pks):
     """
     S116-H07: llamar DESPUÉS de haber borrado ya el/los WorkOrder(s)
     o línea(s) que produjeron `ticket_pks` (de
@@ -2050,20 +2039,21 @@ def _delete_orphaned_tickets (ticket_pks ):
 
     Returns how many tickets were deleted.
     """
-    from chat .models import BreakdownTicket 
-    if not ticket_pks :
-        return 0 
-    orphaned =BreakdownTicket .objects .filter (
-    pk__in =ticket_pks ,
-    work_entry_lines__isnull =True ,
+    from chat.models import BreakdownTicket
+
+    if not ticket_pks:
+        return 0
+    orphaned = BreakdownTicket.objects.filter(
+        pk__in=ticket_pks,
+        work_entry_lines__isnull=True,
     )
-    count =orphaned .count ()
-    if count :
-        orphaned .delete ()
-    return count 
+    count = orphaned.count()
+    if count:
+        orphaned.delete()
+    return count
 
 
-def _delete_task_photo_files (work_order_pks =None ,line_pks =None ):
+def _delete_task_photo_files(work_order_pks=None, line_pks=None):
     """
     S116-H07: Miguel Ángel, verbatim: "ahora borramos un parte y la
     foto se queda. Borrado el parte, hay que borrar la foto
@@ -2085,34 +2075,35 @@ def _delete_task_photo_files (work_order_pks =None ,line_pks =None ):
     borrado de parte(s) completo(s), line_pks para el borrado de una
     sola tarea.
     """
-    from document_explorer .models import DocumentIndexEntry 
-    from spare_parts .gcs_service import TASK_PHOTOS_BUCKET ,delete_file 
+    from document_explorer.models import DocumentIndexEntry
+    from spare_parts.gcs_service import TASK_PHOTOS_BUCKET, delete_file
 
-    qs =TaskPhoto .objects .exclude (gcs_blob_name ="")
-    if work_order_pks :
-        qs =qs .filter (line__entry__work_order__pk__in =work_order_pks )
-    elif line_pks :
-        qs =qs .filter (line__pk__in =line_pks )
-    else :
-        return 
+    qs = TaskPhoto.objects.exclude(gcs_blob_name="")
+    if work_order_pks:
+        qs = qs.filter(line__entry__work_order__pk__in=work_order_pks)
+    elif line_pks:
+        qs = qs.filter(line__pk__in=line_pks)
+    else:
+        return
 
-    for photo in qs :
-        try :
-            delete_file (TASK_PHOTOS_BUCKET ,photo .gcs_blob_name )
-        except Exception :
-            logger .exception (
-            "# [WorkOrderDelete] Fallo borrando de GCS la foto pk=%d "
-            "(blob=%s) al borrar su parte -- se continúa con el "
-            "borrado del parte de todos modos.",
-            photo .pk ,photo .gcs_blob_name ,
+    for photo in qs:
+        try:
+            delete_file(TASK_PHOTOS_BUCKET, photo.gcs_blob_name)
+        except Exception:
+            logger.exception(
+                "# [WorkOrderDelete] Fallo borrando de GCS la foto pk=%d "
+                "(blob=%s) al borrar su parte -- se continúa con el "
+                "borrado del parte de todos modos.",
+                photo.pk,
+                photo.gcs_blob_name,
             )
-        DocumentIndexEntry .objects .filter (
-        bucket =TASK_PHOTOS_BUCKET ,
-        blob_name =photo .gcs_blob_name ,
-        ).delete ()
+        DocumentIndexEntry.objects.filter(
+            bucket=TASK_PHOTOS_BUCKET,
+            blob_name=photo.gcs_blob_name,
+        ).delete()
 
 
-def _revert_spare_parts_for_lines (line_pks ,company_user ):
+def _revert_spare_parts_for_lines(line_pks, company_user):
     """
     S116-H10: Miguel Ángel, verbatim: "si se han asignado a una tarea
     de un parte repuestos y se borra, esos repuestos deben devolver
@@ -2127,24 +2118,24 @@ def _revert_spare_parts_for_lines (line_pks ,company_user ):
     La propia SparePartLine se borra sola en cascada al borrarse la
     línea después -- esta función no la toca.
     """
-    from spare_parts .services import StockAssignmentService 
+    from spare_parts.services import StockAssignmentService
 
-    for spl in SparePartLine .objects .filter (
-    entry_line__pk__in =line_pks ,
-    spare_part_entry__isnull =False ,
+    for spl in SparePartLine.objects.filter(
+        entry_line__pk__in=line_pks,
+        spare_part_entry__isnull=False,
     ):
-        try :
-            StockAssignmentService .revert_consumption (spl ,company_user )
-        except Exception :
-            logger .exception (
-            "# [WorkOrderDelete] Fallo devolviendo el repuesto de "
-            "SparePartLine pk=%d al borrar su tarea -- se continúa "
-            "con el borrado de todos modos.",
-            spl .pk ,
+        try:
+            StockAssignmentService.revert_consumption(spl, company_user)
+        except Exception:
+            logger.exception(
+                "# [WorkOrderDelete] Fallo devolviendo el repuesto de "
+                "SparePartLine pk=%d al borrar su tarea -- se continúa "
+                "con el borrado de todos modos.",
+                spl.pk,
             )
 
 
-class WorkOrderLineDeleteView (SupervisorAccessMixin ,View ):
+class WorkOrderLineDeleteView(SupervisorAccessMixin, View):
     """
     Deletes a single WorkOrderEntryLine identified by line_pk, scoped to the
     authenticated company. Returns an empty HTTP 200 response so that HTMX
@@ -2166,7 +2157,7 @@ class WorkOrderLineDeleteView (SupervisorAccessMixin ,View ):
          otra empresa. Restringido al rol ADMIN.
     """
 
-    def post (self ,request ,wo_pk ,line_pk ):
+    def post(self, request, wo_pk, line_pk):
         """
         Deletes the WorkOrderEntryLine identified by line_pk and returns an
         empty response for HTMX to remove the row from the DOM.
@@ -2174,50 +2165,52 @@ class WorkOrderLineDeleteView (SupervisorAccessMixin ,View ):
         Elimina el WorkOrderEntryLine identificado por line_pk y devuelve una
         respuesta vacía para que HTMX elimine la fila del DOM.
         """
-        from django .shortcuts import get_object_or_404 
-        from django .http import HttpResponse 
+        from django.shortcuts import get_object_or_404
+        from django.http import HttpResponse
 
-        company_user =request .user .company_user 
-        company =company_user .company 
-        wo =get_object_or_404 (WorkOrder ,pk =wo_pk ,company =company )
-        if wo .source in (WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ):
-            from django .http import HttpResponseForbidden 
-            return HttpResponseForbidden (
-            "Los partes digitales se editan única y exclusivamente desde "
-            "su formulario de creación y edición."
+        company_user = request.user.company_user
+        company = company_user.company
+        wo = get_object_or_404(WorkOrder, pk=wo_pk, company=company)
+        if wo.source in (WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED):
+            from django.http import HttpResponseForbidden
+
+            return HttpResponseForbidden(
+                "Los partes digitales se editan única y exclusivamente desde "
+                "su formulario de creación y edición."
             )
-        line =get_object_or_404 (
-        WorkOrderEntryLine ,
-        pk =line_pk ,
-        entry__work_order =wo ,
+        line = get_object_or_404(
+            WorkOrderEntryLine,
+            pk=line_pk,
+            entry__work_order=wo,
         )
-        entry =line .entry 
+        entry = line.entry
         # S116-H07/H10: devolver el repuesto (si lo hubiera) y borrar de
         # GCS/índice la foto (si la hubiera) ANTES de borrar la línea --
         # una vez borrada, TaskPhoto/SparePartLine desaparecen con ella
         # y ya no hay forma de saber qué había que devolver/borrar.
-        _revert_spare_parts_for_lines ([line .pk ],company_user )
-        _delete_task_photo_files (line_pks =[line .pk ])
+        _revert_spare_parts_for_lines([line.pk], company_user)
+        _delete_task_photo_files(line_pks=[line.pk])
         # Capturar el ticket ANTES de borrar la línea -- tras borrarla,
         # si ese ticket no queda enganchado a ninguna otra línea real,
         # se borra también (era esta línea la que lo originó).
-        _ticket_pk =line .breakdown_ticket_id 
-        line .delete ()
-        if _ticket_pk :
-            _delete_orphaned_tickets ({_ticket_pk })
+        _ticket_pk = line.breakdown_ticket_id
+        line.delete()
+        if _ticket_pk:
+            _delete_orphaned_tickets({_ticket_pk})
 
         # If the entry has no remaining lines, delete it too.
         # Si el entry ha quedado sin líneas, eliminarlo también.
-        if not entry .lines .exists ():
-            entry .delete ()
+        if not entry.lines.exists():
+            entry.delete()
 
-        return HttpResponse ("")
+        return HttpResponse("")
 
 
-class WorkOrderDeleteView (SupervisorAccessMixin ,View ):
+class WorkOrderDeleteView(SupervisorAccessMixin, View):
     """
     Deletes a WorkOrder and all its cascade-deleted children (WorkOrderEntry,
-    WorkOrderEntryLine, source PDF file, Excel file) scoped to the authenticated
+    WorkOrderEntryLine, source PDF file, Excel file) scoped to the
+    authenticated
     company. Redirects to the work order list on success.
 
     POST /panel/work-orders/<pk>/delete/
@@ -2226,27 +2219,31 @@ class WorkOrderDeleteView (SupervisorAccessMixin ,View ):
 
     ---
 
-    Elimina un WorkOrder y todos sus hijos eliminados en cascada (WorkOrderEntry,
+    Elimina un WorkOrder y todos sus hijos eliminados en cascada
+    (WorkOrderEntry,
     WorkOrderEntryLine, PDF original, archivo Excel) acotado a la empresa
     autenticada. Redirige a la lista de partes tras el éxito.
 
     POST /panel/work-orders/<pk>/delete/
-         Devuelve HTTP 404 si el WorkOrder no existe o pertenece a otra empresa.
+         Devuelve HTTP 404 si el WorkOrder no existe o pertenece a otra
+         empresa.
          Restringido al rol ADMIN.
     """
 
-    def post (self ,request ,pk ):
+    def post(self, request, pk):
         """
-        Deletes the WorkOrder identified by pk, scoped to the authenticated company.
+        Deletes the WorkOrder identified by pk, scoped to the authenticated
+        company.
         ---
-        Elimina el WorkOrder identificado por pk, acotado a la empresa autenticada.
+        Elimina el WorkOrder identificado por pk, acotado a la empresa
+        autenticada.
         """
-        from django .shortcuts import get_object_or_404 
+        from django.shortcuts import get_object_or_404
 
-        company_user =request .user .company_user 
-        company =company_user .company 
-        wo =get_object_or_404 (WorkOrder ,pk =pk ,company =company )
-        wo_pk =wo .pk 
+        company_user = request.user.company_user
+        company = company_user.company
+        wo = get_object_or_404(WorkOrder, pk=pk, company=company)
+        wo_pk = wo.pk
         # S116-H07/H10: devolver los repuestos y borrar de GCS/índice
         # las fotos ANTES de borrar el parte -- una vez borrado,
         # TaskPhoto/SparePartLine desaparecen en cascada con él y ya no
@@ -2256,34 +2253,35 @@ class WorkOrderDeleteView (SupervisorAccessMixin ,View ):
         # en ningún otro parte -- petición explícita de Miguel Ángel: si
         # el parte que se borra es el que dio origen al ticket, el
         # ticket se borra con él; si no, nunca se toca).
-        _line_pks =list (
-        WorkOrderEntryLine .objects .filter (
-        entry__work_order =wo 
-        ).values_list ("pk",flat =True )
+        _line_pks = list(
+            WorkOrderEntryLine.objects.filter(
+                entry__work_order=wo
+            ).values_list("pk", flat=True)
         )
-        _revert_spare_parts_for_lines (_line_pks ,company_user )
-        _delete_task_photo_files (work_order_pks =[wo_pk ])
-        _ticket_pks =_ticket_pks_linked_to_work_orders ([wo_pk ])
-        wo .delete ()
-        _deleted_tickets =_delete_orphaned_tickets (_ticket_pks )
-        _msg =f"Parte #{wo_pk} eliminado correctamente."
-        if _deleted_tickets :
-            _msg +=(
-            f" También se ha eliminado "
-            f"{'el ticket de avería que' if _deleted_tickets == 1 else f'{_deleted_tickets} tickets de avería que'} "
-            f"este parte había originado y que no seguía en ningún otro parte."
+        _revert_spare_parts_for_lines(_line_pks, company_user)
+        _delete_task_photo_files(work_order_pks=[wo_pk])
+        _ticket_pks = _ticket_pks_linked_to_work_orders([wo_pk])
+        wo.delete()
+        _deleted_tickets = _delete_orphaned_tickets(_ticket_pks)
+        _msg = f"Parte #{wo_pk} eliminado correctamente."
+        if _deleted_tickets:
+            _msg += (
+                f" También se ha eliminado "
+                f"{'el' if _deleted_tickets == 1 else _deleted_tickets} "
+                f"ticket{'' if _deleted_tickets == 1 else 's'} "
+                "de avería que "
+                "este parte había originado y que no seguía en ningún otro "
+                "parte."
             )
-        django_messages .success (
-        request ,
-        _msg 
-        )
-        return redirect ("panel:work_order_list")
+        django_messages.success(request, _msg)
+        return redirect("panel:work_order_list")
 
 
-class WorkOrderMarkReviewedView (SupervisorAccessMixin ,View ):
+class WorkOrderMarkReviewedView(SupervisorAccessMixin, View):
     """
     Toggles the reviewed flag on a WorkOrder identified by pk, scoped to the
-    authenticated company. Returns an HTML fragment (_review_badge_fragment.html)
+    authenticated company. Returns an HTML fragment
+    (_review_badge_fragment.html)
     for HTMX to swap inline in list.html.
 
     POST /panel/work-orders/<pk>/review/
@@ -2292,7 +2290,8 @@ class WorkOrderMarkReviewedView (SupervisorAccessMixin ,View ):
            reviewed_at=now().
          If reviewed is currently True:
            Sets reviewed=False, reviewed_by=None, reviewed_at=None.
-         Returns the rendered _review_badge_fragment.html partial with HTTP 200.
+         Returns the rendered _review_badge_fragment.html partial with HTTP
+         200.
          Returns HTTP 404 if the WorkOrder does not exist or belongs to another
          company.
 
@@ -2301,7 +2300,8 @@ class WorkOrderMarkReviewedView (SupervisorAccessMixin ,View ):
     ---
 
     Alterna el flag reviewed de un WorkOrder identificado por pk, acotado a la
-    empresa autenticada. Devuelve un fragmento HTML (_review_badge_fragment.html)
+    empresa autenticada. Devuelve un fragmento HTML
+    (_review_badge_fragment.html)
     para que HTMX lo intercambie inline en list.html.
 
     POST /panel/work-orders/<pk>/review/
@@ -2310,13 +2310,15 @@ class WorkOrderMarkReviewedView (SupervisorAccessMixin ,View ):
            reviewed_at=now().
          Si reviewed es actualmente True:
            Establece reviewed=False, reviewed_by=None, reviewed_at=None.
-         Devuelve el parcial _review_badge_fragment.html renderizado con HTTP 200.
-         Devuelve HTTP 404 si el WorkOrder no existe o pertenece a otra empresa.
+         Devuelve el parcial _review_badge_fragment.html renderizado con HTTP
+         200.
+         Devuelve HTTP 404 si el WorkOrder no existe o pertenece a otra
+         empresa.
 
     Accesible para los roles SUPERVISOR y ADMIN (SupervisorAccessMixin).
     """
 
-    def post (self ,request ,pk ):
+    def post(self, request, pk):
         """
         Toggles reviewed on the WorkOrder identified by pk and returns the
         rendered review badge fragment for HTMX inline swap.
@@ -2324,51 +2326,54 @@ class WorkOrderMarkReviewedView (SupervisorAccessMixin ,View ):
         Alterna reviewed en el WorkOrder identificado por pk y devuelve el
         fragmento del badge de revisión para el intercambio inline de HTMX.
         """
-        from django .shortcuts import get_object_or_404 
-        from django .utils .timezone import now as tz_now 
+        from django.shortcuts import get_object_or_404
+        from django.utils.timezone import now as tz_now
 
-        company =request .user .company_user .company 
-        company_user =request .user .company_user 
+        company = request.user.company_user.company
+        company_user = request.user.company_user
 
-        wo =get_object_or_404 (WorkOrder ,pk =pk ,company =company )
+        wo = get_object_or_404(WorkOrder, pk=pk, company=company)
 
-        if wo .reviewed :
+        if wo.reviewed:
 
+            wo.reviewed = False
+            wo.reviewed_by = None
+            wo.reviewed_at = None
+            wo.save(update_fields=["reviewed", "reviewed_by", "reviewed_at"])
+        else:
 
-            wo .reviewed =False 
-            wo .reviewed_by =None 
-            wo .reviewed_at =None 
-            wo .save (update_fields =["reviewed","reviewed_by","reviewed_at"])
-        else :
+            wo.reviewed = True
+            wo.reviewed_by = company_user
+            wo.reviewed_at = tz_now()
+            wo.save(update_fields=["reviewed", "reviewed_by", "reviewed_at"])
 
-
-            wo .reviewed =True 
-            wo .reviewed_by =company_user 
-            wo .reviewed_at =tz_now ()
-            wo .save (update_fields =["reviewed","reviewed_by","reviewed_at"])
-
-        return render (
-        request ,
-        "panel/work_orders/_review_badge_fragment.html",
-        {"wo":wo },
+        return render(
+            request,
+            "panel/work_orders/_review_badge_fragment.html",
+            {"wo": wo},
         )
 
 
-class WorkOrderExportView (SupervisorAccessMixin ,View ):
+class WorkOrderExportView(SupervisorAccessMixin, View):
     """
     Generates and returns a multi-sheet Excel file concatenating the individual
     Excel reports of a selection of WorkOrder records identified by their pks.
 
     POST /panel/work-orders/export/
          Expected POST fields:
-           pks         : list[int] (repeating field "pks") — primary keys of the
-                         WorkOrder records to include. Only DONE records belonging
+           pks         : list[int] (repeating field "pks") — primary keys of
+           the
+                         WorkOrder records to include. Only DONE records
+                         belonging
                          to the authenticated company are exported.
-           export_mode : str — "single_sheet" or "multi_sheet" (Hito 8 / Bloque H).
+           export_mode : str — "single_sheet" or "multi_sheet" (Hito 8 / Bloque
+           H).
                          single_sheet: one sheet with all entries ordered by
-                           worker_name then date_key; an opaque header row marks
+                           worker_name then date_key; an opaque header row
+                           marks
                            each new worker block.
-                         multi_sheet: one sheet per worker with individual header.
+                         multi_sheet: one sheet per worker with individual
+                         header.
          Returns HTTP 400 if no valid pks are provided.
          Returns HTTP 404 if the authenticated user has no CompanyUser profile.
 
@@ -2377,15 +2382,20 @@ class WorkOrderExportView (SupervisorAccessMixin ,View ):
     ---
 
     Genera y devuelve un archivo Excel multi-hoja que concatena los informes
-    individuales de una selección de registros WorkOrder identificados por sus pks.
+    individuales de una selección de registros WorkOrder identificados por sus
+    pks.
 
     POST /panel/work-orders/export/
          Campos POST esperados:
            pks         : list[int] (campo repetido "pks") — claves primarias de
-                         los WorkOrder a incluir. Solo se exportan DONE de la empresa.
-           export_mode : str — "single_sheet" o "multi_sheet" (Hito 8 / Bloque H).
-                         single_sheet: una sola hoja con todas las entradas ordenadas
-                           por operario y fecha; una fila cabecera separadora por
+                         los WorkOrder a incluir. Solo se exportan DONE de la
+                         empresa.
+           export_mode : str — "single_sheet" o "multi_sheet" (Hito 8 / Bloque
+           H).
+                         single_sheet: una sola hoja con todas las entradas
+                         ordenadas
+                           por operario y fecha; una fila cabecera separadora
+                           por
                            cada nuevo operario.
                          multi_sheet: una hoja por operario con su membrete.
          Devuelve HTTP 400 si no se proporcionan pks válidos.
@@ -2394,7 +2404,7 @@ class WorkOrderExportView (SupervisorAccessMixin ,View ):
     Accesible para los roles SUPERVISOR y ADMIN (SupervisorAccessMixin).
     """
 
-    def post (self ,request ):
+    def post(self, request):
         """
         Builds the export Excel file from the selected WorkOrder pks.
         Supports two export modes controlled by the POST field export_mode:
@@ -2432,74 +2442,61 @@ class WorkOrderExportView (SupervisorAccessMixin ,View ):
             El título de hoja se trunca a 31 caracteres (límite de Excel).
 
         Ambos modos devuelven HttpResponse con Content-Disposition attachment.
-        Devuelve HTTP 400 ante pks inválidos/ausentes o export_mode desconocido.
+        Devuelve HTTP 400 ante pks inválidos/ausentes o export_mode
+        desconocido.
         """
-        import io 
-        import openpyxl 
-        from openpyxl .styles import Alignment ,Font ,PatternFill 
-        from django .http import HttpResponse ,HttpResponseBadRequest 
-        from django .utils .timezone import now as tz_now 
-        from work_order_processor .models import WorkOrderEntry ,WorkOrderEntryLine 
-        from work_order_processor .services import (
-        generate_work_order_excel as _gen_excel ,
-        _worker_name_from_pdf_path ,
+        import io
+        import openpyxl
+        from openpyxl.styles import Alignment, Font, PatternFill
+        from django.http import HttpResponse, HttpResponseBadRequest
+        from django.utils.timezone import now as tz_now
+        from work_order_processor.models import (
+            WorkOrderEntry,
+            WorkOrderEntryLine,
+        )
+        from work_order_processor.services import (
+            generate_work_order_excel as _gen_excel,
+            _worker_name_from_pdf_path,
         )
 
-        company =request .user .company_user .company 
-        export_mode =request .POST .get ("export_mode","single_sheet").strip ()
+        company = request.user.company_user.company
+        export_mode = request.POST.get("export_mode", "single_sheet").strip()
 
-
-
-
-
-        if export_mode not in ("single_sheet","multi_sheet"):
-            return HttpResponseBadRequest (
-            f"# [EXPORT] Modo de exportación desconocido: {export_mode!r}."
+        if export_mode not in ("single_sheet", "multi_sheet"):
+            return HttpResponseBadRequest(
+                f"# [EXPORT] Modo de exportación desconocido: {export_mode!r}."
             )
 
-
-
-
-
-        raw_pks =request .POST .getlist ("pks")
-        try :
-            pk_list =[int (pk )for pk in raw_pks if pk ]
-        except (ValueError ,TypeError ):
-            return HttpResponseBadRequest ("# [EXPORT] Parámetros pks inválidos.")
-
-        if not pk_list :
-            return HttpResponseBadRequest (
-            "# [EXPORT] No se han seleccionado partes para exportar."
+        raw_pks = request.POST.getlist("pks")
+        try:
+            pk_list = [int(pk) for pk in raw_pks if pk]
+        except (ValueError, TypeError):
+            return HttpResponseBadRequest(
+                "# [EXPORT] Parámetros pks inválidos."
             )
 
+        if not pk_list:
+            return HttpResponseBadRequest(
+                "# [EXPORT] No se han seleccionado partes para exportar."
+            )
 
-
-
-
-
-
-        work_orders =list (
-        WorkOrder .objects 
-        .filter (
-        pk__in =pk_list ,
-        company =company ,
-        status =WorkOrder .Status .DONE ,
-        reviewed =True ,
-        )
-        .order_by ("pk")
+        work_orders = list(
+            WorkOrder.objects.filter(
+                pk__in=pk_list,
+                company=company,
+                status=WorkOrder.Status.DONE,
+                reviewed=True,
+            ).order_by("pk")
         )
 
-        if not work_orders :
-            return HttpResponseBadRequest (
-            "# [EXPORT] Ninguno de los partes seleccionados está revisado y en estado DONE. "
-            "Solo se pueden exportar partes marcados como revisados."
+        if not work_orders:
+            return HttpResponseBadRequest(
+                "# [EXPORT] Ninguno de los partes seleccionados está revisado "
+                "y en estado DONE. "
+                "Solo se pueden exportar partes marcados como revisados."
             )
 
-
-
-
-
-        def _copy_sheet (src_sheet ,dest_wb ,title ):
+        def _copy_sheet(src_sheet, dest_wb, title):
             """
             Copies src_sheet (cells, styles, column widths, row heights) into
             a new sheet named title in dest_wb.
@@ -2507,297 +2504,274 @@ class WorkOrderExportView (SupervisorAccessMixin ,View ):
             Copia src_sheet (celdas, estilos, anchos de columna, alturas de
             fila) en una nueva hoja llamada title en dest_wb.
             """
-            dest_sheet =dest_wb .create_sheet (title =title [:31 ])
-            for row in src_sheet .iter_rows ():
-                for cell in row :
-                    dest_cell =dest_sheet .cell (
-                    row =cell .row ,column =cell .column ,value =cell .value 
+            dest_sheet = dest_wb.create_sheet(title=title[:31])
+            for row in src_sheet.iter_rows():
+                for cell in row:
+                    dest_cell = dest_sheet.cell(
+                        row=cell.row, column=cell.column, value=cell.value
                     )
-                    if cell .has_style :
-                        dest_cell .font =cell .font .copy ()
-                        dest_cell .fill =cell .fill .copy ()
-                        dest_cell .alignment =cell .alignment .copy ()
-                        dest_cell .border =cell .border .copy ()
-                        dest_cell .number_format =cell .number_format 
-            for col_letter ,col_dim in src_sheet .column_dimensions .items ():
-                dest_sheet .column_dimensions [col_letter ].width =col_dim .width 
-            for row_num ,row_dim in src_sheet .row_dimensions .items ():
-                dest_sheet .row_dimensions [row_num ].height =row_dim .height 
-            return dest_sheet 
+                    if cell.has_style:
+                        dest_cell.font = cell.font.copy()
+                        dest_cell.fill = cell.fill.copy()
+                        dest_cell.alignment = cell.alignment.copy()
+                        dest_cell.border = cell.border.copy()
+                        dest_cell.number_format = cell.number_format
+            for col_letter, col_dim in src_sheet.column_dimensions.items():
+                dest_sheet.column_dimensions[col_letter].width = col_dim.width
+            for row_num, row_dim in src_sheet.row_dimensions.items():
+                dest_sheet.row_dimensions[row_num].height = row_dim.height
+            return dest_sheet
 
-
-
-
-
-        def _get_worker_name (wo ):
+        def _get_worker_name(wo):
             """
             Returns the worker name from the PDF filename, or a fallback label.
             ---
             Devuelve el nombre del operario del nombre del PDF, o etiqueta de
             reserva.
             """
-            if wo .source_pdf :
-                return _worker_name_from_pdf_path (wo .source_pdf .name )
+            if wo.source_pdf:
+                return _worker_name_from_pdf_path(wo.source_pdf.name)
             return f"Operario #{wo.pk}"
 
+        if export_mode == "single_sheet":
 
+            wo_map = {wo.pk: wo for wo in work_orders}
 
-
-
-
-
-
-
-
-
-
-        if export_mode =="single_sheet":
-
-
-
-
-
-            wo_map ={wo .pk :wo for wo in work_orders }
-
-            lines_qs =(
-            WorkOrderEntryLine .objects 
-            .filter (entry__work_order__in =work_orders )
-            .select_related (
-            "entry",
-            "entry__work_order",
-            "machine_asset",
-            )
-            .order_by (
-            "entry__work_order__pk",
-            "entry__work_date",
-            "entry__page_number",
-            "line_number",
-            )
+            lines_qs = (
+                WorkOrderEntryLine.objects.filter(
+                    entry__work_order__in=work_orders
+                )
+                .select_related(
+                    "entry",
+                    "entry__work_order",
+                    "machine_asset",
+                )
+                .order_by(
+                    "entry__work_order__pk",
+                    "entry__work_date",
+                    "entry__page_number",
+                    "line_number",
+                )
             )
 
-
-
-
-
-            enriched =[]
-            for line in lines_qs :
-                entry =line .entry 
-                wo =entry .work_order 
-                worker_name =_get_worker_name (wo )
-                date_key =entry .work_date .isoformat ()if entry .work_date else ""
-                enriched .append ({
-                "worker_name":worker_name ,
-                "date_key":date_key ,
-                "line":line ,
-                "entry":entry ,
-                })
-
-
-
-            enriched .sort (key =lambda r :(
-            r ["worker_name"],
-            r ["date_key"]if r ["date_key"]else "",
-            ))
-
-
-
-
-
-            wb =openpyxl .Workbook ()
-            ws =wb .active 
-            ws .title ="EXPORTACION"
-
-
-
-            _SEP_BG ="1F4E79"
-            _SEP_FG ="FFFFFF"
-
-            def _make_sep_fill ():
-                return PatternFill (
-                fill_type ="solid",
-                start_color =_SEP_BG ,
-                end_color =_SEP_BG ,
+            enriched = []
+            for line in lines_qs:
+                entry = line.entry
+                wo = entry.work_order
+                worker_name = _get_worker_name(wo)
+                date_key = (
+                    entry.work_date.isoformat() if entry.work_date else ""
+                )
+                enriched.append(
+                    {
+                        "worker_name": worker_name,
+                        "date_key": date_key,
+                        "line": line,
+                        "entry": entry,
+                    }
                 )
 
+            enriched.sort(
+                key=lambda r: (
+                    r["worker_name"],
+                    r["date_key"] if r["date_key"] else "",
+                )
+            )
 
-            headers =[
-            "OPERARIO","FECHA","BLOQUE","MÁQUINA (NORM)",
-            "MÁQUINA (RAW)","ACTIVO RESUELTO","DESCRIPCIÓN AVERÍA",
-            "REPARACIÓN","H.C.","H.F.","Δ HORAS","O.R.","FLAGS",
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "EXPORTACION"
+
+            _SEP_BG = "1F4E79"
+            _SEP_FG = "FFFFFF"
+
+            def _make_sep_fill():
+                return PatternFill(
+                    fill_type="solid",
+                    start_color=_SEP_BG,
+                    end_color=_SEP_BG,
+                )
+
+            headers = [
+                "OPERARIO",
+                "FECHA",
+                "BLOQUE",
+                "MÁQUINA (NORM)",
+                "MÁQUINA (RAW)",
+                "ACTIVO RESUELTO",
+                "DESCRIPCIÓN AVERÍA",
+                "REPARACIÓN",
+                "H.C.",
+                "H.F.",
+                "Δ HORAS",
+                "O.R.",
+                "FLAGS",
             ]
-            NUM_COLS =len (headers )
+            NUM_COLS = len(headers)
 
-            for col_idx ,hdr in enumerate (headers ,start =1 ):
-                cell =ws .cell (row =1 ,column =col_idx ,value =hdr )
-                cell .font =Font (bold =True ,color =_SEP_FG )
-                cell .fill =_make_sep_fill ()
-                cell .alignment =Alignment (horizontal ="center",vertical ="center")
-            ws .row_dimensions [1 ].height =20 
+            for col_idx, hdr in enumerate(headers, start=1):
+                cell = ws.cell(row=1, column=col_idx, value=hdr)
+                cell.font = Font(bold=True, color=_SEP_FG)
+                cell.fill = _make_sep_fill()
+                cell.alignment = Alignment(
+                    horizontal="center", vertical="center"
+                )
+            ws.row_dimensions[1].height = 20
 
-            current_worker =None 
-            data_row =2 
+            current_worker = None
+            data_row = 2
 
-            for rec in enriched :
-                worker_name =rec ["worker_name"]
-                line =rec ["line"]
-                entry =rec ["entry"]
+            for rec in enriched:
+                worker_name = rec["worker_name"]
+                line = rec["line"]
+                entry = rec["entry"]
 
-
-
-                if worker_name !=current_worker :
-                    ws .merge_cells (
-                    start_row =data_row ,start_column =1 ,
-                    end_row =data_row ,end_column =NUM_COLS ,
+                if worker_name != current_worker:
+                    ws.merge_cells(
+                        start_row=data_row,
+                        start_column=1,
+                        end_row=data_row,
+                        end_column=NUM_COLS,
                     )
-                    sep_cell =ws .cell (row =data_row ,column =1 ,
-                    value =worker_name )
-                    sep_cell .font =Font (bold =True ,color =_SEP_FG ,size =11 )
-                    sep_cell .fill =_make_sep_fill ()
-                    sep_cell .alignment =Alignment (horizontal ="left",
-                    vertical ="center")
-                    ws .row_dimensions [data_row ].height =22 
-                    data_row +=1 
-                    current_worker =worker_name 
+                    sep_cell = ws.cell(
+                        row=data_row, column=1, value=worker_name
+                    )
+                    sep_cell.font = Font(bold=True, color=_SEP_FG, size=11)
+                    sep_cell.fill = _make_sep_fill()
+                    sep_cell.alignment = Alignment(
+                        horizontal="left", vertical="center"
+                    )
+                    ws.row_dimensions[data_row].height = 22
+                    data_row += 1
+                    current_worker = worker_name
 
+                date_display = (
+                    entry.work_date.strftime("%d/%m/%Y")
+                    if entry.work_date
+                    else ""
+                )
+                asset_code = (
+                    line.machine_asset.code if line.machine_asset else ""
+                )
+                hc_display = line.hc.strftime("%H:%M") if line.hc else ""
+                hf_display = line.hf.strftime("%H:%M") if line.hf else ""
+                delta_display = (
+                    str(line.delta_hours)
+                    if line.delta_hours is not None
+                    else ""
+                )
+                flags_display = ", ".join(line.flags) if line.flags else ""
 
-                date_display =(
-                entry .work_date .strftime ("%d/%m/%Y")
-                if entry .work_date else ""
-                )
-                asset_code =(
-                line .machine_asset .code if line .machine_asset else ""
-                )
-                hc_display =(
-                line .hc .strftime ("%H:%M")if line .hc else ""
-                )
-                hf_display =(
-                line .hf .strftime ("%H:%M")if line .hf else ""
-                )
-                delta_display =(
-                str (line .delta_hours )if line .delta_hours is not None else ""
-                )
-                flags_display =", ".join (line .flags )if line .flags else ""
-
-                row_values =[
-                worker_name ,
-                date_display ,
-                line .line_number ,
-                line .machine_norm ,
-                line .machine_raw ,
-                asset_code ,
-                line .fault_description ,
-                line .repair_notes ,
-                hc_display ,
-                hf_display ,
-                delta_display ,
-                line .or_val ,
-                flags_display ,
+                row_values = [
+                    worker_name,
+                    date_display,
+                    line.line_number,
+                    line.machine_norm,
+                    line.machine_raw,
+                    asset_code,
+                    line.fault_description,
+                    line.repair_notes,
+                    hc_display,
+                    hf_display,
+                    delta_display,
+                    line.or_val,
+                    flags_display,
                 ]
-                for col_idx ,val in enumerate (row_values ,start =1 ):
-                    cell =ws .cell (row =data_row ,column =col_idx ,value =val )
-                    cell .alignment =Alignment (vertical ="center",wrap_text =False )
-                ws .row_dimensions [data_row ].height =16 
-                data_row +=1 
-
-
-
-            for col_idx ,hdr in enumerate (headers ,start =1 ):
-                col_letter =openpyxl .utils .get_column_letter (col_idx )
-                ws .column_dimensions [col_letter ].width =min (
-                max (len (hdr )+2 ,12 ),60 
-                )
-
-            if ws .max_row <2 :
-                return HttpResponseBadRequest (
-                "# [EXPORT] No hay líneas de datos en los partes seleccionados."
-                )
-
-
-
-
-
-
-
-
-
-
-        else :
-
-
-            from collections import OrderedDict 
-            groups :dict [str ,list ]=OrderedDict ()
-            for wo in work_orders :
-                worker_name =_get_worker_name (wo )
-                groups .setdefault (worker_name ,[]).append (wo )
-
-            wb =openpyxl .Workbook ()
-            wb .remove (wb .active )
-
-            for worker_name ,wo_list in groups .items ():
-
-
-
-
-                sheet_built =False 
-                for wo in wo_list :
-                    try :
-
-
-                        if not wo .excel_file :
-                            _gen_excel (wo .pk )
-                            wo .refresh_from_db (fields =["excel_file"])
-                        if not wo .excel_file :
-                            continue 
-                        with wo .excel_file .open ("rb")as f :
-                            buf =io .BytesIO (f .read ())
-                        src_wb =openpyxl .load_workbook (buf )
-                        src_sheet =src_wb .worksheets [0 ]
-
-
-                        sheet_title =(
-                        (worker_name [:28 ]+f"#{wo.pk}")
-                        if worker_name else f"Parte#{wo.pk}"
-                        )
-                        _copy_sheet (src_sheet ,wb ,sheet_title )
-                        sheet_built =True 
-                        break 
-                    except Exception :
-                        continue 
-
-                if not sheet_built :
-
-
-                    placeholder =wb .create_sheet (
-                    title =(worker_name [:28 ]if worker_name else "Sin datos")[:31 ]
+                for col_idx, val in enumerate(row_values, start=1):
+                    cell = ws.cell(row=data_row, column=col_idx, value=val)
+                    cell.alignment = Alignment(
+                        vertical="center", wrap_text=False
                     )
-                    placeholder .cell (row =1 ,column =1 ,
-                    value ="No se pudo generar el Excel para este operario.")
+                ws.row_dimensions[data_row].height = 16
+                data_row += 1
 
-            if not wb .worksheets :
-                return HttpResponseBadRequest (
-                "# [EXPORT] No se pudo generar ninguna hoja para los partes seleccionados."
+            for col_idx, hdr in enumerate(headers, start=1):
+                col_letter = openpyxl.utils.get_column_letter(col_idx)
+                ws.column_dimensions[col_letter].width = min(
+                    max(len(hdr) + 2, 12), 60
                 )
 
+            if ws.max_row < 2:
+                return HttpResponseBadRequest(
+                    "# [EXPORT] No hay líneas de datos en los partes "
+                    "seleccionados."
+                )
 
+        else:
 
+            from collections import OrderedDict
 
+            groups: dict[str, list] = OrderedDict()
+            for wo in work_orders:
+                worker_name = _get_worker_name(wo)
+                groups.setdefault(worker_name, []).append(wo)
 
-        output =io .BytesIO ()
-        wb .save (output )
-        output .seek (0 )
+            wb = openpyxl.Workbook()
+            wb.remove(wb.active)
 
-        filename =f"EXPORTACION_{tz_now().strftime('%d-%m-%y')}.xlsx"
-        response =HttpResponse (
-        output .read (),
-        content_type =(
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        ),
+            for worker_name, wo_list in groups.items():
+
+                sheet_built = False
+                for wo in wo_list:
+                    try:
+
+                        if not wo.excel_file:
+                            _gen_excel(wo.pk)
+                            wo.refresh_from_db(fields=["excel_file"])
+                        if not wo.excel_file:
+                            continue
+                        with wo.excel_file.open("rb") as f:
+                            buf = io.BytesIO(f.read())
+                        src_wb = openpyxl.load_workbook(buf)
+                        src_sheet = src_wb.worksheets[0]
+
+                        sheet_title = (
+                            (worker_name[:28] + f"#{wo.pk}")
+                            if worker_name
+                            else f"Parte#{wo.pk}"
+                        )
+                        _copy_sheet(src_sheet, wb, sheet_title)
+                        sheet_built = True
+                        break
+                    except Exception:
+                        continue
+
+                if not sheet_built:
+
+                    placeholder = wb.create_sheet(
+                        title=(
+                            worker_name[:28] if worker_name else "Sin datos"
+                        )[:31]
+                    )
+                    placeholder.cell(
+                        row=1,
+                        column=1,
+                        value=(
+                            "No se pudo generar el Excel para este "
+                            "operario."
+                        ),
+                    )
+
+            if not wb.worksheets:
+                return HttpResponseBadRequest(
+                    "# [EXPORT] No se pudo generar ninguna hoja para los "
+                    "partes seleccionados."
+                )
+
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        filename = f"EXPORTACION_{tz_now().strftime('%d-%m-%y')}.xlsx"
+        response = HttpResponse(
+            output.read(),
+            content_type=XLSX_CONTENT_TYPE,
         )
-        response ["Content-Disposition"]=f'attachment; filename="{filename}"'
-        return response 
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
 
-class WorkOrderDuplicateSearchView (SupervisorAccessMixin ,View ):
+class WorkOrderDuplicateSearchView(SupervisorAccessMixin, View):
     """
     HTMX endpoint that detects duplicate WorkOrders for the authenticated
     company by querying WorkOrderEntry records sharing identical
@@ -2821,12 +2795,13 @@ class WorkOrderDuplicateSearchView (SupervisorAccessMixin ,View ):
 
     POST /panel/work-orders/duplicates/search/
          Devuelve HTTP 200 con el fragmento renderizado en todos los casos.
-         Devuelve HTTP 404 si el usuario autenticado no tiene perfil CompanyUser.
+         Devuelve HTTP 404 si el usuario autenticado no tiene perfil
+         CompanyUser.
 
     Accesible para los roles SUPERVISOR y ADMIN (SupervisorAccessMixin).
     """
 
-    def post (self ,request ):
+    def post(self, request):
         """
         Executes the duplicate detection query scoped to the authenticated
         company and returns the rendered _duplicates_fragment.html partial.
@@ -2835,12 +2810,14 @@ class WorkOrderDuplicateSearchView (SupervisorAccessMixin ,View ):
           1. Query (company, worker_name, work_date) groups where more than one
              distinct WorkOrder contributes WorkOrderEntry records.
           2. For each group, fetch all implicated WorkOrders ordered by pk.
-          3. Identify keeper (highest pk) and candidates for deletion (lower pks).
+          3. Identify keeper (highest pk) and candidates for deletion (lower
+          pks).
 
         ---
 
         Ejecuta la consulta de detección de duplicados acotada a la empresa
-        autenticada y devuelve el parcial _duplicates_fragment.html renderizado.
+        autenticada y devuelve el parcial _duplicates_fragment.html
+        renderizado.
 
         La lógica de detección es equivalente al comando de gestión
         detect_duplicate_entries:
@@ -2851,82 +2828,70 @@ class WorkOrderDuplicateSearchView (SupervisorAccessMixin ,View ):
           3. Identificar el conservado (pk más alto) y los candidatos a
              eliminación (pks inferiores).
         """
-        from django .db .models import Count 
-        from work_order_processor .models import WorkOrderEntry 
+        from django.db.models import Count
+        from work_order_processor.models import WorkOrderEntry
 
-        company =request .user .company_user .company 
+        company = request.user.company_user.company
 
-
-
-
-
-        raw_groups =list (
-        WorkOrderEntry .objects 
-        .filter (work_order__company =company )
-        .values ("worker_name","work_date")
-        .annotate (wo_count =Count ("work_order_id",distinct =True ))
-        .filter (wo_count__gt =1 )
-        .order_by ("worker_name","work_date")
+        raw_groups = list(
+            WorkOrderEntry.objects.filter(work_order__company=company)
+            .values("worker_name", "work_date")
+            .annotate(wo_count=Count("work_order_id", distinct=True))
+            .filter(wo_count__gt=1)
+            .order_by("worker_name", "work_date")
         )
 
-        if not raw_groups :
+        if not raw_groups:
 
+            return render(
+                request,
+                "panel/work_orders/_duplicates_fragment.html",
+                {"duplicate_groups": [], "no_duplicates": True},
+            )
 
-            return render (
-            request ,
+        enriched_groups = []
+
+        for raw in raw_groups:
+            worker_name = raw["worker_name"] or ""
+            work_date = raw["work_date"]
+
+            implicated = list(
+                WorkOrder.objects.filter(
+                    company=company,
+                    entries__worker_name=worker_name,
+                    entries__work_date=work_date,
+                )
+                .select_related("uploaded_by__user")
+                .distinct()
+                .order_by("pk")
+            )
+
+            if len(implicated) < 2:
+
+                continue
+
+            enriched_groups.append(
+                {
+                    "worker_name": worker_name,
+                    "work_date": work_date,
+                    "work_orders": implicated,
+                    "keeper": implicated[-1],
+                    "to_delete": implicated[:-1],
+                }
+            )
+
+        return render(
+            request,
             "panel/work_orders/_duplicates_fragment.html",
-            {"duplicate_groups":[],"no_duplicates":True },
-            )
-
-
-
-
-
-        enriched_groups =[]
-
-        for raw in raw_groups :
-            worker_name =raw ["worker_name"]or ""
-            work_date =raw ["work_date"]
-
-
-
-            implicated =list (
-            WorkOrder .objects 
-            .filter (
-            company =company ,
-            entries__worker_name =worker_name ,
-            entries__work_date =work_date ,
-            )
-            .select_related ("uploaded_by__user")
-            .distinct ()
-            .order_by ("pk")
-            )
-
-            if len (implicated )<2 :
-
-
-                continue 
-
-            enriched_groups .append ({
-            "worker_name":worker_name ,
-            "work_date":work_date ,
-            "work_orders":implicated ,
-            "keeper":implicated [-1 ],
-            "to_delete":implicated [:-1 ],
-            })
-
-        return render (
-        request ,
-        "panel/work_orders/_duplicates_fragment.html",
-        {
-        "duplicate_groups":enriched_groups ,
-        "no_duplicates":False ,
-        "company_user":request .user .company_user ,
-        },
+            {
+                "duplicate_groups": enriched_groups,
+                "no_duplicates": False,
+                "company_user": request.user.company_user,
+            },
         )
 
 
-class WorkOrderDuplicateDeleteView (SupervisorAccessMixin ,View ):
+class WorkOrderDuplicateDeleteView(SupervisorAccessMixin, View):
     """
     HTMX endpoint that deletes a single WorkOrder identified by pk, scoped
     to the authenticated company. Intended for use in the duplicates panel:
@@ -2949,12 +2914,13 @@ class WorkOrderDuplicateDeleteView (SupervisorAccessMixin ,View ):
     que HTMX elimine la fila correspondiente del DOM via hx-swap="outerHTML".
 
     POST /panel/work-orders/duplicates/<pk>/delete/
-         Devuelve HTTP 404 si el WorkOrder no existe o pertenece a otra empresa.
+         Devuelve HTTP 404 si el WorkOrder no existe o pertenece a otra
+         empresa.
 
     Restringido al rol ADMIN (AdminRoleRequiredMixin).
     """
 
-    def post (self ,request ,pk ):
+    def post(self, request, pk):
         """
         Deletes the WorkOrder identified by pk, cascade-removing all its
         children (WorkOrderEntry, WorkOrderEntryLine, source PDF, Excel file).
@@ -2966,66 +2932,68 @@ class WorkOrderDuplicateDeleteView (SupervisorAccessMixin ,View ):
         sus hijos (WorkOrderEntry, WorkOrderEntryLine, PDF original, Excel).
         Devuelve cuerpo vacío para el swap outerHTML de HTMX.
         """
-        from django .shortcuts import get_object_or_404 
-        from django .http import HttpResponse 
+        from django.shortcuts import get_object_or_404
+        from django.http import HttpResponse
 
-        company_user =request .user .company_user 
-        company =company_user .company 
-        wo =get_object_or_404 (WorkOrder ,pk =pk ,company =company )
+        company_user = request.user.company_user
+        company = company_user.company
+        wo = get_object_or_404(WorkOrder, pk=pk, company=company)
         # S116-H07/H10: mismo criterio que WorkOrderDeleteView -- devolver
         # repuestos, borrar de GCS/índice las fotos, y borrar también los
         # tickets que este duplicado había originado y que no seguían en
         # ningún otro parte.
-        _line_pks =list (
-        WorkOrderEntryLine .objects .filter (
-        entry__work_order =wo 
-        ).values_list ("pk",flat =True )
+        _line_pks = list(
+            WorkOrderEntryLine.objects.filter(
+                entry__work_order=wo
+            ).values_list("pk", flat=True)
         )
-        _revert_spare_parts_for_lines (_line_pks ,company_user )
-        _delete_task_photo_files (work_order_pks =[wo .pk ])
-        _ticket_pks =_ticket_pks_linked_to_work_orders ([wo .pk ])
-        wo .delete ()
-        _delete_orphaned_tickets (_ticket_pks )
+        _revert_spare_parts_for_lines(_line_pks, company_user)
+        _delete_task_photo_files(work_order_pks=[wo.pk])
+        _ticket_pks = _ticket_pks_linked_to_work_orders([wo.pk])
+        wo.delete()
+        _delete_orphaned_tickets(_ticket_pks)
+
+        return HttpResponse("")
 
 
-        return HttpResponse ("")
-
-
-
-
-
-class WorkerAbsenceCreateView (SupervisorAccessMixin ,View ):
+class WorkerAbsenceCreateView(SupervisorAccessMixin, View):
     """
-    Creates a WorkerAbsence record from the absence modal in admin_history.html.
+    Creates a WorkerAbsence record from the absence modal in
+    admin_history.html.
     Receives the form POST from the modal's form action pointing to
     'panel:worker_absence_create'. On success or failure, always redirects
     back to the Absences tab of WorkOrderAdminHistoryView.
 
     POST /panel/worker-absences/create/
         Body params:
-          company_user_pk (int)  — pk of the target CompanyUser (must belong to company).
-          absence_type    (str)  — one of the WorkerAbsence.ABSENCE_* constants.
+          company_user_pk (int)  — pk of the target CompanyUser (must belong to
+          company).
+          absence_type    (str)  — one of the WorkerAbsence.ABSENCE_*
+          constants.
           start_date      (str)  — ISO date YYYY-MM-DD.
           end_date        (str)  — ISO date YYYY-MM-DD.
           notes           (str)  — optional free text.
 
     ---
 
-    Crea un registro WorkerAbsence desde el modal de ausencias de admin_history.html.
+    Crea un registro WorkerAbsence desde el modal de ausencias de
+    admin_history.html.
     Recibe el POST del formulario del modal cuya accion apunta a
     'panel:worker_absence_create'. En caso de exito o fallo, siempre redirige
     de vuelta a la pestana Ausencias de WorkOrderAdminHistoryView.
 
     POST /panel/worker-absences/create/
         Parametros del cuerpo:
-          company_user_pk (int)  — pk del CompanyUser objetivo (debe pertenecer a empresa).
-          absence_type    (str)  — una de las constantes WorkerAbsence.ABSENCE_*.
+          company_user_pk (int)  — pk del CompanyUser objetivo (debe pertenecer
+          a empresa).
+          absence_type    (str)  — una de las constantes
+          WorkerAbsence.ABSENCE_*.
           start_date      (str)  — fecha ISO YYYY-MM-DD.
           end_date        (str)  — fecha ISO YYYY-MM-DD.
           notes           (str)  — texto libre opcional.
     """
 
-    def post (self ,request ,*args ,**kwargs ):
+    def post(self, request, *args, **kwargs):
         """
         Validates the POST data, creates the WorkerAbsence and redirects.
         Performs server-side validation: company scope, absence_type whitelist,
@@ -3035,96 +3003,87 @@ class WorkerAbsenceCreateView (SupervisorAccessMixin ,View ):
         Realiza validacion en el servidor: scope de empresa, lista blanca de
         absence_type, ordenacion de fechas (start_date <= end_date).
         """
-        from datetime import datetime 
-        from django .urls import reverse 
-        from ivr_config .models import WorkerAbsence 
+        from datetime import datetime
+        from django.urls import reverse
+        from ivr_config.models import WorkerAbsence
 
-        cu =request .user .company_user 
-        company =cu .company 
-        ABSENCES_TAB_URL =reverse ("panel:work_order_admin_history")+"?tab=absences"
-
-
-
-
-
-        try :
-            cu_pk =int (request .POST .get ("company_user_pk",""))
-            target_cu =CompanyUser .objects .get (pk =cu_pk ,company =company )
-        except (ValueError ,TypeError ,CompanyUser .DoesNotExist ):
-            django_messages .error (
-            request ,
-            "Operario no encontrado o no pertenece a esta empresa.",
-            )
-            return redirect (ABSENCES_TAB_URL )
-
-
-
-
-
-        absence_type =request .POST .get ("absence_type","").strip ()
-        valid_types ={k for k ,_ in WorkerAbsence .ABSENCE_CHOICES }
-        if absence_type not in valid_types :
-            django_messages .error (
-            request ,
-            f"Tipo de ausencia '{absence_type}' no válido.",
-            )
-            return redirect (ABSENCES_TAB_URL )
-
-
-
-
-
-        def _parse_iso (value ):
-            """Parses YYYY-MM-DD string, returns date or None. / Parsea cadena YYYY-MM-DD."""
-            try :
-                return datetime .strptime (value .strip (),"%Y-%m-%d").date ()
-            except (ValueError ,AttributeError ):
-                return None 
-
-        start_date =_parse_iso (request .POST .get ("start_date",""))
-        end_date =_parse_iso (request .POST .get ("end_date",""))
-
-        if not start_date or not end_date :
-            django_messages .error (
-            request ,
-            "Las fechas de inicio y fin son obligatorias y deben tener formato YYYY-MM-DD.",
-            )
-            return redirect (ABSENCES_TAB_URL )
-
-        if start_date >end_date :
-            django_messages .error (
-            request ,
-            "La fecha de inicio no puede ser posterior a la fecha de fin.",
-            )
-            return redirect (ABSENCES_TAB_URL )
-
-        notes =request .POST .get ("notes","").strip ()
-
-
-
-
-
-        WorkerAbsence .objects .create (
-        company_user =target_cu ,
-        absence_type =absence_type ,
-        start_date =start_date ,
-        end_date =end_date ,
-        registered_by =cu ,
-        notes =notes ,
+        cu = request.user.company_user
+        company = cu.company
+        ABSENCES_TAB_URL = (
+            reverse("panel:work_order_admin_history") + "?tab=absences"
         )
 
-        operator_name =(
-        target_cu .user .get_full_name ()or target_cu .user .username 
+        try:
+            cu_pk = int(request.POST.get("company_user_pk", ""))
+            target_cu = CompanyUser.objects.get(pk=cu_pk, company=company)
+        except (ValueError, TypeError, CompanyUser.DoesNotExist):
+            django_messages.error(
+                request,
+                "Operario no encontrado o no pertenece a esta empresa.",
+            )
+            return redirect(ABSENCES_TAB_URL)
+
+        absence_type = request.POST.get("absence_type", "").strip()
+        valid_types = {k for k, _ in WorkerAbsence.ABSENCE_CHOICES}
+        if absence_type not in valid_types:
+            django_messages.error(
+                request,
+                f"Tipo de ausencia '{absence_type}' no válido.",
+            )
+            return redirect(ABSENCES_TAB_URL)
+
+        def _parse_iso(value):
+            """
+            Parses a YYYY-MM-DD string, returns a date or None.
+            ---
+            Parsea una cadena AAAA-MM-DD; devuelve la fecha o None.
+            """
+            try:
+                return datetime.strptime(value.strip(), "%Y-%m-%d").date()
+            except (ValueError, AttributeError):
+                return None
+
+        start_date = _parse_iso(request.POST.get("start_date", ""))
+        end_date = _parse_iso(request.POST.get("end_date", ""))
+
+        if not start_date or not end_date:
+            django_messages.error(
+                request,
+                "Las fechas de inicio y fin son obligatorias y deben tener "
+                "formato YYYY-MM-DD.",
+            )
+            return redirect(ABSENCES_TAB_URL)
+
+        if start_date > end_date:
+            django_messages.error(
+                request,
+                "La fecha de inicio no puede ser posterior a la fecha de fin.",
+            )
+            return redirect(ABSENCES_TAB_URL)
+
+        notes = request.POST.get("notes", "").strip()
+
+        WorkerAbsence.objects.create(
+            company_user=target_cu,
+            absence_type=absence_type,
+            start_date=start_date,
+            end_date=end_date,
+            registered_by=cu,
+            notes=notes,
         )
-        django_messages .success (
-        request ,
-        f"Ausencia de {operator_name} registrada correctamente "
-        f"({start_date:%d/%m/%Y} – {end_date:%d/%m/%Y}).",
+
+        operator_name = (
+            target_cu.user.get_full_name() or target_cu.user.username
         )
-        return redirect (ABSENCES_TAB_URL )
+        django_messages.success(
+            request,
+            f"Ausencia de {operator_name} registrada correctamente "
+            f"({start_date:%d/%m/%Y} – {end_date:%d/%m/%Y}).",
+        )
+        return redirect(ABSENCES_TAB_URL)
 
 
-class WorkerAbsenceUpdateView (SupervisorAccessMixin ,View ):
+class WorkerAbsenceUpdateView(SupervisorAccessMixin, View):
     """
     Updates an existing WorkerAbsence record from the absence modal in
     admin_history.html. Receives the form POST from the edit modal.
@@ -3151,7 +3110,7 @@ class WorkerAbsenceUpdateView (SupervisorAccessMixin ,View ):
           notes        (str) — texto libre opcional.
     """
 
-    def post (self ,request ,pk ,*args ,**kwargs ):
+    def post(self, request, pk, *args, **kwargs):
         """
         Validates the POST data, updates the WorkerAbsence and redirects.
         Performs server-side validation: company scope, absence_type whitelist,
@@ -3161,96 +3120,89 @@ class WorkerAbsenceUpdateView (SupervisorAccessMixin ,View ):
         Realiza validacion en servidor: scope de empresa, lista blanca de
         absence_type, ordenacion de fechas (start_date <= end_date).
         """
-        from datetime import datetime 
-        from django .urls import reverse 
-        from ivr_config .models import WorkerAbsence 
+        from datetime import datetime
+        from django.urls import reverse
+        from ivr_config.models import WorkerAbsence
 
-        cu =request .user .company_user 
-        company =cu .company 
-        ABSENCES_TAB_URL =reverse ("panel:work_order_admin_history")+"?tab=absences"
-
-
-
-
-
-        try :
-            absence =WorkerAbsence .objects .get (
-            pk =pk ,
-            company_user__company =company ,
-            )
-        except WorkerAbsence .DoesNotExist :
-            django_messages .error (
-            request ,
-            "Ausencia no encontrada o no pertenece a esta empresa.",
-            )
-            return redirect (ABSENCES_TAB_URL )
-
-
-
-
-
-        absence_type =request .POST .get ("absence_type","").strip ()
-        valid_types ={k for k ,_ in WorkerAbsence .ABSENCE_CHOICES }
-        if absence_type not in valid_types :
-            django_messages .error (
-            request ,
-            f"Tipo de ausencia '{absence_type}' no válido.",
-            )
-            return redirect (ABSENCES_TAB_URL )
-
-
-
-
-
-        def _parse_iso (value ):
-            """Parses YYYY-MM-DD string, returns date or None. / Parsea cadena YYYY-MM-DD."""
-            try :
-                return datetime .strptime (value .strip (),"%Y-%m-%d").date ()
-            except (ValueError ,AttributeError ):
-                return None 
-
-        start_date =_parse_iso (request .POST .get ("start_date",""))
-        end_date =_parse_iso (request .POST .get ("end_date",""))
-
-        if not start_date or not end_date :
-            django_messages .error (
-            request ,
-            "Las fechas de inicio y fin son obligatorias y deben tener formato YYYY-MM-DD.",
-            )
-            return redirect (ABSENCES_TAB_URL )
-
-        if start_date >end_date :
-            django_messages .error (
-            request ,
-            "La fecha de inicio no puede ser posterior a la fecha de fin.",
-            )
-            return redirect (ABSENCES_TAB_URL )
-
-        notes =request .POST .get ("notes","").strip ()
-
-
-
-
-
-        absence .absence_type =absence_type 
-        absence .start_date =start_date 
-        absence .end_date =end_date 
-        absence .notes =notes 
-        absence .save (update_fields =["absence_type","start_date","end_date","notes"])
-
-        operator_name =(
-        absence .company_user .user .get_full_name ()
-        or absence .company_user .user .username 
+        cu = request.user.company_user
+        company = cu.company
+        ABSENCES_TAB_URL = (
+            reverse("panel:work_order_admin_history") + "?tab=absences"
         )
-        django_messages .success (
-        request ,
-        f"Ausencia de {operator_name} actualizada correctamente "
-        f"({start_date:%d/%m/%Y} – {end_date:%d/%m/%Y}).",
+
+        try:
+            absence = WorkerAbsence.objects.get(
+                pk=pk,
+                company_user__company=company,
+            )
+        except WorkerAbsence.DoesNotExist:
+            django_messages.error(
+                request,
+                "Ausencia no encontrada o no pertenece a esta empresa.",
+            )
+            return redirect(ABSENCES_TAB_URL)
+
+        absence_type = request.POST.get("absence_type", "").strip()
+        valid_types = {k for k, _ in WorkerAbsence.ABSENCE_CHOICES}
+        if absence_type not in valid_types:
+            django_messages.error(
+                request,
+                f"Tipo de ausencia '{absence_type}' no válido.",
+            )
+            return redirect(ABSENCES_TAB_URL)
+
+        def _parse_iso(value):
+            """
+            Parses a YYYY-MM-DD string, returns a date or None.
+            ---
+            Parsea una cadena AAAA-MM-DD; devuelve la fecha o None.
+            """
+            try:
+                return datetime.strptime(value.strip(), "%Y-%m-%d").date()
+            except (ValueError, AttributeError):
+                return None
+
+        start_date = _parse_iso(request.POST.get("start_date", ""))
+        end_date = _parse_iso(request.POST.get("end_date", ""))
+
+        if not start_date or not end_date:
+            django_messages.error(
+                request,
+                "Las fechas de inicio y fin son obligatorias y deben tener "
+                "formato YYYY-MM-DD.",
+            )
+            return redirect(ABSENCES_TAB_URL)
+
+        if start_date > end_date:
+            django_messages.error(
+                request,
+                "La fecha de inicio no puede ser posterior a la fecha de fin.",
+            )
+            return redirect(ABSENCES_TAB_URL)
+
+        notes = request.POST.get("notes", "").strip()
+
+        absence.absence_type = absence_type
+        absence.start_date = start_date
+        absence.end_date = end_date
+        absence.notes = notes
+        absence.save(
+            update_fields=["absence_type", "start_date", "end_date", "notes"]
         )
-        return redirect (ABSENCES_TAB_URL )
+
+        operator_name = (
+            absence.company_user.user.get_full_name()
+            or absence.company_user.user.username
+        )
+        django_messages.success(
+            request,
+            f"Ausencia de {operator_name} actualizada correctamente "
+            f"({start_date:%d/%m/%Y} – {end_date:%d/%m/%Y}).",
+        )
+        return redirect(ABSENCES_TAB_URL)
 
 
-class WorkerAbsenceDeleteView (SupervisorAccessMixin ,View ):
+class WorkerAbsenceDeleteView(SupervisorAccessMixin, View):
     """
     Deletes a WorkerAbsence record scoped to the authenticated user's company.
     On success or failure, always redirects back to the Absences tab of
@@ -3265,7 +3217,7 @@ class WorkerAbsenceDeleteView (SupervisorAccessMixin ,View ):
     POST /panel/worker-absences/<pk>/delete/
     """
 
-    def post (self ,request ,pk ,*args ,**kwargs ):
+    def post(self, request, pk, *args, **kwargs):
         """
         Resolves the WorkerAbsence by pk scoped to the company, deletes it
         and redirects back to the Absences tab.
@@ -3273,51 +3225,43 @@ class WorkerAbsenceDeleteView (SupervisorAccessMixin ,View ):
         Resuelve el WorkerAbsence por pk acotado a la empresa, lo elimina
         y redirige de vuelta a la pestaña Ausencias.
         """
-        from django .urls import reverse 
-        from ivr_config .models import WorkerAbsence 
+        from django.urls import reverse
+        from ivr_config.models import WorkerAbsence
 
-        cu =request .user .company_user 
-        company =cu .company 
-        ABSENCES_TAB_URL =reverse ("panel:work_order_admin_history")+"?tab=absences"
-
-
-
-
-
-        try :
-            absence =WorkerAbsence .objects .select_related (
-            "company_user__user"
-            ).get (
-            pk =pk ,
-            company_user__company =company ,
-            )
-        except WorkerAbsence .DoesNotExist :
-            django_messages .error (
-            request ,
-            "Ausencia no encontrada o no pertenece a esta empresa.",
-            )
-            return redirect (ABSENCES_TAB_URL )
-
-        operator_name =(
-        absence .company_user .user .get_full_name ()
-        or absence .company_user .user .username 
+        cu = request.user.company_user
+        company = cu.company
+        ABSENCES_TAB_URL = (
+            reverse("panel:work_order_admin_history") + "?tab=absences"
         )
-        absence .delete ()
 
-        django_messages .success (
-        request ,
-        f"Ausencia de {operator_name} eliminada correctamente.",
+        try:
+            absence = WorkerAbsence.objects.select_related(
+                "company_user__user"
+            ).get(
+                pk=pk,
+                company_user__company=company,
+            )
+        except WorkerAbsence.DoesNotExist:
+            django_messages.error(
+                request,
+                "Ausencia no encontrada o no pertenece a esta empresa.",
+            )
+            return redirect(ABSENCES_TAB_URL)
+
+        operator_name = (
+            absence.company_user.user.get_full_name()
+            or absence.company_user.user.username
         )
-        return redirect (ABSENCES_TAB_URL )
+        absence.delete()
+
+        django_messages.success(
+            request,
+            f"Ausencia de {operator_name} eliminada correctamente.",
+        )
+        return redirect(ABSENCES_TAB_URL)
 
 
-
-
-
-
-
-
-class WorkdayScheduleView (SupervisorAccessMixin ,View ):
+class WorkdayScheduleView(SupervisorAccessMixin, View):
     """
     Creates or updates the WorkdaySchedule records for the authenticated
     user's company. Supports multiple named schedules per company.
@@ -3356,36 +3300,40 @@ class WorkdayScheduleView (SupervisorAccessMixin ,View ):
          los CompanyUsers asignados a él antes de la eliminación.
     """
 
-    template_name ="panel/workday/schedule_form.html"
+    template_name = "panel/workday/schedule_form.html"
 
-    def _get_own_presence (self ,company_user ):
+    def _get_own_presence(self, company_user):
         """
         Returns the current active PresenceStatus for the authenticated user.
         ---
         Retorna el PresenceStatus activo actual del usuario autenticado.
         """
-        return PresenceStatus .objects .filter (
-        company_user =company_user ,
-        starts_at__lte =now (),
-        ).filter (
-        Q (ends_at__isnull =True )|Q (ends_at__gt =now ())
-        ).order_by ("-starts_at").first ()
+        return (
+            PresenceStatus.objects.filter(
+                company_user=company_user,
+                starts_at__lte=now(),
+            )
+            .filter(Q(ends_at__isnull=True) | Q(ends_at__gt=now()))
+            .order_by("-starts_at")
+            .first()
+        )
 
-    def _parse_time (self ,value ):
+    def _parse_time(self, value):
         """
         Parses an HH:MM time string and returns a time object, or None.
         ---
         Parsea una cadena HH:MM y devuelve un objeto time, o None.
         """
-        from datetime import datetime 
-        if not value :
-            return None 
-        try :
-            return datetime .strptime (value .strip (),"%H:%M").time ()
-        except ValueError :
-            return None 
+        from datetime import datetime
 
-    def _build_context (self ,request ,errors =None ,post_data =None ):
+        if not value:
+            return None
+        try:
+            return datetime.strptime(value.strip(), "%H:%M").time()
+        except ValueError:
+            return None
+
+    def _build_context(self, request, errors=None, post_data=None):
         """
         Builds the template context with the list of existing schedules,
         the creation form data and validation errors.
@@ -3393,191 +3341,206 @@ class WorkdayScheduleView (SupervisorAccessMixin ,View ):
         Construye el contexto con la lista de horarios existentes, los datos
         del formulario de creación y los errores de validación.
         """
-        from ivr_config .models import WorkdaySchedule 
-        cu =request .user .company_user 
-        company =cu .company 
+        from ivr_config.models import WorkdaySchedule
+
+        cu = request.user.company_user
+        company = cu.company
         return {
-        "company":company ,
-        "company_user":cu ,
-        "own_presence":self ._get_own_presence (cu ),
-        "active_nav":"workday_schedule",
-        "schedules":WorkdaySchedule .objects .filter (
-        company =company 
-        ).order_by ("label"),
-        "errors":errors or [],
-        "post_data":post_data or {},
+            "company": company,
+            "company_user": cu,
+            "own_presence": self._get_own_presence(cu),
+            "active_nav": "workday_schedule",
+            "schedules": WorkdaySchedule.objects.filter(
+                company=company
+            ).order_by("label"),
+            "errors": errors or [],
+            "post_data": post_data or {},
         }
 
-    def get (self ,request ,*args ,**kwargs ):
+    def get(self, request, *args, **kwargs):
         """
         Renders the workday schedule management page.
         ---
         Renderiza la página de gestión de horarios de jornada.
         """
-        return render (request ,self .template_name ,self ._build_context (request ))
+        return render(
+            request, self.template_name, self._build_context(request)
+        )
 
-    def post (self ,request ,*args ,**kwargs ):
+    def post(self, request, *args, **kwargs):
         """
         Dispatches create, update and delete actions for WorkdaySchedule.
         ---
         Despacha las acciones create, update y delete para WorkdaySchedule.
         """
-        from django .urls import reverse 
-        from ivr_config .models import WorkdaySchedule 
+        from django.urls import reverse
+        from ivr_config.models import WorkdaySchedule
 
-        cu =request .user .company_user 
-        company =cu .company 
-        action =request .POST .get ("action","").strip ()
+        cu = request.user.company_user
+        company = cu.company
+        action = request.POST.get("action", "").strip()
 
-        REDIRECT_URL =reverse ("panel:workday_schedule")
+        REDIRECT_URL = reverse("panel:workday_schedule")
 
+        if action == "delete":
+            try:
+                pk = int(request.POST.get("schedule_pk", ""))
+                sched = WorkdaySchedule.objects.get(pk=pk, company=company)
 
-
-
-
-        if action =="delete":
-            try :
-                pk =int (request .POST .get ("schedule_pk",""))
-                sched =WorkdaySchedule .objects .get (pk =pk ,company =company )
-
-
-                CompanyUser .objects .filter (
-                company =company ,workday_schedule =sched 
-                ).update (workday_schedule =None )
-                label =sched .label 
-                sched .delete ()
-                django_messages .success (
-                request ,
-                f"Horario '{label}' eliminado correctamente.",
+                CompanyUser.objects.filter(
+                    company=company, workday_schedule=sched
+                ).update(workday_schedule=None)
+                label = sched.label
+                sched.delete()
+                django_messages.success(
+                    request,
+                    f"Horario '{label}' eliminado correctamente.",
                 )
-            except (WorkdaySchedule .DoesNotExist ,ValueError ,TypeError ):
-                django_messages .error (
-                request ,
-                "Horario no encontrado o no pertenece a esta empresa.",
+            except (WorkdaySchedule.DoesNotExist, ValueError, TypeError):
+                django_messages.error(
+                    request,
+                    "Horario no encontrado o no pertenece a esta empresa.",
                 )
-            return redirect (REDIRECT_URL )
+            return redirect(REDIRECT_URL)
 
+        from ivr_config.models import WorkdaySchedule as _WDS_choices
 
+        label_val = request.POST.get("label", "").strip()
+        season_val = request.POST.get(
+            "season", _WDS_choices.Season.WINTER
+        ).strip()
+        is_intensive_val = bool(request.POST.get("is_intensive"))
+        start_morning_val = request.POST.get("start_time_morning", "").strip()
+        end_morning_val = request.POST.get("end_time_morning", "").strip()
+        start_afternoon_val = request.POST.get(
+            "start_time_afternoon", ""
+        ).strip()
+        end_afternoon_val = request.POST.get("end_time_afternoon", "").strip()
+        tol_val = request.POST.get("tolerance_minutes", "15").strip()
+        is_default_val = bool(request.POST.get("is_default"))
 
+        errors = []
+        if not label_val:
+            errors.append("El nombre del horario es obligatorio.")
 
+        if season_val not in dict(_WDS_choices.Season.choices):
+            errors.append("La temporada seleccionada no es válida.")
+            season_val = _WDS_choices.Season.WINTER
 
-        from ivr_config .models import WorkdaySchedule as _WDS_choices 
-
-        label_val =request .POST .get ("label","").strip ()
-        season_val =request .POST .get ("season",_WDS_choices .Season .WINTER ).strip ()
-        is_intensive_val =bool (request .POST .get ("is_intensive"))
-        start_morning_val =request .POST .get ("start_time_morning","").strip ()
-        end_morning_val =request .POST .get ("end_time_morning","").strip ()
-        start_afternoon_val =request .POST .get ("start_time_afternoon","").strip ()
-        end_afternoon_val =request .POST .get ("end_time_afternoon","").strip ()
-        tol_val =request .POST .get ("tolerance_minutes","15").strip ()
-        is_default_val =bool (request .POST .get ("is_default"))
-
-        errors =[]
-        if not label_val :
-            errors .append ("El nombre del horario es obligatorio.")
-
-        if season_val not in dict (_WDS_choices .Season .choices ):
-            errors .append ("La temporada seleccionada no es válida.")
-            season_val =_WDS_choices .Season .WINTER 
-
-        start_morning =self ._parse_time (start_morning_val )
-        if start_morning is None :
-            errors .append ("La hora de entrada de mañana debe tener formato HH:MM.")
-
-        end_morning =self ._parse_time (end_morning_val )
-        if end_morning is None :
-            errors .append ("La hora de salida de mañana debe tener formato HH:MM.")
-
-        if start_morning and end_morning and end_morning <=start_morning :
-            errors .append ("La hora de salida de mañana debe ser posterior a la de entrada.")
-
-
-
-        start_afternoon =None 
-        end_afternoon =None 
-        if not is_intensive_val :
-            start_afternoon =self ._parse_time (start_afternoon_val )
-            end_afternoon =self ._parse_time (end_afternoon_val )
-            if start_afternoon is None :
-                errors .append ("La hora de entrada de tarde es obligatoria para jornada partida.")
-            if end_afternoon is None :
-                errors .append ("La hora de salida de tarde es obligatoria para jornada partida.")
-            if start_afternoon and end_morning and start_afternoon <=end_morning :
-                errors .append (
-                "La hora de entrada de tarde debe ser posterior a la de salida de mañana."
-                )
-            if start_afternoon and end_afternoon and end_afternoon <=start_afternoon :
-                errors .append ("La hora de salida de tarde debe ser posterior a la de entrada.")
-
-        try :
-            tolerance =int (tol_val )
-            if tolerance <0 :
-                raise ValueError 
-        except (ValueError ,TypeError ):
-            errors .append ("La tolerancia debe ser un número entero positivo.")
-            tolerance =15 
-
-        if errors :
-            return render (
-            request ,
-            self .template_name ,
-            self ._build_context (request ,errors =errors ,post_data =request .POST ),
+        start_morning = self._parse_time(start_morning_val)
+        if start_morning is None:
+            errors.append(
+                "La hora de entrada de mañana debe tener formato HH:MM."
             )
 
+        end_morning = self._parse_time(end_morning_val)
+        if end_morning is None:
+            errors.append(
+                "La hora de salida de mañana debe tener formato HH:MM."
+            )
 
+        if start_morning and end_morning and end_morning <= start_morning:
+            errors.append(
+                "La hora de salida de mañana debe ser posterior a la de "
+                "entrada."
+            )
 
-
-
-        if action =="update":
-            try :
-                pk =int (request .POST .get ("schedule_pk",""))
-                sched =WorkdaySchedule .objects .get (pk =pk ,company =company )
-                sched .label =label_val 
-                sched .season =season_val 
-                sched .is_intensive =is_intensive_val 
-                sched .start_time_morning =start_morning 
-                sched .end_time_morning =end_morning 
-                sched .start_time_afternoon =start_afternoon 
-                sched .end_time_afternoon =end_afternoon 
-                sched .tolerance_minutes =tolerance 
-                sched .is_default =is_default_val 
-                sched .save ()
-                django_messages .success (
-                request ,
-                f"Horario '{label_val}' actualizado correctamente.",
+        start_afternoon = None
+        end_afternoon = None
+        if not is_intensive_val:
+            start_afternoon = self._parse_time(start_afternoon_val)
+            end_afternoon = self._parse_time(end_afternoon_val)
+            if start_afternoon is None:
+                errors.append(
+                    "La hora de entrada de tarde es obligatoria para jornada "
+                    "partida."
                 )
-            except (WorkdaySchedule .DoesNotExist ,ValueError ,TypeError ):
-                django_messages .error (
-                request ,
-                "Horario no encontrado o no pertenece a esta empresa.",
+            if end_afternoon is None:
+                errors.append(
+                    "La hora de salida de tarde es obligatoria para jornada "
+                    "partida."
                 )
-            return redirect (REDIRECT_URL )
+            if (
+                start_afternoon
+                and end_morning
+                and start_afternoon <= end_morning
+            ):
+                errors.append(
+                    "La hora de entrada de tarde debe ser posterior a la de "
+                    "salida de mañana."
+                )
+            if (
+                start_afternoon
+                and end_afternoon
+                and end_afternoon <= start_afternoon
+            ):
+                errors.append(
+                    "La hora de salida de tarde debe ser posterior a la de "
+                    "entrada."
+                )
 
+        try:
+            tolerance = int(tol_val)
+            if tolerance < 0:
+                raise ValueError
+        except (ValueError, TypeError):
+            errors.append("La tolerancia debe ser un número entero positivo.")
+            tolerance = 15
 
+        if errors:
+            return render(
+                request,
+                self.template_name,
+                self._build_context(
+                    request, errors=errors, post_data=request.POST
+                ),
+            )
 
+        if action == "update":
+            try:
+                pk = int(request.POST.get("schedule_pk", ""))
+                sched = WorkdaySchedule.objects.get(pk=pk, company=company)
+                sched.label = label_val
+                sched.season = season_val
+                sched.is_intensive = is_intensive_val
+                sched.start_time_morning = start_morning
+                sched.end_time_morning = end_morning
+                sched.start_time_afternoon = start_afternoon
+                sched.end_time_afternoon = end_afternoon
+                sched.tolerance_minutes = tolerance
+                sched.is_default = is_default_val
+                sched.save()
+                django_messages.success(
+                    request,
+                    f"Horario '{label_val}' actualizado correctamente.",
+                )
+            except (WorkdaySchedule.DoesNotExist, ValueError, TypeError):
+                django_messages.error(
+                    request,
+                    "Horario no encontrado o no pertenece a esta empresa.",
+                )
+            return redirect(REDIRECT_URL)
 
-
-        WorkdaySchedule .objects .create (
-        company =company ,
-        label =label_val ,
-        season =season_val ,
-        is_intensive =is_intensive_val ,
-        start_time_morning =start_morning ,
-        end_time_morning =end_morning ,
-        start_time_afternoon =start_afternoon ,
-        end_time_afternoon =end_afternoon ,
-        tolerance_minutes =tolerance ,
-        is_default =is_default_val ,
+        WorkdaySchedule.objects.create(
+            company=company,
+            label=label_val,
+            season=season_val,
+            is_intensive=is_intensive_val,
+            start_time_morning=start_morning,
+            end_time_morning=end_morning,
+            start_time_afternoon=start_afternoon,
+            end_time_afternoon=end_afternoon,
+            tolerance_minutes=tolerance,
+            is_default=is_default_val,
         )
-        django_messages .success (
-        request ,
-        f"Horario '{label_val}' creado correctamente.",
+        django_messages.success(
+            request,
+            f"Horario '{label_val}' creado correctamente.",
         )
-        return redirect (REDIRECT_URL )
+        return redirect(REDIRECT_URL)
 
 
-class AbsenceCategoryListView (SupervisorAccessMixin ,View ):
+class AbsenceCategoryListView(SupervisorAccessMixin, View):
     """
     Lists all AbsenceCategory records for the authenticated user's company.
     Renders the full absence category management page on GET.
@@ -3590,44 +3553,48 @@ class AbsenceCategoryListView (SupervisorAccessMixin ,View ):
     GET /panel/absence-categories/
     """
 
-    template_name ="panel/workday/absence_category_list.html"
+    template_name = "panel/workday/absence_category_list.html"
 
-    def _get_own_presence (self ,company_user ):
+    def _get_own_presence(self, company_user):
         """
         Returns the current active PresenceStatus for the authenticated user.
         ---
         Retorna el PresenceStatus activo actual del usuario autenticado.
         """
-        return PresenceStatus .objects .filter (
-        company_user =company_user ,
-        starts_at__lte =now (),
-        ).filter (
-        Q (ends_at__isnull =True )|Q (ends_at__gt =now ())
-        ).order_by ("-starts_at").first ()
+        return (
+            PresenceStatus.objects.filter(
+                company_user=company_user,
+                starts_at__lte=now(),
+            )
+            .filter(Q(ends_at__isnull=True) | Q(ends_at__gt=now()))
+            .order_by("-starts_at")
+            .first()
+        )
 
-    def get (self ,request ,*args ,**kwargs ):
+    def get(self, request, *args, **kwargs):
         """
         Renders the absence category list page.
         ---
         Renderiza la página de listado de categorías de ausencia.
         """
-        from ivr_config .models import AbsenceCategory 
-        cu =request .user .company_user 
-        company =cu .company 
-        categories =AbsenceCategory .objects .filter (
-        company =company 
-        ).order_by ("order","label")
-        context ={
-        "company":company ,
-        "company_user":cu ,
-        "own_presence":self ._get_own_presence (cu ),
-        "active_nav":"absence_categories",
-        "categories":categories ,
+        from ivr_config.models import AbsenceCategory
+
+        cu = request.user.company_user
+        company = cu.company
+        categories = AbsenceCategory.objects.filter(company=company).order_by(
+            "order", "label"
+        )
+        context = {
+            "company": company,
+            "company_user": cu,
+            "own_presence": self._get_own_presence(cu),
+            "active_nav": "absence_categories",
+            "categories": categories,
         }
-        return render (request ,self .template_name ,context )
+        return render(request, self.template_name, context)
 
 
-class AbsenceCategoryCreateView (SupervisorAccessMixin ,View ):
+class AbsenceCategoryCreateView(SupervisorAccessMixin, View):
     """
     Creates a new AbsenceCategory for the authenticated user's company.
     On success or failure, redirects to absence_category_list.
@@ -3640,61 +3607,64 @@ class AbsenceCategoryCreateView (SupervisorAccessMixin ,View ):
     POST /panel/absence-categories/create/
     """
 
-    def post (self ,request ,*args ,**kwargs ):
+    def post(self, request, *args, **kwargs):
         """
         Validates POST data and creates the AbsenceCategory.
         ---
         Valida los datos POST y crea la AbsenceCategory.
         """
-        from django .urls import reverse 
-        from ivr_config .models import AbsenceCategory 
+        from django.urls import reverse
+        from ivr_config.models import AbsenceCategory
 
-        cu =request .user .company_user 
-        company =cu .company 
-        LIST_URL =reverse ("panel:absence_category_list")
+        cu = request.user.company_user
+        company = cu.company
+        LIST_URL = reverse("panel:absence_category_list")
 
-        label_val =request .POST .get ("label","").strip ()
-        code_val =request .POST .get ("code","").strip ().upper ()
-        requires_note =bool (request .POST .get ("requires_note"))
-        is_justified =bool (request .POST .get ("is_justified"))
-        order_val =request .POST .get ("order","0").strip ()
+        label_val = request.POST.get("label", "").strip()
+        code_val = request.POST.get("code", "").strip().upper()
+        requires_note = bool(request.POST.get("requires_note"))
+        is_justified = bool(request.POST.get("is_justified"))
+        order_val = request.POST.get("order", "0").strip()
 
-        if not label_val or not code_val :
-            django_messages .error (
-            request ,
-            "El nombre y el código son obligatorios.",
+        if not label_val or not code_val:
+            django_messages.error(
+                request,
+                "El nombre y el código son obligatorios.",
             )
-            return redirect (LIST_URL )
+            return redirect(LIST_URL)
 
-        try :
-            order =int (order_val )
-        except (ValueError ,TypeError ):
-            order =0 
+        try:
+            order = int(order_val)
+        except (ValueError, TypeError):
+            order = 0
 
-        if AbsenceCategory .objects .filter (company =company ,code =code_val ).exists ():
-            django_messages .error (
-            request ,
-            f"Ya existe una categoría con el código '{code_val}' en esta empresa.",
+        if AbsenceCategory.objects.filter(
+            company=company, code=code_val
+        ).exists():
+            django_messages.error(
+                request,
+                f"Ya existe una categoría con el código '{code_val}' en esta "
+                "empresa.",
             )
-            return redirect (LIST_URL )
+            return redirect(LIST_URL)
 
-        AbsenceCategory .objects .create (
-        company =company ,
-        code =code_val ,
-        label =label_val ,
-        requires_note =requires_note ,
-        is_justified =is_justified ,
-        order =order ,
-        is_active =True ,
+        AbsenceCategory.objects.create(
+            company=company,
+            code=code_val,
+            label=label_val,
+            requires_note=requires_note,
+            is_justified=is_justified,
+            order=order,
+            is_active=True,
         )
-        django_messages .success (
-        request ,
-        f"Categoría '{label_val}' creada correctamente.",
+        django_messages.success(
+            request,
+            f"Categoría '{label_val}' creada correctamente.",
         )
-        return redirect (LIST_URL )
+        return redirect(LIST_URL)
 
 
-class AbsenceCategoryUpdateView (SupervisorAccessMixin ,View ):
+class AbsenceCategoryUpdateView(SupervisorAccessMixin, View):
     """
     Updates an existing AbsenceCategory belonging to the authenticated
     user's company. On success or failure, redirects to absence_category_list.
@@ -3707,58 +3677,58 @@ class AbsenceCategoryUpdateView (SupervisorAccessMixin ,View ):
     POST /panel/absence-categories/<pk>/update/
     """
 
-    def post (self ,request ,pk ,*args ,**kwargs ):
+    def post(self, request, pk, *args, **kwargs):
         """
         Validates POST data and updates the AbsenceCategory.
         ---
         Valida los datos POST y actualiza la AbsenceCategory.
         """
-        from django .urls import reverse 
-        from ivr_config .models import AbsenceCategory 
+        from django.urls import reverse
+        from ivr_config.models import AbsenceCategory
 
-        cu =request .user .company_user 
-        company =cu .company 
-        LIST_URL =reverse ("panel:absence_category_list")
+        cu = request.user.company_user
+        company = cu.company
+        LIST_URL = reverse("panel:absence_category_list")
 
-        try :
-            category =AbsenceCategory .objects .get (pk =pk ,company =company )
-        except AbsenceCategory .DoesNotExist :
-            django_messages .error (
-            request ,
-            "Categoría no encontrada o no pertenece a esta empresa.",
+        try:
+            category = AbsenceCategory.objects.get(pk=pk, company=company)
+        except AbsenceCategory.DoesNotExist:
+            django_messages.error(
+                request,
+                "Categoría no encontrada o no pertenece a esta empresa.",
             )
-            return redirect (LIST_URL )
+            return redirect(LIST_URL)
 
-        label_val =request .POST .get ("label","").strip ()
-        requires_note =bool (request .POST .get ("requires_note"))
-        is_justified =bool (request .POST .get ("is_justified"))
-        order_val =request .POST .get ("order","0").strip ()
+        label_val = request.POST.get("label", "").strip()
+        requires_note = bool(request.POST.get("requires_note"))
+        is_justified = bool(request.POST.get("is_justified"))
+        order_val = request.POST.get("order", "0").strip()
 
-        if not label_val :
-            django_messages .error (request ,"El nombre es obligatorio.")
-            return redirect (LIST_URL )
+        if not label_val:
+            django_messages.error(request, "El nombre es obligatorio.")
+            return redirect(LIST_URL)
 
-        try :
-            order =int (order_val )
-        except (ValueError ,TypeError ):
-            order =category .order 
+        try:
+            order = int(order_val)
+        except (ValueError, TypeError):
+            order = category.order
 
-        category .label =label_val 
-        category .requires_note =requires_note 
-        category .is_justified =is_justified 
-        category .order =order 
-        category .save (update_fields =[
-        "label","requires_note","is_justified","order"
-        ])
-
-        django_messages .success (
-        request ,
-        f"Categoría '{label_val}' actualizada correctamente.",
+        category.label = label_val
+        category.requires_note = requires_note
+        category.is_justified = is_justified
+        category.order = order
+        category.save(
+            update_fields=["label", "requires_note", "is_justified", "order"]
         )
-        return redirect (LIST_URL )
+
+        django_messages.success(
+            request,
+            f"Categoría '{label_val}' actualizada correctamente.",
+        )
+        return redirect(LIST_URL)
 
 
-class AbsenceCategoryToggleView (SupervisorAccessMixin ,View ):
+class AbsenceCategoryToggleView(SupervisorAccessMixin, View):
     """
     Toggles the is_active flag of an AbsenceCategory. Deactivating a
     category hides it from the operator's gap resolution selector without
@@ -3773,40 +3743,40 @@ class AbsenceCategoryToggleView (SupervisorAccessMixin ,View ):
     POST /panel/absence-categories/<pk>/toggle/
     """
 
-    def post (self ,request ,pk ,*args ,**kwargs ):
+    def post(self, request, pk, *args, **kwargs):
         """
         Toggles is_active and redirects to absence_category_list.
         ---
         Alterna is_active y redirige a absence_category_list.
         """
-        from django .urls import reverse 
-        from ivr_config .models import AbsenceCategory 
+        from django.urls import reverse
+        from ivr_config.models import AbsenceCategory
 
-        cu =request .user .company_user 
-        company =cu .company 
-        LIST_URL =reverse ("panel:absence_category_list")
+        cu = request.user.company_user
+        company = cu.company
+        LIST_URL = reverse("panel:absence_category_list")
 
-        try :
-            category =AbsenceCategory .objects .get (pk =pk ,company =company )
-        except AbsenceCategory .DoesNotExist :
-            django_messages .error (
-            request ,
-            "Categoría no encontrada o no pertenece a esta empresa.",
+        try:
+            category = AbsenceCategory.objects.get(pk=pk, company=company)
+        except AbsenceCategory.DoesNotExist:
+            django_messages.error(
+                request,
+                "Categoría no encontrada o no pertenece a esta empresa.",
             )
-            return redirect (LIST_URL )
+            return redirect(LIST_URL)
 
-        category .is_active =not category .is_active 
-        category .save (update_fields =["is_active"])
+        category.is_active = not category.is_active
+        category.save(update_fields=["is_active"])
 
-        state ="activada"if category .is_active else "desactivada"
-        django_messages .success (
-        request ,
-        f"Categoría '{category.label}' {state} correctamente.",
+        state = "activada" if category.is_active else "desactivada"
+        django_messages.success(
+            request,
+            f"Categoría '{category.label}' {state} correctamente.",
         )
-        return redirect (LIST_URL )
+        return redirect(LIST_URL)
 
 
-class WorkOrderDetailView (CompanyUserRequiredMixin ,View ):
+class WorkOrderDetailView(CompanyUserRequiredMixin, View):
     """
     Read-only detail view of a single WorkOrder -- a column listing of
     the part's full content (entries, lines, spare parts), NOT the
@@ -3831,6 +3801,7 @@ class WorkOrderDetailView (CompanyUserRequiredMixin ,View ):
     para que un operario WORKSHOP no pueda llegar al parte de otro
     adivinando la URL, aunque nunca vea el botón.
     """
+
     template_name = "panel/work_orders/detail.html"
 
     # Roles con permiso de vista Y de corrección manual de la Familia.
@@ -3847,7 +3818,11 @@ class WorkOrderDetailView (CompanyUserRequiredMixin ,View ):
     # duplicados aquí a propósito (mismo patrón que el resto del archivo:
     # sin import cruzado de constantes de prompt entre capas).
     _SPECIAL_FAMILY_LITERALS = (
-        "Vacaciones", "Formación", "Servicio", "Limpieza y mantenimiento", "ITV",
+        "Vacaciones",
+        "Formación",
+        "Servicio",
+        "Limpieza y mantenimiento",
+        "ITV",
     )
 
     @staticmethod
@@ -3866,42 +3841,42 @@ class WorkOrderDetailView (CompanyUserRequiredMixin ,View ):
         <select> (H07 point 3).
         """
         if line.tipo_tarea == "AVERIA" and line.fault_category:
-            line.current_family_value   = line.fault_category
+            line.current_family_value = line.fault_category
             line.current_family_display = line.get_fault_category_display()
-        elif line.task_category_free in WorkOrderDetailView._SPECIAL_FAMILY_LITERALS:
-            line.current_family_value   = f"SPECIAL:{line.task_category_free}"
+        elif (
+            line.task_category_free
+            in WorkOrderDetailView._SPECIAL_FAMILY_LITERALS
+        ):
+            line.current_family_value = f"SPECIAL:{line.task_category_free}"
             line.current_family_display = line.task_category_free
         else:
-            line.current_family_value   = ""
+            line.current_family_value = ""
             line.current_family_display = line.task_category_free or "—"
         return line
 
-    def get (self ,request ,pk ,*args ,**kwargs ):
-        from django .shortcuts import get_object_or_404 as _get_404 
-        from django .http import HttpResponseForbidden 
-        from work_order_processor .models import FaultCategory
+    def get(self, request, pk, *args, **kwargs):
+        from django.shortcuts import get_object_or_404 as _get_404
+        from django.http import HttpResponseForbidden
+        from work_order_processor.models import FaultCategory
 
-        cu =request .user .company_user 
-        company =cu .company 
+        cu = request.user.company_user
+        company = cu.company
 
-        if cu .role not in self ._ELEVATED_ROLES :
-            return HttpResponseForbidden (
-            "Acción no disponible para tu rol."
-            )
+        if cu.role not in self._ELEVATED_ROLES:
+            return HttpResponseForbidden("Acción no disponible para tu rol.")
 
-        work_order =_get_404 (
-        WorkOrder .objects .select_related (
-        "uploaded_by__user","reviewed_by__user","generated_by__user",
-        ),
-        pk =pk ,company =company ,
+        work_order = _get_404(
+            WorkOrder.objects.select_related(
+                "uploaded_by__user",
+                "reviewed_by__user",
+                "generated_by__user",
+            ),
+            pk=pk,
+            company=company,
         )
-        entries =(
-        work_order .entries 
-        .order_by ("page_number")
-        .prefetch_related (
-        "lines__machine_asset",
-        "lines__spare_parts",
-        )
+        entries = work_order.entries.order_by("page_number").prefetch_related(
+            "lines__machine_asset",
+            "lines__spare_parts",
         )
 
         # H07 punto 3 (2026-08-14): anotar en cada línea el valor/etiqueta de
@@ -3921,22 +3896,31 @@ class WorkOrderDetailView (CompanyUserRequiredMixin ,View ):
         # back_url -- preservar los filtros activos de la lista de origen
         # (gap señalado por Miguel Ángel 2026-07-21). Fallback a la
         # pestaña Revisados sin filtros, comportamiento previo.
-        from panel .url_utils import safe_back_url as _safe_back_url_det
-        from django .urls import reverse as _reverse_det
-        _fallback_det =_reverse_det ("panel:work_order_admin_history")+"?tab=reviewed"
-        back_url =_safe_back_url_det (request ,request .GET .get ("back_url",""),_fallback_det )
+        from panel.url_utils import safe_back_url as _safe_back_url_det
+        from django.urls import reverse as _reverse_det
 
-        return render (request ,self .template_name ,{
-        "company":company ,
-        "company_user":cu ,
-        "active_nav":"work_order_admin_history",
-        "work_order":work_order ,
-        "entries":entries ,
-        "back_url":back_url ,
-        "family_choices":family_choices ,
-        })
+        _fallback_det = (
+            _reverse_det("panel:work_order_admin_history") + "?tab=reviewed"
+        )
+        back_url = _safe_back_url_det(
+            request, request.GET.get("back_url", ""), _fallback_det
+        )
 
-    def post (self ,request ,pk ,*args ,**kwargs ):
+        return render(
+            request,
+            self.template_name,
+            {
+                "company": company,
+                "company_user": cu,
+                "active_nav": "work_order_admin_history",
+                "work_order": work_order,
+                "entries": entries,
+                "back_url": back_url,
+                "family_choices": family_choices,
+            },
+        )
+
+    def post(self, request, pk, *args, **kwargs):
         """
         H07 punto 3 (2026-08-14), a petición explícita de Miguel Ángel: "si
         Gemini se confunde al clasificar, quien revisa debe poder corregir el
@@ -3947,73 +3931,93 @@ class WorkOrderDetailView (CompanyUserRequiredMixin ,View ):
         clasificar por primera vez (H07 punto 2); una corrección manual
         posterior no debe mover de sitio lo que el operario ya registró.
         """
-        from django .shortcuts import get_object_or_404 as _get_404 
-        from django .http import HttpResponseForbidden 
+        from django.shortcuts import get_object_or_404 as _get_404
+        from django.http import HttpResponseForbidden
 
-        cu =request .user .company_user 
-        company =cu .company 
+        cu = request.user.company_user
+        company = cu.company
 
-        if cu .role not in self ._ELEVATED_ROLES :
-            return HttpResponseForbidden (
-            "Acción no disponible para tu rol."
-            )
+        if cu.role not in self._ELEVATED_ROLES:
+            return HttpResponseForbidden("Acción no disponible para tu rol.")
 
-        work_order =_get_404 (WorkOrder ,pk =pk ,company =company )
+        work_order = _get_404(WorkOrder, pk=pk, company=company)
 
-        entry_line_pk =request .POST .get ("entry_line_pk")
-        new_family =request .POST .get ("new_family","")
+        entry_line_pk = request.POST.get("entry_line_pk")
+        new_family = request.POST.get("new_family", "")
 
-        line =_get_404 (
-        WorkOrderEntryLine ,
-        pk =entry_line_pk ,
-        entry__work_order =work_order ,
+        line = _get_404(
+            WorkOrderEntryLine,
+            pk=entry_line_pk,
+            entry__work_order=work_order,
         )
 
-        if new_family .startswith ("SPECIAL:"):
-            literal =new_family [len ("SPECIAL:"):]
-            if literal not in self ._SPECIAL_FAMILY_LITERALS :
-                django_messages .error (request ,"Valor de Familia no reconocido.")
-            else :
-                line .tipo_tarea ="MANTENIMIENTO"
-                line .task_category_free =literal 
-                line .fault_category =""
-                line .fault_subcategory =""
-                line .save (update_fields =[
-                "tipo_tarea","task_category_free","fault_category","fault_subcategory",
-                ])
-                django_messages .success (request ,f"Familia corregida a «{literal}».")
-        elif new_family =="":
-            line .tipo_tarea =""
-            line .task_category_free =""
-            line .fault_category =""
-            line .fault_subcategory =""
-            line .save (update_fields =[
-            "tipo_tarea","task_category_free","fault_category","fault_subcategory",
-            ])
-            django_messages .success (request ,"Familia dejada sin clasificar.")
-        else :
-            from work_order_processor .models import FaultCategory
-            valid_codes ={fc [0 ]for fc in FaultCategory .choices }
-            if new_family not in valid_codes :
-                django_messages .error (request ,"Categoría de avería no reconocida.")
-            else :
-                line .tipo_tarea ="AVERIA"
-                line .fault_category =new_family 
-                line .fault_subcategory =""
-                line .task_category_free =""
-                line .save (update_fields =[
-                "tipo_tarea","fault_category","fault_subcategory","task_category_free",
-                ])
-                django_messages .success (request ,"Familia corregida.")
+        if new_family.startswith("SPECIAL:"):
+            literal = new_family.removeprefix("SPECIAL:")
+            if literal not in self._SPECIAL_FAMILY_LITERALS:
+                django_messages.error(
+                    request, "Valor de Familia no reconocido."
+                )
+            else:
+                line.tipo_tarea = "MANTENIMIENTO"
+                line.task_category_free = literal
+                line.fault_category = ""
+                line.fault_subcategory = ""
+                line.save(
+                    update_fields=[
+                        "tipo_tarea",
+                        "task_category_free",
+                        "fault_category",
+                        "fault_subcategory",
+                    ]
+                )
+                django_messages.success(
+                    request, f"Familia corregida a «{literal}»."
+                )
+        elif new_family == "":
+            line.tipo_tarea = ""
+            line.task_category_free = ""
+            line.fault_category = ""
+            line.fault_subcategory = ""
+            line.save(
+                update_fields=[
+                    "tipo_tarea",
+                    "task_category_free",
+                    "fault_category",
+                    "fault_subcategory",
+                ]
+            )
+            django_messages.success(request, "Familia dejada sin clasificar.")
+        else:
+            from work_order_processor.models import FaultCategory
 
-        from django .shortcuts import redirect as _redirect_det
-        _qs =request .GET .urlencode ()
-        _url =request .path +(f"?{_qs}" if _qs else "")
-        return _redirect_det (_url )
+            valid_codes = {fc[0] for fc in FaultCategory.choices}
+            if new_family not in valid_codes:
+                django_messages.error(
+                    request, "Categoría de avería no reconocida."
+                )
+            else:
+                line.tipo_tarea = "AVERIA"
+                line.fault_category = new_family
+                line.fault_subcategory = ""
+                line.task_category_free = ""
+                line.save(
+                    update_fields=[
+                        "tipo_tarea",
+                        "fault_category",
+                        "fault_subcategory",
+                        "task_category_free",
+                    ]
+                )
+                django_messages.success(request, "Familia corregida.")
+
+        from django.shortcuts import redirect as _redirect_det
+
+        _qs = request.GET.urlencode()
+        _url = request.path + (f"?{_qs}" if _qs else "")
+        return _redirect_det(_url)
 
 
-class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
-
+class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
     """
     SINGLE unified work-order history view for ALL roles with access to
     digital parts (ADMIN, SUPERVISOR, WORKSHOPBOSS, WORKSHOP).
@@ -4068,7 +4072,8 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
 
     GET /panel/work-orders/history/
         Optional GET params:
-          tab         (str)  — active tab: pending|reviewed|history|absences|periods.
+          tab         (str)  — active tab:
+          pending|reviewed|history|absences|periods.
                                Default: pending.
           operator_pk (int)  — filter by CompanyUser pk (scoped to company,
                                ignored for WORKSHOP — always own).
@@ -4134,7 +4139,8 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
 
     GET /panel/work-orders/history/
         Parámetros GET opcionales:
-          tab         (str)  — pestaña activa: pending|reviewed|history|absences|periods.
+          tab         (str)  — pestaña activa:
+          pending|reviewed|history|absences|periods.
                                Por defecto: pending.
           operator_pk (int)  — filtrar por pk de CompanyUser (acotado a
                                empresa, ignorado para WORKSHOP — siempre
@@ -4149,30 +4155,40 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
                                necesidad de una pestaña dedicada).
     """
 
-    template_name ="panel/work_orders/admin_history.html"
+    template_name = "panel/work_orders/admin_history.html"
 
-
-
-    _MESES_ES ={
-    1 :"Enero",2 :"Febrero",3 :"Marzo",4 :"Abril",
-    5 :"Mayo",6 :"Junio",7 :"Julio",8 :"Agosto",
-    9 :"Septiembre",10 :"Octubre",11 :"Noviembre",12 :"Diciembre",
+    _MESES_ES = {
+        1: "Enero",
+        2: "Febrero",
+        3: "Marzo",
+        4: "Abril",
+        5: "Mayo",
+        6: "Junio",
+        7: "Julio",
+        8: "Agosto",
+        9: "Septiembre",
+        10: "Octubre",
+        11: "Noviembre",
+        12: "Diciembre",
     }
 
-    def _get_own_presence (self ,company_user ):
+    def _get_own_presence(self, company_user):
         """
         Returns the current active PresenceStatus for the authenticated user.
         ---
         Retorna el PresenceStatus activo actual del usuario autenticado.
         """
-        return PresenceStatus .objects .filter (
-        company_user =company_user ,
-        starts_at__lte =now (),
-        ).filter (
-        Q (ends_at__isnull =True )|Q (ends_at__gt =now ())
-        ).order_by ("-starts_at").first ()
+        return (
+            PresenceStatus.objects.filter(
+                company_user=company_user,
+                starts_at__lte=now(),
+            )
+            .filter(Q(ends_at__isnull=True) | Q(ends_at__gt=now()))
+            .order_by("-starts_at")
+            .first()
+        )
 
-    def _parse_date (self ,value ):
+    def _parse_date(self, value):
         """
         Parses an ISO date string (YYYY-MM-DD) and returns a date object,
         or None if the value is absent or malformed.
@@ -4180,15 +4196,16 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         Parsea una cadena de fecha ISO (YYYY-MM-DD) y devuelve un objeto date,
         o None si el valor esta ausente o malformado.
         """
-        from datetime import datetime 
-        if not value :
-            return None 
-        try :
-            return datetime .strptime (value .strip (),"%Y-%m-%d").date ()
-        except ValueError :
-            return None 
+        from datetime import datetime
 
-    def _build_base_queryset (self ,company ,owner =None ):
+        if not value:
+            return None
+        try:
+            return datetime.strptime(value.strip(), "%Y-%m-%d").date()
+        except ValueError:
+            return None
+
+    def _build_base_queryset(self, company, owner=None):
         """
         Returns the base WorkOrder queryset scoped to the company, restricted
         to DIGITAL and GENERATED sources (operator-entered parts only).
@@ -4198,38 +4215,54 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         uploaded_by=owner.
         All required related data is prefetched for the admin history tabs.
         ---
-        Devuelve el queryset base de WorkOrder acotado a la empresa, restringido
+        Devuelve el queryset base de WorkOrder acotado a la empresa,
+        restringido
         a los origenes DIGITAL y GENERATED (partes introducidos por operarios).
         Los partes PDF_UPLOAD pertenecen exclusivamente a WorkOrderListView.
         Cuando se proporciona owner (rol WORKSHOP — siempre sus propios
         registros, nunca el filtro operator_pk), el queryset se acota además
         a uploaded_by=owner.
-        Todos los datos relacionados se prefetchean para las pestanas del historial.
+        Todos los datos relacionados se prefetchean para las pestanas del
+        historial.
         """
-        qs =(
-        WorkOrder .objects 
-        .filter (
-        company =company ,
-        source__in =[
-        WorkOrder .Source .DIGITAL ,
-        WorkOrder .Source .GENERATED ,
-        ],
+        qs = (
+            WorkOrder.objects.filter(
+                company=company,
+                source__in=[
+                    WorkOrder.Source.DIGITAL,
+                    WorkOrder.Source.GENERATED,
+                ],
+            )
+            .select_related(
+                "uploaded_by__user", "reviewed_by__user", "generated_by__user"
+            )
+            .prefetch_related(
+                Prefetch(
+                    "entries",
+                    queryset=WorkOrderEntry.objects.prefetch_related("lines"),
+                )
+            )
+            .order_by("-id")
         )
-        .select_related ("uploaded_by__user","reviewed_by__user","generated_by__user")
-        .prefetch_related (
-        Prefetch (
-        "entries",
-        queryset =WorkOrderEntry .objects .prefetch_related ("lines"),
-        )
-        )
-        .order_by ("-id")
-        )
-        if owner is not None :
-            qs =qs .filter (uploaded_by =owner )
-        return qs 
+        if owner is not None:
+            qs = qs.filter(uploaded_by=owner)
+        return qs
 
-    def _apply_filters (self ,qs ,operator_pk ,date_from ,date_to ,machine ,company ,
-    fault_category ="",q ="",status ="",is_elevated =True ,dieta ="",origen =""):
+    def _apply_filters(
+        self,
+        qs,
+        operator_pk,
+        date_from,
+        date_to,
+        machine,
+        company,
+        fault_category="",
+        q="",
+        status="",
+        is_elevated=True,
+        dieta="",
+        origen="",
+    ):
         """
         Applies the optional GET filters to a WorkOrder queryset.
         operator_pk filters by uploaded_by (ignored when is_elevated is False
@@ -4238,7 +4271,8 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         another operator via a crafted GET param); date_from/date_to filter
         by the first entry's work_date; machine filters by machine_asset__code.
         fault_category filters by WorkOrderEntryLine.fault_category (exact).
-        q performs a free-text OR search over fault_description and repair_notes.
+        q performs a free-text OR search over fault_description and
+        repair_notes.
         status filters by WorkOrder.status (exact) — folded in from the
         deleted "Mis partes" Estado filter. dieta ("si"/"no") filters by
         WorkOrderEntry.has_diet on any entry of the work order — H07 punto 7
@@ -4262,57 +4296,62 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         propio. origen filtra por WorkOrder.source (exacto) — misma razón,
         columna Origen (solo Histórico) sin filtro propio.
         """
-        if operator_pk and is_elevated :
-            try :
-                cu_pk =int (operator_pk )
-                qs =qs .filter (uploaded_by__pk =cu_pk ,uploaded_by__company =company )
-            except (ValueError ,TypeError ):
-                pass 
-        if date_from :
-            qs =qs .filter (entries__work_date__gte =date_from )
-        if date_to :
-            qs =qs .filter (entries__work_date__lte =date_to )
-        if machine :
-            qs =qs .filter (
-            entries__lines__machine_asset__code__icontains =machine 
+        if operator_pk and is_elevated:
+            try:
+                cu_pk = int(operator_pk)
+                qs = qs.filter(
+                    uploaded_by__pk=cu_pk, uploaded_by__company=company
+                )
+            except (ValueError, TypeError):
+                pass
+        if date_from:
+            qs = qs.filter(entries__work_date__gte=date_from)
+        if date_to:
+            qs = qs.filter(entries__work_date__lte=date_to)
+        if machine:
+            qs = qs.filter(
+                entries__lines__machine_asset__code__icontains=machine
             )
-        if status :
-            qs =qs .filter (status =status )
-        if fault_category :
+        if status:
+            qs = qs.filter(status=status)
+        if fault_category:
 
+            qs = qs.filter(
+                entries__lines__fault_category=fault_category
+            ).distinct()
+        if q:
 
-            qs =qs .filter (
-            entries__lines__fault_category =fault_category 
-            ).distinct ()
-        if q :
+            from django.db.models import Q as _Q
 
-
-            from django .db .models import Q as _Q 
-            qs =qs .filter (
-            _Q (entries__lines__fault_description__icontains =q )
-            |_Q (entries__lines__repair_notes__icontains =q )
+            qs = qs.filter(
+                _Q(entries__lines__fault_description__icontains=q)
+                | _Q(entries__lines__repair_notes__icontains=q)
             )
-        if dieta =="si":
-            qs =qs .filter (entries__has_diet =True )
-        elif dieta =="no":
-            qs =qs .exclude (entries__has_diet =True )
-        if origen :
-            qs =qs .filter (source =origen )
-        return qs .distinct ()
+        if dieta == "si":
+            qs = qs.filter(entries__has_diet=True)
+        elif dieta == "no":
+            qs = qs.exclude(entries__has_diet=True)
+        if origen:
+            qs = qs.filter(source=origen)
+        return qs.distinct()
 
-    def _enrich_work_orders (self ,qs ,active_fault_category =""):
+    def _enrich_work_orders(self, qs, active_fault_category=""):
         """
         Converts a WorkOrder queryset into a list of enriched dicts suitable
         for template rendering. Each dict includes pk, fecha, operator name,
         num_bloques, horas_totales, horas_extra, dieta (True if any entry of
         the work order has has_diet=True -- 2026-07-08, gap señalado por
         Miguel Ángel: la vista no exponía la dieta) and reviewed flag.
-        When active_fault_category is provided (a FaultCategory internal value),
+        When active_fault_category is provided (a FaultCategory internal
+        value),
         the fault_category badge of every enriched dict is forced to the label
-        of that category rather than being calculated from the dominant category
+        of that category rather than being calculated from the dominant
+        category
         across all lines. This ensures the badge is always coherent with the
-        active filter — a work order returned by the filter is guaranteed to have
-        at least one line matching the category, so forcing the label is correct.
+        active filter — a work order returned by the filter is guaranteed to
+        have
+        at least one line matching the category, so forcing the label is
+        correct.
         ---
         Convierte un queryset de WorkOrder en una lista de dicts enriquecidos
         adecuados para renderizado en template. Cada dict incluye pk, fecha,
@@ -4327,72 +4366,90 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         garantizada al menos una línea con esa categoría, por lo que forzar
         el label es semánticamente correcto.
         """
-        from decimal import Decimal 
-        result =[]
-        for wo in qs :
-            entries_list =list (wo .entries .all ())
-            first_entry =entries_list [0 ]if entries_list else None 
-            work_date =first_entry .work_date if first_entry else None 
-            num_bloques =sum (entry .lines .count ()for entry in entries_list )
-            horas_totales =sum (
-            (line .delta_hours 
-            for entry in entries_list 
-            for line in entry .lines .all ()
-            if line .delta_hours is not None ),
-            Decimal ("0"),
-            )
-            operator_name =(
-            wo .uploaded_by .user .get_full_name ()or wo .uploaded_by .user .username 
-            if wo .uploaded_by else "Desconocido"
-            )
-            result .append ({
-            "pk":wo .pk ,
-            "fecha":work_date ,
-            "operator_name":operator_name ,
-            "operator_pk":wo .uploaded_by .pk if wo .uploaded_by else None ,
-            "num_bloques":num_bloques ,
-            "horas_totales":horas_totales ,
-            "horas_extra":max (Decimal ("0"),horas_totales -Decimal ("8")),
-            "dieta":any (entry .has_diet for entry in entries_list ),
-            "reviewed":wo .reviewed ,
-            "reviewed_by":(
-            wo .reviewed_by .user .get_full_name ()or wo .reviewed_by .user .username 
-            if wo .reviewed_by else None 
-            ),
-            "reviewed_at":wo .reviewed_at ,
-            "generated_by":(
-            wo .generated_by .user .get_full_name ()or wo .generated_by .user .username 
-            if wo .generated_by else None 
-            ),
-            "excel_url":wo .excel_file .url if wo .excel_file else None ,
-            "fault_category":self ._dominant_fault_category (
-            wo ,active_fault_category =active_fault_category 
-            ),
-            # Source value used by admin_history.html to dispatch the correct
-            # edit URL: operator_form_edit for DIGITAL/GENERATED, work_order_edit
-            # for PDF parts.
-            # Valor source usado por admin_history.html para despachar la URL
-            # de edición correcta: operator_form_edit para DIGITAL/GENERATED,
-            # work_order_edit para partes PDF.
-            "source":wo .source ,
-            # Pipeline status (PENDING/PROCESSING/DONE/ERROR/...), traspasado
-            # desde la antigua "Mis partes" para el filtro/badge Estado y
-            # para recuperar la vieja pestaña "Error" de Partes Digitales.
-            "status":wo .status ,
-            "status_display":wo .get_status_display (),
-            # Clase Bootstrap del badge de Estado, resuelta aquí y no en el
-            # template -- la plantilla solo debe renderizar, no decidir.
-            # Bootstrap badge class for the Estado badge, resolved here and
-            # not in the template -- templates only render, never decide.
-            "status_badge_class":(
-            "bg-danger"if wo .status =="ERROR"
-            else ""if wo .status =="DONE"
-            else "bg-secondary"
-            ),
-            })
-        return result 
+        from decimal import Decimal
 
-    def _dominant_fault_category (self ,wo ,active_fault_category =""):
+        result = []
+        for wo in qs:
+            entries_list = list(wo.entries.all())
+            first_entry = entries_list[0] if entries_list else None
+            work_date = first_entry.work_date if first_entry else None
+            num_bloques = sum(entry.lines.count() for entry in entries_list)
+            horas_totales = sum(
+                (
+                    line.delta_hours
+                    for entry in entries_list
+                    for line in entry.lines.all()
+                    if line.delta_hours is not None
+                ),
+                Decimal("0"),
+            )
+            operator_name = (
+                wo.uploaded_by.user.get_full_name()
+                or wo.uploaded_by.user.username
+                if wo.uploaded_by
+                else "Desconocido"
+            )
+            result.append(
+                {
+                    "pk": wo.pk,
+                    "fecha": work_date,
+                    "operator_name": operator_name,
+                    "operator_pk": (
+                        wo.uploaded_by.pk if wo.uploaded_by else None
+                    ),
+                    "num_bloques": num_bloques,
+                    "horas_totales": horas_totales,
+                    "horas_extra": max(
+                        Decimal("0"), horas_totales - Decimal("8")
+                    ),
+                    "dieta": any(entry.has_diet for entry in entries_list),
+                    "reviewed": wo.reviewed,
+                    "reviewed_by": (
+                        wo.reviewed_by.user.get_full_name()
+                        or wo.reviewed_by.user.username
+                        if wo.reviewed_by
+                        else None
+                    ),
+                    "reviewed_at": wo.reviewed_at,
+                    "generated_by": (
+                        wo.generated_by.user.get_full_name()
+                        or wo.generated_by.user.username
+                        if wo.generated_by
+                        else None
+                    ),
+                    "excel_url": wo.excel_file.url if wo.excel_file else None,
+                    "fault_category": self._dominant_fault_category(
+                        wo, active_fault_category=active_fault_category
+                    ),
+                    # Source value used by admin_history.html to dispatch
+                    # the correct edit URL: operator_form_edit for
+                    # DIGITAL/GENERATED, work_order_edit for PDF parts.
+                    # Valor source usado por admin_history.html para
+                    # despachar la URL de edición correcta:
+                    # operator_form_edit para DIGITAL/GENERATED,
+                    # work_order_edit para partes PDF.
+                    "source": wo.source,
+                    # Pipeline status (PENDING/PROCESSING/DONE/ERROR/...),
+                    # traspasado desde la antigua "Mis partes" para el
+                    # filtro/badge Estado y para recuperar la vieja pestaña
+                    # "Error" de Partes Digitales.
+                    "status": wo.status,
+                    "status_display": wo.get_status_display(),
+                    # Clase Bootstrap del badge de Estado, resuelta aquí y no
+                    # en el template -- la plantilla solo debe renderizar, no
+                    # decidir. Bootstrap badge class for the Estado badge,
+                    # resolved here and not in the template -- templates only
+                    # render, never decide.
+                    "status_badge_class": (
+                        "bg-danger"
+                        if wo.status == "ERROR"
+                        else "" if wo.status == "DONE" else "bg-secondary"
+                    ),
+                }
+            )
+        return result
+
+    def _dominant_fault_category(self, wo, active_fault_category=""):
         """
         Returns the display label of the most frequent fault_category among all
         WorkOrderEntryLine records of this WorkOrder. Returns an empty string
@@ -4401,9 +4458,12 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         When active_fault_category is supplied (a FaultCategory internal value
         such as "ENGINE_TRANSMISSION"), the method short-circuits: it resolves
         the label for that value from FaultCategory.choices and returns it
-        immediately, bypassing the frequency calculation. This is correct because
-        any WorkOrder present in a fault_category-filtered queryset is guaranteed
-        to contain at least one line with that exact category value — there is no
+        immediately, bypassing the frequency calculation. This is correct
+        because
+        any WorkOrder present in a fault_category-filtered queryset is
+        guaranteed
+        to contain at least one line with that exact category value — there is
+        no
         semantic loss in forcing the label. The short-circuit also avoids
         redundant iteration over prefetched lines on every row render.
         ---
@@ -4413,42 +4473,37 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
 
         Cuando active_fault_category contiene un valor interno de FaultCategory
         (ej. "ENGINE_TRANSMISSION"), el método hace cortocircuito: resuelve el
-        label de ese valor desde FaultCategory.choices y lo devuelve directamente,
+        label de ese valor desde FaultCategory.choices y lo devuelve
+        directamente,
         sin ejecutar el cálculo de frecuencia. Esto es semánticamente correcto
         porque cualquier WorkOrder presente en un queryset filtrado por
-        fault_category tiene garantizada al menos una línea con ese valor exacto.
+        fault_category tiene garantizada al menos una línea con ese valor
+        exacto.
         El cortocircuito también evita iteración redundante sobre las líneas
         prefetcheadas en cada fila del render.
         """
-        from collections import Counter 
-        from work_order_processor .models import FaultCategory 
-        label_map ={fc [0 ]:str (fc [1 ])for fc in FaultCategory .choices }
+        from collections import Counter
+        from work_order_processor.models import FaultCategory
 
+        label_map = {fc[0]: str(fc[1]) for fc in FaultCategory.choices}
 
+        if active_fault_category:
+            label = label_map.get(active_fault_category)
+            if label:
+                return label
 
-
-
-
-
-        if active_fault_category :
-            label =label_map .get (active_fault_category )
-            if label :
-                return label 
-
-
-
-        categories =[
-        line .fault_category 
-        for entry in wo .entries .all ()
-        for line in entry .lines .all ()
-        if line .fault_category 
+        categories = [
+            line.fault_category
+            for entry in wo.entries.all()
+            for line in entry.lines.all()
+            if line.fault_category
         ]
-        if not categories :
+        if not categories:
             return ""
-        dominant =Counter (categories ).most_common (1 )[0 ][0 ]
-        return label_map .get (dominant ,dominant )
+        dominant = Counter(categories).most_common(1)[0][0]
+        return label_map.get(dominant, dominant)
 
-    def get (self ,request ,*args ,**kwargs ):
+    def get(self, request, *args, **kwargs):
         """
         Renders the four-tab admin history page. Resolves GET filters,
         builds each tab's queryset independently and passes all data to
@@ -4458,8 +4513,8 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         Resuelve los filtros GET, construye el queryset de cada pestana
         de forma independiente y pasa todos los datos al contexto del template.
         """
-        cu =request .user .company_user 
-        company =cu .company 
+        cu = request.user.company_user
+        company = cu.company
 
         # Alcance por rol -- pieza central de la vista unificada (H17 S012):
         # ADMIN/SUPERVISOR/WORKSHOPBOSS ven todos los operarios; WORKSHOP
@@ -4470,112 +4525,119 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         # ADMIN/SUPERVISOR/WORKSHOPBOSS see all operators; WORKSHOP sees
         # only their own, no exceptions, regardless of incoming GET params
         # (operator_pk is ignored for WORKSHOP inside _apply_filters).
-        is_elevated =cu .role in (
-        CompanyUser .ROLE_ADMIN ,
-        CompanyUser .ROLE_SUPERVISOR ,
-        CompanyUser .ROLE_WORKSHOPBOSS ,
+        is_elevated = cu.role in (
+            CompanyUser.ROLE_ADMIN,
+            CompanyUser.ROLE_SUPERVISOR,
+            CompanyUser.ROLE_WORKSHOPBOSS,
         )
-        _owner =None if is_elevated else cu 
+        _owner = None if is_elevated else cu
 
+        active_tab = request.GET.get("tab", "pending")
+        operator_pk = request.GET.get("operator_pk", "").strip()
+        date_from = self._parse_date(request.GET.get("date_from", ""))
+        date_to = self._parse_date(request.GET.get("date_to", ""))
+        machine = request.GET.get("machine", "").strip()
+        fault_category = request.GET.get("fault_category", "").strip()
+        q = request.GET.get("q", "").strip()
+        status = request.GET.get("status", "").strip()
+        dieta = request.GET.get("dieta", "").strip()
+        origen = request.GET.get("origen", "").strip()
 
-
-        active_tab =request .GET .get ("tab","pending")
-        operator_pk =request .GET .get ("operator_pk","").strip ()
-        date_from =self ._parse_date (request .GET .get ("date_from",""))
-        date_to =self ._parse_date (request .GET .get ("date_to",""))
-        machine =request .GET .get ("machine","").strip ()
-        fault_category =request .GET .get ("fault_category","").strip ()
-        q =request .GET .get ("q","").strip ()
-        status =request .GET .get ("status","").strip ()
-        dieta =request .GET .get ("dieta","").strip ()
-        origen =request .GET .get ("origen","").strip ()
-
-
-
-
-
-
-
-
-
-        _VALID_SORT_COLS =frozenset (
-        ("fecha","operator_name","horas_totales","horas_extra","reviewed","fault_category")
+        _VALID_SORT_COLS = frozenset(
+            (
+                "fecha",
+                "operator_name",
+                "horas_totales",
+                "horas_extra",
+                "reviewed",
+                "fault_category",
+            )
         )
-        _VALID_SORT_DIRS =frozenset (("asc","desc"))
+        _VALID_SORT_DIRS = frozenset(("asc", "desc"))
 
-        raw_stack =request .GET .get ("sort_stack","").strip ()
+        raw_stack = request.GET.get("sort_stack", "").strip()
 
+        sort_stack = []
+        if raw_stack:
+            for token in raw_stack.split(","):
+                token = token.strip()
+                if ":" not in token:
+                    continue
+                col, _, direction = token.partition(":")
+                col = col.strip()
+                direction = direction.strip()
+                if col in _VALID_SORT_COLS and direction in _VALID_SORT_DIRS:
 
+                    if not any(s[0] == col for s in sort_stack):
+                        sort_stack.append((col, direction))
+                        if len(sort_stack) >= 3:
+                            break
 
-        sort_stack =[]
-        if raw_stack :
-            for token in raw_stack .split (","):
-                token =token .strip ()
-                if ":"not in token :
-                    continue 
-                col ,_ ,direction =token .partition (":")
-                col =col .strip ()
-                direction =direction .strip ()
-                if col in _VALID_SORT_COLS and direction in _VALID_SORT_DIRS :
+        if not sort_stack:
+            sort_stack = [("fecha", "asc")]
 
+        sort_primary_col = sort_stack[0][0]
+        sort_primary_dir = sort_stack[0][1]
 
-                    if not any (s [0 ]==col for s in sort_stack ):
-                        sort_stack .append ((col ,direction ))
-                        if len (sort_stack )>=3 :
-                            break 
-
-
-
-        if not sort_stack :
-            sort_stack =[("fecha","asc")]
-
-
-
-        sort_primary_col =sort_stack [0 ][0 ]
-        sort_primary_dir =sort_stack [0 ][1 ]
-
-
-
-        sort_stack_str =",".join (f"{col}:{direction}"for col ,direction in sort_stack )
-
-
-
-
-
-        operators =(
-        CompanyUser .objects 
-        .filter (
-        company =company ,
-        is_active =True ,
-        role =CompanyUser .ROLE_WORKSHOP ,
+        sort_stack_str = ",".join(
+            f"{col}:{direction}" for col, direction in sort_stack
         )
-        .select_related ("user")
-        .order_by ("user__last_name","user__first_name")
-        )if is_elevated else CompanyUser .objects .none ()
 
-
-
-
-
-        qs_pending =self ._build_base_queryset (company ,owner =_owner ).filter (reviewed =False )
-        qs_pending =self ._apply_filters (
-        qs_pending ,operator_pk ,date_from ,date_to ,machine ,company ,
-        fault_category =fault_category ,q =q ,status =status ,is_elevated =is_elevated ,
-        dieta =dieta ,origen =origen ,
+        operators = (
+            (
+                CompanyUser.objects.filter(
+                    company=company,
+                    is_active=True,
+                    role=CompanyUser.ROLE_WORKSHOP,
+                )
+                .select_related("user")
+                .order_by("user__last_name", "user__first_name")
+            )
+            if is_elevated
+            else CompanyUser.objects.none()
         )
-        pending_list =self ._enrich_work_orders (qs_pending ,active_fault_category =fault_category )
 
-
-
-
-
-        qs_reviewed =self ._build_base_queryset (company ,owner =_owner ).filter (reviewed =True )
-        qs_reviewed =self ._apply_filters (
-        qs_reviewed ,operator_pk ,date_from ,date_to ,machine ,company ,
-        fault_category =fault_category ,q =q ,status =status ,is_elevated =is_elevated ,
-        dieta =dieta ,origen =origen ,
+        qs_pending = self._build_base_queryset(company, owner=_owner).filter(
+            reviewed=False
         )
-        reviewed_list =self ._enrich_work_orders (qs_reviewed ,active_fault_category =fault_category )
+        qs_pending = self._apply_filters(
+            qs_pending,
+            operator_pk,
+            date_from,
+            date_to,
+            machine,
+            company,
+            fault_category=fault_category,
+            q=q,
+            status=status,
+            is_elevated=is_elevated,
+            dieta=dieta,
+            origen=origen,
+        )
+        pending_list = self._enrich_work_orders(
+            qs_pending, active_fault_category=fault_category
+        )
+
+        qs_reviewed = self._build_base_queryset(company, owner=_owner).filter(
+            reviewed=True
+        )
+        qs_reviewed = self._apply_filters(
+            qs_reviewed,
+            operator_pk,
+            date_from,
+            date_to,
+            machine,
+            company,
+            fault_category=fault_category,
+            q=q,
+            status=status,
+            is_elevated=is_elevated,
+            dieta=dieta,
+            origen=origen,
+        )
+        reviewed_list = self._enrich_work_orders(
+            qs_reviewed, active_fault_category=fault_category
+        )
 
         # Excluir de Revisados los partes cuya fecha cae dentro de un
         # WorkPeriod liquidado (is_closed=True) de su propio operario --
@@ -4591,53 +4653,50 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         # periods unfiltered). Same date-range pattern WorkPeriodLockView
         # already uses to detect parts within a period (see above, the
         # unreviewed-parts check).
-        from ivr_config .models import WorkPeriod as _WP_closed 
-        _closed_ranges_by_operator ={}
-        for _op_pk ,_start ,_end in (
-        _WP_closed .objects 
-        .filter (company_user__company =company ,is_closed =True ,end_date__isnull =False )
-        .values_list ("company_user_id","start_date","end_date")
-        ):
-            _closed_ranges_by_operator .setdefault (_op_pk ,[]).append ((_start ,_end ))
+        from ivr_config.models import WorkPeriod as _WP_closed
 
-        def _falls_in_closed_period (wo_dict ):
-            _ranges =_closed_ranges_by_operator .get (wo_dict ["operator_pk"])
-            if not _ranges or wo_dict ["fecha"]is None :
-                return False 
-            return any (_s <=wo_dict ["fecha"]<=_e for _s ,_e in _ranges )
+        _closed_ranges_by_operator = {}
+        for _op_pk, _start, _end in _WP_closed.objects.filter(
+            company_user__company=company,
+            is_closed=True,
+            end_date__isnull=False,
+        ).values_list("company_user_id", "start_date", "end_date"):
+            _closed_ranges_by_operator.setdefault(_op_pk, []).append(
+                (_start, _end)
+            )
 
-        reviewed_list =[wo for wo in reviewed_list if not _falls_in_closed_period (wo )]
+        def _falls_in_closed_period(wo_dict):
+            _ranges = _closed_ranges_by_operator.get(wo_dict["operator_pk"])
+            if not _ranges or wo_dict["fecha"] is None:
+                return False
+            return any(_s <= wo_dict["fecha"] <= _e for _s, _e in _ranges)
 
+        reviewed_list = [
+            wo for wo in reviewed_list if not _falls_in_closed_period(wo)
+        ]
 
-
-
-
-        qs_history =self ._build_base_queryset (company ,owner =_owner ).filter (reviewed =True )
-        qs_history =self ._apply_filters (
-        qs_history ,operator_pk ,date_from ,date_to ,machine ,company ,
-        fault_category =fault_category ,q =q ,status =status ,is_elevated =is_elevated ,
-        dieta =dieta ,origen =origen ,
+        qs_history = self._build_base_queryset(company, owner=_owner).filter(
+            reviewed=True
         )
-        history_list =self ._enrich_work_orders (qs_history ,active_fault_category =fault_category )
+        qs_history = self._apply_filters(
+            qs_history,
+            operator_pk,
+            date_from,
+            date_to,
+            machine,
+            company,
+            fault_category=fault_category,
+            q=q,
+            status=status,
+            is_elevated=is_elevated,
+            dieta=dieta,
+            origen=origen,
+        )
+        history_list = self._enrich_work_orders(
+            qs_history, active_fault_category=fault_category
+        )
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        def _sort_key_for_col (item ,col ):
+        def _sort_key_for_col(item, col):
             """
             Returns a comparable sort key for a single column in an enriched
             work-order dict. None values and empty strings always sort last,
@@ -4647,14 +4706,13 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
             en un dict enriquecido de parte. None y cadena vacía se ordenan
             siempre al final, independientemente de la dirección aplicada.
             """
-            val =item .get (col )
-            if val is None or val =="":
+            val = item.get(col)
+            if val is None or val == "":
 
+                return (1, "")
+            return (0, val)
 
-                return (1 ,"")
-            return (0 ,val )
-
-        def _apply_sort_stack (lst ,stack ):
+        def _apply_sort_stack(lst, stack):
             """
             Applies a multi-level stable sort to lst according to stack.
             stack is a list of (col, dir) pairs ordered from most to least
@@ -4662,84 +4720,83 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
             significant to leverage Python's stable sort.
             ---
             Aplica una ordenación estable multi-nivel a lst según stack.
-            stack es una lista de pares (col, dir) de más a menos significativo.
+            stack es una lista de pares (col, dir) de más a menos
+            significativo.
             La ordenación se aplica de menos significativo a más significativo
             para aprovechar la estabilidad del sort de Python.
             """
-            result =list (lst )
-            for col ,direction in reversed (stack ):
-                reverse_flag =(direction =="desc")
-                result =sorted (
-                result ,
-                key =lambda item ,_col =col :_sort_key_for_col (item ,_col ),
-                reverse =reverse_flag ,
+            result = list(lst)
+            for col, direction in reversed(stack):
+                reverse_flag = direction == "desc"
+                result = sorted(
+                    result,
+                    key=lambda item, _col=col: _sort_key_for_col(item, _col),
+                    reverse=reverse_flag,
                 )
-            return result 
+            return result
 
-        pending_list =_apply_sort_stack (pending_list ,sort_stack )
-        reviewed_list =_apply_sort_stack (reviewed_list ,sort_stack )
-        history_list =_apply_sort_stack (history_list ,sort_stack )
+        pending_list = _apply_sort_stack(pending_list, sort_stack)
+        reviewed_list = _apply_sort_stack(reviewed_list, sort_stack)
+        history_list = _apply_sort_stack(history_list, sort_stack)
 
+        from ivr_config.models import WorkerAbsence
 
-
-
-
-        from ivr_config .models import WorkerAbsence 
-        absence_qs =(
-        WorkerAbsence .objects 
-        .filter (company_user__company =company )
-        .select_related (
-        "company_user__user",
-        "registered_by__user",
-        )
-        .order_by ("-start_date")
+        absence_qs = (
+            WorkerAbsence.objects.filter(company_user__company=company)
+            .select_related(
+                "company_user__user",
+                "registered_by__user",
+            )
+            .order_by("-start_date")
         )
 
-        if is_elevated :
-            if operator_pk :
-                try :
-                    absence_qs =absence_qs .filter (company_user__pk =int (operator_pk ))
-                except (ValueError ,TypeError ):
-                    pass 
-        else :
+        if is_elevated:
+            if operator_pk:
+                try:
+                    absence_qs = absence_qs.filter(
+                        company_user__pk=int(operator_pk)
+                    )
+                except (ValueError, TypeError):
+                    pass
+        else:
             # WORKSHOP: siempre las propias, sin excepcion -- pestaña de
             # solo lectura, traspasada desde la antigua operator_history.
             # WORKSHOP: always their own, no exceptions -- read-only tab,
             # folded in from the deleted operator_history.
-            absence_qs =absence_qs .filter (company_user =cu )
-        absences_list =list (absence_qs )
+            absence_qs = absence_qs.filter(company_user=cu)
+        absences_list = list(absence_qs)
 
-
-
-
-
-        if is_elevated :
-            own_period_groups =[]
+        if is_elevated:
+            own_period_groups = []
             # Build period_groups for the Períodos tab (WorkPeriodGroup-based).
-            # Construir period_groups para la pestaña Períodos (basado en WorkPeriodGroup).
+            # Construir period_groups para la pestaña Períodos (basado en
+            # WorkPeriodGroup).
             from ivr_config.models import WorkPeriodGroup as _WPG_H
+
             _period_groups = list(
-                _WPG_H.objects
-                .filter(company=company)
+                _WPG_H.objects.filter(company=company)
                 .select_related("created_by__user")
                 .order_by("-start_date")
             )
-            _total_operators = CompanyUser .objects .filter (
+            _total_operators = CompanyUser.objects.filter(
                 company=company, is_active=True, role=CompanyUser.ROLE_WORKSHOP
             ).count()
             period_groups = []
             for _g in _period_groups:
                 _op_count = _g.operator_periods.count()
-                period_groups.append({
-                    "group":           _g,
-                    "operator_count":  _op_count,
-                    "total_operators": _total_operators,
-                })
+                period_groups.append(
+                    {
+                        "group": _g,
+                        "operator_count": _op_count,
+                        "total_operators": _total_operators,
+                    }
+                )
 
             # Legacy fallback: keep period_operator_groups for backward compat.
-            # Fallback legacy: mantener period_operator_groups por compatibilidad.
+            # Fallback legacy: mantener period_operator_groups por
+            # compatibilidad.
             period_operator_groups = []
-        else :
+        else:
             # WORKSHOP/DRIVER: la pestaña Períodos es gestión pura, no es
             # parte de lo que ofrecía ninguna de las vistas sustituidas --
             # se oculta en el template. En su lugar, "Mis periodos": sus
@@ -4751,14 +4808,14 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
             # the template. Instead, "Mis periodos": their own
             # WorkPeriodGroup records (H24/S020 point 4, so they can reach
             # the detail and see their own overtime per period).
-            period_groups =[]
-            period_operator_groups =[]
-            from ivr_config .models import WorkPeriod as _WP_OWN 
-            own_period_groups =list (
-            _WP_OWN .objects 
-            .filter (company_user =cu )
-            .select_related ("group")
-            .order_by ("-group__start_date")
+            period_groups = []
+            period_operator_groups = []
+            from ivr_config.models import WorkPeriod as _WP_OWN
+
+            own_period_groups = list(
+                _WP_OWN.objects.filter(company_user=cu)
+                .select_related("group")
+                .order_by("-group__start_date")
             )
 
         # Resumen de horas extra ACUMULADAS PENDIENTES -- H24/S020 punto 3:
@@ -4776,33 +4833,42 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         # liquidated, its hours stop counting here and become
         # historical-only (see point 4, per-period viewer). Only computed,
         # and only meaningful, for WORKSHOP.
-        overtime_hours =None 
-        if not is_elevated :
-            from ivr_config .models import WorkPeriod as _WP_OT 
-            from decimal import Decimal as _Dec_OT 
-            _open_periods =list (
-            _WP_OT .objects 
-            .filter (company_user =cu ,is_closed =False )
-            .order_by ("start_date")
-            )
-            if _open_periods :
-                overtime_hours =sum (
-                (wo ["horas_extra"]for wo in pending_list +reviewed_list 
-                if wo ["operator_pk"]==cu .pk 
-                and wo ["fecha"]is not None 
-                and any (
-                p .start_date <=wo ["fecha"]
-                and (p .end_date is None or wo ["fecha"]<=p .end_date )
-                for p in _open_periods 
-                )
-                ),
-                _Dec_OT ("0"),
-                )
+        overtime_hours = None
+        if not is_elevated:
+            from ivr_config.models import WorkPeriod as _WP_OT
+            from decimal import Decimal as _Dec_OT
 
+            _open_periods = list(
+                _WP_OT.objects.filter(
+                    company_user=cu, is_closed=False
+                ).order_by("start_date")
+            )
+            if _open_periods:
+                overtime_hours = sum(
+                    (
+                        wo["horas_extra"]
+                        for wo in pending_list + reviewed_list
+                        if wo["operator_pk"] == cu.pk
+                        and wo["fecha"] is not None
+                        and any(
+                            p.start_date <= wo["fecha"]
+                            and (
+                                p.end_date is None or wo["fecha"] <= p.end_date
+                            )
+                            for p in _open_periods
+                        )
+                    ),
+                    _Dec_OT("0"),
+                )
 
         from work_order_processor.models import ExportTemplate as _ET
-        _templates_propias = _ET.objects.filter(company_user=cu, is_global=False).order_by("-is_default", "name")
-        _templates_globales = _ET.objects.filter(company=cu.company, is_global=True).order_by("name")
+
+        _templates_propias = _ET.objects.filter(
+            company_user=cu, is_global=False
+        ).order_by("-is_default", "name")
+        _templates_globales = _ET.objects.filter(
+            company=cu.company, is_global=True
+        ).order_by("name")
 
         # back_url / filters_qs -- gap señalado por Miguel Ángel 2026-07-21:
         # al unificar las vistas de partes (H17 S012) se perdió la
@@ -4822,6 +4888,7 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         # WorkOrderEntryFormView / WorkOrderDetailView and back.
         from urllib.parse import urlencode as _urlencode_fq
         from django.urls import reverse as _reverse_fq
+
         _filters_dict = {
             "tab": active_tab,
             "operator_pk": operator_pk,
@@ -4835,7 +4902,9 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
             "origen": origen,
             "sort_stack": sort_stack_str,
         }
-        filters_qs = _urlencode_fq({k: v for k, v in _filters_dict.items() if v})
+        filters_qs = _urlencode_fq(
+            {k: v for k, v in _filters_dict.items() if v}
+        )
         back_url = _reverse_fq("panel:work_order_admin_history") + (
             f"?{filters_qs}" if filters_qs else ""
         )
@@ -4843,99 +4912,105 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         # Compute aggregate totals for the Revisados tab.
         # Calcular totales agregados para la pestaña Revisados.
         from decimal import Decimal as _Dec
+
         reviewed_totals = {
             "horas_totales": sum(
-                (wo["horas_totales"] for wo in reviewed_list
-                 if wo["horas_totales"] is not None),
+                (
+                    wo["horas_totales"]
+                    for wo in reviewed_list
+                    if wo["horas_totales"] is not None
+                ),
                 _Dec("0"),
             ),
             "horas_extra": sum(
-                (wo["horas_extra"] for wo in reviewed_list
-                 if wo["horas_extra"] is not None),
+                (
+                    wo["horas_extra"]
+                    for wo in reviewed_list
+                    if wo["horas_extra"] is not None
+                ),
                 _Dec("0"),
             ),
             "dietas": sum(1 for wo in reviewed_list if wo["dieta"]),
         }
 
-        context ={
-        "company":cu .company ,
-        "company_user":cu ,
-        "own_presence":self ._get_own_presence (cu ),
-        "active_nav":"work_order_admin_history",
-        "active_tab":active_tab ,
-        # Alcance por rol -- controla en el template el selector de operario,
-        # los botones Marcar revisado/Eliminar y las pestañas Ausencias/Períodos.
-        # Role scope -- controls the operator selector, the Marcar
-        # revisado/Eliminar buttons and the Ausencias/Períodos tabs in the
-        # template.
-        "is_elevated":is_elevated ,
-        "operators":operators ,
-        "operator_pk":operator_pk ,
-        "date_from":request .GET .get ("date_from",""),
-        "date_to":request .GET .get ("date_to",""),
-        "machine":machine ,
-        "fault_category":fault_category ,
-        "q":q ,
-        "status":status ,
-        "status_choices":WorkOrder .Status .choices ,
-        "dieta":dieta ,
-        "origen":origen ,
-        "source_choices":WorkOrder .Source .choices ,
-        # Resumen de horas extra del periodo activo -- solo WORKSHOP.
-        # Active-period overtime summary -- WORKSHOP only.
-        "overtime_hours":overtime_hours ,
-
-
-        "fault_category_choices":[
-        (fc [0 ],fc [1 ])
-        for fc in WorkOrderEntryLine .fault_category .field .choices 
-        if fc [0 ]
-        ],
-
-
-
-        "sort_stack_str":sort_stack_str ,
-        "sort_primary_col":sort_primary_col ,
-        "sort_primary_dir":sort_primary_dir ,
-        "filters_qs":filters_qs ,
-        "back_url":back_url ,
-        "pending_list":pending_list ,
-        "reviewed_list":reviewed_list ,
-        "reviewed_totals":reviewed_totals ,
-        "history_list":history_list ,
-        "absences_list":absences_list ,
-        "templates_propias":_templates_propias ,
-        "templates_globales":_templates_globales ,
-        "is_admin":cu .role =="ADMIN",
-        "period_operator_groups":period_operator_groups ,
-        "period_groups":period_groups ,
-        "own_period_groups":own_period_groups ,
-        "column_choices":[
-        ("fecha","Fecha"),
-        ("operario","Operario"),
-        ("maquina","Máquina / CdG"),
-        ("descripcion","Descripción avería"),
-        ("notas","Notas reparación"),
-        ("hc","H. inicio"),
-        ("hf","H. fin"),
-        ("delta_horas","Δ Horas"),
-        ("estado","Estado"),
-        ("familia","Familia avería"),
-        ("origen","Origen"),
-        ("horas_extra","H. Extra"),
-        ("dietas","Dietas"),
-        ],
+        context = {
+            "company": cu.company,
+            "company_user": cu,
+            "own_presence": self._get_own_presence(cu),
+            "active_nav": "work_order_admin_history",
+            "active_tab": active_tab,
+            # Alcance por rol -- controla en el template el selector de
+            # operario,
+            # los botones Marcar revisado/Eliminar y las pestañas
+            # Ausencias/Períodos.
+            # Role scope -- controls the operator selector, the Marcar
+            # revisado/Eliminar buttons and the Ausencias/Períodos tabs in the
+            # template.
+            "is_elevated": is_elevated,
+            "operators": operators,
+            "operator_pk": operator_pk,
+            "date_from": request.GET.get("date_from", ""),
+            "date_to": request.GET.get("date_to", ""),
+            "machine": machine,
+            "fault_category": fault_category,
+            "q": q,
+            "status": status,
+            "status_choices": WorkOrder.Status.choices,
+            "dieta": dieta,
+            "origen": origen,
+            "source_choices": WorkOrder.Source.choices,
+            # Resumen de horas extra del periodo activo -- solo WORKSHOP.
+            # Active-period overtime summary -- WORKSHOP only.
+            "overtime_hours": overtime_hours,
+            "fault_category_choices": [
+                (fc[0], fc[1])
+                for fc in WorkOrderEntryLine.fault_category.field.choices
+                if fc[0]
+            ],
+            "sort_stack_str": sort_stack_str,
+            "sort_primary_col": sort_primary_col,
+            "sort_primary_dir": sort_primary_dir,
+            "filters_qs": filters_qs,
+            "back_url": back_url,
+            "pending_list": pending_list,
+            "reviewed_list": reviewed_list,
+            "reviewed_totals": reviewed_totals,
+            "history_list": history_list,
+            "absences_list": absences_list,
+            "templates_propias": _templates_propias,
+            "templates_globales": _templates_globales,
+            "is_admin": cu.role == "ADMIN",
+            "period_operator_groups": period_operator_groups,
+            "period_groups": period_groups,
+            "own_period_groups": own_period_groups,
+            "column_choices": [
+                ("fecha", "Fecha"),
+                ("operario", "Operario"),
+                ("maquina", "Máquina / CdG"),
+                ("descripcion", "Descripción avería"),
+                ("notas", "Notas reparación"),
+                ("hc", "H. inicio"),
+                ("hf", "H. fin"),
+                ("delta_horas", "Δ Horas"),
+                ("estado", "Estado"),
+                ("familia", "Familia avería"),
+                ("origen", "Origen"),
+                ("horas_extra", "H. Extra"),
+                ("dietas", "Dietas"),
+            ],
         }
-        return render (request ,self .template_name ,context )
+        return render(request, self.template_name, context)
 
-    def post (self ,request ,*args ,**kwargs ):
+    def post(self, request, *args, **kwargs):
         """
         Dispatches POST actions for the admin history view.
 
         Supported actions:
-          generate_absence_parts — creates synthetic WorkOrders from a WorkerAbsence.
+          generate_absence_parts — creates synthetic WorkOrders from a
+          WorkerAbsence.
           delete_work_order      — deletes a single WorkOrder by pk.
-          bulk_action            — applies mark_reviewed, unmark_reviewed or delete
+          bulk_action            — applies mark_reviewed, unmark_reviewed or
+          delete
                                    to a set of PKs.
 
         ---
@@ -4943,19 +5018,25 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         Despacha las acciones POST de la vista de historial de administrador.
 
         Acciones soportadas:
-          generate_absence_parts — crea WorkOrders sinteticos desde un WorkerAbsence.
+          generate_absence_parts — crea WorkOrders sinteticos desde un
+          WorkerAbsence.
           delete_work_order      — elimina un WorkOrder individual por pk.
-          bulk_action            — aplica mark_reviewed, unmark_reviewed o delete
+          bulk_action            — aplica mark_reviewed, unmark_reviewed o
+          delete
                                    a un conjunto de PKs.
         """
-        from datetime import timedelta ,date as dt_date 
-        from django .db import transaction 
-        from ivr_config .models import WorkerAbsence 
-        from work_order_processor .models import WorkOrder ,WorkOrderEntry ,WorkOrderEntryLine 
-        from django .urls import reverse 
+        from datetime import timedelta, date as dt_date
+        from django.db import transaction
+        from ivr_config.models import WorkerAbsence
+        from work_order_processor.models import (
+            WorkOrder,
+            WorkOrderEntry,
+            WorkOrderEntryLine,
+        )
+        from django.urls import reverse
 
-        cu =request .user .company_user 
-        company =cu .company 
+        cu = request.user.company_user
+        company = cu.company
 
         # Guardia de rol: todas las acciones de este post() son de gestion
         # (eliminar, marcar revisado en bloque, generar partes de ausencia)
@@ -4970,237 +5051,265 @@ class WorkOrderAdminHistoryView (WorkOrderFormAccessMixin ,View ):
         # never act here. The class mixin now admits WORKSHOP (for the
         # read-only GET of their own history), so this guard is essential,
         # not redundant.
-        if cu .role not in (
-        CompanyUser .ROLE_ADMIN ,
-        CompanyUser .ROLE_SUPERVISOR ,
-        CompanyUser .ROLE_WORKSHOPBOSS ,
+        if cu.role not in (
+            CompanyUser.ROLE_ADMIN,
+            CompanyUser.ROLE_SUPERVISOR,
+            CompanyUser.ROLE_WORKSHOPBOSS,
         ):
-            from django .http import HttpResponseForbidden 
-            return HttpResponseForbidden (
-            "Acción no disponible para tu rol."
-            )
+            from django.http import HttpResponseForbidden
 
-        action =request .POST .get ("action","").strip ()
+            return HttpResponseForbidden("Acción no disponible para tu rol.")
 
+        action = request.POST.get("action", "").strip()
 
-
-
-
-        if action =="delete_work_order":
-            active_tab =request .POST .get ("active_tab","pending")
-            try :
-                wo_pk =int (request .POST .get ("work_order_pk",""))
-                work_order =WorkOrder .objects .get (
-                pk =wo_pk ,
-                company =company ,
-                source__in =[WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ],
+        if action == "delete_work_order":
+            active_tab = request.POST.get("active_tab", "pending")
+            try:
+                wo_pk = int(request.POST.get("work_order_pk", ""))
+                work_order = WorkOrder.objects.get(
+                    pk=wo_pk,
+                    company=company,
+                    source__in=[
+                        WorkOrder.Source.DIGITAL,
+                        WorkOrder.Source.GENERATED,
+                    ],
                 )
-                work_order .delete ()
-                django_messages .success (request ,f"Parte #{wo_pk} eliminado correctamente.")
-            except (ValueError ,TypeError ,WorkOrder .DoesNotExist ):
-                django_messages .error (
-                request ,
-                "Parte no encontrado o no pertenece a esta empresa.",
+                work_order.delete()
+                django_messages.success(
+                    request, f"Parte #{wo_pk} eliminado correctamente."
+                )
+            except (ValueError, TypeError, WorkOrder.DoesNotExist):
+                django_messages.error(
+                    request,
+                    "Parte no encontrado o no pertenece a esta empresa.",
                 )
             # back_url -- preservar TODOS los filtros activos al volver,
             # no solo tab (gap señalado por Miguel Ángel 2026-07-21).
-            from panel .url_utils import safe_back_url as _safe_back_url_del
-            _fallback_del =reverse ("panel:work_order_admin_history")+f"?tab={active_tab}"
-            return redirect (
-            _safe_back_url_del (request ,request .POST .get ("back_url",""),_fallback_del )
+            from panel.url_utils import safe_back_url as _safe_back_url_del
+
+            _fallback_del = (
+                reverse("panel:work_order_admin_history")
+                + f"?tab={active_tab}"
+            )
+            return redirect(
+                _safe_back_url_del(
+                    request, request.POST.get("back_url", ""), _fallback_del
+                )
             )
 
+        if action == "bulk_action":
+            active_tab = request.POST.get("active_tab", "pending")
+            bulk_op = request.POST.get("bulk_op", "").strip()
+            raw_pks = request.POST.getlist("selected_pks")
 
+            try:
+                pk_list = [int(p) for p in raw_pks if p.strip().isdigit()]
+            except (ValueError, TypeError):
+                pk_list = []
 
+            from panel.url_utils import safe_back_url as _safe_back_url_bulk
 
-
-        if action =="bulk_action":
-            active_tab =request .POST .get ("active_tab","pending")
-            bulk_op =request .POST .get ("bulk_op","").strip ()
-            raw_pks =request .POST .getlist ("selected_pks")
-
-            try :
-                pk_list =[int (p )for p in raw_pks if p .strip ().isdigit ()]
-            except (ValueError ,TypeError ):
-                pk_list =[]
-
-            from panel .url_utils import safe_back_url as _safe_back_url_bulk
-            _fallback_bulk =reverse ("panel:work_order_admin_history")+f"?tab={active_tab}"
-            _back_url_bulk =_safe_back_url_bulk (request ,request .POST .get ("back_url",""),_fallback_bulk )
-
-            if not pk_list :
-                django_messages .warning (request ,"No se ha seleccionado ningún parte.")
-                return redirect (_back_url_bulk )
-
-
-
-            qs =WorkOrder .objects .filter (
-            pk__in =pk_list ,
-            company =company ,
-            source__in =[WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ],
+            _fallback_bulk = (
+                reverse("panel:work_order_admin_history")
+                + f"?tab={active_tab}"
+            )
+            _back_url_bulk = _safe_back_url_bulk(
+                request, request.POST.get("back_url", ""), _fallback_bulk
             )
 
-            if bulk_op =="mark_reviewed":
-                from django .utils .timezone import now as tz_now 
-                updated =qs .filter (reviewed =False ).update (
-                reviewed =True ,
-                reviewed_by =cu ,
-                reviewed_at =tz_now (),
+            if not pk_list:
+                django_messages.warning(
+                    request, "No se ha seleccionado ningún parte."
                 )
-                django_messages .success (
-                request ,
-                f"{updated} parte(s) marcado(s) como revisado(s).",
-                )
-            elif bulk_op =="unmark_reviewed":
+                return redirect(_back_url_bulk)
 
-
-                updated =qs .filter (reviewed =True ).update (
-                reviewed =False ,
-                reviewed_by =None ,
-                reviewed_at =None ,
-                )
-                django_messages .success (
-                request ,
-                f"{updated} parte(s) desmarcado(s) como revisado(s).",
-                )
-            elif bulk_op =="delete":
-                count =qs .count ()
-                qs .delete ()
-                django_messages .success (
-                request ,
-                f"{count} parte(s) eliminado(s) correctamente.",
-                )
-            else :
-                django_messages .error (request ,"Operación en bloque no reconocida.")
-
-            return redirect (_back_url_bulk )
-
-        if action !="generate_absence_parts":
-            django_messages .error (request ,"Acción no reconocida.")
-            return redirect (reverse ("panel:work_order_admin_history")+"?tab=absences")
-
-
-
-        try :
-            absence_pk =int (request .POST .get ("absence_pk",""))
-            absence =WorkerAbsence .objects .select_related ("company_user__user").get (
-            pk =absence_pk ,
-            company_user__company =company ,
+            qs = WorkOrder.objects.filter(
+                pk__in=pk_list,
+                company=company,
+                source__in=[
+                    WorkOrder.Source.DIGITAL,
+                    WorkOrder.Source.GENERATED,
+                ],
             )
-        except (ValueError ,TypeError ,WorkerAbsence .DoesNotExist ):
-            django_messages .error (
-            request ,
-            "Registro de ausencia no encontrado o no pertenece a esta empresa.",
+
+            if bulk_op == "mark_reviewed":
+                from django.utils.timezone import now as tz_now
+
+                updated = qs.filter(reviewed=False).update(
+                    reviewed=True,
+                    reviewed_by=cu,
+                    reviewed_at=tz_now(),
+                )
+                django_messages.success(
+                    request,
+                    f"{updated} parte(s) marcado(s) como revisado(s).",
+                )
+            elif bulk_op == "unmark_reviewed":
+
+                updated = qs.filter(reviewed=True).update(
+                    reviewed=False,
+                    reviewed_by=None,
+                    reviewed_at=None,
+                )
+                django_messages.success(
+                    request,
+                    f"{updated} parte(s) desmarcado(s) como revisado(s).",
+                )
+            elif bulk_op == "delete":
+                count = qs.count()
+                qs.delete()
+                django_messages.success(
+                    request,
+                    f"{count} parte(s) eliminado(s) correctamente.",
+                )
+            else:
+                django_messages.error(
+                    request, "Operación en bloque no reconocida."
+                )
+
+            return redirect(_back_url_bulk)
+
+        if action != "generate_absence_parts":
+            django_messages.error(request, "Acción no reconocida.")
+            return redirect(
+                reverse("panel:work_order_admin_history") + "?tab=absences"
             )
-            return redirect (reverse ("panel:work_order_admin_history")+"?tab=absences")
 
-
-
-        current_day =absence .start_date 
-        working_days =[]
-        while current_day <=absence .end_date :
-            if current_day .weekday ()<5 :
-                working_days .append (current_day )
-            current_day +=timedelta (days =1 )
-
-        if not working_days :
-            django_messages .warning (
-            request ,
-            f"El rango de la ausencia ({absence.start_date} – {absence.end_date}) "
-            f"no contiene días laborables (lunes a viernes). No se han generado partes.",
+        try:
+            absence_pk = int(request.POST.get("absence_pk", ""))
+            absence = WorkerAbsence.objects.select_related(
+                "company_user__user"
+            ).get(
+                pk=absence_pk,
+                company_user__company=company,
             )
-            return redirect (reverse ("panel:work_order_admin_history")+"?tab=absences")
+        except (ValueError, TypeError, WorkerAbsence.DoesNotExist):
+            django_messages.error(
+                request,
+                "Registro de ausencia no encontrado o no pertenece a esta "
+                "empresa.",
+            )
+            return redirect(
+                reverse("panel:work_order_admin_history") + "?tab=absences"
+            )
 
-        created_count =0 
-        skipped_count =0 
+        current_day = absence.start_date
+        working_days = []
+        while current_day <= absence.end_date:
+            if current_day.weekday() < 5:
+                working_days.append(current_day)
+            current_day += timedelta(days=1)
 
-        try :
-            with transaction .atomic ():
-                for work_day in working_days :
+        if not working_days:
+            django_messages.warning(
+                request,
+                f"El rango de la ausencia ({absence.start_date} – "
+                f"{absence.end_date}) "
+                "no contiene días laborables (lunes a viernes). No se han "
+                "generado partes.",
+            )
+            return redirect(
+                reverse("panel:work_order_admin_history") + "?tab=absences"
+            )
 
+        created_count = 0
+        skipped_count = 0
 
-                    already_exists =WorkOrder .objects .filter (
-                    company =company ,
-                    uploaded_by =absence .company_user ,
-                    entries__work_date =work_day ,
-                    ).exists ()
-                    if already_exists :
-                        skipped_count +=1 
-                        continue 
+        try:
+            with transaction.atomic():
+                for work_day in working_days:
 
+                    already_exists = WorkOrder.objects.filter(
+                        company=company,
+                        uploaded_by=absence.company_user,
+                        entries__work_date=work_day,
+                    ).exists()
+                    if already_exists:
+                        skipped_count += 1
+                        continue
 
-
-                    synthetic_name =(
-                    f"AUSENCIA_{absence.get_absence_type_display().upper()}_"
-                    f"{work_day.strftime('%Y%m%d')}_"
-                    f"{absence.company_user.user.username.upper()}.pdf"
+                    synthetic_name = (
+                        "AUSENCIA_"
+                        f"{absence.get_absence_type_display().upper()}_"
+                        f"{work_day.strftime('%Y%m%d')}_"
+                        f"{absence.company_user.user.username.upper()}.pdf"
                     )
 
-                    work_order =WorkOrder .objects .create (
-                    company =company ,
-                    uploaded_by =absence .company_user ,
-                    generated_by =cu ,
-                    source =WorkOrder .Source .GENERATED ,
-                    status =WorkOrder .Status .DONE ,
+                    work_order = WorkOrder.objects.create(
+                        company=company,
+                        uploaded_by=absence.company_user,
+                        generated_by=cu,
+                        source=WorkOrder.Source.GENERATED,
+                        status=WorkOrder.Status.DONE,
                     )
 
+                    work_order.source_pdf.name = synthetic_name
+                    work_order.save()
 
-                    work_order .source_pdf .name =synthetic_name 
-                    work_order .save ()
-
-                    entry =WorkOrderEntry .objects .create (
-                    work_order =work_order ,
-                    page_number =1 ,
-                    worker_name =(
-                    absence .company_user .user .get_full_name ()
-                    or absence .company_user .user .username 
-                    ).upper (),
-                    work_date =work_day ,
-                    uncertain_date =False ,
-                    extraction_confidence =WorkOrderEntry .Confidence .HIGH ,
-                    raw_gemini_response =None ,
+                    entry = WorkOrderEntry.objects.create(
+                        work_order=work_order,
+                        page_number=1,
+                        worker_name=(
+                            absence.company_user.user.get_full_name()
+                            or absence.company_user.user.username
+                        ).upper(),
+                        work_date=work_day,
+                        uncertain_date=False,
+                        extraction_confidence=WorkOrderEntry.Confidence.HIGH,
+                        raw_gemini_response=None,
                     )
 
-                    WorkOrderEntryLine .objects .create (
-                    entry =entry ,
-                    line_number =1 ,
-                    machine_asset =None ,
-                    machine_raw ="",
-                    machine_norm ="",
-                    fault_description =absence .get_absence_type_display (),
-                    repair_notes ="",
-                    hc =None ,
-                    hf =None ,
-                    or_val ="",
-                    delta_hours =8 ,
-                    flags =[],
+                    WorkOrderEntryLine.objects.create(
+                        entry=entry,
+                        line_number=1,
+                        machine_asset=None,
+                        machine_raw="",
+                        machine_norm="",
+                        fault_description=absence.get_absence_type_display(),
+                        repair_notes="",
+                        hc=None,
+                        hf=None,
+                        or_val="",
+                        delta_hours=8,
+                        flags=[],
                     )
-                    created_count +=1 
+                    created_count += 1
 
-        except Exception as exc :
-            logger .error (
-            "# [AdminHistory] Error generando partes de ausencia pk=%d: %s",
-            absence .pk ,exc ,exc_info =True ,
+        except Exception as exc:
+            logger.error(
+                "# [AdminHistory] Error generando partes de ausencia pk=%d: "
+                "%s",
+                absence.pk,
+                exc,
+                exc_info=True,
             )
-            django_messages .error (
-            request ,
-            "Error al generar los partes. "
-            "Por favor, inténtalo de nuevo o contacta con el administrador.",
+            django_messages.error(
+                request,
+                "Error al generar los partes. "
+                "Por favor, inténtalo de nuevo o contacta con el "
+                "administrador.",
             )
-            return redirect (reverse ("panel:work_order_admin_history")+"?tab=absences")
-
-
-
-        msg_parts =[]
-        if created_count :
-            msg_parts .append (f"{created_count} parte(s) generado(s) correctamente.")
-        if skipped_count :
-            msg_parts .append (
-            f"{skipped_count} día(s) omitido(s) por existir ya un parte para esa fecha."
+            return redirect(
+                reverse("panel:work_order_admin_history") + "?tab=absences"
             )
-        django_messages .success (request ," ".join (msg_parts ))
-        return redirect (reverse ("panel:work_order_admin_history")+"?tab=absences")
-class WorkPeriodLockView (AdminRoleRequiredMixin ,View ):
+
+        msg_parts = []
+        if created_count:
+            msg_parts.append(
+                f"{created_count} parte(s) generado(s) correctamente."
+            )
+        if skipped_count:
+            msg_parts.append(
+                f"{skipped_count} día(s) omitido(s) por existir ya un parte "
+                "para esa fecha."
+            )
+        django_messages.success(request, " ".join(msg_parts))
+        return redirect(
+            reverse("panel:work_order_admin_history") + "?tab=absences"
+        )
+
+
+class WorkPeriodLockView(AdminRoleRequiredMixin, View):
     """
     Toggles the is_closed flag of a single WorkPeriod identified by pk.
     ADMIN only.
@@ -5227,72 +5336,77 @@ class WorkPeriodLockView (AdminRoleRequiredMixin ,View ):
     pestaña Períodos de panel:work_order_admin_history como fallback.
     """
 
-    def post (self ,request ,pk ,*args ,**kwargs ):
+    def post(self, request, pk, *args, **kwargs):
         """
         Toggle is_closed on the WorkPeriod and redirect back.
         ---
         Alterna is_closed en el WorkPeriod y redirige al origen.
         """
-        from django .shortcuts import get_object_or_404
-        from django .urls import reverse
-        from ivr_config .models import WorkPeriod
+        from django.shortcuts import get_object_or_404
+        from django.urls import reverse
+        from ivr_config.models import WorkPeriod
 
-        cu =request .user .company_user 
-        wp =get_object_or_404 (
-            WorkPeriod ,
-            pk =pk ,
-            company_user__company =cu .company ,
+        cu = request.user.company_user
+        wp = get_object_or_404(
+            WorkPeriod,
+            pk=pk,
+            company_user__company=cu.company,
         )
-        wp .is_closed =not wp .is_closed 
-        wp .save (update_fields =["is_closed"])
+        dates = wp.start_date.strftime("%d/%m/%Y")
+        if wp.end_date:
+            dates += "–" + wp.end_date.strftime("%d/%m/%Y")
+        wp.is_closed = not wp.is_closed
+        wp.save(update_fields=["is_closed"])
 
-        if wp .is_closed :
+        if wp.is_closed:
             # Check for unreviewed work orders within this period.
             # Comprobar si hay partes sin revisar dentro de este periodo.
             unreviewed_count = 0
-            if wp .end_date :
-                unreviewed_count = WorkOrder .objects .filter (
-                    company =wp .company_user .company ,
-                    uploaded_by =wp .company_user ,
-                    source__in =[
-                        WorkOrder .Source .DIGITAL ,
-                        WorkOrder .Source .GENERATED ,
-                    ],
-                    reviewed =False ,
-                    entries__work_date__gte =wp .start_date ,
-                    entries__work_date__lte =wp .end_date ,
-                ).distinct ().count ()
-            if unreviewed_count :
-                django_messages .warning (
-                    request ,
-                    f"Periodo {wp.start_date:%d/%m/%Y}"
-                    f"{'–' + wp.end_date.strftime('%d/%m/%Y') if wp.end_date else ''}"
-                    f" liquidado, pero hay {unreviewed_count} parte(s) sin revisar "
-                    f"de {wp.company_user.user.get_full_name() or wp.company_user.user.username}.",
+            if wp.end_date:
+                unreviewed_count = (
+                    WorkOrder.objects.filter(
+                        company=wp.company_user.company,
+                        uploaded_by=wp.company_user,
+                        source__in=[
+                            WorkOrder.Source.DIGITAL,
+                            WorkOrder.Source.GENERATED,
+                        ],
+                        reviewed=False,
+                        entries__work_date__gte=wp.start_date,
+                        entries__work_date__lte=wp.end_date,
+                    )
+                    .distinct()
+                    .count()
                 )
-            else :
-                django_messages .success (
-                    request ,
-                    f"Periodo {wp.start_date:%d/%m/%Y}"
-                    f"{'–' + wp.end_date.strftime('%d/%m/%Y') if wp.end_date else ''}"
-                    f" liquidado. Los partes dentro del periodo ya no pueden editarse.",
+            if unreviewed_count:
+                user = wp.company_user.user
+                django_messages.warning(
+                    request,
+                    f"Periodo {dates} liquidado, pero hay "
+                    f"{unreviewed_count} parte(s) sin revisar de "
+                    f"{user.get_full_name() or user.username}.",
                 )
-        else :
-            django_messages .success (
-                request ,
-                f"Periodo {wp.start_date:%d/%m/%Y}"
-                f"{'–' + wp.end_date.strftime('%d/%m/%Y') if wp.end_date else ''}"
-                f" reabierto. Los partes dentro del periodo pueden editarse de nuevo.",
+            else:
+                django_messages.success(
+                    request,
+                    f"Periodo {dates} liquidado. Los partes dentro del "
+                    "periodo ya no pueden editarse.",
+                )
+        else:
+            django_messages.success(
+                request,
+                f"Periodo {dates} reabierto. Los partes dentro del periodo "
+                "pueden editarse de nuevo.",
             )
 
-        referer =request .META .get ("HTTP_REFERER","")
-        return redirect (
-        referer 
-        or reverse ("panel:work_order_admin_history")+"?tab=periods"
+        referer = request.META.get("HTTP_REFERER", "")
+        return redirect(
+            referer
+            or reverse("panel:work_order_admin_history") + "?tab=periods"
         )
 
 
-class WorkOrderAdminExportView (SupervisorAccessMixin ,View ):
+class WorkOrderAdminExportView(SupervisorAccessMixin, View):
     """
     Excel export endpoint scoped exclusively to digital and generated work
     orders (WorkOrder.Source.DIGITAL and WorkOrder.Source.GENERATED).
@@ -5323,7 +5437,8 @@ class WorkOrderAdminExportView (SupervisorAccessMixin ,View ):
     ---
     Endpoint de exportación Excel exclusivo para partes digitales y generados
     (WorkOrder.Source.DIGITAL y WorkOrder.Source.GENERATED).
-    Diseñado para su uso desde la pestaña Revisados de WorkOrderAdminHistoryView.
+    Diseñado para su uso desde la pestaña Revisados de
+    WorkOrderAdminHistoryView.
 
     Soporta dos modos de exportación via el campo POST export_mode:
 
@@ -5349,7 +5464,7 @@ class WorkOrderAdminExportView (SupervisorAccessMixin ,View ):
     Devuelve HTTP 400 ante pks inválidos o export_mode desconocido.
     """
 
-    def post (self ,request ,*args ,**kwargs ):
+    def post(self, request, *args, **kwargs):
         """
         Builds the admin export Excel file from the selected WorkOrder pks,
         restricted to DIGITAL and GENERATED sources only.
@@ -5359,93 +5474,76 @@ class WorkOrderAdminExportView (SupervisorAccessMixin ,View ):
         seleccionados, restringido a orígenes DIGITAL y GENERATED únicamente.
         Soporta los modos de exportación single_sheet y multi_sheet.
         """
-        import io 
-        import openpyxl 
-        from openpyxl .styles import Alignment ,Font ,PatternFill 
-        from django .http import HttpResponse ,HttpResponseBadRequest 
-        from django .utils .timezone import now as tz_now 
-        from work_order_processor .models import WorkOrderEntry ,WorkOrderEntryLine 
-        from work_order_processor .services import (
-        generate_work_order_excel as _gen_excel ,
+        import io
+        import openpyxl
+        from openpyxl.styles import Alignment, Font, PatternFill
+        from django.http import HttpResponse, HttpResponseBadRequest
+        from django.utils.timezone import now as tz_now
+        from work_order_processor.models import (
+            WorkOrderEntry,
+            WorkOrderEntryLine,
+        )
+        from work_order_processor.services import (
+            generate_work_order_excel as _gen_excel,
         )
 
-        cu =request .user .company_user 
-        company =cu .company 
+        cu = request.user.company_user
+        company = cu.company
 
-
-
-
-
-        export_mode =request .POST .get ("export_mode","single_sheet").strip ()
-        if export_mode not in ("single_sheet","multi_sheet","digital_full"):
-            return HttpResponseBadRequest (
-            f"# [ADMIN EXPORT] Modo de exportación desconocido: {export_mode!r}."
+        export_mode = request.POST.get("export_mode", "single_sheet").strip()
+        if export_mode not in ("single_sheet", "multi_sheet", "digital_full"):
+            return HttpResponseBadRequest(
+                "# [ADMIN EXPORT] Modo de exportación desconocido: "
+                f"{export_mode!r}."
             )
 
-
-
-
-
-
-
-        if export_mode =="digital_full":
-            return self ._build_digital_full_excel (request ,company ,pk_list ,operator_filter )
-
-
-
-
-
-        raw_pks =request .POST .getlist ("pks")
-        try :
-            pk_list =[int (pk )for pk in raw_pks if pk ]
-        except (ValueError ,TypeError ):
-            return HttpResponseBadRequest ("# [ADMIN EXPORT] Parámetros pks inválidos.")
-
-        if not pk_list :
-            return HttpResponseBadRequest (
-            "# [ADMIN EXPORT] No se han seleccionado partes para exportar."
+        if export_mode == "digital_full":
+            return self._build_digital_full_excel(
+                request, company, pk_list, operator_filter
             )
 
-
-
-
-
-        operator_pk_raw =request .POST .get ("operator_pk","").strip ()
-        operator_filter =None 
-        if operator_pk_raw :
-            try :
-                operator_filter =int (operator_pk_raw )
-            except (ValueError ,TypeError ):
-                operator_filter =None 
-
-
-
-
-
-        qs =WorkOrder .objects .filter (
-        pk__in =pk_list ,
-        company =company ,
-        status =WorkOrder .Status .DONE ,
-        reviewed =True ,
-        source__in =[WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ],
-        ).order_by ("pk")
-
-        if operator_filter :
-            qs =qs .filter (uploaded_by__pk =operator_filter )
-
-        work_orders =list (qs )
-
-        if not work_orders :
-            return HttpResponseBadRequest (
-            "# [ADMIN EXPORT] Ninguno de los partes seleccionados es digital/generado, "
-            "está revisado y en estado DONE."
+        raw_pks = request.POST.getlist("pks")
+        try:
+            pk_list = [int(pk) for pk in raw_pks if pk]
+        except (ValueError, TypeError):
+            return HttpResponseBadRequest(
+                "# [ADMIN EXPORT] Parámetros pks inválidos."
             )
 
+        if not pk_list:
+            return HttpResponseBadRequest(
+                "# [ADMIN EXPORT] No se han seleccionado partes para exportar."
+            )
 
+        operator_pk_raw = request.POST.get("operator_pk", "").strip()
+        operator_filter = None
+        if operator_pk_raw:
+            try:
+                operator_filter = int(operator_pk_raw)
+            except (ValueError, TypeError):
+                operator_filter = None
 
+        qs = WorkOrder.objects.filter(
+            pk__in=pk_list,
+            company=company,
+            status=WorkOrder.Status.DONE,
+            reviewed=True,
+            source__in=[WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED],
+        ).order_by("pk")
 
+        if operator_filter:
+            qs = qs.filter(uploaded_by__pk=operator_filter)
 
-        def _get_operator_name (wo ):
+        work_orders = list(qs)
+
+        if not work_orders:
+            return HttpResponseBadRequest(
+                "# [ADMIN EXPORT] Ninguno de los partes seleccionados es "
+                "digital/generado, "
+                "está revisado y en estado DONE."
+            )
+
+        def _get_operator_name(wo):
             """
             Returns the full name of the operator who submitted the work order,
             or a fallback label if uploaded_by is not set.
@@ -5453,18 +5551,14 @@ class WorkOrderAdminExportView (SupervisorAccessMixin ,View ):
             Devuelve el nombre completo del operario que envió el parte,
             o una etiqueta de reserva si uploaded_by no está establecido.
             """
-            if wo .uploaded_by :
+            if wo.uploaded_by:
                 return (
-                wo .uploaded_by .user .get_full_name ()
-                or wo .uploaded_by .user .username 
+                    wo.uploaded_by.user.get_full_name()
+                    or wo.uploaded_by.user.username
                 )
             return f"Operario #{wo.pk}"
 
-
-
-
-
-        def _copy_sheet (src_sheet ,dest_wb ,title ):
+        def _copy_sheet(src_sheet, dest_wb, title):
             """
             Copies src_sheet (cells, styles, column widths, row heights) into
             a new sheet named title in dest_wb.
@@ -5472,502 +5566,625 @@ class WorkOrderAdminExportView (SupervisorAccessMixin ,View ):
             Copia src_sheet (celdas, estilos, anchos de columna, alturas de
             fila) en una nueva hoja llamada title en dest_wb.
             """
-            dest_sheet =dest_wb .create_sheet (title =title [:31 ])
-            for row in src_sheet .iter_rows ():
-                for cell in row :
-                    dest_cell =dest_sheet .cell (
-                    row =cell .row ,column =cell .column ,value =cell .value 
+            dest_sheet = dest_wb.create_sheet(title=title[:31])
+            for row in src_sheet.iter_rows():
+                for cell in row:
+                    dest_cell = dest_sheet.cell(
+                        row=cell.row, column=cell.column, value=cell.value
                     )
-                    if cell .has_style :
-                        dest_cell .font =cell .font .copy ()
-                        dest_cell .fill =cell .fill .copy ()
-                        dest_cell .alignment =cell .alignment .copy ()
-                        dest_cell .border =cell .border .copy ()
-                        dest_cell .number_format =cell .number_format 
-            for col_letter ,col_dim in src_sheet .column_dimensions .items ():
-                dest_sheet .column_dimensions [col_letter ].width =col_dim .width 
-            for row_num ,row_dim in src_sheet .row_dimensions .items ():
-                dest_sheet .row_dimensions [row_num ].height =row_dim .height 
-            return dest_sheet 
+                    if cell.has_style:
+                        dest_cell.font = cell.font.copy()
+                        dest_cell.fill = cell.fill.copy()
+                        dest_cell.alignment = cell.alignment.copy()
+                        dest_cell.border = cell.border.copy()
+                        dest_cell.number_format = cell.number_format
+            for col_letter, col_dim in src_sheet.column_dimensions.items():
+                dest_sheet.column_dimensions[col_letter].width = col_dim.width
+            for row_num, row_dim in src_sheet.row_dimensions.items():
+                dest_sheet.row_dimensions[row_num].height = row_dim.height
+            return dest_sheet
 
+        if export_mode == "single_sheet":
 
+            wo_map = {wo.pk: wo for wo in work_orders}
 
-
-
-
-
-
-
-
-
-
-        if export_mode =="single_sheet":
-
-            wo_map ={wo .pk :wo for wo in work_orders }
-
-            rows =(
-            WorkOrderEntryLine .objects 
-            .filter (entry__work_order__pk__in =list (wo_map .keys ()))
-            .select_related (
-            "entry__work_order",
-            "entry",
-            "machine_asset",
-            )
-            .order_by (
-            "entry__work_order__uploaded_by__user__last_name",
-            "entry__work_order__uploaded_by__user__first_name",
-            "entry__work_date",
-            "entry__work_order__pk",
-            "line_number",
-            )
-            )
-
-            wb =openpyxl .Workbook ()
-            ws =wb .active 
-            ws .title ="Partes digitales"
-
-
-            header_fill =PatternFill ("solid",fgColor ="1F3864")
-            header_font =Font (bold =True ,color ="FFFFFF",size =10 )
-            headers =[
-            "Operario","Fecha","Máquina / CdG",
-            "Descripción avería","Notas reparación",
-            "H. inicio","H. fin","Δ Horas",
-            ]
-            for col_idx ,h in enumerate (headers ,start =1 ):
-                cell =ws .cell (row =1 ,column =col_idx ,value =h )
-                cell .fill =header_fill 
-                cell .font =header_font 
-                cell .alignment =Alignment (horizontal ="center",vertical ="center")
-
-
-            sep_fill =PatternFill ("solid",fgColor ="2F5496")
-            sep_font =Font (bold =True ,color ="FFFFFF",size =10 )
-
-            current_row =2 
-            current_operator =None 
-
-            for line in rows :
-                wo =line .entry .work_order 
-                operator_name =_get_operator_name (wo )
-                work_date =line .entry .work_date 
-
-
-
-                if operator_name !=current_operator :
-                    current_operator =operator_name 
-                    sep_cell =ws .cell (
-                    row =current_row ,column =1 ,value =operator_name 
-                    )
-                    sep_cell .fill =sep_fill 
-                    sep_cell .font =sep_font 
-                    sep_cell .alignment =Alignment (vertical ="center")
-                    ws .merge_cells (
-                    start_row =current_row ,start_column =1 ,
-                    end_row =current_row ,end_column =len (headers ),
-                    )
-                    current_row +=1 
-
-                ws .cell (row =current_row ,column =1 ,value =operator_name )
-                ws .cell (row =current_row ,column =2 ,
-                value =work_date .strftime ("%d/%m/%Y")if work_date else "")
-                ws .cell (row =current_row ,column =3 ,
-                value =line .machine_asset .code if line .machine_asset else line .machine_raw or "")
-                ws .cell (row =current_row ,column =4 ,value =line .fault_description or "")
-                ws .cell (row =current_row ,column =5 ,value =line .repair_notes or "")
-                ws .cell (row =current_row ,column =6 ,
-                value =line .hc .strftime ("%H:%M")if line .hc else "")
-                ws .cell (row =current_row ,column =7 ,
-                value =line .hf .strftime ("%H:%M")if line .hf else "")
-                ws .cell (row =current_row ,column =8 ,
-                value =float (line .delta_hours )if line .delta_hours is not None else "")
-                current_row +=1 
-
-
-            for col in ws .columns :
-                max_len =max (
-                (len (str (cell .value ))for cell in col if cell .value ),
-                default =10 ,
+            rows = (
+                WorkOrderEntryLine.objects.filter(
+                    entry__work_order__pk__in=list(wo_map.keys())
                 )
-                ws .column_dimensions [col [0 ].column_letter ].width =min (max_len +4 ,60 )
-
-            buf =io .BytesIO ()
-            wb .save (buf )
-            buf .seek (0 )
-
-            filename =f"partes_digitales_{tz_now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-            response =HttpResponse (
-            buf .read (),
-            content_type ="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                .select_related(
+                    "entry__work_order",
+                    "entry",
+                    "machine_asset",
+                )
+                .order_by(
+                    "entry__work_order__uploaded_by__user__last_name",
+                    "entry__work_order__uploaded_by__user__first_name",
+                    "entry__work_date",
+                    "entry__work_order__pk",
+                    "line_number",
+                )
             )
-            response ["Content-Disposition"]=f'attachment; filename="{filename}"'
-            return response 
 
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Partes digitales"
 
+            header_fill = PatternFill("solid", fgColor="1F3864")
+            header_font = Font(bold=True, color="FFFFFF", size=10)
+            headers = [
+                "Operario",
+                "Fecha",
+                "Máquina / CdG",
+                "Descripción avería",
+                "Notas reparación",
+                "H. inicio",
+                "H. fin",
+                "Δ Horas",
+            ]
+            for col_idx, h in enumerate(headers, start=1):
+                cell = ws.cell(row=1, column=col_idx, value=h)
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = Alignment(
+                    horizontal="center", vertical="center"
+                )
 
+            sep_fill = PatternFill("solid", fgColor="2F5496")
+            sep_font = Font(bold=True, color="FFFFFF", size=10)
 
+            current_row = 2
+            current_operator = None
 
+            for line in rows:
+                wo = line.entry.work_order
+                operator_name = _get_operator_name(wo)
+                work_date = line.entry.work_date
 
-
-
-
-
-
-
-        dest_wb =openpyxl .Workbook ()
-        dest_wb .remove (dest_wb .active )
-
-
-
-        from collections import defaultdict 
-        operator_groups =defaultdict (list )
-        for wo in work_orders :
-            operator_groups [_get_operator_name (wo )].append (wo )
-
-        for operator_name ,wo_list in sorted (operator_groups .items ()):
-            sheet_title =operator_name [:31 ]
-            sheet_added =False 
-
-            for wo in wo_list :
-
-
-                if not wo .excel_file or not wo .excel_file .name :
-                    try :
-                        _gen_excel (wo .pk )
-                        wo .refresh_from_db (fields =["excel_file"])
-                    except Exception :
-                        logger .warning (
-                        "# [AdminExport] No se pudo regenerar Excel para WorkOrder #%d.",
-                        wo .pk ,
-                        )
-                        continue 
-
-                try :
-                    src_wb =openpyxl .load_workbook (wo .excel_file .path )
-                    src_sheet =src_wb .worksheets [0 ]
-                    if not sheet_added :
-                        _copy_sheet (src_sheet ,dest_wb ,sheet_title )
-                        sheet_added =True 
-                    else :
-
-
-                        dest_sheet =dest_wb [sheet_title ]
-                        start_row =dest_sheet .max_row +1 
-                        for row in src_sheet .iter_rows (min_row =2 ):
-                            for cell in row :
-                                dest_cell =dest_sheet .cell (
-                                row =start_row +cell .row -2 ,
-                                column =cell .column ,
-                                value =cell .value ,
-                                )
-                                if cell .has_style :
-                                    dest_cell .font =cell .font .copy ()
-                                    dest_cell .fill =cell .fill .copy ()
-                                    dest_cell .alignment =cell .alignment .copy ()
-                except Exception as exc :
-                    logger .warning (
-                    "# [AdminExport] Error procesando Excel WorkOrder #%d: %s",
-                    wo .pk ,exc ,
+                if operator_name != current_operator:
+                    current_operator = operator_name
+                    sep_cell = ws.cell(
+                        row=current_row, column=1, value=operator_name
                     )
-                    continue 
+                    sep_cell.fill = sep_fill
+                    sep_cell.font = sep_font
+                    sep_cell.alignment = Alignment(vertical="center")
+                    ws.merge_cells(
+                        start_row=current_row,
+                        start_column=1,
+                        end_row=current_row,
+                        end_column=len(headers),
+                    )
+                    current_row += 1
 
-        if not dest_wb .worksheets :
-            return HttpResponseBadRequest (
-            "# [ADMIN EXPORT] No se pudo generar ninguna hoja Excel. "
-            "Verifica que los partes seleccionados tienen Excel generado."
+                ws.cell(row=current_row, column=1, value=operator_name)
+                ws.cell(
+                    row=current_row,
+                    column=2,
+                    value=work_date.strftime("%d/%m/%Y") if work_date else "",
+                )
+                ws.cell(
+                    row=current_row,
+                    column=3,
+                    value=(
+                        line.machine_asset.code
+                        if line.machine_asset
+                        else line.machine_raw or ""
+                    ),
+                )
+                ws.cell(
+                    row=current_row,
+                    column=4,
+                    value=line.fault_description or "",
+                )
+                ws.cell(
+                    row=current_row, column=5, value=line.repair_notes or ""
+                )
+                ws.cell(
+                    row=current_row,
+                    column=6,
+                    value=line.hc.strftime("%H:%M") if line.hc else "",
+                )
+                ws.cell(
+                    row=current_row,
+                    column=7,
+                    value=line.hf.strftime("%H:%M") if line.hf else "",
+                )
+                ws.cell(
+                    row=current_row,
+                    column=8,
+                    value=(
+                        float(line.delta_hours)
+                        if line.delta_hours is not None
+                        else ""
+                    ),
+                )
+                current_row += 1
+
+            for col in ws.columns:
+                max_len = max(
+                    (len(str(cell.value)) for cell in col if cell.value),
+                    default=10,
+                )
+                ws.column_dimensions[col[0].column_letter].width = min(
+                    max_len + 4, 60
+                )
+
+            buf = io.BytesIO()
+            wb.save(buf)
+            buf.seek(0)
+
+            stamp = tz_now().strftime("%Y%m%d_%H%M%S")
+            filename = f"partes_digitales_{stamp}.xlsx"
+            response = HttpResponse(
+                buf.read(),
+                content_type=XLSX_CONTENT_TYPE,
+            )
+            response["Content-Disposition"] = (
+                f'attachment; filename="{filename}"'
+            )
+            return response
+
+        dest_wb = openpyxl.Workbook()
+        dest_wb.remove(dest_wb.active)
+
+        from collections import defaultdict
+
+        operator_groups = defaultdict(list)
+        for wo in work_orders:
+            operator_groups[_get_operator_name(wo)].append(wo)
+
+        for operator_name, wo_list in sorted(operator_groups.items()):
+            sheet_title = operator_name[:31]
+            sheet_added = False
+
+            for wo in wo_list:
+
+                if not wo.excel_file or not wo.excel_file.name:
+                    try:
+                        _gen_excel(wo.pk)
+                        wo.refresh_from_db(fields=["excel_file"])
+                    except Exception:
+                        logger.warning(
+                            "# [AdminExport] No se pudo regenerar Excel para "
+                            "WorkOrder #%d.",
+                            wo.pk,
+                        )
+                        continue
+
+                try:
+                    src_wb = openpyxl.load_workbook(wo.excel_file.path)
+                    src_sheet = src_wb.worksheets[0]
+                    if not sheet_added:
+                        _copy_sheet(src_sheet, dest_wb, sheet_title)
+                        sheet_added = True
+                    else:
+
+                        dest_sheet = dest_wb[sheet_title]
+                        start_row = dest_sheet.max_row + 1
+                        for row in src_sheet.iter_rows(min_row=2):
+                            for cell in row:
+                                dest_cell = dest_sheet.cell(
+                                    row=start_row + cell.row - 2,
+                                    column=cell.column,
+                                    value=cell.value,
+                                )
+                                if cell.has_style:
+                                    dest_cell.font = cell.font.copy()
+                                    dest_cell.fill = cell.fill.copy()
+                                    dest_cell.alignment = cell.alignment.copy()
+                except Exception as exc:
+                    logger.warning(
+                        "# [AdminExport] Error procesando Excel WorkOrder "
+                        "#%d: %s",
+                        wo.pk,
+                        exc,
+                    )
+                    continue
+
+        if not dest_wb.worksheets:
+            return HttpResponseBadRequest(
+                "# [ADMIN EXPORT] No se pudo generar ninguna hoja Excel. "
+                "Verifica que los partes seleccionados tienen Excel generado."
             )
 
-        buf =io .BytesIO ()
-        dest_wb .save (buf )
-        buf .seek (0 )
+        buf = io.BytesIO()
+        dest_wb.save(buf)
+        buf.seek(0)
 
-        filename =f"partes_digitales_multi_{tz_now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-        response =HttpResponse (
-        buf .read (),
-        content_type ="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        stamp = tz_now().strftime("%Y%m%d_%H%M%S")
+        filename = f"partes_digitales_multi_{stamp}.xlsx"
+        response = HttpResponse(
+            buf.read(),
+            content_type=XLSX_CONTENT_TYPE,
         )
-        response ["Content-Disposition"]=f'attachment; filename="{filename}"'
-        return response 
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
-
-    def _build_digital_full_excel (self ,request ,company ,pk_list ,operator_filter ):
+    def _build_digital_full_excel(
+        self, request, company, pk_list, operator_filter
+    ):
         """
         Builds a three-sheet Excel file for digital and generated work orders.
 
-        Sheet 1 — Tareas: one row per WorkOrderEntryLine with all digital fields.
-        Sheet 2 — Repuestos: one row per SparePartLine with supplier and price data.
-        Sheet 3 — Incidencias de jornada: one row per WorkdayGap with resolution detail.
+        Sheet 1 — Tareas: one row per WorkOrderEntryLine with all digital
+        fields.
+        Sheet 2 — Repuestos: one row per SparePartLine with supplier and price
+        data.
+        Sheet 3 — Incidencias de jornada: one row per WorkdayGap with
+        resolution detail.
 
         Returns HttpResponse with Content-Disposition attachment (xlsx).
         Returns HTTP 400 if no valid digital/generated work orders are found.
         ---
         Construye un Excel de tres hojas para partes digitales y generados.
 
-        Hoja 1 — Tareas: una fila por WorkOrderEntryLine con todos los campos digitales.
-        Hoja 2 — Repuestos: una fila por SparePartLine con datos de proveedor y precio.
-        Hoja 3 — Incidencias de jornada: una fila por WorkdayGap con detalle de resolucion.
+        Hoja 1 — Tareas: una fila por WorkOrderEntryLine con todos los campos
+        digitales.
+        Hoja 2 — Repuestos: una fila por SparePartLine con datos de proveedor y
+        precio.
+        Hoja 3 — Incidencias de jornada: una fila por WorkdayGap con detalle de
+        resolucion.
 
         Devuelve HttpResponse con Content-Disposition attachment (xlsx).
-        Devuelve HTTP 400 si no se encuentran partes digitales/generados validos.
+        Devuelve HTTP 400 si no se encuentran partes digitales/generados
+        validos.
         """
-        import io 
-        import openpyxl 
-        from openpyxl .styles import Alignment ,Font ,PatternFill 
-        from django .http import HttpResponse ,HttpResponseBadRequest 
-        from django .utils .timezone import now as tz_now 
-        from work_order_processor .models import (
-        WorkOrderEntry ,WorkOrderEntryLine ,SparePartLine ,WorkdayGap ,
+        import io
+        import openpyxl
+        from openpyxl.styles import Alignment, Font, PatternFill
+        from django.http import HttpResponse, HttpResponseBadRequest
+        from django.utils.timezone import now as tz_now
+        from work_order_processor.models import (
+            WorkOrderEntry,
+            WorkOrderEntryLine,
+            SparePartLine,
+            WorkdayGap,
         )
 
+        qs = WorkOrder.objects.filter(
+            pk__in=pk_list,
+            company=company,
+            status=WorkOrder.Status.DONE,
+            reviewed=True,
+            source__in=[WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED],
+        ).order_by("pk")
 
+        if operator_filter:
+            qs = qs.filter(uploaded_by__pk=operator_filter)
 
-        qs =WorkOrder .objects .filter (
-        pk__in =pk_list ,
-        company =company ,
-        status =WorkOrder .Status .DONE ,
-        reviewed =True ,
-        source__in =[WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ],
-        ).order_by ("pk")
+        work_orders = list(qs)
 
-        if operator_filter :
-            qs =qs .filter (uploaded_by__pk =operator_filter )
-
-        work_orders =list (qs )
-
-        if not work_orders :
-            return HttpResponseBadRequest (
-            "# [DIGITAL FULL EXPORT] Ninguno de los partes seleccionados es "
-            "digital/generado, esta revisado y en estado DONE."
+        if not work_orders:
+            return HttpResponseBadRequest(
+                "# [DIGITAL FULL EXPORT] Ninguno de los partes seleccionados "
+                "es "
+                "digital/generado, esta revisado y en estado DONE."
             )
 
-        wo_pks =[wo .pk for wo in work_orders ]
+        wo_pks = [wo.pk for wo in work_orders]
 
-
-
-        def _op_name (wo ):
-            if wo .uploaded_by :
+        def _op_name(wo):
+            if wo.uploaded_by:
                 return (
-                wo .uploaded_by .user .get_full_name ()
-                or wo .uploaded_by .user .username 
+                    wo.uploaded_by.user.get_full_name()
+                    or wo.uploaded_by.user.username
                 )
             return f"Operario #{wo.pk}"
 
+        def _fmt_time(t):
+            return t.strftime("%H:%M") if t else ""
 
+        def _fmt_date(d):
+            return d.strftime("%d/%m/%Y") if d else ""
 
-        def _fmt_time (t ):
-            return t .strftime ("%H:%M")if t else ""
+        wo_map = {}
+        entries = WorkOrderEntry.objects.filter(
+            work_order__in=wo_pks
+        ).select_related("work_order__uploaded_by__user")
+        for entry in entries:
+            wo_map[entry.work_order_id] = (entry.work_order, entry)
 
+        header_fill = PatternFill("solid", fgColor="1F4E79")
+        header_font = Font(bold=True, color="FFFFFF", size=10)
 
-
-        def _fmt_date (d ):
-            return d .strftime ("%d/%m/%Y")if d else ""
-
-
-
-        wo_map ={}
-        entries =(
-        WorkOrderEntry .objects 
-        .filter (work_order__in =wo_pks )
-        .select_related ("work_order__uploaded_by__user")
-        )
-        for entry in entries :
-            wo_map [entry .work_order_id ]=(entry .work_order ,entry )
-
-
-        header_fill =PatternFill ("solid",fgColor ="1F4E79")
-        header_font =Font (bold =True ,color ="FFFFFF",size =10 )
-
-        def _apply_header (ws ,headers ):
-            for col_idx ,h in enumerate (headers ,start =1 ):
-                cell =ws .cell (row =1 ,column =col_idx ,value =h )
-                cell .fill =header_fill 
-                cell .font =header_font 
-                cell .alignment =Alignment (horizontal ="center",vertical ="center")
-            ws .row_dimensions [1 ].height =18 
-
-        def _autofit (ws ):
-            for col in ws .columns :
-                max_len =max (
-                (len (str (cell .value ))for cell in col if cell .value ),
-                default =10 ,
+        def _apply_header(ws, headers):
+            for col_idx, h in enumerate(headers, start=1):
+                cell = ws.cell(row=1, column=col_idx, value=h)
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = Alignment(
+                    horizontal="center", vertical="center"
                 )
-                ws .column_dimensions [col [0 ].column_letter ].width =min (max_len +4 ,60 )
+            ws.row_dimensions[1].height = 18
 
-        wb =openpyxl .Workbook ()
+        def _autofit(ws):
+            for col in ws.columns:
+                max_len = max(
+                    (len(str(cell.value)) for cell in col if cell.value),
+                    default=10,
+                )
+                ws.column_dimensions[col[0].column_letter].width = min(
+                    max_len + 4, 60
+                )
 
+        wb = openpyxl.Workbook()
 
-
-
-        ws_tasks =wb .active 
-        ws_tasks .title ="Tareas"
-        task_headers =[
-        "Operario","Fecha","Maquina / CdG","O.R.",
-        "Descripcion averia","Notas reparacion",
-        "H. inicio","H. fin","Delta Horas",
-        "Km (odometro)","Horometro motor","Horometro grua",
-        "Categoria averia","Subcategoria averia",
+        ws_tasks = wb.active
+        ws_tasks.title = "Tareas"
+        task_headers = [
+            "Operario",
+            "Fecha",
+            "Maquina / CdG",
+            "O.R.",
+            "Descripcion averia",
+            "Notas reparacion",
+            "H. inicio",
+            "H. fin",
+            "Delta Horas",
+            "Km (odometro)",
+            "Horometro motor",
+            "Horometro grua",
+            "Categoria averia",
+            "Subcategoria averia",
         ]
-        _apply_header (ws_tasks ,task_headers )
+        _apply_header(ws_tasks, task_headers)
 
-        lines =(
-        WorkOrderEntryLine .objects 
-        .filter (entry__work_order__in =wo_pks )
-        .select_related (
-        "entry__work_order__uploaded_by__user",
-        "machine_asset",
+        lines = (
+            WorkOrderEntryLine.objects.filter(entry__work_order__in=wo_pks)
+            .select_related(
+                "entry__work_order__uploaded_by__user",
+                "machine_asset",
+            )
+            .order_by(
+                "entry__work_order__uploaded_by__user__last_name",
+                "entry__work_date",
+                "line_number",
+            )
         )
-        .order_by (
-        "entry__work_order__uploaded_by__user__last_name",
-        "entry__work_date",
-        "line_number",
-        )
-        )
 
-        row =2 
-        for line in lines :
-            entry =line .entry 
-            wo =entry .work_order 
-            ws_tasks .cell (row =row ,column =1 ,value =_op_name (wo ))
-            ws_tasks .cell (row =row ,column =2 ,value =_fmt_date (entry .work_date ))
-            ws_tasks .cell (row =row ,column =3 ,
-            value =line .machine_asset .code if line .machine_asset else line .machine_raw or "")
-            ws_tasks .cell (row =row ,column =4 ,value =line .or_val or "")
-            ws_tasks .cell (row =row ,column =5 ,value =line .fault_description or "")
-            ws_tasks .cell (row =row ,column =6 ,value =line .repair_notes or "")
-            ws_tasks .cell (row =row ,column =7 ,value =_fmt_time (line .hc ))
-            ws_tasks .cell (row =row ,column =8 ,value =_fmt_time (line .hf ))
-            ws_tasks .cell (row =row ,column =9 ,
-            value =float (line .delta_hours )if line .delta_hours is not None else "")
-            ws_tasks .cell (row =row ,column =10 ,
-            value =float (line .odometer_reading )if line .odometer_reading is not None else "")
-            ws_tasks .cell (row =row ,column =11 ,
-            value =float (line .engine_hours_reading )if line .engine_hours_reading is not None else "")
-            ws_tasks .cell (row =row ,column =12 ,
-            value =float (line .crane_hours_reading )if line .crane_hours_reading is not None else "")
-            ws_tasks .cell (row =row ,column =13 ,
-            value =line .get_fault_category_display ()if line .fault_category else "")
-            ws_tasks .cell (row =row ,column =14 ,
-            value =line .get_fault_subcategory_display ()if line .fault_subcategory else "")
-            row +=1 
+        row = 2
+        for line in lines:
+            entry = line.entry
+            wo = entry.work_order
+            ws_tasks.cell(row=row, column=1, value=_op_name(wo))
+            ws_tasks.cell(row=row, column=2, value=_fmt_date(entry.work_date))
+            ws_tasks.cell(
+                row=row,
+                column=3,
+                value=(
+                    line.machine_asset.code
+                    if line.machine_asset
+                    else line.machine_raw or ""
+                ),
+            )
+            ws_tasks.cell(row=row, column=4, value=line.or_val or "")
+            ws_tasks.cell(
+                row=row, column=5, value=line.fault_description or ""
+            )
+            ws_tasks.cell(row=row, column=6, value=line.repair_notes or "")
+            ws_tasks.cell(row=row, column=7, value=_fmt_time(line.hc))
+            ws_tasks.cell(row=row, column=8, value=_fmt_time(line.hf))
+            ws_tasks.cell(
+                row=row,
+                column=9,
+                value=(
+                    float(line.delta_hours)
+                    if line.delta_hours is not None
+                    else ""
+                ),
+            )
+            ws_tasks.cell(
+                row=row,
+                column=10,
+                value=(
+                    float(line.odometer_reading)
+                    if line.odometer_reading is not None
+                    else ""
+                ),
+            )
+            ws_tasks.cell(
+                row=row,
+                column=11,
+                value=(
+                    float(line.engine_hours_reading)
+                    if line.engine_hours_reading is not None
+                    else ""
+                ),
+            )
+            ws_tasks.cell(
+                row=row,
+                column=12,
+                value=(
+                    float(line.crane_hours_reading)
+                    if line.crane_hours_reading is not None
+                    else ""
+                ),
+            )
+            ws_tasks.cell(
+                row=row,
+                column=13,
+                value=(
+                    line.get_fault_category_display()
+                    if line.fault_category
+                    else ""
+                ),
+            )
+            ws_tasks.cell(
+                row=row,
+                column=14,
+                value=(
+                    line.get_fault_subcategory_display()
+                    if line.fault_subcategory
+                    else ""
+                ),
+            )
+            row += 1
 
-        _autofit (ws_tasks )
+        _autofit(ws_tasks)
 
-
-
-
-        ws_parts =wb .create_sheet (title ="Repuestos")
-        parts_headers =[
-        "Operario","Fecha","Maquina / CdG",
-        "Referencia","Material","Cantidad",
-        "Procedencia","Proveedor","Precio unitario",
+        ws_parts = wb.create_sheet(title="Repuestos")
+        parts_headers = [
+            "Operario",
+            "Fecha",
+            "Maquina / CdG",
+            "Referencia",
+            "Material",
+            "Cantidad",
+            "Procedencia",
+            "Proveedor",
+            "Precio unitario",
         ]
-        _apply_header (ws_parts ,parts_headers )
+        _apply_header(ws_parts, parts_headers)
 
-        spare_lines =(
-        SparePartLine .objects 
-        .filter (entry_line__entry__work_order__in =wo_pks )
-        .select_related (
-        "entry_line__entry__work_order__uploaded_by__user",
-        "entry_line__machine_asset",
-        "vehicle",
+        spare_lines = (
+            SparePartLine.objects.filter(
+                entry_line__entry__work_order__in=wo_pks
+            )
+            .select_related(
+                "entry_line__entry__work_order__uploaded_by__user",
+                "entry_line__machine_asset",
+                "vehicle",
+            )
+            .order_by(
+                "entry_line__entry__work_order__uploaded_by__user__last_name",
+                "entry_line__entry__work_date",
+                "entry_line__line_number",
+                "line_number",
+            )
         )
-        .order_by (
-        "entry_line__entry__work_order__uploaded_by__user__last_name",
-        "entry_line__entry__work_date",
-        "entry_line__line_number",
-        "line_number",
-        )
-        )
 
-        row =2 
-        for spare in spare_lines :
-            line =spare .entry_line 
-            entry =line .entry 
-            wo =entry .work_order 
-            ws_parts .cell (row =row ,column =1 ,value =_op_name (wo ))
-            ws_parts .cell (row =row ,column =2 ,value =_fmt_date (entry .work_date ))
-            ws_parts .cell (row =row ,column =3 ,
-            value =line .machine_asset .code if line .machine_asset else line .machine_raw or "")
-            ws_parts .cell (row =row ,column =4 ,value =spare .reference or "")
-            ws_parts .cell (row =row ,column =5 ,value =spare .material or "")
-            ws_parts .cell (row =row ,column =6 ,
-            value =float (spare .quantity )if spare .quantity is not None else "")
-            ws_parts .cell (row =row ,column =7 ,value =spare .get_source_display ())
-            ws_parts .cell (row =row ,column =8 ,value =spare .supplier or "")
-            ws_parts .cell (row =row ,column =9 ,
-            value =float (spare .unit_price )if spare .unit_price is not None else "")
-            row +=1 
+        row = 2
+        for spare in spare_lines:
+            line = spare.entry_line
+            entry = line.entry
+            wo = entry.work_order
+            ws_parts.cell(row=row, column=1, value=_op_name(wo))
+            ws_parts.cell(row=row, column=2, value=_fmt_date(entry.work_date))
+            ws_parts.cell(
+                row=row,
+                column=3,
+                value=(
+                    line.machine_asset.code
+                    if line.machine_asset
+                    else line.machine_raw or ""
+                ),
+            )
+            ws_parts.cell(row=row, column=4, value=spare.reference or "")
+            ws_parts.cell(row=row, column=5, value=spare.material or "")
+            ws_parts.cell(
+                row=row,
+                column=6,
+                value=(
+                    float(spare.quantity) if spare.quantity is not None else ""
+                ),
+            )
+            ws_parts.cell(row=row, column=7, value=spare.get_source_display())
+            ws_parts.cell(row=row, column=8, value=spare.supplier or "")
+            ws_parts.cell(
+                row=row,
+                column=9,
+                value=(
+                    float(spare.unit_price)
+                    if spare.unit_price is not None
+                    else ""
+                ),
+            )
+            row += 1
 
-        _autofit (ws_parts )
+        _autofit(ws_parts)
 
-
-
-
-        ws_gaps =wb .create_sheet (title ="Incidencias de jornada")
-        gaps_headers =[
-        "Operario","Fecha","Tipo","Inicio","Fin",
-        "Duracion (min)","Categoria ausencia",
-        "Ha comido","Hora comida","Nota","Resuelto",
+        ws_gaps = wb.create_sheet(title="Incidencias de jornada")
+        gaps_headers = [
+            "Operario",
+            "Fecha",
+            "Tipo",
+            "Inicio",
+            "Fin",
+            "Duracion (min)",
+            "Categoria ausencia",
+            "Ha comido",
+            "Hora comida",
+            "Nota",
+            "Resuelto",
         ]
-        _apply_header (ws_gaps ,gaps_headers )
+        _apply_header(ws_gaps, gaps_headers)
 
-        gaps =(
-        WorkdayGap .objects 
-        .filter (work_order__in =wo_pks )
-        .select_related (
-        "work_order__uploaded_by__user",
-        "work_order__entries",
-        "absence_category",
+        gaps = (
+            WorkdayGap.objects.filter(work_order__in=wo_pks)
+            .select_related(
+                "work_order__uploaded_by__user",
+                "work_order__entries",
+                "absence_category",
+            )
+            .prefetch_related("work_order__entries")
+            .order_by(
+                "work_order__uploaded_by__user__last_name",
+                "gap_start",
+            )
         )
-        .prefetch_related ("work_order__entries")
-        .order_by (
-        "work_order__uploaded_by__user__last_name",
-        "gap_start",
+
+        row = 2
+        for gap in gaps:
+            wo = gap.work_order
+            entry = wo.entries.first()
+            ws_gaps.cell(row=row, column=1, value=_op_name(wo))
+            ws_gaps.cell(
+                row=row,
+                column=2,
+                value=_fmt_date(entry.work_date) if entry else "",
+            )
+            ws_gaps.cell(row=row, column=3, value=gap.get_gap_type_display())
+            ws_gaps.cell(row=row, column=4, value=_fmt_time(gap.gap_start))
+            ws_gaps.cell(row=row, column=5, value=_fmt_time(gap.gap_end))
+            ws_gaps.cell(row=row, column=6, value=gap.duration_minutes)
+            ws_gaps.cell(
+                row=row,
+                column=7,
+                value=(
+                    gap.absence_category.label if gap.absence_category else ""
+                ),
+            )
+
+            if gap.gap_type == WorkdayGap.GapType.LUNCH_BREAK:
+                ws_gaps.cell(
+                    row=row,
+                    column=8,
+                    value=(
+                        "Si"
+                        if gap.lunch_had
+                        else ("No" if gap.lunch_had is False else "")
+                    ),
+                )
+                ws_gaps.cell(
+                    row=row, column=9, value=_fmt_time(gap.lunch_time)
+                )
+            else:
+                ws_gaps.cell(row=row, column=8, value="")
+                ws_gaps.cell(row=row, column=9, value="")
+            ws_gaps.cell(row=row, column=10, value=gap.note or "")
+            ws_gaps.cell(
+                row=row, column=11, value="Si" if gap.resolved else "No"
+            )
+            row += 1
+
+        _autofit(ws_gaps)
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+
+        stamp = tz_now().strftime("%Y%m%d_%H%M%S")
+        filename = f"partes_digitales_completo_{stamp}.xlsx"
+        response = HttpResponse(
+            buf.read(),
+            content_type=XLSX_CONTENT_TYPE,
         )
-        )
-
-        row =2 
-        for gap in gaps :
-            wo =gap .work_order 
-            entry =wo .entries .first ()
-            ws_gaps .cell (row =row ,column =1 ,value =_op_name (wo ))
-            ws_gaps .cell (row =row ,column =2 ,
-            value =_fmt_date (entry .work_date )if entry else "")
-            ws_gaps .cell (row =row ,column =3 ,value =gap .get_gap_type_display ())
-            ws_gaps .cell (row =row ,column =4 ,value =_fmt_time (gap .gap_start ))
-            ws_gaps .cell (row =row ,column =5 ,value =_fmt_time (gap .gap_end ))
-            ws_gaps .cell (row =row ,column =6 ,value =gap .duration_minutes )
-            ws_gaps .cell (row =row ,column =7 ,
-            value =gap .absence_category .label if gap .absence_category else "")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
 
-            if gap .gap_type ==WorkdayGap .GapType .LUNCH_BREAK :
-                ws_gaps .cell (row =row ,column =8 ,
-                value ="Si"if gap .lunch_had else ("No"if gap .lunch_had is False else ""))
-                ws_gaps .cell (row =row ,column =9 ,value =_fmt_time (gap .lunch_time ))
-            else :
-                ws_gaps .cell (row =row ,column =8 ,value ="")
-                ws_gaps .cell (row =row ,column =9 ,value ="")
-            ws_gaps .cell (row =row ,column =10 ,value =gap .note or "")
-            ws_gaps .cell (row =row ,column =11 ,value ="Si"if gap .resolved else "No")
-            row +=1 
-
-        _autofit (ws_gaps )
-
-        buf =io .BytesIO ()
-        wb .save (buf )
-        buf .seek (0 )
-
-        filename =f"partes_digitales_completo_{tz_now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-        response =HttpResponse (
-        buf .read (),
-        content_type ="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-        response ["Content-Disposition"]=f'attachment; filename="{filename}"'
-        return response 
-
-
-class WorkOrderMachineFilterView (SupervisorAccessMixin ,View ):
+class WorkOrderMachineFilterView(SupervisorAccessMixin, View):
     """
     JSON endpoint returning distinct MachineAsset codes present in the
     WorkOrderEntryLine records of DIGITAL/GENERATED WorkOrders for the
@@ -6000,83 +6217,72 @@ class WorkOrderMachineFilterView (SupervisorAccessMixin ,View ):
     Accesible para los roles SUPERVISOR y ADMIN (SupervisorAccessMixin).
     """
 
-    def get (self ,request ,*args ,**kwargs ):
+    def get(self, request, *args, **kwargs):
         """
         Returns distinct MachineAsset codes present in the filtered WorkOrders.
         ---
-        Devuelve los códigos de MachineAsset distintos en los WorkOrders filtrados.
+        Devuelve los códigos de MachineAsset distintos en los WorkOrders
+        filtrados.
         """
-        from django .http import JsonResponse 
-        from datetime import datetime as _dt_mf 
-        from work_order_processor .models import WorkOrderEntryLine 
+        from django.http import JsonResponse
+        from datetime import datetime as _dt_mf
+        from work_order_processor.models import WorkOrderEntryLine
 
-        company =request .user .company_user .company 
-        operator_pk =request .GET .get ("operator_pk","").strip ()
-        date_from_raw =request .GET .get ("date_from","").strip ()
-        date_to_raw =request .GET .get ("date_to","").strip ()
-        q_raw =request .GET .get ("q","").strip ()
+        company = request.user.company_user.company
+        operator_pk = request.GET.get("operator_pk", "").strip()
+        date_from_raw = request.GET.get("date_from", "").strip()
+        date_to_raw = request.GET.get("date_to", "").strip()
+        q_raw = request.GET.get("q", "").strip()
 
-        def _parse_iso (val ):
+        def _parse_iso(val):
             """Parses YYYY-MM-DD string, returns date or None.
             --- Parsea cadena YYYY-MM-DD, devuelve date o None."""
-            if not val :
-                return None 
-            try :
-                return _dt_mf .strptime (val ,"%Y-%m-%d").date ()
-            except ValueError :
-                return None 
+            if not val:
+                return None
+            try:
+                return _dt_mf.strptime(val, "%Y-%m-%d").date()
+            except ValueError:
+                return None
 
-        date_from =_parse_iso (date_from_raw )
-        date_to =_parse_iso (date_to_raw )
+        date_from = _parse_iso(date_from_raw)
+        date_to = _parse_iso(date_to_raw)
 
-
-
-        qs =(
-        WorkOrderEntryLine .objects 
-        .filter (
-        entry__work_order__company =company ,
-        entry__work_order__source__in =[
-        WorkOrder .Source .DIGITAL ,
-        WorkOrder .Source .GENERATED ,
-        ],
-        machine_asset__isnull =False ,
-        )
+        qs = WorkOrderEntryLine.objects.filter(
+            entry__work_order__company=company,
+            entry__work_order__source__in=[
+                WorkOrder.Source.DIGITAL,
+                WorkOrder.Source.GENERATED,
+            ],
+            machine_asset__isnull=False,
         )
 
-
-        if operator_pk :
-            try :
-                qs =qs .filter (
-                entry__work_order__uploaded_by__pk =int (operator_pk ),
-                entry__work_order__uploaded_by__company =company ,
+        if operator_pk:
+            try:
+                qs = qs.filter(
+                    entry__work_order__uploaded_by__pk=int(operator_pk),
+                    entry__work_order__uploaded_by__company=company,
                 )
-            except (ValueError ,TypeError ):
-                pass 
+            except (ValueError, TypeError):
+                pass
 
+        if date_from:
+            qs = qs.filter(entry__work_date__gte=date_from)
+        if date_to:
+            qs = qs.filter(entry__work_date__lte=date_to)
 
-        if date_from :
-            qs =qs .filter (entry__work_date__gte =date_from )
-        if date_to :
-            qs =qs .filter (entry__work_date__lte =date_to )
+        if q_raw:
+            qs = qs.filter(machine_asset__code__icontains=q_raw)
 
-
-        if q_raw :
-            qs =qs .filter (machine_asset__code__icontains =q_raw )
-
-        codes =(
-        qs 
-        .values_list ("machine_asset__code",flat =True )
-        .distinct ()
-        .order_by ("machine_asset__code")
+        codes = (
+            qs.values_list("machine_asset__code", flat=True)
+            .distinct()
+            .order_by("machine_asset__code")
         )
 
-        return JsonResponse ({"results":list (codes )})
+        return JsonResponse({"results": list(codes)})
 
 
-
-
-
-class ExportTemplateListView (SupervisorAccessMixin ,View ):
+class ExportTemplateListView(SupervisorAccessMixin, View):
     """
     Lists all ExportTemplate records belonging to the authenticated user.
     Returns a JSON response suitable for AJAX calls from the export modal,
@@ -6092,17 +6298,21 @@ class ExportTemplateListView (SupervisorAccessMixin ,View ):
     GET             — renderiza panel/export_templates/list.html.
     """
 
-    template_name ="panel/export_templates/list.html"
+    template_name = "panel/export_templates/list.html"
 
     def get(self, request, *args, **kwargs):
         """
-        Returns the user's export templates (personal + global) as JSON or HTML.
+        Returns the user's export templates (personal + global) as JSON or
+        HTML.
         Auto-creates the default personal template if the user has none.
-        JSON response includes is_global flag so the frontend can distinguish both types.
+        JSON response includes is_global flag so the frontend can distinguish
+        both types.
         ---
-        Devuelve las plantillas del usuario (personales + globales) como JSON o HTML.
+        Devuelve las plantillas del usuario (personales + globales) como JSON o
+        HTML.
         Crea la plantilla personal por defecto si el usuario no tiene ninguna.
-        La respuesta JSON incluye is_global para que el frontend distinga ambos tipos.
+        La respuesta JSON incluye is_global para que el frontend distinga ambos
+        tipos.
         """
         from django.http import JsonResponse
         from work_order_processor.models import ExportTemplate
@@ -6123,6 +6333,7 @@ class ExportTemplateListView (SupervisorAccessMixin ,View ):
         ).order_by("name")
 
         if request.GET.get("format") == "json":
+
             def _serialize(t, is_global=False):
                 return {
                     "id": t.pk,
@@ -6133,10 +6344,10 @@ class ExportTemplateListView (SupervisorAccessMixin ,View ):
                     "sheet_format": t.sheet_format,
                     "operator_scope": t.operator_scope,
                 }
-            data = (
-                [_serialize(t, is_global=False) for t in templates_propias]
-                + [_serialize(t, is_global=True) for t in templates_globales]
-            )
+
+            data = [
+                _serialize(t, is_global=False) for t in templates_propias
+            ] + [_serialize(t, is_global=True) for t in templates_globales]
             return JsonResponse({"templates": data})
 
         _is_admin = cu.role == "ADMIN"
@@ -6146,9 +6357,10 @@ class ExportTemplateListView (SupervisorAccessMixin ,View ):
             "own_presence": PresenceStatus.objects.filter(
                 company_user=cu,
                 starts_at__lte=now(),
-            ).filter(
-                Q(ends_at__isnull=True) | Q(ends_at__gt=now())
-            ).order_by("-starts_at").first(),
+            )
+            .filter(Q(ends_at__isnull=True) | Q(ends_at__gt=now()))
+            .order_by("-starts_at")
+            .first(),
             "active_nav": "work_order_admin_history",
             "templates_propias": templates_propias,
             "templates_globales": templates_globales,
@@ -6172,7 +6384,7 @@ class ExportTemplateListView (SupervisorAccessMixin ,View ):
         return render(request, self.template_name, context)
 
 
-class ExportTemplateCreateView (SupervisorAccessMixin ,View ):
+class ExportTemplateCreateView(SupervisorAccessMixin, View):
     """
     Creates a new ExportTemplate for the authenticated user.
     Accepts POST with JSON body or form data.
@@ -6191,7 +6403,8 @@ class ExportTemplateCreateView (SupervisorAccessMixin ,View ):
         Otherwise creates a personal template for the authenticated user.
         ---
         Valida y crea la ExportTemplate.
-        Si el usuario es ADMIN y el body incluye is_global=true, crea una plantilla
+        Si el usuario es ADMIN y el body incluye is_global=true, crea una
+        plantilla
         global ligada a la empresa (company_user=None).
         En caso contrario, crea una plantilla personal del usuario autenticado.
         """
@@ -6209,24 +6422,43 @@ class ExportTemplateCreateView (SupervisorAccessMixin ,View ):
 
         name = str(body.get("name", "")).strip()
         columns = body.get("columns", [])
-        sheet_format = str(body.get("sheet_format", ExportTemplate.SheetFormat.SINGLE_SHEET)).strip()
-        operator_scope = str(body.get("operator_scope", ExportTemplate.OperatorScope.ALL)).strip()
+        sheet_format = str(
+            body.get("sheet_format", ExportTemplate.SheetFormat.SINGLE_SHEET)
+        ).strip()
+        operator_scope = str(
+            body.get("operator_scope", ExportTemplate.OperatorScope.ALL)
+        ).strip()
         is_default = bool(body.get("is_default", False))
         want_global = bool(body.get("is_global", False)) and cu.role == "ADMIN"
 
         if not name:
-            return JsonResponse({"error": "El nombre es obligatorio."}, status=400)
+            return JsonResponse(
+                {"error": "El nombre es obligatorio."}, status=400
+            )
         if not columns:
-            return JsonResponse({"error": "Selecciona al menos una columna."}, status=400)
+            return JsonResponse(
+                {"error": "Selecciona al menos una columna."}, status=400
+            )
         if sheet_format not in ExportTemplate.SheetFormat.values:
-            return JsonResponse({"error": "Formato de hoja no válido."}, status=400)
+            return JsonResponse(
+                {"error": "Formato de hoja no válido."}, status=400
+            )
         if operator_scope not in ExportTemplate.OperatorScope.values:
-            return JsonResponse({"error": "Alcance de operarios no válido."}, status=400)
+            return JsonResponse(
+                {"error": "Alcance de operarios no válido."}, status=400
+            )
 
         if want_global:
-            if ExportTemplate.objects.filter(company=company, is_global=True, name=name).exists():
+            if ExportTemplate.objects.filter(
+                company=company, is_global=True, name=name
+            ).exists():
                 return JsonResponse(
-                    {"error": f"Ya existe una plantilla global con el nombre '{name}'."},
+                    {
+                        "error": (
+                            "Ya existe una plantilla global con el nombre "
+                            f"'{name}'."
+                        )
+                    },
                     status=400,
                 )
             template = ExportTemplate.objects.create(
@@ -6240,9 +6472,16 @@ class ExportTemplateCreateView (SupervisorAccessMixin ,View ):
                 is_default=False,
             )
         else:
-            if ExportTemplate.objects.filter(company_user=cu, is_global=False, name=name).exists():
+            if ExportTemplate.objects.filter(
+                company_user=cu, is_global=False, name=name
+            ).exists():
                 return JsonResponse(
-                    {"error": f"Ya existe una plantilla con el nombre '{name}'."},
+                    {
+                        "error": (
+                            "Ya existe una plantilla con el nombre "
+                            f"'{name}'."
+                        )
+                    },
                     status=400,
                 )
             template = ExportTemplate.objects.create(
@@ -6256,13 +6495,24 @@ class ExportTemplateCreateView (SupervisorAccessMixin ,View ):
                 is_default=is_default,
             )
         logger.info(
-            "# [EXPORT TEMPLATE] Plantilla pk=%s '%s' creada por %s (global=%s).",
-            template.pk, template.name, cu.user.username, want_global,
+            "# [EXPORT TEMPLATE] Plantilla pk=%s '%s' creada por %s "
+            "(global=%s).",
+            template.pk,
+            template.name,
+            cu.user.username,
+            want_global,
         )
-        return JsonResponse({"id": template.pk, "name": template.name, "is_global": want_global}, status=201)
+        return JsonResponse(
+            {
+                "id": template.pk,
+                "name": template.name,
+                "is_global": want_global,
+            },
+            status=201,
+        )
 
 
-class ExportTemplateUpdateView (SupervisorAccessMixin ,View ):
+class ExportTemplateUpdateView(SupervisorAccessMixin, View):
     """
     Updates an existing ExportTemplate belonging to the authenticated user.
     Returns JSON {ok: true} on success or {error} on failure.
@@ -6280,9 +6530,11 @@ class ExportTemplateUpdateView (SupervisorAccessMixin ,View ):
           with name + " (copia)" instead of editing the original.
         ---
         Valida y aplica la actualización.
-        - Plantilla personal: se actualiza directamente (debe pertenecer al usuario).
+        - Plantilla personal: se actualiza directamente (debe pertenecer al
+        usuario).
         - Plantilla global + ADMIN: se actualiza directamente.
-        - Plantilla global + no-ADMIN (SUPERVISOR): se crea una copia personal con
+        - Plantilla global + no-ADMIN (SUPERVISOR): se crea una copia personal
+        con
           nombre + " (copia)" en lugar de editar la original.
         """
         import json as _json
@@ -6294,14 +6546,20 @@ class ExportTemplateUpdateView (SupervisorAccessMixin ,View ):
 
         # Resolve the template — either personal or global of the same company
         try:
-            template = ExportTemplate.objects.get(pk=pk, company_user=cu, is_global=False)
+            template = ExportTemplate.objects.get(
+                pk=pk, company_user=cu, is_global=False
+            )
             is_own_personal = True
         except ExportTemplate.DoesNotExist:
             is_own_personal = False
             try:
-                template = ExportTemplate.objects.get(pk=pk, company=company, is_global=True)
+                template = ExportTemplate.objects.get(
+                    pk=pk, company=company, is_global=True
+                )
             except ExportTemplate.DoesNotExist:
-                return JsonResponse({"error": "Plantilla no encontrada."}, status=404)
+                return JsonResponse(
+                    {"error": "Plantilla no encontrada."}, status=404
+                )
 
         try:
             body = _json.loads(request.body)
@@ -6310,20 +6568,33 @@ class ExportTemplateUpdateView (SupervisorAccessMixin ,View ):
 
         name = str(body.get("name", template.name)).strip()
         columns = body.get("columns", template.columns)
-        sheet_format = str(body.get("sheet_format", template.sheet_format)).strip()
-        operator_scope = str(body.get("operator_scope", template.operator_scope)).strip()
+        sheet_format = str(
+            body.get("sheet_format", template.sheet_format)
+        ).strip()
+        operator_scope = str(
+            body.get("operator_scope", template.operator_scope)
+        ).strip()
         is_default = bool(body.get("is_default", template.is_default))
 
         if not name:
-            return JsonResponse({"error": "El nombre es obligatorio."}, status=400)
+            return JsonResponse(
+                {"error": "El nombre es obligatorio."}, status=400
+            )
         if not columns:
-            return JsonResponse({"error": "Selecciona al menos una columna."}, status=400)
+            return JsonResponse(
+                {"error": "Selecciona al menos una columna."}, status=400
+            )
         if sheet_format not in ExportTemplate.SheetFormat.values:
-            return JsonResponse({"error": "Formato de hoja no válido."}, status=400)
+            return JsonResponse(
+                {"error": "Formato de hoja no válido."}, status=400
+            )
         if operator_scope not in ExportTemplate.OperatorScope.values:
-            return JsonResponse({"error": "Alcance de operarios no válido."}, status=400)
+            return JsonResponse(
+                {"error": "Alcance de operarios no válido."}, status=400
+            )
 
-        # Global template + non-ADMIN → create personal copy, do not touch original
+        # Global template + non-ADMIN → create personal copy, do not touch
+        # original
         if template.is_global and cu.role != "ADMIN":
             copy_name = f"{name} (copia)"
             # If a personal copy with that name already exists, just return it
@@ -6331,7 +6602,14 @@ class ExportTemplateUpdateView (SupervisorAccessMixin ,View ):
                 company_user=cu, is_global=False, name=copy_name
             ).first()
             if existing_copy:
-                return JsonResponse({"ok": True, "copied": True, "id": existing_copy.pk, "name": existing_copy.name})
+                return JsonResponse(
+                    {
+                        "ok": True,
+                        "copied": True,
+                        "id": existing_copy.pk,
+                        "name": existing_copy.name,
+                    }
+                )
             copy = ExportTemplate.objects.create(
                 company_user=cu,
                 company=None,
@@ -6343,22 +6621,42 @@ class ExportTemplateUpdateView (SupervisorAccessMixin ,View ):
                 is_default=False,
             )
             logger.info(
-                "# [EXPORT TEMPLATE] Copia personal pk=%s '%s' creada por %s desde global pk=%s.",
-                copy.pk, copy.name, cu.user.username, template.pk,
+                "# [EXPORT TEMPLATE] Copia personal pk=%s '%s' creada por %s "
+                "desde global pk=%s.",
+                copy.pk,
+                copy.name,
+                cu.user.username,
+                template.pk,
             )
-            return JsonResponse({"ok": True, "copied": True, "id": copy.pk, "name": copy.name})
+            return JsonResponse(
+                {"ok": True, "copied": True, "id": copy.pk, "name": copy.name}
+            )
 
         # Personal template or global + ADMIN → update directly
         if is_own_personal and name != template.name:
-            if ExportTemplate.objects.filter(company_user=cu, is_global=False, name=name).exists():
+            if ExportTemplate.objects.filter(
+                company_user=cu, is_global=False, name=name
+            ).exists():
                 return JsonResponse(
-                    {"error": f"Ya existe una plantilla con el nombre '{name}'."},
+                    {
+                        "error": (
+                            "Ya existe una plantilla con el nombre "
+                            f"'{name}'."
+                        )
+                    },
                     status=400,
                 )
         if template.is_global and name != template.name:
-            if ExportTemplate.objects.filter(company=company, is_global=True, name=name).exists():
+            if ExportTemplate.objects.filter(
+                company=company, is_global=True, name=name
+            ).exists():
                 return JsonResponse(
-                    {"error": f"Ya existe una plantilla global con el nombre '{name}'."},
+                    {
+                        "error": (
+                            "Ya existe una plantilla global con el nombre "
+                            f"'{name}'."
+                        )
+                    },
                     status=400,
                 )
 
@@ -6371,12 +6669,14 @@ class ExportTemplateUpdateView (SupervisorAccessMixin ,View ):
         template.save()
         logger.info(
             "# [EXPORT TEMPLATE] Plantilla pk=%s '%s' actualizada por %s.",
-            template.pk, template.name, cu.user.username,
+            template.pk,
+            template.name,
+            cu.user.username,
         )
         return JsonResponse({"ok": True})
 
 
-class ExportTemplateDeleteView (SupervisorAccessMixin ,View ):
+class ExportTemplateDeleteView(SupervisorAccessMixin, View):
     """
     Deletes an ExportTemplate belonging to the authenticated user.
     Returns JSON {ok: true} on success or {error} on failure.
@@ -6387,38 +6687,46 @@ class ExportTemplateDeleteView (SupervisorAccessMixin ,View ):
     No permite eliminar la última plantilla del usuario.
     """
 
-    def post (self ,request ,pk ,*args ,**kwargs ):
+    def post(self, request, pk, *args, **kwargs):
         """
         Deletes the template and redirects to the list.
         ---
         Elimina la plantilla y redirige a la lista.
         """
-        from django .http import JsonResponse 
-        from work_order_processor .models import ExportTemplate 
+        from django.http import JsonResponse
+        from work_order_processor.models import ExportTemplate
 
-        cu =request .user .company_user 
+        cu = request.user.company_user
 
-        try :
-            template =ExportTemplate .objects .get (pk =pk ,company_user =cu )
-        except ExportTemplate .DoesNotExist :
-            return JsonResponse ({"error":"Plantilla no encontrada."},status =404 )
-
-        if ExportTemplate .objects .filter (company_user =cu ).count ()<=1 :
-            return JsonResponse (
-            {"error":"No puedes eliminar tu única plantilla de exportación."},
-            status =400 ,
+        try:
+            template = ExportTemplate.objects.get(pk=pk, company_user=cu)
+        except ExportTemplate.DoesNotExist:
+            return JsonResponse(
+                {"error": "Plantilla no encontrada."}, status=404
             )
 
-        name =template .name 
-        template .delete ()
-        logger .info (
-        "# [EXPORT TEMPLATE] Plantilla '%s' eliminada por %s.",
-        name ,cu .user .username ,
+        if ExportTemplate.objects.filter(company_user=cu).count() <= 1:
+            return JsonResponse(
+                {
+                    "error": (
+                        "No puedes eliminar tu única plantilla de "
+                        "exportación."
+                    )
+                },
+                status=400,
+            )
+
+        name = template.name
+        template.delete()
+        logger.info(
+            "# [EXPORT TEMPLATE] Plantilla '%s' eliminada por %s.",
+            name,
+            cu.user.username,
         )
-        return JsonResponse ({"ok":True })
+        return JsonResponse({"ok": True})
 
 
-class WorkOrderAdminExportByTemplateView (SupervisorAccessMixin ,View ):
+class WorkOrderAdminExportByTemplateView(SupervisorAccessMixin, View):
     """
     Generates and streams an Excel file from selected WorkOrder PKs
     using the configuration of the chosen ExportTemplate.
@@ -6438,7 +6746,8 @@ class WorkOrderAdminExportByTemplateView (SupervisorAccessMixin ,View ):
 
     POST /panel/work-orders/export-by-template/
          Parámetros del cuerpo:
-           template_pk  (int)       — pk de ExportTemplate (debe pertenecer al usuario).
+           template_pk  (int)       — pk de ExportTemplate (debe pertenecer al
+           usuario).
            pks          (list[int]) — claves primarias de WorkOrder a exportar.
            operator_pks (list[int]) — filtro de operario opcional cuando
                                        template.operator_scope == 'selection'.
@@ -6447,7 +6756,7 @@ class WorkOrderAdminExportByTemplateView (SupervisorAccessMixin ,View ):
     Devuelve HTTP 400 en entrada inválida o HTTP 404 en plantilla desconocida.
     """
 
-    def post (self ,request ,*args ,**kwargs ):
+    def post(self, request, *args, **kwargs):
         """
         Resolves the template and work orders, calls build_export_from_template
         and streams the resulting workbook as an xlsx attachment.
@@ -6455,50 +6764,46 @@ class WorkOrderAdminExportByTemplateView (SupervisorAccessMixin ,View ):
         Resuelve la plantilla y los partes, llama a build_export_from_template
         y devuelve el libro resultante como adjunto xlsx.
         """
-        import io 
-        from django .http import HttpResponse ,HttpResponseBadRequest 
-        from django .utils .timezone import now as tz_now 
-        from work_order_processor .models import ExportTemplate 
-        from work_order_processor .services import build_export_from_template 
+        import io
+        from django.http import HttpResponse, HttpResponseBadRequest
+        from django.utils.timezone import now as tz_now
+        from work_order_processor.models import ExportTemplate
+        from work_order_processor.services import build_export_from_template
 
-        cu =request .user .company_user 
-        company =cu .company 
+        cu = request.user.company_user
+        company = cu.company
 
-
-
-
-
-        try :
-            template_pk =int (request .POST .get ("template_pk",""))
-            # Resolve template: personal (company_user=cu) OR global (company, is_global=True)
-            # Resolver plantilla: personal (company_user=cu) O global (company, is_global=True)
-            try :
-                template =ExportTemplate .objects .get (pk =template_pk ,company_user =cu ,is_global =False )
-            except ExportTemplate .DoesNotExist :
-                template =ExportTemplate .objects .get (pk =template_pk ,company =company ,is_global =True )
-        except (ValueError ,TypeError ,ExportTemplate .DoesNotExist ):
-            return HttpResponseBadRequest (
-            "# [EXPORT BY TEMPLATE] Plantilla no encontrada o no pertenece al usuario."
+        try:
+            template_pk = int(request.POST.get("template_pk", ""))
+            # Resolve template: personal (company_user=cu) OR global (company,
+            # is_global=True)
+            # Resolver plantilla: personal (company_user=cu) O global (company,
+            # is_global=True)
+            try:
+                template = ExportTemplate.objects.get(
+                    pk=template_pk, company_user=cu, is_global=False
+                )
+            except ExportTemplate.DoesNotExist:
+                template = ExportTemplate.objects.get(
+                    pk=template_pk, company=company, is_global=True
+                )
+        except (ValueError, TypeError, ExportTemplate.DoesNotExist):
+            return HttpResponseBadRequest(
+                "# [EXPORT BY TEMPLATE] Plantilla no encontrada o no "
+                "pertenece al usuario."
             )
 
+        raw_pks = request.POST.getlist("pks")
+        try:
+            pk_list = [int(p) for p in raw_pks if str(p).strip().isdigit()]
+        except (ValueError, TypeError):
+            pk_list = []
 
-
-
-
-        raw_pks =request .POST .getlist ("pks")
-        try :
-            pk_list =[int (p )for p in raw_pks if str (p ).strip ().isdigit ()]
-        except (ValueError ,TypeError ):
-            pk_list =[]
-
-        if not pk_list :
-            return HttpResponseBadRequest (
-            "# [EXPORT BY TEMPLATE] No se han seleccionado partes para exportar."
+        if not pk_list:
+            return HttpResponseBadRequest(
+                "# [EXPORT BY TEMPLATE] No se han seleccionado partes para "
+                "exportar."
             )
-
-
-
-
 
         # Note: prefetch_related is intentionally omitted here.
         # build_export_from_template builds its own WorkOrderEntryLine
@@ -6509,83 +6814,90 @@ class WorkOrderAdminExportByTemplateView (SupervisorAccessMixin ,View ):
         # build_export_from_template construye su propio queryset de
         # WorkOrderEntryLine internamente. Pasar un queryset con anotaciones
         # prefetch como subquery hace que Django emita filas duplicadas.
-        qs =WorkOrder .objects .filter (
-        pk__in =pk_list ,
-        company =company ,
-        source__in =[WorkOrder .Source .DIGITAL ,WorkOrder .Source .GENERATED ],
-        ).order_by (
-        "uploaded_by__user__last_name",
-        "uploaded_by__user__first_name",
-        "pk",
+        qs = WorkOrder.objects.filter(
+            pk__in=pk_list,
+            company=company,
+            source__in=[WorkOrder.Source.DIGITAL, WorkOrder.Source.GENERATED],
+        ).order_by(
+            "uploaded_by__user__last_name",
+            "uploaded_by__user__first_name",
+            "pk",
         )
 
+        if template.operator_scope == "selection":
+            raw_op_pks = request.POST.getlist("operator_pks")
+            try:
+                op_pk_list = [
+                    int(p) for p in raw_op_pks if str(p).strip().isdigit()
+                ]
+            except (ValueError, TypeError):
+                op_pk_list = []
+            if op_pk_list:
+                qs = qs.filter(uploaded_by__pk__in=op_pk_list)
 
-
-
-
-        if template .operator_scope =="selection":
-            raw_op_pks =request .POST .getlist ("operator_pks")
-            try :
-                op_pk_list =[int (p )for p in raw_op_pks if str (p ).strip ().isdigit ()]
-            except (ValueError ,TypeError ):
-                op_pk_list =[]
-            if op_pk_list :
-                qs =qs .filter (uploaded_by__pk__in =op_pk_list )
-
-        if not qs .exists ():
-            return HttpResponseBadRequest (
-            "# [EXPORT BY TEMPLATE] Ninguno de los partes seleccionados es válido para exportar."
+        if not qs.exists():
+            return HttpResponseBadRequest(
+                "# [EXPORT BY TEMPLATE] Ninguno de los partes seleccionados "
+                "es válido para exportar."
             )
-
-
-
-
 
         # H07 punto 5 (2026-08-14): format=pdf usa la misma resolución de
         # plantilla/partes/operator_pks de arriba, solo cambia el generador
         # y el content_type/extensión de salida.
-        export_format =request .POST .get ("format","xlsx").strip ().lower ()
-        if export_format not in ("xlsx","pdf"):
-            export_format ="xlsx"
+        export_format = request.POST.get("format", "xlsx").strip().lower()
+        if export_format not in ("xlsx", "pdf"):
+            export_format = "xlsx"
 
-        if export_format =="pdf":
-            from work_order_processor .services import build_pdf_from_template 
-            pdf_bytes =build_pdf_from_template (template ,qs )
+        if export_format == "pdf":
+            from work_order_processor.services import build_pdf_from_template
 
-            filename =(
-            f"partes_digitales_{tz_now().strftime('%Y%m%d_%H%M%S')}.pdf"
+            pdf_bytes = build_pdf_from_template(template, qs)
+
+            filename = (
+                f"partes_digitales_{tz_now().strftime('%Y%m%d_%H%M%S')}.pdf"
             )
-            response =HttpResponse (pdf_bytes ,content_type ="application/pdf")
-            response ["Content-Disposition"]=f'attachment; filename="{filename}"'
-            logger .info (
-            "# [EXPORT BY TEMPLATE] Exportación PDF '%s' (%d partes) por %s.",
-            template .name ,qs .count (),cu .user .username ,
+            response = HttpResponse(pdf_bytes, content_type="application/pdf")
+            response["Content-Disposition"] = (
+                f'attachment; filename="{filename}"'
             )
-            return response 
+            logger.info(
+                "# [EXPORT BY TEMPLATE] Exportación PDF '%s' (%d partes) por "
+                "%s.",
+                template.name,
+                qs.count(),
+                cu.user.username,
+            )
+            return response
 
-        wb =build_export_from_template (template ,qs )
-        buf =io .BytesIO ()
-        wb .save (buf )
-        buf .seek (0 )
+        wb = build_export_from_template(template, qs)
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
 
-        filename =(
-        f"partes_digitales_{tz_now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        filename = (
+            f"partes_digitales_{tz_now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         )
-        response =HttpResponse (
-        buf .getvalue (),
-        content_type ="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        response = HttpResponse(
+            buf.getvalue(),
+            content_type=XLSX_CONTENT_TYPE,
         )
-        response ["Content-Disposition"]=f'attachment; filename="{filename}"'
-        logger .info (
-        "# [EXPORT BY TEMPLATE] Exportación '%s' (%d partes) por %s.",
-        template .name ,qs .count (),cu .user .username ,
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        logger.info(
+            "# [EXPORT BY TEMPLATE] Exportación '%s' (%d partes) por %s.",
+            template.name,
+            qs.count(),
+            cu.user.username,
         )
         return response
+
+
 # ===========================================================================
 # WORK PERIOD GROUP — Vistas del nuevo modelo WorkPeriodGroup (Opción B)
 # Arquitectura: el periodo es la entidad primaria de la UI. Los operarios
 # son subordinados al grupo.
 # ===========================================================================
+
+
 def _compute_period_overtime(operator, group):
     """
     Sums overtime hours (H24/S020 punto 4, "visor de horas extra por
@@ -6612,8 +6924,7 @@ def _compute_period_overtime(operator, group):
 
     date_to = group.end_date or _tz_now().date()
     work_orders = (
-        WorkOrder.objects
-        .filter(
+        WorkOrder.objects.filter(
             uploaded_by=operator,
             entries__work_date__gte=group.start_date,
             entries__work_date__lte=date_to,
@@ -6696,9 +7007,7 @@ class WorkPeriodGroupDetailView(CompanyUserRequiredMixin, View):
         cu = request.user.company_user
         company = cu.company
 
-        group = get_object_or_404(
-            WorkPeriodGroup, pk=pk, company=company
-        )
+        group = get_object_or_404(WorkPeriodGroup, pk=pk, company=company)
 
         is_elevated = cu.role in (
             CompanyUser.ROLE_ADMIN,
@@ -6710,9 +7019,9 @@ class WorkPeriodGroupDetailView(CompanyUserRequiredMixin, View):
             # Operators already assigned to this group.
             # Operarios ya asignados a este grupo.
             assigned_periods = list(
-                group.operator_periods
-                .select_related("company_user__user")
-                .order_by(
+                group.operator_periods.select_related(
+                    "company_user__user"
+                ).order_by(
                     "company_user__user__last_name",
                     "company_user__user__first_name",
                 )
@@ -6728,9 +7037,9 @@ class WorkPeriodGroupDetailView(CompanyUserRequiredMixin, View):
             # automática; esto solo saca a la luz operarios que
             # pasaron a activos después de crearse el grupo.
             available_operators = list(
-                CompanyUser.objects
-                .filter(
-                    company=company, is_active=True,
+                CompanyUser.objects.filter(
+                    company=company,
+                    is_active=True,
                     role=CompanyUser.ROLE_WORKSHOP,
                 )
                 .exclude(pk__in=assigned_cu_pks)
@@ -6751,7 +7060,8 @@ class WorkPeriodGroupDetailView(CompanyUserRequiredMixin, View):
             if _op_pk_raw.isdigit():
                 overtime_operator = next(
                     (
-                        wp.company_user for wp in assigned_periods
+                        wp.company_user
+                        for wp in assigned_periods
                         if wp.company_user_id == int(_op_pk_raw)
                     ),
                     None,
@@ -6762,7 +7072,8 @@ class WorkPeriodGroupDetailView(CompanyUserRequiredMixin, View):
             # WORKSHOP/DRIVER: can only view a group they belong to --
             # object-level check, not just role.
             own_period = WorkPeriod.objects.filter(
-                company_user=cu, group=group,
+                company_user=cu,
+                group=group,
             ).first()
             if own_period is None:
                 return HttpResponseForbidden(
@@ -6775,19 +7086,20 @@ class WorkPeriodGroupDetailView(CompanyUserRequiredMixin, View):
         overtime_hours_period = None
         if overtime_operator is not None:
             overtime_hours_period = _compute_period_overtime(
-                overtime_operator, group,
+                overtime_operator,
+                group,
             )
 
         context = {
-            "company":               company,
-            "company_user":          cu,
-            "active_nav":            "work_period_list",
-            "group":                 group,
-            "assigned_periods":      assigned_periods,
-            "available_operators":   available_operators,
-            "is_admin":              cu.role == "ADMIN",
-            "is_elevated":           is_elevated,
-            "overtime_operator":     overtime_operator,
+            "company": company,
+            "company_user": cu,
+            "active_nav": "work_period_list",
+            "group": group,
+            "assigned_periods": assigned_periods,
+            "available_operators": available_operators,
+            "is_admin": cu.role == "ADMIN",
+            "is_elevated": is_elevated,
+            "overtime_operator": overtime_operator,
             "overtime_hours_period": overtime_hours_period,
         }
         return render(request, self.template_name, context)
@@ -6828,9 +7140,7 @@ class WorkPeriodGroupCloseView(SupervisorAccessMixin, View):
         cu = request.user.company_user
         company = cu.company
 
-        group = get_object_or_404(
-            WorkPeriodGroup, pk=pk, company=company
-        )
+        group = get_object_or_404(WorkPeriodGroup, pk=pk, company=company)
         DETAIL_URL = reverse(
             "panel:work_period_group_detail", kwargs={"pk": group.pk}
         )
@@ -6917,7 +7227,10 @@ class WorkPeriodGroupCloseView(SupervisorAccessMixin, View):
         logger.info(
             "# [WorkPeriodGroup] Grupo pk=%d '%s' cerrado por %s. "
             "%d partes revisados.",
-            group.pk, group.label, cu.user.username, len(pks),
+            group.pk,
+            group.label,
+            cu.user.username,
+            len(pks),
         )
         return redirect(DETAIL_URL)
 
@@ -6946,9 +7259,7 @@ class WorkPeriodGroupLockView(AdminRoleRequiredMixin, View):
         from ivr_config.models import WorkPeriodGroup
 
         cu = request.user.company_user
-        group = get_object_or_404(
-            WorkPeriodGroup, pk=pk, company=cu.company
-        )
+        group = get_object_or_404(WorkPeriodGroup, pk=pk, company=cu.company)
 
         new_state = not group.is_closed
         group.is_closed = new_state
@@ -6967,7 +7278,9 @@ class WorkPeriodGroupLockView(AdminRoleRequiredMixin, View):
         referer = request.META.get("HTTP_REFERER", "")
         return redirect(
             referer
-            or reverse("panel:work_period_group_detail", kwargs={"pk": group.pk})
+            or reverse(
+                "panel:work_period_group_detail", kwargs={"pk": group.pk}
+            )
         )
 
 
@@ -7017,8 +7330,7 @@ class WorkOrderDraftListView(SuperuserRequiredMixin, View):
         company = cu.company
 
         drafts = (
-            WorkOrder.objects
-            .filter(
+            WorkOrder.objects.filter(
                 company=company,
                 status=WorkOrder.Status.IN_PROGRESS,
                 source=WorkOrder.Source.DIGITAL,
@@ -7036,16 +7348,26 @@ class WorkOrderDraftListView(SuperuserRequiredMixin, View):
                 for line in entry.lines.all()
             ]
             first_entry = wo.entries.first()
-            draft_rows.append({
-                "work_order": wo,
-                "worker_name": first_entry.worker_name if first_entry else "",
-                "work_date": first_entry.work_date if first_entry else None,
-                "line_count": len(lines),
-                "machines": [
-                    line.machine_asset.code if line.machine_asset else line.machine_raw
-                    for line in lines
-                ],
-            })
+            draft_rows.append(
+                {
+                    "work_order": wo,
+                    "worker_name": (
+                        first_entry.worker_name if first_entry else ""
+                    ),
+                    "work_date": (
+                        first_entry.work_date if first_entry else None
+                    ),
+                    "line_count": len(lines),
+                    "machines": [
+                        (
+                            line.machine_asset.code
+                            if line.machine_asset
+                            else line.machine_raw
+                        )
+                        for line in lines
+                    ],
+                }
+            )
 
         context = {
             "company": company,
