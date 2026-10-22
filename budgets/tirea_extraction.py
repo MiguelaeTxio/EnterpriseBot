@@ -25,6 +25,7 @@ revisa antes de crear la orden.
 import json
 import logging
 import re
+import time
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
@@ -78,6 +79,46 @@ _RESPONSE_SCHEMA = {
         + BOOLEAN_FIELDS
     ),
 }
+
+# S133: reading the text instead of the file.
+# Lectura del texto en vez del archivo.
+MIN_TEXT_CHARS = 200
+TEXT_TIMEOUT_MS = 60_000
+TEXT_INTRO = (
+    "El documento llega ya leído como TEXTO (texto del PDF o OCR de la "
+    "imagen), no como imagen: donde abajo dice «imagen» entiende este "
+    "texto. Las tablas pueden salir desordenadas; cada etiqueta suele "
+    "ir seguida de su valor.\n\n---\n"
+)
+_FILENAMES = {
+    "application/pdf": "documento.pdf",
+    "image/jpeg": "documento.jpg",
+    "image/jpg": "documento.jpg",
+    "image/png": "documento.png",
+}
+
+
+def _document_text(file_bytes, mime_type):
+    """
+    Text of the document (embedded PDF text, else Cloud Vision).
+
+    ---
+
+    Texto del documento: el incrustado del PDF y, si no hay, el OCR de
+    Cloud Vision (document_explorer.cloud_vision_service). Cadena vacía
+    si no se puede (otro tipo de archivo o fallo de Vision).
+    """
+    filename = _FILENAMES.get((mime_type or "").split(";")[0].lower())
+    if not filename:
+        return ""
+    from document_explorer.cloud_vision_service import extract_text
+
+    try:
+        return extract_text(filename, file_bytes) or ""
+    except Exception as exc:  # noqa: BLE001 -- se lee el archivo
+        logger.warning("# [TIREA] Texto del documento no leído: %s", exc)
+        return ""
+
 
 _PROMPT = """Lo normal es que la imagen sea una captura o foto de un
 albarán de servicio de asistencia en carretera de la aplicación TIREA
@@ -172,20 +213,50 @@ def extract_tirea_albaran(file_bytes, mime_type, timeout_ms=90_000):
     segundo plano, le da más margen que la vista del panel).
     """
     client = get_gemini_client()
-    response = _generate_content_with_retry(
-        client,
-        model=DEFAULT_MODEL,
-        contents=[
+
+    def ask(document, timeout):
+        return _generate_content_with_retry(
+            client,
+            model=DEFAULT_MODEL,
+            contents=[document, _PROMPT],
+            config=GenerateContentConfig(
+                http_options=HttpOptions(timeout=timeout),
+                response_mime_type="application/json",
+                response_schema=_RESPONSE_SCHEMA,
+                thinking_config=ThinkingConfig(thinking_level="low"),
+                temperature=0.0,
+            ),
+        )
+
+    # S133: the text first (embedded PDF text or Cloud Vision OCR, in
+    # about a second); Gemini reads text much faster than the file
+    # (a PDF read took from one to five minutes). Without enough text,
+    # or if that call fails, Gemini reads the file as before.
+    # S133: primero el texto (el del PDF o el OCR de Cloud Vision, en
+    # un segundo); Gemini lee texto mucho más rápido que el archivo
+    # (leer el PDF tardaba de uno a cinco minutos). Sin texto
+    # suficiente, o si esa llamada falla, Gemini lee el archivo.
+    started = time.monotonic()
+    text = _document_text(file_bytes, mime_type)
+    response = None
+    if len(text.strip()) >= MIN_TEXT_CHARS:
+        try:
+            response = ask(TEXT_INTRO + text, TEXT_TIMEOUT_MS)
+        except Exception as exc:  # noqa: BLE001 -- se lee el archivo
+            logger.warning(
+                "# [TIREA] Lectura del texto fallida (%s); se lee el "
+                "archivo.", exc,
+            )
+    source = "texto"
+    if response is None:
+        source = "archivo"
+        response = ask(
             Part.from_bytes(data=file_bytes, mime_type=mime_type),
-            _PROMPT,
-        ],
-        config=GenerateContentConfig(
-            http_options=HttpOptions(timeout=timeout_ms),
-            response_mime_type="application/json",
-            response_schema=_RESPONSE_SCHEMA,
-            thinking_config=ThinkingConfig(thinking_level="low"),
-            temperature=0.0,
-        ),
+            timeout_ms,
+        )
+    logger.info(
+        "# [TIREA] Leído el %s en %.1f s.", source,
+        time.monotonic() - started,
     )
     raw = json.loads(response.text.strip())
     logger.info(
@@ -198,6 +269,8 @@ def extract_tirea_albaran(file_bytes, mime_type, timeout_ms=90_000):
         # No es un servicio: no hay más que buscar.
         return data
     tax_ids = _tax_ids_in(data.get("company_tax_id", ""))
+    if not _has_group_tax_id(tax_ids):
+        tax_ids += _tax_ids_in(text)
     if not _has_group_tax_id(tax_ids):
         tax_ids += _pdf_tax_ids(file_bytes, mime_type)
     if not _has_group_tax_id(tax_ids):
