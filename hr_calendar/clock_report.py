@@ -35,6 +35,10 @@ salida". La jornada pertenece al día de su entrada (o de su salida si
 no tiene entrada), en hora local. No se inventa nada: una jornada a la
 que le falta una de sus dos pulsaciones no suma horas, solo se avisa.
 
+S133: solo se ficha el inicio y el fin de la jornada; las horas de la
+jornada descuentan la pausa de comida del parte de ese día (la del
+horario o la metida a mano), como en el parte.
+
 Puntualidad: cada entrada se compara con la hora de entrada más
 cercana del horario actual del trabajador (la de mañana o, en jornada
 partida, la de tarde); un minuto después ya es llegada tarde. Cada
@@ -113,6 +117,11 @@ class Shift:
     clock_out: ClockEvent = None
     expected_start: datetime.time = None
     expected_end: datetime.time = None
+    # S133: lunch break of that day's parte inside the shift (it is not
+    # clocked any more): not worked time.
+    # Pausa de comida del parte de ese día dentro de la jornada (ya no
+    # se ficha): no es tiempo trabajado.
+    lunch_seconds: int = 0
 
     @property
     def _raw_early(self):
@@ -188,8 +197,9 @@ class Shift:
     def seconds(self):
         if self.clock_in is None or self.clock_out is None:
             return 0
-        return int((self.clock_out.pressed_at
-                    - self.clock_in.pressed_at).total_seconds())
+        gross = int((self.clock_out.pressed_at
+                     - self.clock_in.pressed_at).total_seconds())
+        return max(gross - self.lunch_seconds, 0)
 
     @property
     def issue(self):
@@ -549,6 +559,52 @@ def _range_bounds(date_from, date_to):
     return start, end
 
 
+def _deduct_parte_lunch(company, user_id, shifts):
+    """
+    Set each shift's lunch_seconds from that day's parte.
+
+    ---
+
+    S133 (Miguel Ángel): solo se ficha el inicio y el fin de la jornada
+    y "las horas trabajadas dependen del parte de trabajo. Si el parte
+    tiene una pausa de comida, la pausa de comida no entra en las horas
+    trabajadas" (el descanso del desayuno sí cuenta: no es pausa del
+    parte). Se descuenta la parte de la pausa del parte de ese día que
+    cae dentro de la jornada; sin parte, o con "No he parado a comer",
+    no hay nada que descontar.
+    """
+    from work_order_processor.models import WorkOrderEntry
+
+    days = {shift.day for shift in shifts if shift.seconds}
+    if not days:
+        return
+    lunches = {}
+    for work_date, lunch_start, lunch_end in WorkOrderEntry.objects.filter(
+        work_order__company=company,
+        work_order__uploaded_by_id=user_id,
+        work_date__in=days,
+        no_lunch_break=False,
+        lunch_break_start__isnull=False,
+        lunch_break_end__isnull=False,
+    ).values_list("work_date", "lunch_break_start", "lunch_break_end"):
+        if lunch_end > lunch_start:
+            lunches.setdefault(work_date, (lunch_start, lunch_end))
+    tz = timezone.get_current_timezone()
+    for shift in shifts:
+        lunch = lunches.get(shift.day)
+        if lunch is None or not shift.seconds:
+            continue
+        lunch_from, lunch_to = (
+            timezone.make_aware(datetime.datetime.combine(shift.day, t), tz)
+            for t in lunch
+        )
+        overlap = (
+            min(shift.clock_out.pressed_at, lunch_to)
+            - max(shift.clock_in.pressed_at, lunch_from)
+        ).total_seconds()
+        shift.lunch_seconds = max(int(overlap), 0)
+
+
 def reports_by_user(company, company_user_ids, date_from, date_to):
     """
     {company_user_id: PersonReport} for the shifts whose day falls in
@@ -598,6 +654,7 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
                 shift.expected_end = expected_start(
                     ends, shift.clock_out.pressed_at,
                 )
+        _deduct_parte_lunch(company, user_id, report.shifts)
         report.events = [
             e for e in user_events if start <= e.pressed_at < end
         ]
