@@ -59,7 +59,7 @@ del albarán; sin él, el de la orden.
     <div class="field-grid cols-4">
         <div class="field-block">
             <span class="label">Matrícula</span>
-            <span class="value">{{ work_order.vehicle_plate|default:"—" }}</span>
+            <span class="value">{{ work_order.vehicle_plate|default:"—" }}{% if work_order.second_vehicle_plate %} / {{ work_order.second_vehicle_plate }}{% endif %}</span>
         </div>
         <div class="field-block">
             <span class="label">Marca</span>
@@ -128,7 +128,7 @@ del albarán; sin él, el de la orden.
                 </div>
                 <div class="field-block full">
                     <span class="label">Dirección entrega</span>
-                    <span class="value">{{ work_order.delivery_address|default:work_order.destination|default:"—" }}</span>
+                    <span class="value">{{ work_order.delivery_address|default:work_order.destination|default:"—" }}{% if work_order.delivery_cp %} ({{ work_order.delivery_cp }}){% endif %}</span>
                 </div>
             </div>
         </div>

@@ -17,7 +17,7 @@ las fotos. Dentro de la fila de la unidad, plegada.
 
         <div class="col-6 col-md-3"><span class="text-muted">Cliente</span><br>{{ work_order.client_name|default:"—" }}</div>
         <div class="col-6 col-md-3"><span class="text-muted">Expediente</span><br>{{ work_order.expediente|default:"—" }}</div>
-        <div class="col-6 col-md-3"><span class="text-muted">Matrícula</span><br>{{ work_order.vehicle_plate|default:"—" }}</div>
+        <div class="col-6 col-md-3"><span class="text-muted">Matrícula</span><br>{{ work_order.vehicle_plate|default:"—" }}{% if work_order.second_vehicle_plate %} / {{ work_order.second_vehicle_plate }}{% endif %}</div>
         <div class="col-6 col-md-3"><span class="text-muted">PMA / Tara</span><br>{{ work_order.vehicle_pma|default:"—" }} / {{ work_order.vehicle_tare|default:"—" }}</div>
         <div class="col-6 col-md-3"><span class="text-muted">Largo / Alto</span><br>{{ work_order.vehicle_length|default:"—" }} / {{ work_order.vehicle_height|default:"—" }}</div>
         <div class="col-6 col-md-3"><span class="text-muted">Vehículo / carga</span><br>{{ work_order.vehicle_load|default:"—" }}</div>

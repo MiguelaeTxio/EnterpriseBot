@@ -1996,6 +1996,18 @@ class WorkOrderAssistance(models.Model):
         verbose_name="Matrícula",
         help_text="Matrícula del vehículo asistido.",
     )
+    # H37 (S133): the other vehicle of the set (tractor or semitrailer).
+    # El otro vehículo del conjunto (tractora o semirremolque).
+    second_vehicle_plate = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name="Matrícula 2º vehículo",
+        help_text=(
+            "Matrícula del otro vehículo del conjunto (tractora o "
+            "semirremolque), si lo hay."
+        ),
+    )
     vehicle_brand = models.CharField(
         max_length=100,
         blank=True,
@@ -2612,6 +2624,14 @@ class WorkOrderAssistance(models.Model):
         default="",
         verbose_name="País entrega",
         help_text="País del punto de entrega del vehículo.",
+    )
+    # H37 (S133). Código postal del punto de entrega.
+    delivery_cp = models.CharField(
+        max_length=10,
+        blank=True,
+        default="",
+        verbose_name="C.P. entrega",
+        help_text="Código postal del punto de entrega del vehículo.",
     )
     # Full street address of the delivery location.
     # Dirección completa del punto de entrega.

@@ -43,14 +43,15 @@ logger = logging.getLogger(__name__)
 TEXT_FIELDS = (
     "insurer_name", "provider_code", "client_name", "client_company",
     "expediente", "policy_number", "location_elapsed", "insured_name",
-    "client_phone", "vehicle_plate", "vehicle_model", "vehicle_brand",
+    "client_phone", "vehicle_plate", "second_vehicle_plate",
+    "vehicle_model", "vehicle_brand",
     "vehicle_color", "vehicle_type_label", "vehicle_subtype_label",
     "breakdown_description", "breakdown_code", "pickup_type",
     "pickup_province", "vehicle_locality", "pickup_country", "pickup_cp",
     "pickup_location", "delivery_type", "delivery_province",
-    "delivery_locality", "delivery_country", "delivery_address",
-    "ris_motive", "insurer_comments", "company_observations",
-    "tirea_driver", "tirea_machine", "company_tax_id",
+    "delivery_locality", "delivery_country", "delivery_cp",
+    "delivery_address", "ris_motive", "insurer_comments",
+    "company_observations", "tirea_driver", "tirea_machine", "company_tax_id",
 )
 DATETIME_FIELDS = (
     "request_time", "service_datetime", "service_start_time",
@@ -119,6 +120,9 @@ Correspondencia de campos (etiqueta en TIREA -> clave):
 - Conductor (del vehículo asistido) -> insured_name
 - Teléfono Móvil (del bloque Vehículo y conductor) -> client_phone
 - Matrícula -> vehicle_plate
+- Matrícula del otro vehículo del conjunto (la tractora o el
+  semirremolque que va con el asistido), si aparece en cualquier parte,
+  también en los Comentarios -> second_vehicle_plate
 - Modelo -> vehicle_model
 - Marca -> vehicle_brand
 - Color -> vehicle_color
@@ -135,7 +139,8 @@ Correspondencia de campos (etiqueta en TIREA -> clave):
   pickup_location; C.P., si aparece -> pickup_cp
 - Entrega: Entregar en -> delivery_type; Provincia -> delivery_province;
   Localidad -> delivery_locality; País -> delivery_country; Dirección ->
-  delivery_address
+  delivery_address; C.P., si aparece (en el bloque Entrega o en la
+  dirección de entrega de los Comentarios) -> delivery_cp
 - Motivo RIS -> ris_motive (vacío si pone "-- Seleccionar --")
 - Kms. chófer -> driver_km; Kilómetros -> total_km_tirea
 - Fallido -> is_failed ("si" o "no"); Facturable -> is_billable ("si" o

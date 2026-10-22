@@ -68,6 +68,11 @@ DATA_FIELDS = {
     "fecha_servicio": ("service_date", "Fecha del servicio, AAAA-MM-DD."),
     "expediente": ("expediente", "Nº de expediente de la aseguradora."),
     "matricula": ("vehicle_plate", "Matrícula del vehículo asistido."),
+    "matricula_2": (
+        "second_vehicle_plate",
+        "Matrícula del otro vehículo del conjunto (tractora o "
+        "semirremolque).",
+    ),
     "marca": ("vehicle_brand", "Marca del vehículo asistido."),
     "modelo": ("vehicle_model", "Modelo del vehículo asistido."),
     "color": ("vehicle_color", "Color del vehículo asistido."),
@@ -76,16 +81,42 @@ DATA_FIELDS = {
         "insured_name", "Conductor del vehículo asistido.",
     ),
     "telefono_cliente": ("client_phone", "Teléfono de contacto del cliente."),
+    "poliza": ("policy_number", "Nº de póliza."),
+    "ocupantes": ("num_passengers", "Nº de ocupantes del vehículo."),
+    "peso": ("vehicle_weight", "Peso en kg."),
+    "pma": ("vehicle_pma", "P.M.A. en kg."),
+    "tara": ("vehicle_tare", "Tara en kg."),
+    "largo": ("vehicle_length", "Largo en metros."),
+    "alto": ("vehicle_height", "Alto en metros."),
+    "ejes": ("vehicle_axes", "Nº de ejes."),
+    "tipo_recogida": (
+        "pickup_type", "Dónde se recoge: Población, Carretera, Taller...",
+    ),
+    "cp_recogida": ("pickup_cp", "Código postal de recogida."),
     "recogida": ("pickup_location", "Dirección o punto de recogida."),
     "localidad_recogida": ("vehicle_locality", "Localidad de recogida."),
     "provincia_recogida": ("pickup_province", "Provincia de recogida."),
     "destino": ("delivery_address", "Dirección de entrega o destino."),
     "localidad_destino": ("delivery_locality", "Localidad de destino."),
     "provincia_destino": ("delivery_province", "Provincia de destino."),
+    "tipo_destino": (
+        "delivery_type", "Dónde se entrega: Taller, Domicilio, Depósito...",
+    ),
+    "cp_destino": ("delivery_cp", "Código postal de destino."),
     "averia": ("breakdown_description", "Avería o motivo del servicio."),
+    "codigo_averia": ("breakdown_code", "Código de avería de la aseguradora."),
     "comentarios": ("insurer_comments", "Comentarios de la aseguradora."),
+    "observaciones": (
+        "company_observations", "Observaciones de la aseguradora.",
+    ),
     "notas": ("extra_notes", "Notas internas de oficina."),
 }
+# Numeric fields of the order (decimal point for the form).
+# Campos numéricos de la orden (punto decimal para el formulario).
+NUMBER_FIELDS = (
+    "num_passengers", "vehicle_weight", "vehicle_pma", "vehicle_tare",
+    "vehicle_length", "vehicle_height", "vehicle_axes",
+)
 # Important for the albarán besides the required ones.
 # Importantes para el albarán además de los obligatorios.
 IMPORTANT_FIELDS = (
@@ -580,7 +611,12 @@ def save_data(intake, args):
     for arg, (field, _help) in DATA_FIELDS.items():
         value = args.get(arg)
         if value not in (None, ""):
-            intake.data[field] = str(value).strip()
+            value = str(value).strip()
+            if field in NUMBER_FIELDS:
+                # Decimal comma as said in Spanish.
+                # Coma decimal tal como se dice en español.
+                value = value.replace(",", ".")
+            intake.data[field] = value
     _save_data(intake)
     result = data_summary(intake)
     if warnings:
@@ -1102,8 +1138,11 @@ def _system_prompt(intake):
         "los comentarios dicen otra cosa o la precisan, llama a "
         "guardar_datos con lo de los comentarios (recogida y destino "
         "con la dirección completa, localidad y provincia; avería con "
-        "lo que pasa de verdad). Lo que guardes es lo que sale en la "
-        "orden y en los albaranes.\n\n"
+        "lo que pasa de verdad). Guarda SIEMPRE todos los datos que "
+        "aparezcan, cada uno en su campo de guardar_datos (matrícula del "
+        "otro vehículo del conjunto, códigos postales, medidas, "
+        "pesos...), aunque solo estén en los comentarios. Lo que guardes "
+        "es lo que sale en la orden y en los albaranes.\n\n"
         "EMPRESA Y ASEGURADORA: van por el CIF. Si guardar_datos ya "
         "devuelve la aseguradora (la ficha de la empresa del grupo del "
         "CIF), no la preguntes. Si falta, pregunta solo la empresa del "

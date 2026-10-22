@@ -263,7 +263,9 @@ def _unit_payload(unit):
         "vehicle": " ".join(part for part in (
             work_order.vehicle_brand, work_order.vehicle_model,
         ) if part),
-        "vehicle_plate": work_order.vehicle_plate,
+        "vehicle_plate": " / ".join(part for part in (
+            work_order.vehicle_plate, work_order.second_vehicle_plate,
+        ) if part),
         "breakdown": work_order.breakdown_description,
         "machine": unit.machine,
         "helpers": unit.helper_names,

@@ -23,7 +23,8 @@ SERVICE_FIELDS = (
     "location_elapsed",
 )
 VEHICLE_FIELDS = (
-    "insured_name", "client_phone", "vehicle_plate", "vehicle_brand",
+    "insured_name", "client_phone", "vehicle_plate", "second_vehicle_plate",
+    "vehicle_brand",
     "vehicle_model", "vehicle_color", "vehicle_type_label",
     "vehicle_subtype_label", "num_passengers", "breakdown_description",
     "breakdown_code", "vehicle_weight", "vehicle_height", "vehicle_length",
@@ -35,7 +36,8 @@ PICKUP_FIELDS = (
 )
 DELIVERY_FIELDS = (
     "delivery_type", "delivery_province", "delivery_locality",
-    "delivery_country", "delivery_address", "driver_km", "total_km_tirea",
+    "delivery_country", "delivery_cp", "delivery_address", "driver_km",
+    "total_km_tirea",
 )
 OTHER_FIELDS = (
     "is_failed", "is_billable", "is_accident", "insurer_comments",
