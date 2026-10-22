@@ -391,10 +391,17 @@ def service_intake_reply(intake_pk, body, media_url, content_type,
         # The error may be the database connection itself.
         # El error puede ser la propia conexión a la base de datos.
         fresh_db_connection()
-        text = (
-            "Perdona, ha habido un problema al preparar el servicio. "
-            "Repíteme el último mensaje."
-        )
+        if "429" in str(exc) or "RESOURCE_EXHAUSTED" in str(exc):
+            # S133: Vertex sigue saturado tras los reintentos.
+            text = (
+                "Perdona, ahora mismo estoy saturada. Repíteme el último "
+                "mensaje dentro de un minuto."
+            )
+        else:
+            text = (
+                "Perdona, ha habido un problema al preparar el servicio. "
+                "Repíteme el último mensaje."
+            )
     if text is None:
         return None
     session = WhatsAppSession.objects.filter(

@@ -61,6 +61,9 @@ MAX_TOOL_ROUNDS = 6
 # reintento.
 PHOTO_TIMEOUT_MS = 150_000
 PHOTO_ATTEMPTS = 2
+# Waits before retrying the agent when Vertex is overloaded.
+# Esperas antes de reintentar el agente si Vertex está saturado.
+AGENT_RETRY_DELAYS = (2, 5, 10)
 
 # Data the agent can fill: tool argument -> order form field.
 # Datos que puede rellenar el agente: argumento -> campo del formulario.
@@ -1266,6 +1269,37 @@ def _run_tool(intake, name, args, whatsapp_sender):
     return {"error": "Herramienta desconocida."}
 
 
+def _generate_with_retry(client, **kwargs):
+    """
+    Gemini call of the agent, retried on a short Vertex overload.
+
+    ---
+
+    Llamada de Gemini del agente, reintentada si Vertex está saturado
+    un momento (429 RESOURCE_EXHAUSTED o 503). S133: "cancela" contestó
+    "ha habido un problema" dos veces seguidas por un 429 pasajero.
+    Esperas cortas: quien da el servicio está esperando en WhatsApp.
+    """
+    import time
+
+    for delay in AGENT_RETRY_DELAYS + (None,):
+        try:
+            return client.models.generate_content(**kwargs)
+        except Exception as exc:  # noqa: BLE001 -- solo se reintenta 429/503
+            text = str(exc)
+            busy = any(
+                code in text
+                for code in ("429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE")
+            )
+            if not busy or delay is None:
+                raise
+            logger.warning(
+                "# [SERVICE INTAKE] Gemini saturado (%s); reintento en %d s.",
+                text[:80], delay,
+            )
+            time.sleep(delay)
+
+
 def reply(intake, user_text, whatsapp_sender):
     """
     Answer one message of the person giving the service.
@@ -1295,7 +1329,8 @@ def reply(intake, user_text, whatsapp_sender):
     ]
     text = ""
     for _round in range(MAX_TOOL_ROUNDS):
-        response = client.models.generate_content(
+        response = _generate_with_retry(
+            client,
             model=BreakdownAgentService.GEMINI_MODEL,
             contents=contents,
             config=config,
