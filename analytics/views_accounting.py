@@ -14,15 +14,22 @@ import logging
 
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import View
 
-from analytics.accounting_csv import MergeError, merge
+from analytics.accounting_csv import MergeError, merge, merge_invoices
 from panel.mixins import SupervisorAccessMixin
 
 logger = logging.getLogger(__name__)
 
 MAX_FILES = 200
+# Tools: kind in the URL -> (merge function, output name, unit label).
+# Herramientas: tipo en la URL -> (unión, nombre de salida, unidad).
+TOOLS = {
+    "asientos": (merge, "ASIENTOS-UNIDOS", "asientos"),
+    "facturas": (merge_invoices, "FACTURAS-UNIDAS", "facturas"),
+}
 MAX_FILE_BYTES = 20 * 1024 * 1024
 
 
@@ -47,7 +54,38 @@ class AccountingToolsView(SupervisorAccessMixin, View):
         from analytics.views import _get_own_presence
 
         company_user = request.user.company_user
+        tools = [
+            {
+                "title": "Unir asientos contables (CSV)",
+                "icon": "bi-filetype-csv",
+                "unit": "asientos",
+                "url": reverse(
+                    "analytics:accounting_csv_merge", args=["asientos"],
+                ),
+                "help": (
+                    "se ponen uno detrás de otro, la columna B se numera "
+                    "seguida según la columna C y se quita la columna K "
+                    "donde la hay."
+                ),
+            },
+            {
+                "title": "Unir facturas (CSV)",
+                "icon": "bi-receipt",
+                "unit": "facturas",
+                "url": reverse(
+                    "analytics:accounting_csv_merge", args=["facturas"],
+                ),
+                "help": (
+                    "se ponen uno detrás de otro con una sola cabecera, el "
+                    "ORDEN queda correlativo, el contador de facturas "
+                    "(ASIENTO) sube con cada factura nueva y repite el "
+                    "número en las líneas de la misma factura, y de las "
+                    "líneas resumen solo queda la última."
+                ),
+            },
+        ]
         return render(request, "panel/accounting_tools.html", {
+            "tools": tools,
             "company_user": company_user,
             "company": company_user.company,
             "active_nav": "accounting_tools",
@@ -63,11 +101,12 @@ class AccountingCsvMergeView(SupervisorAccessMixin, View):
 
     Une los CSV en el orden en que llegan (el que ha dejado el usuario
     en la lista) y devuelve el CSV unido, con el número de filas y de
-    asientos en las cabeceras X-Rows y X-Entries. Si algo falla, JSON
+    asientos o facturas en las cabeceras X-Rows y X-Entries. `kind`:
+    "asientos" o "facturas" (TOOLS). Si algo falla, JSON
     con el motivo (400).
     """
 
-    def post(self, request):
+    def post(self, request, kind):
         """
         Merge and return the file.
 
@@ -75,6 +114,10 @@ class AccountingCsvMergeView(SupervisorAccessMixin, View):
 
         Une y devuelve el fichero.
         """
+        if kind not in TOOLS:
+            return JsonResponse({"error": "Herramienta desconocida."},
+                                status=404)
+        merge_files, prefix, unit = TOOLS[kind]
         uploads = request.FILES.getlist("files")
         if not uploads:
             return JsonResponse(
@@ -94,19 +137,21 @@ class AccountingCsvMergeView(SupervisorAccessMixin, View):
                 )
             files.append((upload.name, upload.read()))
         try:
-            data, rows, entries = merge(files)
+            data, rows, entries = merge_files(files)
         except MergeError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
         logger.info(
-            "# [CSV ASIENTOS] %s une %d ficheros: %d filas, %d asientos.",
-            request.user.username, len(files), rows, entries,
+            "# [CSV %s] %s une %d ficheros: %d filas, %d %s.",
+            kind.upper(), request.user.username, len(files), rows, entries,
+            unit,
         )
-        name = "ASIENTOS-UNIDOS-%s.csv" % (
-            timezone.localtime().strftime("%Y%m%d-%H%M")
+        name = "%s-%s.csv" % (
+            prefix, timezone.localtime().strftime("%Y%m%d-%H%M"),
         )
         response = HttpResponse(data, content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="%s"' % name
         response["X-Rows"] = str(rows)
         response["X-Entries"] = str(entries)
+        response["X-Unit"] = unit
         response["X-Filename"] = name
         return response

@@ -102,7 +102,7 @@ urlpatterns = [
         name="accounting_tools",
     ),
     path(
-        "accounting/csv-merge/",
+        "accounting/csv-merge/<slug:kind>/",
         AccountingCsvMergeView.as_view(),
         name="accounting_csv_merge",
     ),

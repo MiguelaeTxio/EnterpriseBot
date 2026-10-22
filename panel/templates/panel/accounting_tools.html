@@ -1,6 +1,9 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/accounting_tools.html #}
-{# S133: Herramientas de contabilidad. Unión de CSV de asientos contables: carpeta,   #}
-{# lista alfabética reordenable arrastrando, Generar y Descargar.                     #}
+{# S133: Herramientas de contabilidad. Dos herramientas con el mismo flujo: carpeta, #}
+{# lista alfabética reordenable arrastrando, Generar y Descargar.                    #}
+{#   - Unir asientos contables: columna B correlativa según la C, sin columna K.    #}
+{#   - Unir facturas: ORDEN correlativo, contador de facturas según la columna       #}
+{#     Factura y solo la última línea resumen.                                       #}
 {% extends "panel/base.html" %}
 
 {% block title %}Herramientas de contabilidad{% endblock %}
@@ -10,43 +13,43 @@
 {% block content %}
 <div class="container-fluid px-0">
 
-    <div class="card border-0 shadow-sm mb-4">
+    {% for tool in tools %}
+    <div class="card border-0 shadow-sm mb-4 csv-merge-tool"
+         data-url="{{ tool.url }}" data-unit="{{ tool.unit }}">
         <div class="card-header bg-light border-bottom py-2 px-4">
             <span class="fw-semibold text-sm">
-                <i class="bi bi-filetype-csv me-2 text-muted"></i>Unir asientos contables (CSV)
+                <i class="bi {{ tool.icon }} me-2 text-muted"></i>{{ tool.title }}
             </span>
         </div>
         <div class="card-body px-4 py-4">
             <ol class="text-sm text-muted mb-3 ps-3">
                 <li>Elige la carpeta: se cargan todos sus ficheros CSV.</li>
                 <li>Salen por orden alfabético; arrástralos para cambiar el orden.</li>
-                <li>Pulsa <strong>Generar</strong>: se ponen uno detrás de otro, la
-                    columna B se numera seguida según la columna C y se quita la
-                    columna K donde la hay. Después, descárgalo.</li>
+                <li>Pulsa <strong>Generar</strong>: {{ tool.help }} Después, descárgalo.</li>
             </ol>
             <div class="row g-3 align-items-end mb-3">
                 <div class="col-12 col-md-6">
-                    <label class="form-label text-sm fw-semibold mb-1" for="csv-merge-folder">Carpeta</label>
-                    <input type="file" id="csv-merge-folder"
-                           class="form-control form-control-sm"
+                    <label class="form-label text-sm fw-semibold mb-1">Carpeta</label>
+                    <input type="file" class="form-control form-control-sm csv-merge-folder"
                            webkitdirectory directory multiple>
                 </div>
             </div>
-            <div id="csv-merge-feedback" class="text-sm mb-2"></div>
-            <div id="csv-merge-list-wrap" class="d-none">
-                <ul id="csv-merge-list" class="list-group mb-3"></ul>
+            <div class="text-sm mb-2 csv-merge-feedback"></div>
+            <div class="csv-merge-list-wrap d-none">
+                <ul class="list-group mb-3 csv-merge-list"></ul>
                 <div class="d-flex flex-wrap gap-2 align-items-center">
-                    <button type="button" id="csv-merge-generate" class="btn btn-primary btn-sm">
+                    <button type="button" class="btn btn-primary btn-sm csv-merge-generate">
                         <i class="bi bi-gear me-1"></i>Generar
                     </button>
-                    <a id="csv-merge-download" class="btn btn-success btn-sm d-none" href="#">
+                    <a class="btn btn-success btn-sm d-none csv-merge-download" href="#">
                         <i class="bi bi-download me-1"></i>Descargar
                     </a>
-                    <span id="csv-merge-result" class="text-sm text-muted"></span>
+                    <span class="text-sm text-muted csv-merge-result"></span>
                 </div>
             </div>
         </div>
     </div>
+    {% endfor %}
 
 </div>
 
@@ -54,16 +57,16 @@
 
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <script>
-/* S133: unión de CSV de asientos. Carpeta -> lista alfabética
-   reordenable (arrastrar) -> Generar -> Descargar. */
-(function () {
-    const folder = document.getElementById("csv-merge-folder");
-    const list = document.getElementById("csv-merge-list");
-    const wrap = document.getElementById("csv-merge-list-wrap");
-    const feedback = document.getElementById("csv-merge-feedback");
-    const generate = document.getElementById("csv-merge-generate");
-    const download = document.getElementById("csv-merge-download");
-    const result = document.getElementById("csv-merge-result");
+/* S133: carpeta -> lista alfabética reordenable (arrastrar) -> Generar ->
+   Descargar. Una instancia por tarjeta (asientos, facturas). */
+document.querySelectorAll(".csv-merge-tool").forEach(function (card) {
+    const folder = card.querySelector(".csv-merge-folder");
+    const list = card.querySelector(".csv-merge-list");
+    const wrap = card.querySelector(".csv-merge-list-wrap");
+    const feedback = card.querySelector(".csv-merge-feedback");
+    const generate = card.querySelector(".csv-merge-generate");
+    const download = card.querySelector(".csv-merge-download");
+    const result = card.querySelector(".csv-merge-result");
     const files = new Map();
     let downloadUrl = null;
 
@@ -93,7 +96,7 @@
             });
         if (!csvs.length) {
             wrap.classList.add("d-none");
-            feedback.className = "text-sm mb-2 text-danger";
+            feedback.className = "text-sm mb-2 csv-merge-feedback text-danger";
             feedback.textContent = "La carpeta no tiene ficheros CSV.";
             return;
         }
@@ -132,7 +135,7 @@
         feedback.textContent = "";
         generate.disabled = true;
         result.textContent = "Generando…";
-        fetch("{% url 'analytics:accounting_csv_merge' %}", {
+        fetch(card.dataset.url, {
             method: "POST",
             headers: { "X-CSRFToken": document.getElementById("accounting-csrf").value },
             body: data,
@@ -140,7 +143,7 @@
             if (!response.ok) {
                 return response.json().then(function (body) { throw new Error(body.error); });
             }
-            const name = response.headers.get("X-Filename") || "ASIENTOS-UNIDOS.csv";
+            const name = response.headers.get("X-Filename") || "UNIDO.csv";
             const rows = response.headers.get("X-Rows");
             const entries = response.headers.get("X-Entries");
             return response.blob().then(function (blob) {
@@ -148,16 +151,16 @@
                 download.href = downloadUrl;
                 download.download = name;
                 download.classList.remove("d-none");
-                result.textContent = name + " · " + rows + " filas · " + entries + " asientos";
+                result.textContent = name + " · " + rows + " filas · " + entries + " " + card.dataset.unit;
             });
         }).catch(function (error) {
             result.textContent = "";
-            feedback.className = "text-sm mb-2 text-danger";
+            feedback.className = "text-sm mb-2 csv-merge-feedback text-danger";
             feedback.textContent = error.message || "No se ha podido generar.";
         }).finally(function () {
             generate.disabled = false;
         });
     });
-})();
+});
 </script>
 {% endblock %}

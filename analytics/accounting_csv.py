@@ -114,3 +114,99 @@ def merge(files):
         raise MergeError("Los ficheros no tienen filas.")
     data = ("\r\n".join(rows) + "\r\n").encode(out_encoding)
     return data, len(rows), number
+
+
+# ---------------------------------------------------------------------------
+# Invoices (SERIE-n-FACT): Miguel Ángel, S133.
+# Facturas (SERIE-n-FACT).
+# ---------------------------------------------------------------------------
+
+INVOICE_ORDER = 0       # A: ORDEN
+INVOICE_ACCOUNT = 1     # B: CUENTA
+INVOICE_COUNTER = 5     # F: ASIENTO (contador de facturas)
+INVOICE_NUMBER = 6      # G: Factura (a su derecha)
+
+
+def _is_header(cols):
+    """
+    Whether the row is the header (ORDEN;CUENTA;...).
+
+    ---
+
+    Si la fila es la cabecera (ORDEN;CUENTA;...).
+    """
+    return cols[INVOICE_ORDER].strip().upper() == "ORDEN"
+
+
+def _is_summary(cols):
+    """
+    Whether the row is the summary line of a file.
+
+    ---
+
+    Si la fila es la línea resumen del fichero: sin cuenta ni factura
+    (0), solo con los totales.
+    """
+    return (
+        cols[INVOICE_ACCOUNT].strip() == "0"
+        and cols[INVOICE_NUMBER].strip() in ("0", "")
+    )
+
+
+def merge_invoices(files):
+    """
+    Merge invoice files in order. Returns (bytes, rows, invoices).
+
+    ---
+
+    Une ficheros de facturas en el orden dado (`files`: lista de
+    (nombre, bytes)). La cabecera queda una sola vez, arriba. La columna
+    A (ORDEN) queda con números naturales correlativos. La columna F
+    (contador de facturas) sube uno cada vez que cambia la factura de la
+    columna G, a su derecha; las líneas de una misma factura repiten el
+    número (1, 2, 3, 3...). Cada fichero trae una línea resumen: se
+    quitan todas y se deja solo la última, al final, con su ORDEN
+    siguiente. Devuelve el CSV en bytes, las filas de datos y las
+    facturas.
+    """
+    header = None
+    rows = []
+    summary = None
+    order = 0
+    invoices = 0
+    previous_invoice = None
+    out_encoding = "utf-8"
+    for name, data in files:
+        text, encoding = _decode(name, data)
+        if encoding != "utf-8":
+            out_encoding = encoding
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            if not line.strip():
+                continue
+            cols = line.split(";")
+            if len(cols) <= INVOICE_NUMBER:
+                raise MergeError(
+                    "%s, fila %d: no tiene las columnas de factura."
+                    % (name, line_no)
+                )
+            if _is_header(cols):
+                header = header or line
+                continue
+            if _is_summary(cols):
+                summary = cols
+                continue
+            order += 1
+            cols[INVOICE_ORDER] = str(order)
+            if cols[INVOICE_NUMBER] != previous_invoice:
+                invoices += 1
+                previous_invoice = cols[INVOICE_NUMBER]
+            cols[INVOICE_COUNTER] = str(invoices)
+            rows.append(";".join(cols))
+    if not rows:
+        raise MergeError("Los ficheros no tienen facturas.")
+    lines = ([header] if header else []) + rows
+    if summary is not None:
+        summary[INVOICE_ORDER] = str(order + 1)
+        lines.append(";".join(summary))
+    data = ("\r\n".join(lines) + "\r\n").encode(out_encoding)
+    return data, len(rows), invoices
