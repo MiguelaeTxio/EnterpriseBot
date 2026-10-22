@@ -20,7 +20,7 @@
 {#   bulk_unmark_reviewed     — bool, botón Desmarcar revisados en bloque — solo Revisados          #}
 {#   bulk_export               — bool, botón Exportar en bloque — Pendientes y Revisados (H07/S52) #}
 {#   show_totals               — bool, fila TOTAL al final — solo Revisados                         #}
-{#   totals                    — dict con horas_totales/horas_extra/dietas — solo si show_totals    #}
+{#   totals                    — dict con horas_totales/horas_extra/horas_festivas/dietas (S133)     #}
 {#   empty_icon                — clase bootstrap-icons para el estado vacío                         #}
 {#   empty_text                — texto del estado vacío                                             #}
 {#   back_url                  — URL de vuelta con todos los filtros activos, propagada a Editar/    #}
@@ -108,6 +108,14 @@
                             {% if sort_primary_col == 'horas_extra' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
                         </a>
                     </th>
+                    <th class="text-sm fw-semibold">
+                        <a href="#" class="text-dark text-decoration-none d-inline-flex align-items-center gap-1
+                           sort-header-link" data-col="horas_festivas" data-tab="{{ tab_key }}"
+                           title="Sábado, domingo o festivo del calendario de la base del trabajador">
+                            H. Festivas
+                            {% if sort_primary_col == 'horas_festivas' %}<span class="text-primary">{% if sort_primary_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}
+                        </a>
+                    </th>
                     <th class="text-sm fw-semibold">Dieta</th>
                     {% if show_pipeline_status or show_reviewed_badge %}
                     <th class="text-sm fw-semibold">
@@ -153,6 +161,13 @@
                     <td class="text-sm">
                         {% if wo.horas_extra > 0 %}
                         <span class="badge bg-success">+{{ wo.horas_extra }}h</span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-sm">
+                        {% if wo.festivo %}
+                        <span class="badge bg-warning text-dark" title="Sábado, domingo o festivo de su base">Festivo {{ wo.horas_festivas }}h</span>
                         {% else %}
                         <span class="text-muted">—</span>
                         {% endif %}
@@ -280,6 +295,13 @@
                     <td class="text-sm">
                         {% if totals.horas_extra > 0 %}
                         <span class="badge bg-success">+{{ totals.horas_extra }}h</span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-sm">
+                        {% if totals.horas_festivas > 0 %}
+                        <span class="badge bg-warning text-dark">{{ totals.horas_festivas }}h</span>
                         {% else %}
                         <span class="text-muted">—</span>
                         {% endif %}

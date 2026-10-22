@@ -3009,6 +3009,8 @@ def _build_export_columns(template):
     """
     from decimal import Decimal
 
+    from work_order_processor.festive import is_festive
+
     COLUMN_DEFS = {
         "fecha": ("Fecha", lambda wo, entry, line: entry.work_date),
         "operario": (
@@ -3075,10 +3077,13 @@ def _build_export_columns(template):
         "horas_extra": (
             "H. Extra",
             lambda wo, entry, line: (
+                # S133: en festivo (sábado, domingo o festivo de la base)
+                # no hay horas extra: son horas festivas.
+                0.0 if is_festive(entry.work_date, wo.uploaded_by)
                 # H24 — excluye la hora fantasma de vacaciones
                 # (VacationPeriod.generated_entry_line) del cómputo de
                 # horas extra del día.
-                float(max(
+                else float(max(
                     Decimal("0"),
                     sum(
                         (

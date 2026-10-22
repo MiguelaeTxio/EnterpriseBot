@@ -36,6 +36,7 @@ from work_order_processor.tasks import (
     process_work_order_pdf,
 )
 from fleet.models import MachineAsset
+from work_order_processor.festive import is_festive, split_hours
 import logging
 import plotly.graph_objects as go
 import plotly.io as pio
@@ -4234,7 +4235,10 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
                 ],
             )
             .select_related(
-                "uploaded_by__user", "reviewed_by__user", "generated_by__user"
+                "uploaded_by__user",
+                "uploaded_by__base",
+                "reviewed_by__user",
+                "generated_by__user",
             )
             .prefetch_related(
                 Prefetch(
@@ -4389,6 +4393,10 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
                 if wo.uploaded_by
                 else "Desconocido"
             )
+            # S133: horas festivas (sábado, domingo o festivo de la base
+            # del trabajador): ni extra ni ordinarias.
+            festivo = is_festive(work_date, wo.uploaded_by)
+            horas_extra, horas_festivas = split_hours(horas_totales, festivo)
             result.append(
                 {
                     "pk": wo.pk,
@@ -4399,9 +4407,9 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
                     ),
                     "num_bloques": num_bloques,
                     "horas_totales": horas_totales,
-                    "horas_extra": max(
-                        Decimal("0"), horas_totales - Decimal("8")
-                    ),
+                    "horas_extra": horas_extra,
+                    "festivo": festivo,
+                    "horas_festivas": horas_festivas,
                     "dieta": any(entry.has_diet for entry in entries_list),
                     "reviewed": wo.reviewed,
                     "reviewed_by": (
@@ -4549,6 +4557,7 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
                 "operator_name",
                 "horas_totales",
                 "horas_extra",
+                "horas_festivas",
                 "reviewed",
                 "fault_category",
             )
@@ -4928,6 +4937,10 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
                     for wo in reviewed_list
                     if wo["horas_extra"] is not None
                 ),
+                _Dec("0"),
+            ),
+            "horas_festivas": sum(
+                (wo["horas_festivas"] for wo in reviewed_list),
                 _Dec("0"),
             ),
             "dietas": sum(1 for wo in reviewed_list if wo["dieta"]),
@@ -6972,6 +6985,9 @@ def _compute_period_overtime(operator, group):
     total = Decimal("0")
     for wo in work_orders:
         entries_list = list(wo.entries.all())
+        # S133: un parte en festivo no tiene horas extra (son festivas).
+        if entries_list and is_festive(entries_list[0].work_date, operator):
+            continue
         horas_totales = sum(
             (
                 line.delta_hours
