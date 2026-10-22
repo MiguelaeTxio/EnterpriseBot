@@ -32,7 +32,7 @@ import logging
 import unicodedata
 from decimal import Decimal
 
-from django.db import transaction
+from django.db import connection, transaction
 from django.utils import timezone
 
 from budgets.models import ServiceIntake, WorkOrderAssistance
@@ -473,6 +473,23 @@ def apply_photo(intake, file_bytes, mime_type):
     panel. Devuelve un resumen de lo leído para el agente.
     """
     return apply_extracted(intake, extract_photo(file_bytes, mime_type))
+
+
+def fresh_db_connection():
+    """
+    Drop the database connection after a long wait.
+
+    ---
+
+    Cierra la conexión a la base de datos tras una espera larga (la
+    lectura de Gemini puede pasar de cinco minutos con el reintento) y
+    MySQL corta las conexiones inactivas: Django abre otra en la
+    siguiente consulta. S133: la orden se quedaba sin respuesta por
+    "Lost connection to MySQL server". Dentro de una transacción no se
+    toca.
+    """
+    if not connection.in_atomic_block:
+        connection.close()
 
 
 def extract_photo(file_bytes, mime_type):
@@ -1435,6 +1452,8 @@ def process_whatsapp(intake_pk, body, media_url, content_type,
         extracted = extract_photo(_download_media(media_url), content_type)
     except Exception as exc:  # noqa: BLE001 -- se le dice al usuario
         logger.exception("# [SERVICE INTAKE] Foto ilegible: %s", exc)
+    finally:
+        fresh_db_connection()
     if decide and extracted is not None and (
         extracted.get("is_service_order") is False
     ):

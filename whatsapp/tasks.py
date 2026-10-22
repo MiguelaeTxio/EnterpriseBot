@@ -385,7 +385,12 @@ def service_intake_reply(intake_pk, body, media_url, content_type,
             from_number=from_number, decide=decide,
         )
     except Exception as exc:  # noqa: BLE001 -- se avisa al usuario
+        from budgets.service_intake import fresh_db_connection
+
         logger.exception("# [SERVICE INTAKE] Error: %s", exc)
+        # The error may be the database connection itself.
+        # El error puede ser la propia conexión a la base de datos.
+        fresh_db_connection()
         text = (
             "Perdona, ha habido un problema al preparar el servicio. "
             "Repíteme el último mensaje."
