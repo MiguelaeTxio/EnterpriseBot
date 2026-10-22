@@ -1,25 +1,27 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/analytics/accounting_csv.py
 """
-Merge of accounting entry CSV files (Costes de operarios).
+Merge of accounting CSV files (Herramientas de contabilidad).
 
 ---
 
-Unión de ficheros CSV de asientos contables (Miguel Ángel, S133, en
-Costes de operarios): los ficheros van uno detrás de otro, la columna B
-(número de asiento) se renumera correlativa teniendo en cuenta la
-columna C (línea del asiento: cada vez que la columna C vuelve a
-empezar, sube un número, y todas las líneas del asiento comparten el
-mismo). Las filas mantienen su orden y la columna C no se toca. Se
-borra la columna K (la serie: A, C, H...) en los ficheros que la traen
-(14 columnas; los ENTCAR ya vienen sin ella, con 13). Formato de
-salida igual que el de entrada: separado por punto y coma, saltos de
-línea CRLF.
+Unión de ficheros CSV contables (Miguel Ángel, S133, Herramientas de
+contabilidad).
+
+Asientos (`merge`): los ficheros van uno detrás de otro y la columna B
+(número de asiento) se renumera correlativa: cada asiento de un fichero
+(su número original de la columna B) recibe un número nuevo, y todas
+sus líneas comparten el mismo, vengan en el orden que vengan en la
+columna C (incidencia real S133: en los ficheros de Jerónimo las líneas
+vienen 2, 1 o 3, 1, 2, y contar por "la C vuelve a empezar" partía los
+asientos). Las filas conservan su orden y la columna C no se toca. La
+columna K queda vacía, sin datos, pero la columna existe (Miguel Ángel,
+S133: "debe existir la columna, pero totalmente vacía"). Formato de
+salida igual que el de entrada: punto y coma, saltos de línea CRLF.
 """
 
 COLUMN_B = 1
 COLUMN_C = 2
 COLUMN_K = 10
-COLUMNS_WITH_K = 14
 ENCODINGS = ("utf-8", "cp1252")
 
 
@@ -49,20 +51,6 @@ def _decode(name, data):
     raise MergeError("%s: codificación no reconocida." % name)
 
 
-def _line_number(value):
-    """
-    Line number of column C, or None if it is not a number.
-
-    ---
-
-    Número de línea de la columna C, o None si no es un número.
-    """
-    try:
-        return int(value.strip())
-    except ValueError:
-        return None
-
-
 def merge(files):
     """
     Merge the files in order. Returns (bytes, rows, entries).
@@ -80,35 +68,22 @@ def merge(files):
         text, encoding = _decode(name, data)
         if encoding != "utf-8":
             out_encoding = encoding
-        previous_b = None
-        previous_c = None
+        previous = None
         for line_no, line in enumerate(text.splitlines(), start=1):
             if not line.strip():
                 continue
             cols = line.split(";")
-            if len(cols) <= COLUMN_C:
+            if len(cols) <= COLUMN_K:
                 raise MergeError(
-                    "%s, fila %d: no tiene columnas B y C." % (name, line_no)
+                    "%s, fila %d: no llega a la columna K." % (name, line_no)
                 )
-            line_c = _line_number(cols[COLUMN_C])
-            # A new entry starts when column C starts again (1, or not
-            # greater than the previous line) or column B changes. The
-            # rows keep their order; column C is never touched.
-            # Empieza un asiento nuevo cuando la columna C vuelve a
-            # empezar (1, o no mayor que la línea anterior) o cambia la
-            # columna B. Las filas no cambian de orden y la columna C
-            # no se toca.
-            if (
-                cols[COLUMN_B] != previous_b
-                or line_c is None or previous_c is None
-                or line_c <= previous_c
-            ):
+            # A new entry when the original entry number (B) changes.
+            # Asiento nuevo cuando cambia el número original (B).
+            if cols[COLUMN_B] != previous:
                 number += 1
-            previous_b = cols[COLUMN_B]
-            previous_c = line_c
+                previous = cols[COLUMN_B]
             cols[COLUMN_B] = str(number)
-            if len(cols) == COLUMNS_WITH_K:
-                del cols[COLUMN_K]
+            cols[COLUMN_K] = ""
             rows.append(";".join(cols))
     if not rows:
         raise MergeError("Los ficheros no tienen filas.")

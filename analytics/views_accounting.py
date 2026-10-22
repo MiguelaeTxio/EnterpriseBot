@@ -64,8 +64,8 @@ class AccountingToolsView(SupervisorAccessMixin, View):
                 ),
                 "help": (
                     "se ponen uno detrás de otro, la columna B se numera "
-                    "seguida según la columna C y se quita la columna K "
-                    "donde la hay."
+                    "seguida (todas las líneas de un asiento con el mismo "
+                    "número) y la columna K queda vacía."
                 ),
             },
             {
