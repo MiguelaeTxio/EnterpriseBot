@@ -287,13 +287,14 @@ def _driver_units(company_user):
         work_order__company=company_user.company,
         work_order__status__in=OPEN_ORDER_STATUSES,
     ).exclude(
-        # Not sent yet by the office, or already closed in base: the
+        # Not sent yet by the office, closed in base or cancelled: the
         # driver does not see it.
-        # Aún sin enviar por la oficina, o ya cerrado en base: el
+        # Aún sin enviar por la oficina, cerrado en base o anulado: el
         # conductor no lo ve.
         status__in=(
             WorkOrderAssistanceUnit.STATUS_PENDING,
             WorkOrderAssistanceUnit.STATUS_CLOSED_BASE,
+            WorkOrderAssistanceUnit.STATUS_CANCELLED,
         ),
     ).select_related("work_order__insurer")
 

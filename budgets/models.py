@@ -2757,6 +2757,12 @@ class WorkOrderAssistanceUnit(models.Model):
     # Cerrado en base por el conductor (km finales y repostaje);
     # conductor y máquina vuelven a estar libres. Fase 4 del dossier.
     STATUS_CLOSED_BASE = "CLOSED_BASE"
+    # H37 (S133): cancelled from the office with a reason (test albaranes,
+    # services called off); it leaves the board and the app and frees
+    # the driver and the machine.
+    # Anulado desde la oficina con motivo (albaranes de prueba, servicios
+    # anulados); sale del panel y de la app y libera conductor y máquina.
+    STATUS_CANCELLED = "CANCELLED"
 
     STATUS_CHOICES = [
         (STATUS_PENDING,         "Pendiente"),
@@ -2769,6 +2775,7 @@ class WorkOrderAssistanceUnit(models.Model):
         (STATUS_CLOSED_UNSIGNED, "Cerrado sin firma"),
         (STATUS_SIGNED_RECEIVED, "Firma recibida"),
         (STATUS_CLOSED_BASE,     "Cerrado en base"),
+        (STATUS_CANCELLED,       "Anulado"),
     ]
 
     # ── Relations ───────────────────────────────────────────────────────────
@@ -3014,7 +3021,9 @@ class WorkOrderAssistanceUnit(models.Model):
             "gestión. "
             "SIGNED_RECEIVED: supervisor confirma firma recibida del cliente. "
             "CLOSED_BASE: el conductor cierra en base con km finales y "
-            "repostaje; conductor y máquina quedan libres."
+            "repostaje; conductor y máquina quedan libres. "
+            "CANCELLED: anulado desde la oficina con motivo; conductor y "
+            "máquina quedan libres."
         ),
     )
 
@@ -3422,6 +3431,7 @@ class WorkOrderAssistanceUnitEvent(models.Model):
             WorkOrderAssistanceUnit.STATUS_CLOSED_UNSIGNED,
             WorkOrderAssistanceUnit.STATUS_SIGNED_RECEIVED,
             WorkOrderAssistanceUnit.STATUS_CLOSED_BASE,
+            WorkOrderAssistanceUnit.STATUS_CANCELLED,
         )
         if to_status in finished and unit.operator_id:
             from django.db import transaction

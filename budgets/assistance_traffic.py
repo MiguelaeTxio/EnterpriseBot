@@ -80,6 +80,10 @@ RETURNING_STATUSES = (
     Unit.STATUS_SIGNED_RECEIVED,
 )
 
+# Albaranes that are no longer on the board.
+# Albaranes que ya no salen en el panel.
+GONE_STATUSES = (Unit.STATUS_CLOSED_BASE, Unit.STATUS_CANCELLED)
+
 # Colours of the dossier (4.4): red created or pending, yellow sent or
 # in service, green finished and signed (returning), blue scheduled,
 # orange incidence. Grey (closed in base) arrives with phase 4.
@@ -178,14 +182,15 @@ def board_units(company):
     ---
 
     Albaranes del panel: las unidades de las órdenes abiertas que aún
-    no se han cerrado en base. Al cerrarse en base (fase 4 del dossier)
-    salen del panel y su conductor y su máquina quedan libres.
+    no se han cerrado en base ni anulado. Al cerrarse en base (fase 4
+    del dossier) o anularse salen del panel y su conductor y su máquina
+    quedan libres.
     """
     return Unit.objects.filter(
         work_order__company=company,
         work_order__status__in=OPEN_ORDER_STATUSES,
     ).exclude(
-        status=Unit.STATUS_CLOSED_BASE,
+        status__in=GONE_STATUSES,
     ).select_related(
         "work_order__insurer", "operator__user", "machine_asset",
     ).prefetch_related("helpers__user")
@@ -687,6 +692,45 @@ def close_base(company, by, unit_pk, km, liters):
             unit, previous, unit.status, by=by,
             detail="Cerrado en base desde la oficina: %s km y %s l "
                    "estimados." % (estimated_km, estimated_liters),
+        )
+    return unit
+
+
+def cancel(company, by, unit_pk, reason):
+    """
+    Cancel an albarán from the office, with a reason.
+
+    ---
+
+    Anula un albarán desde la oficina, con motivo obligatorio: sin
+    firma ni cierre en base (Miguel Ángel, S133: el conductor sin la
+    app no puede firmarlo y la oficina no tenía forma de cerrarlo). El
+    albarán sale del panel y de la app y, si su equipo no tiene otro
+    albarán, queda libre; su siguiente albarán en cola se envía.
+    """
+    reason = (reason or "").strip()
+    if not reason:
+        raise TrafficError("Escribe el motivo de la anulación.")
+    with transaction.atomic():
+        unit = Unit.objects.select_for_update().select_related(
+            "work_order",
+        ).filter(pk=unit_pk, work_order__company=company).first()
+        if unit is None:
+            raise TrafficError("Ese albarán ya no existe.")
+        if unit.status in GONE_STATUSES:
+            raise TrafficError(
+                "El albarán %s ya está %s." % (
+                    unit.albaran_number,
+                    unit.get_status_display().lower(),
+                )
+            )
+        previous = unit.status
+        unit.status = Unit.STATUS_CANCELLED
+        unit.queued_at = None
+        unit.save(update_fields=["status", "queued_at", "updated_at"])
+        Event.status_change(
+            unit, previous, unit.status, by=by,
+            detail="Anulado desde la oficina: %s" % reason,
         )
     return unit
 

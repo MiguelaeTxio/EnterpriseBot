@@ -438,7 +438,7 @@ class ServicesDeliveryNotesExportView(
 
 TRAFFIC_ACTIONS = (
     "pair", "separate", "assign", "unassign", "send", "close",
-    "add_helper", "remove_helper",
+    "add_helper", "remove_helper", "cancel",
 )
 
 
@@ -652,6 +652,12 @@ class ServicesTrafficActionView(AssistanceSupervisorAccessMixin, View):
                 message = "Albarán %s cerrado en base." % (
                     unit.albaran_number
                 )
+            elif action == "cancel":
+                unit = traffic.cancel(
+                    company, company_user, _int(data.get("unit")),
+                    data.get("reason"),
+                )
+                message = "Albarán %s anulado." % unit.albaran_number
             else:
                 unit = traffic.send(
                     company, company_user, _int(data.get("unit")),

@@ -75,7 +75,9 @@ class AlbaranRow:
             self.machine = unit.machine or ""
             self.status = unit.status
             self.status_label = unit.get_status_display()
-            self.is_closed = unit.status == Unit.STATUS_CLOSED_BASE
+            self.is_closed = unit.status in (
+                Unit.STATUS_CLOSED_BASE, Unit.STATUS_CANCELLED,
+            )
             self.closed_at = unit.base_closed_at
             self.estimated_km = unit.estimated_km
             self.estimated_fuel = unit.estimated_fuel_liters

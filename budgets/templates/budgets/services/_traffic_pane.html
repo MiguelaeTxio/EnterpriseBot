@@ -161,6 +161,7 @@ screen_key services_hub, clave "traffic").
       data-unassign="{% url 'budgets:services_traffic_action' action='unassign' %}"
       data-send="{% url 'budgets:services_traffic_action' action='send' %}"
       data-close="{% url 'budgets:services_traffic_action' action='close' %}"
+      data-cancel="{% url 'budgets:services_traffic_action' action='cancel' %}"
       data-add_helper="{% url 'budgets:services_traffic_action' action='add_helper' %}"
       data-remove_helper="{% url 'budgets:services_traffic_action' action='remove_helper' %}"></form>
 
@@ -375,7 +376,11 @@ if (!(window.google && window.google.maps && window.google.maps.importLibrary)) 
                 values.km = form.querySelector("[name=km]").value;
                 values.liters = form.querySelector("[name=liters]").value;
             }
-            if (button.dataset.action === "send" || button.dataset.action === "close") {
+            if (button.dataset.action === "cancel") {
+                const form = button.closest(".tb-close-form");
+                values.reason = form.querySelector("[name=reason]").value;
+            }
+            if (["send", "close", "cancel"].includes(button.dataset.action)) {
                 button.disabled = true;
             }
             post(urls[button.dataset.action], values);
@@ -416,7 +421,7 @@ if (!(window.google && window.google.maps && window.google.maps.importLibrary)) 
             clearInterval(timer);
             return;
         }
-        // Tampoco con un cierre en base a medio escribir.
+        // Tampoco con un cierre en base o una anulación a medio escribir.
         if (dragging || selected || document.hidden
                 || board.offsetParent === null
                 || board.querySelector("details.tb-close[open]")) {
