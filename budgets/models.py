@@ -4619,3 +4619,92 @@ class WorkOrderAssistanceUnitPhoto(models.Model):
 
     def __str__(self):
         return "%s — %s" % (self.unit.albaran_number, self.get_kind_display())
+
+
+class DriverDocumentRequirement(models.Model):
+    """
+    A document a driver must have in force (any of several types).
+
+    ---
+
+    H37 (S133). Documento que un conductor debe tener en vigor para
+    llevar una máquina, con los tipos del catálogo que lo acreditan
+    (cualquiera vale): "CAP" se acredita con el certificado (`CAP`) o
+    con la tarjeta de cualificación del conductor
+    (`TARJETA_CUALIF_CONDUCTOR`); "Carné de gruista" con
+    `CARNET_GRUISTA`. Datos en base de datos, no en el código.
+    """
+
+    name = models.CharField(
+        max_length=80, unique=True, verbose_name="Documento",
+    )
+    document_types = models.ManyToManyField(
+        "document_explorer.DocumentTypeCatalog",
+        related_name="+",
+        verbose_name="Tipos que lo acreditan",
+    )
+
+    class Meta:
+        verbose_name = "Documento exigido al conductor"
+        verbose_name_plural = "Documentos exigidos al conductor"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class MachineDriverRequirement(models.Model):
+    """
+    What a driver needs in force to take a type of machine.
+
+    ---
+
+    H37 (S133). Lo que un conductor necesita en vigor para llevar un
+    tipo de máquina (`MachineAsset.type_name`): clases del permiso de
+    conducción y documentos (CAP, carné de gruista). Miguel Ángel, S133:
+    "tenemos los permisos de conducción para poder determinar a quien
+    podemos enviar según su permiso". Tabla inicial acordada en S133:
+    asistencia en carretera C + CAP; cabeza tractora CE + CAP; grúa
+    móvil y rescate con grúa móvil C + CAP + carné de gruista;
+    vehículos de personal B.
+    """
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="machine_driver_requirements",
+        verbose_name="Empresa",
+    )
+    machine_type_name = models.CharField(
+        max_length=120,
+        verbose_name="Tipo de máquina",
+        help_text="Igual que el tipo de la ficha de la máquina "
+                  "(p. ej. CABEZA TRACTORA).",
+    )
+    required_categories = models.ManyToManyField(
+        "document_explorer.DrivingLicenceCategory",
+        blank=True,
+        related_name="+",
+        verbose_name="Clases del permiso",
+    )
+    required_documents = models.ManyToManyField(
+        DriverDocumentRequirement,
+        blank=True,
+        related_name="machine_requirements",
+        verbose_name="Documentos",
+    )
+    is_active = models.BooleanField(default=True, verbose_name="Activo")
+
+    class Meta:
+        verbose_name = "Requisito del conductor por tipo de máquina"
+        verbose_name_plural = "Requisitos del conductor por tipo de máquina"
+        ordering = ["company", "machine_type_name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("company", "machine_type_name"),
+                name="unique_driver_requirement_per_machine_type",
+            ),
+        ]
+
+    def __str__(self):
+        return self.machine_type_name

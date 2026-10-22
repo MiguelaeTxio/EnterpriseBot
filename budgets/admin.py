@@ -12,6 +12,8 @@ de tarifa, presupuestos y lineas de presupuesto para gestion superusuario.
 from django.contrib import admin
 
 from budgets.models import (
+    DriverDocumentRequirement,
+    MachineDriverRequirement,
     BudgetLine,
     Budget,
     Insurer,
@@ -29,7 +31,8 @@ class VehicleTypeInline(admin.TabularInline):
     """
     Inline editor for VehicleType records within an Insurer admin page.
     ---
-    Editor inline de registros VehicleType dentro de la pagina admin de Insurer.
+    Editor inline de registros VehicleType dentro de la pagina admin de
+    Insurer.
     """
 
     model = VehicleType
@@ -42,7 +45,8 @@ class TariffLineInline(admin.TabularInline):
     """
     Inline editor for TariffLine records within an InsurerTariff admin page.
     ---
-    Editor inline de registros TariffLine dentro de la pagina admin de InsurerTariff.
+    Editor inline de registros TariffLine dentro de la pagina admin de
+    InsurerTariff.
     """
 
     model = TariffLine
@@ -63,7 +67,8 @@ class InsurerTariffInline(admin.TabularInline):
     """
     Inline editor for InsurerTariff records within an Insurer admin page.
     ---
-    Editor inline de registros InsurerTariff dentro de la pagina admin de Insurer.
+    Editor inline de registros InsurerTariff dentro de la pagina admin de
+    Insurer.
     """
 
     model = InsurerTariff
@@ -245,3 +250,18 @@ class BudgetLineAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+# H37 (S133): what a driver needs in force per machine type.
+# Lo que necesita un conductor en vigor por tipo de máquina.
+@admin.register(DriverDocumentRequirement)
+class DriverDocumentRequirementAdmin(admin.ModelAdmin):
+    list_display = ("name",)
+    filter_horizontal = ("document_types",)
+
+
+@admin.register(MachineDriverRequirement)
+class MachineDriverRequirementAdmin(admin.ModelAdmin):
+    list_display = ("machine_type_name", "company", "is_active")
+    list_filter = ("company", "is_active")
+    filter_horizontal = ("required_categories", "required_documents")

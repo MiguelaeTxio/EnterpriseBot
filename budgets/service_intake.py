@@ -596,8 +596,10 @@ def availability(company):
     conductor, con su estado (los mismos del panel de tráfico).
     """
     from budgets import assistance_traffic as traffic
+    from budgets.driver_qualification import Checker
 
     drivers, machines, crews = traffic._current(company)
+    checker = Checker(company)
     crew_rows = []
     for crew in crews:
         row = "%s con %s (%s): %s" % (
@@ -609,11 +611,20 @@ def availability(company):
             row += " con el albarán %s" % crew.current_unit.albaran_number
         if crew.queue:
             row += "; %d en cola" % len(crew.queue)
+        missing = checker.missing(crew.driver_card, crew.machine_card)
+        if missing:
+            row += "; NO PUEDE llevarla: %s" % ", ".join(missing)
         crew_rows.append(row)
-    driver_rows = [
-        "%s: %s" % (d.display_name, d.state_label)
-        for d in drivers if d.crew is None
-    ]
+    driver_rows = []
+    for driver in drivers:
+        if driver.crew is not None:
+            continue
+        types = checker.machine_types_for(driver)
+        driver_rows.append("%s: %s; puede llevar: %s" % (
+            driver.display_name, driver.state_label,
+            ", ".join(types) if types else "ningún tipo (sin permisos "
+            "o documentos en vigor registrados)",
+        ))
     machine_rows = [
         "%s %s (%s): %s" % (
             m.code, m.plate, m.type_name or m.brand_model, m.state_label,
@@ -628,7 +639,10 @@ def availability(company):
             "Libre y Regresando se pueden asignar ya. Asignado o En "
             "servicio: el nuevo servicio queda en cola y sale solo al "
             "terminar. En taller, de baja, vacaciones o ausente: solo si "
-            "quien da el servicio confirma que sí está disponible."
+            "quien da el servicio confirma que sí está disponible. "
+            "Propón solo conductores que pueden llevar el tipo de "
+            "máquina (permiso de conducir, CAP y carné de gruista en "
+            "vigor, según el tipo)."
         ),
     }
 
@@ -748,6 +762,22 @@ def launch(intake, args, whatsapp_sender):
                 driver.display_name
             )}
         teams.append((driver, machine, team.get("ayudantes") or []))
+    from budgets.driver_qualification import Checker
+
+    checker = Checker(company)
+    team_missing = []
+    for driver, machine, _helpers in teams:
+        missing = checker.missing(driver, machine)
+        if missing and not force_note:
+            return {"error": (
+                "%s no puede llevar la %s (%s): %s. Si quien da el "
+                "servicio confirma que sí puede, lánzalo con "
+                "nota_prevalencia." % (
+                    driver.display_name, machine.code,
+                    machine.type_name or "", ", ".join(missing),
+                )
+            )}
+        team_missing.append(missing)
     if len({d.pk for d, _m, _h in teams}) < len(teams) or len(
         {m.pk for _d, m, _h in teams}
     ) < len(teams):
@@ -771,7 +801,9 @@ def launch(intake, args, whatsapp_sender):
                     work_order.delivery_address or ""
                 )[:255]
             form.save()
-            for driver, machine, helpers in teams:
+            for (driver, machine, helpers), missing in zip(
+                teams, team_missing,
+            ):
                 crew = AssistanceCrew.objects.filter(
                     driver=driver, machine=machine,
                 ).first()
@@ -787,6 +819,21 @@ def launch(intake, args, whatsapp_sender):
                     company, by, crew.pk, order_pk=work_order.pk,
                     force_note=force_note,
                 )
+                if missing:
+                    # S133: sent without the licence or documents the
+                    # machine needs, because the giver said so.
+                    # Enviado sin el permiso o los documentos que pide
+                    # la máquina, porque lo ha dicho quien da el servicio.
+                    from budgets.models import (
+                        WorkOrderAssistanceUnitEvent as Event,
+                    )
+
+                    Event.objects.create(
+                        unit=unit, kind=Event.KIND_ASSIGN, created_by=by,
+                        detail=("Asignado pese a: %s. %s" % (
+                            ", ".join(missing), force_note,
+                        ))[:255],
+                    )
                 for name in helpers:
                     helper, error = _find_driver(drivers, name)
                     if error:
@@ -1076,10 +1123,22 @@ def _system_prompt(intake):
         "6. Tras lanzar, di el nº de albarán y si se ha enviado o queda "
         "en cola. Si una herramienta devuelve un error, explícalo y "
         "pregunta lo necesario.\n\n"
+        "PERMISOS: propón solo conductores que pueden llevar el tipo de "
+        "máquina (consultar_disponibilidad dice qué tipos puede llevar "
+        "cada uno, según su permiso de conducir, CAP y carné de gruista "
+        "en vigor). Si quien da el servicio elige a alguien que no "
+        "puede, díselo UNA vez con lo que le falta; si confirma, lanza "
+        "con nota_prevalencia.\n\n"
+        "RESPUESTAS CORTAS: siempre que haya que elegir, da opciones "
+        "NUMERADAS (1, 2, 3...), cada una con todo lo que implica "
+        "(qué se hace, conductor y máquina), para que baste contestar "
+        "con el número. Entiende «1», «la 2», «la primera»... Para "
+        "lanzar, pregunta «¿Lo lanzo? (sí/no)». No hagas varias "
+        "preguntas a la vez si puedes juntarlas en las opciones.\n\n"
         "ESTILO: mensajes cortos de WhatsApp, en español, sin "
         "formularios ni listas largas. Tutea. Formato de WhatsApp: "
         "negrita con UN asterisco a cada lado (*así*), nunca dos; sin "
-        "almohadillas ni viñetas con asterisco (usa guiones).\n\n"
+        "almohadillas ni viñetas con asterisco.\n\n"
         "ASEGURADORAS Y SUS TIPOS DE VEHÍCULO (ASISTIDO):\n%(insurers)s\n"
     ) % {
         "company": company.name,
@@ -1439,8 +1498,11 @@ def voice_instruction(company_user):
         "3. Lo que se manda lo decides tú, como jefa de tráfico:\n"
         "%(criteria)s"
         "Consulta servicio_disponibilidad y PROPÓN el equipo o los "
-        "equipos concretos, libres o regresando. Nunca preguntes qué "
-        "vehículo asignar. Si van varios, lánzalos juntos con el "
+        "equipos concretos, libres o regresando, solo con conductores "
+        "que pueden llevar ese tipo de máquina (permiso, CAP y carné de "
+        "gruista en vigor). Nunca preguntes qué vehículo asignar. Si "
+        "hay alternativas, numéralas (opción uno, opción dos) para que "
+        "baste decir el número. Si van varios, lánzalos juntos con el "
         "argumento equipos.\n"
         "4. Antes de lanzar, resume (aseguradora, vehículo, de dónde a "
         "dónde, conductor y máquina) y pregunta si lo lanzas. Si te "
