@@ -1,17 +1,19 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/analytics/views_accounting.py
 """
-Accounting entry CSV merge in Costes de operarios.
+Accounting tools page: accounting entry CSV merge.
 
 ---
 
-Unión de CSV de asientos contables en Costes de operarios (S133). La
-pantalla pide una carpeta, lista sus CSV por orden alfabético, el
+Herramientas de contabilidad (S133, entrada propia de la barra
+lateral): unión de CSV de asientos contables. La pantalla pide una
+carpeta, lista sus CSV por orden alfabético, el
 usuario los reordena arrastrándolos y al pulsar "Generar" se suben en
 ese orden; esta vista los une y devuelve el CSV para descargar.
 """
 import logging
 
 from django.http import HttpResponse, JsonResponse
+from django.shortcuts import render
 from django.utils import timezone
 from django.views.generic import View
 
@@ -22,6 +24,35 @@ logger = logging.getLogger(__name__)
 
 MAX_FILES = 200
 MAX_FILE_BYTES = 20 * 1024 * 1024
+
+
+class AccountingToolsView(SupervisorAccessMixin, View):
+    """
+    Accounting tools page.
+
+    ---
+
+    Página de Herramientas de contabilidad. Pasa company_user y
+    active_nav para la barra lateral, como el resto de páginas.
+    """
+
+    def get(self, request):
+        """
+        Render the page.
+
+        ---
+
+        Pinta la página.
+        """
+        from analytics.views import _get_own_presence
+
+        company_user = request.user.company_user
+        return render(request, "panel/accounting_tools.html", {
+            "company_user": company_user,
+            "company": company_user.company,
+            "active_nav": "accounting_tools",
+            "own_presence": _get_own_presence(company_user),
+        })
 
 
 class AccountingCsvMergeView(SupervisorAccessMixin, View):

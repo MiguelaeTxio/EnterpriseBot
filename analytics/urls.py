@@ -8,7 +8,10 @@ Todas las rutas bajo /panel/analytics/ via include('analytics.urls').
 """
 from django.urls import path
 
-from analytics.views_accounting import AccountingCsvMergeView
+from analytics.views_accounting import (
+    AccountingCsvMergeView,
+    AccountingToolsView,
+)
 from analytics.views import (
     AnalyticsView,
     AnalyticsDataView,
@@ -91,10 +94,15 @@ urlpatterns = [
         AnalyticsCostsView.as_view(),
         name="analytics_costs",
     ),
-    # S133: merge of accounting entry CSV files.
-    # Unión de CSV de asientos contables.
+    # S133: accounting tools (merge of accounting entry CSV files).
+    # Herramientas de contabilidad (unión de CSV de asientos).
     path(
-        "costs/csv-merge/",
+        "accounting/",
+        AccountingToolsView.as_view(),
+        name="accounting_tools",
+    ),
+    path(
+        "accounting/csv-merge/",
         AccountingCsvMergeView.as_view(),
         name="accounting_csv_merge",
     ),
