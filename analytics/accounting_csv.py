@@ -10,12 +10,13 @@ contabilidad).
 Asientos (`merge`): los ficheros van uno detrás de otro y la columna B
 (número de asiento) se renumera correlativa: cada asiento de un fichero
 (su número original de la columna B) recibe un número nuevo, y todas
-sus líneas comparten el mismo, vengan en el orden que vengan en la
-columna C (incidencia real S133: en los ficheros de Jerónimo las líneas
-vienen 2, 1 o 3, 1, 2, y contar por "la C vuelve a empezar" partía los
-asientos). Las filas conservan su orden y la columna C no se toca. La
-columna K queda vacía, sin datos, pero la columna existe (Miguel Ángel,
-S133: "debe existir la columna, pero totalmente vacía"). Formato de
+sus líneas comparten el mismo. La columna C (línea del asiento) se
+renumera 1, 2, 3... dentro de cada asiento, en el orden en que vienen
+las filas, que no se mueven (incidencia real S133: en los ficheros de
+Jerónimo la C viene 2, 1 o 3, 1, 2 y su programa contable da error si
+no va 1, 2, 3). La columna K queda vacía, sin datos, pero la columna
+existe (Miguel Ángel, S133: "debe existir la columna, pero totalmente
+vacía"). Formato de
 salida igual que el de entrada: punto y coma, saltos de línea CRLF.
 """
 
@@ -69,6 +70,7 @@ def merge(files):
         if encoding != "utf-8":
             out_encoding = encoding
         previous = None
+        line_in_entry = 0
         for line_no, line in enumerate(text.splitlines(), start=1):
             if not line.strip():
                 continue
@@ -82,7 +84,10 @@ def merge(files):
             if cols[COLUMN_B] != previous:
                 number += 1
                 previous = cols[COLUMN_B]
+                line_in_entry = 0
+            line_in_entry += 1
             cols[COLUMN_B] = str(number)
+            cols[COLUMN_C] = str(line_in_entry)
             cols[COLUMN_K] = ""
             rows.append(";".join(cols))
     if not rows:
