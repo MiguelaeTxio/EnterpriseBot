@@ -640,6 +640,20 @@ vamos a centrar en la toma de datos."*
 (origen, regla de C, cola de D) → agente de WhatsApp → agente de voz
 (IVR) → app del conductor (G) → consulta de servicios (H).
 
+**Permisos para asignar (S133, 22/10/2026):** Alia solo propone
+conductores que pueden llevar el tipo de máquina según su permiso de
+conducir, CAP y carné de gruista en vigor (`MachineDriverRequirement`,
+migraciones 0042-0044; `budgets/driver_qualification.py`). Tabla
+acordada ("Perfecto"): asistencia en carretera C + CAP; cabeza tractora
+(y cabeza tractora asistencia) CE + CAP; grúa móvil de 20/30 TM y
+rescate con grúa móvil C + CAP + carné de gruista; vehículos de
+personal B. Forzarlo exige nota y queda registrado ("Asignado pese
+a..."). Las opciones de Alia van numeradas para contestar con el
+número. Comprobado en producción: solo tienen ficha de persona con
+permisos alvarez_admin (B), carlos.carlin (C/CE + CAP + gruista) y
+joseantonio.zafra (CE + CAP); el resto de usuarios que salen como
+conductores no tiene ficha de persona enlazada y Alia no los propone.
+
 **Pendiente técnico anotado en S133 (directriz 4.9):**
 `vox_bridge/services.py` pasó de ~750 avisos de flake8 a 68 (repaso
 automático con AST idéntico más imports sin uso retirados). Las 68
