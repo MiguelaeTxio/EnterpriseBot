@@ -138,15 +138,13 @@
         });
     }
 
-    // Sin la salida fichada el parte no se puede cerrar (solo guardar
-    // tareas): se desactiva "Cerrar parte" y se explica por qué.
+    // Sin la salida fichada el parte no se cierra, pero "Cerrar parte"
+    // sigue activo y lo guarda "en curso" (S133, Miguel Ángel: "que el
+    // botón se quede habilitado, que puedan guardar"); aquí solo se
+    // explica qué pasará.
     function applyCloseBlock(blockers) {
         var closeBtn = document.getElementById("btn-form-submit");
         var note = document.getElementById("clock-close-note");
-        if (closeBtn) {
-            closeBtn.disabled = blockers.length > 0;
-            closeBtn.title = blockers.join(" ");
-        }
         if (!note && closeBtn && closeBtn.parentNode) {
             note = document.createElement("div");
             note.id = "clock-close-note";

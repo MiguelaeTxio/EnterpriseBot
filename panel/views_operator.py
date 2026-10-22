@@ -3858,6 +3858,23 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                 )
                 _intra.ok = False
 
+        # S133 (Miguel Ángel, incidencia de Antonio Fontalba): "que el
+        # botón se quede habilitado, que puedan guardar, porque eso le
+        # genera mucha sospecha de que no se va a grabar". Si lo único
+        # que falla es el fichaje (falta la salida o las horas no cuadran
+        # con lo fichado), el parte se guarda igualmente, "en curso", y
+        # se le dice por qué no queda cerrado; la salida lo cerrará si
+        # cuadra (clock_parts.on_clock_out).
+        _clock_hold = []
+        if (
+            not _intra.ok
+            and _intra.errors
+            and all(e.rule == "FICHAJE" for e in _intra.errors)
+        ):
+            _clock_hold = [e.message for e in _intra.errors]
+            _intra.errors = []
+            _intra.ok = True
+
         if not _intra.ok:
 
             _error_msgs = [e.message for e in _intra.errors]
@@ -3932,6 +3949,7 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
             and _form_action != "save_blocks"
             and not _clock_stretches
             and not _non_working_day_c
+            and not _clock_hold
         ):
             from decimal import Decimal as _Dec_C
             from ivr_config.models import WorkerAbsence as _WA_C
@@ -4742,6 +4760,8 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                 f"{len(entry_lines_data)} bloque(s) guardado(s). "
                 "Puedes añadir más bloques o cerrar el parte cuando termines.",
             )
+            if _clock_hold:
+                django_messages.warning(request, " ".join(_clock_hold))
             return redirect("/panel/operator/form/")
 
         _ip_wo_pk_close = POST.get("in_progress_wo_pk", "").strip()
@@ -4806,7 +4826,11 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                     # parte tras haber subido una foto.
                     work_order = _reuse_wo
                     _close_existing_entry = work_order.entries.first()
-                    work_order.status = WorkOrder.Status.DONE
+                    work_order.status = (
+                        WorkOrder.Status.IN_PROGRESS
+                        if _clock_hold
+                        else WorkOrder.Status.DONE
+                    )
                     work_order.save(update_fields=["status"])
                 else:
                     # No existing WO found — create a new one.
@@ -4815,7 +4839,11 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                         company=company,
                         uploaded_by=cu,
                         source=WorkOrder.Source.DIGITAL,
-                        status=WorkOrder.Status.DONE,
+                        status=(
+                            WorkOrder.Status.IN_PROGRESS
+                            if _clock_hold
+                            else WorkOrder.Status.DONE
+                        ),
                         total_pages=1,
                         processed_pages=1,
                         reviewed=False,
@@ -5552,13 +5580,16 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                     _lpk,
                 )
 
+        # S133: un parte que queda "en curso" por el fichaje no lleva Excel
+        # todavía (generarlo lo marca como cerrado); lo genera su cierre.
         try:
-            generate_work_order_excel(work_order.pk)
-            logger.info(
-                "# [FormView] Excel generado correctamente para WorkOrder "
-                "#%d.",
-                work_order.pk,
-            )
+            if not _clock_hold:
+                generate_work_order_excel(work_order.pk)
+                logger.info(
+                    "# [FormView] Excel generado correctamente para "
+                    "WorkOrder #%d.",
+                    work_order.pk,
+                )
         except Exception as exc:
             logger.warning(
                 "# [FormView] Excel no generado para WorkOrder #%d: %s.",
@@ -5613,11 +5644,19 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                 + " | ".join(_meter_warnings),
             )
 
-        django_messages.success(
-            request,
-            f"Parte de trabajo registrado correctamente (#{work_order.pk}). "
-            f"El informe Excel está disponible en la lista de partes.",
-        )
+        if _clock_hold:
+            django_messages.warning(
+                request,
+                f"Parte #{work_order.pk} guardado, sin cerrar. "
+                + " ".join(_clock_hold),
+            )
+        else:
+            django_messages.success(
+                request,
+                f"Parte de trabajo registrado correctamente "
+                f"(#{work_order.pk}). "
+                f"El informe Excel está disponible en la lista de partes.",
+            )
 
         from django.urls import reverse as _reverse_co
         from spare_parts.models import SparePartEntry as _SPE_review
