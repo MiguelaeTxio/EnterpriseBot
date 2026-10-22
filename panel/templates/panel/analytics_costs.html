@@ -181,7 +181,63 @@
         </div>
     </div>
 
+    {# ------------------------------------------------------------------ #}
+    {# S133: merge of accounting entry CSV files                          #}
+    {# S133: unión de CSV de asientos contables                           #}
+    {# ------------------------------------------------------------------ #}
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-light border-bottom py-2 px-4">
+            <span class="fw-semibold text-sm">
+                <i class="bi bi-filetype-csv me-2 text-muted"></i>Unir asientos contables (CSV)
+            </span>
+        </div>
+        <div class="card-body px-4 py-4">
+            <p class="text-sm text-muted mb-3">
+                Elige los ficheros de asientos (ASIENTOS-A, ASIENTOS-C,
+                ASIENTOS-H, ENTCAR...). Se ponen uno detrás de otro por
+                orden de nombre, la columna B se numera seguida según la
+                columna C (cada asiento un número, todas sus líneas el
+                mismo) y se quita la columna K donde la hay. Se descarga
+                un único CSV.
+            </p>
+            <form method="post" action="{% url 'analytics:accounting_csv_merge' %}"
+                  enctype="multipart/form-data">
+                {% csrf_token %}
+                <div class="row g-3 align-items-end">
+                    <div class="col-12 col-md-6">
+                        <input type="file" name="files" id="csv-merge-files"
+                               class="form-control form-control-sm"
+                               accept=".csv,text/csv" multiple required>
+                    </div>
+                    <div class="col-12 col-md-3">
+                        <button type="submit" class="btn btn-primary btn-sm w-100">
+                            <i class="bi bi-download me-1"></i>Unir y descargar
+                        </button>
+                    </div>
+                </div>
+                <ol id="csv-merge-order" class="text-sm text-muted mt-3 mb-0 d-none"></ol>
+            </form>
+        </div>
+    </div>
+
 </div>
+
+<script>
+/* S133: order in which the files will be merged (by name, as the
+   server does). Orden en que se unirán (por nombre, como el servidor). */
+document.getElementById("csv-merge-files").addEventListener("change", function () {
+    const list = document.getElementById("csv-merge-order");
+    const names = Array.from(this.files).map(function (f) { return f.name; })
+        .sort(function (a, b) { return a.toLowerCase().localeCompare(b.toLowerCase()); });
+    list.innerHTML = "";
+    names.forEach(function (name) {
+        const item = document.createElement("li");
+        item.textContent = name;
+        list.appendChild(item);
+    });
+    list.classList.toggle("d-none", names.length === 0);
+});
+</script>
 
 {# Hidden CSRF token for POST/DELETE requests #}
 {# Token CSRF oculto para peticiones POST/DELETE #}
