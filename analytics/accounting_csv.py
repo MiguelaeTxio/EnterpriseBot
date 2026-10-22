@@ -7,11 +7,13 @@ Merge of accounting entry CSV files (Costes de operarios).
 Unión de ficheros CSV de asientos contables (Miguel Ángel, S133, en
 Costes de operarios): los ficheros van uno detrás de otro, la columna B
 (número de asiento) se renumera correlativa teniendo en cuenta la
-columna C (línea del asiento: cada asiento nuevo de un fichero sube un
-número, y todas sus líneas comparten el mismo) y se borra la columna K
-(la serie: A, C, H...) en los ficheros que la traen (14 columnas; los
-ENTCAR ya vienen sin ella, con 13). Formato de salida igual que el de
-entrada: separado por punto y coma, saltos de línea CRLF.
+columna C (línea del asiento: cada vez que la columna C vuelve a
+empezar, sube un número, y todas las líneas del asiento comparten el
+mismo). Las filas mantienen su orden y la columna C no se toca. Se
+borra la columna K (la serie: A, C, H...) en los ficheros que la traen
+(14 columnas; los ENTCAR ya vienen sin ella, con 13). Formato de
+salida igual que el de entrada: separado por punto y coma, saltos de
+línea CRLF.
 """
 
 COLUMN_B = 1
@@ -47,6 +49,20 @@ def _decode(name, data):
     raise MergeError("%s: codificación no reconocida." % name)
 
 
+def _line_number(value):
+    """
+    Line number of column C, or None if it is not a number.
+
+    ---
+
+    Número de línea de la columna C, o None si no es un número.
+    """
+    try:
+        return int(value.strip())
+    except ValueError:
+        return None
+
+
 def merge(files):
     """
     Merge the files in order. Returns (bytes, rows, entries).
@@ -64,7 +80,8 @@ def merge(files):
         text, encoding = _decode(name, data)
         if encoding != "utf-8":
             out_encoding = encoding
-        previous = None
+        previous_b = None
+        previous_c = None
         for line_no, line in enumerate(text.splitlines(), start=1):
             if not line.strip():
                 continue
@@ -73,9 +90,22 @@ def merge(files):
                 raise MergeError(
                     "%s, fila %d: no tiene columnas B y C." % (name, line_no)
                 )
-            if cols[COLUMN_B] != previous:
+            line_c = _line_number(cols[COLUMN_C])
+            # A new entry starts when column C starts again (1, or not
+            # greater than the previous line) or column B changes. The
+            # rows keep their order; column C is never touched.
+            # Empieza un asiento nuevo cuando la columna C vuelve a
+            # empezar (1, o no mayor que la línea anterior) o cambia la
+            # columna B. Las filas no cambian de orden y la columna C
+            # no se toca.
+            if (
+                cols[COLUMN_B] != previous_b
+                or line_c is None or previous_c is None
+                or line_c <= previous_c
+            ):
                 number += 1
-                previous = cols[COLUMN_B]
+            previous_b = cols[COLUMN_B]
+            previous_c = line_c
             cols[COLUMN_B] = str(number)
             if len(cols) == COLUMNS_WITH_K:
                 del cols[COLUMN_K]
