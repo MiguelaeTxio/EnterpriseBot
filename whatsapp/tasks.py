@@ -349,7 +349,7 @@ def expire_presence_statuses() -> str:
 
 @shared_task(name="whatsapp.tasks.service_intake_reply")
 def service_intake_reply(intake_pk, body, media_url, content_type,
-                         platform_number, from_number):
+                         platform_number, from_number, decide=False):
     """
     Answer a message of somebody giving a service by WhatsApp.
 
@@ -359,6 +359,9 @@ def service_intake_reply(intake_pk, body, media_url, content_type,
     (budgets.service_intake): prepara la respuesta con el agente, la
     envía y la guarda en la sesión. En segundo plano porque leer la foto
     y consultar los datos puede pasar del tiempo que espera Twilio.
+    Sin respuesta (None) no se envía nada: el texto espera a la lectura
+    de un documento, o el documento no era un servicio. `decide`: ver
+    `process_whatsapp`.
     """
     from budgets.service_intake import process_whatsapp
     from whatsapp.models import WhatsAppMessage
@@ -379,6 +382,7 @@ def service_intake_reply(intake_pk, body, media_url, content_type,
         text = process_whatsapp(
             intake_pk, body, media_url, content_type,
             os.environ.get("TWILIO_WHATSAPP_SENDER", ""),
+            from_number=from_number, decide=decide,
         )
     except Exception as exc:  # noqa: BLE001 -- se avisa al usuario
         logger.exception("# [SERVICE INTAKE] Error: %s", exc)
@@ -386,6 +390,8 @@ def service_intake_reply(intake_pk, body, media_url, content_type,
             "Perdona, ha habido un problema al preparar el servicio. "
             "Repíteme el último mensaje."
         )
+    if text is None:
+        return None
     session = WhatsAppSession.objects.filter(
         phone_number=from_number, is_active=True,
     ).order_by("-session_start").first()
@@ -403,31 +409,3 @@ def service_intake_reply(intake_pk, body, media_url, content_type,
             body=text, message_sid=sid,
         )
     return text
-
-
-@shared_task(name="whatsapp.tasks.service_document_route")
-def service_document_route(company_pk, company_user_pk, body, post,
-                           platform_number, from_number):
-    """
-    Decide what a document of a service giver is for, and act.
-
-    ---
-
-    H37 (S133). Un documento (foto o PDF) de quien da servicios, sin
-    conversación de servicio abierta: Gemini lo mira y decide si es un
-    servicio (pasa a Alia, que lo lee y contesta) o cualquier otra cosa
-    (pasa a Documentación como un adjunto más). En segundo plano: mirar
-    el documento puede pasar del tiempo que espera Twilio.
-    """
-    from budgets.service_intake import route_document
-    from ivr_config.models import Company
-
-    company = Company.objects.get(pk=company_pk)
-    intake_pk = route_document(
-        company, company_user_pk, from_number, body, post,
-    )
-    if intake_pk is not None:
-        service_intake_reply(
-            intake_pk, body, post.get("MediaUrl0", ""),
-            post.get("MediaContentType0", ""), platform_number, from_number,
-        )

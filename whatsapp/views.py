@@ -229,32 +229,35 @@ class IncomingWhatsAppView(View):
         _service_media = (
             request.POST.get("MediaContentType0", "") if num_media else ""
         )
+        _service_doc = (
+            _service_media.startswith("image/")
+            or _service_media == "application/pdf"
+        )
         if (
             _intake is None and _service_contact is not None
             and service_giver(_service_contact.company_user)
-            and (
-                _service_media.startswith("image/")
-                or _service_media == "application/pdf"
-            )
+            and _service_doc
         ):
-            # A photo or PDF of whoever gives services: Gemini looks at
-            # it (in Celery) and decides if it is a service or a document
-            # for Documentación. Never by keywords.
-            # Foto o PDF de quien da servicios: Gemini lo mira (en
-            # Celery) y decide si es un servicio o un documento para
-            # Documentación. Nunca por palabras clave.
-            from whatsapp.tasks import service_document_route
+            # A photo or PDF of whoever gives services opens the service
+            # conversation at once (so a text sent right after waits for
+            # it); the same Gemini read says if it is a service or a
+            # document for Documentación. Never by keywords.
+            # Foto o PDF de quien da servicios: abre la conversación ya
+            # (un texto mandado justo después espera a su lectura) y la
+            # misma lectura de Gemini dice si es un servicio o un
+            # documento para Documentación. Nunca por palabras clave.
+            from budgets.service_intake import start_from_assistant
 
-            service_document_route.delay(
-                company.pk, _service_contact.company_user_id,
-                _service_body,
-                {
-                    key: request.POST.get(key, "")
-                    for key in ("MediaUrl0", "MediaContentType0")
-                },
-                to_number, from_number,
+            _intake = start_from_assistant(
+                _service_contact.company_user, from_number,
             )
-            return HttpResponse(status=200)
+            _service_decide = True
+        else:
+            _service_decide = False
+        if _intake is not None and _service_doc:
+            from budgets.service_intake import mark_reading
+
+            mark_reading(_intake)
         if _intake is not None:
             from whatsapp.tasks import service_intake_reply
 
@@ -277,7 +280,7 @@ class IncomingWhatsAppView(View):
                 request.POST.get("MediaUrl0", "") if num_media else "",
                 request.POST.get("MediaContentType0", "") if num_media
                 else "",
-                to_number, from_number,
+                to_number, from_number, decide=_service_decide,
             )
             return HttpResponse(status=200)
 

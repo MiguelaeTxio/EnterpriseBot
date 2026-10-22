@@ -537,7 +537,12 @@ lo que dependa de ellas.
    Es el punto 7 de 6.1 (fase 5 del dossier).
 
 4. **Hoja de servicio (modelo que pasó Pepe, S133).** Implementada en
-   S133 (servidor `5d20122`/`b3e61fd`, app `3565e15`). Dudas abiertas:
+   S133 (servidor `5d20122`/`b3e61fd`, app `3565e15`). **Cerrada por
+   Miguel Ángel (S133, 22/10/2026):** *"De momento damos ya todos los
+   datos por válidos, festivos y nocturnos calculados por las tarifas
+   que ya tenemos y por la configuración de horarios y calendarios de
+   cada base, así como las bases que también están configuradas en
+   BBDD."* Las decisiones de abajo quedan como están:
    1. **Km salida:** en el modelo viene como opcional; Miguel Ángel
       cree que es un fallo y se ha puesto obligatorio y como puerta de
       la hoja (*"si no mete la información inicial no le da acceso a

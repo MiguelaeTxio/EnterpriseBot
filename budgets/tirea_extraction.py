@@ -61,7 +61,7 @@ DECIMAL_FIELDS = (
     "vehicle_tare", "driver_km", "total_km_tirea",
 )
 INTEGER_FIELDS = ("vehicle_axes", "num_passengers")
-BOOLEAN_FIELDS = ("is_failed", "is_billable")
+BOOLEAN_FIELDS = ("is_failed", "is_billable", "is_service_order")
 
 _RESPONSE_SCHEMA = {
     "type": "object",
@@ -78,10 +78,22 @@ _RESPONSE_SCHEMA = {
     ),
 }
 
-_PROMPT = """La imagen es una captura o foto de un albarán de servicio de
-asistencia en carretera de la aplicación TIREA (pantalla "Albarán" con los
-bloques Servicio, Vehículo y conductor, Recogida, Entrega y un lateral con
-Fallido, Facturable, Comentarios, Chófer y Grúa).
+_PROMPT = """Lo normal es que la imagen sea una captura o foto de un
+albarán de servicio de asistencia en carretera de la aplicación TIREA
+(pantalla "Albarán" con los bloques Servicio, Vehículo y conductor,
+Recogida, Entrega y un lateral con Fallido, Facturable, Comentarios,
+Chófer y Grúa), pero puede ser de otra plataforma o cualquier otro
+documento.
+
+Primero decide para qué es -> is_service_order:
+- "si" si son los datos de un servicio de asistencia que HAY QUE HACER
+  (albarán o servicio de TIREA u otra plataforma de aseguradora, captura
+  de la pantalla, correo o nota con el vehículo a recoger y adónde
+  llevarlo...).
+- "no" si es cualquier otra cosa: documentación personal (DNI, carnet,
+  certificados), de una máquina (ITV, seguro, ficha técnica), una
+  factura, o un parte ya terminado y firmado para archivar. En ese caso
+  deja todos los demás campos vacíos.
 
 Devuelve SOLO lo que se lee en la imagen, sin inventar nada. Si un campo
 está vacío o no se ve, devuelve una cadena vacía "".
@@ -176,6 +188,10 @@ def extract_tirea_albaran(file_bytes, mime_type, timeout_ms=90_000):
         sum(1 for value in raw.values() if str(value).strip()),
     )
     data = _convert(raw)
+    if data.get("is_service_order") is False:
+        # Not a service: nothing else to look for.
+        # No es un servicio: no hay más que buscar.
+        return data
     tax_ids = _tax_ids_in(data.get("company_tax_id", ""))
     if not _has_group_tax_id(tax_ids):
         tax_ids += _pdf_tax_ids(file_bytes, mime_type)
@@ -368,61 +384,3 @@ def _to_decimal(value):
         return Decimal(text)
     except InvalidOperation:
         return None
-
-
-_SERVICE_DOC_PROMPT = """Te lo manda por WhatsApp un supervisor de
-asistencia en carretera de una empresa de grúas. Mira el documento (y
-el texto que lo acompaña, si lo hay) y decide para qué es:
-
-- es_servicio = true si son los datos de un servicio de asistencia que
-  HAY QUE HACER: albarán o servicio de TIREA u otra plataforma de
-  aseguradora, captura o foto de la pantalla con el servicio, correo o
-  nota con el vehículo a recoger y adónde llevarlo...
-- es_servicio = false si es cualquier otra cosa: documentación personal
-  (DNI, carnet, certificados), de una máquina (ITV, seguro, ficha
-  técnica), una factura, o un parte ya terminado y firmado para
-  archivar.
-
-Texto que lo acompaña: %s"""
-
-
-def is_service_document(file_bytes, mime_type, text="", timeout_ms=60_000):
-    """
-    Whether a document is a service to carry out (Gemini decides).
-
-    ---
-
-    Si el documento son los datos de un servicio de asistencia que hay
-    que hacer, o cualquier otra cosa (Miguel Ángel, S133: "que Gemini
-    lea el PDF y sepa para lo que es", nada de palabras clave). Devuelve
-    (es_servicio, motivo).
-    """
-    client = get_gemini_client()
-    response = _generate_content_with_retry(
-        client,
-        model=DEFAULT_MODEL,
-        contents=[
-            Part.from_bytes(data=file_bytes, mime_type=mime_type),
-            _SERVICE_DOC_PROMPT % (text or "(ninguno)"),
-        ],
-        config=GenerateContentConfig(
-            http_options=HttpOptions(timeout=timeout_ms),
-            response_mime_type="application/json",
-            response_schema={
-                "type": "object",
-                "properties": {
-                    "es_servicio": {"type": "boolean"},
-                    "motivo": {"type": "string"},
-                },
-                "required": ["es_servicio", "motivo"],
-            },
-            thinking_config=ThinkingConfig(thinking_level="low"),
-            temperature=0.0,
-        ),
-    )
-    answer = json.loads(response.text.strip())
-    logger.info(
-        "# [TIREA] ¿Servicio? %s -- %s",
-        answer.get("es_servicio"), answer.get("motivo", ""),
-    )
-    return bool(answer.get("es_servicio")), answer.get("motivo", "")

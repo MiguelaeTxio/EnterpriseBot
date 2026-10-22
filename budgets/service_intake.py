@@ -249,6 +249,86 @@ def _insurers(company):
     ).prefetch_related("vehicle_types").order_by("name")
 
 
+# A document being read holds the texts that arrive meanwhile, so the
+# answer covers both (S133: the PDF and "voy a dar un servicio" arrived
+# together and Alia asked for the PDF she was already reading).
+# Mientras se lee un documento, los textos que llegan esperan y la
+# respuesta los atiende juntos.
+READING_LIMIT = datetime.timedelta(minutes=5)
+
+
+def _save_data(intake):
+    """
+    Save the data keeping the texts queued by other messages.
+
+    ---
+
+    Guarda los datos sin pisar los textos que otro mensaje haya dejado
+    en espera mientras tanto (`pending_texts`).
+    """
+    with transaction.atomic():
+        fresh = ServiceIntake.objects.select_for_update().get(pk=intake.pk)
+        intake.data["pending_texts"] = fresh.data.get("pending_texts", [])
+        if not intake.data["pending_texts"]:
+            intake.data.pop("pending_texts")
+        intake.save(update_fields=["data", "updated_at"])
+
+
+def mark_reading(intake):
+    """
+    Note that a document of the conversation is being read.
+
+    ---
+
+    Apunta que se está leyendo un documento de la conversación (lo
+    llama el webhook antes de encolar la lectura).
+    """
+    with transaction.atomic():
+        fresh = ServiceIntake.objects.select_for_update().get(pk=intake.pk)
+        fresh.data["reading_since"] = timezone.now().isoformat()
+        fresh.save(update_fields=["data", "updated_at"])
+
+
+def _hold_text(intake_pk, body):
+    """
+    Keep a text for the answer of the document being read, if any.
+
+    ---
+
+    Si se está leyendo un documento, guarda el texto para que lo
+    atienda esa respuesta y devuelve True (no se contesta aparte).
+    """
+    with transaction.atomic():
+        fresh = ServiceIntake.objects.select_for_update().get(pk=intake_pk)
+        since = fresh.data.get("reading_since")
+        if not since:
+            return False
+        started = datetime.datetime.fromisoformat(since)
+        if timezone.now() - started > READING_LIMIT:
+            return False
+        fresh.data.setdefault("pending_texts", []).append(body)
+        fresh.save(update_fields=["data", "updated_at"])
+        return True
+
+
+def _release_texts(intake):
+    """
+    End the reading and take the texts that waited for it.
+
+    ---
+
+    Termina la lectura y devuelve los textos que esperaban.
+    """
+    with transaction.atomic():
+        fresh = ServiceIntake.objects.select_for_update().get(pk=intake.pk)
+        texts = fresh.data.pop("pending_texts", [])
+        fresh.data.pop("reading_since", None)
+        fresh.save(update_fields=["data", "updated_at"])
+    intake.data.pop("pending_texts", None)
+    intake.data.pop("reading_since", None)
+    return texts
+
+
 def _set_insurer(intake, name):
     """
     Store the insurer named in the conversation.
@@ -354,15 +434,25 @@ def apply_photo(intake, file_bytes, mime_type):
     plataforma), con el mismo extractor que el alta desde foto del
     panel. Devuelve un resumen de lo leído para el agente.
     """
+    return apply_extracted(intake, extract_photo(file_bytes, mime_type))
+
+
+def extract_photo(file_bytes, mime_type):
+    """
+    Read the photo with Gemini, retrying a cut call once.
+
+    ---
+
+    Lee la foto con Gemini (una sola llamada que además dice si es un
+    servicio: `is_service_order`), con un reintento si Vertex la corta.
+    """
     from budgets.tirea_extraction import extract_tirea_albaran
-    from budgets.views_services import _initial_from_extraction
 
     for attempt in range(1, PHOTO_ATTEMPTS + 1):
         try:
-            extracted = extract_tirea_albaran(
+            return extract_tirea_albaran(
                 file_bytes, mime_type, timeout_ms=PHOTO_TIMEOUT_MS,
             )
-            break
         except Exception as exc:  # noqa: BLE001 -- 5xx de Vertex: reintento
             transient = any(
                 code in str(exc)
@@ -374,6 +464,18 @@ def apply_photo(intake, file_bytes, mime_type):
                 "# [SERVICE INTAKE] Lectura de la foto cortada (%s); "
                 "reintento %d.", exc, attempt + 1,
             )
+
+
+def apply_extracted(intake, extracted):
+    """
+    Store what was read in the photo and summarise it for the agent.
+
+    ---
+
+    Guarda lo leído en la foto y devuelve el resumen para el agente.
+    """
+    from budgets.views_services import _initial_from_extraction
+
     initial = _initial_from_extraction(intake.company, extracted)
     for key, value in initial.items():
         if value in (None, ""):
@@ -400,7 +502,7 @@ def apply_photo(intake, file_bytes, mime_type):
             ).name
     intake.data["photo"] = True
     intake.data["origin"] = WorkOrderAssistance.ORIGIN_PHOTO
-    intake.save(update_fields=["data", "updated_at"])
+    _save_data(intake)
     return data_summary(intake)
 
 
@@ -472,7 +574,7 @@ def save_data(intake, args):
         value = args.get(arg)
         if value not in (None, ""):
             intake.data[field] = str(value).strip()
-    intake.save(update_fields=["data", "updated_at"])
+    _save_data(intake)
     result = data_summary(intake)
     if warnings:
         result["avisos"] = warnings
@@ -1117,7 +1219,7 @@ def claim_whatsapp(company, contact, from_number):
     mensaje y sepa qué es lo que le estamos diciendo"): el texto lo
     decide el asistente general (marcador SERVICE_MARKER, ver
     whatsapp/views.py) y un documento lo mira Gemini en segundo plano
-    (`route_document`).
+    (`process_whatsapp` con `decide`).
     """
     company_user = getattr(contact, "company_user", None)
     if not service_giver(company_user):
@@ -1167,46 +1269,6 @@ def start_from_assistant(company_user, from_number):
     )
 
 
-def route_document(company, company_user_pk, from_number, body, post):
-    """
-    Decide with Gemini what a document of a service giver is for.
-
-    ---
-
-    Decide con Gemini para qué es un documento (foto o PDF) que manda
-    quien da servicios sin conversación abierta: si son los datos de un
-    servicio, abre la conversación y devuelve su pk; si no, lo pasa a
-    Documentación como cualquier adjunto y devuelve None. Si Gemini no
-    contesta, se toma como servicio (quien da servicios casi siempre
-    manda eso, y Alia lo dice si no lo es).
-    """
-    from budgets.tirea_extraction import is_service_document
-    from document_explorer.person_phone_service import (
-        resolve_person_by_phone,
-    )
-    from document_explorer.worker_request_service import (
-        _download_media,
-        expects_media,
-        register_incoming_media,
-    )
-
-    content_type = post.get("MediaContentType0", "")
-    try:
-        is_service, _why = is_service_document(
-            _download_media(post.get("MediaUrl0", "")), content_type, body,
-        )
-    except Exception as exc:  # noqa: BLE001 -- ver docstring
-        logger.warning("# [SERVICE INTAKE] Sin clasificar: %s", exc)
-        is_service = True
-    if is_service:
-        company_user = CompanyUser.objects.get(pk=company_user_pk)
-        return start_from_assistant(company_user, from_number).pk
-    person = resolve_person_by_phone(company, from_number)
-    if person is not None and expects_media(person):
-        register_incoming_media(person, from_number, post)
-    return None
-
-
 def _is_document(content_type):
     """
     Whether the attachment is a photo or a PDF.
@@ -1221,38 +1283,90 @@ def _is_document(content_type):
 
 
 def process_whatsapp(intake_pk, body, media_url, content_type,
-                     whatsapp_sender):
+                     whatsapp_sender, from_number="", decide=False):
     """
     Prepare the answer to a WhatsApp message of a service (Celery).
 
     ---
 
     Prepara la respuesta a un mensaje de servicio (en Celery): lee la
-    foto si la hay y llama al agente. Devuelve el texto de la respuesta.
+    foto si la hay y llama al agente. Devuelve el texto de la respuesta,
+    o None si no hay que contestar: un texto que llega mientras se lee
+    un documento espera a esa respuesta, y un documento que resulta no
+    ser un servicio va a Documentación.
+
+    `decide`: el documento llegó sin conversación abierta, así que puede
+    no ser un servicio. Lo dice la misma lectura de Gemini
+    (`is_service_order`), sin una llamada aparte (S133: tardaba dos
+    minutos).
     """
     intake = ServiceIntake.objects.select_related(
         "company", "requested_by__user",
     ).get(pk=intake_pk)
-    user_text = body
-    if media_url and _is_document(content_type):
-        from document_explorer.worker_request_service import _download_media
+    if not (media_url and _is_document(content_type)):
+        if _hold_text(intake_pk, body):
+            return None
+        return reply(intake, body, whatsapp_sender)
 
-        intake.data["last_photo"] = {
-            "url": media_url, "content_type": content_type,
-        }
-        intake.save(update_fields=["data", "updated_at"])
-        try:
-            summary = apply_photo(
-                intake, _download_media(media_url), content_type,
-            )
-            note = "[Foto del servicio leída: %s]" % json.dumps(
-                summary, ensure_ascii=False,
-            )
-        except Exception as exc:  # noqa: BLE001 -- se le dice al usuario
-            logger.exception("# [SERVICE INTAKE] Foto ilegible: %s", exc)
-            note = "[Llegó una foto del servicio pero no se ha podido leer.]"
-        user_text = "%s\n%s" % (body, note) if body else note
-    return reply(intake, user_text, whatsapp_sender)
+    from document_explorer.worker_request_service import _download_media
+
+    intake.data["last_photo"] = {
+        "url": media_url, "content_type": content_type,
+    }
+    _save_data(intake)
+    extracted = None
+    try:
+        extracted = extract_photo(_download_media(media_url), content_type)
+    except Exception as exc:  # noqa: BLE001 -- se le dice al usuario
+        logger.exception("# [SERVICE INTAKE] Foto ilegible: %s", exc)
+    if decide and extracted is not None and (
+        extracted.get("is_service_order") is False
+    ):
+        return _not_a_service(intake, body, media_url, content_type,
+                              from_number, whatsapp_sender)
+    if extracted is None:
+        note = "[Llegó una foto del servicio pero no se ha podido leer.]"
+    else:
+        note = "[Foto del servicio leída: %s]" % json.dumps(
+            apply_extracted(intake, extracted), ensure_ascii=False,
+        )
+    texts = [text for text in [body] + _release_texts(intake) if text]
+    return reply(intake, "\n".join(texts + [note]), whatsapp_sender)
+
+
+def _not_a_service(intake, body, media_url, content_type, from_number,
+                   whatsapp_sender):
+    """
+    A document that is not a service: to Documentación.
+
+    ---
+
+    El documento no es un servicio: pasa a Documentación como cualquier
+    adjunto. La conversación abierta solo para él se cancela; si
+    mientras tanto escribieron algo, Alia lo atiende.
+    """
+    from document_explorer.person_phone_service import (
+        resolve_person_by_phone,
+    )
+    from document_explorer.worker_request_service import (
+        expects_media,
+        register_incoming_media,
+    )
+
+    person = resolve_person_by_phone(intake.company, from_number)
+    if person is not None and expects_media(person):
+        register_incoming_media(person, from_number, {
+            "MediaUrl0": media_url, "MediaContentType0": content_type,
+        })
+    intake.data.pop("last_photo", None)
+    _save_data(intake)
+    texts = [text for text in [body] + _release_texts(intake) if text]
+    if texts:
+        return reply(intake, "\n".join(texts), whatsapp_sender)
+    if not intake.conversation:
+        intake.status = ServiceIntake.STATUS_CANCELLED
+        intake.save(update_fields=["status", "updated_at"])
+    return None
 
 
 # ---------------------------------------------------------------------------
