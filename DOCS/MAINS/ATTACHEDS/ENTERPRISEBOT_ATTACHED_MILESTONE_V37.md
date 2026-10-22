@@ -553,7 +553,9 @@ lo que dependa de ellas.
       "antes de cargar" también es obligatoria.
    4. **Matrícula y expediente opcionales y PMA obligatorio:** así
       viene en el modelo; se ha respetado tal cual.
-   5. **Nocturno:** se calcula con la hora de salida de base y el
+   5. **Hora salida base:** en el modelo venía en rojo por error; la
+      pone el conductor junto a los km de salida (corregido en S133).
+   6. **Nocturno:** se calcula con la hora de salida de base y el
       horario nocturno de la aseguradora (o el de la empresa).
       Confirmar si cuenta la salida o la hora del servicio.
 
