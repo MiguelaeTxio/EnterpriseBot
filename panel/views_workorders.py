@@ -5309,6 +5309,53 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
         )
 
 
+def unreviewed_by_operator(periods):
+    """
+    [(worker name, parts not reviewed)] inside the given WorkPeriods.
+
+    ---
+
+    S133: partes digitales sin revisar dentro de cada periodo de
+    operario (mismo criterio de fechas que la liquidación), por
+    operario, para no liquidar con partes pendientes.
+    """
+    found = []
+    for wp in periods:
+        qs = WorkOrder.objects.filter(
+            company=wp.company_user.company,
+            uploaded_by=wp.company_user,
+            source__in=[
+                WorkOrder.Source.DIGITAL,
+                WorkOrder.Source.GENERATED,
+            ],
+            reviewed=False,
+            entries__work_date__gte=wp.start_date,
+        )
+        if wp.end_date:
+            qs = qs.filter(entries__work_date__lte=wp.end_date)
+        count = qs.distinct().count()
+        if count:
+            user = wp.company_user.user
+            found.append((user.get_full_name() or user.username, count))
+    return sorted(found)
+
+
+def pending_message(pending):
+    """
+    Text of the parts still to review, per worker.
+
+    ---
+
+    Texto de los partes que faltan por revisar, por operario.
+    """
+    total = sum(count for _name, count in pending)
+    detail = ", ".join("%s: %d" % (name, count) for name, count in pending)
+    return (
+        f"hay {total} parte{'s' if total != 1 else ''} sin revisar "
+        f"({detail}). Revísalos antes de liquidar."
+    )
+
+
 class WorkPeriodLockView(AdminRoleRequiredMixin, View):
     """
     Toggles the is_closed flag of a single WorkPeriod identified by pk.
@@ -5355,43 +5402,33 @@ class WorkPeriodLockView(AdminRoleRequiredMixin, View):
         dates = wp.start_date.strftime("%d/%m/%Y")
         if wp.end_date:
             dates += "–" + wp.end_date.strftime("%d/%m/%Y")
-        wp.is_closed = not wp.is_closed
-        wp.save(update_fields=["is_closed"])
 
-        if wp.is_closed:
-            # Check for unreviewed work orders within this period.
-            # Comprobar si hay partes sin revisar dentro de este periodo.
-            unreviewed_count = 0
-            if wp.end_date:
-                unreviewed_count = (
-                    WorkOrder.objects.filter(
-                        company=wp.company_user.company,
-                        uploaded_by=wp.company_user,
-                        source__in=[
-                            WorkOrder.Source.DIGITAL,
-                            WorkOrder.Source.GENERATED,
-                        ],
-                        reviewed=False,
-                        entries__work_date__gte=wp.start_date,
-                        entries__work_date__lte=wp.end_date,
-                    )
-                    .distinct()
-                    .count()
-                )
-            if unreviewed_count:
-                user = wp.company_user.user
+        if not wp.is_closed:
+            # S133: a period with parts not reviewed is not liquidated
+            # (Carolina's scare: the reviewed ones vanished from Revisados
+            # while 113 parts were still pending).
+            # S133: no se liquida con partes sin revisar.
+            pending = unreviewed_by_operator([wp])
+            if pending:
                 django_messages.warning(
                     request,
-                    f"Periodo {dates} liquidado, pero hay "
-                    f"{unreviewed_count} parte(s) sin revisar de "
-                    f"{user.get_full_name() or user.username}.",
+                    f"No se puede liquidar el periodo {dates}: "
+                    + pending_message(pending),
                 )
-            else:
-                django_messages.success(
-                    request,
-                    f"Periodo {dates} liquidado. Los partes dentro del "
-                    "periodo ya no pueden editarse.",
+                return redirect(
+                    request.META.get("HTTP_REFERER", "")
+                    or reverse("panel:work_order_admin_history")
+                    + "?tab=periods"
                 )
+
+        wp.is_closed = not wp.is_closed
+        wp.save(update_fields=["is_closed"])
+        if wp.is_closed:
+            django_messages.success(
+                request,
+                f"Periodo {dates} liquidado. Los partes dentro del periodo "
+                "ya no pueden editarse.",
+            )
         else:
             django_messages.success(
                 request,
@@ -7262,6 +7299,26 @@ class WorkPeriodGroupLockView(AdminRoleRequiredMixin, View):
         group = get_object_or_404(WorkPeriodGroup, pk=pk, company=cu.company)
 
         new_state = not group.is_closed
+        if new_state:
+            # S133: no se liquida con partes sin revisar.
+            pending = unreviewed_by_operator(
+                group.operator_periods.select_related(
+                    "company_user__company", "company_user__user",
+                )
+            )
+            if pending:
+                django_messages.warning(
+                    request,
+                    f"No se puede liquidar el periodo '{group.label}': "
+                    + pending_message(pending),
+                )
+                return redirect(
+                    request.META.get("HTTP_REFERER", "")
+                    or reverse(
+                        "panel:work_period_group_detail",
+                        kwargs={"pk": group.pk},
+                    )
+                )
         group.is_closed = new_state
         group.save(update_fields=["is_closed", "updated_at"])
 
