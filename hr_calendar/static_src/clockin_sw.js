@@ -127,6 +127,8 @@ function sendPending(sentBy) {
                                 record.auto = false;
                                 record.received_at = data.received_at;
                                 record.delay_seconds = data.delay_seconds;
+                                record.parte_notice = data.parte_notice || "";
+                                record.parte_ok = data.parte_ok !== false;
                                 record.error = "";
                                 return putRecord(db, record).then(function () { return false; });
                             }

@@ -89,6 +89,10 @@ class PressResult:
 
     event: ClockEvent
     created: bool
+    # S133: what an OUT did to the parte, for the worker ("" = nothing).
+    # Lo que una salida hizo con el parte, para el trabajador.
+    parte_notice: str = ""
+    parte_ok: bool = True
 
 
 def trusted_device_user(request):
@@ -304,6 +308,7 @@ def _after_save(event, company_user):
             logger.exception(
                 "# [FICHAJE-MUNICIPIO] Error con el fichaje %s.", client_id,
             )
+    outcome = None
     if (event.kind == ClockEvent.Kind.OUT
             or event.sent_by == ClockEvent.SentBy.MANUAL):
         # H24 (S129): la salida ajusta el parte de ese día si ya estaba
@@ -313,13 +318,15 @@ def _after_save(event, company_user):
         # nunca impide guardar el fichaje.
         try:
             from hr_calendar.clock_parts import on_clock_press
-            on_clock_press(event)
+            outcome = on_clock_press(event)
         except Exception:
             logger.exception(
                 "# [FICHAJE-PARTE] Error ajustando el parte al fichaje %s.",
                 client_id,
             )
-    return PressResult(event, True)
+    if outcome is None:
+        return PressResult(event, True)
+    return PressResult(event, True, outcome.notice, outcome.ok)
 
 
 def _event_json(event):
@@ -376,6 +383,8 @@ def receive(request):
         return JsonResponse({"error": str(exc)}, status=400)
     data = _event_json(result.event)
     data["duplicate"] = not result.created
+    data["parte_notice"] = result.parte_notice
+    data["parte_ok"] = result.parte_ok
     return JsonResponse(data)
 
 

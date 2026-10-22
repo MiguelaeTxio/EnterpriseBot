@@ -290,7 +290,11 @@ GPS, queda como incidencia en la pestaña Fichajes).
             // cuanto esa pulsación llega al servidor.
             const waiting = records.find(function (r) { return r.id === statusEl.dataset.pendingId; });
             if (waiting && waiting.received_at) {
-                setStatus(LABELS[waiting.kind] + " de las " + new Date(waiting.pressed_at).toLocaleTimeString("es-ES", {hour: "2-digit", minute: "2-digit"}) + " recibida.", "ok");
+                // S133: si la salida no cuadra con el parte, se le dice
+                // (el parte queda guardado, sin cerrar).
+                setStatus(LABELS[waiting.kind] + " de las " + new Date(waiting.pressed_at).toLocaleTimeString("es-ES", {hour: "2-digit", minute: "2-digit"}) + " recibida." +
+                          (waiting.parte_notice ? " " + waiting.parte_notice : ""),
+                          waiting.parte_ok === false ? "err" : "ok");
             }
             if (!records.length) {
                 list.innerHTML = '<div class="muted">Ninguno todavía en este móvil.</div>';
@@ -325,6 +329,12 @@ GPS, queda como incidencia en la pestaña Fichajes).
                     state.textContent = "Pendiente de enviar" + (r.error ? " · " + r.error : "");
                 }
                 div.appendChild(state);
+                if (r.parte_notice) {
+                    const parte = document.createElement("div");
+                    parte.className = r.parte_ok === false ? "err" : "ok";
+                    parte.textContent = r.parte_notice;
+                    div.appendChild(parte);
+                }
                 list.appendChild(div);
             });
         });
@@ -354,6 +364,8 @@ GPS, queda como incidencia en la pestaña Fichajes).
                                 record.auto = false;
                                 record.received_at = data.received_at;
                                 record.delay_seconds = data.delay_seconds;
+                                record.parte_notice = data.parte_notice || "";
+                                record.parte_ok = data.parte_ok !== false;
                                 record.error = "";
                                 return putRecord(record).then(function () { return false; });
                             }

@@ -343,20 +343,21 @@ def close_blockers(stretches):
     """
     Why the parte cannot be closed yet ([] = it can): Miguel Ángel, "un
     parte no se puede cerrar si no está fichada la salida, las tareas
-    si, el parte no".
+    si, el parte no". S133: closing it anyway saves it "in progress"
+    ("que el botón se quede habilitado, que puedan guardar").
     ---
-    Por qué el parte no se puede cerrar todavía ([] = sí se puede).
+    Por qué el parte no se puede cerrar todavía ([] = sí se puede). S133:
+    al darle a cerrar igualmente se guarda "en curso".
     """
     if not stretches:
         return [
-            "No hay fichajes de ese día: el parte no se puede cerrar sin "
-            "fichar la entrada y la salida. Puedes guardar las tareas."
+            "No hay fichajes de ese día: el parte se guarda, pero no se "
+            "cierra hasta que estén fichadas la entrada y la salida."
         ]
     if any(s.end is None for s in stretches):
         return [
-            "Todavía no has fichado la salida: el parte no se puede cerrar. "
-            "Guarda las tareas; al fichar la salida se cerrará solo si "
-            "cuadra con lo fichado."
+            "Todavía no has fichado la salida: el parte se guarda y se "
+            "cerrará solo al fichar la salida si las horas cuadran."
         ]
     return []
 
@@ -381,15 +382,15 @@ def on_clock_press(event):
     después, quizá cuando la salida de su jornada ya estaba fichada)
     vuelve a pasar por on_clock_out con esa salida: el parte hecho antes
     se cierra si ahora cuadra, o vuelve a "en curso" si deja de cuadrar.
-    Devuelve el texto de on_clock_out ("" = nada).
+    Devuelve el ClockOutOutcome de on_clock_out (vacío = nada).
     """
     if event.kind == ClockEvent.Kind.OUT:
         return on_clock_out(event)
     if event.sent_by != ClockEvent.SentBy.MANUAL:
-        return ""
+        return ClockOutOutcome()
     clock_out = closing_out_of(event)
     if clock_out is None:
-        return ""
+        return ClockOutOutcome()
     return on_clock_out(clock_out)
 
 
@@ -418,6 +419,31 @@ def closing_out_of(clock_in):
 # ------------------------------------------------------------------
 # Clocking OUT: adjust the parte made beforehand and try to close it
 # ------------------------------------------------------------------
+@dataclass
+class ClockOutOutcome:
+    """
+    What an OUT did to the parte of that day: `text` for the log ("" =
+    nothing) and `notice` for the worker on the clock-in page (S133,
+    Miguel Ángel: "cuando fiche, si hay una discrepancia de hora,
+    decirle, no están bien las horas, pero que se quede guardado");
+    `ok` is False when the hours do not match.
+    ---
+    Lo que una SALIDA hizo con el parte de ese día: `text` para el log
+    y `notice` para el trabajador en la página de fichaje.
+    """
+
+    text: str = ""
+    notice: str = ""
+    ok: bool = True
+
+
+def _mismatch_notice(problem):
+    return (
+        "Las horas del parte no cuadran con el fichaje: %s El parte queda "
+        "guardado, sin cerrar: corrige las horas y ciérralo." % problem
+    )
+
+
 def _net_hours(hc, hf, lunch):
     gross = _minutes(hf) - _minutes(hc)
     if lunch:
@@ -489,7 +515,8 @@ def on_clock_out(event):
     3. A parte already closed that no longer matches goes back to "in
        progress" so it cannot stay closed with times that disagree with
        the clock-in.
-    Returns a short text of what was done ("" = nothing).
+    Returns a ClockOutOutcome (what was done, and the notice for the
+    worker).
     ---
     Tras una SALIDA (regla de Miguel Ángel arriba): 1) en el parte de
     ese día ya hecho y no revisado, la última tarea del tramo que cierra
@@ -498,7 +525,8 @@ def on_clock_out(event):
     reglas que al cerrarlo a mano), con la pausa de comida del parte
     como único hueco; si no cuadra, sigue abierto y lo arregla
     el trabajador; 3) un parte ya cerrado que deja de cuadrar vuelve a
-    "en curso". Devuelve un texto corto de lo hecho ("" = nada).
+    "en curso". Devuelve un ClockOutOutcome (lo hecho y el aviso para
+    el trabajador).
     """
     from work_order_processor.models import (
         WorkOrder,
@@ -512,7 +540,7 @@ def on_clock_out(event):
     )
 
     if event.kind != ClockEvent.Kind.OUT:
-        return ""
+        return ClockOutOutcome()
     worker = event.company_user
     work_date = timezone.localtime(event.pressed_at).date()
     out_time = _rounded_time(event)
@@ -529,7 +557,7 @@ def on_clock_out(event):
         .order_by("-work_order__upload_date").first()
     )
     if entry is None:
-        return ""
+        return ClockOutOutcome()
     work_order = entry.work_order
     stretches = day_stretches(worker, work_date)
     stretch_start = None
@@ -545,7 +573,7 @@ def on_clock_out(event):
     )
     timed = [line for line in lines if line.hc and line.hf]
     if not timed:
-        return ""
+        return ClockOutOutcome()
     _backup_log(work_order, entry, lines, "fichaje de salida %s"
                 % _fmt(out_time))
     # S133: the lunch break is the parte's (schedule or by hand).
@@ -604,11 +632,14 @@ def on_clock_out(event):
             lunch=lunch,
         ) + close_blockers(stretches)
     result = ""
+    notice = ""
     if work_order.status == WorkOrder.Status.DONE:
         if problems:
             work_order.status = WorkOrder.Status.IN_PROGRESS
             work_order.save(update_fields=["status"])
-            result = "parte reabierto: ya no cuadra con lo fichado"
+            result = "parte reabierto: ya no cuadra con lo fichado (%s)" % (
+                problems[0])
+            notice = _mismatch_notice(problems[0])
     elif not problems:
         work_order.status = WorkOrder.Status.DONE
         work_order.save(update_fields=["status"])
@@ -621,9 +652,11 @@ def on_clock_out(event):
                 has_overlap_incident=True,
             )
         result = "parte cerrado al fichar la salida"
+        notice = "Parte del día cerrado: las horas cuadran con el fichaje."
     else:
         result = "parte abierto: no cuadra con lo fichado (%s)" % (
             problems[0])
+        notice = _mismatch_notice(problems[0])
     logger.info(
         "# [FICHAJE-PARTE] WorkOrder #%d (usuario #%d, %s) salida %s: %s%s",
         work_order.pk, worker.pk, work_date, _fmt(out_time), result,
@@ -642,4 +675,4 @@ def on_clock_out(event):
                 "# [FICHAJE-PARTE] No se pudo generar el Excel del "
                 "WorkOrder #%d.", work_order.pk,
             )
-    return result
+    return ClockOutOutcome(text=result, notice=notice, ok=not problems)
