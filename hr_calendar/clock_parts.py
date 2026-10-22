@@ -26,8 +26,16 @@ Clock-in and work orders ("partes") together (H24, S129). Miguel
    hueco de media hora sin tarea al cerrar el parte [...] si acabó una
    tarea a las 13:30 es obligatorio una tarea de 13:30 a 14".
 
-A day's clocked stretches come from hr_calendar.clock_report (an IN
-with the next OUT); the parte uses each press's ROUNDED time
+S133 (Miguel Ángel): "solo hay que fichar al inicio y fin de la
+jornada y que se refleje en los partes". The day is ONE stretch, from
+the first IN to the last OUT; the lunch break is not clocked: it is the
+parte's, taken from the schedule as before the clock-in and changed by
+hand when it was not that one. Rules 2 and 3 apply to that single
+stretch with the lunch break as the only allowed gap; the parte closes
+with the day's OUT (no more waiting for a second period).
+
+A day's stretch comes from hr_calendar.clock_report (first IN and last
+OUT of the day); the parte uses each press's ROUNDED time
 (ClockEvent.rounded_at, hr_calendar/clock_rounding.py: ±5 min to the
 whole/half hour, otherwise IN to the next half hour and OUT to the
 previous one) and must match it exactly. A stretch may
@@ -42,10 +50,15 @@ estaba hecho y no cuadra, se ajusta: la última tarea de ese tramo
 termina a la hora fichada; 3. el parte hecho después se ajusta a lo
 fichado, horas fichadas fijas, y el hueco entre tramos es la comida).
 
-Los tramos fichados de un día salen de hr_calendar.clock_report (una
-ENTRADA con la siguiente SALIDA), al minuto exacto fichado. Un tramo
-puede no tener SALIDA (sigue trabajando: el parte hecho antes de salir)
-o no tener ENTRADA.
+S133: solo se ficha el inicio y el fin de la jornada. El día es UN
+tramo, de la primera ENTRADA a la última SALIDA; la pausa de comida no
+se ficha: es la del parte (la del horario, como antes de los fichajes,
+o la que se meta a mano si no fue esa), y es el único hueco permitido.
+El parte se cierra con la salida del día.
+
+El tramo sale de hr_calendar.clock_report (primera ENTRADA y última
+SALIDA del día), con las horas redondeadas. Puede no tener SALIDA
+(sigue trabajando: el parte hecho antes de salir) o no tener ENTRADA.
 """
 import datetime
 import logging
@@ -149,65 +162,66 @@ def day_stretches(company_user, work_date):
         pressed_at__gte=start,
         pressed_at__lt=start + datetime.timedelta(days=1),
     ).order_by("pressed_at", "pk"))
-    stretches = []
-    for shift in build_shifts(events):
-        stretch = Stretch(
-            start=_rounded_time(shift.clock_in),
-            end=_rounded_time(shift.clock_out),
-            clocked_start=_local_time(shift.clock_in.pressed_at)
-            if shift.clock_in else None,
-            clocked_end=_local_time(shift.clock_out.pressed_at)
-            if shift.clock_out else None,
-        )
-        # Un tramo que redondeado no dura nada (entra 8:20 -> 8:30, sale
-        # 8:40 -> 8:30) no lleva tareas.
-        if stretch.start and stretch.end and stretch.end <= stretch.start:
-            continue
-        stretches.append(stretch)
-    return stretches
+    shifts = build_shifts(events)
+    if not shifts:
+        return []
+    # S133: only the start and the end of the day are clocked. The day
+    # is one stretch from its first IN to its last OUT (none while the
+    # last IN is still open); a press in between (old habit of clocking
+    # the lunch break) does not split it.
+    # S133: solo se ficha el inicio y el fin de la jornada. El día es
+    # un tramo de la primera ENTRADA a la última SALIDA (ninguna si la
+    # última entrada sigue abierta); una pulsación intermedia (la
+    # costumbre de fichar la comida) no lo parte.
+    clock_in = next(
+        (shift.clock_in for shift in shifts if shift.clock_in), None,
+    )
+    clock_out = shifts[-1].clock_out
+    stretch = Stretch(
+        start=_rounded_time(clock_in),
+        end=_rounded_time(clock_out),
+        clocked_start=_local_time(clock_in.pressed_at)
+        if clock_in else None,
+        clocked_end=_local_time(clock_out.pressed_at)
+        if clock_out else None,
+    )
+    # Un tramo que redondeado no dura nada (entra 8:20 -> 8:30, sale
+    # 8:40 -> 8:30) no lleva tareas.
+    if stretch.start and stretch.end and stretch.end <= stretch.start:
+        return []
+    return [stretch]
 
 
-def lunch_from_stretches(stretches):
+def lunch_gaps(lunch):
     """
-    (start, end) of the first gap between two clocked stretches, or
-    None: that gap is the day's lunch break.
+    The lunch break as an allowed gap in minutes, [(start, end)] or []:
+    no task goes there and it is not "uncovered time" (R3). The break
+    is the one of the parte (schedule by default, changed by hand when
+    it was not that one), not clocked (S133).
     ---
-    (inicio, fin) del primer hueco entre dos tramos fichados, o None:
-    ese hueco es la pausa de comida del día.
+    La pausa de comida como hueco permitido en minutos, [(inicio, fin)]
+    o []: ahí no va ninguna tarea y no cuenta como "laguna sin cubrir"
+    (R3). Es la del parte (la del horario por defecto, cambiada a mano
+    si no fue esa), no se ficha (S133).
     """
-    for previous, following in zip(stretches, stretches[1:]):
-        if previous.end and following.start:
-            return previous.end, following.start
-    return None
-
-
-def allowed_gaps(stretches):
-    """
-    Gaps between clocked stretches in minutes, [(start, end)]: no task
-    goes there and they are not "uncovered time" (R3).
-    ---
-    Huecos entre tramos fichados en minutos, [(inicio, fin)]: ahí no va
-    ninguna tarea y no cuentan como "laguna sin cubrir" (R3).
-    """
-    return [
-        (_minutes(a.end), _minutes(b.start))
-        for a, b in zip(stretches, stretches[1:])
-        if a.end and b.start
-    ]
+    if not lunch or not lunch[0] or not lunch[1]:
+        return []
+    return [(_minutes(lunch[0]), _minutes(lunch[1]))]
 
 
 def _fmt(value):
     return value.strftime("%H:%M")
 
 
-def check_tasks(stretches, tasks, closing=True):
+def check_tasks(stretches, tasks, closing=True, lunch=None):
     """
     Errors (Spanish, for the worker) of the tasks against the clocked
     stretches. tasks: [(task number, hc, hf)] with hc < hf. Empty list
     when there are no stretches (a day without clock-in works as
     before). closing=True (closing the parte) also requires each
-    stretch to be covered without holes; "Guardar tareas" (progressive
-    save) does not.
+    stretch to be covered without holes but the lunch break (lunch:
+    (start, end) times or None); "Guardar tareas" (progressive save)
+    does not.
     ---
     Errores (para el trabajador) de las tareas frente a los tramos
     fichados. tasks: [(número de tarea, hc, hf)] con hc < hf. Lista
@@ -217,6 +231,7 @@ def check_tasks(stretches, tasks, closing=True):
     """
     if not stretches:
         return []
+    gaps = lunch_gaps(lunch)
     errors = []
     clocked = ", ".join(s.label() for s in stretches)
     groups = {i: [] for i in range(len(stretches))}
@@ -257,7 +272,12 @@ def check_tasks(stretches, tasks, closing=True):
             )
         if closing:
             for previous, following in zip(items, items[1:]):
-                if following[1] > previous[2]:
+                in_lunch = any(
+                    a <= _minutes(previous[2])
+                    and _minutes(following[1]) <= b
+                    for a, b in gaps
+                )
+                if following[1] > previous[2] and not in_lunch:
                     errors.append(
                         "Hueco sin tarea de %s a %s dentro de lo fichado "
                         "(%s): al cerrar el parte todo lo fichado tiene "
@@ -339,27 +359,6 @@ def close_blockers(stretches):
             "cuadra con lo fichado."
         ]
     return []
-
-
-def is_split_shift(company_user):
-    """
-    True when the worker's schedule is a split shift (morning and
-    afternoon): then the parte is not closed on the first OUT but on
-    the OUT of the second period.
-    ---
-    True si el horario del trabajador es de jornada partida (mañana y
-    tarde): entonces el parte no se cierra con la primera salida sino
-    con la salida del segundo periodo.
-    """
-    from panel.views_operator import _resolve_operator_schedule
-
-    schedule = _resolve_operator_schedule(
-        company_user, company_user.company,
-    )
-    return bool(
-        schedule is not None and not schedule.is_intensive
-        and schedule.end_time_morning and schedule.start_time_afternoon
-    )
 
 
 # ------------------------------------------------------------------
@@ -474,19 +473,19 @@ def on_clock_out(event):
     """
     After an OUT press (Miguel Ángel: "cuando hacemos el parte antes que
     el fichaje, queda abierto y no se puede cerrar, cuando fichamos la
-    salida se intenta cerrar si cumple con el horario, siempre que no
-    sea jornada partida, si es jornada partida no se intenta cerrar
-    hasta que se fiche el segundo periodo"):
+    salida se intenta cerrar si cumple con el horario"; S133: solo se
+    ficha el inicio y el fin de la jornada, así que la salida del día
+    cierra el parte):
 
     1. The worker's parte of that day, if already made and not reviewed,
        gets the last task of the stretch closed by this OUT ending at
        the OUT time (a task ending later is cut). A copy of the parte
        goes to the log first ([PARTE-BACKUP]).
     2. If the parte is still open, it is closed when it matches what was
-       clocked (same rules and safeguards as closing it by hand) --
-       except on a split shift before the OUT of the second period. If
-       it does not match it stays open: the worker fixes it and closes
-       it, as with any parte the safeguards do not let through.
+       clocked (same rules and safeguards as closing it by hand), with
+       the parte's lunch break as the only gap. If it does not match
+       it stays open: the worker fixes it and closes it, as with any
+       parte the safeguards do not let through.
     3. A parte already closed that no longer matches goes back to "in
        progress" so it cannot stay closed with times that disagree with
        the clock-in.
@@ -496,8 +495,8 @@ def on_clock_out(event):
     ese día ya hecho y no revisado, la última tarea del tramo que cierra
     esta salida pasa a terminar a esa hora (antes, copia al log); 2) si
     el parte sigue abierto, se cierra si cuadra con lo fichado (mismas
-    reglas que al cerrarlo a mano), salvo en jornada partida antes de la
-    salida del segundo periodo; si no cuadra, sigue abierto y lo arregla
+    reglas que al cerrarlo a mano), con la pausa de comida del parte
+    como único hueco; si no cuadra, sigue abierto y lo arregla
     el trabajador; 3) un parte ya cerrado que deja de cuadrar vuelve a
     "en curso". Devuelve un texto corto de lo hecho ("" = nada).
     """
@@ -549,6 +548,13 @@ def on_clock_out(event):
         return ""
     _backup_log(work_order, entry, lines, "fichaje de salida %s"
                 % _fmt(out_time))
+    # S133: the lunch break is the parte's (schedule or by hand).
+    # La pausa de comida es la del parte (horario o a mano).
+    lunch = None
+    if not entry.no_lunch_break and (
+        entry.lunch_break_start and entry.lunch_break_end
+    ):
+        lunch = (entry.lunch_break_start, entry.lunch_break_end)
 
     # 1. Ajuste a la hora de salida (solo las tareas de este tramo).
     # La tarea pasa a terminar a la hora de salida redondeada (fichar
@@ -562,21 +568,23 @@ def on_clock_out(event):
     if in_stretch:
         last = max(in_stretch, key=lambda line: line.hf)
         for line in in_stretch:
+            # A morning task is not stretched over the lunch break: the
+            # afternoon tasks are missing and the worker adds them.
+            # Una tarea de la mañana no se alarga por encima de la
+            # comida: faltan las de la tarde y las pone el trabajador.
+            if (
+                line is last and line.hf < out_time and lunch
+                and line.hf <= lunch[0]
+            ):
+                continue
             if line is last or line.hf > out_time:
                 if line.hf != out_time:
                     done.append("tarea %d: fin %s -> %s" % (
                         line.line_number, _fmt(line.hf), _fmt(out_time)))
                     line.hf = out_time
 
-    # Pausa de comida = hueco entre tramos fichados; horas netas.
-    lunch = lunch_from_stretches(stretches)
+    # Horas netas, sin la pausa de comida del parte.
     with transaction.atomic():
-        entry.lunch_break_start = lunch[0] if lunch else None
-        entry.lunch_break_end = lunch[1] if lunch else None
-        entry.no_lunch_break = lunch is None
-        entry.save(update_fields=[
-            "lunch_break_start", "lunch_break_end", "no_lunch_break",
-        ])
         for line in timed:
             line.delta_hours = _net_hours(line.hc, line.hf, lunch)
             line.save(update_fields=["hf", "delta_hours"])
@@ -587,22 +595,21 @@ def on_clock_out(event):
         for line in timed
     ]
     intra = run_intra_part_validation(
-        blocks, lunch_window=None, allowed_gaps=allowed_gaps(stretches),
+        blocks, lunch_window=None, allowed_gaps=lunch_gaps(lunch),
     )
     problems = [e.message for e in intra.errors]
     if not problems:
         problems = check_tasks(
             stretches, [(b.idx, b.hc, b.hf) for b in blocks], closing=True,
+            lunch=lunch,
         ) + close_blockers(stretches)
-    complete = [s for s in stretches if s.start and s.end]
-    wait_second = is_split_shift(worker) and len(complete) < 2
     result = ""
     if work_order.status == WorkOrder.Status.DONE:
         if problems:
             work_order.status = WorkOrder.Status.IN_PROGRESS
             work_order.save(update_fields=["status"])
             result = "parte reabierto: ya no cuadra con lo fichado"
-    elif not problems and not wait_second:
+    elif not problems:
         work_order.status = WorkOrder.Status.DONE
         work_order.save(update_fields=["status"])
         inter = validate_inter_overlap(
@@ -614,8 +621,6 @@ def on_clock_out(event):
                 has_overlap_incident=True,
             )
         result = "parte cerrado al fichar la salida"
-    elif wait_second and not problems:
-        result = "jornada partida: se cerrará con la salida de la tarde"
     else:
         result = "parte abierto: no cuadra con lo fichado (%s)" % (
             problems[0])

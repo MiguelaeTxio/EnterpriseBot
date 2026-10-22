@@ -3081,12 +3081,11 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                     continue
 
         # H24 (S129): fichajes del DUEÑO del parte ese día
-        # (hr_calendar/clock_parts.py). Si los hay, mandan: el hueco
-        # entre dos tramos fichados es la pausa de comida, y un solo
-        # tramo significa jornada sin pausa (todo lo fichado es trabajo).
+        # (hr_calendar/clock_parts.py). S133: solo se ficha el inicio y
+        # el fin de la jornada (un tramo); la pausa de comida es la del
+        # formulario (la del horario o la metida a mano), no se ficha.
         from hr_calendar.clock_parts import (
             day_stretches as _cp_day_stretches,
-            lunch_from_stretches as _cp_lunch,
         )
 
         _parte_owner = cu
@@ -3110,16 +3109,6 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
         )
 
         _clock_required = _cp_clock_required(_parte_owner, work_date)
-        if _clock_stretches:
-            _clk_lunch = _cp_lunch(_clock_stretches)
-            if _clk_lunch:
-                _lb_start, _lb_end = _clk_lunch
-                _no_lunch_break = False
-                _post_lb_start = _lb_start.strftime("%H:%M")
-                _post_lb_end = _lb_end.strftime("%H:%M")
-                _post_show_lunch = True
-            else:
-                _no_lunch_break = True
 
         logger.info(
             "# [I2-DIAG-WORKDATE] work_date=%r form_action=%r",
@@ -3751,7 +3740,6 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
 
         if _clock_stretches:
             from hr_calendar.clock_parts import (
-                allowed_gaps as _cp_allowed_gaps,
                 check_tasks as _cp_check_tasks,
             )
             from work_order_processor.validators import (
@@ -3759,15 +3747,19 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
             )
 
             _intra = run_intra_part_validation(
-                _blocks,
-                lunch_window=None,
-                allowed_gaps=_cp_allowed_gaps(_clock_stretches),
+                _blocks, lunch_window=_lunch_window,
             )
             if _intra.ok:
+                _clk_lunch = None
+                if _lunch_window:
+                    _clk_lunch = tuple(
+                        _dt_time_lb(m // 60, m % 60) for m in _lunch_window
+                    )
                 _clk_errors = _cp_check_tasks(
                     _clock_stretches,
                     [(b.idx, b.hc, b.hf) for b in _blocks],
                     closing=_form_action != "save_blocks",
+                    lunch=_clk_lunch,
                 )
                 if _clk_errors:
                     _intra.errors.extend(
@@ -6098,10 +6090,7 @@ class OperatorClockStretchesView(WorkOrderFormAccessMixin, View):
 
     def get(self, request):
         from django.http import JsonResponse
-        from hr_calendar.clock_parts import (
-            day_stretches,
-            lunch_from_stretches,
-        )
+        from hr_calendar.clock_parts import day_stretches
 
         from datetime import datetime as _dt_clk
 
@@ -6112,7 +6101,7 @@ class OperatorClockStretchesView(WorkOrderFormAccessMixin, View):
                 "%Y-%m-%d",
             ).date()
         except ValueError:
-            return JsonResponse({"stretches": [], "lunch": None})
+            return JsonResponse({"stretches": []})
         owner = cu
         wo_pk = request.GET.get("wo_pk", "")
         if wo_pk.isdigit():
@@ -6127,7 +6116,6 @@ class OperatorClockStretchesView(WorkOrderFormAccessMixin, View):
             except (WorkOrder.DoesNotExist, ValueError):
                 pass
         stretches = day_stretches(owner, work_date)
-        lunch = lunch_from_stretches(stretches)
         from hr_calendar.clock_parts import close_blockers, clock_required
 
         blockers = (
@@ -6156,13 +6144,5 @@ class OperatorClockStretchesView(WorkOrderFormAccessMixin, View):
             {
                 "close_blockers": blockers,
                 "stretches": stretch_rows,
-                "lunch": (
-                    {
-                        "start": lunch[0].strftime("%H:%M"),
-                        "end": lunch[1].strftime("%H:%M"),
-                    }
-                    if lunch
-                    else None
-                ),
             }
         )

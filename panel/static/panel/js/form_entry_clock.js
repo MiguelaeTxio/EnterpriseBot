@@ -1,5 +1,10 @@
 /* /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/static/panel/js/form_entry_clock.js
  *
+ * S133: only the start and the end of the day are clocked (one
+ * stretch); the lunch break is the form's (schedule or by hand).
+ * S133: solo se fichan el inicio y el fin de la jornada (un tramo); la
+ * pausa de comida es la del formulario (horario o a mano).
+ *
  * H24 (S129). Parte form and clock-in: shows the clocked stretches of
  * the chosen day, pre-fills the tasks with them on a fresh form and
  * locks the clocked times (they are not editable). The server checks
@@ -92,25 +97,35 @@
         });
     }
 
-    function setLunch(lunch) {
+    // S133: la pausa de comida no se ficha: es la del formulario (la
+    // del horario o la que se meta a mano). null si no hay pausa.
+    function formLunch() {
         var lbStart = document.getElementById("id_lunch_break_start");
         var lbEnd = document.getElementById("id_lunch_break_end");
         var noLunchCb = document.getElementById("id_no_lunch_toggle");
         var hadLunchCb = document.getElementById("id_had_lunch_toggle");
-        if (lunch) {
-            setValue(lbStart, lunch.start);
-            setValue(lbEnd, lunch.end);
-            if (noLunchCb) { noLunchCb.checked = false; noLunchCb.dispatchEvent(new Event("change")); }
-            if (hadLunchCb) { hadLunchCb.checked = true; hadLunchCb.dispatchEvent(new Event("change")); }
-        } else {
-            if (noLunchCb) { noLunchCb.checked = true; noLunchCb.dispatchEvent(new Event("change")); }
-            if (hadLunchCb) { hadLunchCb.checked = false; hadLunchCb.dispatchEvent(new Event("change")); }
-        }
+        if (noLunchCb && noLunchCb.checked) { return null; }
+        if (hadLunchCb && !hadLunchCb.checked) { return null; }
+        if (!lbStart || !lbEnd || !lbStart.value || !lbEnd.value) { return null; }
+        if (lbEnd.value <= lbStart.value) { return null; }
+        return {start: lbStart.value, end: lbEnd.value};
     }
 
-    function prefill(lunch) {
+    // Un parte nuevo: de la entrada al inicio de la comida y del fin de
+    // la comida a la salida (una sola tarea si la comida no cae dentro).
+    function prefill() {
+        var s = stretches[0];
+        if (!s) { return; }
+        var lunch = formLunch();
+        var pieces = [{start: s.start, end: s.end || ""}];
+        if (lunch && (!s.start || s.start < lunch.start) && (!s.end || lunch.end < s.end)) {
+            pieces = [
+                {start: s.start, end: lunch.start},
+                {start: lunch.end, end: s.end || ""}
+            ];
+        }
         var addBtn = document.getElementById("btn-add-block");
-        stretches.forEach(function (s, i) {
+        pieces.forEach(function (piece, i) {
             var idx = i + 1;
             if (idx > blockCount()) {
                 if (!addBtn) { return; }
@@ -118,10 +133,9 @@
             }
             var hc = field("entrada_" + idx + "_hc");
             var hf = field("entrada_" + idx + "_hf");
-            if (hc && s.start) { setValue(hc, s.start); }
-            setValue(hf, s.end || "");
+            if (hc && piece.start) { setValue(hc, piece.start); }
+            setValue(hf, piece.end);
         });
-        setLunch(lunch);
     }
 
     // Sin la salida fichada el parte no se puede cerrar (solo guardar
@@ -166,16 +180,16 @@
         var withReal = stretches.some(function (s) { return s.clocked_start || s.clocked_end; });
         banner.innerHTML = "";
         var strong = document.createElement("strong");
-        strong.textContent = "Fichajes de este día" + (withReal ? " (real → parte)" : "") + ": " + parts.join(" · ") + ". ";
+        strong.textContent = "Jornada fichada" + (withReal ? " (real → parte)" : "") + ": " + parts.join(" · ") + ". ";
         banner.appendChild(strong);
         banner.appendChild(document.createTextNode(
             "Estas horas no se pueden cambiar: " +
-            "la primera tarea de cada tramo empieza a la entrada, " +
-            "la última termina a la salida y, al cerrar el parte, todo lo fichado tiene que tener tarea." +
-            (data.lunch ? " El hueco entre tramos es la pausa de comida." : "")
+            "la primera tarea empieza a la entrada, " +
+            "la última termina a la salida y, al cerrar el parte, toda la jornada tiene que tener tarea " +
+            "menos la pausa de comida. La pausa es la de tu horario; si no comiste a esa hora, cámbiala."
         ));
         banner.classList.remove("d-none");
-        if (isFresh()) { prefill(data.lunch); }
+        if (isFresh()) { prefill(); }
         applyLocks();
     }
 
@@ -202,11 +216,19 @@
             return s.end && (!s.start || v > s.start) && v < s.end;
         });
         if (!stretch) { return; }
+        // Hasta la comida si la tarea acaba antes; dentro de la comida
+        // no se añade nada.
+        var lunch = formLunch();
+        var target = stretch.end;
+        if (lunch && v < lunch.end) {
+            if (v > lunch.start) { return; }
+            target = lunch.start;
+        }
         for (var i = 1; i <= blockCount(); i++) {
             var hc = field("entrada_" + i + "_hc");
-            if (hc && hc.value && hc.value >= v && hc.value < stretch.end) { return; }
+            if (hc && hc.value && hc.value >= v && hc.value < target) { return; }
         }
-        if (toMin(stretch.end) - toMin(v) <= 0) { return; }
+        if (toMin(target) - toMin(v) <= 0) { return; }
         var addBtn = document.getElementById("btn-add-block");
         if (!addBtn) { return; }
         addBtn.click();
@@ -214,7 +236,7 @@
         var newHc = field("entrada_" + idx + "_hc");
         var newHf = field("entrada_" + idx + "_hf");
         setValue(newHc, v);
-        setValue(newHf, stretch.end);
+        setValue(newHf, target);
         applyLocks();
     }
 
