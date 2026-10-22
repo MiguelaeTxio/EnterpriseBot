@@ -397,6 +397,10 @@ def _detail_payload(unit):
         "operator": _display_name(operator) if operator else "",
         "started": unit.km_start is not None,
         "km_start": _number(unit.km_start),
+        "departed_at": (
+            timezone.localtime(unit.started_at).strftime("%H:%M")
+            if unit.started_at and unit.km_start is not None else ""
+        ),
         "arrived": unit.arrived_at is not None,
         "vehicle_pma": _number(work_order.vehicle_pma),
         "vehicle_tare": _number(work_order.vehicle_tare),
@@ -739,9 +743,9 @@ class DriverAlbaranStartView(View):
 
     ---
 
-    Abre la hoja de servicio con los km de salida (la puerta de la hoja:
-    Miguel Ángel, S133). El sistema apunta la hora y la base de salida y
-    si es nocturno. Se puede repetir para corregir los km.
+    Abre la hoja de servicio con los km y la hora de salida de base (la
+    puerta de la hoja: Miguel Ángel, S133). El sistema apunta la base de
+    salida y si es nocturno. Se puede repetir para corregirlos.
     """
 
     def post(self, request, pk):

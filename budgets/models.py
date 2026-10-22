@@ -3204,12 +3204,12 @@ class WorkOrderAssistanceUnit(models.Model):
 
     # H37 (S133): service sheet of Pepe (hoja de servicio). The driver
     # cannot see the sheet until he enters the km at departure; the
-    # departure time (`started_at`), the departure base and the night
-    # flag are recorded by the system and only the office sees them.
+    # departure time (`started_at`) is entered by the driver too; the
+    # departure base and the night flag are recorded by the system and
+    # only the office sees them.
     # Hoja de servicio de Pepe. El conductor no ve la hoja hasta meter
-    # los km de salida; la hora de salida (`started_at`), la base de
-    # salida y el nocturno los apunta el sistema y solo los ve la
-    # oficina.
+    # los km y la hora de salida (`started_at`); la base de salida y el
+    # nocturno los apunta el sistema y solo los ve la oficina.
     km_start = models.DecimalField(
         max_digits=10,
         decimal_places=1,

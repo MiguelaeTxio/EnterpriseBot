@@ -12,8 +12,10 @@ Pepe ("HOJA DE SERVICIO - Registro de asistencia y remolque"):
   el conductor no ve la hoja (Miguel Ángel, S133: "si no mete la
   información inicial no le da acceso a la hoja de servicio"; en el
   modelo venía como opcional, pendiente de confirmar con Pepe). La hora
-  de salida (`started_at`), la base de salida y el nocturno los apunta
-  el sistema al meter los km: solo los ve la oficina.
+  de salida de base (`started_at`) también la pone el conductor en la
+  puerta (Miguel Ángel, S133: en el modelo venía en rojo por error,
+  "lo debe rellenar el chófer"). La base de salida y el nocturno los
+  apunta el sistema: solo los ve la oficina.
 - 02 Cliente y vehículo: obligatorios cliente, PMA y avería; el resto
   se puede dejar vacío.
 - 03 Servicio y tiempos: obligatorios recogida, destino y firma (o el
@@ -160,18 +162,20 @@ def start(unit, by, km_raw, at_raw):
 
     ---
 
-    Abre la hoja: km de salida (obligatorios) y, por el sistema, hora
-    de salida, base de salida y nocturno. Pasa el albarán a "En curso".
+    Abre la hoja: km y hora de salida de base, que pone el conductor
+    (obligatorios), y, por el sistema, base de salida y nocturno. Pasa
+    el albarán a "En curso". Se puede repetir para corregirlos.
     Devuelve el estado anterior para el registro.
     """
     km = decimal_or_none(km_raw, "Km salida")
     if km is None:
         raise SheetError("Faltan los km de salida.")
+    if at_raw in (None, ""):
+        raise SheetError("Falta la hora de salida de base.")
     when = client_time(at_raw)
     previous = unit.status
     unit.km_start = km
-    if unit.started_at is None:
-        unit.started_at = when
+    unit.started_at = when
     base = getattr(by, "base", None) or unit.work_order.base
     if unit.departure_base_id is None and base is not None:
         unit.departure_base = base

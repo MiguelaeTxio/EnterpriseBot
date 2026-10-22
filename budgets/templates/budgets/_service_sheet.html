@@ -2,7 +2,7 @@
 {% comment %}
 H37 (S133). Hoja de servicio del albarán, con el modelo de Pepe: lo que
 rellena el conductor en la app y, en rojo, lo que solo ve la oficina
-(hora y base de salida, hora de entrada al servicio y nocturno), más
+(base de salida, hora de entrada al servicio y nocturno), más
 las fotos. Dentro de la fila de la unidad, plegada.
 {% endcomment %}
 <details class="mt-2 small">
@@ -11,7 +11,7 @@ las fotos. Dentro de la fila de la unidad, plegada.
     </summary>
     <div class="row g-2 mt-1">
         <div class="col-6 col-md-3"><span class="text-muted">Km salida</span><br>{{ unit.km_start }}</div>
-        <div class="col-6 col-md-3 text-danger"><span>Hora salida base</span><br>{{ unit.started_at|date:"d/m/Y H:i"|default:"—" }}</div>
+        <div class="col-6 col-md-3"><span class="text-muted">Hora salida base</span><br>{{ unit.started_at|date:"d/m/Y H:i"|default:"—" }}</div>
         <div class="col-6 col-md-3 text-danger"><span>Base de salida</span><br>{{ unit.departure_base.name|default:"—" }}</div>
         <div class="col-6 col-md-3 text-danger"><span>Nocturno</span><br>{% if unit.is_night %}Sí{% elif unit.is_night is False %}No{% else %}—{% endif %}</div>
 
