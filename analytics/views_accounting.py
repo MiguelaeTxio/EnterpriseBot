@@ -80,8 +80,9 @@ class AccountingToolsView(SupervisorAccessMixin, View):
                     "se ponen uno detrás de otro con una sola cabecera, el "
                     "ORDEN queda correlativo, el contador de facturas "
                     "(ASIENTO) sube con cada factura nueva y repite el "
-                    "número en las líneas de la misma factura, y de las "
-                    "líneas resumen solo queda la última."
+                    "número en las líneas de la misma factura, y queda una "
+                    "sola línea resumen al final, con BASE, CUOTA y TOTAL "
+                    "sumados de todas las facturas."
                 ),
             },
         ]

@@ -105,6 +105,43 @@ INVOICE_ORDER = 0       # A: ORDEN
 INVOICE_ACCOUNT = 1     # B: CUENTA
 INVOICE_COUNTER = 5     # F: ASIENTO (contador de facturas)
 INVOICE_NUMBER = 6      # G: Factura (a su derecha)
+# Amount columns added up in the final summary line.
+# Columnas de importe que se suman en la línea resumen final.
+INVOICE_SUMS = (8, 11, 13)  # I: BASE, L: CUOTA, N: TOTAL
+
+
+def _amount(text):
+    """
+    Decimal of an amount with point or comma, or 0.
+
+    ---
+
+    Decimal de un importe con punto o coma decimal ("-1859.60" o
+    "-30.610,22"), o 0 si está vacío.
+    """
+    from decimal import Decimal, InvalidOperation
+
+    text = (text or "").strip()
+    if not text:
+        return Decimal("0")
+    if "," in text:
+        text = text.replace(".", "").replace(",", ".")
+    try:
+        return Decimal(text)
+    except InvalidOperation:
+        return Decimal("0")
+
+
+def _spanish(value):
+    """
+    Amount in the format of the summary lines: -30.610,22.
+
+    ---
+
+    Importe con el formato de las líneas resumen: -30.610,22.
+    """
+    text = "{:,.2f}".format(value)
+    return text.replace(",", "_").replace(".", ",").replace("_", ".")
 
 
 def _is_header(cols):
@@ -145,13 +182,16 @@ def merge_invoices(files):
     (contador de facturas) sube uno cada vez que cambia la factura de la
     columna G, a su derecha; las líneas de una misma factura repiten el
     número (1, 2, 3, 3...). Cada fichero trae una línea resumen: se
-    quitan todas y se deja solo la última, al final, con su ORDEN
-    siguiente. Devuelve el CSV en bytes, las filas de datos y las
-    facturas.
+    quitan todas y se deja solo una al final, con su ORDEN siguiente y
+    con BASE, CUOTA y TOTAL sumados de TODAS las facturas (Jerónimo,
+    S133: "faltaría el sumatorio de todas las facturas [...] está
+    copiando el sumatorio del último fichero"). Devuelve el CSV en
+    bytes, las filas de datos y las facturas.
     """
     header = None
     rows = []
     summary = None
+    totals = {column: _amount("") for column in INVOICE_SUMS}
     order = 0
     invoices = 0
     previous_invoice = None
@@ -181,12 +221,18 @@ def merge_invoices(files):
                 invoices += 1
                 previous_invoice = cols[INVOICE_NUMBER]
             cols[INVOICE_COUNTER] = str(invoices)
+            for column in INVOICE_SUMS:
+                if column < len(cols):
+                    totals[column] += _amount(cols[column])
             rows.append(";".join(cols))
     if not rows:
         raise MergeError("Los ficheros no tienen facturas.")
     lines = ([header] if header else []) + rows
     if summary is not None:
         summary[INVOICE_ORDER] = str(order + 1)
+        for column, total in totals.items():
+            if column < len(summary):
+                summary[column] = _spanish(total)
         lines.append(";".join(summary))
     data = ("\r\n".join(lines) + "\r\n").encode(out_encoding)
     return data, len(rows), invoices
