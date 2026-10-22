@@ -36,6 +36,11 @@ on:
         required: false
         default: "0"
         type: string
+      grep_pattern:
+        description: "Opcional (solo pythonanywhere): expresión regular (grep -E). Si se da, remote_path admite comodines (p. ej. /var/log/x.error.log*) y solo se sube lo que coincida, también dentro de los .gz."
+        required: false
+        default: ""
+        type: string
       dpi:
         description: "Opcional (solo gcs_image): resolución del render. 110 por defecto; 220 para letra manuscrita sobre trama."
         required: false
@@ -82,10 +87,27 @@ jobs:
         env:
           REMOTE_PATH: ${{ inputs.remote_path }}
           TAIL_LINES: ${{ inputs.tail_lines }}
+          GREP_PATTERN: ${{ inputs.grep_pattern }}
         run: |
           set +e
           DRIVE_SCRIPT="/home/MiguelAeTxio/SWAP/drive_upload_${{ github.run_id }}.py"
           DRIVE_NAME="$(basename "$REMOTE_PATH")_${{ github.run_id }}"
+          if [ -n "$GREP_PATTERN" ]; then
+            # S133: búsqueda de solo lectura en varios logs rotados a la
+            # vez (zgrep lee también los .gz). El patrón viaja en base64
+            # para no depender de comillas anidadas en el ssh.
+            PATTERN_B64=$(printf '%s' "$GREP_PATTERN" | base64 -w0)
+            GREP_OUT="/home/MiguelAeTxio/SWAP/file_grep_${{ github.run_id }}.txt"
+            DRIVE_NAME="grep_${{ github.run_id }}.txt"
+            ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
+              "set -e; cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; export PYTHONPATH=/home/MiguelAeTxio/PROJECTS/EnterpriseBot; PATTERN=\$(echo '$PATTERN_B64' | base64 -d); for f in $REMOTE_PATH; do zgrep -H -E -- \"\$PATTERN\" \"\$f\" || true; done > '$GREP_OUT'; python -m dotenv run python3 '$DRIVE_SCRIPT' '$GREP_OUT' '$DRIVE_NAME' '${{ env.DRIVE_FOLDER_ID }}'; rm -f '$DRIVE_SCRIPT' '$GREP_OUT'" \
+              > /tmp/result.txt 2>&1
+            RC=$?
+            echo "EXIT=$RC" >> /tmp/result.txt
+            echo "DRIVE_NAME=$DRIVE_NAME" >> /tmp/result.txt
+            cat /tmp/result.txt
+            exit $RC
+          fi
           ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
             "set -e; cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; export PYTHONPATH=/home/MiguelAeTxio/PROJECTS/EnterpriseBot; TARGET='$REMOTE_PATH'; if [ '$TAIL_LINES' != '0' ]; then TARGET=/home/MiguelAeTxio/SWAP/file_fetch_${{ github.run_id }}.txt; tail -n '$TAIL_LINES' '$REMOTE_PATH' > \"\$TARGET\"; fi; python -m dotenv run python3 '$DRIVE_SCRIPT' \"\$TARGET\" '$DRIVE_NAME' '${{ env.DRIVE_FOLDER_ID }}'; rm -f '$DRIVE_SCRIPT' /home/MiguelAeTxio/SWAP/file_fetch_${{ github.run_id }}.txt" \
             > /tmp/result.txt 2>&1
