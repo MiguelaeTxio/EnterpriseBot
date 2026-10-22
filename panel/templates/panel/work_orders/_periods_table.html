@@ -1,0 +1,66 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/work_orders/_periods_table.html #}
+{# S133 (directriz 4.24): pestaña Períodos de Partes Digitales dentro del panel con scroll; ver,    #}
+{# liquidar y reabrir en el menú de tres puntos de cada fila. Los periodos se crean solos por      #}
+{# fecha (H24/S020).                                                                               #}
+{% if period_groups %}
+<table class="table table-sm table-hover align-middle mb-0">
+    <thead>
+        <tr>
+            <th class="text-sm fw-semibold">Etiqueta</th>
+            <th class="text-sm fw-semibold">Inicio</th>
+            <th class="text-sm fw-semibold">Fin</th>
+            <th class="text-sm fw-semibold">Estado</th>
+            <th class="text-sm fw-semibold">Operarios</th>
+            <th class="text-sm fw-semibold"></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in period_groups %}
+        {% with g=row.group %}
+        <tr class="{% if g.is_closed %}table-secondary{% endif %}">
+            <td class="fw-semibold text-sm">{{ g.label }}</td>
+            <td class="text-sm">{{ g.start_date|date:"d/m/Y" }}</td>
+            <td class="text-sm">{% if g.end_date %}{{ g.end_date|date:"d/m/Y" }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td>
+                {% if g.status == "LIQUIDATED" %}<span class="badge bg-danger">{{ g.status_label }}</span>
+                {% elif g.status == "PENDING_LIQUIDATION" %}<span class="badge bg-warning text-dark">{{ g.status_label }}</span>
+                {% else %}<span class="badge bg-success">{{ g.status_label }}</span>{% endif %}
+            </td>
+            <td class="text-sm">
+                <span class="{% if row.operator_count < row.total_operators and not g.is_closed %}text-warning fw-semibold{% endif %}">{{ row.operator_count }} / {{ row.total_operators }}</span>
+                {% if row.operator_count < row.total_operators and not g.is_closed %}<i class="bi bi-exclamation-circle text-warning ms-1" title="Faltan operarios por añadir"></i>{% endif %}
+            </td>
+            <td class="text-sm text-end">
+                <div class="dropdown">
+                    <button type="button" class="btn btn-sm btn-link text-secondary py-0 px-1"
+                            data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}'
+                            aria-expanded="false" title="Acciones del periodo">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                        <li><a class="dropdown-item small" href="{% url 'panel:work_period_group_detail' g.pk %}"><i class="bi bi-eye me-2"></i>Ver / Gestionar</a></li>
+                        {% if is_admin %}
+                        <li>
+                            <form method="post" action="{% url 'panel:work_period_group_lock' g.pk %}" class="m-0"
+                                  onsubmit="return confirm('{% if g.is_closed %}¿Reabrir el periodo {{ g.label|escapejs }}?{% else %}¿Liquidar el periodo {{ g.label|escapejs }}?{% endif %}')">
+                                {% csrf_token %}
+                                <button type="submit" class="dropdown-item small {% if g.is_closed %}text-warning{% else %}text-danger{% endif %}">
+                                    {% if g.is_closed %}<i class="bi bi-unlock me-2"></i>Reabrir{% else %}<i class="bi bi-lock me-2"></i>Liquidar{% endif %}
+                                </button>
+                            </form>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </div>
+            </td>
+        </tr>
+        {% endwith %}
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="px-4 py-5 text-center text-muted">
+    <i class="bi bi-calendar-range fs-3 d-block mb-2"></i>
+    <p class="text-sm mb-0">No hay períodos de trabajo registrados todavía. Se creará automáticamente en cuanto haga falta (p. ej. al abrir el calendario de vacaciones).</p>
+</div>
+{% endif %}

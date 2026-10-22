@@ -47,6 +47,15 @@ XLSX_CONTENT_TYPE = (
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
 
+# S133 (directrices 4.15 y 4.24): Partes Digitales guarda por usuario la
+# pestaña, los filtros, el orden y la selección.
+HISTORY_SCREEN_KEY = "work_orders_history"
+HISTORY_FILTER_KEYS = (
+    "tab", "operator_pk", "date_from", "date_to", "machine",
+    "fault_category", "q", "status", "dieta", "origen", "sort_stack",
+)
+MAX_SORT_LEVELS = 4
+
 
 class WorkOrderListView(SupervisorAccessMixin, View):
     """
@@ -4521,6 +4530,16 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
         Resuelve los filtros GET, construye el queryset de cada pestana
         de forma independiente y pasa todos los datos al contexto del template.
         """
+        from panel.navigation_persistence import (
+            apply_list_navigation,
+            get_saved_state_key,
+        )
+
+        # S133 (directriz 4.15): pestaña, filtros y orden se guardan por
+        # usuario y se recuperan al volver sin parámetros.
+        apply_list_navigation(
+            request, HISTORY_SCREEN_KEY, HISTORY_FILTER_KEYS,
+        )
         cu = request.user.company_user
         company = cu.company
 
@@ -4579,11 +4598,18 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
 
                     if not any(s[0] == col for s in sort_stack):
                         sort_stack.append((col, direction))
-                        if len(sort_stack) >= 3:
+                        if len(sort_stack) >= MAX_SORT_LEVELS:
                             break
 
+        # S133 (directriz 4.24): "Quitar orden" vuelve al orden por fecha.
+        sort_active = bool(sort_stack)
         if not sort_stack:
             sort_stack = [("fecha", "asc")]
+        # Prioridad y sentido de cada columna ordenada, para la cabecera.
+        sort_headers = {
+            col: {"pos": index, "dir": direction}
+            for index, (col, direction) in enumerate(sort_stack, start=1)
+        }
 
         sort_primary_col = sort_stack[0][0]
         sort_primary_dir = sort_stack[0][1]
@@ -4591,6 +4617,9 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
         sort_stack_str = ",".join(
             f"{col}:{direction}" for col, direction in sort_stack
         )
+        # Sin orden propio, nada que guardar ni que "quitar".
+        if not sort_active:
+            sort_stack_str = ""
 
         operators = (
             (
@@ -4917,10 +4946,31 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
         back_url = _reverse_fq("panel:work_order_admin_history") + (
             f"?{filters_qs}" if filters_qs else ""
         )
+        # S133 (4.24): enlaces de pestaña con los mismos filtros y orden.
+        tab_filters_qs = _urlencode_fq(
+            {
+                k: v for k, v in _filters_dict.items()
+                if v and k != "tab"
+            }
+        )
+        filters_active = any(
+            v for k, v in _filters_dict.items()
+            if k not in ("tab", "sort_stack")
+        )
 
         # Compute aggregate totals for the Revisados tab.
         # Calcular totales agregados para la pestaña Revisados.
         from decimal import Decimal as _Dec
+
+        # S133 (directriz 4.24): selección de filas guardada por usuario.
+        _saved_selection = get_saved_state_key(
+            cu, HISTORY_SCREEN_KEY, "selection", [],
+        )
+        if not isinstance(_saved_selection, list):
+            _saved_selection = []
+        _only_selected = bool(get_saved_state_key(
+            cu, HISTORY_SCREEN_KEY, "only_selected", False,
+        ))
 
         reviewed_totals = {
             "horas_totales": sum(
@@ -4983,7 +5033,16 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
             "sort_stack_str": sort_stack_str,
             "sort_primary_col": sort_primary_col,
             "sort_primary_dir": sort_primary_dir,
+            "sort_headers": sort_headers,
+            "sort_active": sort_active,
+            "screen_key": HISTORY_SCREEN_KEY,
+            "saved_selection": _saved_selection,
+            "only_selected": _only_selected,
             "filters_qs": filters_qs,
+            "tab_filters_qs": tab_filters_qs,
+            "filters_active": filters_active,
+            "show_selection_viewer": active_tab
+            in ("pending", "reviewed", "history"),
             "back_url": back_url,
             "pending_list": pending_list,
             "reviewed_list": reviewed_list,

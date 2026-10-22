@@ -139,6 +139,11 @@
     // antes estaba fijado a "form-bulk-reviewed", lo que dejaba la
     // exportación inservible en cualquier otra pestaña con bulk_export=True.
     var ACTIVE_BULK_FORM_SELECTOR = "#form-bulk-{{ active_tab }}";
+    // S133 (directriz 4.24): lo marcado es la selección guardada
+    // (admin_history.js), aunque el filtro la oculte.
+    function _selectedKeys() {
+        return window.WoHistory ? window.WoHistory.selectedKeys() : [];
+    }
 
     var SHEET_FORMAT_LABELS = {
         "single_sheet": "Una sola hoja",
@@ -233,9 +238,7 @@
     function _updatePartsCount() {
         /* Count checked PKs in the active tab's table.
            Contar PKs marcados en la tabla de la pestaña activa. */
-        var checked = document.querySelectorAll(
-            ACTIVE_BULK_FORM_SELECTOR + " .bulk-check-item:checked"
-        );
+        var checked = _selectedKeys();
         var countEl = document.getElementById("export-parts-count");
         if (countEl) {
             countEl.textContent = checked.length > 0
@@ -276,14 +279,12 @@
 
         /* Collect checked PKs from the active tab's table (or all if none checked).
            Recopilar PKs marcados de la tabla de la pestaña activa (o todos si ninguno). */
-        var checkedItems = document.querySelectorAll(
-            ACTIVE_BULK_FORM_SELECTOR + " .bulk-check-item:checked"
-        );
+        var checkedItems = _selectedKeys();
         var pkSource = checkedItems.length > 0
-            ? Array.from(checkedItems).map(function (el) { return el.value; })
+            ? checkedItems
             : Array.from(document.querySelectorAll(
-                ACTIVE_BULK_FORM_SELECTOR + " .bulk-check-item"
-              )).map(function (el) { return el.value; });
+                ACTIVE_BULK_FORM_SELECTOR + " tbody tr[data-key]"
+              )).map(function (el) { return el.dataset.key; });
 
         pkSource.forEach(function (pk) {
             var inp   = document.createElement("input");
@@ -364,7 +365,7 @@
 (function () {
     "use strict";
 
-    var MAX_STACK_LEVELS = 3;
+    var MAX_STACK_LEVELS = 4;
 
     /**
      * Parse a sort_stack string into an array of {col, dir} objects.
@@ -374,7 +375,7 @@
      * Devuelve [] para cadena vacía o inválida.
      */
     function parseStack(stackStr) {
-        var valid = ["fecha", "operator_name", "horas_totales", "horas_extra", "reviewed", "fault_category"];
+        var valid = ["fecha", "operator_name", "horas_totales", "horas_extra", "horas_festivas", "reviewed", "fault_category"];
         var result = [];
         stackStr.split(",").forEach(function (token) {
             var parts = token.trim().split(":");
@@ -451,7 +452,7 @@
                 evt.preventDefault();
 
                 var clickedCol = link.getAttribute("data-col");
-                var tab        = link.getAttribute("data-tab");
+                var tab        = "{{ active_tab }}";
 
                 /* Read current sort_stack from the hidden input.
                    Leer el sort_stack actual del input oculto. */
@@ -477,6 +478,21 @@
                 window.location.href = window.location.pathname + "?" + params.toString();
             });
         });
+        // S133 (directriz 4.24): "Quitar orden" vuelve al orden por fecha.
+        var clearSort = document.getElementById("wo-clear-sort");
+        if (clearSort) {
+            clearSort.addEventListener("click", function () {
+                var params = new URLSearchParams(window.location.search);
+                params.set("tab", "{{ active_tab }}");
+                params.set("sort_stack", "");
+                ["operator_pk", "date_from", "date_to", "machine", "fault_category",
+                 "q", "status", "dieta", "origen"].forEach(function (key) {
+                    var input = document.querySelector("#wo-filter-form [name='" + key + "']");
+                    if (input) { params.set(key, input.value); }
+                });
+                window.location.href = window.location.pathname + "?" + params.toString();
+            });
+        }
     });
 
 }());
@@ -486,479 +502,286 @@
 {% block page_title %}Partes Digitales{% endblock %}
 
 {% block content %}
+{% comment %}
+S133 (directriz 4.24): formato único de listado, como Documentación.
+- #wo-top-panel, fijo: "Buscar y filtrar" a la izquierda y, para la
+  oficina, las acciones a la derecha con el contador de seleccionados.
+- Pestañas.
+- #wo-bottom-panel (altura calculada, panel/_fixed_list_layout.html):
+  solo la lista hace scroll, con la cabecera arriba y, en Revisados, la
+  fila TOTAL fija abajo; a la derecha, el visor "Selección actual". La
+  lista se puede ver a pantalla completa.
+Pestaña, filtros, orden y selección se guardan por usuario (4.15,
+screen_key work_orders_history).
+{% endcomment %}
 <div class="container-fluid px-0">
 
-    {# ------------------------------------------------------------------ #}
-    {# Sort URL helper — generador de URL de ordenación                    #}
-    {# Uso: {% url 'panel:work_order_admin_history' %}?tab={{ active_tab   #}
-    {#      }}&sort=COLUMNA&dir=DIR&operator_pk=...&date_from=...         #}
-    {# Macro inline via with tag para construir la query base preservando  #}
-    {# todos los filtros activos en cada enlace de cabecera de columna.    #}
-    {# ------------------------------------------------------------------ #}
-    {% with _fp="operator_pk="|add:operator_pk|add:"&date_from="|add:date_from|add:"&date_to="|add:date_to|add:"&machine="|add:machine|add:"&fault_category="|add:fault_category|default:''|add:"&q="|add:q|default:'' %}
-    {# _fp = filter params string — cadena de parámetros de filtro activos #}
-    {% endwith %}
-
-    {# ------------------------------------------------------------------ #}
-    {# Global filter bar — Barra de filtros global                         #}
-    {# ------------------------------------------------------------------ #}
-    <div class="card border-0 shadow-sm mb-4">
-        <div class="card-body py-3 px-4">
-            <form method="get" class="row g-2 align-items-end">
-                {# Preserve active tab on filter submit #}
-                <input type="hidden" name="tab" value="{{ active_tab }}">
-                {# Preserve sort stack on filter submit — preservar pila de ordenación al filtrar #}
-                <input type="hidden" name="sort_stack" id="hidden-sort-stack" value="{{ sort_stack_str }}">
-                {# fault_category y q son enviados por los inputs visibles del formulario — no se duplican aquí #}
-
-                {% if is_elevated %}
-                <div class="col-12 col-md-2">
-                    <label class="form-label text-sm fw-semibold mb-1">Operario</label>
-                    <select name="operator_pk" class="form-select form-select-sm">
-                        <option value="">Todos los operarios</option>
-                        {% for op in operators %}
-                        <option value="{{ op.pk }}"
-                            {% if operator_pk|stringformat:"s" == op.pk|stringformat:"s" %}selected{% endif %}>
-                            {{ op.user.get_full_name|default:op.user.username }}
-                        </option>
-                        {% endfor %}
-                    </select>
+    <div class="border rounded p-2 mb-2 bg-white" id="wo-top-panel">
+        <div class="row g-2">
+            <div class="{% if is_elevated %}col-lg-7{% else %}col-12{% endif %}">
+                <div class="border rounded p-2 h-100">
+                    <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                    <form method="get" class="row g-2 align-items-end" id="wo-filter-form">
+                        <input type="hidden" name="tab" value="{{ active_tab }}">
+                        <input type="hidden" name="sort_stack" id="hidden-sort-stack" value="{{ sort_stack_str }}">
+                        <div class="col-12">
+                            <input type="search" name="q" class="form-control form-control-sm"
+                                   placeholder="Buscar en la avería o la reparación…" value="{{ q|default:'' }}" autocomplete="off">
+                        </div>
+                        {% if is_elevated %}
+                        <div class="col-6 col-md-4 col-xl-3">
+                            <label class="form-label small fw-bold mb-0">Operario</label>
+                            <select name="operator_pk" class="form-select form-select-sm">
+                                <option value="">Todos</option>
+                                {% for op in operators %}
+                                <option value="{{ op.pk }}" {% if operator_pk|stringformat:"s" == op.pk|stringformat:"s" %}selected{% endif %}>{{ op.user.get_full_name|default:op.user.username }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        {% if period_groups %}
+                        <div class="col-6 col-md-4 col-xl-3">
+                            <label class="form-label small fw-bold mb-0">Periodo</label>
+                            <select id="filter-period-select" class="form-select form-select-sm">
+                                <option value="">— Elegir periodo —</option>
+                                {% for row in period_groups %}
+                                <option value="{{ row.group.start_date|date:'Y-m-d' }}|{{ row.group.end_date|date:'Y-m-d' }}">{{ row.group.label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        {% endif %}
+                        {% endif %}
+                        <div class="col-6 col-md-4 col-xl-3">
+                            <label class="form-label small fw-bold mb-0">Desde</label>
+                            <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+                        </div>
+                        <div class="col-6 col-md-4 col-xl-3">
+                            <label class="form-label small fw-bold mb-0">Hasta</label>
+                            <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+                        </div>
+                        <div class="col-6 col-md-4 col-xl-3 filter-machine-wrapper">
+                            <label class="form-label small fw-bold mb-0">Máquina / CdG</label>
+                            <input type="text" name="machine" id="filter-machine-input" class="form-control form-control-sm"
+                                   placeholder="Código…" value="{{ machine }}" autocomplete="off">
+                            <ul id="filter-machine-dropdown" class="list-unstyled bg-white border rounded shadow-sm mb-0 filter-machine-dropdown"></ul>
+                        </div>
+                        <div class="col-6 col-md-4 col-xl-3">
+                            <label class="form-label small fw-bold mb-0">Familia de avería</label>
+                            <select name="fault_category" class="form-select form-select-sm">
+                                <option value="">Todas</option>
+                                {% for fc_value, fc_label in fault_category_choices %}
+                                <option value="{{ fc_value }}" {% if fault_category == fc_value %}selected{% endif %}>{{ fc_label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-6 col-md-4 col-xl-2">
+                            <label class="form-label small fw-bold mb-0">Estado</label>
+                            <select name="status" class="form-select form-select-sm">
+                                <option value="">Todos</option>
+                                {% for st_value, st_label in status_choices %}
+                                <option value="{{ st_value }}" {% if status == st_value %}selected{% endif %}>{{ st_label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-6 col-md-4 col-xl-2">
+                            <label class="form-label small fw-bold mb-0">Dieta</label>
+                            <select name="dieta" class="form-select form-select-sm">
+                                <option value="">Todos</option>
+                                <option value="si" {% if dieta == "si" %}selected{% endif %}>Con dieta</option>
+                                <option value="no" {% if dieta == "no" %}selected{% endif %}>Sin dieta</option>
+                            </select>
+                        </div>
+                        <div class="col-6 col-md-4 col-xl-2">
+                            <label class="form-label small fw-bold mb-0">Origen</label>
+                            <select name="origen" class="form-select form-select-sm">
+                                <option value="">Todos</option>
+                                {% for src_value, src_label in source_choices %}
+                                <option value="{{ src_value }}" {% if origen == src_value %}selected{% endif %}>{{ src_label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12 d-flex flex-wrap align-items-center gap-2">
+                            <button type="submit" class="btn btn-primary btn-sm px-3">
+                                <i class="bi bi-funnel me-1"></i>Filtrar
+                            </button>
+                            <a href="{% url 'panel:work_order_admin_history' %}?tab={{ active_tab }}" class="btn btn-outline-secondary btn-sm">
+                                <i class="bi bi-x-lg me-1"></i>Quitar filtros
+                            </a>
+                            {% if sort_active %}
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="wo-clear-sort" title="Deshacer todos los órdenes aplicados">
+                                <i class="bi bi-x-circle me-1"></i>Quitar orden
+                            </button>
+                            {% endif %}
+                            {% if is_elevated and active_tab in "pending reviewed history" %}
+                            <div class="form-check mb-0 ms-lg-auto">
+                                <input class="form-check-input" type="checkbox" id="wo-only-selected" autocomplete="off" {% if only_selected %}checked{% endif %}>
+                                <label class="form-check-label small" for="wo-only-selected">Mostrar solo la selección actual</label>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </form>
                 </div>
-                {% endif %}
+            </div>
 
-                {% if is_elevated and period_groups %}
-                <div class="col-12 col-md-2">
-                    <label class="form-label text-sm fw-semibold mb-1">Periodo</label>
-                    <select id="filter-period-select" class="form-select form-select-sm">
-                        <option value="">— Elegir periodo —</option>
-                        {% for row in period_groups %}
-                        <option value="{{ row.group.start_date|date:'Y-m-d' }}|{{ row.group.end_date|date:'Y-m-d' }}">
-                            {{ row.group.label }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
-                {% endif %}
-
-                <div class="col-12 col-md-2">
-                    <label class="form-label text-sm fw-semibold mb-1">Fecha desde</label>
-                    <input type="date" name="date_from" class="form-control form-control-sm"
-                           placeholder="Cualquier fecha"
-                           value="{{ date_from }}">
-                </div>
-
-                <div class="col-12 col-md-2">
-                    <label class="form-label text-sm fw-semibold mb-1">Fecha hasta</label>
-                    <input type="date" name="date_to" class="form-control form-control-sm"
-                           placeholder="Cualquier fecha"
-                           value="{{ date_to }}">
-                </div>
-
-                <div class="col-12 col-md-2 filter-machine-wrapper">
-                    <label class="form-label text-sm fw-semibold mb-1">Máquina / CdG</label>
-                    <input type="text" name="machine" id="filter-machine-input"
-                           class="form-control form-control-sm"
-                           placeholder="Código de máquina…" value="{{ machine }}"
-                           autocomplete="off">
-                    <ul id="filter-machine-dropdown"
-                        class="list-unstyled bg-white border rounded shadow-sm mb-0 filter-machine-dropdown">
-                    </ul>
-                </div>
-
-                {# Familia de avería — fault_category filter dropdown #}
-                <div class="col-12 col-md-2">
-                    <label class="form-label text-sm fw-semibold mb-1">Familia de avería</label>
-                    <select name="fault_category" class="form-select form-select-sm">
-                        <option value="">Todas las familias</option>
-                        {% for fc_value, fc_label in fault_category_choices %}
-                        <option value="{{ fc_value }}"
-                            {% if fault_category == fc_value %}selected{% endif %}>
-                            {{ fc_label }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
-
-                {# Estado — status filter dropdown, traspasado de la antigua "Mis partes" #}
-                {# Recupera la vieja pestaña "Error" de Partes Digitales sin pestaña dedicada #}
-                <div class="col-12 col-md-2">
-                    <label class="form-label text-sm fw-semibold mb-1">Estado</label>
-                    <select name="status" class="form-select form-select-sm">
-                        <option value="">Todos los estados</option>
-                        {% for st_value, st_label in status_choices %}
-                        <option value="{{ st_value }}"
-                            {% if status == st_value %}selected{% endif %}>
-                            {{ st_label }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
-
-                {# Búsqueda libre — free-text search over fault_description + repair_notes #}
-                <div class="col-12 col-md-2">
-                    <label class="form-label text-sm fw-semibold mb-1">Búsqueda</label>
-                    <input type="text" name="q" class="form-control form-control-sm"
-                           placeholder="Avería o reparación…" value="{{ q|default:'' }}"
-                           autocomplete="off">
-                </div>
-
-                {# Dieta — has_diet filter dropdown — H07 punto 7 (2026-08-14), #}
-                {# columna Dieta ya presentada sin filtro propio #}
-                <div class="col-12 col-md-2">
-                    <label class="form-label text-sm fw-semibold mb-1">Dieta</label>
-                    <select name="dieta" class="form-select form-select-sm">
-                        <option value="">Todos</option>
-                        <option value="si" {% if dieta == "si" %}selected{% endif %}>Con dieta</option>
-                        <option value="no" {% if dieta == "no" %}selected{% endif %}>Sin dieta</option>
-                    </select>
-                </div>
-
-                {# Origen — source filter dropdown — H07 punto 7 (2026-08-14), #}
-                {# columna Origen (Histórico) ya presentada sin filtro propio #}
-                <div class="col-12 col-md-2">
-                    <label class="form-label text-sm fw-semibold mb-1">Origen</label>
-                    <select name="origen" class="form-select form-select-sm">
-                        <option value="">Todos</option>
-                        {% for src_value, src_label in source_choices %}
-                        <option value="{{ src_value }}" {% if origen == src_value %}selected{% endif %}>
-                            {{ src_label }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
-
-                <div class="col-12 col-md-1 d-flex gap-2">
-                    <button type="submit" class="btn btn-primary btn-sm px-3 flex-grow-1">
-                        <i class="bi bi-funnel me-1"></i>Filtrar
+            {% if is_elevated %}
+            <div class="col-lg-5">
+                <div class="border rounded p-2 h-100">
+                    {% if active_tab == "pending" or active_tab == "reviewed" or active_tab == "history" %}
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <strong class="small"><span id="wo-mass-count">0</span> seleccionados</strong>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="wo-mass-clear">Limpiar</button>
+                    </div>
+                    <div class="row g-1">
+                        <div class="col-md-6 border-end pe-2">
+                            <div class="small text-muted fw-bold">Revisión</div>
+                            <div class="d-flex gap-1 flex-wrap">
+                                <button type="button" class="btn btn-sm btn-success wo-needs-selection wo-bulk" data-op="mark_reviewed" disabled>
+                                    <i class="bi bi-check2-all me-1"></i>Marcar revisados
+                                </button>
+                                {% if active_tab == "reviewed" %}
+                                <button type="button" class="btn btn-sm btn-warning wo-needs-selection wo-bulk" data-op="unmark_reviewed" disabled>
+                                    <i class="bi bi-x-circle me-1"></i>Desmarcar revisados
+                                </button>
+                                {% endif %}
+                            </div>
+                            <div class="small text-muted fw-bold mt-2">Eliminar</div>
+                            <button type="button" class="btn btn-sm btn-outline-danger wo-needs-selection wo-bulk" data-op="delete"
+                                    data-confirm="¿Eliminar los partes seleccionados? Esta acción no se puede deshacer." disabled>
+                                <i class="bi bi-trash me-1"></i>Eliminar
+                            </button>
+                        </div>
+                        <div class="col-md-6 ps-2">
+                            {% if active_tab != "history" %}
+                            <div class="small text-muted fw-bold">Exportar</div>
+                            <button type="button" id="btn-export-template" class="btn btn-sm btn-outline-success"
+                                    data-bs-toggle="modal" data-bs-target="#modalExportTemplate">
+                                <i class="bi bi-file-earmark-excel me-1"></i>Excel / PDF por plantilla
+                            </button>
+                            <div class="small text-muted mt-1">Sin selección, exporta todo lo que se ve filtrado.</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% elif active_tab == "absences" %}
+                    <div class="small text-muted fw-bold">Ausencias</div>
+                    <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#modalAbsenceCreate">
+                        <i class="bi bi-plus-circle me-1"></i>Nueva ausencia
                     </button>
-                    <a href="{% url 'panel:work_order_admin_history' %}?tab={{ active_tab }}"
-                       class="btn btn-outline-secondary btn-sm px-2">
-                        <i class="bi bi-x-lg"></i>
-                    </a>
+                    <div class="small text-muted mt-1">Editar, generar partes o eliminar: en el menú de cada fila.</div>
+                    {% else %}
+                    <div class="small text-muted fw-bold">Períodos de trabajo</div>
+                    <div class="small text-muted">Se crean solos por fecha. Liquidar o reabrir: en el menú de cada fila (solo administrador). No se liquida un periodo con partes sin revisar.</div>
+                    {% endif %}
                 </div>
-            </form>
+            </div>
+            {% endif %}
         </div>
     </div>
 
-    {# ------------------------------------------------------------------ #}
-    {# Tab navigation — Navegación de pestañas                             #}
-    {# ------------------------------------------------------------------ #}
     <ul class="nav nav-tabs mb-0 border-bottom-0" id="adminHistoryTabs">
         <li class="nav-item">
-            <a class="nav-link {% if active_tab == 'pending' %}active{% endif %} fw-semibold"
-               href="?tab=pending&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&status={{ status }}&dieta={{ dieta }}&origen={{ origen }}">
+            <a class="nav-link {% if active_tab == 'pending' %}active{% endif %} fw-semibold" href="?tab=pending&{{ tab_filters_qs }}">
                 <i class="bi bi-clock-history me-1"></i>Pendientes
-                {% if pending_list %}
-                <span class="badge bg-warning text-dark ms-1">{{ pending_list|length }}</span>
-                {% endif %}
+                {% if pending_list %}<span class="badge bg-warning text-dark ms-1">{{ pending_list|length }}</span>{% endif %}
             </a>
         </li>
         <li class="nav-item">
-            <a class="nav-link {% if active_tab == 'reviewed' %}active{% endif %} fw-semibold"
-               href="?tab=reviewed&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&status={{ status }}&dieta={{ dieta }}&origen={{ origen }}">
+            <a class="nav-link {% if active_tab == 'reviewed' %}active{% endif %} fw-semibold" href="?tab=reviewed&{{ tab_filters_qs }}">
                 <i class="bi bi-check2-circle me-1"></i>Revisados
-                {% if reviewed_list %}
-                <span class="badge bg-success ms-1">{{ reviewed_list|length }}</span>
-                {% endif %}
+                {% if reviewed_list %}<span class="badge bg-success ms-1">{{ reviewed_list|length }}</span>{% endif %}
             </a>
         </li>
         <li class="nav-item">
-            <a class="nav-link {% if active_tab == 'history' %}active{% endif %} fw-semibold"
-               href="?tab=history&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&status={{ status }}&dieta={{ dieta }}&origen={{ origen }}">
+            <a class="nav-link {% if active_tab == 'history' %}active{% endif %} fw-semibold" href="?tab=history&{{ tab_filters_qs }}">
                 <i class="bi bi-archive me-1"></i>Histórico
             </a>
         </li>
         <li class="nav-item">
-            <a class="nav-link {% if active_tab == 'absences' %}active{% endif %} fw-semibold"
-               href="?tab=absences&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&status={{ status }}&dieta={{ dieta }}&origen={{ origen }}">
+            <a class="nav-link {% if active_tab == 'absences' %}active{% endif %} fw-semibold" href="?tab=absences&{{ tab_filters_qs }}">
                 <i class="bi bi-calendar-x me-1"></i>Ausencias
-                {% if absences_list %}
-                <span class="badge bg-secondary ms-1">{{ absences_list|length }}</span>
-                {% endif %}
+                {% if absences_list %}<span class="badge bg-secondary ms-1">{{ absences_list|length }}</span>{% endif %}
             </a>
         </li>
         {% if is_elevated %}
         <li class="nav-item">
-            <a class="nav-link {% if active_tab == 'periods' %}active{% endif %} fw-semibold"
-               href="?tab=periods&operator_pk={{ operator_pk }}&date_from={{ date_from }}&date_to={{ date_to }}&machine={{ machine }}&status={{ status }}&dieta={{ dieta }}&origen={{ origen }}">
+            <a class="nav-link {% if active_tab == 'periods' %}active{% endif %} fw-semibold" href="?tab=periods&{{ tab_filters_qs }}">
                 <i class="bi bi-calendar-range me-1"></i>Períodos
             </a>
         </li>
         {% endif %}
     </ul>
 
-    {# ------------------------------------------------------------------ #}
-    {# Tab content — Contenido de pestañas                                 #}
-    {# ------------------------------------------------------------------ #}
-    <div class="tab-content-panel border border-top-0 rounded-bottom shadow-sm bg-white">
-
-        {# ============================================================== #}
-        {# TAB 1 — Pendientes                                              #}
-        {# ============================================================== #}
-        {% if active_tab == 'pending' %}
-        <div class="p-0">
-            {% if not is_elevated and overtime_hours is not None %}
-            <div class="px-4 pt-3">
-                <div class="alert alert-{% if overtime_hours > 0 %}warning{% else %}light border{% endif %} py-2 px-3 mb-0 d-flex align-items-center gap-2">
-                    <i class="bi bi-stopwatch"></i>
-                    <span class="text-sm">
-                        Horas extra acumuladas pendientes:
-                        <strong>{{ overtime_hours }}h</strong>
-                    </span>
-                </div>
-            </div>
-            {% endif %}
-            {% if not is_elevated and own_period_groups %}
-            <div class="px-4 pt-2">
-                <details class="text-sm">
-                    <summary class="text-muted section-summary-toggle">
-                        <i class="bi bi-calendar-range me-1"></i>Mis periodos
-                    </summary>
-                    <div class="d-flex flex-wrap gap-2 mt-2">
-                        {% for wp in own_period_groups %}
-                        <a href="{% url 'panel:work_period_group_detail' wp.group.pk %}"
-                           class="badge bg-light text-dark border text-decoration-none py-2 px-3">
-                            {{ wp.group.label }}
-                            {% if wp.is_closed %}<i class="bi bi-lock ms-1 text-muted"></i>{% endif %}
-                        </a>
-                        {% endfor %}
+    <div class="border rounded-bottom p-2 bg-white" id="wo-bottom-panel">
+        <div class="row g-2 h-100">
+            <div class="{% if is_elevated and show_selection_viewer %}col-lg-9{% else %}col-12{% endif %} h-100">
+                <div class="border rounded p-2 h-100 d-flex flex-column" id="wo-list-box">
+                    <div class="d-flex justify-content-between align-items-center mb-1 gap-2">
+                        <div class="fw-bold small">
+                            {% if active_tab == "pending" %}{{ pending_list|length }} partes pendientes de revisar
+                            {% elif active_tab == "reviewed" %}{{ reviewed_list|length }} partes revisados
+                            {% elif active_tab == "history" %}{{ history_list|length }} partes
+                            {% elif active_tab == "absences" %}{{ absences_list|length }} ausencias
+                            {% else %}{{ period_groups|length }} períodos{% endif %}
+                            {% if filters_active %}<span class="text-muted fw-normal">(filtrado)</span>{% endif %}
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" id="wo-fullscreen" title="Pantalla completa">
+                            <i class="bi bi-fullscreen"></i>
+                        </button>
                     </div>
-                </details>
-            </div>
-            {% endif %}
-            {% include "panel/work_orders/_wo_table.html" with wo_list=pending_list tab_key="pending" show_pipeline_status=True show_edit=True show_mark_reviewed_row=True bulk_mark_reviewed=True bulk_export=True back_url=back_url empty_icon="bi-check2-all text-success" empty_text="No hay partes pendientes de revisión." %}
-        </div>
-
-        {# ============================================================== #}
-        {# TAB 2 — Revisados (Excel export available here only)            #}
-        {# ============================================================== #}
-        {% elif active_tab == 'reviewed' %}
-        <div class="p-0">
-            {% include "panel/work_orders/_wo_table.html" with wo_list=reviewed_list tab_key="reviewed" show_reviewed_by=True show_excel=True show_unmark_reviewed_row=True show_detail=True bulk_mark_reviewed=True bulk_unmark_reviewed=True bulk_export=True show_totals=True totals=reviewed_totals back_url=back_url empty_icon="bi-inbox" empty_text="No hay partes revisados con los filtros aplicados." %}
-        </div>
-
-        {# ============================================================== #}
-        {# TAB 3 — Histórico                                               #}
-        {# ============================================================== #}
-        {% elif active_tab == 'history' %}
-        <div class="p-0">
-            {% include "panel/work_orders/_wo_table.html" with wo_list=history_list tab_key="history" show_reviewed_badge=True show_origen=True show_detail=True bulk_mark_reviewed=True back_url=back_url empty_icon="bi-inbox" empty_text="No hay partes con los filtros aplicados." %}
-        </div>
-
-        {# ============================================================== #}
-        {# TAB 4 — Ausencias                                               #}
-        {# ============================================================== #}
-        {% elif active_tab == 'absences' %}
-        <div class="p-0">
-
-            {# Action bar — Barra de acciones de ausencias #}
-            <div class="px-4 py-3 border-bottom bg-light d-flex align-items-center justify-content-between flex-wrap gap-2">
-                <span class="text-sm fw-semibold text-muted">
-                    <i class="bi bi-calendar-x me-1"></i>{% if is_elevated %}Gestión de ausencias{% else %}Mis ausencias{% endif %}
-                </span>
-                {% if is_elevated %}
-                <a href="#" class="btn btn-primary btn-sm px-3" data-bs-toggle="modal"
-                   data-bs-target="#modalAbsenceCreate">
-                    <i class="bi bi-plus-circle me-1"></i>Nueva ausencia
-                </a>
-                {% endif %}
-            </div>
-
-            {% if absences_list %}
-            <div class="table-responsive">
-                <table class="table table-sm table-hover align-middle mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th class="px-4 text-sm fw-semibold">Operario</th>
-                            <th class="text-sm fw-semibold">Tipo</th>
-                            <th class="text-sm fw-semibold">Desde</th>
-                            <th class="text-sm fw-semibold">Hasta</th>
-                            <th class="text-sm fw-semibold">Notas</th>
-                            <th class="text-sm fw-semibold">Registrado por</th>
-                            {% if is_elevated %}
-                            <th class="text-sm fw-semibold">Acciones</th>
-                            {% endif %}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for absence in absences_list %}
-                        <tr>
-                            <td class="px-4 text-sm fw-semibold">
-                                {{ absence.company_user.user.get_full_name|default:absence.company_user.user.username }}
-                            </td>
-                            <td class="text-sm">
-                                <span class="badge bg-secondary">{{ absence.get_absence_type_display }}</span>
-                            </td>
-                            <td class="text-sm">{{ absence.start_date|date:"d/m/Y" }}</td>
-                            <td class="text-sm">{{ absence.end_date|date:"d/m/Y" }}</td>
-                            <td class="text-sm text-muted">
-                                {{ absence.notes|truncatechars:50|default:"—" }}
-                            </td>
-                            <td class="text-sm text-muted">
-                                {% if absence.registered_by %}
-                                    {{ absence.registered_by.user.get_full_name|default:absence.registered_by.user.username }}
-                                {% else %}—{% endif %}
-                            </td>
-                            {% if is_elevated %}
-                            <td class="text-sm">
-                                <div class="d-flex gap-1 flex-wrap">
-                                    {# Generar partes — generate synthetic work orders for absence range #}
-                                    <form method="post" class="d-inline">
-                                        {% csrf_token %}
-                                        <input type="hidden" name="action" value="generate_absence_parts">
-                                        <input type="hidden" name="absence_pk" value="{{ absence.pk }}">
-                                        <button type="submit"
-                                                class="btn btn-outline-primary btn-sm py-0 px-2"
-                                                title="Generar partes del periodo (días laborables)"
-                                                onclick="return confirm('¿Generar partes sintéticos para todos los días laborables de este periodo de ausencia?')">
-                                            <i class="bi bi-calendar-plus me-1"></i>Generar partes
-                                        </button>
-                                    </form>
-                                    {# Editar ausencia — open edit modal pre-filled with absence data #}
-                                    <button type="button"
-                                            class="btn btn-outline-secondary btn-sm py-0 px-2"
-                                            data-bs-toggle="modal"
-                                            data-bs-target="#modalAbsenceEdit"
-                                            data-update-url="{% url 'panel:worker_absence_update' absence.pk %}"
-                                            data-absence-type="{{ absence.absence_type }}"
-                                            data-start-date="{{ absence.start_date|date:'Y-m-d' }}"
-                                            data-end-date="{{ absence.end_date|date:'Y-m-d' }}"
-                                            data-notes="{{ absence.notes|escapejs }}"
-                                            title="Editar ausencia">
-                                        <i class="bi bi-pencil"></i>
-                                    </button>
-                                    {# Eliminar ausencia — POST delete with confirmation #}
-                                    <form method="post"
-                                          action="{% url 'panel:worker_absence_delete' absence.pk %}"
-                                          class="d-inline"
-                                          onsubmit="return confirm('¿Eliminar esta ausencia? Esta acción no se puede deshacer.')">
-                                        {% csrf_token %}
-                                        <button type="submit"
-                                                class="btn btn-outline-danger btn-sm py-0 px-2"
-                                                title="Eliminar ausencia">
-                                            <i class="bi bi-trash"></i>
-                                        </button>
-                                    </form>
-                                </div>
-                            </td>
-                            {% endif %}
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="px-4 py-5 text-center text-muted">
-                <i class="bi bi-calendar-check fs-3 d-block mb-2"></i>
-                <span class="text-sm">No hay ausencias registradas con los filtros aplicados.</span>
-            </div>
-            {% endif %}
-        </div>
-
-        {# ============================================================== #}
-        {# TAB 5 — Períodos de trabajo                                     #}
-        {# ============================================================== #}
-        {% elif active_tab == 'periods' %}
-        <div class="p-0">
-
-            {# Action bar -- ya no hay creación manual (H24/S020): el periodo se asegura solo, por fecha, la primera vez que hace falta (calendario de vacaciones). #}
-            <div class="px-4 py-3 border-bottom bg-light">
-                <span class="text-sm fw-semibold text-muted">
-                    <i class="bi bi-calendar-range me-1"></i>Gestión de períodos de trabajo
-                </span>
-            </div>
-
-            {# Period group list #}
-            {% if period_groups %}
-            <div class="px-4 pt-4">
-                <div class="card border-0 shadow-sm">
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th class="text-sm fw-semibold ps-4">Etiqueta</th>
-                                    <th class="text-sm fw-semibold">Inicio</th>
-                                    <th class="text-sm fw-semibold">Fin</th>
-                                    <th class="text-sm fw-semibold">Estado</th>
-                                    <th class="text-sm fw-semibold">Operarios</th>
-                                    <th class="text-sm fw-semibold">Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for row in period_groups %}
-                                {% with g=row.group %}
-                                <tr class="{% if g.is_closed %}table-secondary{% endif %}">
-                                    <td class="ps-4 fw-semibold text-sm">{{ g.label }}</td>
-                                    <td class="text-sm">{{ g.start_date|date:"d/m/Y" }}</td>
-                                    <td class="text-sm">
-                                        {% if g.end_date %}{{ g.end_date|date:"d/m/Y" }}
-                                        {% else %}<span class="text-muted">—</span>{% endif %}
-                                    </td>
-                                    <td>
-                                        {% if g.status == "LIQUIDATED" %}
-                                        <span class="badge bg-danger">{{ g.status_label }}</span>
-                                        {% elif g.status == "PENDING_LIQUIDATION" %}
-                                        <span class="badge bg-warning text-dark">{{ g.status_label }}</span>
-                                        {% else %}
-                                        <span class="badge bg-success">{{ g.status_label }}</span>
-                                        {% endif %}
-                                    </td>
-                                    <td class="text-sm">
-                                        <span class="{% if row.operator_count < row.total_operators and not g.is_closed %}text-warning fw-semibold{% endif %}">
-                                            {{ row.operator_count }} / {{ row.total_operators }}
-                                        </span>
-                                        {% if row.operator_count < row.total_operators and not g.is_closed %}
-                                        <i class="bi bi-exclamation-circle text-warning ms-1"
-                                           title="Faltan operarios por añadir"></i>
-                                        {% endif %}
-                                    </td>
-                                    <td class="text-nowrap">
-                                        <a href="{% url 'panel:work_period_group_detail' g.pk %}"
-                                           class="btn btn-outline-primary btn-sm py-0 px-2 me-1">
-                                            <i class="bi bi-eye me-1"></i>Ver / Gestionar
-                                        </a>
-                                        {% if is_admin %}
-                                        <form method="post"
-                                              action="{% url 'panel:work_period_group_lock' g.pk %}"
-                                              class="d-inline"
-                                              onsubmit="return confirm('{% if g.is_closed %}Reabrir el periodo {{ g.label }}?{% else %}Liquidar el periodo {{ g.label }}?{% endif %}')">
-                                            {% csrf_token %}
-                                            <button type="submit"
-                                                    class="btn btn-sm py-0 px-2 {% if g.is_closed %}btn-outline-warning{% else %}btn-outline-danger{% endif %}">
-                                                {% if g.is_closed %}
-                                                <i class="bi bi-unlock me-1"></i>Reabrir
-                                                {% else %}
-                                                <i class="bi bi-lock me-1"></i>Liquidar
-                                                {% endif %}
-                                            </button>
-                                        </form>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                {% endwith %}
-                                {% endfor %}
-                            </tbody>
-                        </table>
+                    {% if active_tab == "pending" and not is_elevated %}
+                    {% if overtime_hours is not None %}
+                    <div class="alert alert-{% if overtime_hours > 0 %}warning{% else %}light border{% endif %} py-1 px-2 mb-1 small">
+                        <i class="bi bi-stopwatch me-1"></i>Horas extra acumuladas pendientes: <strong>{{ overtime_hours }}h</strong>
+                    </div>
+                    {% endif %}
+                    {% if own_period_groups %}
+                    <details class="small mb-1">
+                        <summary class="text-muted section-summary-toggle"><i class="bi bi-calendar-range me-1"></i>Mis periodos</summary>
+                        <div class="d-flex flex-wrap gap-2 mt-1">
+                            {% for wp in own_period_groups %}
+                            <a href="{% url 'panel:work_period_group_detail' wp.group.pk %}" class="badge bg-light text-dark border text-decoration-none py-2 px-3">
+                                {{ wp.group.label }}{% if wp.is_closed %}<i class="bi bi-lock ms-1 text-muted"></i>{% endif %}
+                            </a>
+                            {% endfor %}
+                        </div>
+                    </details>
+                    {% endif %}
+                    {% endif %}
+                    <div id="wo-results-scroll" class="fixed-list-scroll flex-scroll-xy">
+                        {% if active_tab == 'pending' %}
+                        {% include "panel/work_orders/_wo_table.html" with wo_list=pending_list tab_key="pending" show_pipeline_status=True show_edit=True show_mark_reviewed_row=True back_url=back_url empty_icon="bi-check2-all text-success" empty_text="No hay partes pendientes de revisión." %}
+                        {% elif active_tab == 'reviewed' %}
+                        {% include "panel/work_orders/_wo_table.html" with wo_list=reviewed_list tab_key="reviewed" show_reviewed_by=True show_excel=True show_unmark_reviewed_row=True show_detail=True show_totals=True totals=reviewed_totals back_url=back_url empty_icon="bi-inbox" empty_text="No hay partes revisados con los filtros aplicados." %}
+                        {% elif active_tab == 'history' %}
+                        {% include "panel/work_orders/_wo_table.html" with wo_list=history_list tab_key="history" show_reviewed_badge=True show_origen=True show_detail=True back_url=back_url empty_icon="bi-inbox" empty_text="No hay partes con los filtros aplicados." %}
+                        {% elif active_tab == 'absences' %}
+                        {% include "panel/work_orders/_absences_table.html" %}
+                        {% elif active_tab == 'periods' %}
+                        {% include "panel/work_orders/_periods_table.html" %}
+                        {% endif %}
                     </div>
                 </div>
             </div>
-            {% else %}
-            <div class="px-4 py-5 text-center text-muted">
-                <i class="bi bi-calendar-range fs-3 d-block mb-2"></i>
-                <p class="text-sm mb-0">
-                    No hay períodos de trabajo registrados todavía. Se
-                    creará automáticamente en cuanto haga falta (p. ej.
-                    al abrir el calendario de vacaciones).
-                </p>
+            {% if is_elevated and show_selection_viewer %}
+            <div class="col-lg-3 h-100">
+                <div class="border rounded p-2 h-100 d-flex flex-column">
+                    <div class="fw-bold small mb-1">Selección actual (<span id="wo-selection-count">0</span>)</div>
+                    <div class="flex-scroll-y">
+                        <ul class="mb-0 small ps-0 list-unstyled" id="wo-selection-list">
+                            <li class="text-muted">Nada seleccionado todavía.</li>
+                        </ul>
+                    </div>
+                </div>
             </div>
             {% endif %}
-
         </div>
-        {% endif %}
-
-    </div>{# /.tab-content-panel #}
+    </div>
 
 </div>{# /.container-fluid #}
+
+{{ saved_selection|json_script:"wo-saved-selection" }}
+{{ back_url|json_script:"wo-back-url" }}
+{{ active_tab|json_script:"wo-active-tab" }}
+{{ screen_key|json_script:"wo-screen-key" }}
+{% include "panel/_fixed_list_layout.html" with top_id="wo-top-panel" bottom_id="wo-bottom-panel" %}
 
 {# ------------------------------------------------------------------ #}
 {# Modal — Alta de nueva ausencia                                      #}
@@ -1096,10 +919,6 @@
 
 {% block extra_head %}
 <style>
-    /* Tab content panel — panel de contenido de pestaña */
-    .tab-content-panel {
-        min-height: 200px;
-    }
     /* Nav tabs connected to content panel — pestañas conectadas al panel */
     #adminHistoryTabs .nav-link {
         border-bottom: none;
@@ -1113,8 +932,14 @@
     }
     /* Bulk selection column width — Ancho columna selección múltiple */
     .bulk-check-col { width: 2.5rem; }
-    /* Bulk action bar hidden by default — Barra de acciones bulk oculta por defecto */
-    .bulk-action-bar { display: none; }
+    /* S133 (4.24): lista con scroll propio; la fila TOTAL de Revisados
+       queda fija abajo y la lista se puede ver a pantalla completa. */
+    #wo-results-scroll table td,
+    #wo-results-scroll table th { white-space: nowrap; }
+    #wo-results-scroll thead th { background-color: #f8f9fa; }
+    #wo-results-scroll tfoot td { position: sticky; bottom: 0; z-index: 2; background-color: #cfe2ff; }
+    #wo-list-box:fullscreen { background: var(--bs-body-bg, #fff); padding: 1rem; }
+    #wo-list-box:fullscreen #wo-results-scroll { height: calc(100vh - 4rem); }
     /* Machine autocomplete wrapper — Contenedor relativo del autocompletado */
     .filter-machine-wrapper { position: relative; }
     /* Machine autocomplete dropdown — Desplegable de autocompletado de maquina */

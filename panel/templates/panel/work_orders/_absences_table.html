@@ -1,0 +1,81 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/work_orders/_absences_table.html #}
+{# S133 (directriz 4.24): pestaña Ausencias de Partes Digitales dentro del panel con scroll; las    #}
+{# acciones de fila (generar partes, editar, eliminar) en el menú de tres puntos; el alta, en el   #}
+{# panel fijo de acciones.                                                                         #}
+{% if absences_list %}
+<table class="table table-sm table-hover align-middle mb-0">
+    <thead>
+        <tr>
+            <th class="text-sm fw-semibold">Operario</th>
+            <th class="text-sm fw-semibold">Tipo</th>
+            <th class="text-sm fw-semibold">Desde</th>
+            <th class="text-sm fw-semibold">Hasta</th>
+            <th class="text-sm fw-semibold">Notas</th>
+            <th class="text-sm fw-semibold">Registrado por</th>
+            {% if is_elevated %}<th class="text-sm fw-semibold"></th>{% endif %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for absence in absences_list %}
+        <tr>
+            <td class="text-sm fw-semibold">{{ absence.company_user.user.get_full_name|default:absence.company_user.user.username }}</td>
+            <td class="text-sm"><span class="badge bg-secondary">{{ absence.get_absence_type_display }}</span></td>
+            <td class="text-sm">{{ absence.start_date|date:"d/m/Y" }}</td>
+            <td class="text-sm">{{ absence.end_date|date:"d/m/Y" }}</td>
+            <td class="text-sm text-muted">{{ absence.notes|truncatechars:50|default:"—" }}</td>
+            <td class="text-sm text-muted">
+                {% if absence.registered_by %}{{ absence.registered_by.user.get_full_name|default:absence.registered_by.user.username }}{% else %}—{% endif %}
+            </td>
+            {% if is_elevated %}
+            <td class="text-sm text-end">
+                <div class="dropdown">
+                    <button type="button" class="btn btn-sm btn-link text-secondary py-0 px-1"
+                            data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}'
+                            aria-expanded="false" title="Acciones de la ausencia">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                        <li>
+                            <form method="post" class="m-0">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="generate_absence_parts">
+                                <input type="hidden" name="absence_pk" value="{{ absence.pk }}">
+                                <button type="submit" class="dropdown-item small"
+                                        onclick="return confirm('¿Generar partes sintéticos para todos los días laborables de este periodo de ausencia?')">
+                                    <i class="bi bi-calendar-plus me-2"></i>Generar partes
+                                </button>
+                            </form>
+                        </li>
+                        <li>
+                            <button type="button" class="dropdown-item small"
+                                    data-bs-toggle="modal" data-bs-target="#modalAbsenceEdit"
+                                    data-update-url="{% url 'panel:worker_absence_update' absence.pk %}"
+                                    data-absence-type="{{ absence.absence_type }}"
+                                    data-start-date="{{ absence.start_date|date:'Y-m-d' }}"
+                                    data-end-date="{{ absence.end_date|date:'Y-m-d' }}"
+                                    data-notes="{{ absence.notes|escapejs }}">
+                                <i class="bi bi-pencil me-2"></i>Editar
+                            </button>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <form method="post" action="{% url 'panel:worker_absence_delete' absence.pk %}" class="m-0"
+                                  onsubmit="return confirm('¿Eliminar esta ausencia? Esta acción no se puede deshacer.')">
+                                {% csrf_token %}
+                                <button type="submit" class="dropdown-item small text-danger"><i class="bi bi-trash me-2"></i>Eliminar</button>
+                            </form>
+                        </li>
+                    </ul>
+                </div>
+            </td>
+            {% endif %}
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="px-4 py-5 text-center text-muted">
+    <i class="bi bi-calendar-check fs-3 d-block mb-2"></i>
+    <span class="text-sm">No hay ausencias registradas con los filtros aplicados.</span>
+</div>
+{% endif %}
