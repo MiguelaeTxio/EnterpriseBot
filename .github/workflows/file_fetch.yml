@@ -111,9 +111,16 @@ jobs:
           ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
             "set -e; cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; export PYTHONPATH=/home/MiguelAeTxio/PROJECTS/EnterpriseBot; TARGET='$REMOTE_PATH'; if [ '$TAIL_LINES' != '0' ]; then TARGET=/home/MiguelAeTxio/SWAP/file_fetch_${{ github.run_id }}.txt; tail -n '$TAIL_LINES' '$REMOTE_PATH' > \"\$TARGET\"; fi; python -m dotenv run python3 '$DRIVE_SCRIPT' \"\$TARGET\" '$DRIVE_NAME' '${{ env.DRIVE_FOLDER_ID }}'; rm -f '$DRIVE_SCRIPT' /home/MiguelAeTxio/SWAP/file_fetch_${{ github.run_id }}.txt" \
             > /tmp/result.txt 2>&1
-          echo "EXIT=$?" >> /tmp/result.txt
+          RC=$?
+          echo "EXIT=$RC" >> /tmp/result.txt
           echo "DRIVE_NAME=$DRIVE_NAME" >> /tmp/result.txt
           cat /tmp/result.txt
+          # S135: el paso falla de verdad si falla el ssh
+          # (com-actions-relay 4.2); antes salia verde siempre.
+          if [ $RC -ne 0 ]; then
+            echo "::error title=file_fetch::ssh salio con $RC"
+          fi
+          exit $RC
 
       - name: GCS — bajar a SWAP en el servidor y subirlo a Drive
         if: inputs.mode == 'gcs'
@@ -132,9 +139,16 @@ jobs:
           ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
             "set -e; cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; export PYTHONPATH=/home/MiguelAeTxio/PROJECTS/EnterpriseBot; python -m dotenv run python3 '$GCS_SCRIPT_PATH' '$BUCKET' '$BLOB' '$TMP_PATH'; python -m dotenv run python3 '$DRIVE_SCRIPT' '$TMP_PATH' '$DRIVE_NAME' '${{ env.DRIVE_FOLDER_ID }}'; rm -f '$TMP_PATH' '$GCS_SCRIPT_PATH' '$DRIVE_SCRIPT'" \
             > /tmp/result.txt 2>&1
-          echo "EXIT=$?" >> /tmp/result.txt
+          RC=$?
+          echo "EXIT=$RC" >> /tmp/result.txt
           echo "DRIVE_NAME=$DRIVE_NAME" >> /tmp/result.txt
           cat /tmp/result.txt
+          # S135: el paso falla de verdad si falla el ssh
+          # (com-actions-relay 4.2); antes salia verde siempre.
+          if [ $RC -ne 0 ]; then
+            echo "::error title=file_fetch::ssh salio con $RC"
+          fi
+          exit $RC
 
       # S117 (H30) -- modo gcs_text: en vez del archivo entero, SOLO el
       # texto de las 2 primeras páginas de uno o varios blobs, extraído
@@ -164,9 +178,16 @@ jobs:
           ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
             "set -e; cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; export PYTHONPATH=/home/MiguelAeTxio/PROJECTS/EnterpriseBot; python -m dotenv run python3 '$SCRIPT_PATH' '$OUT_PATH' 2500 '$TARGETS_PATH'; python -m dotenv run python3 '$DRIVE_SCRIPT' '$OUT_PATH' '$DRIVE_NAME' '${{ env.DRIVE_FOLDER_ID }}'; rm -f '$OUT_PATH' '$SCRIPT_PATH' '$TARGETS_PATH' '$DRIVE_SCRIPT'" \
             > /tmp/result.txt 2>&1
-          echo "EXIT=$?" >> /tmp/result.txt
+          RC=$?
+          echo "EXIT=$RC" >> /tmp/result.txt
           echo "DRIVE_NAME=$DRIVE_NAME" >> /tmp/result.txt
           cat /tmp/result.txt
+          # S135: el paso falla de verdad si falla el ssh
+          # (com-actions-relay 4.2); antes salia verde siempre.
+          if [ $RC -ne 0 ]; then
+            echo "::error title=file_fetch::ssh salio con $RC"
+          fi
+          exit $RC
 
       # H30 (S119) -- modo gcs_image: el modelo necesita VER documentos
       # escaneados (el conector de Drive solo le da texto). Las primeras
