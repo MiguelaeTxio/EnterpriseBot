@@ -992,14 +992,22 @@ def _attach_person_avatars(persons, person_ct):
         ).order_by("-id").values_list("domain_object_id", "pk"):
             fallback.setdefault(person_pk, entry_pk)
     # H31 (S134): la foto de carné recortada manda sobre las demás.
-    with_photo = set(PersonIdPhoto.objects.filter(
+    # S136: con su fecha, que va en la dirección de la miniatura
+    # (`?v=`, igual que en la ficha). La foto se sirve con caché de un
+    # día: sin la versión, el listado seguía mostrando la anterior (la
+    # de Paraschiv, de lado, ya girada en la ficha).
+    photo_versions = dict(PersonIdPhoto.objects.filter(
         person_id__in=[person.pk for person in persons],
-    ).values_list("person_id", flat=True))
+    ).values_list("person_id", "extracted_at"))
     for person in persons:
         person.avatar_entry_id = (
             person.avatar_document_id or fallback.get(person.pk)
         )
-        person.has_id_photo = person.pk in with_photo
+        extracted_at = photo_versions.get(person.pk)
+        person.has_id_photo = extracted_at is not None
+        person.id_photo_version = (
+            int(extracted_at.timestamp()) if extracted_at else 0
+        )
     return persons
 
 
