@@ -17,32 +17,13 @@ municipio. Sin horas ni DNI: eso queda para el detalle y el Excel.
     <input type="hidden" name="sort" value="{{ current_sort }}">
 </span>
 {% comment %}
-S136 (Miguel Ángel, desde el móvil: "echo en falta ordenar por
-columnas"). En el móvil la tabla pasa a tarjetas y las cabeceras no se
-ven: esta barra hace lo mismo que pulsar la cabecera (mismas reglas de
-orden múltiple). Solo en pantallas pequeñas.
+S136: sin stack-mobile. Miguel Ángel: columnas ordenables "tal y como
+están en todas las vistas desde que empezamos con el tema de
+documentación": también en el móvil se ve la tabla con sus cabeceras
+ordenables y scroll lateral dentro de la lista, como Centros de gasto
+y Albaranes de Servicios.
 {% endcomment %}
-<div class="d-lg-none d-flex flex-wrap align-items-center gap-1 mb-2 small" id="clk-mobile-sort">
-    <span class="text-muted me-1">Ordenar por:</span>
-    {% for column in sort_columns %}
-    <button type="button" class="btn btn-sm {% if column.arrow %}btn-primary{% else %}btn-outline-secondary{% endif %} py-0"
-            hx-get="{% url 'panel:clock_events_results' %}"
-            hx-target="#clk-results"
-            hx-include="#clk-filters"
-            hx-vals='{"sort": "{{ column.next }}"}'>
-        {% if column.key == "person" %}Nombre{% else %}{{ column.label }}{% endif %}
-        {% if column.arrow %}<i class="bi bi-chevron-{% if column.arrow == 'up' %}up{% else %}down{% endif %}"></i>{% if column.priority %}<sup>{{ column.priority }}</sup>{% endif %}{% endif %}
-    </button>
-    {% endfor %}
-    {% if sort_active %}
-    <button type="button" class="btn btn-sm btn-link py-0"
-            hx-get="{% url 'panel:clock_events_results' %}"
-            hx-target="#clk-results"
-            hx-include="#clk-filters"
-            hx-vals='{"sort": ""}'>Quitar orden</button>
-    {% endif %}
-</div>
-<table class="table table-hover table-light align-middle stack-mobile" id="clk-table">
+<table class="table table-hover table-light align-middle" id="clk-table">
     <thead class="table-light">
         <tr>
             <th class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input" id="clk-check-all" title="Seleccionar todos los que cumplen el filtro actual"></th>
@@ -65,7 +46,7 @@ orden múltiple). Solo en pantallas pequeñas.
     <tbody>
         {% for row in rows %}
         <tr>
-            <td class="sticky-col sticky-col-1 stack-mobile-check">
+            <td class="sticky-col sticky-col-1">
                 <input type="checkbox" class="form-check-input clk-row-check" data-pk="{{ row.person.pk }}" data-label="{{ row.label }}">
             </td>
             <td class="sticky-col sticky-col-2">
