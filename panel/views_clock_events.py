@@ -44,6 +44,7 @@ from panel.navigation_persistence import (
     get_saved_state_key,
 )
 from panel.views_vacation_balance import (
+    _csv_param,
     _filtered_people,
     _param,
     _parse_date,
@@ -53,10 +54,31 @@ from panel.views_vacation_balance import (
 SCREEN_KEY = "clock_events"
 FILTER_KEYS = (
     "search", "active", "company", "date_from", "date_to", "sort",
-    "issues_only",
+    "issues_only", "events",
 )
 _MAX_SORT_KEYS = 4
 _MAX_RANGE_DAYS = 366
+
+
+def _last_day_time(row, field):
+    """
+    Local time of day of the last day's IN or OUT, or None.
+    ---
+    Hora (local) de la entrada o la salida del último día, o None.
+    S136: para ordenar también por Entrada y Salida.
+    """
+    last = row.report.last_day
+    if not last or last[field] is None:
+        return None
+    return timezone.localtime(last[field].pressed_at).time()
+
+
+def _last_day_place(row):
+    last = row.report.last_day
+    if not last:
+        return None
+    return (last["last"].municipality or "").upper() or None
+
 
 _SORT_VALUES = {
     "person": lambda r: r.sort_name,
@@ -64,13 +86,21 @@ _SORT_VALUES = {
     "last": lambda r: (r.report.last_event.pressed_at
                        if r.report.last_event else None),
     "issues": lambda r: r.report.incident_count,
+    # S136 (Miguel Ángel: "ordenar por columnas"): todas ordenables.
+    "entry": lambda r: _last_day_time(r, "clock_in"),
+    "exit": lambda r: _last_day_time(r, "clock_out"),
+    "place": _last_day_place,
 }
 _COLUMNS = (
     ("person", "Apellidos, Nombre"),
     ("events", "Fichajes"),
     ("issues", "Incidencias"),
     ("last", "Último día"),
+    ("entry", "Entrada"),
+    ("exit", "Salida"),
+    ("place", "Municipio"),
 )
+_EVENTS_CHOICES = ("with", "without")
 
 
 class _EmptyReport:
@@ -215,6 +245,22 @@ def _with_issues_filter(request, rows):
     return [r for r in rows if r.report.issues]
 
 
+def _with_events_filter(request, rows):
+    """
+    "Con fichajes" / "Sin fichajes" (S136, Miguel Ángel: "filtro de
+    trabajadores con/sin fichajes"), checkboxes with literal meaning:
+    both = everyone, none = nobody (directive 4.24).
+    ---
+    Casillas "Con fichajes" y "Sin fichajes" en las fechas elegidas,
+    con semántica literal: las dos = todos, ninguna = nadie.
+    """
+    wanted = _csv_param(request, "events", _EVENTS_CHOICES)
+    return [
+        r for r in rows
+        if ("with" if r.report.events else "without") in wanted
+    ]
+
+
 def _list_context(request):
     """
     Context of the table: filtered workers with their report, sorted.
@@ -233,9 +279,9 @@ def _list_context(request):
             "company_user",
         ).filter(pk__in=wanted))
     rows = _sort_rows(
-        _with_issues_filter(
+        _with_events_filter(request, _with_issues_filter(
             request, _rows(request, people, date_from, date_to),
-        ),
+        )),
         _parse_sort(_param(request, "sort")),
     )
     # H24 (S129): municipio del último fichaje de cada fila.
@@ -252,6 +298,7 @@ def _list_context(request):
         "date_from": date_from,
         "date_to": date_to,
         "filter_issues_only": _param(request, "issues_only") == "1",
+        "filter_events": _csv_param(request, "events", _EVENTS_CHOICES),
         "total_label": format_duration(
             sum(r.report.total_seconds for r in rows),
         ),
@@ -443,9 +490,9 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
             rows = _rows(request, people, date_from, date_to)
         else:
             people, _a, _c, _s = _filtered_people(request)
-            rows = _with_issues_filter(
+            rows = _with_events_filter(request, _with_issues_filter(
                 request, _rows(request, people, date_from, date_to),
-            )
+            ))
         rows = sorted(rows, key=lambda r: r.sort_name)
         book = Workbook()
         days = book.active

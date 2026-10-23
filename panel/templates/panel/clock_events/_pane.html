@@ -68,6 +68,25 @@ selección persistidos por usuario (screen_key "clock_events").
                             </div>
                             <input type="hidden" name="selected_ids" id="clk-selected-ids" value="">
                         </div>
+                        {% comment %}
+                        S136 (Miguel Ángel): "filtro de trabajadores con/sin
+                        fichajes" en las fechas elegidas, también al exportar.
+                        Semántica literal: las dos = todos, ninguna = nadie.
+                        {% endcomment %}
+                        <div>
+                            <div class="fw-semibold mb-1">Fichajes</div>
+                            <div class="form-check">
+                                <input class="form-check-input clk-events-check" type="checkbox" value="with" id="clkEventsWith"
+                                       {% if "with" in filter_events %}checked{% endif %}>
+                                <label class="form-check-label" for="clkEventsWith">Con fichajes</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input clk-events-check" type="checkbox" value="without" id="clkEventsWithout"
+                                       {% if "without" in filter_events %}checked{% endif %}>
+                                <label class="form-check-label" for="clkEventsWithout">Sin fichajes</label>
+                            </div>
+                            <input type="hidden" name="events" id="clk-events-input" value="{{ filter_events|join:',' }}">
+                        </div>
                         {# H24 (S129): solo los trabajadores con alguna incidencia en las fechas elegidas (también al exportar). #}
                         <div>
                             <div class="fw-semibold mb-1">Incidencias</div>
@@ -244,6 +263,9 @@ document.getElementById("clkDetailModal").addEventListener("show.bs.modal", func
     }
     document.querySelectorAll(".clk-active-check").forEach(function (cb) {
         cb.addEventListener("change", function () { syncCsv(".clk-active-check", "clk-active-input"); });
+    });
+    document.querySelectorAll(".clk-events-check").forEach(function (cb) {
+        cb.addEventListener("change", function () { syncCsv(".clk-events-check", "clk-events-input"); });
     });
     document.querySelectorAll(".clk-company-check").forEach(function (cb) {
         cb.addEventListener("change", function () { syncCsv(".clk-company-check", "clk-company-input"); });
