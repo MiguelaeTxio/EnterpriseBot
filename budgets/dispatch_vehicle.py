@@ -76,7 +76,7 @@ JOB_KINDS = (
     (
         "tyre", "cambio de rueda o neumático",
         (PERSONAL,),
-        ("pinch", "reventon", "reventad", "neumatic", "rueda",
+        ("pinch", "reventon", "reventad", "neum", "rueda",
          "cubierta", "llanta"),
     ),
     (
@@ -123,6 +123,7 @@ TOW_WORDS = (
 # Vehículos asistidos pesados (se remolcan con rescate o grúa móvil).
 HEAVY_WORDS = (
     "camion", "tractora", "cabeza tractora", "autobus", "autocar",
+    "industrial",
     "semirremolque", "trailer", "articulado", "hormigonera",
     "volquete", "rigido",
 )
@@ -233,6 +234,13 @@ def job_for(data):
     on_site = [
         k for k in found if k in ON_SITE_KINDS
     ] if "lift" not in found and not must_tow else []
+    if (
+        not on_site and "lift" not in found and not must_tow
+        and str(data.get("repair_on_site")).lower() in ("true", "si", "sí")
+    ):
+        # The insurer says "Reparación in situ: Sí".
+        # La aseguradora marca la reparación in situ.
+        on_site = ["repair"]
     if on_site:
         # Repaired on the spot: the personal vehicle, nothing else.
         # Se arregla en el sitio: el vehículo de personal, nada más.

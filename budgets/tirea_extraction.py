@@ -63,7 +63,10 @@ DECIMAL_FIELDS = (
     "vehicle_tare", "driver_km", "total_km_tirea",
 )
 INTEGER_FIELDS = ("vehicle_axes", "num_passengers")
-BOOLEAN_FIELDS = ("is_failed", "is_billable", "is_service_order")
+BOOLEAN_FIELDS = (
+    "is_failed", "is_billable", "is_service_order", "repair_on_site",
+    "is_accident",
+)
 
 _RESPONSE_SCHEMA = {
     "type": "object",
@@ -186,6 +189,8 @@ Correspondencia de campos (etiqueta en TIREA -> clave):
 - Kms. chófer -> driver_km; Kilómetros -> total_km_tirea
 - Fallido -> is_failed ("si" o "no"); Facturable -> is_billable ("si" o
   "no")
+- Reparación in situ -> repair_on_site ("si" o "no"); Accidente ->
+  is_accident ("si" o "no"); vacío si no aparece
 - Comentarios -> insurer_comments (texto completo)
 - Observaciones compañía -> company_observations
 - Chófer (del lateral) -> tirea_driver (tal cual, p. ej. "023 - NOMBRE")

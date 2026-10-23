@@ -40,7 +40,8 @@ DELIVERY_FIELDS = (
     "total_km_tirea",
 )
 OTHER_FIELDS = (
-    "is_failed", "is_billable", "is_accident", "insurer_comments",
+    "is_failed", "is_billable", "is_accident", "repair_on_site",
+    "insurer_comments",
     "company_observations", "extra_notes",
 )
 
