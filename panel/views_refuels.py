@@ -209,6 +209,7 @@ def _row(supply):
         "unit": vehicle.get_unit_display(),
         "unit_known": vehicle.unit != GasoGesVehicle.UNIT_UNKNOWN,
         "unit_source": _UNIT_SOURCE_LABELS.get(vehicle.unit_source, ""),
+        "ask_driver": vehicle.ask_driver,
         "litres": supply.litres,
         "status": supply.get_status_display(),
         "status_badge": _STATUS_BADGES.get(supply.status, "light"),
@@ -342,6 +343,43 @@ class RefuelsVehicleUnitView(CompanyUserRequiredMixin, View):
                            "kilómetros" if unit == GasoGesVehicle.UNIT_KM
                            else "horas",
                            counters["lecturas"], counters["dudosos"]),
+        })
+
+
+class RefuelsVehicleAskView(CompanyUserRequiredMixin, View):
+    """
+    POST: whether the drivers of the marked supplies' vehicles get
+    WhatsApp questions.
+
+    ---
+
+    POST: si se pregunta o no por WhatsApp a los chóferes de los
+    vehículos de los repostajes marcados (S135, Miguel Ángel: no por
+    los que lleva siempre la misma persona). Sus lecturas siguen
+    entrando igual.
+    """
+
+    def post(self, request):
+        if not can_edit_service(request.user.company_user):
+            return JsonResponse(
+                {"ok": False, "error": "No tienes permiso para esto."},
+                status=403)
+        ask = request.POST.get("ask") == "1"
+        wanted = [int(pk) for pk in request.POST.get(
+            "selected_ids", "").split(",") if pk.isdigit()]
+        vehicle_ids = set(GasoGesSupply.objects.filter(
+            pk__in=wanted).values_list("vehicle_id", flat=True))
+        changed = GasoGesVehicle.objects.filter(
+            pk__in=vehicle_ids).update(ask_driver=ask)
+        if not changed:
+            return JsonResponse(
+                {"ok": False, "error": "Marca antes algún repostaje."},
+                status=400)
+        return JsonResponse({
+            "ok": True,
+            "message": "%d vehículo(s): %s." % (
+                changed, "se preguntará al chófer" if ask
+                else "no se preguntará al chófer"),
         })
 
 

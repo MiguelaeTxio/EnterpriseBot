@@ -618,6 +618,19 @@ class GasoGesVehicle(models.Model):
     last_km = models.BigIntegerField(
         _("Últimos KM (GasoGes)"), null=True, blank=True,
     )
+    # S135, Miguel Ángel: no se pregunta por los vehículos que lleva
+    # siempre la misma persona (administradores, comerciales: "ese
+    # vehículo siempre lo lleva Carlos Carlín"), sino por los camiones
+    # y grúas que coge gente distinta. Sus lecturas siguen entrando.
+    # ---
+    # Whether the driver gets WhatsApp questions about this vehicle.
+    ask_driver = models.BooleanField(
+        _("Preguntar al chófer"), default=True,
+        help_text=_(
+            "Si no, sus repostajes dan lecturas igual, pero el robot "
+            "no pregunta nunca por ellos."
+        ),
+    )
     updated_at = models.DateTimeField(_("Actualizado"), auto_now=True)
 
     class Meta:

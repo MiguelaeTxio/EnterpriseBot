@@ -83,6 +83,18 @@ Filtros, orden y selección persistidos por usuario (screen_key
                     Para los vehículos de los repostajes marcados. Queda puesta a mano y sus
                     repostajes sin unidad pasan a lectura si son coherentes.
                 </div>
+                <div class="small text-muted fw-bold mt-2">Preguntas por WhatsApp</div>
+                <div class="d-flex flex-wrap gap-1">
+                    <button type="button" class="btn btn-sm btn-outline-secondary rfl-ask-btn" data-ask="0">
+                        <i class="bi bi-chat-square-x me-1"></i>No preguntar
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary rfl-ask-btn" data-ask="1">
+                        <i class="bi bi-chat-square-text me-1"></i>Preguntar
+                    </button>
+                </div>
+                <div class="small text-muted mt-1">
+                    Para los vehículos que lleva siempre la misma persona, mejor no preguntar: sus lecturas entran igual.
+                </div>
                 <div class="small mt-1" id="rfl-unit-result"></div>
                 {% endif %}
             </div>
@@ -143,6 +155,7 @@ Filtros, orden y selección persistidos por usuario (screen_key
     const SCREEN_KEY = "{{ screen_key|escapejs }}";
     const EXPORT_URL = "{% url 'panel:refuels_export' %}";
     const UNIT_URL = "{% url 'panel:refuels_vehicle_unit' %}";
+    const ASK_URL = "{% url 'panel:refuels_vehicle_ask' %}";
 
     // Selección (pk -> etiqueta), recordada por usuario.
     const selection = new Map();
@@ -253,8 +266,7 @@ Filtros, orden y selección persistidos por usuario (screen_key
         const match = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
         return match ? decodeURIComponent(match[1]) : "";
     }
-    document.querySelectorAll(".rfl-unit-btn").forEach(function (btn) {
-        btn.addEventListener("click", function () {
+    function postVehicleAction(url, field, value) {
             const out = document.getElementById("rfl-unit-result");
             if (!selection.size) {
                 out.className = "small mt-1 text-danger";
@@ -262,11 +274,11 @@ Filtros, orden y selección persistidos por usuario (screen_key
                 return;
             }
             const data = new FormData();
-            data.append("unit", btn.dataset.unit);
+            data.append(field, value);
             data.append("selected_ids", Array.from(selection.keys()).join(","));
             out.className = "small mt-1 text-muted";
             out.textContent = "Guardando…";
-            fetch(UNIT_URL, {method: "POST", headers: {"X-CSRFToken": csrfToken()}, body: data})
+            fetch(url, {method: "POST", headers: {"X-CSRFToken": csrfToken()}, body: data})
                 .then(function (resp) { return resp.json(); })
                 .then(function (body) {
                     out.className = "small mt-1 " + (body.ok ? "text-success" : "text-danger");
@@ -277,7 +289,12 @@ Filtros, orden y selección persistidos por usuario (screen_key
                     out.className = "small mt-1 text-danger";
                     out.textContent = "No se pudo guardar. Inténtalo de nuevo.";
                 });
-        });
+    }
+    document.querySelectorAll(".rfl-unit-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () { postVehicleAction(UNIT_URL, "unit", btn.dataset.unit); });
+    });
+    document.querySelectorAll(".rfl-ask-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () { postVehicleAction(ASK_URL, "ask", btn.dataset.ask); });
     });
 
     // Pantalla completa con el formato del laboratorio de análisis (4.26).

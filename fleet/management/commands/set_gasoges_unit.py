@@ -10,8 +10,10 @@ horas (queda "a mano": la deducción ya no la cambia) y rehace sus
 lecturas del surtidor. Por códigos de centro de gasto (`--codes`) y/o
 por principio de código (`--code-prefix`, p. ej. Z: Miguel Ángel,
 S135, "Todas las Z son plataforma elevadora. Todas van con horas").
-Lo mismo que la acción "Apunta kilómetros / horas" de la pestaña
-Repostajes, para muchos a la vez.
+Con `--ask yes/no`, además o en su lugar, si se pregunta al chófer
+por WhatsApp (S135: no por los que lleva siempre la misma persona).
+Lo mismo que las acciones de la pestaña Repostajes, para muchos a la
+vez.
 """
 from datetime import datetime
 
@@ -36,8 +38,10 @@ class Command(BaseCommand):
     )
 
     def add_arguments(self, parser):
-        parser.add_argument("--unit", required=True,
-                            choices=["KM", "HOURS"])
+        parser.add_argument("--unit", choices=["KM", "HOURS"])
+        parser.add_argument(
+            "--ask", choices=["yes", "no"],
+            help="Preguntar o no al chófer por WhatsApp (S135).")
         parser.add_argument("--codes", default="",
                             help="Códigos separados por comas.")
         parser.add_argument("--code-prefix", default="",
@@ -65,6 +69,8 @@ class Command(BaseCommand):
         prefix = options["code_prefix"].strip().upper()
         if not codes and not prefix:
             raise CommandError("Indica --codes o --code-prefix.")
+        if not options["unit"] and not options["ask"]:
+            raise CommandError("Indica --unit y/o --ask.")
         with open(options["log_file"], "a", encoding="utf-8") as handle:
             self._handle = handle
             vehicles = GasoGesVehicle.objects.filter(
@@ -73,18 +79,28 @@ class Command(BaseCommand):
                       if v.machine.code.upper() in codes
                       or (prefix and v.machine.code.upper().startswith(
                           prefix))]
-            self._log("Inicio: %d vehículos de GasoGes a %s." % (
-                len(chosen), options["unit"]))
+            self._log("Inicio: %d vehículos de GasoGes (unidad %s, "
+                      "preguntar %s)." % (
+                          len(chosen), options["unit"] or "sin cambio",
+                          options["ask"] or "sin cambio"))
             found = {v.machine.code.upper() for v in chosen}
             for code in codes:
                 if code not in found:
                     self._log("AVISO: %s no tiene vehículo de GasoGes "
                               "enlazado." % code)
             for vehicle in chosen:
-                vehicle.unit = options["unit"]
-                vehicle.unit_source = GasoGesVehicle.UNIT_SOURCE_MANUAL
-                vehicle.save(update_fields=[
-                    "unit", "unit_source", "updated_at"])
-                redo_vehicle(vehicle, self._log)
+                if options["ask"]:
+                    vehicle.ask_driver = options["ask"] == "yes"
+                    vehicle.save(update_fields=["ask_driver", "updated_at"])
+                    self._log("%s (GasoGes %s): %s al chófer." % (
+                        vehicle.machine.code, vehicle.gasoges_id,
+                        "se pregunta" if vehicle.ask_driver
+                        else "no se pregunta"))
+                if options["unit"]:
+                    vehicle.unit = options["unit"]
+                    vehicle.unit_source = GasoGesVehicle.UNIT_SOURCE_MANUAL
+                    vehicle.save(update_fields=[
+                        "unit", "unit_source", "updated_at"])
+                    redo_vehicle(vehicle, self._log)
             self._handle.write("Fin.\n")
             print("Fin.", flush=True)

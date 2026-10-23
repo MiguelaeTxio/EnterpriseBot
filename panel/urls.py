@@ -34,6 +34,7 @@ from panel.views_refuels import (
     RefuelsExportView,
     RefuelsResultsView,
     RefuelsTabView,
+    RefuelsVehicleAskView,
     RefuelsVehicleUnitView,
 )
 from panel.views_service_tab import (
@@ -1127,6 +1128,11 @@ urlpatterns = [
         "documentacion/repostajes/unidad/",
         RefuelsVehicleUnitView.as_view(),
         name="refuels_vehicle_unit",
+    ),
+    path(
+        "documentacion/repostajes/preguntar/",
+        RefuelsVehicleAskView.as_view(),
+        name="refuels_vehicle_ask",
     ),
     path(
         "documentacion/repostajes/exportar/",

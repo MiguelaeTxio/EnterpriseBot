@@ -20,9 +20,11 @@ Qué se pregunta (`send_pending_questions`, desde la tarea horaria):
   vehículo (se repite solo si en 7 días nadie contestó).
 - Dato: repostajes dudosos de las últimas 48 horas de vehículos con
   unidad conocida, una vez por repostaje.
-Solo a quien repostó, si tiene ficha y móvil; una pregunta abierta por
-chófer a la vez (así la respuesta no se confunde); de 8:00 a 21:00; y
-solo cuando Meta ha aprobado la plantilla (se consulta a Twilio).
+Nunca por los vehículos marcados "no preguntar" (los que lleva siempre
+la misma persona, S135). Solo a quien repostó, si tiene ficha y
+móvil; una pregunta abierta por chófer a la vez (así la respuesta no
+se confunde); de 8:00 a 21:00; y solo cuando Meta ha aprobado la
+plantilla (se consulta a Twilio).
 
 Respuestas (`handle_whatsapp_reply`, desde el webhook, antes que el
 chatbot): los botones, y el número que escribe el chófer tras pulsar
@@ -162,7 +164,7 @@ def _candidates():
     since = timezone.now() - timedelta(hours=RECENT_HOURS)
     recent = GasoGesSupply.objects.filter(
         supplied_at__gte=since, vehicle__machine__isnull=False,
-        user__person__isnull=False,
+        vehicle__ask_driver=True, user__person__isnull=False,
     ).select_related("vehicle", "user__person").order_by("-supplied_at")
     asked_supplies = set(RefuelQuestion.objects.filter(
         supply__in=recent).values_list("supply_id", flat=True))
