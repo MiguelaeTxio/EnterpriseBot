@@ -171,8 +171,10 @@ TIMEOUT_CALL_COMPLETION_SECONDS = 60.0
 # Audio format specification for Twilio ↔ Gemini Live bridge.
 # Especificación de formato de audio para el puente Twilio ↔ Gemini Live.
 GEMINI_AUDIO_MIME_TYPE = "audio/pcm;rate=16000"
-GEMINI_OUTPUT_SAMPLE_RATE = 24000  # Hz — Gemini Live output is always 24kHz PCM
-TWILIO_INPUT_SAMPLE_RATE = 8000   # Hz — Twilio G.711 mu-law/A-law is always 8kHz
+# Hz — Gemini Live output is always 24kHz PCM.
+GEMINI_OUTPUT_SAMPLE_RATE = 24000
+# Hz — Twilio G.711 mu-law/A-law is always 8kHz.
+TWILIO_INPUT_SAMPLE_RATE = 8000
 TWILIO_OUTPUT_SAMPLE_RATE = 8000  # Hz — Twilio expects 8kHz mu-law back
 
 # ---------------------------------------------------------------------------
@@ -976,7 +978,9 @@ class VoiceOrchestrationService:
                                     },
                                     "urgency_inferred": {
                                         "type": "string",
-                                        "enum": ["BAJA", "MEDIA", "ALTA", "CRITICA"],
+                                        "enum": [
+                                            "BAJA", "MEDIA", "ALTA", "CRITICA",
+                                        ],
                                         "description": (
                                             "Urgencia inferida por el agente "
                                             "según la "
@@ -1114,7 +1118,9 @@ class VoiceOrchestrationService:
                                             "ABANDONED",
                                             "OTHER",
                                         ],
-                                        "description": "Resultado final de la llamada.",
+                                        "description": (
+                                            "Resultado final de la llamada."
+                                        ),
                                     },
                                     "raw_summary": {
                                         "type": "string",
@@ -1677,7 +1683,11 @@ class VoiceOrchestrationService:
                     silence_frame_count = 0
                     speech_frame_count += 1
 
-                    if not is_speaking and speech_frame_count >= SPEECH_FRAMES_TO_START_ACTIVITY:
+                    if (
+                        not is_speaking
+                        and speech_frame_count
+                        >= SPEECH_FRAMES_TO_START_ACTIVITY
+                    ):
                         # Sufficient consecutive speech frames — open activity
                         # window.
                         # Suficientes frames consecutivos de voz — abrir
@@ -1727,7 +1737,11 @@ class VoiceOrchestrationService:
                     speech_frame_count = 0
                     silence_frame_count += 1
 
-                    if is_speaking and silence_frame_count >= SILENCE_FRAMES_TO_END_ACTIVITY:
+                    if (
+                        is_speaking
+                        and silence_frame_count
+                        >= SILENCE_FRAMES_TO_END_ACTIVITY
+                    ):
                         # Sufficient consecutive silence frames — close
                         # activity window.
                         # Suficientes frames consecutivos de silencio — cerrar
@@ -1753,7 +1767,8 @@ class VoiceOrchestrationService:
                             # corrutinas (P2).
                             _t_activity_end = time.monotonic()
                             self._t_last_activity_end = _t_activity_end
-                            self._t_first_audio_logged = False  # reset for next turn
+                            # Reset for next turn.
+                            self._t_first_audio_logged = False
                             logger.info(
                                 "[LATENCY-P1] activity_end enviado — "
                                 f"t={_t_activity_end:.3f}s"
@@ -1819,6 +1834,860 @@ class VoiceOrchestrationService:
     # -----------------------------------------------------------------------
     # OUTBOUND AUDIO PIPELINE / PIPELINE DE AUDIO SALIENTE
     # -----------------------------------------------------------------------
+
+    async def _tool_service(self, session, fn_call) -> None:
+        """
+        Handle the servicio_* tool call of Gemini Live.
+
+        ---
+
+        Atiende la llamada a la herramienta servicio_* de Gemini Live.
+        H37 (S133): dar un servicio por teléfono con las herramientas de
+        budgets.service_intake.
+        Extraído del bucle de _receive_gemini_audio en S134 (PEP8:
+        líneas largas por la anidación), sin cambiar su lógica.
+        """
+        try:
+            from asgiref.sync import (
+                sync_to_async as _s2a_svc,
+            )
+            from budgets.service_intake import (
+                run_voice_tool,
+            )
+            _svc_result = await _s2a_svc(
+                run_voice_tool
+            )(
+                self.service_user_pk,
+                self.caller_number,
+                fn_call.name,
+                dict(fn_call.args or {}),
+            ) if self.service_user_pk else {
+                "error": "Quien llama no puede dar "
+                         "servicios.",
+            }
+        except Exception as svc_exc:
+            logger.error(
+                f"[H37-SERVICIO] Error en "
+                f"{fn_call.name}: "
+                f"{type(svc_exc).__name__}: {svc_exc}"
+            )
+            _svc_result = {
+                "error": "Error interno: %s" % svc_exc,
+            }
+        logger.info(
+            f"[H37-SERVICIO] {fn_call.name} -> "
+            f"{str(_svc_result)[:300]}"
+        )
+        try:
+            await session.send_tool_response(
+                function_responses=types.FunctionResponse(
+                    id=fn_call.id,
+                    name=fn_call.name,
+                    response={"result": _svc_result},
+                )
+            )
+        except Exception as svc_tr_exc:
+            logger.error(
+                f"[H37-SERVICIO] Error enviando "
+                f"tool_response: {svc_tr_exc}"
+            )
+
+    async def _tool_route_to_section(self, session, fn_call) -> None:
+        """
+        Handle the route_to_section tool call of Gemini Live.
+
+        ---
+
+        Atiende la llamada a la herramienta route_to_section de Gemini Live.
+        Estrategia B, Paso 38: recarga la sesión con la sección elegida.
+        Extraído del bucle de _receive_gemini_audio en S134 (PEP8:
+        líneas largas por la anidación), sin cambiar su lógica.
+        """
+        section_id = int(
+            fn_call.args.get("section_id", -1))
+        logger.info(
+            "[ESTRATEGIA-B] tool_call "
+            "route_to_section recibido. "
+            f"section_id={section_id}. "
+            "Ejecutando "
+            "_reload_session_for_section()..."
+        )
+        success = await self._reload_session_for_section(
+            session, section_id
+        )
+        # Respond to Gemini with the tool result so it
+        # can
+        # continue the conversation with the new
+        # context.
+        # Responder a Gemini con el resultado de la
+        # tool para
+        # que continúe la conversación con el nuevo
+        # contexto.
+        try:
+            # H17 FIX (2026-07-09): la Live API exige
+            # responder
+            # a un tool_call con
+            # session.send_tool_response() —
+            # send_client_content(role="tool") no es el
+            # metodo
+            # documentado y deja la sesion sin avanzar
+            # de turno.
+            # El id del function_call original es
+            # obligatorio
+            # para que Gemini correlacione la
+            # respuesta.
+            await session.send_tool_response(
+                function_responses=types.FunctionResponse(
+                    id=fn_call.id,
+                    name="route_to_section",
+                    response={
+                        "success": success,
+                        "section_id": section_id,
+                    },
+                )
+            )
+            logger.info(
+                "[ESTRATEGIA-B] tool_response "
+                "route_to_section "
+                "enviado correctamente "
+                f"(success={success})."
+            )
+        except Exception as tr_exc:
+            logger.error(
+                "[ESTRATEGIA-B] Error al enviar "
+                "tool_response: "
+                f"{type(tr_exc).__name__}: {tr_exc}",
+                exc_info=True,
+            )
+
+    async def _tool_submit_captured_data(self, session, fn_call) -> None:
+        """
+        Handle the submit_captured_data tool call of Gemini Live.
+
+        ---
+
+        Atiende la llamada a la herramienta submit_captured_data de
+        Gemini Live.
+        Paso 7, Hito 5: persiste CallDataCapture y avisa por WhatsApp.
+        Extraído del bucle de _receive_gemini_audio en S134 (PEP8:
+        líneas largas por la anidación), sin cambiar su lógica.
+        """
+        # --- Tool Call Handler: submit_captured_data
+        # (Paso 7, Hito 5) ---
+        # Persist CallDataCapture and fire WhatsApp
+        # notification.
+        # Persistir CallDataCapture y disparar
+        # notificación WhatsApp.
+        _section_id_cap = int(
+            fn_call.args.get("section_id", -1))
+        _captured_fields = fn_call.args.get(
+            "captured_fields", {})
+        logger.info(
+            "[PASO-7] tool_call submit_captured_data "
+            "recibido. "
+            f"section_id={_section_id_cap} | "
+            f"campos={list(_captured_fields.keys())}"
+        )
+        try:
+            from ivr_config.models import (
+                CallDataCapture as _CDC,
+                Section as _Section,
+            )
+            from whatsapp.services import send_capture_notification
+            from asgiref.sync import sync_to_async
+
+            # Resolve section and referent contact from
+            # DB.
+            # Resolver sección y contacto referente
+            # desde BD.
+            def _persist_capture():
+                section_obj = _Section.objects.filter(
+                    pk=_section_id_cap
+                ).first()
+                contact_obj = None
+                if section_obj:
+                    sc = section_obj.section_contacts.order_by(
+                        "priority"
+                    ).select_related("contact").first()
+                    if sc:
+                        contact_obj = sc.contact
+                cdc = _CDC.objects.create(
+                    call_sid=self.call_sid,
+                    call_flow=self.general_call_flow,
+                    section=section_obj,
+                    contact=contact_obj,
+                    captured_data=_captured_fields,
+                )
+                logger.info(
+                    "[PASO-7] CallDataCapture "
+                    "persistido — "
+                    f"pk={cdc.pk} | "
+                    f"section={section_obj} | "
+                    f"contact={contact_obj}"
+                )
+                return cdc
+
+            cdc_instance = await sync_to_async(_persist_capture)()
+
+            # Fire WhatsApp notification
+            # asynchronously.
+            # No se espera confirmación — el transfer
+            # no
+            # debe bloquearse por el envío WhatsApp.
+            # Disparar notificación WhatsApp de forma
+            # asíncrona.
+            # No se espera confirmación — la
+            # transferencia
+            # no debe bloquearse por el envío WhatsApp.
+            _wa_sender = os.getenv(
+                "TWILIO_WHATSAPP_SENDER", ""
+            )
+            if _wa_sender:
+                asyncio.create_task(
+                    asyncio.to_thread(
+                        send_capture_notification,
+                        cdc_instance,
+                        _wa_sender,
+                    )
+                )
+                logger.info(
+                    "[PASO-7] Tarea WhatsApp "
+                    "notification "
+                    "disparada de forma asíncrona.")
+            else:
+                logger.warning(
+                    "[PASO-7] TWILIO_WHATSAPP_SENDER "
+                    "no "
+                    "configurado — notificación "
+                    "WhatsApp omitida.")
+        except Exception as cap_exc:
+            logger.error(
+                "[PASO-7] Error al persistir "
+                "CallDataCapture "
+                f"o disparar notificación: "
+                f"{type(cap_exc).__name__}: {cap_exc}",
+                exc_info=True,
+            )
+
+        # Respond to Gemini with tool_response.
+        # Responder a Gemini con tool_response.
+        try:
+            # H17 FIX (2026-07-09): ver nota en
+            # route_to_section.
+            await session.send_tool_response(
+                function_responses=types.FunctionResponse(
+                    id=fn_call.id,
+                    name="submit_captured_data",
+                    response={
+                        "success": True,
+                        "section_id": _section_id_cap,
+                    },
+                )
+            )
+            logger.info(
+                "[PASO-7] tool_response "
+                "submit_captured_data "
+                "enviado correctamente.")
+        except Exception as tr_cap_exc:
+            logger.error(
+                "[PASO-7] Error al enviar "
+                "tool_response "
+                f"submit_captured_data: "
+                f"{type(tr_cap_exc).__name__}: "
+                f"{tr_cap_exc}",
+                exc_info=True,
+            )
+
+    async def _tool_report_breakdown(self, session, fn_call) -> None:
+        """
+        Handle the report_breakdown tool call of Gemini Live.
+
+        ---
+
+        Atiende la llamada a la herramienta report_breakdown de Gemini Live.
+        Avería interna: crea el BreakdownTicket y pide la ubicación.
+        Extraído del bucle de _receive_gemini_audio en S134 (PEP8:
+        líneas largas por la anidación), sin cambiar su lógica.
+        """
+        # --- Tool Call Handler: report_breakdown (H03)
+        # ---
+        # Creates a BreakdownTicket in DB via ORM (same
+        # process — no HTTP round-trip needed).
+        # Crea un BreakdownTicket en BD vía ORM (mismo
+        # proceso — sin round-trip HTTP necesario).
+        _machine_code = str(fn_call.args.get(
+            "machine_code", "")).strip()
+        _fault_summary = str(fn_call.args.get(
+            "fault_summary", "")).strip()
+        _fault_location = str(fn_call.args.get(
+            "fault_location", "")).strip()
+        _urgency = str(
+            fn_call.args.get(
+                "urgency_inferred",
+                "MEDIA")).strip()
+        _caller_name = str(fn_call.args.get(
+            "caller_name", "")).strip()
+        _at_base = bool(
+            fn_call.args.get("at_base", False))
+        _base_name = str(
+            fn_call.args.get(
+                "base_name", "")).strip()
+        logger.info(
+            "[H03-BREAKDOWN] tool_call "
+            "report_breakdown recibido — "
+            f"máquina='{_machine_code}' | "
+            f"urgencia='{_urgency}' | "
+            f"at_base={_at_base}"
+        )
+        _breakdown_ticket_code = None
+        try:
+            from asgiref.sync import sync_to_async as _s2a
+            from ivr_config.models import Section as _Sec
+            from chat.models import BreakdownTicket as _BT
+
+            # Map urgency string → BreakdownTicket
+            # urgency choices.
+            # Mapear cadena de urgencia → choices de
+            # BreakdownTicket.
+            _urgency_map = {
+                "BAJA": _BT.URGENCY_LOW,
+                "MEDIA": _BT.URGENCY_MEDIUM,
+                "ALTA": _BT.URGENCY_HIGH,
+                "CRITICA": _BT.URGENCY_CRITICAL,
+            }
+            _urgency_val = _urgency_map.get(
+                _urgency.upper(), _BT.URGENCY_MEDIUM
+            )
+
+            def _create_breakdown():
+                # H17 Paso 3 — Simplified security
+                # gate.
+                # Rule: if caller_number is a Contact
+                # registered
+                # in the company → it is a breakdown.
+                # No ChatRoom
+                # lookup. No section membership check.
+                #
+                # H17 Paso 3 — Puerta de seguridad
+                # simplificada.
+                # Regla: si caller_number es un Contact
+                # registrado
+                # en la empresa → es avería. Sin lookup
+                # de ChatRoom.
+                # Sin comprobación de pertenencia a
+                # sección.
+                from ivr_config.models import PhoneNumber as _PN
+                from ivr_config.models import Contact as _Ct
+
+                # Step 1: Resolve company from Twilio
+                # number.
+                # Paso 1: Resolver empresa desde número
+                # Twilio.
+                try:
+                    _pn = _PN.objects.select_related(
+                        "company"
+                    ).get(
+                        number=self.twilio_number,
+                        is_active=True,
+                    )
+                    _company = _pn.company
+                except Exception:
+                    _company = None
+
+                if not _company:
+                    logger.warning(
+                        "[H03-BREAKDOWN] Número "
+                        "Twilio "
+                        f"'{self.twilio_number}' no "
+                        "resuelve "
+                        "empresa. Ticket rechazado."
+                    )
+                    return None
+
+                # Step 2: Security gate — caller must
+                # be a
+                # registered Contact of the company.
+                # Paso 2: Puerta de seguridad — el
+                # llamante
+                # debe ser un Contact registrado en la
+                # empresa.
+                _contact = None
+                if self.caller_number:
+                    _contact = _Ct.objects.filter(
+                        company=_company,
+                        phone_number=self.caller_number,
+                    ).first()
+
+                if _contact is None:
+                    logger.warning(
+                        f"[H03-BREAKDOWN] Llamante "
+                        f"'{self.caller_number}' no "
+                        "es un "
+                        "Contact registrado en la "
+                        "empresa. "
+                        "Ticket rechazado."
+                    )
+                    return None
+
+                # Step 3: Resolve section for ticket
+                # tagging.
+                # Paso 3: Resolver sección para
+                # etiquetar el ticket.
+                _section = _Sec.objects.filter(
+                    company=_company,
+                    is_active=True,
+                    ivr_breakdown_enabled=True,
+                ).first()
+
+                # Step 4: Resolve MachineAsset from
+                # machine_code.
+                # Paso 4: Resolver MachineAsset desde
+                # machine_code.
+                _machine = None
+                try:
+                    from fleet.models import MachineAsset as _MA
+                    _machine = (
+                        _MA.objects.filter(
+                            code__iexact=_machine_code).first()
+                        or _MA.objects.filter(
+                            code__iexact=_machine_code.upper()).first())
+                except Exception as ma_exc:
+                    logger.warning(
+                        "[H03-BREAKDOWN] No se pudo "
+                        "resolver "
+                        "MachineAsset "
+                        f"'{_machine_code}': "
+                        f"{ma_exc}"
+                    )
+
+                _caller_prefix = ""
+                if _caller_name:
+                    _caller_prefix = f"[Chófer: {_caller_name}] "
+                # Build initial conversation_log entry
+                # from the structured data captured by
+                # Alia during the IVR session.
+                # Construir entrada inicial de
+                # conversation_log con los datos
+                # estructurados capturados por Alia
+                # durante la sesión IVR.
+                _log_entry = {
+                    "source": "IVR",
+                    "role": "SYSTEM",
+                    "content": (
+                        f"Ticket abierto vía IVR. "
+                        f"Datos capturados por Alia: "
+                        f"máquina='{_machine_code}', "
+                        f"avería='{_fault_summary}', "
+                        f"ubicación en máquina="
+                        f"'{_fault_location or 'no indicada'}', "
+                        f"ubicación física="
+                        f"'{_base_name or 'en ruta'}', "
+                        f"urgencia='{_urgency}', "
+                        f"en base={_at_base}."
+                    ),
+                }
+                ticket = _BT.objects.create(
+                    company=_company,
+                    contact=_contact,
+                    section=_section,
+                    machine=_machine,
+                    machine_raw=_machine_code,
+                    fault_summary=_caller_prefix + _fault_summary,
+                    fault_location=_fault_location,
+                    location=_base_name,
+                    status=_BT.STATUS_OPEN,
+                    origin=_BT.ORIGIN_IVR,
+                    urgency=_urgency_val,
+                    reported_by=_contact,
+                    conversation_log=[_log_entry],
+                )
+                logger.info(
+                    "[H03-BREAKDOWN] BreakdownTicket "
+                    "creado — "
+                    f"pk={ticket.pk} | "
+                    f"code='{ticket.ticket_date_code}' | "
+                    f"máquina='{_machine_code}' | "
+                    f"sección={_section}"
+                )
+
+                # H17 Paso 7 — Broadcast a taller.
+                # H17 Step 7 — Workshop broadcast.
+                _wa_sender_ivr = os.getenv(
+                    "TWILIO_WHATSAPP_SENDER", ""
+                )
+                if _wa_sender_ivr:
+                    try:
+                        from whatsapp.services import (
+                            WhatsAppChatService as _WACS,
+                        )
+                        _WACS.send_breakdown_broadcast(
+                            ticket=ticket,
+                            wa_sender=_wa_sender_ivr,
+                        )
+                    except Exception as _bc_exc:
+                        logger.error(
+                            "[H03-BREAKDOWN] Error "
+                            "broadcast "
+                            "WA ticket pk=%s: %s", ticket.pk, _bc_exc, )
+                else:
+                    logger.warning(
+                        "[H03-BREAKDOWN] "
+                        "TWILIO_WHATSAPP_SENDER "
+                        "no configurado — broadcast "
+                        "omitido "
+                        "ticket pk=%s.", ticket.pk, )
+
+                # H17 Paso 5 — Geolocalización
+                # post-IVR.
+                # Si el conductor está en ruta
+                # (at_base=False),
+                # enviar plantilla de solicitud de
+                # ubicación
+                # al número desde el que llamó.
+                # H17 Step 5 — Post-IVR geolocation.
+                # If the driver is on the road
+                # (at_base=False),
+                # send the location request template to
+                # the
+                # caller's number.
+                if (
+                    not _at_base
+                    and self.caller_number
+                    and _wa_sender_ivr
+                ):
+                    try:
+                        from whatsapp.models import (
+                            WhatsAppTemplate as _WATpl,
+                        )
+                        from whatsapp.services import (
+                            WhatsAppChatService as _WACS2,
+                        )
+                        _loc_tpl = _WATpl.objects.filter(
+                            company=_company,
+                            name="breakdown_location_request",
+                            is_active=True,
+                        ).first()
+                        if _loc_tpl:
+                            _caller_name_geo = (
+                                _contact.name
+                                if _contact
+                                else "conductor"
+                            )
+                            _WACS2.send_template(
+                                from_number=_wa_sender_ivr, to_number=(
+                                    self.caller_number), content_sid=(
+                                    _loc_tpl.content_sid), content_variables={
+                                    "1": _caller_name_geo, "2": (
+                                        ticket .ticket_date_code or ""), }, )
+                            logger.info(
+                                "[H03-BREAKDOWN] "
+                                "Plantilla "
+                                "breakdown_location_request "
+                                "enviada a %s para "
+                                "ticket "
+                                "pk=%s.",
+                                self.caller_number,
+                                ticket.pk,
+                            )
+                        else:
+                            logger.warning(
+                                "[H03-BREAKDOWN] "
+                                "Plantilla "
+                                "breakdown_location_request "
+                                "no encontrada — "
+                                "geoloc omitida "
+                                "ticket "
+                                "pk=%s.",
+                                ticket.pk,
+                            )
+                    except Exception as _geo_exc:
+                        logger.error(
+                            "[H03-BREAKDOWN] Error "
+                            "enviando "
+                            "breakdown_location_request a "
+                            "%s: %s", self.caller_number, _geo_exc, )
+
+                return ticket
+
+            _ticket = await _s2a(_create_breakdown)()
+            _breakdown_ticket_code = _ticket.ticket_date_code
+
+        except Exception as bd_exc:
+            logger.error(
+                "[H03-BREAKDOWN] Error al crear "
+                "BreakdownTicket: "
+                f"{type(bd_exc).__name__}: {bd_exc}",
+                exc_info=True,
+            )
+
+        # Respond to Gemini with tool_response
+        # including ticket code.
+        # Responder a Gemini con tool_response
+        # incluyendo el código del ticket.
+        try:
+            # H17 FIX (2026-07-09): ver nota en
+            # route_to_section.
+            # Bug diagnosticado en S010 el 2026-07-09:
+            # sin este
+            # fix, la llamada quedaba muda tras crear
+            # el ticket
+            # hasta que Twilio cortaba por inactividad.
+            await session.send_tool_response(
+                function_responses=types.FunctionResponse(
+                    id=fn_call.id,
+                    name="report_breakdown",
+                    response={
+                        "success": _breakdown_ticket_code is not None,
+                        "ticket_code": _breakdown_ticket_code or "",
+                        "location_needed": not _at_base,
+                    },
+                )
+            )
+            logger.info(
+                "[H03-BREAKDOWN] tool_response "
+                "report_breakdown "
+                "enviado "
+                f"(ticket={_breakdown_ticket_code}, "
+                f"location_needed={not _at_base})."
+            )
+        except Exception as tr_bd_exc:
+            logger.error(
+                "[H03-BREAKDOWN] Error al enviar "
+                "tool_response: "
+                f"{type(tr_bd_exc).__name__}: "
+                f"{tr_bd_exc}",
+                exc_info=True,
+            )
+
+    async def _tool_submit_call_summary(self, session, fn_call) -> None:
+        """
+        Handle the submit_call_summary tool call of Gemini Live.
+
+        ---
+
+        Atiende la llamada a la herramienta submit_call_summary de Gemini Live.
+        H03: guarda el resumen de la llamada (InboundCallLog).
+        Extraído del bucle de _receive_gemini_audio en S134 (PEP8:
+        líneas largas por la anidación), sin cambiar su lógica.
+        """
+        # --- Tool Call Handler: submit_call_summary
+        # (H03) ---
+        # Persists InboundCallLog at end of every call.
+        # Persiste InboundCallLog al final de cada
+        # llamada.
+        _cs_caller_name = str(
+            fn_call.args.get("caller_name", "")).strip()
+        _cs_caller_phone = str(fn_call.args.get(
+            "caller_phone_reported", "")).strip()
+        _cs_call_reason = str(
+            fn_call.args.get("call_reason", "")).strip()
+        _cs_call_type = str(fn_call.args.get(
+            "call_type", "OTHER")).strip()
+        _cs_outcome = str(fn_call.args.get(
+            "outcome", "OTHER")).strip()
+        _cs_raw_summary = str(
+            fn_call.args.get("raw_summary", "")).strip()
+        logger.info(
+            "[H03-SUMMARY] tool_call "
+            "submit_call_summary — "
+            f"tipo='{_cs_call_type}' | "
+            f"outcome='{_cs_outcome}'"
+        )
+        try:
+            from asgiref.sync import sync_to_async as _s2a_cs
+            from ivr_config.models import InboundCallLog as _ICL
+
+            def _persist_summary():
+                from ivr_config.models import PhoneNumber as _PN2
+                _company2 = None
+                _section2 = None
+                try:
+                    _pn2 = _PN2.objects.select_related("company").get(
+                        number=self.twilio_number, is_active=True)
+                    _company2 = _pn2.company
+                except Exception:
+                    pass
+
+                import django.utils.timezone as _tz
+                _ICL.objects.create(
+                    company=_company2,
+                    call_sid=getattr(self, "call_sid", ""),
+                    twilio_number=self.twilio_number or "",
+                    caller_number=self.caller_number or "",
+                    started_at=getattr(self, "call_started_at", _tz.now()),
+                    caller_name=_cs_caller_name,
+                    caller_phone_reported=_cs_caller_phone,
+                    call_reason=_cs_call_reason,
+                    call_type=_cs_call_type,
+                    outcome=_cs_outcome,
+                    raw_summary=_cs_raw_summary,
+                    section=_section2,
+                )
+                logger.info(
+                    "[H03-SUMMARY] InboundCallLog "
+                    "creado — "
+                    f"caller='{_cs_caller_name or self.caller_number}' | "
+                    f"tipo='{_cs_call_type}' | "
+                    f"outcome='{_cs_outcome}'"
+                )
+
+            await _s2a_cs(_persist_summary)()
+
+        except Exception as cs_exc:
+            logger.error(
+                "[H03-SUMMARY] Error al crear "
+                "InboundCallLog: "
+                f"{type(cs_exc).__name__}: {cs_exc}",
+                exc_info=True,
+            )
+
+        # Respond to Gemini so it can proceed with
+        # farewell.
+        # Responder a Gemini para que pueda continuar
+        # con la despedida.
+        try:
+            # H17 FIX (2026-07-09): ver nota en
+            # route_to_section.
+            await session.send_tool_response(
+                function_responses=types.FunctionResponse(
+                    id=fn_call.id,
+                    name="submit_call_summary",
+                    response={"success": True},
+                )
+            )
+            logger.info(
+                "[H03-SUMMARY] tool_response "
+                "submit_call_summary enviado.")
+        except Exception as cs_tr_exc:
+            logger.error(
+                "[H03-SUMMARY] Error al enviar "
+                "tool_response: "
+                f"{type(cs_tr_exc).__name__}: "
+                f"{cs_tr_exc}",
+                exc_info=True,
+            )
+
+    async def _tool_transfer_to_section_contact(
+        self, session, fn_call,
+    ) -> None:
+        """
+        Handle the transfer_to_section_contact tool call of Gemini Live.
+
+        ---
+
+        Atiende la llamada a la herramienta transfer_to_section_contact
+        de Gemini Live.
+        Paso 39: responde, drena el audio y transfiere la llamada.
+        Extraído del bucle de _receive_gemini_audio en S134 (PEP8:
+        líneas largas por la anidación), sin cambiar su lógica.
+        """
+        section_id = int(
+            fn_call.args.get("section_id", -1))
+        logger.info(
+            "[PASO-39] tool_call "
+            "transfer_to_section_contact "
+            f"recibido. section_id={section_id}. "
+            "Iniciando secuencia de transferencia con "
+            "drenado de audio."
+        )
+        # Send the tool_response to Gemini FIRST so the
+        # session
+        # protocol is satisfied before we block on the
+        # audio drain.
+        # With function calling, Gemini Live does NOT
+        # send
+        # turn_complete after a tool_call event — the
+        # tool_call
+        # IS the end of the model turn. Therefore the
+        # deferred
+        # turn_complete approach does not work here.
+        # Instead we
+        # send the tool_response immediately and then
+        # drain the
+        # audio_output_queue + apply a fixed safety
+        # pause before
+        # calling _execute_transfer() which sets
+        # session_active=False.
+        # Enviar el tool_response a Gemini PRIMERO para
+        # que el
+        # protocolo de sesión quede satisfecho antes de
+        # bloquear
+        # en el drenado de audio. Con function calling,
+        # Gemini Live
+        # NO envía turn_complete tras un evento
+        # tool_call — el
+        # tool_call ES el fin del turno del modelo. Por
+        # tanto el
+        # enfoque de deferido hasta turn_complete no
+        # funciona aquí.
+        # En su lugar enviamos el tool_response
+        # inmediatamente y
+        # luego drenamos audio_output_queue + aplicamos
+        # una pausa
+        # fija antes de llamar a _execute_transfer()
+        # que establece
+        # session_active=False.
+        try:
+            # H17 FIX (2026-07-09): ver nota en
+            # route_to_section.
+            await session.send_tool_response(
+                function_responses=types.FunctionResponse(
+                    id=fn_call.id,
+                    name="transfer_to_section_contact",
+                    response={
+                        "success": True,
+                        "section_id": section_id,
+                    },
+                )
+            )
+            logger.info(
+                "[PASO-39] tool_response "
+                "transfer_to_section_contact "
+                "enviado antes del drenado de audio."
+            )
+        except Exception as tr_pre_exc:
+            logger.error(
+                "[PASO-39] Error al enviar "
+                "tool_response previo: "
+                f"{type(tr_pre_exc).__name__}: "
+                f"{tr_pre_exc}",
+                exc_info=True,
+            )
+        # Drain the audio output queue so María
+        # finishes speaking
+        # before the Gemini Live session is terminated.
+        # Drenar la cola de salida para que María
+        # termine de hablar
+        # antes de que la sesión Gemini Live se
+        # termine.
+        _drain_timeout = 8.0
+        _drain_elapsed = 0.0
+        _drain_interval = 0.05
+        while (
+            not self.audio_output_queue.empty()
+            and _drain_elapsed < _drain_timeout
+        ):
+            await asyncio.sleep(_drain_interval)
+            _drain_elapsed += _drain_interval
+        # Fixed safety pause to allow last dequeued
+        # fragments
+        # to finish transmitting to Twilio.
+        # Pausa fija para que los últimos fragmentos
+        # desencollados
+        # terminen de transmitirse a Twilio.
+        await asyncio.sleep(3.5)
+        logger.info(
+            "[PASO-39] Audio drenado "
+            f"({_drain_elapsed:.2f}s) + "
+            "pausa completada. Ejecutando "
+            "_execute_transfer()."
+        )
+        transfer_success = await self._execute_transfer(section_id)
+        logger.info(
+            "[PASO-39] _execute_transfer() "
+            "completado "
+            f"(success={transfer_success})."
+        )
 
     async def _receive_gemini_audio(self, session) -> None:
         """
@@ -1924,785 +2793,27 @@ class VoiceOrchestrationService:
                             # herramienta de budgets.service_intake y se le
                             # devuelve el resultado a Gemini.
                             if fn_call.name.startswith("servicio_"):
-                                try:
-                                    from asgiref.sync import (
-                                        sync_to_async as _s2a_svc,
-                                    )
-                                    from budgets.service_intake import (
-                                        run_voice_tool,
-                                    )
-                                    _svc_result = await _s2a_svc(
-                                        run_voice_tool
-                                    )(
-                                        self.service_user_pk,
-                                        self.caller_number,
-                                        fn_call.name,
-                                        dict(fn_call.args or {}),
-                                    ) if self.service_user_pk else {
-                                        "error": "Quien llama no puede dar "
-                                                 "servicios.",
-                                    }
-                                except Exception as svc_exc:
-                                    logger.error(
-                                        f"[H37-SERVICIO] Error en "
-                                        f"{fn_call.name}: "
-                                        f"{type(svc_exc).__name__}: {svc_exc}"
-                                    )
-                                    _svc_result = {
-                                        "error": "Error interno: %s" % svc_exc,
-                                    }
-                                logger.info(
-                                    f"[H37-SERVICIO] {fn_call.name} -> "
-                                    f"{str(_svc_result)[:300]}"
-                                )
-                                try:
-                                    await session.send_tool_response(
-                                        function_responses=types.FunctionResponse(
-                                            id=fn_call.id,
-                                            name=fn_call.name,
-                                            response={"result": _svc_result},
-                                        )
-                                    )
-                                except Exception as svc_tr_exc:
-                                    logger.error(
-                                        f"[H37-SERVICIO] Error enviando "
-                                        f"tool_response: {svc_tr_exc}"
-                                    )
+                                await self._tool_service(session, fn_call)
                                 continue
                             if fn_call.name == "route_to_section":
-                                section_id = int(
-                                    fn_call.args.get("section_id", -1))
-                                logger.info(
-                                    "[ESTRATEGIA-B] tool_call "
-                                    "route_to_section recibido. "
-                                    f"section_id={section_id}. "
-                                    "Ejecutando "
-                                    "_reload_session_for_section()..."
+                                await self._tool_route_to_section(
+                                    session, fn_call,
                                 )
-                                success = await self._reload_session_for_section(
-                                    session, section_id
-                                )
-                                # Respond to Gemini with the tool result so it
-                                # can
-                                # continue the conversation with the new
-                                # context.
-                                # Responder a Gemini con el resultado de la
-                                # tool para
-                                # que continúe la conversación con el nuevo
-                                # contexto.
-                                try:
-                                    # H17 FIX (2026-07-09): la Live API exige
-                                    # responder
-                                    # a un tool_call con
-                                    # session.send_tool_response() —
-                                    # send_client_content(role="tool") no es el
-                                    # metodo
-                                    # documentado y deja la sesion sin avanzar
-                                    # de turno.
-                                    # El id del function_call original es
-                                    # obligatorio
-                                    # para que Gemini correlacione la
-                                    # respuesta.
-                                    await session.send_tool_response(
-                                        function_responses=types.FunctionResponse(
-                                            id=fn_call.id,
-                                            name="route_to_section",
-                                            response={
-                                                "success": success,
-                                                "section_id": section_id,
-                                            },
-                                        )
-                                    )
-                                    logger.info(
-                                        "[ESTRATEGIA-B] tool_response "
-                                        "route_to_section "
-                                        "enviado correctamente "
-                                        f"(success={success})."
-                                    )
-                                except Exception as tr_exc:
-                                    logger.error(
-                                        "[ESTRATEGIA-B] Error al enviar "
-                                        "tool_response: "
-                                        f"{type(tr_exc).__name__}: {tr_exc}",
-                                        exc_info=True,
-                                    )
                             elif fn_call.name == "submit_captured_data":
-                                # --- Tool Call Handler: submit_captured_data
-                                # (Paso 7, Hito 5) ---
-                                # Persist CallDataCapture and fire WhatsApp
-                                # notification.
-                                # Persistir CallDataCapture y disparar
-                                # notificación WhatsApp.
-                                _section_id_cap = int(
-                                    fn_call.args.get("section_id", -1))
-                                _captured_fields = fn_call.args.get(
-                                    "captured_fields", {})
-                                logger.info(
-                                    "[PASO-7] tool_call submit_captured_data "
-                                    "recibido. "
-                                    f"section_id={_section_id_cap} | "
-                                    f"campos={list(_captured_fields.keys())}"
+                                await self._tool_submit_captured_data(
+                                    session, fn_call,
                                 )
-                                try:
-                                    from ivr_config.models import (
-                                        CallDataCapture as _CDC,
-                                        Section as _Section,
-                                    )
-                                    from whatsapp.services import send_capture_notification
-                                    from asgiref.sync import sync_to_async
-
-                                    # Resolve section and referent contact from
-                                    # DB.
-                                    # Resolver sección y contacto referente
-                                    # desde BD.
-                                    def _persist_capture():
-                                        section_obj = _Section.objects.filter(
-                                            pk=_section_id_cap
-                                        ).first()
-                                        contact_obj = None
-                                        if section_obj:
-                                            sc = section_obj.section_contacts.order_by(
-                                                "priority"
-                                            ).select_related("contact").first()
-                                            if sc:
-                                                contact_obj = sc.contact
-                                        cdc = _CDC.objects.create(
-                                            call_sid=self.call_sid,
-                                            call_flow=self.general_call_flow,
-                                            section=section_obj,
-                                            contact=contact_obj,
-                                            captured_data=_captured_fields,
-                                        )
-                                        logger.info(
-                                            "[PASO-7] CallDataCapture "
-                                            "persistido — "
-                                            f"pk={cdc.pk} | "
-                                            f"section={section_obj} | "
-                                            f"contact={contact_obj}"
-                                        )
-                                        return cdc
-
-                                    cdc_instance = await sync_to_async(_persist_capture)()
-
-                                    # Fire WhatsApp notification
-                                    # asynchronously.
-                                    # No se espera confirmación — el transfer
-                                    # no
-                                    # debe bloquearse por el envío WhatsApp.
-                                    # Disparar notificación WhatsApp de forma
-                                    # asíncrona.
-                                    # No se espera confirmación — la
-                                    # transferencia
-                                    # no debe bloquearse por el envío WhatsApp.
-                                    _wa_sender = os.getenv(
-                                        "TWILIO_WHATSAPP_SENDER", ""
-                                    )
-                                    if _wa_sender:
-                                        asyncio.create_task(
-                                            asyncio.to_thread(
-                                                send_capture_notification,
-                                                cdc_instance,
-                                                _wa_sender,
-                                            )
-                                        )
-                                        logger.info(
-                                            "[PASO-7] Tarea WhatsApp "
-                                            "notification "
-                                            "disparada de forma asíncrona.")
-                                    else:
-                                        logger.warning(
-                                            "[PASO-7] TWILIO_WHATSAPP_SENDER "
-                                            "no "
-                                            "configurado — notificación "
-                                            "WhatsApp omitida.")
-                                except Exception as cap_exc:
-                                    logger.error(
-                                        "[PASO-7] Error al persistir "
-                                        "CallDataCapture "
-                                        f"o disparar notificación: "
-                                        f"{type(cap_exc).__name__}: {cap_exc}",
-                                        exc_info=True,
-                                    )
-
-                                # Respond to Gemini with tool_response.
-                                # Responder a Gemini con tool_response.
-                                try:
-                                    # H17 FIX (2026-07-09): ver nota en
-                                    # route_to_section.
-                                    await session.send_tool_response(
-                                        function_responses=types.FunctionResponse(
-                                            id=fn_call.id,
-                                            name="submit_captured_data",
-                                            response={
-                                                "success": True,
-                                                "section_id": _section_id_cap,
-                                            },
-                                        )
-                                    )
-                                    logger.info(
-                                        "[PASO-7] tool_response "
-                                        "submit_captured_data "
-                                        "enviado correctamente.")
-                                except Exception as tr_cap_exc:
-                                    logger.error(
-                                        "[PASO-7] Error al enviar "
-                                        "tool_response "
-                                        f"submit_captured_data: "
-                                        f"{type(tr_cap_exc).__name__}: "
-                                        f"{tr_cap_exc}",
-                                        exc_info=True,
-                                    )
-
                             elif fn_call.name == "report_breakdown":
-                                # --- Tool Call Handler: report_breakdown (H03)
-                                # ---
-                                # Creates a BreakdownTicket in DB via ORM (same
-                                # process — no HTTP round-trip needed).
-                                # Crea un BreakdownTicket en BD vía ORM (mismo
-                                # proceso — sin round-trip HTTP necesario).
-                                _machine_code = str(fn_call.args.get(
-                                    "machine_code", "")).strip()
-                                _fault_summary = str(fn_call.args.get(
-                                    "fault_summary", "")).strip()
-                                _fault_location = str(fn_call.args.get(
-                                    "fault_location", "")).strip()
-                                _urgency = str(
-                                    fn_call.args.get(
-                                        "urgency_inferred",
-                                        "MEDIA")).strip()
-                                _caller_name = str(fn_call.args.get(
-                                    "caller_name", "")).strip()
-                                _at_base = bool(
-                                    fn_call.args.get("at_base", False))
-                                _base_name = str(
-                                    fn_call.args.get(
-                                        "base_name", "")).strip()
-                                logger.info(
-                                    "[H03-BREAKDOWN] tool_call "
-                                    "report_breakdown recibido — "
-                                    f"máquina='{_machine_code}' | "
-                                    f"urgencia='{_urgency}' | "
-                                    f"at_base={_at_base}"
+                                await self._tool_report_breakdown(
+                                    session, fn_call,
                                 )
-                                _breakdown_ticket_code = None
-                                try:
-                                    from asgiref.sync import sync_to_async as _s2a
-                                    from ivr_config.models import Section as _Sec
-                                    from chat.models import BreakdownTicket as _BT
-
-                                    # Map urgency string → BreakdownTicket
-                                    # urgency choices.
-                                    # Mapear cadena de urgencia → choices de
-                                    # BreakdownTicket.
-                                    _urgency_map = {
-                                        "BAJA": _BT.URGENCY_LOW,
-                                        "MEDIA": _BT.URGENCY_MEDIUM,
-                                        "ALTA": _BT.URGENCY_HIGH,
-                                        "CRITICA": _BT.URGENCY_CRITICAL,
-                                    }
-                                    _urgency_val = _urgency_map.get(
-                                        _urgency.upper(), _BT.URGENCY_MEDIUM
-                                    )
-
-                                    def _create_breakdown():
-                                        # H17 Paso 3 — Simplified security
-                                        # gate.
-                                        # Rule: if caller_number is a Contact
-                                        # registered
-                                        # in the company → it is a breakdown.
-                                        # No ChatRoom
-                                        # lookup. No section membership check.
-                                        #
-                                        # H17 Paso 3 — Puerta de seguridad
-                                        # simplificada.
-                                        # Regla: si caller_number es un Contact
-                                        # registrado
-                                        # en la empresa → es avería. Sin lookup
-                                        # de ChatRoom.
-                                        # Sin comprobación de pertenencia a
-                                        # sección.
-                                        from ivr_config.models import PhoneNumber as _PN
-                                        from ivr_config.models import Contact as _Ct
-
-                                        # Step 1: Resolve company from Twilio
-                                        # number.
-                                        # Paso 1: Resolver empresa desde número
-                                        # Twilio.
-                                        try:
-                                            _pn = _PN.objects.select_related(
-                                                "company"
-                                            ).get(
-                                                number=self.twilio_number,
-                                                is_active=True,
-                                            )
-                                            _company = _pn.company
-                                        except Exception:
-                                            _company = None
-
-                                        if not _company:
-                                            logger.warning(
-                                                "[H03-BREAKDOWN] Número "
-                                                "Twilio "
-                                                f"'{self.twilio_number}' no "
-                                                "resuelve "
-                                                "empresa. Ticket rechazado."
-                                            )
-                                            return None
-
-                                        # Step 2: Security gate — caller must
-                                        # be a
-                                        # registered Contact of the company.
-                                        # Paso 2: Puerta de seguridad — el
-                                        # llamante
-                                        # debe ser un Contact registrado en la
-                                        # empresa.
-                                        _contact = None
-                                        if self.caller_number:
-                                            _contact = _Ct.objects.filter(
-                                                company=_company, phone_number=self.caller_number, ).first()
-
-                                        if _contact is None:
-                                            logger.warning(
-                                                f"[H03-BREAKDOWN] Llamante "
-                                                f"'{self.caller_number}' no "
-                                                "es un "
-                                                "Contact registrado en la "
-                                                "empresa. "
-                                                "Ticket rechazado."
-                                            )
-                                            return None
-
-                                        # Step 3: Resolve section for ticket
-                                        # tagging.
-                                        # Paso 3: Resolver sección para
-                                        # etiquetar el ticket.
-                                        _section = _Sec.objects.filter(
-                                            company=_company,
-                                            is_active=True,
-                                            ivr_breakdown_enabled=True,
-                                        ).first()
-
-                                        # Step 4: Resolve MachineAsset from
-                                        # machine_code.
-                                        # Paso 4: Resolver MachineAsset desde
-                                        # machine_code.
-                                        _machine = None
-                                        try:
-                                            from fleet.models import MachineAsset as _MA
-                                            _machine = (
-                                                _MA.objects.filter(
-                                                    code__iexact=_machine_code).first() or _MA.objects.filter(
-                                                    code__iexact=_machine_code.upper()).first())
-                                        except Exception as ma_exc:
-                                            logger.warning(
-                                                "[H03-BREAKDOWN] No se pudo "
-                                                "resolver "
-                                                "MachineAsset "
-                                                f"'{_machine_code}': "
-                                                f"{ma_exc}"
-                                            )
-
-                                        _caller_prefix = ""
-                                        if _caller_name:
-                                            _caller_prefix = f"[Chófer: {_caller_name}] "
-                                        # Build initial conversation_log entry
-                                        # from the structured data captured by
-                                        # Alia during the IVR session.
-                                        # Construir entrada inicial de
-                                        # conversation_log con los datos
-                                        # estructurados capturados por Alia
-                                        # durante la sesión IVR.
-                                        _log_entry = {
-                                            "source": "IVR",
-                                            "role": "SYSTEM",
-                                            "content": (
-                                                f"Ticket abierto vía IVR. "
-                                                f"Datos capturados por Alia: "
-                                                f"máquina='{_machine_code}', "
-                                                f"avería='{_fault_summary}', "
-                                                f"ubicación en máquina="
-                                                f"'{_fault_location or 'no indicada'}', "
-                                                f"ubicación física="
-                                                f"'{_base_name or 'en ruta'}', "
-                                                f"urgencia='{_urgency}', "
-                                                f"en base={_at_base}."
-                                            ),
-                                        }
-                                        ticket = _BT.objects.create(
-                                            company=_company,
-                                            contact=_contact,
-                                            section=_section,
-                                            machine=_machine,
-                                            machine_raw=_machine_code,
-                                            fault_summary=_caller_prefix + _fault_summary,
-                                            fault_location=_fault_location,
-                                            location=_base_name,
-                                            status=_BT.STATUS_OPEN,
-                                            origin=_BT.ORIGIN_IVR,
-                                            urgency=_urgency_val,
-                                            reported_by=_contact,
-                                            conversation_log=[_log_entry],
-                                        )
-                                        logger.info(
-                                            "[H03-BREAKDOWN] BreakdownTicket "
-                                            "creado — "
-                                            f"pk={ticket.pk} | "
-                                            f"code='{ticket.ticket_date_code}' | "
-                                            f"máquina='{_machine_code}' | "
-                                            f"sección={_section}"
-                                        )
-
-                                        # H17 Paso 7 — Broadcast a taller.
-                                        # H17 Step 7 — Workshop broadcast.
-                                        _wa_sender_ivr = os.getenv(
-                                            "TWILIO_WHATSAPP_SENDER", ""
-                                        )
-                                        if _wa_sender_ivr:
-                                            try:
-                                                from whatsapp.services import (
-                                                    WhatsAppChatService as _WACS,
-                                                )
-                                                _WACS.send_breakdown_broadcast(
-                                                    ticket=ticket,
-                                                    wa_sender=_wa_sender_ivr,
-                                                )
-                                            except Exception as _bc_exc:
-                                                logger.error(
-                                                    "[H03-BREAKDOWN] Error "
-                                                    "broadcast "
-                                                    "WA ticket pk=%s: %s", ticket.pk, _bc_exc, )
-                                        else:
-                                            logger.warning(
-                                                "[H03-BREAKDOWN] "
-                                                "TWILIO_WHATSAPP_SENDER "
-                                                "no configurado — broadcast "
-                                                "omitido "
-                                                "ticket pk=%s.", ticket.pk, )
-
-                                        # H17 Paso 5 — Geolocalización
-                                        # post-IVR.
-                                        # Si el conductor está en ruta
-                                        # (at_base=False),
-                                        # enviar plantilla de solicitud de
-                                        # ubicación
-                                        # al número desde el que llamó.
-                                        # H17 Step 5 — Post-IVR geolocation.
-                                        # If the driver is on the road
-                                        # (at_base=False),
-                                        # send the location request template to
-                                        # the
-                                        # caller's number.
-                                        if (
-                                            not _at_base
-                                            and self.caller_number
-                                            and _wa_sender_ivr
-                                        ):
-                                            try:
-                                                from whatsapp.models import (
-                                                    WhatsAppTemplate as _WATpl,
-                                                )
-                                                from whatsapp.services import (
-                                                    WhatsAppChatService as _WACS2,
-                                                )
-                                                _loc_tpl = _WATpl.objects.filter(
-                                                    company=_company, name="breakdown_location_request", is_active=True, ).first()
-                                                if _loc_tpl:
-                                                    _caller_name_geo = (
-                                                        _contact.name
-                                                        if _contact
-                                                        else "conductor"
-                                                    )
-                                                    _WACS2.send_template(
-                                                        from_number=_wa_sender_ivr, to_number=(
-                                                            self.caller_number), content_sid=(
-                                                            _loc_tpl.content_sid), content_variables={
-                                                            "1": _caller_name_geo, "2": (
-                                                                ticket .ticket_date_code or ""), }, )
-                                                    logger.info(
-                                                        "[H03-BREAKDOWN] "
-                                                        "Plantilla "
-                                                        "breakdown_location_request "
-                                                        "enviada a %s para "
-                                                        "ticket "
-                                                        "pk=%s.",
-                                                        self.caller_number,
-                                                        ticket.pk,
-                                                    )
-                                                else:
-                                                    logger.warning(
-                                                        "[H03-BREAKDOWN] "
-                                                        "Plantilla "
-                                                        "breakdown_location_request "
-                                                        "no encontrada — "
-                                                        "geoloc omitida "
-                                                        "ticket "
-                                                        "pk=%s.",
-                                                        ticket.pk,
-                                                    )
-                                            except Exception as _geo_exc:
-                                                logger.error(
-                                                    "[H03-BREAKDOWN] Error "
-                                                    "enviando "
-                                                    "breakdown_location_request a "
-                                                    "%s: %s", self.caller_number, _geo_exc, )
-
-                                        return ticket
-
-                                    _ticket = await _s2a(_create_breakdown)()
-                                    _breakdown_ticket_code = _ticket.ticket_date_code
-
-                                except Exception as bd_exc:
-                                    logger.error(
-                                        "[H03-BREAKDOWN] Error al crear "
-                                        "BreakdownTicket: "
-                                        f"{type(bd_exc).__name__}: {bd_exc}",
-                                        exc_info=True,
-                                    )
-
-                                # Respond to Gemini with tool_response
-                                # including ticket code.
-                                # Responder a Gemini con tool_response
-                                # incluyendo el código del ticket.
-                                try:
-                                    # H17 FIX (2026-07-09): ver nota en
-                                    # route_to_section.
-                                    # Bug diagnosticado en S010 el 2026-07-09:
-                                    # sin este
-                                    # fix, la llamada quedaba muda tras crear
-                                    # el ticket
-                                    # hasta que Twilio cortaba por inactividad.
-                                    await session.send_tool_response(
-                                        function_responses=types.FunctionResponse(
-                                            id=fn_call.id,
-                                            name="report_breakdown",
-                                            response={
-                                                "success": _breakdown_ticket_code is not None,
-                                                "ticket_code": _breakdown_ticket_code or "",
-                                                "location_needed": not _at_base,
-                                            },
-                                        )
-                                    )
-                                    logger.info(
-                                        "[H03-BREAKDOWN] tool_response "
-                                        "report_breakdown "
-                                        "enviado "
-                                        f"(ticket={_breakdown_ticket_code}, "
-                                        f"location_needed={not _at_base})."
-                                    )
-                                except Exception as tr_bd_exc:
-                                    logger.error(
-                                        "[H03-BREAKDOWN] Error al enviar "
-                                        "tool_response: "
-                                        f"{type(tr_bd_exc).__name__}: "
-                                        f"{tr_bd_exc}",
-                                        exc_info=True,
-                                    )
-
                             elif fn_call.name == "submit_call_summary":
-                                # --- Tool Call Handler: submit_call_summary
-                                # (H03) ---
-                                # Persists InboundCallLog at end of every call.
-                                # Persiste InboundCallLog al final de cada
-                                # llamada.
-                                _cs_caller_name = str(
-                                    fn_call.args.get("caller_name", "")).strip()
-                                _cs_caller_phone = str(fn_call.args.get(
-                                    "caller_phone_reported", "")).strip()
-                                _cs_call_reason = str(
-                                    fn_call.args.get("call_reason", "")).strip()
-                                _cs_call_type = str(fn_call.args.get(
-                                    "call_type", "OTHER")).strip()
-                                _cs_outcome = str(fn_call.args.get(
-                                    "outcome", "OTHER")).strip()
-                                _cs_raw_summary = str(
-                                    fn_call.args.get("raw_summary", "")).strip()
-                                logger.info(
-                                    "[H03-SUMMARY] tool_call "
-                                    "submit_call_summary — "
-                                    f"tipo='{_cs_call_type}' | "
-                                    f"outcome='{_cs_outcome}'"
+                                await self._tool_submit_call_summary(
+                                    session, fn_call,
                                 )
-                                try:
-                                    from asgiref.sync import sync_to_async as _s2a_cs
-                                    from ivr_config.models import InboundCallLog as _ICL
-
-                                    def _persist_summary():
-                                        from ivr_config.models import PhoneNumber as _PN2
-                                        _company2 = None
-                                        _section2 = None
-                                        try:
-                                            _pn2 = _PN2.objects.select_related("company").get(
-                                                number=self.twilio_number, is_active=True)
-                                            _company2 = _pn2.company
-                                        except Exception:
-                                            pass
-
-                                        import django.utils.timezone as _tz
-                                        _ICL.objects.create(
-                                            company=_company2,
-                                            call_sid=getattr(self, "call_sid", ""),
-                                            twilio_number=self.twilio_number or "",
-                                            caller_number=self.caller_number or "",
-                                            started_at=getattr(self, "call_started_at", _tz.now()),
-                                            caller_name=_cs_caller_name,
-                                            caller_phone_reported=_cs_caller_phone,
-                                            call_reason=_cs_call_reason,
-                                            call_type=_cs_call_type,
-                                            outcome=_cs_outcome,
-                                            raw_summary=_cs_raw_summary,
-                                            section=_section2,
-                                        )
-                                        logger.info(
-                                            "[H03-SUMMARY] InboundCallLog "
-                                            "creado — "
-                                            f"caller='{_cs_caller_name or self.caller_number}' | "
-                                            f"tipo='{_cs_call_type}' | "
-                                            f"outcome='{_cs_outcome}'"
-                                        )
-
-                                    await _s2a_cs(_persist_summary)()
-
-                                except Exception as cs_exc:
-                                    logger.error(
-                                        "[H03-SUMMARY] Error al crear "
-                                        "InboundCallLog: "
-                                        f"{type(cs_exc).__name__}: {cs_exc}",
-                                        exc_info=True,
-                                    )
-
-                                # Respond to Gemini so it can proceed with
-                                # farewell.
-                                # Responder a Gemini para que pueda continuar
-                                # con la despedida.
-                                try:
-                                    # H17 FIX (2026-07-09): ver nota en
-                                    # route_to_section.
-                                    await session.send_tool_response(
-                                        function_responses=types.FunctionResponse(
-                                            id=fn_call.id,
-                                            name="submit_call_summary",
-                                            response={"success": True},
-                                        )
-                                    )
-                                    logger.info(
-                                        "[H03-SUMMARY] tool_response "
-                                        "submit_call_summary enviado.")
-                                except Exception as cs_tr_exc:
-                                    logger.error(
-                                        "[H03-SUMMARY] Error al enviar "
-                                        "tool_response: "
-                                        f"{type(cs_tr_exc).__name__}: "
-                                        f"{cs_tr_exc}",
-                                        exc_info=True,
-                                    )
-
                             elif fn_call.name == "transfer_to_section_contact":
-                                section_id = int(
-                                    fn_call.args.get("section_id", -1))
-                                logger.info(
-                                    "[PASO-39] tool_call "
-                                    "transfer_to_section_contact "
-                                    f"recibido. section_id={section_id}. "
-                                    "Iniciando secuencia de transferencia con "
-                                    "drenado de audio."
-                                )
-                                # Send the tool_response to Gemini FIRST so the
-                                # session
-                                # protocol is satisfied before we block on the
-                                # audio drain.
-                                # With function calling, Gemini Live does NOT
-                                # send
-                                # turn_complete after a tool_call event — the
-                                # tool_call
-                                # IS the end of the model turn. Therefore the
-                                # deferred
-                                # turn_complete approach does not work here.
-                                # Instead we
-                                # send the tool_response immediately and then
-                                # drain the
-                                # audio_output_queue + apply a fixed safety
-                                # pause before
-                                # calling _execute_transfer() which sets
-                                # session_active=False.
-                                # Enviar el tool_response a Gemini PRIMERO para
-                                # que el
-                                # protocolo de sesión quede satisfecho antes de
-                                # bloquear
-                                # en el drenado de audio. Con function calling,
-                                # Gemini Live
-                                # NO envía turn_complete tras un evento
-                                # tool_call — el
-                                # tool_call ES el fin del turno del modelo. Por
-                                # tanto el
-                                # enfoque de deferido hasta turn_complete no
-                                # funciona aquí.
-                                # En su lugar enviamos el tool_response
-                                # inmediatamente y
-                                # luego drenamos audio_output_queue + aplicamos
-                                # una pausa
-                                # fija antes de llamar a _execute_transfer()
-                                # que establece
-                                # session_active=False.
-                                try:
-                                    # H17 FIX (2026-07-09): ver nota en
-                                    # route_to_section.
-                                    await session.send_tool_response(
-                                        function_responses=types.FunctionResponse(
-                                            id=fn_call.id,
-                                            name="transfer_to_section_contact",
-                                            response={
-                                                "success": True,
-                                                "section_id": section_id,
-                                            },
-                                        )
-                                    )
-                                    logger.info(
-                                        "[PASO-39] tool_response "
-                                        "transfer_to_section_contact "
-                                        "enviado antes del drenado de audio."
-                                    )
-                                except Exception as tr_pre_exc:
-                                    logger.error(
-                                        "[PASO-39] Error al enviar "
-                                        "tool_response previo: "
-                                        f"{type(tr_pre_exc).__name__}: "
-                                        f"{tr_pre_exc}",
-                                        exc_info=True,
-                                    )
-                                # Drain the audio output queue so María
-                                # finishes speaking
-                                # before the Gemini Live session is terminated.
-                                # Drenar la cola de salida para que María
-                                # termine de hablar
-                                # antes de que la sesión Gemini Live se
-                                # termine.
-                                _drain_timeout = 8.0
-                                _drain_elapsed = 0.0
-                                _drain_interval = 0.05
-                                while (
-                                    not self.audio_output_queue.empty()
-                                    and _drain_elapsed < _drain_timeout
-                                ):
-                                    await asyncio.sleep(_drain_interval)
-                                    _drain_elapsed += _drain_interval
-                                # Fixed safety pause to allow last dequeued
-                                # fragments
-                                # to finish transmitting to Twilio.
-                                # Pausa fija para que los últimos fragmentos
-                                # desencollados
-                                # terminen de transmitirse a Twilio.
-                                await asyncio.sleep(3.5)
-                                logger.info(
-                                    "[PASO-39] Audio drenado "
-                                    f"({_drain_elapsed:.2f}s) + "
-                                    "pausa completada. Ejecutando "
-                                    "_execute_transfer()."
-                                )
-                                transfer_success = await self._execute_transfer(section_id)
-                                logger.info(
-                                    "[PASO-39] _execute_transfer() "
-                                    "completado "
-                                    f"(success={transfer_success})."
+                                await self._tool_transfer_to_section_contact(
+                                    session, fn_call,
                                 )
                             else:
                                 logger.warning(
@@ -2754,7 +2865,10 @@ class VoiceOrchestrationService:
                                         "Gemini recibido — "
                                         f"t={_t_first_audio:.3f}s | "
                                         f"TTFT desde activity_end: "
-                                        f"{_t_first_audio - _t_activity_end_ref:.3f}s"
+                                        "%.3fs" % (
+                                            _t_first_audio
+                                            - _t_activity_end_ref
+                                        )
                                     )
                                 else:
                                     logger.info(
@@ -2798,7 +2912,10 @@ class VoiceOrchestrationService:
                     # Fuente: referencia Live API Vertex AI + foro Google AI
                     # Developers patrón 'Turn 1 works, Turn 2 dies',
                     # 2026-04-05.
-                    if response.server_content and response.server_content.turn_complete:
+                    if (
+                        response.server_content
+                        and response.server_content.turn_complete
+                    ):
                         # LATENCY-P4: Timestamp at turn_complete — total Gemini
                         # turn duration.
                         # LATENCIA-P4: Marca en turn_complete — duración total
@@ -2813,7 +2930,8 @@ class VoiceOrchestrationService:
                                 f"t={_t_turn_complete:.3f}s | "
                                 "Duración total del turno desde "
                                 "activity_end: "
-                                f"{_t_turn_complete - _t_activity_end_ref:.3f}s"
+                                f"{_t_turn_complete - _t_activity_end_ref:.3f}"
+                                "s"
                             )
                         else:
                             logger.info(
@@ -3586,7 +3704,8 @@ class VoiceOrchestrationService:
         # URL base — leída del archivo de sesión ngrok compartido.
         try:
             ngrok_file = (
-                "/home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/SESSION/NGROK_URL.txt"
+                "/home/MiguelAeTxio/PROJECTS/EnterpriseBot/DOCS/SESSION/"
+                "NGROK_URL.txt"
             )
             with open(ngrok_file, "r") as _f:
                 base_url = _f.read().strip().rstrip("/")
