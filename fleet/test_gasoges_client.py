@@ -110,6 +110,12 @@ class GasoGesClientTests(unittest.TestCase):
                                   "name": "PEREZ PEREZ JUAN"}])
 
     @mock.patch("fleet.gasoges_client.requests.get")
+    def test_day_without_supplies_is_null(self, get):
+        get.return_value = _response(200, None)
+        self.assertEqual(self.client.supplies("2026-01-04", "2026-01-04"),
+                         [])
+
+    @mock.patch("fleet.gasoges_client.requests.get")
     def test_unauthorized(self, get):
         get.return_value = _response(401)
         with self.assertRaises(GasoGesError) as ctx:

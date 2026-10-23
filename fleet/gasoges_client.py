@@ -182,6 +182,12 @@ class GasoGesClient:
             raise GasoGesError(
                 "GasoGes devolvió una respuesta que no es JSON (%s)." % url
             ) from exc
+        # S135: un día sin suministros (fines de semana, festivos)
+        # GasoGes responde `null`, no una lista vacía.
+        # ---
+        # A day without supplies comes back as `null`.
+        if data is None:
+            return []
         if not isinstance(data, list):
             raise GasoGesError(
                 "GasoGes devolvió JSON que no es una lista (%s): %s"
