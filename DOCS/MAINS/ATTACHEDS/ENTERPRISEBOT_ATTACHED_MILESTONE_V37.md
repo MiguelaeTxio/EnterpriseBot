@@ -358,147 +358,12 @@ COMPLETED) y PDF descargado. Correcciones salidas de la prueba:
 - `PLATFORM_BASE_URL` como ajuste de `settings.py`; plantilla
   `work_order_create_direct.html` que faltaba desde H17.
 
-## 6. Hoja de Ruta para la Siguiente Sesión (S133) -- reescrita al cierre de S132, sustituye a la de S132
+## 6. Notas de S133: dudas para Pepe y decisiones de la reunión
 
-### 6.0. Incidencias de Partes Digitales anotadas en S133 -- primera tarea de la siguiente sesión
-
-Son de Partes Digitales (H07/H20), no de H37. Se anotan aquí porque
-Miguel Ángel pidió resolverlas en la siguiente sesión, antes de seguir
-con la hoja de ruta de abajo (Caso A del enrutador: al resolverlas, el
-trabajo se registra en el anexo del hito donde vive el error).
-
-**A. Periodos liquidados con partes pendientes, y partes que no salen
-en el historial.** Miguel Ángel, S133 (2026-10-21), verbatim: *"anota
-esta incidencia de periodos liquidados y partes que no están en el
-historial, para resolverla en la siguiente sesión."* Lo que enseñan
-sus capturas de Partes Digitales
-(`/panel/work-orders/history/`):
-- Pestaña **Períodos**, operario Estevao Veloso Sampaio: los seis
-  periodos salen **Liquidado** (Septiembre-Octubre 2026, 21/09-20/10;
-  Agosto-Septiembre; Julio-Agosto; Junio-Julio; Mayo-Junio; y
-  "anteriores", 01/01/2000-20/05/2026), con columna Operarios 9/9,
-  8/9, 3/9, 5/9, 5/9 y 3/9. Contadores de Sampaio en ese filtro:
-  Pendientes 23, Revisados 11.
-- Pestaña **Pendientes**, todos los operarios, 01/01/2026-21/10/2026:
-  **190** partes pendientes, con fechas de mayo a julio de 2026 (p. ej.
-  David Contreras Marquez desde el 21/05/2026, Jose Antonio Vargas Mora
-  18/06/2026), es decir, dentro de periodos que ya salen liquidados.
-- Pestaña **Revisados**: 92 (p. ej. Carlos Bas Blanco junio-julio,
-  revisados por Alejandro Sergio el 13/08/2026).
-Qué hay que averiguar: cómo puede estar liquidado un periodo con
-partes sin revisar dentro (y qué significan 3/9, 5/9...), y qué partes
-faltan en la pestaña **Histórico** y por qué. Antes de tocar nada,
-consulta a BD de los periodos (`WorkPeriodGroup` y relacionados,
-`panel/views_workorders.py`) y de los partes de esas fechas, y
-pregunta a Miguel Ángel qué esperaba ver en cada pestaña si no queda
-claro con los datos (directriz 4.8).
-
-**B. Parte 702 de Sampaio (domingo 18 mezclado con martes 20).** El
-borrador del domingo 18 (bloque B43, 08:00-15:30, 6 h, creado el 19 a
-las 19:04 con "Guardar bloques") no se pudo cerrar por el mínimo de 8 h
-en festivo (corregido en S133, commit `d6ab7bc`). El formulario
-siempre abre el borrador pendiente del operario y, al hacer el parte
-del martes 20, Sampaio cambió la fecha y añadió el bloque B12
-(15:30-18:30, 3 h): el parte 702 quedó con fecha 20/10 y los dos
-bloques. Pendiente: su respuesta a las preguntas enviadas por WhatsApp
-el 20/10 (qué hizo el domingo y el martes completos) y la decisión de
-Miguel Ángel entre (1) separar el parte con un Comando S, (2) que lo
-corrija Sampaio desde el panel o (3) dejarlo.
-
-**C. Borrador que arrastra cualquier parte nuevo.** Con un borrador
-abierto, guardar bloques o cerrar escribe siempre en ese borrador,
-aunque el operario cambie la fecha (`WorkOrderEntryFormView`, búsqueda
-del `IN_PROGRESS` del operario en guardar y cerrar). Decisión
-pendiente de Miguel Ángel: (a) avisar y dejar elegir entre seguir el
-borrador o empezar un parte nuevo, con el borrador conservado aparte
-(cambio de vista y de servidor), o (b) no dejar cambiar la fecha de un
-borrador guardado.
-
-### 6.1. Hoja de ruta de H37
-
-Ordenada con las fases del dossier de Pepe (4.4), a petición de Miguel
-Ángel en S132. Los puntos 1 a 3 quedaron cerrados en S132 (ver 5.1 a
-5.3); se mantiene la numeración para no perder la correspondencia con
-el dossier.
-
-Datos de partida fijados por Miguel Ángel en S132:
-- **Máquinas de asistencia:** las de la familia ASISTENCIA de la flota
-  (`fleet.MachineAsset.family`).
-- **Conductores de asistencia**, verbatim: *"Conforme se vayan dando de
-  alta trabajadores irán entrando en la sección. Ya debería de haber un
-  trabajador."* Son los trabajadores de la sección Asistencia.
-
-Se hace en este orden.
-
-1. **Forma de la app del operario.** Cerrado en S132 (5.1).
-2. **Sección Servicios.** Cerrado en S132 (5.2).
-3. **Fase 1 del dossier.** Cerrado en S132 (5.3).
-   Queda una mejora atada a un dato externo: cuando Miguel Ángel
-   aporte el dato de Pepe que distingue en el albarán de TIREA un
-   servicio de Asistencia y Grúas Granada de uno de Transgrual, usarlo
-   en `_match_insurer` (`budgets/views_services.py`) para elegir solo
-   entre las aseguradoras 80 y 81. **Cierre:** una foto de TIREA de
-   Europ Assistance que deja la aseguradora correcta y su tipo de
-   vehículo ya elegidos en el formulario.
-4. **Fase 2: panel de tráfico y asignación.** Pestaña principal de
-   Servicios: columnas de tarjetas de conductores, máquinas y
-   albaranes abiertos con los colores del dossier (4.4), asignación
-   arrastrando, sin dejar asignar lo ocupado ni lo que está en taller,
-   y botón de enviar, que manda el aviso por WhatsApp con la plantilla
-   `assistance_albaran_notice` (4.2, creada en S132, Content SID
-   `HXa984de23fae56cb4afbeb1b6458f693c`, pendiente de aprobación de
-   Meta). Ya hecho en S132: el aviso con su confirmación de entrega
-   ("Enviando aviso" → "Notificado" / "Aviso fallido", 5.4); el botón
-   de enviar del panel reutiliza `send_operator_albaran_notification`.
-   Cada cambio de estado guarda hora y usuario. **Primera tarea de
-   S133:** si Miguel Ángel indica que Meta ya aprobó la plantilla,
-   pulsar "Avisar de nuevo" en la unidad 20261020002-02. **Cierre de
-   esa tarea:** consulta a BD con la unidad en NOTIFIED, `notified_at`
-   relleno y `notify_error` vacío. **Cierre del punto:** un servicio
-   asignado arrastrando y enviado en producción, con conductor y
-   máquina en estado ocupado y la unidad en NOTIFIED en BD.
-5. **Fase 3: vista del conductor y firma.** Hoja del conductor sin
-   notas internas ni importes, km de salida, fotos, firma del cliente
-   o motivo de no firma; al firmar, albarán en verde y conductor y
-   máquina regresando. Aquí va la prueba completa con un albarán real
-   de Allianz, cotejando los campos de la sección 3.1 (en S132 ya se
-   probó la cadena completa con un servicio real de Europ Assistance:
-   albarán rellenado y firmado en el móvil y PDF, ver 5.4). Después, la app
-   nativa Android en Kotlin (4.1): repositorio propio NewFlow,
-   compilación por GitHub Actions, albarán sin conexión que se envía
-   al volver la cobertura, segundo plano con envío continuo de la
-   posición, y el mapa del panel con servicios, vehículos y bases.
-   Miguel Ángel instala y actualiza la app; primeras pruebas en su
-   propio móvil. **Cierre:** tres consultas a BD. Un albarán de Allianz
-   firmado en producción. Otro rellenado y firmado en modo avión que
-   llega al recuperar la conexión, con `signed_offline=True` y
-   `synced_at` relleno. Posiciones del móvil de Miguel Ángel
-   registradas con la pantalla apagada.
-6. **Fase 4: cierre en base con km y gasoil.** El conductor mete km
-   finales y si repostó y cuántos litros; el albarán pasa a cerrado
-   (gris) y conductor y máquina vuelven a libres. Sin km finales ni la
-   indicación de repostaje no se puede cerrar. Decisión S132: el
-   estado final de un albarán firmado en pantalla es este cierre en
-   base; *Firma recibida* queda solo para el albarán cerrado sin firma
-   cuyo papel firmado llega después. **Cierre:** un servicio real
-   cerrado en base, con sus km y litros en BD y conductor y máquina de
-   nuevo libres.
-7. **Fase 5: historial, buscador, PDF y envío al cliente.** Servicios
-   cerrados archivados, buscador del apartado 26 del dossier,
-   exportaciones del 27, y el envío del albarán firmado al cliente con
-   la plantilla `albaran_customer_delivery`. Los albaranes no se
-   borran: se corrigen con registro de auditoría. **Cierre:** un
-   albarán real encontrado con el buscador, su PDF descargado y el
-   envío recibido en el teléfono de prueba que indique Miguel Ángel.
-8. **Fase 6: mantenimiento y avisos.** Km y próximo mantenimiento de
-   cada máquina de asistencia, sobre los avisos de revisiones de H30, y
-   las alertas del apartado 25 del dossier. **Cierre:** una alerta real
-   generada en producción.
-9. **Fase 7: estadísticas y facturación.** Apartados 17 y 18 del
-   dossier. **Cierre:** las estadísticas del apartado 17 calculadas en
-   el panel sobre los servicios reales de BD, coincidentes con una
-   consulta a BD de los mismos servicios, y la facturación del
-   apartado 18 de un servicio real cerrado, con su importe en BD.
+Los apartados 6.0 y 6.1 (hoja de ruta de S133) quedan sustituidos por la
+sección 7 (lo hecho en S133) y la sección 8 (hoja de ruta de S134). Se
+conservan 6.2 y 6.3 con su numeración porque otros textos y commits los
+citan así.
 
 ### 6.2. Dudas para Pepe (anotadas en S133)
 
@@ -675,3 +540,181 @@ sacar cada manejador a su propio método, y eso hay que validarlo con
 llamadas reales al robot. Se hace en la sesión en que se pruebe la
 llamada para dar servicios.
 
+
+## 7. COMPLETADAS EN S133 (21-23/10/2026, PEE PC; H37 fases 2 a 4, Alia como jefa de tráfico, y fichajes y Partes Digitales)
+
+65 commits (`5b774e6..856f19d`), 79 archivos, 15 migraciones aplicadas
+por `deploy.yml` sin error (`budgets` 0033-0046 y
+`work_order_processor` 0034).
+
+### 7.1. Servicios de asistencia (H37)
+
+- **Panel de tráfico (fase 2, punto 4 de la hoja de S132):** tarjetas
+  de conductores, máquinas y albaranes, asignación arrastrando y envío
+  (`56714fb`). Equipos conductor+máquina, intercambio de máquinas, mapa
+  y pantalla completa (`4daefcc`). Conductores y máquinas en columnas
+  separadas (`1e7d698`). Un conductor y una máquina que regresan a base
+  se pueden asignar al siguiente servicio (`ab67c89`).
+- **App del conductor:** API con token y albaranes asignados
+  (`f5585d6`), detalle del albarán y envío firmado o sin firma con
+  motivo (`2c0149e`), y cierre en base con km finales y repostaje
+  (`4eaeaae`). Cierre en base también desde el panel, con km y gasoil
+  estimados (`444f934`). Hoja de servicio de Pepe: los km de salida son
+  la puerta de la hoja, y van fotos (`5d20122`, `b3e61fd`). La hora de
+  salida de base la pone el conductor (`ddddae5`).
+- **Ayudantes por albarán y albarán resumen de la orden** en PDF
+  (`47fef39`). Listado de albaranes con el formato 4.24 (`3b430ba`).
+  Para las pruebas, los administradores también salen como conductores
+  (`8f0629a`).
+- **Alta de servicios por las tres puertas de la reunión con Pepe
+  (6.3):**
+  - Origen del servicio, cola y asignación forzada (`4e18b49`).
+  - Alia por WhatsApp (`4a9f704`, `8b381ff`, `52daa66`, `4032c7c`).
+  - Llamando al robot con las mismas herramientas (`93651b8`).
+  - Alta por CIF, con dos lecturas de respaldo del CIF de TIREA
+    (`4b167f1`, `2f6b12b`).
+  - Alia decide desde el conductor parado y lanza varios equipos
+    (`b69471c`). Remolca tractora y semirremolque juntos y cuenta con
+    los conductores en cola (`e85342b`).
+  - Propone solo conductores con el permiso de conducir, el CAP y el
+    carné de gruista que pide la máquina, con opciones numeradas
+    (`3274202`, `a80642c`, tabla en 6.3).
+- **Ajustes tras pruebas reales con Miguel Ángel por WhatsApp:**
+  - Anular albarán desde el tablero, con motivo obligatorio y unidad
+    en `CANCELLED` (`49ef64c`). Liberó a Zafra del albarán de prueba
+    20261021003-01.
+  - Los comentarios de quien da el servicio mandan sobre los campos de
+    relleno de TIREA (`1e6e36b`).
+  - Se guardan todos los datos del servicio: matrícula del 2.º
+    vehículo, C.P. de entrega y el resto de campos de la orden, que Alia
+    puede usar (`d14b189`).
+  - Alia contesta aunque la lectura del PDF tarde: conexión MySQL
+    renovada tras la llamada larga a Gemini (`65c728f`).
+  - Una reparación en el sitio va con VEHÍCULO DE PERSONAL, nunca con
+    grúa (`3099f0d`).
+  - El documento se lee primero como texto (PDF o Cloud Vision), en
+    unos 4-5 s; solo si no hay texto se lee el archivo (`e99d7d5`).
+  - Reintentos con espera ante un 429/503 de Gemini, con aviso
+    "estoy saturada" al usuario si no se recupera (`8037f19`).
+- **Fuera de H37:** Herramientas de contabilidad (`f9b0a2b` a
+  `76d0eff`, descritas en 6.3), y nombre y apellidos de la cuenta
+  editables desde la edición de usuario (`285a1d6`).
+
+### 7.2. Fichajes y Partes Digitales (H24/H07, Caso A del enrutador: anotado aquí porque se hizo en esta sesión)
+
+- **Se ficha solo al inicio y al fin de la jornada** (`67e74fb`): un
+  único tramo de la primera entrada a la última salida. La pausa de
+  comida es la del parte: sale del horario y se cambia a mano, como
+  antes de los fichajes. La pestaña Fichajes descuenta esa pausa
+  (`d9948b2`).
+- **"Nuevo parte" pasa a ser un aviso para los operarios** antes del
+  formulario (`WorkshopNotice`, migración 0034, `d77a801`). Lo editan
+  ADMIN y WORKSHOPBOSS. Miguel Ángel puso el texto del aviso de los
+  fichajes.
+- **No se liquida un periodo con partes sin revisar** (`0e24666`).
+  Causa de la incidencia 6.0.A de S132 y de que Carolina no viera los
+  revisados: el periodo Septiembre-Octubre 2026 se liquidó con 113
+  partes sin revisar. Miguel Ángel lo reabrió.
+- **Horas festivas** (`ff6ff0c`). Sábado, domingo y festivo de la base
+  del trabajador; no son ni extras ni ordinarias. Columna, total y
+  orden propios en el listado (`work_order_processor/festive.py`).
+- **Partes Digitales con el formato 4.24** (`c481c4b`, PEP8 previo en
+  `19838a3`). Panel fijo arriba, lista con scroll, selección
+  persistente y orden de hasta 4 niveles. La fila TOTAL de Revisados
+  queda fija abajo.
+- **El parte se guarda aunque el fichaje no cuadre** (`0a55293`,
+  `856f19d`), por la incidencia de Antonio Fontalba del 22/10.
+  - Quería cerrar el parte antes de fichar la salida y el botón estaba
+    desactivado. Miguel Ángel: *"que el botón se quede habilitado, que
+    puedan guardar [...] cuando fiche, si hay una discrepancia de hora,
+    decirle, no están bien las horas, pero que se quede guardado."*
+  - Ahora "Cerrar parte" siempre está activo. Si solo falla el fichaje
+    (falta la salida o las horas no cuadran), el parte queda guardado
+    en curso, con aviso amarillo del motivo y sin Excel, porque generar
+    el Excel marca el parte como cerrado.
+  - Al fichar la salida, la página de fichaje dice si el parte se ha
+    cerrado o qué hora no cuadra (`ClockOutOutcome` en
+    `hr_calendar/clock_parts.py`, `parte_notice` en la respuesta de
+    `/fichaje/`).
+  - Probado en local, con el caso de Antonio y los dos casos de horas
+    que no cuadran.
+- **Sampaio, parte 702** (incidencia 6.0.B de S132): resuelto por el
+  propio Sampaio. El domingo 18 es el parte 708 (B43, de 18:30 a 21:30,
+  3 h festivas) y el 702 es el martes 20 completo (consulta a BD del
+  23/10).
+- **Pablo Cañamero, partes del 24/09 y del 16/10:** no se pueden
+  recuperar. No llegaron nunca al servidor: no hay rastro en BD (ni
+  borradores) ni en ningún log rotado, y Pablo no tiene fichajes. Los
+  tiene que volver a meter él.
+
+### 7.3. Herramientas
+
+`file_fetch.yml` admite `grep_pattern` (`b8c9b0e`): busca una expresión
+en varios logs rotados a la vez (también dentro de los `.gz`) con
+`remote_path` con comodines, y solo sube a Drive las líneas que
+coinciden. Los logs INFO de Django de la web (`[SAFETY-LOG]`,
+`[PARTE-BACKUP]`, `[FICHAJE]`...) están en
+`/var/log/enterprisebot-miguelaetxio.pythonanywhere.com.error.log*`,
+no en `server.log`.
+
+## 8. Hoja de Ruta para la Siguiente Sesión (S134) -- reescrita al cierre de S133
+
+Se hace en este orden.
+
+1. **Parte guardado que arrastra cualquier parte nuevo** (6.0.C de
+   S132, decisión de Miguel Ángel en S133: opción 1).
+   - Hoy, con un parte en curso, el formulario siempre lo abre y lo que
+     se guarda o se cierra va a ese parte, aunque el operario cambie la
+     fecha (`WorkOrderEntryFormView`: búsqueda del `IN_PROGRESS` del
+     operario en GET, en guardar y en cerrar). Desde S133 pasa más,
+     porque un parte cuyas horas no cuadran con el fichaje queda en
+     curso.
+   - Hacer: avisar al operario de que tiene un parte en curso de otro
+     día y dejarle elegir entre seguir con ese parte o empezar uno
+     nuevo. El parte en curso se conserva aparte, sin perder nada.
+   - **Cierre:** prueba en local con un parte en curso del día D y un
+     parte nuevo del día D+1. Consulta a BD con dos `WorkOrder`
+     distintos, uno por fecha, cada uno con sus propias líneas.
+2. **Tablero de tráfico de Servicios** (captura de Miguel Ángel del
+   23/10).
+   - En pantalla completa del tablero no hay botón para volver al
+     estado normal. Añadirlo con el formato de la directriz 4.26.
+   - Las tarjetas de usuarios (conductores) son más estrechas que los
+     nombres: "Alberto Álvarez D...", "Alejandro Sergio" y "José Luis
+     Álvarez" salen cortados y se salen de la tarjeta.
+   - **Cierre:** captura con Playwright del tablero en pantalla
+     completa y en normal. Botón visible que devuelve al estado normal.
+     El nombre completo de los conductores dentro de su tarjeta,
+     comprobado con `scrollWidth <= clientWidth` en cada nombre.
+3. **Alia elige el vehículo adecuado al trabajo.** Según haya que
+   remolcar, levantar vehículos o sustituir neumáticos, ruedas,
+   baterías, etc. (Miguel Ángel, S133).
+   - Partir de los criterios de asignación actuales
+     (`DISPATCH_CRITERIA` en `budgets/service_intake.py`, que ya manda
+     la reparación en el sitio con VEHÍCULO DE PERSONAL) y de los tipos
+     y familias de la flota de asistencia.
+   - **Cierre:** un caso de prueba de Alia por tipo de trabajo, en
+     local y por WhatsApp en producción con Miguel Ángel, con el tipo
+     de vehículo propuesto correcto en cada uno: remolque, elevación y
+     cambio de neumático o rueda, de batería, etc.
+4. **Resto de H37, en el orden de la reunión con Pepe (6.3):**
+   1. **Consulta de servicios por cualquier dato (6.3.H).** La búsqueda
+      del listado de Albaranes solo mira unos pocos campos. **Cierre:**
+      una búsqueda por "7 horas de espera" (o el dato equivalente de un
+      servicio real) que devuelve los servicios con ese dato.
+   2. **Quitar a los administradores de la lista de conductores.** Se
+      añadieron en `8f0629a` solo para las pruebas.
+      **Cierre:** el panel de tráfico sin `alvarez_admin` ni
+      `coco.alvarez` como conductores.
+   3. **Plantilla `assistance_albaran_notice` de Meta.** Cuando Miguel
+      Ángel indique que está aprobada, pulsar "Avisar de nuevo" en una
+      unidad real. **Cierre:** unidad en `NOTIFIED`, con `notified_at`
+      relleno y `notify_error` vacío.
+   4. **Prueba del robot de voz para dar servicios**, con el repaso
+      pendiente de `vox_bridge/services.py` (6.3, pendiente técnico).
+      **Cierre:** un servicio dado de alta llamando al robot en
+      producción, y flake8 a 0 en ese archivo.
+   5. **Lo que depende de Pepe (6.2):** aseguradora 80/81 por CIF,
+      cierre en base de servicios encadenados y envío al cliente. Se
+      hace cuando Miguel Ángel traiga sus respuestas.
+   6. **Exportación a TIREA y Prologic:** más adelante (6.3.I).
