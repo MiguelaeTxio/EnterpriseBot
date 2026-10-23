@@ -3757,3 +3757,73 @@ Punto de partida real del código:
    - la descarga da un `.png` de ≤ 128 KB, comprobado con el tamaño
      real del archivo;
    - lo mismo con una persona que solo tenga permiso de conducir.
+
+## COMPLETADAS EN S134 (23/10/2026, PEE PC; punto 1 de la Hoja de Ruta S134/S135 -- foto de carné)
+
+Pausado de nuevo al cierre de S134 por PCH a H37 (Miguel Ángel:
+*"volver con los servicios de la asistencia en la siguiente"*). La
+"Hoja de Ruta pendiente al reactivar H31" sigue intacta.
+
+### 1. Foto de carné sacada del DNI o del permiso -- `8fb132a`
+
+- Migración `document_explorer` 0189:
+  - `PersonIdPhoto` (uno por persona, JPEG en BD, documento de origen);
+  - `PersonIdentity.photo_attempted_at`.
+- `document_explorer/id_photo_service.py`:
+  - busca la cara con Cloud Vision en DNI, NIE, pasaporte, permiso de
+    conducir e imágenes (imagen o 2 primeras páginas del PDF);
+  - recorta 3:4 alrededor de la cara más grande.
+- Tarea `extract_id_photos_task` cada 15 min (10 personas por vuelta):
+  personas nunca revisadas con documentos, o con un documento nuevo.
+- Ficha:
+  - la foto recortada manda sobre `avatar_document`;
+  - icono del ojo con la ventana "Ver foto": foto grande, documento de
+    origen, "Sacar del DNI o permiso" y "Descargar foto para
+    plataforma".
+- Descarga: PNG de 128 KB como máximo, nombre
+  `APELLIDO1_APELLIDO2_NOMBRE.png` (Miguel Ángel: *"se descarga con el
+  nombre de la persona en formato PNG y con menos de 128K"*).
+- **Comprobado en producción:**
+  - migración aplicada (consulta a BD);
+  - la tarea sacó la foto de la persona 5 (de un permiso de conducir
+    en JPEG) y de la 250 (de un DNI en PDF), según el log;
+  - Miguel Ángel descargó la foto para plataforma.
+
+### 2. Recuadro para la plataforma -- `02bf546`
+
+Miguel Ángel: *"la plataforma pide que salga la cara principalmente y
+que la cara ocupe la máxima cantidad posible en la foto"*.
+
+- En "Ver foto" se arrastra un recuadro sobre la foto y la descarga es
+  solo ese recuadro (`?x&y&w&h` en fracciones), en PNG ≤ 128 KB.
+- **Probado en local con Playwright:** recuadro de la mitad de ancho y
+  alto, PNG con la mitad de tamaño y nombre correcto.
+
+### 3. Subida directa de la foto de perfil -- `bcceb63`
+
+- Problema visto en producción: el botón de la cámara subía la foto
+  por la subida de documentos (IMAGEN en GCS y dos lecturas de
+  Gemini, lento), y la foto recortada del DNI tapaba la subida.
+- Ahora la cámara sube la foto a `foto/subir/`:
+  - sin GCS ni Gemini;
+  - se endereza, se pasa a JPEG y se limita a 800 px de alto.
+- Migración 0190: `PersonIdPhoto.is_manual`. Una foto subida o elegida
+  a mano ya no la cambia la tarea, solo el botón "Sacar del DNI o
+  permiso". **Aplicada en producción** (consulta a BD).
+- **Probado:** en local (0,07 s; la tarea la salta); Miguel Ángel subió
+  en producción su foto recortada.
+
+### 4. "Sacar del DNI o permiso" prefiere los documentos de identidad -- `efdb576`
+
+- Problema visto en producción: tras subir la foto, el botón volvía a
+  sacar la cara de la foto recortada. El primer intento de subida la
+  había archivado como IMAGEN, más reciente que el DNI.
+- Ahora van primero DNI, NIE, pasaporte y permiso, y las imágenes solo
+  si ninguno tiene cara.
+- **Probado en local** con una IMAGEN más reciente que el DNI: usa el
+  DNI.
+
+### Otros
+
+flake8 a 0 en los archivos tocados: `panel/views_documentation_h30.py`
+y `panel/urls.py` enteros, y `document_explorer/tasks.py`.
