@@ -30,6 +30,7 @@ from django.utils import timezone
 
 from document_explorer.models import PersonIdentity
 from fleet.gasoges_client import GasoGesClient
+from fleet.gasoges_client import GasoGesError
 from fleet.gasoges_rules import check_reading
 from fleet.gasoges_rules import deduce_unit
 from fleet.gasoges_rules import name_matches
@@ -217,12 +218,25 @@ def sync_supplies(client, start, end, log, heartbeat=None):
     """
     users = {u.gasoges_id: u for u in GasoGesUser.objects.all()}
     vehicles = {v.gasoges_id: v for v in GasoGesVehicle.objects.all()}
-    counters = {"dias": 0, "leidos": 0, "nuevos": 0, "dias_al_tope": 0}
+    counters = {"dias": 0, "leidos": 0, "nuevos": 0, "dias_al_tope": 0,
+                "dias_con_error": 0}
     total_days = (end - start).days + 1
     day = start
     while day <= end:
-        rows = client.supplies(day, day)
         counters["dias"] += 1
+        try:
+            rows = client.supplies(day, day)
+        except GasoGesError as exc:
+            # S135: el 04/01/2026 GasoGes no devolvió una lista y paró
+            # la carga entera. Un día raro se apunta y se sigue; un
+            # error de credenciales (401) sí para todo.
+            # ---
+            # One odd day is logged and skipped; a 401 stops everything.
+            if "401" in str(exc):
+                raise
+            counters["dias_con_error"] += 1
+            log("AVISO: %s sin leer -- %s" % (day, exc))
+            rows = []
         counters["leidos"] += len(rows)
         if len(rows) >= API_PAGE_LIMIT:
             counters["dias_al_tope"] += 1
@@ -258,7 +272,8 @@ def sync_supplies(client, start, end, log, heartbeat=None):
             heartbeat(counters["dias"], total_days, counters)
         day += timedelta(days=1)
     log("Suministros: %(dias)d días, %(leidos)d leídos, %(nuevos)d "
-        "nuevos, %(dias_al_tope)d días al tope de la API." % counters)
+        "nuevos, %(dias_al_tope)d días al tope de la API, "
+        "%(dias_con_error)d días sin leer." % counters)
     return counters
 
 

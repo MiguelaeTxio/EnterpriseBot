@@ -184,7 +184,8 @@ class GasoGesClient:
             ) from exc
         if not isinstance(data, list):
             raise GasoGesError(
-                "GasoGes devolvió JSON que no es una lista (%s)." % url
+                "GasoGes devolvió JSON que no es una lista (%s): %s"
+                % (url, str(data)[:200])
             )
         return data
 
