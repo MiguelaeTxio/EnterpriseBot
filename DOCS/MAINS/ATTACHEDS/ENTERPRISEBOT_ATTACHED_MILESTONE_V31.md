@@ -3728,3 +3728,32 @@ verde de Actions):** `document_explorer` 0132, 0133, 0134, 0135;
    enlazar `prorroga_de` cuando lleguen.
 
 
+
+## REACTIVADO EN S134 -- Hoja de Ruta S134/S135 (concertada con Miguel Ángel; va antes que la "Hoja de Ruta pendiente al reactivar H31", que sigue intacta)
+
+PCH desde H37 en S134 (23/10/2026). Miguel Ángel, verbatim: *"Necesito
+pivotar hacia documentación. [...] Hay que dotar al sistema de un
+pipeline en los DNI y permisos con foto para extraer la foto y
+colocarla como foto de la persona y además PDF descargar la foto en
+png y con un tamaño máximo de 128kb"*.
+
+Punto de partida real del código:
+- La foto de la persona es hoy `PersonIdentity.avatar_document` (H35,
+  S105): un documento-imagen ya indexado, elegido a mano
+  (`views_documentation_h30.py`, vista que fija el avatar).
+- Se enseña el documento entero (el DNI o el carné completo), no la
+  cara recortada.
+- Si no hay avatar elegido, `PersonalDetailView` cae al documento de
+  tipo `IMAGEN`.
+
+1. **Pipeline de foto de carné.**
+   1. De los DNI y permisos de conducir de cada persona (imagen o
+      PDF), sacar la foto de la cara.
+   2. Ponerla como foto de la persona.
+   3. Poder descargarla en PNG de 128 KB como máximo.
+   **Cierre:**
+   - una persona real con DNI indexado tiene su foto recortada como
+     foto de ficha;
+   - la descarga da un `.png` de ≤ 128 KB, comprobado con el tamaño
+     real del archivo;
+   - lo mismo con una persona que solo tenga permiso de conducir.

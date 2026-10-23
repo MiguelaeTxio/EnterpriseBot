@@ -718,3 +718,131 @@ Se hace en este orden.
       cierre en base de servicios encadenados y envío al cliente. Se
       hace cuando Miguel Ángel traiga sus respuestas.
    6. **Exportación a TIREA y Prologic:** más adelante (6.3.I).
+
+## 9. COMPLETADAS EN S134 (23/10/2026, PEE PC; puntos 1, 2, 3, 4.1, 4.2 y 4.4 de la hoja de S134, y estimados de tiempo con cola en dos modos)
+
+Sesión pausada por PCH a H31 (Miguel Ángel: *"Necesito pivotar hacia
+documentación"*). La hoja de ruta de la sección 8 queda tal cual; aquí
+se anota lo hecho de cada punto.
+
+### 9.1. Punto 1 -- parte en curso de otro día (H07, Caso A) -- `d3332ad`
+
+- "Nuevo parte" abre el parte en curso de hoy. Si solo los hay de otros
+  días, pregunta: seguir con uno o empezar uno nuevo
+  (`form_in_progress_choice.html`; `?parte=<pk>` y `?nuevo=1`). Los
+  demás partes en curso salen avisados en el formulario.
+- Guardar tareas y Cerrar parte sin parte señalado crean uno nuevo,
+  nunca toman el primer parte en curso del operario.
+- Otro parte en curso de la misma fecha cuenta como fecha duplicada,
+  con enlace para seguir con él; el error conserva el parte que se
+  estaba guardando (antes se perdía y el siguiente envío creaba otro).
+- **Probado en local:** parte en curso del 22/10 y parte nuevo del
+  23/10, dos `WorkOrder` distintos, cada uno con su línea.
+
+### 9.2. Punto 2 -- tablero de tráfico -- `7a1700b`
+
+- Botón "Salir de pantalla completa" dentro del panel (el de la barra
+  superior queda fuera de la pantalla completa).
+- Nombres de conductores enteros: `min-w-0` no existe en Bootstrap 5.3
+  y el bloque del nombre no encogía.
+- **Probado en local con Playwright:** `scrollWidth <= clientWidth` y
+  nombre dentro de la tarjeta en tres nombres largos; el botón solo se
+  ve en pantalla completa y devuelve al estado normal.
+
+### 9.3. Punto 3 -- Alia elige el vehículo según el trabajo -- `acdd445`, `8a2680c`, `b1c1be4`
+
+- `budgets/dispatch_vehicle.py`: trabajo según los datos del servicio
+  y tipos reales de la flota que lo hacen:
+  - remolcar ligero: ASISTENCIA EN CARRETERA;
+  - remolcar pesado: RESCATE / GRÚA MÓVIL;
+  - levantar: GRÚA MÓVIL / RESCATE;
+  - rueda, batería, combustible y averías pequeñas: VEHÍCULOS DE
+    PERSONAL;
+  - semirremolque: CABEZA TRACTORA, en otro equipo.
+- `guardar_datos` y `consultar_disponibilidad` le dan a Alia el trabajo
+  detectado y para qué sirve cada máquina.
+- Con la hoja real de Web Flota que pasó Miguel Ángel (RACC,
+  OT4526068), la lectura de TIREA pasa a recoger "Reparación in situ"
+  y "Accidente", y se reconoce "NEUM".
+- Criterio 6: el tipo lo decide el trabajo, nunca quién está libre.
+- **Prueba de Miguel Ángel por WhatsApp** con seis servicios de prueba
+  generados con el formato de Web Flota, marcados PRUEBA:
+  - cinco tipos correctos a la primera;
+  - en el vuelco, Alia propuso primero la plataforma porque Zafra no
+    tiene carné de gruista. Corregido con el criterio 6.
+
+### 9.4. Punto 4.1 -- búsqueda por cualquier dato -- `614a2e3`
+
+- `budgets/assistance_search.py`: cada dato guardado de la orden, el
+  albarán, su incidencia, su firma, sus ayudantes y su historial es
+  una frase «valor etiqueta» sacada de los campos del modelo.
+- Cada número tiene que estar en un dato cuya etiqueta lleva las
+  palabras dichas a su lado.
+- **Probado en local:** once búsquedas; «7 horas de espera» no da los
+  de 7 horas de rescate.
+
+### 9.5. Punto 4.2 -- administradores fuera de la lista de conductores -- `f026d02`
+
+**Comprobado en producción** (consulta a BD): conductores de
+asistencia = solo `joseantonio.zafra`.
+
+### 9.6. Punto 4.4 -- robot de voz, flake8 a 0 -- `b4085ac`
+
+- Cada manejador de herramienta del bucle de `_receive_gemini_audio`
+  pasa a su método, con cuerpo idéntico en AST al original.
+- flake8 a 0 en `vox_bridge/services.py`; desplegado con el reinicio
+  del bridge.
+- **Falta la llamada real al robot** para validarlo.
+
+### 9.7. Estimados de tiempo y cola en dos modos -- `924d83c`
+
+Pedido por Miguel Ángel en S134 tras la prueba del punto 3 (no había
+segundo conductor para el caso de dos equipos). Verbatim:
+- *"ver las horas y bueno, los kilómetros hasta el punto de recogida
+  [...] tener estos tiempos de finalización ya calculados una vez que
+  se lanzan los servicios"*;
+- *"Hay que enviar el aviso en cola con vuelta a base o en cola desde
+  donde esté. Tenemos que tener esas dos opciones [...] si viene un
+  camión de vuelta, pasa cerca, entonces le decimos a ese que
+  directamente recoja él"*.
+
+Tiempos de trabajo fijados por él: carga 30, descarga 30, reparación
+in situ 30, levantar un vehículo 60 min (`AssistanceTimes`, uno por
+empresa, sin pantalla para editarlos todavía).
+
+Qué se ha hecho:
+- Migración `budgets` 0047. **Comprobada en producción** por consulta
+  a BD: migración aplicada, 7 columnas nuevas y la tabla de tiempos.
+- `budgets/service_eta.py`:
+  - matriz de rutas de Google con tráfico, desde la última posición del
+    móvil o la base;
+  - encadena el albarán en curso y los de la cola;
+  - se recalcula al asignar, al quitar, al cambiar la cola y en cada
+    cambio de estado.
+- Cola con vuelta a base (por defecto): sale al cerrar en base el
+  anterior. Desde donde esté: sale al terminarlo.
+- Tablero: llegada, fin y km de cada albarán, botón para cambiar la
+  cola y hora de fin de los equipos ocupados.
+- Alia (WhatsApp y llamada):
+  - recibe a qué hora llegaría cada equipo a la recogida, por los dos
+    caminos;
+  - lanza con el argumento `cola`.
+- `deploy.yml` reinicia bridge y worker también por `dispatch_vehicle`,
+  `service_eta` y `driver_qualification`.
+
+**Probado en local** con trayectos fijos: horas encadenadas, los dos
+modos, salida de la cola y llegada de un equipo ocupado.
+
+**Pendiente:** la prueba en producción con Google real. Miguel Ángel
+tiene que elegir entre:
+1. Lanzarla con Zafra avisándole antes.
+2. Hacerla con un usuario chófer de pruebas suyo.
+
+### 9.8. Recibido en S134 para más adelante
+
+Documentación de la API de GasoGes Web, para actualizar km y horas de
+las máquinas. Miguel Ángel: *"en la siguiente sesión"*. Guardada en
+`DOCS_ATTACHED_2_ANNEX_V30/Documentacion_API_GasoGes_v1.3.pdf`
+(`51a268c`):
+- API de solo consulta (GET) con autenticación básica;
+- las credenciales las da GasoGes y no van en el repositorio.
