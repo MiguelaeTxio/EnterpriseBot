@@ -59,6 +59,7 @@ orden múltiple). Solo en pantallas pequeñas.
                 </a>
             </th>
             {% endfor %}
+            <th></th>
         </tr>
     </thead>
     <tbody>
@@ -87,9 +88,23 @@ orden múltiple). Solo en pantallas pequeñas.
             <td data-label="Último día" colspan="4">{% if not row.has_account %}<span class="text-muted">Sin usuario del panel</span>{% else %}—{% endif %}</td>
             {% endif %}
             {% endwith %}
+            {# S136: acciones de la fila en el menú de tres puntos (directriz 4.24, regla 9). #}
+            <td class="text-end">
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-link text-dark py-0" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Acciones">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#clkDetailModal"
+                               hx-get="{% url 'panel:clock_events_detail' row.person.pk %}?date_from={{ date_from|date:'Y-m-d' }}&date_to={{ date_to|date:'Y-m-d' }}"
+                               hx-target="#clk-detail-container"><i class="bi bi-calendar-week me-1"></i>Ver las jornadas</a></li>
+                        <li><a class="dropdown-item" href="{% url 'panel:documentation_personal_detail' pk=row.person.pk %}"><i class="bi bi-person-vcard me-1"></i>Abrir la ficha</a></li>
+                    </ul>
+                </div>
+            </td>
         </tr>
         {% empty %}
-        <tr><td colspan="9" class="text-muted small py-3">No se encontró personal.</td></tr>
+        <tr><td colspan="10" class="text-muted small py-3">No se encontró personal.</td></tr>
         {% endfor %}
     </tbody>
 </table>

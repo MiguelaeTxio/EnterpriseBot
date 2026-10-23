@@ -5,9 +5,10 @@ Vacaciones (directriz 4.24):
 - #clk-top-panel (fijo): "Buscar y filtrar" con los filtros de
   Personal (búsqueda, Estado, Empresa, Selección) más el intervalo de
   fechas; a la derecha, la selección y la exportación a Excel.
-- #clk-bottom-panel: "Trabajadores" (2/3) -- una fila por trabajador
-  con fichajes, horas, incidencias y último fichaje del intervalo -- y
-  "Selección actual" (1/3).
+- #clk-bottom-panel: "Trabajadores" (3/4) -- una fila por trabajador
+  con fichajes, horas, incidencias y último fichaje del intervalo, con
+  su menú de tres puntos -- y "Selección actual" (1/4). Pantalla
+  completa de la lista (directriz 4.26). S136: alineado con Repostajes.
 Pulsar el nombre abre sus jornadas día a día. Solo consulta: los
 registros se conservan cuatro años (art. 34.9 ET). Filtros, orden y
 selección persistidos por usuario (screen_key "clock_events").
@@ -124,12 +125,16 @@ selección persistidos por usuario (screen_key "clock_events").
 
 <div class="border rounded p-2" id="clk-bottom-panel">
     <div class="row g-2 h-100">
-        <div class="col-lg-8 h-100">
+        <div class="col-lg-9 h-100">
             <div class="border rounded p-2 h-100 d-flex flex-column">
                 <div class="fw-bold small mb-1">Trabajadores (<span id="clk-row-count">{{ rows|length }}</span>)
                     <button type="button" class="btn btn-sm btn-link py-0{% if not sort_active %} d-none{% endif %}" id="clk-clear-sort"
                             hx-get="{% url 'panel:clock_events_results' %}" hx-target="#clk-results"
                             hx-include="#clk-filters" hx-vals='{"sort": ""}'>Quitar orden</button>
+                    {# S136: pantalla completa, formato del laboratorio de análisis (directriz 4.26), como Repostajes. #}
+                    <button type="button" class="btn btn-sm btn-outline-secondary float-end" id="clk-fullscreen" title="Pantalla completa">
+                        <i class="bi bi-fullscreen"></i>
+                    </button>
                 </div>
                 <div id="clk-results-scroll" class="clk-fill clk-scroll-both">
                     <div id="clk-results">
@@ -138,7 +143,7 @@ selección persistidos por usuario (screen_key "clock_events").
                 </div>
             </div>
         </div>
-        <div class="col-lg-4 h-100">
+        <div class="col-lg-3 h-100">
             <div class="border rounded p-2 h-100 d-flex flex-column">
                 <div class="fw-bold small mb-1">Selección actual (<span id="clk-selection-count">0</span>)</div>
                 <div class="clk-fill clk-scroll-y">
@@ -159,6 +164,8 @@ selección persistidos por usuario (screen_key "clock_events").
 .clk-fill { flex: 1 1 auto; min-height: 0; }
 .clk-scroll-y { overflow-y: auto; }
 .clk-scroll-both { overflow: auto; }
+#clk-bottom-panel:fullscreen { background-color: var(--bs-body-bg); padding: 1rem; }
+#clk-bottom-panel:fullscreen #clk-results-scroll { height: calc(100vh - 5rem); }
 </style>
 
 <div class="modal fade" id="clkDetailModal" tabindex="-1" aria-labelledby="clkDetailModalLabel" aria-hidden="true">
@@ -309,6 +316,13 @@ document.getElementById("clkDetailModal").addEventListener("show.bs.modal", func
         });
         params.set("selected_ids", Array.from(selection.keys()).join(","));
         window.location.href = EXPORT_URL + "?" + params.toString();
+    });
+
+    // S136: pantalla completa con el formato del laboratorio de análisis (4.26).
+    const bottom = document.getElementById("clk-bottom-panel");
+    document.getElementById("clk-fullscreen").addEventListener("click", function () {
+        if (document.fullscreenElement) document.exitFullscreen();
+        else bottom.requestFullscreen();
     });
 
     document.body.addEventListener("htmx:afterSwap", function (evt) {
