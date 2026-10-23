@@ -2254,6 +2254,48 @@ def _attach_new_task_photo(request, line, prefix, company_user):
     upload_task_photo_to_drive.delay(photo.pk)
 
 
+def _list_in_progress_parts(cu, company):
+    """
+    In-progress digital parts of an operator, newest first, each with
+    its work date and number of tasks.
+
+    ---
+
+    Partes digitales en curso de un operario, del más reciente al más
+    antiguo, cada uno con su fecha y su número de tareas. H37-S134
+    (6.0.C de S132): un parte en curso ya no arrastra cualquier parte
+    nuevo; el operario elige con cuál sigue.
+    """
+    from work_order_processor.models import WorkOrder as _WO_LIP
+
+    parts = []
+    in_progress = (
+        _WO_LIP.objects.filter(
+            company=company,
+            uploaded_by=cu,
+            source=_WO_LIP.Source.DIGITAL,
+            status=_WO_LIP.Status.IN_PROGRESS,
+        )
+        .prefetch_related("entries__lines")
+        .order_by("-upload_date")
+    )
+    for wo in in_progress:
+        entries = list(wo.entries.all())
+        work_date = next(
+            (e.work_date for e in entries if e.work_date is not None),
+            None,
+        )
+        parts.append(
+            {
+                "wo": wo,
+                "pk": wo.pk,
+                "work_date": work_date,
+                "num_tasks": sum(len(e.lines.all()) for e in entries),
+            }
+        )
+    return parts
+
+
 class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
     """
     Structured web form entry path for work orders (Via A).
@@ -2612,21 +2654,52 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
             )
             return render(request, self.template_name, context)
 
-        from work_order_processor.models import (
-            WorkOrder as _WO_IP,
-            SparePartLine as _SPL_IP,
-        )
+        from work_order_processor.models import SparePartLine as _SPL_IP
 
-        _in_progress_wo = (
-            _WO_IP.objects.filter(
-                company=company,
-                uploaded_by=cu,
-                source=_WO_IP.Source.DIGITAL,
-                status=_WO_IP.Status.IN_PROGRESS,
+        # H37-S134 (6.0.C de S132, opción 1 de Miguel Ángel): antes se
+        # abría siempre el último parte en curso, fuera del día que fuera,
+        # y todo lo que se guardaba iba a ese parte. Ahora:
+        #   ?parte=<pk>  abre ese parte en curso;
+        #   ?nuevo=1     abre un parte nuevo y conserva los que hay;
+        #   sin nada     abre el parte en curso de hoy, o pregunta si
+        #                solo los hay de otros días.
+        _ip_parts = _list_in_progress_parts(cu, company)
+        _wanted_pk = request.GET.get("parte", "").strip()
+        _force_new = request.GET.get("nuevo", "").strip() == "1"
+        _in_progress_wo = None
+        if _wanted_pk:
+            _in_progress_wo = next(
+                (p["wo"] for p in _ip_parts if str(p["pk"]) == _wanted_pk),
+                None,
             )
-            .order_by("-upload_date")
-            .first()
-        )
+            if _in_progress_wo is None:
+                django_messages.warning(
+                    request,
+                    "Ese parte ya no está en curso o no es tuyo.",
+                )
+        if _in_progress_wo is None and not _force_new and _ip_parts:
+            from django.utils.timezone import localdate as _localdate_ip
+
+            _today_ip = _localdate_ip()
+            _in_progress_wo = next(
+                (p["wo"] for p in _ip_parts if p["work_date"] == _today_ip),
+                None,
+            )
+            if _in_progress_wo is None:
+                return render(
+                    request,
+                    "panel/operator/form_in_progress_choice.html",
+                    {
+                        "active_nav": "operator_dashboard",
+                        "in_progress_parts": _ip_parts,
+                        "today": _today_ip,
+                    },
+                )
+        _other_ip_parts = [
+            p
+            for p in _ip_parts
+            if _in_progress_wo is None or p["pk"] != _in_progress_wo.pk
+        ]
 
         if _in_progress_wo is not None:
 
@@ -2831,6 +2904,10 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                 {
                     "in_progress_mode": True,
                     "in_progress_wo_pk": _in_progress_wo.pk,
+                    "other_in_progress_parts": _other_ip_parts,
+                    "in_progress_date": (
+                        _ip_first_entry.work_date if _ip_first_entry else None
+                    ),
                     "num_entradas": len(_ip_entradas),
                     "num_repuestos": len(_ip_repuestos),
                     "fecha": _ip_fecha_str,
@@ -2952,6 +3029,7 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                 "num_entradas": 1,
                 "num_repuestos": 0,
                 "fecha": "",
+                "other_in_progress_parts": _other_ip_parts,
                 "min_date": min_date.isoformat() if min_date else "",
                 "lunch_break_start": _lunch_start,
                 "lunch_break_end": _lunch_end,
@@ -3309,14 +3387,9 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                     _excl_pks.add(int(_ip_wo_pk_ck))
                 except ValueError:
                     pass
-            _ip_pks = list(
-                _WO0.objects.filter(
-                    company=company,
-                    uploaded_by=_parte_owner,
-                    status=_WO0.Status.IN_PROGRESS,
-                ).values_list("pk", flat=True)
-            )
-            _excl_pks.update(_ip_pks)
+            # H37-S134: ya no se excluyen todos los partes en curso del
+            # operario, solo el que se está guardando. Otro parte en curso
+            # de la misma fecha es un parte duplicado, como cualquier otro.
             _existing_entry0 = (
                 _WOE0.objects.filter(
                     work_order__company=company,
@@ -3367,15 +3440,38 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                         }
                         for ld in _parse_entry_lines_from_post(POST, company)
                     ]
+                    _dup_wo = _existing_entry0.work_order
+                    _dup_in_progress = (
+                        _dup_wo.status == _WO0.Status.IN_PROGRESS
+                        and _dup_wo.uploaded_by_id == cu.pk
+                    )
+                    if _dup_in_progress:
+                        _dup_error = (
+                            "Ya tienes un parte en curso del "
+                            f"{work_date.strftime('%d/%m/%Y')}. Sigue con "
+                            "ese parte en lugar de empezar otro."
+                        )
+                    else:
+                        _dup_error = (
+                            "Ya existe un parte para la fecha "
+                            f"{work_date.strftime('%d/%m/%Y')}. "
+                            "Si quieres editarlo, ve al historial y pulsa "
+                            "'Editar' en el parte correspondiente."
+                        )
                     context = self._get_context_base(request)
                     context.update(
                         {
-                            "error": (
-                                "Ya existe un parte para la fecha "
-                                f"{work_date.strftime('%d/%m/%Y')}. "
-                                "Si quieres editarlo, ve al historial y pulsa "
-                                "'Editar' en el parte correspondiente."
+                            "error": _dup_error,
+                            "duplicate_in_progress_pk": (
+                                _dup_wo.pk if _dup_in_progress else None
                             ),
+                            # El formulario sigue apuntando al parte que
+                            # se estaba guardando: sin esto, el siguiente
+                            # envío creaba un parte nuevo.
+                            "edit_mode": bool(_edit_wo_pk_ck),
+                            "edit_wo_pk": _edit_wo_pk_ck,
+                            "in_progress_mode": bool(_ip_wo_pk_ck),
+                            "in_progress_wo_pk": _ip_wo_pk_ck,
                             "fecha": fecha_str,
                             "entradas_enriched": _entradas_err,
                             "repuestos_enriched": [],
@@ -4070,11 +4166,10 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                         except (_WO_IP2.DoesNotExist, ValueError):
                             _ip_wo = None
                     else:
-                        _ip_wo = _WO_IP2.objects.filter(
-                            company=company,
-                            uploaded_by=cu,
-                            status=_WO_IP2.Status.IN_PROGRESS,
-                        ).first()
+                        # H37-S134: sin parte en curso señalado, es un
+                        # parte nuevo. Antes se tomaba el primer parte en
+                        # curso del operario, fuera del día que fuera.
+                        _ip_wo = None
 
                     if _ip_wo is None:
 
@@ -4762,19 +4857,16 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
             )
             if _clock_hold:
                 django_messages.warning(request, " ".join(_clock_hold))
-            return redirect("/panel/operator/form/")
+            from django.urls import reverse as _reverse_sb
 
+            return redirect(
+                f"{_reverse_sb('panel:operator_form')}?parte={_ip_wo.pk}"
+            )
+
+        # H37-S134: sin parte en curso señalado, el cierre es de un parte
+        # nuevo. Antes se cerraba el primer parte en curso del operario,
+        # fuera del día que fuera.
         _ip_wo_pk_close = POST.get("in_progress_wo_pk", "").strip()
-        if not _ip_wo_pk_close:
-            from work_order_processor.models import WorkOrder as _WO_CL
-
-            _ip_wo_close = _WO_CL.objects.filter(
-                company=company,
-                uploaded_by=cu,
-                status=_WO_CL.Status.IN_PROGRESS,
-            ).first()
-            if _ip_wo_close:
-                _ip_wo_pk_close = str(_ip_wo_close.pk)
 
         # Non-destructive close: reuse the existing IN_PROGRESS work order
         # (or any digital WO for this operator) — set status to DONE and

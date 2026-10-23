@@ -1,0 +1,52 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/operator/form_in_progress_choice.html #}
+{% extends "panel/base.html" %}
+{% comment %}
+H37-S134 (6.0.C de S132, opción 1 de Miguel Ángel): el operario tiene
+partes en curso, ninguno de hoy. Elige seguir con uno de ellos o empezar
+un parte nuevo; los partes en curso se conservan sin tocar.
+Rendered by WorkOrderEntryFormView.get when every in-progress part is
+from another day.
+{% endcomment %}
+
+{% block title %}Nuevo parte{% endblock %}
+
+{% block page_title %}Nuevo parte{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12 col-lg-8 col-xl-6">
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-warning-subtle border-bottom py-3 px-4">
+            <h6 class="mb-0 fw-semibold">
+                <i class="bi bi-exclamation-triangle-fill me-2 text-warning"></i>
+                {% if in_progress_parts|length == 1 %}Tienes un parte sin cerrar de otro día{% else %}Tienes partes sin cerrar de otros días{% endif %}
+            </h6>
+        </div>
+        <div class="card-body px-4 py-3">
+            <p class="text-sm mb-3">
+                Hoy es {{ today|date:"l j \d\e F" }}. Elige si sigues con
+                {% if in_progress_parts|length == 1 %}ese parte{% else %}uno de esos partes{% endif %}
+                o empiezas uno nuevo. No se pierde nada: lo que no cierres sigue guardado.
+            </p>
+            <div class="list-group mb-3">
+                {% for part in in_progress_parts %}
+                <a href="{% url 'panel:operator_form' %}?parte={{ part.pk }}"
+                   class="list-group-item list-group-item-action d-flex justify-content-between align-items-center gap-2">
+                    <span>
+                        <i class="bi bi-journal-text me-2 text-muted"></i>
+                        Parte del
+                        <strong>{% if part.work_date %}{{ part.work_date|date:"l d/m/Y" }}{% else %}día sin fecha{% endif %}</strong>
+                        <span class="text-muted small ms-1">({{ part.num_tasks }} tarea{{ part.num_tasks|pluralize }})</span>
+                    </span>
+                    <span class="btn btn-outline-primary btn-sm">Seguir con este parte</span>
+                </a>
+                {% endfor %}
+            </div>
+            <a href="{% url 'panel:operator_form' %}?nuevo=1" class="btn btn-success">
+                <i class="bi bi-plus-circle me-1"></i>Empezar un parte nuevo
+            </a>
+        </div>
+    </div>
+    </div>
+</div>
+{% endblock %}

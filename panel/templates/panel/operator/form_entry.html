@@ -36,7 +36,29 @@
         {% if error %}
         <div class="alert alert-danger d-flex align-items-start gap-2 mb-4">
             <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i>
-            <div>{{ error }}</div>
+            <div>
+                {{ error }}
+                {% if duplicate_in_progress_pk %}
+                <a href="{% url 'panel:operator_form' %}?parte={{ duplicate_in_progress_pk }}"
+                   class="btn btn-sm btn-outline-danger ms-2">Seguir con ese parte</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% comment %}
+        H37-S134: otros partes en curso del operario, que se conservan.
+        Other in-progress parts of the operator, kept untouched.
+        {% endcomment %}
+        {% if other_in_progress_parts %}
+        <div class="alert alert-warning d-flex align-items-start gap-2 mb-4">
+            <i class="bi bi-journal-text flex-shrink-0 mt-1"></i>
+            <div>
+                {% if in_progress_mode %}Estás con el parte del {{ in_progress_date|date:"d/m/Y"|default:"día sin fecha" }}.{% else %}Estás empezando un parte nuevo.{% endif %}
+                También tienes sin cerrar:
+                {% for part in other_in_progress_parts %}
+                <a href="{% url 'panel:operator_form' %}?parte={{ part.pk }}" class="alert-link">parte del {% if part.work_date %}{{ part.work_date|date:"d/m/Y" }}{% else %}día sin fecha{% endif %}</a>{% if not forloop.last %}, {% endif %}{% endfor %}.
+            </div>
         </div>
         {% endif %}
 
