@@ -333,7 +333,7 @@ def _previous_reading(machine, field, day):
     ).order_by("-reading_date", "-id").first()
 
 
-def build_readings(log, heartbeat=None):
+def build_readings(log, heartbeat=None, vehicle=None):
     """
     Turn credible supplies into meter readings, in time order.
 
@@ -348,6 +348,8 @@ def build_readings(log, heartbeat=None):
         GasoGesSupply.STATUS_NO_UNIT,
     ]).select_related("vehicle", "vehicle__machine").order_by(
         "supplied_at", "id")
+    if vehicle is not None:
+        pending = pending.filter(vehicle=vehicle)
     total = pending.count()
     counters = {"lecturas": 0, "dudosos": 0, "sin_centro": 0,
                 "sin_unidad": 0}
@@ -401,6 +403,42 @@ def build_readings(log, heartbeat=None):
         "%(sin_centro)d sin centro de gasto, %(sin_unidad)d sin "
         "unidad." % counters)
     return counters
+
+
+def accept_supply(supply, note, value=None):
+    """
+    Turn a supply into a reading because the driver said so.
+
+    ---
+
+    Convierte un repostaje en lectura porque lo ha dicho el chófer
+    (S135, pregunta por WhatsApp): confirmó que el dato es correcto o
+    escribió el valor correcto (`value`). El valor tecleado original
+    queda en el motivo. Sin centro de gasto o sin unidad no hay lectura
+    posible y devuelve False.
+    """
+    vehicle = supply.vehicle
+    if vehicle.machine_id is None or (
+            vehicle.unit == GasoGesVehicle.UNIT_UNKNOWN):
+        return False
+    field = "km" if vehicle.unit == GasoGesVehicle.UNIT_KM else "hours"
+    if value is not None and value != supply.meter_value:
+        note = "%s (tecleó %s)" % (note, supply.meter_value)
+        supply.meter_value = value
+    with transaction.atomic():
+        if supply.reading_id:
+            supply.reading.delete()
+        supply.reading = MachineMeterReading.objects.create(
+            machine=vehicle.machine,
+            reading_date=timezone.localtime(supply.supplied_at).date(),
+            source=MachineMeterReading.SOURCE_GASOGES,
+            **{field: supply.meter_value},
+        )
+        supply.status = GasoGesSupply.STATUS_READING
+        supply.status_note = note[:255]
+        supply.save(update_fields=[
+            "meter_value", "reading", "status", "status_note"])
+    return True
 
 
 def reset_readings(log):

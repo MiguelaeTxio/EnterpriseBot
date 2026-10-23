@@ -758,6 +758,82 @@ class GasoGesSupply(models.Model):
         return f"Suministro {self.vehicle.gasoges_id} {self.supplied_at}"
 
 
+class RefuelQuestion(models.Model):
+    """
+    One WhatsApp question to a driver about a GasoGes supply.
+
+    ---
+
+    Una pregunta por WhatsApp al chófer sobre un repostaje de GasoGes
+    (S135, Miguel Ángel: dos plantillas con botones). Guarda a quién se
+    preguntó, qué y en qué quedó, para no repetir y para saber a qué
+    pregunta corresponde cada respuesta:
+    - VALUE (`refuel_value_check`): el KM tecleado parece erróneo.
+    - UNIT (`refuel_unit_check`): no se sabe si el vehículo apunta km u
+      horas.
+    """
+
+    KIND_VALUE = "VALUE"
+    KIND_UNIT = "UNIT"
+    KIND_CHOICES = [
+        (KIND_VALUE, _("¿Es correcto el dato?")),
+        (KIND_UNIT, _("¿Kilómetros u horas?")),
+    ]
+    STATUS_SENT = "SENT"
+    STATUS_AWAITING_VALUE = "AWAITING_VALUE"
+    STATUS_CONFIRMED = "CONFIRMED"
+    STATUS_CORRECTED = "CORRECTED"
+    STATUS_UNIT_SET = "UNIT_SET"
+    STATUS_EXPIRED = "EXPIRED"
+    STATUS_CHOICES = [
+        (STATUS_SENT, _("Enviada, sin respuesta")),
+        (STATUS_AWAITING_VALUE, _("Esperando el valor correcto")),
+        (STATUS_CONFIRMED, _("El chófer dice que es correcto")),
+        (STATUS_CORRECTED, _("Corregido por el chófer")),
+        (STATUS_UNIT_SET, _("Unidad confirmada por el chófer")),
+        (STATUS_EXPIRED, _("Sin respuesta a tiempo")),
+    ]
+
+    kind = models.CharField(_("Pregunta"), max_length=6,
+                            choices=KIND_CHOICES)
+    supply = models.ForeignKey(
+        GasoGesSupply,
+        on_delete=models.CASCADE,
+        related_name="questions",
+        verbose_name=_("Repostaje"),
+    )
+    vehicle = models.ForeignKey(
+        GasoGesVehicle,
+        on_delete=models.CASCADE,
+        related_name="questions",
+        verbose_name=_("Vehículo (GasoGes)"),
+    )
+    person = models.ForeignKey(
+        "document_explorer.PersonIdentity",
+        on_delete=models.CASCADE,
+        related_name="refuel_questions",
+        verbose_name=_("Chófer"),
+    )
+    phone = models.CharField(_("Teléfono"), max_length=20)
+    status = models.CharField(
+        _("Estado"), max_length=16, choices=STATUS_CHOICES,
+        default=STATUS_SENT, db_index=True,
+    )
+    message_sid = models.CharField(max_length=64, blank=True)
+    sent_at = models.DateTimeField(_("Enviada"), auto_now_add=True)
+    answered_at = models.DateTimeField(_("Respondida"), null=True,
+                                       blank=True)
+    answer = models.CharField(_("Respuesta"), max_length=255, blank=True)
+
+    class Meta:
+        verbose_name = _("Pregunta de repostaje")
+        verbose_name_plural = _("Preguntas de repostaje")
+        ordering = ["-sent_at", "-id"]
+
+    def __str__(self) -> str:
+        return f"{self.get_kind_display()} -- {self.supply}"
+
+
 # ---------------------------------------------------------------------------
 # MaintenanceLog — one record per intervention / un registro por intervención
 # ---------------------------------------------------------------------------

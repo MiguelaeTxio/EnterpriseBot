@@ -673,6 +673,31 @@ class IncomingWhatsAppView(View):
                 )
             return HttpResponse(status=200)
 
+        # --- Step 4b-quater (H30, S135): refuel questions. ---
+        # Buttons of refuel_value_check / refuel_unit_check and the number
+        # a driver writes after "No, lo corrijo", before anything else.
+        # --- Paso 4b-quater (H30, S135): preguntas de repostajes. ---
+        # Botones de refuel_value_check / refuel_unit_check y el número
+        # que escribe el chófer tras "No, lo corrijo", antes que nada.
+        from fleet.refuel_questions import handle_whatsapp_reply
+
+        _refuel_reply = handle_whatsapp_reply(
+            company, from_number, _button_payload, body,
+        )
+        if _refuel_reply is not None:
+            try:
+                WhatsAppChatService.send_reply(
+                    from_number=to_number,
+                    to_number=from_number,
+                    reply_text=_refuel_reply,
+                )
+            except Exception as _exc:
+                logger.error(
+                    "# [WHATSAPP] Error respondiendo repostaje a %s: %s",
+                    from_number, _exc,
+                )
+            return HttpResponse(status=200)
+
         # --- Step 4b-ter: Handle ButtonPayload for circular_notification —
         # H31, S115. ---
         # Intercepts the "Leer aquí" Quick Reply of the circular_notification
