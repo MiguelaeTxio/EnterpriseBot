@@ -9,8 +9,10 @@ los centros de gasto (`fleet.MachineAsset.gasoges_vehicle_id`), punto 3
 de la hoja de ruta S135:
 - Por `MATRICULA` contra `plate`, normalizadas (sin espacios ni
   guiones, mayúsculas).
-- Si el vehículo de GasoGes no tiene matrícula, por `NOMBRE` contra
-  `code`, con la misma normalización.
+- Si la matrícula no casa con ninguna (o no hay), contra `code`: la
+  propia MATRICULA de GasoGes (que en ~90 vehículos guarda el código,
+  "Z-01"), el NOMBRE, y cada palabra del NOMBRE ("T-13 1364BFL"),
+  con la misma normalización (Miguel Ángel, S135, opción A.1).
 
 No enlaza nada dudoso: si una matrícula coincide con varios centros de
 gasto, si un centro de gasto ya tiene otro ID, o si dos vehículos de
@@ -122,6 +124,35 @@ class Command(BaseCommand):
                counters)
         )
 
+    @staticmethod
+    def _candidates(plate, name, raw_name, by_plate, by_code):
+        """
+        Cost centres matching a GasoGes vehicle, and how they matched.
+
+        ---
+
+        Centros de gasto que casan con un vehículo de GasoGes y por qué
+        vía. Orden (Miguel Ángel, S135, opción A.1): matrícula contra
+        `plate`; si no casa ninguna, MATRICULA de GasoGes contra `code`
+        (GasoGes guarda ahí el código en ~90 vehículos: "Z-01"),
+        NOMBRE contra `code`, y por último cada palabra del NOMBRE
+        contra `code` ("T-13 1364BFL" -> T13), solo si todas las que
+        casan llevan al mismo centro de gasto.
+        """
+        if plate and by_plate.get(plate):
+            return by_plate[plate], "matrícula"
+        if plate and by_code.get(plate):
+            return by_code[plate], "código en MATRICULA"
+        if name and by_code.get(name):
+            return by_code[name], "código en NOMBRE"
+        found = {}
+        for word in str(raw_name or "").split():
+            for asset in by_code.get(normalize(word), []):
+                found[asset.pk] = asset
+        if found:
+            return list(found.values()), "código dentro del NOMBRE"
+        return [], ""
+
     def _run(self, apply):
         mode = "APLICAR" if apply else "SOLO INFORME (sin --apply)"
         self._log("Inicio: enlace de vehículos de GasoGes -- %s." % mode)
@@ -154,21 +185,12 @@ class Command(BaseCommand):
                 vid = vehicle["vehicle_id"]
                 plate = normalize(vehicle["plate"])
                 name = normalize(vehicle["name"])
-                if plate:
-                    candidates = by_plate.get(plate, [])
-                    how = "matrícula"
-                else:
-                    candidates = by_code.get(name, [])
-                    how = "nombre"
+                candidates, how = self._candidates(
+                    plate, name, vehicle["name"], by_plate, by_code)
                 reason = None
                 asset = None
                 if not candidates:
-                    reason = "sin coincidencia por %s" % how
-                    if plate and by_code.get(name):
-                        reason += (
-                            " (por NOMBRE coincidiría con %s)"
-                            % by_code[name][0].code
-                        )
+                    reason = "sin coincidencia por matrícula ni código"
                 elif len(candidates) > 1:
                     reason = "%s en varios centros de gasto: %s" % (
                         how, ", ".join(a.code for a in candidates))
