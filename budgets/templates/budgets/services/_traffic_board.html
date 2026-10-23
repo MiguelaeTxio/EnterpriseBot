@@ -34,7 +34,7 @@ y el gasoil estimados del servicio, de base a base.
                 <div class="d-flex align-items-center gap-2">
                     <span class="tb-avatar">{{ driver.user.first_name|slice:":1" }}{{ driver.user.last_name|slice:":1" }}</span>
                     <div class="flex-grow-1 min-w-0">
-                        <div class="fw-semibold text-truncate">{{ driver.display_name }}</div>
+                        <div class="fw-semibold tb-name">{{ driver.display_name }}</div>
                         <div class="small text-muted">
                             {{ driver.state_label }}
                             {% if driver.current_unit %}· {{ driver.current_unit.albaran_number }}{% endif %}
@@ -92,7 +92,7 @@ y el gasoil estimados del servicio, de base a base.
                     <div class="min-w-0 d-flex flex-column gap-1">
                         <span class="tb-chip{% if crew.is_movable %} tb-draggable{% endif %}"
                               {% if crew.is_movable %}draggable="true" data-kind="driver" data-resource="{{ crew.driver_id }}" data-crew="{{ crew.pk }}" title="Arrastra a otro equipo o a una máquina para cambiarlo"{% endif %}>
-                            <i class="bi bi-person"></i>{{ crew.driver_card.display_name }}
+                            <i class="bi bi-person"></i><span class="tb-name">{{ crew.driver_card.display_name }}</span>
                         </span>
                         <span class="tb-chip{% if crew.is_movable %} tb-draggable{% endif %}"
                               {% if crew.is_movable %}draggable="true" data-kind="machine" data-resource="{{ crew.machine_id }}" data-crew="{{ crew.pk }}" title="Arrastra a otro equipo o a un conductor para cambiarla"{% endif %}>
@@ -197,10 +197,10 @@ y el gasoil estimados del servicio, de base a base.
                         <div class="small text-muted mb-1">Estimado de base a base (como se cobra), aunque la máquina haya encadenado otro servicio.</div>
                         <div class="d-flex flex-wrap gap-2 align-items-end">
                             <label class="small">Km
-                                <input type="text" inputmode="decimal" class="form-control form-control-sm" name="km" value="{{ unit.km_hint }}" style="width: 6.5rem;">
+                                <input type="text" inputmode="decimal" class="form-control form-control-sm tb-num-input" name="km" value="{{ unit.km_hint }}">
                             </label>
                             <label class="small">Gasoil (l)
-                                <input type="text" inputmode="decimal" class="form-control form-control-sm" name="liters" style="width: 6.5rem;">
+                                <input type="text" inputmode="decimal" class="form-control form-control-sm tb-num-input" name="liters">
                             </label>
                             <button type="button" class="btn btn-sm btn-secondary" data-action="close" data-unit="{{ unit.pk }}">
                                 <i class="bi bi-check2 me-1"></i>Cerrar

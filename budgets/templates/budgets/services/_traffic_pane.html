@@ -37,9 +37,21 @@ screen_key services_hub, clave "traffic").
 #traffic-map-wrap:fullscreen #traffic-map { border-radius: 0; }
 #traffic-bottom-panel:fullscreen { height: 100vh !important; background: var(--bs-body-bg, #fff); padding: 1rem; }
 #traffic-bottom-panel[data-solo] #traffic-map-wrap { display: none; }
+/* S134: botón para salir de la pantalla completa del tablero, dentro
+   del propio panel (el de arriba queda fuera de la pantalla completa). */
+#traffic-bottom-panel { position: relative; }
+#traffic-fs-exit { display: none; position: absolute; top: .75rem; right: 1rem; z-index: 5; }
+#traffic-bottom-panel:fullscreen { padding-top: 3.25rem; }
+#traffic-bottom-panel:fullscreen #traffic-fs-exit { display: inline-block; }
 .tb-subhead { font-size: .8rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: .35rem; }
 .tb-chip { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .45rem; border-radius: 1rem; background: #f1f3f5; font-size: .85rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tb-chip.tb-draggable { cursor: grab; border: 1px dashed #adb5bd; }
+/* S134: el nombre completo del conductor cabe en su tarjeta (parte en
+   varias líneas si hace falta). min-w-0 no existe en Bootstrap 5.3: sin
+   esta regla el bloque del nombre no encogía y se salía de la tarjeta. */
+.tb-columns .min-w-0 { min-width: 0; }
+.tb-name { white-space: normal; overflow-wrap: anywhere; }
+.tb-num-input { width: 6.5rem; }
 .tb-locked-soft { opacity: .85; }
 .tb-close > summary { list-style: none; }
 .tb-close > summary::-webkit-details-marker { display: none; }
@@ -130,6 +142,10 @@ screen_key services_hub, clave "traffic").
 </div>
 
 <div id="traffic-bottom-panel">
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="traffic-fs-exit"
+            title="Salir de pantalla completa">
+        <i class="bi bi-fullscreen me-1"></i>Salir de pantalla completa
+    </button>
     <div id="traffic-board"
          hx-get="{% url 'budgets:services_traffic_board' %}"
          hx-include="#traffic-filters"
@@ -338,6 +354,11 @@ if (!(window.google && window.google.maps && window.google.maps.importLibrary)) 
         const button = ev.target.closest("[data-solo]");
         if (button) {
             toggleSolo(button.dataset.solo);
+        }
+    });
+    document.getElementById("traffic-fs-exit").addEventListener("click", function () {
+        if (document.fullscreenElement) {
+            document.exitFullscreen();
         }
     });
     document.getElementById("traffic-map-full").addEventListener("click", function () {
