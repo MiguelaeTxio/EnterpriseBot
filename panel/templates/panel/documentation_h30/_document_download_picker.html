@@ -6,38 +6,59 @@ Miguel Ángel: "un modal con la documentación separada por familia,
 con marcajes de obsoletos, para que filtro, etcétera [...] si se
 necesitan documentos, sea fácil extraerlos de la ficha".
 
-Formato de la directriz 4.24: arriba, fijo, "Buscar y filtrar" a la
-izquierda y las acciones a la derecha; debajo, solo la lista hace
-scroll. Las casillas son la "Selección de documentos" de la ficha; la
-descarga usa sus vistas de ZIP y PDF único. El comportamiento vive en
+Formato único de listado (directriz 4.24, rehecho en la misma S136 tras
+preguntar Miguel Ángel si seguía el formato):
+- arriba, fijo: "Buscar y filtrar" (búsqueda, familia, estados en
+  casillas, "Mostrar solo la selección actual", "Quitar orden") y las
+  acciones con "N seleccionados" y "Limpiar";
+- debajo: la lista (3/4) con su scroll, cabecera fija, orden múltiple
+  pulsando las cabeceras y menú de tres puntos por fila, y el visor
+  "Selección actual" (1/4); pantalla completa de la lista (4.26).
+Sin nombres de archivo: al supervisor se le enseña el tipo, las fechas
+y el estado, nunca el nombre del archivo (criterio de Miguel Ángel).
+Las casillas son la "Selección de documentos" de la ficha; la descarga
+usa sus vistas de ZIP y PDF único. Comportamiento en
 panel/static/panel/js/document_download_picker.js.
 {% endcomment %}
 <div class="ddp-root d-flex flex-column h-100"
-     data-screen-key="{{ screen_key }}" data-subject-pk="{{ subject_pk }}"{% if can_trash %}
+     data-screen-key="{{ screen_key }}" data-subject-pk="{{ subject_pk }}"
+     data-sort="{{ saved_sort }}"{% if can_trash %}
      data-trash-url="{{ trash_url }}"{% endif %}>
     <div class="row g-2 mb-2 flex-shrink-0">
         <div class="col-lg-7">
             <div class="border rounded p-2 h-100">
-                <div class="small text-muted fw-bold mb-1">Buscar y filtrar</div>
+                <div class="fw-bold small mb-1">Buscar y filtrar</div>
                 <input type="search" class="form-control form-control-sm mb-2 ddp-search"
-                       placeholder="Buscar por tipo o nombre de archivo…">
-                <div class="d-flex flex-wrap align-items-center gap-3">
-                    <select class="form-select form-select-sm ddp-family ddp-select-auto" aria-label="Familia">
-                        <option value="">Todas las familias</option>
-                        {% for family in families %}
-                        <option value="{{ family.code }}"{% if family.code == saved_family %} selected{% endif %}>{{ family.label }} ({{ family.rows|length }})</option>
-                        {% endfor %}
-                    </select>
-                    {% for value, label in state_choices %}
-                    <div class="form-check form-check-inline mb-0">
-                        <input class="form-check-input ddp-state" type="checkbox" id="ddp-state-{{ value }}"
-                               value="{{ value }}"{% if value in saved_states %} checked{% endif %}>
-                        <label class="form-check-label small" for="ddp-state-{{ value }}">{{ label }}s</label>
+                       placeholder="Buscar por tipo o familia…">
+                <div class="d-flex flex-wrap align-items-start gap-3 small">
+                    <div>
+                        <div class="fw-semibold mb-1">Familia</div>
+                        <select class="form-select form-select-sm ddp-family ddp-select-auto" aria-label="Familia">
+                            <option value="">Todas</option>
+                            {% for family in families %}
+                            <option value="{{ family.code }}"{% if family.code == saved_family %} selected{% endif %}>{{ family.label }} ({{ family.rows|length }})</option>
+                            {% endfor %}
+                        </select>
                     </div>
-                    {% endfor %}
-                    <div class="form-check form-check-inline mb-0">
-                        <input class="form-check-input ddp-only-selected" type="checkbox" id="ddp-only-selected">
-                        <label class="form-check-label small" for="ddp-only-selected">Solo los marcados</label>
+                    <div>
+                        <div class="fw-semibold mb-1">Estado</div>
+                        {% for value, label in state_choices %}
+                        <div class="form-check">
+                            <input class="form-check-input ddp-state" type="checkbox" id="ddp-state-{{ value }}"
+                                   value="{{ value }}"{% if value in saved_states %} checked{% endif %}>
+                            <label class="form-check-label" for="ddp-state-{{ value }}">{{ label }}s</label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div>
+                        <div class="fw-semibold mb-1">Selección</div>
+                        <div class="form-check">
+                            <input class="form-check-input ddp-only-selected" type="checkbox" id="ddp-only-selected">
+                            <label class="form-check-label" for="ddp-only-selected">Mostrar solo la selección actual</label>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-secondary mt-1 d-none ddp-clear-sort" title="Deshacer todos los órdenes aplicados">
+                            <i class="bi bi-x-circle me-1"></i>Quitar orden
+                        </button>
                     </div>
                 </div>
             </div>
@@ -45,83 +66,124 @@ panel/static/panel/js/document_download_picker.js.
         <div class="col-lg-5">
             <div class="border rounded p-2 h-100">
                 <div class="d-flex align-items-center gap-2 mb-1">
-                    <strong class="small"><span class="ddp-count">0</span> marcados</strong>
-                    <span class="small text-muted">· <span class="ddp-visible">0</span> de {{ total }} a la vista</span>
-                    <button type="button" class="btn btn-sm btn-outline-secondary ms-auto ddp-fullscreen" title="Pantalla completa">
-                        <i class="bi bi-fullscreen"></i>
-                    </button>
+                    <strong class="small"><span class="ddp-count">0</span> seleccionados</strong>
+                    <button type="button" class="btn btn-sm btn-outline-secondary ddp-clear">Limpiar</button>
                 </div>
-                <div class="d-flex flex-wrap gap-1 mb-2">
-                    <button type="button" class="btn btn-sm btn-outline-primary ddp-check-visible">Marcar los visibles</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary ddp-uncheck-visible">Desmarcar los visibles</button>
-                    <button type="button" class="btn btn-sm btn-outline-danger ddp-clear">Limpiar</button>
-                </div>
-                <div class="d-flex flex-wrap gap-1">
-                    <button type="button" class="btn btn-sm btn-primary ddp-download" data-url="{{ zip_url }}">
-                        <i class="bi bi-file-earmark-zip me-1"></i>Descargar ZIP
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary ddp-download" data-url="{{ pdf_url }}">
-                        <i class="bi bi-file-earmark-pdf me-1"></i>Descargar PDF único
-                    </button>
+                <div class="row g-1">
+                    <div class="col-6 border-end pe-2">
+                        <div class="small text-muted fw-bold">Marcar</div>
+                        <div class="d-flex flex-wrap gap-1">
+                            <button type="button" class="btn btn-sm btn-outline-primary ddp-check-visible">Los visibles</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary ddp-uncheck-visible">Desmarcar visibles</button>
+                        </div>
+                    </div>
+                    <div class="col-6 ps-2">
+                        <div class="small text-muted fw-bold">Descargar la selección</div>
+                        <div class="d-flex flex-wrap gap-1">
+                            <button type="button" class="btn btn-sm btn-primary ddp-download" data-url="{{ zip_url }}">
+                                <i class="bi bi-file-earmark-zip me-1"></i>ZIP
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-primary ddp-download" data-url="{{ pdf_url }}">
+                                <i class="bi bi-file-earmark-pdf me-1"></i>PDF único
+                            </button>
+                        </div>
+                    </div>
                     {% if can_trash %}
                     {% comment %}
-                    S136: papelera de los marcados (borrado blando,
-                    directriz 4.12). Pide confirmación con un segundo
-                    clic.
+                    S136: papelera de la selección (borrado blando, directriz
+                    4.12). Pide confirmación con un segundo clic.
                     {% endcomment %}
-                    <button type="button" class="btn btn-sm btn-outline-danger ms-auto ddp-trash">
-                        <i class="bi bi-trash me-1"></i>Enviar a la papelera
-                    </button>
+                    <div class="col-12 border-top pt-1 mt-1">
+                        <div class="small text-muted fw-bold">Papelera</div>
+                        <button type="button" class="btn btn-sm btn-outline-danger ddp-trash">
+                            <i class="bi bi-trash me-1"></i>Enviar la selección a la papelera
+                        </button>
+                    </div>
                     {% endif %}
                 </div>
                 <div class="small mt-1 ddp-message"></div>
             </div>
         </div>
     </div>
-    <div class="ddp-scroll border rounded">
-        {% if families %}
-        <table class="table table-sm table-hover mb-0 ddp-table">
-            <thead>
-                <tr>
-                    <th class="ddp-check-col"><input class="form-check-input ddp-check-all" type="checkbox" title="Marcar o desmarcar los visibles"></th>
-                    <th>Tipo</th>
-                    <th>Archivo</th>
-                    <th>Emisión</th>
-                    <th>Caducidad</th>
-                    <th>Estado</th>
-                    <th class="ddp-view-col"></th>
-                </tr>
-            </thead>
-            {% for family in families %}
-            <tbody class="ddp-family-group" data-family="{{ family.code }}">
-                <tr class="table-light ddp-family-header">
-                    <td colspan="7" class="fw-bold small">{{ family.label }} <span class="text-muted fw-normal ddp-family-count"></span></td>
-                </tr>
-                {% for row in family.rows %}
-                <tr class="ddp-row" data-pk="{{ row.entry.pk }}" data-state="{{ row.state }}"
-                    data-text="{{ row.entry.document_type.label|default:''|lower }} {{ row.entry.name|lower }}">
-                    <td><input class="form-check-input ddp-check" type="checkbox" value="{{ row.entry.pk }}" aria-label="Marcar {{ row.entry.name }}"></td>
-                    <td class="small">{% if row.entry.document_type_id %}{{ row.entry.document_type.label }}{% else %}<span class="text-muted">Sin tipo</span>{% endif %}</td>
-                    <td class="small text-break">{{ row.entry.name }}</td>
-                    <td class="small text-nowrap">{{ row.entry.issue_date|date:"d/m/Y"|default:"—" }}</td>
-                    <td class="small text-nowrap">{{ row.entry.expiry_date|date:"d/m/Y"|default:"—" }}</td>
-                    <td class="small">
-                        {% if row.state == "vigente" %}<span class="badge text-bg-success">{{ row.state_label }}</span>
-                        {% elif row.state == "caducado" %}<span class="badge text-bg-danger">{{ row.state_label }}</span>
-                        {% else %}<span class="badge text-bg-secondary">{{ row.state_label }}</span>{% endif %}
-                    </td>
-                    <td class="text-nowrap">
-                        <a class="btn btn-sm btn-link p-0" href="{% url 'panel:documentation_document_view' pk=row.entry.pk %}" target="_blank" rel="noopener" title="Ver"><i class="bi bi-eye"></i></a>
-                        {% if can_trash %}<button type="button" class="btn btn-sm btn-link text-danger p-0 ms-1 ddp-row-trash" title="Enviar a la papelera"><i class="bi bi-trash"></i></button>{% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-            {% endfor %}
-        </table>
-        <div class="text-muted small p-3 d-none ddp-empty">Ningún documento cumple los filtros.</div>
-        {% else %}
-        <div class="text-muted small p-3">No hay documentación archivada.</div>
-        {% endif %}
+    <div class="ddp-bottom">
+        <div class="row g-2 h-100">
+            <div class="col-lg-9 h-100">
+                <div class="border rounded p-2 h-100 d-flex flex-column ddp-list-box">
+                    <div class="fw-bold small mb-1">
+                        Documentos (<span class="ddp-visible">0</span> de {{ total }})
+                        <button type="button" class="btn btn-sm btn-outline-secondary float-end ddp-fullscreen" title="Pantalla completa">
+                            <i class="bi bi-fullscreen"></i>
+                        </button>
+                    </div>
+                    <div class="ddp-scroll">
+                        {% if families %}
+                        <table class="table table-sm table-hover mb-0 ddp-table">
+                            <thead>
+                                <tr>
+                                    <th class="ddp-check-col"><input class="form-check-input ddp-check-all" type="checkbox" title="Marcar o desmarcar los visibles"></th>
+                                    <th><a href="#" class="text-decoration-none text-dark ddp-sort" data-key="type">Tipo</a></th>
+                                    <th><a href="#" class="text-decoration-none text-dark ddp-sort" data-key="issue">Emisión</a></th>
+                                    <th><a href="#" class="text-decoration-none text-dark ddp-sort" data-key="expiry">Caducidad</a></th>
+                                    <th><a href="#" class="text-decoration-none text-dark ddp-sort" data-key="state">Estado</a></th>
+                                    <th class="ddp-menu-col"></th>
+                                </tr>
+                            </thead>
+                            {% for family in families %}
+                            <tbody class="ddp-family-group" data-family="{{ family.code }}">
+                                <tr class="table-light ddp-family-header">
+                                    <td colspan="6" class="fw-bold small">{{ family.label }} <span class="text-muted fw-normal ddp-family-count"></span></td>
+                                </tr>
+                                {% for row in family.rows %}
+                                <tr class="ddp-row" data-pk="{{ row.entry.pk }}" data-state="{{ row.state }}"
+                                    data-index="{{ forloop.counter }}"
+                                    data-type="{% if row.entry.document_type_id %}{{ row.entry.document_type.label|lower }}{% else %}~{% endif %}"
+                                    data-issue="{{ row.entry.issue_date|date:'Y-m-d' }}"
+                                    data-expiry="{{ row.entry.expiry_date|date:'Y-m-d' }}"
+                                    data-label="{% if row.entry.document_type_id %}{{ row.entry.document_type.label }}{% else %}Sin tipo{% endif %}{% if row.entry.expiry_date %} · caduca {{ row.entry.expiry_date|date:'d/m/Y' }}{% elif row.entry.issue_date %} · emitido {{ row.entry.issue_date|date:'d/m/Y' }}{% endif %}"
+                                    data-text="{{ row.entry.document_type.label|default:'sin tipo'|lower }} {{ family.label|lower }}">
+                                    <td><input class="form-check-input ddp-check" type="checkbox" value="{{ row.entry.pk }}" aria-label="Marcar"></td>
+                                    <td class="small">{% if row.entry.document_type_id %}{{ row.entry.document_type.label }}{% else %}<span class="text-muted">Sin tipo</span>{% endif %}</td>
+                                    <td class="small text-nowrap">{{ row.entry.issue_date|date:"d/m/Y"|default:"—" }}</td>
+                                    <td class="small text-nowrap">{{ row.entry.expiry_date|date:"d/m/Y"|default:"—" }}</td>
+                                    <td class="small">
+                                        {% if row.state == "vigente" %}<span class="badge text-bg-success">{{ row.state_label }}</span>
+                                        {% elif row.state == "caducado" %}<span class="badge text-bg-danger">{{ row.state_label }}</span>
+                                        {% else %}<span class="badge text-bg-secondary">{{ row.state_label }}</span>{% endif %}
+                                    </td>
+                                    <td class="text-end">
+                                        {# S136: acciones de la fila en el menú de tres puntos (4.24, regla 9). #}
+                                        <div class="dropdown">
+                                            <button class="btn btn-sm btn-link text-dark py-0" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" title="Acciones">
+                                                <i class="bi bi-three-dots-vertical"></i>
+                                            </button>
+                                            <ul class="dropdown-menu dropdown-menu-end">
+                                                <li><a class="dropdown-item" href="{% url 'panel:documentation_document_view' pk=row.entry.pk %}" target="_blank" rel="noopener"><i class="bi bi-eye me-1"></i>Ver</a></li>
+                                                {% if can_trash %}<li><button type="button" class="dropdown-item text-danger ddp-row-trash"><i class="bi bi-trash me-1"></i>Enviar a la papelera</button></li>{% endif %}
+                                            </ul>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            {% endfor %}
+                        </table>
+                        <div class="text-muted small p-3 d-none ddp-empty">Ningún documento cumple los filtros.</div>
+                        {% else %}
+                        <div class="text-muted small p-3">No hay documentación archivada.</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-3 h-100">
+                <div class="border rounded p-2 h-100 d-flex flex-column">
+                    <div class="fw-bold small mb-1">Selección actual (<span class="ddp-selection-count">0</span>)</div>
+                    <div class="ddp-scroll">
+                        <ul class="mb-0 small ps-0 list-unstyled ddp-selection-list">
+                            <li class="text-muted">Nada seleccionado todavía.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>

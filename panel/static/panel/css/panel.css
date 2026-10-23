@@ -1898,18 +1898,21 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
 
 /* H31 (S136). Ventana "Descargar documentación" de las fichas de
    persona y máquina (panel/js/document_download_picker.js): parte de
-   arriba fija y solo la lista con scroll (directriz 4.24); cabecera de
-   columnas pegada arriba; pantalla completa (directriz 4.26). */
+   arriba fija; debajo, lista (3/4) y "Selección actual" (1/4), cada una
+   con su scroll (directriz 4.24); cabecera de columnas pegada arriba;
+   pantalla completa de la lista (directriz 4.26). En el móvil las
+   columnas se apilan y la ventana hace scroll entera. */
 #documentDownloadPickerModal .ddp-body {
     height: 78vh;
     min-height: 0;
 }
-#documentDownloadPickerModal .ddp-content:fullscreen {
+.ddp-bottom {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+.ddp-list-box:fullscreen {
     background-color: var(--bs-body-bg);
     padding: 1rem;
-}
-#documentDownloadPickerModal .ddp-content:fullscreen .ddp-body {
-    height: calc(100vh - 5rem);
 }
 .ddp-scroll {
     flex: 1 1 auto;
@@ -1922,14 +1925,20 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
     background-color: #f8f9fa;
     z-index: 2;
 }
-.ddp-check-col {
+.ddp-check-col,
+.ddp-menu-col {
     width: 2rem;
-}
-.ddp-view-col {
-    width: 3.5rem;
 }
 .ddp-select-auto {
     width: auto;
     max-width: 100%;
     min-width: 0;
+}
+@media (max-width: 991.98px) {
+    #documentDownloadPickerModal .ddp-body {
+        height: auto;
+    }
+    .ddp-bottom .ddp-scroll {
+        max-height: 60vh;
+    }
 }

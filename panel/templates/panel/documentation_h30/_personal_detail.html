@@ -1129,11 +1129,11 @@ girada queda puesta a mano: la búsqueda automática ya no la cambia.
                             <div class="text-muted">Se cambia sola cuando llega un DNI o permiso nuevo.</div>
                             {% endif %}
                             <div class="mt-1">
-                                {% if id_photo.source_id %}Sacada de <a href="{% url 'panel:documentation_document_view' pk=id_photo.source_id %}" target="_blank" rel="noopener">{{ id_photo.source__name }}</a>{% else %}Subida a mano{% endif %}
+                                {% if id_photo.source_id %}Sacada de su {{ id_photo.source__document_type__label|default:"documento" }} (<a href="{% url 'panel:documentation_document_view' pk=id_photo.source_id %}" target="_blank" rel="noopener">ver</a>){% else %}Subida a mano{% endif %}
                                 el {{ id_photo.extracted_at|date:"d/m/Y H:i" }}.
                             </div>
                             {% elif avatar %}
-                            Imagen elegida como foto: <a href="{% url 'panel:documentation_document_view' pk=avatar.pk %}" target="_blank" rel="noopener">{{ avatar.name }}</a>.
+                            Imagen elegida como foto (<a href="{% url 'panel:documentation_document_view' pk=avatar.pk %}" target="_blank" rel="noopener">ver</a>).
                             {% else %}
                             Sin foto.
                             {% endif %}
@@ -1150,7 +1150,7 @@ girada queda puesta a mano: la búsqueda automática ya no la cambia.
                             <div class="input-group input-group-sm mb-2">
                                 <select class="form-select" id="personPhotoSourceSelect"{% if not photo_sources %} disabled{% endif %}>
                                     {% for source in photo_sources %}
-                                    <option value="{{ source.pk }}"{% if id_photo and id_photo.source_id == source.pk %} selected{% endif %}>{{ source.document_type__label }}{% if source.expiry_date %} · caduca {{ source.expiry_date|date:"d/m/Y" }}{% endif %}{% if source.is_obsolete %} · obsoleto{% endif %} · {{ source.name }}</option>
+                                    <option value="{{ source.pk }}"{% if id_photo and id_photo.source_id == source.pk %} selected{% endif %}>{{ source.document_type__label }}{% if source.expiry_date %} · caduca {{ source.expiry_date|date:"d/m/Y" }}{% endif %}{% if source.is_obsolete %} · obsoleto{% endif %}</option>
                                     {% empty %}
                                     <option value="">No tiene DNI, NIE, pasaporte, permiso ni imágenes</option>
                                     {% endfor %}

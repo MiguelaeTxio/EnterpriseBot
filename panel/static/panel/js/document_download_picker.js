@@ -16,10 +16,14 @@
 //   abre la descarga de siempre de la selección.
 // - Los filtros (estados y familia) se guardan por usuario
 //   (directriz 4.15).
-// - S136: "Enviar a la papelera" (los marcados, o una fila con su
-//   icono) pide un segundo clic para confirmar; al cerrar la ventana
-//   tras borrar algo, la ficha se recarga para que desaparezca también
-//   de ella.
+// - S136: "Enviar a la papelera" (la selección, o una fila desde su
+//   menú de tres puntos) pide un segundo clic para confirmar; al cerrar
+//   la ventana tras borrar algo, la ficha se recarga para que
+//   desaparezca también de ella.
+// - Formato único de listado (directriz 4.24): orden múltiple pulsando
+//   las cabeceras (dentro de cada familia; máximo 4, superíndice con la
+//   prioridad, "Quitar orden"), visor "Selección actual" y pantalla
+//   completa de la lista (4.26). El orden se guarda con los filtros.
 (function () {
     "use strict";
 
@@ -132,6 +136,80 @@
         const checkAll = root.querySelector(".ddp-check-all");
         const message = root.querySelector(".ddp-message");
         const empty = root.querySelector(".ddp-empty");
+        const clearSort = root.querySelector(".ddp-clear-sort");
+        const sortLinks = Array.from(root.querySelectorAll(".ddp-sort"));
+        const STATE_ORDER = {vigente: 0, caducado: 1, obsoleto: 2};
+        const MAX_SORT = 4;
+        let sortKeys = (root.dataset.sort || "").split(",").map(function (token) {
+            token = token.trim();
+            return {key: token.replace(/^-/, ""), desc: token.charAt(0) === "-"};
+        }).filter(function (item) {
+            return ["type", "issue", "expiry", "state"].indexOf(item.key) !== -1;
+        }).slice(0, MAX_SORT);
+
+        function sortValue(row, key) {
+            if (key === "state") {
+                return String(STATE_ORDER[row.dataset.state]);
+            }
+            return row.dataset[key] || "";
+        }
+
+        // Orden dentro de cada familia; sin orden, el del servidor. Los
+        // vacíos (sin fecha) siempre al final.
+        function applySort() {
+            groups.forEach(function (group) {
+                const groupRows = Array.from(group.querySelectorAll(".ddp-row"));
+                groupRows.sort(function (a, b) {
+                    for (let i = 0; i < sortKeys.length; i += 1) {
+                        const key = sortKeys[i].key;
+                        const va = sortValue(a, key);
+                        const vb = sortValue(b, key);
+                        if (va === vb) {
+                            continue;
+                        }
+                        if (!va) {
+                            return 1;
+                        }
+                        if (!vb) {
+                            return -1;
+                        }
+                        const cmp = va < vb ? -1 : 1;
+                        return sortKeys[i].desc ? -cmp : cmp;
+                    }
+                    return parseInt(a.dataset.index, 10) - parseInt(b.dataset.index, 10);
+                });
+                groupRows.forEach(function (row) {
+                    group.appendChild(row);
+                });
+            });
+            sortLinks.forEach(function (link) {
+                const index = sortKeys.findIndex(function (item) {
+                    return item.key === link.dataset.key;
+                });
+                const old = link.querySelector(".ddp-sort-mark");
+                if (old) {
+                    old.remove();
+                }
+                if (index === -1) {
+                    return;
+                }
+                const mark = document.createElement("span");
+                mark.className = "ddp-sort-mark";
+                mark.innerHTML = ' <i class="bi bi-chevron-' +
+                    (sortKeys[index].desc ? "down" : "up") + '"></i>' +
+                    (sortKeys.length > 1 ? "<sup>" + (index + 1) + "</sup>" : "");
+                link.appendChild(mark);
+            });
+            if (clearSort) {
+                clearSort.classList.toggle("d-none", sortKeys.length === 0);
+            }
+        }
+
+        function sortString() {
+            return sortKeys.map(function (item) {
+                return (item.desc ? "-" : "") + item.key;
+            }).join(",");
+        }
 
         rows.forEach(function (row) {
             row.querySelector(".ddp-check").checked =
@@ -144,8 +222,35 @@
             });
         }
 
+        // Visor "Selección actual": lo marcado aunque el filtro lo oculte.
+        function refreshSelectionViewer() {
+            const list = root.querySelector(".ddp-selection-list");
+            const labels = rows.filter(function (row) {
+                return selection.has(parseInt(row.dataset.pk, 10));
+            }).map(function (row) {
+                return row.dataset.label;
+            }).sort(function (a, b) {
+                return a.localeCompare(b);
+            });
+            root.querySelector(".ddp-selection-count").textContent = labels.length;
+            list.innerHTML = "";
+            if (!labels.length) {
+                const li = document.createElement("li");
+                li.className = "text-muted";
+                li.textContent = "Nada seleccionado todavía.";
+                list.appendChild(li);
+                return;
+            }
+            labels.forEach(function (label) {
+                const li = document.createElement("li");
+                li.textContent = label;
+                list.appendChild(li);
+            });
+        }
+
         function refreshCounts() {
             root.querySelector(".ddp-count").textContent = selection.size;
+            refreshSelectionViewer();
             const visible = visibleRows();
             root.querySelector(".ddp-visible").textContent = visible.length;
             if (checkAll) {
@@ -219,8 +324,40 @@
                         return box.value;
                     }),
                     family: family ? family.value : "",
+                    sort: sortString(),
                 },
             }).catch(function () {});
+        }
+
+        // Cabecera: la pulsada pasa a ser el criterio principal y las
+        // demás quedan de desempate; pulsar la principal le da la vuelta
+        // (mismas reglas que Centros de gasto, 4.24 regla 2).
+        sortLinks.forEach(function (link) {
+            link.addEventListener("click", function (ev) {
+                ev.preventDefault();
+                const key = link.dataset.key;
+                const index = sortKeys.findIndex(function (item) {
+                    return item.key === key;
+                });
+                if (index === 0) {
+                    sortKeys[0].desc = !sortKeys[0].desc;
+                } else if (index > 0) {
+                    const item = sortKeys.splice(index, 1)[0];
+                    sortKeys.unshift(item);
+                } else {
+                    sortKeys.unshift({key: key, desc: false});
+                }
+                sortKeys = sortKeys.slice(0, MAX_SORT);
+                applySort();
+                persistFilters();
+            });
+        });
+        if (clearSort) {
+            clearSort.addEventListener("click", function () {
+                sortKeys = [];
+                applySort();
+                persistFilters();
+            });
         }
 
         function setRows(list, checked) {
@@ -375,7 +512,7 @@
                     return;
                 }
                 askThenTrash(trashButton, pks,
-                    "¿Seguro? Clic otra vez: " + pks.length + " a la papelera");
+                    "¿Seguro? Pulsa otra vez: " + pks.length + " a la papelera");
             });
         }
         if (trashUrl) {
@@ -384,23 +521,24 @@
                 if (button) {
                     button.addEventListener("click", function () {
                         askThenTrash(button, [parseInt(row.dataset.pk, 10)],
-                            "¿Seguro?");
+                            "¿Seguro? Pulsa otra vez");
                     });
                 }
             });
         }
 
-        // Pantalla completa con el formato del laboratorio de análisis
-        // (directriz 4.26): el contenedor estable de la ventana.
-        const content = root.closest(".ddp-content");
+        // Pantalla completa de la lista, formato del laboratorio de
+        // análisis (directriz 4.26).
+        const listBox = root.querySelector(".ddp-list-box");
         root.querySelector(".ddp-fullscreen").addEventListener("click", function () {
             if (document.fullscreenElement) {
                 document.exitFullscreen();
-            } else if (content && content.requestFullscreen) {
-                content.requestFullscreen();
+            } else if (listBox && listBox.requestFullscreen) {
+                listBox.requestFullscreen();
             }
         });
 
+        applySort();
         applyFilters();
     }
 })();

@@ -2024,7 +2024,8 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         # sobre las dos anteriores. Sin cargar la imagen: solo si existe
         # y de qué documento sale.
         id_photo = PersonIdPhoto.objects.filter(person=person).values(
-            "source_id", "source__name", "extracted_at", "is_manual",
+            "source_id", "source__document_type__label", "extracted_at",
+            "is_manual",
         ).first()
         # S136: documentos de los que se puede sacar la foto a mano en
         # la ventana de gestión, en el mismo orden que la búsqueda
@@ -2032,8 +2033,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         from document_explorer.id_photo_service import candidates
 
         photo_sources = list(candidates(person).values(
-            "pk", "name", "document_type__label", "expiry_date",
-            "is_obsolete",
+            "pk", "document_type__label", "expiry_date", "is_obsolete",
         )[:30])
         photo_url = (
             "%s?v=%s" % (
@@ -3840,6 +3840,7 @@ class DocumentDownloadPickerView(CompanyUserRequiredMixin, View):
                 "pdf_url": pdf_url,
                 "saved_states": saved_states,
                 "saved_family": str(saved.get("family") or ""),
+                "saved_sort": str(saved.get("sort") or ""),
                 "state_choices": list(DOWNLOAD_STATE_LABELS.items()),
                 # S136: "Enviar a la papelera", mismos roles que el
                 # borrado de un documento en la ficha.
@@ -5623,6 +5624,20 @@ class PersonalPhotoUploadView(DocsUploadAccessMixin, View):
         return JsonResponse({"ok": True})
 
 
+def _source_label(entry):
+    """
+    What the supervisor sees of a photo source: its type, not its file.
+
+    ---
+
+    Lo que ve el supervisor del documento de origen de la foto: su tipo
+    ("su DNI"), nunca el nombre del archivo (S136, criterio de Miguel
+    Ángel para todo el panel).
+    """
+    label = entry.document_type.label if entry.document_type_id else ""
+    return "su %s" % label if label else "un documento"
+
+
 class PersonalPhotoExtractView(DocsUploadAccessMixin, View):
     """
     POST: crop the ID photo now, automatically or from one document.
@@ -5660,7 +5675,7 @@ class PersonalPhotoExtractView(DocsUploadAccessMixin, View):
                 return JsonResponse(
                     {"ok": False, "error": str(exc)}, status=422,
                 )
-            return JsonResponse({"ok": True, "source": entry.name})
+            return JsonResponse({"ok": True, "source": _source_label(entry)})
         entry = set_automatic(person)
         if entry is None:
             return JsonResponse({"ok": False, "error": (
@@ -5668,7 +5683,7 @@ class PersonalPhotoExtractView(DocsUploadAccessMixin, View):
                 "ninguna cara en el DNI, NIE, pasaporte, permiso de "
                 "conducir ni imágenes de esta persona."
             )}, status=422)
-        return JsonResponse({"ok": True, "source": entry.name})
+        return JsonResponse({"ok": True, "source": _source_label(entry)})
 
 
 class PersonalPhotoRotateView(DocsUploadAccessMixin, View):
