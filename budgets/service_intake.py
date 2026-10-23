@@ -35,6 +35,7 @@ from decimal import Decimal
 from django.db import connection, transaction
 from django.utils import timezone
 
+from budgets.dispatch_vehicle import job_hint, machine_use
 from budgets.models import ServiceIntake, WorkOrderAssistance
 from ivr_config.models import CompanyUser
 
@@ -181,6 +182,14 @@ DISPATCH_CRITERIA = (
     "su albarán queda en cola y sale al terminar el actual. Dilo en la "
     "opción (\"Zafra en cola, tras su servicio actual\"). Un mismo "
     "conductor no puede ir en dos equipos a la vez.\n"
+    "5. Elige el TIPO de máquina por el trabajo: remolcar (plataforma "
+    "para ligeros, rescate o grúa móvil para pesados), levantar un "
+    "vehículo volcado o caído (grúa móvil o rescate), cambiar una rueda "
+    "o un neumático, la batería o echar combustible (vehículo de "
+    "personal con mecánico), llevar un semirremolque (cabeza "
+    "tractora). Los datos guardados traen «trabajo y vehículo "
+    "adecuado» y la disponibilidad dice para qué sirve cada máquina; "
+    "propón una máquina de ese tipo.\n"
 )
 
 
@@ -606,7 +615,13 @@ def data_summary(intake):
     for field, label in IMPORTANT_FIELDS:
         if not data.get(field):
             missing.append(label)
-    return {"datos": known, "faltan": missing}
+    result = {"datos": known, "faltan": missing}
+    hint = job_hint(data)
+    if hint:
+        # H37-S134: the job and the vehicle that fits, for Alia.
+        # El trabajo y el vehículo adecuado, para Alia.
+        result["trabajo_y_vehiculo_adecuado"] = hint
+    return result
 
 
 def save_data(intake, args):
@@ -651,14 +666,16 @@ def save_data(intake, args):
 # Quién y qué está disponible.
 # ---------------------------------------------------------------------------
 
-def availability(company):
+def availability(company, intake=None):
     """
     Tool: crews, drivers and machines with their state.
 
     ---
 
     Herramienta: equipos, conductores sin máquina y máquinas sin
-    conductor, con su estado (los mismos del panel de tráfico).
+    conductor, con su estado (los mismos del panel de tráfico). Desde
+    H37-S134 cada máquina dice para qué sirve y, con el servicio en
+    curso (`intake`), el trabajo y el vehículo adecuado.
     """
     from budgets import assistance_traffic as traffic
     from budgets.driver_qualification import Checker
@@ -676,6 +693,9 @@ def availability(company):
             row += " con el albarán %s" % crew.current_unit.albaran_number
         if crew.queue:
             row += "; %d en cola" % len(crew.queue)
+        use = machine_use(crew.machine_card.type_name)
+        if use:
+            row += "; la máquina sirve para: %s" % use
         missing = checker.missing(crew.driver_card, crew.machine_card)
         if missing:
             row += "; NO PUEDE llevarla: %s" % ", ".join(missing)
@@ -694,13 +714,18 @@ def availability(company):
             ", ".join(types) if types else "ningún tipo (sin permisos "
             "o documentos en vigor registrados)",
         ))
-    machine_rows = [
-        "%s %s (%s): %s" % (
+    machine_rows = []
+    for m in machines:
+        if m.crew is not None:
+            continue
+        row = "%s %s (%s): %s" % (
             m.code, m.plate, m.type_name or m.brand_model, m.state_label,
         )
-        for m in machines if m.crew is None
-    ]
-    return {
+        use = machine_use(m.type_name)
+        if use:
+            row += "; sirve para: %s" % use
+        machine_rows.append(row)
+    result = {
         "equipos": crew_rows,
         "conductores_sin_maquina": driver_rows,
         "maquinas_sin_conductor": machine_rows,
@@ -714,6 +739,10 @@ def availability(company):
             "vigor, según el tipo)."
         ),
     }
+    hint = job_hint(intake.data) if intake is not None else ""
+    if hint:
+        result["trabajo_y_vehiculo_adecuado"] = hint
+    return result
 
 
 def _find_driver(drivers, name):
@@ -1259,7 +1288,7 @@ def _run_tool(intake, name, args, whatsapp_sender):
     if name == "guardar_datos":
         return save_data(intake, args)
     if name == "consultar_disponibilidad":
-        return availability(intake.company)
+        return availability(intake.company, intake)
     if name == "lanzar_servicio":
         return launch(intake, args, whatsapp_sender)
     if name == "volver_a_leer_foto":
@@ -1765,7 +1794,7 @@ def run_voice_tool(company_user_pk, caller_number, name, args):
     if tool == "guardar_datos":
         return save_data(intake, args)
     if tool == "disponibilidad":
-        return availability(intake.company)
+        return availability(intake.company, intake)
     if tool == "lanzar":
         return launch(
             intake, args, os.environ.get("TWILIO_WHATSAPP_SENDER", ""),
