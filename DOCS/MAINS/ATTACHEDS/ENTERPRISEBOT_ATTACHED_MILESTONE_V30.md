@@ -9772,3 +9772,43 @@ commit `51a268c`):
 Después, lo "Pendiente de H30 al pausarlo" (más arriba), tal cual. Al
 terminar esta hoja, la sesión vuelve a H37 por PCH (Miguel Ángel:
 *"luego volvemos con asistencia"*).
+
+### Ampliación de Miguel Ángel en S135 (tras la comprobación previa del punto 4)
+
+Miguel Ángel, durante S135, sobre las lecturas que llegan del surtidor:
+
+- **Las anotaciones no siempre son ciertas.** Un chófer con prisa (sale
+  a un rescate, o llega tarde y deja el camión listo para el día
+  siguiente) empieza a repostar sin subirse al camión y escribe lo que
+  le da la gana (*"555 o vete tú a saber"*). También hay errores de
+  tecleo: un cero de más (en vez de 100.004 km o 17.500 horas). Cuando
+  se encuentren anomalías de ese tipo hay que aplicar ciertas reglas.
+- **Pestaña "Surtidor" en Documentación**, con el formato de CRUD de
+  siempre (directriz 4.24), para ver los marcajes y los suministros:
+  los últimos que han echado gasolina y gasoil, las horas, los km...
+- **Comprobación por litros.** Los litros los da la máquina y son
+  exactos, así que se puede saber cuántos litros va gastando cada
+  vehículo y tener una comparativa entre km (u horas) y litros. Con
+  ella, al llegar un repostaje se comprueba si los km están dentro de
+  la media de litros y se detecta cuándo una lectura no es correcta.
+- **Pregunta por WhatsApp al chófer** cuando una lectura no sea
+  correcta, con el robot de WhatsApp y una plantilla nueva: *"Los datos
+  que has introducido son los correctos. Si no son los correctos, por
+  favor, responde a este mensaje cuando puedas con los kilómetros
+  correctos o las horas correctas de la grúa, camión, coche, etc."*
+
+Hallazgos de la comprobación previa del punto 4
+(`EnterpriseBot_006.txt`, solo lectura, 23/10/2026):
+- **La API devuelve como máximo 1.000 suministros por petición**: 180
+  días pedidos, 1.000 exactos y el último de mediados de junio. Hay que
+  pedirlos por tramos cortos.
+- **Hay un vehículo de GasoGes por registro, no por máquina**: varios
+  centros de gasto tienen dos registros en uso (A56: el ID 119, con 8
+  suministros, y el 120; ADOLFO: el 79 y el 104, con 7; T29: el 248 y
+  el 250). Un solo campo `gasoges_vehicle_id` por centro de gasto no
+  basta.
+- **Que la máquina tenga horómetro no dice si `KM` trae horas o km.**
+  A44 trae horas (unos 22.000, que coinciden con su revisión de 22.287
+  h); A30, que también tiene horómetro y odómetro, sube unos 900 en 12
+  días (son km). Y los datos tienen el ruido que describe Miguel Ángel
+  (A33: 62.962 y 22.738 alternándose; A44: valores que bajan; KM 0).
