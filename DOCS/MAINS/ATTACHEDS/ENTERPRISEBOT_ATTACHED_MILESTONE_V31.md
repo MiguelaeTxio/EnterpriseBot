@@ -3726,6 +3726,25 @@ verde de Actions):** `document_explorer` 0132, 0133, 0134, 0135;
    Sánchez) siguen pendientes de que la supervisora escanee y suba
    los contratos originales -- sin acción de código pendiente, solo
    enlazar `prorroga_de` cuando lleguen.
+7. **Alta de EPIs desde el panel y entrega con máquina** (añadido en
+   S135, desvío desde H30). Miguel Ángel no encontraba cómo dar de
+   alta un EPI nuevo: en el panel no existe. `EpiItemCatalog` solo se
+   ha llenado por migraciones (S71-S73, botiquín en `0055`, V16 en
+   `0191` de S135), aunque su docstring prevé desde S046 una opción
+   "nuevo EPI" en el propio desplegable de entrega. Construir:
+   - "+ Nuevo EPI" en el desplegable de entrega, y alta y edición en la
+     pestaña EPIs (familia, nombre, revisión periódica, vida útil en
+     años, norma UNE-EN, coste de reposición).
+   - Entrega con persona **y máquina** desde el panel (Miguel Ángel,
+     S135: *"La entrega debe ser análoga a los botiquines, persona y
+     máquina"*). `EpiDelivery.destination_machine` existe desde S72
+     (`0054`), pero el flujo de entrega del panel
+     (`EpiBatchDeliveryExecuteView`) no lo rellena nunca: solo lo
+     usaron los extractores históricos de botiquines. Aplica al
+     botiquín y al V16.
+   **Cierre:** en producción, un EPI dado de alta desde el panel sale
+   en el desplegable de entrega; una entrega de V16 a una persona con
+   un centro de gasto queda en BD con `destination_machine` puesto.
 
 
 
