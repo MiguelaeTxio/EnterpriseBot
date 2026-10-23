@@ -532,7 +532,7 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
         valid_tabs = (
             "maquinaria", "personal", "epis", "accesorios", "vacaciones",
             "fichajes", "calendario", "requisitos", "avisos", "circulares",
-            "plantillas", "bandeja", "revisiones",
+            "plantillas", "bandeja", "revisiones", "repostajes",
         )
         # H30 (S126): "Bandeja de entrada" solo para quien puede subir
         # documentación (mismos roles que DocsUploadAccessMixin).

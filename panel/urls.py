@@ -30,6 +30,12 @@ from panel.views_circulars_h31 import (
     CircularSaveContentView,
     PersonalDocutenExportView,
 )
+from panel.views_refuels import (
+    RefuelsExportView,
+    RefuelsResultsView,
+    RefuelsTabView,
+    RefuelsVehicleUnitView,
+)
 from panel.views_service_tab import (
     ServiceBulkPlanView,
     ServiceRowSaveView,
@@ -1103,6 +1109,27 @@ urlpatterns = [
         "documentacion/revisiones/plan/",
         ServiceBulkPlanView.as_view(),
         name="service_tab_bulk_plan",
+    ),
+    # H30 (S135): repostajes del surtidor (GasoGes), formato 4.24.
+    path(
+        "documentacion/repostajes/",
+        RefuelsTabView.as_view(),
+        name="refuels_tab",
+    ),
+    path(
+        "documentacion/repostajes/resultados/",
+        RefuelsResultsView.as_view(),
+        name="refuels_results",
+    ),
+    path(
+        "documentacion/repostajes/unidad/",
+        RefuelsVehicleUnitView.as_view(),
+        name="refuels_vehicle_unit",
+    ),
+    path(
+        "documentacion/repostajes/exportar/",
+        RefuelsExportView.as_view(),
+        name="refuels_export",
     ),
     path(
         "documentacion/avisos/revisiones/antelacion/",
