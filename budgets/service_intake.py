@@ -190,6 +190,13 @@ DISPATCH_CRITERIA = (
     "tractora). Los datos guardados traen «trabajo y vehículo "
     "adecuado» y la disponibilidad dice para qué sirve cada máquina; "
     "propón una máquina de ese tipo.\n"
+    "6. El tipo de máquina lo decide el TRABAJO, nunca quién está libre. "
+    "Si ningún conductor libre puede llevar la máquina adecuada, "
+    "propón igualmente esa máquina como opción 1 y di lo que falta "
+    "(conductor con permiso, o quién quedará libre antes y el servicio "
+    "irá en cola). Nunca ofrezcas como primera opción una máquina que "
+    "no sirve para el trabajo (p. ej. una plataforma para levantar un "
+    "vehículo volcado).\n"
 )
 
 
