@@ -115,7 +115,14 @@ def name_matches(gasoges_name, person_name):
     return True
 
 
-def deduce_unit(has_odometer, has_engine_hours, points):
+# Miguel Ángel (S135): "Todas las Z son plataforma elevadora. Todas van
+# con horas."
+# ---
+# Every Z cost centre is an aerial platform and goes by hours.
+HOURS_CODE_PREFIXES = ("Z",)
+
+
+def deduce_unit(has_odometer, has_engine_hours, points, code=""):
     """
     Deduce what the driver types in KM: kilometres or hours.
 
@@ -133,6 +140,8 @@ def deduce_unit(has_odometer, has_engine_hours, points):
     A44/A33): compara la mediana del primer tercio con la del último.
     Devuelve (unidad, motivo).
     """
+    if str(code or "").upper().startswith(HOURS_CODE_PREFIXES):
+        return UNIT_HOURS, "plataforma elevadora (todas las Z van por horas)"
     if has_odometer and not has_engine_hours:
         return UNIT_KM, "solo tiene odómetro"
     if has_engine_hours and not has_odometer:

@@ -112,6 +112,10 @@ class DeduceUnitTests(unittest.TestCase):
                       (_d("2026-07-20 08:00:00"), 22180)]
         self.assertEqual(deduce_unit(True, True, junk)[0], UNIT_UNKNOWN)
 
+    def test_every_z_is_hours(self):
+        self.assertEqual(
+            deduce_unit(True, False, A30, code="Z134")[0], UNIT_HOURS)
+
     def test_few_supplies(self):
         self.assertEqual(deduce_unit(True, True, A30[:2])[0], UNIT_UNKNOWN)
 

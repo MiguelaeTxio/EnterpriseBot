@@ -303,7 +303,7 @@ def deduce_units(log):
             "supplied_at", "meter_value")[:UNIT_WINDOW_SUPPLIES])
         unit, reason = deduce_unit(
             vehicle.machine.has_odometer, vehicle.machine.has_engine_hours,
-            points)
+            points, vehicle.machine.code)
         vehicle.unit = unit
         vehicle.unit_source = (GasoGesVehicle.UNIT_SOURCE_DEDUCED
                                if unit != GasoGesVehicle.UNIT_UNKNOWN
@@ -439,6 +439,33 @@ def accept_supply(supply, note, value=None):
         supply.save(update_fields=[
             "meter_value", "reading", "status", "status_note"])
     return True
+
+
+def redo_vehicle(vehicle, log):
+    """
+    Redo the GasoGes readings of one vehicle with its current unit.
+
+    ---
+
+    Rehace las lecturas del surtidor de un vehículo con la unidad que
+    tiene ahora (S135: Z134 estaba deducida en km y es de horas). No
+    toca los repostajes que confirmó o corrigió el chófer.
+    """
+    supplies = vehicle.supplies.exclude(
+        status_note__startswith="confirmado por el chófer").exclude(
+        status_note__startswith="corregido por el chófer")
+    with transaction.atomic():
+        deleted, _detail = MachineMeterReading.objects.filter(
+            gasoges_supply__in=supplies).delete()
+        supplies.update(status=GasoGesSupply.STATUS_PENDING,
+                        status_note="", reading=None)
+    counters = build_readings(lambda _line: None, vehicle=vehicle)
+    log("%s (GasoGes %s): %d lecturas borradas; %d creadas, %d "
+        "dudosas." % (
+            vehicle.machine.code if vehicle.machine else "-",
+            vehicle.gasoges_id, deleted, counters["lecturas"],
+            counters["dudosos"]))
+    return counters
 
 
 def reset_readings(log):
