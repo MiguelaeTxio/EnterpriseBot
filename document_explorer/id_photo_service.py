@@ -74,9 +74,14 @@ def candidates(person):
 
     ---
 
-    Documentos de la persona de los que puede salir la foto, del más
-    reciente al más antiguo (por fecha de indexado).
+    Documentos de la persona de los que puede salir la foto: primero
+    los de identidad (DNI, NIE, pasaporte, permiso de conducir) y
+    después las imágenes, cada grupo del más reciente al más antiguo.
+    S134: con las imágenes mezcladas, "Sacar del DNI o permiso" sacaba
+    la cara de una foto de perfil ya recortada, más reciente que el DNI.
     """
+    from django.db.models import Case, IntegerField, Value, When
+
     return DocumentIndexEntry.objects.filter(
         domain_content_type=_person_ct(),
         domain_object_id=person.pk,
@@ -84,7 +89,12 @@ def candidates(person):
         document_type__code__in=SOURCE_TYPES,
         deleted_at__isnull=True,
         purged_at__isnull=True,
-    ).select_related("document_type").order_by("-indexed_at", "-pk")
+    ).select_related("document_type").annotate(
+        is_plain_image=Case(
+            When(document_type__code="IMAGEN", then=Value(1)),
+            default=Value(0), output_field=IntegerField(),
+        ),
+    ).order_by("is_plain_image", "-indexed_at", "-pk")
 
 
 def _pages(entry, data):
