@@ -1504,3 +1504,23 @@ Nunca combinar el `read -s` con el `clone`/`pull` en un solo bloque
 el valor antes de que siga el resto del script.
 
 
+
+---
+
+## API DE GASOGES (PROGRAMA DEL SURTIDOR) -- CREDENCIALES EN EL `.env` DEL SERVIDOR (S135, H30)
+
+- **Variables:** `GASOGES_API_USER` y `GASOGES_API_PASSWORD`, en
+  `/home/MiguelAeTxio/PROJECTS/EnterpriseBot/.env` (se cargan con el
+  `load_dotenv` de `enterprise_core/settings.py` y con
+  `python -m dotenv run`). Las da GasoGes; nunca en el repositorio ni
+  en el chat.
+- **Cómo se pusieron (S135):** Comando S con `read -rp`/`read -rsp`
+  (Miguel Ángel escribe usuario y contraseña cuando la consola los
+  pide), que borra las líneas anteriores de esas dos variables y
+  añade las nuevas. Para cambiarlas, repetir el mismo comando.
+- **API:** `https://api.gasoges.es/v1/...`, autenticación básica,
+  solo GET. Solo se llega desde el servidor: `api.gasoges.es` no está
+  en la lista de dominios permitidos del contenedor de Claude.
+- **Cliente:** `fleet/gasoges_client.py` (`GasoGesClient`).
+- **Comprobado en S135:** `/v1/vehiculos` responde 200 con 262
+  vehículos (`EnterpriseBot_001.txt`).
