@@ -102,6 +102,14 @@ class GasoGesClientTests(unittest.TestCase):
             auth=("u", "p"), timeout=30)
 
     @mock.patch("fleet.gasoges_client.requests.get")
+    def test_users_drop_pin_and_key(self, get):
+        get.return_value = _response(
+            200, [[7, "PEREZ PEREZ JUAN", "1234", "ABCD"]])
+        users = self.client.users()
+        self.assertEqual(users, [{"user_id": 7,
+                                  "name": "PEREZ PEREZ JUAN"}])
+
+    @mock.patch("fleet.gasoges_client.requests.get")
     def test_unauthorized(self, get):
         get.return_value = _response(401)
         with self.assertRaises(GasoGesError) as ctx:

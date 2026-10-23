@@ -501,6 +501,13 @@ CELERY_BEAT_SCHEDULE = {
         'task':     'document_explorer.tasks.extract_id_photos_task',
         'schedule': crontab(minute='*/15'),
     },
+
+    # H30 (S135): suministros del surtidor (GasoGes) -> lecturas de km
+    # y horas de los centros de gasto, cada hora (últimos 3 días).
+    'sync-gasoges': {
+        'task':     'fleet.tasks.sync_gasoges_task',
+        'schedule': crontab(minute=20),
+    },
 }
 
 # H30 (S123): destinatarios (PersonIdentity.pk) de la alerta de caída

@@ -363,23 +363,6 @@ class MachineAsset(models.Model):
         ),
     )
 
-    # ------------------------------------------------------------------
-    # H30 (S135) -- enlace con el vehículo del programa del surtidor
-    # (GasoGes, `ID VEHICULO`), para leer los km de sus suministros.
-    # ---
-    # H30 (S135) -- link with the GasoGes fuel pump vehicle id.
-    # ------------------------------------------------------------------
-    gasoges_vehicle_id = models.PositiveIntegerField(
-        _("ID de vehículo en GasoGes"),
-        null=True,
-        blank=True,
-        unique=True,
-        help_text=_(
-            "ID del vehículo en el programa del surtidor (GasoGes). "
-            "Vacío: sin enlace."
-        ),
-    )
-
     class Meta:
         verbose_name = _("Centro de gasto")
         verbose_name_plural = _("Centros de gasto")
@@ -503,6 +486,22 @@ class MachineMeterReading(models.Model):
         verbose_name=_("Anotada por"),
     )
     created_at = models.DateTimeField(_("Anotada el"), auto_now_add=True)
+    # H30 (S135): de dónde sale la lectura -- a mano (panel) o de un
+    # suministro del surtidor (GasoGes, ver GasoGesSupply.reading).
+    # ---
+    # H30 (S135): reading source -- typed in the panel or GasoGes.
+    SOURCE_MANUAL = "MANUAL"
+    SOURCE_GASOGES = "GASOGES"
+    SOURCE_CHOICES = [
+        (SOURCE_MANUAL, _("A mano")),
+        (SOURCE_GASOGES, _("Surtidor (GasoGes)")),
+    ]
+    source = models.CharField(
+        _("Origen"),
+        max_length=10,
+        choices=SOURCE_CHOICES,
+        default=SOURCE_MANUAL,
+    )
 
     class Meta:
         verbose_name = _("Lectura de horas y kilómetros")
@@ -552,6 +551,211 @@ class MachineServiceAlertSettings(models.Model):
 
     def __str__(self) -> str:
         return f"Avisos de revisión -- {self.company}"
+
+
+# ---------------------------------------------------------------------------
+# H30 (S135) -- programa del surtidor (GasoGes)
+# H30 (S135) -- fuel pump software (GasoGes)
+# ---------------------------------------------------------------------------
+
+class GasoGesVehicle(models.Model):
+    """
+    One vehicle record of GasoGes, linked to its cost centre.
+
+    ---
+
+    Un registro de vehículo de GasoGes (`ID VEHICULO`), enlazado con su
+    centro de gasto. Una máquina puede tener varios registros en uso
+    (S135: A56 reposta con el 119 y el 120); los tanques, el taller y
+    similares quedan sin centro de gasto. `unit` dice qué apunta el
+    chófer en el campo KM del surtidor: kilómetros u horas (S135: A44
+    apunta horas, A30 km, aunque las dos tienen horómetro).
+    """
+
+    UNIT_UNKNOWN = "UNKNOWN"
+    UNIT_KM = "KM"
+    UNIT_HOURS = "HOURS"
+    UNIT_CHOICES = [
+        (UNIT_UNKNOWN, _("Sin saber")),
+        (UNIT_KM, _("Kilómetros")),
+        (UNIT_HOURS, _("Horas")),
+    ]
+    UNIT_SOURCE_DEDUCED = "DEDUCED"
+    UNIT_SOURCE_DRIVER = "DRIVER"
+    UNIT_SOURCE_MANUAL = "MANUAL"
+    UNIT_SOURCE_CHOICES = [
+        (UNIT_SOURCE_DEDUCED, _("Deducida")),
+        (UNIT_SOURCE_DRIVER, _("Confirmada por el chófer")),
+        (UNIT_SOURCE_MANUAL, _("Puesta a mano")),
+    ]
+
+    gasoges_id = models.PositiveIntegerField(
+        _("ID en GasoGes"), unique=True,
+    )
+    plate = models.CharField(_("Matrícula (GasoGes)"), max_length=50,
+                             blank=True)
+    name = models.CharField(_("Nombre (GasoGes)"), max_length=150,
+                            blank=True)
+    machine = models.ForeignKey(
+        MachineAsset,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="gasoges_vehicles",
+        verbose_name=_("Centro de gasto"),
+    )
+    link_method = models.CharField(
+        _("Cómo se enlazó"), max_length=40, blank=True,
+    )
+    unit = models.CharField(
+        _("Qué apunta en KM"), max_length=10, choices=UNIT_CHOICES,
+        default=UNIT_UNKNOWN,
+    )
+    unit_source = models.CharField(
+        _("Origen de la unidad"), max_length=10,
+        choices=UNIT_SOURCE_CHOICES, blank=True,
+    )
+    last_km = models.BigIntegerField(
+        _("Últimos KM (GasoGes)"), null=True, blank=True,
+    )
+    updated_at = models.DateTimeField(_("Actualizado"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("Vehículo de GasoGes")
+        verbose_name_plural = _("Vehículos de GasoGes")
+        ordering = ["gasoges_id"]
+
+    def __str__(self) -> str:
+        return f"GasoGes {self.gasoges_id} ({self.plate or self.name})"
+
+
+class GasoGesUser(models.Model):
+    """
+    One GasoGes user (who refuels), matched with a worker.
+
+    ---
+
+    Un usuario de GasoGes (quien reposta), cruzado por nombre con su
+    ficha de trabajador para poder escribirle por WhatsApp. GasoGes
+    solo da el nombre, cortado a 30 caracteres. Nunca se guardan el
+    PIN ni la llave.
+    """
+
+    gasoges_id = models.PositiveIntegerField(
+        _("ID en GasoGes"), unique=True,
+    )
+    name = models.CharField(_("Nombre (GasoGes)"), max_length=150,
+                            blank=True)
+    person = models.ForeignKey(
+        "document_explorer.PersonIdentity",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="gasoges_users",
+        verbose_name=_("Trabajador"),
+    )
+    match_note = models.CharField(
+        _("Cruce con la ficha"), max_length=255, blank=True,
+    )
+    updated_at = models.DateTimeField(_("Actualizado"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("Usuario de GasoGes")
+        verbose_name_plural = _("Usuarios de GasoGes")
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return f"GasoGes {self.gasoges_id} ({self.name})"
+
+
+class GasoGesSupply(models.Model):
+    """
+    One fuel supply read from GasoGes, stored once.
+
+    ---
+
+    Un suministro leído de GasoGes, guardado una sola vez (la API no da
+    ID de suministro: `dedupe_key` junta vehículo, fecha y hora, KM,
+    litros y surtidor). Los litros los da la máquina y son exactos; el
+    KM lo teclea el chófer y puede estar mal (S135, Miguel Ángel: el
+    chófer con prisa que pone "555", o un cero de más). Solo los
+    suministros que pasan la comprobación crean lectura.
+    """
+
+    STATUS_PENDING = "PENDING"
+    STATUS_READING = "READING"
+    STATUS_ANOMALY = "ANOMALY"
+    STATUS_NO_MACHINE = "NO_MACHINE"
+    STATUS_NO_UNIT = "NO_UNIT"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, _("Pendiente")),
+        (STATUS_READING, _("Lectura creada")),
+        (STATUS_ANOMALY, _("Lectura dudosa")),
+        (STATUS_NO_MACHINE, _("Sin centro de gasto")),
+        (STATUS_NO_UNIT, _("Sin saber si son km u horas")),
+    ]
+
+    dedupe_key = models.CharField(max_length=120, unique=True)
+    vehicle = models.ForeignKey(
+        GasoGesVehicle,
+        on_delete=models.PROTECT,
+        related_name="supplies",
+        verbose_name=_("Vehículo (GasoGes)"),
+    )
+    user = models.ForeignKey(
+        GasoGesUser,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="supplies",
+        verbose_name=_("Quién repostó"),
+    )
+    gasoges_user_id = models.PositiveIntegerField(
+        _("ID de usuario (GasoGes)"), null=True, blank=True,
+    )
+    supplied_at = models.DateTimeField(_("Fecha y hora"), db_index=True)
+    meter_value = models.BigIntegerField(
+        _("KM tecleado"), null=True, blank=True,
+    )
+    litres = models.DecimalField(
+        _("Litros"), max_digits=9, decimal_places=2, null=True, blank=True,
+    )
+    price = models.DecimalField(
+        _("Precio"), max_digits=9, decimal_places=4, null=True,
+        blank=True,
+    )
+    pump_serial = models.BigIntegerField(
+        _("Nº de serie del surtidor"), null=True, blank=True,
+    )
+    tank_id = models.PositiveIntegerField(
+        _("Depósito"), null=True, blank=True,
+    )
+    fuel_id = models.PositiveIntegerField(
+        _("Combustible"), null=True, blank=True,
+    )
+    status = models.CharField(
+        _("Estado"), max_length=12, choices=STATUS_CHOICES,
+        default=STATUS_PENDING, db_index=True,
+    )
+    status_note = models.CharField(_("Motivo"), max_length=255,
+                                   blank=True)
+    reading = models.OneToOneField(
+        MachineMeterReading,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="gasoges_supply",
+        verbose_name=_("Lectura creada"),
+    )
+    created_at = models.DateTimeField(_("Leído el"), auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("Suministro de GasoGes")
+        verbose_name_plural = _("Suministros de GasoGes")
+        ordering = ["-supplied_at", "-id"]
+
+    def __str__(self) -> str:
+        return f"Suministro {self.vehicle.gasoges_id} {self.supplied_at}"
 
 
 # ---------------------------------------------------------------------------

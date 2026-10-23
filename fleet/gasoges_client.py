@@ -48,6 +48,13 @@ VEHICLE_FIELDS = (
     "last_km",
     "average_calculation",
 )
+# Solo ID y nombre: el PIN y la llave nunca salen del cliente.
+# ---
+# Only id and name: PIN and key never leave the client.
+USER_FIELDS = (
+    "user_id",
+    "name",
+)
 SUPPLY_FIELDS = (
     "user_id",
     "vehicle_id",
@@ -192,6 +199,18 @@ class GasoGesClient:
         """
         return [_to_dict(row, VEHICLE_FIELDS)
                 for row in self._get("vehiculos")]
+
+    def users(self):
+        """
+        Return every user as {user_id, name} (never PIN or key).
+
+        ---
+
+        Devuelve todos los usuarios como {user_id, name}; el PIN y la
+        llave se descartan aquí mismo.
+        """
+        return [_to_dict(row[:2], USER_FIELDS)
+                for row in self._get("usuarios")]
 
     def supplies(self, start, end):
         """
