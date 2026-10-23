@@ -358,6 +358,69 @@ def extract_for_person(person, limit=5):
     return None
 
 
+def set_automatic(person):
+    """
+    Back to automatic mode: drop the manual mark and search now.
+
+    ---
+
+    Vuelve la foto al modo automático (S136, Miguel Ángel: "ponerla en
+    el modo automático"): quita la marca de puesta a mano y busca ya la
+    cara en los documentos, en el orden de `candidates`. Si no encuentra
+    ninguna, la foto que hubiera se queda, pero ya en automático: la
+    cambiará la tarea en cuanto llegue un documento nuevo. Devuelve el
+    documento usado o None.
+    """
+    PersonIdPhoto.objects.filter(person=person).update(is_manual=False)
+    return extract_for_person(person)
+
+
+def queue_recheck(person_ids):
+    """
+    Put persons back in the automatic queue; returns how many.
+
+    ---
+
+    Acción masiva de la pestaña Personal (S136): las personas marcadas
+    vuelven al modo automático (también las puestas a mano) y a la cola
+    de la tarea de cada 15 minutos, que les vuelve a sacar la foto.
+    Devuelve cuántas personas quedan en cola.
+    """
+    ids = [int(pk) for pk in person_ids]
+    PersonIdPhoto.objects.filter(person_id__in=ids).update(is_manual=False)
+    return PersonIdentity.objects.filter(pk__in=ids).update(
+        photo_attempted_at=None,
+    )
+
+
+def save_rotated(person, data, clockwise, source=None):
+    """
+    Turn the person photo a quarter and store it as manual.
+
+    ---
+
+    Gira la foto de la persona un cuarto de vuelta (a la derecha si
+    `clockwise`) y la guarda como puesta a mano, para que la tarea
+    automática no la vuelva a cambiar (S136).
+    """
+    from PIL import Image, ImageOps, UnidentifiedImageError
+
+    try:
+        image = ImageOps.exif_transpose(Image.open(io.BytesIO(data)))
+    except (UnidentifiedImageError, OSError) as exc:
+        raise IdPhotoError("La foto no se puede abrir.") from exc
+    image = image.convert("RGB").rotate(
+        -90 if clockwise else 90, expand=True,
+    )
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", quality=STORED_JPEG_QUALITY)
+    PersonIdPhoto.objects.update_or_create(
+        person=person, defaults={
+            "image": buffer.getvalue(), "source": source, "is_manual": True,
+        },
+    )
+
+
 def box_pixels(box, width, height):
     """
     Pixel box of a fractional box, inside the image.

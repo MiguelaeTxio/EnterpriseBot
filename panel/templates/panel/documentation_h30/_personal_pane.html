@@ -61,7 +61,7 @@ pantalla completa aparte, no un fragmento htmx de este pane.
         {% endcomment %}
         <div class="border rounded p-2 h-100 d-flex flex-column">
             <div class="fw-bold small mb-1">Grupos de reparto</div>
-            <div style="flex: 1 1 auto; min-height: 0; overflow-y: auto;" class="mb-1">
+            <div class="mb-1 ppane-scroll-fill">
                 <ul class="list-group list-group-flush small" id="personGroupSavedList">
                     {% for group in person_groups %}
                     <li class="list-group-item px-1 py-0" id="personGroupRow{{ group.pk }}"
@@ -126,7 +126,7 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                         acumulativo). Modelo/campo internos siguen
                         llamándose JobPosition/job_position.
                         {% endcomment %}
-                        <select id="person-mass-job-position" data-requirement-select class="form-select form-select-sm" style="width:auto; max-width:100%; min-width:0;">
+                        <select id="person-mass-job-position" data-requirement-select class="form-select form-select-sm ppane-select-auto">
                             <option value="">— Sin requisito (quitar) —</option>
                             {% for position in job_positions %}
                             <option value="{{ position.pk }}">{{ position.name }}</option>
@@ -138,11 +138,24 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                 <div class="col-6">
                     <div class="small text-muted fw-bold">EPIs</div>
                     <button type="button" class="btn btn-sm btn-primary" id="person-mass-epi-submit">Entregar EPIs…</button>
+                    {% if can_manage_photo %}
+                    {% comment %}
+                    H31 (S136): las marcadas vuelven al modo automático
+                    (también las fotos puestas a mano) y a la cola de la
+                    tarea de cada 15 minutos, que les vuelve a sacar la
+                    foto del DNI o permiso.
+                    {% endcomment %}
+                    <div class="small text-muted fw-bold mt-1">Foto de carné</div>
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="person-mass-photo-queue"
+                            data-url="{% url 'panel:documentation_personal_photo_queue' %}" disabled>
+                        <i class="bi bi-person-bounding-box me-1"></i>Volver a sacar la foto
+                    </button>
+                    {% endif %}
                 </div>
                 <div class="col-6 border-top pt-1 mt-1">
                     <div class="small text-muted fw-bold">Información</div>
                     <div class="d-flex gap-1 flex-wrap">
-                        <select id="person-mass-notify" class="form-select form-select-sm" style="width:auto; max-width:100%; min-width:0;">
+                        <select id="person-mass-notify" class="form-select form-select-sm ppane-select-auto">
                             <option value="">Circular/notificación…</option>
                             {% for ntype in notification_types %}
                             <option value="{{ ntype.code }}">{{ ntype.label }}</option>
@@ -156,14 +169,14 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                         hoja de pasos. Desplegable propio: solo las
                         circulares que requieren firma certificada.
                         {% endcomment %}
-                        <select id="person-mass-docuten" class="form-select form-select-sm" style="width:auto; max-width:100%; min-width:0;">
+                        <select id="person-mass-docuten" class="form-select form-select-sm ppane-select-auto">
                             <option value="">Circular con firma…</option>
                             {% for ntype in docuten_types %}
                             <option value="{{ ntype.code }}">{{ ntype.label }}</option>
                             {% endfor %}
                         </select>
                         {# Obra: solo la piden las circulares con datos de obra (nombramientos). #}
-                        <select id="person-mass-docuten-worksite" class="form-select form-select-sm" style="width:auto; max-width:100%; min-width:0;">
+                        <select id="person-mass-docuten-worksite" class="form-select form-select-sm ppane-select-auto">
                             <option value="">Obra (si la pide)…</option>
                             {% for worksite in docuten_worksites %}
                             <option value="{{ worksite.pk }}">{{ worksite.name }}</option>
@@ -221,13 +234,13 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                     <div class="small text-muted fw-bold">Dosieres</div>
                     <div class="d-flex gap-1 flex-wrap">
                         {# S130: plantilla, formato, Descargar y Enviar son los mismos que en Centros de gasto (hub.html, data-dossier-*): las dos selecciones van juntas. #}
-                        <select id="person-mass-dossier-template" data-dossier-bind="personTemplate" class="form-select form-select-sm" style="width:auto; max-width:100%; min-width:0;">
+                        <select id="person-mass-dossier-template" data-dossier-bind="personTemplate" class="form-select form-select-sm ppane-select-auto">
                             <option value="">Plantilla…</option>
                             {% for template in dossier_templates %}
                             <option value="{{ template.pk }}">{{ template.name }}</option>
                             {% endfor %}
                         </select>
-                        <select id="person-mass-dossier-mode" data-dossier-bind="format" class="form-select form-select-sm" style="width:auto; max-width:100%; min-width:0;">
+                        <select id="person-mass-dossier-mode" data-dossier-bind="format" class="form-select form-select-sm ppane-select-auto">
                             <option value="combined">Todo en un PDF</option>
                             <option value="per_subject">Un PDF por cada uno</option>
                             <option value="zip">ZIP (originales)</option>
@@ -284,7 +297,7 @@ superior.
     <div class="col-lg-8 h-100" id="personal-results-col">
         <div class="border rounded p-2 h-100 d-flex flex-column">
             <div class="fw-bold small mb-1">Trabajadores</div>
-            <div id="personal-results-scroll" style="flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: auto;">
+            <div id="personal-results-scroll" class="ppane-scroll-fill ppane-scroll-x">
             <div id="personal-results">
                 {% include "panel/documentation_h30/_personal_results.html" with page=page sort_key=sort_key sort_dir=sort_dir search=search %}
             </div>
@@ -294,7 +307,7 @@ superior.
     <div class="col-lg-4 h-100" id="personal-selection-col">
         <div class="border rounded p-2 h-100 d-flex flex-column">
             <div class="fw-bold small mb-1">Selección actual (<span id="personSelectionCount">0</span>)</div>
-            <div id="personSelectionScroll" style="flex: 1 1 auto; min-height: 0; overflow-y: auto;">
+            <div id="personSelectionScroll" class="ppane-scroll-fill">
                 <ul class="mb-0 small ps-0" id="personSelectionPreviewList">
                     <li class="text-muted">Nadie seleccionado todavía.</li>
                 </ul>
@@ -315,6 +328,17 @@ propio contenedor de scroll -- nunca desaparece al bajar, aunque solo
 las filas de debajo se desplacen de verdad.
 {% endcomment %}
 <style>
+/* H31 (S136, directriz 4.9): estilos que vivían en línea. */
+.ppane-scroll-fill { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.ppane-scroll-x { overflow-x: auto; }
+.ppane-select-auto { width: auto; max-width: 100%; min-width: 0; }
+.ppane-epi-box {
+    height: 40vh;
+    overflow-y: auto;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+    padding: 0.5rem;
+}
 #personal-results-scroll thead th {
     position: sticky;
     top: 0;
@@ -424,6 +448,8 @@ las filas de debajo se desplacen de verdad.
         if (terminateBtn) terminateBtn.disabled = selection.size === 0;
         const reactivateBtn = document.getElementById('person-mass-reactivate');
         if (reactivateBtn) reactivateBtn.disabled = selection.size === 0;
+        const photoQueueBtn = document.getElementById('person-mass-photo-queue');
+        if (photoQueueBtn) photoQueueBtn.disabled = selection.size === 0;
     }
 
     // H31 (S113), Miguel Ángel: "el visor de seleccionados [...]
@@ -824,6 +850,33 @@ las filas de debajo se desplacen de verdad.
         });
     });
 
+    // H31 (S136): "Volver a sacar la foto" de la selección.
+    const photoQueueButton = document.getElementById('person-mass-photo-queue');
+    if (photoQueueButton) {
+        photoQueueButton.addEventListener('click', function () {
+            if (selection.size === 0) return;
+            const formData = new FormData();
+            selection.forEach(function (pk) { formData.append('person_ids', pk); });
+            photoQueueButton.disabled = true;
+            fetch(photoQueueButton.dataset.url, {
+                method: 'POST',
+                headers: {'X-CSRFToken': getCookie('csrftoken')},
+                body: formData,
+            }).then(function (r) { return r.json(); }).then(function (data) {
+                photoQueueButton.disabled = selection.size === 0;
+                if (!data.ok) {
+                    resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">' + (data.error || 'No se ha podido.') + '</div>';
+                    return;
+                }
+                resultEl.innerHTML = '<div class="alert alert-success py-1 px-2 mb-0">' + data.count +
+                    ' persona(s) en modo automático y en cola: la foto se vuelve a sacar en las próximas pasadas (10 personas cada 15 minutos).</div>';
+            }).catch(function () {
+                photoQueueButton.disabled = selection.size === 0;
+                resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red.</div>';
+            });
+        });
+    }
+
     // H31 (S117): reactivar (deshacer baja o recontratar) la selección.
     let personalReactivateModalInstance = null;
     document.getElementById('person-mass-reactivate').addEventListener('click', function () {
@@ -1173,7 +1226,7 @@ arriba, mismo motivo que el resto de modales de este archivo.
                 <div class="row g-2">
                     <div class="col-7">
                         <label class="form-label small mb-1">Al elegir un lote se marcan sus EPIs -- desmarca los que hoy no toque entregar, o marca EPIs sueltos sin lote:</label>
-                        <div id="personMassEpiBatchList" style="height:40vh;overflow-y:auto;border:1px solid #dee2e6;border-radius:0.25rem;padding:0.5rem;">
+                        <div id="personMassEpiBatchList" class="ppane-epi-box">
                             {% for epi in epi_items %}
                             <div class="ps-3 pe-2 py-1" data-epi-family="{{ epi.family }}">
                                 <div class="form-check">
@@ -1188,7 +1241,7 @@ arriba, mismo motivo que el resto de modales de este archivo.
                     </div>
                     <div class="col-5">
                         <label class="form-label small mb-1 fw-bold">Se van a entregar</label>
-                        <div id="personMassEpiBatchPreview" style="height:40vh;overflow-y:auto;border:1px solid #dee2e6;border-radius:0.25rem;padding:0.5rem;">
+                        <div id="personMassEpiBatchPreview" class="ppane-epi-box">
                             <ul class="mb-0 small ps-0" id="personMassEpiBatchPreviewList">
                                 <li class="text-muted">Ningún EPI marcado todavía.</li>
                             </ul>
@@ -1279,7 +1332,7 @@ los mismos campos de antes, ahora precargados y editables solo para
 confirmar o corregir un fallo puntual -- nunca el punto de entrada.
 El mismo <input type="file"> se reenvía tal cual al confirmar
 (PersonalCreateView), sin duplicar la llamada a Gemini.
-Modal aparte, fuera del <script> IIFE de arriba (mismo motivo que
+Modal aparte, fuera del bloque script (IIFE) de arriba (mismo motivo que
 editModeConfirmModal en _personal_detail.html: nada que ver con esa
 lógica, y así queda autocontenido).
 {% endcomment %}

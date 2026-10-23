@@ -175,6 +175,8 @@ from panel.views_documentation_h30 import (
     PersonalPhotoView,
     PersonalPlatformPhotoView,
     PersonalPhotoExtractView,
+    PersonalPhotoQueueView,
+    PersonalPhotoRotateView,
     PersonalPhotoUploadView,
     PersonalWorkdayDetailView,
     SubjectDocumentUploadView,
@@ -1265,6 +1267,18 @@ urlpatterns = [
         "documentacion/personal/<int:pk>/foto/subir/",
         PersonalPhotoUploadView.as_view(),
         name="documentation_personal_photo_upload",
+    ),
+    # H31 (S136): ventana de gestión de la foto -- girarla, y la acción
+    # masiva "Volver a sacar la foto" de la pestaña Personal.
+    path(
+        "documentacion/personal/<int:pk>/foto/girar/",
+        PersonalPhotoRotateView.as_view(),
+        name="documentation_personal_photo_rotate",
+    ),
+    path(
+        "documentacion/personal/foto/cola/",
+        PersonalPhotoQueueView.as_view(),
+        name="documentation_personal_photo_queue",
     ),
     # H31 (S113): entrega real de EPIs (individual desde la ficha, o
     # masiva sobre la selección con casillero) -- sustituye a las

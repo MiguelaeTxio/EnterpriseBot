@@ -11,8 +11,8 @@
     .pdet-avatar-wrap { min-width: 96px; }
     .pdet-avatar { width: 96px; height: 96px; object-fit: cover; }
     .pdet-avatar-icon { font-size: 96px; line-height: 1; }
-    .pdet-avatar-btn { width: 32px; height: 32px; padding: 0; bottom: 0; right: 0; }
-    .pdet-avatar-view-btn { width: 32px; height: 32px; padding: 0; bottom: 0; left: 0; }
+    .pdet-avatar-btn { width: 32px; height: 32px; padding: 0; bottom: 0; right: -6px; }
+    .pdet-photo-side { min-width: 0; }
     .pdet-photo-large { max-width: 100%; max-height: 60vh; width: auto; height: auto; display: block; user-select: none; }
     .pdet-crop-wrap { position: relative; display: inline-block; cursor: crosshair; touch-action: none; }
     .pdet-crop-box { position: absolute; border: 2px solid #0d6efd; box-shadow: 0 0 0 9999px rgba(0, 0, 0, .45); pointer-events: none; }
@@ -110,30 +110,18 @@ y se habilita "Guardar".
             <i class="bi bi-person-circle text-secondary pdet-avatar-icon"></i>
             {% endif %}
             {% comment %}
-            H31 (S134): icono para ver la foto en grande, con su origen y
-            la descarga "para plataforma" (PNG de menos de 128 KB con el
-            nombre de la persona) -- Miguel Ángel.
+            H31 (S136). Un solo icono de configuración junto a la foto
+            (antes, ver y cámara iban muy juntos). Abre la ventana de
+            gestión de la foto de perfil -- Miguel Ángel: "poner un icono
+            de configuración, y en ese de configuración aprovechamos para
+            mostrar la foto en tamaño completo y para las diferentes
+            opciones que haya, pues subir nueva foto, modificar la
+            existente, ponerla en el modo automático".
             {% endcomment %}
-            <button type="button" class="btn btn-sm btn-outline-secondary bg-body rounded-circle position-absolute pdet-avatar-view-btn"
-                    title="Ver foto" data-bs-toggle="modal" data-bs-target="#personPhotoModal">
-                <i class="bi bi-eye"></i>
+            <button type="button" class="btn btn-sm btn-outline-secondary bg-body rounded-circle position-absolute pdet-avatar-btn"
+                    title="Gestionar la foto" data-bs-toggle="modal" data-bs-target="#personPhotoModal">
+                <i class="bi bi-gear-fill"></i>
             </button>
-            {% comment %}
-            H31 (S76): icono de edición sobre el avatar -- Miguel
-            Ángel: "nos falta el añadir y el editar [...] un icono
-            para editar esa imagen y poder subir una imagen nueva."
-            S134: la foto de perfil se sube directa a la ficha, sin
-            pasar por la subida de documentos (que la leía con Gemini y
-            era lenta). Miguel Ángel: "La foto no tiene por qué leerla
-            [...] lo que queremos es que sea lo más rápido posible."
-            {% endcomment %}
-            <button type="button" class="btn btn-sm btn-primary rounded-circle position-absolute pdet-avatar-btn"
-                    title="{% if photo_url %}Cambiar foto{% else %}Añadir foto{% endif %}"
-                    id="personPhotoUploadBtn"
-                    data-url="{% url 'panel:documentation_personal_photo_upload' pk=person.pk %}">
-                <i class="bi bi-camera-fill"></i>
-            </button>
-            <input type="file" accept="image/*" class="d-none" id="personPhotoUploadInput">
         </div>
         <div class="flex-grow-1 pdet-main">
             <form id="personalUpdateForm" class="row g-2">
@@ -1078,54 +1066,112 @@ ancestro con display:none (panel colapsado) ocultaría el modal por
 completo aunque Bootstrap le añada la clase "show" vía JS.
 {% endcomment %}
 {% comment %}
-H31 (S134). Ventana "Ver foto": la foto de la persona en grande, de qué
-documento sale, la descarga para plataforma y, para quien gestiona la
-documentación, volver a sacarla del DNI o del permiso de conducir.
+H31 (S134, rehecha en S136). Ventana de gestión de la foto de perfil:
+la foto en grande con el recuadro para la plataforma, su estado
+(automática o puesta a mano) y de qué documento sale; para quien
+gestiona la documentación, subir una foto nueva, sacarla de un
+documento concreto, girarla y volver al modo automático; y la descarga
+para plataforma. Una foto subida, sacada de un documento elegido o
+girada queda puesta a mano: la búsqueda automática ya no la cambia.
 {% endcomment %}
 <div class="modal fade" id="personPhotoModal" tabindex="-1" aria-labelledby="personPhotoModalTitle">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="personPhotoModalTitle">Foto de {{ person.given_name }} {{ person.first_surname }}</h5>
+                <h5 class="modal-title" id="personPhotoModalTitle"><i class="bi bi-person-square me-2"></i>Foto de perfil de {{ person.given_name }} {{ person.first_surname }}</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
-            <div class="modal-body text-center">
-                {% if photo_url %}
-                <div class="small text-muted mb-2">Arrastra sobre la foto un recuadro con la cara: es lo que se descarga para la plataforma.</div>
-                <div class="pdet-crop-wrap" id="personPhotoCrop">
-                    <img src="{{ photo_url }}" alt="Foto de carné" class="rounded border pdet-photo-large"
-                         width="300" height="400" draggable="false">
-                    <div class="pdet-crop-box d-none" id="personPhotoCropBox"></div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-7 text-center">
+                        {% if photo_url %}
+                        <div class="pdet-crop-wrap" id="personPhotoCrop">
+                            <img src="{{ photo_url }}" alt="Foto de carné" class="rounded border pdet-photo-large"
+                                 width="300" height="400" draggable="false">
+                            <div class="pdet-crop-box d-none" id="personPhotoCropBox"></div>
+                        </div>
+                        <div class="small text-muted mt-1">Arrastra sobre la foto un recuadro con la cara: es lo que se descarga para la plataforma.</div>
+                        <button type="button" class="btn btn-link btn-sm p-0 d-none" id="personPhotoCropClear">Quitar el recuadro</button>
+                        {% if can_manage_photo %}
+                        <div class="btn-group btn-group-sm mt-2" role="group" aria-label="Girar la foto">
+                            <button type="button" class="btn btn-outline-secondary" data-photo-rotate="left"
+                                    data-url="{% url 'panel:documentation_personal_photo_rotate' pk=person.pk %}">
+                                <i class="bi bi-arrow-counterclockwise me-1"></i>Girar a la izquierda
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary" data-photo-rotate="right"
+                                    data-url="{% url 'panel:documentation_personal_photo_rotate' pk=person.pk %}">
+                                <i class="bi bi-arrow-clockwise me-1"></i>Girar a la derecha
+                            </button>
+                        </div>
+                        {% endif %}
+                        {% else %}
+                        <i class="bi bi-person-circle text-secondary pdet-avatar-icon"></i>
+                        <p class="text-muted mb-0">Esta persona todavía no tiene foto.</p>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-5 pdet-photo-side">
+                        <div class="small text-muted fw-bold">Estado</div>
+                        <div class="small mb-2">
+                            {% if id_photo %}
+                            {% if id_photo.is_manual %}
+                            <span class="badge text-bg-warning">Puesta a mano</span>
+                            <div class="text-muted">La búsqueda automática no la cambia.</div>
+                            {% else %}
+                            <span class="badge text-bg-success">Automática</span>
+                            <div class="text-muted">Se cambia sola cuando llega un DNI o permiso nuevo.</div>
+                            {% endif %}
+                            <div class="mt-1">
+                                {% if id_photo.source_id %}Sacada de <a href="{% url 'panel:documentation_document_view' pk=id_photo.source_id %}" target="_blank" rel="noopener">{{ id_photo.source__name }}</a>{% else %}Subida a mano{% endif %}
+                                el {{ id_photo.extracted_at|date:"d/m/Y H:i" }}.
+                            </div>
+                            {% elif avatar %}
+                            Imagen elegida como foto: <a href="{% url 'panel:documentation_document_view' pk=avatar.pk %}" target="_blank" rel="noopener">{{ avatar.name }}</a>.
+                            {% else %}
+                            Sin foto.
+                            {% endif %}
+                        </div>
+                        {% if can_manage_photo %}
+                        <div class="border-top pt-2 mb-2">
+                            <div class="small text-muted fw-bold mb-1">Cambiar la foto</div>
+                            <button type="button" class="btn btn-sm btn-outline-primary w-100 mb-2" id="personPhotoUploadBtn"
+                                    data-url="{% url 'panel:documentation_personal_photo_upload' pk=person.pk %}">
+                                <i class="bi bi-camera-fill me-1"></i>Subir foto nueva
+                            </button>
+                            <input type="file" accept="image/*" class="d-none" id="personPhotoUploadInput">
+                            <label class="form-label small mb-0" for="personPhotoSourceSelect">Sacar de un documento</label>
+                            <div class="input-group input-group-sm mb-2">
+                                <select class="form-select" id="personPhotoSourceSelect"{% if not photo_sources %} disabled{% endif %}>
+                                    {% for source in photo_sources %}
+                                    <option value="{{ source.pk }}"{% if id_photo and id_photo.source_id == source.pk %} selected{% endif %}>{{ source.document_type__label }}{% if source.expiry_date %} · caduca {{ source.expiry_date|date:"d/m/Y" }}{% endif %}{% if source.is_obsolete %} · obsoleto{% endif %} · {{ source.name }}</option>
+                                    {% empty %}
+                                    <option value="">No tiene DNI, NIE, pasaporte, permiso ni imágenes</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="button" class="btn btn-outline-primary" id="personPhotoSourceBtn"{% if not photo_sources %} disabled{% endif %}
+                                        data-url="{% url 'panel:documentation_personal_photo_extract' pk=person.pk %}">Sacar</button>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-success w-100" id="personPhotoExtractBtn"
+                                    data-url="{% url 'panel:documentation_personal_photo_extract' pk=person.pk %}">
+                                <i class="bi bi-magic me-1"></i>{% if id_photo and not id_photo.is_manual %}Volver a buscarla automáticamente{% else %}Pasar a modo automático{% endif %}
+                            </button>
+                        </div>
+                        {% endif %}
+                        {% if photo_url %}
+                        <div class="border-top pt-2">
+                            <div class="small text-muted fw-bold mb-1">Descargar</div>
+                            <a class="btn btn-primary btn-sm w-100" id="personPhotoDownload"
+                               data-url="{% url 'panel:documentation_personal_platform_photo' pk=person.pk %}"
+                               href="{% url 'panel:documentation_personal_platform_photo' pk=person.pk %}">
+                                <i class="bi bi-download me-1"></i>Foto para plataforma (PNG, 128 KB)
+                            </a>
+                        </div>
+                        {% endif %}
+                        <div id="personPhotoMessage" class="small mt-2"></div>
+                    </div>
                 </div>
-                <div class="small mt-1">
-                    <button type="button" class="btn btn-link btn-sm p-0 d-none" id="personPhotoCropClear">Quitar el recuadro</button>
-                </div>
-                <div class="small text-muted mt-2">
-                    {% if id_photo %}Recortada de
-                    {% if id_photo.source_id %}<a href="{% url 'panel:documentation_document_view' pk=id_photo.source_id %}" target="_blank" rel="noopener">{{ id_photo.source__name }}</a>{% else %}un documento ya borrado{% endif %}
-                    el {{ id_photo.extracted_at|date:"d/m/Y H:i" }}.
-                    {% elif avatar %}Imagen elegida como foto: <a href="{% url 'panel:documentation_document_view' pk=avatar.pk %}" target="_blank" rel="noopener">{{ avatar.name }}</a>.
-                    {% endif %}
-                </div>
-                {% else %}
-                <p class="text-muted mb-0">Esta persona todavía no tiene foto.</p>
-                {% endif %}
-                <div id="personPhotoMessage" class="small mt-2"></div>
             </div>
-            <div class="modal-footer gap-2">
-                {% if can_manage_photo %}
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="personPhotoExtractBtn"
-                        data-url="{% url 'panel:documentation_personal_photo_extract' pk=person.pk %}">
-                    <i class="bi bi-person-bounding-box me-1"></i>Sacar del DNI o permiso
-                </button>
-                {% endif %}
-                {% if photo_url %}
-                <a class="btn btn-primary btn-sm" id="personPhotoDownload"
-                   data-url="{% url 'panel:documentation_personal_platform_photo' pk=person.pk %}"
-                   href="{% url 'panel:documentation_personal_platform_photo' pk=person.pk %}">
-                    <i class="bi bi-download me-1"></i>Descargar foto para plataforma
-                </a>
-                {% endif %}
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
             </div>
         </div>
     </div>
@@ -2052,35 +2098,70 @@ function getCookie(name) {
 </script>
 <script>
 (function () {
-    // H31 (S134): "Sacar del DNI o permiso" en la ventana "Ver foto".
-    const button = document.getElementById("personPhotoExtractBtn");
-    if (!button) {
+    // H31 (S134, ampliado en S136): acciones de la ventana de gestión
+    // de la foto -- modo automático, sacarla de un documento elegido y
+    // girarla. Las tres recargan la ficha al terminar bien.
+    const message = document.getElementById("personPhotoMessage");
+    const buttons = document.querySelectorAll(
+        "#personPhotoExtractBtn, #personPhotoSourceBtn, [data-photo-rotate]"
+    );
+    if (!message || !buttons.length) {
         return;
     }
-    const message = document.getElementById("personPhotoMessage");
-    button.addEventListener("click", function () {
-        button.disabled = true;
+
+    function run(button, fields, busyText) {
+        const formData = new FormData();
+        Object.keys(fields).forEach(function (key) {
+            formData.append(key, fields[key]);
+        });
+        buttons.forEach(function (b) { b.disabled = true; });
         message.className = "small mt-2 text-muted";
-        message.textContent = "Buscando la cara en los documentos...";
+        message.textContent = busyText;
         fetch(button.dataset.url, {
             method: "POST",
+            body: formData,
             headers: {"X-CSRFToken": getCookie("csrftoken")},
         }).then(function (response) {
             return response.json();
         }).then(function (data) {
             if (data.ok) {
                 message.className = "small mt-2 text-success";
-                message.textContent = "Foto sacada de " + data.source + ".";
+                message.textContent = data.source
+                    ? "Foto sacada de " + data.source + "."
+                    : "Hecho.";
                 window.location.reload();
-            } else {
-                message.className = "small mt-2 text-danger";
-                message.textContent = data.error;
-                button.disabled = false;
+                return;
             }
+            message.className = "small mt-2 text-danger";
+            message.textContent = data.error || "No se ha podido hacer.";
+            buttons.forEach(function (b) { b.disabled = false; });
         }).catch(function () {
             message.className = "small mt-2 text-danger";
             message.textContent = "Error de red. Inténtalo otra vez.";
-            button.disabled = false;
+            buttons.forEach(function (b) { b.disabled = false; });
+        });
+    }
+
+    const autoBtn = document.getElementById("personPhotoExtractBtn");
+    if (autoBtn) {
+        autoBtn.addEventListener("click", function () {
+            run(autoBtn, {}, "Buscando la cara en los documentos...");
+        });
+    }
+    const sourceBtn = document.getElementById("personPhotoSourceBtn");
+    const sourceSelect = document.getElementById("personPhotoSourceSelect");
+    if (sourceBtn && sourceSelect) {
+        sourceBtn.addEventListener("click", function () {
+            if (!sourceSelect.value) {
+                return;
+            }
+            run(sourceBtn, {entry: sourceSelect.value},
+                "Buscando la cara en el documento elegido...");
+        });
+    }
+    document.querySelectorAll("[data-photo-rotate]").forEach(function (b) {
+        b.addEventListener("click", function () {
+            run(b, {direction: b.dataset.photoRotate}, "Girando la foto...");
         });
     });
 })();

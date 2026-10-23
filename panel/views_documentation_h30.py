@@ -1218,6 +1218,11 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
             CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR,
             CompanyUser.ROLE_WORKSHOPBOSS,
         )
+        # H31 (S136): "Volver a sacar la foto" masivo, mismos roles que
+        # la gestión de la foto en la ficha.
+        ctx["can_manage_photo"] = request.user.company_user.role in (
+            CompanyUser.ROLE_DOCS_SUPERVISOR, CompanyUser.ROLE_ADMIN,
+        )
         return render(
             request, "panel/documentation_h30/_personal_pane.html", ctx
         )
@@ -2011,8 +2016,17 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         # sobre las dos anteriores. Sin cargar la imagen: solo si existe
         # y de qué documento sale.
         id_photo = PersonIdPhoto.objects.filter(person=person).values(
-            "source_id", "source__name", "extracted_at",
+            "source_id", "source__name", "extracted_at", "is_manual",
         ).first()
+        # S136: documentos de los que se puede sacar la foto a mano en
+        # la ventana de gestión, en el mismo orden que la búsqueda
+        # automática (vigentes primero).
+        from document_explorer.id_photo_service import candidates
+
+        photo_sources = list(candidates(person).values(
+            "pk", "name", "document_type__label", "expiry_date",
+            "is_obsolete",
+        )[:30])
         photo_url = (
             "%s?v=%s" % (
                 reverse("panel:documentation_personal_photo",
@@ -2116,6 +2130,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
                 ),
                 "avatar": avatar,
                 "id_photo": id_photo,
+                "photo_sources": photo_sources,
                 "photo_url": photo_url,
                 "can_manage_photo": request.user.company_user.role
                 in (
@@ -5386,27 +5401,115 @@ class PersonalPhotoUploadView(DocsUploadAccessMixin, View):
 
 class PersonalPhotoExtractView(DocsUploadAccessMixin, View):
     """
-    POST: crop the ID photo now from the newest ID document.
+    POST: crop the ID photo now, automatically or from one document.
 
     ---
 
-    H31 (S134). POST: saca ya la foto de carné del documento más
-    reciente de la persona que tenga cara (DNI, NIE, pasaporte, permiso
-    de conducir o imagen), sin esperar a la tarea periódica.
+    H31 (S134). POST: saca ya la foto de carné, sin esperar a la tarea
+    periódica.
+
+    S136, ventana de gestión de la foto (Miguel Ángel: "modificar la
+    existente, ponerla en el modo automático"):
+    - con `entry`: la saca de ese documento concreto de la persona y la
+      deja puesta a mano (la tarea ya no la cambia);
+    - sin `entry`: modo automático (`set_automatic`): quita la marca de
+      puesta a mano y la saca del primer documento con cara.
     """
 
     def post(self, request, pk):
-        from document_explorer.id_photo_service import extract_for_person
+        from document_explorer.id_photo_service import (
+            IdPhotoError, candidates, extract_from_entry, set_automatic,
+        )
 
         person = get_object_or_404(PersonIdentity, pk=pk)
-        entry = extract_for_person(person)
+        entry_pk = request.POST.get("entry", "").strip()
+        if entry_pk:
+            entry = candidates(person).filter(pk=entry_pk).first()
+            if entry is None:
+                return JsonResponse({"ok": False, "error": (
+                    "Ese documento no es un DNI, NIE, pasaporte, permiso "
+                    "ni imagen de esta persona."
+                )}, status=400)
+            try:
+                extract_from_entry(person, entry, manual=True)
+            except IdPhotoError as exc:
+                return JsonResponse(
+                    {"ok": False, "error": str(exc)}, status=422,
+                )
+            return JsonResponse({"ok": True, "source": entry.name})
+        entry = set_automatic(person)
         if entry is None:
             return JsonResponse({"ok": False, "error": (
-                "No se ha encontrado ninguna cara en el DNI, NIE, "
-                "pasaporte, permiso de conducir ni imágenes de esta "
-                "persona."
+                "Foto en modo automático, pero no se ha encontrado "
+                "ninguna cara en el DNI, NIE, pasaporte, permiso de "
+                "conducir ni imágenes de esta persona."
             )}, status=422)
         return JsonResponse({"ok": True, "source": entry.name})
+
+
+class PersonalPhotoRotateView(DocsUploadAccessMixin, View):
+    """
+    POST: turn the person photo a quarter (direction=left|right).
+
+    ---
+
+    H31 (S136). POST: gira la foto de la persona un cuarto de vuelta a
+    la izquierda o a la derecha (`direction`), para corregir a mano una
+    foto que ha salido torcida. Queda puesta a mano.
+    """
+
+    def post(self, request, pk):
+        from document_explorer.id_photo_service import (
+            IdPhotoError, save_rotated,
+        )
+
+        person = get_object_or_404(PersonIdentity, pk=pk)
+        direction = request.POST.get("direction", "")
+        if direction not in ("left", "right"):
+            return JsonResponse(
+                {"ok": False, "error": "Sentido de giro no válido."},
+                status=400,
+            )
+        data = _person_photo_bytes(person)
+        if data is None:
+            return JsonResponse(
+                {"ok": False, "error": "Esta persona no tiene foto."},
+                status=404,
+            )
+        id_photo = PersonIdPhoto.objects.filter(person=person).first()
+        source = id_photo.source if id_photo else person.avatar_document
+        try:
+            save_rotated(person, data, direction == "right", source=source)
+        except IdPhotoError as exc:
+            return JsonResponse({"ok": False, "error": str(exc)}, status=422)
+        return JsonResponse({"ok": True})
+
+
+class PersonalPhotoQueueView(DocsUploadAccessMixin, View):
+    """
+    POST: send the selected persons back to automatic photo search.
+
+    ---
+
+    H31 (S136). POST (`person_ids`): acción masiva de la pestaña
+    Personal, "Volver a sacar la foto". Las personas marcadas vuelven
+    al modo automático (también las puestas a mano) y a la cola de la
+    tarea de cada 15 minutos.
+    """
+
+    def post(self, request):
+        from document_explorer.id_photo_service import queue_recheck
+
+        person_ids = [
+            pk for pk in request.POST.getlist("person_ids") if pk.isdigit()
+        ]
+        if not person_ids:
+            return JsonResponse(
+                {"ok": False, "error": "No hay personas seleccionadas."},
+                status=400,
+            )
+        count = queue_recheck(person_ids)
+        return JsonResponse({"ok": True, "count": count})
 
 
 class MachineSetAvatarView(DocsUploadAccessMixin, View):
