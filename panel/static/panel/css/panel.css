@@ -1922,9 +1922,11 @@ table.table #toll-thead ~ tbody tr:nth-child(even):not(.table-secondary) td {
     background-color: #f8f9fa;
     z-index: 2;
 }
-.ddp-check-col,
-.ddp-view-col {
+.ddp-check-col {
     width: 2rem;
+}
+.ddp-view-col {
+    width: 3.5rem;
 }
 .ddp-select-auto {
     width: auto;

@@ -13,7 +13,8 @@ descarga usa sus vistas de ZIP y PDF único. El comportamiento vive en
 panel/static/panel/js/document_download_picker.js.
 {% endcomment %}
 <div class="ddp-root d-flex flex-column h-100"
-     data-screen-key="{{ screen_key }}" data-subject-pk="{{ subject_pk }}">
+     data-screen-key="{{ screen_key }}" data-subject-pk="{{ subject_pk }}"{% if can_trash %}
+     data-trash-url="{{ trash_url }}"{% endif %}>
     <div class="row g-2 mb-2 flex-shrink-0">
         <div class="col-lg-7">
             <div class="border rounded p-2 h-100">
@@ -62,6 +63,16 @@ panel/static/panel/js/document_download_picker.js.
                     <button type="button" class="btn btn-sm btn-outline-primary ddp-download" data-url="{{ pdf_url }}">
                         <i class="bi bi-file-earmark-pdf me-1"></i>Descargar PDF único
                     </button>
+                    {% if can_trash %}
+                    {% comment %}
+                    S136: papelera de los marcados (borrado blando,
+                    directriz 4.12). Pide confirmación con un segundo
+                    clic.
+                    {% endcomment %}
+                    <button type="button" class="btn btn-sm btn-outline-danger ms-auto ddp-trash">
+                        <i class="bi bi-trash me-1"></i>Enviar a la papelera
+                    </button>
+                    {% endif %}
                 </div>
                 <div class="small mt-1 ddp-message"></div>
             </div>
@@ -99,7 +110,10 @@ panel/static/panel/js/document_download_picker.js.
                         {% elif row.state == "caducado" %}<span class="badge text-bg-danger">{{ row.state_label }}</span>
                         {% else %}<span class="badge text-bg-secondary">{{ row.state_label }}</span>{% endif %}
                     </td>
-                    <td><a class="btn btn-sm btn-link p-0" href="{% url 'panel:documentation_document_view' pk=row.entry.pk %}" target="_blank" rel="noopener" title="Ver"><i class="bi bi-eye"></i></a></td>
+                    <td class="text-nowrap">
+                        <a class="btn btn-sm btn-link p-0" href="{% url 'panel:documentation_document_view' pk=row.entry.pk %}" target="_blank" rel="noopener" title="Ver"><i class="bi bi-eye"></i></a>
+                        {% if can_trash %}<button type="button" class="btn btn-sm btn-link text-danger p-0 ms-1 ddp-row-trash" title="Enviar a la papelera"><i class="bi bi-trash"></i></button>{% endif %}
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>

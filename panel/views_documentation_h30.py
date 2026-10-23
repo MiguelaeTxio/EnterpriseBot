@@ -3822,6 +3822,11 @@ class DocumentDownloadPickerView(CompanyUserRequiredMixin, View):
         families = _document_download_families(
             subject, for_person=(kind == "personal"),
         )
+        url_name = (
+            "panel:documentation_personal_download_trash"
+            if kind == "personal"
+            else "panel:documentation_machine_download_trash"
+        )
         return render(
             request,
             "panel/documentation_h30/_document_download_picker.html",
@@ -3836,8 +3841,61 @@ class DocumentDownloadPickerView(CompanyUserRequiredMixin, View):
                 "saved_states": saved_states,
                 "saved_family": str(saved.get("family") or ""),
                 "state_choices": list(DOWNLOAD_STATE_LABELS.items()),
+                # S136: "Enviar a la papelera", mismos roles que el
+                # borrado de un documento en la ficha.
+                "can_trash": request.user.company_user.role in (
+                    CompanyUser.ROLE_DOCS_SUPERVISOR,
+                    CompanyUser.ROLE_ADMIN,
+                ),
+                "trash_url": reverse(url_name, args=[pk]),
             },
         )
+
+
+class DocumentDownloadTrashView(DocsUploadAccessMixin, View):
+    """
+    POST: send documents of one person or machine to the trash.
+
+    ---
+
+    H31 (S136, sesión invasora). POST (`entry_ids`): manda a la
+    papelera documentos de la persona o máquina desde la ventana
+    "Descargar documentación". Miguel Ángel: "deberíamos de tener un
+    botón para eliminar, porque algunos archivos habría que
+    eliminarlos [...] para que no aparezca en la documentación" (fotos
+    repetidas, el mismo permiso obsoleto varias veces).
+
+    Mismo borrado que `DocumentDeleteView` de la ficha: solo
+    `deleted_at`/`deleted_by`, nunca toca GCS (directriz 4.12); el
+    final real sigue siendo el vaciado de la papelera por el
+    administrador. Solo documentos vivos de ESE sujeto.
+    """
+
+    def post(self, request, pk, kind):
+        model = PersonIdentity if kind == "personal" else MachineAsset
+        subject = get_object_or_404(model, pk=pk)
+        entry_ids = [
+            value for value in request.POST.getlist("entry_ids")
+            if value.isdigit()
+        ]
+        if not entry_ids:
+            return JsonResponse(
+                {"ok": False, "error": "No hay documentos marcados."},
+                status=400,
+            )
+        entries = DocumentIndexEntry.objects.filter(
+            pk__in=entry_ids, bucket=BUCKET,
+            domain_content_type=ContentType.objects.get_for_model(model),
+            domain_object_id=subject.pk,
+            entry_kind=DocumentIndexEntry.KIND_FILE,
+            deleted_at__isnull=True, purged_at__isnull=True,
+        )
+        trashed = list(entries.values_list("pk", flat=True))
+        entries.update(
+            deleted_at=timezone.now(),
+            deleted_by=request.user.company_user,
+        )
+        return JsonResponse({"ok": True, "trashed_ids": trashed})
 
 
 class MachineDossierTemplateListView(CompanyUserRequiredMixin, View):

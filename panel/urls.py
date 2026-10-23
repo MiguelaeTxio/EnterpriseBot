@@ -142,6 +142,7 @@ from panel.views_documentation_h30 import (
     MachineDocumentSelectionPreviewView,
     MachineDocumentSelectionZipView,
     DocumentDownloadPickerView,
+    DocumentDownloadTrashView,
     MachineDossierTemplateApplyView,
     MachineDossierTemplateListView,
     PersonalDetailView,
@@ -1300,6 +1301,18 @@ urlpatterns = [
         DocumentDownloadPickerView.as_view(),
         {"kind": "machine"},
         name="documentation_machine_download_picker",
+    ),
+    path(
+        "documentacion/personal/<int:pk>/descargar/papelera/",
+        DocumentDownloadTrashView.as_view(),
+        {"kind": "personal"},
+        name="documentation_personal_download_trash",
+    ),
+    path(
+        "documentacion/maquinaria/<int:pk>/descargar/papelera/",
+        DocumentDownloadTrashView.as_view(),
+        {"kind": "machine"},
+        name="documentation_machine_download_trash",
     ),
     # H31 (S113): entrega real de EPIs (individual desde la ficha, o
     # masiva sobre la selección con casillero) -- sustituye a las

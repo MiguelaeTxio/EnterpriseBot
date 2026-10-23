@@ -16,10 +16,15 @@
 //   abre la descarga de siempre de la selección.
 // - Los filtros (estados y familia) se guardan por usuario
 //   (directriz 4.15).
+// - S136: "Enviar a la papelera" (los marcados, o una fila con su
+//   icono) pide un segundo clic para confirmar; al cerrar la ventana
+//   tras borrar algo, la ficha se recarga para que desaparezca también
+//   de ella.
 (function () {
     "use strict";
 
     let modalInstance = null;
+    let trashedSomething = false;
 
     function csrf() {
         const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
@@ -73,6 +78,11 @@
             '<div class="modal-body ddp-body"></div>' +
             "</div></div>";
         document.body.appendChild(element);
+        element.addEventListener("hidden.bs.modal", function () {
+            if (trashedSomething) {
+                window.location.reload();
+            }
+        });
         return element;
     }
 
@@ -287,6 +297,98 @@
                 });
             });
         });
+
+        // S136: papelera. Primer clic: pide confirmación; segundo clic
+        // (en 5 s): manda los documentos a la papelera.
+        const trashUrl = root.dataset.trashUrl;
+
+        function askThenTrash(button, pks, label) {
+            if (button.dataset.armed !== "1") {
+                button.dataset.armed = "1";
+                button.dataset.label = button.innerHTML;
+                button.innerHTML = label;
+                button.classList.add("btn-danger", "text-white");
+                setTimeout(function () {
+                    if (button.dataset.armed === "1") {
+                        button.dataset.armed = "";
+                        button.innerHTML = button.dataset.label;
+                        button.classList.remove("btn-danger", "text-white");
+                    }
+                }, 5000);
+                return;
+            }
+            button.dataset.armed = "";
+            button.disabled = true;
+            const formData = new FormData();
+            pks.forEach(function (pk) {
+                formData.append("entry_ids", pk);
+            });
+            fetch(trashUrl, {
+                method: "POST",
+                headers: {"X-CSRFToken": csrf()},
+                body: formData,
+            }).then(function (response) {
+                return response.json();
+            }).then(function (data) {
+                button.disabled = false;
+                button.innerHTML = button.dataset.label;
+                button.classList.remove("btn-danger", "text-white");
+                if (!data.ok) {
+                    message.className = "small mt-1 ddp-message text-danger";
+                    message.textContent = data.error || "No se ha podido.";
+                    return;
+                }
+                trashedSomething = true;
+                (data.trashed_ids || []).forEach(function (pk) {
+                    selection.delete(pk);
+                    const row = root.querySelector('.ddp-row[data-pk="' + pk + '"]');
+                    if (row) {
+                        rows.splice(rows.indexOf(row), 1);
+                        row.remove();
+                    }
+                });
+                persistSelection().catch(function () {});
+                applyFilters();
+                message.className = "small mt-1 ddp-message text-success";
+                message.textContent = data.trashed_ids.length +
+                    " documento(s) enviados a la papelera.";
+            }).catch(function () {
+                button.disabled = false;
+                button.innerHTML = button.dataset.label;
+                button.classList.remove("btn-danger", "text-white");
+                message.className = "small mt-1 ddp-message text-danger";
+                message.textContent = "Error de red. Inténtalo otra vez.";
+            });
+        }
+
+        const trashButton = root.querySelector(".ddp-trash");
+        if (trashButton && trashUrl) {
+            trashButton.addEventListener("click", function () {
+                const pks = rows.filter(function (row) {
+                    return row.querySelector(".ddp-check").checked;
+                }).map(function (row) {
+                    return parseInt(row.dataset.pk, 10);
+                });
+                if (!pks.length) {
+                    message.className = "small mt-1 ddp-message text-danger";
+                    message.textContent = "Marca primero algún documento.";
+                    return;
+                }
+                askThenTrash(trashButton, pks,
+                    "¿Seguro? Clic otra vez: " + pks.length + " a la papelera");
+            });
+        }
+        if (trashUrl) {
+            rows.forEach(function (row) {
+                const button = row.querySelector(".ddp-row-trash");
+                if (button) {
+                    button.addEventListener("click", function () {
+                        askThenTrash(button, [parseInt(row.dataset.pk, 10)],
+                            "¿Seguro?");
+                    });
+                }
+            });
+        }
 
         // Pantalla completa con el formato del laboratorio de análisis
         // (directriz 4.26): el contenedor estable de la ventana.
