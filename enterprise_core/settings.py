@@ -494,6 +494,13 @@ CELERY_BEAT_SCHEDULE = {
         'task':     'document_explorer.tasks.check_system_agents_task',
         'schedule': crontab(minute='*/5'),
     },
+
+    # H31 (S134): foto de carné recortada del DNI o del permiso de
+    # conducir para las personas con un documento nuevo de ese tipo.
+    'extract-id-photos': {
+        'task':     'document_explorer.tasks.extract_id_photos_task',
+        'schedule': crontab(minute='*/15'),
+    },
 }
 
 # H30 (S123): destinatarios (PersonIdentity.pk) de la alerta de caída

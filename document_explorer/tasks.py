@@ -509,12 +509,12 @@ def consume_quarantine_task(self) -> None:
     (...) hay que eliminarlo directamente") are soft-deleted to
     `_DOSSIER_TRASH_USERNAME`'s papelera and logged as `ACTION_TRASHED`
     -- never a guess (S127: only after their documents are extracted,
-    see `classification_service._handle_dossier`). **Extended S042 (decision 3.14, N=1 -- Miguel
-    Ángel: "con que entre una vez y no se pueda clasificar ya es
-    suficiente")**: everything else (identity/machine not resolved
-    with certainty, a plain `DESCONOCIDO`, or even a technical
-    classification error) gets exactly ONE pass through this task and
-    then leaves `_CUARENTENA/` for real, moved (pure index write,
+    see `classification_service._handle_dossier`). **Extended S042
+    (decision 3.14, N=1 -- Miguel Ángel: "con que entre una vez y no
+    se pueda clasificar ya es suficiente")**: everything else
+    (identity/machine not resolved with certainty, a plain `DESCONOCIDO`, or
+    even a technical classification error) gets exactly ONE pass through this
+    task and then leaves `_CUARENTENA/` for real, moved (pure index write,
     `move_service.move_entry`, `blob_name` untouched) into the real
     "NO CONFORMES" folder and logged as `ACTION_SENT_TO_NO_CONFORMES`
     -- it never re-enters this task's query on its own again. A human
@@ -555,11 +555,11 @@ def consume_quarantine_task(self) -> None:
     de que es un dossier (...) hay que eliminarlo directamente") se
     reubican a la papelera de `_DOSSIER_TRASH_USERNAME` y quedan como
     `ACTION_TRASHED` -- nunca una sospecha (S127: solo después de sacar
-    sus documentos, ver `classification_service._handle_dossier`). **Ampliado en S042
-    (decisión 3.14, N=1 -- Miguel Ángel: "con que entre una vez y no
-    se pueda clasificar ya es suficiente")**: todo lo demás (identidad
-    /máquina sin resolver con certeza, un `DESCONOCIDO` simple, o
-    incluso un error técnico de clasificación) recibe exactamente UNA
+    sus documentos, ver `classification_service._handle_dossier`).
+    **Ampliado en S042 (decisión 3.14, N=1 -- Miguel Ángel: "con que
+    entre una vez y no se pueda clasificar ya es suficiente")**: todo
+    lo demás (identidad/máquina sin resolver con certeza, un `DESCONOCIDO`
+    simple, o incluso un error técnico de clasificación) recibe exactamente UNA
     pasada por esta tarea y a partir de ahí sale de verdad de
     `_CUARENTENA/`, movido (escritura de índice pura,
     `move_service.move_entry`, `blob_name` intacto) a la carpeta real
@@ -1107,3 +1107,34 @@ def refresh_contract_task(self, person_pk, document_type_code, entry_pk):
     result = refresh_after_contract(person, document_type_code, entry)
     return "ok" if result is not None else "sin cambios"
 
+
+# Persons checked per run of the ID photo task.
+# Personas que mira cada pasada de la tarea de fotos de carné.
+ID_PHOTO_PERSONS_PER_RUN = 10
+
+
+@app.task(base=DjangoTask, bind=True, max_retries=0)
+def extract_id_photos_task(self) -> str:
+    """
+    Every 15 minutes: crop the ID photo of persons with a new ID
+    document.
+
+    ---
+
+    H31 (S134). Cada 15 minutos: saca la foto de carné de las personas
+    con un DNI, NIE, pasaporte, permiso de conducir o imagen indexado
+    después de su última búsqueda (ver `id_photo_service`). Como mucho
+    `ID_PHOTO_PERSONS_PER_RUN` por pasada.
+    """
+    from .id_photo_service import extract_for_person, persons_to_check
+
+    done = failed = 0
+    for person in persons_to_check(ID_PHOTO_PERSONS_PER_RUN):
+        if extract_for_person(person) is not None:
+            done += 1
+        else:
+            failed += 1
+    logger.info(
+        "# [ID-PHOTO] Pasada: %d fotos sacadas, %d sin foto.", done, failed,
+    )
+    return "%d sacadas, %d sin foto" % (done, failed)

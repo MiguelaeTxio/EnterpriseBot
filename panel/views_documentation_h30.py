@@ -44,14 +44,18 @@ import logging
 import unicodedata
 
 from analytics.views import _resolve_work_period
-from document_explorer import naming_service, personal_intake_service, postal_code_service
+from document_explorer import (
+    naming_service,
+    personal_intake_service,
+    postal_code_service,
+)
 from document_explorer.index_writer import ensure_folder_chain
 from document_explorer.models import (
     DocumentAcknowledgment, DocumentIndexEntry,
     DocumentTypeCatalog, DrivingLicenceCategory, EpiDelivery,
     EpiDeliveryBatchTemplate, EpiItemCatalog, JobPosition,
     PersonalDossierTemplate, PersonGroupTemplate, PersonIdentity,
-    path_digest,
+    PersonIdPhoto, path_digest,
 )
 from document_explorer.epi_delivery_document_service import (
     build_epi_delivery_pdf_bytes, resolve_company_fiscal_profile,
@@ -80,9 +84,17 @@ from panel.mixins import (
 from panel.models import PanelNavigationState
 from panel.navigation_persistence import get_saved_state_key
 from panel.views_task_photos import _build_photo_entries
-from spare_parts.gcs_service import download_bytes, generate_signed_url, upload_bytes
+from spare_parts.gcs_service import (
+    download_bytes,
+    generate_signed_url,
+    upload_bytes,
+)
 from whatsapp.services import send_epi_delivery_whatsapp_confirmation
-from work_order_processor.models import WorkOrder, WorkOrderEntry, WorkOrderEntryLine
+from work_order_processor.models import (
+    WorkOrder,
+    WorkOrderEntry,
+    WorkOrderEntryLine,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -109,12 +121,26 @@ EPI_TECHNICAL_SHEETS_ROOT = "_FICHAS_TECNICAS_EPI"
 # vacío (sin cruzar contra el Excel, dato real S76) quedan en su
 # propia opción "sin_empresa" -- ninguno se oculta en silencio.
 COMPANY_FILTER_CHOICES = [
-    ("adolfo_alvarez", "Grúas Adolfo Álvarez S.L.", ["GRUAS ADOLFO ALVAREZ SL"]),
-    ("transgrual", "TRANSGRUAL S.L.", [
-        "TRANSGRUAL SL", "TRANSGRUAL S.L.", "TRANSGRUAL Y ASITENCIA",
-    ]),
+    (
+        "adolfo_alvarez",
+        "Grúas Adolfo Álvarez S.L.",
+        ["GRUAS ADOLFO ALVAREZ SL"],
+    ),
+    (
+        "transgrual",
+        "TRANSGRUAL S.L.",
+        [
+            "TRANSGRUAL SL",
+            "TRANSGRUAL S.L.",
+            "TRANSGRUAL Y ASITENCIA",
+        ],
+    ),
     ("aldi", "GRUALDI S.L.", ["GRUALDI S.L"]),
-    ("asistencia_granada", "Asistencia y Grúas Granada", ["ASIST.GRUAS GRANADA"]),
+    (
+        "asistencia_granada",
+        "Asistencia y Grúas Granada",
+        ["ASIST.GRUAS GRANADA"],
+    ),
     ("sin_empresa", "Sin empresa asignada", [""]),
 ]
 
@@ -143,14 +169,18 @@ def _apply_personal_filters(qs, request):
         if "true" in active_filter:
             active_q |= Q(is_active_employee=True)
         if "false" in active_filter:
-            active_q |= Q(is_active_employee=False) | Q(is_active_employee__isnull=True)
+            active_q |= Q(is_active_employee=False) | Q(
+                is_active_employee__isnull=True
+            )
         qs = qs.filter(active_q)
     else:
         qs = qs.none()
 
     company_filter = request.GET.getlist("company")
     if company_filter:
-        raw_by_slug = {slug: raws for slug, _label, raws in COMPANY_FILTER_CHOICES}
+        raw_by_slug = {
+            slug: raws for slug, _label, raws in COMPANY_FILTER_CHOICES
+        }
         company_q = Q()
         matched_any = False
         for slug in company_filter:
@@ -476,7 +506,8 @@ def _attach_required_document_alerts(
 
 
 class DocumentationHubV2View(CompanyUserRequiredMixin, View):
-    """GET: página completa, tres pestañas, listado inicial de Centros de Gasto.
+    """GET: página completa, tres pestañas, listado inicial de Centros de
+    Gasto.
 
     H31 (S75): la pestaña activa y los filtros de cada pestaña se
     restauran desde `PanelNavigationState` (nunca vuelve a la pestaña
@@ -490,9 +521,14 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
 
     def get(self, request):
         nav_state = PanelNavigationState.objects.filter(
-            company_user=request.user.company_user, screen_key="documentation_hub",
+            company_user=request.user.company_user,
+            screen_key="documentation_hub",
         ).first()
-        state = nav_state.state if nav_state and isinstance(nav_state.state, dict) else {}
+        state = (
+            nav_state.state
+            if nav_state and isinstance(nav_state.state, dict)
+            else {}
+        )
         valid_tabs = (
             "maquinaria", "personal", "epis", "accesorios", "vacaciones",
             "fichajes", "calendario", "requisitos", "avisos", "circulares",
@@ -538,7 +574,11 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
             active_tab = state.get("active_tab") or "maquinaria"
             if active_tab not in valid_tabs:
                 active_tab = "maquinaria"
-        filters = state.get("filters") if isinstance(state.get("filters"), dict) else {}
+        filters = (
+            state.get("filters")
+            if isinstance(state.get("filters"), dict)
+            else {}
+        )
 
         # S117: la pestaña "Centros de Gasto" ya no se pinta aquí -- la
         # carga por htmx el panel compartido de maquinaria (puerta
@@ -571,8 +611,12 @@ def _build_personal_tab_querystring(filters):
     """
     from urllib.parse import urlencode
 
-    personal_filters = filters.get("personal") if isinstance(filters, dict) else None
-    personal_filters = personal_filters if isinstance(personal_filters, dict) else {}
+    personal_filters = (
+        filters.get("personal") if isinstance(filters, dict) else None
+    )
+    personal_filters = (
+        personal_filters if isinstance(personal_filters, dict) else {}
+    )
 
     params = [
         ("q", personal_filters.get("q", "")),
@@ -587,7 +631,9 @@ def _build_personal_tab_querystring(filters):
 
     company_values = personal_filters.get("company")
     if not isinstance(company_values, list):
-        company_values = [slug for slug, _label, _raws in COMPANY_FILTER_CHOICES]
+        company_values = [
+            slug for slug, _label, _raws in COMPANY_FILTER_CHOICES
+        ]
     for value in company_values:
         params.append(("company", value))
 
@@ -829,39 +875,48 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
         # y lecturas), apartado propio de la ficha.
         from panel.views_machine_service import machine_service_context
 
-        return render(request, "panel/documentation_h30/_machine_detail.html", {
-            **_machine_workshop_context(machine, entries_list),
-            **machine_service_context(machine, request.user.company_user),
-            "service_open": request.GET.get("service_open") == "1",
-            "lifting_accessories": lifting_accessories,
-            "lifting_accessories_expired": any(
-                accessory.is_expired for accessory in lifting_accessories
-            ),
-            "machine": machine, "families": families, "avatar": avatar,
-            "untyped_documents": untyped_documents,
-            "missing_types_by_family": missing_types_by_family,
-            "missing_required_types_by_family": (
-                missing_required_types_by_family
-            ),
-            "attention_types_by_family": attention_types_by_family,
-            "expired_current_documents": expired_current_documents,
-            "has_expired_documents": bool(expired_current_documents),
-            # S119, punto 6: casillas marcadas (PanelNavigationState).
-            "selected_document_ids": _machine_selected_ids(
-                request, machine.pk,
-            ),
-            "all_document_types": all_document_types,
-            "doc_types": doc_types, "active_nav": "documentation_hub",
-            "back_url": back_url,
-            "back_label": back_label,
-            "form": form,
-            "can_edit_machine": self._can_edit(request),
-            "machine_saved": saved,
-            "machine_form_open": saved or form.errors,
-            # S119, punto 5: con errores de validación se reabre ya en
-            # modo edición, para poder corregir sin volver a confirmar.
-            "start_in_edit_mode": bool(form.errors),
-        }, status=status)
+        return render(
+            request,
+            "panel/documentation_h30/_machine_detail.html",
+            {
+                **_machine_workshop_context(machine, entries_list),
+                **machine_service_context(machine, request.user.company_user),
+                "service_open": request.GET.get("service_open") == "1",
+                "lifting_accessories": lifting_accessories,
+                "lifting_accessories_expired": any(
+                    accessory.is_expired for accessory in lifting_accessories
+                ),
+                "machine": machine,
+                "families": families,
+                "avatar": avatar,
+                "untyped_documents": untyped_documents,
+                "missing_types_by_family": missing_types_by_family,
+                "missing_required_types_by_family": (
+                    missing_required_types_by_family
+                ),
+                "attention_types_by_family": attention_types_by_family,
+                "expired_current_documents": expired_current_documents,
+                "has_expired_documents": bool(expired_current_documents),
+                # S119, punto 6: casillas marcadas (PanelNavigationState).
+                "selected_document_ids": _machine_selected_ids(
+                    request,
+                    machine.pk,
+                ),
+                "all_document_types": all_document_types,
+                "doc_types": doc_types,
+                "active_nav": "documentation_hub",
+                "back_url": back_url,
+                "back_label": back_label,
+                "form": form,
+                "can_edit_machine": self._can_edit(request),
+                "machine_saved": saved,
+                "machine_form_open": saved or form.errors,
+                # S119, punto 5: con errores de validación se reabre ya en
+                # modo edición, para poder corregir sin volver a confirmar.
+                "start_in_edit_mode": bool(form.errors),
+            },
+            status=status,
+        )
 
     def get(self, request, pk):
         from fleet.forms import MachineAssetForm
@@ -901,10 +956,15 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
             params = {"saved": "1"}
             if request.GET.get("back_url"):
                 params["back_url"] = request.GET["back_url"]
-            return redirect("%s?%s" % (
-                reverse("panel:documentation_machine_detail", args=[machine.pk]),
-                urlencode(params),
-            ))
+            return redirect(
+                "%s?%s"
+                % (
+                    reverse(
+                        "panel:documentation_machine_detail", args=[machine.pk]
+                    ),
+                    urlencode(params),
+                )
+            )
         return self._render(request, machine, form, status=400)
 
 
@@ -931,10 +991,15 @@ def _attach_person_avatars(persons, person_ct):
             deleted_at__isnull=True, purged_at__isnull=True,
         ).order_by("-id").values_list("domain_object_id", "pk"):
             fallback.setdefault(person_pk, entry_pk)
+    # H31 (S134): la foto de carné recortada manda sobre las demás.
+    with_photo = set(PersonIdPhoto.objects.filter(
+        person_id__in=[person.pk for person in persons],
+    ).values_list("person_id", flat=True))
     for person in persons:
         person.avatar_entry_id = (
             person.avatar_document_id or fallback.get(person.pk)
         )
+        person.has_id_photo = person.pk in with_photo
     return persons
 
 
@@ -994,11 +1059,17 @@ def _person_list_page(request):
     person_ct = ContentType.objects.get_for_model(PersonIdentity)
     doc_count_subquery = (
         DocumentIndexEntry.objects.filter(
-            bucket=BUCKET, domain_content_type=person_ct,
+            bucket=BUCKET,
+            domain_content_type=person_ct,
             domain_object_id=OuterRef("pk"),
             entry_kind=DocumentIndexEntry.KIND_FILE,
-            deleted_at__isnull=True, purged_at__isnull=True,
-        ).order_by().values("domain_object_id").annotate(n=Count("id")).values("n")
+            deleted_at__isnull=True,
+            purged_at__isnull=True,
+        )
+        .order_by()
+        .values("domain_object_id")
+        .annotate(n=Count("id"))
+        .values("n")
     )
     qs = qs.annotate(doc_count=Coalesce(Subquery(doc_count_subquery), 0))
     sort_columns = [
@@ -1136,16 +1207,20 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
         # H31 (S113): lotes de EPIs guardados para la nueva acción
         # masiva de entrega -- mismo criterio que job_positions/
         # person_groups de arriba, cargado una única vez.
-        ctx["epi_batch_templates"] = EpiDeliveryBatchTemplate.objects.prefetch_related(
-            "items",
-        ).order_by("name")
+        ctx["epi_batch_templates"] = (
+            EpiDeliveryBatchTemplate.objects.prefetch_related(
+                "items",
+            ).order_by("name")
+        )
         # H31 (S129): exportar a Excel con plantilla, mismos roles que
         # la exportación de partes (lleva DNI, dirección y n.º de SS).
         ctx["can_export_personal"] = request.user.company_user.role in (
             CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR,
             CompanyUser.ROLE_WORKSHOPBOSS,
         )
-        return render(request, "panel/documentation_h30/_personal_pane.html", ctx)
+        return render(
+            request, "panel/documentation_h30/_personal_pane.html", ctx
+        )
 
 
 class PersonalResultsFragmentView(CompanyUserRequiredMixin, View):
@@ -1156,10 +1231,17 @@ class PersonalResultsFragmentView(CompanyUserRequiredMixin, View):
     def get(self, request):
         _clear_last_person_pointer(request)
         ctx = _person_list_page(request)
-        return render(request, "panel/documentation_h30/_personal_results.html", ctx)
+        return render(
+            request, "panel/documentation_h30/_personal_results.html", ctx
+        )
 
 
-def _group_current_by_family(current_entries, exclude_family_codes=(), include_empty_families=(), for_person=False):
+def _group_current_by_family(
+    current_entries,
+    exclude_family_codes=(),
+    include_empty_families=(),
+    for_person=False,
+):
     """
     H31 (S76). Agrupa los documentos vigentes por la `family` real del
     catálogo -- campo que ya existía exactamente para esto desde H30
@@ -1394,7 +1476,10 @@ def _group_epi_deliveries_by_family(epi_deliveries):
     for delivery in epi_deliveries:
         epi_id = delivery.epi_id
         current_latest = latest_by_epi.get(epi_id)
-        if current_latest is None or delivery.delivery_date > current_latest.delivery_date:
+        if (
+            current_latest is None
+            or delivery.delivery_date > current_latest.delivery_date
+        ):
             latest_by_epi[epi_id] = delivery
 
     epi_ct = ContentType.objects.get_for_model(EpiItemCatalog)
@@ -1408,12 +1493,17 @@ def _group_epi_deliveries_by_family(epi_deliveries):
         technical_docs_by_epi.setdefault(doc.domain_object_id, []).append(doc)
 
     for delivery in latest_by_epi.values():
-        delivery.epi.technical_docs = technical_docs_by_epi.get(delivery.epi_id, [])
+        delivery.epi.technical_docs = technical_docs_by_epi.get(
+            delivery.epi_id, []
+        )
         family = delivery.epi.family or "Sin familia asignada"
         by_family.setdefault(family, []).append(delivery)
 
     return [
-        {"label": family, "deliveries": sorted(items, key=lambda d: d.epi.label)}
+        {
+            "label": family,
+            "deliveries": sorted(items, key=lambda d: d.epi.label),
+        }
         for family, items in sorted(by_family.items())
     ]
 
@@ -1563,7 +1653,9 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             company_user=cu, screen_key="documentation_hub",
             defaults={"state": {}},
         )
-        _hub_state = nav_state.state if isinstance(nav_state.state, dict) else {}
+        _hub_state = (
+            nav_state.state if isinstance(nav_state.state, dict) else {}
+        )
         _hub_state["active_tab"] = "personal"
         _hub_state["last_person_pk"] = pk
         nav_state.state = _hub_state
@@ -1574,7 +1666,8 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         ).first()
         _ficha_state = (
             ficha_nav_state.state
-            if ficha_nav_state and isinstance(ficha_nav_state.state, dict) else {}
+            if ficha_nav_state and isinstance(ficha_nav_state.state, dict)
+            else {}
         )
         _person_accordion = (
             _ficha_state.get("person_accordion")
@@ -1749,8 +1842,10 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             fam_attention = attention_types_by_family.get(fam["code"])
             if fam_missing:
                 documentacion_alert_titles.append(
-                    "Falta (%s): %s" % (
-                        fam["label"], ", ".join(dt.label for dt in fam_missing),
+                    "Falta (%s): %s"
+                    % (
+                        fam["label"],
+                        ", ".join(dt.label for dt in fam_missing),
                     ),
                 )
             if fam_attention:
@@ -1766,9 +1861,11 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         # cambia dónde se pinta (ver docstring de
         # _group_current_by_family, parámetro exclude_family_codes).
         laboral_documents = [
-            entry for entry in current
+            entry
+            for entry in current
             if entry.document_type
-            and entry.document_type.family == DocumentTypeCatalog.FAMILY_LABORAL
+            and entry.document_type.family
+            == DocumentTypeCatalog.FAMILY_LABORAL
         ]
         # S125: aviso por antigüedad (o caducidad) del contrato vigente.
         contract_alert = _contract_alert(person)
@@ -1778,9 +1875,11 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             entry.contract_alert = contract_alert if is_contract else None
             entry.contract_review = contract_review if is_contract else ""
         salud_documents = [
-            entry for entry in current
+            entry
+            for entry in current
             if entry.document_type
-            and entry.document_type.family == DocumentTypeCatalog.FAMILY_SALUD_BAJAS_PERSONA
+            and entry.document_type.family
+            == DocumentTypeCatalog.FAMILY_SALUD_BAJAS_PERSONA
         ]
         # H31 (S77). Vacaciones real -- VacationPeriod.operator (FK a
         # CompanyUser) + PersonIdentity.company_user (OneToOne, S74),
@@ -1848,7 +1947,8 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         selected_period = None
         if partes_period_id:
             selected_period = next(
-                (p for p in work_periods if str(p.pk) == partes_period_id), None,
+                (p for p in work_periods if str(p.pk) == partes_period_id),
+                None,
             )
         elif not partes_explicit_filter and person.company_user_id:
             selected_period = _resolve_work_period(
@@ -1903,7 +2003,28 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         # dedicado nuevo) tiene prioridad si está relleno; si no, cae
         # al mecanismo IMAGEN de siempre, sin romper fichas ya usando
         # "Cambiar foto".
-        avatar = person.avatar_document or entries.filter(document_type__code="IMAGEN").first()
+        avatar = (
+            person.avatar_document
+            or entries.filter(document_type__code="IMAGEN").first()
+        )
+        # H31 (S134): la foto de carné recortada (PersonIdPhoto) manda
+        # sobre las dos anteriores. Sin cargar la imagen: solo si existe
+        # y de qué documento sale.
+        id_photo = PersonIdPhoto.objects.filter(person=person).values(
+            "source_id", "source__name", "extracted_at",
+        ).first()
+        photo_url = (
+            "%s?v=%s" % (
+                reverse("panel:documentation_personal_photo",
+                        args=[person.pk]),
+                int(id_photo["extracted_at"].timestamp()),
+            )
+            if id_photo else (
+                reverse("panel:documentation_document_view",
+                        args=[avatar.pk])
+                if avatar else ""
+            )
+        )
         doc_types = DocumentTypeCatalog.objects.filter(
             is_active=True, domain__in=["PERSONAL", "BOTH"],
         ).order_by("label")
@@ -1942,67 +2063,95 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR,
             CompanyUser.ROLE_WORKSHOPBOSS,
         )
-        return render(request, "panel/documentation_h30/_personal_detail.html", {
-            "can_view_clock_events": can_view_clock,
-            "clock_date_from": _today_clk.replace(day=1),
-            "clock_date_to": _today_clk,
-            "google_maps_api_key": (
-                _os_clk.environ.get("GOOGLE_MAPS_API_KEY", "")
-                if can_view_clock else ""
-            ),
-            "google_maps_map_id": _os_clk.environ.get("GOOGLE_MAPS_MAP_ID", ""),
-            "person": person, "current": current, "obsolete": obsolete,
-            "families": families,
-            "laboral_documents": laboral_documents,
-            "contract_alert": contract_alert,
-            "salud_documents": salud_documents,
-            "missing_types_by_family": missing_types_by_family,
-            "missing_required_types_by_family": missing_required_types_by_family,
-            "attention_types_by_family": attention_types_by_family,
-            "documentacion_has_alert": documentacion_has_alert,
-            "documentacion_alert_title": ". ".join(documentacion_alert_titles),
-            "job_positions": JobPosition.objects.order_by("name"),
-            "all_document_types": all_document_types,
-            "vacation_periods": vacation_periods,
-            "absence_periods": absence_periods,
-            "partes_total_hours": partes_total_hours,
-            "partes_by_machine": partes_by_machine,
-            "partes_by_day": partes_by_day,
-            "partes_digital_count": len(_digital_entry_ids),
-            "partes_historical_count": len(_historical_entry_ids),
-            "work_periods": work_periods,
-            "selected_period": selected_period,
-            "partes_from": partes_from,
-            "partes_to": partes_to,
-            "partes_sort": partes_sort,
-            "partes_filtered": bool(
-                partes_period_id or partes_from or partes_to
-                or partes_sort != "desc",
-            ),
-            "avatar": avatar,
-            "doc_types": doc_types, "epi_deliveries": epi_deliveries,
-            "epi_families": epi_families,
-            "epi_items": epi_items,
-            # H30 (S121): accesorios de elevación entregados ahora a esta
-            # persona (su responsable) -- solo consulta, el CRUD vive en
-            # su pestaña del hub.
-            "lifting_accessories": _person_lifting_accessories(
-                person, request.user.company_user.company,
-            ),
-            # H30 (S122): periodos de contratación (altas) con su
-            # contrato emparejado a ±15 días, o "falta contrato".
-            "employment": employment,
-            # H31 (S113): lotes de EPIs guardados para el nuevo flujo de
-            # entrega desde la ficha individual (mismo modal que la
-            # acción masiva de Personal).
-            "epi_batch_templates": EpiDeliveryBatchTemplate.objects.prefetch_related(
-                "items",
-            ).order_by("name"),
-            "notification_types": notification_types,
-            "active_nav": "documentation_hub",
-            "main_accordion_open": main_accordion_open,
-            "selected_document_ids": selected_document_ids,
-        })
+        return render(
+            request,
+            "panel/documentation_h30/_personal_detail.html",
+            {
+                "can_view_clock_events": can_view_clock,
+                "clock_date_from": _today_clk.replace(day=1),
+                "clock_date_to": _today_clk,
+                "google_maps_api_key": (
+                    _os_clk.environ.get("GOOGLE_MAPS_API_KEY", "")
+                    if can_view_clock
+                    else ""
+                ),
+                "google_maps_map_id": _os_clk.environ.get(
+                    "GOOGLE_MAPS_MAP_ID", ""
+                ),
+                "person": person,
+                "current": current,
+                "obsolete": obsolete,
+                "families": families,
+                "laboral_documents": laboral_documents,
+                "contract_alert": contract_alert,
+                "salud_documents": salud_documents,
+                "missing_types_by_family": missing_types_by_family,
+                "missing_required_types_by_family": (
+                    missing_required_types_by_family
+                ),
+                "attention_types_by_family": attention_types_by_family,
+                "documentacion_has_alert": documentacion_has_alert,
+                "documentacion_alert_title": ". ".join(
+                    documentacion_alert_titles
+                ),
+                "job_positions": JobPosition.objects.order_by("name"),
+                "all_document_types": all_document_types,
+                "vacation_periods": vacation_periods,
+                "absence_periods": absence_periods,
+                "partes_total_hours": partes_total_hours,
+                "partes_by_machine": partes_by_machine,
+                "partes_by_day": partes_by_day,
+                "partes_digital_count": len(_digital_entry_ids),
+                "partes_historical_count": len(_historical_entry_ids),
+                "work_periods": work_periods,
+                "selected_period": selected_period,
+                "partes_from": partes_from,
+                "partes_to": partes_to,
+                "partes_sort": partes_sort,
+                "partes_filtered": bool(
+                    partes_period_id
+                    or partes_from
+                    or partes_to
+                    or partes_sort != "desc",
+                ),
+                "avatar": avatar,
+                "id_photo": id_photo,
+                "photo_url": photo_url,
+                "can_manage_photo": request.user.company_user.role
+                in (
+                    CompanyUser.ROLE_DOCS_SUPERVISOR,
+                    CompanyUser.ROLE_ADMIN,
+                ),
+                "doc_types": doc_types,
+                "epi_deliveries": epi_deliveries,
+                "epi_families": epi_families,
+                "epi_items": epi_items,
+                # H30 (S121): accesorios de elevación entregados ahora a esta
+                # persona (su responsable) -- solo consulta, el CRUD vive en
+                # su pestaña del hub.
+                "lifting_accessories": _person_lifting_accessories(
+                    person,
+                    request.user.company_user.company,
+                ),
+                # H30 (S122): periodos de contratación (altas) con su
+                # contrato emparejado a ±15 días, o "falta contrato".
+                "employment": employment,
+                # H31 (S113): lotes de EPIs guardados para el nuevo flujo de
+                # entrega desde la ficha individual (mismo modal que la
+                # acción masiva de Personal).
+                "epi_batch_templates": (
+                    EpiDeliveryBatchTemplate.objects.prefetch_related(
+                        "items",
+                    )
+                ).order_by(
+                    "name"
+                ),
+                "notification_types": notification_types,
+                "active_nav": "documentation_hub",
+                "main_accordion_open": main_accordion_open,
+                "selected_document_ids": selected_document_ids,
+            },
+        )
 
 
 def _move_previous_period_documents(current, obsolete, periods_newest_first):
@@ -2482,7 +2631,8 @@ class PersonalDocumentSelectionPreviewView(CompanyUserRequiredMixin, View):
         person, entries = _resolve_document_selection(request, pk)
         return render(
             request,
-            "panel/documentation_h30/_personal_document_selection_preview.html",
+            "panel/documentation_h30/"
+            "_personal_document_selection_preview.html",
             {"person": person, "entries": entries},
         )
 
@@ -2608,7 +2758,9 @@ def _build_dossier_pdf_bytes(person, entries, epi_deliveries=None):
     skipped_lines = []
     for entry in all_entries:
         extension = entry.name.rsplit(".", 1)[-1] if "." in entry.name else ""
-        label = entry.document_type.label if entry.document_type_id else entry.name
+        label = (
+            entry.document_type.label if entry.document_type_id else entry.name
+        )
         family = (
             entry.document_type.get_person_family_display()
             if entry.document_type_id else "—"
@@ -2617,13 +2769,19 @@ def _build_dossier_pdf_bytes(person, entries, epi_deliveries=None):
         pdf_bytes = convert_to_pdf_bytes(data, extension)
         if pdf_bytes is None:
             skipped_lines.append(
-                f"{label} ({family}) -- formato .{extension or '?'} no soportado",
+                f"{label} ({family}) -- formato .{extension or '?'} "
+                "no soportado",
             )
             continue
         included_pdfs.append(pdf_bytes)
         caducidad = (
-            f"vigente {entry.expiry_date}" if entry.expiry_date
-            else (f"emisión {entry.issue_date}" if entry.issue_date else "sin fecha")
+            f"vigente {entry.expiry_date}"
+            if entry.expiry_date
+            else (
+                f"emisión {entry.issue_date}"
+                if entry.issue_date
+                else "sin fecha"
+            )
         )
         included_lines.append(f"{label} -- {family} -- {caducidad}")
 
@@ -3247,7 +3405,9 @@ class DossierTemplateSaveView(CompanyUserRequiredMixin, View):
             return JsonResponse(
                 {
                     "ok": False,
-                    "error": "Selecciona al menos un tipo documental o un EPI.",
+                    "error": (
+                        "Selecciona al menos un tipo documental o un EPI."
+                    ),
                 },
                 status=400,
             )
@@ -3257,7 +3417,9 @@ class DossierTemplateSaveView(CompanyUserRequiredMixin, View):
         template.document_types.set(type_ids)
         template.epi_items.set(epi_item_ids)
 
-        return JsonResponse({"ok": True, "id": template.pk, "name": template.name})
+        return JsonResponse(
+            {"ok": True, "id": template.pk, "name": template.name}
+        )
 
 
 class PersonalDossierTemplateApplyView(CompanyUserRequiredMixin, View):
@@ -3288,7 +3450,8 @@ class PersonalDossierTemplateApplyView(CompanyUserRequiredMixin, View):
 
         output_format = request.GET.get("format", "").strip().upper()
         if output_format not in (
-            PersonalDossierTemplate.FORMAT_PDF, PersonalDossierTemplate.FORMAT_ZIP,
+            PersonalDossierTemplate.FORMAT_PDF,
+            PersonalDossierTemplate.FORMAT_ZIP,
         ):
             return HttpResponse(
                 "Falta indicar el formato (PDF o ZIP) para descargar "
@@ -3701,7 +3864,10 @@ class JobPositionSaveView(CompanyUserRequiredMixin, View):
             position.save()
         except IntegrityError:
             return JsonResponse(
-                {"ok": False, "error": "Ya existe un requisito con ese nombre."},
+                {
+                    "ok": False,
+                    "error": "Ya existe un requisito con ese nombre.",
+                },
                 status=400,
             )
         type_ids = request.POST.getlist("document_type_ids")
@@ -3710,7 +3876,9 @@ class JobPositionSaveView(CompanyUserRequiredMixin, View):
         category_ids = request.POST.getlist("driving_category_ids")
         position.required_driving_categories.set(category_ids)
 
-        return JsonResponse({"ok": True, "id": position.pk, "name": position.name})
+        return JsonResponse(
+            {"ok": True, "id": position.pk, "name": position.name}
+        )
 
 
 class JobPositionBulkDeleteView(CompanyUserRequiredMixin, View):
@@ -3885,7 +4053,10 @@ class EpiTechnicalSheetUploadView(DocsUploadAccessMixin, View):
         uploaded_file = request.FILES.get("file")
         if not uploaded_file:
             return JsonResponse(
-                {"ok": False, "error": "Falta el archivo de la ficha técnica."},
+                {
+                    "ok": False,
+                    "error": "Falta el archivo de la ficha técnica.",
+                },
                 status=400,
             )
 
@@ -3899,13 +4070,18 @@ class EpiTechnicalSheetUploadView(DocsUploadAccessMixin, View):
         )
         today = timezone.now().date()
         filename = "%s_FICHA_TECNICA_%s_%s.%s" % (
-            epi.code, today.isoformat(), DocumentIndexEntry.objects.count(), extension,
+            epi.code,
+            today.isoformat(),
+            DocumentIndexEntry.objects.count(),
+            extension,
         )
         target_folder = "%s/%s" % (EPI_TECHNICAL_SHEETS_ROOT, epi.code)
         ensure_folder_chain(BUCKET, target_folder)
         blob_name = "%s/%s" % (target_folder, filename)
         content_type = (
-            "application/pdf" if extension == "pdf" else "application/octet-stream"
+            "application/pdf"
+            if extension == "pdf"
+            else "application/octet-stream"
         )
         upload_bytes(BUCKET, blob_name, data, content_type=content_type)
 
@@ -3924,13 +4100,17 @@ class EpiTechnicalSheetUploadView(DocsUploadAccessMixin, View):
             domain_content_type=epi_ct,
             domain_object_id=epi.pk,
         )
-        return JsonResponse({
-            "ok": True,
-            "technical_sheet": {
-                "id": entry.pk,
-                "url": reverse("panel:documentation_document_view", args=[entry.pk]),
-            },
-        })
+        return JsonResponse(
+            {
+                "ok": True,
+                "technical_sheet": {
+                    "id": entry.pk,
+                    "url": reverse(
+                        "panel:documentation_document_view", args=[entry.pk]
+                    ),
+                },
+            }
+        )
 
 
 class EpiBatchDeliveryExecuteView(DocsUploadAccessMixin, View):
@@ -3992,7 +4172,12 @@ class EpiBatchDeliveryExecuteView(DocsUploadAccessMixin, View):
             )
         if not epi_ids or not delivery_date_str:
             return JsonResponse(
-                {"ok": False, "error": "Selecciona al menos un EPI y la fecha de entrega."},
+                {
+                    "ok": False,
+                    "error": (
+                        "Selecciona al menos un EPI y la fecha de entrega."
+                    ),
+                },
                 status=400,
             )
         try:
@@ -4000,7 +4185,10 @@ class EpiBatchDeliveryExecuteView(DocsUploadAccessMixin, View):
             delivery_date = date(year, month, day)
         except ValueError:
             return JsonResponse(
-                {"ok": False, "error": "Fecha de entrega con formato inválido."},
+                {
+                    "ok": False,
+                    "error": "Fecha de entrega con formato inválido.",
+                },
                 status=400,
             )
 
@@ -4010,7 +4198,13 @@ class EpiBatchDeliveryExecuteView(DocsUploadAccessMixin, View):
         )
         if not epis:
             return JsonResponse(
-                {"ok": False, "error": "Ninguno de los EPIs seleccionados existe o está activo."},
+                {
+                    "ok": False,
+                    "error": (
+                        "Ninguno de los EPIs seleccionados existe o está "
+                        "activo."
+                    ),
+                },
                 status=400,
             )
         epi_labels = [epi.label for epi in epis]
@@ -4019,7 +4213,12 @@ class EpiBatchDeliveryExecuteView(DocsUploadAccessMixin, View):
             epis_document_type = DocumentTypeCatalog.objects.get(code="EPIS")
         except DocumentTypeCatalog.DoesNotExist:
             return JsonResponse(
-                {"ok": False, "error": "El tipo documental EPIS no existe en el catálogo."},
+                {
+                    "ok": False,
+                    "error": (
+                        "El tipo documental EPIS no existe en el catálogo."
+                    ),
+                },
                 status=400,
             )
 
@@ -4031,7 +4230,9 @@ class EpiBatchDeliveryExecuteView(DocsUploadAccessMixin, View):
             try:
                 person = PersonIdentity.objects.get(pk=person_id)
             except (PersonIdentity.DoesNotExist, ValueError):
-                errors.append({"person_id": person_id, "error": "Persona no encontrada."})
+                errors.append(
+                    {"person_id": person_id, "error": "Persona no encontrada."}
+                )
                 continue
 
             deliveries = [
@@ -4042,19 +4243,27 @@ class EpiBatchDeliveryExecuteView(DocsUploadAccessMixin, View):
                 for epi in epis
             ]
 
-            company_profile = resolve_company_fiscal_profile(person.employer_company)
+            company_profile = resolve_company_fiscal_profile(
+                person.employer_company
+            )
             try:
                 pdf_bytes = build_epi_delivery_pdf_bytes(
                     person, epi_labels, delivery_date, company_profile,
                 )
                 subject_label = "%s %s, %s" % (
-                    person.first_surname, person.second_surname, person.given_name,
+                    person.first_surname,
+                    person.second_surname,
+                    person.given_name,
                 )
                 upload_result = upload_subject_document(
-                    subject=person, domain_content_type=person_ct,
-                    document_type=epis_document_type, data=pdf_bytes,
-                    original_filename="entrega_epis_%s.pdf" % delivery_date.isoformat(),
-                    typed_date=None, subject_label=subject_label,
+                    subject=person,
+                    domain_content_type=person_ct,
+                    document_type=epis_document_type,
+                    data=pdf_bytes,
+                    original_filename="entrega_epis_%s.pdf"
+                    % delivery_date.isoformat(),
+                    typed_date=None,
+                    subject_label=subject_label,
                     uploaded_by=getattr(request.user, "company_user", None),
                 )
                 entry = upload_result["entry"]
@@ -4063,10 +4272,13 @@ class EpiBatchDeliveryExecuteView(DocsUploadAccessMixin, View):
                 ).update(source_entry=entry)
                 documents_generated += 1
             except SubjectUploadError as exc:
-                errors.append({
-                    "person_id": person.pk,
-                    "error": "Entregas registradas, pero el documento no se pudo generar: %s" % exc,
-                })
+                errors.append(
+                    {
+                        "person_id": person.pk,
+                        "error": "Entregas registradas, pero el documento "
+                        "no se pudo generar: %s" % exc,
+                    }
+                )
 
             for delivery in deliveries:
                 if send_epi_delivery_whatsapp_confirmation(delivery):
@@ -4090,14 +4302,16 @@ class EpiBatchTemplateSaveView(CompanyUserRequiredMixin, View):
     """
     H31 (S113). POST: crea un lote nuevo (sin `template_pk`) o edita
     uno existente -- nombre y la lista completa de EPIs marcados en
-    la propia pestaña EPIs (EpiTabFragmentView). Igual que un puesto de trabajo, un
-    lote sí puede guardarse sin ningún EPI marcado todavía (se puede
-    seguir perfilando después).
+    la propia pestaña EPIs (EpiTabFragmentView). Igual que un puesto de
+    trabajo, un lote sí puede guardarse sin ningún EPI marcado todavía
+    (se puede seguir perfilando después).
     """
 
     def post(self, request, template_pk=None):
         if template_pk:
-            template = get_object_or_404(EpiDeliveryBatchTemplate, pk=template_pk)
+            template = get_object_or_404(
+                EpiDeliveryBatchTemplate, pk=template_pk
+            )
         else:
             template = EpiDeliveryBatchTemplate()
 
@@ -4203,17 +4417,23 @@ class PersonalIntakeExtractView(DocsUploadAccessMixin, View):
         extractions = []
         per_file = []
         filenames = []
-        for (name, _content_type, _data), result in zip(file_bytes, results_by_index):
+        for (name, _content_type, _data), result in zip(
+            file_bytes, results_by_index
+        ):
             extractions.append(result)
             filenames.append(name)
-            per_file.append({
-                "filename": name,
-                "document_type_code": result.get("document_type_code", "DESCONOCIDO"),
-                "confidence": result.get("confidence", ""),
-                "expiry_hint": result.get("expiry_hint", ""),
-                "issue_hint": result.get("issue_hint", ""),
-                "error": result.get("error"),
-            })
+            per_file.append(
+                {
+                    "filename": name,
+                    "document_type_code": result.get(
+                        "document_type_code", "DESCONOCIDO"
+                    ),
+                    "confidence": result.get("confidence", ""),
+                    "expiry_hint": result.get("expiry_hint", ""),
+                    "issue_hint": result.get("issue_hint", ""),
+                    "error": result.get("error"),
+                }
+            )
 
         # H31 (S101), Miguel Ángel, verbatim: "estamos indicando números
         # de documentos y no nombres de documentos [...] eso no sirve
@@ -4508,7 +4728,9 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
                 f.name, extension, len(data),
             )
             if extension.lower() == "pdf":
-                embedded_text = personal_intake_service._pdf_embedded_text(data)
+                embedded_text = personal_intake_service._pdf_embedded_text(
+                    data
+                )
                 logger.warning(
                     "# [DIAG-FECHAS] archivo=%s len(embedded_text)=%d "
                     "primeros_200=%r",
@@ -4531,10 +4753,18 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
                 if document_type and document_type.tracks_expiry else None
             )
             if expiry_date is None:
-                raw_expiry = expiry_hints[idx] if idx < len(expiry_hints) else ""
-                if document_type and document_type.tracks_expiry and raw_expiry:
+                raw_expiry = (
+                    expiry_hints[idx] if idx < len(expiry_hints) else ""
+                )
+                if (
+                    document_type
+                    and document_type.tracks_expiry
+                    and raw_expiry
+                ):
                     try:
-                        year, month, day = (int(x) for x in raw_expiry.split("-"))
+                        year, month, day = (
+                            int(x) for x in raw_expiry.split("-")
+                        )
                         expiry_date = date(year, month, day)
                     except ValueError:
                         expiry_date = None
@@ -4553,7 +4783,9 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
                 raw_issue = issue_hints[idx] if idx < len(issue_hints) else ""
                 if raw_issue:
                     try:
-                        year, month, day = (int(x) for x in raw_issue.split("-"))
+                        year, month, day = (
+                            int(x) for x in raw_issue.split("-")
+                        )
                         issue_date = date(year, month, day)
                     except ValueError:
                         issue_date = None
@@ -4615,13 +4847,17 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
                         if company:
                             DocumentSubstitutionLog.objects.create(
                                 company=company,
-                                superseding_content_type=ContentType.objects.get_for_model(
-                                    DocumentIndexEntry,
+                                superseding_content_type=(
+                                    ContentType.objects.get_for_model(
+                                        DocumentIndexEntry,
+                                    )
                                 ),
                                 superseding_object_id=entry.pk,
                                 superseding_label=entry.name,
-                                superseded_content_type=ContentType.objects.get_for_model(
-                                    DocumentIndexEntry,
+                                superseded_content_type=(
+                                    ContentType.objects.get_for_model(
+                                        DocumentIndexEntry,
+                                    )
                                 ),
                                 superseded_object_id=old_entry.pk,
                                 superseded_label=old_entry.name,
@@ -4668,7 +4904,8 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
             return JsonResponse(
                 {
                     "ok": False,
-                    "error": "Faltan campos obligatorios: %s." % ", ".join(missing),
+                    "error": "Faltan campos obligatorios: %s."
+                    % ", ".join(missing),
                 },
                 status=400,
             )
@@ -4677,7 +4914,8 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
             return JsonResponse(
                 {
                     "ok": False,
-                    "error": "Ya existe una persona con el DNI/NIE %s." % data["dni"],
+                    "error": "Ya existe una persona con el DNI/NIE %s."
+                    % data["dni"],
                 },
                 status=400,
             )
@@ -4693,7 +4931,10 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
                 date_values[field] = date(year, month, day)
             except ValueError:
                 return JsonResponse(
-                    {"ok": False, "error": "Fecha con formato inválido en %s." % field},
+                    {
+                        "ok": False,
+                        "error": "Fecha con formato inválido en %s." % field,
+                    },
                     status=400,
                 )
         # H31 (S100): fecha de alta por defecto = hoy si el supervisor
@@ -4758,15 +4999,18 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
             request, person, folder_path,
         )
 
-        return JsonResponse({
-            "ok": True,
-            "person_id": person.pk,
-            "documents_stored": stored_count,
-            "warnings": doc_warnings,
-            "redirect_url": reverse(
-                "panel:documentation_personal_detail", kwargs={"pk": person.pk},
-            ),
-        })
+        return JsonResponse(
+            {
+                "ok": True,
+                "person_id": person.pk,
+                "documents_stored": stored_count,
+                "warnings": doc_warnings,
+                "redirect_url": reverse(
+                    "panel:documentation_personal_detail",
+                    kwargs={"pk": person.pk},
+                ),
+            }
+        )
 
 
 class PersonalUpdateView(DocsUploadAccessMixin, View):
@@ -4804,7 +5048,9 @@ class PersonalUpdateView(DocsUploadAccessMixin, View):
     # valor en el POST -> desasigna (None), mismo criterio que un
     # campo de fecha vacío.
     FK_EDITABLE_FIELDS = ("job_position",)
-    EDITABLE_FIELDS = TEXT_EDITABLE_FIELDS + DATE_EDITABLE_FIELDS + FK_EDITABLE_FIELDS
+    EDITABLE_FIELDS = (
+        TEXT_EDITABLE_FIELDS + DATE_EDITABLE_FIELDS + FK_EDITABLE_FIELDS
+    )
 
     NAME_FIELDS = ("given_name", "first_surname", "second_surname")
 
@@ -4823,13 +5069,16 @@ class PersonalUpdateView(DocsUploadAccessMixin, View):
                 raw_value = request.POST.get(field, "").strip()
                 if raw_value:
                     try:
-                        year, month, day = (int(x) for x in raw_value.split("-"))
+                        year, month, day = (
+                            int(x) for x in raw_value.split("-")
+                        )
                         setattr(person, field, date(year, month, day))
                     except ValueError:
                         return JsonResponse(
                             {
                                 "ok": False,
-                                "error": "Fecha con formato inválido en %s." % field,
+                                "error": "Fecha con formato inválido en %s."
+                                % field,
                             },
                             status=400,
                         )
@@ -4847,7 +5096,8 @@ class PersonalUpdateView(DocsUploadAccessMixin, View):
                 updated_fields.append(field)
         if not updated_fields:
             return JsonResponse(
-                {"ok": False, "error": "Sin campos que actualizar."}, status=400,
+                {"ok": False, "error": "Sin campos que actualizar."},
+                status=400,
             )
         try:
             person.full_clean(validate_unique=False)
@@ -4970,13 +5220,142 @@ class PersonalSetAvatarView(DocsUploadAccessMixin, View):
             )
         person.avatar_document = entry
         person.save(update_fields=["avatar_document"])
-        return JsonResponse({
-            "ok": True,
-            "avatar_url": reverse(
-                "panel:documentation_document_view", args=[entry.pk],
-            ),
-        })
+        # H31 (S134): la foto elegida a mano se recorta igual que la del
+        # DNI. Si no se ve ninguna cara, se usa la imagen entera, como
+        # antes, y se quita el recorte anterior para que no la tape.
+        from document_explorer.id_photo_service import (
+            IdPhotoError, extract_from_entry,
+        )
 
+        try:
+            extract_from_entry(person, entry)
+            avatar_url = reverse(
+                "panel:documentation_personal_photo", args=[person.pk],
+            )
+        except IdPhotoError:
+            PersonIdPhoto.objects.filter(person=person).delete()
+            avatar_url = reverse(
+                "panel:documentation_document_view", args=[entry.pk],
+            )
+        return JsonResponse({"ok": True, "avatar_url": avatar_url})
+
+
+def _platform_photo_name(person):
+    """
+    File name of the platform photo: SURNAMES_NAME.png, no accents.
+
+    ---
+
+    Nombre del archivo de la foto para plataforma: APELLIDOS_NOMBRE.png,
+    sin tildes ni espacios (mismo estilo que los nombres canónicos).
+    """
+    parts = (person.first_surname, person.second_surname, person.given_name)
+    text = "_".join(p for p in parts if p) or "FOTO_%s" % person.pk
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    text = "".join(c if c.isalnum() else "_" for c in text.upper())
+    return "%s.png" % "_".join(t for t in text.split("_") if t)
+
+
+def _person_photo_bytes(person):
+    """
+    The person photo as image bytes: the ID crop, or the chosen image.
+
+    ---
+
+    La foto de la persona en bytes: el recorte de carné si lo hay; si
+    no, la imagen elegida como foto (`avatar_document`); None si no
+    tiene ninguna.
+    """
+    id_photo = PersonIdPhoto.objects.filter(person=person).first()
+    if id_photo is not None:
+        return bytes(id_photo.image)
+    entry = person.avatar_document
+    if entry is not None and entry.name.lower().endswith(
+        PersonalSetAvatarView.IMAGE_EXTENSIONS,
+    ):
+        from spare_parts.gcs_service import download_bytes
+
+        return download_bytes(entry.bucket, entry.blob_name)
+    return None
+
+
+class PersonalPhotoView(CompanyUserRequiredMixin, View):
+    """
+    GET: the ID photo crop of a person (JPEG).
+
+    ---
+
+    H31 (S134). GET: la foto de carné recortada de la persona, en JPEG,
+    para la ficha y su ventana "Ver foto". Mismo acceso que "Ver" un
+    documento.
+    """
+
+    def get(self, request, pk):
+        id_photo = get_object_or_404(PersonIdPhoto, person_id=pk)
+        response = HttpResponse(bytes(id_photo.image),
+                                content_type="image/jpeg")
+        response["Cache-Control"] = "private, max-age=86400"
+        return response
+
+
+class PersonalPlatformPhotoView(CompanyUserRequiredMixin, View):
+    """
+    GET: download the person photo as a PNG under 128 KB.
+
+    ---
+
+    H31 (S134). GET: descarga la foto "para plataforma": PNG de menos
+    de 128 KB con el nombre de la persona -- Miguel Ángel: "que ponga
+    únicamente descarga foto para plataforma y se descarga con el
+    nombre de la persona en formato PNG y con menos de 128K".
+    """
+
+    def get(self, request, pk):
+        from document_explorer.id_photo_service import (
+            IdPhotoError, platform_png,
+        )
+
+        person = get_object_or_404(PersonIdentity, pk=pk)
+        data = _person_photo_bytes(person)
+        if data is None:
+            return HttpResponse("Esta persona no tiene foto.", status=404,
+                                content_type="text/plain; charset=utf-8")
+        try:
+            png = platform_png(data)
+        except IdPhotoError as exc:
+            return HttpResponse(str(exc), status=422,
+                                content_type="text/plain; charset=utf-8")
+        response = HttpResponse(png, content_type="image/png")
+        response["Content-Disposition"] = 'attachment; filename="%s"' % (
+            _platform_photo_name(person)
+        )
+        return response
+
+
+class PersonalPhotoExtractView(DocsUploadAccessMixin, View):
+    """
+    POST: crop the ID photo now from the newest ID document.
+
+    ---
+
+    H31 (S134). POST: saca ya la foto de carné del documento más
+    reciente de la persona que tenga cara (DNI, NIE, pasaporte, permiso
+    de conducir o imagen), sin esperar a la tarea periódica.
+    """
+
+    def post(self, request, pk):
+        from document_explorer.id_photo_service import extract_for_person
+
+        person = get_object_or_404(PersonIdentity, pk=pk)
+        entry = extract_for_person(person)
+        if entry is None:
+            return JsonResponse({"ok": False, "error": (
+                "No se ha encontrado ninguna cara en el DNI, NIE, "
+                "pasaporte, permiso de conducir ni imágenes de esta "
+                "persona."
+            )}, status=422)
+        return JsonResponse({"ok": True, "source": entry.name})
 
 
 class MachineSetAvatarView(DocsUploadAccessMixin, View):
@@ -5285,7 +5664,9 @@ class PersonalNotificationSendView(DocsUploadAccessMixin, View):
         )
 
         try:
-            eml_bytes, filename = _build_notification_eml(person, document_type)
+            eml_bytes, filename = _build_notification_eml(
+                person, document_type
+            )
         except NotificationEmlError as exc:
             return HttpResponse(str(exc), status=400)
 
@@ -5370,7 +5751,10 @@ class PersonalTerminateView(DocsUploadAccessMixin, View):
         person_ids = request.POST.getlist("person_ids")
         if not person_ids:
             return JsonResponse(
-                {"ok": False, "error": "No hay ningún trabajador seleccionado."},
+                {
+                    "ok": False,
+                    "error": "No hay ningún trabajador seleccionado.",
+                },
                 status=400,
             )
         today = timezone.localdate()
@@ -5542,7 +5926,10 @@ class PersonalReactivateView(DocsUploadAccessMixin, View):
         person_ids = request.POST.getlist("person_ids")
         if not person_ids:
             return JsonResponse(
-                {"ok": False, "error": "No hay ningún trabajador seleccionado."},
+                {
+                    "ok": False,
+                    "error": "No hay ningún trabajador seleccionado.",
+                },
                 status=400,
             )
         rehire_date = (
@@ -5602,7 +5989,8 @@ class PersonGroupTemplateSaveView(DocsUploadAccessMixin, View):
 
         if not name:
             return JsonResponse(
-                {"ok": False, "error": "Falta el nombre del grupo."}, status=400,
+                {"ok": False, "error": "Falta el nombre del grupo."},
+                status=400,
             )
         if not person_ids:
             return JsonResponse(
@@ -5676,7 +6064,10 @@ class PersonalNotificationMassSendView(DocsUploadAccessMixin, View):
             )
         if not type_code:
             return JsonResponse(
-                {"ok": False, "error": "Falta el tipo de circular/notificación."},
+                {
+                    "ok": False,
+                    "error": "Falta el tipo de circular/notificación.",
+                },
                 status=400,
             )
         document_type = get_object_or_404(
@@ -5691,10 +6082,17 @@ class PersonalNotificationMassSendView(DocsUploadAccessMixin, View):
                 try:
                     person = PersonIdentity.objects.get(pk=person_id)
                 except (PersonIdentity.DoesNotExist, ValueError):
-                    errors.append({"person_id": person_id, "error": "Persona no encontrada."})
+                    errors.append(
+                        {
+                            "person_id": person_id,
+                            "error": "Persona no encontrada.",
+                        }
+                    )
                     continue
                 try:
-                    eml_bytes, filename = _build_notification_eml(person, document_type)
+                    eml_bytes, filename = _build_notification_eml(
+                        person, document_type
+                    )
                 except NotificationEmlError as exc:
                     errors.append({"person_id": person.pk, "error": str(exc)})
                     continue
@@ -5709,15 +6107,22 @@ class PersonalNotificationMassSendView(DocsUploadAccessMixin, View):
 
         if created_count == 0:
             return JsonResponse(
-                {"ok": False, "error": "Ninguna persona válida para el envío.", "errors": errors},
+                {
+                    "ok": False,
+                    "error": "Ninguna persona válida para el envío.",
+                    "errors": errors,
+                },
                 status=400,
             )
 
-        response = HttpResponse(zip_buffer.getvalue(), content_type="application/zip")
+        response = HttpResponse(
+            zip_buffer.getvalue(), content_type="application/zip"
+        )
         safe_type = type_code.lower()
         today = timezone.localdate().isoformat()
         response["Content-Disposition"] = (
-            f'attachment; filename="notificaciones_masivas_{safe_type}_{today}.zip"'
+            f'attachment; filename="notificaciones_masivas_{safe_type}_'
+            f'{today}.zip"'
         )
         response["X-Mass-Created-Count"] = str(created_count)
         response["X-Mass-Errors"] = json.dumps(errors)
@@ -5796,16 +6201,21 @@ class EpiTabFragmentView(CompanyUserRequiredMixin, View):
 
     def get(self, request):
         ctx = _epi_list_page(request)
-        ctx["catalog"] = EpiItemCatalog.objects.filter(is_active=True).order_by(
-            "family", "label",
+        ctx["catalog"] = EpiItemCatalog.objects.filter(
+            is_active=True
+        ).order_by(
+            "family",
+            "label",
         )
         # H31 (S113): lotes de EPIs guardados -- el CRUD ahora vive
         # centralizado en esta misma pestaña (antes página aparte),
         # decisión explícita de Miguel Ángel: "que esté centralizado
         # en los EPIs".
-        ctx["batch_templates"] = EpiDeliveryBatchTemplate.objects.prefetch_related(
-            "items",
-        ).order_by("name")
+        ctx["batch_templates"] = (
+            EpiDeliveryBatchTemplate.objects.prefetch_related(
+                "items",
+            ).order_by("name")
+        )
         return render(request, "panel/documentation_h30/_epi_pane.html", ctx)
 
 
@@ -5816,7 +6226,9 @@ class EpiResultsFragmentView(CompanyUserRequiredMixin, View):
 
     def get(self, request):
         ctx = _epi_list_page(request)
-        return render(request, "panel/documentation_h30/_epi_results.html", ctx)
+        return render(
+            request, "panel/documentation_h30/_epi_results.html", ctx
+        )
 
 
 class CalendarTabFragmentView(CompanyUserRequiredMixin, View):
@@ -6077,7 +6489,9 @@ class SubjectDocumentUploadView(DocsUploadAccessMixin, View):
                 }
             if result["warning"]:
                 entry_result["warning"] = {
-                    "system_date": result["warning"]["system_date"].isoformat(),
+                    "system_date": result["warning"][
+                        "system_date"
+                    ].isoformat(),
                     "typed_date": result["warning"]["typed_date"].isoformat(),
                     "source": result["warning"]["source"],
                 }
@@ -6132,7 +6546,11 @@ class DocumentTypeQuickCreateView(DocsUploadAccessMixin, View):
 
         label = (request.POST.get("label") or "").strip()
         family = (request.POST.get("family") or "").strip()
-        tracks_expiry = request.POST.get("tracks_expiry") in ("true", "on", "1")
+        tracks_expiry = request.POST.get("tracks_expiry") in (
+            "true",
+            "on",
+            "1",
+        )
 
         valid_families = dict(DocumentTypeCatalog.FAMILY_CHOICES)
         if not label:

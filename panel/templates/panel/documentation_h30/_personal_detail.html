@@ -12,6 +12,8 @@
     .pdet-avatar { width: 96px; height: 96px; object-fit: cover; }
     .pdet-avatar-icon { font-size: 96px; line-height: 1; }
     .pdet-avatar-btn { width: 32px; height: 32px; padding: 0; bottom: 0; right: 0; }
+    .pdet-avatar-view-btn { width: 32px; height: 32px; padding: 0; bottom: 0; left: 0; }
+    .pdet-photo-large { max-width: 100%; max-height: 60vh; }
     .pdet-main { min-width: 260px; }
     .pdet-check-col { width: 2rem; }
     .pdet-clickable { cursor: pointer; }
@@ -98,13 +100,22 @@ y se habilita "Guardar".
 <div class="card">
     <div class="card-body d-flex align-items-start gap-3 flex-wrap">
         <div class="text-center position-relative pdet-avatar-wrap">
-            {% if avatar %}
-            <img src="{% url 'panel:documentation_document_view' pk=avatar.pk %}"
+            {% if photo_url %}
+            <img src="{{ photo_url }}"
                  alt="Foto de carné" class="rounded-circle border pdet-avatar"
                  width="96" height="96">
             {% else %}
             <i class="bi bi-person-circle text-secondary pdet-avatar-icon"></i>
             {% endif %}
+            {% comment %}
+            H31 (S134): icono para ver la foto en grande, con su origen y
+            la descarga "para plataforma" (PNG de menos de 128 KB con el
+            nombre de la persona) -- Miguel Ángel.
+            {% endcomment %}
+            <button type="button" class="btn btn-sm btn-outline-secondary bg-body rounded-circle position-absolute pdet-avatar-view-btn"
+                    title="Ver foto" data-bs-toggle="modal" data-bs-target="#personPhotoModal">
+                <i class="bi bi-eye"></i>
+            </button>
             {% comment %}
             H31 (S76): icono de edición sobre el avatar -- Miguel
             Ángel: "nos falta el añadir y el editar [...] un icono
@@ -1061,6 +1072,51 @@ H31 (S76): modales fuera de cualquier acordeón a propósito -- un
 ancestro con display:none (panel colapsado) ocultaría el modal por
 completo aunque Bootstrap le añada la clase "show" vía JS.
 {% endcomment %}
+{% comment %}
+H31 (S134). Ventana "Ver foto": la foto de la persona en grande, de qué
+documento sale, la descarga para plataforma y, para quien gestiona la
+documentación, volver a sacarla del DNI o del permiso de conducir.
+{% endcomment %}
+<div class="modal fade" id="personPhotoModal" tabindex="-1" aria-labelledby="personPhotoModalTitle">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="personPhotoModalTitle">Foto de {{ person.given_name }} {{ person.first_surname }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body text-center">
+                {% if photo_url %}
+                <img src="{{ photo_url }}" alt="Foto de carné" class="img-fluid rounded border pdet-photo-large"
+                     width="300" height="400">
+                <div class="small text-muted mt-2">
+                    {% if id_photo %}Recortada de
+                    {% if id_photo.source_id %}<a href="{% url 'panel:documentation_document_view' pk=id_photo.source_id %}" target="_blank" rel="noopener">{{ id_photo.source__name }}</a>{% else %}un documento ya borrado{% endif %}
+                    el {{ id_photo.extracted_at|date:"d/m/Y H:i" }}.
+                    {% elif avatar %}Imagen elegida como foto: <a href="{% url 'panel:documentation_document_view' pk=avatar.pk %}" target="_blank" rel="noopener">{{ avatar.name }}</a>.
+                    {% endif %}
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">Esta persona todavía no tiene foto.</p>
+                {% endif %}
+                <div id="personPhotoMessage" class="small mt-2"></div>
+            </div>
+            <div class="modal-footer gap-2">
+                {% if can_manage_photo %}
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="personPhotoExtractBtn"
+                        data-url="{% url 'panel:documentation_personal_photo_extract' pk=person.pk %}">
+                    <i class="bi bi-person-bounding-box me-1"></i>Sacar del DNI o permiso
+                </button>
+                {% endif %}
+                {% if photo_url %}
+                <a class="btn btn-primary btn-sm" href="{% url 'panel:documentation_personal_platform_photo' pk=person.pk %}">
+                    <i class="bi bi-download me-1"></i>Descargar foto para plataforma
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="editModeConfirmModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -1936,6 +1992,41 @@ function getCookie(name) {
                 headers: {'X-CSRFToken': csrfTokenPersonal, 'Content-Type': 'application/json'},
                 body: JSON.stringify(update),
             });
+        });
+    });
+})();
+</script>
+<script>
+(function () {
+    // H31 (S134): "Sacar del DNI o permiso" en la ventana "Ver foto".
+    const button = document.getElementById("personPhotoExtractBtn");
+    if (!button) {
+        return;
+    }
+    const message = document.getElementById("personPhotoMessage");
+    button.addEventListener("click", function () {
+        button.disabled = true;
+        message.className = "small mt-2 text-muted";
+        message.textContent = "Buscando la cara en los documentos...";
+        fetch(button.dataset.url, {
+            method: "POST",
+            headers: {"X-CSRFToken": getCookie("csrftoken")},
+        }).then(function (response) {
+            return response.json();
+        }).then(function (data) {
+            if (data.ok) {
+                message.className = "small mt-2 text-success";
+                message.textContent = "Foto sacada de " + data.source + ".";
+                window.location.reload();
+            } else {
+                message.className = "small mt-2 text-danger";
+                message.textContent = data.error;
+                button.disabled = false;
+            }
+        }).catch(function () {
+            message.className = "small mt-2 text-danger";
+            message.textContent = "Error de red. Inténtalo otra vez.";
+            button.disabled = false;
         });
     });
 })();

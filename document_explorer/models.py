@@ -1757,6 +1757,19 @@ class PersonIdentity(models.Model):
         related_name="+",
         verbose_name="Documento-imagen usado como foto de perfil",
     )
+    # ------------------------------------------------------------------
+    # H31 (S134). Ultima busqueda automatica de foto de carne (ver
+    # PersonIdPhoto e id_photo_service).
+    photo_attempted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Foto buscada por última vez el",
+        help_text=(
+            "La búsqueda automática solo vuelve a mirar a la persona si "
+            "llega un DNI, NIE, pasaporte, permiso de conducir o imagen "
+            "indexado después de esta fecha."
+        ),
+    )
     contract_reviewed_at = models.DateField(
         null=True,
         blank=True,
@@ -1798,7 +1811,6 @@ class PersonIdentity(models.Model):
 
         profile = resolve_company_fiscal_profile(self.employer_company)
         return profile.legal_name if profile else self.employer_company
-
 
     def __str__(self):
         return (
@@ -4245,3 +4257,49 @@ class PersonalExportTemplate(models.Model):
                 company_user_id=self.company_user_id, is_default=True,
             ).exclude(pk=self.pk).update(is_default=False)
         super().save(*args, **kwargs)
+
+
+class PersonIdPhoto(models.Model):
+    """
+    ID photo of a person, cropped from his ID card or driving licence.
+
+    ---
+
+    H31 (S134). Foto de carné de una persona, recortada de su DNI, NIE,
+    pasaporte, permiso de conducir o de una imagen subida como foto --
+    Miguel Ángel: "un pipeline en los DNI y permisos con foto para
+    extraer la foto y colocarla como foto de la persona", y poder verla
+    y descargarla "para plataforma" en PNG de menos de 128 KB con el
+    nombre de la persona. El recorte se guarda a su tamaño real en
+    JPEG; el PNG de la plataforma se genera al descargar. Modelo
+    aparte de `PersonIdentity` para que ninguna consulta de personas
+    cargue las fotos. No es un documento: no va al índice de GCS ni
+    toca ningún blob (directriz 4.12). Tiene prioridad sobre
+    `avatar_document` como foto de la ficha.
+    """
+
+    person = models.OneToOneField(
+        PersonIdentity,
+        on_delete=models.CASCADE,
+        related_name="id_photo",
+        verbose_name="Persona",
+    )
+    image = models.BinaryField(verbose_name="Foto de carné (JPEG recortado)")
+    source = models.ForeignKey(
+        DocumentIndexEntry,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name="Documento del que sale la foto",
+    )
+    extracted_at = models.DateTimeField(
+        auto_now=True, verbose_name="Foto sacada el",
+    )
+
+    class Meta:
+        verbose_name = "Foto de carné"
+        verbose_name_plural = "Fotos de carné"
+
+    def __str__(self):
+        return "Foto de carné de %s" % self.person_id
