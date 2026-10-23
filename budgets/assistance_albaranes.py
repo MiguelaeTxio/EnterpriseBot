@@ -13,6 +13,7 @@ no tiene ninguno, para que nada se pierda de vista (Miguel Ángel, S133:
 """
 import datetime
 
+from budgets.assistance_search import Query, row_phrases
 from budgets.models import WorkOrderAssistance, WorkOrderAssistanceUnit
 
 Unit = WorkOrderAssistanceUnit
@@ -94,22 +95,6 @@ class AlbaranRow:
             part for part in (self.number, self.insurer, self.expediente)
             if part
         )
-
-    def matches(self, text):
-        """
-        Whether the row contains the searched text.
-
-        ---
-
-        Si la fila contiene el texto buscado (nº, expediente, matrícula,
-        cliente, recogida, destino, conductor, máquina o aseguradora).
-        """
-        haystack = " ".join((
-            self.number, self.expediente, self.vehicle_plate,
-            self.client_name, self.pickup, self.destination, self.driver,
-            self.machine, self.insurer,
-        )).lower()
-        return text in haystack
 
 
 def parse_sort(raw):
@@ -237,6 +222,18 @@ def build_rows(company, params, only_keys=None):
     units = Unit.objects.filter(
         work_order__in=orders,
     ).select_related("work_order__insurer", "operator__user")
+    if (params.get("search") or "").strip():
+        # Everything row_phrases reads, in a few queries.
+        # Todo lo que lee row_phrases, en pocas consultas.
+        units = units.select_related(
+            "work_order__vehicle_type", "work_order__operator__user",
+            "work_order__operator_2__user", "work_order__created_by__user",
+            "work_order__base", "work_order__budget", "operator_2__user",
+            "machine_asset", "departure_base", "arrival_base",
+            "signed_received_by__user", "base_closed_by__user",
+            "incidence__operator__user", "incidence__operator_2__user",
+            "incidence__recorded_by__user", "signature",
+        ).prefetch_related("helpers__user", "events__created_by__user")
     rows = [AlbaranRow(unit.work_order, unit) for unit in units]
     rows += [
         AlbaranRow(order) for order in orders.filter(
@@ -254,9 +251,14 @@ def build_rows(company, params, only_keys=None):
     elif state == STATE_CLOSED:
         rows = [row for row in rows if row.is_closed]
 
-    text = (params.get("search") or "").strip().lower()
-    if text:
-        rows = [row for row in rows if row.matches(text)]
+    query = Query(params.get("search") or "")
+    if query:
+        # S134 (6.3.H): any stored datum of the albarán is searchable.
+        # Cualquier dato guardado del albarán se puede buscar.
+        rows = [
+            row for row in rows
+            if query.matches(row_phrases(row.work_order, row.unit))
+        ]
     return _sort_rows(rows, parse_sort(params.get("sort")))
 
 
