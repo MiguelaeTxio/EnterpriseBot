@@ -520,6 +520,16 @@ def build_board(company, category="", sort=SORT_AVAILABILITY):
             (helper.pk, _driver_name(helper)) for helper in unit.helpers.all()
         ]
         unit.km_hint = _km_hint(unit)
+        # S134: the other queue mode, for the button that changes it.
+        # El otro modo de cola, para el botón que lo cambia.
+        unit.queue_other = next(
+            (mode, label) for mode, label in Unit.QUEUE_MODE_CHOICES
+            if mode != unit.queue_mode
+        )
+        unit.queue_from_base = unit.queue_mode == Unit.QUEUE_FROM_BASE
+        unit.has_eta = unit.eta_finish_at is not None and (
+            unit.status not in RETURNING_STATUSES
+        )
 
     empty_orders = list(WorkOrderAssistance.objects.filter(
         company=company,
@@ -1012,7 +1022,7 @@ def separate(company, by, crew_pk):
 
 
 def assign(company, by, crew_pk, unit_pk=None, order_pk=None,
-           force_note=""):
+           force_note="", queue_mode=None):
     """
     Assign a crew to an albarán (or to a new albarán of an order).
 
@@ -1032,7 +1042,14 @@ def assign(company, by, crew_pk, unit_pk=None, order_pk=None,
       contrario (ausencia, taller); se asigna igual y queda anotado con
       la nota. *"La orden de la persona que llama prevalece sobre lo que
       tengamos en base de datos."*
+
+    S134: `queue_mode` (Unit.QUEUE_FROM_BASE o QUEUE_FROM_HERE) dice si
+    un albarán en cola sale con vuelta a base o desde donde esté el
+    conductor; sin indicarlo, con vuelta a base. Tras asignar se
+    recalculan los estimados de tiempo del conductor (service_eta).
     """
+    from budgets.service_eta import schedule_refresh
+
     with transaction.atomic():
         _lock_crews(company)
         _drivers, _machines, crews = _current(company)
@@ -1093,17 +1110,54 @@ def assign(company, by, crew_pk, unit_pk=None, order_pk=None,
                     )
                 )[:255],
             )
+        if queue_mode in dict(Unit.QUEUE_MODE_CHOICES):
+            unit.queue_mode = queue_mode
+            unit.save(update_fields=["queue_mode", "updated_at"])
         if queued and unit.queued_at is None:
             unit.queued_at = timezone.now()
             unit.save(update_fields=["queued_at", "updated_at"])
             Event.objects.create(
                 unit=unit, kind=Event.KIND_ASSIGN, created_by=by,
-                detail="En cola: se enviará cuando %s termine el servicio "
-                       "en curso." % _driver_name(driver),
+                detail="En cola (%s): se enviará cuando %s termine el "
+                       "servicio en curso." % (
+                           unit.get_queue_mode_display().lower(),
+                           _driver_name(driver),
+                       ),
             )
         elif not queued and unit.queued_at is not None:
             unit.queued_at = None
             unit.save(update_fields=["queued_at", "updated_at"])
+        schedule_refresh(company, driver.pk)
+    return unit
+
+
+def set_queue_mode(company, by, unit_pk, queue_mode):
+    """
+    Change how a queued albarán leaves: back to base or from where
+    the driver is.
+
+    ---
+
+    Cambia cómo sale un albarán en cola: con vuelta a base o desde
+    donde esté el conductor (S134). Recalcula sus estimados.
+    """
+    from budgets.service_eta import schedule_refresh
+
+    if queue_mode not in dict(Unit.QUEUE_MODE_CHOICES):
+        raise TrafficError("Modo de cola desconocido.")
+    with transaction.atomic():
+        unit = _locked_unit(company, unit_pk)
+        if unit.queued_at is None:
+            raise TrafficError(
+                "El albarán %s no está en cola." % unit.albaran_number
+            )
+        unit.queue_mode = queue_mode
+        unit.save(update_fields=["queue_mode", "updated_at"])
+        Event.objects.create(
+            unit=unit, kind=Event.KIND_ASSIGN, created_by=by,
+            detail="Cola: %s." % unit.get_queue_mode_display().lower(),
+        )
+        schedule_refresh(company, unit.operator_id)
     return unit
 
 
@@ -1114,10 +1168,14 @@ def unassign(company, by, unit_pk):
     ---
 
     Quita el equipo (conductor y máquina) de un albarán aún sin enviar.
+    Los albaranes que le quedan al conductor se reestiman (S134).
     """
+    from budgets.service_eta import schedule_refresh
+
     with transaction.atomic():
         unit = _locked_unit(company, unit_pk)
         fields = []
+        schedule_refresh(company, unit.operator_id)
         if unit.operator_id:
             Event.objects.create(
                 unit=unit, kind=Event.KIND_UNASSIGN, created_by=by,
@@ -1185,7 +1243,8 @@ def send(company, by, unit_pk, whatsapp_sender):
     return unit
 
 
-def release_queue(company, driver_pk, whatsapp_sender=None):
+def release_queue(company, driver_pk, whatsapp_sender=None,
+                  finished_status=None):
     """
     Send the next queued albarán of a driver who has just finished.
 
@@ -1196,6 +1255,10 @@ def release_queue(company, driver_pk, whatsapp_sender=None):
     tiene ningún otro albarán asignado o en servicio. Lo llama
     `WorkOrderAssistanceUnitEvent.status_change` al terminar un
     albarán. Devuelve el albarán enviado o None.
+
+    S134: un albarán en cola con vuelta a base solo sale cuando el
+    anterior se cierra en base (o se anula), no al firmarse; con
+    `finished_status` vacío no se comprueba.
     """
     import os
 
@@ -1219,12 +1282,22 @@ def release_queue(company, driver_pk, whatsapp_sender=None):
         ).order_by("queued_at").first()
         if unit is None:
             return None
+        back_in_base = finished_status in (
+            None, Unit.STATUS_CLOSED_BASE, Unit.STATUS_CANCELLED,
+        )
+        if unit.queue_mode == Unit.QUEUE_FROM_BASE and not back_in_base:
+            return None
         unit.queued_at = None
         unit.save(update_fields=["queued_at", "updated_at"])
         Event.objects.create(
             unit=unit, kind=Event.KIND_ASSIGN,
-            detail="Sale de la cola: el conductor ha terminado el servicio "
-                   "anterior.",
+            detail=(
+                "Sale de la cola: el conductor ha cerrado el servicio "
+                "anterior en base."
+                if unit.queue_mode == Unit.QUEUE_FROM_BASE else
+                "Sale de la cola: el conductor ha terminado el servicio "
+                "anterior y va desde donde está."
+            ),
         )
     if whatsapp_sender:
         send_operator_albaran_notification(unit.pk, whatsapp_sender)

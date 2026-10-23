@@ -141,6 +141,17 @@ TEAMS_HELP = (
     "por equipo, con su conductor, su máquina y sus ayudantes. Con un "
     "solo equipo basta conductor y maquina."
 )
+QUEUE_HELP = (
+    "Solo si el equipo está ocupado y el servicio queda en cola: "
+    "«vuelta_a_base» (sale cuando cierre el servicio actual en base y "
+    "va desde la base) o «desde_donde_este» (sale al terminar el actual "
+    "y va directo desde allí, p. ej. un rescate que vuelve y pasa "
+    "cerca). Si no se dice, con vuelta a base."
+)
+QUEUE_ARGS = {
+    "vuelta_a_base": "from_base",
+    "desde_donde_este": "from_here",
+}
 VEHICLE_TYPE_HELP = (
     "Categoría de tarifa del vehículo ASISTIDO (el del cliente: turismo, "
     "furgoneta, camión, semirremolque...), nunca nuestra grúa o máquina."
@@ -179,9 +190,14 @@ DISPATCH_CRITERIA = (
     "(argumento equipos), salvo que quien lo da diga otra cosa.\n"
     "4. Si no hay conductores libres suficientes, cuenta también con "
     "los que cumplen los permisos pero están Asignados o En servicio: "
-    "su albarán queda en cola y sale al terminar el actual. Dilo en la "
-    "opción (\"Zafra en cola, tras su servicio actual\"). Un mismo "
-    "conductor no puede ir en dos equipos a la vez.\n"
+    "su albarán queda en cola. consultar_disponibilidad trae en "
+    "«llegada_a_la_recogida» a qué hora llegaría cada equipo a esta "
+    "recogida: los libres desde donde están y los ocupados al terminar "
+    "lo suyo, desde donde terminan («desde donde esté») o pasando por "
+    "su base («con vuelta a base»). Propón al que llegue antes. Si va "
+    "en cola, di la hora y la opción de cola (\"Zafra, en cola desde "
+    "donde esté: llega ~11:10\") y lánzalo con el argumento cola. Un "
+    "mismo conductor no puede ir en dos equipos a la vez.\n"
     "5. Elige el TIPO de máquina por el trabajo: remolcar (plataforma "
     "para ligeros, rescate o grúa móvil para pesados), levantar un "
     "vehículo volcado o caído (grúa móvil o rescate), cambiar una rueda "
@@ -749,7 +765,42 @@ def availability(company, intake=None):
     hint = job_hint(intake.data) if intake is not None else ""
     if hint:
         result["trabajo_y_vehiculo_adecuado"] = hint
+    pickup = _intake_pickup(intake)
+    if pickup:
+        # S134: when each crew would reach this pickup.
+        # Cuándo llegaría cada equipo a esta recogida.
+        from budgets.service_eta import EtaError, arrivals
+
+        candidates = [
+            crew for crew in crews if crew.is_assignable or crew.is_queueable
+        ]
+        try:
+            result["llegada_a_la_recogida"] = arrivals(
+                company, candidates, pickup,
+            )
+        except EtaError as exc:
+            result["llegada_a_la_recogida"] = "Sin estimado: %s" % exc
     return result
+
+
+def _intake_pickup(intake):
+    """
+    Full pickup address of the service being given, or "".
+
+    ---
+
+    Dirección completa de recogida del servicio que se está dando, o
+    "" si todavía no se sabe.
+    """
+    if intake is None or not intake.data.get("pickup_location"):
+        return ""
+    return ", ".join(
+        str(intake.data[field]).strip()
+        for field in (
+            "pickup_location", "vehicle_locality", "pickup_province",
+        )
+        if intake.data.get(field)
+    )
 
 
 def _find_driver(drivers, name):
@@ -866,12 +917,17 @@ def launch(intake, args, whatsapp_sender):
             return {"error": "%s no lleva máquina: ¿con cuál va?" % (
                 driver.display_name
             )}
-        teams.append((driver, machine, team.get("ayudantes") or []))
+        queue_mode = QUEUE_ARGS.get(
+            (team.get("cola") or args.get("cola") or "").strip().lower(),
+        )
+        teams.append((
+            driver, machine, team.get("ayudantes") or [], queue_mode,
+        ))
     from budgets.driver_qualification import Checker
 
     checker = Checker(company)
     team_missing = []
-    for driver, machine, _helpers in teams:
+    for driver, machine, _helpers, _queue in teams:
         missing = checker.missing(driver, machine)
         if missing and not force_note:
             return {"error": (
@@ -883,8 +939,8 @@ def launch(intake, args, whatsapp_sender):
                 )
             )}
         team_missing.append(missing)
-    if len({d.pk for d, _m, _h in teams}) < len(teams) or len(
-        {m.pk for _d, m, _h in teams}
+    if len({team[0].pk for team in teams}) < len(teams) or len(
+        {team[1].pk for team in teams}
     ) < len(teams):
         return {"error": "Hay un conductor o una máquina repetidos."}
 
@@ -906,7 +962,7 @@ def launch(intake, args, whatsapp_sender):
                     work_order.delivery_address or ""
                 )[:255]
             form.save()
-            for (driver, machine, helpers), missing in zip(
+            for (driver, machine, helpers, queue_mode), missing in zip(
                 teams, team_missing,
             ):
                 crew = AssistanceCrew.objects.filter(
@@ -922,7 +978,7 @@ def launch(intake, args, whatsapp_sender):
                     )
                 unit = traffic.assign(
                     company, by, crew.pk, order_pk=work_order.pk,
-                    force_note=force_note,
+                    force_note=force_note, queue_mode=queue_mode,
                 )
                 if missing:
                     # S133: sent without the licence or documents the
@@ -965,8 +1021,13 @@ def launch(intake, args, whatsapp_sender):
         }
         if unit.queued_at is not None:
             row["estado"] = (
-                "En cola: se enviará solo cuando %s termine el servicio "
-                "en curso." % driver.display_name
+                "En cola (%s): se enviará solo cuando %s %s." % (
+                    unit.get_queue_mode_display().lower(),
+                    driver.display_name,
+                    "cierre en base el servicio en curso"
+                    if unit.queue_mode == unit.QUEUE_FROM_BASE
+                    else "termine el servicio en curso",
+                )
             )
         else:
             try:
@@ -1103,6 +1164,11 @@ def _tool_declarations():
                                 "ayudantes": types.Schema(
                                     type=types.Type.ARRAY, items=string,
                                 ),
+                                "cola": types.Schema(
+                                    type=types.Type.STRING,
+                                    enum=list(QUEUE_ARGS),
+                                    description=QUEUE_HELP,
+                                ),
                             },
                             required=["conductor"],
                         ),
@@ -1122,6 +1188,10 @@ def _tool_declarations():
                     "ayudantes": types.Schema(
                         type=types.Type.ARRAY, items=string,
                         description="Nombres de los ayudantes, si van.",
+                    ),
+                    "cola": types.Schema(
+                        type=types.Type.STRING, enum=list(QUEUE_ARGS),
+                        description=QUEUE_HELP,
                     ),
                     "nota_prevalencia": types.Schema(
                         type=types.Type.STRING,
@@ -1733,6 +1803,11 @@ def voice_tool_declarations():
                                     "type": "array",
                                     "items": {"type": "string"},
                                 },
+                                "cola": {
+                                    "type": "string",
+                                    "enum": list(QUEUE_ARGS),
+                                    "description": QUEUE_HELP,
+                                },
                             },
                             "required": ["conductor"],
                         },
@@ -1752,6 +1827,10 @@ def voice_tool_declarations():
                     "ayudantes": {
                         "type": "array", "items": {"type": "string"},
                         "description": "Nombres de los ayudantes, si van.",
+                    },
+                    "cola": {
+                        "type": "string", "enum": list(QUEUE_ARGS),
+                        "description": QUEUE_HELP,
                     },
                     "nota_prevalencia": {
                         "type": "string",

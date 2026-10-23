@@ -179,7 +179,8 @@ screen_key services_hub, clave "traffic").
       data-close="{% url 'budgets:services_traffic_action' action='close' %}"
       data-cancel="{% url 'budgets:services_traffic_action' action='cancel' %}"
       data-add_helper="{% url 'budgets:services_traffic_action' action='add_helper' %}"
-      data-remove_helper="{% url 'budgets:services_traffic_action' action='remove_helper' %}"></form>
+      data-remove_helper="{% url 'budgets:services_traffic_action' action='remove_helper' %}"
+      data-queue_mode="{% url 'budgets:services_traffic_action' action='queue_mode' %}"></form>
 
 {% include "panel/_fixed_list_layout.html" with top_id="traffic-top-panel" bottom_id="traffic-bottom-panel" %}
 
@@ -391,6 +392,9 @@ if (!(window.google && window.google.maps && window.google.maps.importLibrary)) 
             }
             if (button.dataset.driver) {
                 values.driver = button.dataset.driver;
+            }
+            if (button.dataset.mode) {
+                values.mode = button.dataset.mode;
             }
             if (button.dataset.action === "close") {
                 const form = button.closest(".tb-close-form");

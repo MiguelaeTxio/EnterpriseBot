@@ -3298,6 +3298,68 @@ class WorkOrderAssistanceUnit(models.Model):
         verbose_name="Hora llegada base",
     )
 
+    # H37 (S134): queue mode and time estimate. A queued albarán goes
+    # either after the driver is back in base or straight from where
+    # he finishes; the estimate gives the arrival at the pickup and the
+    # end of the service, so a crew that will finish soon can be given
+    # the next one (Miguel Ángel, S134).
+    # Modo de cola y estimado de tiempos. Un albarán en cola sale con
+    # vuelta a base o desde donde esté el conductor al terminar; el
+    # estimado da la llegada a la recogida y el fin del servicio, para
+    # dar el siguiente a quien va a terminar antes.
+    QUEUE_FROM_BASE = "from_base"
+    QUEUE_FROM_HERE = "from_here"
+    QUEUE_MODE_CHOICES = [
+        (QUEUE_FROM_BASE, "Con vuelta a base"),
+        (QUEUE_FROM_HERE, "Desde donde esté"),
+    ]
+    queue_mode = models.CharField(
+        max_length=10,
+        choices=QUEUE_MODE_CHOICES,
+        default=QUEUE_FROM_BASE,
+        verbose_name="Cola",
+        help_text="Con vuelta a base: sale cuando el conductor cierra el "
+                  "anterior en base. Desde donde esté: sale al terminar "
+                  "el anterior y va directo a la recogida.",
+    )
+    eta_pickup_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Llegada estimada a la recogida",
+    )
+    eta_finish_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Fin estimado",
+        help_text="Hora en que se estima que el conductor termina el "
+                  "servicio y queda libre (en el destino o in situ).",
+    )
+    eta_km = models.DecimalField(
+        max_digits=8,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        verbose_name="Km estimados hasta terminar",
+    )
+    eta_end_place = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Lugar estimado de fin",
+    )
+    eta_detail = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Detalle del estimado",
+        help_text="Desde dónde se calcula y qué tiempos de trabajo suma.",
+    )
+    eta_computed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Estimado calculado en",
+    )
+
     created_at = models.DateTimeField(
         auto_now_add=True, verbose_name="Fecha de creación"
     )
@@ -3453,21 +3515,32 @@ class WorkOrderAssistanceUnitEvent(models.Model):
             WorkOrderAssistanceUnit.STATUS_CLOSED_BASE,
             WorkOrderAssistanceUnit.STATUS_CANCELLED,
         )
-        if to_status in finished and unit.operator_id:
+        if unit.operator_id:
             from django.db import transaction
 
             company_id = unit.work_order.company_id
             driver_id = unit.operator_id
+            release = to_status in finished
 
-            def _release():
+            def _after_commit():
                 from budgets.assistance_traffic import release_queue
+                from budgets.service_eta import refresh_driver_by_pk
                 from ivr_config.models import Company
 
                 company = Company.objects.filter(pk=company_id).first()
-                if company is not None:
-                    release_queue(company, driver_id)
+                if company is None:
+                    return
+                if release:
+                    release_queue(
+                        company, driver_id, finished_status=to_status,
+                    )
+                # S134: every status change moves the estimates of the
+                # driver's albaranes.
+                # Cada cambio de estado mueve los estimados del
+                # conductor.
+                refresh_driver_by_pk(company, driver_id)
 
-            transaction.on_commit(_release)
+            transaction.on_commit(_after_commit)
         return event
 
 
@@ -4738,3 +4811,61 @@ class MachineDriverRequirement(models.Model):
 
     def __str__(self):
         return self.machine_type_name
+
+
+class AssistanceTimes(models.Model):
+    """
+    Working times added to the travel times of an assistance service.
+
+    ---
+
+    Tiempos de trabajo que se suman a los trayectos para estimar el fin
+    de un servicio de asistencia. H37 (S134), Miguel Ángel: carga y
+    descarga media hora cada una (*"mientras ata, desata, lo baja,
+    firma... son 30 minutos"*), reparación in situ 30 minutos y levantar
+    un vehículo volcado o caído 60 minutos. Uno por empresa.
+    """
+
+    company = models.OneToOneField(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="assistance_times",
+        verbose_name="Empresa",
+    )
+    load_minutes = models.PositiveSmallIntegerField(
+        default=30, verbose_name="Carga (min)",
+    )
+    unload_minutes = models.PositiveSmallIntegerField(
+        default=30, verbose_name="Descarga (min)",
+    )
+    on_site_minutes = models.PositiveSmallIntegerField(
+        default=30, verbose_name="Reparación in situ (min)",
+        help_text="Rueda, batería, combustible o avería pequeña.",
+    )
+    lift_minutes = models.PositiveSmallIntegerField(
+        default=60, verbose_name="Levantar un vehículo (min)",
+        help_text="Volcado, salido de la vía o caído.",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True, verbose_name="Fecha de modificación",
+    )
+
+    class Meta:
+        verbose_name = "Tiempos de trabajo de asistencia"
+        verbose_name_plural = "Tiempos de trabajo de asistencia"
+
+    def __str__(self):
+        return "Tiempos de asistencia de %s" % self.company
+
+    @classmethod
+    def for_company(cls, company):
+        """
+        The times of a company, created with the defaults if missing.
+
+        ---
+
+        Los tiempos de la empresa; si no existen, se crean con los
+        valores por defecto.
+        """
+        times, _created = cls.objects.get_or_create(company=company)
+        return times

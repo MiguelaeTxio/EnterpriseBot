@@ -438,7 +438,7 @@ class ServicesDeliveryNotesExportView(
 
 TRAFFIC_ACTIONS = (
     "pair", "separate", "assign", "unassign", "send", "close",
-    "add_helper", "remove_helper", "cancel",
+    "add_helper", "remove_helper", "cancel", "queue_mode",
 )
 
 
@@ -651,6 +651,15 @@ class ServicesTrafficActionView(AssistanceSupervisorAccessMixin, View):
                 )
                 message = "Albarán %s cerrado en base." % (
                     unit.albaran_number
+                )
+            elif action == "queue_mode":
+                unit = traffic.set_queue_mode(
+                    company, company_user, _int(data.get("unit")),
+                    data.get("mode"),
+                )
+                message = "Albarán %s en cola %s." % (
+                    unit.albaran_number,
+                    unit.get_queue_mode_display().lower(),
                 )
             elif action == "cancel":
                 unit = traffic.cancel(

@@ -108,6 +108,7 @@ y el gasoil estimados del servicio, de base a base.
                 <div class="small mt-1">
                     {{ crew.state_label }}
                     {% if crew.current_unit %}· {{ crew.current_unit.albaran_number }}{% endif %}
+                    {% if crew.current_unit.eta_finish_at and crew.is_queueable %}· termina ~{{ crew.current_unit.eta_finish_at|date:"H:i" }}{% endif %}
                     <span class="text-muted">· {{ crew.machine_card.type_name|default:crew.machine_card.brand_model }}</span>
                 </div>
                 {% if crew.queue %}
@@ -183,7 +184,17 @@ y el gasoil estimados del servicio, de base a base.
                     {% endif %}
                 </div>
                 {% if unit.is_queued %}
-                <div class="small text-primary mt-1"><i class="bi bi-hourglass-split me-1"></i>En cola: se envía solo cuando {{ unit.driver_name }} termine el servicio en curso.</div>
+                <div class="small text-primary mt-1"><i class="bi bi-hourglass-split me-1"></i>En cola, {{ unit.get_queue_mode_display|lower }}: {% if unit.queue_from_base %}se envía cuando {{ unit.driver_name }} cierre en base el servicio en curso.{% else %}se envía cuando {{ unit.driver_name }} termine el servicio en curso y va directo desde allí.{% endif %}
+                    <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline"
+                            data-action="queue_mode" data-unit="{{ unit.pk }}" data-mode="{{ unit.queue_other.0 }}">Cambiar a «{{ unit.queue_other.1|lower }}»</button>
+                </div>
+                {% endif %}
+                {% if unit.has_eta %}
+                <div class="small mt-1"><i class="bi bi-clock me-1"></i>{% if unit.arrived_at %}En la recogida{% else %}Llega ~{{ unit.eta_pickup_at|date:"H:i" }}{% endif %} · termina ~{{ unit.eta_finish_at|date:"H:i" }}{% if unit.eta_km %} · {{ unit.eta_km }} km{% endif %}
+                    <span class="text-muted d-block">{{ unit.eta_detail }}</span>
+                </div>
+                {% elif unit.eta_detail and unit.operator_id %}
+                <div class="small text-muted mt-1"><i class="bi bi-clock me-1"></i>{{ unit.eta_detail }}</div>
                 {% endif %}
                 {% if unit.status == 'NOTIFY_FAILED' and unit.notify_error %}
                 <div class="small text-danger mt-1"><i class="bi bi-exclamation-triangle me-1"></i>{{ unit.notify_error }}</div>
