@@ -84,7 +84,9 @@ class MachineAsset(models.Model):
     company_name = models.CharField(
         _("Nombre de Empresa"),
         max_length=200,
-        help_text=_("Nombre completo de la empresa tal como aparece en el catálogo."),
+        help_text=_(
+            "Nombre completo de la empresa tal como aparece en el catálogo."
+        ),
     )
     family = models.CharField(
         _("Familia"),
@@ -149,7 +151,8 @@ class MachineAsset(models.Model):
         max_length=50,
         blank=True,
         help_text=_(
-            "Matrícula o número de bastidor abreviado del vehículo o maquinaria. "
+            "Matrícula o número de bastidor abreviado del vehículo o "
+            "maquinaria. "
             "Puede coincidir con el código en equipos sin matrícula oficial."
         ),
     )
@@ -157,7 +160,9 @@ class MachineAsset(models.Model):
         _("Nº Bastidor"),
         max_length=100,
         blank=True,
-        help_text=_("Número de bastidor completo tal como figura en el catálogo."),
+        help_text=_(
+            "Número de bastidor completo tal como figura en el catálogo."
+        ),
     )
     brand_model = models.CharField(
         _("Marca / Modelo"),
@@ -181,7 +186,10 @@ class MachineAsset(models.Model):
     mileage = models.IntegerField(
         _("Kilómetros"),
         default=0,
-        help_text=_("Kilómetros registrados en el catálogo en el momento de la importación."),
+        help_text=_(
+            "Kilómetros registrados en el catálogo en el momento de la "
+            "importación."
+        ),
     )
     hours = models.IntegerField(
         _("Horas de Trabajo"),
@@ -355,11 +363,28 @@ class MachineAsset(models.Model):
         ),
     )
 
+    # ------------------------------------------------------------------
+    # H30 (S135) -- enlace con el vehículo del programa del surtidor
+    # (GasoGes, `ID VEHICULO`), para leer los km de sus suministros.
+    # ---
+    # H30 (S135) -- link with the GasoGes fuel pump vehicle id.
+    # ------------------------------------------------------------------
+    gasoges_vehicle_id = models.PositiveIntegerField(
+        _("ID de vehículo en GasoGes"),
+        null=True,
+        blank=True,
+        unique=True,
+        help_text=_(
+            "ID del vehículo en el programa del surtidor (GasoGes). "
+            "Vacío: sin enlace."
+        ),
+    )
+
     class Meta:
-        verbose_name        = _("Centro de gasto")
+        verbose_name = _("Centro de gasto")
         verbose_name_plural = _("Centros de gasto")
-        ordering            = ["company_code", "family", "code"]
-        indexes             = [
+        ordering = ["company_code", "family", "code"]
+        indexes = [
             models.Index(fields=["company_code", "family"]),
             models.Index(fields=["code"]),
         ]
@@ -438,9 +463,9 @@ class MachineServiceRecord(models.Model):
     created_at = models.DateTimeField(_("Anotada el"), auto_now_add=True)
 
     class Meta:
-        verbose_name        = _("Revisión de centro de gasto")
+        verbose_name = _("Revisión de centro de gasto")
         verbose_name_plural = _("Revisiones de centros de gasto")
-        ordering            = ["-service_date", "-id"]
+        ordering = ["-service_date", "-id"]
 
     def __str__(self) -> str:
         return f"{self.machine.code} -- revisión {self.service_date}"
@@ -480,9 +505,9 @@ class MachineMeterReading(models.Model):
     created_at = models.DateTimeField(_("Anotada el"), auto_now_add=True)
 
     class Meta:
-        verbose_name        = _("Lectura de horas y kilómetros")
+        verbose_name = _("Lectura de horas y kilómetros")
         verbose_name_plural = _("Lecturas de horas y kilómetros")
-        ordering            = ["-reading_date", "-id"]
+        ordering = ["-reading_date", "-id"]
 
     def __str__(self) -> str:
         return f"{self.machine.code} -- lectura {self.reading_date}"
@@ -522,7 +547,7 @@ class MachineServiceAlertSettings(models.Model):
     updated_at = models.DateTimeField(_("Último cambio"), auto_now=True)
 
     class Meta:
-        verbose_name        = _("Antelación de avisos de revisión")
+        verbose_name = _("Antelación de avisos de revisión")
         verbose_name_plural = _("Antelación de avisos de revisión")
 
     def __str__(self) -> str:
@@ -543,9 +568,10 @@ class MaintenanceLog(models.Model):
 
     ---
 
-    Registra una intervención de mantenimiento individual sobre un MachineAsset.
-    Una intervención puede originarse en una línea de parte de trabajo procesada
-    (FK work_entry_line) o ser introducida manualmente por un supervisor.
+    Registra una intervención de mantenimiento individual sobre un
+    MachineAsset. Una intervención puede originarse en una línea de parte
+    de trabajo procesada (FK work_entry_line) o ser introducida
+    manualmente por un supervisor.
     Todos los repuestos y conceptos de mano de obra de terceros consumidos se
     vinculan mediante registros MaintenanceItem.
     """
@@ -558,7 +584,9 @@ class MaintenanceLog(models.Model):
         on_delete=models.CASCADE,
         related_name="maintenance_logs",
         verbose_name=_("Centro de gasto"),
-        help_text=_("Máquina o vehículo sobre el que se realiza la intervención."),
+        help_text=_(
+            "Máquina o vehículo sobre el que se realiza la intervención."
+        ),
     )
     work_entry_line = models.ForeignKey(
         "work_order_processor.WorkOrderEntryLine",
@@ -578,7 +606,9 @@ class MaintenanceLog(models.Model):
     # ------------------------------------------------------------------
     date = models.DateField(
         _("Fecha"),
-        help_text=_("Fecha en que se realizó la intervención de mantenimiento."),
+        help_text=_(
+            "Fecha en que se realizó la intervención de mantenimiento."
+        ),
     )
     description = models.TextField(
         _("Descripción"),
@@ -609,7 +639,9 @@ class MaintenanceLog(models.Model):
     notes = models.TextField(
         _("Observaciones"),
         blank=True,
-        help_text=_("Observaciones adicionales del supervisor o del operario."),
+        help_text=_(
+            "Observaciones adicionales del supervisor o del operario."
+        ),
     )
 
     # ------------------------------------------------------------------
@@ -625,9 +657,9 @@ class MaintenanceLog(models.Model):
     )
 
     class Meta:
-        verbose_name        = _("Registro de Mantenimiento")
+        verbose_name = _("Registro de Mantenimiento")
         verbose_name_plural = _("Registros de Mantenimiento")
-        ordering            = ["-date", "machine_asset"]
+        ordering = ["-date", "machine_asset"]
 
     def __str__(self) -> str:
         return (
@@ -649,7 +681,8 @@ class MaintenanceItem(models.Model):
     as a line item in the corresponding delivery note).
 
     The `item_type` field drives the accounting logic:
-      - WAREHOUSE_PART   → cost deducted from internal warehouse stock (future).
+      - WAREHOUSE_PART   → cost deducted from internal warehouse stock
+                           (future).
       - THIRD_PARTY_PART → cost from an external supplier delivery note.
       - THIRD_PARTY_LABOUR → third-party labour detailed in a delivery note,
                              treated as a part line per business convention.
@@ -662,15 +695,18 @@ class MaintenanceItem(models.Model):
     según el convenio del negocio).
 
     El campo `item_type` impulsa la lógica contable:
-      - WAREHOUSE_PART     → coste deducido del stock del almacén interno (futuro).
-      - THIRD_PARTY_PART   → coste procedente de un albarán de proveedor externo.
+      - WAREHOUSE_PART     → coste deducido del stock del almacén interno
+                             (futuro).
+      - THIRD_PARTY_PART   → coste procedente de un albarán de proveedor
+                             externo.
       - THIRD_PARTY_LABOUR → mano de obra de tercero detallada en albarán,
-                             tratada como línea de repuesto por convenio del negocio.
+                             tratada como línea de repuesto por convenio
+                             del negocio.
     """
 
     class ItemType(models.TextChoices):
-        WAREHOUSE_PART    = "WAREHOUSE_PART",    _("Repuesto — Almacén propio")
-        THIRD_PARTY_PART  = "THIRD_PARTY_PART",  _("Repuesto — Tercero")
+        WAREHOUSE_PART = "WAREHOUSE_PART",    _("Repuesto — Almacén propio")
+        THIRD_PARTY_PART = "THIRD_PARTY_PART",  _("Repuesto — Tercero")
         THIRD_PARTY_LABOUR = "THIRD_PARTY_LABOUR", _("Mano de obra — Tercero")
 
     # ------------------------------------------------------------------
@@ -681,7 +717,9 @@ class MaintenanceItem(models.Model):
         on_delete=models.CASCADE,
         related_name="items",
         verbose_name=_("Registro de Mantenimiento"),
-        help_text=_("Intervención de mantenimiento a la que pertenece esta línea."),
+        help_text=_(
+            "Intervención de mantenimiento a la que pertenece esta línea."
+        ),
     )
 
     # ------------------------------------------------------------------
@@ -693,7 +731,8 @@ class MaintenanceItem(models.Model):
         choices=ItemType.choices,
         db_index=True,
         help_text=_(
-            "Tipo de concepto: repuesto de almacén propio, repuesto de tercero "
+            "Tipo de concepto: repuesto de almacén propio, repuesto de tercero"
+            " "
             "o mano de obra de tercero."
         ),
     )
@@ -705,7 +744,8 @@ class MaintenanceItem(models.Model):
         _("Descripción"),
         max_length=300,
         help_text=_(
-            "Nombre o descripción del repuesto, pieza o concepto de mano de obra."
+            "Nombre o descripción del repuesto, pieza o concepto de mano de "
+            "obra."
         ),
     )
     reference = models.CharField(
@@ -713,7 +753,8 @@ class MaintenanceItem(models.Model):
         max_length=100,
         blank=True,
         help_text=_(
-            "Referencia del repuesto o pieza (código de almacén, referencia del "
+            "Referencia del repuesto o pieza (código de almacén, referencia "
+            "del "
             "fabricante, etc.). Vacío para mano de obra de tercero."
         ),
     )
@@ -750,7 +791,8 @@ class MaintenanceItem(models.Model):
         help_text=_(
             "Referencia del albarán o factura del proveedor externo. "
             "Vacío para repuestos de almacén propio. Permite trazar el coste "
-            "al documento de tercero cuando el módulo de albaranes esté disponible."
+            "al documento de tercero cuando el módulo de albaranes esté "
+            "disponible."
         ),
     )
 
@@ -763,9 +805,9 @@ class MaintenanceItem(models.Model):
     )
 
     class Meta:
-        verbose_name        = _("Línea de Mantenimiento")
+        verbose_name = _("Línea de Mantenimiento")
         verbose_name_plural = _("Líneas de Mantenimiento")
-        ordering            = ["maintenance_log", "item_type", "description"]
+        ordering = ["maintenance_log", "item_type", "description"]
 
     def __str__(self) -> str:
         cost = (
