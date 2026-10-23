@@ -4296,6 +4296,15 @@ class PersonIdPhoto(models.Model):
     extracted_at = models.DateTimeField(
         auto_now=True, verbose_name="Foto sacada el",
     )
+    is_manual = models.BooleanField(
+        default=False,
+        verbose_name="Puesta a mano",
+        help_text=(
+            "Foto subida o elegida a mano en la ficha: la búsqueda "
+            "automática ya no la cambia (solo \"Sacar del DNI o "
+            "permiso\")."
+        ),
+    )
 
     class Meta:
         verbose_name = "Foto de carné"

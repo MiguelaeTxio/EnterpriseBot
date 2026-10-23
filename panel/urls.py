@@ -169,6 +169,7 @@ from panel.views_documentation_h30 import (
     PersonalPhotoView,
     PersonalPlatformPhotoView,
     PersonalPhotoExtractView,
+    PersonalPhotoUploadView,
     PersonalWorkdayDetailView,
     SubjectDocumentUploadView,
 )
@@ -1232,6 +1233,11 @@ urlpatterns = [
         "documentacion/personal/<int:pk>/foto/sacar/",
         PersonalPhotoExtractView.as_view(),
         name="documentation_personal_photo_extract",
+    ),
+    path(
+        "documentacion/personal/<int:pk>/foto/subir/",
+        PersonalPhotoUploadView.as_view(),
+        name="documentation_personal_photo_upload",
     ),
     # H31 (S113): entrega real de EPIs (individual desde la ficha, o
     # masiva sobre la selección con casillero) -- sustituye a las

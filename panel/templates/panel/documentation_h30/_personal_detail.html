@@ -122,15 +122,18 @@ y se habilita "Guardar".
             H31 (S76): icono de edición sobre el avatar -- Miguel
             Ángel: "nos falta el añadir y el editar [...] un icono
             para editar esa imagen y poder subir una imagen nueva."
-            Reutiliza el flujo de subida ya existente
-            (openUploadForm), preseleccionando el tipo IMAGEN --
-            nunca un mecanismo de subida aparte.
+            S134: la foto de perfil se sube directa a la ficha, sin
+            pasar por la subida de documentos (que la leía con Gemini y
+            era lenta). Miguel Ángel: "La foto no tiene por qué leerla
+            [...] lo que queremos es que sea lo más rápido posible."
             {% endcomment %}
             <button type="button" class="btn btn-sm btn-primary rounded-circle position-absolute pdet-avatar-btn"
-                    title="{% if avatar %}Cambiar foto{% else %}Añadir foto{% endif %}"
-                    onclick="openUploadForm('IMAGEN', true)">
+                    title="{% if photo_url %}Cambiar foto{% else %}Añadir foto{% endif %}"
+                    id="personPhotoUploadBtn"
+                    data-url="{% url 'panel:documentation_personal_photo_upload' pk=person.pk %}">
                 <i class="bi bi-camera-fill"></i>
             </button>
+            <input type="file" accept="image/*" class="d-none" id="personPhotoUploadInput">
         </div>
         <div class="flex-grow-1 pdet-main">
             <form id="personalUpdateForm" class="row g-2">
@@ -2003,6 +2006,46 @@ function getCookie(name) {
                 headers: {'X-CSRFToken': csrfTokenPersonal, 'Content-Type': 'application/json'},
                 body: JSON.stringify(update),
             });
+        });
+    });
+})();
+</script>
+<script>
+(function () {
+    // H31 (S134): foto de perfil subida directa, sin lectura.
+    const button = document.getElementById("personPhotoUploadBtn");
+    const input = document.getElementById("personPhotoUploadInput");
+    if (!button || !input) {
+        return;
+    }
+    button.addEventListener("click", function () {
+        input.click();
+    });
+    input.addEventListener("change", function () {
+        if (!input.files.length) {
+            return;
+        }
+        const formData = new FormData();
+        formData.append("file", input.files[0]);
+        button.disabled = true;
+        fetch(button.dataset.url, {
+            method: "POST",
+            body: formData,
+            headers: {"X-CSRFToken": getCookie("csrftoken")},
+        }).then(function (response) {
+            return response.json();
+        }).then(function (data) {
+            if (data.ok) {
+                window.location.reload();
+                return;
+            }
+            button.disabled = false;
+            input.value = "";
+            alert(data.error || "No se ha podido subir la foto.");
+        }).catch(function () {
+            button.disabled = false;
+            input.value = "";
+            alert("No se ha podido subir la foto.");
         });
     });
 })();

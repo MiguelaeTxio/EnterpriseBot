@@ -204,7 +204,7 @@ def crop_photo(entry, data):
     return buffer.getvalue()
 
 
-def extract_from_entry(person, entry, data=None):
+def extract_from_entry(person, entry, data=None, manual=False):
     """
     Crop the photo of one document and store it as the person photo.
 
@@ -219,7 +219,8 @@ def extract_from_entry(person, entry, data=None):
         data = download_bytes(entry.bucket, entry.blob_name)
     image = crop_photo(entry, data)
     PersonIdPhoto.objects.update_or_create(
-        person=person, defaults={"image": image, "source": entry},
+        person=person,
+        defaults={"image": image, "source": entry, "is_manual": manual},
     )
     person.photo_attempted_at = timezone.now()
     person.save(update_fields=["photo_attempted_at"])
@@ -296,6 +297,10 @@ def persons_to_check(limit):
     ).filter(
         Q(photo_attempted_at__isnull=True, has_any=True)
         | Q(has_newer=True),
+    ).exclude(
+        # A photo put by hand is never replaced automatically.
+        # Una foto puesta a mano nunca se cambia sola.
+        id_photo__is_manual=True,
     ).order_by(F("is_active_employee").desc(), "pk")
     return list(pending[:limit])
 
@@ -315,6 +320,41 @@ def candidates_for_any_person():
         deleted_at__isnull=True,
         purged_at__isnull=True,
     )
+
+
+def save_uploaded(person, data):
+    """
+    Store an uploaded profile photo as it is, without reading it.
+
+    ---
+
+    Guarda una foto de perfil subida a mano tal cual, sin leerla ni
+    buscar la cara (Miguel Ángel, S134: *"La foto no tiene por qué
+    leerla [...] lo que queremos es que sea lo más rápido posible"*).
+    Solo se endereza (EXIF), se pasa a JPEG y se limita su tamaño. Queda
+    marcada como puesta a mano: la búsqueda automática ya no la cambia.
+    """
+    from PIL import Image, ImageOps, UnidentifiedImageError
+
+    try:
+        image = ImageOps.exif_transpose(Image.open(io.BytesIO(data)))
+    except (UnidentifiedImageError, OSError) as exc:
+        raise IdPhotoError("El archivo no es una imagen.") from exc
+    image = image.convert("RGB")
+    if image.height > MAX_STORED_HEIGHT:
+        image = image.resize((
+            round(image.width * MAX_STORED_HEIGHT / image.height),
+            MAX_STORED_HEIGHT,
+        ))
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", quality=STORED_JPEG_QUALITY)
+    PersonIdPhoto.objects.update_or_create(
+        person=person, defaults={
+            "image": buffer.getvalue(), "source": None, "is_manual": True,
+        },
+    )
+    person.photo_attempted_at = timezone.now()
+    person.save(update_fields=["photo_attempted_at"])
 
 
 def platform_png(image_bytes, box=None, max_bytes=PLATFORM_MAX_BYTES):

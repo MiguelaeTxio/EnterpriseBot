@@ -5228,7 +5228,7 @@ class PersonalSetAvatarView(DocsUploadAccessMixin, View):
         )
 
         try:
-            extract_from_entry(person, entry)
+            extract_from_entry(person, entry, manual=True)
             avatar_url = reverse(
                 "panel:documentation_personal_photo", args=[person.pk],
             )
@@ -5345,6 +5345,43 @@ class PersonalPlatformPhotoView(CompanyUserRequiredMixin, View):
             _platform_photo_name(person)
         )
         return response
+
+
+class PersonalPhotoUploadView(DocsUploadAccessMixin, View):
+    """
+    POST: upload a profile photo straight to the person record.
+
+    ---
+
+    H31 (S134). POST: sube la foto de perfil directamente a la ficha,
+    sin pasar por la subida de documentos (que la leía con Gemini, ~20
+    s, y la archivaba como documento IMAGEN). Miguel Ángel: *"La foto no
+    tiene por qué leerla, es una foto que vamos a subir, foto de
+    perfil, y lo que queremos es que sea lo más rápido posible."*
+    """
+
+    MAX_BYTES = 20 * 1024 * 1024
+
+    def post(self, request, pk):
+        from document_explorer.id_photo_service import (
+            IdPhotoError, save_uploaded,
+        )
+
+        person = get_object_or_404(PersonIdentity, pk=pk)
+        upload = request.FILES.get("file")
+        if upload is None:
+            return JsonResponse(
+                {"ok": False, "error": "Falta la foto."}, status=400,
+            )
+        if upload.size > self.MAX_BYTES:
+            return JsonResponse({"ok": False, "error": (
+                "La foto pesa más de 20 MB."
+            )}, status=400)
+        try:
+            save_uploaded(person, upload.read())
+        except IdPhotoError as exc:
+            return JsonResponse({"ok": False, "error": str(exc)}, status=400)
+        return JsonResponse({"ok": True})
 
 
 class PersonalPhotoExtractView(DocsUploadAccessMixin, View):
