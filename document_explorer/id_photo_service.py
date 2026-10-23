@@ -255,6 +255,24 @@ def extract_for_person(person, limit=5):
     return None
 
 
+def box_pixels(box, width, height):
+    """
+    Pixel box of a fractional box, inside the image.
+
+    ---
+
+    Caja en píxeles de una caja en fracciones (x, y, ancho, alto),
+    recortada a la imagen; IdPhotoError si queda vacía.
+    """
+    x, y, w, h = (min(max(float(v), 0.0), 1.0) for v in box)
+    left, top = round(x * width), round(y * height)
+    right = min(width, round((x + w) * width))
+    bottom = min(height, round((y + h) * height))
+    if right - left < 8 or bottom - top < 8:
+        raise IdPhotoError("El recuadro marcado es demasiado pequeño.")
+    return left, top, right, bottom
+
+
 def persons_to_check(limit):
     """
     Persons with a source document indexed after their last search.
@@ -299,19 +317,27 @@ def candidates_for_any_person():
     )
 
 
-def platform_png(jpeg_bytes, max_bytes=PLATFORM_MAX_BYTES):
+def platform_png(image_bytes, box=None, max_bytes=PLATFORM_MAX_BYTES):
     """
-    PNG of the photo under `max_bytes`, for other platforms.
+    PNG of the photo (or of a box of it) under `max_bytes`.
 
     ---
 
     PNG de la foto de menos de `max_bytes` (128 KB), para subirla a
     otras plataformas: se reduce de tamaño y, si hace falta, se pasa a
-    256 colores hasta que cabe.
+    256 colores hasta que cabe. `box` = (x, y, ancho, alto) en
+    fracciones de 0 a 1 de la foto tal como se ve: el recuadro que
+    marca el usuario para que la cara ocupe la mayor parte (Miguel
+    Ángel, S134: *"la plataforma pide que salga la cara principalmente
+    y que la cara ocupe la máxima cantidad posible en la foto"*).
     """
-    from PIL import Image
+    from PIL import Image, ImageOps
 
-    image = Image.open(io.BytesIO(jpeg_bytes)).convert("RGB")
+    image = ImageOps.exif_transpose(
+        Image.open(io.BytesIO(image_bytes)),
+    ).convert("RGB")
+    if box is not None:
+        image = image.crop(box_pixels(box, *image.size))
     width, height = image.size
     scale = 1.0
     for _attempt in range(30):

@@ -5308,7 +5308,11 @@ class PersonalPlatformPhotoView(CompanyUserRequiredMixin, View):
     H31 (S134). GET: descarga la foto "para plataforma": PNG de menos
     de 128 KB con el nombre de la persona -- Miguel Ángel: "que ponga
     únicamente descarga foto para plataforma y se descarga con el
-    nombre de la persona en formato PNG y con menos de 128K".
+    nombre de la persona en formato PNG y con menos de 128K". Con
+    `x`, `y`, `w`, `h` (fracciones de 0 a 1) descarga solo el recuadro
+    marcado en la ventana "Ver foto": *"una herramienta para que
+    seleccione un rectángulo de la foto"*, porque las plataformas
+    piden que la cara ocupe la mayor parte posible.
     """
 
     def get(self, request, pk):
@@ -5321,8 +5325,18 @@ class PersonalPlatformPhotoView(CompanyUserRequiredMixin, View):
         if data is None:
             return HttpResponse("Esta persona no tiene foto.", status=404,
                                 content_type="text/plain; charset=utf-8")
+        box = None
+        raw_box = [request.GET.get(key, "") for key in ("x", "y", "w", "h")]
+        if all(raw_box):
+            try:
+                box = tuple(float(value) for value in raw_box)
+            except ValueError:
+                return HttpResponse(
+                    "Recuadro con formato inválido.", status=400,
+                    content_type="text/plain; charset=utf-8",
+                )
         try:
-            png = platform_png(data)
+            png = platform_png(data, box=box)
         except IdPhotoError as exc:
             return HttpResponse(str(exc), status=422,
                                 content_type="text/plain; charset=utf-8")

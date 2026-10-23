@@ -13,7 +13,9 @@
     .pdet-avatar-icon { font-size: 96px; line-height: 1; }
     .pdet-avatar-btn { width: 32px; height: 32px; padding: 0; bottom: 0; right: 0; }
     .pdet-avatar-view-btn { width: 32px; height: 32px; padding: 0; bottom: 0; left: 0; }
-    .pdet-photo-large { max-width: 100%; max-height: 60vh; }
+    .pdet-photo-large { max-width: 100%; max-height: 60vh; width: auto; height: auto; display: block; user-select: none; }
+    .pdet-crop-wrap { position: relative; display: inline-block; cursor: crosshair; touch-action: none; }
+    .pdet-crop-box { position: absolute; border: 2px solid #0d6efd; box-shadow: 0 0 0 9999px rgba(0, 0, 0, .45); pointer-events: none; }
     .pdet-main { min-width: 260px; }
     .pdet-check-col { width: 2rem; }
     .pdet-clickable { cursor: pointer; }
@@ -1086,8 +1088,15 @@ documentación, volver a sacarla del DNI o del permiso de conducir.
             </div>
             <div class="modal-body text-center">
                 {% if photo_url %}
-                <img src="{{ photo_url }}" alt="Foto de carné" class="img-fluid rounded border pdet-photo-large"
-                     width="300" height="400">
+                <div class="small text-muted mb-2">Arrastra sobre la foto un recuadro con la cara: es lo que se descarga para la plataforma.</div>
+                <div class="pdet-crop-wrap" id="personPhotoCrop">
+                    <img src="{{ photo_url }}" alt="Foto de carné" class="rounded border pdet-photo-large"
+                         width="300" height="400" draggable="false">
+                    <div class="pdet-crop-box d-none" id="personPhotoCropBox"></div>
+                </div>
+                <div class="small mt-1">
+                    <button type="button" class="btn btn-link btn-sm p-0 d-none" id="personPhotoCropClear">Quitar el recuadro</button>
+                </div>
                 <div class="small text-muted mt-2">
                     {% if id_photo %}Recortada de
                     {% if id_photo.source_id %}<a href="{% url 'panel:documentation_document_view' pk=id_photo.source_id %}" target="_blank" rel="noopener">{{ id_photo.source__name }}</a>{% else %}un documento ya borrado{% endif %}
@@ -1108,7 +1117,9 @@ documentación, volver a sacarla del DNI o del permiso de conducir.
                 </button>
                 {% endif %}
                 {% if photo_url %}
-                <a class="btn btn-primary btn-sm" href="{% url 'panel:documentation_personal_platform_photo' pk=person.pk %}">
+                <a class="btn btn-primary btn-sm" id="personPhotoDownload"
+                   data-url="{% url 'panel:documentation_personal_platform_photo' pk=person.pk %}"
+                   href="{% url 'panel:documentation_personal_platform_photo' pk=person.pk %}">
                     <i class="bi bi-download me-1"></i>Descargar foto para plataforma
                 </a>
                 {% endif %}
@@ -2028,6 +2039,84 @@ function getCookie(name) {
             message.textContent = "Error de red. Inténtalo otra vez.";
             button.disabled = false;
         });
+    });
+})();
+</script>
+<script>
+(function () {
+    // H31 (S134): recuadro de la foto para la plataforma -- Miguel
+    // Ángel: "una herramienta para que seleccione un rectángulo de la
+    // foto. Y ese rectángulo es el que vamos a descargar".
+    const wrap = document.getElementById("personPhotoCrop");
+    if (!wrap) {
+        return;
+    }
+    const image = wrap.querySelector("img");
+    const box = document.getElementById("personPhotoCropBox");
+    const clear = document.getElementById("personPhotoCropClear");
+    const link = document.getElementById("personPhotoDownload");
+    let start = null;
+    let rect = null;
+
+    function point(ev) {
+        const r = image.getBoundingClientRect();
+        return {
+            x: Math.min(Math.max(ev.clientX - r.left, 0), r.width),
+            y: Math.min(Math.max(ev.clientY - r.top, 0), r.height),
+            w: r.width,
+            h: r.height
+        };
+    }
+
+    function draw(a, b) {
+        const left = Math.min(a.x, b.x);
+        const top = Math.min(a.y, b.y);
+        const width = Math.abs(a.x - b.x);
+        const height = Math.abs(a.y - b.y);
+        box.style.left = left + "px";
+        box.style.top = top + "px";
+        box.style.width = width + "px";
+        box.style.height = height + "px";
+        box.classList.remove("d-none");
+        rect = {x: left / a.w, y: top / a.h, w: width / a.w, h: height / a.h};
+    }
+
+    function updateLink() {
+        if (rect && rect.w > 0.02 && rect.h > 0.02) {
+            const params = new URLSearchParams({
+                x: rect.x.toFixed(4), y: rect.y.toFixed(4),
+                w: rect.w.toFixed(4), h: rect.h.toFixed(4)
+            });
+            link.href = link.dataset.url + "?" + params.toString();
+            clear.classList.remove("d-none");
+        } else {
+            rect = null;
+            box.classList.add("d-none");
+            link.href = link.dataset.url;
+            clear.classList.add("d-none");
+        }
+    }
+
+    wrap.addEventListener("pointerdown", function (ev) {
+        ev.preventDefault();
+        wrap.setPointerCapture(ev.pointerId);
+        start = point(ev);
+    });
+    wrap.addEventListener("pointermove", function (ev) {
+        if (start) {
+            draw(start, point(ev));
+        }
+    });
+    wrap.addEventListener("pointerup", function (ev) {
+        if (start) {
+            draw(start, point(ev));
+            start = null;
+            updateLink();
+        }
+    });
+    clear.addEventListener("click", function () {
+        rect = null;
+        updateLink();
     });
 })();
 </script>
