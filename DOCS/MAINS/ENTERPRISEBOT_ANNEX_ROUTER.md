@@ -53,8 +53,8 @@ Cumple dos funciones inseparables:
 | H27 | Ingesta de Documentación vía Correo Electrónico | `ENTERPRISEBOT_ATTACHED_MILESTONE_V27.md` |
 | H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` |
 | H29 | Explorador de Archivos y Gobierno Documental del Panel sobre GCS | `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md` |
-| H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` |
-| H31 | Interfaz de Gestión Documental de Personal — Altas, Bajas, Sustituciones, EPIs y Circulares (título anterior: "Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares"; ampliado en S99 al fusionar H33) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` ← EN PROGRESO |
+| H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` ← EN PROGRESO |
+| H31 | Interfaz de Gestión Documental de Personal — Altas, Bajas, Sustituciones, EPIs y Circulares (título anterior: "Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares"; ampliado en S99 al fusionar H33) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` |
 | H32 | Migraciones de Infraestructura (Modelo IA, Python, Registro Android) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md` |
 | ~~H33~~ | ~~Subida de Documentación en Tiempo Real desde el Panel~~ — **FUSIONADO EN H31 el 2026-09-10 (S99)**, ver sección 6 | `ENTERPRISEBOT_ATTACHED_MILESTONE_V33.md` (conservado íntegro como archivo histórico) |
 | H34 | Modelo Propio de Clasificación de Documentos (entrenamiento) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V34.md` |
@@ -68,8 +68,26 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ## 3. Resultado Actual
 
-**Hito EN PROGRESO:** H31 — Interfaz de Gestión Documental de Personal
-→ `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`. Reactivado en S134 por
+**Hito EN PROGRESO:** H30 — Vinculación Documental Real: Centros de
+Gasto y Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md`.
+Reactivado al cierre de S134 por Miguel Ángel (PCH desde H31): *"damos
+preferencia a los vehículos y los km y horas, ya que son fundamentales
+para los avisos. Pasamos a la siguiente sesión con esto y luego
+volvemos con asistencia."* Se empieza por la sección "REACTIVADO AL
+CIERRE DE S134 -- Hoja de Ruta S135" al final del anexo (integración de
+GasoGes: lecturas de km y horas de las máquinas para los avisos de
+revisiones). Después sigue lo "Pendiente de H30 al pausarlo", intacto.
+Al terminar, PCH de vuelta a H37.
+
+**Hito PAUSADO al cierre de S134:** H31 — Interfaz de Gestión
+Documental de Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`.
+Hecho en S134: foto de carné sacada del DNI o del permiso, recuadro
+para la plataforma y subida directa de la foto de perfil (ver
+"COMPLETADAS EN S134" del anexo). Queda la "Hoja de Ruta pendiente al
+reactivar H31", intacta.
+
+**Histórico S134 (desde el PCH):** H31 EN PROGRESO →
+`ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`. Reactivado en S134 por
 Miguel Ángel (PCH desde H37: *"Necesito pivotar hacia
 documentación"*). Se empieza por la sección "REACTIVADO EN S134" al
 final del anexo: pipeline de la foto de carné, que saca la foto de los
@@ -77,17 +95,18 @@ DNI y permisos, la pone como foto de la persona y la descarga en PNG
 de 128 KB como máximo. Después sigue la "Hoja de Ruta pendiente al
 reactivar H31", intacta.
 
-**Hito PAUSADO en S134:** H37 — Albaranes Digitales y Órdenes de
+**Hito PAUSADO en S134 (se retoma después de H30):** H37 — Albaranes Digitales y Órdenes de
 Trabajo ASISTENCIA → `ENTERPRISEBOT_ATTACHED_MILESTONE_V37.md`. En S134
 se hicieron los puntos 1, 2, 3, 4.1, 4.2 y 4.4 de su hoja de ruta S134,
 y además los estimados de tiempo con cola en dos modos. Ver sección 9
 del anexo. Quedan:
-- la prueba en producción de los estimados con Google real;
+- la prueba en producción de los estimados con Google real, con un
+  usuario chófer de pruebas (decidido al cierre de S134);
 - la llamada real al robot (4.4);
 - la plantilla de Meta (4.3);
 - lo que depende de Pepe (4.5);
 - TIREA y Prologic (4.6).
-La documentación de GasoGes está recibida para más adelante (9.8).
+La documentación de GasoGes pasa a H30, primera en la sesión siguiente (9.8).
 
 **Histórico S131-S133:** H37 EN PROGRESO — Albaranes Digitales y
 Órdenes de Trabajo ASISTENCIA → `ENTERPRISEBOT_ATTACHED_MILESTONE_V37.md`. Hito nuevo,

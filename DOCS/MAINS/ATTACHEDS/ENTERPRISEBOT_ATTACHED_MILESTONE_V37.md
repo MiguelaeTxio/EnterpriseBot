@@ -833,10 +833,12 @@ Qué se ha hecho:
 **Probado en local** con trayectos fijos: horas encadenadas, los dos
 modos, salida de la cola y llegada de un equipo ocupado.
 
-**Pendiente:** la prueba en producción con Google real. Miguel Ángel
-tiene que elegir entre:
-1. Lanzarla con Zafra avisándole antes.
-2. Hacerla con un usuario chófer de pruebas suyo.
+**Pendiente:** la prueba en producción con Google real. Decidido por
+Miguel Ángel al cierre de S134: se hace con un usuario chófer de
+pruebas suyo, sin tocar a ningún conductor real. **Cierre:** un
+servicio de prueba asignado a ese usuario con otro en cola; consulta
+a BD con `eta_pickup_at`, `eta_finish_at` y `eta_km` rellenos en los
+dos, y `eta_detail` sin error de Google.
 
 ### 9.8. Recibido en S134 para más adelante
 
@@ -846,3 +848,12 @@ las máquinas. Miguel Ángel: *"en la siguiente sesión"*. Guardada en
 (`51a268c`):
 - API de solo consulta (GET) con autenticación básica;
 - las credenciales las da GasoGes y no van en el repositorio.
+
+### 9.9. Al cierre de S134
+
+- La sesión acabó en H31 (foto de carné, ver su anexo) y la siguiente
+  va a H30, con la integración de GasoGes (km y horas de las máquinas
+  para los avisos). Miguel Ángel: *"Pasamos a la siguiente sesión con
+  esto y luego volvemos con asistencia."*
+- La hoja de ruta de la sección 8 sigue intacta. Lo que queda de ella
+  está en el resumen de arriba.

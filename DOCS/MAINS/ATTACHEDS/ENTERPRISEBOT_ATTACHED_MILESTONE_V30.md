@@ -9699,3 +9699,76 @@ no cerrados de 7 mecánicos en producción al construirlo.
 Commits de S131 en H30: `ec50b64`, `0ee4c80`, `cbb9603`, `66278ef`,
 `70442d6`, `8d8b605`, `f794f88`, `6256bb2`, `d5e788c`, `88f5d33`,
 `5f73292`, `6603821`.
+
+---
+
+## REACTIVADO AL CIERRE DE S134 -- Hoja de Ruta S135 (concertada con Miguel Ángel; va antes que lo "Pendiente de H30 al pausarlo", que sigue intacto)
+
+PCH desde H31 al cierre de S134 (23/10/2026). Miguel Ángel, verbatim:
+*"damos preferencia a los vehículos y los km y horas, ya que son
+fundamentales para los avisos. Pasamos a la siguiente sesión con esto
+y luego volvemos con asistencia."* Es el enlace con el programa del
+surtidor que el punto 1 de S131 dejó para más adelante ("Más adelante
+se tomarán del programa del surtidor").
+
+Lo que dice la documentación de GasoGes
+(`DOCS_ATTACHED_2_ANNEX_V30/Documentacion_API_GasoGes_v1.3.pdf`,
+commit `51a268c`):
+- URL `https://api.gasoges.es/v1/...`; autenticación básica HTTP;
+  solo GET; fechas `YYYY-MM-DD`; respuestas JSON en listas sin nombres
+  de campo (el orden de la lista es lo que da el significado).
+- `GET /v1/vehiculos`: `[ID VEHICULO, "MATRICULA", "NOMBRE", "PIN",
+  "LLAVE", "GASOLEO PROFESIONAL", EMPLAZAMIENTO/EMPRESA, GRUPO,
+  ULTIMOS KM, CALCULO MEDIAS]`.
+- `GET /v1/suministros/todos/{inicio}/{fin}`: `[ID USUARIO, ID
+  VEHICULO, KM, LITROS, PRECIO, "FECHA Y HORA", Nº SERIE SURTIDOR, ID
+  DEPOSITO, ID COMBUSTIBLE]`.
+- **La API no tiene campo de horas**: solo `KM` en cada suministro y
+  `ULTIMOS KM` en el vehículo.
+- Desde el contenedor de Claude no se llega a `api.gasoges.es` (lista
+  de dominios permitidos): las llamadas se hacen desde el servidor.
+
+1. **Credenciales en el servidor.** Miguel Ángel pone en el `.env` de
+   PythonAnywhere `GASOGES_API_USER` y `GASOGES_API_PASSWORD` (se las
+   da GasoGes; nunca en el repositorio ni en el chat). El modelo le
+   entrega la línea exacta del `.env` a rellenar (com-bash-commands).
+   **Cierre:** un Comando S de solo lectura que llama a
+   `/v1/vehiculos` responde 200 y deja en SWAP el número de vehículos
+   (leído por el relevo, nunca los datos en git).
+2. **Cliente de la API** (`fleet/gasoges_client.py`): vehículos y
+   suministros entre fechas, con las listas convertidas a diccionarios
+   con nombre por la posición documentada arriba, timeout y errores
+   400/401/403 con mensaje claro. **Cierre:** pruebas en local con
+   respuestas copiadas del formato del PDF (los dos endpoints, y una
+   respuesta 401) en verde; flake8 a 0.
+3. **Enlace de vehículos de GasoGes con los centros de gasto**
+   (`fleet.MachineAsset`): por `MATRICULA` contra `plate`
+   (normalizada: sin espacios ni guiones, mayúsculas) y, si no hay
+   matrícula, por `NOMBRE` contra `code`. Campo nuevo en
+   `MachineAsset` con el `ID VEHICULO` de GasoGes, rellenado por un
+   Comando S. **Cierre:** el Comando S deja en SWAP cuántos vehículos
+   de GasoGes quedan enlazados y la lista de los que no (para Drive,
+   nunca git), y consulta a BD con el número de `MachineAsset` con el
+   ID puesto.
+4. **Lecturas desde los suministros.** Tarea periódica que pide los
+   suministros nuevos y crea `MachineMeterReading` (fecha del
+   suministro, `km`) en los centros de gasto enlazados, sin duplicar
+   (un suministro ya leído no se vuelve a anotar). Antes de escribir
+   nada, comprobar con los suministros reales de las máquinas que van
+   por horas (`has_engine_hours`, p. ej. A44 o A68) qué número trae
+   `KM` en ellas: si son horas, esas lecturas van a `hours` y no a
+   `km`. **Cierre:** consulta a BD con lecturas nuevas de origen
+   GasoGes en al menos un vehículo por km y uno por horas, con el
+   número igual al de su último suministro; y la pestaña Documentación
+   > Revisiones mostrando esa última lectura.
+5. **Avisos con las lecturas de GasoGes.** Con las lecturas ya
+   entrando solas, hacer la prueba de cierre del punto 1 de S131 (la
+   primera de lo "Pendiente de H30 al pausarlo"): un centro de gasto
+   real con intervalo y revisión anotada, cuya lectura de GasoGes pase
+   de revisión + intervalo, sale como vencida en Avisos. **Cierre:**
+   el que dice ese punto (consulta a BD con su revisión, su lectura y
+   el intervalo).
+
+Después, lo "Pendiente de H30 al pausarlo" (más arriba), tal cual. Al
+terminar esta hoja, la sesión vuelve a H37 por PCH (Miguel Ángel:
+*"luego volvemos con asistencia"*).
