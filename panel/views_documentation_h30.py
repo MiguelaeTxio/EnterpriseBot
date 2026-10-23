@@ -3682,6 +3682,164 @@ class MachineDocumentSelectionZipView(CompanyUserRequiredMixin, View):
         return _build_dossier_zip_response(machine, entries)
 
 
+# H31 (S136, sesión invasora). Estados de un documento en la ventana
+# "Descargar documentación", en el orden en que se listan.
+DOWNLOAD_STATE_ORDER = {"vigente": 0, "caducado": 1, "obsoleto": 2}
+DOWNLOAD_STATE_LABELS = {
+    "vigente": "Vigente", "caducado": "Caducado", "obsoleto": "Obsoleto",
+}
+
+
+def _document_download_families(subject, for_person):
+    """
+    Documents of a person or machine grouped by family, with state.
+
+    ---
+
+    H31 (S136). Todos los documentos vivos de la persona o máquina,
+    agrupados por familia (en el orden del catálogo) y marcados como
+    vigente, caducado (vigente con la caducidad ya pasada) u obsoleto,
+    con el mismo cálculo que la ficha (`_split_current_obsolete` con el
+    requisito de documentación del sujeto). Los que no tienen tipo van
+    en su propia familia, "Sin tipo", como vigentes. Devuelve una lista
+    de {"code", "label", "rows": [{"entry", "state", "state_label"}]}.
+    """
+    ct = ContentType.objects.get_for_model(subject)
+    entries = list(DocumentIndexEntry.objects.filter(
+        bucket=BUCKET, domain_content_type=ct, domain_object_id=subject.pk,
+        entry_kind=DocumentIndexEntry.KIND_FILE,
+        deleted_at__isnull=True, purged_at__isnull=True,
+    ).select_related("document_type"))
+    typed = [entry for entry in entries if entry.document_type_id]
+    current, obsolete = _split_current_obsolete(
+        typed, get_required_type_ids(subject),
+    )
+    states = {}
+    for entry in current:
+        states[entry.pk] = (
+            "caducado" if getattr(entry, "needs_attention", False)
+            else "vigente"
+        )
+    for entry in obsolete:
+        states[entry.pk] = "obsoleto"
+    family_order = {
+        code: index
+        for index, (code, _label) in enumerate(
+            DocumentTypeCatalog.FAMILY_CHOICES,
+        )
+    }
+    families = {}
+    for entry in entries:
+        if entry.document_type_id:
+            code = entry.document_type.family or ""
+            label = DocumentTypeCatalog.family_label(
+                code, for_person=for_person,
+            )
+        else:
+            code, label = "SIN_TIPO", "Sin tipo"
+        state = states.get(entry.pk, "vigente")
+        families.setdefault(code, {"code": code, "label": label, "rows": []})
+        families[code]["rows"].append({
+            "entry": entry,
+            "state": state,
+            "state_label": DOWNLOAD_STATE_LABELS[state],
+        })
+    for family in families.values():
+        family["rows"].sort(key=lambda row: (
+            row["entry"].document_type.label
+            if row["entry"].document_type_id else row["entry"].name,
+            DOWNLOAD_STATE_ORDER[row["state"]],
+            -(row["entry"].expiry_date or row["entry"].issue_date
+              or date.min).toordinal(),
+        ))
+    return sorted(
+        families.values(),
+        key=lambda family: family_order.get(family["code"], len(family_order)),
+    )
+
+
+class DocumentDownloadPickerView(CompanyUserRequiredMixin, View):
+    """
+    GET: the "Descargar documentación" window of a person or machine.
+
+    ---
+
+    H31 (S136, sesión invasora). Miguel Ángel: "un botón que ponga
+    descargar documentación, abrimos un modal con la documentación
+    separada por familia, con marcajes de obsoletos, para que filtro,
+    etcétera, para gestionar la descarga de documentación de un
+    determinado trabajador o de una determinada máquina".
+
+    Fragmento de la ventana (lo carga `panel/js/document_download_
+    picker.js`). Las casillas son la misma "Selección de documentos"
+    de la ficha (PanelNavigationState, clave `document_selection`), así
+    que la descarga reutiliza las vistas de siempre: ZIP con los
+    originales por familia y PDF único con índice. Los filtros de la
+    ventana se guardan por usuario en la misma clave de pantalla
+    (`download_picker`, directriz 4.15).
+    """
+
+    def get(self, request, pk, kind):
+        if kind == "personal":
+            subject = get_object_or_404(PersonIdentity, pk=pk)
+            screen_key = "personal_ficha"
+            zip_url = reverse(
+                "panel:documentation_personal_document_selection_zip",
+                args=[pk],
+            )
+            pdf_url = reverse(
+                "panel:documentation_personal_document_selection_pdf",
+                args=[pk],
+            )
+            title = "%s %s %s" % (
+                subject.given_name, subject.first_surname,
+                subject.second_surname,
+            )
+        else:
+            subject = get_object_or_404(MachineAsset, pk=pk)
+            screen_key = MACHINE_FICHA_SCREEN_KEY
+            zip_url = reverse(
+                "panel:documentation_machine_document_selection_zip",
+                args=[pk],
+            )
+            pdf_url = reverse(
+                "panel:documentation_machine_document_selection_pdf",
+                args=[pk],
+            )
+            title = "%s — %s" % (subject.code, subject.brand_model)
+        nav_state = PanelNavigationState.objects.filter(
+            company_user=request.user.company_user, screen_key=screen_key,
+        ).first()
+        state = (
+            nav_state.state
+            if nav_state and isinstance(nav_state.state, dict) else {}
+        )
+        saved = state.get("download_picker")
+        saved = saved if isinstance(saved, dict) else {}
+        saved_states = saved.get("states")
+        if not isinstance(saved_states, list):
+            saved_states = ["vigente", "caducado"]
+        families = _document_download_families(
+            subject, for_person=(kind == "personal"),
+        )
+        return render(
+            request,
+            "panel/documentation_h30/_document_download_picker.html",
+            {
+                "title": title,
+                "families": families,
+                "total": sum(len(family["rows"]) for family in families),
+                "screen_key": screen_key,
+                "subject_pk": pk,
+                "zip_url": zip_url,
+                "pdf_url": pdf_url,
+                "saved_states": saved_states,
+                "saved_family": str(saved.get("family") or ""),
+                "state_choices": list(DOWNLOAD_STATE_LABELS.items()),
+            },
+        )
+
+
 class MachineDossierTemplateListView(CompanyUserRequiredMixin, View):
     """
     GET: company machine-scope dossier templates, from a machine file.

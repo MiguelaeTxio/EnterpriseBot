@@ -141,6 +141,7 @@ from panel.views_documentation_h30 import (
     MachineDocumentSelectionPdfView,
     MachineDocumentSelectionPreviewView,
     MachineDocumentSelectionZipView,
+    DocumentDownloadPickerView,
     MachineDossierTemplateApplyView,
     MachineDossierTemplateListView,
     PersonalDetailView,
@@ -1285,6 +1286,20 @@ urlpatterns = [
         "documentacion/personal/foto/cola/",
         PersonalPhotoQueueView.as_view(),
         name="documentation_personal_photo_queue",
+    ),
+    # H31 (S136): ventana "Descargar documentación" de la ficha de una
+    # persona o de una máquina (misma vista, distinto sujeto).
+    path(
+        "documentacion/personal/<int:pk>/descargar/",
+        DocumentDownloadPickerView.as_view(),
+        {"kind": "personal"},
+        name="documentation_personal_download_picker",
+    ),
+    path(
+        "documentacion/maquinaria/<int:pk>/descargar/",
+        DocumentDownloadPickerView.as_view(),
+        {"kind": "machine"},
+        name="documentation_machine_download_picker",
     ),
     # H31 (S113): entrega real de EPIs (individual desde la ficha, o
     # masiva sobre la selección con casillero) -- sustituye a las

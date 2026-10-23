@@ -1,0 +1,113 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_document_download_picker.html #}
+{% comment %}
+H31 (S136, sesión invasora). Ventana "Descargar documentación" de la
+ficha de una persona o de una máquina (DocumentDownloadPickerView).
+Miguel Ángel: "un modal con la documentación separada por familia,
+con marcajes de obsoletos, para que filtro, etcétera [...] si se
+necesitan documentos, sea fácil extraerlos de la ficha".
+
+Formato de la directriz 4.24: arriba, fijo, "Buscar y filtrar" a la
+izquierda y las acciones a la derecha; debajo, solo la lista hace
+scroll. Las casillas son la "Selección de documentos" de la ficha; la
+descarga usa sus vistas de ZIP y PDF único. El comportamiento vive en
+panel/static/panel/js/document_download_picker.js.
+{% endcomment %}
+<div class="ddp-root d-flex flex-column h-100"
+     data-screen-key="{{ screen_key }}" data-subject-pk="{{ subject_pk }}">
+    <div class="row g-2 mb-2 flex-shrink-0">
+        <div class="col-lg-7">
+            <div class="border rounded p-2 h-100">
+                <div class="small text-muted fw-bold mb-1">Buscar y filtrar</div>
+                <input type="search" class="form-control form-control-sm mb-2 ddp-search"
+                       placeholder="Buscar por tipo o nombre de archivo…">
+                <div class="d-flex flex-wrap align-items-center gap-3">
+                    <select class="form-select form-select-sm ddp-family ddp-select-auto" aria-label="Familia">
+                        <option value="">Todas las familias</option>
+                        {% for family in families %}
+                        <option value="{{ family.code }}"{% if family.code == saved_family %} selected{% endif %}>{{ family.label }} ({{ family.rows|length }})</option>
+                        {% endfor %}
+                    </select>
+                    {% for value, label in state_choices %}
+                    <div class="form-check form-check-inline mb-0">
+                        <input class="form-check-input ddp-state" type="checkbox" id="ddp-state-{{ value }}"
+                               value="{{ value }}"{% if value in saved_states %} checked{% endif %}>
+                        <label class="form-check-label small" for="ddp-state-{{ value }}">{{ label }}s</label>
+                    </div>
+                    {% endfor %}
+                    <div class="form-check form-check-inline mb-0">
+                        <input class="form-check-input ddp-only-selected" type="checkbox" id="ddp-only-selected">
+                        <label class="form-check-label small" for="ddp-only-selected">Solo los marcados</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="border rounded p-2 h-100">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <strong class="small"><span class="ddp-count">0</span> marcados</strong>
+                    <span class="small text-muted">· <span class="ddp-visible">0</span> de {{ total }} a la vista</span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary ms-auto ddp-fullscreen" title="Pantalla completa">
+                        <i class="bi bi-fullscreen"></i>
+                    </button>
+                </div>
+                <div class="d-flex flex-wrap gap-1 mb-2">
+                    <button type="button" class="btn btn-sm btn-outline-primary ddp-check-visible">Marcar los visibles</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary ddp-uncheck-visible">Desmarcar los visibles</button>
+                    <button type="button" class="btn btn-sm btn-outline-danger ddp-clear">Limpiar</button>
+                </div>
+                <div class="d-flex flex-wrap gap-1">
+                    <button type="button" class="btn btn-sm btn-primary ddp-download" data-url="{{ zip_url }}">
+                        <i class="bi bi-file-earmark-zip me-1"></i>Descargar ZIP
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-primary ddp-download" data-url="{{ pdf_url }}">
+                        <i class="bi bi-file-earmark-pdf me-1"></i>Descargar PDF único
+                    </button>
+                </div>
+                <div class="small mt-1 ddp-message"></div>
+            </div>
+        </div>
+    </div>
+    <div class="ddp-scroll border rounded">
+        {% if families %}
+        <table class="table table-sm table-hover mb-0 ddp-table">
+            <thead>
+                <tr>
+                    <th class="ddp-check-col"><input class="form-check-input ddp-check-all" type="checkbox" title="Marcar o desmarcar los visibles"></th>
+                    <th>Tipo</th>
+                    <th>Archivo</th>
+                    <th>Emisión</th>
+                    <th>Caducidad</th>
+                    <th>Estado</th>
+                    <th class="ddp-view-col"></th>
+                </tr>
+            </thead>
+            {% for family in families %}
+            <tbody class="ddp-family-group" data-family="{{ family.code }}">
+                <tr class="table-light ddp-family-header">
+                    <td colspan="7" class="fw-bold small">{{ family.label }} <span class="text-muted fw-normal ddp-family-count"></span></td>
+                </tr>
+                {% for row in family.rows %}
+                <tr class="ddp-row" data-pk="{{ row.entry.pk }}" data-state="{{ row.state }}"
+                    data-text="{{ row.entry.document_type.label|default:''|lower }} {{ row.entry.name|lower }}">
+                    <td><input class="form-check-input ddp-check" type="checkbox" value="{{ row.entry.pk }}" aria-label="Marcar {{ row.entry.name }}"></td>
+                    <td class="small">{% if row.entry.document_type_id %}{{ row.entry.document_type.label }}{% else %}<span class="text-muted">Sin tipo</span>{% endif %}</td>
+                    <td class="small text-break">{{ row.entry.name }}</td>
+                    <td class="small text-nowrap">{{ row.entry.issue_date|date:"d/m/Y"|default:"—" }}</td>
+                    <td class="small text-nowrap">{{ row.entry.expiry_date|date:"d/m/Y"|default:"—" }}</td>
+                    <td class="small">
+                        {% if row.state == "vigente" %}<span class="badge text-bg-success">{{ row.state_label }}</span>
+                        {% elif row.state == "caducado" %}<span class="badge text-bg-danger">{{ row.state_label }}</span>
+                        {% else %}<span class="badge text-bg-secondary">{{ row.state_label }}</span>{% endif %}
+                    </td>
+                    <td><a class="btn btn-sm btn-link p-0" href="{% url 'panel:documentation_document_view' pk=row.entry.pk %}" target="_blank" rel="noopener" title="Ver"><i class="bi bi-eye"></i></a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            {% endfor %}
+        </table>
+        <div class="text-muted small p-3 d-none ddp-empty">Ningún documento cumple los filtros.</div>
+        {% else %}
+        <div class="text-muted small p-3">No hay documentación archivada.</div>
+        {% endif %}
+    </div>
+</div>

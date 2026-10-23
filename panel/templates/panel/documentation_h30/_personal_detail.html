@@ -1,6 +1,6 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_personal_detail.html #}
 {% extends "panel/base.html" %}
-{% load document_explorer_extras %}
+{% load static document_explorer_extras %}
 
 {% block title %}{{ person.first_surname }} {{ person.second_surname }} — Documentación{% endblock %}
 {% block page_title %}{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }} ({{ person.dni }})<br><small class="text-muted">{{ person.employer_legal_name|default:"Sin empresa asignada" }}</small>{% endblock %}
@@ -22,6 +22,7 @@
     .pdet-viewer-body { height: 80vh; }
     .pdet-viewer-frame { width: 100%; height: 100%; border: 0; }
 </style>
+<script src="{% static 'panel/js/document_download_picker.js' %}"></script>
 {% endblock %}
 
 {% block content %}
@@ -62,6 +63,13 @@ se mandan dichos documentos con el formato que se seleccionó".
 {% endcomment %}
 <button type="button" class="btn btn-sm btn-outline-secondary mb-0 ms-2" onclick="openDossierTemplateManager()">
     <i class="bi bi-bookmark-star me-1"></i>Plantillas de dossier
+</button>
+{# H31 (S136): ventana "Descargar documentación" (panel/js/document_download_picker.js). #}
+<button type="button" class="btn btn-sm btn-outline-primary mb-0 ms-2"
+        data-ddp-url="{% url 'panel:documentation_personal_download_picker' pk=person.pk %}"
+        data-ddp-title="{{ person.given_name }} {{ person.first_surname }} {{ person.second_surname }}"
+        onclick="openDocumentDownloadPicker(this.dataset.ddpUrl, this.dataset.ddpTitle)">
+    <i class="bi bi-download me-1"></i>Descargar documentación
 </button>
 </div>
 
