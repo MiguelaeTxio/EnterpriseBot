@@ -9813,21 +9813,156 @@ Hallazgos de la comprobación previa del punto 4
   días (son km). Y los datos tienen el ruido que describe Miguel Ángel
   (A33: 62.962 y 22.738 alternándose; A44: valores que bajan; KM 0).
 
-### Decisión de Miguel Ángel al dar por bueno el CRUD de Repostajes (S135, 23/10/2026)
+---
 
-Miguel Ángel da por bueno el CRUD de Repostajes: con los repostajes que
-vayan llegando, la ficha de cada vehículo tendrá sus km u horas
-correctos y los avisos de revisión podrán darse bien. Lo que queda, para
-la semana siguiente (a partir del 26/10/2026):
+### COMPLETADAS EN S135 (23/10/2026, PEE PC; H30 -- GasoGes integrado:
+### suministros, unidades, lecturas, pestaña Repostajes y preguntas por
+### WhatsApp al chófer)
 
-1. **Recuperar las revisiones ya hechas** de cada vehículo: cuándo se
-   hicieron y con cuántas horas o km. Sin ese punto de partida, el
-   punto 5 de la hoja de ruta S135 (avisos de revisión con las lecturas
-   de GasoGes) no tiene de qué partir: hoy solo A44 y A68 tienen plan
-   de revisiones.
-2. **Después, los avisos de revisión y su configuración.**
+Sesión en paralelo con S136 (otro chat, H31, fotos de carné): S136 usó
+SWAP 101+ y las migraciones de `document_explorer` desde la 0192; S135
+llegó hasta `EnterpriseBot_013.txt`.
 
-Quedan también, de la ampliación de S135: la regla de km u horas por
-litro (comprobación por litros) y la prueba real de las preguntas por
-WhatsApp, cuando Meta apruebe las plantillas `refuel_value_check` y
-`refuel_unit_check`.
+#### Puntos 1 y 2 -- Credenciales y cliente (CERRADOS, `152df93`)
+- `GASOGES_API_USER`/`GASOGES_API_PASSWORD` en el `.env` del servidor
+  (solo los nombres en `SESSION_VARIABLES.md`). Llamada real a
+  `/v1/vehiculos` con 200.
+- `fleet/gasoges_client.py`: `users()`, `vehicles()`, `supplies()`,
+  listas posicionales a diccionarios, errores 400/401/403/timeout con
+  mensaje claro, `null` como lista vacía (`b3a3825`: GasoGes responde
+  `null` en los días sin suministros). 8 pruebas en
+  `fleet/test_gasoges_client.py`.
+- Hallazgos de la API: máximo 1.000 filas por llamada (los suministros
+  se piden día a día); los nombres de usuario vienen cortados a 30
+  caracteres; `KM` trae km u horas según el vehículo.
+
+#### Punto 3 -- Enlace con los centros de gasto (CERRADO)
+- `acce45a`, `bf237f5`, `2fbe00d`: enlace por matrícula, código en
+  `MATRICULA`, código en `NOMBRE`; la matrícula exacta gana al código
+  (antes B42 se quedaba con el vehículo "NULO", y A56, A65, Z130 con el
+  duplicado equivocado).
+- Sustituido en `da7cabb` por el modelo `GasoGesVehicle` (un registro
+  por vehículo de GasoGes, varios por centro de gasto): migración 0021
+  copia los 239 enlaces y quita `MachineAsset.gasoges_vehicle_id`
+  (creado en la 0020). `link_gasoges_vehicles.py` borrado.
+- Restos sin efecto en los avisos (no se tocan): cuatro matrículas
+  duplicadas en `MachineAsset` (P9/P09, MA1268/X05, M6364/M6364WT,
+  LILI/A3), el turismo P3138BDM que no está en la flota y el coche de
+  Alberto Adolfo (reposta en 22 vehículos; no se puede deducir cuál es
+  el suyo).
+
+#### Punto 4 -- Lecturas desde los suministros (CERRADO)
+- `da7cabb`: modelos `GasoGesUser`, `GasoGesSupply` (estado PENDING /
+  READING / ANOMALY / NO_MACHINE / NO_UNIT con motivo) y
+  `MachineMeterReading.source` (MANUAL / GASOGES);
+  `fleet/gasoges_sync.py` y el comando `sync_gasoges` (`--since`,
+  `--days`, `--rebuild`). Tarea Celery `sync_gasoges_task` cada hora
+  (minuto 20), últimos 3 días.
+- `fleet/gasoges_rules.py` (sin Django, ~21 pruebas con casos reales
+  de A30/A44): unidad deducida por pendiente Theil-Sen de los últimos
+  40 suministros (robusta a "33333" sueltos), y lectura dudosa si es 0,
+  menor de 10, menor que la anterior, sube más de 1.500 km o 24 h por
+  día, o (primera lectura) se aleja más de un 25 % de lo habitual del
+  vehículo (`f93b15e`). Un día con error ya no para la carga
+  (`614ba1d`).
+- `7cbb6b8`: por Miguel Ángel, todas las Z van por horas (son
+  plataformas elevadoras); 0067JDK, X12 y X15 por km. Comando
+  `set_gasoges_unit` (`--unit`, `--ask`, `--codes`, `--code-prefix`).
+  Hecho en producción con el Comando S 012: las 95 Z en HOURS (a mano).
+- Verificado en BD: A30 28.013 km, 4542KGD 268.930 km, Z44 7.475 h,
+  Z79 3.256 h, iguales al último suministro válido.
+- Unidad aún sin saber (la preguntará el WhatsApp): A33, A34, A36, A50,
+  A56, A59, A70, B42, B45 y los camiones de Barbero y Martínez Segura.
+
+#### Ampliación de Miguel Ángel -- Repostajes y preguntas (CERRADA)
+- `4a8f5ab`: pestaña **Repostajes** en Documentación (tras Centros de
+  gasto y Revisiones), CRUD 4.24 con pantalla completa 4.26: búsqueda,
+  estado, fechas (30 días por defecto, máximo un año), orden múltiple,
+  1.000 filas, exportación a Excel, unidad por vehículo desde el menú.
+- `4394d17`: plantillas `refuel_value_check`
+  (`HXb380c5ee4163ac07a958fabc32cae0fd`) y `refuel_unit_check`
+  (`HX332948301d3d593d249484b3440c2633`), creadas con el Comando S 011;
+  en Meta en estado "received".
+- `4de4554`: `fleet/refuel_questions.py` y modelo `RefuelQuestion`
+  (migración 0022). Se pregunta solo por suministros de las últimas 48
+  h, primero la unidad, una pregunta abierta por persona, de 8 a 21 h,
+  20 como máximo por pasada y solo con la plantilla aprobada. La
+  respuesta entra por `whatsapp/views.py` (paso 4b-quater).
+- `4559a86`: campo `GasoGesVehicle.ask_driver` (migración 0023) y
+  botón "Preguntar / No preguntar" en Repostajes. Por Miguel Ángel, no
+  se pregunta por los vehículos que siempre lleva la misma persona
+  (administradores, comerciales: el 0067JDK de Carlos Carlín, el de
+  Miguel Ángel); sí por camiones y grúas. Marcados en producción: 7
+  (0067JDK, 0672KKZ, 1245LJB, 9737KKF, 5080MZV, 3749NGX, 2119NGV).
+- `f16937b`: el icono `bi-chat-square-x` no existe en Bootstrap Icons
+  1.11.3 y no se veía; ahora `bi-bell-slash`. `c2231c6`: filtro
+  "¿Se pregunta al chófer?" (Sí / No) en Repostajes.
+- Miguel Ángel da por bueno el CRUD de Repostajes.
+
+#### Punto 5 -- Avisos con lecturas de GasoGes (NO CERRADO)
+Sin caso real: solo A44 y A68 tienen plan de revisiones (800 h); A44
+tenía la unidad sin saber y A68 no tiene vehículo en GasoGes. Pasa a la
+hoja de ruta siguiente detrás de la recuperación de revisiones.
+
+#### Desvíos de la sesión
+- `d8828ed` (H31): EPI V16 dado de alta en el catálogo por migración
+  (`document_explorer` 0191). Entrega análoga a los botiquines (persona
+  y máquina) anotada como punto 7 de la hoja de ruta pendiente de H31.
+- `ad5e9bd`: `file_fetch.yml` daba verde aunque fallara el ssh; ahora
+  falla en rojo. `deploy.yml` reinicia el worker Celery si cambia
+  `fleet/`.
+- `779ac46`: ampliación de Miguel Ángel y hallazgos del punto 4 en este
+  anexo.
+
+---
+
+## Hoja de Ruta para la Siguiente Sesión de H30 (desde el 26/10/2026) -- sustituye a la Hoja de Ruta S135
+
+Miguel Ángel al cierre de S135: con los repostajes que vayan llegando,
+la ficha de cada vehículo tendrá sus km u horas correctos; queda
+recuperar cuándo se hicieron las revisiones (fecha, horas y km) y
+después los avisos y su configuración. Se hace en este orden:
+
+1. **Recuperar las revisiones ya hechas.** Miguel Ángel trae, para cada
+   centro de gasto con revisión periódica, el intervalo (horas y/o km)
+   y la última revisión (fecha y horas y/o km); Jerónimo es quien tiene
+   esas fechas. El modelo las carga con un Comando S en
+   `MachineAsset.service_hours_interval` / `service_every_km` y
+   `MachineServiceRecord` (`service_date`, `hours`, `km`), y pone en
+   HOURS (desde Repostajes) la unidad de los centros de gasto por horas
+   que aún estén sin saber, empezando por A44. **Cierre:** consulta a
+   BD donde todo `MachineAsset` con intervalo tiene al menos un
+   `MachineServiceRecord`, y el número de centros de gasto con
+   intervalo coincide con la lista que trajo Miguel Ángel.
+2. **Avisos de revisión con las lecturas de GasoGes** (el punto 5 de
+   S135 y la prueba de cierre del punto 1 de S131). **Cierre:** consulta
+   a BD con un centro de gasto real cuya última lectura GASOGES supera
+   revisión + intervalo y que sale como vencido en Avisos, y otro sin
+   revisión anotada que no sale.
+3. **Configuración de los avisos** (a quién, cuándo, con qué
+   antelación) sobre `MachineServiceAlertSettings`, tal como la defina
+   Miguel Ángel al llegar a este punto. **Cierre:** la configuración
+   guardada en BD y un aviso real enviado según ella (consulta a BD del
+   envío).
+4. **Regla de km u horas por litro** (ampliación de S135): en
+   `fleet/gasoges_rules.py`, un suministro es dudoso si los km (u
+   horas) desde el anterior no cuadran con los litros según la media
+   del vehículo. **Cierre:** pruebas nuevas en verde con casos reales,
+   flake8 a 0, `sync_gasoges --rebuild` en producción y consulta a BD
+   con los suministros ANOMALY cuyo motivo es la regla de litros.
+5. **Prueba real de las preguntas por WhatsApp.** **Cierre:**
+   `GET https://content.twilio.com/v1/Content/{sid}/ApprovalRequests`
+   con `whatsapp.status == "approved"` para los dos SID de arriba, y
+   consulta a BD con al menos una `RefuelQuestion` en CONFIRMED,
+   CORRECTED o UNIT_SET.
+6. Lo "Pendiente de H30 al pausarlo" que queda (más arriba):
+   - Prueba de cierre del punto 2 de S131: cerrar desde la lista uno de
+     los tickets de Pablo Cañamero; **cierre:** consulta a BD con ese
+     ticket en `CLOSED` (arrastrado 1.ª sesión sin avanzar).
+   - Aprobación de Meta de `machine_service_notice`; **cierre:** su
+     `ApprovalRequests` en `approved`.
+   - Puntos 7, 8 y 9 de la hoja de ruta de S128, con los criterios de
+     cierre que allí constan (arrastrado 1.ª sesión sin avanzar).
+
+Al terminar esta hoja, PCH de vuelta a H37 (Miguel Ángel en S134:
+*"luego volvemos con asistencia"*).
