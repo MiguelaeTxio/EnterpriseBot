@@ -9812,3 +9812,22 @@ Hallazgos de la comprobación previa del punto 4
   h); A30, que también tiene horómetro y odómetro, sube unos 900 en 12
   días (son km). Y los datos tienen el ruido que describe Miguel Ángel
   (A33: 62.962 y 22.738 alternándose; A44: valores que bajan; KM 0).
+
+### Decisión de Miguel Ángel al dar por bueno el CRUD de Repostajes (S135, 23/10/2026)
+
+Miguel Ángel da por bueno el CRUD de Repostajes: con los repostajes que
+vayan llegando, la ficha de cada vehículo tendrá sus km u horas
+correctos y los avisos de revisión podrán darse bien. Lo que queda, para
+la semana siguiente (a partir del 26/10/2026):
+
+1. **Recuperar las revisiones ya hechas** de cada vehículo: cuándo se
+   hicieron y con cuántas horas o km. Sin ese punto de partida, el
+   punto 5 de la hoja de ruta S135 (avisos de revisión con las lecturas
+   de GasoGes) no tiene de qué partir: hoy solo A44 y A68 tienen plan
+   de revisiones.
+2. **Después, los avisos de revisión y su configuración.**
+
+Quedan también, de la ampliación de S135: la regla de km u horas por
+litro (comprobación por litros) y la prueba real de las preguntas por
+WhatsApp, cuando Meta apruebe las plantillas `refuel_value_check` y
+`refuel_unit_check`.
