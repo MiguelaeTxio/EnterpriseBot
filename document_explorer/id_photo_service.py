@@ -16,12 +16,14 @@ persona"*, y poder descargarla *"para plataforma [...] con el nombre
 de la persona en formato PNG y con menos de 128K"*.
 
 - Documentos de los que sale: DNI, NIE, pasaporte, permiso de
-  conducir y las imágenes que se suben como foto (tipo IMAGEN). Manda
-  el más reciente: una foto subida a mano después de un DNI gana; un
-  DNI nuevo, después de la foto, también.
+  conducir y, si ninguno tiene cara, las imágenes (tipo IMAGEN). Van
+  primero los vigentes, del que caduca más tarde al que caduca antes
+  (S136); los obsoletos solo si ningún vigente tiene cara.
 - La cara se busca con la detección de caras de Cloud Vision (la misma
   cuenta que el OCR de la plataforma). En el DNI hay una foto grande y
   otra pequeña de seguridad: se toma la más grande.
+- Documentos escaneados de lado o del revés: la página se gira hasta
+  que la cara queda derecha antes de recortar (S136).
 - Nunca toca el documento ni su blob en GCS (directriz 4.12): el
   recorte se guarda en `PersonIdPhoto`, uno por persona.
 """
@@ -43,7 +45,14 @@ SOURCE_TYPES = ("DNI", "NIE", "PASAPORTE", "CARNET_CONDUCIR", "IMAGEN")
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
 PDF_PAGES = 2
 PDF_DPI = 200
+# Cloud Vision rejects images over 75 megapixels; pages are kept well
+# under it. / Cloud Vision rechaza más de 75 megapíxeles (S136, visto
+# en producción con un PDF de página enorme).
+MAX_PIXELS = 20_000_000
 MIN_CONFIDENCE = 0.6
+# A face is upright when its roll is under this angle.
+# Una cara está derecha si su giro es menor que este ángulo.
+UPRIGHT_ROLL = 45
 # ID photo proportions: 3 wide by 4 high, face about half the width.
 # Proporción de foto de carné: 3 de ancho por 4 de alto.
 CROP_WIDTH_PER_FACE = 1.9
@@ -76,11 +85,17 @@ def candidates(person):
 
     Documentos de la persona de los que puede salir la foto: primero
     los de identidad (DNI, NIE, pasaporte, permiso de conducir) y
-    después las imágenes, cada grupo del más reciente al más antiguo.
-    S134: con las imágenes mezcladas, "Sacar del DNI o permiso" sacaba
-    la cara de una foto de perfil ya recortada, más reciente que el DNI.
+    después las imágenes. S134: con las imágenes mezcladas, "Sacar del
+    DNI o permiso" sacaba la cara de una foto de perfil ya recortada,
+    más reciente que el DNI.
+
+    Dentro de cada grupo, los vigentes antes que los obsoletos, y del
+    que caduca más tarde al que caduca antes (S136). Antes se ordenaba
+    por fecha de indexado, que en casi todos es la misma (29/07/2026):
+    50 de las 140 fotos salían de un documento obsoleto, sin haber
+    probado siquiera el vigente.
     """
-    from django.db.models import Case, IntegerField, Value, When
+    from django.db.models import Case, F, IntegerField, Value, When
 
     return DocumentIndexEntry.objects.filter(
         domain_content_type=_person_ct(),
@@ -94,7 +109,14 @@ def candidates(person):
             When(document_type__code="IMAGEN", then=Value(1)),
             default=Value(0), output_field=IntegerField(),
         ),
-    ).order_by("is_plain_image", "-indexed_at", "-pk")
+    ).order_by(
+        "is_plain_image",
+        "is_obsolete",
+        F("expiry_date").desc(nulls_last=True),
+        F("issue_date").desc(nulls_last=True),
+        "-indexed_at",
+        "-pk",
+    )
 
 
 def _pages(entry, data):
@@ -115,25 +137,46 @@ def _pages(entry, data):
         pages = []
         with fitz.open(stream=data, filetype="pdf") as pdf:
             for index in range(min(PDF_PAGES, pdf.page_count)):
-                pixmap = pdf[index].get_pixmap(dpi=PDF_DPI)
-                pages.append(Image.open(
+                page = pdf[index]
+                points = max(page.rect.width * page.rect.height, 1.0)
+                dpi = min(PDF_DPI, int(72 * (MAX_PIXELS / points) ** 0.5))
+                pixmap = page.get_pixmap(dpi=max(dpi, 1))
+                pages.append(_limit_size(Image.open(
                     io.BytesIO(pixmap.tobytes("png")),
-                ).convert("RGB"))
+                ).convert("RGB")))
         return pages
     if name.endswith(IMAGE_EXTENSIONS):
         image = Image.open(io.BytesIO(data))
-        return [ImageOps.exif_transpose(image).convert("RGB")]
+        return [_limit_size(ImageOps.exif_transpose(image).convert("RGB"))]
     raise IdPhotoError("Formato no admitido: %s." % entry.name)
+
+
+def _limit_size(image):
+    """
+    The image scaled down to MAX_PIXELS at most.
+
+    ---
+
+    La imagen reducida a MAX_PIXELS como mucho, para que Cloud Vision
+    la acepte.
+    """
+    pixels = image.width * image.height
+    if pixels <= MAX_PIXELS:
+        return image
+    scale = (MAX_PIXELS / pixels) ** 0.5
+    return image.resize((
+        max(1, int(image.width * scale)), max(1, int(image.height * scale)),
+    ))
 
 
 def _faces(image):
     """
-    Faces found by Cloud Vision: (confidence, x0, y0, x1, y1).
+    Faces found by Cloud Vision: (confidence, x0, y0, x1, y1, roll).
 
     ---
 
     Caras que encuentra Cloud Vision en la imagen, con la caja ajustada
-    a la cara (`fd_bounding_poly`).
+    a la cara (`fd_bounding_poly`) y su giro en grados (`roll_angle`).
     """
     from google.cloud import vision
 
@@ -155,9 +198,48 @@ def _faces(image):
         if xs and ys:
             faces.append((
                 face.detection_confidence, min(xs), min(ys), max(xs),
-                max(ys),
+                max(ys), face.roll_angle,
             ))
     return faces
+
+
+def _area(face):
+    return (face[3] - face[1]) * (face[4] - face[2])
+
+
+def _good_faces(image, upright_only=False):
+    """
+    Faces with enough confidence (and upright, if asked).
+
+    ---
+
+    Caras con confianza suficiente; con `upright_only`, solo las que
+    están derechas.
+    """
+    return [
+        face for face in _faces(image)
+        if face[0] >= MIN_CONFIDENCE
+        and (not upright_only or abs(face[5]) < UPRIGHT_ROLL)
+    ]
+
+
+def _turned_upright(image):
+    """
+    The page turned so that its face is upright, and its faces.
+
+    ---
+
+    S136, Miguel Ángel: hay fotos giradas. Prueba la página girada un
+    cuarto de vuelta a cada lado y media vuelta, y devuelve la primera
+    en la que Cloud Vision ve una cara derecha: (página girada, caras).
+    (None, []) si en ninguna.
+    """
+    for degrees in (90, 270, 180):
+        turned = image.rotate(degrees, expand=True)
+        faces = _good_faces(turned, upright_only=True)
+        if faces:
+            return turned, faces
+    return None, []
 
 
 def crop_box(face, width, height):
@@ -169,7 +251,7 @@ def crop_box(face, width, height):
     Caja de foto de carné (3:4, cabeza y hombros) alrededor de la cara,
     sin salirse de la imagen.
     """
-    _conf, x0, y0, x1, y1 = face
+    x0, y0, x1, y1 = face[1:5]
     face_w, face_h = x1 - x0, y1 - y0
     crop_w = min(face_w * CROP_WIDTH_PER_FACE, width)
     crop_h = min(crop_w * 4 / 3, height)
@@ -190,19 +272,29 @@ def crop_photo(entry, data):
     ---
 
     Foto de carné recortada del documento, en JPEG: la cara más grande
-    con confianza suficiente de las páginas leídas.
+    con confianza suficiente de las páginas leídas, derecha.
+
+    Si la cara más grande no está derecha, o no se ve ninguna cara, se
+    vuelven a mirar las páginas giradas (S136): así solo pagan las
+    llamadas de más los documentos escaneados de lado y los que no
+    tienen cara (reversos).
     """
+    pages = _pages(entry, data)
     best = None
-    for image in _pages(entry, data):
-        for face in _faces(image):
-            if face[0] < MIN_CONFIDENCE:
-                continue
-            area = (face[3] - face[1]) * (face[4] - face[2])
-            if best is None or area > best[0]:
-                best = (area, image, face)
+    for image in pages:
+        for face in _good_faces(image):
+            if best is None or _area(face) > _area(best[1]):
+                best = (image, face)
+    if best is None or abs(best[1][5]) >= UPRIGHT_ROLL:
+        best = None
+        for image in pages:
+            turned, faces = _turned_upright(image)
+            for face in faces:
+                if best is None or _area(face) > _area(best[1]):
+                    best = (turned, face)
     if best is None:
         raise IdPhotoError("No se ve ninguna cara en %s." % entry.name)
-    _area, image, face = best
+    image, face = best
     photo = image.crop(crop_box(face, *image.size))
     if photo.height > MAX_STORED_HEIGHT:
         photo = photo.resize((
@@ -246,10 +338,10 @@ def extract_for_person(person, limit=5):
 
     ---
 
-    Saca la foto del documento más reciente que tenga cara (DNI, NIE,
-    pasaporte, permiso de conducir o imagen), probando como mucho
-    `limit`. Devuelve el documento usado, o None si ninguno sirve; en
-    los dos casos queda apuntada la fecha de búsqueda.
+    Saca la foto del primer documento con cara, en el orden de
+    `candidates` (vigentes primero), probando como mucho `limit`.
+    Devuelve el documento usado, o None si ninguno sirve; en los dos
+    casos queda apuntada la fecha de búsqueda.
     """
     for entry in candidates(person)[:limit]:
         try:
