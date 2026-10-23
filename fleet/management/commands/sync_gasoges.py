@@ -46,6 +46,13 @@ class Command(BaseCommand):
             "--days", type=int, default=3,
             help="Sin --since: días hacia atrás a leer (3 por defecto).")
         parser.add_argument(
+            "--rebuild", action="store_true",
+            help=(
+                "Borra las lecturas del surtidor (nunca las puestas a "
+                "mano) y las rehace con las reglas vigentes."
+            ),
+        )
+        parser.add_argument(
             "--log-file", required=True,
             help="Ruta del log propio (pantalla y archivo a la vez).",
         )
@@ -109,7 +116,8 @@ class Command(BaseCommand):
             self._log("Inicio: sincronización de GasoGes, del %s al %s."
                       % (start, end))
             try:
-                run_sync(start, end, self._log, self._heartbeat)
+                run_sync(start, end, self._log, self._heartbeat,
+                         rebuild=options["rebuild"])
             except GasoGesError as exc:
                 self._log("ERROR: %s" % exc)
                 raise CommandError(str(exc))

@@ -35,6 +35,7 @@ from fleet.gasoges_rules import check_reading
 from fleet.gasoges_rules import deduce_unit
 from fleet.gasoges_rules import name_matches
 from fleet.gasoges_rules import normalize
+from fleet.gasoges_rules import typical_value
 from fleet.models import GasoGesSupply
 from fleet.models import GasoGesUser
 from fleet.models import GasoGesVehicle
@@ -350,6 +351,7 @@ def build_readings(log, heartbeat=None):
     total = pending.count()
     counters = {"lecturas": 0, "dudosos": 0, "sin_centro": 0,
                 "sin_unidad": 0}
+    typicals = {}
     for done, supply in enumerate(pending.iterator(), start=1):
         vehicle = supply.vehicle
         if vehicle.machine_id is None:
@@ -370,9 +372,14 @@ def build_readings(log, heartbeat=None):
             previous_when = (timezone.make_aware(datetime.combine(
                 previous.reading_date, time(12)))
                 if previous else None)
+            if vehicle.pk not in typicals:
+                typicals[vehicle.pk] = typical_value(
+                    vehicle.supplies.order_by("-supplied_at").values_list(
+                        "meter_value", flat=True)[:UNIT_WINDOW_SUPPLIES])
             ok, reason = check_reading(
                 supply.meter_value, vehicle.unit, previous_value,
-                previous_when, supply.supplied_at)
+                previous_when, supply.supplied_at,
+                typicals[vehicle.pk])
             if ok:
                 with transaction.atomic():
                     supply.reading = MachineMeterReading.objects.create(
@@ -396,7 +403,29 @@ def build_readings(log, heartbeat=None):
     return counters
 
 
-def run_sync(start, end, log, heartbeat=None):
+def reset_readings(log):
+    """
+    Delete the readings that came from GasoGes and redo them.
+
+    ---
+
+    Borra las lecturas que vinieron del surtidor (nunca las puestas a
+    mano), deja todos los suministros pendientes y vuelve a deducir
+    las unidades que no confirmó nadie, para rehacer las lecturas con
+    las reglas vigentes (S135: A44 y Z01 tras la primera carga).
+    """
+    with transaction.atomic():
+        deleted, _detail = MachineMeterReading.objects.filter(
+            source=MachineMeterReading.SOURCE_GASOGES).delete()
+        GasoGesSupply.objects.update(
+            status=GasoGesSupply.STATUS_PENDING, status_note="",
+            reading=None)
+    log("Rehacer: %d lecturas del surtidor borradas; todos los "
+        "suministros vuelven a pendiente." % deleted)
+    return deleted
+
+
+def run_sync(start, end, log, heartbeat=None, rebuild=False):
     """
     Full sync: users, vehicles, supplies, units and readings.
 
@@ -411,6 +440,8 @@ def run_sync(start, end, log, heartbeat=None):
     summary["vehiculos"] = sync_vehicles(client, log)
     summary["suministros"] = sync_supplies(
         client, start, end, log, heartbeat)
+    if rebuild:
+        summary["rehacer"] = reset_readings(log)
     summary["unidades"] = deduce_units(log)
     summary["lecturas"] = build_readings(log)
     return summary

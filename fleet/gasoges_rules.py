@@ -36,6 +36,17 @@ MIN_DAYS_FOR_RATE = 7
 MAX_KM_PER_DAY = 1500
 MAX_HOURS_PER_DAY = 24
 
+# Un número tan pequeño no es una lectura real (S135: Z01 con "1").
+# ---
+# Such a small number is never a real reading.
+MIN_CREDIBLE_VALUE = 10
+# La primera lectura de una máquina debe parecerse a lo que teclean
+# los chóferes en ese vehículo (mediana): S135, A44 con "33333".
+# ---
+# A first reading must be close to the vehicle's typical value.
+FIRST_READING_TOLERANCE = 0.25
+MIN_VALUES_FOR_TYPICAL = 3
+
 UNIT_UNKNOWN = "UNKNOWN"
 UNIT_KM = "KM"
 UNIT_HOURS = "HOURS"
@@ -126,25 +137,49 @@ def deduce_unit(has_odometer, has_engine_hours, points):
         return UNIT_KM, "solo tiene odómetro"
     if has_engine_hours and not has_odometer:
         return UNIT_HOURS, "solo tiene horómetro"
-    clean = sorted((when, value) for when, value in points if value)
+    clean = sorted((when, value) for when, value in points
+                   if value and value >= MIN_CREDIBLE_VALUE)
     if len(clean) < MIN_SUPPLIES_FOR_RATE:
         return UNIT_UNKNOWN, "pocos suministros para deducirla"
     days = (clean[-1][0] - clean[0][0]).total_seconds() / 86400
     if days < MIN_DAYS_FOR_RATE:
         return UNIT_UNKNOWN, "suministros de pocos días"
-    third = max(1, len(clean) // 3)
-    first = median(value for _when, value in clean[:third])
-    last = median(value for _when, value in clean[-third:])
-    first_day = clean[third // 2][0]
-    last_day = clean[-1 - third // 2][0]
-    span = max((last_day - first_day).total_seconds() / 86400, 1)
-    rate = (last - first) / span
+    # Mediana de las pendientes entre todos los pares separados al
+    # menos un día (Theil-Sen): un valor absurdo suelto ("33333" en
+    # A44, S135) no la mueve.
+    # ---
+    # Median of pairwise slopes (Theil-Sen), robust to outliers.
+    slopes = []
+    for i, (when_a, value_a) in enumerate(clean):
+        for when_b, value_b in clean[i + 1:]:
+            span = (when_b - when_a).total_seconds() / 86400
+            if span >= 1:
+                slopes.append((value_b - value_a) / span)
+    if not slopes:
+        return UNIT_UNKNOWN, "suministros de pocos días"
+    rate = median(slopes)
     if rate > KM_RATE_THRESHOLD:
         return UNIT_KM, "sube %.0f al día (más que un horómetro)" % rate
     return UNIT_UNKNOWN, "sube %.0f al día (puede ser km u horas)" % rate
 
 
-def check_reading(value, unit, previous_value, previous_when, when):
+def typical_value(values):
+    """
+    Median of the credible values a vehicle's drivers type, or None.
+
+    ---
+
+    Mediana de los valores creíbles que teclean los chóferes de un
+    vehículo, o None si hay pocos.
+    """
+    clean = [v for v in values if v and v >= MIN_CREDIBLE_VALUE]
+    if len(clean) < MIN_VALUES_FOR_TYPICAL:
+        return None
+    return median(clean)
+
+
+def check_reading(value, unit, previous_value, previous_when, when,
+                  typical=None):
     """
     Decide if a typed value is a credible reading. Returns (ok, reason).
 
@@ -152,12 +187,20 @@ def check_reading(value, unit, previous_value, previous_when, when):
 
     Decide si un valor tecleado vale como lectura. Dudoso si está vacío
     o a 0, si es menor que la lectura anterior, o si sube más de lo
-    creíble por día (1.500 km o 24 horas). Sin lectura anterior se
-    acepta. Devuelve (vale, motivo).
+    creíble por día (1.500 km o 24 horas). Sin lectura anterior, debe
+    parecerse (±25 %) al valor típico del vehículo, si se conoce.
+    Devuelve (vale, motivo).
     """
     if not value:
         return False, "KM vacío o a 0"
+    if value < MIN_CREDIBLE_VALUE:
+        return False, "número demasiado pequeño (%s)" % value
     if previous_value is None:
+        if typical and abs(value - typical) > (
+                typical * FIRST_READING_TOLERANCE):
+            return False, (
+                "primera lectura lejos de lo habitual en este vehículo "
+                "(%s)" % int(typical))
         return True, "primera lectura"
     if value < previous_value:
         return False, "menor que la lectura anterior (%s)" % previous_value

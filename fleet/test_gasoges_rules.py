@@ -17,6 +17,7 @@ from fleet.gasoges_rules import check_reading
 from fleet.gasoges_rules import deduce_unit
 from fleet.gasoges_rules import name_matches
 from fleet.gasoges_rules import normalize
+from fleet.gasoges_rules import typical_value
 
 
 def _d(text):
@@ -103,6 +104,14 @@ class DeduceUnitTests(unittest.TestCase):
     def test_both_noisy_slow_is_unknown(self):
         self.assertEqual(deduce_unit(True, True, A44)[0], UNIT_UNKNOWN)
 
+    def test_junk_values_do_not_fool_it(self):
+        junk = A44 + [(_d("2026-06-20 08:00:00"), 33333),
+                      (_d("2026-06-28 08:00:00"), 33333),
+                      (_d("2026-07-05 08:00:00"), 22100),
+                      (_d("2026-07-12 08:00:00"), 33333),
+                      (_d("2026-07-20 08:00:00"), 22180)]
+        self.assertEqual(deduce_unit(True, True, junk)[0], UNIT_UNKNOWN)
+
     def test_few_supplies(self):
         self.assertEqual(deduce_unit(True, True, A30[:2])[0], UNIT_UNKNOWN)
 
@@ -139,6 +148,17 @@ class CheckReadingTests(unittest.TestCase):
     def test_hours_too_fast(self):
         self.assertFalse(check_reading(
             17600, UNIT_HOURS, 17500, self.before, self.after)[0])
+
+    def test_tiny_number(self):
+        self.assertFalse(check_reading(
+            1, UNIT_HOURS, None, None, self.after)[0])
+
+    def test_first_reading_far_from_typical(self):
+        typical = typical_value([21849, 21581, 21881, 0, 33333, 21989])
+        self.assertFalse(check_reading(
+            33333, UNIT_HOURS, None, None, self.after, typical)[0])
+        self.assertTrue(check_reading(
+            21942, UNIT_HOURS, None, None, self.after, typical)[0])
 
     def test_normal_km(self):
         self.assertTrue(check_reading(
