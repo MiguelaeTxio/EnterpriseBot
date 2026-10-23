@@ -65,6 +65,13 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--apply", action="store_true")
         parser.add_argument(
+            "--reset", action="store_true",
+            help=(
+                "Vacía antes todos los enlaces de GasoGes y los rehace "
+                "(S135: corregir enlaces de la primera pasada)."
+            ),
+        )
+        parser.add_argument(
             "--log-file", required=True,
             help="Ruta del log propio (pantalla y archivo a la vez).",
         )
@@ -105,7 +112,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         with open(options["log_file"], "a", encoding="utf-8") as handle:
             self._handle = handle
-            self._run(options["apply"])
+            self._run(options["apply"], options["reset"])
 
     def _heartbeat(self, done, total, start, counters):
         """
@@ -153,8 +160,10 @@ class Command(BaseCommand):
             return list(found.values()), "código dentro del NOMBRE"
         return [], ""
 
-    def _run(self, apply):
+    def _run(self, apply, reset):
         mode = "APLICAR" if apply else "SOLO INFORME (sin --apply)"
+        if reset:
+            mode += ", CON --reset"
         self._log("Inicio: enlace de vehículos de GasoGes -- %s." % mode)
         try:
             vehicles = GasoGesClient().vehicles()
@@ -165,6 +174,17 @@ class Command(BaseCommand):
         self._log("Vehículos en GasoGes: %d." % total)
 
         assets = list(MachineAsset.objects.all())
+        if reset:
+            # Se vacían en memoria siempre y en BD solo con --apply.
+            # ---
+            # Cleared in memory always, in the DB only with --apply.
+            previous = sum(
+                1 for a in assets if a.gasoges_vehicle_id is not None)
+            for asset in assets:
+                asset.gasoges_vehicle_id = None
+            self._log(
+                "--reset: %d enlaces anteriores %s." % (
+                    previous, "vaciados" if apply else "por vaciar"))
         by_plate = {}
         by_code = {}
         for asset in assets:
@@ -176,17 +196,34 @@ class Command(BaseCommand):
             if asset.gasoges_vehicle_id is not None
         }
 
+        # La matrícula exacta va siempre antes que el código: si dos
+        # vehículos de GasoGes caen en el mismo centro de gasto, se lo
+        # queda el que casa por matrícula (S135, B42 "NULO", A56, A65 y
+        # Z130 se los quedó el primero de la lista en la 1.ª pasada).
+        # ---
+        # Exact plate always wins over code matches.
+        matches = []
+        for position, vehicle in enumerate(vehicles, start=1):
+            candidates, how = self._candidates(
+                normalize(vehicle["plate"]), normalize(vehicle["name"]),
+                vehicle["name"], by_plate, by_code)
+            matches.append((0 if how == "matrícula" else 1, position,
+                            vehicle, candidates, how))
+        matches.sort(key=lambda item: (item[0], item[1]))
+
         claimed = {}
         linked = already = 0
         unlinked = []
         start = datetime.now()
         with transaction.atomic():
-            for position, vehicle in enumerate(vehicles, start=1):
+            if reset and apply:
+                MachineAsset.objects.filter(
+                    gasoges_vehicle_id__isnull=False,
+                ).update(gasoges_vehicle_id=None)
+            for done, (_prio, position, vehicle, candidates, how) in (
+                enumerate(matches, start=1)
+            ):
                 vid = vehicle["vehicle_id"]
-                plate = normalize(vehicle["plate"])
-                name = normalize(vehicle["name"])
-                candidates, how = self._candidates(
-                    plate, name, vehicle["name"], by_plate, by_code)
                 reason = None
                 asset = None
                 if not candidates:
@@ -226,9 +263,9 @@ class Command(BaseCommand):
                         asset.gasoges_vehicle_id = vid
                         asset.save(update_fields=[
                             "gasoges_vehicle_id", "updated_at"])
-                if position % HEARTBEAT_EVERY == 0 or position == total:
+                if done % HEARTBEAT_EVERY == 0 or done == total:
                     self._heartbeat(
-                        position, total, start,
+                        done, total, start,
                         "enlazados=%d, ya_estaban=%d, sin_enlazar=%d"
                         % (linked, already, len(unlinked)),
                     )
