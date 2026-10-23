@@ -37,8 +37,12 @@ from panel.views_machine_service import can_edit_service
 from panel.views_vacation_balance import _param, _parse_date
 
 SCREEN_KEY = "refuels"
-FILTER_KEYS = ("search", "status", "date_from", "date_to", "sort")
+FILTER_KEYS = ("search", "status", "ask", "date_from", "date_to", "sort")
 NO_STATUS = "none"
+# Filtro "¿Se pregunta al chófer?": sí / no (S135).
+# ---
+# "Is the driver asked?" filter: yes / no.
+ASK_CHOICES = (("yes", "Sí"), ("no", "No"))
 _MAX_SORT_KEYS = 4
 _MAX_RANGE_DAYS = 366
 _DEFAULT_DAYS = 30
@@ -107,6 +111,24 @@ def _statuses(request):
     return chosen if raw else valid
 
 
+def _ask_values(request):
+    """
+    "Is the driver asked?" filter, literal checkboxes like the status.
+
+    ---
+
+    Filtro "¿Se pregunta al chófer?" con las casillas en sentido
+    literal, como el de estado: las dos = todos, ninguna = ninguno.
+    Devuelve los valores de `ask_driver` que se muestran.
+    """
+    raw = _param(request, "ask")
+    if raw == NO_STATUS:
+        return []
+    chosen = [code for code in raw.split(",")
+              if code in dict(ASK_CHOICES)] if raw else ["yes", "no"]
+    return [code == "yes" for code in chosen]
+
+
 def _parse_sort(raw):
     keys, seen = [], set()
     for token in (raw or "").split(","):
@@ -158,11 +180,12 @@ def _sort_controls(raw):
 
 def _filtered_supplies(request):
     """
-    Supplies of the filters (dates, statuses, search), unsorted.
+    Supplies of the filters (dates, statuses, asked, search), unsorted.
 
     ---
 
-    Suministros de los filtros (fechas, estados, búsqueda), sin
+    Suministros de los filtros (fechas, estados, si se pregunta al
+    chófer, búsqueda), sin
     ordenar. Las fechas van como intervalo de horas locales, sin
     `__date` (no depende de las tablas de zona horaria de MySQL).
     """
@@ -174,7 +197,8 @@ def _filtered_supplies(request):
     supplies = GasoGesSupply.objects.select_related(
         "vehicle", "vehicle__machine", "user", "user__person",
     ).filter(supplied_at__gte=start, supplied_at__lt=end,
-             status__in=_statuses(request))
+             status__in=_statuses(request),
+             vehicle__ask_driver__in=_ask_values(request))
     search = _param(request, "search").strip()
     if search:
         supplies = supplies.filter(
@@ -242,6 +266,7 @@ def _list_context(request):
     total = supplies.count()
     date_from, date_to = _date_range(request)
     statuses = _statuses(request)
+    asks = _ask_values(request)
     return {
         "rows": [_row(s) for s in supplies.order_by(*order, "-id")[
             :_MAX_ROWS]],
@@ -252,6 +277,10 @@ def _list_context(request):
         "status_choices": [
             {"code": code, "label": label, "checked": code in statuses}
             for code, label in GasoGesSupply.STATUS_CHOICES],
+        "ask_choices": [
+            {"code": code, "label": label,
+             "checked": (code == "yes") in asks}
+            for code, label in ASK_CHOICES],
         "date_from": date_from,
         "date_to": date_to,
         **_sort_controls(_param(request, "sort")),

@@ -38,6 +38,17 @@ Filtros, orden y selección persistidos por usuario (screen_key
                             <input type="hidden" name="status" id="rfl-status-input" value="">
                         </div>
                         <div>
+                            <div class="fw-semibold mb-1"><i class="bi bi-bell-slash me-1"></i>¿Se pregunta al chófer?</div>
+                            {% for choice in ask_choices %}
+                            <div class="form-check">
+                                <input class="form-check-input rfl-ask-check" type="checkbox" value="{{ choice.code }}"
+                                       id="rflAsk{{ forloop.counter }}"{% if choice.checked %} checked{% endif %}>
+                                <label class="form-check-label" for="rflAsk{{ forloop.counter }}">{{ choice.label }}</label>
+                            </div>
+                            {% endfor %}
+                            <input type="hidden" name="ask" id="rfl-ask-input" value="">
+                        </div>
+                        <div>
                             <div class="fw-semibold mb-1">Desde</div>
                             <input type="date" name="date_from" class="form-control form-control-sm mb-2" value="{{ date_from|date:'Y-m-d' }}">
                             <div class="fw-semibold mb-1">Hasta</div>
@@ -229,6 +240,17 @@ Filtros, orden y selección persistidos por usuario (screen_key
         cb.addEventListener("change", syncStatus);
     });
     syncStatus();
+
+    // ¿Se pregunta al chófer?: mismas casillas literales que el estado.
+    function syncAsk() {
+        const values = Array.from(document.querySelectorAll(".rfl-ask-check:checked"))
+            .map(function (cb) { return cb.value; });
+        document.getElementById("rfl-ask-input").value = values.length ? values.join(",") : "none";
+    }
+    document.querySelectorAll(".rfl-ask-check").forEach(function (cb) {
+        cb.addEventListener("change", syncAsk);
+    });
+    syncAsk();
 
     results.addEventListener("change", function (evt) {
         const target = evt.target;
