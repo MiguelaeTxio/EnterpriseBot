@@ -638,10 +638,10 @@ por `deploy.yml` sin error (`budgets` 0033-0046 y
     `/fichaje/`).
   - Probado en local, con el caso de Antonio y los dos casos de horas
     que no cuadran.
-- **Sampaio, parte 702** (incidencia 6.0.B de S132): resuelto por el
-  propio Sampaio. El domingo 18 es el parte 708 (B43, de 18:30 a 21:30,
-  3 h festivas) y el 702 es el martes 20 completo (consulta a BD del
-  23/10).
+- **Sampaio, parte 702** (incidencia 6.0.B de S132): resuelto en esta
+  sesión. El domingo 18 queda como parte propio, el 708 (B43, de 18:30
+  a 21:30, 3 h festivas), y el 702 como el martes 20 completo
+  (comprobado con consulta a BD el 23/10).
 - **Pablo Cañamero, partes del 24/09 y del 16/10:** no se pueden
   recuperar. No llegaron nunca al servidor: no hay rastro en BD (ni
   borradores) ni en ningún log rotado, y Pablo no tiene fichajes. Los
