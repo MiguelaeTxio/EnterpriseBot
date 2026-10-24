@@ -73,41 +73,49 @@ Filtros, orden y selección persistidos por usuario (screen_key
                     <strong class="small"><span id="rfl-mass-count">0</span> seleccionados</strong>
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="rfl-mass-clear">Limpiar</button>
                 </div>
-                <div class="small text-muted fw-bold">Exportar</div>
-                <button type="button" class="btn btn-sm btn-outline-success" id="rfl-export">
-                    <i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel
-                </button>
-                <div class="small text-muted mt-1">
-                    De los marcados o, si no hay ninguno, de todos los del filtro.
-                </div>
-                {% if can_edit %}
-                <div class="small text-muted fw-bold mt-2">Unidad del vehículo</div>
-                <div class="d-flex flex-wrap gap-1">
-                    <button type="button" class="btn btn-sm btn-outline-primary rfl-unit-btn" data-unit="KM">
-                        <i class="bi bi-speedometer2 me-1"></i>Apunta kilómetros
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary rfl-unit-btn" data-unit="HOURS">
-                        <i class="bi bi-clock-history me-1"></i>Apunta horas
-                    </button>
-                </div>
-                <div class="small text-muted mt-1">
-                    Para los vehículos de los repostajes marcados. Queda puesta a mano y sus
-                    repostajes sin unidad pasan a lectura si son coherentes.
-                </div>
-                <div class="small text-muted fw-bold mt-2">Preguntas por WhatsApp</div>
-                <div class="d-flex flex-wrap gap-1">
-                    <button type="button" class="btn btn-sm btn-outline-secondary rfl-ask-btn" data-ask="0">
-                        <i class="bi bi-bell-slash me-1"></i>No preguntar
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary rfl-ask-btn" data-ask="1">
-                        <i class="bi bi-chat-square-text me-1"></i>Preguntar
-                    </button>
-                </div>
-                <div class="small text-muted mt-1">
-                    Para los vehículos que lleva siempre la misma persona, mejor no preguntar: sus lecturas entran igual.
+                {% comment %}
+                S136: acciones en cuadrícula por categoría, como Personal y
+                Albaranes de Servicios (directriz 4.24, regla 6); las
+                explicaciones van en el título de cada botón, no en
+                párrafos que alargaban el panel fijo.
+                {% endcomment %}
+                <div class="row g-1">
+                    <div class="col-6 border-end pe-2">
+                        <div class="small text-muted fw-bold">Exportar</div>
+                        <button type="button" class="btn btn-sm btn-outline-success" id="rfl-export"
+                                title="De los marcados o, si no hay ninguno, de todos los del filtro.">
+                            <i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel
+                        </button>
+                    </div>
+                    {% if can_edit %}
+                    <div class="col-6 ps-2">
+                        <div class="small text-muted fw-bold">Unidad del vehículo</div>
+                        <div class="d-flex flex-wrap gap-1">
+                            <button type="button" class="btn btn-sm btn-outline-primary rfl-unit-btn" data-unit="KM"
+                                    title="Para los vehículos de los repostajes marcados. Queda puesta a mano y sus repostajes sin unidad pasan a lectura si son coherentes.">
+                                <i class="bi bi-speedometer2 me-1"></i>Kilómetros
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-primary rfl-unit-btn" data-unit="HOURS"
+                                    title="Para los vehículos de los repostajes marcados. Queda puesta a mano y sus repostajes sin unidad pasan a lectura si son coherentes.">
+                                <i class="bi bi-clock-history me-1"></i>Horas
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-6 border-top pt-1 mt-1">
+                        <div class="small text-muted fw-bold">Preguntas por WhatsApp</div>
+                        <div class="d-flex flex-wrap gap-1">
+                            <button type="button" class="btn btn-sm btn-outline-secondary rfl-ask-btn" data-ask="0"
+                                    title="Para los vehículos que lleva siempre la misma persona, mejor no preguntar: sus lecturas entran igual.">
+                                <i class="bi bi-bell-slash me-1"></i>No preguntar
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary rfl-ask-btn" data-ask="1">
+                                <i class="bi bi-chat-square-text me-1"></i>Preguntar
+                            </button>
+                        </div>
+                    </div>
+                    {% endif %}
                 </div>
                 <div class="small mt-1" id="rfl-unit-result"></div>
-                {% endif %}
             </div>
         </div>
     </div>
