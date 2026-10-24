@@ -3846,3 +3846,131 @@ que la cara ocupe la máxima cantidad posible en la foto"*.
 
 flake8 a 0 en los archivos tocados: `panel/views_documentation_h30.py`
 y `panel/urls.py` enteros, y `document_explorer/tasks.py`.
+
+## COMPLETADAS EN S136 (sesión invasora, 23-24/10/2026, PEE PC; en paralelo con H30 S135)
+
+Sesión invasora (directriz 4.11, Caso A del enrutador): H30 sigue EN
+PROGRESO y no se ha tocado ninguna hoja de ruta. Arrancó en
+`4a8f5ab`. Todo desplegado y con el Action en verde.
+
+### 1. Foto de carné: pipeline corregido y fotos ya puestas rehechas -- `9eb218b`
+
+Encargo de Miguel Ángel: había fotos giradas, otras salían de
+documentos ya obsoletos, y en los documentos nuevos la foto está en la
+cara de atrás. Datos de producción al empezar (consulta a BD): 140
+fotos, **50 sacadas de un documento obsoleto**, porque los candidatos
+se ordenaban por `indexed_at` y casi todos se indexaron el mismo día
+(29/07/2026). En el log, `Image too large. Please limit to 75
+megapixels` en un PDF de página enorme.
+
+- `id_photo_service.candidates()`: primero los documentos de
+  identidad, los vigentes antes que los obsoletos y del que caduca más
+  tarde al que antes (después la emisión y el indexado); las imágenes
+  al final. Los obsoletos solo se usan si ningún vigente tiene cara.
+- `crop_photo()`: si la cara más grande no está derecha (`roll_angle`
+  de 45° o más) o no se ve ninguna, prueba la página girada 90, 270 y
+  180 y usa la primera en la que la cara sale derecha. Solo hacen esa
+  llamada de más los documentos de lado y las caras de atrás sin foto.
+- `_pages()`: las páginas se limitan a 20 MP.
+- Migración **0192** (`RunPython`): `photo_attempted_at` a NULL para
+  todas las personas sin foto puesta a mano; la tarea de cada 15 min
+  las ha vuelto a pasar. **Comprobado en producción:** migración
+  aplicada; primeras pasadas correctas en el log (personas 3 y 6, que
+  tenían foto de un DNI obsoleto, la sacan de su permiso y su DNI
+  vigentes). **Estado final (consulta del 24/10):** 169 fotos, 2
+  puestas a mano, **0 personas en cola**, 19 fotos aún de un documento
+  obsoleto (personas en las que ningún documento vigente tiene una
+  cara que Cloud Vision detecte).
+- Probado en local con un DNI real escaneado de lado (Cloud Vision
+  simulado): 2 llamadas, recorte derecho de 3:4.
+
+### 2. Ventana de gestión de la foto de perfil -- `a72fa0a`, `3ec9420`, `de1314a`
+
+Miguel Ángel: los iconos de ver y cámara iban muy juntos; un solo icono
+de configuración con la foto a tamaño completo y todas las opciones.
+
+- Ficha: un solo icono (engranaje) que abre la ventana. En ella: foto
+  grande con el recuadro para la plataforma; estado (automática o
+  puesta a mano) y su documento de origen; subir foto nueva; sacarla
+  de un documento elegido (desplegable con los vigentes primero);
+  girar a izquierda o derecha; pasar a modo automático; descargar el
+  PNG para plataforma. Las acciones de cambio, solo para
+  DOCS_SUPERVISOR y ADMIN.
+- Vistas: `PersonalPhotoExtractView` (con `entry`: de ese documento y
+  queda puesta a mano; sin él: `set_automatic`),
+  `PersonalPhotoRotateView` (`foto/girar/`), `PersonalPhotoQueueView`
+  (`foto/cola/`, acción masiva **"Volver a sacar la foto"** en la
+  pestaña Personal).
+- `3ec9420`: un nombre de archivo largo se salía de la ventana.
+- `de1314a`: la miniatura del listado de Personal salía de lado aunque
+  en la ficha ya estuviera bien (caché de un día sin versión): ahora
+  lleva `?v=<fecha de la foto>`, como la ficha.
+- `b7fc27f`: el origen se nombra por su tipo ("Sacada de su DNI
+  (ver)"), nunca por el nombre de archivo (criterio de Miguel Ángel
+  para el panel).
+
+### 3. "Descargar documentación" en las fichas de persona y máquina -- `41036ef`, `aee312f`, `b7fc27f`
+
+Miguel Ángel: un botón para abrir la documentación separada por
+familia, con los obsoletos marcados y filtros, para sacar documentos
+de la ficha fácilmente.
+
+- `DocumentDownloadPickerView` (`documentacion/personal|maquinaria/
+  <pk>/descargar/`): todos los documentos vivos agrupados por familia
+  y marcados vigente, caducado u obsoleto con el mismo cálculo que la
+  ficha (`_split_current_obsolete` con el requisito del sujeto).
+- La ventana sigue el formato único de listado (4.24): buscar y
+  filtrar (familia, estados, solo la selección), orden múltiple por
+  cabecera dentro de cada familia, visor "Selección actual", menú de
+  tres puntos, pantalla completa de la lista, descarga en ZIP o PDF
+  único. Las casillas son la "Selección de documentos" de la ficha, y
+  los filtros y el orden se guardan por usuario (4.15). Sin nombres de
+  archivo.
+- `aee312f`: **papelera** desde la ventana (la selección o una fila),
+  con un segundo clic de confirmación; borrado blando
+  (`DocumentDownloadTrashView`, 4.12). Miguel Ángel lo pidió para
+  quitar fotos repetidas y el mismo permiso obsoleto varias veces.
+- `b7fc27f`: rehecha tras preguntar Miguel Ángel si seguía el formato
+  (la primera versión no tenía orden por cabecera, visor ni menú, y
+  enseñaba el nombre del archivo).
+- Probado en navegador (Playwright) con datos de ejemplo.
+
+### 4. Fichajes y Repostajes con el formato completo, y columnas en el móvil -- `5baebed`, `7842d4b`, `a0b5f30`, `916a7d7`, `39131d0`, `d229cfd`, `0add9bb`
+
+- Fichajes (H24): filtro **"Con fichajes / Sin fichajes"** (también al
+  exportar); Entrada, Salida y Municipio también ordenables;
+  pantalla completa, menú de tres puntos ("Ver las jornadas", "Abrir
+  la ficha") y lista 3/4 + selección 1/4 (`7842d4b`).
+- **Error mío, corregido:** para ordenar en el móvil le puse una barra
+  "Ordenar por" (`5baebed`), que no es el formato. Miguel Ángel lo
+  señaló y se retiró (`a0b5f30`): la tabla mantiene columnas y
+  cabecera ordenables en el móvil.
+- Repostajes (H30, tocado a petición expresa de Miguel Ángel con S135
+  ya cerrada): en el móvil no se podía "Seleccionar todos" porque las
+  tarjetas ocultaban la cabecera (`916a7d7`); y el panel de acciones
+  iba apilado con párrafos de explicación (364 px de alto): ahora en
+  cuadrícula por categorías con las explicaciones en el título de cada
+  botón (227 px), igual en Fichajes (`39131d0`).
+- Decisión de Miguel Ángel, con las dos opciones delante: **todas las
+  listas de gestión con columnas también en el móvil**. Se quitan las
+  tarjetas (`stack-mobile`) de Personal, EPIs, Vacaciones (y su tabla
+  de Reglas), Accesorios de elevación y Revisiones (`d229cfd`). Por
+  debajo de 992 px sigue sin haber columnas fijas (S123, por decisión
+  suya). Siguen con tarjetas las tablas que no son listados de gestión
+  (fichas, chat de averías).
+- Directriz 4.24 ampliada (`0add9bb`): punto 11 (columnas también en el
+  móvil) y punto 12 (acciones en cuadrícula, explicaciones en el
+  título).
+- Comprobado a 390 px en Fichajes y Repostajes (cabecera visible,
+  "Seleccionar todos" marca todas las filas). Las otras cinco listas
+  pasan el lint y Django las procesa, pero no se han visto en un móvil.
+
+### 5. Otros
+
+- El mapa del fichaje (detalle del trabajador) funciona en el móvil:
+  probado a 390 px; no se había tocado.
+- Grupo de WhatsApp para Asistencia: decisiones registradas en
+  `ENTERPRISEBOT_ATTACHED_MILESTONE_V37.md`, sección 10.
+- flake8 y djlint a 0 en todos los archivos tocados; los 11 estilos en
+  línea de `_personal_pane.html` pasan a clases (4.9).
+- La release `relevo-imagenes` queda con 0 adjuntos.

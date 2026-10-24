@@ -857,3 +857,51 @@ las máquinas. Miguel Ángel: *"en la siguiente sesión"*. Guardada en
   esto y luego volvemos con asistencia."*
 - La hoja de ruta de la sección 8 sigue intacta. Lo que queda de ella
   está en el resumen de arriba.
+
+## 10. DECISIONES EN S136 (sesión invasora desde H31, 24/10/2026) -- sala de chat de Asistencia
+
+Sin trabajo de código. La hoja de ruta de este anexo no se toca
+(directriz 4.11); queda como decisión de diseño para cuando se aborde.
+
+**Grupo real de WhatsApp: descartado.** Comprobado en línea: la API de
+grupos de Meta exige cuenta oficial de empresa (OBA), admite como
+máximo 8 participantes y Twilio no documenta soporte. Twilio solo
+ofrece un grupo simulado con Conversations, sujeto a la ventana de 24
+horas de cada participante.
+
+**Lo que se hará, decidido por Miguel Ángel (verbatim donde importa):**
+
+1. Sala de chat en la plataforma, instalable como página web en
+   cualquier dispositivo (iPhone o Android), con los mensajes de todos
+   *"con el mismo formato de una sala de IRC"*. Funciona como canales
+   de IRC: de momento solo hay una sala, **Asistencia**; si hubiera
+   más, cada una es un canal. En la sala de Asistencia salen los
+   servicios.
+2. **WhatsApp solo avisa; toda la conversación ocurre en la sala.**
+   La plantilla dice que hay un mensaje nuevo en la sala `{{sala}}`,
+   con el enlace `{{link}}`; sirve para cualquier sala.
+3. **Dentro de la ventana de 24 horas, aviso con texto normal sin
+   plantilla.** La plantilla solo se usa fuera de la ventana.
+4. **Si no abre el primer aviso, no se envía un segundo:** un aviso
+   por tanda, hasta que entre en la sala.
+5. **La plantilla lleva un botón de respuesta rápida ("Ver mensajes"),
+   no un botón de enlace.** Miguel Ángel quiere poder avisar con texto
+   normal una vez abierta la ventana; comprobado que pulsar un botón
+   de enlace no abre la ventana de 24 horas y una respuesta rápida sí,
+   porque cuenta como mensaje del trabajador. Al pulsarlo, el bot le
+   contesta con el enlace a la sala, y con la ventana abierta los
+   avisos siguientes van en texto normal.
+6. **Acceso de quien no tiene cuenta del panel (chóferes): el enlace
+   es personal** y deja la sesión abierta en ese dispositivo.
+7. Si alguien contesta al aviso por WhatsApp, el bot le responde con
+   el enlace a la sala.
+8. Va en H37.
+
+**Piezas que ya existen y se reutilizan:** la plantilla
+`chat_session_renewal` y la entrega de mensajes pendientes al aceptar
+(circulares); el envío uno a uno por Celery y Twilio; la plantilla de
+asistencia con botón (S132); el service worker del fichaje y del
+albarán. **Ya no existen:** `ChatRoom` y `ChatMessage` de H13 se
+retiraron en H17 (en `chat/` solo quedan archivos vacíos; el anexo V13
+está desfasado), así que la sala se construye de cero, con miembros
+`PersonIdentity` (directriz 4.19).
