@@ -24,6 +24,7 @@ from django.views import View
 from budgets.forms_services import WorkOrderAssistanceForm
 from budgets.models import Insurer, WorkOrderAssistance
 from budgets.views import _build_base_context
+from chat import room_service
 from panel.mixins import (
     AssistanceSupervisorAccessMixin,
     AssistanceWorkOrderAccessMixin,
@@ -895,7 +896,7 @@ def _initial_from_extraction(company, data):
 
 
 def _render_order_form(request, form, title, action_url, hints=None,
-                       origin=""):
+                       origin="", source_token=""):
     """
     Render the order form page.
 
@@ -911,6 +912,9 @@ def _render_order_form(request, form, title, action_url, hints=None,
                       "form_action": reverse(action_url),
                       "hints": hints or {},
                       "origin": origin,
+                      # H37 (S138): documento de TIREA ya guardado en
+                      # GCS, para que el bot lo publique en la sala.
+                      "source_token": source_token,
                   }))
 
 
@@ -959,8 +963,9 @@ class ServicesTireaUploadView(AssistanceSupervisorAccessMixin, View):
             )
             return redirect("budgets:services_tirea_upload")
         company = request.user.company_user.company
+        content = upload.read()
         try:
-            data = extract_tirea_albaran(upload.read(), upload.content_type)
+            data = extract_tirea_albaran(content, upload.content_type)
         except Exception:
             logger.exception("# [TIREA] Error en la extracción.")
             messages.error(
@@ -973,10 +978,21 @@ class ServicesTireaUploadView(AssistanceSupervisorAccessMixin, View):
             initial=_initial_from_extraction(company, data), company=company,
         )
         hints = {key: data[key] for key in _HINT_KEYS if key in data}
+        # H37 (S138): the TIREA document is kept so the room bot posts
+        # it with the service once it is saved.
+        # Se guarda el documento de TIREA para que el bot lo publique
+        # en la sala con el servicio cuando se guarde.
+        source_token = room_service.sign_source(
+            room_service.store_source_document(
+                company, content, upload.content_type,
+            ),
+            upload.content_type,
+        )
         return _render_order_form(
             request, form, "Nueva orden desde TIREA",
             "budgets:work_order_save", hints,
             origin=WorkOrderAssistance.ORIGIN_PHOTO,
+            source_token=source_token,
         )
 
 
@@ -1020,13 +1036,18 @@ class WorkOrderSaveView(AssistanceSupervisorAccessMixin, View):
         origin = request.POST.get("origin", "")
         if origin not in dict(WorkOrderAssistance.ORIGIN_CHOICES):
             origin = WorkOrderAssistance.ORIGIN_PANEL
+        source_token = request.POST.get("source_token", "")
         if not form.is_valid():
             return _render_order_form(
                 request, form, "Nueva orden", "budgets:work_order_save",
-                origin=origin,
+                origin=origin, source_token=source_token,
             )
         work_order = form.save(commit=False)
         work_order.origin = origin
+        (
+            work_order.source_document_blob,
+            work_order.source_document_type,
+        ) = room_service.unsign_source(source_token)
         work_order.company = company_user.company
         work_order.operator = company_user
         work_order.created_by = company_user

@@ -56,6 +56,9 @@ urlpatterns = [
     # dispositivo de confianza (hr_calendar/clockin.py).
     path('fichaje/', include('hr_calendar.clockin_urls',
                              namespace='clockin')),
+    # H37 (S138): salas de chat de la plataforma (formato IRC), con
+    # enlace personal para quien no tiene cuenta del panel.
+    path('sala/', include('chat.urls_room', namespace='chat_room')),
     path('admin/', admin.site.urls),
     # Voice IVR bridge — puente IVR de voz.
     path('api/vox/', include('vox_bridge.urls')),

@@ -733,6 +733,14 @@
                             </a>
                         </li>
                     {% endif %}
+                    {# Sala de Asistencia (H37, S138): chat de la plataforma con formato IRC. ADMIN y ASSIST_SUPERVISOR. #}
+                    {% if company_user.role == 'ADMIN' or company_user.role == 'ASSIST_SUPERVISOR' %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'chat_room:room' slug='asistencia' %}">
+                                <i class="bi bi-chat-dots"></i>Sala de Asistencia
+                            </a>
+                        </li>
+                    {% endif %}
                     {# Servicios (H37, S132): sustituye a "Albarán (demo)". ADMIN y ASSIST_SUPERVISOR. #}
                     {% if company_user.role == 'ADMIN' or company_user.role == 'ASSIST_SUPERVISOR' %}
                         <li class="nav-item">

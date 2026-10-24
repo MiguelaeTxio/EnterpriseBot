@@ -205,6 +205,24 @@ class IncomingWhatsAppView(View):
 
         record_inbound(company, from_number)
 
+        # --- Step 2a-room (H37, S138): answer to a room notice. ---
+        # "Ver mensajes" button or a reply to the notice itself: the bot
+        # answers with the personal link to the room. Only those two,
+        # so Alia keeps the rest of the conversation.
+        # --- Paso 2a-sala (H37, S138): respuesta a un aviso de sala. ---
+        # Botón "Ver mensajes" o respuesta al propio aviso: el bot
+        # contesta con el enlace personal a la sala. Solo esos dos casos,
+        # para que Alia siga atendiendo el resto.
+        from chat.room_service import handle_whatsapp_reply
+
+        if handle_whatsapp_reply(
+            company, from_number,
+            request.POST.get("ButtonPayload", "").strip(),
+            request.POST.get("OriginalRepliedMessageSid", "").strip(),
+            to_number,
+        ):
+            return HttpResponse(status=200)
+
         # --- Step 2a-bis (H37, S133): giving a service. ---
         # An assistance supervisor (or admin) giving a service by
         # WhatsApp: text or photo of the service. Decided here, answered

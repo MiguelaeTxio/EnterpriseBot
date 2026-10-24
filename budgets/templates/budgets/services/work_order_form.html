@@ -31,6 +31,7 @@ leída, chófer y grúa asignados en TIREA) y se muestran como ayuda.
     <form method="post" action="{{ form_action }}">
         {% csrf_token %}
         {% if origin %}<input type="hidden" name="origin" value="{{ origin }}">{% endif %}
+        {% if source_token %}<input type="hidden" name="source_token" value="{{ source_token }}">{% endif %}
         {% for title, fields in form.blocks %}
         <div class="card shadow-sm mb-3">
             <div class="card-header py-2 fw-semibold small">{{ title }}</div>

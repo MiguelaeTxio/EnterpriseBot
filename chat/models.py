@@ -10,7 +10,8 @@ BreakdownTicket lifecycle (Hito 14 redesign):
   OPEN → IN_PROGRESS (operario asignado) → CLOSED
   OPEN/IN_PROGRESS → PAUSED (operario reasignado a otro ticket)
   ticket_date_code: YYYYMMDD-NN (diario por empresa, ej. 20260618-01)
-  origin: MANUAL (panel) | CHATBOT (agente Gemini WhatsApp) | IVR (llamada de voz)
+  origin: MANUAL (panel) | CHATBOT (agente Gemini WhatsApp) |
+    IVR (llamada de voz)
 ---
 Modelos de datos para el módulo de chat de EnterpriseBot.
 
@@ -22,13 +23,14 @@ Ciclo de vida BreakdownTicket (rediseño Hito 14):
   OPEN → IN_PROGRESS (operario asignado) → CLOSED
   OPEN/IN_PROGRESS → PAUSED (operario reasignado a otro ticket)
   ticket_date_code: YYYYMMDD-NN (diario por empresa, ej. 20260618-01)
-  origin: MANUAL (panel) | CHATBOT (agente Gemini WhatsApp) | IVR (llamada de voz)
+  origin: MANUAL (panel) | CHATBOT (agente Gemini WhatsApp) |
+    IVR (llamada de voz)
 """
 
 from django.db import models
 from django.utils import timezone
 
-from ivr_config.models import Company, CompanyUser, Contact, Section
+from ivr_config.models import Company, CompanyUser, Contact
 
 
 class BreakdownTicket(models.Model):
@@ -39,13 +41,15 @@ class BreakdownTicket(models.Model):
     Status lifecycle (Hito 14 redesign):
       OPEN        — ticket created, no operator assigned.
       IN_PROGRESS — operator assigned; ticket is an active repair order (OT).
-      PAUSED      — operator was reassigned to another ticket; awaiting a new one.
+      PAUSED      — operator was reassigned to another ticket; awaiting
+                    a new one.
       CLOSED      — work finished; resolved_by and resolved_at are set.
 
     ticket_date_code: human-readable identifier YYYYMMDD-NN, daily sequential
     per company (e.g. 20260618-01). Assigned automatically on first save().
 
-    origin: MANUAL (panel creation) | CHATBOT (Gemini WhatsApp agent) | IVR (voice call).
+    origin: MANUAL (panel creation) | CHATBOT (Gemini WhatsApp agent) |
+      IVR (voice call).
 
     BreakdownTickets are never automatically purged.
     ---
@@ -60,19 +64,21 @@ class BreakdownTicket(models.Model):
       CLOSED      — trabajo finalizado; resolved_by y resolved_at asignados.
 
     ticket_date_code: identificador legible YYYYMMDD-NN, secuencial diario
-    por empresa (ej. 20260618-01). Se asigna automáticamente en el primer save().
+    por empresa (ej. 20260618-01). Se asigna automáticamente en el primer
+    save().
 
-    origin: MANUAL (creación desde panel) | CHATBOT (agente Gemini WhatsApp) | IVR (llamada de voz).
+    origin: MANUAL (creación desde panel) | CHATBOT (agente Gemini
+      WhatsApp) | IVR (llamada de voz).
 
     Los BreakdownTicket nunca se eliminan automáticamente.
     """
 
     # --- Status choices ---------------------------------------------------
-    STATUS_OPEN        = "OPEN"
+    STATUS_OPEN = "OPEN"
     STATUS_IN_PROGRESS = "IN_PROGRESS"
-    STATUS_PAUSED      = "PAUSED"
-    STATUS_CLOSED      = "CLOSED"
-    STATUS_CHOICES     = [
+    STATUS_PAUSED = "PAUSED"
+    STATUS_CLOSED = "CLOSED"
+    STATUS_CHOICES = [
         (STATUS_OPEN,        "Abierto"),
         (STATUS_IN_PROGRESS, "En curso"),
         (STATUS_PAUSED,      "Pausado"),
@@ -80,11 +86,11 @@ class BreakdownTicket(models.Model):
     ]
 
     # --- Urgency choices --------------------------------------------------
-    URGENCY_LOW      = "LOW"
-    URGENCY_MEDIUM   = "MEDIUM"
-    URGENCY_HIGH     = "HIGH"
+    URGENCY_LOW = "LOW"
+    URGENCY_MEDIUM = "MEDIUM"
+    URGENCY_HIGH = "HIGH"
     URGENCY_CRITICAL = "CRITICAL"
-    URGENCY_CHOICES  = [
+    URGENCY_CHOICES = [
         (URGENCY_LOW,      "Baja"),
         (URGENCY_MEDIUM,   "Media"),
         (URGENCY_HIGH,     "Alta"),
@@ -92,9 +98,9 @@ class BreakdownTicket(models.Model):
     ]
 
     # --- Origin choices ---------------------------------------------------
-    ORIGIN_MANUAL  = "MANUAL"
+    ORIGIN_MANUAL = "MANUAL"
     ORIGIN_CHATBOT = "CHATBOT"
-    ORIGIN_IVR     = "IVR"
+    ORIGIN_IVR = "IVR"
     # ORIGIN_AUTO: ticket pregenerado por el sistema (H10 Paso 4-bis,
     # chat/services.py::get_or_create_ticket_for_machine) al registrar
     # una tarea de parte o confirmar un albarán sin ningún ticket
@@ -105,7 +111,7 @@ class BreakdownTicket(models.Model):
     # a task or confirming a delivery note with no OPEN/IN_PROGRESS or
     # recently closed ticket for the machine -- purely informative
     # metadata (Paso 4-bis design, point 6), never blocking.
-    ORIGIN_AUTO    = "AUTO"
+    ORIGIN_AUTO = "AUTO"
     ORIGIN_CHOICES = [
         (ORIGIN_MANUAL,  "Manual"),
         (ORIGIN_CHATBOT, "Chatbot"),
@@ -129,10 +135,10 @@ class BreakdownTicket(models.Model):
     # free-form categorization with no rigid taxonomy. Classified by Gemini,
     # asynchronously (Celery), when the task is saved -- see
     # work_order_processor.tasks.classify_fault_line.
-    TIPO_TAREA_AVERIA        = "AVERIA"
-    TIPO_TAREA_MEJORA        = "MEJORA"
+    TIPO_TAREA_AVERIA = "AVERIA"
+    TIPO_TAREA_MEJORA = "MEJORA"
     TIPO_TAREA_MANTENIMIENTO = "MANTENIMIENTO"
-    TIPO_TAREA_FABRICACION   = "FABRICACION"
+    TIPO_TAREA_FABRICACION = "FABRICACION"
     TIPO_TAREA_CHOICES = [
         (TIPO_TAREA_AVERIA,        "Avería"),
         (TIPO_TAREA_MEJORA,        "Mejora"),
@@ -214,7 +220,8 @@ class BreakdownTicket(models.Model):
         verbose_name="Sección",
         help_text=(
             "Sección del contacto en el momento de abrir el ticket. "
-            "Se registra para trazabilidad aunque la membresía M2M pueda cambiar."
+            "Se registra para trazabilidad aunque la membresía M2M pueda "
+            "cambiar."
         ),
     )
     machine = models.ForeignKey(
@@ -234,7 +241,10 @@ class BreakdownTicket(models.Model):
         choices=ORIGIN_CHOICES,
         default=ORIGIN_MANUAL,
         verbose_name="Origen",
-        help_text="Indica si el ticket fue creado manualmente, por el chatbot o por IVR.",
+        help_text=(
+            "Indica si el ticket fue creado manualmente, por el chatbot o "
+            "por IVR."
+        ),
     )
     fault_category = models.CharField(
         max_length=30,
@@ -243,7 +253,8 @@ class BreakdownTicket(models.Model):
         verbose_name="Categoría de avería",
         help_text=(
             "Categoría principal de la avería. Usa los mismos códigos que "
-            "FaultCategory en work_order_processor (ej. HYDRAULIC, ELECTRICAL_ELECTRONIC)."
+            "FaultCategory en work_order_processor (ej. HYDRAULIC, "
+            "ELECTRICAL_ELECTRONIC)."
         ),
     )
     photos = models.JSONField(
@@ -279,14 +290,19 @@ class BreakdownTicket(models.Model):
         blank=True,
         default="",
         verbose_name="Resumen de la avería",
-        help_text="Descripción de la avería recogida mediante diálogo o entrada manual.",
+        help_text=(
+            "Descripción de la avería recogida mediante diálogo o entrada "
+            "manual."
+        ),
     )
     location = models.CharField(
         max_length=200,
         blank=True,
         default="",
         verbose_name="Ubicación",
-        help_text="Ubicación actual del vehículo o lugar donde ocurrió la avería.",
+        help_text=(
+            "Ubicación actual del vehículo o lugar donde ocurrió la avería."
+        ),
     )
     urgency = models.CharField(
         max_length=10,
@@ -300,7 +316,10 @@ class BreakdownTicket(models.Model):
         blank=True,
         default="",
         verbose_name="Notas adicionales",
-        help_text="Observaciones adicionales recogidas durante el diálogo o la gestión.",
+        help_text=(
+            "Observaciones adicionales recogidas durante el diálogo o la "
+            "gestión."
+        ),
     )
     # --- Paso 23 H14: geolocalización y ubicación exacta en máquina -------
     fault_location = models.CharField(
@@ -352,7 +371,8 @@ class BreakdownTicket(models.Model):
         related_name="assigned_breakdown_tickets",
         verbose_name="Asignado a",
         help_text=(
-            "Operario de taller (WORKSHOPBOSS) al que se ha asignado este ticket. "
+            "Operario de taller (WORKSHOPBOSS) al que se ha asignado este "
+            "ticket. "
             "Null cuando el ticket está disponible para asignar."
         ),
     )
@@ -387,7 +407,8 @@ class BreakdownTicket(models.Model):
         help_text=(
             "Historial unificado de la conversación asociada a este ticket. "
             "Lista de entradas con formato: "
-            "{timestamp, source ('IVR'|'WHATSAPP'|'SYSTEM'), role ('USER'|'MODEL'), content}. "
+            "{timestamp, source ('IVR'|'WHATSAPP'|'SYSTEM'), "
+            "role ('USER'|'MODEL'), content}. "
             "Poblado por el agente IVR (Alia) y el agente WhatsApp."
         ),
     )
@@ -414,9 +435,9 @@ class BreakdownTicket(models.Model):
         Formato: YYYYMMDD-NN — secuencial diario por empresa (01-99).
         """
         if not self.ticket_date_code:
-            today    = timezone.localdate()
+            today = timezone.localdate()
             date_str = today.strftime("%Y%m%d")
-            company  = self.company if self.company_id else None
+            company = self.company if self.company_id else None
             if company:
                 existing = BreakdownTicket.objects.filter(
                     company=company,
@@ -434,3 +455,195 @@ class BreakdownTicket(models.Model):
             f"[{code}] [{self.get_status_display()}] "
             f"{self.machine_raw or 'Máquina no identificada'}"
         )
+
+
+# ---------------------------------------------------------------------------
+# H37 (S138): rooms of the platform chat (IRC format, one channel per room).
+# Salas del chat de la plataforma (formato IRC, un canal por sala).
+# ---------------------------------------------------------------------------
+
+class ChatRoom(models.Model):
+    """
+    A chat room of the platform, like an IRC channel (H37, S138).
+
+    ---
+
+    Sala de chat de la plataforma, como un canal de IRC (H37, S138). De
+    momento solo hay una, Asistencia (`slug="asistencia"`), donde salen
+    también los servicios. La conversación ocurre aquí; WhatsApp solo
+    avisa de que hay mensajes nuevos (decisiones de S136, anexo H37
+    sección 10).
+    """
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="chat_rooms",
+        verbose_name="Empresa",
+    )
+    slug = models.SlugField(max_length=40, verbose_name="Identificador")
+    name = models.CharField(max_length=80, verbose_name="Nombre")
+    created_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Creada",
+    )
+
+    class Meta:
+        verbose_name = "Sala de chat"
+        verbose_name_plural = "Salas de chat"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "slug"], name="chat_room_company_slug",
+            ),
+        ]
+
+    def __str__(self):
+        return "#%s" % self.slug
+
+
+class ChatRoomMember(models.Model):
+    """
+    A worker in a room: personal link, presence and notice state.
+
+    ---
+
+    Un trabajador en una sala (directriz 4.19: `PersonIdentity`, tenga o
+    no cuenta del panel). Lo añade a mano quien gestiona la sala con el
+    botón "Añadir" (Miguel Ángel, S138).
+
+    - `link_token`: enlace personal; abrirlo deja la sesión abierta en
+      ese dispositivo (cookie firmada).
+    - `last_seen_at`: última vez que estuvo dentro de la sala.
+    - `notice_sent_at`: aviso por WhatsApp de la tanda en curso. Un solo
+      aviso por tanda: no se manda otro hasta que entre en la sala
+      (`last_seen_at` posterior al aviso).
+    - `notice_message_sid`: SID de Twilio del último aviso, para
+      reconocer una respuesta a ese aviso.
+    """
+
+    room = models.ForeignKey(
+        ChatRoom,
+        on_delete=models.CASCADE,
+        related_name="members",
+        verbose_name="Sala",
+    )
+    person = models.ForeignKey(
+        "document_explorer.PersonIdentity",
+        on_delete=models.CASCADE,
+        related_name="chat_memberships",
+        verbose_name="Trabajador",
+    )
+    link_token = models.CharField(
+        max_length=64, unique=True, verbose_name="Token del enlace personal",
+    )
+    added_by = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Añadido por",
+    )
+    joined_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Añadido",
+    )
+    last_seen_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Última vez en la sala",
+    )
+    notice_sent_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Aviso de la tanda enviado",
+    )
+    notice_message_sid = models.CharField(
+        max_length=64, blank=True, default="",
+        verbose_name="SID del último aviso",
+    )
+    notice_error = models.CharField(
+        max_length=255, blank=True, default="",
+        verbose_name="Error del último aviso",
+    )
+
+    class Meta:
+        verbose_name = "Miembro de sala"
+        verbose_name_plural = "Miembros de sala"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["room", "person"], name="chat_room_member_person",
+            ),
+        ]
+
+    def __str__(self):
+        return "%s en %s" % (self.person_id, self.room)
+
+
+class ChatMessage(models.Model):
+    """
+    A line of a room: a worker's message or a bot message.
+
+    ---
+
+    Una línea de la sala: mensaje de un trabajador (`USER`) o del bot
+    (`BOT`: los servicios, en texto plano o con el PDF de TIREA, y los
+    avisos de la sala, p. ej. quién se ha añadido). `author_name` guarda
+    el nombre con el que salió, aunque la persona cambie después. Los
+    mensajes no se borran.
+    """
+
+    KIND_USER = "USER"
+    KIND_BOT = "BOT"
+    KIND_CHOICES = [
+        (KIND_USER, "Trabajador"),
+        (KIND_BOT, "Bot"),
+    ]
+
+    room = models.ForeignKey(
+        ChatRoom,
+        on_delete=models.CASCADE,
+        related_name="messages",
+        verbose_name="Sala",
+    )
+    kind = models.CharField(
+        max_length=8, choices=KIND_CHOICES, default=KIND_USER,
+        verbose_name="Tipo",
+    )
+    author = models.ForeignKey(
+        "document_explorer.PersonIdentity",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="chat_messages",
+        verbose_name="Autor",
+    )
+    author_name = models.CharField(
+        max_length=120, verbose_name="Nombre del autor",
+    )
+    body = models.TextField(blank=True, default="", verbose_name="Texto")
+    attachment_blob = models.CharField(
+        max_length=500, blank=True, default="",
+        verbose_name="Adjunto (blob en GCS)",
+    )
+    attachment_name = models.CharField(
+        max_length=200, blank=True, default="",
+        verbose_name="Nombre del adjunto",
+    )
+    attachment_type = models.CharField(
+        max_length=100, blank=True, default="",
+        verbose_name="Tipo del adjunto",
+    )
+    work_order = models.ForeignKey(
+        "budgets.WorkOrderAssistance",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="chat_messages",
+        verbose_name="Servicio",
+    )
+    created_at = models.DateTimeField(
+        default=timezone.now, db_index=True, verbose_name="Enviado",
+    )
+
+    class Meta:
+        verbose_name = "Mensaje de sala"
+        verbose_name_plural = "Mensajes de sala"
+        ordering = ["created_at", "pk"]
+
+    def __str__(self):
+        return "%s <%s> %s" % (self.room, self.author_name, self.body[:40])

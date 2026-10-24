@@ -2680,6 +2680,22 @@ class WorkOrderAssistance(models.Model):
         verbose_name="Km totales TIREA",
         help_text="Kilómetros totales del servicio registrados en TIREA.",
     )
+    # H37 (S138): the TIREA document (photo or PDF) the service came
+    # from, kept in GCS so the room bot can post it.
+    # Documento de TIREA (foto o PDF) del que salió el servicio,
+    # guardado en GCS para que el bot de la sala lo publique.
+    source_document_blob = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        verbose_name="Documento de origen (blob en GCS)",
+    )
+    source_document_type = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Tipo del documento de origen",
+    )
 
     # ── Control ─────────────────────────────────────────────────────────────
     created_at = models.DateTimeField(

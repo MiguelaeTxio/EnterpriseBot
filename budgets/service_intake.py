@@ -870,6 +870,38 @@ def _order_form(intake):
     return WorkOrderAssistanceForm(post, company=intake.company)
 
 
+def _keep_source_document(intake):
+    """
+    Keep in GCS the TIREA document of the conversation, if any.
+
+    ---
+
+    H37 (S138). Guarda en GCS el documento de TIREA (foto o PDF) que
+    llegó en la conversación, para que el bot lo publique en la sala
+    con el servicio. Devuelve (blob, tipo), o ("", "") si no hubo
+    documento o no se pudo bajar (el servicio se da igual).
+    """
+    photo = intake.data.get("last_photo") or {}
+    url = photo.get("url") or ""
+    content_type = photo.get("content_type") or ""
+    if not url:
+        return "", ""
+    from chat.room_service import store_source_document
+    from document_explorer.worker_request_service import _download_media
+
+    try:
+        data = _download_media(url)
+    except Exception:  # noqa: BLE001 -- el servicio se da igual
+        logger.exception(
+            "# [SERVICE INTAKE] No se pudo bajar el documento %s.", url,
+        )
+        return "", ""
+    finally:
+        fresh_db_connection()
+    blob = store_source_document(intake.company, data, content_type)
+    return (blob, content_type) if blob else ("", "")
+
+
 def launch(intake, args, whatsapp_sender):
     """
     Tool: create the order and the albarán, assign and send.
@@ -944,11 +976,14 @@ def launch(intake, args, whatsapp_sender):
     ) < len(teams):
         return {"error": "Hay un conductor o una máquina repetidos."}
 
+    source_blob, source_type = _keep_source_document(intake)
     launched = []
     helper_errors = []
     try:
         with transaction.atomic():
             work_order = form.save(commit=False)
+            work_order.source_document_blob = source_blob
+            work_order.source_document_type = source_type
             work_order.company = company
             work_order.operator = by
             work_order.created_by = by
