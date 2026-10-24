@@ -1088,6 +1088,12 @@ incidencia.
    bloques distintos dentro de la propia sesión invasora si Miguel
    Ángel lo pide así explícitamente (ver origen, S040).
 
+**Desde S137, skill común `com-invasora`:** cuando Miguel Ángel pide
+abrir una sesión invasora, el modelo entrega sin preguntar el mensaje
+de inicio completo para el chat nuevo (hito, número de sesión, tarea,
+y archivos de SWAP desde `100` para no pisar los de la sesión
+principal); las reglas de esta sección van dentro de ese mensaje.
+
 **Origen:** S040 — sesión invasora que trabajó sobre H10 (albaranes de
 proveedor: prompt más permisivo con marca manuscrita, y albarán de
 abono a proveedor) mientras otra sesión seguía activa en paralelo
