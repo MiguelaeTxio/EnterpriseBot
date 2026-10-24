@@ -78,6 +78,35 @@ def _message_json(message, room):
     return data
 
 
+def _member_list(room):
+    """
+    Members of the room with whether they are inside right now.
+
+    ---
+
+    Miembros de la sala por nombre, cada uno con `online`: tiene la
+    sala abierta ahora mismo (consultó hace menos de PRESENCE_WINDOW),
+    el mismo dato que evita avisar a quien está dentro (S138).
+    """
+    since = timezone.now() - room_service.PRESENCE_WINDOW
+    members = ChatRoomMember.objects.filter(room=room).select_related(
+        "person",
+    )
+    return sorted(
+        (
+            {
+                "name": room_service.person_name(member.person),
+                "online": bool(
+                    member.last_seen_at is not None
+                    and member.last_seen_at > since
+                ),
+            }
+            for member in members
+        ),
+        key=lambda item: item["name"],
+    )
+
+
 @never_cache
 @require_GET
 def home(request):
@@ -147,16 +176,10 @@ def room_page(request, slug):
     if room is None:
         return render(request, "chat/room/no_access.html", status=403)
     room_service.mark_seen(viewer.member)
-    members = ChatRoomMember.objects.filter(room=room).select_related(
-        "person",
-    )
-    member_names = sorted(
-        room_service.person_name(member.person) for member in members
-    )
     return render(request, "chat/room/room.html", {
         "room": room,
         "viewer": viewer,
-        "member_names": member_names,
+        "members": _member_list(room),
         "can_write": bool(viewer.name),
     })
 
@@ -188,6 +211,7 @@ def messages_feed(request, slug):
         ))
     return JsonResponse({
         "messages": [_message_json(item, room) for item in messages],
+        "members": _member_list(room),
     })
 
 
@@ -298,13 +322,7 @@ def member_add(request, slug):
     if person is None:
         return JsonResponse({"error": "Persona no válida."}, status=400)
     room_service.add_member(room, person, added_by=viewer.company_user)
-    names = sorted(
-        room_service.person_name(member.person)
-        for member in ChatRoomMember.objects.filter(
-            room=room,
-        ).select_related("person")
-    )
-    return JsonResponse({"members": names})
+    return JsonResponse({"members": _member_list(room)})
 
 
 @never_cache
