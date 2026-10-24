@@ -9925,8 +9925,10 @@ después los avisos y su configuración. Se hace en este orden:
 
 1. **Recuperar las revisiones ya hechas.** Miguel Ángel trae, para cada
    centro de gasto con revisión periódica, el intervalo (horas y/o km)
-   y la última revisión (fecha y horas y/o km); Jerónimo es quien tiene
-   esas fechas. El modelo las carga con un Comando S en
+   y la última revisión (fecha y horas y/o km); quien tiene esos datos
+   es Alberto Álvarez Díaz (corregido en S137 por Miguel Ángel:
+   Jerónimo solo dio el contacto de GasoGes). El modelo las carga con
+   un Comando S en
    `MachineAsset.service_hours_interval` / `service_every_km` y
    `MachineServiceRecord` (`service_date`, `hours`, `km`), y pone en
    HOURS (desde Repostajes) la unidad de los centros de gasto por horas
