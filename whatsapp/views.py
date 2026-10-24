@@ -213,14 +213,22 @@ class IncomingWhatsAppView(View):
         # Botón "Ver mensajes" o respuesta al propio aviso: el bot
         # contesta con el enlace personal a la sala. Solo esos dos casos,
         # para que Alia siga atendiendo el resto.
-        from chat.room_service import handle_whatsapp_reply
+        # #asistencia / #salir (S138): enter or leave the room through
+        # WhatsApp, members only.
+        # #asistencia / #salir (S138): entrar o salir de la sala por
+        # WhatsApp, solo los miembros.
+        from chat.room_service import (
+            handle_whatsapp_command,
+            handle_whatsapp_reply,
+            route_whatsapp,
+        )
 
         if handle_whatsapp_reply(
             company, from_number,
             request.POST.get("ButtonPayload", "").strip(),
             request.POST.get("OriginalRepliedMessageSid", "").strip(),
             to_number,
-        ):
+        ) or handle_whatsapp_command(company, from_number, body):
             return HttpResponse(status=200)
 
         # --- Step 2a-bis (H37, S133): giving a service. ---
@@ -272,6 +280,19 @@ class IncomingWhatsAppView(View):
             _service_decide = True
         else:
             _service_decide = False
+        # --- Step 2a-room-bis (S138): inside the room by WhatsApp. ---
+        # Without a service conversation (that one goes to Alia and to
+        # the room, whatsapp.tasks.service_intake_reply), what a member
+        # inside the room writes goes to the room.
+        # --- Paso 2a-sala-bis (S138): dentro de la sala por WhatsApp. ---
+        # Sin conversación de servicio (esa va a Alia y a la sala), lo
+        # que escribe un miembro que está dentro va a la sala.
+        if _intake is None and route_whatsapp(
+            company, from_number, _service_body,
+            request.POST.get("MediaUrl0", "") if num_media else "",
+            request.POST.get("MediaContentType0", "") if num_media else "",
+        ):
+            return HttpResponse(status=200)
         if _intake is not None and _service_doc:
             from budgets.service_intake import mark_reading
 

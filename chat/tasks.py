@@ -31,3 +31,33 @@ def send_room_notice(member_pk):
     from chat.room_service import deliver_notice
 
     deliver_notice(member_pk)
+
+
+@shared_task(name="chat.tasks.relay_room_message")
+def relay_room_message(message_pk, member_pks):
+    """
+    Send a room message to the members inside by WhatsApp.
+
+    ---
+
+    Manda un mensaje de la sala a los miembros que están dentro por
+    WhatsApp (S138, `chat.room_service.deliver_relay`).
+    """
+    from chat.room_service import deliver_relay
+
+    deliver_relay(message_pk, member_pks)
+
+
+@shared_task(name="chat.tasks.post_whatsapp_to_room")
+def post_whatsapp_to_room(member_pk, body, media_url, content_type):
+    """
+    Post in the room a WhatsApp message with a file.
+
+    ---
+
+    Publica en la sala un mensaje de WhatsApp con foto o PDF (S138,
+    `chat.room_service.post_whatsapp_message`).
+    """
+    from chat.room_service import post_whatsapp_message
+
+    post_whatsapp_message(member_pk, body, media_url, content_type)

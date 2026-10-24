@@ -22,6 +22,7 @@ urlpatterns = [
     path("<slug:slug>/mensajes/", views_room.messages_feed,
          name="messages"),
     path("<slug:slug>/enviar/", views_room.send, name="send"),
+    path("<slug:slug>/subir/", views_room.upload, name="upload"),
     path("<slug:slug>/adjunto/<int:pk>/", views_room.attachment,
          name="attachment"),
     path("<slug:slug>/miembros/candidatos/", views_room.member_candidates,

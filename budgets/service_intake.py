@@ -886,11 +886,18 @@ def _keep_source_document(intake):
     content_type = photo.get("content_type") or ""
     if not url:
         return "", ""
-    from chat.room_service import store_source_document
-    from document_explorer.worker_request_service import _download_media
+    from chat.room_service import (
+        GCS_SCHEME,
+        media_bytes,
+        store_source_document,
+    )
 
+    if url.startswith(GCS_SCHEME):
+        # S138: sent from the room, already kept in GCS.
+        # Mandado desde la sala: ya está guardado en GCS.
+        return url[len(GCS_SCHEME):], content_type
     try:
-        data = _download_media(url)
+        data = media_bytes(url)
     except Exception:  # noqa: BLE001 -- el servicio se da igual
         logger.exception(
             "# [SERVICE INTAKE] No se pudo bajar el documento %s.", url,
@@ -1619,7 +1626,7 @@ def process_whatsapp(intake_pk, body, media_url, content_type,
             return None
         return reply(intake, body, whatsapp_sender)
 
-    from document_explorer.worker_request_service import _download_media
+    from chat.room_service import media_bytes
 
     intake.data["last_photo"] = {
         "url": media_url, "content_type": content_type,
@@ -1627,7 +1634,9 @@ def process_whatsapp(intake_pk, body, media_url, content_type,
     _save_data(intake)
     extracted = None
     try:
-        extracted = extract_photo(_download_media(media_url), content_type)
+        # S138: Twilio media, or a file sent from the room (gcs:<blob>).
+        # Adjunto de Twilio, o archivo mandado desde la sala.
+        extracted = extract_photo(media_bytes(media_url), content_type)
     except Exception as exc:  # noqa: BLE001 -- se le dice al usuario
         logger.exception("# [SERVICE INTAKE] Foto ilegible: %s", exc)
     finally:

@@ -349,7 +349,8 @@ def expire_presence_statuses() -> str:
 
 @shared_task(name="whatsapp.tasks.service_intake_reply")
 def service_intake_reply(intake_pk, body, media_url, content_type,
-                         platform_number, from_number, decide=False):
+                         platform_number, from_number, decide=False,
+                         posted=False):
     """
     Answer a message of somebody giving a service by WhatsApp.
 
@@ -362,19 +363,34 @@ def service_intake_reply(intake_pk, body, media_url, content_type,
     Sin respuesta (None) no se envía nada: el texto espera a la lectura
     de un documento, o el documento no era un servicio. `decide`: ver
     `process_whatsapp`.
+
+    S138: si quien da el servicio es miembro de la sala de Asistencia,
+    la conversación ocurre en la sala: su mensaje sale allí (salvo
+    `posted`, ya publicado desde la web de la sala) y las respuestas de
+    Alia también (`chat.room_service.deliver_intake_text`).
     """
+    from budgets.models import ServiceIntake
     from budgets.service_intake import process_whatsapp
+    from chat.room_service import deliver_intake_text, intake_inbound
     from whatsapp.models import WhatsAppMessage
-    from whatsapp.services import WhatsAppChatService
+
+    intake = ServiceIntake.objects.select_related(
+        "requested_by__company",
+    ).get(pk=intake_pk)
+    if not posted:
+        try:
+            intake_inbound(intake, body, media_url, content_type,
+                           from_number)
+        except Exception as exc:  # noqa: BLE001 -- Alia contesta igual
+            logger.exception("# [SERVICE INTAKE] Sala: %s", exc)
 
     # S133: reading the photo can take a while; say so at once.
     # Leer la foto puede tardar: se avisa en el acto.
     if media_url:
         try:
-            WhatsAppChatService.send_reply(
-                from_number=platform_number, to_number=from_number,
-                reply_text="Recibido. Estoy leyendo el documento, me lleva "
-                           "unos segundos…",
+            deliver_intake_text(
+                intake, "Recibido. Estoy leyendo el documento, me lleva "
+                "unos segundos…", from_number,
             )
         except Exception as exc:  # noqa: BLE001 -- el aviso no es crítico
             logger.warning("# [SERVICE INTAKE] Aviso no enviado: %s", exc)
@@ -408,10 +424,7 @@ def service_intake_reply(intake_pk, body, media_url, content_type,
         phone_number=from_number, is_active=True,
     ).order_by("-session_start").first()
     try:
-        sid = WhatsAppChatService.send_reply(
-            from_number=platform_number, to_number=from_number,
-            reply_text=text,
-        )
+        sid = deliver_intake_text(intake, text, from_number)
     except Exception as exc:  # noqa: BLE001 -- se registra sin SID
         logger.error("# [SERVICE INTAKE] Error enviando respuesta: %s", exc)
         sid = ""

@@ -32,6 +32,8 @@ logger = logging.getLogger(__name__)
 
 _SW_PATH = Path(__file__).resolve().parent / "static_src" / "room_sw.js"
 MAX_BODY = 2000
+MAX_UPLOAD_BYTES = 15 * 1024 * 1024
+UPLOAD_TYPES = ("application/pdf", "image/jpeg", "image/png", "image/webp")
 PAGE_SIZE = 200
 
 
@@ -100,6 +102,7 @@ def _member_list(room):
                     member.last_seen_at is not None
                     and member.last_seen_at > since
                 ),
+                "whatsapp": member.whatsapp_inside,
             }
             for member in members
         ),
@@ -240,6 +243,56 @@ def send(request, slug):
         room, body, author=viewer.person, author_name=viewer.name,
     )
     room_service.mark_seen(viewer.member)
+    # S138: with a service conversation open, the text also goes to
+    # Alia, who answers in the room.
+    # Con una conversación de servicio abierta, el texto va también a
+    # Alia, que contesta en la sala.
+    room_service.start_room_service(viewer, room, body=body)
+    return JsonResponse({"message": _message_json(message, room)})
+
+
+@never_cache
+@require_POST
+def upload(request, slug):
+    """
+    POST /sala/<slug>/subir/: send a PDF or a photo to the room.
+
+    ---
+
+    Manda un PDF o una foto a la sala (campo `file`, texto opcional en
+    `body`). Si quien lo manda da servicios, empieza (o sigue) la
+    conversación de servicio con Alia, que contesta en la sala (S138).
+    """
+    room = _room_or_404(request, slug)
+    viewer = room_service.viewer_for(request, room)
+    if not viewer.name:
+        return HttpResponseForbidden("Sin nombre con el que escribir.")
+    upload_file = request.FILES.get("file")
+    if (
+        upload_file is None
+        or upload_file.content_type not in UPLOAD_TYPES
+        or upload_file.size > MAX_UPLOAD_BYTES
+    ):
+        return JsonResponse({
+            "error": "Manda un PDF o una foto (JPG, PNG o WEBP) de menos "
+                     "de 15 MB.",
+        }, status=400)
+    attachment = room_service.store_upload(
+        upload_file.read(), upload_file.content_type, upload_file.name,
+    )
+    if attachment is None:
+        return JsonResponse(
+            {"error": "No se ha podido guardar el archivo."}, status=500,
+        )
+    body = str(request.POST.get("body", "")).strip()[:MAX_BODY]
+    message = room_service.post_message(
+        room, body, author=viewer.person, author_name=viewer.name,
+        attachment=attachment,
+    )
+    room_service.mark_seen(viewer.member)
+    room_service.start_room_service(
+        viewer, room, body=body, attachment=attachment,
+    )
     return JsonResponse({"message": _message_json(message, room)})
 
 

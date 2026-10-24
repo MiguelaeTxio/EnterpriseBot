@@ -335,10 +335,8 @@ def post_message(room, body, author=None, author_name="", kind=None,
         attachment_type=attachment.get("type", "")[:100],
         work_order=work_order,
     )
-    author_pk = author.pk if author is not None else None
-    transaction.on_commit(
-        lambda: schedule_notices(room.pk, author_pk),
-    )
+    message_pk = message.pk
+    transaction.on_commit(lambda: schedule_delivery(message_pk))
     return message
 
 
@@ -363,23 +361,31 @@ def _claim_notice(member_pk, now):
     )
 
 
-def schedule_notices(room_pk, author_person_pk=None):
+def schedule_delivery(message_pk):
     """
-    Send the WhatsApp notice to the members that need one.
+    Deliver a new message to the other members.
 
     ---
 
-    Manda el aviso por WhatsApp a los miembros que lo necesitan: todos
-    menos el autor, quien está dentro de la sala ahora mismo y quien
-    ya tiene un aviso sin abrir de esta tanda.
+    Reparte un mensaje nuevo a los demás miembros (todos menos el
+    autor). Quien está dentro por WhatsApp lo recibe por WhatsApp
+    (S138); al resto se le manda el aviso de la tanda, salvo que tenga
+    la sala abierta ahora mismo o ya tenga un aviso sin abrir.
     """
-    from chat.tasks import send_room_notice
+    from chat.tasks import relay_room_message, send_room_notice
 
+    message = ChatMessage.objects.filter(pk=message_pk).first()
+    if message is None:
+        return
     now = timezone.now()
-    members = ChatRoomMember.objects.filter(room_id=room_pk)
-    if author_person_pk is not None:
-        members = members.exclude(person_id=author_person_pk)
+    members = ChatRoomMember.objects.filter(room_id=message.room_id)
+    if message.author_id is not None:
+        members = members.exclude(person_id=message.author_id)
+    inside = []
     for member in members:
+        if member.whatsapp_inside:
+            inside.append(member.pk)
+            continue
         if (
             member.last_seen_at is not None
             and now - member.last_seen_at < PRESENCE_WINDOW
@@ -387,6 +393,8 @@ def schedule_notices(room_pk, author_person_pk=None):
             continue
         if _claim_notice(member.pk, now):
             send_room_notice.delay(member.pk)
+    if inside:
+        relay_room_message.delay(message_pk, inside)
 
 
 def notice_text(member):
@@ -710,3 +718,492 @@ def unsign_source(token):
     if not blob.startswith(SOURCE_PREFIX + "/"):
         return "", ""
     return blob, str(payload.get("t", ""))
+
+
+# ---------------------------------------------------------------------------
+# Inside the room through WhatsApp (S138).
+# Dentro de la sala por WhatsApp (S138).
+# ---------------------------------------------------------------------------
+
+ENTER_COMMAND = "#asistencia"
+LEAVE_COMMAND = "#salir"
+UPLOAD_PREFIX = "asistencia/sala"
+GCS_SCHEME = "gcs:"
+
+
+def _twilio_send(phone, text, media_url=None):
+    """
+    Send a free WhatsApp message (inside the 24 h window).
+
+    ---
+
+    Manda un mensaje libre por WhatsApp (dentro de la ventana de 24 h)
+    y devuelve su SID. Las excepciones de Twilio se propagan.
+    """
+    from whatsapp.tasks import _build_twilio_client, _get_whatsapp_sender
+    from whatsapp.window_service import to_e164
+
+    sender = _get_whatsapp_sender()
+    if not sender.startswith("whatsapp:"):
+        sender = "whatsapp:%s" % sender
+    kwargs = {
+        "from_": sender, "to": "whatsapp:%s" % to_e164(phone),
+        "body": text,
+    }
+    if media_url:
+        kwargs["media_url"] = [media_url]
+    return _build_twilio_client().messages.create(**kwargs).sid
+
+
+def _say(phone, text):
+    """
+    Send a short bot answer, never breaking the caller.
+
+    ---
+
+    Contesta algo corto del bot por WhatsApp sin romper nunca al que
+    llama (webhook o tarea).
+    """
+    try:
+        return _twilio_send(phone, text)
+    except Exception:  # noqa: BLE001 -- se registra y se sigue
+        logger.exception("# [CHAT ROOM] No se pudo contestar a %s.", phone)
+        return ""
+
+
+def member_for_phone(company, phone):
+    """
+    The Asistencia room member who owns this phone, or None.
+
+    ---
+
+    El miembro de la sala Asistencia dueño de este teléfono, o None.
+    """
+    from document_explorer.person_phone_service import (
+        resolve_person_by_phone,
+    )
+
+    person = resolve_person_by_phone(company, phone)
+    if person is None:
+        return None
+    return ChatRoomMember.objects.select_related("room", "person").filter(
+        room__company=company, room__slug=ASSISTANCE_SLUG, person=person,
+    ).first()
+
+
+def member_for_company_user(company_user):
+    """
+    The Asistencia room member of a panel user, or None.
+
+    ---
+
+    El miembro de la sala Asistencia de un usuario del panel (por su
+    ficha de persona), o None.
+    """
+    person = getattr(company_user, "person_identity", None)
+    if person is None:
+        return None
+    return ChatRoomMember.objects.select_related("room", "person").filter(
+        room__company=company_user.company, room__slug=ASSISTANCE_SLUG,
+        person=person,
+    ).first()
+
+
+def enter_whatsapp(member, phone):
+    """
+    Put the member inside the room through WhatsApp.
+
+    ---
+
+    Mete al miembro en la sala por WhatsApp y se lo dice. Nada si ya
+    estaba dentro.
+    """
+    if member.whatsapp_inside:
+        return False
+    ChatRoomMember.objects.filter(pk=member.pk).update(
+        whatsapp_inside=True, whatsapp_joined_at=timezone.now(),
+    )
+    member.whatsapp_inside = True
+    _say(phone, (
+        "Estás en la sala #%s. Lo que escribas aquí va a la sala y te "
+        "llegará lo que escriban los demás. Escribe %s para salir."
+    ) % (member.room.slug, LEAVE_COMMAND))
+    logger.info("# [CHAT ROOM] Miembro %s dentro por WhatsApp.", member.pk)
+    return True
+
+
+def leave_whatsapp(member):
+    """
+    Take the member out of the room through WhatsApp.
+
+    ---
+
+    Saca al miembro de la sala por WhatsApp: vuelve a recibir solo el
+    aviso de mensajes nuevos.
+    """
+    ChatRoomMember.objects.filter(pk=member.pk).update(
+        whatsapp_inside=False,
+    )
+    member.whatsapp_inside = False
+    logger.info("# [CHAT ROOM] Miembro %s fuera por WhatsApp.", member.pk)
+
+
+def handle_whatsapp_command(company, from_number, body):
+    """
+    #asistencia and #salir sent by WhatsApp (True if it was one).
+
+    ---
+
+    Órdenes de la sala por WhatsApp: `#asistencia` entra y `#salir`
+    sale. Solo los miembros de la sala (Miguel Ángel, S138: un grupo
+    reducido, no los chóferes). Devuelve True si era una orden.
+    """
+    command = (body or "").strip().lower()
+    if command not in (ENTER_COMMAND, LEAVE_COMMAND):
+        return False
+    member = member_for_phone(company, from_number)
+    if member is None:
+        _say(from_number, "No estás en la sala de Asistencia.")
+        return True
+    if command == ENTER_COMMAND:
+        if not enter_whatsapp(member, from_number):
+            _say(from_number, (
+                "Ya estás en la sala #%s. Escribe %s para salir."
+            ) % (member.room.slug, LEAVE_COMMAND))
+        return True
+    if member.whatsapp_inside:
+        leave_whatsapp(member)
+        _say(from_number, (
+            "Has salido de la sala #%s. Te avisaré cuando haya mensajes "
+            "nuevos."
+        ) % member.room.slug)
+    else:
+        _say(from_number, "No estabas dentro de la sala.")
+    return True
+
+
+def store_upload(data, content_type, name=""):
+    """
+    Keep a file sent to the room in GCS; attachment dict or None.
+
+    ---
+
+    Guarda en GCS un archivo mandado a la sala (foto o PDF) y devuelve
+    el adjunto (`blob`, `name`, `type`), o None si no se pudo.
+    """
+    import uuid
+
+    from spare_parts.gcs_service import upload_bytes
+
+    extension = {
+        "application/pdf": "pdf", "image/png": "png",
+        "image/webp": "webp", "image/jpeg": "jpg",
+    }.get(content_type, "bin")
+    blob_name = "%s/%s/%s.%s" % (
+        UPLOAD_PREFIX, timezone.localdate().strftime("%Y/%m"),
+        uuid.uuid4().hex, extension,
+    )
+    try:
+        upload_bytes(
+            ATTACHMENT_BUCKET, blob_name, data, content_type=content_type,
+        )
+    except Exception:  # noqa: BLE001 -- el mensaje sale sin adjunto
+        logger.exception("# [CHAT ROOM] No se pudo guardar el adjunto.")
+        return None
+    clean = (name or "").replace("/", "_").strip()
+    return {
+        "blob": blob_name,
+        "name": clean or "adjunto.%s" % extension,
+        "type": content_type,
+    }
+
+
+def post_whatsapp_message(member_pk, body, media_url="", content_type=""):
+    """
+    Post in the room what a member sent by WhatsApp (text or file).
+
+    ---
+
+    Publica en la sala lo que un miembro ha mandado por WhatsApp: el
+    texto y, si trae, la foto o el PDF (se baja de Twilio y se guarda
+    en GCS).
+    """
+    member = ChatRoomMember.objects.select_related("room", "person").filter(
+        pk=member_pk,
+    ).first()
+    if member is None:
+        return None
+    attachment = None
+    if media_url:
+        from document_explorer.worker_request_service import (
+            _download_media,
+        )
+
+        try:
+            attachment = store_upload(
+                _download_media(media_url), content_type,
+            )
+        except Exception:  # noqa: BLE001 -- sale el texto igual
+            logger.exception("# [CHAT ROOM] Adjunto de WhatsApp perdido.")
+    if not (body or attachment):
+        return None
+    message = post_message(
+        member.room, body or "", author=member.person,
+        author_name=person_name(member.person), attachment=attachment,
+    )
+    ChatRoomMember.objects.filter(pk=member.pk).update(
+        last_seen_at=timezone.now(),
+    )
+    return message
+
+
+def route_whatsapp(company, from_number, body, media_url="",
+                   content_type=""):
+    """
+    A member inside the room writes by WhatsApp: to the room.
+
+    ---
+
+    Si quien escribe está dentro de la sala por WhatsApp (y no tiene
+    una conversación de servicio abierta, que va antes por Alia), su
+    mensaje va a la sala. Devuelve True si lo ha atendido. Con
+    adjunto se publica en Celery (bajarlo puede tardar más de lo que
+    espera Twilio).
+    """
+    member = member_for_phone(company, from_number)
+    if member is None or not member.whatsapp_inside:
+        return False
+    if media_url:
+        from chat.tasks import post_whatsapp_to_room
+
+        post_whatsapp_to_room.delay(
+            member.pk, body, media_url, content_type,
+        )
+    else:
+        post_whatsapp_message(member.pk, body)
+    return True
+
+
+def relay_line(message):
+    """
+    One room message as a WhatsApp line.
+
+    ---
+
+    Un mensaje de la sala como línea de WhatsApp: `<Nombre> texto`, o
+    `-Alia- texto` para el bot, como en la sala.
+    """
+    if message.kind == ChatMessage.KIND_BOT:
+        head = "-%s-" % message.author_name
+    else:
+        head = "<%s>" % message.author_name
+    text = message.body or ""
+    if message.attachment_blob and not text:
+        text = message.attachment_name
+    return "%s %s" % (head, text)
+
+
+def deliver_relay(message_pk, member_pks):
+    """
+    Send a room message to the members inside by WhatsApp (Celery).
+
+    ---
+
+    Manda un mensaje de la sala a los miembros que están dentro por
+    WhatsApp, con su archivo si lo tiene. Si a alguno se le ha cerrado
+    la ventana de 24 h, sale de la sala y recibe el aviso normal
+    (plantilla), como decidió Miguel Ángel (S138).
+    """
+    from document_explorer.person_phone_service import mobile_of
+    from whatsapp.window_service import window_open
+
+    message = ChatMessage.objects.select_related("room__company").filter(
+        pk=message_pk,
+    ).first()
+    if message is None:
+        return
+    company = message.room.company
+    media_url = None
+    if message.attachment_blob:
+        from spare_parts.gcs_service import generate_signed_url
+
+        try:
+            media_url = generate_signed_url(
+                ATTACHMENT_BUCKET, message.attachment_blob,
+            )
+        except Exception:  # noqa: BLE001 -- sale el texto y el nombre
+            logger.exception("# [CHAT ROOM] Sin URL firmada del adjunto.")
+    text = relay_line(message)
+    members = ChatRoomMember.objects.select_related("person", "room").filter(
+        pk__in=member_pks, whatsapp_inside=True,
+    )
+    for member in members:
+        phone = mobile_of(member.person)
+        if not phone:
+            leave_whatsapp(member)
+            continue
+        if not window_open(company, phone):
+            leave_whatsapp(member)
+            if _claim_notice(member.pk, timezone.now()):
+                deliver_notice(member.pk)
+            continue
+        try:
+            _twilio_send(phone, text, media_url=media_url)
+        except Exception:  # noqa: BLE001 -- los demás siguen
+            logger.exception(
+                "# [CHAT ROOM] Mensaje %s no llegó a %s.", message_pk, phone,
+            )
+
+
+# ---------------------------------------------------------------------------
+# The service conversation with Alia happens in the room (S138).
+# La conversación de servicio con Alia ocurre en la sala (S138).
+# ---------------------------------------------------------------------------
+
+def intake_member(intake):
+    """
+    The room member of whoever gives the service, or None.
+
+    ---
+
+    El miembro de la sala de quien da el servicio, o None (entonces la
+    conversación sigue solo por WhatsApp, como antes).
+    """
+    return member_for_company_user(intake.requested_by)
+
+
+def intake_inbound(intake, body, media_url, content_type, from_number):
+    """
+    A WhatsApp message of a service conversation: into the room.
+
+    ---
+
+    Un mensaje de WhatsApp de una conversación de servicio: si quien da
+    el servicio es miembro de la sala, entra en ella (dar un servicio a
+    Alia es entrar en la sala, Miguel Ángel, S138) y su mensaje, con el
+    documento si lo trae, sale en la sala antes que la respuesta de
+    Alia.
+    """
+    member = intake_member(intake)
+    if member is None:
+        return None
+    _set_surface(intake, "whatsapp")
+    enter_whatsapp(member, from_number)
+    post_whatsapp_message(member.pk, body, media_url, content_type)
+    return member
+
+
+def _set_surface(intake, surface):
+    """
+    Note where the giver wrote last (whatsapp or room).
+
+    ---
+
+    Anota desde dónde escribió por última vez quien da el servicio
+    (`whatsapp` o `room`), para saber si contestarle también fuera de
+    la sala.
+    """
+    from budgets.models import ServiceIntake
+
+    data = dict(intake.data or {})
+    data["last_surface"] = surface
+    intake.data = data
+    ServiceIntake.objects.filter(pk=intake.pk).update(data=data)
+
+
+def deliver_intake_text(intake, text, from_number):
+    """
+    Alia's answer in a service conversation; returns the WhatsApp SID.
+
+    ---
+
+    La respuesta de Alia en una conversación de servicio. Si quien da
+    el servicio es miembro de la sala, sale en la sala (y por la sala
+    le llega si está dentro por WhatsApp); si no está dentro y escribió
+    por WhatsApp, también se le manda directamente. Si no es miembro,
+    por WhatsApp como siempre. Devuelve el SID del WhatsApp directo, o
+    "".
+    """
+    from budgets.models import ServiceIntake
+
+    member = intake_member(intake)
+    if member is not None:
+        post_message(
+            member.room, text, author=None, author_name=BOT_NAME,
+            kind=ChatMessage.KIND_BOT,
+        )
+        fresh = ServiceIntake.objects.filter(pk=intake.pk).values_list(
+            "data", flat=True,
+        ).first() or {}
+        member.refresh_from_db(fields=["whatsapp_inside"])
+        if member.whatsapp_inside or (
+            fresh.get("last_surface") == "room"
+        ) or not from_number:
+            return ""
+    if not from_number:
+        return ""
+    return _twilio_send(from_number, text)
+
+
+def start_room_service(viewer, room, body="", attachment=None):
+    """
+    Hand a room message of a service giver to Alia, if it applies.
+
+    ---
+
+    Pasa a Alia lo que escribe en la web de la sala quien da servicios:
+    un PDF o una foto abre (o sigue) la conversación de servicio; un
+    texto solo va a Alia si ya hay una abierta. Devuelve True si se ha
+    pasado a Alia.
+    """
+    from budgets.models import ServiceIntake
+    from budgets.service_intake import (
+        open_intake,
+        service_giver,
+        start_intake,
+    )
+    from whatsapp.tasks import _get_whatsapp_sender, service_intake_reply
+
+    company_user = viewer.company_user
+    if not service_giver(company_user):
+        return False
+    intake = open_intake(company_user, ServiceIntake.CHANNEL_WHATSAPP)
+    if intake is None and attachment is None:
+        return False
+    if intake is None:
+        from budgets.assistance_resources import operator_phone
+
+        intake = start_intake(
+            company_user, ServiceIntake.CHANNEL_WHATSAPP,
+            operator_phone(company_user) or "",
+        )
+    _set_surface(intake, "room")
+    media_url = content_type = ""
+    if attachment is not None:
+        media_url = GCS_SCHEME + attachment["blob"]
+        content_type = attachment["type"]
+    service_intake_reply.delay(
+        intake.pk, body, media_url, content_type, _get_whatsapp_sender(),
+        intake.phone_number or "", decide=False, posted=True,
+    )
+    return True
+
+
+def media_bytes(media_url):
+    """
+    Bytes of a service document: Twilio media or a room upload in GCS.
+
+    ---
+
+    Bytes de un documento de servicio: un adjunto de Twilio, o uno
+    subido a la sala (`gcs:<blob>`).
+    """
+    if media_url.startswith(GCS_SCHEME):
+        from spare_parts.gcs_service import download_bytes
+
+        return download_bytes(
+            ATTACHMENT_BUCKET, media_url[len(GCS_SCHEME):],
+        )
+    from document_explorer.worker_request_service import _download_media
+
+    return _download_media(media_url)

@@ -7,6 +7,10 @@ worker la guarde y se pueda instalar en cualquier móvil. Cada línea:
 -Alia- y, si traen el documento de TIREA, con su enlace. Pide los
 mensajes nuevos cada 4 s mientras está a la vista. El botón "Añadir"
 solo lo ve quien gestiona la sala.
+S138: botón 📎 para mandar un PDF o una foto; si quien lo manda da
+servicios, Alia empieza el servicio con él y contesta en la sala.
+En Miembros, punto verde para quien la tiene abierta o está dentro por
+WhatsApp (#asistencia).
 {% endcomment %}
 <!doctype html>
 <html lang="es">
@@ -50,7 +54,9 @@ solo lo ve quien gestiona la sala.
         form#composer { display: flex; gap: 6px; padding: 8px; background: #f8f9fa; border-top: 1px solid #dee2e6; flex: 0 0 auto; }
         #body { flex: 1 1 auto; font-size: 1rem; padding: 8px; border: 1px solid #ced4da; border-radius: 6px; resize: none; height: 40px; font-family: inherit; }
         #btn-send { background: #0d6efd; color: #fff; border: 0; border-radius: 6px; padding: 0 16px; font-size: 1rem; font-weight: 600; }
-        #btn-send:disabled { opacity: .6; }
+        #btn-send:disabled, #btn-attach:disabled { opacity: .6; }
+        #btn-attach { background: #f1f3f5; color: #212529; border: 1px solid #ced4da; border-radius: 6px; padding: 0 12px; font-size: 1.1rem; cursor: pointer; }
+        .wa { font-size: .7rem; color: #198754; font-weight: 600; }
         #error { color: #842029; font-size: .8rem; padding: 0 12px; }
         dialog { border: 1px solid #dee2e6; border-radius: 10px; padding: 12px; width: min(420px, 94vw); }
         dialog input { width: 100%; padding: 8px; font-size: 1rem; border: 1px solid #ced4da; border-radius: 6px; }
@@ -71,13 +77,15 @@ solo lo ve quien gestiona la sala.
     <div id="log" aria-live="polite"></div>
     <aside id="people">
         <h2>Miembros</h2>
-        <ul id="people-list">{% for member in members %}<li><span class="dot{% if member.online %} on{% endif %}" title="{% if member.online %}Tiene la sala abierta{% else %}No tiene la sala abierta{% endif %}"></span>{{ member.name }}</li>{% endfor %}</ul>
+        <ul id="people-list">{% for member in members %}<li><span class="dot{% if member.online or member.whatsapp %} on{% endif %}" title="{% if member.whatsapp %}Dentro por WhatsApp{% elif member.online %}Tiene la sala abierta{% else %}No tiene la sala abierta{% endif %}"></span>{{ member.name }}{% if member.whatsapp %} <span class="wa">WhatsApp</span>{% endif %}</li>{% endfor %}</ul>
     </aside>
 </main>
 <div id="error"></div>
 {% if can_write %}
 <form id="composer" autocomplete="off">
-    <textarea id="body" maxlength="2000" placeholder="Escribe como {{ viewer.name }}" aria-label="Mensaje"></textarea>
+    <button type="button" id="btn-attach" title="Mandar un PDF o una foto. Si das servicios, Alia empieza el servicio con él" aria-label="Adjuntar PDF o foto">📎</button>
+    <input type="file" id="file" accept="application/pdf,image/jpeg,image/png,image/webp" hidden>
+    <textarea id="body" maxlength="2000" placeholder="Escribe un mensaje" title="Escribes como {{ viewer.name }}" aria-label="Mensaje"></textarea>
     <button type="submit" id="btn-send">Enviar</button>
 </form>
 {% endif %}
@@ -162,10 +170,16 @@ solo lo ve quien gestiona la sala.
         members.forEach(function (member) {
             var li = document.createElement("li");
             var dot = document.createElement("span");
-            dot.className = member.online ? "dot on" : "dot";
-            dot.title = member.online ? "Tiene la sala abierta" : "No tiene la sala abierta";
+            var inside = member.online || member.whatsapp;
+            dot.className = inside ? "dot on" : "dot";
+            dot.title = member.whatsapp ? "Dentro por WhatsApp" : (member.online ? "Tiene la sala abierta" : "No tiene la sala abierta");
             li.appendChild(dot);
             li.appendChild(document.createTextNode(member.name));
+            if (member.whatsapp) {
+                var wa = document.createElement("span");
+                wa.className = "wa"; wa.textContent = " WhatsApp";
+                li.appendChild(wa);
+            }
             people.appendChild(li);
         });
         document.getElementById("people-count").textContent = members.length;
@@ -212,6 +226,33 @@ solo lo ve quien gestiona la sala.
                 // El texto se queda en la caja para volver a enviarlo.
                 errorBox.textContent = "No se ha podido enviar. Revisa la conexión y vuelve a pulsar Enviar.";
             }).then(function () { sendBtn.disabled = false; body.focus(); });
+        });
+        // PDF or photo: to the room and, for a service giver, to Alia.
+        // PDF o foto: a la sala y, si da servicios, a Alia.
+        var attachBtn = document.getElementById("btn-attach");
+        var fileInput = document.getElementById("file");
+        attachBtn.addEventListener("click", function () { fileInput.click(); });
+        fileInput.addEventListener("change", function () {
+            if (!fileInput.files.length) { return; }
+            var data = new FormData();
+            data.append("file", fileInput.files[0]);
+            data.append("body", body.value.trim());
+            attachBtn.disabled = true; sendBtn.disabled = true;
+            errorBox.textContent = "Subiendo " + fileInput.files[0].name + "…";
+            fetch(BASE + "subir/", {
+                method: "POST", credentials: "same-origin",
+                headers: {"X-CSRFToken": csrf}, body: data
+            }).then(function (r) {
+                return r.json().then(function (result) {
+                    if (!r.ok) { throw new Error(result.error || r.status); }
+                    body.value = ""; errorBox.textContent = ""; poll();
+                });
+            }).catch(function (error) {
+                errorBox.textContent = "No se ha podido mandar el archivo. " + (error.message || "");
+            }).then(function () {
+                attachBtn.disabled = false; sendBtn.disabled = false;
+                fileInput.value = "";
+            });
         });
         body.addEventListener("keydown", function (event) {
             if (event.key === "Enter" && !event.shiftKey && window.matchMedia("(min-width: 701px)").matches) {

@@ -560,6 +560,18 @@ class ChatRoomMember(models.Model):
         max_length=255, blank=True, default="",
         verbose_name="Error del último aviso",
     )
+    # S138: inside the room through WhatsApp (#asistencia, or giving a
+    # service to Alia): what he writes goes to the room and he gets the
+    # room by WhatsApp, until #salir or the 24 h window closes.
+    # Dentro de la sala por WhatsApp (#asistencia, o al dar un servicio
+    # a Alia): lo que escribe va a la sala y le llega la sala por
+    # WhatsApp, hasta #salir o hasta que se cierra la ventana de 24 h.
+    whatsapp_inside = models.BooleanField(
+        default=False, verbose_name="Dentro por WhatsApp",
+    )
+    whatsapp_joined_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Entró por WhatsApp",
+    )
 
     class Meta:
         verbose_name = "Miembro de sala"
