@@ -17,7 +17,14 @@ si son km u horas, o sin centro de gasto (tanques, taller...).
     Se muestran {{ max_rows }} de {{ total }} repostajes: acota las fechas o los filtros para ver el resto. La exportación a Excel lleva todos.
 </div>
 {% endif %}
-<table class="table table-hover table-light align-middle stack-mobile" id="rfl-table">
+{% comment %}
+S136 (sesión invasora): sin stack-mobile. En el móvil las tarjetas
+ocultaban la cabecera, y con ella la casilla "Seleccionar todos"
+(Miguel Ángel: "no puedo seleccionar todos, para aplicar alguna acción
+a todos") y el orden por columnas. Igual que Fichajes: la tabla
+mantiene columnas y cabecera en cualquier pantalla, con scroll lateral.
+{% endcomment %}
+<table class="table table-hover table-light align-middle" id="rfl-table">
     <thead class="table-light">
         <tr>
             <th class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input" id="rfl-check-all" title="Seleccionar todos los que se ven"></th>
@@ -42,7 +49,7 @@ si son km u horas, o sin centro de gasto (tanques, taller...).
     <tbody>
         {% for row in rows %}
         <tr>
-            <td class="sticky-col sticky-col-1 stack-mobile-check">
+            <td class="sticky-col sticky-col-1">
                 <input type="checkbox" class="form-check-input rfl-row-check" data-pk="{{ row.pk }}" data-label="{{ row.label }}">
             </td>
             <td class="sticky-col sticky-col-2">
