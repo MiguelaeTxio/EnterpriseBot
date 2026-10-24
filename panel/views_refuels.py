@@ -16,18 +16,26 @@ selección, exportación a Excel y una acción masiva: fijar a mano si el
 vehículo apunta km u horas (S135: A44 no se pudo deducir). Los
 suministros no se editan: el dato correcto lo dará el chófer por
 WhatsApp.
+
+S137: selector "Ver" con otras dos vistas sobre los mismos filtros,
+Miguel Ángel: "necesito una visión desde el punto de vista de los
+vehículos y otra desde el punto de vista de los repostadores". En
+Vehículos, una fila por vehículo de GasoGes y en Repostadores una por
+usuario de GasoGes, con sus totales en el periodo (repostajes, litros,
+último repostaje, dudosos...). Las acciones de unidad y de preguntar al
+chófer se aplican en Vehículos a los vehículos marcados.
 """
 import datetime
 import io
 
-from django.db.models import Q
+from django.db.models import Count, Max, Q, Sum
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.utils import timezone
 from django.views import View
 
 from fleet.gasoges_sync import build_readings
-from fleet.models import GasoGesSupply, GasoGesVehicle
+from fleet.models import GasoGesSupply, GasoGesUser, GasoGesVehicle
 from panel.mixins import CompanyUserRequiredMixin
 from panel.navigation_persistence import (
     apply_list_navigation,
@@ -37,7 +45,8 @@ from panel.views_machine_service import can_edit_service
 from panel.views_vacation_balance import _param, _parse_date
 
 SCREEN_KEY = "refuels"
-FILTER_KEYS = ("search", "status", "ask", "date_from", "date_to", "sort")
+FILTER_KEYS = ("view", "search", "status", "ask", "date_from", "date_to",
+               "sort")
 NO_STATUS = "none"
 # Filtro "¿Se pregunta al chófer?": sí / no (S135).
 # ---
@@ -48,16 +57,64 @@ _MAX_RANGE_DAYS = 366
 _DEFAULT_DAYS = 30
 _MAX_ROWS = 1000
 
-_COLUMNS = (
-    ("date", "Fecha y hora", "supplied_at"),
-    ("machine", "Centro de gasto", "vehicle__machine__code"),
-    ("vehicle", "Vehículo (GasoGes)", "vehicle__plate"),
-    ("driver", "Quién repostó", "user__name"),
-    ("value", "KM tecleado", "meter_value"),
-    ("litres", "Litros", "litres"),
-    ("status", "Estado", "status"),
+# S137: tres vistas sobre los mismos suministros filtrados.
+# ---
+# Three views over the same filtered supplies.
+VIEW_SUPPLIES = "supplies"
+VIEW_VEHICLES = "vehicles"
+VIEW_USERS = "users"
+VIEW_CHOICES = (
+    (VIEW_SUPPLIES, "Repostajes"),
+    (VIEW_VEHICLES, "Vehículos"),
+    (VIEW_USERS, "Repostadores"),
 )
-_SORT_FIELDS = {key: field for key, _label, field in _COLUMNS}
+
+_COLUMNS = {
+    VIEW_SUPPLIES: (
+        ("date", "Fecha y hora", "supplied_at"),
+        ("machine", "Centro de gasto", "vehicle__machine__code"),
+        ("vehicle", "Vehículo (GasoGes)", "vehicle__plate"),
+        ("driver", "Quién repostó", "user__name"),
+        ("value", "KM tecleado", "meter_value"),
+        ("litres", "Litros", "litres"),
+        ("status", "Estado", "status"),
+    ),
+    VIEW_VEHICLES: (
+        ("vmachine", "Centro de gasto", "vehicle__machine__code"),
+        ("vplate", "Vehículo (GasoGes)", "vehicle__plate"),
+        ("vname", "Nombre (GasoGes)", "vehicle__name"),
+        ("vcount", "Repostajes", "n_supplies"),
+        ("vlitres", "Litros", "total_litres"),
+        ("vlast", "Último repostaje", "last_at"),
+        ("vkm", "Últimos KM (GasoGes)", "vehicle__last_km"),
+        ("vanomaly", "Dudosos", "n_anomalies"),
+        ("vdrivers", "Repostadores", "n_others"),
+    ),
+    VIEW_USERS: (
+        ("uname", "Repostador (GasoGes)", "user__name"),
+        ("uperson", "Ficha de trabajador", "user__person__first_surname"),
+        ("ucount", "Repostajes", "n_supplies"),
+        ("ulitres", "Litros", "total_litres"),
+        ("ulast", "Último repostaje", "last_at"),
+        ("uanomaly", "Dudosos", "n_anomalies"),
+        ("uvehicles", "Vehículos", "n_others"),
+    ),
+}
+_DEFAULT_ORDER = {
+    VIEW_SUPPLIES: ["-supplied_at"],
+    VIEW_VEHICLES: ["vehicle__machine__code", "vehicle__plate"],
+    VIEW_USERS: ["user__name"],
+}
+_SELECTION_KEYS = {
+    VIEW_SUPPLIES: "selection",
+    VIEW_VEHICLES: "selection_vehicles",
+    VIEW_USERS: "selection_users",
+}
+_TOTAL_LABELS = {
+    VIEW_SUPPLIES: "Repostajes",
+    VIEW_VEHICLES: "Vehículos",
+    VIEW_USERS: "Repostadores",
+}
 
 _STATUS_BADGES = {
     GasoGesSupply.STATUS_READING: "success",
@@ -129,18 +186,44 @@ def _ask_values(request):
     return [code == "yes" for code in chosen]
 
 
-def _parse_sort(raw):
+def _view(request):
+    """
+    Current view: supplies, vehicles or users (default supplies).
+
+    ---
+
+    Vista actual: repostajes, vehículos o repostadores (por defecto,
+    repostajes).
+    """
+    raw = _param(request, "view")
+    return raw if raw in dict(VIEW_CHOICES) else VIEW_SUPPLIES
+
+
+def _sort_fields(view):
+    return {key: field for key, _label, field in _COLUMNS[view]}
+
+
+def _parse_sort(raw, view):
+    """
+    Valid sort keys of the view, at most four (unknown keys dropped).
+
+    ---
+
+    Claves de orden válidas de la vista, como mucho cuatro; las de otra
+    vista se descartan (al cambiar de vista no queda un orden roto).
+    """
+    fields = _sort_fields(view)
     keys, seen = [], set()
     for token in (raw or "").split(","):
         token = token.strip()
         key = token.lstrip("-")
-        if key in _SORT_FIELDS and key not in seen:
+        if key in fields and key not in seen:
             keys.append((key, token.startswith("-")))
             seen.add(key)
     return keys[:_MAX_SORT_KEYS]
 
 
-def _sort_controls(raw):
+def _sort_controls(raw, view):
     """
     Header links, arrows and priorities (same rules as Fichajes).
 
@@ -149,10 +232,10 @@ def _sort_controls(raw):
     Enlaces, flechas y prioridad de cada cabecera (mismas reglas que
     Fichajes y Centros de gasto).
     """
-    sort_keys = _parse_sort(raw)
+    sort_keys = _parse_sort(raw, view)
     active = [key for key, _desc in sort_keys]
     columns = []
-    for key, label, _field in _COLUMNS:
+    for key, label, _field in _COLUMNS[view]:
         if key in active:
             idx = active.index(key)
             desc = sort_keys[idx][1]
@@ -246,30 +329,171 @@ def _row(supply):
     }
 
 
-def _list_context(request):
+def _person_label(person):
     """
-    Context of the table: filtered supplies, sorted, capped.
+    "Surnames, Name" of a worker file, or "".
 
     ---
 
-    Contexto de la tabla: suministros filtrados y ordenados, hasta
+    "Apellidos, Nombre" de la ficha de trabajador, o "".
+    """
+    if person is None:
+        return ""
+    surnames = " ".join(
+        part for part in (person.first_surname, person.second_surname)
+        if part)
+    return ", ".join(part for part in (surnames, person.given_name) if part)
+
+
+def _vehicle_label(vehicle):
+    return vehicle.plate or vehicle.name or "GasoGes %s" % vehicle.gasoges_id
+
+
+def _grouped(supplies, field, other, order):
+    """
+    Supplies grouped by `field` with their totals, sorted.
+
+    ---
+
+    Suministros agrupados por `field` (vehículo o repostador) con sus
+    totales en el periodo: número, litros, último, dudosos y cuántos
+    del otro lado (repostadores distintos de un vehículo, o vehículos
+    distintos de un repostador).
+    """
+    return supplies.order_by().values(field).annotate(
+        n_supplies=Count("id"),
+        total_litres=Sum("litres"),
+        last_at=Max("supplied_at"),
+        n_anomalies=Count(
+            "id", filter=Q(status=GasoGesSupply.STATUS_ANOMALY)),
+        n_others=Count(other, distinct=True),
+    ).order_by(*order)
+
+
+def _totals(group):
+    return {
+        "count": group["n_supplies"],
+        "litres": group["total_litres"],
+        "last": (timezone.localtime(group["last_at"])
+                 if group["last_at"] else None),
+        "anomalies": group["n_anomalies"],
+        "others": group["n_others"],
+    }
+
+
+def _vehicle_rows(groups):
+    """
+    One row per GasoGes vehicle (dumb template).
+
+    ---
+
+    Una fila por vehículo de GasoGes, lista para la plantilla.
+    """
+    vehicles = GasoGesVehicle.objects.select_related("machine").in_bulk(
+        [group["vehicle"] for group in groups])
+    rows = []
+    for group in groups:
+        vehicle = vehicles.get(group["vehicle"])
+        if vehicle is None:
+            continue
+        label = _vehicle_label(vehicle)
+        rows.append({
+            "pk": vehicle.pk,
+            "machine": vehicle.machine,
+            "vehicle_label": label,
+            "vehicle_name": vehicle.name,
+            "last_km": vehicle.last_km,
+            "unit": vehicle.get_unit_display(),
+            "unit_known": vehicle.unit != GasoGesVehicle.UNIT_UNKNOWN,
+            "unit_source": _UNIT_SOURCE_LABELS.get(vehicle.unit_source, ""),
+            "ask_driver": vehicle.ask_driver,
+            "search": (vehicle.machine.code if vehicle.machine
+                       else vehicle.plate or vehicle.name),
+            "label": ("%s %s" % (vehicle.machine.code, label)
+                      if vehicle.machine else label),
+            **_totals(group),
+        })
+    return rows
+
+
+def _user_rows(groups):
+    """
+    One row per GasoGes user (who refuels); unknown users together.
+
+    ---
+
+    Una fila por usuario de GasoGes (quien reposta). Los repostajes sin
+    usuario conocido van juntos en una fila.
+    """
+    users = GasoGesUser.objects.select_related("person").in_bulk(
+        [group["user"] for group in groups if group["user"]])
+    rows = []
+    for group in groups:
+        user = users.get(group["user"]) if group["user"] else None
+        name = user.name if user else "Sin usuario en GasoGes"
+        rows.append({
+            "pk": user.pk if user else 0,
+            "name": name,
+            "known": user is not None,
+            "person": user.person if user else None,
+            "person_label": _person_label(user.person) if user else "",
+            "search": user.name if user else "",
+            "label": name,
+            **_totals(group),
+        })
+    return rows
+
+
+def _list_context(request):
+    """
+    Context of the table of the current view: filtered, sorted, capped.
+
+    ---
+
+    Contexto de la tabla de la vista actual: filtrada y ordenada, hasta
     1.000 filas (con aviso si hay más).
     """
+    view = _view(request)
     supplies = _filtered_supplies(request)
+    wanted = None
     if request.GET.get("only_selected") == "1":
         wanted = [int(pk) for pk in request.GET.get(
             "selected_ids", "").split(",") if pk.isdigit()]
-        supplies = supplies.filter(pk__in=wanted)
-    sort_keys = _parse_sort(_param(request, "sort"))
-    order = [("-" if desc else "") + _SORT_FIELDS[key]
-             for key, desc in sort_keys] or ["-supplied_at"]
-    total = supplies.count()
+    fields = _sort_fields(view)
+    sort_keys = _parse_sort(_param(request, "sort"), view)
+    order = [("-" if desc else "") + fields[key]
+             for key, desc in sort_keys] or _DEFAULT_ORDER[view]
+    if view == VIEW_VEHICLES:
+        if wanted is not None:
+            supplies = supplies.filter(vehicle_id__in=wanted)
+        groups = list(_grouped(supplies, "vehicle", "user", order))
+        total = len(groups)
+        rows = _vehicle_rows(groups[:_MAX_ROWS])
+    elif view == VIEW_USERS:
+        if wanted is not None:
+            chosen = Q(user_id__in=wanted)
+            if 0 in wanted:
+                chosen |= Q(user__isnull=True)
+            supplies = supplies.filter(chosen)
+        groups = list(_grouped(supplies, "user", "vehicle", order))
+        total = len(groups)
+        rows = _user_rows(groups[:_MAX_ROWS])
+    else:
+        if wanted is not None:
+            supplies = supplies.filter(pk__in=wanted)
+        total = supplies.count()
+        rows = [_row(s) for s in supplies.order_by(*order, "-id")[
+            :_MAX_ROWS]]
     date_from, date_to = _date_range(request)
     statuses = _statuses(request)
     asks = _ask_values(request)
     return {
-        "rows": [_row(s) for s in supplies.order_by(*order, "-id")[
-            :_MAX_ROWS]],
+        "view": view,
+        "view_choices": [
+            {"code": code, "label": label, "checked": code == view}
+            for code, label in VIEW_CHOICES],
+        "total_label": _TOTAL_LABELS[view],
+        "rows": rows,
         "total": total,
         "capped": total > _MAX_ROWS,
         "max_rows": _MAX_ROWS,
@@ -283,7 +507,7 @@ def _list_context(request):
             for code, label in ASK_CHOICES],
         "date_from": date_from,
         "date_to": date_to,
-        **_sort_controls(_param(request, "sort")),
+        **_sort_controls(_param(request, "sort"), view),
     }
 
 
@@ -300,15 +524,19 @@ class RefuelsTabView(CompanyUserRequiredMixin, View):
 
     def get(self, request):
         apply_list_navigation(request, SCREEN_KEY, FILTER_KEYS)
-        saved_selection = get_saved_state_key(
-            request.user.company_user, SCREEN_KEY, "selection", [])
-        if not isinstance(saved_selection, list):
-            saved_selection = []
+        company_user = request.user.company_user
+        # Una selección por vista (S137): "selection" (repostajes, la de
+        # siempre), "selection_vehicles" y "selection_users".
+        saved_selection = {}
+        for view, key in _SELECTION_KEYS.items():
+            value = get_saved_state_key(company_user, SCREEN_KEY, key, [])
+            saved_selection[view] = value if isinstance(value, list) else []
         return render(request, "panel/refuels/_pane.html", {
             **_list_context(request),
             "screen_key": SCREEN_KEY,
             "saved_selection": saved_selection,
-            "can_edit": can_edit_service(request.user.company_user),
+            "selection_keys": _SELECTION_KEYS,
+            "can_edit": can_edit_service(company_user),
         })
 
 
@@ -325,6 +553,24 @@ class RefuelsResultsView(CompanyUserRequiredMixin, View):
         apply_list_navigation(request, SCREEN_KEY, FILTER_KEYS)
         return render(request, "panel/refuels/_table.html",
                       _list_context(request))
+
+
+def _selected_vehicle_ids(request):
+    """
+    Vehicle pks of the marked rows: the vehicles themselves in the
+    Vehicles view, or the vehicles of the marked supplies.
+
+    ---
+
+    Vehículos de las filas marcadas: en la vista Vehículos, los propios
+    vehículos; en Repostajes, los de los repostajes marcados.
+    """
+    wanted = [int(pk) for pk in request.POST.get(
+        "selected_ids", "").split(",") if pk.isdigit()]
+    if request.POST.get("view") == VIEW_VEHICLES:
+        return set(wanted)
+    return set(GasoGesSupply.objects.filter(
+        pk__in=wanted).values_list("vehicle_id", flat=True))
 
 
 class RefuelsVehicleUnitView(CompanyUserRequiredMixin, View):
@@ -350,10 +596,7 @@ class RefuelsVehicleUnitView(CompanyUserRequiredMixin, View):
             return JsonResponse(
                 {"ok": False, "error": "Elige kilómetros u horas."},
                 status=400)
-        wanted = [int(pk) for pk in request.POST.get(
-            "selected_ids", "").split(",") if pk.isdigit()]
-        vehicle_ids = set(GasoGesSupply.objects.filter(
-            pk__in=wanted).values_list("vehicle_id", flat=True))
+        vehicle_ids = _selected_vehicle_ids(request)
         vehicles = GasoGesVehicle.objects.filter(
             pk__in=vehicle_ids, machine__isnull=False)
         changed = vehicles.update(
@@ -394,15 +637,13 @@ class RefuelsVehicleAskView(CompanyUserRequiredMixin, View):
                 {"ok": False, "error": "No tienes permiso para esto."},
                 status=403)
         ask = request.POST.get("ask") == "1"
-        wanted = [int(pk) for pk in request.POST.get(
-            "selected_ids", "").split(",") if pk.isdigit()]
-        vehicle_ids = set(GasoGesSupply.objects.filter(
-            pk__in=wanted).values_list("vehicle_id", flat=True))
+        vehicle_ids = _selected_vehicle_ids(request)
         changed = GasoGesVehicle.objects.filter(
             pk__in=vehicle_ids).update(ask_driver=ask)
         if not changed:
             return JsonResponse(
-                {"ok": False, "error": "Marca antes algún repostaje."},
+                {"ok": False,
+                 "error": "Marca antes algún repostaje o vehículo."},
                 status=400)
         return JsonResponse({
             "ok": True,
@@ -412,66 +653,146 @@ class RefuelsVehicleAskView(CompanyUserRequiredMixin, View):
         })
 
 
-class RefuelsExportView(CompanyUserRequiredMixin, View):
+def _excel_response(book, prefix, request):
     """
-    GET: Excel of the marked supplies (or all the filtered ones).
+    The workbook as an .xlsx download named with the date range.
 
     ---
 
-    GET: Excel de los repostajes marcados o, si no hay ninguno, de
-    todos los del filtro (sin el tope de 1.000 de la pantalla).
+    El libro como descarga .xlsx, con las fechas del filtro en el nombre.
+    """
+    buffer = io.BytesIO()
+    book.save(buffer)
+    date_from, date_to = _date_range(request)
+    response = HttpResponse(
+        buffer.getvalue(),
+        content_type=("application/vnd.openxmlformats-officedocument."
+                      "spreadsheetml.sheet"))
+    response["Content-Disposition"] = (
+        'attachment; filename="%s_%s_%s.xlsx"' % (
+            prefix, date_from.strftime("%Y%m%d"),
+            date_to.strftime("%Y%m%d")))
+    return response
+
+
+def _write_sheet(book, title, headers, lines, date_cols=()):
+    """
+    One sheet: bold frozen header, column widths, date formats.
+
+    ---
+
+    Una hoja: cabecera en negrita fija, anchos de columna y formato de
+    fecha en las columnas indicadas.
+    """
+    from openpyxl.styles import Font
+    from openpyxl.utils import get_column_letter
+
+    sheet = book.active
+    sheet.title = title
+    sheet.append([header for header, _width in headers])
+    for line in lines:
+        sheet.append(line)
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+    sheet.freeze_panes = "A2"
+    for index, (_header, width) in enumerate(headers, start=1):
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    for letter, number_format in date_cols:
+        for cell in sheet[letter][1:]:
+            cell.number_format = number_format
+
+
+def _float(value):
+    return float(value) if value is not None else None
+
+
+class RefuelsExportView(CompanyUserRequiredMixin, View):
+    """
+    GET: Excel of the current view, marked rows or all the filtered.
+
+    ---
+
+    GET: Excel de la vista actual (repostajes, vehículos o
+    repostadores): de las filas marcadas o, si no hay ninguna, de todas
+    las del filtro (sin el tope de 1.000 de la pantalla).
     """
 
     def get(self, request):
         from openpyxl import Workbook
-        from openpyxl.styles import Font
 
+        view = _view(request)
         wanted = [int(pk) for pk in request.GET.get(
             "selected_ids", "").split(",") if pk.isdigit()]
+        book = Workbook()
+        if view == VIEW_VEHICLES:
+            return self._vehicles(request, book, wanted)
+        if view == VIEW_USERS:
+            return self._users(request, book, wanted)
         supplies = (GasoGesSupply.objects.select_related(
             "vehicle", "vehicle__machine", "user").filter(pk__in=wanted)
             if wanted else _filtered_supplies(request))
-        book = Workbook()
-        sheet = book.active
-        sheet.title = "Repostajes"
-        headers = [
-            ("Fecha", 12), ("Hora", 8), ("Centro de gasto", 14),
-            ("Matrícula (GasoGes)", 16), ("Nombre (GasoGes)", 28),
-            ("Quién repostó", 32), ("KM tecleado", 12), ("Unidad", 11),
-            ("Litros", 9), ("Precio", 9), ("Estado", 24), ("Motivo", 48),
-        ]
-        sheet.append([h for h, _w in headers])
+        lines = []
         for supply in supplies.order_by("supplied_at", "id"):
             local = timezone.localtime(supply.supplied_at)
             vehicle = supply.vehicle
-            sheet.append([
+            lines.append([
                 local.date(), local.time().replace(microsecond=0),
                 vehicle.machine.code if vehicle.machine else "",
                 vehicle.plate, vehicle.name,
                 supply.user.name if supply.user else "",
                 supply.meter_value, vehicle.get_unit_display(),
-                float(supply.litres) if supply.litres is not None
-                else None,
-                float(supply.price) if supply.price is not None else None,
+                _float(supply.litres), _float(supply.price),
                 supply.get_status_display(), supply.status_note,
             ])
-        for cell in sheet[1]:
-            cell.font = Font(bold=True)
-        sheet.freeze_panes = "A2"
-        for index, (_header, width) in enumerate(headers):
-            sheet.column_dimensions[chr(ord("A") + index)].width = width
-        for cell in sheet["A"][1:]:
-            cell.number_format = "DD/MM/YYYY"
-        for cell in sheet["B"][1:]:
-            cell.number_format = "HH:MM"
-        buffer = io.BytesIO()
-        book.save(buffer)
-        date_from, date_to = _date_range(request)
-        response = HttpResponse(
-            buffer.getvalue(),
-            content_type=("application/vnd.openxmlformats-officedocument."
-                          "spreadsheetml.sheet"))
-        response["Content-Disposition"] = (
-            'attachment; filename="repostajes_%s_%s.xlsx"' % (
-                date_from.strftime("%Y%m%d"), date_to.strftime("%Y%m%d")))
-        return response
+        _write_sheet(book, "Repostajes", [
+            ("Fecha", 12), ("Hora", 8), ("Centro de gasto", 14),
+            ("Matrícula (GasoGes)", 16), ("Nombre (GasoGes)", 28),
+            ("Quién repostó", 32), ("KM tecleado", 12), ("Unidad", 11),
+            ("Litros", 9), ("Precio", 9), ("Estado", 24), ("Motivo", 48),
+        ], lines, (("A", "DD/MM/YYYY"), ("B", "HH:MM")))
+        return _excel_response(book, "repostajes", request)
+
+    def _vehicles(self, request, book, wanted):
+        supplies = _filtered_supplies(request)
+        if wanted:
+            supplies = supplies.filter(vehicle_id__in=wanted)
+        rows = _vehicle_rows(list(_grouped(
+            supplies, "vehicle", "user", _DEFAULT_ORDER[VIEW_VEHICLES])))
+        lines = [[
+            row["machine"].code if row["machine"] else "",
+            row["vehicle_label"], row["vehicle_name"], row["count"],
+            _float(row["litres"]),
+            row["last"].replace(tzinfo=None) if row["last"] else None,
+            row["last_km"], row["unit"], row["anomalies"], row["others"],
+            "Sí" if row["ask_driver"] else "No",
+        ] for row in rows]
+        _write_sheet(book, "Vehículos", [
+            ("Centro de gasto", 14), ("Vehículo (GasoGes)", 18),
+            ("Nombre (GasoGes)", 28), ("Repostajes", 11), ("Litros", 10),
+            ("Último repostaje", 17), ("Últimos KM (GasoGes)", 18),
+            ("Unidad", 11), ("Dudosos", 9), ("Repostadores", 12),
+            ("Se pregunta al chófer", 18),
+        ], lines, (("F", "DD/MM/YYYY HH:MM"),))
+        return _excel_response(book, "repostajes_vehiculos", request)
+
+    def _users(self, request, book, wanted):
+        supplies = _filtered_supplies(request)
+        if wanted:
+            chosen = Q(user_id__in=wanted)
+            if 0 in wanted:
+                chosen |= Q(user__isnull=True)
+            supplies = supplies.filter(chosen)
+        rows = _user_rows(list(_grouped(
+            supplies, "user", "vehicle", _DEFAULT_ORDER[VIEW_USERS])))
+        lines = [[
+            row["name"], row["person_label"], row["count"],
+            _float(row["litres"]),
+            row["last"].replace(tzinfo=None) if row["last"] else None,
+            row["anomalies"], row["others"],
+        ] for row in rows]
+        _write_sheet(book, "Repostadores", [
+            ("Repostador (GasoGes)", 32), ("Ficha de trabajador", 36),
+            ("Repostajes", 11), ("Litros", 10), ("Último repostaje", 17),
+            ("Dudosos", 9), ("Vehículos", 10),
+        ], lines, (("E", "DD/MM/YYYY HH:MM"),))
+        return _excel_response(book, "repostajes_repostadores", request)

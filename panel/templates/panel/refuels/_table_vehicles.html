@@ -1,0 +1,65 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/refuels/_table_vehicles.html #}
+{% comment %}
+H30 (S137). Vista Vehículos de Repostajes: una fila por vehículo de
+GasoGes con sus totales en el periodo y los filtros de la pestaña.
+Todo llega calculado desde panel/views_refuels.py (_vehicle_rows).
+{% endcomment %}
+<table class="table table-hover table-light align-middle" id="rfl-table">
+    <thead class="table-light">
+        <tr>
+            <th class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input" id="rfl-check-all" title="Seleccionar todos los que se ven"></th>
+            <th class="sticky-col sticky-col-2"></th>
+            {% for column in sort_columns %}
+            <th class="{% if column.key == 'vmachine' %}sticky-col sticky-col-3 sticky-col-last{% elif column.key != 'vplate' and column.key != 'vname' and column.key != 'vlast' %}text-end{% endif %}">
+                <a href="#" class="text-decoration-none text-dark"
+                   hx-get="{% url 'panel:refuels_results' %}"
+                   hx-target="#rfl-results"
+                   hx-include="#rfl-filters"
+                   hx-vals='{"sort": "{{ column.next }}"}'>
+                    {{ column.label }}
+                    {% if column.arrow %}<i class="bi bi-chevron-{% if column.arrow == 'up' %}up{% else %}down{% endif %}"></i>{% if column.priority %}<sup>{{ column.priority }}</sup>{% endif %}{% endif %}
+                </a>
+            </th>
+            {% endfor %}
+            <th>Unidad</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            <td class="sticky-col sticky-col-1">
+                <input type="checkbox" class="form-check-input rfl-row-check" data-pk="{{ row.pk }}" data-label="{{ row.label }}">
+            </td>
+            <td class="sticky-col sticky-col-2">
+                {% if row.anomalies %}<i class="bi bi-exclamation-triangle-fill text-danger" title="Tiene repostajes con KM dudoso en el periodo"></i>{% elif not row.unit_known and row.machine %}<i class="bi bi-question-circle text-warning-emphasis" title="No se sabe si este vehículo apunta km u horas"></i>{% endif %}
+            </td>
+            <td class="sticky-col sticky-col-3 sticky-col-last" data-label="Centro de gasto">{% if row.machine %}{{ row.machine.code }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td data-label="Vehículo (GasoGes)">{{ row.vehicle_label }}{% if not row.ask_driver %} <i class="bi bi-bell-slash text-secondary" title="No se pregunta al chófer por este vehículo"></i>{% endif %}</td>
+            <td data-label="Nombre (GasoGes)">{{ row.vehicle_name|default:"" }}</td>
+            <td class="text-end" data-label="Repostajes">{{ row.count }}</td>
+            <td class="text-end" data-label="Litros">{% if row.litres is not None %}{{ row.litres }}{% else %}—{% endif %}</td>
+            <td data-label="Último repostaje">{% if row.last %}{{ row.last|date:"d/m/Y H:i" }}{% else %}—{% endif %}</td>
+            <td class="text-end" data-label="Últimos KM (GasoGes)">{% if row.last_km is not None %}{{ row.last_km }}{% else %}—{% endif %}</td>
+            <td class="text-end{% if row.anomalies %} text-danger fw-bold{% endif %}" data-label="Dudosos">{{ row.anomalies }}</td>
+            <td class="text-end" data-label="Repostadores">{{ row.others }}</td>
+            <td data-label="Unidad">{% if row.unit_known %}{{ row.unit }}{% if row.unit_source %} <span class="text-muted">({{ row.unit_source }})</span>{% endif %}{% else %}<span class="text-warning-emphasis">{{ row.unit }}</span>{% endif %}</td>
+            <td class="text-end">
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-link text-dark py-0" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Acciones">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item rfl-drill" href="#" data-search="{{ row.search }}"><i class="bi bi-fuel-pump me-1"></i>Ver sus repostajes</a></li>
+                        {% if row.machine %}
+                        <li><a class="dropdown-item" href="{% url 'panel:documentation_machine_detail' row.machine.pk %}"><i class="bi bi-truck me-1"></i>Abrir el centro de gasto</a></li>
+                        {% endif %}
+                    </ul>
+                </div>
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="13" class="text-muted small py-3">No hay vehículos con repostajes con estos filtros.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>

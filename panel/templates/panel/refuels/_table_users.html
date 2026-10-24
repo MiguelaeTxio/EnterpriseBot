@@ -1,0 +1,67 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/refuels/_table_users.html #}
+{% comment %}
+H30 (S137). Vista Repostadores de Repostajes: una fila por usuario de
+GasoGes (quien reposta) con sus totales en el periodo y los filtros de
+la pestaña. Los repostajes sin usuario conocido van juntos en una fila.
+Todo llega calculado desde panel/views_refuels.py (_user_rows).
+{% endcomment %}
+<table class="table table-hover table-light align-middle" id="rfl-table">
+    <thead class="table-light">
+        <tr>
+            <th class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input" id="rfl-check-all" title="Seleccionar todos los que se ven"></th>
+            <th class="sticky-col sticky-col-2"></th>
+            {% for column in sort_columns %}
+            <th class="{% if column.key == 'uname' %}sticky-col sticky-col-3 sticky-col-last{% elif column.key != 'uperson' and column.key != 'ulast' %}text-end{% endif %}">
+                <a href="#" class="text-decoration-none text-dark"
+                   hx-get="{% url 'panel:refuels_results' %}"
+                   hx-target="#rfl-results"
+                   hx-include="#rfl-filters"
+                   hx-vals='{"sort": "{{ column.next }}"}'>
+                    {{ column.label }}
+                    {% if column.arrow %}<i class="bi bi-chevron-{% if column.arrow == 'up' %}up{% else %}down{% endif %}"></i>{% if column.priority %}<sup>{{ column.priority }}</sup>{% endif %}{% endif %}
+                </a>
+            </th>
+            {% endfor %}
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            <td class="sticky-col sticky-col-1">
+                <input type="checkbox" class="form-check-input rfl-row-check" data-pk="{{ row.pk }}" data-label="{{ row.label }}">
+            </td>
+            <td class="sticky-col sticky-col-2">
+                {% if row.anomalies %}<i class="bi bi-exclamation-triangle-fill text-danger" title="Tiene repostajes con KM dudoso en el periodo"></i>{% endif %}
+            </td>
+            <td class="sticky-col sticky-col-3 sticky-col-last" data-label="Repostador (GasoGes)">{% if row.known %}{{ row.name }}{% else %}<span class="text-muted">{{ row.name }}</span>{% endif %}</td>
+            <td data-label="Ficha de trabajador">{% if row.person %}{{ row.person_label }}{% elif row.known %}<span class="text-muted"><i class="bi bi-person-x me-1" title="Sin ficha de trabajador: no se le puede escribir"></i>Sin ficha</span>{% endif %}</td>
+            <td class="text-end" data-label="Repostajes">{{ row.count }}</td>
+            <td class="text-end" data-label="Litros">{% if row.litres is not None %}{{ row.litres }}{% else %}—{% endif %}</td>
+            <td data-label="Último repostaje">{% if row.last %}{{ row.last|date:"d/m/Y H:i" }}{% else %}—{% endif %}</td>
+            <td class="text-end{% if row.anomalies %} text-danger fw-bold{% endif %}" data-label="Dudosos">{{ row.anomalies }}</td>
+            <td class="text-end" data-label="Vehículos">{{ row.others }}</td>
+            <td class="text-end">
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-link text-dark py-0" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Acciones">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        {% if row.known %}
+                        <li><a class="dropdown-item rfl-drill" href="#" data-search="{{ row.search }}"><i class="bi bi-fuel-pump me-1"></i>Ver sus repostajes</a></li>
+                        {% endif %}
+                        {% if row.person %}
+                        <li><a class="dropdown-item" href="{% url 'panel:documentation_personal_detail' row.person.pk %}"><i class="bi bi-person me-1"></i>Abrir su ficha</a></li>
+                        {% endif %}
+                        {% if not row.known and not row.person %}
+                        <li><span class="dropdown-item-text text-muted small">Sin usuario en GasoGes</span></li>
+                        {% endif %}
+                    </ul>
+                </div>
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="10" class="text-muted small py-3">No hay repostadores con repostajes con estos filtros.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>

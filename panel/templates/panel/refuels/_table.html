@@ -8,15 +8,26 @@ si son km u horas, o sin centro de gasto (tanques, taller...).
 {% endcomment %}
 <div id="rfl-fragment-state" class="d-none"
      data-count="{{ total }}"
+     data-view="{{ view }}"
+     data-title="{{ total_label }}"
      data-sort-active="{% if sort_active %}1{% endif %}"></div>
 <span id="rfl-sort-inputs" class="d-none">
     <input type="hidden" name="sort" value="{{ current_sort }}">
 </span>
 {% if capped %}
 <div class="alert alert-info py-1 px-2 small mb-1">
-    Se muestran {{ max_rows }} de {{ total }} repostajes: acota las fechas o los filtros para ver el resto. La exportación a Excel lleva todos.
+    Se muestran {{ max_rows }} de {{ total }}: acota las fechas o los filtros para ver el resto. La exportación a Excel lleva todos.
 </div>
 {% endif %}
+{% comment %}
+S137: vistas Vehículos y Repostadores (una fila por vehículo o por
+repostador, con sus totales en el periodo); Repostajes sigue debajo.
+{% endcomment %}
+{% if view == "vehicles" %}
+{% include "panel/refuels/_table_vehicles.html" %}
+{% elif view == "users" %}
+{% include "panel/refuels/_table_users.html" %}
+{% else %}
 {% comment %}
 S136 (sesión invasora): sin stack-mobile. En el móvil las tarjetas
 ocultaban la cabecera, y con ella la casilla "Seleccionar todos"
@@ -84,3 +95,4 @@ mantiene columnas y cabecera en cualquier pantalla, con scroll lateral.
         {% endfor %}
     </tbody>
 </table>
+{% endif %}

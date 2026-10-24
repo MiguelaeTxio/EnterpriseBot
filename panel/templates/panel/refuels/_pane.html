@@ -11,6 +11,11 @@ Revisiones), misma disposición que Fichajes (directriz 4.24):
 Los suministros vienen de GasoGes cada hora y no se editan aquí.
 Filtros, orden y selección persistidos por usuario (screen_key
 "refuels").
+S137: selector "Ver" (Repostajes / Vehículos / Repostadores) sobre los
+mismos filtros; cada vista con su propia selección guardada. Las
+acciones de unidad y de preguntar valen en Repostajes (para los
+vehículos de los repostajes marcados) y en Vehículos (para los
+vehículos marcados); en Repostadores no aplican y se ocultan.
 {% endcomment %}
 <div class="border rounded p-2 mb-2" id="rfl-top-panel">
     <div class="row g-2">
@@ -21,6 +26,16 @@ Filtros, orden y selección persistidos por usuario (screen_key
                       hx-get="{% url 'panel:refuels_results' %}" hx-target="#rfl-results"
                       hx-include="#rfl-sort-inputs"
                       hx-trigger="input changed delay:300ms from:#rfl-filter-search, change, rfl-selection-refresh">
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-2 small">
+                        <span class="fw-semibold">Ver</span>
+                        <div class="btn-group btn-group-sm" role="group" aria-label="Ver">
+                            {% for choice in view_choices %}
+                            <input type="radio" class="btn-check rfl-view-radio" name="view" value="{{ choice.code }}"
+                                   id="rflView{{ forloop.counter }}" autocomplete="off"{% if choice.checked %} checked{% endif %}>
+                            <label class="btn btn-outline-primary" for="rflView{{ forloop.counter }}">{{ choice.label }}</label>
+                            {% endfor %}
+                        </div>
+                    </div>
                     <div class="d-flex gap-2 mb-2">
                         <input type="text" name="search" id="rfl-filter-search" class="form-control doc-h30-search"
                                placeholder="Buscar por centro de gasto, matrícula, vehículo o chófer…" value="{{ filter_search }}">
@@ -88,20 +103,20 @@ Filtros, orden y selección persistidos por usuario (screen_key
                         </button>
                     </div>
                     {% if can_edit %}
-                    <div class="col-6 ps-2">
+                    <div class="col-6 ps-2 rfl-vehicle-action">
                         <div class="small text-muted fw-bold">Unidad del vehículo</div>
                         <div class="d-flex flex-wrap gap-1">
                             <button type="button" class="btn btn-sm btn-outline-primary rfl-unit-btn" data-unit="KM"
-                                    title="Para los vehículos de los repostajes marcados. Queda puesta a mano y sus repostajes sin unidad pasan a lectura si son coherentes.">
+                                    title="Para los vehículos marcados (o los de los repostajes marcados). Queda puesta a mano y sus repostajes sin unidad pasan a lectura si son coherentes.">
                                 <i class="bi bi-speedometer2 me-1"></i>Kilómetros
                             </button>
                             <button type="button" class="btn btn-sm btn-outline-primary rfl-unit-btn" data-unit="HOURS"
-                                    title="Para los vehículos de los repostajes marcados. Queda puesta a mano y sus repostajes sin unidad pasan a lectura si son coherentes.">
+                                    title="Para los vehículos marcados (o los de los repostajes marcados). Queda puesta a mano y sus repostajes sin unidad pasan a lectura si son coherentes.">
                                 <i class="bi bi-clock-history me-1"></i>Horas
                             </button>
                         </div>
                     </div>
-                    <div class="col-6 border-top pt-1 mt-1">
+                    <div class="col-6 border-top pt-1 mt-1 rfl-vehicle-action">
                         <div class="small text-muted fw-bold">Preguntas por WhatsApp</div>
                         <div class="d-flex flex-wrap gap-1">
                             <button type="button" class="btn btn-sm btn-outline-secondary rfl-ask-btn" data-ask="0"
@@ -125,7 +140,7 @@ Filtros, orden y selección persistidos por usuario (screen_key
     <div class="row g-2 h-100">
         <div class="col-lg-9 h-100">
             <div class="border rounded p-2 h-100 d-flex flex-column">
-                <div class="fw-bold small mb-1">Repostajes (<span id="rfl-row-count">{{ total }}</span>)
+                <div class="fw-bold small mb-1"><span id="rfl-row-title">{{ total_label }}</span> (<span id="rfl-row-count">{{ total }}</span>)
                     <button type="button" class="btn btn-sm btn-link py-0{% if not sort_active %} d-none{% endif %}" id="rfl-clear-sort"
                             hx-get="{% url 'panel:refuels_results' %}" hx-target="#rfl-results"
                             hx-include="#rfl-filters" hx-vals='{"sort": ""}'>Quitar orden</button>
@@ -164,6 +179,7 @@ Filtros, orden y selección persistidos por usuario (screen_key
 </style>
 
 {{ saved_selection|json_script:"rfl-saved-selection" }}
+{{ selection_keys|json_script:"rfl-selection-keys" }}
 {% include "panel/_fixed_list_layout.html" with top_id="rfl-top-panel" bottom_id="rfl-bottom-panel" %}
 <script>
 (function () {
@@ -176,25 +192,37 @@ Filtros, orden y selección persistidos por usuario (screen_key
     const UNIT_URL = "{% url 'panel:refuels_vehicle_unit' %}";
     const ASK_URL = "{% url 'panel:refuels_vehicle_ask' %}";
 
-    // Selección (pk -> etiqueta), recordada por usuario.
-    const selection = new Map();
+    // S137: una selección por vista (pk -> etiqueta), recordada por
+    // usuario con su propia clave ("selection" es la de Repostajes).
+    const SELECTION_KEYS = JSON.parse(document.getElementById("rfl-selection-keys").textContent);
+    const selections = {};
+    let currentView = "{{ view|escapejs }}";
+    let saved = {};
     try {
-        JSON.parse(document.getElementById("rfl-saved-selection").textContent).forEach(function (item) {
-            if (item && item.pk) selection.set(String(item.pk), item.label || "");
-        });
+        saved = JSON.parse(document.getElementById("rfl-saved-selection").textContent) || {};
     } catch (e) { /* estado ilegible: se empieza sin selección */ }
-    let lastSaved = null;
+    Object.keys(SELECTION_KEYS).forEach(function (view) {
+        selections[view] = new Map();
+        (saved[view] || []).forEach(function (item) {
+            if (item && item.pk !== undefined && item.pk !== null) selections[view].set(String(item.pk), item.label || "");
+        });
+    });
+    function current() { return selections[currentView] || selections.supplies; }
+    const lastSaved = {};
     function saveSelection() {
-        const payload = Array.from(selection.entries()).map(function ([pk, label]) {
+        const payload = Array.from(current().entries()).map(function ([pk, label]) {
             return {pk: pk, label: label};
         });
         const serialized = JSON.stringify(payload);
-        if (serialized === lastSaved) return;
-        lastSaved = serialized;
-        window.EbNavState.save(SCREEN_KEY, {selection: payload});
+        if (serialized === lastSaved[currentView]) return;
+        lastSaved[currentView] = serialized;
+        const state = {};
+        state[SELECTION_KEYS[currentView]] = payload;
+        window.EbNavState.save(SCREEN_KEY, state);
     }
 
     function updateSelectionUi() {
+        const selection = current();
         saveSelection();
         document.getElementById("rfl-mass-count").textContent = selection.size;
         document.getElementById("rfl-selection-count").textContent = selection.size;
@@ -229,14 +257,43 @@ Filtros, orden y selección persistidos por usuario (screen_key
     function refreshFromFragment() {
         const state = document.getElementById("rfl-fragment-state");
         if (state) {
+            currentView = state.dataset.view || "supplies";
+            document.getElementById("rfl-row-title").textContent = state.dataset.title;
+            document.querySelectorAll(".rfl-vehicle-action").forEach(function (el) {
+                el.classList.toggle("d-none", currentView === "users");
+            });
             document.getElementById("rfl-row-count").textContent = state.dataset.count;
             document.getElementById("rfl-clear-sort").classList.toggle("d-none", !state.dataset.sortActive);
         }
+        const selection = current();
         results.querySelectorAll(".rfl-row-check").forEach(function (cb) {
             cb.checked = selection.has(cb.dataset.pk);
         });
         updateSelectionUi();
     }
+
+    // Al cambiar de vista: el orden de la otra vista no vale, y la
+    // selección que manda es la de la vista nueva.
+    document.querySelectorAll(".rfl-view-radio").forEach(function (radio) {
+        radio.addEventListener("change", function () {
+            const sortInput = document.querySelector('#rfl-sort-inputs input[name="sort"]');
+            if (sortInput) sortInput.value = "";
+            currentView = radio.value;
+            document.getElementById("rfl-selected-ids").value = Array.from(current().keys()).join(",");
+        });
+    });
+
+    // "Ver sus repostajes" desde Vehículos o Repostadores: vista
+    // Repostajes buscando ese vehículo o esa persona.
+    results.addEventListener("click", function (evt) {
+        const link = evt.target.closest(".rfl-drill");
+        if (!link) return;
+        evt.preventDefault();
+        document.getElementById("rfl-filter-search").value = link.dataset.search || "";
+        const radio = document.querySelector('.rfl-view-radio[value="supplies"]');
+        radio.checked = true;
+        radio.dispatchEvent(new Event("change", {bubbles: true}));
+    });
 
     // Estado: casillas literales -- ninguna marcada = ninguno ("none").
     function syncStatus() {
@@ -262,6 +319,7 @@ Filtros, orden y selección persistidos por usuario (screen_key
 
     results.addEventListener("change", function (evt) {
         const target = evt.target;
+        const selection = current();
         if (target.classList.contains("rfl-row-check")) {
             if (target.checked) selection.set(target.dataset.pk, target.dataset.label);
             else selection.delete(target.dataset.pk);
@@ -277,7 +335,7 @@ Filtros, orden y selección persistidos por usuario (screen_key
     });
 
     document.getElementById("rfl-mass-clear").addEventListener("click", function () {
-        selection.clear();
+        current().clear();
         refreshFromFragment();
     });
 
@@ -286,7 +344,7 @@ Filtros, orden y selección persistidos por usuario (screen_key
         new FormData(filters).forEach(function (value, key) {
             if (key !== "only_selected" && key !== "selected_ids") params.append(key, value);
         });
-        params.set("selected_ids", Array.from(selection.keys()).join(","));
+        params.set("selected_ids", Array.from(current().keys()).join(","));
         window.location.href = EXPORT_URL + "?" + params.toString();
     });
 
@@ -298,13 +356,17 @@ Filtros, orden y selección persistidos por usuario (screen_key
     }
     function postVehicleAction(url, field, value) {
             const out = document.getElementById("rfl-unit-result");
+            const selection = current();
             if (!selection.size) {
                 out.className = "small mt-1 text-danger";
-                out.textContent = "Marca antes algún repostaje del vehículo.";
+                out.textContent = currentView === "vehicles"
+                    ? "Marca antes algún vehículo."
+                    : "Marca antes algún repostaje del vehículo.";
                 return;
             }
             const data = new FormData();
             data.append(field, value);
+            data.append("view", currentView);
             data.append("selected_ids", Array.from(selection.keys()).join(","));
             out.className = "small mt-1 text-muted";
             out.textContent = "Guardando…";
