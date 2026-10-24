@@ -1825,6 +1825,23 @@ cinco reglas de arriba:
    fila (ver, descargar, editar...), además de las masivas.
 10. **Pantalla completa** del panel de la lista con el formato de la
     directriz 4.26.
+11. **El mismo formato en el móvil, con columnas (S136).** Nunca
+    tarjetas (`stack-mobile`, S128) ni controles de orden o selección
+    aparte para el móvil: la tabla conserva sus columnas y su cabecera
+    (orden por columnas, casilla "Seleccionar todos") en cualquier
+    pantalla y se desliza de lado. Por debajo de 992 px no va ninguna
+    columna fija (S123: el nombre fijo tapaba las demás). Origen:
+    Miguel Ángel, desde el móvil, echó en falta el orden por columnas
+    en Fichajes y "Seleccionar todos" en Repostajes; la barra "Ordenar
+    por" que se le puso a Fichajes no era el formato y se retiró.
+    Decidido por Miguel Ángel con las dos opciones delante ("todas con
+    columnas" o "todas en tarjetas"). Las tarjetas siguen solo en las
+    tablas que no son listados de gestión (fichas, chat de averías).
+12. **Panel de acciones en cuadrícula por categoría** (como Personal y
+    Albaranes de Servicios): cada categoría con su título pequeño y
+    sus botones; las explicaciones van en el título (`title`) de cada
+    botón, nunca en párrafos que alarguen el panel fijo (S136,
+    Repostajes ocupaba 364 px de alto por esos párrafos).
 
 **Implementación de referencia añadida en S133:**
 `budgets/templates/budgets/services/_delivery_notes_pane.html` +
