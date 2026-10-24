@@ -10,7 +10,7 @@ envía solo esta fila (hx-include="closest tr") y la vista devuelve la
 fila recalculada.
 {% endcomment %}
 <tr id="vbal-row-{{ row.person.pk }}">
-    <td class="sticky-col sticky-col-1 stack-mobile-check">
+    <td class="sticky-col sticky-col-1">
         <input type="checkbox" class="form-check-input vbal-row-check" data-pk="{{ row.person.pk }}" data-label="{{ row.label }}">
     </td>
     <td class="sticky-col sticky-col-2">
@@ -31,7 +31,7 @@ fila recalculada.
     <td data-label="Fecha de fin">
         <input type="date" name="date_end" class="form-control form-control-sm vbal-date">
     </td>
-    <td class="stack-mobile-full">
+    <td>
         <button type="button" class="btn btn-sm btn-primary vbal-register"
                 hx-post="{% url 'panel:vacation_row_register' row.person.pk %}"
                 hx-include="closest tr" hx-target="closest tr" hx-swap="outerHTML"

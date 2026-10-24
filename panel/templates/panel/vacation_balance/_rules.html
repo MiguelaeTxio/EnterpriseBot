@@ -81,7 +81,7 @@ quien aún no tiene sección.
     <div class="{% if can_manage %}col-lg-8{% else %}col-12{% endif %}">
         <div class="fw-bold small mb-1">Reglas</div>
         {% if rules %}
-        <table class="table table-sm table-hover align-middle small stack-mobile">
+        <table class="table table-sm table-hover align-middle small">
             <thead class="table-light">
                 <tr>
                     <th>Sección</th><th>Desde</th><th class="text-end">Días/año</th><th>Tipo</th>
@@ -91,7 +91,7 @@ quien aún no tiene sección.
             <tbody>
                 {% for rule in rules %}
                 <tr class="{% if not rule.is_in_force %}text-muted{% endif %}">
-                    <td class="stack-mobile-title">
+                    <td>
                         {% if rule.section %}{{ rule.section.name }}{% else %}<em>General de la empresa</em>{% endif %}
                         {% if rule.is_in_force %}<span class="badge text-bg-success ms-1">Vigente</span>{% endif %}
                     </td>
