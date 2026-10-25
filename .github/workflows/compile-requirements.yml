@@ -18,8 +18,9 @@ name: Compilar requirements.txt en PythonAnywhere
 # árbol de trabajo del servidor a su estado comiteado en la MISMA
 # sesión SSH (nunca queda una modificación local suelta), y es este
 # job -- no el servidor -- quien comitea y pushea el candado
-# recompilado de vuelta a GitHub. El push resultante dispara
-# deploy.yml de forma normal, que instala de verdad con `pip-sync`.
+# recompilado de vuelta a GitHub y lanza deploy.yml (workflow_dispatch,
+# S138: el push con GITHUB_TOKEN no lo dispara solo), que instala de
+# verdad con `pip-sync`.
 #
 # Se dispara solo cuando `requirements.in` cambia (nunca en cada push
 # trivial), o manualmente si hiciera falta recompilar sin haber
@@ -55,6 +56,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -141,6 +143,16 @@ jobs:
           git add requirements.txt
           git commit -m "chore: recompilar requirements.txt en PythonAnywhere (pip-compile automático)"
           git push origin main
+          # ⛔ S138, hallazgo real: un push hecho con GITHUB_TOKEN NO
+          # dispara deploy.yml (regla de GitHub para evitar bucles), así
+          # que el pip-sync de la dependencia nueva nunca se ejecutaba
+          # (pywebpush compilado en 63e228f sin instalar). Se lanza
+          # deploy.yml a mano; workflow_dispatch sí está permitido con
+          # GITHUB_TOKEN. Espera en la cola del mismo grupo de
+          # concurrencia hasta que este job termine.
+          gh workflow run deploy.yml --ref main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Limpiar clave SSH
         if: always()

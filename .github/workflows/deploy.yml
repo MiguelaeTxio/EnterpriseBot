@@ -29,6 +29,10 @@ name: Deploy EnterpriseBot to PythonAnywhere
 on:
   push:
     branches: [main]
+  # S138: lanzado también por compile-requirements.yml tras comitear el
+  # candado (un push hecho con GITHUB_TOKEN no dispara este workflow,
+  # así que el pip-sync de la dependencia nueva no llegaba a ejecutarse).
+  workflow_dispatch:
 
 concurrency:
   group: enterprisebot-pythonanywhere-ssh
