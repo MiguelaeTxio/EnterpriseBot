@@ -136,6 +136,8 @@ def payload(message):
     # Notifications are plain text: WhatsApp marks out (*x* -> x).
     # Las notificaciones son texto plano: sin marcas de WhatsApp.
     text = re.sub(r"(```|[*_~`])", "", (message.body or "")).strip()
+    if message.transcript:
+        text = ("%s 🎤 %s" % (text, message.transcript)).strip()
     if not text and message.attachment_name:
         text = "📄 %s" % message.attachment_name
     if len(text) > MAX_PUSH_TEXT:

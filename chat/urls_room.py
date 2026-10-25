@@ -31,4 +31,6 @@ urlpatterns = [
          name="member_candidates"),
     path("<slug:slug>/miembros/anadir/", views_room.member_add,
          name="member_add"),
+    path("<slug:slug>/miembros/<int:pk>/enlace/", views_room.member_link,
+         name="member_link"),
 ]

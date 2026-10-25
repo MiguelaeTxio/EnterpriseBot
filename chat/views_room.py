@@ -27,6 +27,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from chat import room_service
 from chat.models import ChatMessage, ChatRoom, ChatRoomMember
+from chat.voice_service import base_type, is_audio
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,12 @@ def _message_json(message, room):
         # S138: a discarded sheet keeps its name, without the file.
         # Una hoja descartada conserva su nombre, sin archivo.
         data["attachment_name"] = message.attachment_name
+    if is_audio(message.attachment_type):
+        # S138: voice message, played in the page with its text.
+        # Mensaje de voz: se escucha en la página, con su texto.
+        data["audio"] = True
+    if message.transcript:
+        data["transcript"] = message.transcript
     return data
 
 
@@ -100,6 +107,7 @@ def _member_list(room):
     return sorted(
         (
             {
+                "id": member.pk,
                 "name": room_service.person_name(member.person),
                 "online": bool(
                     member.last_seen_at is not None
@@ -270,28 +278,53 @@ def send(request, slug):
 @require_POST
 def upload(request, slug):
     """
-    POST /sala/<slug>/subir/: send a PDF or a photo to the room.
+    POST /sala/<slug>/subir/: send a PDF, a photo or a voice message.
 
     ---
 
-    Manda un PDF o una foto a la sala (campo `file`, texto opcional en
-    `body`). Si quien lo manda da servicios, empieza (o sigue) la
-    conversación de servicio con Alia, que contesta en la sala (S138).
+    Manda un PDF, una foto o un mensaje de voz a la sala (campo `file`,
+    texto opcional en `body`). Si quien lo manda da servicios, empieza
+    (o sigue) la conversación de servicio con Alia, que contesta en la
+    sala (S138). La voz se transcribe y, si es para Alia, le llega como
+    texto.
     """
     room = _room_or_404(request, slug)
     viewer = room_service.viewer_for(request, room)
     if not viewer.name:
         return HttpResponseForbidden("Sin nombre con el que escribir.")
     upload_file = request.FILES.get("file")
+    content_type = base_type(getattr(upload_file, "content_type", ""))
     if (
         upload_file is None
-        or upload_file.content_type not in UPLOAD_TYPES
+        or not (content_type in UPLOAD_TYPES or is_audio(content_type))
         or upload_file.size > MAX_UPLOAD_BYTES
     ):
         return JsonResponse({
-            "error": "Manda un PDF o una foto (JPG, PNG o WEBP) de menos "
-                     "de 15 MB.",
+            "error": "Manda un PDF, una foto (JPG, PNG o WEBP) o un "
+                     "mensaje de voz de menos de 15 MB.",
         }, status=400)
+    if is_audio(content_type):
+        # S138: voice message: kept now, transcribed and posted in
+        # Celery (the page shows it when it arrives).
+        # Mensaje de voz: se guarda ya y se transcribe y publica en
+        # Celery (la página lo muestra cuando llega).
+        from chat.tasks import post_room_voice
+
+        attachment = room_service.store_upload(
+            upload_file.read(), content_type, "mensaje_de_voz",
+        )
+        if attachment is None:
+            return JsonResponse(
+                {"error": "No se ha podido guardar el audio."}, status=500,
+            )
+        room_service.mark_seen(viewer.member)
+        post_room_voice.delay(
+            room.pk, attachment,
+            viewer.person.pk if viewer.person else None, viewer.name,
+            viewer.company_user.pk if viewer.company_user else None,
+            viewer.member.pk if viewer.member else None,
+        )
+        return JsonResponse({"pending": True})
     if room_service.gives_services(viewer):
         # S138: a service sheet, SERVICIOS_ASISTENCIA/SERVICIO_...
         # Hoja de servicio, en SERVICIOS_ASISTENCIA con su nombre.
@@ -396,8 +429,51 @@ def member_add(request, slug):
     ).first()
     if person is None:
         return JsonResponse({"error": "Persona no válida."}, status=400)
-    room_service.add_member(room, person, added_by=viewer.company_user)
-    return JsonResponse({"members": _member_list(room)})
+    member, _created = room_service.add_member(
+        room, person, added_by=viewer.company_user,
+    )
+    return JsonResponse({"members": _member_list(room), "added": member.pk})
+
+
+@never_cache
+@require_GET
+def member_link(request, slug, pk):
+    """
+    GET /sala/<slug>/miembros/<pk>/enlace/: personal link to send.
+
+    ---
+
+    El enlace personal de un miembro para mandárselo (S138): quien
+    gestiona la sala lo copia o lo envía desde su propio WhatsApp
+    (enlace wa.me con el texto ya escrito), sin Twilio, plantilla ni
+    ventana de 24 h.
+    """
+    from urllib.parse import quote
+
+    from document_explorer.person_phone_service import mobile_of
+
+    room = _room_or_404(request, slug)
+    viewer = room_service.viewer_for(request, room)
+    if not viewer.can_manage:
+        return HttpResponseForbidden("Sin permiso.")
+    member = get_object_or_404(
+        ChatRoomMember.objects.select_related("person"), pk=pk, room=room,
+    )
+    link = room_service.personal_link(member)
+    text = (
+        "Hola %s. Este es tu enlace a la sala %s de Grupo Álvarez: %s\n"
+        "Ábrelo en el móvil, instala la sala y pulsa \"Activar avisos\"."
+        % (
+            member.person.given_name.strip().title(), room.name, link,
+        )
+    )
+    phone = (mobile_of(member.person) or "").lstrip("+")
+    return JsonResponse({
+        "name": room_service.person_full_name(member.person),
+        "link": link,
+        "whatsapp_url": "https://wa.me/%s?text=%s" % (phone, quote(text)),
+        "has_phone": bool(phone),
+    })
 
 
 @never_cache

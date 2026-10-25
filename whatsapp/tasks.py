@@ -350,7 +350,7 @@ def expire_presence_statuses() -> str:
 @shared_task(name="whatsapp.tasks.service_intake_reply")
 def service_intake_reply(intake_pk, body, media_url, content_type,
                          platform_number, from_number, decide=False,
-                         posted=False):
+                         posted=False, voice=None):
     """
     Answer a message of somebody giving a service by WhatsApp.
 
@@ -380,7 +380,7 @@ def service_intake_reply(intake_pk, body, media_url, content_type,
     if not posted:
         try:
             stored = intake_inbound(intake, body, media_url, content_type,
-                                    from_number)
+                                    from_number, voice=voice)
         except Exception as exc:  # noqa: BLE001 -- Alia contesta igual
             logger.exception("# [SERVICE INTAKE] Sala: %s", exc)
             stored = None

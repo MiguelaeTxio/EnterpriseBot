@@ -58,6 +58,10 @@ WhatsApp (#asistencia).
         #btn-send { background: #0d6efd; color: #fff; border: 0; border-radius: 6px; padding: 0 16px; font-size: 1rem; font-weight: 600; }
         #btn-send:disabled, #btn-attach:disabled { opacity: .6; }
         #btn-attach { background: #f1f3f5; color: #212529; border: 1px solid #ced4da; border-radius: 6px; padding: 0 12px; font-size: 1.1rem; cursor: pointer; }
+        #btn-mic, #btn-mic-cancel { background: #f1f3f5; color: #212529; border: 1px solid #ced4da; border-radius: 6px; padding: 0 10px; font-size: 1.1rem; cursor: pointer; white-space: nowrap; }
+        #btn-mic.rec { background: #dc3545; color: #fff; border-color: #dc3545; font-size: .9rem; }
+        audio.voice { display: block; width: 100%; max-width: 360px; height: 36px; margin: 4px 0 2px; }
+        .said { font-style: italic; color: #495057; }
         .wa { font-size: .7rem; color: #198754; font-weight: 600; }
         #error { color: #842029; font-size: .8rem; padding: 0 12px; }
         dialog { border: 1px solid #dee2e6; border-radius: 10px; padding: 12px; width: min(420px, 94vw); }
@@ -66,6 +70,10 @@ WhatsApp (#asistencia).
         #candidates li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #f1f3f5; }
         #candidates button, dialog .close { background: #198754; color: #fff; border: 0; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
         dialog .close { background: #6c757d; }
+        .link-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+        .link-actions .act, #link-copy { background: #198754; color: #fff; border: 0; border-radius: 6px; padding: 6px 12px; text-decoration: none; cursor: pointer; font-size: .9rem; }
+        #link-copy { background: #0d6efd; }
+        .lnk { margin-left: auto; background: none; border: 0; cursor: pointer; font-size: .9rem; padding: 0 2px; }
     </style>
 </head>
 <body>
@@ -81,12 +89,15 @@ WhatsApp (#asistencia).
     <div id="log" aria-live="polite"></div>
     <aside id="people">
         <h2>Miembros</h2>
-        <ul id="people-list">{% for member in members %}<li><span class="dot{% if member.online or member.whatsapp %} on{% endif %}" title="{% if member.whatsapp %}Dentro por WhatsApp{% elif member.online %}Tiene la sala abierta{% else %}No tiene la sala abierta{% endif %}"></span>{{ member.name }}{% if member.whatsapp %} <span class="wa">WhatsApp</span>{% endif %}</li>{% endfor %}</ul>
+        <ul id="people-list"></ul>
+        {{ members|json_script:"members-data" }}
     </aside>
 </main>
 <div id="error"></div>
 {% if can_write %}
 <form id="composer" autocomplete="off">
+    <button type="button" id="btn-mic" title="Mensaje de voz: pulsa para grabar y otra vez para enviar. Sale con su texto, y si das servicios Alia lo entiende" aria-label="Grabar mensaje de voz">🎤</button>
+    <button type="button" id="btn-mic-cancel" title="Cancelar la grabación" aria-label="Cancelar la grabación" hidden>✕</button>
     <button type="button" id="btn-attach" title="Mandar un PDF o una foto. Si das servicios, Alia empieza el servicio con él" aria-label="Adjuntar PDF o foto">📎</button>
     <input type="file" id="file" accept="application/pdf,image/jpeg,image/png,image/webp" hidden>
     <textarea id="body" maxlength="2000" placeholder="Escribe un mensaje" title="Escribes como {{ viewer.name }}" aria-label="Mensaje"></textarea>
@@ -99,12 +110,23 @@ WhatsApp (#asistencia).
     <ul id="candidates"></ul>
     <button type="button" class="close" id="add-close">Cerrar</button>
 </dialog>
+<dialog id="link-dialog">
+    <p><strong id="link-name"></strong><br><span class="t">Su enlace personal a la sala. Mándaselo por WhatsApp o cópialo.</span></p>
+    <input type="text" id="link-url" readonly aria-label="Enlace personal">
+    <p class="link-actions">
+        <a id="link-wa" class="act" target="_blank" rel="noopener">Enviar por WhatsApp</a>
+        <button type="button" id="link-copy">Copiar</button>
+        <button type="button" class="close" id="link-close">Cerrar</button>
+    </p>
+    <p class="t" id="link-nophone" hidden>No tiene móvil en su ficha: WhatsApp se abrirá para elegir el contacto.</p>
+</dialog>
 {% endif %}
 {% csrf_token %}
 <script>
 (function () {
     "use strict";
     var BASE = "/sala/{{ room.slug }}/";
+    var CAN_MANAGE = {% if viewer.can_manage %}true{% else %}false{% endif %};
     var log = document.getElementById("log");
     var net = document.getElementById("net");
     var errorBox = document.getElementById("error");
@@ -200,7 +222,19 @@ WhatsApp (#asistencia).
         name.textContent = bot ? "-" + message.author + "- " : "<" + message.author + "> ";
         line.appendChild(time); line.appendChild(name);
         addText(line, message.body);
-        if (message.attachment_name) {
+        if (message.audio && message.attachment_url) {
+            // S138: voice message, with its text below (for noisy places).
+            // Mensaje de voz, con su texto debajo (para cuando hay ruido).
+            var player = document.createElement("audio");
+            player.controls = true; player.preload = "none";
+            player.src = message.attachment_url;
+            player.className = "voice";
+            line.appendChild(player);
+            var said = document.createElement("div");
+            said.className = "said";
+            addText(said, message.transcript ? "🎤 " + message.transcript : "🎤 (sin transcripción)");
+            line.appendChild(said);
+        } else if (message.attachment_name) {
             line.appendChild(document.createTextNode(" "));
             var file = document.createElement(message.attachment_url ? "a" : "span");
             if (message.attachment_url) {
@@ -234,9 +268,47 @@ WhatsApp (#asistencia).
                 wa.className = "wa"; wa.textContent = " WhatsApp";
                 li.appendChild(wa);
             }
+            if (CAN_MANAGE) {
+                var lnk = document.createElement("button");
+                lnk.type = "button"; lnk.className = "lnk"; lnk.textContent = "🔗";
+                lnk.title = "Enlace personal de " + member.name;
+                lnk.addEventListener("click", function () { showLink(member.id); });
+                li.appendChild(lnk);
+            }
             people.appendChild(li);
         });
         document.getElementById("people-count").textContent = members.length;
+    }
+
+    // S138: personal link to send from one's own WhatsApp (wa.me),
+    // without Twilio, template or 24 h window.
+    // Enlace personal para mandarlo desde el propio WhatsApp (wa.me),
+    // sin Twilio, plantilla ni ventana de 24 h.
+    function showLink(memberId) {
+        fetch(BASE + "miembros/" + memberId + "/enlace/", {credentials: "same-origin"})
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                document.getElementById("link-name").textContent = data.name;
+                document.getElementById("link-url").value = data.link;
+                document.getElementById("link-wa").href = data.whatsapp_url;
+                document.getElementById("link-nophone").hidden = data.has_phone;
+                var addDialog = document.getElementById("add-dialog");
+                if (addDialog && addDialog.open) { addDialog.close(); }
+                document.getElementById("link-dialog").showModal();
+            });
+    }
+    var linkCopy = document.getElementById("link-copy");
+    if (linkCopy) {
+        linkCopy.addEventListener("click", function () {
+            var field = document.getElementById("link-url");
+            var done = function () { linkCopy.textContent = "Copiado"; setTimeout(function () { linkCopy.textContent = "Copiar"; }, 1500); };
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(field.value).then(done, function () { field.select(); });
+            } else { field.select(); document.execCommand("copy"); done(); }
+        });
+        document.getElementById("link-close").addEventListener("click", function () {
+            document.getElementById("link-dialog").close();
+        });
     }
 
     function poll() {
@@ -286,6 +358,73 @@ WhatsApp (#asistencia).
                 errorBox.textContent = "No se ha podido enviar. Revisa la conexión y vuelve a pulsar Enviar.";
             }).then(function () { sendBtn.disabled = false; body.focus(); });
         });
+        // S138: voice message. Tap to record, tap again to send.
+        // Mensaje de voz: se pulsa para grabar y otra vez para enviar.
+        var micBtn = document.getElementById("btn-mic");
+        var micCancel = document.getElementById("btn-mic-cancel");
+        var recorder = null, chunks = [], recTimer = null, recStart = 0, recCancelled = false;
+        function recType() {
+            var types = ["audio/ogg;codecs=opus", "audio/webm;codecs=opus", "audio/mp4", "audio/webm"];
+            for (var i = 0; i < types.length; i++) {
+                if (window.MediaRecorder && MediaRecorder.isTypeSupported(types[i])) { return types[i]; }
+            }
+            return "";
+        }
+        function stopRec(cancel) {
+            recCancelled = cancel;
+            if (recorder && recorder.state !== "inactive") { recorder.stop(); }
+        }
+        function sendVoice(blob) {
+            var type = (blob.type || "audio/webm").split(";")[0];
+            var ext = {"audio/ogg": "ogg", "audio/webm": "webm", "audio/mp4": "m4a"}[type] || "webm";
+            var data = new FormData();
+            data.append("file", new File([blob], "mensaje_de_voz." + ext, {type: type}));
+            errorBox.textContent = "Enviando el mensaje de voz…";
+            fetch(BASE + "subir/", {
+                method: "POST", credentials: "same-origin",
+                headers: {"X-CSRFToken": csrf}, body: data
+            }).then(function (r) {
+                return r.json().then(function (result) {
+                    if (!r.ok) { throw new Error(result.error || r.status); }
+                    errorBox.textContent = "Mensaje de voz enviado: saldrá con su texto en unos segundos.";
+                    setTimeout(function () { if (errorBox.textContent.indexOf("Mensaje de voz enviado") === 0) { errorBox.textContent = ""; } }, 8000);
+                    poll();
+                });
+            }).catch(function (error) {
+                errorBox.textContent = "No se ha podido enviar el mensaje de voz. " + (error.message || "");
+            });
+        }
+        if (!window.MediaRecorder || !navigator.mediaDevices) { micBtn.hidden = true; }
+        micBtn.addEventListener("click", function () {
+            if (recorder && recorder.state === "recording") { stopRec(false); return; }
+            navigator.mediaDevices.getUserMedia({audio: true}).then(function (stream) {
+                var type = recType();
+                recorder = type ? new MediaRecorder(stream, {mimeType: type}) : new MediaRecorder(stream);
+                chunks = []; recCancelled = false;
+                recorder.ondataavailable = function (e) { if (e.data.size) { chunks.push(e.data); } };
+                recorder.onstop = function () {
+                    stream.getTracks().forEach(function (t) { t.stop(); });
+                    clearInterval(recTimer);
+                    micBtn.classList.remove("rec"); micBtn.textContent = "🎤"; micCancel.hidden = true;
+                    if (!recCancelled && chunks.length) {
+                        sendVoice(new Blob(chunks, {type: recorder.mimeType || type || "audio/webm"}));
+                    }
+                };
+                recorder.start();
+                recStart = Date.now();
+                micBtn.classList.add("rec"); micCancel.hidden = false;
+                recTimer = setInterval(function () {
+                    var sec = Math.floor((Date.now() - recStart) / 1000);
+                    micBtn.textContent = "■ " + Math.floor(sec / 60) + ":" + ("0" + (sec % 60)).slice(-2);
+                    if (sec >= 300) { stopRec(false); }
+                }, 250);
+                micBtn.textContent = "■ 0:00";
+            }).catch(function () {
+                errorBox.textContent = "Sin permiso de micrófono: actívalo en los ajustes del navegador para esta app.";
+            });
+        });
+        micCancel.addEventListener("click", function () { stopRec(true); });
+
         // PDF or photo: to the room and, for a service giver, to Alia.
         // PDF o foto: a la sala y, si da servicios, a Alia.
         var attachBtn = document.getElementById("btn-attach");
@@ -351,6 +490,7 @@ WhatsApp (#asistencia).
                               .then(function (result) {
                                   renderMembers(result.members);
                                   item.remove();
+                                  if (result.added) { showLink(result.added); }
                               });
                         });
                         item.appendChild(label); item.appendChild(add);
@@ -363,6 +503,7 @@ WhatsApp (#asistencia).
         document.getElementById("add-close").addEventListener("click", function () { dialog.close(); });
     }
 
+    renderMembers(JSON.parse(document.getElementById("members-data").textContent));
     poll();
     setInterval(function () { if (!document.hidden) { poll(); } }, 4000);
     // S138: on leaving the screen (closed, background, other app) the

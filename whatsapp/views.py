@@ -205,6 +205,38 @@ class IncomingWhatsAppView(View):
 
         record_inbound(company, from_number)
 
+        # --- Step 2a-voice (H37, S138): voice notes. ---
+        # From a room member or whoever gives services: transcribed in
+        # Celery and fed back here as text (EBVoice), so Alia, the room
+        # or the assistant treat it like a written message.
+        # --- Paso 2a-voz (H37, S138): notas de voz. ---
+        # De un miembro de la sala o de quien da servicios: se
+        # transcriben en Celery y vuelven aquí como texto (EBVoice), para
+        # que Alia, la sala o el asistente las traten como lo escrito.
+        from chat.room_service import wants_voice
+
+        _voice_type = (
+            request.POST.get("MediaContentType0", "") if num_media else ""
+        )
+        if (
+            _voice_type.startswith("audio/")
+            and not request.POST.get("EBVoice")
+            and wants_voice(company, from_number)
+        ):
+            from chat.tasks import whatsapp_voice_note
+
+            whatsapp_voice_note.delay(request.POST.dict())
+            return HttpResponse(status=200)
+        _voice = None
+        if request.POST.get("EBVoiceBlob"):
+            _voice = {
+                "blob": request.POST.get("EBVoiceBlob", ""),
+                "type": request.POST.get("EBVoiceType", ""),
+                "name": "nota_de_voz.%s" % request.POST.get(
+                    "EBVoiceBlob", "",
+                ).rsplit(".", 1)[-1],
+            }
+
         # --- Step 2a-room (H37, S138): answer to a room notice. ---
         # "Ver mensajes" button or a reply to the notice itself: the bot
         # answers with the personal link to the room. Only those two,
@@ -291,6 +323,7 @@ class IncomingWhatsAppView(View):
             company, from_number, _service_body,
             request.POST.get("MediaUrl0", "") if num_media else "",
             request.POST.get("MediaContentType0", "") if num_media else "",
+            voice=_voice,
         ):
             return HttpResponse(status=200)
         if _intake is not None and _service_doc:
@@ -320,6 +353,7 @@ class IncomingWhatsAppView(View):
                 request.POST.get("MediaContentType0", "") if num_media
                 else "",
                 to_number, from_number, decide=_service_decide,
+                voice=_voice,
             )
             return HttpResponse(status=200)
 
@@ -1076,7 +1110,7 @@ class IncomingWhatsAppView(View):
                     )
                     service_intake_reply.delay(
                         _handover.pk, _effective_msg, "", "",
-                        to_number, from_number,
+                        to_number, from_number, voice=_voice,
                     )
                     return HttpResponse(status=200)
 

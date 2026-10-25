@@ -24,6 +24,7 @@ de S136, anexo H37 sección 10, y de Miguel Ángel en S138):
   mensajes de las personas.
 """
 import logging
+import re
 import secrets
 from datetime import timedelta
 
@@ -333,7 +334,7 @@ def candidates(room, query=""):
 # ---------------------------------------------------------------------------
 
 def post_message(room, body, author=None, author_name="", kind=None,
-                 attachment=None, work_order=None):
+                 attachment=None, work_order=None, transcript=""):
     """
     Save a message in the room and notify the other members.
 
@@ -354,6 +355,7 @@ def post_message(room, body, author=None, author_name="", kind=None,
         attachment_name=attachment.get("name", "")[:200],
         attachment_type=attachment.get("type", "")[:100],
         work_order=work_order,
+        transcript=transcript or "",
     )
     message_pk = message.pk
     transaction.on_commit(lambda: schedule_delivery(message_pk))
@@ -923,6 +925,27 @@ def member_for_phone(company, phone):
     ).first()
 
 
+def wants_voice(company, phone):
+    """
+    Whether a WhatsApp voice note of this phone goes to transcription.
+
+    ---
+
+    Si una nota de voz de WhatsApp de este teléfono se transcribe
+    (S138): de los miembros de la sala y de quien da servicios. El
+    resto sigue como siempre.
+    """
+    if member_for_phone(company, phone) is not None:
+        return True
+    from budgets.service_intake import service_giver
+    from ivr_config.models import Contact
+
+    contact = Contact.objects.filter(
+        company=company, phone_number=phone,
+    ).select_related("company_user").first()
+    return service_giver(getattr(contact, "company_user", None))
+
+
 def member_for_company_user(company_user):
     """
     The Asistencia room member of a panel user, or None.
@@ -1071,9 +1094,13 @@ def store_upload(data, content_type, name=""):
 
     from spare_parts.gcs_service import upload_bytes
 
+    from chat.voice_service import AUDIO_EXTENSIONS, base_type
+
+    content_type = base_type(content_type) or content_type
     extension = {
         "application/pdf": "pdf", "image/png": "png",
         "image/webp": "webp", "image/jpeg": "jpg",
+        **AUDIO_EXTENSIONS,
     }.get(content_type, "bin")
     blob_name = "%s/%s/%s.%s" % (
         UPLOAD_PREFIX, timezone.localdate().strftime("%Y/%m"),
@@ -1087,6 +1114,8 @@ def store_upload(data, content_type, name=""):
         logger.exception("# [CHAT ROOM] No se pudo guardar el adjunto.")
         return None
     clean = (name or "").replace("/", "_").strip()
+    if clean and "." not in clean:
+        clean = "%s.%s" % (clean, extension)
     return {
         "blob": blob_name,
         "name": clean or "adjunto.%s" % extension,
@@ -1095,7 +1124,7 @@ def store_upload(data, content_type, name=""):
 
 
 def post_whatsapp_message(member_pk, body, media_url="", content_type="",
-                          attachment=None):
+                          attachment=None, transcript=""):
     """
     Post in the room what a member sent by WhatsApp (text or file).
 
@@ -1126,6 +1155,7 @@ def post_whatsapp_message(member_pk, body, media_url="", content_type="",
     message = post_message(
         member.room, body or "", author=member.person,
         author_name=person_name(member.person), attachment=attachment,
+        transcript=transcript,
     )
     ChatRoomMember.objects.filter(pk=member.pk).update(
         last_seen_at=timezone.now(),
@@ -1134,7 +1164,7 @@ def post_whatsapp_message(member_pk, body, media_url="", content_type="",
 
 
 def route_whatsapp(company, from_number, body, media_url="",
-                   content_type=""):
+                   content_type="", voice=None):
     """
     A member inside the room writes by WhatsApp: to the room.
 
@@ -1149,7 +1179,13 @@ def route_whatsapp(company, from_number, body, media_url="",
     member = member_for_phone(company, from_number)
     if member is None or not member.whatsapp_inside:
         return False
-    if media_url:
+    if voice:
+        # S138: a voice note, already transcribed (body is its text).
+        # Nota de voz ya transcrita (body es su texto).
+        post_whatsapp_message(
+            member.pk, "", attachment=voice, transcript=body,
+        )
+    elif media_url:
         from chat.tasks import post_whatsapp_to_room
 
         post_whatsapp_to_room.delay(
@@ -1157,6 +1193,11 @@ def route_whatsapp(company, from_number, body, media_url="",
         )
     else:
         post_whatsapp_message(member.pk, body)
+    if body:
+        call_alia(
+            getattr(member.person, "company_user", None), member.room,
+            body, surface="whatsapp",
+        )
     return True
 
 
@@ -1174,6 +1215,8 @@ def relay_line(message):
     else:
         head = "<%s>" % message.author_name
     text = message.body or ""
+    if message.transcript:
+        text = ("%s 🎤 %s" % (text, message.transcript)).strip()
     if message.attachment_blob and not text:
         text = message.attachment_name
     return "%s %s" % (head, text)
@@ -1199,8 +1242,17 @@ def deliver_relay(message_pk, member_pks):
     if message is None:
         return
     company = message.room.company
+    from chat.voice_service import WHATSAPP_AUDIO, base_type, is_audio
+
     media_url = None
-    if message.attachment_blob:
+    playable = not is_audio(message.attachment_type) or (
+        base_type(message.attachment_type) in WHATSAPP_AUDIO
+    )
+    if message.attachment_blob and playable:
+        # S138: a web recording (webm) does not play in WhatsApp: only
+        # its text goes.
+        # Una grabación web (webm) no se reproduce en WhatsApp: va solo
+        # su texto.
         from spare_parts.gcs_service import generate_signed_url
 
         try:
@@ -1248,7 +1300,8 @@ def intake_member(intake):
     return member_for_company_user(intake.requested_by)
 
 
-def intake_inbound(intake, body, media_url, content_type, from_number):
+def intake_inbound(intake, body, media_url, content_type, from_number,
+                   voice=None):
     """
     A WhatsApp message of a service conversation: into the room.
 
@@ -1268,6 +1321,16 @@ def intake_inbound(intake, body, media_url, content_type, from_number):
     _set_surface(intake, "whatsapp")
     enter_whatsapp(member, from_number)
     attachment = None
+    if voice:
+        # S138: voice note, already transcribed; not a service sheet.
+        # Nota de voz ya transcrita; no es hoja de servicio.
+        try:
+            post_whatsapp_message(
+                member.pk, "", attachment=voice, transcript=body,
+            )
+        except Exception:  # noqa: BLE001 -- Alia contesta igual
+            logger.exception("# [CHAT ROOM] Nota de voz sin publicar.")
+        return None
     if media_url:
         try:
             attachment = store_service_document(
@@ -1350,15 +1413,54 @@ def gives_services(viewer):
     return service_giver(viewer.company_user)
 
 
+ALIA_MENTION = re.compile(r"(^|[^\w@])@?alia\b", re.IGNORECASE)
+
+
+def mentions_alia(text):
+    """
+    Whether a message calls Alia by name.
+
+    ---
+
+    Si un mensaje nombra a Alia (`@Alia`, "Alia, ¿quién está libre?").
+    """
+    return bool(ALIA_MENTION.search(text or ""))
+
+
 def start_room_service(viewer, room, body="", attachment=None):
     """
     Hand a room message of a service giver to Alia, if it applies.
 
     ---
 
-    Pasa a Alia lo que escribe en la web de la sala quien da servicios:
-    un PDF o una foto abre (o sigue) la conversación de servicio; un
-    texto solo va a Alia si ya hay una abierta. Devuelve True si se ha
+    Pasa a Alia lo que escribe en la web de la sala quien da servicios
+    (`call_alia`, superficie sala).
+    """
+    return call_alia(
+        viewer.company_user, room, body, attachment=attachment,
+        surface="room",
+    )
+
+
+def call_alia(company_user, room, body="", attachment=None,
+              surface="room"):
+    """
+    Give a room message to Alia when it is for her.
+
+    ---
+
+    Pasa a Alia un mensaje de la sala cuando es para ella (S138, todos
+    los caminos llevan a Alia):
+
+    - De quien da servicios: un PDF o una foto abre (o sigue) la
+      conversación de servicio; un texto (o la transcripción de un
+      mensaje de voz) va a Alia si ya hay conversación abierta o si la
+      nombra (`@Alia`).
+    - De quien no da servicios y la nombra: Alia contesta en la sala
+      que solo atiende a quien da servicios.
+
+    `surface`: desde dónde escribió (`room` o `whatsapp`), para saber
+    si contestarle también fuera de la sala. Devuelve True si se ha
     pasado a Alia.
     """
     from budgets.models import ServiceIntake
@@ -1369,11 +1471,18 @@ def start_room_service(viewer, room, body="", attachment=None):
     )
     from whatsapp.tasks import _get_whatsapp_sender, service_intake_reply
 
-    company_user = viewer.company_user
+    called = mentions_alia(body)
     if not service_giver(company_user):
+        if called:
+            post_message(
+                room, "Solo atiendo peticiones de quien da servicios "
+                "(supervisores de asistencia y administradores).",
+                author=None, author_name=BOT_NAME,
+                kind=ChatMessage.KIND_BOT,
+            )
         return False
     intake = open_intake(company_user, ServiceIntake.CHANNEL_WHATSAPP)
-    if intake is None and attachment is None:
+    if intake is None and attachment is None and not called:
         return False
     if intake is None:
         from budgets.assistance_resources import operator_phone
@@ -1382,7 +1491,7 @@ def start_room_service(viewer, room, body="", attachment=None):
             company_user, ServiceIntake.CHANNEL_WHATSAPP,
             operator_phone(company_user) or "",
         )
-    _set_surface(intake, "room")
+    _set_surface(intake, surface)
     media_url = content_type = ""
     if attachment is not None:
         remember_document(intake, attachment)
@@ -1393,6 +1502,46 @@ def start_room_service(viewer, room, body="", attachment=None):
         intake.phone_number or "", decide=False, posted=True,
     )
     return True
+
+
+def post_voice(room_pk, attachment, author_person_pk=None,
+               author_name="", company_user_pk=None, member_pk=None):
+    """
+    Transcribe a voice message recorded in the room and post it.
+
+    ---
+
+    Transcribe un mensaje de voz grabado en la web de la sala y lo
+    publica con su texto (desde Celery). Si quien habla da servicios,
+    el texto va a Alia como si lo hubiera escrito (`call_alia`).
+    """
+    from chat.voice_service import transcribe
+    from document_explorer.models import PersonIdentity
+    from ivr_config.models import CompanyUser
+    from spare_parts.gcs_service import download_bytes
+
+    room = ChatRoom.objects.filter(pk=room_pk).first()
+    if room is None:
+        return None
+    try:
+        data = download_bytes(ATTACHMENT_BUCKET, attachment["blob"])
+    except Exception:  # noqa: BLE001 -- sale sin texto
+        logger.exception("# [CHAT VOZ] No se pudo bajar el audio.")
+        data = b""
+    text = transcribe(data, attachment["type"])
+    author = PersonIdentity.objects.filter(pk=author_person_pk).first()
+    message = post_message(
+        room, "", author=author, author_name=author_name,
+        attachment=attachment, transcript=text,
+    )
+    if member_pk:
+        ChatRoomMember.objects.filter(pk=member_pk).update(
+            last_seen_at=timezone.now(),
+        )
+    company_user = CompanyUser.objects.filter(pk=company_user_pk).first()
+    if text and company_user is not None:
+        call_alia(company_user, room, text, surface="room")
+    return message
 
 
 def media_bytes(media_url):

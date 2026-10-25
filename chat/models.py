@@ -648,6 +648,13 @@ class ChatMessage(models.Model):
         related_name="chat_messages",
         verbose_name="Servicio",
     )
+    # S138: text of a voice message (from the room or a WhatsApp voice
+    # note), read by Gemini; shown below the audio.
+    # Texto de un mensaje de voz (de la sala o una nota de voz de
+    # WhatsApp), leído por Gemini; sale debajo del audio.
+    transcript = models.TextField(
+        blank=True, default="", verbose_name="Transcripción",
+    )
     created_at = models.DateTimeField(
         default=timezone.now, db_index=True, verbose_name="Enviado",
     )
