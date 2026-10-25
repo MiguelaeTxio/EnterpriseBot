@@ -76,6 +76,9 @@ def _message_json(message, room):
         data["attachment_url"] = "/sala/%s/adjunto/%d/" % (
             room.slug, message.pk,
         )
+    if message.attachment_name:
+        # S138: a discarded sheet keeps its name, without the file.
+        # Una hoja descartada conserva su nombre, sin archivo.
         data["attachment_name"] = message.attachment_name
     return data
 
