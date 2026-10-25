@@ -272,8 +272,13 @@ WhatsApp (#asistencia).
                 body: JSON.stringify({body: text})
             }).then(function (r) {
                 if (!r.ok) { throw new Error(r.status); }
-                body.value = "";
-                poll();
+                return r.json().then(function (result) {
+                    body.value = "";
+                    // #asistencia / #salir: answer for whoever wrote it.
+                    // #asistencia / #salir: respuesta para quien lo escribe.
+                    if (result.notice) { errorBox.textContent = result.notice; }
+                    poll();
+                });
             }).catch(function () {
                 // The text stays in the box to send it again.
                 // El texto se queda en la caja para volver a enviarlo.

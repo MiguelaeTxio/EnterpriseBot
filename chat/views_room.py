@@ -242,6 +242,11 @@ def send(request, slug):
     body = body.strip()[:MAX_BODY]
     if not body:
         return JsonResponse({"error": "Mensaje vacío."}, status=400)
+    # S138: #asistencia / #salir also from the web room, not posted.
+    # #asistencia / #salir también desde la web, sin publicarse.
+    notice = room_service.handle_web_command(viewer, body)
+    if notice is not None:
+        return JsonResponse({"notice": notice})
     message = room_service.post_message(
         room, body, author=viewer.person, author_name=viewer.name,
     )

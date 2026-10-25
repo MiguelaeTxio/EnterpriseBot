@@ -963,6 +963,50 @@ def handle_whatsapp_command(company, from_number, body):
     return True
 
 
+def handle_web_command(viewer, body):
+    """
+    #asistencia and #salir written in the web room; notice or None.
+
+    ---
+
+    Las órdenes `#asistencia` y `#salir` escritas en la web de la sala
+    (Miguel Ángel, S138: también desde la sala se entra y se sale de la
+    sala por WhatsApp). No se publican; devuelven el aviso que ve quien
+    las escribe, o None si el texto no es una orden.
+    """
+    from document_explorer.person_phone_service import mobile_of
+    from whatsapp.window_service import window_open
+
+    command = (body or "").strip().lower()
+    if command not in (ENTER_COMMAND, LEAVE_COMMAND):
+        return None
+    member = viewer.member
+    if member is None:
+        return "No eres miembro de la sala."
+    if command == LEAVE_COMMAND:
+        if not member.whatsapp_inside:
+            return "No estabas dentro de la sala por WhatsApp."
+        leave_whatsapp(member)
+        return (
+            "Has salido de la sala por WhatsApp: solo te llegará el aviso "
+            "de mensajes nuevos."
+        )
+    if member.whatsapp_inside:
+        return "Ya estás dentro de la sala por WhatsApp."
+    phone = mobile_of(member.person)
+    if not phone:
+        return "No tienes móvil en tu ficha."
+    if not window_open(member.room.company, phone):
+        # Free WhatsApp texts need the 24 h window open.
+        # Los textos libres de WhatsApp necesitan la ventana abierta.
+        return (
+            "Para recibir la sala por WhatsApp, escribe %s al número de "
+            "WhatsApp de la empresa." % ENTER_COMMAND
+        )
+    enter_whatsapp(member, phone)
+    return "Estás dentro de la sala también por WhatsApp."
+
+
 def store_upload(data, content_type, name=""):
     """
     Keep a file sent to the room in GCS; attachment dict or None.
