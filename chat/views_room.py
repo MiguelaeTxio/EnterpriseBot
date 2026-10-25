@@ -419,6 +419,11 @@ def manifest(request):
     (Android o iPhone).
     """
     data = {
+        # S138: id of its own so the phone installs it as an app
+        # separate from Fichaje (same origin).
+        # Identificador propio para que el móvil la instale como una
+        # app distinta del Fichaje (mismo dominio).
+        "id": "/sala/",
         "name": "Sala de Asistencia — Grupo Álvarez",
         "short_name": "Sala",
         "start_url": "/sala/%s/" % room_service.ASSISTANCE_SLUG,

@@ -72,6 +72,7 @@ WhatsApp (#asistencia).
 <header>
     <h1>#{{ room.slug }}</h1>
     <span class="net" id="net">En línea</span>
+    <button type="button" id="btn-install" title="Instalar la sala como app en este dispositivo" hidden>Instalar</button>
     {% if viewer.can_manage %}<button type="button" id="btn-add" title="Añadir un trabajador a la sala">Añadir</button>{% endif %}
     <button type="button" id="btn-people" title="Miembros de la sala (punto verde: la tiene abierta ahora)"><span id="people-count">{{ members|length }}</span> 👥</button>
 </header>
@@ -361,6 +362,24 @@ WhatsApp (#asistencia).
     document.addEventListener("visibilitychange", function () { if (!document.hidden) { poll(); } });
     window.addEventListener("online", function () { setNet(true); poll(); });
     window.addEventListener("offline", function () { setNet(false); });
+
+    // Install button: only when the browser offers it (Chrome/Android).
+    // Botón Instalar: solo cuando el navegador lo ofrece.
+    var installEvent = null;
+    var installBtn = document.getElementById("btn-install");
+    window.addEventListener("beforeinstallprompt", function (event) {
+        event.preventDefault();
+        installEvent = event;
+        installBtn.hidden = false;
+    });
+    installBtn.addEventListener("click", function () {
+        if (!installEvent) { return; }
+        installEvent.prompt();
+        installEvent.userChoice.then(function () {
+            installEvent = null; installBtn.hidden = true;
+        });
+    });
+    window.addEventListener("appinstalled", function () { installBtn.hidden = true; });
 
     if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sala/sw.js", {scope: "/sala/"}).catch(function () {});

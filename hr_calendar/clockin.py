@@ -465,6 +465,13 @@ def manifest(request):
     una app.
     """
     data = {
+        # H37 (S138): explicit id, the same Chrome already derives from
+        # start_url (installed phones keep the app), so the Sala de
+        # Asistencia (/sala/) can be installed beside it.
+        # Identificador explícito, el mismo que Chrome ya saca de
+        # start_url (los móviles instalados conservan la app), para que
+        # la Sala de Asistencia se pueda instalar junto a ella.
+        "id": "/fichaje/",
         "name": "Fichaje — Grupo Álvarez",
         "short_name": "Fichaje",
         "start_url": "/fichaje/",
