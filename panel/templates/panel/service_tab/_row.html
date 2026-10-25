@@ -25,6 +25,14 @@ datos nuevos. Todo llega resuelto de la vista.
             <option value="{{ value }}" {% if machine.service_hours_interval == value %}selected{% endif %}>{{ value }} h</option>
             {% endfor %}
         </select>
+        {% if machine.has_crane_hours %}
+        <select class="form-select form-select-sm svc-input svc-w-sel" name="crane_interval" {% if not can_edit %}disabled{% endif %} aria-label="Revisión de la grúa por horas" title="Grúa">
+            <option value="">grúa —</option>
+            {% for value, label in hours_choices %}
+            <option value="{{ value }}" {% if machine.service_crane_hours_interval == value %}selected{% endif %}>grúa {{ value }} h</option>
+            {% endfor %}
+        </select>
+        {% endif %}
         <input type="number" min="1" class="form-control form-control-sm svc-input svc-w-sel" name="km_interval" list="svcKmSuggestions" placeholder="km" value="{{ machine.service_every_km|default_if_none:'' }}" {% if not can_edit %}disabled{% endif %} aria-label="Revisión cada N km">
         </div>
     </td>

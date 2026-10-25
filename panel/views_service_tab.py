@@ -390,7 +390,7 @@ def _day(raw, label, required=False):
     return value
 
 
-def _hours_interval(raw):
+def _hours_interval(raw, what="La revisión por horas"):
     """
     Hours interval from the select ("" -> None).
 
@@ -403,7 +403,7 @@ def _hours_interval(raw):
         return None
     valid = {value for value, _label in MachineAsset.SERVICE_HOURS_CHOICES}
     if not raw.isdigit() or int(raw) not in valid:
-        raise RowError("La revisión por horas es cada 800 o cada 1200.")
+        raise RowError("%s es cada 800 o cada 1200." % what)
     return int(raw)
 
 
@@ -414,7 +414,8 @@ def _save_row(machine, data, company_user):
     ---
 
     Aplica una fila, todo o nada:
-    - Plan: revisión por horas (800/1200) y cada N km.
+    - Plan: revisión por horas (800/1200), de la grúa por horas
+      (800/1200, solo con horómetro de grúa; S137) y cada N km.
     - Lectura: si trae km, horas o horas de grúa, se anota con su fecha
       (hoy por defecto). Si ya hay una lectura de ese mismo día, se
       completa esa en vez de duplicarla.
@@ -424,6 +425,11 @@ def _save_row(machine, data, company_user):
       son opcionales (solo con fecha no avisa).
     """
     hours_interval = _hours_interval(data.get("hours_interval"))
+    crane_interval = (
+        _hours_interval(data.get("crane_interval"),
+                        "La revisión de la grúa")
+        if machine.has_crane_hours else None
+    )
     km_interval = _count(data.get("km_interval"), "La revisión por km")
     reading = {
         "km": _count(data.get("reading_km"), "Los km de la lectura"),
@@ -447,9 +453,11 @@ def _save_row(machine, data, company_user):
 
     with transaction.atomic():
         machine.service_hours_interval = hours_interval
+        machine.service_crane_hours_interval = crane_interval
         machine.service_every_km = km_interval or None
         machine.save(update_fields=[
-            "service_hours_interval", "service_every_km", "updated_at",
+            "service_hours_interval", "service_crane_hours_interval",
+            "service_every_km", "updated_at",
         ])
         if any(value is not None for value in reading.values()):
             day = reading_date or date.today()
@@ -525,8 +533,9 @@ class ServiceBulkPlanView(CompanyUserRequiredMixin, View):
     ---
 
     POST: aplica a la vez a los centros de gasto marcados la revisión
-    por horas, la revisión por km o las dos (solo lo que se pida
-    aplicar: `apply_hours`, `apply_km`).
+    por horas, la de la grúa, la de km o varias (solo lo que se pida
+    aplicar: `apply_hours`, `apply_crane`, `apply_km`). La de la grúa
+    solo se pone a los que tienen horómetro de grúa (S137).
     """
 
     def post(self, request):
@@ -546,8 +555,9 @@ class ServiceBulkPlanView(CompanyUserRequiredMixin, View):
                 {"ok": False, "error": "Selección no válida."}, status=400,
             )
         apply_hours = request.POST.get("apply_hours") == "1"
+        apply_crane = request.POST.get("apply_crane") == "1"
         apply_km = request.POST.get("apply_km") == "1"
-        if not ids or not (apply_hours or apply_km):
+        if not ids or not (apply_hours or apply_crane or apply_km):
             return JsonResponse(
                 {"ok": False, "error": "Marca centros de gasto y qué "
                  "revisión aplicar."},
@@ -563,9 +573,21 @@ class ServiceBulkPlanView(CompanyUserRequiredMixin, View):
                 fields["service_every_km"] = _count(
                     request.POST.get("km_interval"), "La revisión por km",
                 ) or None
+            crane = (
+                _hours_interval(request.POST.get("crane_interval"),
+                                "La revisión de la grúa")
+                if apply_crane else None
+            )
         except RowError as exc:
             return JsonResponse({"ok": False, "error": str(exc)}, status=400)
-        updated = MachineAsset.objects.filter(
+        machines = MachineAsset.objects.filter(
             pk__in=ids, company=company_user.company,
-        ).update(**fields)
+        )
+        updated = machines.update(**fields) if fields else 0
+        if apply_crane:
+            with_crane = machines.filter(has_crane_hours=True).update(
+                service_crane_hours_interval=crane,
+            )
+            if not fields:
+                updated = with_crane
         return JsonResponse({"ok": True, "updated": updated})

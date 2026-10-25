@@ -26,7 +26,7 @@ desliza entera, sin columnas fijas (S123). Mismo formato en PC y móvil.
         <tr class="small">
             <th rowspan="2" class="svc-fix-left"><input type="checkbox" class="form-check-input me-1" id="svc-select-all" aria-label="Seleccionar todos"><a href="#" class="svc-sort text-reset" data-sort="{{ sort_next.code }}">Código{% if sort_arrows.code %} <i class="bi bi-arrow-{{ sort_arrows.code }}"></i><sup>{{ sort_priority.code }}</sup>{% endif %}</a></th>
             <th rowspan="2"><a href="#" class="svc-sort text-reset" data-sort="{{ sort_next.family }}">Familia{% if sort_arrows.family %} <i class="bi bi-arrow-{{ sort_arrows.family }}"></i><sup>{{ sort_priority.family }}</sup>{% endif %}</a></th>
-            <th rowspan="2">Revisión cada<div class="fw-normal text-muted">horas · km</div></th>
+            <th rowspan="2">Revisión cada<div class="fw-normal text-muted">horas · grúa · km</div></th>
             <th rowspan="2" class="svc-bar svc-bar-read" data-group="read" title="Ver lecturas"><span class="svc-bar-label">Lecturas</span></th>
             <th rowspan="2" class="svc-sep svc-grp-read"><a href="#" class="svc-sort text-reset" data-sort="{{ sort_next.last_reading }}" title="Ordenar por fecha de la última lectura">Última lectura{% if sort_arrows.last_reading %} <i class="bi bi-arrow-{{ sort_arrows.last_reading }}"></i><sup>{{ sort_priority.last_reading }}</sup>{% endif %}</a></th>
             <th colspan="4" class="text-center svc-grp-read">Lectura nueva</th>

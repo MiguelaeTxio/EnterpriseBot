@@ -353,6 +353,23 @@ class MachineAsset(models.Model):
             "sin revisión por horas."
         ),
     )
+    # H30 (S137) -- la grúa tiene su propio intervalo, separado del del
+    # camión. Miguel Ángel: "la grúa que va en horas y el camión que va
+    # en km" (A43: grúa cada 1200 h, camión por km). Hasta S137 la
+    # revisión de grúa tomaba el intervalo de `service_hours_interval`.
+    # ---
+    # H30 (S137) -- the crane has its own hours interval, apart from the
+    # truck's (hours or km).
+    service_crane_hours_interval = models.PositiveSmallIntegerField(
+        _("Revisión de la grúa por horas"),
+        choices=SERVICE_HOURS_CHOICES,
+        null=True,
+        blank=True,
+        help_text=_(
+            "Cada cuántas horas de grúa pasa la revisión la grúa. Vacío: "
+            "sin revisión de grúa. Solo cuenta si tiene horómetro de grúa."
+        ),
+    )
     service_every_km = models.PositiveIntegerField(
         _("Revisión cada N km"),
         null=True,
@@ -398,7 +415,10 @@ class MachineAsset(models.Model):
 
         True si tiene alguna revisión configurada (por horas o por km).
         """
-        return bool(self.service_hours_interval or self.service_every_km)
+        return bool(
+            self.service_hours_interval or self.service_every_km
+            or (self.has_crane_hours and self.service_crane_hours_interval)
+        )
 
 
 # ---------------------------------------------------------------------------

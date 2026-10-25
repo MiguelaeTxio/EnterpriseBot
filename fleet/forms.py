@@ -50,6 +50,7 @@ class MachineAssetForm(forms.ModelForm):
             "is_active",
             # H30 (S131): plan de revisiones por horas y km.
             "service_hours_interval",
+            "service_crane_hours_interval",
             "service_every_km",
         ]
         widgets = {
@@ -106,6 +107,9 @@ class MachineAssetForm(forms.ModelForm):
             "service_hours_interval": forms.Select(attrs={
                 "class": "form-select",
             }),
+            "service_crane_hours_interval": forms.Select(attrs={
+                "class": "form-select",
+            }),
             "service_every_km": forms.NumberInput(attrs={
                 "class": "form-control",
                 "min": "1",
@@ -127,6 +131,7 @@ class MachineAssetForm(forms.ModelForm):
             "hours":          "Horas",
             "is_active":      "Activo",
             "service_hours_interval": "Revisión por horas",
+            "service_crane_hours_interval": "Revisión de la grúa por horas",
             "service_every_km":       "Revisión cada N km",
         }
 
@@ -203,4 +208,3 @@ class MachineAssetForm(forms.ModelForm):
         if not cleaned.get("service_every_km"):
             cleaned["service_every_km"] = None
         return cleaned
-

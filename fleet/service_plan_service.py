@@ -85,7 +85,9 @@ def crane_schedule(interval):
 
     La revisión del motor de la grúa, con sus propias horas (horómetro
     de grúa) y su propio aviso -- Miguel Ángel, S131: "las grúas deben
-    de tener su propio aviso". Mismo intervalo que la de la máquina.
+    de tener su propio aviso". Desde S137 con su propio intervalo
+    (`service_crane_hours_interval`): la grúa va por horas aunque el
+    camión vaya por km.
     """
     return Schedule(
         KEY_CRANE, "Revisión grúa de %d horas" % interval, UNIT_HOURS,
@@ -143,9 +145,10 @@ def enabled_schedules(machine):
     if machine.service_hours_interval:
         interval = machine.service_hours_interval
         pairs.append((hours_schedule(interval), interval))
-        # S131: con horómetro de grúa, la grúa tiene su propia revisión.
-        if machine.has_crane_hours:
-            pairs.append((crane_schedule(interval), interval))
+    # S137: la grúa, con su propio intervalo y solo con horómetro de grúa.
+    if machine.has_crane_hours and machine.service_crane_hours_interval:
+        interval = machine.service_crane_hours_interval
+        pairs.append((crane_schedule(interval), interval))
     if machine.service_every_km:
         pairs.append((SCHEDULE_KM, machine.service_every_km))
     return pairs
@@ -304,6 +307,8 @@ def compute_service_notices():
     machines = list(
         MachineAsset.objects.filter(is_active=True).filter(
             Q(service_hours_interval__isnull=False)
+            | Q(service_crane_hours_interval__isnull=False,
+                has_crane_hours=True)
             | Q(service_every_km__isnull=False, service_every_km__gt=0),
         ),
     )

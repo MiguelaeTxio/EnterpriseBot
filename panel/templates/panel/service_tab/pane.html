@@ -58,6 +58,11 @@ nueva son un acordeón (solo una abierta, guardada por usuario).
                         {% for value, label in hours_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
                     </select>
                     <button type="button" class="btn btn-sm btn-outline-primary" id="svc-bulk-hours-apply">Aplicar horas</button>
+                    <select class="form-select form-select-sm" id="svc-bulk-crane" aria-label="Revisión de la grúa por horas">
+                        <option value="">Sin revisión de grúa</option>
+                        {% for value, label in hours_choices %}<option value="{{ value }}">Grúa: {{ label|lower }}</option>{% endfor %}
+                    </select>
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="svc-bulk-crane-apply" title="Solo a los que tienen horómetro de grúa">Aplicar grúa</button>
                     <input type="number" min="1" class="form-control form-control-sm" id="svc-bulk-km" list="svcKmSuggestions" placeholder="Sin revisión por km" aria-label="Revisión cada N km">
                     <button type="button" class="btn btn-sm btn-outline-primary" id="svc-bulk-km-apply">Aplicar km</button>
                 </div>
@@ -296,6 +301,9 @@ nueva son un acordeón (solo una abierta, guardada por usuario).
     if (hoursApply) {
         hoursApply.addEventListener("click", function () {
             bulk({apply_hours: "1", hours_interval: document.getElementById("svc-bulk-hours").value}, "Revisión por horas");
+        });
+        document.getElementById("svc-bulk-crane-apply").addEventListener("click", function () {
+            bulk({apply_crane: "1", crane_interval: document.getElementById("svc-bulk-crane").value}, "Revisión de la grúa");
         });
         document.getElementById("svc-bulk-km-apply").addEventListener("click", function () {
             bulk({apply_km: "1", km_interval: document.getElementById("svc-bulk-km").value}, "Revisión por km");

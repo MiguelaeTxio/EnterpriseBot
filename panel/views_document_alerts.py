@@ -1100,6 +1100,8 @@ class DocumentNoticesView(CompanyUserRequiredMixin, View):
         else:
             has_service_plans = MachineAsset.objects.filter(
                 Q(service_hours_interval__isnull=False)
+                | Q(service_crane_hours_interval__isnull=False,
+                    has_crane_hours=True)
                 | Q(service_every_km__gt=0),
                 is_active=True,
             ).exists()
