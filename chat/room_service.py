@@ -50,7 +50,6 @@ PRESENCE_WINDOW = timedelta(seconds=60)
 NOTICE_TEMPLATE_NAME = "chat_room_notice"
 NOTICE_BUTTON_ID = "ver_mensajes_sala"
 ATTACHMENT_BUCKET = "cgs_grupo_alvarez"
-SOURCE_PREFIX = "asistencia/tirea"
 MANAGER_ROLES = ("ADMIN", "ASSIST_SUPERVISOR")
 
 
@@ -645,38 +644,120 @@ def post_service(work_order_pk):
         return None
 
 
+SERVICE_FOLDER = "SERVICIOS_ASISTENCIA"
+SERVICE_NAME = "SERVICIO"
+EXTENSIONS = {
+    "application/pdf": "pdf", "image/png": "png", "image/webp": "webp",
+    "image/jpeg": "jpg",
+}
+
+
+def store_service_document(data, content_type):
+    """
+    Keep a service sheet in GCS; attachment dict or None.
+
+    ---
+
+    Guarda en GCS una hoja de servicio (foto o PDF), venga de donde
+    venga (sala, WhatsApp a Alia o Servicios del panel), en la carpeta
+    única `SERVICIOS_ASISTENCIA` con el nombre
+    `SERVICIO_AAMMDD_HHMMSS.EXT` (hora de Madrid), como decidió Miguel
+    Ángel (S138). Si en ese segundo ya hay otra, ordinal `_2`, `_3`...
+    Devuelve el adjunto (`blob`, `name`, `type`), o None si no se pudo.
+    """
+    from spare_parts.gcs_service import get_storage_client, upload_bytes
+
+    extension = EXTENSIONS.get(content_type, "bin")
+    stamp = timezone.localtime().strftime("%y%m%d_%H%M%S")
+    try:
+        bucket = get_storage_client().bucket(ATTACHMENT_BUCKET)
+        ordinal = 1
+        while True:
+            suffix = "" if ordinal == 1 else "_%d" % ordinal
+            name = "%s_%s%s.%s" % (SERVICE_NAME, stamp, suffix, extension)
+            blob_name = "%s/%s" % (SERVICE_FOLDER, name)
+            if not bucket.blob(blob_name).exists():
+                break
+            ordinal += 1
+        upload_bytes(
+            ATTACHMENT_BUCKET, blob_name, data, content_type=content_type,
+        )
+    except Exception:  # noqa: BLE001 -- el servicio se da igual
+        logger.exception("# [CHAT ROOM] No se pudo guardar la hoja.")
+        return None
+    logger.info("# [CHAT ROOM] Hoja de servicio guardada: %s", blob_name)
+    return {"blob": blob_name, "name": name, "type": content_type}
+
+
 def store_source_document(company, data, content_type):
     """
     Keep a TIREA document in GCS and return its blob name.
 
     ---
 
-    Guarda en GCS el documento de TIREA de un servicio (foto o PDF) y
-    devuelve el nombre del blob, o "" si no se pudo.
+    Guarda en GCS el documento de TIREA de un servicio (foto o PDF),
+    como hoja de servicio (`store_service_document`), y devuelve el
+    nombre del blob, o "" si no se pudo.
     """
-    import uuid
+    attachment = store_service_document(data, content_type)
+    return attachment["blob"] if attachment else ""
 
-    from spare_parts.gcs_service import upload_bytes
 
-    extension = {
-        "application/pdf": "pdf", "image/png": "png",
-        "image/webp": "webp",
-    }.get(content_type, "jpg")
-    blob_name = "%s/%s/%s.%s" % (
-        SOURCE_PREFIX, timezone.localdate().strftime("%Y/%m"),
-        uuid.uuid4().hex, extension,
-    )
-    try:
-        upload_bytes(
-            ATTACHMENT_BUCKET, blob_name, data, content_type=content_type,
-        )
-    except Exception:  # noqa: BLE001 -- el servicio se da igual
-        logger.exception(
-            "# [CHAT ROOM] No se pudo guardar el documento de TIREA de %s.",
-            company,
-        )
-        return ""
-    return blob_name
+def remember_document(intake, attachment):
+    """
+    Note a service sheet in its service conversation.
+
+    ---
+
+    Anota una hoja de servicio en su conversación de servicio, para
+    enlazarla al servicio al lanzarlo o borrarla si se cancela.
+    """
+    from budgets.models import ServiceIntake
+
+    data = dict(intake.data or {})
+    documents = list(data.get("documents") or [])
+    if attachment["blob"] not in documents:
+        documents.append(attachment["blob"])
+    data["documents"] = documents
+    intake.data = data
+    ServiceIntake.objects.filter(pk=intake.pk).update(data=data)
+
+
+def discard_documents(intake):
+    """
+    Really delete the service sheets of a cancelled conversation.
+
+    ---
+
+    Borra de verdad del cubo las hojas de servicio de una conversación
+    cancelada (Miguel Ángel, S138: "si el servicio es cancelado, se
+    descarta el archivo [...] borrándolo realmente del bucket"). Nunca
+    la que ya esté enlazada a un servicio. En la sala el mensaje queda,
+    sin el archivo y con "(descartado)".
+    """
+    from budgets.models import WorkOrderAssistance
+    from spare_parts.gcs_service import delete_file
+
+    documents = list((intake.data or {}).get("documents") or [])
+    for blob in documents:
+        if not blob.startswith(SERVICE_FOLDER + "/"):
+            continue
+        if WorkOrderAssistance.objects.filter(
+            source_document_blob=blob,
+        ).exists():
+            continue
+        try:
+            delete_file(ATTACHMENT_BUCKET, blob)
+        except Exception:  # noqa: BLE001 -- se registra y se sigue
+            logger.exception("# [CHAT ROOM] No se pudo borrar %s.", blob)
+            continue
+        for message in ChatMessage.objects.filter(attachment_blob=blob):
+            message.attachment_blob = ""
+            message.attachment_name = (
+                "%s (descartado)" % message.attachment_name
+            )[:200]
+            message.save(update_fields=["attachment_blob", "attachment_name"])
+        logger.info("# [CHAT ROOM] Hoja descartada y borrada: %s", blob)
 
 
 SOURCE_TOKEN_SALT = "chat.room.source"
@@ -715,7 +796,7 @@ def unsign_source(token):
     except signing.BadSignature:
         return "", ""
     blob = str(payload.get("b", ""))
-    if not blob.startswith(SOURCE_PREFIX + "/"):
+    if not blob.startswith(SERVICE_FOLDER + "/"):
         return "", ""
     return blob, str(payload.get("t", ""))
 
@@ -918,7 +999,8 @@ def store_upload(data, content_type, name=""):
     }
 
 
-def post_whatsapp_message(member_pk, body, media_url="", content_type=""):
+def post_whatsapp_message(member_pk, body, media_url="", content_type="",
+                          attachment=None):
     """
     Post in the room what a member sent by WhatsApp (text or file).
 
@@ -933,8 +1015,7 @@ def post_whatsapp_message(member_pk, body, media_url="", content_type=""):
     ).first()
     if member is None:
         return None
-    attachment = None
-    if media_url:
+    if attachment is None and media_url:
         from document_explorer.worker_request_service import (
             _download_media,
         )
@@ -1082,15 +1163,30 @@ def intake_inbound(intake, body, media_url, content_type, from_number):
     el servicio es miembro de la sala, entra en ella (dar un servicio a
     Alia es entrar en la sala, Miguel Ángel, S138) y su mensaje, con el
     documento si lo trae, sale en la sala antes que la respuesta de
-    Alia.
+    Alia. El documento se guarda una sola vez, como hoja de servicio, y
+    se devuelve su dirección `gcs:` para que Alia lo lea de ahí (None si
+    no hay documento o no es miembro).
     """
     member = intake_member(intake)
     if member is None:
         return None
     _set_surface(intake, "whatsapp")
     enter_whatsapp(member, from_number)
-    post_whatsapp_message(member.pk, body, media_url, content_type)
-    return member
+    attachment = None
+    if media_url:
+        try:
+            attachment = store_service_document(
+                media_bytes(media_url), content_type,
+            )
+        except Exception:  # noqa: BLE001 -- sale el texto igual
+            logger.exception("# [CHAT ROOM] Hoja de WhatsApp perdida.")
+        if attachment is not None:
+            remember_document(intake, attachment)
+    try:
+        post_whatsapp_message(member.pk, body, attachment=attachment)
+    except Exception:  # noqa: BLE001 -- Alia lee la hoja igual
+        logger.exception("# [CHAT ROOM] Mensaje de servicio sin publicar.")
+    return GCS_SCHEME + attachment["blob"] if attachment else None
 
 
 def _set_surface(intake, surface):
@@ -1145,6 +1241,20 @@ def deliver_intake_text(intake, text, from_number):
     return _twilio_send(from_number, text)
 
 
+def gives_services(viewer):
+    """
+    Whether who looks at the room can give services.
+
+    ---
+
+    Si quien mira la sala da servicios (supervisor de asistencia o
+    administrador): sus PDF y fotos son hojas de servicio.
+    """
+    from budgets.service_intake import service_giver
+
+    return service_giver(viewer.company_user)
+
+
 def start_room_service(viewer, room, body="", attachment=None):
     """
     Hand a room message of a service giver to Alia, if it applies.
@@ -1180,6 +1290,7 @@ def start_room_service(viewer, room, body="", attachment=None):
     _set_surface(intake, "room")
     media_url = content_type = ""
     if attachment is not None:
+        remember_document(intake, attachment)
         media_url = GCS_SCHEME + attachment["blob"]
         content_type = attachment["type"]
     service_intake_reply.delay(

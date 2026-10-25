@@ -250,10 +250,25 @@ def open_intake(company_user, channel):
         status=ServiceIntake.STATUS_OPEN,
     ).order_by("-updated_at").first()
     if intake and timezone.now() - intake.updated_at > INTAKE_IDLE_LIMIT:
-        intake.status = ServiceIntake.STATUS_CANCELLED
-        intake.save(update_fields=["status", "updated_at"])
+        _cancel_intake(intake)
         return None
     return intake
+
+
+def _cancel_intake(intake):
+    """
+    Cancel a service conversation and discard its service sheets.
+
+    ---
+
+    Cancela una conversación de servicio y borra del cubo sus hojas de
+    servicio (S138, `chat.room_service.discard_documents`).
+    """
+    from chat.room_service import discard_documents
+
+    intake.status = ServiceIntake.STATUS_CANCELLED
+    intake.save(update_fields=["status", "updated_at"])
+    discard_documents(intake)
 
 
 def start_intake(company_user, channel, phone_number=""):
@@ -1129,8 +1144,7 @@ def cancel(intake):
 
     Herramienta: abandona el servicio que se estaba dando.
     """
-    intake.status = ServiceIntake.STATUS_CANCELLED
-    intake.save(update_fields=["status", "updated_at"])
+    _cancel_intake(intake)
     return {"ok": True}
 
 
@@ -1686,8 +1700,7 @@ def _not_a_service(intake, body, media_url, content_type, from_number,
     if texts:
         return reply(intake, "\n".join(texts), whatsapp_sender)
     if not intake.conversation:
-        intake.status = ServiceIntake.STATUS_CANCELLED
-        intake.save(update_fields=["status", "updated_at"])
+        _cancel_intake(intake)
     return None
 
 

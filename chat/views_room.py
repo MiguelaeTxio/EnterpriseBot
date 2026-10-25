@@ -277,9 +277,16 @@ def upload(request, slug):
             "error": "Manda un PDF o una foto (JPG, PNG o WEBP) de menos "
                      "de 15 MB.",
         }, status=400)
-    attachment = room_service.store_upload(
-        upload_file.read(), upload_file.content_type, upload_file.name,
-    )
+    if room_service.gives_services(viewer):
+        # S138: a service sheet, SERVICIOS_ASISTENCIA/SERVICIO_...
+        # Hoja de servicio, en SERVICIOS_ASISTENCIA con su nombre.
+        attachment = room_service.store_service_document(
+            upload_file.read(), upload_file.content_type,
+        )
+    else:
+        attachment = room_service.store_upload(
+            upload_file.read(), upload_file.content_type, upload_file.name,
+        )
     if attachment is None:
         return JsonResponse(
             {"error": "No se ha podido guardar el archivo."}, status=500,

@@ -379,10 +379,15 @@ def service_intake_reply(intake_pk, body, media_url, content_type,
     ).get(pk=intake_pk)
     if not posted:
         try:
-            intake_inbound(intake, body, media_url, content_type,
-                           from_number)
+            stored = intake_inbound(intake, body, media_url, content_type,
+                                    from_number)
         except Exception as exc:  # noqa: BLE001 -- Alia contesta igual
             logger.exception("# [SERVICE INTAKE] Sala: %s", exc)
+            stored = None
+        if stored:
+            # S138: Alia reads the sheet already kept in GCS.
+            # Alia lee la hoja ya guardada en GCS.
+            media_url = stored
 
     # S133: reading the photo can take a while; say so at once.
     # Leer la foto puede tardar: se avisa en el acto.
