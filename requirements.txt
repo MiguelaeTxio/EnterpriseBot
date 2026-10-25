@@ -12,6 +12,7 @@ aiohttp==3.13.5
     # via
     #   -r requirements.in
     #   aiohttp-retry
+    #   pywebpush
     #   twilio
 aiohttp-retry==2.9.1
     # via twilio
@@ -76,7 +77,10 @@ compressed-rtf==1.0.7
 cryptography==46.0.6
     # via
     #   google-auth
+    #   http-ece
     #   msoffcrypto-tool
+    #   py-vapid
+    #   pywebpush
 cssbeautifier==1.15.4
     # via djlint
 cssselect2==0.9.0
@@ -181,6 +185,8 @@ grpcio-status==1.83.0
     # via google-api-core
 h11==0.16.0
     # via httpcore
+http-ece==1.2.1
+    # via pywebpush
 httpcore==1.0.9
     # via httpx
 httplib2==0.32.0
@@ -285,6 +291,8 @@ protobuf==7.35.1
     #   proto-plus
 psutil==7.2.2
     # via -r requirements.in
+py-vapid==1.9.6
+    # via pywebpush
 pyasn1==0.6.3
     # via pyasn1-modules
 pyasn1-modules==0.4.2
@@ -320,6 +328,8 @@ python-docx==1.2.0
     # via -r requirements.in
 python-dotenv==1.2.2
     # via -r requirements.in
+pywebpush==2.3.0
+    # via -r requirements.in
 pyyaml==6.0.3
     # via
     #   djlint
@@ -339,6 +349,7 @@ requests==2.33.1
     #   google-auth
     #   google-cloud-storage
     #   google-genai
+    #   pywebpush
     #   requests-oauthlib
     #   twilio
 requests-oauthlib==2.0.0
