@@ -33,7 +33,7 @@ para un momento distinto.
       hx-get="{% url 'panel:documentation_personal_results' %}" hx-target="#personal-results"
       hx-trigger="input changed delay:300ms from:input[name='q'], change from:.personal-filter-checkbox, submit">
     <div class="d-flex gap-2 mb-2">
-        <input type="text" name="q" class="form-control doc-h30-search" placeholder="Buscar por nombre, apellidos, DNI…"
+        <input type="text" name="q" class="form-control doc-h30-search" placeholder="Buscar por nombre, apellidos, DNI, teléfono…"
                value="{{ search }}">
     </div>
     <div class="d-flex flex-wrap gap-3 align-items-start small">

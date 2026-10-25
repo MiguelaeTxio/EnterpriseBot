@@ -28,8 +28,8 @@ from django.contrib.staticfiles.finders import find as find_static
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import IntegrityError
-from django.db.models import Count, OuterRef, Q, Subquery
-from django.db.models.functions import Coalesce
+from django.db.models import Count, F, OuterRef, Q, Subquery, Value
+from django.db.models.functions import Coalesce, Replace
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -1049,13 +1049,29 @@ def _person_list_page(request):
         # un campo más a la lista. select_related("job_position") ya
         # aplicado arriba cubre el JOIN sin coste extra; al ser FK
         # (no M2M), no hay riesgo de duplicar filas.
+        # S137: Miguel Ángel, "¿puedo buscar un operario por el número de
+        # teléfono?". Los dos teléfonos entran en la búsqueda comparando
+        # solo cifras: se quitan espacios, puntos, guiones y paréntesis
+        # del teléfono guardado y de la palabra buscada, así que
+        # "600 12 34 56", "600123456" o "+34 600..." coinciden igual.
+        qs = qs.annotate(
+            phone_digits=_phone_digits("phone"),
+            phone2_digits=_phone_digits("phone_secondary"),
+        )
         for word in search.split():
-            qs = qs.filter(
+            match = (
                 Q(first_surname__icontains=word)
                 | Q(second_surname__icontains=word)
                 | Q(given_name__icontains=word) | Q(dni__icontains=word)
-                | Q(job_position__name__icontains=word),
+                | Q(job_position__name__icontains=word)
             )
+            digits = "".join(ch for ch in word if ch.isdigit())
+            if digits:
+                match |= (
+                    Q(phone_digits__contains=digits)
+                    | Q(phone2_digits__contains=digits)
+                )
+            qs = qs.filter(match)
     # H31 (S100): Miguel Ángel pidió ordenar también por Nombre, Alta y
     # Documentos (todas menos DNI). `domain_object` es una
     # GenericForeignKey sin `GenericRelation` inversa -- no admite
@@ -1234,6 +1250,21 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
         return render(
             request, "panel/documentation_h30/_personal_pane.html", ctx
         )
+
+
+def _phone_digits(field):
+    """
+    Phone field without spaces, dots, dashes or brackets (DB side).
+
+    ---
+
+    El teléfono sin espacios, puntos, guiones ni paréntesis, calculado
+    en la propia consulta (S137, búsqueda de Personal por teléfono).
+    """
+    expr = F(field)
+    for char in (" ", ".", "-", "(", ")", "/"):
+        expr = Replace(expr, Value(char), Value(""))
+    return expr
 
 
 class PersonalResultsFragmentView(CompanyUserRequiredMixin, View):
