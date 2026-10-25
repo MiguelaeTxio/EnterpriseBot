@@ -61,3 +61,18 @@ def post_whatsapp_to_room(member_pk, body, media_url, content_type):
     from chat.room_service import post_whatsapp_message
 
     post_whatsapp_message(member_pk, body, media_url, content_type)
+
+
+@shared_task(name="chat.tasks.send_room_push")
+def send_room_push(message_pk, member_pks):
+    """
+    Send a room message by push to these members.
+
+    ---
+
+    Manda un mensaje de la sala por push a estos miembros (S138,
+    `chat.push_service.deliver_push`).
+    """
+    from chat.push_service import deliver_push
+
+    deliver_push(message_pk, member_pks)

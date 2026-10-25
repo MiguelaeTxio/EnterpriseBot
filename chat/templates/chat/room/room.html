@@ -73,6 +73,7 @@ WhatsApp (#asistencia).
     <h1>#{{ room.slug }}</h1>
     <span class="net" id="net">En línea</span>
     <button type="button" id="btn-install" title="Instalar la sala como app en este dispositivo" hidden>Instalar</button>
+    {% if push_key %}<button type="button" id="btn-push" data-key="{{ push_key }}" title="Recibir los mensajes de la sala como notificaciones en este dispositivo (en vez de por WhatsApp)" hidden>Activar avisos</button>{% endif %}
     {% if viewer.can_manage %}<button type="button" id="btn-add" title="Añadir un trabajador a la sala">Añadir</button>{% endif %}
     <button type="button" id="btn-people" title="Miembros de la sala (punto verde: la tiene abierta ahora)"><span id="people-count">{{ members|length }}</span> 👥</button>
 </header>
@@ -385,6 +386,75 @@ WhatsApp (#asistencia).
         });
     });
     window.addEventListener("appinstalled", function () { installBtn.hidden = true; });
+
+    // S138: push notices. Main notice of the room; without them, the
+    // WhatsApp notice. One tap per device.
+    // Avisos push: el aviso principal de la sala; sin ellos, el de
+    // WhatsApp. Se activan una vez por dispositivo.
+    var pushBtn = document.getElementById("btn-push");
+    function keyBytes(text) {
+        var padded = (text + "===".slice((text.length + 3) % 4)).replace(/-/g, "+").replace(/_/g, "/");
+        var raw = atob(padded);
+        var bytes = new Uint8Array(raw.length);
+        for (var i = 0; i < raw.length; i++) { bytes[i] = raw.charCodeAt(i); }
+        return bytes;
+    }
+    function savePush(body) {
+        return fetch(BASE + "push/", {
+            method: "POST", credentials: "same-origin",
+            headers: {"Content-Type": "application/json", "X-CSRFToken": csrf},
+            body: JSON.stringify(body)
+        });
+    }
+    function showPush(active) {
+        pushBtn.hidden = false;
+        pushBtn.textContent = active ? "Avisos ✓" : "Activar avisos";
+        pushBtn.dataset.active = active ? "1" : "";
+        pushBtn.title = active
+            ? "Este dispositivo recibe los mensajes como notificaciones. Pulsa para quitarlas y volver al aviso por WhatsApp."
+            : "Recibir los mensajes de la sala como notificaciones en este dispositivo (en vez de por WhatsApp)";
+    }
+    if (pushBtn && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window) {
+        navigator.serviceWorker.ready.then(function (registration) {
+            return registration.pushManager.getSubscription().then(function (current) {
+                // An active device is saved again (it may have changed).
+                // Un dispositivo activo se vuelve a guardar.
+                if (current) { savePush(current.toJSON()); }
+                showPush(Boolean(current));
+                pushBtn.addEventListener("click", function () {
+                    pushBtn.disabled = true;
+                    registration.pushManager.getSubscription().then(function (sub) {
+                        if (sub && pushBtn.dataset.active) {
+                            return savePush({off: true, endpoint: sub.endpoint}).then(function () {
+                                return sub.unsubscribe();
+                            }).then(function () {
+                                showPush(false);
+                                errorBox.textContent = "Avisos quitados en este dispositivo: te llegará el aviso por WhatsApp.";
+                            });
+                        }
+                        return Notification.requestPermission().then(function (permission) {
+                            if (permission !== "granted") {
+                                errorBox.textContent = "Sin permiso de notificaciones: actívalo en los ajustes del navegador para esta app.";
+                                return null;
+                            }
+                            return registration.pushManager.subscribe({
+                                userVisibleOnly: true,
+                                applicationServerKey: keyBytes(pushBtn.dataset.key)
+                            }).then(function (created) {
+                                return savePush(created.toJSON()).then(function (r) {
+                                    if (!r.ok) { throw new Error(r.status); }
+                                    showPush(true);
+                                    errorBox.textContent = "Avisos activados en este dispositivo.";
+                                });
+                            });
+                        });
+                    }).catch(function (error) {
+                        errorBox.textContent = "No se han podido activar los avisos. " + (error.message || "");
+                    }).then(function () { pushBtn.disabled = false; });
+                });
+            });
+        });
+    }
 
     if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sala/sw.js", {scope: "/sala/"}).catch(function () {});

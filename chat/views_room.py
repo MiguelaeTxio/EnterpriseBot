@@ -182,9 +182,16 @@ def room_page(request, slug):
     if room is None:
         return render(request, "chat/room/no_access.html", status=403)
     room_service.mark_seen(viewer.member)
+    from chat import push_service
+
     return render(request, "chat/room/room.html", {
         "room": room,
         "viewer": viewer,
+        # S138: push notifications, for members only.
+        # Notificaciones push, solo para miembros.
+        "push_key": (
+            push_service.public_key() if viewer.member is not None else ""
+        ),
         "members": _member_list(room),
         "can_write": bool(viewer.name),
     })
@@ -391,6 +398,41 @@ def member_add(request, slug):
         return JsonResponse({"error": "Persona no válida."}, status=400)
     room_service.add_member(room, person, added_by=viewer.company_user)
     return JsonResponse({"members": _member_list(room)})
+
+
+@never_cache
+@require_POST
+def push_subscribe(request, slug):
+    """
+    POST /sala/<slug>/push/: turn on push notices on this device.
+
+    ---
+
+    Activa los avisos push en este dispositivo (JSON de la suscripción
+    del navegador). Con `{"off": true, "endpoint": ...}` los quita.
+    Solo miembros de la sala.
+    """
+    from chat import push_service
+
+    room = _room_or_404(request, slug)
+    viewer = room_service.viewer_for(request, room)
+    if viewer.member is None:
+        return HttpResponseForbidden("Solo los miembros de la sala.")
+    try:
+        data = json.loads(request.body or b"{}")
+    except ValueError:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    if data.get("off"):
+        push_service.unsubscribe(str(data.get("endpoint", "")))
+        return JsonResponse({"ok": True})
+    subscription = push_service.subscribe(
+        viewer.member, data, request.META.get("HTTP_USER_AGENT", ""),
+    )
+    if subscription is None:
+        return JsonResponse({"error": "Suscripción no válida."}, status=400)
+    return JsonResponse({"ok": True})
 
 
 @never_cache

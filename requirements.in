@@ -170,3 +170,8 @@ extract-msg
 # servidor ya tiene alguno; si no, ver com-gcs-download como vía
 # alternativa para este documento concreto.
 rarfile
+#
+# H37 (S138): notificaciones push de la Sala de Asistencia (Web Push con
+# claves VAPID, chat/push_service.py). Aviso principal de la sala; el
+# aviso por WhatsApp queda para quien no active las push.
+pywebpush

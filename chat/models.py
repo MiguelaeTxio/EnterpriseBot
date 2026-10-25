@@ -659,3 +659,50 @@ class ChatMessage(models.Model):
 
     def __str__(self):
         return "%s <%s> %s" % (self.room, self.author_name, self.body[:40])
+
+
+class ChatPushSubscription(models.Model):
+    """
+    A device of a room member subscribed to push notifications.
+
+    ---
+
+    Un dispositivo de un miembro de la sala suscrito a las
+    notificaciones push (H37, S138). Se da de alta con el botón
+    "Activar avisos" de la sala instalada. Mientras un miembro tenga
+    alguno, el aviso le llega por push y no por WhatsApp; si el
+    servicio de push dice que el dispositivo ya no existe (404/410), la
+    suscripción se borra.
+    """
+
+    member = models.ForeignKey(
+        ChatRoomMember,
+        on_delete=models.CASCADE,
+        related_name="push_subscriptions",
+        verbose_name="Miembro",
+    )
+    endpoint = models.URLField(
+        max_length=500, unique=True, verbose_name="Dirección de push",
+    )
+    p256dh = models.CharField(max_length=200, verbose_name="Clave p256dh")
+    auth = models.CharField(max_length=100, verbose_name="Clave auth")
+    user_agent = models.CharField(
+        max_length=200, blank=True, default="", verbose_name="Navegador",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Activada",
+    )
+    last_sent_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Último aviso enviado",
+    )
+    last_error = models.CharField(
+        max_length=255, blank=True, default="",
+        verbose_name="Último error",
+    )
+
+    class Meta:
+        verbose_name = "Suscripción push de sala"
+        verbose_name_plural = "Suscripciones push de sala"
+
+    def __str__(self):
+        return "%s %s" % (self.member_id, self.endpoint[:40])

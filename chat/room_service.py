@@ -367,11 +367,22 @@ def schedule_delivery(message_pk):
     ---
 
     Reparte un mensaje nuevo a los demás miembros (todos menos el
-    autor). Quien está dentro por WhatsApp lo recibe por WhatsApp
-    (S138); al resto se le manda el aviso de la tanda, salvo que tenga
-    la sala abierta ahora mismo o ya tenga un aviso sin abrir.
+    autor), con el pipeline híbrido de Miguel Ángel (S138):
+
+    1. Dentro de la sala por WhatsApp (#asistencia): el mensaje por
+       WhatsApp.
+    2. Con la sala abierta ahora mismo: nada.
+    3. Con avisos push activados en algún dispositivo: push, uno por
+       mensaje.
+    4. El resto (quien no quiere push): el aviso por WhatsApp de la
+       tanda, salvo que ya tenga uno sin abrir.
     """
-    from chat.tasks import relay_room_message, send_room_notice
+    from chat.push_service import enabled as push_enabled
+    from chat.tasks import (
+        relay_room_message,
+        send_room_notice,
+        send_room_push,
+    )
 
     message = ChatMessage.objects.filter(pk=message_pk).first()
     if message is None:
@@ -380,7 +391,13 @@ def schedule_delivery(message_pk):
     members = ChatRoomMember.objects.filter(room_id=message.room_id)
     if message.author_id is not None:
         members = members.exclude(person_id=message.author_id)
+    with_push = set()
+    if push_enabled():
+        with_push = set(members.filter(
+            push_subscriptions__isnull=False,
+        ).values_list("pk", flat=True))
     inside = []
+    pushed = []
     for member in members:
         if member.whatsapp_inside:
             inside.append(member.pk)
@@ -390,10 +407,15 @@ def schedule_delivery(message_pk):
             and now - member.last_seen_at < PRESENCE_WINDOW
         ):
             continue
+        if member.pk in with_push:
+            pushed.append(member.pk)
+            continue
         if _claim_notice(member.pk, now):
             send_room_notice.delay(member.pk)
     if inside:
         relay_room_message.delay(message_pk, inside)
+    if pushed:
+        send_room_push.delay(message_pk, pushed)
 
 
 def notice_text(member):
