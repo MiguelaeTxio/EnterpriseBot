@@ -402,6 +402,24 @@ def member_add(request, slug):
 
 @never_cache
 @require_POST
+def away(request, slug):
+    """
+    POST /sala/<slug>/fuera/: the page is no longer on screen.
+
+    ---
+
+    La página ha dejado de estar a la vista (app cerrada o en segundo
+    plano): desde ya le llegan los avisos (S138). Lo manda el navegador
+    con sendBeacon.
+    """
+    room = _room_or_404(request, slug)
+    viewer = room_service.viewer_for(request, room)
+    room_service.mark_away(viewer.member)
+    return HttpResponse(status=204)
+
+
+@never_cache
+@require_POST
 def push_subscribe(request, slug):
     """
     POST /sala/<slug>/push/: turn on push notices on this device.

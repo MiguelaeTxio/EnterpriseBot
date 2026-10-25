@@ -365,7 +365,19 @@ WhatsApp (#asistencia).
 
     poll();
     setInterval(function () { if (!document.hidden) { poll(); } }, 4000);
-    document.addEventListener("visibilitychange", function () { if (!document.hidden) { poll(); } });
+    // S138: on leaving the screen (closed, background, other app) the
+    // server is told at once, so the notices start right away.
+    // Al dejar la pantalla (cerrada, segundo plano, otra app) se avisa
+    // al servidor en el acto, para que los avisos empiecen ya.
+    function goneAway() {
+        var data = new FormData();
+        data.append("csrfmiddlewaretoken", csrf);
+        if (navigator.sendBeacon) { navigator.sendBeacon(BASE + "fuera/", data); }
+    }
+    document.addEventListener("visibilitychange", function () {
+        if (document.hidden) { goneAway(); } else { poll(); }
+    });
+    window.addEventListener("pagehide", goneAway);
     window.addEventListener("online", function () { setNet(true); poll(); });
     window.addEventListener("offline", function () { setNet(false); });
 

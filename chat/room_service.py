@@ -43,10 +43,14 @@ BOT_NAME = "Alia"
 COOKIE_NAME = "eb_chat_member"
 COOKIE_MAX_AGE = 365 * 24 * 3600
 COOKIE_SALT = "chat.room.member"
-# Inside the room = polled less than this ago (the page polls every 4 s).
+# Inside the room = polled less than this ago (the page polls every 4 s
+# while it is on screen and says when it leaves it). S138: was 60 s; a
+# message sent in that minute after closing the app got no notice.
 # Dentro de la sala = consultó hace menos que esto (la página consulta
-# cada 4 s).
-PRESENCE_WINDOW = timedelta(seconds=60)
+# cada 4 s mientras está a la vista y avisa al dejar de estarlo). S138:
+# eran 60 s; un mensaje en ese minuto tras cerrar la app se quedaba sin
+# aviso.
+PRESENCE_WINDOW = timedelta(seconds=15)
 NOTICE_TEMPLATE_NAME = "chat_room_notice"
 NOTICE_BUTTON_ID = "ver_mensajes_sala"
 ATTACHMENT_BUCKET = "cgs_grupo_alvarez"
@@ -237,6 +241,23 @@ def personal_link(member):
     )
 
 
+def mark_away(member):
+    """
+    Note that the member has just left the room (app closed or hidden).
+
+    ---
+
+    Anota que el miembro acaba de dejar la sala (app cerrada o en
+    segundo plano): desde ya le llegan los avisos.
+    """
+    if member is None:
+        return
+    away = timezone.now() - PRESENCE_WINDOW - timedelta(seconds=1)
+    ChatRoomMember.objects.filter(
+        pk=member.pk, last_seen_at__gt=away,
+    ).update(last_seen_at=away)
+
+
 def mark_seen(member):
     """
     Note that the member is inside the room now.
@@ -398,6 +419,8 @@ def schedule_delivery(message_pk):
         ).values_list("pk", flat=True))
     inside = []
     pushed = []
+    present = []
+    noticed = []
     for member in members:
         if member.whatsapp_inside:
             inside.append(member.pk)
@@ -406,12 +429,18 @@ def schedule_delivery(message_pk):
             member.last_seen_at is not None
             and now - member.last_seen_at < PRESENCE_WINDOW
         ):
+            present.append(member.pk)
             continue
         if member.pk in with_push:
             pushed.append(member.pk)
             continue
         if _claim_notice(member.pk, now):
+            noticed.append(member.pk)
             send_room_notice.delay(member.pk)
+    logger.info(
+        "# [CHAT ROOM] Mensaje %s: WhatsApp=%s push=%s en la sala=%s "
+        "aviso=%s", message_pk, inside, pushed, present, noticed,
+    )
     if inside:
         relay_room_message.delay(message_pk, inside)
     if pushed:
