@@ -1,0 +1,74 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/operator/_service_fields.html #}
+{% comment %}
+H30 (S137). Casilla "Revisión" de una tarea: qué filtros se cambiaron,
+aceite (tipo y litros) y próxima revisión. Recibe `idx` (número de la
+tarea, o __IDX__ en la plantilla oculta que usa el JS para las tareas
+nuevas) y `service` (datos guardados o None). Lo procesa
+fleet/work_order_service.py.
+{% endcomment %}
+<div class="col-12 service-wrap" data-block-idx="{{ idx }}">
+    <div class="form-check mt-1">
+        <input class="form-check-input service-toggle" type="checkbox"
+               name="entrada_{{ idx }}_is_service"
+               id="id_entrada_{{ idx }}_is_service"
+               value="1" data-block-idx="{{ idx }}"
+               {% if service %}checked{% endif %}>
+        <label class="form-check-label fw-medium" for="id_entrada_{{ idx }}_is_service">
+            <i class="bi bi-droplet-half me-1 text-secondary"></i>
+            Revisión (cambio de aceite y filtros)
+        </label>
+    </div>
+    <div class="service-fields border rounded p-3 mt-2{% if not service %} d-none{% endif %}" id="service-fields-{{ idx }}">
+        <div class="mb-2">
+            <div class="form-label fw-medium mb-1">Filtros cambiados</div>
+            <div class="d-flex flex-wrap gap-3">
+                {% for code, label in service_filters %}
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox"
+                           name="entrada_{{ idx }}_service_filter_{{ code }}"
+                           id="id_entrada_{{ idx }}_service_filter_{{ code }}"
+                           value="1"
+                           {% if service and code in service.filters %}checked{% endif %}>
+                    <label class="form-check-label" for="id_entrada_{{ idx }}_service_filter_{{ code }}">{{ label }}</label>
+                </div>
+                {% endfor %}
+            </div>
+            <small class="text-muted">Si los filtros vienen en un albarán, márcalos también en los repuestos de esta tarea.</small>
+        </div>
+        <div class="row g-2">
+            <div class="col-12 col-md-4">
+                <label class="form-label fw-medium" for="id_entrada_{{ idx }}_service_oil_type">Aceite</label>
+                <select class="form-select service-oil-type" data-block-idx="{{ idx }}"
+                        name="entrada_{{ idx }}_service_oil_type"
+                        id="id_entrada_{{ idx }}_service_oil_type">
+                    <option value="">—</option>
+                    {% for value, label in service_oil_choices %}
+                    <option value="{{ value }}" {% if service and service.oil_type == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label fw-medium" for="id_entrada_{{ idx }}_service_oil_litres">Litros</label>
+                <input type="number" step="0.1" min="0" class="form-control"
+                       name="entrada_{{ idx }}_service_oil_litres"
+                       id="id_entrada_{{ idx }}_service_oil_litres"
+                       value="{% if service and service.oil_litres %}{{ service.oil_litres|stringformat:'g' }}{% endif %}">
+            </div>
+            <div class="col-6 col-md-3">
+                <label class="form-label fw-medium" for="id_entrada_{{ idx }}_service_next_hours">Próxima revisión (h)</label>
+                <input type="number" step="1" min="0" class="form-control service-next-hours"
+                       name="entrada_{{ idx }}_service_next_hours"
+                       id="id_entrada_{{ idx }}_service_next_hours"
+                       value="{% if service and service.next_hours %}{{ service.next_hours }}{% endif %}">
+            </div>
+            <div class="col-6 col-md-3">
+                <label class="form-label fw-medium" for="id_entrada_{{ idx }}_service_next_km">o próxima (km)</label>
+                <input type="number" step="1" min="0" class="form-control"
+                       name="entrada_{{ idx }}_service_next_km"
+                       id="id_entrada_{{ idx }}_service_next_km"
+                       value="{% if service and service.next_km %}{{ service.next_km }}{% endif %}">
+            </div>
+        </div>
+        <small class="text-muted">Por horas, salvo los vehículos que van por km (camiones de pluma, furgonetas, turismos).</small>
+    </div>
+</div>

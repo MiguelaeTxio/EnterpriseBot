@@ -891,6 +891,8 @@
                         '</label>' +
                     '</div>' +
                 '</div>' +
+                // H30 (S137): casilla "Revisión" (form_entry_service.js).
+                (window.ebServiceBlock ? window.ebServiceBlock(idx) : '') +
                 // Ticket de avería vinculado (H17)
                 // Linked breakdown ticket selector (H17)
                 _buildTicketBlock(idx) +

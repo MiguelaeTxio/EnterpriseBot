@@ -455,6 +455,43 @@ class MachineServiceRecord(models.Model):
         _("Horas de grúa en la revisión"), null=True, blank=True,
     )
     notes = models.CharField(_("Observaciones"), max_length=255, blank=True)
+
+    # H30 (S137): revisión anotada desde el parte (casilla "Revisión" de
+    # la tarea). Miguel Ángel: qué filtros se cambiaron, cuánto aceite y
+    # cuál, y la próxima revisión en horas (o en km si va por km).
+    # ---
+    # Service entered from a work order block.
+    OIL_SYNTHETIC = "SYNTHETIC"
+    OIL_SEMI_SYNTHETIC = "SEMI_SYNTHETIC"
+    OIL_CHOICES = [
+        (OIL_SYNTHETIC, _("Sintético (cada 1200 h)")),
+        (OIL_SEMI_SYNTHETIC, _("Semisintético (cada 800 h)")),
+    ]
+    work_order_line = models.OneToOneField(
+        "work_order_processor.WorkOrderEntryLine",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="service_record",
+        verbose_name=_("Tarea del parte"),
+    )
+    filters_changed = models.CharField(
+        _("Filtros cambiados"), max_length=255, blank=True,
+    )
+    oil_type = models.CharField(
+        _("Tipo de aceite"), max_length=20, choices=OIL_CHOICES,
+        blank=True,
+    )
+    oil_litres = models.DecimalField(
+        _("Litros de aceite"), max_digits=6, decimal_places=1,
+        null=True, blank=True,
+    )
+    next_service_hours = models.PositiveIntegerField(
+        _("Próxima revisión (horas)"), null=True, blank=True,
+    )
+    next_service_km = models.PositiveIntegerField(
+        _("Próxima revisión (km)"), null=True, blank=True,
+    )
     created_by = models.ForeignKey(
         "ivr_config.CompanyUser",
         null=True,

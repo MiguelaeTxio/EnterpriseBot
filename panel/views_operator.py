@@ -17,6 +17,9 @@ from work_order_processor.models import (
     TaskPhoto,
     WorkOrder,
 )
+from fleet.models import MachineServiceRecord as _MachineServiceRecord
+from fleet.work_order_service import FILTERS as _SERVICE_FILTERS
+from fleet.work_order_service import form_data as _service_form_data
 from work_order_processor.services import find_cached_classification
 from work_order_processor.tasks import (
     classify_fault_line,
@@ -784,6 +787,11 @@ def _parse_entry_lines_from_post(POST, company):
         # is_on_site — checkbox enviado como "1" cuando está marcado.
         _is_on_site = POST.get(f"{pfx}is_on_site", "") == "1"
 
+        # H30 (S137): casilla "Revisión" de la tarea (filtros, aceite y
+        # próxima revisión) -- fleet/work_order_service.py.
+        from fleet.work_order_service import parse_service_post
+        _service = parse_service_post(POST, pfx)
+
         # breakdown ticket resolution -- H10 Paso 4-bis (revisado S007),
         # sustituye el desplegable manual ticket_pk de H17.
         # Resolución de ticket de avería -- H10 Paso 4-bis (revisado
@@ -903,6 +911,7 @@ def _parse_entry_lines_from_post(POST, company):
                 "is_personal": _is_personal_block,
                 "vacation_end_date": _vacation_end_date,
                 "is_on_site": _is_on_site,
+                "service": _service,
                 "is_empresa": _is_empresa_block,
                 "ticket_action": _ticket_action,
                 "ticket_reopen": _ticket_reopen,
@@ -1570,6 +1579,7 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
                     "machine_asset": ld["machine_asset"],
                     "fault_description": ld["fault_description"],
                     "repair_notes": ld["repair_notes"],
+                    "service": ld.get("service"),
                     "hc": ld["hc"].strftime("%H:%M") if ld["hc"] else "",
                     "hf": ld["hf"].strftime("%H:%M") if ld["hf"] else "",
                     "or_val": ld["or_val"],
@@ -1618,6 +1628,7 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
                     "machine_asset": ld["machine_asset"],
                     "fault_description": ld["fault_description"],
                     "repair_notes": ld["repair_notes"],
+                    "service": ld.get("service"),
                     "hc": ld["hc"].strftime("%H:%M") if ld["hc"] else "",
                     "hf": ld["hf"].strftime("%H:%M") if ld["hf"] else "",
                     "or_val": ld["or_val"],
@@ -1680,6 +1691,7 @@ class WorkOrderEntryConfirmView(WorkshopRequiredMixin, View):
                     "machine_asset": ld["machine_asset"],
                     "fault_description": ld["fault_description"],
                     "repair_notes": ld["repair_notes"],
+                    "service": ld.get("service"),
                     "hc": ld["hc"].strftime("%H:%M") if ld["hc"] else "",
                     "hf": ld["hf"].strftime("%H:%M") if ld["hf"] else "",
                     "or_val": ld["or_val"],
@@ -2386,6 +2398,9 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
             "assets": assets,
             "absence_categories": _json_ctx.dumps(_absence_cats_ctx),
             "absence_categories_list": _absence_cats_ctx,
+            # H30 (S137): casilla "Revisión" de cada tarea.
+            "service_filters": _SERVICE_FILTERS,
+            "service_oil_choices": _MachineServiceRecord.OIL_CHOICES,
         }
 
     def get(self, request, *args, **kwargs):
@@ -2483,6 +2498,8 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                             # ticket real llevara CLOSED en BD.
                             "ticket_closed": line.ticket_closed,
                             "breakdown_ticket": line.breakdown_ticket,
+                            # H30 (S137): revisión anotada en la tarea.
+                            "service": _service_form_data(line),
                         }
                     )
                     for spare in _SPL_E.objects.filter(
@@ -2764,6 +2781,8 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                             # reedición no lo reflejaba.
                             "ticket_closed": _ip_line.ticket_closed,
                             "breakdown_ticket": _ip_line.breakdown_ticket,
+                            # H30 (S137): revisión anotada en la tarea.
+                            "service": _service_form_data(_ip_line),
                         }
                     )
                     for _ip_spare in _SPL_IP.objects.filter(
@@ -3276,6 +3295,7 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                         "machine_asset": ld["machine_asset"],
                         "fault_description": ld["fault_description"],
                         "repair_notes": ld["repair_notes"],
+                        "service": ld.get("service"),
                         "hc": ld["hc"].strftime("%H:%M") if ld["hc"] else "",
                         "hf": ld["hf"].strftime("%H:%M") if ld["hf"] else "",
                         "or_val": ld["or_val"],
@@ -3429,6 +3449,7 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                             "machine_asset": ld["machine_asset"],
                             "fault_description": ld["fault_description"],
                             "repair_notes": ld["repair_notes"],
+                            "service": ld.get("service"),
                             "hc": (
                                 ld["hc"].strftime("%H:%M") if ld["hc"] else ""
                             ),
@@ -3708,6 +3729,7 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                     "machine_asset": ld["machine_asset"],
                     "fault_description": ld["fault_description"],
                     "repair_notes": ld["repair_notes"],
+                    "service": ld.get("service"),
                     "hc": ld["hc"].strftime("%H:%M") if ld["hc"] else "",
                     "hf": ld["hf"].strftime("%H:%M") if ld["hf"] else "",
                     "or_val": ld["or_val"],
@@ -3772,6 +3794,7 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                     "machine_asset": ld["machine_asset"],
                     "fault_description": ld["fault_description"],
                     "repair_notes": ld["repair_notes"],
+                    "service": ld.get("service"),
                     "hc": ld["hc"].strftime("%H:%M") if ld["hc"] else "",
                     "hf": ld["hf"].strftime("%H:%M") if ld["hf"] else "",
                     "or_val": ld["or_val"],
@@ -3822,6 +3845,7 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                     "machine_asset": ld["machine_asset"],
                     "fault_description": ld["fault_description"],
                     "repair_notes": ld["repair_notes"],
+                    "service": ld.get("service"),
                     "hc": ld["hc"].strftime("%H:%M") if ld["hc"] else "",
                     "hf": ld["hf"].strftime("%H:%M") if ld["hf"] else "",
                     "or_val": ld["or_val"],
@@ -3985,6 +4009,7 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                     "machine_asset": ld["machine_asset"],
                     "fault_description": ld["fault_description"],
                     "repair_notes": ld["repair_notes"],
+                    "service": ld.get("service"),
                     "hc": ld["hc"].strftime("%H:%M") if ld["hc"] else "",
                     "hf": ld["hf"].strftime("%H:%M") if ld["hf"] else "",
                     "or_val": ld["or_val"],
@@ -4072,6 +4097,7 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                         "machine_asset": ld["machine_asset"],
                         "fault_description": ld["fault_description"],
                         "repair_notes": ld["repair_notes"],
+                        "service": ld.get("service"),
                         "hc": ld["hc"].strftime("%H:%M") if ld["hc"] else "",
                         "hf": ld["hf"].strftime("%H:%M") if ld["hf"] else "",
                         "or_val": ld["or_val"],
@@ -4456,6 +4482,13 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                                 **_ip_line_fields,
                             )
                         _ip_created_lines[_ip_line_num] = _ip_line_obj
+                        # H30 (S137): revisión anotada en la tarea.
+                        from fleet.work_order_service import (
+                            sync_line_service as _sync_service_ip,
+                        )
+                        _sync_service_ip(
+                            _ip_line_obj, _ip_ld.get("service"), cu,
+                        )
 
                         # S116-H07: resolución de ticket de avería también
                         # en "Guardar tareas" -- antes solo se procesaba al
@@ -5197,6 +5230,11 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                         )
                     created_lines[ld["line_number"]] = line
                     created_line_pks.append(line.pk)
+                    # H30 (S137): revisión anotada en la tarea.
+                    from fleet.work_order_service import (
+                        sync_line_service as _sync_service_co,
+                    )
+                    _sync_service_co(line, ld.get("service"), cu)
 
                     # H24 (S019, flujo real) — si esta es la tarea de
                     # vacaciones que el propio operario acaba de meter
