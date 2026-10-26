@@ -177,9 +177,9 @@ def _cookie_member(request, room):
         token = str(payload.get("t"))
     except (signing.BadSignature, AttributeError, TypeError, ValueError):
         return None
-    return ChatRoomMember.objects.select_related("person").filter(
-        pk=member_pk, link_token=token, room=room,
-    ).first()
+    return ChatRoomMember.objects.select_related(
+        "person__company_user__user",
+    ).filter(pk=member_pk, link_token=token, room=room).first()
 
 
 def viewer_for(request, room):
@@ -191,11 +191,27 @@ def viewer_for(request, room):
     Quién mira la sala, o None si no puede entrar. Entra un miembro
     (por su enlace personal o por su sesión del panel) y quien gestiona
     la sala (administradores y supervisores de asistencia), aunque aún
-    no se haya añadido.
+    no se haya añadido. Con el enlace personal, la cuenta del panel de
+    la persona cuenta igual que una sesión abierta (S138).
     """
     company_user = _panel_user(request, room)
     member = _cookie_member(request, room)
     person = member.person if member is not None else None
+    if company_user is None and person is not None:
+        # S138: the personal link counts as the person's panel account
+        # (giving services, managing the room) when he has one, even
+        # without a panel session on that device.
+        # El enlace personal cuenta como la cuenta del panel de la
+        # persona (dar servicios, gestionar la sala) si la tiene, aunque
+        # no haya sesión del panel en ese dispositivo.
+        linked = person.company_user
+        if (
+            linked is not None
+            and linked.is_active
+            and linked.user.is_active
+            and linked.company_id == room.company_id
+        ):
+            company_user = linked
     if person is None and company_user is not None:
         person = getattr(company_user, "person_identity", None)
         if person is not None:
