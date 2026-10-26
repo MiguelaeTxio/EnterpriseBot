@@ -476,13 +476,13 @@ class MachineServiceRecord(models.Model):
 
 class MachineMeterReading(models.Model):
     """
-    One manual hours/km reading of a cost centre, with its date.
+    One hours/km reading of a cost centre, with its date.
 
     ---
 
-    Una lectura manual de horas y/o kilómetros de un centro de gasto,
-    con su fecha. Hoy se apuntan a mano (más adelante vendrán del
-    programa del surtidor, S131).
+    Una lectura de horas y/o kilómetros de un centro de gasto, con su
+    fecha. Llega de tres sitios (`source`): a mano (S131), del surtidor
+    GasoGes (S135) o del parte digital del mecánico (S137).
     """
 
     machine = models.ForeignKey(
@@ -512,15 +512,34 @@ class MachineMeterReading(models.Model):
     # H30 (S135): reading source -- typed in the panel or GasoGes.
     SOURCE_MANUAL = "MANUAL"
     SOURCE_GASOGES = "GASOGES"
+    # H30 (S137): lecturas del horómetro y el odómetro que apunta el
+    # mecánico en el parte digital (WorkOrderEntryLine).
+    # ---
+    # H30 (S137): readings typed by the mechanic in the digital work
+    # order.
+    SOURCE_WORK_ORDER = "PARTE"
     SOURCE_CHOICES = [
         (SOURCE_MANUAL, _("A mano")),
         (SOURCE_GASOGES, _("Surtidor (GasoGes)")),
+        (SOURCE_WORK_ORDER, _("Parte de trabajo")),
     ]
     source = models.CharField(
         _("Origen"),
         max_length=10,
         choices=SOURCE_CHOICES,
         default=SOURCE_MANUAL,
+    )
+    # H30 (S137): el bloque del parte del que sale la lectura (una por
+    # bloque; se rehace si el parte cambia y se borra con él).
+    # ---
+    # H30 (S137): the work order block the reading comes from.
+    work_order_line = models.OneToOneField(
+        "work_order_processor.WorkOrderEntryLine",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="meter_reading",
+        verbose_name=_("Bloque del parte"),
     )
 
     class Meta:
