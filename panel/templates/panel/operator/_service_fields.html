@@ -1,7 +1,9 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/operator/_service_fields.html #}
 {% comment %}
-H30 (S137). Casilla "Revisión" de una tarea: qué filtros se cambiaron,
-aceite (tipo y litros) y próxima revisión. Recibe `idx` (número de la
+H30 (S137). Casilla "Revisión" de una tarea: repuestos del albarán de
+la máquina (los marca form_entry_service.js, que son las mismas casillas
+de consumo de la tarea), otros filtros, aceite (tipo y litros) y
+próxima revisión. Recibe `idx` (número de la
 tarea, o __IDX__ en la plantilla oculta que usa el JS para las tareas
 nuevas) y `service` (datos guardados o None). Lo procesa
 fleet/work_order_service.py.
@@ -20,7 +22,12 @@ fleet/work_order_service.py.
     </div>
     <div class="service-fields border rounded p-3 mt-2{% if not service %} d-none{% endif %}" id="service-fields-{{ idx }}">
         <div class="mb-2">
-            <div class="form-label fw-medium mb-1">Filtros cambiados</div>
+            <div class="form-label fw-medium mb-1">Del albarán</div>
+            {% if service.albaran_note %}<div class="small mb-1">{{ service.albaran_note }}</div>{% endif %}
+            <div class="service-albaran small" id="service-albaran-{{ idx }}" data-block-idx="{{ idx }}"></div>
+        </div>
+        <div class="mb-2">
+            <div class="form-label fw-medium mb-1">Otros filtros cambiados que no venían en el albarán</div>
             <div class="d-flex flex-wrap gap-3">
                 {% for code, label in service_filters %}
                 <div class="form-check">
@@ -33,7 +40,6 @@ fleet/work_order_service.py.
                 </div>
                 {% endfor %}
             </div>
-            <small class="text-muted">Si los filtros vienen en un albarán, márcalos también en los repuestos de esta tarea.</small>
         </div>
         <div class="row g-2">
             <div class="col-12 col-md-4">

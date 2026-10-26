@@ -790,7 +790,7 @@ def _parse_entry_lines_from_post(POST, company):
         # H30 (S137): casilla "Revisión" de la tarea (filtros, aceite y
         # próxima revisión) -- fleet/work_order_service.py.
         from fleet.work_order_service import parse_service_post
-        _service = parse_service_post(POST, pfx)
+        _service = parse_service_post(POST, pfx, company)
 
         # breakdown ticket resolution -- H10 Paso 4-bis (revisado S007),
         # sustituye el desplegable manual ticket_pk de H17.

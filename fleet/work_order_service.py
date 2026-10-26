@@ -13,13 +13,18 @@ máquina va por km). Al guardar, la tarea pasa a tipo REVISION y se crea
 las horas y km que el mecánico puso en la tarea. Si se desmarca, se
 borra esa revisión y la tarea se vuelve a clasificar.
 
-Los filtros que vienen del albarán se marcan como siempre en los
-repuestos de la tarea; quedan enlazados a la tarea y se ven con ella.
+Lo que viene del albarán no se marca dos veces (Miguel Ángel: "lo que
+salga en los repuestos es lo que tienen que marcar, y si hay algo
+además, se añade"): la casilla muestra los repuestos del albarán
+pre-asignados a la máquina, y marcarlos ahí es marcarlos como
+consumidos en la tarea (las mismas casillas `consume_part`). Los
+filtros que no venían en el albarán se añaden aparte.
 """
 from decimal import Decimal
 from decimal import InvalidOperation
 
 SERVICE_TYPE = "REVISION"
+ALBARAN_PREFIX = "Del albarán: "
 
 # Filtros que se cambian normalmente (código, etiqueta).
 FILTERS = (
@@ -48,7 +53,7 @@ def _int_or_none(raw):
     return value if value > 0 else None
 
 
-def parse_service_post(post, prefix):
+def parse_service_post(post, prefix, company):
     """
     Service data of one block from the POST, or None if not ticked.
 
@@ -59,6 +64,15 @@ def parse_service_post(post, prefix):
     """
     if post.get("%sis_service" % prefix, "") != "1":
         return None
+    from spare_parts.models import SparePartEntry
+
+    consume = "%sconsume_part_" % prefix
+    part_pks = [int(key[len(consume):]) for key in post.keys()
+                if key.startswith(consume) and post.get(key) == "1"
+                and key[len(consume):].isdigit()]
+    albaran_parts = list(SparePartEntry.objects.filter(
+        company=company, pk__in=part_pks).order_by("pk").values_list(
+        "description", flat=True)) if part_pks else []
     filters = [code for code, _label in FILTERS
                if post.get("%sservice_filter_%s" % (prefix, code)) == "1"]
     oil_type = post.get("%sservice_oil_type" % prefix, "").strip()
@@ -73,6 +87,7 @@ def parse_service_post(post, prefix):
 
     return {
         "filters": filters,
+        "albaran_parts": albaran_parts,
         "oil_type": (oil_type if oil_type in dict(
             MachineServiceRecord.OIL_CHOICES) else ""),
         "oil_litres": litres,
@@ -97,6 +112,8 @@ def form_data(line):
     return {
         "filters": [code for code in record.filters_changed.split(",")
                     if code],
+        "albaran_note": (record.notes if record.notes.startswith(
+            ALBARAN_PREFIX) else ""),
         "oil_type": record.oil_type,
         "oil_litres": record.oil_litres,
         "next_hours": record.next_service_hours,
@@ -157,17 +174,23 @@ def sync_line_service(line, data, company_user):
             _set_type(line, WorkOrderEntryLine, tipo_tarea="",
                       task_category_free="")
         return "deleted"
-    filters = ", ".join(FILTER_LABELS[code] for code in data["filters"])
+    albaran = data.get("albaran_parts") or []
+    filters = ", ".join(
+        albaran + [FILTER_LABELS[code] for code in data["filters"]])
     _set_type(
         line, WorkOrderEntryLine,
         tipo_tarea=SERVICE_TYPE,
         task_category_free=(
-            "cambio de aceite y filtros (%s)" % filters if filters
-            else "cambio de aceite"),
+            ("cambio de aceite y filtros (%s)" % filters)[:200]
+            if filters else "cambio de aceite"),
         fault_category="",
         fault_subcategory="",
     )
     values = {
+        "notes": ((ALBARAN_PREFIX + "; ".join(albaran))[:255] if albaran
+                  else (record.notes if record is not None
+                        and record.notes.startswith(ALBARAN_PREFIX)
+                        else "Anotada desde el parte")),
         "machine": line.machine_asset,
         "service_date": line.entry.work_date,
         "hours": _whole(line.engine_hours_reading),
@@ -181,8 +204,7 @@ def sync_line_service(line, data, company_user):
     }
     if record is None:
         MachineServiceRecord.objects.create(
-            work_order_line=line, created_by=company_user,
-            notes="Anotada desde el parte", **values)
+            work_order_line=line, created_by=company_user, **values)
         return "created"
     for field, value in values.items():
         setattr(record, field, value)
