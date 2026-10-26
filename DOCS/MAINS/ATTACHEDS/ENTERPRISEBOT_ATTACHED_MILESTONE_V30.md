@@ -9923,19 +9923,56 @@ la ficha de cada vehículo tendrá sus km u horas correctos; queda
 recuperar cuándo se hicieron las revisiones (fecha, horas y km) y
 después los avisos y su configuración. Se hace en este orden:
 
-1. **Recuperar las revisiones ya hechas.** Miguel Ángel trae, para cada
-   centro de gasto con revisión periódica, el intervalo (horas y/o km)
-   y la última revisión (fecha y horas y/o km); quien tiene esos datos
-   es Alberto Álvarez Díaz (corregido en S137 por Miguel Ángel:
-   Jerónimo solo dio el contacto de GasoGes). El modelo las carga con
-   un Comando S en
-   `MachineAsset.service_hours_interval` / `service_every_km` y
-   `MachineServiceRecord` (`service_date`, `hours`, `km`), y pone en
-   HOURS (desde Repostajes) la unidad de los centros de gasto por horas
-   que aún estén sin saber, empezando por A44. **Cierre:** consulta a
-   BD donde todo `MachineAsset` con intervalo tiene al menos un
-   `MachineServiceRecord`, y el número de centros de gasto con
-   intervalo coincide con la lista que trajo Miguel Ángel.
+**Reglas del taller para las revisiones** (S137, 26/10/2026; Miguel
+Ángel tras hablar con Antonio Fontalba Serón, jefe de mecánicos). Hasta
+no tenerlas claras en todas las máquinas no se avanza a los avisos:
+
+- **Todo va por horas**, salvo los vehículos sin horómetro de trabajo:
+  camiones con pluma que no son grúas móviles, furgonetas, turismos,
+  camiones de remolque y demás camiones que no trabajan por horas, que
+  van **por km**. Hay máquinas que se dieron por km y no lo son: se
+  revisan todas con la hoja de toma de datos.
+- **800 o 1200 horas según el aceite:** sintético cada 1200 h,
+  semisintético cada 800 h. Las de km, cada los km que diga el taller.
+- Grúa con motor propio: horas de grúa aparte de las del camión.
+- **Mantenimiento de una máquina = revisión = cambio de aceite** (y de
+  los filtros que toquen). En la clasificación de partes es el tipo de
+  tarea REVISION ("Revisión / cambio de aceite", S137); el
+  MANTENIMIENTO de Gemini queda para limpieza, pintura, traslados,
+  montajes y tareas del taller.
+- La situación de hoy la toma a mano **José Antonio Mora** (mozo de
+  taller) con la hoja impresa "Revisiones_hoja_para_imprimir.xlsx"
+  (S137): código, matrícula, km / horas camión / horas grúa de hoy,
+  fecha y km / horas camión / horas grúa de la última revisión, y si la
+  pasa cada 800 h, cada 1200 h o cada X km.
+
+1. **Recuperar las revisiones ya hechas**, por tres vías:
+   a. **Hoja de José Antonio Mora** (la de arriba). El modelo carga lo
+      que traiga con un Comando S en `MachineAsset`
+      (`service_hours_interval`, `service_crane_hours_interval`,
+      `service_every_km`, unidad de GasoGes) y `MachineServiceRecord`
+      (`service_date`, `hours`, `km`). Los datos de revisiones los
+      tiene también Alberto Álvarez Díaz (Jerónimo solo dio el
+      contacto de GasoGes).
+   b. **Partes digitales e históricos de PDF:** tipo REVISION en la
+      clasificación (commit `3a9f85d`) y `reclassify_revisions`
+      (commit `4f56cb2`, por el texto del mecánico, sin Gemini). El
+      ensayo (SWAP 011) dio 121 bloques; la hoja
+      "Revisiones_en_partes_para_revisar.xlsx" lleva la propuesta del
+      modelo (49 Sí, 59 No, 13 dudosos) y la confirman Miguel Ángel o
+      Antonio. Solo después se marcan como REVISION los confirmados y
+      se cargan como `MachineServiceRecord`.
+   c. **Parte nuevo con revisión:** en crear y editar parte, casilla
+      "revisión" que, marcada, pide qué filtros se cambiaron (aceite,
+      aire, todos...; del albarán si lo hay, y si no, lo que se cambia
+      normalmente), cuánto aceite y cuál, y la próxima revisión en
+      horas (o km si es camión). Marca el bloque como REVISION y crea
+      su `MachineServiceRecord`.
+   **Cierre:** consulta a BD donde todo `MachineAsset` con intervalo
+   tiene al menos un `MachineServiceRecord`, el número de centros de
+   gasto con intervalo coincide con la hoja de José Antonio Mora, y un
+   parte real con la casilla de revisión marcada tiene su
+   `MachineServiceRecord`.
 2. **Avisos de revisión con las lecturas de GasoGes** (el punto 5 de
    S135 y la prueba de cierre del punto 1 de S131). **Cierre:** consulta
    a BD con un centro de gasto real cuya última lectura GASOGES supera
