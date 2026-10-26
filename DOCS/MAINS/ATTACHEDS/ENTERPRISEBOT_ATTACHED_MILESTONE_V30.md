@@ -9962,12 +9962,12 @@ no tenerlas claras en todas las máquinas no se avanza a los avisos:
       modelo (49 Sí, 59 No, 13 dudosos) y la confirman Miguel Ángel o
       Antonio. Solo después se marcan como REVISION los confirmados y
       se cargan como `MachineServiceRecord`. Confirmada en S137
-      (devuelta por Miguel Ángel): 53 bloques son revisión (se marcan
-      con `reclassify_revisions --ids`); quedan 9 dudosos sin decidir
-      (3275 A39, 294 A54, 3325 A62, 3861 A68, 3179 B33, 3793
-      EMPRESA_TALLER_MECANICO, 2677 Z130, 2641 Z26, 3158 Z45). Falta
-      cargar los `MachineServiceRecord`, cruzados con la hoja de José
-      Antonio Mora (horas y km de cada revisión).
+      (devuelta por Miguel Ángel): solo lo marcado "sí" es revisión
+      (52 bloques, se marcan con `reclassify_revisions --ids`); lo que
+      dejó en blanco no lo es (el taller es una dependencia, no se le
+      cambia el aceite). Falta cargar los `MachineServiceRecord`,
+      cruzados con la hoja de José Antonio Mora (horas y km de cada
+      revisión).
    c. **Parte nuevo con revisión:** en crear y editar parte, casilla
       "revisión" que, marcada, pide qué filtros se cambiaron (aceite,
       aire, todos...; del albarán si lo hay, y si no, lo que se cambia
