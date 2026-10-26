@@ -658,6 +658,13 @@ class ChatMessage(models.Model):
     transcript = models.TextField(
         blank=True, default="", verbose_name="Transcripción",
     )
+    # S138: colour of a service message, the same as the traffic board
+    # legend (dossier 4.4): red, yellow, green, grey, blue, orange.
+    # Color de un mensaje de servicio, el mismo de la leyenda del
+    # tablero de tráfico (dossier 4.4).
+    tone = models.CharField(
+        max_length=10, blank=True, default="", verbose_name="Color",
+    )
     created_at = models.DateTimeField(
         default=timezone.now, db_index=True, verbose_name="Enviado",
     )

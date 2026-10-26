@@ -397,7 +397,7 @@ def missing_data(person):
 # ---------------------------------------------------------------------------
 
 def post_message(room, body, author=None, author_name="", kind=None,
-                 attachment=None, work_order=None, transcript=""):
+                 attachment=None, work_order=None, transcript="", tone=""):
     """
     Save a message in the room and notify the other members.
 
@@ -419,6 +419,7 @@ def post_message(room, body, author=None, author_name="", kind=None,
         attachment_type=attachment.get("type", "")[:100],
         work_order=work_order,
         transcript=transcript or "",
+        tone=tone or "",
     )
     message_pk = message.pk
     transaction.on_commit(lambda: schedule_delivery(message_pk))
@@ -751,6 +752,7 @@ def post_service(work_order_pk):
                 room, body, author=None, author_name=BOT_NAME,
                 kind=ChatMessage.KIND_BOT, attachment=attachment,
                 work_order=work_order,
+                tone=status_tone("", work_order),
             )
     except Exception:  # noqa: BLE001 -- el alta del servicio sigue
         logger.exception(
@@ -803,6 +805,45 @@ def store_service_document(data, content_type):
         return None
     logger.info("# [CHAT ROOM] Hoja de servicio guardada: %s", blob_name)
     return {"blob": blob_name, "name": name, "type": content_type}
+
+
+TONE_GREY = "grey"
+# Colour circle of each tone, for WhatsApp (no colours there).
+# Círculo de color de cada tono, para WhatsApp (allí no hay colores).
+TONE_EMOJI = {
+    "red": "🔴", "yellow": "🟡", "green": "🟢", "grey": "⚪",
+    "blue": "🔵", "orange": "🟠",
+}
+
+
+def status_tone(status, work_order):
+    """
+    Legend colour of an albarán in this status.
+
+    ---
+
+    Color de la leyenda del tablero de tráfico (dossier 4.4, S138) para
+    un albarán en este estado: rojo creado o pendiente, amarillo
+    enviado o en servicio, verde terminado y firmado (regresando), gris
+    cerrado en base o anulado, azul programado, naranja incidencia
+    (aviso fallido). Mismas reglas que `assistance_traffic.unit_colour`.
+    """
+    from budgets import assistance_traffic as traffic
+    from budgets.models import WorkOrderAssistanceUnit as Unit
+
+    if status == Unit.STATUS_NOTIFY_FAILED:
+        return traffic.COLOUR_ORANGE
+    if status in traffic.IN_SERVICE_STATUSES:
+        return traffic.COLOUR_YELLOW
+    if status in traffic.RETURNING_STATUSES:
+        return traffic.COLOUR_GREEN
+    if status in traffic.GONE_STATUSES:
+        return TONE_GREY
+    if work_order.service_date and (
+        work_order.service_date > timezone.localdate()
+    ):
+        return traffic.COLOUR_BLUE
+    return traffic.COLOUR_RED
 
 
 def _driver_name(company_user):
@@ -884,11 +925,16 @@ def post_unit_event(event_pk):
         if not text:
             return None
         work_order = event.unit.work_order
+        status = (
+            event.to_status if event.kind == Event.KIND_STATUS
+            else event.unit.status
+        )
         with transaction.atomic():
             return post_message(
                 assistance_room(work_order.company), text, author=None,
                 author_name=BOT_NAME, kind=ChatMessage.KIND_BOT,
                 work_order=work_order,
+                tone=status_tone(status, work_order),
             )
     except Exception:  # noqa: BLE001 -- el cambio de estado sigue
         logger.exception(
@@ -1417,6 +1463,8 @@ def relay_line(message):
     """
     if message.kind == ChatMessage.KIND_BOT:
         head = "-%s-" % message.author_name
+        if message.tone in TONE_EMOJI:
+            head = "%s %s" % (TONE_EMOJI[message.tone], head)
     else:
         head = "<%s>" % message.author_name
     text = message.body or ""

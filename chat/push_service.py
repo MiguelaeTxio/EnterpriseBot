@@ -140,6 +140,10 @@ def payload(message):
         text = ("%s 🎤 %s" % (text, message.transcript)).strip()
     if not text and message.attachment_name:
         text = "📄 %s" % message.attachment_name
+    from chat.room_service import TONE_EMOJI
+
+    if message.tone in TONE_EMOJI:
+        text = "%s %s" % (TONE_EMOJI[message.tone], text)
     if len(text) > MAX_PUSH_TEXT:
         text = text[:MAX_PUSH_TEXT - 1] + "…"
     return {

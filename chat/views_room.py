@@ -87,6 +87,8 @@ def _message_json(message, room):
         data["audio"] = True
     if message.transcript:
         data["transcript"] = message.transcript
+    if message.tone:
+        data["tone"] = message.tone
     return data
 
 

@@ -41,6 +41,12 @@ WhatsApp (#asistencia).
         .line .n { color: #0d6efd; font-weight: 700; }
         .line.bot .n { color: #b02a37; }
         .line.bot { background: #fff8e6; border-left: 3px solid #ffc107; padding-left: 6px; margin: 2px 0; }
+        .line.tone-red { border-left: 4px solid #dc3545; background: #fdf2f3; }
+        .line.tone-yellow { border-left: 4px solid #ffc107; background: #fffbea; }
+        .line.tone-green { border-left: 4px solid #198754; background: #f0f8f3; }
+        .line.tone-blue { border-left: 4px solid #0d6efd; background: #eef4ff; }
+        .line.tone-orange { border-left: 4px solid #fd7e14; background: #fff4ea; }
+        .line.tone-grey { border-left: 4px solid #6c757d; background: #f1f3f5; }
         .line a { color: #0a58ca; }
         .line pre { white-space: pre-wrap; margin: 2px 0; padding: 4px 6px; background: #f1f3f5; border-radius: 4px; font: inherit; }
         .line code { background: #f1f3f5; padding: 0 3px; border-radius: 3px; }
@@ -216,6 +222,9 @@ WhatsApp (#asistencia).
         var bot = message.kind === "BOT";
         var line = document.createElement("div");
         line.className = bot ? "line bot" : "line";
+        // S138: albarán status colours, as in the traffic board legend.
+        // Colores de estado del albarán, como la leyenda del tablero.
+        if (message.tone) { line.className += " tone-" + message.tone; }
         var time = document.createElement("span");
         time.className = "t"; time.textContent = "[" + message.time + "] ";
         var name = document.createElement("span");
