@@ -2542,10 +2542,12 @@ TIPO_TAREA — elige exactamente uno:
   MEJORA        — mejora o modificación que no responde a una avería
   MANTENIMIENTO — mantenimiento preventivo o periódico
   FABRICACION   — fabricación de una pieza, útil o estructura nueva
-  REVISION      — revisión periódica de la máquina: cambio de aceite
-                  y/o de filtros (aceite, aire, gasoil, hidráulico), "hacer
-                  la revisión", "revisión de las 800/1200 horas", "revision"
-                  aunque venga sin tilde
+  REVISION      — revisión o mantenimiento de una máquina: cambio de
+                  aceite y/o de filtros (aceite, aire, gasoil, hidráulico),
+                  "hacer la revisión", "revisión de las 800/1200 horas",
+                  "revision" sin tilde, o "mantenimiento"/"mnto." de una
+                  máquina concreta (en este taller, mantenimiento de una
+                  máquina = revisión con cambio de aceite y filtros)
 
 SI tipo_tarea=AVERIA: clasifica fault_category y fault_subcategory con la
 taxonomía siguiente, y deja task_category_free en cadena vacía ("").
@@ -2626,8 +2628,11 @@ REGLAS OBLIGATORIAS:
    por defecto, no AVERIA. Reserva AVERIA para cuando el texto mencione
    explícitamente un problema, avería, rotura o pieza a reparar/sustituir.
 5. REVISION manda sobre MANTENIMIENTO: si el texto dice que se cambió el
-   aceite o los filtros, o que se hizo la revisión de la máquina, es
-   REVISION aunque además se limpie o se engrase. NO es REVISION
+   aceite o los filtros, o que se hizo la revisión o el mantenimiento de
+   una máquina, es REVISION aunque además se limpie o se engrase.
+   MANTENIMIENTO queda para lo que no es revisión de una máquina:
+   limpieza, orden o pintura, traslados, montajes, tareas del taller.
+   NO es REVISION
    "revisar" una avería concreta ("revisar fuga", "revisar frenos que no
    frenan") -- eso es AVERIA --, ni la revisión previa a la ITV -- eso es
    el literal "ITV".
@@ -2780,6 +2785,14 @@ def classify_task(
         }
 
     except Exception as exc:
+        # H30 (S137): el 429 de Vertex AI se relanza para que quien llama
+        # reintente (classify_fault_line, backfill_task_types). Antes se
+        # tragaba aquí y el bloque se quedaba sin clasificar para siempre.
+        # ---
+        # Vertex AI 429 is re-raised so that callers can retry it.
+        exc_str = str(exc)
+        if "429" in exc_str or "RESOURCE_EXHAUSTED" in exc_str:
+            raise
         logger.error(
             "# [classify_task] Error en clasificación Gemini: %s",
             exc,

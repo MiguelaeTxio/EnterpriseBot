@@ -1,56 +1,93 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/work_order_processor/management/commands/reclassify_revisions.py
 """
-H30 (S137). Re-run the task classification on the work order blocks that
-may be a service (oil and filter change) and mark them REVISION.
+H30 (S137). Mark as REVISION the work order blocks whose own text says
+they are a service (oil, filters, "revisión", "mantenimiento").
 
 ---
 
 H30 (S137). Miguel Ángel: la revisión (cambio de aceite y filtros) tiene
-que estar clara en la clasificación. Hasta ahora no había tipo propio y
-las revisiones quedaban repartidas entre Mantenimiento ("mantenimiento
-general", "revisión general"...), Avería y bloques sin clasificar.
+que estar clara en la clasificación, y en este taller "mantenimiento" de
+una máquina es lo mismo que revisión: se cambia el aceite y los filtros
+que toquen. Hasta ahora no había tipo propio y las revisiones quedaban
+repartidas entre Mantenimiento, Avería y bloques sin clasificar.
 
-Este comando vuelve a pasar por Gemini (classify_task, con el prompt que
-ya conoce el tipo REVISION) los bloques candidatos:
-- su texto (descripción o notas) habla de revisión (con o sin tilde),
-  aceite o filtros, o
-- Gemini ya les puso una categoría libre de revisión o de mantenimiento
-  preventivo.
+No usa Gemini (el primer intento, con Gemini, se cortó: el
+"Mantenimiento" de Gemini es un cajón de sastre de limpiezas, traslados
+y pintura). Manda lo que escribió el mecánico. Un bloque es revisión si:
+- es de una máquina (no del activo PERSONAL ni sin máquina),
+- su descripción o sus notas dicen revisión (con o sin tilde),
+  mantenimiento, mnto, aceite o filtro,
+- y no habla de una avería (fuga, pérdida, rotura, roto, avería) ni de
+  una revisión médica, ni es uno de los literales especiales (limpieza
+  del taller, vacaciones, formación, servicio, ITV).
 
-Solo se cambia un bloque si Gemini dice ahora REVISION; el resto se
-queda como estaba. Con --dry-run se llama a Gemini y se apunta qué
-diría, sin guardar nada. Al final lista los bloques que son revisión
-(máquina, fecha y texto): son el punto de partida para recuperar las
+Con --dry-run solo lista. Al final lista los bloques que son revisión
+(máquina, fecha y texto) y los que se dejan fuera por hablar de avería,
+para revisarlos a mano: son el punto de partida para recuperar las
 revisiones ya hechas.
 """
-import time
+import re
 from datetime import datetime
 from datetime import timedelta
 
 from django.core.management.base import BaseCommand
 from django.db.models import Q
 
+from work_order_processor.management.commands.seed_personal_asset import (
+    PERSONAL_ASSET_CODE,
+)
 from work_order_processor.models import WorkOrderEntryLine
-from work_order_processor.services import classify_task
 
 REVISION = "REVISION"
-HEARTBEAT_EVERY = 10
-TEXT_PATTERN = r"revisi|aceite|filtro"
-FREE_PATTERN = r"revisi|preventiv"
+HEARTBEAT_EVERY = 25
+SERVICE_PATTERN = r"revisi|mantenimiento|mnto|aceite|filtro"
+FAULT_WORDS = re.compile(r"fuga|p[eé]rdida|rotura|\broto\b|aver[ií]a")
+MEDICAL_WORDS = re.compile(r"m[eé]dic")
+SPECIAL_LITERALS = (
+    "Limpieza y mantenimiento", "Vacaciones", "Formación", "Servicio",
+    "ITV",
+)
+
+
+def _text(line):
+    """
+    Description and notes of a block, joined, on one line.
+
+    ---
+
+    Descripción y notas del bloque, juntas y en una sola línea.
+    """
+    parts = (line.fault_description, line.repair_notes)
+    return " ".join(" / ".join(p for p in parts if p).split())
+
+
+def _what_changed(text):
+    """
+    Short label of what the service changed, from the block text.
+
+    ---
+
+    Etiqueta corta de lo que se cambió, sacada del texto del bloque.
+    """
+    low = text.lower()
+    things = [name for word, name in (("aceite", "aceite"),
+                                      ("filtro", "filtros"))
+              if word in low]
+    return "cambio de " + " y ".join(things) if things else "revisión"
 
 
 class Command(BaseCommand):
     """
-    Mark as REVISION the blocks Gemini now sees as a service.
+    Mark as REVISION the blocks whose text says they are a service.
 
     ---
 
-    Marca como REVISION los bloques que Gemini ve ahora como revisión.
+    Marca como REVISION los bloques cuyo texto dice que son revisión.
     """
 
     help = (
-        "Vuelve a clasificar con Gemini los bloques de parte que pueden "
-        "ser una revisión y los marca REVISION (H30, S137)."
+        "Marca como REVISION los bloques de parte cuyo texto dice "
+        "revisión, mantenimiento, aceite o filtro (H30, S137)."
     )
 
     def add_arguments(self, parser):
@@ -60,7 +97,7 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             "--dry-run", action="store_true",
-            help="Llama a Gemini y apunta lo que diría, sin guardar.",
+            help="Solo lista, sin guardar nada.",
         )
 
     def _write(self, line):
@@ -87,39 +124,12 @@ class Command(BaseCommand):
         end = (datetime.now() + timedelta(seconds=eta)).strftime("%H:%M:%S")
         self._log(
             "Progreso: %d/%d bloques (%d%%) -- ETA %dm%02ds (fin aprox. "
-            "%s) -- revision=%d, sin_cambio=%d, errores=%d"
+            "%s) -- revision=%d, averia=%d, fuera=%d"
             % (done, total, done * 100 // total, eta // 60, eta % 60, end,
-               counters["revision"], counters["unchanged"],
-               counters["errors"]))
+               len(counters["revision"]), len(counters["fault"]),
+               counters["out"]))
 
-    def _classify(self, line):
-        """
-        Call classify_task, retrying on Vertex AI 429; None on error.
-
-        ---
-
-        Llama a classify_task, con reintentos ante el 429 de Vertex AI
-        (mismo contrato que backfill_task_types); None si falla.
-        """
-        for attempt in range(1, 4):
-            try:
-                return classify_task(
-                    fault_description=line.fault_description or "",
-                    repair_notes=line.repair_notes or "",
-                )
-            except Exception as exc:
-                text = str(exc)
-                if ("429" in text or "RESOURCE_EXHAUSTED" in text) and (
-                        attempt < 3):
-                    self._log("pk=%d: 429 de Vertex AI (intento %d de 3), "
-                              "espero 60 s." % (line.pk, attempt))
-                    time.sleep(60)
-                    continue
-                self._log("pk=%d: error de Gemini -- %s" % (line.pk, exc))
-                return None
-        return None
-
-    def _save(self, line, result):
+    def _save(self, line, what):
         """
         Store REVISION on the block and on its ticket, if any.
 
@@ -129,7 +139,7 @@ class Command(BaseCommand):
         """
         WorkOrderEntryLine.objects.filter(pk=line.pk).update(
             tipo_tarea=REVISION,
-            task_category_free=result["task_category_free"],
+            task_category_free=what,
             fault_category="",
             fault_subcategory="",
         )
@@ -137,62 +147,76 @@ class Command(BaseCommand):
         if ticket is not None:
             ticket.tipo_tarea = REVISION
             ticket.fault_category = ""
-            ticket.task_category_free = result["task_category_free"]
+            ticket.task_category_free = what
             ticket.save(update_fields=[
                 "tipo_tarea", "fault_category", "task_category_free"])
 
+    def _list(self, title, rows):
+        """
+        Write a list of blocks: machine, date, current type and text.
+
+        ---
+
+        Escribe una lista de bloques: máquina, fecha, tipo y texto.
+        """
+        self._write("")
+        self._write("%s (%d):" % (title, len(rows)))
+        self._write("bloque | máquina | fecha | tipo antes | texto")
+        for line, text in rows:
+            when = line.entry.work_date
+            self._write("%d | %s | %s | %s | %s" % (
+                line.pk, line.machine_asset.code,
+                when.strftime("%d/%m/%Y") if when else "?",
+                line.tipo_tarea or "sin clasificar", text[:200]))
+
     def handle(self, *args, **options):
         dry_run = options["dry_run"]
-        wanted = (Q(fault_description__iregex=TEXT_PATTERN) |
-                  Q(repair_notes__iregex=TEXT_PATTERN) |
-                  Q(task_category_free__iregex=FREE_PATTERN))
-        candidates = WorkOrderEntryLine.objects.filter(wanted).exclude(
-            tipo_tarea=REVISION).select_related(
-            "entry", "machine_asset", "breakdown_ticket").order_by("id")
+        wanted = (Q(fault_description__iregex=SERVICE_PATTERN) |
+                  Q(repair_notes__iregex=SERVICE_PATTERN))
+        candidates = WorkOrderEntryLine.objects.filter(
+            wanted, machine_asset__isnull=False,
+        ).exclude(machine_asset__code=PERSONAL_ASSET_CODE).exclude(
+            tipo_tarea=REVISION).exclude(
+            task_category_free__in=SPECIAL_LITERALS).select_related(
+            "entry", "machine_asset", "breakdown_ticket").order_by(
+            "machine_asset__code", "entry__work_date", "id")
         with open(options["log_file"], "a", encoding="utf-8") as handle:
             self._handle = handle
             self._start = datetime.now()
             total = candidates.count()
-            self._log("Inicio%s: %d bloques candidatos a revisión." % (
-                " (DRY-RUN, no se guarda nada)" if dry_run else "", total))
-            counters = {"revision": 0, "unchanged": 0, "errors": 0}
-            found = []
+            self._log("Inicio%s: %d bloques de máquina que dicen revisión, "
+                      "mantenimiento, aceite o filtro." % (
+                          " (DRY-RUN, no se guarda nada)" if dry_run
+                          else "", total))
+            counters = {"revision": [], "fault": [], "out": 0}
             for done, line in enumerate(candidates.iterator(), start=1):
-                result = self._classify(line)
-                if result is None:
-                    counters["errors"] += 1
-                elif result["tipo_tarea"] == REVISION:
-                    counters["revision"] += 1
-                    found.append((line, result["task_category_free"]))
-                    if not dry_run:
-                        self._save(line, result)
-                    self._log("pk=%d: %s -> REVISION (%s)%s" % (
-                        line.pk, line.tipo_tarea or "sin clasificar",
-                        result["task_category_free"],
-                        "" if dry_run else ", guardado"))
+                text = _text(line)
+                low = text.lower()
+                if MEDICAL_WORDS.search(low):
+                    counters["out"] += 1
+                    self._log("bloque %d: fuera (revisión médica)."
+                              % line.pk)
+                elif FAULT_WORDS.search(low):
+                    counters["fault"].append((line, text))
+                    self._log("bloque %d: fuera (habla de avería)."
+                              % line.pk)
                 else:
-                    counters["unchanged"] += 1
-                    self._log("pk=%d: sigue %s (Gemini dice %s)" % (
+                    counters["revision"].append((line, text))
+                    if not dry_run:
+                        self._save(line, _what_changed(text))
+                    self._log("bloque %d: %s -> REVISION (%s)%s" % (
                         line.pk, line.tipo_tarea or "sin clasificar",
-                        result["tipo_tarea"] or "nada"))
+                        _what_changed(text),
+                        "" if dry_run else ", guardado"))
                 self._heartbeat(done, total, counters)
-            self._write("")
-            self._write("Bloques que son revisión (%d):" % len(found))
-            self._write("máquina | fecha | qué se cambió | texto del parte")
-            for line, what in found:
-                code = (line.machine_asset.code if line.machine_asset
-                        else line.machine_raw or "?")
-                when = line.entry.work_date
-                text = " / ".join(
-                    part for part in (line.fault_description,
-                                      line.repair_notes) if part)
-                self._write("%s | %s | %s | %s" % (
-                    code, when.strftime("%d/%m/%Y") if when else "?",
-                    what, " ".join(text.split())[:200]))
+            self._list("Bloques que son revisión", counters["revision"])
+            self._list("Fuera por hablar de avería (mirar a mano)",
+                       counters["fault"])
             self._write("")
             self._write(
-                "Resumen%s: %d bloques pasan a revisión, %d se quedan "
-                "como estaban y %d con error de Gemini." % (
-                    " (DRY-RUN)" if dry_run else "", counters["revision"],
-                    counters["unchanged"], counters["errors"]))
+                "Resumen%s: %d bloques pasan a revisión, %d se dejan fuera "
+                "por hablar de avería y %d por ser revisión médica." % (
+                    " (DRY-RUN)" if dry_run else "",
+                    len(counters["revision"]), len(counters["fault"]),
+                    counters["out"]))
             self._write("Fin.")
