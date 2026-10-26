@@ -9974,6 +9974,11 @@ no tenerlas claras en todas las máquinas no se avanza a los avisos:
       normalmente), cuánto aceite y cuál, y la próxima revisión en
       horas (o km si es camión). Marca el bloque como REVISION y crea
       su `MachineServiceRecord`.
+      Construido en S137 (commit `54a0073`): parte por formulario
+      (guardar tareas y cerrar, también al reeditar), migración fleet
+      0027, `fleet/work_order_service.py`. El parte subido por foto
+      (confirmar) no lleva la casilla. Falta la prueba real de un
+      mecánico.
    **Cierre:** consulta a BD donde todo `MachineAsset` con intervalo
    tiene al menos un `MachineServiceRecord`, el número de centros de
    gasto con intervalo coincide con la hoja de José Antonio Mora, y un
