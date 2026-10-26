@@ -117,6 +117,19 @@ vehículos marcados); en Repostadores no aplican y se ocultan.
                         </div>
                     </div>
                     <div class="col-6 border-top pt-1 mt-1 rfl-vehicle-action">
+                        <div class="small text-muted fw-bold">Contador</div>
+                        <div class="d-flex flex-wrap gap-1">
+                            <button type="button" class="btn btn-sm btn-outline-danger rfl-meter-btn" data-broken="1"
+                                    title="Cuentakilómetros u horómetro averiado: no se pregunta al chófer y sus repostajes desde ahora no dan lectura.">
+                                <i class="bi bi-speedometer me-1"></i>Averiado
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-success rfl-meter-btn" data-broken="0"
+                                    title="Sus repostajes vuelven a dar lectura desde que se averió.">
+                                <i class="bi bi-check2-circle me-1"></i>Reparado
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-6 border-top pt-1 mt-1 rfl-vehicle-action">
                         <div class="small text-muted fw-bold">Preguntas por WhatsApp</div>
                         <div class="d-flex flex-wrap gap-1">
                             <button type="button" class="btn btn-sm btn-outline-secondary rfl-ask-btn" data-ask="0"
@@ -191,6 +204,7 @@ vehículos marcados); en Repostadores no aplican y se ocultan.
     const EXPORT_URL = "{% url 'panel:refuels_export' %}";
     const UNIT_URL = "{% url 'panel:refuels_vehicle_unit' %}";
     const ASK_URL = "{% url 'panel:refuels_vehicle_ask' %}";
+    const METER_URL = "{% url 'panel:refuels_vehicle_meter' %}";
 
     // S137: una selección por vista (pk -> etiqueta), recordada por
     // usuario con su propia clave ("selection" es la de Repostajes).
@@ -387,6 +401,9 @@ vehículos marcados); en Repostadores no aplican y se ocultan.
     });
     document.querySelectorAll(".rfl-ask-btn").forEach(function (btn) {
         btn.addEventListener("click", function () { postVehicleAction(ASK_URL, "ask", btn.dataset.ask); });
+    });
+    document.querySelectorAll(".rfl-meter-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () { postVehicleAction(METER_URL, "broken", btn.dataset.broken); });
     });
 
     // Pantalla completa con el formato del laboratorio de análisis (4.26).

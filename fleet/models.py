@@ -670,6 +670,23 @@ class GasoGesVehicle(models.Model):
             "no pregunta nunca por ellos."
         ),
     )
+    # S137, Miguel Ángel: a veces el cuentakilómetros o el horómetro está
+    # roto (una máquina estuvo dos años así) y el chófer teclea ceros o
+    # cualquier cosa. Mientras esté averiado no se pregunta por el
+    # vehículo y sus repostajes no dan lectura. Lo anota el chófer al
+    # contestar la pregunta del robot, o a mano desde Repostajes.
+    # ---
+    # Broken meter: no questions and no readings while it lasts.
+    meter_broken = models.BooleanField(
+        _("Contador averiado"), default=False,
+        help_text=_(
+            "Cuentakilómetros u horómetro averiado: no se pregunta al "
+            "chófer y sus repostajes no dan lectura hasta que se repare."
+        ),
+    )
+    meter_broken_since = models.DateTimeField(
+        _("Averiado desde"), null=True, blank=True,
+    )
     updated_at = models.DateTimeField(_("Actualizado"), auto_now=True)
 
     class Meta:
@@ -739,12 +756,14 @@ class GasoGesSupply(models.Model):
     STATUS_ANOMALY = "ANOMALY"
     STATUS_NO_MACHINE = "NO_MACHINE"
     STATUS_NO_UNIT = "NO_UNIT"
+    STATUS_BROKEN_METER = "BROKEN"
     STATUS_CHOICES = [
         (STATUS_PENDING, _("Pendiente")),
         (STATUS_READING, _("Lectura creada")),
         (STATUS_ANOMALY, _("Lectura dudosa")),
         (STATUS_NO_MACHINE, _("Sin centro de gasto")),
         (STATUS_NO_UNIT, _("Sin saber si son km u horas")),
+        (STATUS_BROKEN_METER, _("Contador averiado")),
     ]
 
     dedupe_key = models.CharField(max_length=120, unique=True)
@@ -836,6 +855,7 @@ class RefuelQuestion(models.Model):
     STATUS_CONFIRMED = "CONFIRMED"
     STATUS_CORRECTED = "CORRECTED"
     STATUS_UNIT_SET = "UNIT_SET"
+    STATUS_METER_BROKEN = "METER_BROKEN"
     STATUS_EXPIRED = "EXPIRED"
     STATUS_CHOICES = [
         (STATUS_SENT, _("Enviada, sin respuesta")),
@@ -843,6 +863,8 @@ class RefuelQuestion(models.Model):
         (STATUS_CONFIRMED, _("El chófer dice que es correcto")),
         (STATUS_CORRECTED, _("Corregido por el chófer")),
         (STATUS_UNIT_SET, _("Unidad confirmada por el chófer")),
+        (STATUS_METER_BROKEN, _("El chófer dice que el contador está "
+                                "averiado")),
         (STATUS_EXPIRED, _("Sin respuesta a tiempo")),
     ]
 

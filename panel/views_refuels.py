@@ -122,6 +122,7 @@ _STATUS_BADGES = {
     GasoGesSupply.STATUS_NO_UNIT: "warning",
     GasoGesSupply.STATUS_NO_MACHINE: "secondary",
     GasoGesSupply.STATUS_PENDING: "light",
+    GasoGesSupply.STATUS_BROKEN_METER: "dark",
 }
 _UNIT_SOURCE_LABELS = {
     GasoGesVehicle.UNIT_SOURCE_DEDUCED: "deducida",
@@ -317,6 +318,7 @@ def _row(supply):
         "unit_known": vehicle.unit != GasoGesVehicle.UNIT_UNKNOWN,
         "unit_source": _UNIT_SOURCE_LABELS.get(vehicle.unit_source, ""),
         "ask_driver": vehicle.ask_driver,
+        "meter_broken": vehicle.meter_broken,
         "litres": supply.litres,
         "status": supply.get_status_display(),
         "status_badge": _STATUS_BADGES.get(supply.status, "light"),
@@ -407,6 +409,10 @@ def _vehicle_rows(groups):
             "unit_known": vehicle.unit != GasoGesVehicle.UNIT_UNKNOWN,
             "unit_source": _UNIT_SOURCE_LABELS.get(vehicle.unit_source, ""),
             "ask_driver": vehicle.ask_driver,
+            "meter_broken": vehicle.meter_broken,
+            "meter_broken_since": (
+                timezone.localtime(vehicle.meter_broken_since)
+                if vehicle.meter_broken_since else None),
             "search": (vehicle.machine.code if vehicle.machine
                        else vehicle.plate or vehicle.name),
             "label": ("%s %s" % (vehicle.machine.code, label)
@@ -706,6 +712,44 @@ def _float(value):
     return float(value) if value is not None else None
 
 
+class RefuelsVehicleMeterView(CompanyUserRequiredMixin, View):
+    """
+    POST: mark the meter of the marked vehicles broken or repaired.
+
+    ---
+
+    POST: marca el contador de los vehículos marcados (o de los de los
+    repostajes marcados) como averiado o reparado (S137). Averiado: no
+    se pregunta al chófer y sus repostajes desde ahora no dan lectura.
+    Reparado: sus repostajes vuelven a contar desde que se averió.
+    """
+
+    def post(self, request):
+        if not can_edit_service(request.user.company_user):
+            return JsonResponse(
+                {"ok": False, "error": "No tienes permiso para esto."},
+                status=403)
+        broken = request.POST.get("broken") == "1"
+        vehicles = list(GasoGesVehicle.objects.filter(
+            pk__in=_selected_vehicle_ids(request)))
+        if not vehicles:
+            return JsonResponse(
+                {"ok": False,
+                 "error": "Marca antes algún repostaje o vehículo."},
+                status=400)
+        for vehicle in vehicles:
+            vehicle.meter_broken = broken
+            vehicle.meter_broken_since = timezone.now() if broken else None
+            vehicle.save(update_fields=[
+                "meter_broken", "meter_broken_since", "updated_at"])
+            build_readings(lambda _line: None, vehicle=vehicle)
+        return JsonResponse({
+            "ok": True,
+            "message": "%d vehículo(s): contador %s." % (
+                len(vehicles), "averiado" if broken else "reparado"),
+        })
+
+
 class RefuelsExportView(CompanyUserRequiredMixin, View):
     """
     GET: Excel of the current view, marked rows or all the filtered.
@@ -765,13 +809,14 @@ class RefuelsExportView(CompanyUserRequiredMixin, View):
             row["last"].replace(tzinfo=None) if row["last"] else None,
             row["last_km"], row["unit"], row["anomalies"], row["others"],
             "Sí" if row["ask_driver"] else "No",
+            "Sí" if row["meter_broken"] else "No",
         ] for row in rows]
         _write_sheet(book, "Vehículos", [
             ("Centro de gasto", 14), ("Vehículo (GasoGes)", 18),
             ("Nombre (GasoGes)", 28), ("Repostajes", 11), ("Litros", 10),
             ("Último repostaje", 17), ("Últimos KM (GasoGes)", 18),
             ("Unidad", 11), ("Dudosos", 9), ("Repostadores", 12),
-            ("Se pregunta al chófer", 18),
+            ("Se pregunta al chófer", 18), ("Contador averiado", 16),
         ], lines, (("F", "DD/MM/YYYY HH:MM"),))
         return _excel_response(book, "repostajes_vehiculos", request)
 

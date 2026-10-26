@@ -35,6 +35,7 @@ from panel.views_refuels import (
     RefuelsResultsView,
     RefuelsTabView,
     RefuelsVehicleAskView,
+    RefuelsVehicleMeterView,
     RefuelsVehicleUnitView,
 )
 from panel.views_service_tab import (
@@ -1135,6 +1136,12 @@ urlpatterns = [
         "documentacion/repostajes/preguntar/",
         RefuelsVehicleAskView.as_view(),
         name="refuels_vehicle_ask",
+    ),
+    # H30 (S137): contador averiado / reparado.
+    path(
+        "documentacion/repostajes/contador/",
+        RefuelsVehicleMeterView.as_view(),
+        name="refuels_vehicle_meter",
     ),
     path(
         "documentacion/repostajes/exportar/",

@@ -26,13 +26,22 @@ verificado en línea (twilio.com/docs/content/twilio-quick-reply,
 23/10/2026): variables en el texto (nunca al principio ni al final ni
 dos seguidas), títulos de 20 caracteres como máximo y el `id` del
 botón llega en `ButtonPayload` del webhook.
+
+S137: versión 2 de las dos (`refuel_value_check_v2`,
+`refuel_unit_check_v2`) con un tercer botón, "Contador averiado"
+(Miguel Ángel: a veces el cuentakilómetros o el horómetro está roto y
+hay que saberlo para no preguntar más por ese vehículo). Una plantilla
+aprobada no se puede cambiar: son plantillas nuevas, y la versión 1
+queda sin usar. Verificado en línea el 26/10/2026
+(twilio.com/docs/content/twilio-quick-reply): hasta diez botones en
+una plantilla, título de 20 caracteres como máximo.
 """
 from whatsapp.management.commands import (
     create_document_notice_whatsapp_templates as notice_templates,
 )
 
-VALUE_TEMPLATE = "refuel_value_check"
-UNIT_TEMPLATE = "refuel_unit_check"
+VALUE_TEMPLATE = "refuel_value_check_v2"
+UNIT_TEMPLATE = "refuel_unit_check_v2"
 
 # `id` de cada botón: llega en ButtonPayload al pulsarlo.
 # ---
@@ -41,6 +50,7 @@ VALUE_OK = "refuel_value_ok"
 VALUE_FIX = "refuel_value_fix"
 UNIT_KM = "refuel_unit_km"
 UNIT_HOURS = "refuel_unit_hours"
+METER_BROKEN = "refuel_meter_broken"
 
 _SAMPLE = {
     "1": "Juan Perez",
@@ -64,6 +74,7 @@ TEMPLATES = [
                 "actions": [
                     {"title": "Sí, es correcto", "id": VALUE_OK},
                     {"title": "No, lo corrijo", "id": VALUE_FIX},
+                    {"title": "Contador averiado", "id": METER_BROKEN},
                 ],
             },
         },
@@ -81,6 +92,7 @@ TEMPLATES = [
                 "actions": [
                     {"title": "Kilómetros", "id": UNIT_KM},
                     {"title": "Horas", "id": UNIT_HOURS},
+                    {"title": "Contador averiado", "id": METER_BROKEN},
                 ],
             },
         },
@@ -100,7 +112,7 @@ class Command(notice_templates.Command):
 
     help = (
         "Crea y somete a aprobacion de Meta las plantillas WhatsApp "
-        "refuel_value_check y refuel_unit_check (H30, S135)."
+        "refuel_value_check_v2 y refuel_unit_check_v2 (H30, S137)."
     )
     templates = TEMPLATES
     start_message = (

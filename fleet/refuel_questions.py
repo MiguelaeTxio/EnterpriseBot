@@ -29,6 +29,15 @@ plantilla (se consulta a Twilio).
 Respuestas (`handle_whatsapp_reply`, desde el webhook, antes que el
 chatbot): los botones, y el número que escribe el chófer tras pulsar
 "No, lo corrijo".
+
+S137, Miguel Ángel: el cuentakilómetros o el horómetro a veces está
+roto y el chófer teclea ceros o cualquier cosa. Las dos plantillas
+pasan a una versión 2 con un tercer botón, "Contador averiado": al
+pulsarlo el vehículo queda marcado como averiado
+(`GasoGesVehicle.meter_broken`), no se vuelve a preguntar por él y sus
+repostajes no dan lectura hasta que alguien lo marque como reparado en
+Repostajes. Las preguntas ya enviadas con la versión 1 siguen valiendo
+(los botones tienen los mismos `id`).
 """
 import logging
 import os
@@ -47,13 +56,14 @@ from fleet.models import GasoGesSupply, GasoGesVehicle, RefuelQuestion
 
 logger = logging.getLogger(__name__)
 
-VALUE_TEMPLATE = "refuel_value_check"
-UNIT_TEMPLATE = "refuel_unit_check"
+VALUE_TEMPLATE = "refuel_value_check_v2"
+UNIT_TEMPLATE = "refuel_unit_check_v2"
 VALUE_OK = "refuel_value_ok"
 VALUE_FIX = "refuel_value_fix"
 UNIT_KM = "refuel_unit_km"
 UNIT_HOURS = "refuel_unit_hours"
-BUTTONS = (VALUE_OK, VALUE_FIX, UNIT_KM, UNIT_HOURS)
+METER_BROKEN = "refuel_meter_broken"
+BUTTONS = (VALUE_OK, VALUE_FIX, UNIT_KM, UNIT_HOURS, METER_BROKEN)
 
 RECENT_HOURS = 48
 ANSWER_HOURS = 24
@@ -164,7 +174,8 @@ def _candidates():
     since = timezone.now() - timedelta(hours=RECENT_HOURS)
     recent = GasoGesSupply.objects.filter(
         supplied_at__gte=since, vehicle__machine__isnull=False,
-        vehicle__ask_driver=True, user__person__isnull=False,
+        vehicle__ask_driver=True, vehicle__meter_broken=False,
+        user__person__isnull=False,
     ).select_related("vehicle", "user__person").order_by("-supplied_at")
     asked_supplies = set(RefuelQuestion.objects.filter(
         supply__in=recent).values_list("supply_id", flat=True))
@@ -309,11 +320,18 @@ def handle_whatsapp_reply(company, phone, button_payload, body):
         return "Gracias, queda anotado %s." % _format_value(value)
 
     person = resolve_person_by_phone(company, phone)
-    kind = (RefuelQuestion.KIND_UNIT if button_payload in (
-        UNIT_KM, UNIT_HOURS) else RefuelQuestion.KIND_VALUE)
-    question = person and RefuelQuestion.objects.filter(
-        person=person, kind=kind, status=RefuelQuestion.STATUS_SENT,
-    ).select_related("supply__vehicle").order_by("-sent_at").first()
+    questions = RefuelQuestion.objects.filter(
+        person=person, status=RefuelQuestion.STATUS_SENT)
+    # "Contador averiado" está en las dos plantillas: vale para la
+    # pregunta abierta del chófer, sea cual sea (solo hay una a la vez).
+    # ---
+    # "Broken meter" is in both templates: any open question.
+    if button_payload != METER_BROKEN:
+        questions = questions.filter(kind=(
+            RefuelQuestion.KIND_UNIT if button_payload in (
+                UNIT_KM, UNIT_HOURS) else RefuelQuestion.KIND_VALUE))
+    question = person and questions.select_related(
+        "supply__vehicle").order_by("-sent_at").first()
     if not question:
         return ("Gracias. Esa pregunta ya estaba contestada o ha "
                 "caducado; no hace falta hacer nada más.")
@@ -330,6 +348,19 @@ def handle_whatsapp_reply(company, phone, button_payload, body):
         question.save(update_fields=["status", "answer", "answered_at"])
         return ("De acuerdo. Escribe solo el número correcto que marca "
                 "el vehículo (kilómetros u horas), por ejemplo 125400.")
+    if button_payload == METER_BROKEN:
+        vehicle = question.vehicle
+        vehicle.meter_broken = True
+        vehicle.meter_broken_since = question.supply.supplied_at
+        vehicle.save(update_fields=[
+            "meter_broken", "meter_broken_since", "updated_at"])
+        question.status = RefuelQuestion.STATUS_METER_BROKEN
+        question.answer = "Contador averiado"
+        question.save(update_fields=["status", "answer", "answered_at"])
+        build_readings(lambda _line: None, vehicle=vehicle)
+        return ("Gracias, queda anotado que el contador está averiado. No "
+                "te volveremos a preguntar por este vehículo hasta que se "
+                "repare.")
     unit = (GasoGesVehicle.UNIT_KM if button_payload == UNIT_KM
             else GasoGesVehicle.UNIT_HOURS)
     vehicle = question.vehicle

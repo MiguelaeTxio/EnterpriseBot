@@ -334,6 +334,42 @@ def _field_of(unit):
     return "km" if unit == GasoGesVehicle.UNIT_KM else "hours"
 
 
+def meter_broken_at(vehicle, when):
+    """
+    True if the vehicle's meter was marked broken at that moment.
+
+    ---
+
+    True si el contador del vehículo estaba averiado en ese momento
+    (S137): marcado como averiado y el repostaje es de esa fecha o
+    posterior (sin fecha, todos).
+    """
+    if not vehicle.meter_broken:
+        return False
+    since = vehicle.meter_broken_since
+    return since is None or when >= since
+
+
+def _mark_broken(supply):
+    """
+    Leave a supply without reading because its meter is broken.
+
+    ---
+
+    Deja un repostaje sin lectura porque su contador está averiado.
+    """
+    if (supply.status == GasoGesSupply.STATUS_BROKEN_METER
+            and supply.reading_id is None):
+        return
+    with transaction.atomic():
+        if supply.reading_id is not None:
+            supply.reading.delete()
+        supply.reading = None
+        supply.status = GasoGesSupply.STATUS_BROKEN_METER
+        supply.status_note = "contador averiado"
+        supply.save(update_fields=["status", "status_note", "reading"])
+
+
 def recheck_series(machine, unit):
     """
     Recompute which supplies of a machine form its meter series.
@@ -351,9 +387,16 @@ def recheck_series(machine, unit):
     cambian. Devuelve (lecturas, dudosos) tras rehacerla.
     """
     field = _field_of(unit)
-    supplies = list(GasoGesSupply.objects.filter(
+    supplies = []
+    for supply in GasoGesSupply.objects.filter(
         vehicle__machine=machine, vehicle__unit=unit,
-    ).select_related("reading").order_by("supplied_at", "id"))
+    ).select_related("reading", "vehicle").order_by("supplied_at", "id"):
+        # S137: con el contador averiado no hay lectura ni cuenta para la
+        # serie.
+        if meter_broken_at(supply.vehicle, supply.supplied_at):
+            _mark_broken(supply)
+        else:
+            supplies.append(supply)
     points = [(s.supplied_at, s.meter_value) for s in supplies]
     forced = {i for i, s in enumerate(supplies)
               if s.status_note.startswith(DRIVER_NOTES)}
@@ -407,24 +450,28 @@ def build_readings(log, heartbeat=None, vehicle=None, recheck_all=False):
 
     ---
 
-    Mira los repostajes pendientes, sin centro de gasto o sin unidad
-    (pueden haberse resuelto) y rehace la serie del contador de cada
-    centro de gasto afectado (`recheck_series`): un repostaje nuevo
-    puede hacer dudoso uno anterior o al revés. Con `recheck_all`, todas
-    las series (S137, para rehacerlas con la regla nueva sin borrar lo
-    confirmado por los chóferes).
+    Mira los repostajes pendientes, sin centro de gasto, sin unidad o
+    con el contador averiado (pueden haberse resuelto) y rehace la serie
+    del contador de cada centro de gasto afectado (`recheck_series`): un
+    repostaje nuevo puede hacer dudoso uno anterior o al revés. Con
+    `recheck_all`, todas las series (S137, para rehacerlas con la regla
+    nueva sin borrar lo confirmado por los chóferes).
     """
     pending = GasoGesSupply.objects.filter(status__in=[
         GasoGesSupply.STATUS_PENDING, GasoGesSupply.STATUS_NO_MACHINE,
-        GasoGesSupply.STATUS_NO_UNIT,
+        GasoGesSupply.STATUS_NO_UNIT, GasoGesSupply.STATUS_BROKEN_METER,
     ]).select_related("vehicle", "vehicle__machine")
     if vehicle is not None:
         pending = pending.filter(vehicle=vehicle)
     counters = {"lecturas": 0, "dudosos": 0, "sin_centro": 0,
-                "sin_unidad": 0, "series": 0}
+                "sin_unidad": 0, "averiados": 0, "series": 0}
     groups = set()
     for supply in pending.iterator():
         current = supply.vehicle
+        if meter_broken_at(current, supply.supplied_at):
+            _mark_broken(supply)
+            counters["averiados"] += 1
+            continue
         if current.machine_id is None:
             status = GasoGesSupply.STATUS_NO_MACHINE
             counters["sin_centro"] += 1
@@ -456,7 +503,8 @@ def build_readings(log, heartbeat=None, vehicle=None, recheck_all=False):
             heartbeat(done, total, counters)
     log("Lecturas: %(series)d series de contador rehechas, con "
         "%(lecturas)d lecturas y %(dudosos)d dudosas; %(sin_centro)d "
-        "sin centro de gasto, %(sin_unidad)d sin unidad." % counters)
+        "sin centro de gasto, %(sin_unidad)d sin unidad, %(averiados)d "
+        "con el contador averiado." % counters)
     return counters
 
 
