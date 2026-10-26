@@ -2117,6 +2117,13 @@ class WorkshopNotice(models.Model):
         _("Cambiado el"),
         auto_now=True,
     )
+    # H30 (S137): sube cada vez que cambia el texto. Quien ya aceptó esta
+    # versión no lo vuelve a ver; si vuelve a salir, es que hay algo nuevo.
+    version = models.PositiveIntegerField(
+        _("Versión"),
+        default=1,
+        help_text=_("Sube cada vez que cambia el texto del aviso."),
+    )
 
     class Meta:
         verbose_name = _("Aviso para los operarios")
@@ -2128,3 +2135,44 @@ class WorkshopNotice(models.Model):
     @property
     def is_shown(self) -> bool:
         return self.is_active and bool(self.text.strip())
+
+
+class WorkshopNoticeRead(models.Model):
+    """
+    Last notice version a worker accepted (S137).
+
+    ---
+
+    Última versión del aviso que un operario aceptó. Miguel Ángel
+    (S137): el aviso sale una sola vez; con 5 segundos antes de poder
+    aceptar, para que lo lean, y una vez aceptado ya no sale más hasta
+    que el aviso cambie.
+    """
+
+    notice = models.ForeignKey(
+        WorkshopNotice,
+        on_delete=models.CASCADE,
+        related_name="reads",
+        verbose_name=_("Aviso"),
+    )
+    company_user = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.CASCADE,
+        related_name="+",
+        verbose_name=_("Operario"),
+    )
+    version = models.PositiveIntegerField(_("Versión aceptada"))
+    read_at = models.DateTimeField(_("Aceptado el"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("Aviso aceptado")
+        verbose_name_plural = _("Avisos aceptados")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("notice", "company_user"),
+                name="unique_notice_read_per_user",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.company_user} -- aviso v{self.version}"

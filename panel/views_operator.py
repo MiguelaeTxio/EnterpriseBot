@@ -79,11 +79,30 @@ class OperatorDashboardView(WorkshopRequiredMixin, TemplateView):
         aviso ve siempre la página para poder cambiarlo.
         """
         notice = self._notice()
-        if (notice is None or not notice.is_shown) and (
-            not self._can_edit_notice()
+        if not self._can_edit_notice() and (
+            notice is None
+            or not notice.is_shown
+            or self._already_read(notice)
         ):
             return redirect("panel:operator_form")
         return super().get(request, *args, **kwargs)
+
+    def _already_read(self, notice):
+        """
+        Whether the worker already accepted this notice version.
+
+        ---
+
+        H30 (S137), Miguel Ángel: el aviso sale una sola vez; aceptado,
+        ya no sale hasta que cambie el texto.
+        """
+        from work_order_processor.models import WorkshopNoticeRead
+
+        return WorkshopNoticeRead.objects.filter(
+            notice=notice,
+            company_user=self.request.user.company_user,
+            version__gte=notice.version,
+        ).exists()
 
     def post(self, request, *args, **kwargs):
         """
@@ -94,14 +113,30 @@ class OperatorDashboardView(WorkshopRequiredMixin, TemplateView):
         Guarda el aviso (administrador y jefe de taller).
         """
         from work_order_processor.models import WorkshopNotice
+        from work_order_processor.models import WorkshopNoticeRead
 
+        company_user = request.user.company_user
+        if request.POST.get("action") == "accept":
+            # H30 (S137): el operario aceptó el aviso; no le vuelve a
+            # salir hasta que cambie.
+            notice = self._notice()
+            if notice is not None:
+                WorkshopNoticeRead.objects.update_or_create(
+                    notice=notice,
+                    company_user=company_user,
+                    defaults={"version": notice.version},
+                )
+            return redirect("panel:operator_form")
         if not self._can_edit_notice():
             return redirect("panel:operator_dashboard")
-        company_user = request.user.company_user
         notice, _created = WorkshopNotice.objects.get_or_create(
             company=company_user.company,
         )
-        notice.text = request.POST.get("text", "").strip()
+        new_text = request.POST.get("text", "").strip()
+        if not _created and new_text != notice.text:
+            # Texto nuevo: vuelve a salir a todos los operarios.
+            notice.version += 1
+        notice.text = new_text
         notice.is_active = request.POST.get("is_active") == "1"
         notice.updated_by = company_user
         notice.save()

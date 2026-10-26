@@ -39,8 +39,9 @@
         <div class="card-body px-4 py-3">
             <p class="text-muted text-sm mb-2">
                 Lo leen al entrar en <strong>Nuevo parte</strong>, en una ventana con
-                <strong>Aceptar</strong>; al aceptar se abre el formulario. Sin texto o sin
-                marcar <em>Mostrar</em>, van directos al formulario.
+                <strong>Aceptar</strong> (que se puede pulsar a los 5 segundos); al aceptar
+                se abre el formulario y ya no les vuelve a salir hasta que cambies el texto.
+                Sin texto o sin marcar <em>Mostrar</em>, van directos al formulario.
             </p>
             <form method="post">
                 {% csrf_token %}
@@ -89,7 +90,17 @@
                 {% if can_edit_notice %}
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
                 {% endif %}
+                {% if can_edit_notice %}
                 <a href="{% url 'panel:operator_form' %}" class="btn btn-success px-4">Aceptar</a>
+                {% else %}
+                <form method="post" class="mb-0">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="accept">
+                    <button type="submit" class="btn btn-success px-4" id="notice-accept" disabled>
+                        Aceptar (<span id="notice-countdown">5</span>)
+                    </button>
+                </form>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -102,8 +113,23 @@
 <script>
 (function () {
     // El operario ve el aviso nada más entrar; Aceptar abre el formulario.
+    // H30 (S137): Aceptar se activa a los 5 segundos, para que lo lean.
     var el = document.getElementById("notice-modal");
     if (el && window.bootstrap) { new bootstrap.Modal(el).show(); }
+    var button = document.getElementById("notice-accept");
+    var counter = document.getElementById("notice-countdown");
+    var left = 5;
+    var timer = setInterval(function () {
+        left -= 1;
+        if (counter) { counter.textContent = left; }
+        if (left <= 0) {
+            clearInterval(timer);
+            if (button) {
+                button.disabled = false;
+                button.textContent = "Aceptar";
+            }
+        }
+    }, 1000);
 }());
 </script>
 {% endif %}
