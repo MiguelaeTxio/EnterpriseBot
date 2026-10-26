@@ -16,13 +16,24 @@ con la fecha del parte. Se rehace al guardar el bloque o el parte
 (señales de `fleet/signals.py`) y se borra con el bloque. Un bloque sin
 máquina, sin fecha o sin ninguna lectura mayor que 0 no da lectura (los
 ceros son la línea base de la primera reparación).
+
+S137, mismo día: el parte digital rellena solo los contadores con los
+valores del catálogo importado (`MachineAsset.mileage` en el odómetro y
+`MachineAsset.hours` en los dos horómetros, `AssetDetailView`) y el
+mecánico casi nunca los cambia: A36 lleva meses con 748.899 km y
+136.395 h. Un valor igual al que trae el formulario no lo ha tecleado
+nadie y no cuenta como lectura.
 """
 from fleet.models import MachineMeterReading
 
+# (campo del bloque, campo de la lectura, campo del catálogo con el
+# que el formulario rellena la casilla).
+# ---
+# (block field, reading field, catalogue field prefilled by the form).
 _FIELDS = (
-    ("odometer_reading", "km"),
-    ("engine_hours_reading", "hours"),
-    ("crane_hours_reading", "crane_hours"),
+    ("odometer_reading", "km", "mileage"),
+    ("engine_hours_reading", "hours", "hours"),
+    ("crane_hours_reading", "crane_hours", "hours"),
 )
 
 
@@ -33,13 +44,20 @@ def line_values(line):
     ---
 
     Lecturas del bloque mayores que 0, como enteros (redondeadas), con
-    el nombre del campo de `MachineMeterReading`.
+    el nombre del campo de `MachineMeterReading`. Se descarta la que
+    coincide con el valor del catálogo con que el formulario rellena la
+    casilla: no la tecleó nadie.
     """
+    asset = line.machine_asset
     values = {}
-    for line_field, reading_field in _FIELDS:
+    for line_field, reading_field, catalogue_field in _FIELDS:
         raw = getattr(line, line_field)
-        if raw is not None and raw > 0:
-            values[reading_field] = int(round(raw))
+        if raw is None or raw <= 0:
+            continue
+        prefilled = getattr(asset, catalogue_field) if asset else None
+        if prefilled is not None and raw == prefilled:
+            continue
+        values[reading_field] = int(round(raw))
     return values
 
 

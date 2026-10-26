@@ -6,7 +6,9 @@ H30 (S137). Creates the meter readings of the work orders already saved.
 
 H30 (S137). Crea las lecturas de km y horas de los partes digitales ya
 guardados (los nuevos las crean solos, ver `fleet/signals.py`). Se puede
-repetir: cada bloque tiene una sola lectura y solo se toca si cambia.
+repetir: cada bloque tiene una sola lectura y solo se toca si cambia; si
+ya no vale (p. ej. era el valor del catálogo que trae el formulario), se
+borra.
 """
 from datetime import datetime
 from datetime import timedelta
@@ -75,7 +77,7 @@ class Command(BaseCommand):
             | Q(engine_hours_reading__isnull=False)
             | Q(crane_hours_reading__isnull=False)
             | Q(meter_reading__isnull=False),
-        ).select_related("entry").order_by("id")
+        ).select_related("entry", "machine_asset").order_by("id")
         with open(options["log_file"], "a", encoding="utf-8") as handle:
             self._handle = handle
             self._start = datetime.now()

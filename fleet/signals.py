@@ -43,5 +43,5 @@ def work_order_entry_saved(sender, instance, **kwargs):
     """
     if kwargs.get("created"):
         return
-    for line in instance.lines.select_related("entry"):
+    for line in instance.lines.select_related("entry", "machine_asset"):
         sync_line_reading(line)
