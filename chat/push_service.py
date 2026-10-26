@@ -135,7 +135,13 @@ def payload(message):
     room = message.room
     # Notifications are plain text: WhatsApp marks out (*x* -> x).
     # Las notificaciones son texto plano: sin marcas de WhatsApp.
-    text = re.sub(r"(```|[*_~`])", "", (message.body or "")).strip()
+    # S138: the Maps links stay in the room, not in the notification.
+    # Los enlaces de Maps se quedan en la sala, no en la notificación.
+    body = "\n".join(
+        line for line in (message.body or "").splitlines()
+        if not line.startswith("📍")
+    )
+    text = re.sub(r"(```|[*_~`])", "", body).strip()
     if message.transcript:
         text = ("%s 🎤 %s" % (text, message.transcript)).strip()
     if not text and message.attachment_name:

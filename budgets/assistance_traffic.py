@@ -1335,6 +1335,23 @@ def _last_positions(drivers, now):
     return positions
 
 
+def _service_point(work_order):
+    """
+    Stored pickup coordinates of an order, or None.
+
+    ---
+
+    Coordenadas guardadas de la recogida (S138), o None: entonces el
+    mapa la sitúa por la dirección, como antes.
+    """
+    from budgets.service_geocode import coordinates
+
+    coords = coordinates(work_order, "pickup")
+    if coords is None:
+        return None
+    return {"lat": coords[0], "lng": coords[1]}
+
+
 def build_map(company):
     """
     Data of the traffic map.
@@ -1416,6 +1433,7 @@ def build_map(company):
         services.append({
             "label": unit.albaran_number,
             "address": unit.work_order.pickup_location,
+            "point": _service_point(unit.work_order),
             "colour": unit_colour(unit, today),
             "status": unit.get_status_display(),
             "driver": (
@@ -1430,6 +1448,7 @@ def build_map(company):
         services.append({
             "label": work_order.work_order_number,
             "address": work_order.pickup_location,
+            "point": _service_point(work_order),
             "colour": (
                 COLOUR_BLUE if work_order.service_date > today
                 else COLOUR_RED

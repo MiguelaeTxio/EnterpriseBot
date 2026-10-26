@@ -589,7 +589,7 @@ if (!(window.google && window.google.maps && window.google.maps.importLibrary)) 
         noPos.title = noPos.textContent;
 
         for (const service of data.services) {
-            const point = await geocode(service.address);
+            const point = service.point || await geocode(service.address);
             if (!point) {
                 continue;
             }

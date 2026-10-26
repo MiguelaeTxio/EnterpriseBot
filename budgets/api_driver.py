@@ -43,6 +43,7 @@ from django.views.decorators.csrf import csrf_exempt
 from budgets.assistance_resources import assistance_drivers
 from budgets.assistance_traffic import OPEN_ORDER_STATUSES, driver_is_out
 from budgets import service_sheet as sheet
+from budgets.service_geocode import maps_url
 from budgets.models import (
     DriverDeviceToken,
     DriverPosition,
@@ -258,6 +259,11 @@ def _unit_payload(unit):
             else work_order.pickup_location
         ),
         "destination": work_order.destination,
+        # S138: "Cómo llegar" buttons (Google Maps, by coordinates when
+        # the order has them).
+        # Botones "Cómo llegar" (Google Maps, por coordenadas si las hay).
+        "pickup_maps_url": maps_url(work_order, "pickup"),
+        "destination_maps_url": maps_url(work_order, "destination"),
         "client_name": work_order.client_name,
         "client_phone": work_order.client_phone,
         "vehicle": " ".join(part for part in (

@@ -15,12 +15,24 @@ from django.apps import AppConfig
 class BudgetsConfig(AppConfig):
     """
     AppConfig for the budgets application.
-    Registers the app under the 'budgets' label with BigAutoField as default PK.
+    Registers the app under the 'budgets' label with BigAutoField as
+    default PK.
     ---
     AppConfig para la aplicación budgets.
-    Registra la app bajo la etiqueta 'budgets' con BigAutoField como PK por defecto.
+    Registra la app bajo la etiqueta 'budgets' con BigAutoField como PK
+    por defecto.
     """
 
     default_auto_field = "django.db.models.BigAutoField"
     name = "budgets"
     verbose_name = "Presupuestos ASISTENCIA"
+
+    def ready(self):
+        """
+        Connect the signals of the app.
+
+        ---
+
+        Conecta las señales de la app (H37, S138: coordenadas).
+        """
+        from budgets import signals  # noqa: F401

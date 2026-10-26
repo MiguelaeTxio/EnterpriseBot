@@ -707,7 +707,27 @@ def service_text(work_order):
         ("Observaciones", work_order.company_observations),
     )
     lines += ["%s: %s" % (label, value) for label, value in rows if value]
+    lines += _maps_lines(work_order)
     return "\n".join(lines)
+
+
+def _maps_lines(work_order):
+    """
+    Google Maps links of the pickup and the destination.
+
+    ---
+
+    Enlaces de Google Maps de la recogida y del destino (H37, S138:
+    "Cómo llegar" también desde la sala).
+    """
+    from budgets.service_geocode import maps_url
+
+    lines = []
+    for label, prefix in (("Recogida", "pickup"), ("Destino", "destination")):
+        url = maps_url(work_order, prefix)
+        if url:
+            lines.append("📍 %s en Maps: %s" % (label, url))
+    return lines
 
 
 def post_service(work_order_pk):
@@ -727,6 +747,17 @@ def post_service(work_order_pk):
     ).filter(pk=work_order_pk).first()
     if work_order is None:
         return None
+    try:
+        # H37 (S138): the coordinates first, for the Maps links.
+        # Primero las coordenadas, para los enlaces de Maps.
+        from budgets.service_geocode import ensure_points
+
+        ensure_points(work_order)
+    except Exception:  # noqa: BLE001 -- sin coordenadas, por texto
+        logger.exception(
+            "# [CHAT ROOM] Sin coordenadas para %s.",
+            work_order.work_order_number,
+        )
     room = assistance_room(work_order.company)
     attachment = None
     body = service_text(work_order)
@@ -743,9 +774,11 @@ def post_service(work_order_pk):
             "name": name,
             "type": work_order.source_document_type,
         }
-        body = "Nuevo servicio %s (documento de TIREA)" % (
-            work_order.work_order_number,
-        )
+        body = "\n".join([
+            "Nuevo servicio %s (documento de TIREA)" % (
+                work_order.work_order_number,
+            ),
+        ] + _maps_lines(work_order))
     try:
         with transaction.atomic():
             return post_message(

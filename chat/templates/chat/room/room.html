@@ -200,7 +200,11 @@ WhatsApp (#asistencia).
         text.split(/(https?:\/\/\S+)/).forEach(function (part, index) {
             if (index % 2 === 1) {
                 var link = document.createElement("a");
-                link.href = part; link.textContent = part;
+                link.href = part;
+                // S138: Maps links read as "Cómo llegar".
+                // Los enlaces de Maps se leen como "Cómo llegar".
+                link.textContent = part.indexOf("https://www.google.com/maps/") === 0
+                    ? "Cómo llegar ↗" : part;
                 link.target = "_blank"; link.rel = "noopener";
                 parent.appendChild(link);
             } else {

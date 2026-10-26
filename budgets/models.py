@@ -2076,6 +2076,35 @@ class WorkOrderAssistance(models.Model):
         verbose_name="Destino",
         help_text="Punto de destino del servicio de asistencia.",
     )
+    # H37 (S138): coordinates of both points, geocoded once from the
+    # full address (budgets.service_geocode); *_geocoded is the text
+    # they came from, so a changed address is geocoded again.
+    # Coordenadas de los dos puntos, geocodificadas una vez desde la
+    # dirección completa; *_geocoded es el texto del que salieron.
+    pickup_latitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True,
+        verbose_name="Latitud de la recogida",
+    )
+    pickup_longitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True,
+        verbose_name="Longitud de la recogida",
+    )
+    pickup_geocoded = models.CharField(
+        max_length=700, blank=True, default="",
+        verbose_name="Dirección geocodificada de la recogida",
+    )
+    destination_latitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True,
+        verbose_name="Latitud del destino",
+    )
+    destination_longitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True,
+        verbose_name="Longitud del destino",
+    )
+    destination_geocoded = models.CharField(
+        max_length=700, blank=True, default="",
+        verbose_name="Dirección geocodificada del destino",
+    )
 
     # ── Service phase data (JSON) ───────────────────────────────────────────
     # Each phase mirrors one billing column of the physical albarán.

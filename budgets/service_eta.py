@@ -386,7 +386,11 @@ def plan(unit, start_at, start_point, router, times):
         raise EtaError("La orden %s no tiene dirección de recogida." % (
             work_order.work_order_number,
         ))
-    pickup_point = address_point(pickup)
+    # S138: by its coordinates when the order has them.
+    # Por sus coordenadas si la orden las tiene.
+    from budgets.service_geocode import eta_point
+
+    pickup_point = eta_point(work_order, "pickup")
     delivery = delivery_address(work_order)
     job = order_job(work_order)
     meters = 0
@@ -410,7 +414,7 @@ def plan(unit, start_at, start_point, router, times):
         end_point = pickup_point
     else:
         first = times.lift_minutes if job == JOB_LIFT else times.load_minutes
-        delivery_point = address_point(delivery)
+        delivery_point = eta_point(work_order, "destination")
         seconds, transport = router.leg(pickup_point, delivery_point)
         meters += transport
         finish_at = pickup_at + datetime.timedelta(
@@ -579,10 +583,17 @@ def _free_at(company, driver, now):
     last = pending[-1]
     if last.eta_finish_at is None or not last.eta_end_place:
         return None, None, False
-    return (
-        max(last.eta_finish_at, now), address_point(last.eta_end_place),
-        False,
-    )
+    # S138: the stored coordinates of the place where it ends.
+    # Las coordenadas guardadas del sitio donde termina.
+    from budgets.service_geocode import eta_point
+
+    end_point = address_point(last.eta_end_place)
+    for prefix in ("destination", "pickup"):
+        point = eta_point(last.work_order, prefix)
+        if point["label"][:255] == last.eta_end_place:
+            end_point = point
+            break
+    return max(last.eta_finish_at, now), end_point, False
 
 
 def arrivals(company, crews, pickup, router=None, now=None):
