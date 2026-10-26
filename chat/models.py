@@ -139,11 +139,14 @@ class BreakdownTicket(models.Model):
     TIPO_TAREA_MEJORA = "MEJORA"
     TIPO_TAREA_MANTENIMIENTO = "MANTENIMIENTO"
     TIPO_TAREA_FABRICACION = "FABRICACION"
+    # H30 (S137): revisión (cambio de aceite y filtros), tipo propio.
+    TIPO_TAREA_REVISION = "REVISION"
     TIPO_TAREA_CHOICES = [
         (TIPO_TAREA_AVERIA,        "Avería"),
         (TIPO_TAREA_MEJORA,        "Mejora"),
         (TIPO_TAREA_MANTENIMIENTO, "Mantenimiento"),
         (TIPO_TAREA_FABRICACION,   "Fabricación"),
+        (TIPO_TAREA_REVISION,      "Revisión / cambio de aceite"),
     ]
     tipo_tarea = models.CharField(
         max_length=15,

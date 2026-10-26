@@ -201,6 +201,12 @@ class TipoTarea(models.TextChoices):
     MEJORA        = "MEJORA",        _("Mejora")
     MANTENIMIENTO = "MANTENIMIENTO", _("Mantenimiento")
     FABRICACION   = "FABRICACION",   _("Fabricación")
+    # H30 (S137), Miguel Ángel: la revisión (cambio de aceite y filtros)
+    # tiene que estar clara en la clasificación, no perdida dentro de
+    # "mantenimiento general". De ella salen los avisos de revisión.
+    # ---
+    # H30 (S137): services (oil and filter change) get their own type.
+    REVISION      = "REVISION",      _("Revisión / cambio de aceite")
 
 
 class WorkOrder(models.Model):

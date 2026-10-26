@@ -219,6 +219,7 @@ class Command(BaseCommand):
         count_errors     = 0
         by_tipo = {
             "AVERIA": 0, "MEJORA": 0, "MANTENIMIENTO": 0, "FABRICACION": 0,
+            "REVISION": 0,
         }
 
         self.stdout.write(
@@ -365,7 +366,8 @@ class Command(BaseCommand):
             f"#   AVERIA:               {by_tipo['AVERIA']}\n"
             f"#   MEJORA:               {by_tipo['MEJORA']}\n"
             f"#   MANTENIMIENTO:        {by_tipo['MANTENIMIENTO']}\n"
-            f"#   FABRICACION:          {by_tipo['FABRICACION']}"
+            f"#   FABRICACION:          {by_tipo['FABRICACION']}\n"
+            f"#   REVISION:             {by_tipo['REVISION']}"
         )
 
 

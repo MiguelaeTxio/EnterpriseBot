@@ -3850,7 +3850,14 @@ class WorkOrderDetailView(CompanyUserRequiredMixin, View):
         Also computes the value to preselect in the manual-correction
         <select> (H07 point 3).
         """
-        if line.tipo_tarea == "AVERIA" and line.fault_category:
+        if line.tipo_tarea == "REVISION":
+            # H30 (S137): la revisión es un tipo propio, no un literal.
+            line.current_family_value = "REVISION"
+            line.current_family_display = line.get_tipo_tarea_display()
+            if line.task_category_free:
+                line.current_family_display += (
+                    " (%s)" % line.task_category_free)
+        elif line.tipo_tarea == "AVERIA" and line.fault_category:
             line.current_family_value = line.fault_category
             line.current_family_display = line.get_fault_category_display()
         elif (
@@ -3901,7 +3908,7 @@ class WorkOrderDetailView(CompanyUserRequiredMixin, View):
         # orden -- mismo criterio de agrupación que el prompt de Gemini.
         family_choices = list(FaultCategory.choices) + [
             (f"SPECIAL:{lit}", lit) for lit in self._SPECIAL_FAMILY_LITERALS
-        ]
+        ] + [("REVISION", "Revisión / cambio de aceite")]
 
         # back_url -- preservar los filtros activos de la lista de origen
         # (gap señalado por Miguel Ángel 2026-07-21). Fallback a la
@@ -3961,7 +3968,26 @@ class WorkOrderDetailView(CompanyUserRequiredMixin, View):
             entry__work_order=work_order,
         )
 
-        if new_family.startswith("SPECIAL:"):
+        if new_family == "REVISION":
+            # H30 (S137): revisión (cambio de aceite y filtros).
+            if line.tipo_tarea != "REVISION":
+                line.task_category_free = ""
+            line.tipo_tarea = "REVISION"
+            line.fault_category = ""
+            line.fault_subcategory = ""
+            line.save(
+                update_fields=[
+                    "tipo_tarea",
+                    "task_category_free",
+                    "fault_category",
+                    "fault_subcategory",
+                ]
+            )
+            django_messages.success(
+                request,
+                "Familia corregida a «Revisión / cambio de aceite».",
+            )
+        elif new_family.startswith("SPECIAL:"):
             literal = new_family.removeprefix("SPECIAL:")
             if literal not in self._SPECIAL_FAMILY_LITERALS:
                 django_messages.error(

@@ -2542,6 +2542,10 @@ TIPO_TAREA — elige exactamente uno:
   MEJORA        — mejora o modificación que no responde a una avería
   MANTENIMIENTO — mantenimiento preventivo o periódico
   FABRICACION   — fabricación de una pieza, útil o estructura nueva
+  REVISION      — revisión periódica de la máquina: cambio de aceite
+                  y/o de filtros (aceite, aire, gasoil, hidráulico), "hacer
+                  la revisión", "revisión de las 800/1200 horas", "revision"
+                  aunque venga sin tilde
 
 SI tipo_tarea=AVERIA: clasifica fault_category y fault_subcategory con la
 taxonomía siguiente, y deja task_category_free en cadena vacía ("").
@@ -2573,11 +2577,13 @@ TAXONOMÍA — Subcategorías (fault_subcategory):
   BC_BODYWORK | BC_CHASSIS
   OT_OTHER
 
-SI tipo_tarea es MEJORA, MANTENIMIENTO o FABRICACION: deja fault_category y
+SI tipo_tarea es MEJORA, MANTENIMIENTO, FABRICACION o REVISION: deja \
+fault_category y
 fault_subcategory en cadena vacía (""), y rellena task_category_free con una
 categorización breve en español, sin taxonomía rígida (pocas palabras, p.ej.
 "mejora hidráulica", "mantenimiento preventivo motor", "fabricación
-estructura metálica").
+estructura metálica"). Para REVISION, di qué se cambió (p.ej. "cambio de
+aceite y filtros", "cambio de filtro de aire").
 
 CASOS ESPECIALES DE task_category_free — cuando la descripción encaje en uno
 de estos cinco casos, usa tipo_tarea=MANTENIMIENTO y task_category_free debe
@@ -2619,7 +2625,13 @@ REGLAS OBLIGATORIAS:
    sin ninguna mención de fallo, rotura o pieza dañada), usa MANTENIMIENTO
    por defecto, no AVERIA. Reserva AVERIA para cuando el texto mencione
    explícitamente un problema, avería, rotura o pieza a reparar/sustituir.
-5. Menciones de "bloque" o "bloque motor" junto a una acción de avería
+5. REVISION manda sobre MANTENIMIENTO: si el texto dice que se cambió el
+   aceite o los filtros, o que se hizo la revisión de la máquina, es
+   REVISION aunque además se limpie o se engrase. NO es REVISION
+   "revisar" una avería concreta ("revisar fuga", "revisar frenos que no
+   frenan") -- eso es AVERIA --, ni la revisión previa a la ITV -- eso es
+   el literal "ITV".
+6. Menciones de "bloque" o "bloque motor" junto a una acción de avería
    (sustituir, reparar, fuga, avería del bloque) deben clasificarse como
    AVERIA / ENGINE_TRANSMISSION / ET_ENGINE, no como mantenimiento genérico.
    Un simple "desmontar/montar/intercambiar bloque" sin mención de fallo
@@ -2652,7 +2664,9 @@ Notas de reparación: {repair_notes}
 # libre de suposiciones sobre el orden de carga de apps sigue el mismo
 # patrón ya usado en chat/ticket_resolution.py (imports locales dentro de
 # funciones).
-_VALID_TIPO_TAREA = {"AVERIA", "MEJORA", "MANTENIMIENTO", "FABRICACION"}
+_VALID_TIPO_TAREA = {
+    "AVERIA", "MEJORA", "MANTENIMIENTO", "FABRICACION", "REVISION",
+}
 
 
 def classify_task(
@@ -2754,7 +2768,7 @@ def classify_task(
                 "fault_subcategory": subcat, "task_category_free": "",
             }
 
-        # MEJORA / MANTENIMIENTO / FABRICACION.
+        # MEJORA / MANTENIMIENTO / FABRICACION / REVISION.
         logger.info(
             "# [classify_task] Clasificación completada: tipo_tarea=%s "
             "task_category_free=%r.",
