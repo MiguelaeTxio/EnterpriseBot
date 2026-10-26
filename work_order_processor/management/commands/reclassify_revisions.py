@@ -99,6 +99,12 @@ class Command(BaseCommand):
             "--dry-run", action="store_true",
             help="Solo lista, sin guardar nada.",
         )
+        parser.add_argument(
+            "--ids", default="",
+            help=("Bloques ya confirmados a mano, separados por comas: "
+                  "se marcan todos como REVISION, sin aplicar la regla "
+                  "del texto."),
+        )
 
     def _write(self, line):
         print(line, flush=True)
@@ -171,6 +177,9 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         dry_run = options["dry_run"]
+        if options["ids"]:
+            self._handle_ids(options, dry_run)
+            return
         wanted = (Q(fault_description__iregex=SERVICE_PATTERN) |
                   Q(repair_notes__iregex=SERVICE_PATTERN))
         candidates = WorkOrderEntryLine.objects.filter(
@@ -219,4 +228,48 @@ class Command(BaseCommand):
                     " (DRY-RUN)" if dry_run else "",
                     len(counters["revision"]), len(counters["fault"]),
                     counters["out"]))
+            self._write("Fin.")
+
+    def _handle_ids(self, options, dry_run):
+        """
+        Mark as REVISION the blocks confirmed by hand.
+
+        ---
+
+        Marca como REVISION los bloques que Miguel Ángel o Antonio
+        confirmaron a mano en "Revisiones_en_partes_para_revisar.xlsx"
+        (S137). Avisa de los que no existen o ya eran REVISION.
+        """
+        ids = sorted({int(part) for part in options["ids"].split(",")
+                      if part.strip()})
+        lines = {line.pk: line for line in WorkOrderEntryLine.objects.filter(
+            pk__in=ids).select_related(
+            "entry", "machine_asset", "breakdown_ticket")}
+        with open(options["log_file"], "a", encoding="utf-8") as handle:
+            self._handle = handle
+            self._start = datetime.now()
+            self._log("Inicio%s: %d bloques confirmados a mano." % (
+                " (DRY-RUN, no se guarda nada)" if dry_run else "",
+                len(ids)))
+            done, rows = 0, []
+            for pk in ids:
+                line = lines.get(pk)
+                if line is None:
+                    self._log("bloque %d: no existe." % pk)
+                    continue
+                if line.tipo_tarea == REVISION:
+                    self._log("bloque %d: ya era REVISION." % pk)
+                    continue
+                text = _text(line)
+                if not dry_run:
+                    self._save(line, _what_changed(text))
+                self._log("bloque %d: %s -> REVISION (%s)%s" % (
+                    pk, line.tipo_tarea or "sin clasificar",
+                    _what_changed(text), "" if dry_run else ", guardado"))
+                rows.append((line, text))
+                done += 1
+            self._list("Bloques marcados como revisión", rows)
+            self._write("")
+            self._write("Resumen%s: %d de %d bloques pasan a revisión." % (
+                " (DRY-RUN)" if dry_run else "", done, len(ids)))
             self._write("Fin.")

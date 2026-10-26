@@ -9961,7 +9961,13 @@ no tenerlas claras en todas las máquinas no se avanza a los avisos:
       "Revisiones_en_partes_para_revisar.xlsx" lleva la propuesta del
       modelo (49 Sí, 59 No, 13 dudosos) y la confirman Miguel Ángel o
       Antonio. Solo después se marcan como REVISION los confirmados y
-      se cargan como `MachineServiceRecord`.
+      se cargan como `MachineServiceRecord`. Confirmada en S137
+      (devuelta por Miguel Ángel): 53 bloques son revisión (se marcan
+      con `reclassify_revisions --ids`); quedan 9 dudosos sin decidir
+      (3275 A39, 294 A54, 3325 A62, 3861 A68, 3179 B33, 3793
+      EMPRESA_TALLER_MECANICO, 2677 Z130, 2641 Z26, 3158 Z45). Falta
+      cargar los `MachineServiceRecord`, cruzados con la hoja de José
+      Antonio Mora (horas y km de cada revisión).
    c. **Parte nuevo con revisión:** en crear y editar parte, casilla
       "revisión" que, marcada, pide qué filtros se cambiaron (aceite,
       aire, todos...; del albarán si lo hay, y si no, lo que se cambia
@@ -10002,6 +10008,18 @@ no tenerlas claras en todas las máquinas no se avanza a los avisos:
      `ApprovalRequests` en `approved`.
    - Puntos 7, 8 y 9 de la hoja de ruta de S128, con los criterios de
      cierre que allí constan (arrastrado 1.ª sesión sin avanzar).
+   - **Firma certificada de circulares en Docuten (APARCADO en S137
+     hasta que Alejandro dé permiso para crear plantillas).** Sin
+     permiso de Administrar > Plantillas PDF, el PDF con campos de
+     `panel/docuten_export.py` se subió como documento normal en
+     "Nuevo envío de firma" y Docuten pidió al firmante rellenar sus
+     datos. La API de Docuten se descarta por precio. Según el blog de
+     Docuten (Fast Templates), una plantilla solo se rellena sola con
+     nombre, NIF y móvil del firmante; el resto de campos los rellena
+     el firmante. Alternativa sin plantilla: PDF fijo sin campos ni
+     datos del trabajador en el texto, CSV sin metadatos (los datos del
+     firmante quedan en la hoja de evidencias de Docuten). **Cierre:**
+     un envío real a Miguel Ángel en el que solo lee y firma.
 
 Al terminar esta hoja, PCH de vuelta a H37 (Miguel Ángel en S134:
 *"luego volvemos con asistencia"*).
