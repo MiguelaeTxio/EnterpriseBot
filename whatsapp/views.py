@@ -324,6 +324,7 @@ class IncomingWhatsAppView(View):
             request.POST.get("MediaUrl0", "") if num_media else "",
             request.POST.get("MediaContentType0", "") if num_media else "",
             voice=_voice,
+            button_payload=request.POST.get("ButtonPayload", "").strip(),
         ):
             return HttpResponse(status=200)
         if _intake is not None and _service_doc:

@@ -1163,8 +1163,49 @@ def post_whatsapp_message(member_pk, body, media_url="", content_type="",
     return message
 
 
+def answers_elsewhere(company, member, phone, button_payload="",
+                      has_media=False):
+    """
+    Whether a WhatsApp message answers another platform notice.
+
+    ---
+
+    Si un mensaje de WhatsApp contesta a otro aviso de la plataforma y
+    no a la sala (S138, Miguel Ángel: los avisos de otras cosas van
+    fuera de la sala aunque se esté dentro por WhatsApp). Entonces
+    sigue su camino de siempre:
+
+    - un botón de cualquier plantilla (repostaje, circular...);
+    - una pregunta de repostaje que espera el número escrito;
+    - una conversación de avería en curso;
+    - una foto o PDF de un documento que se le ha pedido.
+    """
+    if button_payload:
+        return True
+    from fleet.models import RefuelQuestion
+    from ivr_config.models import Contact
+
+    if RefuelQuestion.objects.filter(
+        person=member.person, status=RefuelQuestion.STATUS_AWAITING_VALUE,
+    ).exists():
+        return True
+    contact = Contact.objects.filter(
+        company=company, phone_number=phone,
+    ).only("routing_state").first()
+    if contact is not None and (
+        contact.routing_state != Contact.ROUTING_STATE_NONE
+    ):
+        return True
+    if has_media:
+        from document_explorer.worker_request_service import open_requests
+
+        if open_requests(member.person):
+            return True
+    return False
+
+
 def route_whatsapp(company, from_number, body, media_url="",
-                   content_type="", voice=None):
+                   content_type="", voice=None, button_payload=""):
     """
     A member inside the room writes by WhatsApp: to the room.
 
@@ -1178,6 +1219,15 @@ def route_whatsapp(company, from_number, body, media_url="",
     """
     member = member_for_phone(company, from_number)
     if member is None or not member.whatsapp_inside:
+        return False
+    if answers_elsewhere(
+        company, member, from_number, button_payload,
+        has_media=bool(media_url),
+    ):
+        logger.info(
+            "# [CHAT ROOM] Miembro %s contesta a otro aviso: fuera de la "
+            "sala.", member.pk,
+        )
         return False
     if voice:
         # S138: a voice note, already transcribed (body is its text).
