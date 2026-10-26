@@ -53,6 +53,14 @@ class Command(BaseCommand):
             ),
         )
         parser.add_argument(
+            "--recheck", action="store_true",
+            help=(
+                "Rehace la serie del contador de todos los centros de "
+                "gasto con la regla vigente (S137), sin borrar lo "
+                "confirmado o corregido por los chóferes."
+            ),
+        )
+        parser.add_argument(
             "--log-file", required=True,
             help="Ruta del log propio (pantalla y archivo a la vez).",
         )
@@ -117,7 +125,8 @@ class Command(BaseCommand):
                       % (start, end))
             try:
                 run_sync(start, end, self._log, self._heartbeat,
-                         rebuild=options["rebuild"])
+                         rebuild=options["rebuild"],
+                         recheck=options["recheck"])
             except GasoGesError as exc:
                 self._log("ERROR: %s" % exc)
                 raise CommandError(str(exc))

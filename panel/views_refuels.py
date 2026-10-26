@@ -609,8 +609,8 @@ class RefuelsVehicleUnitView(CompanyUserRequiredMixin, View):
         counters = build_readings(lambda _line: None)
         return JsonResponse({
             "ok": True,
-            "message": "%d vehículo(s) en %s. Lecturas nuevas: %d; "
-                       "dudosas: %d." % (
+            "message": "%d vehículo(s) en %s. Series rehechas: %d "
+                       "lecturas y %d dudosas." % (
                            changed,
                            "kilómetros" if unit == GasoGesVehicle.UNIT_KM
                            else "horas",

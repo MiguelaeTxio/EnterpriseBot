@@ -14,13 +14,13 @@ ruta S135 (con la ampliación de Miguel Ángel en la misma sesión):
    y guardados una sola vez.
 4. Unidad de cada vehículo (km u horas), deducida si es clara; si no,
    queda sin saber y la confirmará el chófer.
-5. Lecturas: solo de los suministros que pasan la comprobación; los
-   dudosos quedan marcados, sin lectura.
+5. Lecturas: solo de los suministros que forman la serie real del
+   contador de cada centro de gasto (S137, `best_series`); los dudosos
+   quedan marcados, sin lectura.
 
 Todas las funciones reciben `log` (una función que escribe una línea).
 """
 from datetime import datetime
-from datetime import time
 from datetime import timedelta
 from decimal import Decimal
 from decimal import InvalidOperation
@@ -31,11 +31,11 @@ from django.utils import timezone
 from document_explorer.models import PersonIdentity
 from fleet.gasoges_client import GasoGesClient
 from fleet.gasoges_client import GasoGesError
-from fleet.gasoges_rules import check_reading
+from fleet.gasoges_rules import best_series
 from fleet.gasoges_rules import deduce_unit
 from fleet.gasoges_rules import name_matches
 from fleet.gasoges_rules import normalize
-from fleet.gasoges_rules import typical_value
+from fleet.gasoges_rules import series_reason
 from fleet.models import GasoGesSupply
 from fleet.models import GasoGesUser
 from fleet.models import GasoGesVehicle
@@ -319,89 +319,144 @@ def deduce_units(log):
     return counters
 
 
-def _previous_reading(machine, field, day):
+DRIVER_NOTES = ("confirmado por el chófer", "corregido por el chófer")
+SERIES_NOTE = "encaja con el resto de lecturas del vehículo"
+
+
+def _field_of(unit):
     """
-    Last reading of a machine with that field, on or before a day.
+    Reading field of a vehicle unit ("km" or "hours").
 
     ---
 
-    Última lectura de la máquina con ese dato, ese día o antes.
+    Campo de la lectura según la unidad del vehículo.
     """
-    return MachineMeterReading.objects.filter(
-        machine=machine, reading_date__lte=day,
-        **{"%s__isnull" % field: False},
-    ).order_by("-reading_date", "-id").first()
+    return "km" if unit == GasoGesVehicle.UNIT_KM else "hours"
 
 
-def build_readings(log, heartbeat=None, vehicle=None):
+def recheck_series(machine, unit):
     """
-    Turn credible supplies into meter readings, in time order.
+    Recompute which supplies of a machine form its meter series.
 
     ---
 
-    Convierte en lecturas los suministros creíbles, por orden de fecha.
-    Vuelve a mirar los que estaban pendientes, sin centro de gasto o
-    sin unidad (pueden haberse resuelto); los dudosos no se tocan.
+    Rehace, para un centro de gasto y una unidad (km u horas), qué
+    repostajes forman la serie real de su contador (S137,
+    `best_series`): esos tienen lectura y el resto quedan dudosos, con
+    el motivo. Junta los repostajes de todos sus vehículos de GasoGes
+    con esa unidad (A56 reposta con dos). Los confirmados o corregidos
+    por el chófer conservan su lectura siempre, pero cuentan como uno
+    más al elegir la serie: un "sí, es correcto" a un dato malo no
+    vuelve dudosas las lecturas buenas. Solo se tocan las lecturas que
+    cambian. Devuelve (lecturas, dudosos) tras rehacerla.
+    """
+    field = _field_of(unit)
+    supplies = list(GasoGesSupply.objects.filter(
+        vehicle__machine=machine, vehicle__unit=unit,
+    ).select_related("reading").order_by("supplied_at", "id"))
+    points = [(s.supplied_at, s.meter_value) for s in supplies]
+    forced = {i for i, s in enumerate(supplies)
+              if s.status_note.startswith(DRIVER_NOTES)}
+    chain = best_series(points, unit)
+    readings = doubtful = 0
+    for index, supply in enumerate(supplies):
+        if index in forced:
+            readings += 1
+            continue
+        if index in chain:
+            readings += 1
+            reading = supply.reading
+            if (supply.status == GasoGesSupply.STATUS_READING
+                    and reading is not None
+                    and getattr(reading, field) == supply.meter_value):
+                continue
+            with transaction.atomic():
+                if reading is not None:
+                    reading.delete()
+                supply.reading = MachineMeterReading.objects.create(
+                    machine=machine,
+                    reading_date=timezone.localtime(
+                        supply.supplied_at).date(),
+                    source=MachineMeterReading.SOURCE_GASOGES,
+                    **{field: supply.meter_value},
+                )
+                supply.status = GasoGesSupply.STATUS_READING
+                supply.status_note = SERIES_NOTE
+                supply.save(update_fields=[
+                    "status", "status_note", "reading"])
+            continue
+        doubtful += 1
+        note = series_reason(points, index, chain, unit)[:255]
+        if (supply.status == GasoGesSupply.STATUS_ANOMALY
+                and supply.reading_id is None
+                and supply.status_note == note):
+            continue
+        with transaction.atomic():
+            if supply.reading is not None:
+                supply.reading.delete()
+            supply.reading = None
+            supply.status = GasoGesSupply.STATUS_ANOMALY
+            supply.status_note = note
+            supply.save(update_fields=["status", "status_note", "reading"])
+    return readings, doubtful
+
+
+def build_readings(log, heartbeat=None, vehicle=None, recheck_all=False):
+    """
+    Resolve pending supplies and recheck the affected meter series.
+
+    ---
+
+    Mira los repostajes pendientes, sin centro de gasto o sin unidad
+    (pueden haberse resuelto) y rehace la serie del contador de cada
+    centro de gasto afectado (`recheck_series`): un repostaje nuevo
+    puede hacer dudoso uno anterior o al revés. Con `recheck_all`, todas
+    las series (S137, para rehacerlas con la regla nueva sin borrar lo
+    confirmado por los chóferes).
     """
     pending = GasoGesSupply.objects.filter(status__in=[
         GasoGesSupply.STATUS_PENDING, GasoGesSupply.STATUS_NO_MACHINE,
         GasoGesSupply.STATUS_NO_UNIT,
-    ]).select_related("vehicle", "vehicle__machine").order_by(
-        "supplied_at", "id")
+    ]).select_related("vehicle", "vehicle__machine")
     if vehicle is not None:
         pending = pending.filter(vehicle=vehicle)
-    total = pending.count()
     counters = {"lecturas": 0, "dudosos": 0, "sin_centro": 0,
-                "sin_unidad": 0}
-    typicals = {}
-    for done, supply in enumerate(pending.iterator(), start=1):
-        vehicle = supply.vehicle
-        if vehicle.machine_id is None:
-            supply.status = GasoGesSupply.STATUS_NO_MACHINE
-            supply.status_note = ""
+                "sin_unidad": 0, "series": 0}
+    groups = set()
+    for supply in pending.iterator():
+        current = supply.vehicle
+        if current.machine_id is None:
+            status = GasoGesSupply.STATUS_NO_MACHINE
             counters["sin_centro"] += 1
-        elif vehicle.unit == GasoGesVehicle.UNIT_UNKNOWN:
-            supply.status = GasoGesSupply.STATUS_NO_UNIT
-            supply.status_note = ""
+        elif current.unit == GasoGesVehicle.UNIT_UNKNOWN:
+            status = GasoGesSupply.STATUS_NO_UNIT
             counters["sin_unidad"] += 1
         else:
-            field = "km" if vehicle.unit == GasoGesVehicle.UNIT_KM else (
-                "hours")
-            local = timezone.localtime(supply.supplied_at)
-            previous = _previous_reading(vehicle.machine, field,
-                                         local.date())
-            previous_value = getattr(previous, field) if previous else None
-            previous_when = (timezone.make_aware(datetime.combine(
-                previous.reading_date, time(12)))
-                if previous else None)
-            if vehicle.pk not in typicals:
-                typicals[vehicle.pk] = typical_value(
-                    vehicle.supplies.order_by("-supplied_at").values_list(
-                        "meter_value", flat=True)[:UNIT_WINDOW_SUPPLIES])
-            ok, reason = check_reading(
-                supply.meter_value, vehicle.unit, previous_value,
-                previous_when, supply.supplied_at,
-                typicals[vehicle.pk])
-            if ok:
-                with transaction.atomic():
-                    supply.reading = MachineMeterReading.objects.create(
-                        machine=vehicle.machine,
-                        reading_date=local.date(),
-                        source=MachineMeterReading.SOURCE_GASOGES,
-                        **{field: supply.meter_value},
-                    )
-                supply.status = GasoGesSupply.STATUS_READING
-                counters["lecturas"] += 1
-            else:
-                supply.status = GasoGesSupply.STATUS_ANOMALY
-                counters["dudosos"] += 1
-            supply.status_note = reason[:255]
-        supply.save(update_fields=["status", "status_note", "reading"])
+            groups.add((current.machine_id, current.unit))
+            continue
+        if supply.status != status or supply.status_note:
+            supply.status = status
+            supply.status_note = ""
+            supply.save(update_fields=["status", "status_note"])
+    known = GasoGesVehicle.objects.filter(machine__isnull=False).exclude(
+        unit=GasoGesVehicle.UNIT_UNKNOWN)
+    if recheck_all:
+        groups.update(known.values_list("machine_id", "unit"))
+    elif vehicle is not None and vehicle.machine_id and (
+            vehicle.unit != GasoGesVehicle.UNIT_UNKNOWN):
+        groups.add((vehicle.machine_id, vehicle.unit))
+    machines = MachineAsset.objects.in_bulk({m for m, _u in groups})
+    total = len(groups)
+    for done, (machine_id, unit) in enumerate(sorted(groups), start=1):
+        readings, doubtful = recheck_series(machines[machine_id], unit)
+        counters["lecturas"] += readings
+        counters["dudosos"] += doubtful
+        counters["series"] += 1
         if heartbeat:
             heartbeat(done, total, counters)
-    log("Lecturas: %(lecturas)d creadas, %(dudosos)d dudosas, "
-        "%(sin_centro)d sin centro de gasto, %(sin_unidad)d sin "
-        "unidad." % counters)
+    log("Lecturas: %(series)d series de contador rehechas, con "
+        "%(lecturas)d lecturas y %(dudosos)d dudosas; %(sin_centro)d "
+        "sin centro de gasto, %(sin_unidad)d sin unidad." % counters)
     return counters
 
 
@@ -460,8 +515,8 @@ def redo_vehicle(vehicle, log):
         supplies.update(status=GasoGesSupply.STATUS_PENDING,
                         status_note="", reading=None)
     counters = build_readings(lambda _line: None, vehicle=vehicle)
-    log("%s (GasoGes %s): %d lecturas borradas; %d creadas, %d "
-        "dudosas." % (
+    log("%s (GasoGes %s): %d lecturas borradas; serie rehecha con %d "
+        "lecturas y %d dudosas." % (
             vehicle.machine.code if vehicle.machine else "-",
             vehicle.gasoges_id, deleted, counters["lecturas"],
             counters["dudosos"]))
@@ -490,7 +545,8 @@ def reset_readings(log):
     return deleted
 
 
-def run_sync(start, end, log, heartbeat=None, rebuild=False):
+def run_sync(start, end, log, heartbeat=None, rebuild=False,
+             recheck=False):
     """
     Full sync: users, vehicles, supplies, units and readings.
 
@@ -508,5 +564,5 @@ def run_sync(start, end, log, heartbeat=None, rebuild=False):
     if rebuild:
         summary["rehacer"] = reset_readings(log)
     summary["unidades"] = deduce_units(log)
-    summary["lecturas"] = build_readings(log)
+    summary["lecturas"] = build_readings(log, recheck_all=recheck)
     return summary

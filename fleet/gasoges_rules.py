@@ -11,7 +11,8 @@ poder probarlas solas:
 - `name_words` / `name_matches`: cruce del nombre de un usuario de
   GasoGes (cortado a 30 caracteres) con el nombre de una ficha.
 - `deduce_unit`: si lo que el chófer teclea en KM son km u horas.
-- `check_reading`: si un KM tecleado vale como lectura o es dudoso.
+- `best_series` / `series_reason`: qué KM tecleados forman la serie
+  real del vehículo y, los que no, por qué son dudosos.
 
 Las reglas de anomalía de este módulo son las primeras y provisionales:
 Miguel Ángel (S135) definirá las suyas con la media de litros (los
@@ -40,12 +41,6 @@ MAX_HOURS_PER_DAY = 24
 # ---
 # Such a small number is never a real reading.
 MIN_CREDIBLE_VALUE = 10
-# La primera lectura de una máquina debe parecerse a lo que teclean
-# los chóferes en ese vehículo (mediana): S135, A44 con "33333".
-# ---
-# A first reading must be close to the vehicle's typical value.
-FIRST_READING_TOLERANCE = 0.25
-MIN_VALUES_FOR_TYPICAL = 3
 
 UNIT_UNKNOWN = "UNKNOWN"
 UNIT_KM = "KM"
@@ -172,50 +167,89 @@ def deduce_unit(has_odometer, has_engine_hours, points, code=""):
     return UNIT_UNKNOWN, "sube %.0f al día (puede ser km u horas)" % rate
 
 
-def typical_value(values):
+def _fits(earlier, later, limit):
     """
-    Median of the credible values a vehicle's drivers type, or None.
+    True if `later` can follow `earlier` in a real meter series.
 
     ---
 
-    Mediana de los valores creíbles que teclean los chóferes de un
-    vehículo, o None si hay pocos.
+    True si `later` puede ir detrás de `earlier` en un contador real:
+    no baja y no sube más de lo creíble por día (como mínimo un día).
     """
-    clean = [v for v in values if v and v >= MIN_CREDIBLE_VALUE]
-    if len(clean) < MIN_VALUES_FOR_TYPICAL:
-        return None
-    return median(clean)
+    (when_a, value_a), (when_b, value_b) = earlier, later
+    if value_b < value_a:
+        return False
+    days = max((when_b - when_a).total_seconds() / 86400, 1)
+    return (value_b - value_a) / days <= limit
 
 
-def check_reading(value, unit, previous_value, previous_when, when,
-                  typical=None):
+def best_series(points, unit):
     """
-    Decide if a typed value is a credible reading. Returns (ok, reason).
+    Indexes of the points forming the vehicle's real meter series.
+
+    `points` is a time-ordered list of (datetime, value). The series is
+    the longest chain that never goes down and never grows faster than
+    a vehicle can (1.500 km or 24 hours per day). Ties go to the chain
+    ending latest.
 
     ---
 
-    Decide si un valor tecleado vale como lectura. Dudoso si está vacío
-    o a 0, si es menor que la lectura anterior, o si sube más de lo
-    creíble por día (1.500 km o 24 horas). Sin lectura anterior, debe
-    parecerse (±25 %) al valor típico del vehículo, si se conoce.
-    Devuelve (vale, motivo).
+    Índices de los puntos que forman la serie real del contador del
+    vehículo (S137). Antes cada KM se comparaba con la última lectura
+    aceptada, y un solo dato malo aceptado (7245 GBM: 324.624 el 19/05,
+    o 250.000 redondo el 10/03) hacía dudosas todas las lecturas buenas
+    que venían detrás. Ahora manda la cadena más larga de valores que
+    nunca bajan ni suben más de lo creíble por día (1.500 km o 24
+    horas): la mayoría de repostajes bien tecleados deja fuera al dato
+    suelto, esté donde esté. A igualdad, gana la cadena que acaba más
+    tarde.
     """
-    if not value:
-        return False, "KM vacío o a 0"
-    if value < MIN_CREDIBLE_VALUE:
-        return False, "número demasiado pequeño (%s)" % value
-    if previous_value is None:
-        if typical and abs(value - typical) > (
-                typical * FIRST_READING_TOLERANCE):
-            return False, (
-                "primera lectura lejos de lo habitual en este vehículo "
-                "(%s)" % int(typical))
-        return True, "primera lectura"
-    if value < previous_value:
-        return False, "menor que la lectura anterior (%s)" % previous_value
-    days = max((when - previous_when).total_seconds() / 86400, 1)
     limit = MAX_KM_PER_DAY if unit == UNIT_KM else MAX_HOURS_PER_DAY
-    if (value - previous_value) / days > limit:
-        return False, "sube %s en %.0f días desde %s" % (
-            value - previous_value, days, previous_value)
-    return True, "coherente con la lectura anterior"
+    usable = [i for i, (_when, value) in enumerate(points)
+              if value and value >= MIN_CREDIBLE_VALUE]
+    score, back = {}, {}
+    for pos, i in enumerate(usable):
+        best, best_from = 0, None
+        for j in usable[:pos]:
+            if score[j] > best and _fits(points[j], points[i], limit):
+                best, best_from = score[j], j
+        score[i], back[i] = best + 1, best_from
+    if not score:
+        return set()
+    end = max(score, key=lambda i: (score[i], i))
+    chain = set()
+    while end is not None:
+        chain.add(end)
+        end = back[end]
+    return chain
+
+
+def series_reason(points, index, chain, unit):
+    """
+    Why a point outside the series is doubtful (Spanish, one line).
+
+    ---
+
+    Por qué un KM que no entra en la serie es dudoso, comparado con las
+    lecturas de la serie justo antes y justo después.
+    """
+    when, value = points[index]
+    if not value:
+        return "KM vacío o a 0"
+    if value < MIN_CREDIBLE_VALUE:
+        return "número demasiado pequeño (%s)" % value
+    limit = MAX_KM_PER_DAY if unit == UNIT_KM else MAX_HOURS_PER_DAY
+    before = [i for i in chain if i < index]
+    after = [i for i in chain if i > index]
+    prev_value = points[max(before)][1] if before else None
+    next_value = points[min(after)][1] if after else None
+    if prev_value is not None and value < prev_value:
+        return "menor que la lectura anterior (%s)" % prev_value
+    if next_value is not None and value > next_value:
+        return "mayor que la lectura siguiente (%s)" % next_value
+    if before and not _fits(points[max(before)], points[index], limit):
+        prev_when = points[max(before)][0]
+        days = max((when - prev_when).total_seconds() / 86400, 1)
+        return "sube %s en %.0f días desde %s" % (
+            value - prev_value, days, prev_value)
+    return "no encaja con el resto de lecturas del vehículo"

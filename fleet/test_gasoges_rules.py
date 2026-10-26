@@ -13,11 +13,11 @@ from datetime import datetime
 from fleet.gasoges_rules import UNIT_HOURS
 from fleet.gasoges_rules import UNIT_KM
 from fleet.gasoges_rules import UNIT_UNKNOWN
-from fleet.gasoges_rules import check_reading
+from fleet.gasoges_rules import best_series
 from fleet.gasoges_rules import deduce_unit
 from fleet.gasoges_rules import name_matches
 from fleet.gasoges_rules import normalize
-from fleet.gasoges_rules import typical_value
+from fleet.gasoges_rules import series_reason
 
 
 def _d(text):
@@ -120,53 +120,84 @@ class DeduceUnitTests(unittest.TestCase):
         self.assertEqual(deduce_unit(True, True, A30[:2])[0], UNIT_UNKNOWN)
 
 
-class CheckReadingTests(unittest.TestCase):
+# 7245 GBM (S137): Miguel Ángel teclea bien sus km; el 250.000 redondo
+# del 10/03 y el 324.624 del 19/05 (234.624 con dos cifras cambiadas)
+# hacían dudosas todas las lecturas buenas de detrás.
+GBM = [
+    (_d("2026-03-10 14:25:00"), 250000), (_d("2026-03-18 14:19:01"), 227482),
+    (_d("2026-03-25 16:52:28"), 228304), (_d("2026-04-08 10:40:29"), 226629),
+    (_d("2026-04-08 13:16:38"), 229558), (_d("2026-04-17 13:05:02"), 230841),
+    (_d("2026-04-28 12:10:16"), 232102), (_d("2026-05-08 13:34:35"), 233399),
+    (_d("2026-05-19 12:43:57"), 324624), (_d("2026-05-28 12:48:58"), 235717),
+    (_d("2026-06-08 05:24:21"), 237050), (_d("2026-06-15 13:00:29"), 237984),
+    (_d("2026-06-23 12:43:22"), 239086), (_d("2026-07-01 12:59:28"), 240231),
+    (_d("2026-07-09 09:58:56"), 241345), (_d("2026-07-17 12:33:47"), 242423),
+    (_d("2026-07-27 12:29:45"), 243520), (_d("2026-08-03 12:29:39"), 244525),
+    (_d("2026-08-14 04:37:44"), 245613), (_d("2026-08-21 07:37:16"), 246362),
+    (_d("2026-09-01 13:08:29"), 247493), (_d("2026-09-03 12:30:38"), 247932),
+    (_d("2026-09-14 04:13:52"), 249028), (_d("2026-09-25 12:18:28"), 249931),
+    (_d("2026-10-19 12:53:55"), 250825),
+]
+
+# A43 (S137), tramo real: un 1.015.000 con un cero de más y dos KM
+# por debajo de la serie justo después.
+A43 = [
+    (_d("2026-09-09 15:39:31"), 101650), (_d("2026-09-16 05:04:46"), 101650),
+    (_d("2026-09-16 13:23:24"), 1015000), (_d("2026-09-17 18:06:18"), 101560),
+    (_d("2026-09-18 08:55:24"), 101100), (_d("2026-09-23 12:27:56"), 102273),
+    (_d("2026-09-24 11:44:00"), 102311), (_d("2026-09-25 12:14:07"), 102350),
+]
+
+
+class BestSeriesTests(unittest.TestCase):
     """
-    Credibility of one typed value against the previous reading.
+    Meter series chosen among the typed values (S137).
 
     ---
 
-    Si un valor tecleado vale como lectura frente a la anterior.
+    Serie del contador elegida entre los KM tecleados (S137).
     """
 
-    def setUp(self):
-        self.before = _d("2026-06-01 08:00:00")
-        self.after = _d("2026-06-03 08:00:00")
+    def test_gbm_drops_only_the_two_wrong_values(self):
+        chain = best_series(GBM, UNIT_KM)
+        wrong = {i for i in range(len(GBM)) if i not in chain}
+        self.assertEqual({GBM[i][1] for i in wrong},
+                         {250000, 226629, 324624})
 
-    def test_zero_is_doubtful(self):
-        self.assertFalse(check_reading(
-            0, UNIT_KM, 100, self.before, self.after)[0])
+    def test_gbm_reasons(self):
+        chain = best_series(GBM, UNIT_KM)
+        self.assertEqual(series_reason(GBM, 0, chain, UNIT_KM),
+                         "mayor que la lectura siguiente (227482)")
+        self.assertEqual(series_reason(GBM, 8, chain, UNIT_KM),
+                         "mayor que la lectura siguiente (235717)")
 
-    def test_first_reading_accepted(self):
-        self.assertTrue(check_reading(
-            555, UNIT_KM, None, None, self.after)[0])
+    def test_a43_extra_zero_and_lower_values(self):
+        chain = best_series(A43, UNIT_KM)
+        self.assertEqual({A43[i][1] for i in range(len(A43))
+                          if i not in chain}, {1015000, 101560, 101100})
 
-    def test_lower_than_previous(self):
-        self.assertFalse(check_reading(
-            21333, UNIT_HOURS, 21942, self.before, self.after)[0])
-
-    def test_extra_zero(self):
-        self.assertFalse(check_reading(
-            1000040, UNIT_KM, 100004, self.before, self.after)[0])
+    def test_zero_and_tiny_never_enter(self):
+        points = [(_d("2026-06-01 08:00:00"), 100),
+                  (_d("2026-06-02 08:00:00"), 0),
+                  (_d("2026-06-03 08:00:00"), 1),
+                  (_d("2026-06-04 08:00:00"), 120)]
+        chain = best_series(points, UNIT_HOURS)
+        self.assertEqual(chain, {0, 3})
+        self.assertEqual(series_reason(points, 1, chain, UNIT_HOURS),
+                         "KM vacío o a 0")
 
     def test_hours_too_fast(self):
-        self.assertFalse(check_reading(
-            17600, UNIT_HOURS, 17500, self.before, self.after)[0])
+        points = [(_d("2026-06-01 08:00:00"), 17500),
+                  (_d("2026-06-03 08:00:00"), 17600),
+                  (_d("2026-06-05 08:00:00"), 17520)]
+        chain = best_series(points, UNIT_HOURS)
+        self.assertEqual(chain, {0, 2})
 
-    def test_tiny_number(self):
-        self.assertFalse(check_reading(
-            1, UNIT_HOURS, None, None, self.after)[0])
-
-    def test_first_reading_far_from_typical(self):
-        typical = typical_value([21849, 21581, 21881, 0, 33333, 21989])
-        self.assertFalse(check_reading(
-            33333, UNIT_HOURS, None, None, self.after, typical)[0])
-        self.assertTrue(check_reading(
-            21942, UNIT_HOURS, None, None, self.after, typical)[0])
-
-    def test_normal_km(self):
-        self.assertTrue(check_reading(
-            100900, UNIT_KM, 100004, self.before, self.after)[0])
+    def test_tie_goes_to_the_latest(self):
+        points = [(_d("2026-06-01 08:00:00"), 250825),
+                  (_d("2026-06-08 08:00:00"), 260000),
+                  (_d("2026-06-09 08:00:00"), 252000)]
+        self.assertEqual(best_series(points, UNIT_KM), {0, 2})
 
 
 if __name__ == "__main__":
