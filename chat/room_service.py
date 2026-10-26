@@ -321,20 +321,26 @@ def add_member(room, person, added_by=None):
 
 def candidates(room, query=""):
     """
-    Active workers of the company that are not in the room yet.
+    Workers who can give services and are not in the room yet.
 
     ---
 
-    Trabajadores en activo de la empresa que aún no están en la sala,
-    filtrados por nombre si se escribe algo.
+    Trabajadores que pueden dar servicios y aún no están en la sala
+    (Miguel Ángel, S138: la sala es solo de quien da servicios): ficha
+    en activo enlazada a una cuenta del panel activa de administrador o
+    supervisor de asistencia. Filtrados por nombre si se escribe algo.
     """
     from django.db.models import Q
 
+    from budgets.service_intake import SERVICE_GIVER_ROLES
     from document_explorer.models import PersonIdentity
 
     people = PersonIdentity.objects.filter(
         company=room.company, is_active_employee=True,
-    ).exclude(chat_memberships__room=room)
+        company_user__is_active=True,
+        company_user__user__is_active=True,
+        company_user__role__in=SERVICE_GIVER_ROLES,
+    ).exclude(chat_memberships__room=room).select_related("company_user")
     for word in (query or "").split():
         people = people.filter(
             Q(given_name__icontains=word)
@@ -342,6 +348,47 @@ def candidates(room, query=""):
             | Q(second_surname__icontains=word)
         )
     return people.order_by("first_surname", "second_surname", "given_name")
+
+
+def can_join(person):
+    """
+    Whether a worker can be added to the room (gives services).
+
+    ---
+
+    Si un trabajador se puede añadir a la sala: su cuenta enlazada da
+    servicios.
+    """
+    from budgets.service_intake import service_giver
+
+    return bool(
+        person.is_active_employee
+        and service_giver(person.company_user)
+        and person.company_user.user.is_active
+    )
+
+
+def missing_data(person):
+    """
+    What a room member lacks to use every path (for the Añadir list).
+
+    ---
+
+    Lo que le falta a un miembro para usar todos los caminos: móvil en
+    la ficha (sala por WhatsApp, aviso de respaldo) y contacto de
+    WhatsApp enlazado a su cuenta (dar servicios a Alia por WhatsApp).
+    """
+    from document_explorer.person_phone_service import mobile_of
+    from ivr_config.models import Contact
+
+    missing = []
+    if not mobile_of(person):
+        missing.append("sin móvil en su ficha")
+    if not Contact.objects.filter(
+        company_user=person.company_user,
+    ).exclude(phone_number="").exists():
+        missing.append("sin contacto de WhatsApp en su cuenta")
+    return missing
 
 
 # ---------------------------------------------------------------------------

@@ -389,8 +389,8 @@ def member_candidates(request, slug):
 
     ---
 
-    Trabajadores en activo que se pueden añadir, para el botón
-    "Añadir" (solo quien gestiona la sala).
+    Quienes se pueden añadir (dan servicios), con su rol y lo que les
+    falta, para el botón "Añadir" (solo quien gestiona la sala).
     """
     room = _room_or_404(request, slug)
     viewer = room_service.viewer_for(request, room)
@@ -398,7 +398,12 @@ def member_candidates(request, slug):
         return HttpResponseForbidden("Sin permiso.")
     people = room_service.candidates(room, request.GET.get("q", ""))[:50]
     return JsonResponse({"people": [
-        {"id": person.pk, "name": room_service.person_full_name(person)}
+        {
+            "id": person.pk,
+            "name": room_service.person_full_name(person),
+            "role": person.company_user.get_role_display(),
+            "missing": room_service.missing_data(person),
+        }
         for person in people
     ]})
 
@@ -429,6 +434,14 @@ def member_add(request, slug):
     ).first()
     if person is None:
         return JsonResponse({"error": "Persona no válida."}, status=400)
+    if not room_service.can_join(person):
+        # S138: the room is only for whoever gives services.
+        # La sala es solo de quien da servicios.
+        return JsonResponse({
+            "error": "Solo se añade a quien da servicios (cuenta de "
+                     "administrador o supervisor de asistencia enlazada "
+                     "a su ficha).",
+        }, status=400)
     member, _created = room_service.add_member(
         room, person, added_by=viewer.company_user,
     )

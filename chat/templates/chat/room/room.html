@@ -106,7 +106,8 @@ WhatsApp (#asistencia).
 {% endif %}
 {% if viewer.can_manage %}
 <dialog id="add-dialog">
-    <input type="search" id="add-q" placeholder="Buscar trabajador por nombre" aria-label="Buscar trabajador">
+    <input type="search" id="add-q" placeholder="Buscar por nombre" aria-label="Buscar trabajador">
+    <p class="t">Solo salen administradores y supervisores de asistencia con su cuenta del panel enlazada a su ficha (mismo DNI).</p>
     <ul id="candidates"></ul>
     <button type="button" class="close" id="add-close">Cerrar</button>
 </dialog>
@@ -477,7 +478,13 @@ WhatsApp (#asistencia).
                     data.people.forEach(function (person) {
                         var item = document.createElement("li");
                         var label = document.createElement("span");
-                        label.textContent = person.name;
+                        label.textContent = person.name + " · " + person.role;
+                        if (person.missing.length) {
+                            var warn = document.createElement("div");
+                            warn.className = "t";
+                            warn.textContent = "⚠ " + person.missing.join(", ");
+                            label.appendChild(warn);
+                        }
                         var add = document.createElement("button");
                         add.type = "button"; add.textContent = "Añadir";
                         add.addEventListener("click", function () {
@@ -488,6 +495,7 @@ WhatsApp (#asistencia).
                                 body: JSON.stringify({person: person.id})
                             }).then(function (r) { return r.json(); })
                               .then(function (result) {
+                                  if (result.error) { errorBox.textContent = result.error; return; }
                                   renderMembers(result.members);
                                   item.remove();
                                   if (result.added) { showLink(result.added); }
