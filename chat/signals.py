@@ -39,3 +39,25 @@ def post_new_service(sender, instance, created, **kwargs):
 
     work_order_pk = instance.pk
     transaction.on_commit(lambda: post_service(work_order_pk))
+
+
+@receiver(post_save, sender="budgets.WorkOrderAssistanceUnitEvent")
+def post_unit_event(sender, instance, created, **kwargs):
+    """
+    Post every albarán change in the Asistencia room after the commit.
+
+    ---
+
+    Publica en la sala Asistencia cada cambio de un albarán (estado,
+    asignación o asignación retirada) tras el commit. Miguel Ángel,
+    S138: "es importante que los cambios de estado de los servicios
+    aparezcan en la sala". Todos pasan por
+    WorkOrderAssistanceUnitEvent, sea cual sea su origen (tablero, app
+    del conductor, Alia, WhatsApp, Twilio).
+    """
+    if not created or kwargs.get("raw"):
+        return
+    from chat.room_service import post_unit_event as post_event
+
+    event_pk = instance.pk
+    transaction.on_commit(lambda: post_event(event_pk))

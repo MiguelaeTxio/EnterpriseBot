@@ -805,6 +805,98 @@ def store_service_document(data, content_type):
     return {"blob": blob_name, "name": name, "type": content_type}
 
 
+def _driver_name(company_user):
+    """
+    Short name of an albarán driver.
+
+    ---
+
+    Nombre corto del conductor de un albarán (por su ficha si la tiene).
+    """
+    if company_user is None:
+        return "sin conductor"
+    person = getattr(company_user, "person_identity", None)
+    if person is not None:
+        return person_name(person)
+    user = company_user.user
+    return user.get_full_name().strip() or user.get_username()
+
+
+def unit_event_text(event):
+    """
+    Room line of an albarán change, or "" if it is not posted.
+
+    ---
+
+    Línea de la sala de un cambio de albarán: albarán, conductor y
+    máquina, y el cambio (de estado a estado, asignación o asignación
+    retirada), con el detalle si lo hay. El alta del albarán no se
+    publica: el servicio ya sale al darse de alta.
+    """
+    from budgets.models import WorkOrderAssistanceUnit as Unit
+    from budgets.models import WorkOrderAssistanceUnitEvent as Event
+
+    if event.kind == Event.KIND_CREATED:
+        return ""
+    unit = event.unit
+    labels = dict(Unit.STATUS_CHOICES)
+    machine = (
+        unit.machine_asset.code if unit.machine_asset_id else unit.machine
+    ) or "sin máquina"
+    head = "Albarán %s · %s · %s" % (
+        unit.albaran_number, _driver_name(unit.operator), machine,
+    )
+    if event.kind == Event.KIND_STATUS:
+        change = "%s → %s" % (
+            labels.get(event.from_status, event.from_status or "—"),
+            labels.get(event.to_status, event.to_status),
+        )
+    elif event.kind == Event.KIND_ASSIGN:
+        change = "asignado"
+    else:
+        change = "asignación retirada"
+    text = "%s: *%s*" % (head, change)
+    if event.detail:
+        text = "%s (%s)" % (text, event.detail)
+    return text
+
+
+def post_unit_event(event_pk):
+    """
+    The bot posts an albarán change in the Asistencia room.
+
+    ---
+
+    El bot publica en la sala Asistencia un cambio de albarán (S138), y
+    avisa como cualquier mensaje del bot. Nunca rompe el cambio de
+    estado.
+    """
+    from budgets.models import WorkOrderAssistanceUnitEvent as Event
+
+    event = Event.objects.select_related(
+        "unit__work_order__company", "unit__operator__user",
+        "unit__machine_asset",
+    ).filter(pk=event_pk).first()
+    if event is None:
+        return None
+    try:
+        text = unit_event_text(event)
+        if not text:
+            return None
+        work_order = event.unit.work_order
+        with transaction.atomic():
+            return post_message(
+                assistance_room(work_order.company), text, author=None,
+                author_name=BOT_NAME, kind=ChatMessage.KIND_BOT,
+                work_order=work_order,
+            )
+    except Exception:  # noqa: BLE001 -- el cambio de estado sigue
+        logger.exception(
+            "# [CHAT ROOM] No se pudo publicar el cambio %s.", event_pk,
+        )
+        return None
+
+
 def store_source_document(company, data, content_type):
     """
     Keep a TIREA document in GCS and return its blob name.
