@@ -298,9 +298,15 @@
     var sectionSelect = document.getElementById('id_section');
     var roleSelect    = document.getElementById('id_role');
     if (!sectionSelect || !roleSelect) return;
+    // H37 (S138): a role chosen by hand is never overwritten by the
+    // section's default (it happened with Daniel Anaya and Carlos Carlín).
+    // Un rol elegido a mano nunca lo pisa el de la sección (pasó con
+    // Daniel Anaya y Carlos Carlín).
+    var roleChosen = false;
+    roleSelect.addEventListener('change', function () { roleChosen = true; });
     sectionSelect.addEventListener('change', function () {
         var pk = sectionSelect.value;
-        if (!pk) return;
+        if (!pk || roleChosen) return;
         fetch('/panel/sections/' + pk + '/default-role/', {
             headers: { 'X-Requested-With': 'XMLHttpRequest' },
         })
