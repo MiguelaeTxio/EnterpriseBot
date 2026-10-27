@@ -970,6 +970,12 @@ class RefuelQuestion(models.Model):
     answered_at = models.DateTimeField(_("Respondida"), null=True,
                                        blank=True)
     answer = models.CharField(_("Respuesta"), max_length=255, blank=True)
+    # S137: por qué se pregunta, en la frase que se le manda al chófer
+    # (Miguel Ángel: el operario tiene que saber por qué está mal).
+    # ---
+    # Why the driver is asked, as sent to them.
+    reason = models.CharField(_("Por qué se pregunta"), max_length=255,
+                              blank=True)
 
     class Meta:
         verbose_name = _("Pregunta de repostaje")

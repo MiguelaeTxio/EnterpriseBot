@@ -41,6 +41,13 @@ S137: versión 3 de la del dato (`refuel_value_check_v3`). Miguel
 horas o kilómetros. Una variable más, {{5}} ("las horas que marca el
 horómetro" o "los kilómetros que marca el cuentakilómetros"), en mitad
 del texto. Mientras Meta no la apruebe se sigue usando la v2.
+
+S137: versión 4 de la del dato (`refuel_value_check_v4`). Miguel
+Ángel: los chóferes reciben el aviso y no saben por qué está mal. Otra
+variable, {{6}}, con el motivo en una frase ("son 1.179 horas más que
+el 05/10 (6.681) en 21 días, y un horómetro no sube tanto: parecen
+kilómetros, y este vehículo va por horas"). Se usa en cuanto Meta la
+aprueba; antes, la v3 y luego la v2.
 """
 from whatsapp.management.commands import (
     create_document_notice_whatsapp_templates as notice_templates,
@@ -48,6 +55,7 @@ from whatsapp.management.commands import (
 
 VALUE_TEMPLATE = "refuel_value_check_v2"
 VALUE_TEMPLATE_V3 = "refuel_value_check_v3"
+VALUE_TEMPLATE_V4 = "refuel_value_check_v4"
 UNIT_TEMPLATE = "refuel_unit_check_v2"
 
 # `id` de cada botón: llega en ButtonPayload al pulsarlo.
@@ -67,8 +75,33 @@ _SAMPLE = {
 }
 
 _SAMPLE_V3 = dict(_SAMPLE, **{"5": "las horas que marca el horómetro"})
+_SAMPLE_V4 = dict(_SAMPLE_V3, **{
+    "6": ("son 1.179 horas más que el 05/10 (6.681) en 21 días, y un "
+          "horómetro no sube tanto: parecen kilómetros, y este vehículo "
+          "va por horas"),
+})
 
 TEMPLATES = [
+    {
+        "name": VALUE_TEMPLATE_V4,
+        "variables": _SAMPLE_V4,
+        "types": {
+            "twilio/quick-reply": {
+                "body": (
+                    notice_templates._PREAMBLE
+                    + "En el repostaje de {{2}} del {{3}} anotó {{4}} en "
+                    "el surtidor y no parece correcto porque {{6}}. "
+                    "Recuerde que en este vehículo hay que anotar {{5}} "
+                    "al repostar. ¿Es correcto el dato?"
+                ),
+                "actions": [
+                    {"title": "Sí, es correcto", "id": VALUE_OK},
+                    {"title": "No, lo corrijo", "id": VALUE_FIX},
+                    {"title": "Contador averiado", "id": METER_BROKEN},
+                ],
+            },
+        },
+    },
     {
         "name": VALUE_TEMPLATE_V3,
         "variables": _SAMPLE_V3,
@@ -141,7 +174,8 @@ class Command(notice_templates.Command):
 
     help = (
         "Crea y somete a aprobacion de Meta las plantillas WhatsApp "
-        "refuel_value_check_v3, _v2 y refuel_unit_check_v2 (H30, S137); "
+        "refuel_value_check_v4, _v3, _v2 y refuel_unit_check_v2 (H30, "
+        "S137); "
         "las que ya están en BD no se tocan."
     )
     templates = TEMPLATES

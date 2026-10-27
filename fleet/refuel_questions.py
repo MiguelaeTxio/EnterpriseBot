@@ -48,6 +48,15 @@ concreta y por qué no encajaba (texto libre, ya dentro de la ventana de
 24 horas); el número que escribe se comprueba igual, y si tampoco
 encaja se le pide otra vez, salvo que repita el mismo (entonces se da
 por bueno: lo ha comprobado).
+
+S137, Miguel Ángel: los chóferes reciben el aviso y no saben por qué
+está mal ("tiene que quedar claro que el operario sepa por qué"). Cada
+pregunta del dato guarda el motivo en una frase para el chófer
+(`question_reason`: kilómetros en lugar de horas, horas en lugar de
+kilómetros, un número que baja o que sube más de lo posible, con la
+lectura con la que se compara) y la plantilla v4 lo lleva en el
+mensaje. Se usa en cuanto Meta la aprueba; mientras, la v3 o la v2 (y
+el motivo se le dice al pulsar "No, lo corrijo").
 """
 import logging
 import os
@@ -61,7 +70,11 @@ from document_explorer.person_phone_service import (
     mobile_of,
     resolve_person_by_phone,
 )
-from fleet.gasoges_rules import MAX_HOURS_PER_DAY, MAX_KM_PER_DAY
+from fleet.gasoges_rules import (
+    MAX_HOURS_PER_DAY,
+    MAX_KM_PER_DAY,
+    MIN_CREDIBLE_VALUE,
+)
 from fleet.gasoges_sync import accept_supply, build_readings
 from fleet.models import GasoGesSupply, GasoGesVehicle, RefuelQuestion
 
@@ -69,6 +82,7 @@ logger = logging.getLogger(__name__)
 
 VALUE_TEMPLATE = "refuel_value_check_v2"
 VALUE_TEMPLATE_V3 = "refuel_value_check_v3"
+VALUE_TEMPLATE_V4 = "refuel_value_check_v4"
 UNIT_TEMPLATE = "refuel_unit_check_v2"
 VALUE_OK = "refuel_value_ok"
 VALUE_FIX = "refuel_value_fix"
@@ -148,15 +162,16 @@ def _format_value(value):
     return "{:,}".format(value).replace(",", ".") if value else "0"
 
 
-def _variables(question, with_unit=False):
+def _variables(question, template_name=""):
     """
     Template variables of a question.
 
     ---
 
     Variables de la plantilla: nombre, centro de gasto, fecha y hora
-    del repostaje y lo que tecleó; con `with_unit` (plantilla v3), qué
-    hay que anotar en ese vehículo.
+    del repostaje y lo que tecleó; con la v3 y la v4, qué hay que
+    anotar en ese vehículo ({{5}}); con la v4, además, por qué no
+    parece correcto ({{6}}, S137).
     """
     supply = question.supply
     vehicle = question.vehicle
@@ -168,9 +183,11 @@ def _variables(question, with_unit=False):
             "%d/%m/%Y %H:%M"),
         "4": _format_value(supply.meter_value),
     }
-    if with_unit:
+    if template_name in (VALUE_TEMPLATE_V3, VALUE_TEMPLATE_V4):
         variables["5"] = UNIT_PHRASES.get(
             vehicle.unit, UNIT_PHRASES[GasoGesVehicle.UNIT_KM])
+    if template_name == VALUE_TEMPLATE_V4:
+        variables["6"] = question.reason
     return variables
 
 
@@ -192,6 +209,47 @@ def _previous_reading(supply):
         "supplied_at", "meter_value").first()
 
 
+def _next_reading(supply):
+    """
+    (date, value) of the first good reading after this supply, or None.
+
+    ---
+
+    Fecha y valor de la primera lectura buena del mismo centro de gasto
+    y unidad posterior a este repostaje, o None.
+    """
+    vehicle = supply.vehicle
+    return GasoGesSupply.objects.filter(
+        vehicle__machine_id=vehicle.machine_id, vehicle__unit=vehicle.unit,
+        status=GasoGesSupply.STATUS_READING,
+        supplied_at__gt=supply.supplied_at,
+    ).exclude(pk=supply.pk).order_by("supplied_at").values_list(
+        "supplied_at", "meter_value").first()
+
+
+def _day(when):
+    """
+    "dd/mm" of a datetime, in local time.
+
+    ---
+
+    Día y mes de una fecha, en hora local.
+    """
+    return timezone.localtime(when).strftime("%d/%m")
+
+
+def _days(days):
+    """
+    "1 día" / "21 días".
+
+    ---
+
+    Días en texto, en singular o plural.
+    """
+    days = round(days)
+    return "%d día%s" % (days, "" if days == 1 else "s")
+
+
 def value_problem(supply, value):
     """
     Why a value does not fit the vehicle's readings ("" if it fits).
@@ -199,26 +257,65 @@ def value_problem(supply, value):
     ---
 
     Por qué un número no encaja con las lecturas del vehículo, en una
-    frase para el chófer ("" si encaja): menor que la última lectura, o
-    sube más de lo posible (en un vehículo de horas, parecen km).
+    frase que entienda el chófer ("" si encaja). S137, Miguel Ángel: el
+    operario tiene que saber por qué se le pregunta: si ha puesto
+    kilómetros en lugar de horas, horas en lugar de kilómetros, un
+    número que baja o uno que sube más de lo posible. Siempre con la
+    lectura de referencia (fecha y valor) para que la compare.
     """
-    previous = _previous_reading(supply)
-    if previous is None or value is None:
+    if value is None:
         return ""
-    when, last = previous
-    days = max((supply.supplied_at - when).total_seconds() / 86400, 1)
     hours = supply.vehicle.unit == GasoGesVehicle.UNIT_HOURS
-    if value < last:
-        return "es menor que la última lectura (%s)" % _format_value(last)
-    if (value - last) / days > (MAX_HOURS_PER_DAY if hours
-                                else MAX_KM_PER_DAY):
-        if hours:
-            return ("sube más de lo que puede subir un horómetro desde la "
-                    "última lectura (%s): parecen kilómetros"
-                    % _format_value(last))
-        return ("sube más de lo que se puede recorrer desde la última "
-                "lectura (%s)" % _format_value(last))
+    word = "horas" if hours else "km"
+    meter = "el horómetro" if hours else "el cuentakilómetros"
+    if not value:
+        return "es 0 o está vacío"
+    if value < MIN_CREDIBLE_VALUE:
+        return "%s es demasiado poco para %s de este vehículo" % (
+            _format_value(value), meter)
+    previous = _previous_reading(supply)
+    if previous is not None:
+        when, last = previous
+        days = max((supply.supplied_at - when).total_seconds() / 86400, 1)
+        if value < last:
+            if not hours and value * 5 < last:
+                return ("parecen horas, y este vehículo va por "
+                        "kilómetros: el %s marcaba %s km"
+                        % (_day(when), _format_value(last)))
+            return ("es menos de lo que marcaba el %s (%s %s), y %s no "
+                    "puede bajar" % (_day(when), _format_value(last), word,
+                                     meter))
+        limit = MAX_HOURS_PER_DAY if hours else MAX_KM_PER_DAY
+        if (value - last) / days > limit:
+            if hours:
+                return ("son %s horas más que el %s (%s) en %s, y un "
+                        "horómetro no sube tanto: parecen kilómetros, y "
+                        "este vehículo va por horas"
+                        % (_format_value(value - last), _day(when),
+                           _format_value(last), _days(days)))
+            return ("son %s km más que el %s (%s) en %s, y no da tiempo "
+                    "a recorrerlos"
+                    % (_format_value(value - last), _day(when),
+                       _format_value(last), _days(days)))
+    following = _next_reading(supply)
+    if following is not None and value > following[1]:
+        return ("es más de lo que marcó después, el %s (%s %s)"
+                % (_day(following[0]), _format_value(following[1]), word))
     return ""
+
+
+def question_reason(supply):
+    """
+    Why a doubtful supply is asked about, for the driver (never empty).
+
+    ---
+
+    Por qué se le pregunta al chófer por un repostaje dudoso, en una
+    frase (nunca vacía): la de `value_problem` o, si no hay lectura con
+    la que compararlo, que no encaja con el resto.
+    """
+    return (value_problem(supply, supply.meter_value)
+            or "no encaja con el resto de lecturas del vehículo")
 
 
 def _expire_old():
@@ -297,9 +394,11 @@ def send_pending_questions(company, log=logger.info):
         log("Preguntas de repostajes: fuera de horario (8:00-21:00).")
         return counters
     sender = os.environ.get("TWILIO_WHATSAPP_SENDER", "")
-    # S137: la v3 del dato (recuerda horas o km) en cuanto esté aprobada.
+    # S137: la v4 del dato (dice por qué no encaja y si son horas o km)
+    # en cuanto esté aprobada; si no, la v3 (solo horas o km); si no, v2.
     value_template = next((
         template for template in (
+            _template(company, VALUE_TEMPLATE_V4),
             _template(company, VALUE_TEMPLATE_V3),
             _template(company, VALUE_TEMPLATE))
         if template and template_approved(template.content_sid)), None)
@@ -333,13 +432,14 @@ def send_pending_questions(company, log=logger.info):
             continue
         question = RefuelQuestion(
             kind=kind, supply=supply, vehicle=supply.vehicle,
-            person=person, phone=phone)
+            person=person, phone=phone,
+            reason=(question_reason(supply)[:255]
+                    if kind == RefuelQuestion.KIND_VALUE else ""))
         try:
             message = send_notification(
                 client, sender, company, phone,
                 templates[kind].content_sid, _variables(
-                    question,
-                    templates[kind].name == VALUE_TEMPLATE_V3))
+                    question, templates[kind].name))
         except Exception as exc:  # Twilio: se apunta y se sigue.
             log("ERROR enviando pregunta a %s: %s" % (phone, exc))
             continue
@@ -402,9 +502,9 @@ def handle_whatsapp_reply(company, phone, button_payload, body):
             # Se guarda lo que escribió: si lo repite, se da por bueno.
             awaiting.answer = body[:255]
             awaiting.save(update_fields=["answer"])
-            return ("Ese número tampoco encaja: %s. Recuerda que son %s. "
-                    "Escríbelo de nuevo (si es correcto, repítelo)."
-                    % (problem, unit_ask))
+            return ("Ese número tampoco parece correcto: %s. Recuerda que "
+                    "son %s. Escríbelo de nuevo (si es correcto, "
+                    "repítelo)." % (problem, unit_ask))
         awaiting.status = RefuelQuestion.STATUS_CORRECTED
         awaiting.answer = body[:255]
         awaiting.answered_at = timezone.now()
@@ -447,7 +547,7 @@ def handle_whatsapp_reply(company, phone, button_payload, body):
                 % (unit_ask,
                    supply.vehicle.machine.code if supply.vehicle.machine
                    else "vehículo",
-                   " Lo que anotaste (%s) %s." % (
+                   " Lo que anotaste (%s) no parece correcto: %s." % (
                        _format_value(supply.meter_value), problem)
                    if problem else ""))
     if button_payload == METER_BROKEN:
