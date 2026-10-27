@@ -35,12 +35,19 @@ aprobada no se puede cambiar: son plantillas nuevas, y la versión 1
 queda sin usar. Verificado en línea el 26/10/2026
 (twilio.com/docs/content/twilio-quick-reply): hasta diez botones en
 una plantilla, título de 20 caracteres como máximo.
+
+S137: versión 3 de la del dato (`refuel_value_check_v3`). Miguel
+Ángel: hay que recordar al chófer qué tiene que anotar en ese vehículo,
+horas o kilómetros. Una variable más, {{5}} ("las horas que marca el
+horómetro" o "los kilómetros que marca el cuentakilómetros"), en mitad
+del texto. Mientras Meta no la apruebe se sigue usando la v2.
 """
 from whatsapp.management.commands import (
     create_document_notice_whatsapp_templates as notice_templates,
 )
 
 VALUE_TEMPLATE = "refuel_value_check_v2"
+VALUE_TEMPLATE_V3 = "refuel_value_check_v3"
 UNIT_TEMPLATE = "refuel_unit_check_v2"
 
 # `id` de cada botón: llega en ButtonPayload al pulsarlo.
@@ -59,7 +66,29 @@ _SAMPLE = {
     "4": "33.333",
 }
 
+_SAMPLE_V3 = dict(_SAMPLE, **{"5": "las horas que marca el horómetro"})
+
 TEMPLATES = [
+    {
+        "name": VALUE_TEMPLATE_V3,
+        "variables": _SAMPLE_V3,
+        "types": {
+            "twilio/quick-reply": {
+                "body": (
+                    notice_templates._PREAMBLE
+                    + "En el repostaje de {{2}} del {{3}} anotó {{4}} en "
+                    "el surtidor y parece que no es correcto: en este "
+                    "vehículo hay que anotar {{5}} al repostar. ¿Es "
+                    "correcto el dato?"
+                ),
+                "actions": [
+                    {"title": "Sí, es correcto", "id": VALUE_OK},
+                    {"title": "No, lo corrijo", "id": VALUE_FIX},
+                    {"title": "Contador averiado", "id": METER_BROKEN},
+                ],
+            },
+        },
+    },
     {
         "name": VALUE_TEMPLATE,
         "variables": _SAMPLE,
@@ -112,7 +141,8 @@ class Command(notice_templates.Command):
 
     help = (
         "Crea y somete a aprobacion de Meta las plantillas WhatsApp "
-        "refuel_value_check_v2 y refuel_unit_check_v2 (H30, S137)."
+        "refuel_value_check_v3, _v2 y refuel_unit_check_v2 (H30, S137); "
+        "las que ya están en BD no se tocan."
     )
     templates = TEMPLATES
     start_message = (

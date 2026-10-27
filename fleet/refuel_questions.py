@@ -38,6 +38,16 @@ pulsarlo el vehículo queda marcado como averiado
 repostajes no dan lectura hasta que alguien lo marque como reparado en
 Repostajes. Las preguntas ya enviadas con la versión 1 siguen valiendo
 (los botones tienen los mismos `id`).
+
+S137, Miguel Ángel: al chófer hay que recordarle qué se anota en ese
+vehículo, horas o kilómetros (regla del taller). La pregunta del dato
+usa la plantilla v3 (lleva "las horas que marca el horómetro" o "los
+kilómetros que marca el cuentakilómetros") en cuanto Meta la aprueba;
+mientras, la v2. Al pulsar "No, lo corrijo" se le pide la unidad
+concreta y por qué no encajaba (texto libre, ya dentro de la ventana de
+24 horas); el número que escribe se comprueba igual, y si tampoco
+encaja se le pide otra vez, salvo que repita el mismo (entonces se da
+por bueno: lo ha comprobado).
 """
 import logging
 import os
@@ -51,12 +61,14 @@ from document_explorer.person_phone_service import (
     mobile_of,
     resolve_person_by_phone,
 )
+from fleet.gasoges_rules import MAX_HOURS_PER_DAY, MAX_KM_PER_DAY
 from fleet.gasoges_sync import accept_supply, build_readings
 from fleet.models import GasoGesSupply, GasoGesVehicle, RefuelQuestion
 
 logger = logging.getLogger(__name__)
 
 VALUE_TEMPLATE = "refuel_value_check_v2"
+VALUE_TEMPLATE_V3 = "refuel_value_check_v3"
 UNIT_TEMPLATE = "refuel_unit_check_v2"
 VALUE_OK = "refuel_value_ok"
 VALUE_FIX = "refuel_value_fix"
@@ -72,6 +84,15 @@ SEND_FROM_HOUR = 8
 SEND_UNTIL_HOUR = 21
 MAX_PER_RUN = 20
 APPROVAL_URL = "https://content.twilio.com/v1/Content/%s/ApprovalRequests"
+UNIT_PHRASES = {
+    GasoGesVehicle.UNIT_KM: "los kilómetros que marca el cuentakilómetros",
+    GasoGesVehicle.UNIT_HOURS: "las horas que marca el horómetro",
+}
+UNIT_ASK = {
+    GasoGesVehicle.UNIT_KM: "los KILÓMETROS que marca ahora el "
+                            "cuentakilómetros",
+    GasoGesVehicle.UNIT_HOURS: "las HORAS que marca ahora el horómetro",
+}
 _NUMBER_RE = re.compile(r"^\s*(\d{1,3}(?:[.\s]\d{3})+|\d+)\s*$")
 OPEN_STATUSES = (RefuelQuestion.STATUS_SENT,
                  RefuelQuestion.STATUS_AWAITING_VALUE)
@@ -127,18 +148,19 @@ def _format_value(value):
     return "{:,}".format(value).replace(",", ".") if value else "0"
 
 
-def _variables(question):
+def _variables(question, with_unit=False):
     """
     Template variables of a question.
 
     ---
 
     Variables de la plantilla: nombre, centro de gasto, fecha y hora
-    del repostaje y lo que tecleó.
+    del repostaje y lo que tecleó; con `with_unit` (plantilla v3), qué
+    hay que anotar en ese vehículo.
     """
     supply = question.supply
     vehicle = question.vehicle
-    return {
+    variables = {
         "1": question.person.given_name or "trabajador",
         "2": vehicle.machine.code if vehicle.machine else (
             vehicle.plate or vehicle.name),
@@ -146,6 +168,57 @@ def _variables(question):
             "%d/%m/%Y %H:%M"),
         "4": _format_value(supply.meter_value),
     }
+    if with_unit:
+        variables["5"] = UNIT_PHRASES.get(
+            vehicle.unit, UNIT_PHRASES[GasoGesVehicle.UNIT_KM])
+    return variables
+
+
+def _previous_reading(supply):
+    """
+    (date, value) of the last good reading before this supply, or None.
+
+    ---
+
+    Fecha y valor de la última lectura buena del mismo centro de gasto
+    y unidad anterior a este repostaje, o None.
+    """
+    vehicle = supply.vehicle
+    return GasoGesSupply.objects.filter(
+        vehicle__machine_id=vehicle.machine_id, vehicle__unit=vehicle.unit,
+        status=GasoGesSupply.STATUS_READING,
+        supplied_at__lt=supply.supplied_at,
+    ).exclude(pk=supply.pk).order_by("-supplied_at").values_list(
+        "supplied_at", "meter_value").first()
+
+
+def value_problem(supply, value):
+    """
+    Why a value does not fit the vehicle's readings ("" if it fits).
+
+    ---
+
+    Por qué un número no encaja con las lecturas del vehículo, en una
+    frase para el chófer ("" si encaja): menor que la última lectura, o
+    sube más de lo posible (en un vehículo de horas, parecen km).
+    """
+    previous = _previous_reading(supply)
+    if previous is None or value is None:
+        return ""
+    when, last = previous
+    days = max((supply.supplied_at - when).total_seconds() / 86400, 1)
+    hours = supply.vehicle.unit == GasoGesVehicle.UNIT_HOURS
+    if value < last:
+        return "es menor que la última lectura (%s)" % _format_value(last)
+    if (value - last) / days > (MAX_HOURS_PER_DAY if hours
+                                else MAX_KM_PER_DAY):
+        if hours:
+            return ("sube más de lo que puede subir un horómetro desde la "
+                    "última lectura (%s): parecen kilómetros"
+                    % _format_value(last))
+        return ("sube más de lo que se puede recorrer desde la última "
+                "lectura (%s)" % _format_value(last))
+    return ""
 
 
 def _expire_old():
@@ -224,13 +297,20 @@ def send_pending_questions(company, log=logger.info):
         log("Preguntas de repostajes: fuera de horario (8:00-21:00).")
         return counters
     sender = os.environ.get("TWILIO_WHATSAPP_SENDER", "")
+    # S137: la v3 del dato (recuerda horas o km) en cuanto esté aprobada.
+    value_template = next((
+        template for template in (
+            _template(company, VALUE_TEMPLATE_V3),
+            _template(company, VALUE_TEMPLATE))
+        if template and template_approved(template.content_sid)), None)
+    unit_template = _template(company, UNIT_TEMPLATE)
+    if unit_template and not template_approved(unit_template.content_sid):
+        unit_template = None
     templates = {
-        RefuelQuestion.KIND_VALUE: _template(company, VALUE_TEMPLATE),
-        RefuelQuestion.KIND_UNIT: _template(company, UNIT_TEMPLATE),
+        RefuelQuestion.KIND_VALUE: value_template,
+        RefuelQuestion.KIND_UNIT: unit_template,
     }
-    approved = {
-        kind: bool(t and template_approved(t.content_sid))
-        for kind, t in templates.items()}
+    approved = {kind: t is not None for kind, t in templates.items()}
     if not sender or not any(approved.values()):
         log("Preguntas de repostajes: plantillas sin aprobar todavía "
             "(o sin TWILIO_WHATSAPP_SENDER); no se envía nada.")
@@ -257,7 +337,9 @@ def send_pending_questions(company, log=logger.info):
         try:
             message = send_notification(
                 client, sender, company, phone,
-                templates[kind].content_sid, _variables(question))
+                templates[kind].content_sid, _variables(
+                    question,
+                    templates[kind].name == VALUE_TEMPLATE_V3))
         except Exception as exc:  # Twilio: se apunta y se sigue.
             log("ERROR enviando pregunta a %s: %s" % (phone, exc))
             continue
@@ -309,9 +391,20 @@ def handle_whatsapp_reply(company, phone, button_payload, body):
         if not awaiting:
             return None
         value = _parse_number(body)
+        unit_ask = UNIT_ASK.get(awaiting.supply.vehicle.unit,
+                                "el número que marca el vehículo")
         if value is None:
-            return ("No lo he entendido. Escribe solo el número correcto, "
-                    "por ejemplo 125400.")
+            return ("No lo he entendido. Escribe solo %s, por ejemplo "
+                    "125400." % unit_ask)
+        problem = value_problem(awaiting.supply, value)
+        repeated = _parse_number(awaiting.answer) == value
+        if problem and not repeated:
+            # Se guarda lo que escribió: si lo repite, se da por bueno.
+            awaiting.answer = body[:255]
+            awaiting.save(update_fields=["answer"])
+            return ("Ese número tampoco encaja: %s. Recuerda que son %s. "
+                    "Escríbelo de nuevo (si es correcto, repítelo)."
+                    % (problem, unit_ask))
         awaiting.status = RefuelQuestion.STATUS_CORRECTED
         awaiting.answer = body[:255]
         awaiting.answered_at = timezone.now()
@@ -346,8 +439,17 @@ def handle_whatsapp_reply(company, phone, button_payload, body):
         question.status = RefuelQuestion.STATUS_AWAITING_VALUE
         question.answer = "No, lo corrijo"
         question.save(update_fields=["status", "answer", "answered_at"])
-        return ("De acuerdo. Escribe solo el número correcto que marca "
-                "el vehículo (kilómetros u horas), por ejemplo 125400.")
+        supply = question.supply
+        unit_ask = UNIT_ASK.get(supply.vehicle.unit,
+                                "el número que marca el vehículo")
+        problem = value_problem(supply, supply.meter_value)
+        return ("De acuerdo. Escribe solo %s del %s, por ejemplo 125400.%s"
+                % (unit_ask,
+                   supply.vehicle.machine.code if supply.vehicle.machine
+                   else "vehículo",
+                   " Lo que anotaste (%s) %s." % (
+                       _format_value(supply.meter_value), problem)
+                   if problem else ""))
     if button_payload == METER_BROKEN:
         vehicle = question.vehicle
         vehicle.meter_broken = True
