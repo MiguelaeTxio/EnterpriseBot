@@ -12,7 +12,9 @@ kilómetros. A esos, sin plantilla nueva (contestaron hoy: la ventana de
 24 horas está abierta), se les escribe en texto libre que el valor
 sigue siendo incorrecto, que en ese vehículo van horas y no kilómetros,
 que es por la revisión, que tienen que anotarlo en horas y que seguirán
-recibiendo mensajes mientras no lo hagan.
+recibiendo mensajes mientras no lo hagan, y que si el horómetro está
+mal contesten AVERIADO para no recibir más (refuel_questions lo marca
+como el botón "Contador averiado").
 
 Además se deshace su confirmación: el "Sí, es correcto" había metido
 esos kilómetros como horas buenas en la serie del vehículo (y de ahí al
@@ -46,7 +48,9 @@ MESSAGE = (
     "con los kilómetros no podemos saber cuándo le toca. El valor sigue "
     "siendo incorrecto, y mientras se anoten kilómetros seguirá "
     "recibiendo estos mensajes. En el próximo repostaje anote las horas, "
-    "por favor. Gracias."
+    "por favor. Si el horómetro de {code} está averiado o no marca bien, "
+    "conteste a este mensaje con la palabra AVERIADO y dejaremos de "
+    "preguntarle por este vehículo hasta que se repare. Gracias."
 )
 
 
