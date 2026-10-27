@@ -56,7 +56,8 @@ pregunta del dato guarda el motivo en una frase para el chófer
 kilómetros, un número que baja o que sube más de lo posible, con la
 lectura con la que se compara) y la plantilla v4 lo lleva en el
 mensaje. Se usa en cuanto Meta la aprueba; mientras, la v3 o la v2 (y
-el motivo se le dice al pulsar "No, lo corrijo").
+el motivo se le dice al pulsar "No, lo corrijo"). Por los brazos (B)
+no se pregunta el dato hasta tener la v4 (Miguel Ángel, S137).
 """
 import logging
 import os
@@ -388,7 +389,7 @@ def send_pending_questions(company, log=logger.info):
     from whatsapp.window_service import send_notification
 
     counters = {"enviadas": 0, "caducadas": _expire_old(),
-                "sin_movil": 0, "esperan": 0}
+                "sin_movil": 0, "esperan": 0, "brazos": 0}
     hour = timezone.localtime().hour
     if not SEND_FROM_HOUR <= hour < SEND_UNTIL_HOUR:
         log("Preguntas de repostajes: fuera de horario (8:00-21:00).")
@@ -422,6 +423,13 @@ def send_pending_questions(company, log=logger.info):
             break
         if not approved[kind]:
             continue
+        # S137, Miguel Ángel: a los brazos (B) se les pregunta el dato
+        # cuando esté aprobada la v4, que dice por qué no encaja.
+        if (kind == RefuelQuestion.KIND_VALUE
+                and templates[kind].name != VALUE_TEMPLATE_V4
+                and supply.vehicle.machine.code.upper().startswith("B")):
+            counters["brazos"] += 1
+            continue
         person = supply.user.person
         phone = mobile_of(person)
         if not phone:
@@ -449,7 +457,8 @@ def send_pending_questions(company, log=logger.info):
         counters["enviadas"] += 1
     log("Preguntas de repostajes: %(enviadas)d enviadas, %(esperan)d "
         "esperan a que el chófer conteste otra, %(sin_movil)d sin móvil, "
-        "%(caducadas)d caducadas." % counters)
+        "%(brazos)d de brazos esperan a la v4, %(caducadas)d caducadas."
+        % counters)
     return counters
 
 
