@@ -521,6 +521,21 @@ puede ser es que la interfaz no informe de lo que pasa."
         </h2>
         <div id="collapseMachineWorkshop" class="accordion-collapse collapse">
             <div class="accordion-body">
+                {% comment %}
+                H30 (S139, invasora): "Gestión" (tareas de los partes con
+                sumatorio, Excel y el parte como documento) y "Averías"
+                (tickets con sus partes y repuestos), pantallas aparte.
+                {% endcomment %}
+                {% if can_manage_workshop %}
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                    <a href="{% url 'panel:machine_workshop_tasks' pk=machine.pk %}" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-list-check me-1"></i>Gestión
+                    </a>
+                    <a href="{% url 'panel:machine_workshop_tickets' pk=machine.pk %}" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-exclamation-triangle me-1"></i>Averías
+                    </a>
+                </div>
+                {% endif %}
                 {% if not has_workshop_data %}
                 <p class="text-muted small mb-0">Sin partes, mantenimientos ni libro historial registrados para esta máquina.</p>
                 {% else %}

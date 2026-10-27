@@ -79,7 +79,7 @@ from fleet.models import MachineAsset
 from hr_calendar.models import AbsencePeriod, VacationPeriod
 from ivr_config.models import Company, CompanyUser, WorkPeriod
 from panel.mixins import (
-    CompanyUserRequiredMixin, DocsUploadAccessMixin,
+    CompanyUserRequiredMixin, DocsUploadAccessMixin, FleetAccessMixin,
 )
 from panel.models import PanelNavigationState
 from panel.navigation_persistence import get_saved_state_key
@@ -881,6 +881,13 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
             {
                 **_machine_workshop_context(machine, entries_list),
                 **machine_service_context(machine, request.user.company_user),
+                # H30 (S139, invasora): botones "Gestión" y "Averías" de
+                # la sección Taller, solo para quien puede abrirlas
+                # (mismos roles que Centros de gasto, FleetAccessMixin).
+                "can_manage_workshop": (
+                    request.user.company_user.role
+                    in FleetAccessMixin.allowed_roles
+                ),
                 "service_open": request.GET.get("service_open") == "1",
                 "lifting_accessories": lifting_accessories,
                 "lifting_accessories_expired": any(

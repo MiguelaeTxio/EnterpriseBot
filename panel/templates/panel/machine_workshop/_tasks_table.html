@@ -1,0 +1,79 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/machine_workshop/_tasks_table.html #}
+{% comment %}
+H30 (S139, invasora). Tabla de tareas de los partes de la máquina
+(directriz 4.24): orden múltiple con prioridad, casilla por fila y
+"todos", cabecera fija, menú de tres puntos por fila. "Ver el parte"
+abre el documento de solo lectura, nunca la vista de edición.
+{% endcomment %}
+{% if rows %}
+<table class="table table-sm table-hover align-middle mb-0 small" id="mw-table">
+    <thead class="table-light">
+        <tr>
+            <th><input class="form-check-input" type="checkbox" id="mw-check-all" title="Marcar/desmarcar todos los visibles"></th>
+            <th>{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.date label="Fecha" %}</th>
+            <th>{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.worker label="Mecánico" %}</th>
+            <th>{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.tipo label="Tipo" %}</th>
+            <th>{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.description label="Avería / tarea" %}</th>
+            <th>Horario</th>
+            <th class="text-end">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.hours label="Horas" align_end=True %}</th>
+            <th class="text-end">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.parts label="Repuestos" align_end=True %}</th>
+            <th class="text-end">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.cost label="Importe" align_end=True %}</th>
+            <th>{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.ticket label="Ticket" %}</th>
+            <th class="text-end">Acciones</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            <td>
+                <input class="form-check-input mw-row-check" type="checkbox"
+                       data-key="{{ row.key }}" data-label="{{ row.label }}"
+                       data-hours="{{ row.hours|default_if_none:0|stringformat:'s' }}"
+                       data-cost="{{ row.parts_cost|stringformat:'s' }}">
+            </td>
+            <td>{{ row.work_date|date:"d/m/Y" }}</td>
+            <td>{{ row.worker|default:"—" }}</td>
+            <td>{{ row.tipo_label|default:"—" }}{% if row.tipo_detail %}<div class="text-muted">{{ row.tipo_detail }}</div>{% endif %}</td>
+            <td class="mw-col-text">{{ row.description|default:"—"|truncatechars:140 }}</td>
+            <td>{% if row.hc or row.hf %}{{ row.hc|time:"H:i"|default:"?" }}–{{ row.hf|time:"H:i"|default:"?" }}{% else %}—{% endif %}</td>
+            <td class="text-end">{{ row.hours|default_if_none:"—" }}</td>
+            <td class="text-end">{% if row.parts_count %}{{ row.parts_count }}{% else %}—{% endif %}</td>
+            <td class="text-end">
+                {% if row.parts_count %}{{ row.parts_cost|floatformat:2 }} €{% if row.parts_unpriced %} <i class="bi bi-exclamation-circle text-warning" title="{{ row.parts_unpriced }} repuesto{{ row.parts_unpriced|pluralize }} sin precio grabado"></i>{% endif %}{% else %}—{% endif %}
+            </td>
+            <td>{{ row.ticket_code|default:"—" }}</td>
+            <td class="text-end">
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-secondary border-0 px-2" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                        <li><a class="dropdown-item" href="{% url 'panel:work_order_document' entry_pk=row.entry.pk %}?maquina={{ machine.pk }}"><i class="bi bi-file-earmark-text me-2"></i>Ver el parte</a></li>
+                        {% if row.ticket and can_open_ticket %}
+                        <li><a class="dropdown-item" href="{% url 'panel:breakdown_ticket_detail' pk=row.ticket.pk %}"><i class="bi bi-exclamation-triangle me-2"></i>Ver el ticket</a></li>
+                        {% endif %}
+                    </ul>
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="text-center text-muted py-5">
+    <i class="bi bi-tools fs-1 d-block mb-2 opacity-25"></i>
+    <p class="mb-0">No hay tareas de parte que coincidan con los filtros aplicados.</p>
+</div>
+{% endif %}
+{% comment %}
+Estado del fragmento para el panel fijo (que no se repinta): nº de
+filas y totales de lo listado, si hay filtro y el orden vigente.
+{% endcomment %}
+<span id="mw-fragment-state" class="d-none"
+      data-count="{{ totals.count }}"
+      data-hours="{{ totals.hours|floatformat:2 }}"
+      data-cost="{{ totals.cost|floatformat:2 }}"
+      data-unpriced="{{ totals.unpriced }}"
+      data-filtered="{% if is_filtered %}1{% endif %}"
+      data-sort-active="{% if sort_active %}1{% endif %}"
+      data-sort="{{ current_sort }}"></span>

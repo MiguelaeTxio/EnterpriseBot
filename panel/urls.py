@@ -43,6 +43,15 @@ from panel.views_service_tab import (
     ServiceRowSaveView,
     ServiceTabPaneView,
 )
+from panel.views_machine_workshop import (
+    MachineWorkshopTasksExportView,
+    MachineWorkshopTasksFragmentView,
+    MachineWorkshopTasksView,
+    MachineWorkshopTicketsExportView,
+    MachineWorkshopTicketsFragmentView,
+    MachineWorkshopTicketsView,
+    WorkOrderDocumentView,
+)
 from panel.views_machine_service import (
     MachineMeterReadingCreateView,
     MachineMeterReadingDeleteView,
@@ -879,6 +888,43 @@ urlpatterns = [
         "documentacion/maquinaria/<int:pk>/lecturas/<int:reading_pk>/borrar/",
         MachineMeterReadingDeleteView.as_view(),
         name="machine_meter_reading_delete",
+    ),
+    # H30 (S139, invasora): gestión del taller de la máquina -- tareas de
+    # los partes, averías y documento de solo lectura del parte.
+    path(
+        "documentacion/maquinaria/<int:pk>/taller/partes/",
+        MachineWorkshopTasksView.as_view(),
+        name="machine_workshop_tasks",
+    ),
+    path(
+        "documentacion/maquinaria/<int:pk>/taller/partes/tabla/",
+        MachineWorkshopTasksFragmentView.as_view(),
+        name="machine_workshop_tasks_table",
+    ),
+    path(
+        "documentacion/maquinaria/<int:pk>/taller/partes/excel/",
+        MachineWorkshopTasksExportView.as_view(),
+        name="machine_workshop_tasks_export",
+    ),
+    path(
+        "documentacion/maquinaria/<int:pk>/taller/averias/",
+        MachineWorkshopTicketsView.as_view(),
+        name="machine_workshop_tickets",
+    ),
+    path(
+        "documentacion/maquinaria/<int:pk>/taller/averias/tabla/",
+        MachineWorkshopTicketsFragmentView.as_view(),
+        name="machine_workshop_tickets_table",
+    ),
+    path(
+        "documentacion/maquinaria/<int:pk>/taller/averias/excel/",
+        MachineWorkshopTicketsExportView.as_view(),
+        name="machine_workshop_tickets_export",
+    ),
+    path(
+        "taller/partes/<int:entry_pk>/documento/",
+        WorkOrderDocumentView.as_view(),
+        name="work_order_document",
     ),
     # H30 (S118) punto 1: historial completo de un tipo documental de una
     # máquina.

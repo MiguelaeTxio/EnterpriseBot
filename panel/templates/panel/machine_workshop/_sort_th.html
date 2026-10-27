@@ -1,0 +1,21 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/machine_workshop/_sort_th.html #}
+{% comment %}
+H30 (S139, invasora). Cabecera ordenable de los listados del taller de
+la máquina (directriz 4.24): `col` (siguiente orden, flecha y
+prioridad, resueltos en la vista) y `label` llegan del include;
+`table_url` del contexto.
+{% endcomment %}
+<a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none{% if align_end %} justify-content-end{% endif %}"
+   hx-get="{{ table_url }}"
+   hx-target="#mw-table-container"
+   hx-include="#mw-filters"
+   hx-trigger="click"
+   hx-vals='{"sort": "{{ col.next }}"}'
+   role="button">
+    {{ label }}
+    {% if col.arrow %}
+        <i class="bi bi-arrow-{{ col.arrow }}-short"></i>{% if col.priority %}<sup class="small">{{ col.priority }}</sup>{% endif %}
+    {% else %}
+        <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
+    {% endif %}
+</a>

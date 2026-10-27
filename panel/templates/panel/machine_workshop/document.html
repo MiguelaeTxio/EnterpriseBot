@@ -1,0 +1,236 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/machine_workshop/document.html #}
+{% extends "panel/base.html" %}
+
+{% block title %}Parte de trabajo{% if work_date %} {{ work_date|date:"d/m/Y" }}{% endif %}{% endblock %}
+{% block page_title %}Parte de trabajo{% endblock %}
+
+{% block extra_head %}
+<style>
+.wo-doc { max-width: 980px; }
+.wo-doc .wo-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; color: var(--bs-secondary-color, #6c757d); }
+.wo-doc .wo-task { border-left: 4px solid var(--bs-border-color, #dee2e6); }
+.wo-doc .wo-task.wo-this-machine { border-left-color: var(--bs-primary, #0d6efd); }
+.wo-doc .wo-photo { width: 120px; height: 90px; object-fit: cover; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% comment %}
+H30 (S139, invasora). "Ver el parte": el parte presentado como un
+documento, de solo lectura. Miguel Ángel: "debe mostrar todo lo que hay
+grabado en el parte y nada de lo que no está grabado [...] sin casillas
+marcadas o desmarcadas, solo lo que aplica". Cada bloque solo se pinta
+si tiene dato; los sí/no solo cuando aplican. Datos resueltos en
+panel/machine_workshop.py (work_order_document).
+{% endcomment %}
+<div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+    <a href="{{ panel_back_url|default:fallback_back_url }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Volver
+    </a>
+    {% if machine %}<span class="small text-muted">Abierto desde {{ machine.code }} — {{ machine.brand_model }}: sus tareas van marcadas en azul.</span>{% endif %}
+</div>
+
+<div class="wo-doc card shadow-sm">
+    <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 border-bottom pb-3 mb-3">
+            <div>
+                <h4 class="mb-1">Parte de trabajo</h4>
+                <div class="fs-5">{{ worker|default:"Mecánico sin nombre" }}</div>
+            </div>
+            <div class="text-end">
+                <div class="fs-5 fw-semibold">{{ work_date|date:"l, d/m/Y"|capfirst }}</div>
+                {% if uncertain_date %}<div class="small text-warning">Fecha dudosa en el original</div>{% endif %}
+                {% if is_pdf %}<div class="small text-muted">Escaneado: {{ pdf_name }}, página {{ page_number }}</div>{% endif %}
+                {% if reviewed_by %}<div class="small text-success"><i class="bi bi-check2-circle me-1"></i>Revisado por {{ reviewed_by }}{% if reviewed_at %} el {{ reviewed_at|date:"d/m/Y H:i" }}{% endif %}</div>{% endif %}
+            </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+            <div class="col-6 col-md-3">
+                <div class="wo-label">Horas trabajadas</div>
+                <div class="fs-5 fw-semibold">{{ total_hours|floatformat:2 }} h</div>
+            </div>
+            {% if start or end %}
+            <div class="col-6 col-md-3">
+                <div class="wo-label">Horario</div>
+                <div class="fs-5">{{ start|default:"?" }} – {{ end|default:"?" }}</div>
+            </div>
+            {% endif %}
+            {% if lunch %}
+            <div class="col-6 col-md-3">
+                <div class="wo-label">Pausa de comida</div>
+                <div class="fs-5">{{ lunch }}</div>
+            </div>
+            {% elif no_lunch_break %}
+            <div class="col-6 col-md-3">
+                <div class="wo-label">Jornada</div>
+                <div class="fs-5">Sin pausa de comida</div>
+            </div>
+            {% endif %}
+            {% if has_diet %}
+            <div class="col-6 col-md-3">
+                <div class="wo-label">Dieta</div>
+                <div class="fs-5">Con dieta</div>
+            </div>
+            {% endif %}
+            {% if total_cost or total_unpriced %}
+            <div class="col-6 col-md-3">
+                <div class="wo-label">Repuestos</div>
+                <div class="fs-5">{{ total_cost|floatformat:2 }} €</div>
+                {% if total_unpriced %}<div class="small text-warning">{{ total_unpriced }} sin precio grabado</div>{% endif %}
+            </div>
+            {% endif %}
+        </div>
+
+        {% for task in tasks %}
+        <div class="wo-task{% if task.is_this_machine %} wo-this-machine{% endif %} border rounded p-3 mb-3">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+                <div>
+                    <span class="badge bg-dark me-1">Tarea {{ task.number }}</span>
+                    <span class="fw-semibold">{% if task.machine %}{{ task.machine.code }} — {{ task.machine.brand_model }}{% else %}{{ task.machine_text|default:"Sin máquina" }}{% endif %}</span>
+                    {% if task.is_on_site %}<span class="badge bg-secondary ms-1"><i class="bi bi-geo-alt me-1"></i>In situ</span>{% endif %}
+                </div>
+                <div class="text-end">
+                    {% if task.hc or task.hf %}<span class="me-2">{{ task.hc|default:"?" }} – {{ task.hf|default:"?" }}</span>{% endif %}
+                    {% if task.hours is not None %}<span class="fw-semibold">{{ task.hours }} h</span>{% endif %}
+                </div>
+            </div>
+
+            <div class="row g-2 mb-2">
+                {% if task.tipo_label %}
+                <div class="col-12 col-md-4">
+                    <div class="wo-label">Tipo</div>
+                    <div>{{ task.tipo_label }}{% if task.tipo_detail %} <span class="text-muted">— {{ task.tipo_detail }}</span>{% endif %}</div>
+                </div>
+                {% endif %}
+                {% if task.or_val %}
+                <div class="col-6 col-md-2">
+                    <div class="wo-label">O.R.</div>
+                    <div>{{ task.or_val }}</div>
+                </div>
+                {% endif %}
+                {% if task.ticket %}
+                <div class="col-12 col-md-6">
+                    <div class="wo-label">Ticket de avería</div>
+                    <div>
+                        {% if can_open_ticket %}<a href="{% url 'panel:breakdown_ticket_detail' pk=task.ticket.pk %}">{{ task.ticket.ticket_date_code|default:task.ticket.pk }}</a>{% else %}{{ task.ticket.ticket_date_code|default:task.ticket.pk }}{% endif %}
+                        {% if task.ticket.fault_summary %}<span class="text-muted">— {{ task.ticket.fault_summary|truncatechars:80 }}</span>{% endif %}
+                        {% if task.ticket_closed %}<span class="badge bg-success ms-1">Cerrado en este parte</span>{% endif %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            {% if task.description %}
+            <div class="mb-2">
+                <div class="wo-label">Avería / tarea</div>
+                <div>{{ task.description|linebreaksbr }}</div>
+            </div>
+            {% endif %}
+            {% if task.repair %}
+            <div class="mb-2">
+                <div class="wo-label">Reparación realizada</div>
+                <div>{{ task.repair|linebreaksbr }}</div>
+            </div>
+            {% endif %}
+
+            {% if task.readings %}
+            <div class="mb-2">
+                <div class="wo-label">Lecturas</div>
+                <div>{% for label, value in task.readings %}{{ label }}: {{ value }}{% if not forloop.last %} · {% endif %}{% endfor %}</div>
+            </div>
+            {% endif %}
+
+            {% for service in task.services %}
+            <div class="mb-2">
+                <div class="wo-label">Revisión — {{ service.engine }}</div>
+                <div>
+                    {% if service.filters %}Filtros: {{ service.filters|join:", " }}.{% endif %}
+                    {% if service.oil %} Aceite: {{ service.oil }}{% if service.oil_litres %}, {{ service.oil_litres }} l{% endif %}.{% elif service.oil_litres %} Aceite: {{ service.oil_litres }} l.{% endif %}
+                    {% if service.next_hours %} Próxima a las {{ service.next_hours }} h.{% endif %}
+                    {% if service.next_km %} Próxima a los {{ service.next_km }} km.{% endif %}
+                    {% if service.notes %}<div class="text-muted small">{{ service.notes }}</div>{% endif %}
+                </div>
+            </div>
+            {% endfor %}
+
+            {% if task.parts %}
+            <div class="mb-2">
+                <div class="wo-label mb-1">Repuestos gastados</div>
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0 small">
+                        <thead class="table-light">
+                            <tr><th>Referencia</th><th>Material</th><th class="text-end">Unidades</th><th class="text-end">Precio</th><th class="text-end">Importe</th><th>Procedencia</th><th>Albaranes</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for part in task.parts %}
+                            <tr>
+                                <td>
+                                    {% if part.can_open_stock and part.article_internal_reference %}
+                                    <a href="{% url 'workorder_spare_parts:catalog_article_detail' internal_reference=part.article_internal_reference %}">{{ part.reference|default:part.article_internal_reference }}</a>
+                                    {% elif part.can_open_stock and part.article_pk %}
+                                    <a href="{% url 'workorder_spare_parts:catalog_edit' pk=part.article_pk %}">{{ part.reference|default:"Ver repuesto" }}</a>
+                                    {% else %}{{ part.reference|default:"—" }}{% endif %}
+                                </td>
+                                <td>{{ part.material|default:"—" }}{% if part.vehicle and task.machine and part.vehicle.pk != task.machine.pk %}<div class="text-muted">Imputado a {{ part.vehicle.code }}</div>{% endif %}</td>
+                                <td class="text-end">{{ part.quantity|default_if_none:"—" }}</td>
+                                <td class="text-end">{% if part.price is not None %}{{ part.price|floatformat:2 }} €{% else %}—{% endif %}</td>
+                                <td class="text-end">{% if part.amount is not None %}{{ part.amount|floatformat:2 }} €{% else %}—{% endif %}</td>
+                                <td>{{ part.source_label }}{% if part.supplier %} — {{ part.supplier }}{% endif %}</td>
+                                <td>
+                                    {% for note in part.delivery_notes %}
+                                    {% if part.can_open_stock %}<a href="{% url 'delivery_notes:detail' pk=note.pk %}">{{ note.label }}</a>{% else %}{{ note.label }}{% endif %}{% if not forloop.last %}<br>{% endif %}
+                                    {% empty %}—{% endfor %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot>
+                            <tr class="fw-semibold"><td colspan="4" class="text-end">Total de la tarea</td><td class="text-end">{{ task.parts_cost|floatformat:2 }} €</td><td colspan="2">{% if task.parts_unpriced %}<span class="text-warning fw-normal">{{ task.parts_unpriced }} sin precio grabado</span>{% endif %}</td></tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if task.delivery_notes %}
+            <div class="mb-2">
+                <div class="wo-label">Albaranes vinculados a la tarea</div>
+                <div>
+                    {% for note in task.delivery_notes %}
+                    {% if can_open_stock %}<a href="{% url 'delivery_notes:detail' pk=note.pk %}">{{ note.label }}</a>{% else %}{{ note.label }}{% endif %}{% if not forloop.last %} · {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            {% if task.photos %}
+            <div>
+                <div class="wo-label mb-1">Fotos</div>
+                <div class="d-flex flex-wrap gap-2">
+                    {% for photo in task.photos %}
+                    <a href="{{ photo.url }}" target="_blank" rel="noopener" title="{{ photo.caption }}">
+                        <img src="{{ photo.url }}" alt="{{ photo.caption|default:'Foto de la tarea' }}" class="wo-photo rounded border" loading="lazy">
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+
+        {% if gaps %}
+        <div class="border-top pt-3">
+            <div class="wo-label mb-1">Justificaciones de jornada</div>
+            <ul class="mb-0">
+                {% for gap in gaps %}
+                <li>
+                    {{ gap.type }}{% if gap.start or gap.end %} ({{ gap.start|default:"?" }}–{{ gap.end|default:"?" }}{% if gap.minutes %}, {{ gap.minutes }} min{% endif %}){% endif %}{% if gap.category %}: {{ gap.category }}{% endif %}{% if gap.note %} — {{ gap.note }}{% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

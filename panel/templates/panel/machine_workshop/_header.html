@@ -1,0 +1,30 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/machine_workshop/_header.html #}
+{% comment %}
+H30 (S139, invasora). Cabecera común de la gestión del taller de una
+máquina: miga de pan a la ficha, "Volver" a la página de la que se vino
+(directriz 4.25) y las dos pantallas (Partes de trabajo / Averías) como
+pestañas que navegan entre sí.
+{% endcomment %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small mb-1">
+        <li class="breadcrumb-item"><a href="{{ machine_detail_url }}">{{ machine.code }} — {{ machine.brand_model }}</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Taller — {% if active_kind == "tasks" %}Partes de trabajo{% else %}Averías{% endif %}</li>
+    </ol>
+</nav>
+<div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+    <a href="{{ panel_back_url|default:machine_detail_url }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Volver
+    </a>
+    <ul class="nav nav-tabs flex-grow-1">
+        <li class="nav-item">
+            <a class="nav-link{% if active_kind == 'tasks' %} active{% endif %}" href="{% url 'panel:machine_workshop_tasks' pk=machine.pk %}">
+                <i class="bi bi-tools me-1"></i>Partes de trabajo
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link{% if active_kind == 'tickets' %} active{% endif %}" href="{% url 'panel:machine_workshop_tickets' pk=machine.pk %}">
+                <i class="bi bi-exclamation-triangle me-1"></i>Averías
+            </a>
+        </li>
+    </ul>
+</div>

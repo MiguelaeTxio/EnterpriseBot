@@ -1,0 +1,161 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/machine_workshop/tickets.html #}
+{% extends "panel/base.html" %}
+{% load static %}
+
+{% block title %}{{ machine.code }} — Averías{% endblock %}
+{% block page_title %}{{ machine.code }} — {{ machine.brand_model }}{% endblock %}
+
+{% block extra_head %}
+<style>
+#mw-results-scroll table td,
+#mw-results-scroll table th { white-space: nowrap; }
+#mw-results-scroll .mw-col-text { white-space: normal; min-width: 16rem; max-width: 28rem; }
+#mw-list-box:fullscreen { background: var(--bs-body-bg, #fff); padding: 1rem; }
+#mw-list-box:fullscreen #mw-results-scroll { height: calc(100vh - 4rem); }
+</style>
+<script src="{% static 'panel/js/machine_workshop_list.js' %}"></script>
+{% endblock %}
+
+{% block content %}
+{% comment %}
+H30 (S139, invasora). Gestión de las averías de la máquina: sus tickets
+de avería con las tareas de parte que los atendieron, horas, repuestos
+gastados e importe (directriz 4.24, mismo formato que Partes de
+trabajo). Una avería cerrada sigue en el listado (regla 8: nada se
+pierde de vista), filtrable con las casillas de estado.
+{% endcomment %}
+{% include "panel/machine_workshop/_header.html" %}
+
+<div id="mw-root"
+     data-table-url="{{ table_url }}"
+     data-export-url="{% url 'panel:machine_workshop_tickets_export' pk=machine.pk %}"
+     data-screen-key="{{ screen_key }}">
+
+<div class="border rounded p-2 mb-2" id="mw-top-panel">
+    <div class="row g-2">
+        <div class="col-lg-7">
+            <div class="border rounded p-2 h-100" id="mw-filters">
+                <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                <input type="search" class="form-control form-control-sm mb-2"
+                       placeholder="Buscar en el ticket, la avería, las tareas, los mecánicos o los repuestos…"
+                       name="search" value="{{ filters.search }}" autocomplete="off"
+                       hx-get="{{ table_url }}" hx-target="#mw-table-container"
+                       hx-include="#mw-filters, #mw-sort"
+                       hx-trigger="input changed delay:300ms, search">
+                <div class="d-flex flex-wrap gap-3">
+                    <div>
+                        <div class="small fw-bold">Estado</div>
+                        {% comment %}
+                        Casillas sin "name": el JS traduce la combinación al
+                        valor único de state -- ambas = todas, ninguna =
+                        ninguna (semántica literal de casilla).
+                        {% endcomment %}
+                        <div class="form-check">
+                            <input class="form-check-input mw-state-check" type="checkbox" id="mw-state-open" autocomplete="off"
+                                   {% if filters.state == '' or filters.state == 'open' %}checked{% endif %}>
+                            <label class="form-check-label small" for="mw-state-open">Abiertas</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input mw-state-check" type="checkbox" id="mw-state-closed" autocomplete="off"
+                                   {% if filters.state == '' or filters.state == 'closed' %}checked{% endif %}>
+                            <label class="form-check-label small" for="mw-state-closed">Cerradas</label>
+                        </div>
+                        <input type="hidden" id="mw-filter-state" name="state" value="{{ filters.state }}"
+                               hx-get="{{ table_url }}" hx-target="#mw-table-container"
+                               hx-include="#mw-filters, #mw-sort" hx-trigger="mw-state-change">
+                    </div>
+                    <div>
+                        <div class="small fw-bold">Fecha del ticket</div>
+                        <div class="d-flex gap-1">
+                            <input type="date" class="form-control form-control-sm" name="date_from" value="{{ filters.date_from }}" title="Desde"
+                                   hx-get="{{ table_url }}" hx-target="#mw-table-container"
+                                   hx-include="#mw-filters, #mw-sort" hx-trigger="change">
+                            <input type="date" class="form-control form-control-sm" name="date_to" value="{{ filters.date_to }}" title="Hasta"
+                                   hx-get="{{ table_url }}" hx-target="#mw-table-container"
+                                   hx-include="#mw-filters, #mw-sort" hx-trigger="change">
+                        </div>
+                    </div>
+                </div>
+                <div class="small fw-bold mt-2">Selección</div>
+                <div class="d-flex align-items-center justify-content-between gap-2">
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" id="mw-only-selected" name="only_selected" value="1" autocomplete="off"
+                               {% if only_selected %}checked{% endif %}
+                               hx-get="{{ table_url }}" hx-target="#mw-table-container"
+                               hx-include="#mw-filters, #mw-sort"
+                               hx-trigger="change, mw-selection-refresh">
+                        <label class="form-check-label small" for="mw-only-selected">Mostrar solo la selección actual</label>
+                    </div>
+                    <input type="hidden" id="mw-selected-ids" name="selected_ids" value="">
+                    <button type="button"
+                            class="btn btn-sm btn-outline-secondary{% if not sort_active %} d-none{% endif %}"
+                            id="mw-clear-sort"
+                            hx-get="{{ table_url }}" hx-target="#mw-table-container"
+                            hx-include="#mw-filters" hx-vals='{"sort": ""}'
+                            title="Deshacer todos los órdenes aplicados">
+                        <i class="bi bi-x-circle me-1"></i>Quitar orden
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="border rounded p-2 h-100">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <strong class="small"><span id="mw-mass-count">0</span> seleccionados</strong>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="mw-mass-clear">Limpiar</button>
+                </div>
+                <div class="small text-muted fw-bold">Descargar la selección</div>
+                <button type="button" class="btn btn-sm btn-outline-success mw-needs-selection" id="mw-mass-export" disabled
+                        title="Excel con las averías seleccionadas, sus tareas de parte y sus repuestos, con totales">
+                    <i class="bi bi-file-earmark-excel me-1"></i>Excel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="border rounded p-2" id="mw-bottom-panel">
+    <div class="row g-2 h-100">
+        <div class="col-lg-9 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column" id="mw-list-box">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <div class="fw-bold small">
+                        <span id="mw-row-count">{{ totals.count }}</span> averías
+                        <span id="mw-row-filtered" class="text-muted fw-normal{% if not is_filtered %} d-none{% endif %}">(filtrado)</span>
+                        <span class="text-muted fw-normal">·</span>
+                        <span id="mw-row-hours">{{ totals.hours|floatformat:2 }}</span> h
+                        <span class="text-muted fw-normal">·</span>
+                        <span id="mw-row-cost">{{ totals.cost|floatformat:2 }}</span> € en repuestos
+                        <span id="mw-row-unpriced" class="text-warning fw-normal{% if not totals.unpriced %} d-none{% endif %}">(<span>{{ totals.unpriced }}</span> sin precio)</span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" id="mw-fullscreen" title="Pantalla completa">
+                        <i class="bi bi-fullscreen"></i>
+                    </button>
+                </div>
+                <div id="mw-results-scroll" class="fixed-list-scroll flex-scroll-xy">
+                    <div id="mw-table-container">
+                        {% include "panel/machine_workshop/_tickets_table.html" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1">Selección actual (<span id="mw-selection-count">0</span>)</div>
+                <div class="small text-muted mb-1" id="mw-selection-totals"></div>
+                <div class="flex-scroll-y">
+                    <ul class="mb-0 small ps-0 list-unstyled" id="mw-selection-list">
+                        <li class="text-muted">Nada seleccionado todavía.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<span id="mw-sort" class="d-none"><input type="hidden" name="sort" value="{{ current_sort }}"></span>
+{{ saved_selection|json_script:"mw-saved-selection" }}
+</div>
+{% include "panel/_fixed_list_layout.html" with top_id="mw-top-panel" bottom_id="mw-bottom-panel" %}
+{% endblock %}
