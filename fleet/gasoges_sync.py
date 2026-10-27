@@ -655,7 +655,6 @@ def run_sync(start, end, log, heartbeat=None, rebuild=False,
         client, start, end, log, heartbeat)
     if rebuild:
         summary["rehacer"] = reset_readings(log)
-    summary["regla"] = len(apply_convention(log))
     summary["unidades"] = deduce_units(log)
     summary["lecturas"] = build_readings(log, recheck_all=recheck)
     return summary
