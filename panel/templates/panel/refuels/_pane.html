@@ -16,6 +16,9 @@ mismos filtros; cada vista con su propia selección guardada. Las
 acciones de unidad y de preguntar valen en Repostajes (para los
 vehículos de los repostajes marcados) y en Vehículos (para los
 vehículos marcados); en Repostadores no aplican y se ocultan.
+S137: cuarta vista, "Preguntas por WhatsApp" (las preguntas enviadas y
+su resumen). En ella no aplican los filtros de estado y de "¿se
+pregunta?" ni las acciones de unidad, contador y preguntar: se ocultan.
 {% endcomment %}
 <div class="border rounded p-2 mb-2" id="rfl-top-panel">
     <div class="row g-2">
@@ -41,7 +44,7 @@ vehículos marcados); en Repostadores no aplican y se ocultan.
                                placeholder="Buscar por centro de gasto, matrícula, vehículo o chófer…" value="{{ filter_search }}">
                     </div>
                     <div class="d-flex flex-wrap gap-3 align-items-start small">
-                        <div>
+                        <div class="rfl-supply-filter">
                             <div class="fw-semibold mb-1">Estado</div>
                             {% for choice in status_choices %}
                             <div class="form-check">
@@ -52,7 +55,7 @@ vehículos marcados); en Repostadores no aplican y se ocultan.
                             {% endfor %}
                             <input type="hidden" name="status" id="rfl-status-input" value="">
                         </div>
-                        <div>
+                        <div class="rfl-supply-filter">
                             <div class="fw-semibold mb-1"><i class="bi bi-bell-slash me-1"></i>¿Se pregunta al chófer?</div>
                             {% for choice in ask_choices %}
                             <div class="form-check">
@@ -129,7 +132,7 @@ vehículos marcados); en Repostadores no aplican y se ocultan.
                             </button>
                         </div>
                     </div>
-                    <div class="col-6 border-top pt-1 mt-1">
+                    <div class="col-6 border-top pt-1 mt-1 rfl-ask-action">
                         <div class="small text-muted fw-bold">Preguntas por WhatsApp</div>
                         <div class="d-flex flex-wrap gap-1">
                             <button type="button" class="btn btn-sm btn-outline-secondary rfl-ask-btn" data-ask="0"
@@ -184,6 +187,7 @@ vehículos marcados); en Repostadores no aplican y se ocultan.
 <style>
 #rfl-results-scroll table td,
 #rfl-results-scroll table th { white-space: nowrap; }
+#rfl-results-scroll table td.rfl-wrap { white-space: normal; min-width: 22rem; }
 .rfl-fill { flex: 1 1 auto; min-height: 0; }
 .rfl-scroll-y { overflow-y: auto; }
 .rfl-scroll-both { overflow: auto; }
@@ -274,7 +278,10 @@ vehículos marcados); en Repostadores no aplican y se ocultan.
             currentView = state.dataset.view || "supplies";
             document.getElementById("rfl-row-title").textContent = state.dataset.title;
             document.querySelectorAll(".rfl-vehicle-action").forEach(function (el) {
-                el.classList.toggle("d-none", currentView === "users");
+                el.classList.toggle("d-none", currentView === "users" || currentView === "questions");
+            });
+            document.querySelectorAll(".rfl-ask-action, .rfl-supply-filter").forEach(function (el) {
+                el.classList.toggle("d-none", currentView === "questions");
             });
             document.getElementById("rfl-row-count").textContent = state.dataset.count;
             document.getElementById("rfl-clear-sort").classList.toggle("d-none", !state.dataset.sortActive);

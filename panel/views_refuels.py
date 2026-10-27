@@ -24,6 +24,15 @@ Vehículos, una fila por vehículo de GasoGes y en Repostadores una por
 usuario de GasoGes, con sus totales en el periodo (repostajes, litros,
 último repostaje, dudosos...). Las acciones de unidad y de preguntar al
 chófer se aplican en Vehículos a los vehículos marcados.
+
+S137: cuarta vista, "Preguntas", Miguel Ángel: "un poco de estadística,
+a ver cuántos mensajes se han enviado [...] que se pudiera ver desde el
+propio panel". Una fila por pregunta de WhatsApp enviada en las fechas
+del filtro (cuándo, a quién, por qué vehículo, qué tecleó, por qué se
+le pregunta, en qué quedó y qué contestó) y, encima, el resumen:
+enviadas, chóferes, contestadas por respuesta, esperando y sin
+respuesta. Los filtros de estado del repostaje y de "¿se pregunta?" no
+aplican a esta vista; las fechas y la búsqueda, sí.
 """
 import datetime
 import io
@@ -35,7 +44,12 @@ from django.utils import timezone
 from django.views import View
 
 from fleet.gasoges_sync import build_readings
-from fleet.models import GasoGesSupply, GasoGesUser, GasoGesVehicle
+from fleet.models import (
+    GasoGesSupply,
+    GasoGesUser,
+    GasoGesVehicle,
+    RefuelQuestion,
+)
 from panel.mixins import CompanyUserRequiredMixin
 from panel.navigation_persistence import (
     apply_list_navigation,
@@ -63,10 +77,12 @@ _MAX_ROWS = 1000
 VIEW_SUPPLIES = "supplies"
 VIEW_VEHICLES = "vehicles"
 VIEW_USERS = "users"
+VIEW_QUESTIONS = "questions"
 VIEW_CHOICES = (
     (VIEW_SUPPLIES, "Repostajes"),
     (VIEW_VEHICLES, "Vehículos"),
     (VIEW_USERS, "Repostadores"),
+    (VIEW_QUESTIONS, "Preguntas por WhatsApp"),
 )
 
 _COLUMNS = {
@@ -99,21 +115,44 @@ _COLUMNS = {
         ("uanomaly", "Dudosos", "n_anomalies"),
         ("uvehicles", "Vehículos", "n_others"),
     ),
+    VIEW_QUESTIONS: (
+        ("qsent", "Enviada", "sent_at"),
+        ("qdriver", "Chófer", "person__first_surname"),
+        ("qmachine", "Centro de gasto", "vehicle__machine__code"),
+        ("qkind", "Pregunta", "kind"),
+        ("qvalue", "Dato tecleado", "supply__meter_value"),
+        ("qreason", "Por qué se pregunta", "reason"),
+        ("qstatus", "En qué quedó", "status"),
+        ("qanswer", "Respuesta", "answer"),
+        ("qanswered", "Respondida", "answered_at"),
+    ),
 }
 _DEFAULT_ORDER = {
     VIEW_SUPPLIES: ["-supplied_at"],
     VIEW_VEHICLES: ["vehicle__machine__code", "vehicle__plate"],
     VIEW_USERS: ["user__name"],
+    VIEW_QUESTIONS: ["-sent_at"],
 }
 _SELECTION_KEYS = {
     VIEW_SUPPLIES: "selection",
     VIEW_VEHICLES: "selection_vehicles",
     VIEW_USERS: "selection_users",
+    VIEW_QUESTIONS: "selection_questions",
 }
 _TOTAL_LABELS = {
     VIEW_SUPPLIES: "Repostajes",
     VIEW_VEHICLES: "Vehículos",
     VIEW_USERS: "Repostadores",
+    VIEW_QUESTIONS: "Preguntas",
+}
+_QUESTION_BADGES = {
+    RefuelQuestion.STATUS_SENT: "warning",
+    RefuelQuestion.STATUS_AWAITING_VALUE: "info",
+    RefuelQuestion.STATUS_CONFIRMED: "success",
+    RefuelQuestion.STATUS_CORRECTED: "primary",
+    RefuelQuestion.STATUS_UNIT_SET: "primary",
+    RefuelQuestion.STATUS_METER_BROKEN: "dark",
+    RefuelQuestion.STATUS_EXPIRED: "secondary",
 }
 
 _STATUS_BADGES = {
@@ -459,6 +498,122 @@ def _user_rows(groups):
     return rows
 
 
+def _local_range(request):
+    """
+    Aware [start, end) of the date filter, in local time.
+
+    ---
+
+    Intervalo [inicio, fin) del filtro de fechas en hora local, sin
+    `__date` (no depende de las tablas de zona horaria de MySQL).
+    """
+    date_from, date_to = _date_range(request)
+    return (
+        timezone.make_aware(
+            datetime.datetime.combine(date_from, datetime.time.min)),
+        timezone.make_aware(datetime.datetime.combine(
+            date_to + datetime.timedelta(days=1), datetime.time.min)),
+    )
+
+
+def _filtered_questions(request):
+    """
+    WhatsApp questions sent in the date range, with the search.
+
+    ---
+
+    Preguntas de WhatsApp enviadas en las fechas del filtro, con la
+    búsqueda (centro de gasto, matrícula, vehículo o chófer).
+    """
+    start, end = _local_range(request)
+    questions = RefuelQuestion.objects.select_related(
+        "supply", "vehicle", "vehicle__machine", "person",
+    ).filter(sent_at__gte=start, sent_at__lt=end)
+    search = _param(request, "search").strip()
+    if search:
+        questions = questions.filter(
+            Q(vehicle__machine__code__icontains=search)
+            | Q(vehicle__plate__icontains=search)
+            | Q(vehicle__name__icontains=search)
+            | Q(person__given_name__icontains=search)
+            | Q(person__first_surname__icontains=search)
+            | Q(person__second_surname__icontains=search))
+    return questions
+
+
+def _question_stats(questions):
+    """
+    Summary of the questions: sent, drivers and how many in each state.
+
+    ---
+
+    Resumen de las preguntas del filtro: enviadas, a cuántos chóferes y
+    cuántas en cada estado (en el orden de STATUS_CHOICES, solo las que
+    tienen alguna), con el porcentaje sobre las enviadas.
+    """
+    total = questions.count()
+    by_status = dict(questions.values_list("status").annotate(
+        n=Count("id")).order_by())
+    answered = total - by_status.get(RefuelQuestion.STATUS_SENT, 0) - (
+        by_status.get(RefuelQuestion.STATUS_EXPIRED, 0))
+    return {
+        "total": total,
+        "drivers": questions.values("person_id").distinct().count(),
+        "answered": answered,
+        "answered_pct": round(answered * 100 / total) if total else 0,
+        "states": [
+            {"label": label, "count": by_status[code],
+             "badge": _QUESTION_BADGES.get(code, "light"),
+             "pct": round(by_status[code] * 100 / total)}
+            for code, label in RefuelQuestion.STATUS_CHOICES
+            if by_status.get(code)],
+    }
+
+
+def _question_row(question):
+    """
+    One question ready for the template (dumb template).
+
+    ---
+
+    Una pregunta lista para la plantilla: todo calculado aquí.
+    """
+    from fleet.refuel_questions import question_reason
+
+    vehicle = question.vehicle
+    sent = timezone.localtime(question.sent_at)
+    # Las preguntas de antes de S137 no guardaban el motivo: se calcula
+    # ahora y se avisa de que no iba en el mensaje.
+    reason, reason_sent = question.reason, True
+    if not reason and question.kind == RefuelQuestion.KIND_VALUE:
+        reason, reason_sent = question_reason(question.supply), False
+    return {
+        "pk": question.pk,
+        "sent": sent,
+        "driver": _person_label(question.person),
+        "person": question.person,
+        "machine": vehicle.machine,
+        "vehicle_label": _vehicle_label(vehicle),
+        "kind": question.get_kind_display(),
+        "value": question.supply.meter_value,
+        "unit": vehicle.get_unit_display(),
+        "reason": reason,
+        "reason_sent": reason_sent,
+        "status": question.get_status_display(),
+        "status_badge": _QUESTION_BADGES.get(question.status, "light"),
+        "answer": question.answer,
+        "answered": (timezone.localtime(question.answered_at)
+                     if question.answered_at else None),
+        "search": vehicle.machine.code if vehicle.machine else (
+            vehicle.plate or ""),
+        "label": "%s %s %s" % (
+            sent.strftime("%d/%m %H:%M"),
+            vehicle.machine.code if vehicle.machine else (
+                vehicle.plate or vehicle.gasoges_id),
+            _person_label(question.person)),
+    }
+
+
 def _list_context(request):
     """
     Context of the table of the current view: filtered, sorted, capped.
@@ -478,7 +633,16 @@ def _list_context(request):
     sort_keys = _parse_sort(_param(request, "sort"), view)
     order = [("-" if desc else "") + fields[key]
              for key, desc in sort_keys] or _DEFAULT_ORDER[view]
-    if view == VIEW_VEHICLES:
+    question_stats = None
+    if view == VIEW_QUESTIONS:
+        questions = _filtered_questions(request)
+        question_stats = _question_stats(questions)
+        if wanted is not None:
+            questions = questions.filter(pk__in=wanted)
+        total = questions.count()
+        rows = [_question_row(q) for q in questions.order_by(
+            *order, "-id")[:_MAX_ROWS]]
+    elif view == VIEW_VEHICLES:
         if wanted is not None:
             supplies = supplies.filter(vehicle_id__in=wanted)
         groups = list(_grouped(supplies, "vehicle", "user", order))
@@ -504,6 +668,7 @@ def _list_context(request):
     asks = _ask_values(request)
     return {
         "view": view,
+        "question_stats": question_stats,
         "view_choices": [
             {"code": code, "label": label, "checked": code == view}
             for code, label in VIEW_CHOICES],
@@ -791,6 +956,8 @@ class RefuelsExportView(CompanyUserRequiredMixin, View):
             return self._vehicles(request, book, wanted)
         if view == VIEW_USERS:
             return self._users(request, book, wanted)
+        if view == VIEW_QUESTIONS:
+            return self._questions(request, book, wanted)
         supplies = (GasoGesSupply.objects.select_related(
             "vehicle", "vehicle__machine", "user").filter(pk__in=wanted)
             if wanted else _filtered_supplies(request))
@@ -861,3 +1028,27 @@ class RefuelsExportView(CompanyUserRequiredMixin, View):
             ("Dudosos", 9), ("Vehículos", 10), ("Se le pregunta", 14),
         ], lines, (("E", "DD/MM/YYYY HH:MM"),))
         return _excel_response(book, "repostajes_repostadores", request)
+
+    def _questions(self, request, book, wanted):
+        questions = _filtered_questions(request)
+        if wanted:
+            questions = questions.filter(pk__in=wanted)
+        lines = []
+        for question in questions.order_by("sent_at", "id"):
+            row = _question_row(question)
+            lines.append([
+                row["sent"].replace(tzinfo=None), row["driver"],
+                row["machine"].code if row["machine"] else "",
+                row["vehicle_label"], row["kind"], row["value"],
+                row["unit"], row["reason"], row["status"], row["answer"],
+                row["answered"].replace(tzinfo=None) if row["answered"]
+                else None,
+            ])
+        _write_sheet(book, "Preguntas", [
+            ("Enviada", 17), ("Chófer", 34), ("Centro de gasto", 14),
+            ("Vehículo (GasoGes)", 18), ("Pregunta", 22),
+            ("Dato tecleado", 13), ("Unidad", 11),
+            ("Por qué se pregunta", 60), ("En qué quedó", 30),
+            ("Respuesta", 20), ("Respondida", 17),
+        ], lines, (("A", "DD/MM/YYYY HH:MM"), ("K", "DD/MM/YYYY HH:MM")))
+        return _excel_response(book, "repostajes_preguntas", request)
