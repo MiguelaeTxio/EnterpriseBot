@@ -639,12 +639,11 @@ class RefuelsVehicleAskView(CompanyUserRequiredMixin, View):
 
     ---
 
-    POST: si se pregunta o no por WhatsApp. S137 (Miguel Ángel: "desde
-    el punto de vista del chófer"): en Repostadores, a los chóferes
-    marcados; en Repostajes, a los chóferes de los repostajes marcados;
-    en Vehículos, a los vehículos marcados (los que lleva siempre la
-    misma persona, S135). Se pregunta si el chófer y el vehículo lo
-    tienen marcado. Sus lecturas siguen entrando igual.
+    POST: si se pregunta o no por WhatsApp. S137 (Miguel Ángel: la marca
+    va donde está la vista): en Repostadores, a los chóferes marcados;
+    en Repostajes y en Vehículos, a los vehículos (centros de gasto)
+    marcados o de los repostajes marcados. Se pregunta si el chófer y el
+    vehículo lo tienen marcado. Sus lecturas siguen entrando igual.
     """
 
     def post(self, request):
@@ -656,20 +655,15 @@ class RefuelsVehicleAskView(CompanyUserRequiredMixin, View):
         view = request.POST.get("view")
         wanted = [int(pk) for pk in request.POST.get(
             "selected_ids", "").split(",") if pk.isdigit()]
-        if view == VIEW_VEHICLES:
-            changed = GasoGesVehicle.objects.filter(
-                pk__in=wanted).update(ask_driver=ask)
-            what = "vehículo(s)"
-        else:
-            if view == VIEW_USERS:
-                user_ids = wanted
-            else:
-                user_ids = GasoGesSupply.objects.filter(
-                    pk__in=wanted, user__isnull=False).values_list(
-                    "user_id", flat=True)
+        if view == VIEW_USERS:
             changed = GasoGesUser.objects.filter(
-                pk__in=list(user_ids)).update(ask_driver=ask)
+                pk__in=wanted).update(ask_driver=ask)
             what = "chófer(es)"
+        else:
+            changed = GasoGesVehicle.objects.filter(
+                pk__in=_selected_vehicle_ids(request)).update(
+                ask_driver=ask)
+            what = "vehículo(s)"
         if not changed:
             return JsonResponse(
                 {"ok": False,
