@@ -1464,6 +1464,36 @@ def build_map(company):
     }
 
 
+def driver_current_unit(company_user):
+    """
+    The albarán a driver's position belongs to, or None.
+
+    ---
+
+    El albarán al que pertenece ahora la posición del conductor (S138,
+    ruta de cada albarán): el que está haciendo (salió de base y aún no
+    lo ha terminado); si no, el que vuelve de terminar (regreso a base);
+    si no, el primero que tiene enviado. None fuera de servicio.
+    """
+    units = list(Unit.objects.filter(
+        operator=company_user,
+        status__in=IN_SERVICE_STATUSES + RETURNING_STATUSES,
+        work_order__status__in=OPEN_ORDER_STATUSES,
+    ).order_by("created_at", "pk"))
+    doing = [
+        unit for unit in units
+        if unit.status in IN_SERVICE_STATUSES and unit.started_at is not None
+    ]
+    if doing:
+        return doing[0]
+    returning = [unit for unit in units if unit.status in RETURNING_STATUSES]
+    if returning:
+        return max(returning, key=lambda unit: (
+            unit.completed_at or unit.closed_at or unit.updated_at
+        ))
+    return units[0] if units else None
+
+
 def driver_is_out(company_user):
     """
     Whether the driver has an albarán in progress.

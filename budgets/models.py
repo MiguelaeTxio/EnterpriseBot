@@ -4562,6 +4562,19 @@ class DriverPosition(models.Model):
         related_name="driver_positions",
         verbose_name="Conductor",
     )
+    # H37 (S138): the albarán in progress when the position came in, so
+    # each albarán keeps its route (Miguel Ángel: "poder visualizar la
+    # ruta en el mapa con las detenciones que haya tenido el vehículo").
+    # Albarán en curso cuando llegó la posición: cada albarán guarda su
+    # ruta.
+    unit = models.ForeignKey(
+        "WorkOrderAssistanceUnit",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="positions",
+        verbose_name="Albarán",
+    )
     latitude = models.DecimalField(
         max_digits=9,
         decimal_places=6,
@@ -4594,6 +4607,10 @@ class DriverPosition(models.Model):
             models.Index(
                 fields=["company_user", "-recorded_at"],
                 name="drvpos_user_recorded_idx",
+            ),
+            models.Index(
+                fields=["unit", "recorded_at"],
+                name="drvpos_unit_recorded_idx",
             ),
         ]
 

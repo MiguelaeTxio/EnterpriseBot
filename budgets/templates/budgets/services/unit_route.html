@@ -1,0 +1,155 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/services/unit_route.html #}
+{% extends "panel/base.html" %}
+
+{% block title %}Ruta {{ unit.albaran_number }}{% endblock %}
+{% block page_title %}Ruta del albarán {{ unit.albaran_number }}{% endblock %}
+
+{% block content %}
+{% comment %}
+H37 (S138). Ruta de un albarán con las detenciones del vehículo
+(budgets/service_route.py): la línea con las posiciones que mandó el
+móvil del chófer, las detenciones numeradas y la recogida y el destino
+del servicio.
+{% endcomment %}
+<div class="mb-3">
+    <a href="{% url 'budgets:work_order_detail' pk=work_order.pk %}" class="text-muted text-decoration-none">
+        <i class="bi bi-arrow-left me-1"></i>Ver la orden
+    </a>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-2 small d-flex flex-wrap gap-3">
+        <span><strong>{{ unit.albaran_number }}</strong>{% if work_order.insurer %} · {{ work_order.insurer.name }}{% endif %}</span>
+        {% if driver %}<span><i class="bi bi-person me-1"></i>{{ driver }}</span>{% endif %}
+        <span><i class="bi bi-flag me-1"></i>{{ unit.get_status_display }}</span>
+        {% if route.count %}
+        <span><i class="bi bi-clock me-1"></i>{{ route.start }} – {{ route.end }}</span>
+        <span><i class="bi bi-signpost-split me-1"></i>{{ route.km }} km según el móvil</span>
+        <span><i class="bi bi-pause-circle me-1"></i>{{ route.stops|length }} detenciones · {{ route.stopped_minutes }} min parado</span>
+        {% endif %}
+    </div>
+</div>
+
+{% if not route.count %}
+<div class="alert alert-light border">
+    Este albarán aún no tiene posiciones del móvil del chófer. Se guardan
+    mientras el albarán está en curso, desde que la app lo recibe hasta que
+    se cierra en base.
+</div>
+{% else %}
+<div id="route-map" class="rounded border mb-3" style="height: 60vh; min-height: 320px;"
+     data-map-id="{{ google_maps_map_id|default:'DEMO_MAP_ID' }}"></div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white py-2">
+        <span class="fw-semibold small">Detenciones</span>
+        <span class="text-muted small">(parado al menos {{ stop_minutes }} min sin alejarse más de {{ stop_radius }} m)</span>
+    </div>
+    {% if route.stops %}
+    <div class="table-responsive">
+        <table class="table table-sm mb-0 align-middle small">
+            <thead><tr><th>#</th><th>Desde</th><th>Hasta</th><th>Minutos</th><th>Dónde</th></tr></thead>
+            <tbody>
+            {% for stop in route.stops %}
+            <tr class="route-stop" data-index="{{ forloop.counter0 }}" style="cursor: pointer;">
+                <td><span class="badge text-bg-warning">{{ stop.number }}</span></td>
+                <td>{{ stop.start }}</td>
+                <td>{{ stop.end }}</td>
+                <td>{{ stop.minutes }}</td>
+                <td>{{ stop.place|default:"—" }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="card-body small text-muted">Sin detenciones.</div>
+    {% endif %}
+</div>
+{{ route|json_script:"route-data" }}
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+{{ block.super }}
+{% if route.count and google_maps_api_key %}
+<script>
+if (!(window.google && window.google.maps && window.google.maps.importLibrary)) {
+{# Maps JS API -- Dynamic Library Import (mismo patrón que el mapa de fichajes). #}
+(g=>{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={});var d=b.maps||(b.maps={}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`https://maps.${c}apis.com/maps/api/js?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))})
+({key: "{{ google_maps_api_key|escapejs }}", v: "weekly"});
+}
+</script>
+<script>
+(async function () {
+    "use strict";
+    const data = JSON.parse(document.getElementById("route-data").textContent);
+    const mapEl = document.getElementById("route-map");
+    const mapsLib = await google.maps.importLibrary("maps");
+    const markerLib = await google.maps.importLibrary("marker");
+    const map = new mapsLib.Map(mapEl, {
+        center: data.path[0], zoom: 12,
+        mapId: mapEl.dataset.mapId || "DEMO_MAP_ID",
+        streetViewControl: false, fullscreenControl: true
+    });
+    const info = new mapsLib.InfoWindow();
+    const bounds = new google.maps.LatLngBounds();
+    data.path.forEach(function (p) { bounds.extend(p); });
+
+    new mapsLib.Polyline({
+        map: map, path: data.path, strokeColor: "#0d6efd",
+        strokeOpacity: 0.85, strokeWeight: 4
+    });
+
+    function esc(text) {
+        const div = document.createElement("div");
+        div.textContent = text == null ? "" : String(text);
+        return div.innerHTML;
+    }
+
+    function marker(point, pinOptions, title, html) {
+        const pin = new markerLib.PinElement(pinOptions);
+        const m = new markerLib.AdvancedMarkerElement({
+            map: map, position: point, content: pin.element, title: title
+        });
+        const open = function () {
+            info.setContent(html);
+            info.open({map: map, anchor: m});
+        };
+        m.addListener("click", open);
+        bounds.extend(point);
+        return {marker: m, open: open};
+    }
+
+    const first = data.path[0];
+    const last = data.path[data.path.length - 1];
+    marker(first, {background: "#198754", borderColor: "#fff", glyphColor: "#fff", glyph: "S"},
+        "Salida", "<div class=\"fw-semibold\">Primera posición</div><div>" + esc(data.start) + "</div>");
+    marker(last, {background: "#212529", borderColor: "#fff", glyphColor: "#fff", glyph: "F"},
+        "Final", "<div class=\"fw-semibold\">Última posición</div><div>" + esc(data.end) + "</div>");
+    data.marks.forEach(function (mark) {
+        marker(mark, {background: "#6f42c1", borderColor: "#fff", glyphColor: "#fff",
+                      glyph: mark.label === "Recogida" ? "R" : "D"},
+            mark.label, "<div class=\"fw-semibold\">" + esc(mark.label) + " del servicio</div>");
+    });
+    const stopMarkers = data.stops.map(function (stop) {
+        return marker(stop, {background: "#ffc107", borderColor: "#fff", glyphColor: "#212529",
+                             glyph: String(stop.number)},
+            "Detención " + stop.number,
+            "<div class=\"fw-semibold\">Detención " + stop.number + (stop.place ? " · " + esc(stop.place) : "") + "</div>"
+            + "<div>" + esc(stop.start) + " – " + esc(stop.end) + " (" + stop.minutes + " min)</div>");
+    });
+    map.fitBounds(bounds, 40);
+
+    document.querySelectorAll(".route-stop").forEach(function (row) {
+        row.addEventListener("click", function () {
+            const stop = data.stops[Number(row.dataset.index)];
+            map.panTo(stop);
+            map.setZoom(16);
+            stopMarkers[Number(row.dataset.index)].open();
+        });
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

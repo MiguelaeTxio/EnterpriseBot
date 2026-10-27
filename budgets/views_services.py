@@ -1138,3 +1138,51 @@ class WorkOrderEditView(AssistanceWorkOrderAccessMixin, View):
                 "hints": {},
             }),
         )
+
+
+class UnitRouteView(AssistanceSupervisorAccessMixin, View):
+    """
+    Route of an albarán on the map, with its stops.
+
+    ---
+
+    Ruta de un albarán en el mapa con las detenciones del vehículo
+    (H37, S138; budgets.service_route).
+    """
+
+    template_name = "budgets/services/unit_route.html"
+
+    def get(self, request, pk):
+        """
+        Render the route page.
+
+        ---
+
+        Pinta la página de la ruta.
+        """
+        from budgets.models import WorkOrderAssistanceUnit
+        from budgets.service_route import (
+            STOP_MIN_MINUTES, STOP_RADIUS_M, build_route,
+        )
+
+        unit = get_object_or_404(
+            WorkOrderAssistanceUnit.objects.select_related(
+                "work_order", "work_order__insurer", "operator__user",
+            ),
+            pk=pk,
+            work_order__company=request.user.company_user.company,
+        )
+        operator = unit.operator.user if unit.operator_id else None
+        return render(request, self.template_name, {
+            "unit": unit,
+            "work_order": unit.work_order,
+            "driver": (
+                (operator.get_full_name() or operator.username)
+                if operator else ""
+            ),
+            "route": build_route(unit),
+            "stop_minutes": STOP_MIN_MINUTES,
+            "stop_radius": STOP_RADIUS_M,
+            "google_maps_api_key": os.environ.get("GOOGLE_MAPS_API_KEY", ""),
+            "google_maps_map_id": os.environ.get("GOOGLE_MAPS_MAP_ID", ""),
+        })

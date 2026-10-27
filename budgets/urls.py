@@ -824,4 +824,12 @@ urlpatterns = [
         views.WorkOrderPdfView.as_view(),
         name="work_order_pdf",
     ),
+
+    # H37 (S138): route of an albarán with its stops.
+    # Ruta de un albarán con sus detenciones.
+    path(
+        "work-orders/units/<int:pk>/ruta/",
+        views_services.UnitRouteView.as_view(),
+        name="unit_route",
+    ),
 ]

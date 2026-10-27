@@ -113,6 +113,10 @@ deja de hacerlo en cuanto cambia de estado.
                class="btn btn-sm btn-outline-primary">
                 <i class="bi bi-pencil-square me-1"></i>Albarán
             </a>
+            <a href="{% url 'budgets:unit_route' pk=unit.pk %}"
+               class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-geo-alt me-1"></i>Ruta
+            </a>
             {% if unit.status == 'COMPLETED' %}
             <a href="{% url 'budgets:work_order_pdf' pk=unit.pk %}"
                class="btn btn-sm btn-outline-success"

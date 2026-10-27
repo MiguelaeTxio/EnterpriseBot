@@ -41,7 +41,9 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
 from budgets.assistance_resources import assistance_drivers
-from budgets.assistance_traffic import OPEN_ORDER_STATUSES, driver_is_out
+from budgets.assistance_traffic import (
+    OPEN_ORDER_STATUSES, driver_current_unit, driver_is_out,
+)
 from budgets import service_sheet as sheet
 from budgets.service_geocode import maps_url
 from budgets.models import (
@@ -884,6 +886,48 @@ def _coordinate(data, key, label, limit):
     return value
 
 
+MAX_POSITION_BATCH = 500
+
+
+def _position_row(company_user, unit, data, now):
+    """
+    Unsaved DriverPosition of one position sent by the app.
+
+    ---
+
+    La posición (sin guardar) de un punto que manda la app, o
+    ValueError. Hora del móvil si es razonable (no futura); si no, la
+    de ahora.
+    """
+    latitude = _coordinate(data, "latitude", "latitud", 90)
+    longitude = _coordinate(data, "longitude", "longitud", 180)
+    recorded_at = now
+    millis = data.get("recorded_at")
+    if isinstance(millis, (int, float)) and not isinstance(millis, bool):
+        try:
+            taken = datetime.datetime.fromtimestamp(
+                millis / 1000, tz=datetime.timezone.utc,
+            )
+        except (OverflowError, OSError, ValueError):
+            taken = None
+        if taken is not None and taken <= now:
+            recorded_at = taken
+    accuracy = data.get("accuracy")
+    return DriverPosition(
+        company_user=company_user,
+        unit=unit,
+        latitude=latitude,
+        longitude=longitude,
+        accuracy_m=(
+            int(accuracy)
+            if isinstance(accuracy, (int, float))
+            and not isinstance(accuracy, bool) and 0 <= accuracy < 100000
+            else None
+        ),
+        recorded_at=recorded_at,
+    )
+
+
 @method_decorator(csrf_exempt, name="dispatch")
 class DriverPositionView(View):
     """
@@ -900,50 +944,38 @@ class DriverPositionView(View):
 
     def post(self, request):
         """
-        Store the position if the driver is on a service.
+        Store the position(s) if the driver is on a service.
 
         ---
 
-        Guarda la posición si el conductor está en un servicio.
+        Guarda la posición si el conductor está en un servicio. S138:
+        también un lote ({"positions": [...]}), las que el móvil guardó
+        sin cobertura, para que la ruta del albarán no tenga huecos.
+        Cada posición queda ligada al albarán en curso.
         """
         company_user, _token = _token_user(request)
         if company_user is None:
             return _error("Sesión no válida.", 401)
-        if not driver_is_out(company_user):
+        unit = driver_current_unit(company_user)
+        if unit is None:
             return JsonResponse({"tracking": False})
         data = _json_body(request)
-        try:
-            latitude = _coordinate(data, "latitude", "latitud", 90)
-            longitude = _coordinate(data, "longitude", "longitud", 180)
-        except ValueError as exc:
-            return _error(str(exc), 400)
-        # Phone time if it is sane (not in the future); else now.
-        # Hora del móvil si es razonable (no futura); si no, la de ahora.
-        recorded_at = timezone.now()
-        millis = data.get("recorded_at")
-        if isinstance(millis, (int, float)) and not isinstance(millis, bool):
+        batch = data.get("positions")
+        items = batch[:MAX_POSITION_BATCH] if isinstance(batch, list) else [
+            data,
+        ]
+        now = timezone.now()
+        rows = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
             try:
-                taken = datetime.datetime.fromtimestamp(
-                    millis / 1000, tz=datetime.timezone.utc,
-                )
-            except (OverflowError, OSError, ValueError):
-                taken = None
-            if taken is not None and taken <= recorded_at:
-                recorded_at = taken
-        accuracy = data.get("accuracy")
-        DriverPosition.objects.create(
-            company_user=company_user,
-            latitude=latitude,
-            longitude=longitude,
-            accuracy_m=(
-                int(accuracy)
-                if isinstance(accuracy, (int, float))
-                and not isinstance(accuracy, bool) and 0 <= accuracy < 100000
-                else None
-            ),
-            recorded_at=recorded_at,
-        )
-        return JsonResponse({"tracking": True})
+                rows.append(_position_row(company_user, unit, item, now))
+            except ValueError as exc:
+                if batch is None:
+                    return _error(str(exc), 400)
+        DriverPosition.objects.bulk_create(rows)
+        return JsonResponse({"tracking": True, "saved": len(rows)})
 
 
 # ---------------------------------------------------------------------------
