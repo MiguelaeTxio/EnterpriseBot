@@ -32,6 +32,7 @@ from document_explorer.models import PersonIdentity
 from fleet.gasoges_client import GasoGesClient
 from fleet.gasoges_client import GasoGesError
 from fleet.gasoges_rules import best_series
+from fleet.gasoges_rules import convention_unit
 from fleet.gasoges_rules import deduce_unit
 from fleet.gasoges_rules import name_matches
 from fleet.gasoges_rules import normalize
@@ -276,6 +277,49 @@ def sync_supplies(client, start, end, log, heartbeat=None):
         "nuevos, %(dias_al_tope)d días al tope de la API, "
         "%(dias_con_error)d días sin leer." % counters)
     return counters
+
+
+def apply_convention(log, dry_run=False):
+    """
+    Set the unit of every linked vehicle the workshop rule covers.
+
+    ---
+
+    Pone la unidad que fija la regla del taller (S137: P, turismos y
+    furgonetas, km; A y B, horas) a los vehículos enlazados a un centro
+    de gasto, por encima de lo deducido o puesto a mano. Si la unidad
+    cambia, rehace sus lecturas (`redo_vehicle`): lo que no encaje con
+    la regla queda dudoso y se pregunta al repostador. Devuelve los
+    vehículos que cambiaron.
+    """
+    changed = []
+    vehicles = GasoGesVehicle.objects.filter(
+        machine__isnull=False).select_related("machine")
+    for vehicle in vehicles:
+        unit = convention_unit(vehicle.machine.code, vehicle.machine.family)
+        if unit is None:
+            continue
+        if (vehicle.unit == unit and vehicle.unit_source
+                == GasoGesVehicle.UNIT_SOURCE_CONVENTION):
+            continue
+        before = vehicle.get_unit_display()
+        unit_changed = vehicle.unit != unit
+        changed.append(vehicle)
+        log("%s %s (GasoGes %s): %s -> %s%s." % (
+            vehicle.machine.code, vehicle.plate or vehicle.name,
+            vehicle.gasoges_id, before,
+            dict(GasoGesVehicle.UNIT_CHOICES)[unit],
+            "" if unit_changed else " (solo pasa a regla del taller)"))
+        if dry_run:
+            continue
+        vehicle.unit = unit
+        vehicle.unit_source = GasoGesVehicle.UNIT_SOURCE_CONVENTION
+        vehicle.save(update_fields=["unit", "unit_source", "updated_at"])
+        if unit_changed:
+            redo_vehicle(vehicle, log)
+    log("Regla del taller: %d vehículos cambiados%s." % (
+        len(changed), " (DRY-RUN, sin guardar)" if dry_run else ""))
+    return changed
 
 
 def deduce_units(log):
@@ -611,6 +655,7 @@ def run_sync(start, end, log, heartbeat=None, rebuild=False,
         client, start, end, log, heartbeat)
     if rebuild:
         summary["rehacer"] = reset_readings(log)
+    summary["regla"] = len(apply_convention(log))
     summary["unidades"] = deduce_units(log)
     summary["lecturas"] = build_readings(log, recheck_all=recheck)
     return summary

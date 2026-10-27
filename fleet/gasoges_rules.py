@@ -117,6 +117,37 @@ def name_matches(gasoges_name, person_name):
 HOURS_CODE_PREFIXES = ("Z",)
 
 
+# Regla del taller (S137, Miguel Ángel): P, turismos y furgonetas van por
+# km; las A (grúas móviles) y las B (brazos), por horas. Manda sobre lo
+# deducido y lo puesto a mano: un repostaje que no encaja con ella sale
+# dudoso y se pregunta al repostador.
+# ---
+# Workshop rule: which unit each kind of vehicle goes by.
+KM_FAMILIES = ("TURISMOS",)
+KM_CODE_PREFIXES = ("P",)
+HOURS_CONVENTION_PREFIXES = ("A", "B")
+
+
+def convention_unit(code, family):
+    """
+    Unit set by the workshop rule, or None if the rule says nothing.
+
+    ---
+
+    Unidad que fija la regla del taller: turismos (y furgonetas, que van
+    en la familia de turismos) y P, km; A y B, horas. None si la regla no
+    dice nada de ese centro de gasto.
+    """
+    code = str(code or "").upper()
+    if str(family or "").upper() in KM_FAMILIES:
+        return UNIT_KM
+    if code.startswith(KM_CODE_PREFIXES):
+        return UNIT_KM
+    if code.startswith(HOURS_CONVENTION_PREFIXES):
+        return UNIT_HOURS
+    return None
+
+
 def deduce_unit(has_odometer, has_engine_hours, points, code=""):
     """
     Deduce what the driver types in KM: kilometres or hours.

@@ -659,10 +659,12 @@ class GasoGesVehicle(models.Model):
     UNIT_SOURCE_DEDUCED = "DEDUCED"
     UNIT_SOURCE_DRIVER = "DRIVER"
     UNIT_SOURCE_MANUAL = "MANUAL"
+    UNIT_SOURCE_CONVENTION = "CONVENTION"
     UNIT_SOURCE_CHOICES = [
         (UNIT_SOURCE_DEDUCED, _("Deducida")),
         (UNIT_SOURCE_DRIVER, _("Confirmada por el chófer")),
         (UNIT_SOURCE_MANUAL, _("Puesta a mano")),
+        (UNIT_SOURCE_CONVENTION, _("Regla del taller")),
     ]
 
     gasoges_id = models.PositiveIntegerField(
