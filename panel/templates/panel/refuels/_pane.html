@@ -286,14 +286,32 @@ vehículos marcados); en Repostadores no aplican y se ocultan.
         updateSelectionUi();
     }
 
-    // Al cambiar de vista: el orden de la otra vista no vale, y la
-    // selección que manda es la de la vista nueva.
+    // S137 (Miguel Ángel): cambiar un filtro o la vista solo cambia lo
+    // que se ve; nunca deja nada marcado. Se vacía la selección, así el
+    // contador y la lista de la derecha son siempre lo que él marca a la
+    // vista, sin repostajes de antes que ya no se ven.
+    function clearAllSelections() {
+        Object.keys(selections).forEach(function (view) { selections[view].clear(); });
+        Object.keys(SELECTION_KEYS).forEach(function (view) {
+            const state = {};
+            state[SELECTION_KEYS[view]] = [];
+            lastSaved[view] = "[]";
+            window.EbNavState.save(SCREEN_KEY, state);
+        });
+        document.getElementById("rfl-selected-ids").value = "";
+    }
+    filters.addEventListener("change", function (evt) {
+        if (evt.target.id === "rflOnlySelected") return;
+        clearAllSelections();
+    }, true);
+    document.getElementById("rfl-filter-search").addEventListener("input", clearAllSelections);
+
+    // Al cambiar de vista, el orden de la otra vista no vale.
     document.querySelectorAll(".rfl-view-radio").forEach(function (radio) {
         radio.addEventListener("change", function () {
             const sortInput = document.querySelector('#rfl-sort-inputs input[name="sort"]');
             if (sortInput) sortInput.value = "";
             currentView = radio.value;
-            document.getElementById("rfl-selected-ids").value = Array.from(current().keys()).join(",");
         });
     });
 
