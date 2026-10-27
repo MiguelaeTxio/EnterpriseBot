@@ -4053,6 +4053,31 @@ class WorkOrderDetailView(CompanyUserRequiredMixin, View):
         return _redirect_det(_url)
 
 
+
+def _hours_totals(work_orders):
+    """
+    Hour totals of a list of enriched work orders (same as Revisados).
+
+    ---
+
+    Totales de horas de una lista de partes ya enriquecidos: horas,
+    extra, festivas y dietas. Mismo cálculo y formato en Pendientes,
+    Revisados y el resumen del periodo (S137).
+    """
+    from decimal import Decimal
+
+    return {
+        "horas_totales": sum(
+            (wo["horas_totales"] for wo in work_orders
+             if wo["horas_totales"] is not None), Decimal("0")),
+        "horas_extra": sum(
+            (wo["horas_extra"] for wo in work_orders
+             if wo["horas_extra"] is not None), Decimal("0")),
+        "horas_festivas": sum(
+            (wo["horas_festivas"] for wo in work_orders), Decimal("0")),
+        "dietas": sum(1 for wo in work_orders if wo["dieta"]),
+    }
+
 class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
     """
     SINGLE unified work-order history view for ALL roles with access to
@@ -4373,6 +4398,40 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
         if origen:
             qs = qs.filter(source=origen)
         return qs.distinct()
+
+    def _own_open_period_summary(self, company, cu):
+        """
+        Totals of the worker's unliquidated period(s), without filters.
+
+        ---
+
+        Totales del periodo sin liquidar del operario (sus WorkPeriod con
+        is_closed=False), con todos sus partes y sin los filtros de la
+        pestaña: el total y lo que aún está sin revisar. None si no tiene
+        ningún periodo abierto.
+        """
+        from ivr_config.models import WorkPeriod
+
+        periods = list(WorkPeriod.objects.filter(
+            company_user=cu, is_closed=False).order_by("start_date"))
+        if not periods:
+            return None
+        parts = [
+            wo for wo in self._enrich_work_orders(
+                self._build_base_queryset(company, owner=cu))
+            if wo["operator_pk"] == cu.pk and wo["fecha"] is not None
+            and any(p.start_date <= wo["fecha"]
+                    and (p.end_date is None or wo["fecha"] <= p.end_date)
+                    for p in periods)
+        ]
+        pending = [wo for wo in parts if not wo["reviewed"]]
+        return {
+            "periods": periods,
+            "total": _hours_totals(parts),
+            "count": len(parts),
+            "pending": _hours_totals(pending),
+            "pending_count": len(pending),
+        }
 
     def _enrich_work_orders(self, qs, active_fault_category=""):
         """
@@ -4897,34 +4956,16 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
         # liquidated, its hours stop counting here and become
         # historical-only (see point 4, per-period viewer). Only computed,
         # and only meaningful, for WORKSHOP.
-        overtime_hours = None
+        # H30 (S137), Miguel Ángel: el antiguo "Horas extra acumuladas
+        # pendientes" no se sabía de dónde salía (sumaba solo los partes
+        # que dejaban ver los filtros de la pestaña) y no seguía el formato
+        # de Revisados. El operario ve ahora el total de su periodo sin
+        # liquidar (todos sus partes, sin filtros) y cuánto falta revisar.
+        # ---
+        # The worker sees the totals of his unliquidated period.
+        own_period = None
         if not is_elevated:
-            from ivr_config.models import WorkPeriod as _WP_OT
-            from decimal import Decimal as _Dec_OT
-
-            _open_periods = list(
-                _WP_OT.objects.filter(
-                    company_user=cu, is_closed=False
-                ).order_by("start_date")
-            )
-            if _open_periods:
-                overtime_hours = sum(
-                    (
-                        wo["horas_extra"]
-                        for wo in pending_list + reviewed_list
-                        if wo["operator_pk"] == cu.pk
-                        and wo["fecha"] is not None
-                        and any(
-                            p.start_date <= wo["fecha"]
-                            and (
-                                p.end_date is None or wo["fecha"] <= p.end_date
-                            )
-                            for p in _open_periods
-                        )
-                    ),
-                    _Dec_OT("0"),
-                )
-
+            own_period = self._own_open_period_summary(company, cu)
         from work_order_processor.models import ExportTemplate as _ET
 
         _templates_propias = _ET.objects.filter(
@@ -4998,29 +5039,7 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
             cu, HISTORY_SCREEN_KEY, "only_selected", False,
         ))
 
-        reviewed_totals = {
-            "horas_totales": sum(
-                (
-                    wo["horas_totales"]
-                    for wo in reviewed_list
-                    if wo["horas_totales"] is not None
-                ),
-                _Dec("0"),
-            ),
-            "horas_extra": sum(
-                (
-                    wo["horas_extra"]
-                    for wo in reviewed_list
-                    if wo["horas_extra"] is not None
-                ),
-                _Dec("0"),
-            ),
-            "horas_festivas": sum(
-                (wo["horas_festivas"] for wo in reviewed_list),
-                _Dec("0"),
-            ),
-            "dietas": sum(1 for wo in reviewed_list if wo["dieta"]),
-        }
+        reviewed_totals = _hours_totals(reviewed_list)
 
         context = {
             "company": cu.company,
@@ -5050,7 +5069,8 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
             "source_choices": WorkOrder.Source.choices,
             # Resumen de horas extra del periodo activo -- solo WORKSHOP.
             # Active-period overtime summary -- WORKSHOP only.
-            "overtime_hours": overtime_hours,
+            "own_period": own_period,
+            "pending_totals": _hours_totals(pending_list),
             "fault_category_choices": [
                 (fc[0], fc[1])
                 for fc in WorkOrderEntryLine.fault_category.field.choices

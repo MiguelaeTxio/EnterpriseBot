@@ -10,7 +10,7 @@
 {#   wo_list, tab_key ("pending" | "reviewed" | "history")                                          #}
 {#   show_pipeline_status, show_reviewed_by, show_excel, show_reviewed_badge, show_origen           #}
 {#   show_edit, show_detail, show_mark_reviewed_row, show_unmark_reviewed_row                       #}
-{#   show_totals + totals (horas_totales/horas_extra/horas_festivas/dietas) — solo Revisados        #}
+{#   show_totals + totals (horas_totales/horas_extra/horas_festivas/dietas) — Pendientes y Revisados #}
 {#   empty_icon, empty_text, back_url                                                               #}
 {# Toda decisión de negocio llega resuelta desde la vista; este parcial solo renderiza.             #}
 
@@ -155,7 +155,7 @@
                 <td class="text-sm">
                     {% if totals.dietas > 0 %}<span class="badge bg-info text-dark">{{ totals.dietas }}</span>{% else %}<span class="text-muted">—</span>{% endif %}
                 </td>
-                <td colspan="4"></td>
+                <td colspan="{% if tab_key == 'pending' %}3{% else %}4{% endif %}"></td>
             </tr>
         </tfoot>
         {% endif %}
