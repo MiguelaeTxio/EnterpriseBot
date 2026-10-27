@@ -2,7 +2,9 @@
 {% comment %}
 H30 (S139, invasora). Tabla de tareas de los partes de la máquina
 (directriz 4.24): orden múltiple con prioridad, casilla por fila y
-"todos", cabecera fija, menú de tres puntos por fila. Cada celda lleva
+"todos", cabecera fija. Pulsar la fila abre el parte (S139, Miguel
+Ángel: "toda la línea clicable"); la única acción es el icono de ver el
+ticket de avería, si la tarea tiene. Cada celda lleva
 la clase de su columna (mwc-<clave>) para los casilleros de columnas.
 Al pie, fija abajo, la fila de totales de lo listado (horas
 ordinarias, extra, festivas, horas, repuestos e importe). "Ver el
@@ -27,12 +29,12 @@ parte" abre el documento de solo lectura, nunca la vista de edición.
             <th class="mwc-cost text-end">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.cost label="Importe" align_end=True %}</th>
             <th class="mwc-albaranes">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.albaranes label="Albaranes" %}</th>
             <th class="mwc-ticket">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.ticket label="Ticket" %}</th>
-            <th class="text-end">Acciones</th>
+            <th class="text-end" title="Ver el ticket de avería">Ticket</th>
         </tr>
     </thead>
     <tbody>
         {% for row in rows %}
-        <tr>
+        <tr class="mw-row-link" data-href="{% url 'panel:work_order_document' entry_pk=row.entry.pk %}?maquina={{ machine.pk }}" title="Ver el parte">
             <td>
                 <input class="form-check-input mw-row-check" type="checkbox"
                        data-key="{{ row.key }}" data-label="{{ row.label }}"
@@ -63,17 +65,13 @@ parte" abre el documento de solo lectura, nunca la vista de edición.
             </td>
             <td class="mwc-ticket">{{ row.ticket_code|default:"—" }}</td>
             <td class="text-end">
-                <div class="dropdown">
-                    <button class="btn btn-sm btn-outline-secondary border-0 px-2" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                        <i class="bi bi-three-dots-vertical"></i>
-                    </button>
-                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-                        <li><a class="dropdown-item" href="{% url 'panel:work_order_document' entry_pk=row.entry.pk %}?maquina={{ machine.pk }}"><i class="bi bi-file-earmark-text me-2"></i>Ver el parte</a></li>
-                        {% if row.ticket and can_open_ticket %}
-                        <li><a class="dropdown-item" href="{% url 'panel:breakdown_ticket_detail' pk=row.ticket.pk %}"><i class="bi bi-exclamation-triangle me-2"></i>Ver el ticket</a></li>
-                        {% endif %}
-                    </ul>
-                </div>
+                {% if row.ticket and can_open_ticket %}
+                <a href="{% url 'panel:breakdown_ticket_detail' pk=row.ticket.pk %}"
+                   class="btn btn-sm btn-outline-secondary border-0 px-2"
+                   title="Ver el ticket de avería {{ row.ticket_code }}" aria-label="Ver el ticket de avería {{ row.ticket_code }}">
+                    <i class="bi bi-ticket-detailed"></i>
+                </a>
+                {% endif %}
             </td>
         </tr>
         {% endfor %}

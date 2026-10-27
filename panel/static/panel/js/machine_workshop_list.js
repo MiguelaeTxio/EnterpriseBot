@@ -197,6 +197,25 @@
             });
         });
 
+        // S139: pulsar la fila abre el parte (tr.mw-row-link, data-href).
+        // La casilla, los enlaces y botones de la fila hacen lo suyo; con
+        // Ctrl/Cmd o la rueda se abre en otra pestaña, como un enlace.
+        function openRow(evt) {
+            if (evt.target.closest("a, button, input, label, .form-check")) {
+                return;
+            }
+            var row = evt.target.closest("tr.mw-row-link");
+            if (!row || !row.dataset.href) { return; }
+            if (evt.type === "auxclick" && evt.button !== 1) { return; }
+            if (evt.ctrlKey || evt.metaKey || evt.type === "auxclick") {
+                window.open(row.dataset.href, "_blank", "noopener");
+            } else {
+                window.location.href = row.dataset.href;
+            }
+        }
+        container.addEventListener("click", openRow);
+        container.addEventListener("auxclick", openRow);
+
         container.addEventListener("change", function (evt) {
             var target = evt.target;
             if (target.classList.contains("mw-row-check")) {
