@@ -503,10 +503,12 @@ CELERY_BEAT_SCHEDULE = {
     },
 
     # H30 (S135): suministros del surtidor (GasoGes) -> lecturas de km
-    # y horas de los centros de gasto, cada hora (últimos 3 días).
+    # y horas de los centros de gasto (últimos 3 días). S137, Miguel
+    # Ángel: cada 5 minutos, para que la pregunta por WhatsApp llegue a
+    # los pocos minutos de repostar y no una hora después.
     'sync-gasoges': {
         'task':     'fleet.tasks.sync_gasoges_task',
-        'schedule': crontab(minute=20),
+        'schedule': crontab(minute='*/5'),
     },
 }
 

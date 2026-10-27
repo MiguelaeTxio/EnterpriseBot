@@ -8,7 +8,10 @@ H30 (S135). Tareas periódicas de la app fleet: sincronización de
 GasoGes (programa del surtidor) para que las lecturas de km y horas
 entren solas en Revisiones y Avisos.
 """
+import fcntl
 import logging
+import os
+import tempfile
 from datetime import date
 from datetime import timedelta
 
@@ -20,6 +23,9 @@ logger = logging.getLogger(__name__)
 
 SYNC_DAYS = 3
 COMPANY_SLUG = "grupo-alvarez"
+# S137: corre cada 5 minutos; si la anterior no ha terminado, esta no
+# empieza (evita preguntar dos veces por el mismo repostaje).
+LOCK_PATH = os.path.join(tempfile.gettempdir(), "enterprisebot_gasoges.lock")
 
 
 @shared_task(name="fleet.tasks.sync_gasoges_task")
@@ -31,6 +37,24 @@ def sync_gasoges_task():
 
     Sincroniza los últimos días de GasoGes. Idempotente: un suministro
     ya guardado no se vuelve a guardar ni a convertir en lectura.
+    """
+    with open(LOCK_PATH, "w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            logger.info("GasoGes: la sincronización anterior sigue en "
+                        "marcha; esta se salta.")
+            return {"saltada": True}
+        return _sync()
+
+
+def _sync():
+    """
+    One GasoGes sync and its WhatsApp questions.
+
+    ---
+
+    Una sincronización de GasoGes y sus preguntas por WhatsApp.
     """
     from fleet.refuel_questions import send_pending_questions
     from ivr_config.models import Company
