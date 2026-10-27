@@ -221,6 +221,7 @@ TASK_COLUMNS = (
     "Fecha", "Mecánico", "Tipo", "Clasificación", "Avería / tarea",
     "Reparación", "H.C.", "H.F.", "Horas", "O.R.", "Ticket",
     "Repuestos", "Importe repuestos (€)", "Repuestos sin precio",
+    "Albaranes",
 )
 PART_COLUMNS = (
     "Fecha", "Mecánico", "Ticket", "Referencia", "Material", "Unidades",
@@ -246,7 +247,7 @@ def _write_tasks(workbook, rows, first=True):
             row.description, row.repair, workshop.time_text(row.hc),
             workshop.time_text(row.hf), _number(row.hours), row.or_val,
             row.ticket_code, row.parts_count, _number(row.parts_cost),
-            row.parts_unpriced or None,
+            row.parts_unpriced or None, row.delivery_notes_text,
         ])
         for info in row.parts:
             if not info.counts_for_machine:
@@ -305,6 +306,7 @@ def _tasks_context(request, machine):
         "can_open_ticket": (
             request.user.company_user.role in workshop.TICKET_ROLES
         ),
+        "can_open_stock": _can_open_stock(request),
         **workshop.sort_controls(params["sort"], workshop.TASK_SORTABLE),
     }
 

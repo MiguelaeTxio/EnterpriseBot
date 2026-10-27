@@ -50,8 +50,13 @@ STOCK_ROLES = {
 TICKET_ROLES = STOCK_ROLES | {CompanyUser.ROLE_WORKSHOP}
 
 TASK_FILTER_KEYS = (
-    "search", "tipo", "worker", "ticket", "date_from", "date_to", "sort",
+    "search", "tipo", "worker", "ticket", "albaran", "date_from",
+    "date_to", "sort",
 )
+# Filtro "Albarán" del listado de tareas (S139, Miguel Ángel: "filtros
+# de partes que llevan albarán para que de una tacada saquemos todos").
+ALBARAN_WITH = "with"
+ALBARAN_WITHOUT = "without"
 TICKET_FILTER_KEYS = ("search", "state", "date_from", "date_to", "sort")
 
 STATE_OPEN = "open"
@@ -338,6 +343,18 @@ def _parts_prefetch():
     )
 
 
+def _task_notes_prefetch():
+    """
+    Prefetch of the delivery-note lines linked straight to a task.
+
+    ---
+
+    Prefetch de las líneas de albarán vinculadas directamente a la
+    tarea, con su albarán y su proveedor.
+    """
+    return "delivery_note_lines__delivery_note__supplier"
+
+
 def _parts_totals(parts):
     """
     Cost of the parts that count for the machine and how many lack it.
@@ -420,6 +437,7 @@ class TaskRow:
         self.parts_count = sum(
             1 for info in self.parts if info.counts_for_machine
         )
+        self.delivery_notes = task_delivery_notes(line, self.parts)
         self.label = " — ".join(
             part for part in (
                 self.work_date.strftime("%d/%m/%Y")
@@ -435,7 +453,48 @@ class TaskRow:
                 "%s %s %s" % (info.reference, info.material, info.supplier)
                 for info in self.parts
             ),
+            " ".join(note["label"] for note in self.delivery_notes),
         ]).lower()
+
+    @property
+    def delivery_notes_text(self):
+        """
+        Delivery notes of the task as one line of text (Excel).
+
+        ---
+
+        Albaranes de la tarea en una sola línea de texto (para el Excel).
+        """
+        return "; ".join(note["label"] for note in self.delivery_notes)
+
+
+def task_delivery_notes(line, parts):
+    """
+    Supplier delivery notes of a task, without repeats, by date.
+
+    ---
+
+    Albaranes de proveedor que lleva una tarea, sin repetir: los
+    vinculados directamente a la tarea (línea de albarán con esa línea
+    de parte) y aquellos de los que dependen sus repuestos.
+    """
+    notes = {}
+    for note_line in line.delivery_note_lines.all():
+        note = note_line.delivery_note
+        notes[note.pk] = (
+            note.delivery_date or _DATE_MIN, delivery_note_label(note),
+        )
+    for info in parts:
+        for note in _part_delivery_notes(info.part):
+            notes[note.pk] = (
+                note.delivery_date or _DATE_MIN, delivery_note_label(note),
+            )
+    return [
+        {"pk": pk, "label": label}
+        for pk, (_date, label) in sorted(
+            notes.items(), key=lambda item: (item[1][0], item[0]),
+        )
+    ]
 
 
 TASK_SORTABLE = {
@@ -447,6 +506,7 @@ TASK_SORTABLE = {
     "parts": lambda r: r.parts_count,
     "cost": lambda r: r.parts_cost,
     "ticket": lambda r: r.ticket_code,
+    "albaranes": lambda r: len(r.delivery_notes),
 }
 TASK_DEFAULT_ORDER = (("date", True),)
 
@@ -477,7 +537,7 @@ def build_task_rows(machine, params, can_open_stock, only_keys=None):
     """
     lines = machine_lines(machine).select_related(
         "entry", "breakdown_ticket",
-    ).prefetch_related(_parts_prefetch())
+    ).prefetch_related(_parts_prefetch(), _task_notes_prefetch())
     if only_keys is None:
         date_from = parse_date(params.get("date_from"))
         date_to = parse_date(params.get("date_to"))
@@ -506,6 +566,12 @@ def build_task_rows(machine, params, can_open_stock, only_keys=None):
         lines = lines.filter(pk__in=pks)
 
     rows = [TaskRow(line, machine.pk, can_open_stock) for line in lines]
+    if only_keys is None:
+        albaran = params.get("albaran") or ""
+        if albaran == ALBARAN_WITH:
+            rows = [row for row in rows if row.delivery_notes]
+        elif albaran == ALBARAN_WITHOUT:
+            rows = [row for row in rows if not row.delivery_notes]
     words = _words(params.get("search"))
     if words and only_keys is None:
         rows = [row for row in rows if _matches(words, row.haystack)]
@@ -670,7 +736,7 @@ def build_ticket_rows(machine, params, can_open_stock, only_keys=None):
         "work_entry_lines",
         queryset=machine_lines(machine).select_related(
             "entry", "breakdown_ticket",
-        ).prefetch_related(_parts_prefetch()),
+        ).prefetch_related(_parts_prefetch(), _task_notes_prefetch()),
     ))
     state = params.get("state", "")
     if only_keys is None:

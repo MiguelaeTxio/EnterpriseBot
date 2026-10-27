@@ -18,6 +18,7 @@ abre el documento de solo lectura, nunca la vista de edición.
             <th class="text-end">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.hours label="Horas" align_end=True %}</th>
             <th class="text-end">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.parts label="Repuestos" align_end=True %}</th>
             <th class="text-end">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.cost label="Importe" align_end=True %}</th>
+            <th>{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.albaranes label="Albaranes" %}</th>
             <th>{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.ticket label="Ticket" %}</th>
             <th class="text-end">Acciones</th>
         </tr>
@@ -40,6 +41,11 @@ abre el documento de solo lectura, nunca la vista de edición.
             <td class="text-end">{% if row.parts_count %}{{ row.parts_count }}{% else %}—{% endif %}</td>
             <td class="text-end">
                 {% if row.parts_count %}{{ row.parts_cost|floatformat:2 }} €{% if row.parts_unpriced %} <i class="bi bi-exclamation-circle text-warning" title="{{ row.parts_unpriced }} repuesto{{ row.parts_unpriced|pluralize }} sin precio grabado"></i>{% endif %}{% else %}—{% endif %}
+            </td>
+            <td>
+                {% for note in row.delivery_notes %}
+                {% if can_open_stock %}<a href="{% url 'delivery_notes:detail' pk=note.pk %}">{{ note.label }}</a>{% else %}{{ note.label }}{% endif %}{% if not forloop.last %}<br>{% endif %}
+                {% empty %}—{% endfor %}
             </td>
             <td>{{ row.ticket_code|default:"—" }}</td>
             <td class="text-end">

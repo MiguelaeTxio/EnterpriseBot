@@ -80,6 +80,17 @@ repuestos) es el de lo listado, y el de la selección va en su visor.
                         </select>
                     </div>
                     <div>
+                        <div class="small fw-bold">Albarán</div>
+                        <select class="form-select form-select-sm" name="albaran" autocomplete="off"
+                                hx-get="{{ table_url }}" hx-target="#mw-table-container"
+                                hx-include="#mw-filters, #mw-sort" hx-trigger="change"
+                                title="Albaranes de proveedor de la tarea o de sus repuestos">
+                            <option value="">Todos</option>
+                            <option value="with"{% if filters.albaran == "with" %} selected{% endif %}>Con albarán</option>
+                            <option value="without"{% if filters.albaran == "without" %} selected{% endif %}>Sin albarán</option>
+                        </select>
+                    </div>
+                    <div>
                         <div class="small fw-bold">Fecha del parte</div>
                         <div class="d-flex gap-1">
                             <input type="date" class="form-control form-control-sm" name="date_from" value="{{ filters.date_from }}" title="Desde"
