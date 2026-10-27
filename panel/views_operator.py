@@ -6340,6 +6340,9 @@ class WorkshopIntensiveToggleView(WorkshopRequiredMixin, View):
             "first_block_hf": _first_hf,
             "absence_categories": _json.dumps(_absence_cats),
             "absence_categories_list": _absence_cats,
+            # H30 (S137): casilla "Revisión" de la primera tarea.
+            "service_filters": _SERVICE_FILTERS,
+            "service_oil_choices": _MachineServiceRecord.OIL_CHOICES,
         }
         return _render(
             request,
