@@ -825,6 +825,14 @@ urlpatterns = [
         name="work_order_pdf",
     ),
 
+    # H37 (S138): internal summary of services chained on the road.
+    # Resumen interno de los servicios encadenados en ruta.
+    path(
+        "services/chained/",
+        views_services.ServicesChainedView.as_view(),
+        name="services_chained",
+    ),
+
     # H37 (S138): route of an albarán with its stops.
     # Ruta de un albarán con sus detenciones.
     path(

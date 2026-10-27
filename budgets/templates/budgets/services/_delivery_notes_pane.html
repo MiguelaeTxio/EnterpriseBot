@@ -160,9 +160,15 @@ ya no se puede ver en ningún sitio".
                         <span id="alb-row-count">{{ rows|length }}</span> albaranes
                         <span id="alb-row-filtered" class="text-muted fw-normal{% if not is_filtered %} d-none{% endif %}">(filtrado)</span>
                     </div>
-                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" id="alb-fullscreen" title="Pantalla completa">
-                        <i class="bi bi-fullscreen"></i>
-                    </button>
+                    <div class="d-flex gap-1">
+                        {# S138: resumen interno de los km cobrados sin hacer al encadenar en ruta. #}
+                        <a href="{% url 'budgets:services_chained' %}" class="btn btn-sm btn-outline-secondary py-0 px-2" title="Km cobrados sin hacer al encadenar en ruta (solo oficina)">
+                            <i class="bi bi-link-45deg me-1"></i>Km encadenados
+                        </a>
+                        <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" id="alb-fullscreen" title="Pantalla completa">
+                            <i class="bi bi-fullscreen"></i>
+                        </button>
+                    </div>
                 </div>
                 <div id="alb-results-scroll" class="fixed-list-scroll flex-scroll-xy">
                     <div id="alb-table-container">

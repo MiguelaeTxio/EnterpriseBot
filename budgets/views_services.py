@@ -1244,3 +1244,65 @@ class UnitRouteView(AssistanceSupervisorAccessMixin, View):
             "google_maps_api_key": os.environ.get("GOOGLE_MAPS_API_KEY", ""),
             "google_maps_map_id": os.environ.get("GOOGLE_MAPS_MAP_ID", ""),
         })
+
+
+class ServicesChainedView(AssistanceSupervisorAccessMixin, View):
+    """
+    Internal summary of the services chained on the road.
+
+    ---
+
+    Resumen interno de los servicios encadenados en ruta (H37, S138,
+    Miguel Ángel: "a final de año, ¿cuántos kilómetros nos hemos
+    ahorrado que hemos facturado sin tener que hacerlos al encadenar?").
+    Entre dos fechas (por defecto, el año en curso): cada encadenamiento
+    con los km del chófer, los hechos hasta el cambio y los cobrados sin
+    hacer, y los totales. Solo oficina.
+    """
+
+    template_name = "budgets/services/chained.html"
+
+    def get(self, request):
+        """
+        Render the summary.
+
+        ---
+
+        Pinta el resumen.
+        """
+        import datetime
+
+        from django.utils import timezone
+
+        from budgets.models import WorkOrderAssistanceUnit
+
+        today = timezone.localdate()
+        try:
+            since = datetime.date.fromisoformat(request.GET.get("desde", ""))
+        except ValueError:
+            since = today.replace(month=1, day=1)
+        try:
+            until = datetime.date.fromisoformat(request.GET.get("hasta", ""))
+        except ValueError:
+            until = today
+        units = list(WorkOrderAssistanceUnit.objects.filter(
+            work_order__company=request.user.company_user.company,
+            chained_to__isnull=False,
+            chain_at__date__gte=since,
+            chain_at__date__lte=until,
+        ).select_related(
+            "work_order__insurer", "chained_to", "operator__user",
+        ).order_by("chain_at"))
+        saved = [u.chain_saved_km for u in units]
+        estimated = [u.chain_return_minutes_est for u in units]
+        return render(request, self.template_name, {
+            "units": units,
+            "since": since,
+            "until": until,
+            "total_saved": sum(km for km in saved if km is not None),
+            "total_billed": sum(
+                u.billed_km for u in units if u.billed_km is not None
+            ),
+            "total_minutes": sum(m for m in estimated if m is not None),
+            "without_km": sum(1 for km in saved if km is None),
+        })
