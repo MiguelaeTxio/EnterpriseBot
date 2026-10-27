@@ -117,15 +117,19 @@ def name_matches(gasoges_name, person_name):
 HOURS_CODE_PREFIXES = ("Z",)
 
 
-# Regla del taller (S137, Miguel Ángel): P, turismos y furgonetas van por
-# km; las A (grúas móviles) y las B (brazos), por horas. Manda sobre lo
+# Regla del taller (S137, Miguel Ángel): turismos y furgonetas (X) y P
+# van por km; grúas móviles (A, y la familia MÓVILES), brazos (B),
+# carretillas (T) y plataformas elevadoras (Z), por horas. Manda sobre lo
 # deducido y lo puesto a mano: un repostaje que no encaja con ella sale
-# dudoso y se pregunta al repostador.
+# dudoso y se pregunta al repostador. La familia manda sobre el código
+# (ADOLFO es un turismo aunque empiece por A; PAOLA, una plataforma
+# aunque empiece por P).
 # ---
 # Workshop rule: which unit each kind of vehicle goes by.
 KM_FAMILIES = ("TURISMOS",)
-KM_CODE_PREFIXES = ("P",)
-HOURS_CONVENTION_PREFIXES = ("A", "B")
+HOURS_FAMILIES = ("PLATAFORMAS", "CARRETILLAS", "MÓVILES")
+HOURS_CONVENTION_PREFIXES = ("A", "B", "T", "Z")
+KM_CODE_PREFIXES = ("P", "X")
 
 
 def convention_unit(code, family):
@@ -134,17 +138,19 @@ def convention_unit(code, family):
 
     ---
 
-    Unidad que fija la regla del taller: turismos (y furgonetas, que van
-    en la familia de turismos) y P, km; A y B, horas. None si la regla no
-    dice nada de ese centro de gasto.
+    Unidad que fija la regla del taller, o None si la regla no dice nada
+    de ese centro de gasto (generadores, contenedores, la Kärcher...).
     """
     code = str(code or "").upper()
-    if str(family or "").upper() in KM_FAMILIES:
+    family = str(family or "").upper()
+    if family in KM_FAMILIES:
         return UNIT_KM
-    if code.startswith(KM_CODE_PREFIXES):
-        return UNIT_KM
+    if family in HOURS_FAMILIES:
+        return UNIT_HOURS
     if code.startswith(HOURS_CONVENTION_PREFIXES):
         return UNIT_HOURS
+    if code.startswith(KM_CODE_PREFIXES):
+        return UNIT_KM
     return None
 
 

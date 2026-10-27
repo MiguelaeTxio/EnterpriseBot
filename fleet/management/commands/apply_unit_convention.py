@@ -5,9 +5,9 @@ H30 (S137). Apply the workshop unit rule to the GasoGes vehicles.
 ---
 
 H30 (S137). Pone a los vehículos de GasoGes la unidad que fija la regla
-del taller (P, turismos y furgonetas por km; A y B por horas) y rehace
-las lecturas de los que cambian. La sincronización de GasoGes la aplica
-sola cada vez; este comando es para aplicarla ya.
+del taller (turismos, furgonetas X y P por km; A, B, T, Z y grúas
+móviles por horas), solo en centros de gasto activos, y rehace las
+lecturas de los que cambian. Solo se aplica con este comando.
 """
 from datetime import datetime
 
@@ -25,8 +25,8 @@ class Command(BaseCommand):
     Aplica ya la regla del taller a los vehículos de GasoGes.
     """
 
-    help = ("Pone la unidad de la regla del taller (P, turismos y "
-            "furgonetas, km; A y B, horas) y rehace sus lecturas.")
+    help = ("Pone la unidad de la regla del taller a los vehículos de "
+            "centros de gasto activos y rehace sus lecturas.")
 
     def add_arguments(self, parser):
         parser.add_argument(

@@ -285,16 +285,18 @@ def apply_convention(log, dry_run=False):
 
     ---
 
-    Pone la unidad que fija la regla del taller (S137: P, turismos y
-    furgonetas, km; A y B, horas) a los vehículos enlazados a un centro
-    de gasto, por encima de lo deducido o puesto a mano. Si la unidad
+    Pone la unidad que fija la regla del taller (S137, ver
+    `convention_unit`) a los vehículos enlazados a un centro de gasto
+    ACTIVO (Miguel Ángel: los inactivos no cuentan), por encima de lo
+    deducido o puesto a mano. Si la unidad
     cambia, rehace sus lecturas (`redo_vehicle`): lo que no encaje con
     la regla queda dudoso y se pregunta al repostador. Devuelve los
     vehículos que cambiaron.
     """
     changed = []
     vehicles = GasoGesVehicle.objects.filter(
-        machine__isnull=False).select_related("machine")
+        machine__isnull=False, machine__is_active=True,
+    ).select_related("machine")
     for vehicle in vehicles:
         unit = convention_unit(vehicle.machine.code, vehicle.machine.family)
         if unit is None:

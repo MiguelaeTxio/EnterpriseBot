@@ -222,9 +222,20 @@ class ConventionUnitTests(unittest.TestCase):
         # ADOLFO empieza por A pero es un turismo: manda la familia.
         self.assertEqual(convention_unit("ADOLFO", "TURISMOS"), UNIT_KM)
 
+    def test_platforms_forklifts_and_mobile_cranes_by_hours(self):
+        self.assertEqual(convention_unit("Z14", "PLATAFORMAS"), UNIT_HOURS)
+        self.assertEqual(convention_unit("T05", "CARRETILLAS"), UNIT_HOURS)
+        self.assertEqual(convention_unit("H04", "MÓVILES"), UNIT_HOURS)
+        # PAOLA empieza por P pero es una plataforma: manda la familia.
+        self.assertEqual(convention_unit("PAOLA", "PLATAFORMAS"),
+                         UNIT_HOURS)
+
+    def test_vans_by_km(self):
+        self.assertEqual(convention_unit("X07", "ASISTENCIA"), UNIT_KM)
+
     def test_others_have_no_rule(self):
-        self.assertIsNone(convention_unit("Z14", "PLATAFORMAS"))
-        self.assertIsNone(convention_unit("T05", "CARRETILLAS"))
+        self.assertIsNone(convention_unit("V05", "ALQUILER"))
+        self.assertIsNone(convention_unit("0672KKZ", ""))
 
 
 if __name__ == "__main__":
