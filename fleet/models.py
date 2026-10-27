@@ -763,6 +763,16 @@ class GasoGesUser(models.Model):
     match_note = models.CharField(
         _("Cruce con la ficha"), max_length=255, blank=True,
     )
+    # H30 (S137), Miguel Ángel: a quién se pregunta se decide por chófer
+    # (antes solo por vehículo, y no había forma de preguntar a una sola
+    # persona). Se le pregunta si él y el vehículo lo tienen marcado.
+    # ---
+    # Whether this driver gets WhatsApp questions.
+    ask_driver = models.BooleanField(
+        _("Se le pregunta por WhatsApp"),
+        default=True,
+        help_text=_("Si no, no se le pregunta por sus repostajes."),
+    )
     updated_at = models.DateTimeField(_("Actualizado"), auto_now=True)
 
     class Meta:

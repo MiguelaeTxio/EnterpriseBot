@@ -175,7 +175,7 @@ def _candidates():
     recent = GasoGesSupply.objects.filter(
         supplied_at__gte=since, vehicle__machine__isnull=False,
         vehicle__ask_driver=True, vehicle__meter_broken=False,
-        user__person__isnull=False,
+        user__ask_driver=True, user__person__isnull=False,
     ).select_related("vehicle", "user__person").order_by("-supplied_at")
     asked_supplies = set(RefuelQuestion.objects.filter(
         supply__in=recent).values_list("supply_id", flat=True))

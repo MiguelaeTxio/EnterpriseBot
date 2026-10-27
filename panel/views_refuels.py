@@ -281,8 +281,16 @@ def _filtered_supplies(request):
     supplies = GasoGesSupply.objects.select_related(
         "vehicle", "vehicle__machine", "user", "user__person",
     ).filter(supplied_at__gte=start, supplied_at__lt=end,
-             status__in=_statuses(request),
-             vehicle__ask_driver__in=_ask_values(request))
+             status__in=_statuses(request))
+    # S137: se pregunta si el chófer y el vehículo lo tienen marcado.
+    asked = Q(vehicle__ask_driver=True, user__ask_driver=True)
+    ask_values = _ask_values(request)
+    if ask_values == [True]:
+        supplies = supplies.filter(asked)
+    elif ask_values == [False]:
+        supplies = supplies.exclude(asked)
+    elif not ask_values:
+        supplies = supplies.none()
     search = _param(request, "search").strip()
     if search:
         supplies = supplies.filter(
@@ -317,7 +325,7 @@ def _row(supply):
         "unit": vehicle.get_unit_display(),
         "unit_known": vehicle.unit != GasoGesVehicle.UNIT_UNKNOWN,
         "unit_source": _UNIT_SOURCE_LABELS.get(vehicle.unit_source, ""),
-        "ask_driver": vehicle.ask_driver,
+        "ask_driver": vehicle.ask_driver and bool(user and user.ask_driver),
         "meter_broken": vehicle.meter_broken,
         "litres": supply.litres,
         "status": supply.get_status_display(),
@@ -443,6 +451,7 @@ def _user_rows(groups):
             "known": user is not None,
             "person": user.person if user else None,
             "person_label": _person_label(user.person) if user else "",
+            "ask_driver": user.ask_driver if user else False,
             "search": user.name if user else "",
             "label": name,
             **_totals(group),
@@ -626,15 +635,16 @@ class RefuelsVehicleUnitView(CompanyUserRequiredMixin, View):
 
 class RefuelsVehicleAskView(CompanyUserRequiredMixin, View):
     """
-    POST: whether the drivers of the marked supplies' vehicles get
-    WhatsApp questions.
+    POST: whether WhatsApp questions are sent, per driver or vehicle.
 
     ---
 
-    POST: si se pregunta o no por WhatsApp a los chóferes de los
-    vehículos de los repostajes marcados (S135, Miguel Ángel: no por
-    los que lleva siempre la misma persona). Sus lecturas siguen
-    entrando igual.
+    POST: si se pregunta o no por WhatsApp. S137 (Miguel Ángel: "desde
+    el punto de vista del chófer"): en Repostadores, a los chóferes
+    marcados; en Repostajes, a los chóferes de los repostajes marcados;
+    en Vehículos, a los vehículos marcados (los que lleva siempre la
+    misma persona, S135). Se pregunta si el chófer y el vehículo lo
+    tienen marcado. Sus lecturas siguen entrando igual.
     """
 
     def post(self, request):
@@ -643,19 +653,34 @@ class RefuelsVehicleAskView(CompanyUserRequiredMixin, View):
                 {"ok": False, "error": "No tienes permiso para esto."},
                 status=403)
         ask = request.POST.get("ask") == "1"
-        vehicle_ids = _selected_vehicle_ids(request)
-        changed = GasoGesVehicle.objects.filter(
-            pk__in=vehicle_ids).update(ask_driver=ask)
+        view = request.POST.get("view")
+        wanted = [int(pk) for pk in request.POST.get(
+            "selected_ids", "").split(",") if pk.isdigit()]
+        if view == VIEW_VEHICLES:
+            changed = GasoGesVehicle.objects.filter(
+                pk__in=wanted).update(ask_driver=ask)
+            what = "vehículo(s)"
+        else:
+            if view == VIEW_USERS:
+                user_ids = wanted
+            else:
+                user_ids = GasoGesSupply.objects.filter(
+                    pk__in=wanted, user__isnull=False).values_list(
+                    "user_id", flat=True)
+            changed = GasoGesUser.objects.filter(
+                pk__in=list(user_ids)).update(ask_driver=ask)
+            what = "chófer(es)"
         if not changed:
             return JsonResponse(
                 {"ok": False,
-                 "error": "Marca antes algún repostaje o vehículo."},
+                 "error": "Marca antes algún repostaje, chófer o "
+                          "vehículo."},
                 status=400)
         return JsonResponse({
             "ok": True,
-            "message": "%d vehículo(s): %s." % (
-                changed, "se preguntará al chófer" if ask
-                else "no se preguntará al chófer"),
+            "message": "%d %s: %s." % (
+                changed, what, "se le preguntará" if ask
+                else "no se le preguntará"),
         })
 
 
@@ -834,10 +859,11 @@ class RefuelsExportView(CompanyUserRequiredMixin, View):
             _float(row["litres"]),
             row["last"].replace(tzinfo=None) if row["last"] else None,
             row["anomalies"], row["others"],
+            "Sí" if row["ask_driver"] else "No",
         ] for row in rows]
         _write_sheet(book, "Repostadores", [
             ("Repostador (GasoGes)", 32), ("Ficha de trabajador", 36),
             ("Repostajes", 11), ("Litros", 10), ("Último repostaje", 17),
-            ("Dudosos", 9), ("Vehículos", 10),
+            ("Dudosos", 9), ("Vehículos", 10), ("Se le pregunta", 14),
         ], lines, (("E", "DD/MM/YYYY HH:MM"),))
         return _excel_response(book, "repostajes_repostadores", request)

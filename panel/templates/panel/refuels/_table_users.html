@@ -22,6 +22,7 @@ Todo llega calculado desde panel/views_refuels.py (_user_rows).
                 </a>
             </th>
             {% endfor %}
+            <th>Se le pregunta</th>
             <th></th>
         </tr>
     </thead>
@@ -41,6 +42,7 @@ Todo llega calculado desde panel/views_refuels.py (_user_rows).
             <td data-label="Último repostaje">{% if row.last %}{{ row.last|date:"d/m/Y H:i" }}{% else %}—{% endif %}</td>
             <td class="text-end{% if row.anomalies %} text-danger fw-bold{% endif %}" data-label="Dudosos">{{ row.anomalies }}</td>
             <td class="text-end" data-label="Vehículos">{{ row.others }}</td>
+            <td data-label="Se le pregunta">{% if row.known %}{% if row.ask_driver %}<i class="bi bi-chat-square-text text-success me-1"></i>Sí{% else %}<i class="bi bi-bell-slash text-secondary me-1"></i>No{% endif %}{% endif %}</td>
             <td class="text-end">
                 <div class="dropdown">
                     <button class="btn btn-sm btn-link text-dark py-0" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Acciones">
@@ -61,7 +63,7 @@ Todo llega calculado desde panel/views_refuels.py (_user_rows).
             </td>
         </tr>
         {% empty %}
-        <tr><td colspan="10" class="text-muted small py-3">No hay repostadores con repostajes con estos filtros.</td></tr>
+        <tr><td colspan="11" class="text-muted small py-3">No hay repostadores con repostajes con estos filtros.</td></tr>
         {% endfor %}
     </tbody>
 </table>
