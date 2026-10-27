@@ -467,12 +467,27 @@ class MachineServiceRecord(models.Model):
         (OIL_SYNTHETIC, _("Sintético (cada 1200 h)")),
         (OIL_SEMI_SYNTHETIC, _("Semisintético (cada 800 h)")),
     ]
-    work_order_line = models.OneToOneField(
+    # S137, Miguel Ángel: las A con dos motores llevan dos revisiones (la
+    # del motor del camión y la del de la grúa); una tarea puede anotar
+    # las dos, una por motor.
+    # ---
+    # Which engine was serviced (trucks with a crane engine have two).
+    ENGINE_TRUCK = "TRUCK"
+    ENGINE_CRANE = "CRANE"
+    ENGINE_CHOICES = [
+        (ENGINE_TRUCK, _("Motor del camión")),
+        (ENGINE_CRANE, _("Motor de la grúa")),
+    ]
+    engine = models.CharField(
+        _("Motor"), max_length=10, choices=ENGINE_CHOICES,
+        default=ENGINE_TRUCK,
+    )
+    work_order_line = models.ForeignKey(
         "work_order_processor.WorkOrderEntryLine",
         null=True,
         blank=True,
         on_delete=models.CASCADE,
-        related_name="service_record",
+        related_name="service_records",
         verbose_name=_("Tarea del parte"),
     )
     filters_changed = models.CharField(
@@ -506,6 +521,14 @@ class MachineServiceRecord(models.Model):
         verbose_name = _("Revisión de centro de gasto")
         verbose_name_plural = _("Revisiones de centros de gasto")
         ordering = ["-service_date", "-id"]
+        constraints = [
+            # MySQL admite varios NULL en un índice único: las
+            # revisiones anotadas a mano (sin tarea) no chocan.
+            models.UniqueConstraint(
+                fields=("work_order_line", "engine"),
+                name="unique_service_per_line_engine",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.machine.code} -- revisión {self.service_date}"

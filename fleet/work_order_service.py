@@ -19,6 +19,12 @@ además, se añade"): la casilla muestra los repuestos del albarán
 pre-asignados a la máquina, y marcarlos ahí es marcarlos como
 consumidos en la tarea (las mismas casillas `consume_part`). Los
 filtros que no venían en el albarán se añaden aparte.
+
+Las A con dos motores (S137, Miguel Ángel) llevan dos revisiones: la
+del motor del camión (horas o km del camión) y la del motor de la grúa
+(horas de grúa), cada una con su aceite, sus litros y su próxima
+revisión. En las máquinas con horas de grúa la casilla deja elegir uno
+o los dos motores; una revisión por tarea y motor.
 """
 from decimal import Decimal
 from decimal import InvalidOperation
@@ -53,6 +59,29 @@ def _int_or_none(raw):
     return value if value > 0 else None
 
 
+def _oil(post, prefix, name):
+    """
+    (oil type, litres) of one engine from the POST.
+
+    ---
+
+    Tipo de aceite y litros de un motor (`name` es "" para el del
+    camión y "crane_" para el de la grúa).
+    """
+    from fleet.models import MachineServiceRecord
+
+    oil_type = post.get("%sservice_%soil_type" % (prefix, name), "").strip()
+    try:
+        litres = Decimal(
+            post.get("%sservice_%soil_litres" % (prefix, name), "").strip()
+            .replace(",", "."))
+        litres = litres if litres > 0 else None
+    except InvalidOperation:
+        litres = None
+    return (oil_type if oil_type in dict(MachineServiceRecord.OIL_CHOICES)
+            else ""), litres
+
+
 def parse_service_post(post, prefix, company):
     """
     Service data of one block from the POST, or None if not ticked.
@@ -75,21 +104,26 @@ def parse_service_post(post, prefix, company):
         "description", flat=True)) if part_pks else []
     filters = [code for code, _label in FILTERS
                if post.get("%sservice_filter_%s" % (prefix, code)) == "1"]
-    oil_type = post.get("%sservice_oil_type" % prefix, "").strip()
-    try:
-        litres = Decimal(
-            post.get("%sservice_oil_litres" % prefix, "").strip()
-            .replace(",", "."))
-        litres = litres if litres > 0 else None
-    except InvalidOperation:
-        litres = None
-    from fleet.models import MachineServiceRecord
-
+    oil_type, litres = _oil(post, prefix, "")
+    # Con horas de grúa, el formulario deja elegir motor; si no, solo
+    # está el del camión.
+    choice = post.get("%sservice_engine_choice" % prefix) == "1"
+    truck = (post.get("%sservice_truck" % prefix) == "1") if choice else True
+    crane = None
+    if choice and post.get("%sservice_crane" % prefix) == "1":
+        crane_oil, crane_litres = _oil(post, prefix, "crane_")
+        crane = {
+            "oil_type": crane_oil,
+            "oil_litres": crane_litres,
+            "next_hours": _int_or_none(
+                post.get("%sservice_crane_next_hours" % prefix)),
+        }
     return {
+        "truck": truck,
+        "crane": crane,
         "filters": filters,
         "albaran_parts": albaran_parts,
-        "oil_type": (oil_type if oil_type in dict(
-            MachineServiceRecord.OIL_CHOICES) else ""),
+        "oil_type": oil_type,
         "oil_litres": litres,
         "next_hours": _int_or_none(
             post.get("%sservice_next_hours" % prefix)),
@@ -104,20 +138,34 @@ def form_data(line):
     ---
 
     Datos de revisión de una tarea ya guardada, para volver a pintar el
-    formulario, o None si no tiene revisión anotada.
+    formulario (los dos motores), o None si no tiene revisión anotada.
     """
-    record = getattr(line, "service_record", None) if line.pk else None
-    if record is None:
+    if not line.pk:
         return None
+    records = {record.engine: record
+               for record in line.service_records.all()}
+    if not records:
+        return None
+    from fleet.models import MachineServiceRecord
+
+    truck = records.get(MachineServiceRecord.ENGINE_TRUCK)
+    crane = records.get(MachineServiceRecord.ENGINE_CRANE)
+    first = truck or crane
     return {
-        "filters": [code for code in record.filters_changed.split(",")
+        "truck": truck is not None,
+        "crane": crane is not None and {
+            "oil_type": crane.oil_type,
+            "oil_litres": crane.oil_litres,
+            "next_hours": crane.next_service_hours,
+        },
+        "filters": [code for code in first.filters_changed.split(",")
                     if code],
-        "albaran_note": (record.notes if record.notes.startswith(
+        "albaran_note": (first.notes if first.notes.startswith(
             ALBARAN_PREFIX) else ""),
-        "oil_type": record.oil_type,
-        "oil_litres": record.oil_litres,
-        "next_hours": record.next_service_hours,
-        "next_km": record.next_service_km,
+        "oil_type": truck.oil_type if truck else "",
+        "oil_litres": truck.oil_litres if truck else None,
+        "next_hours": truck.next_service_hours if truck else None,
+        "next_km": truck.next_service_km if truck else None,
     }
 
 
@@ -148,65 +196,93 @@ def _set_type(line, model, **fields):
 
 def sync_line_service(line, data, company_user):
     """
-    Create, update or delete the service record of a block.
+    Create, update or delete the service records of a block.
 
     Returns "created", "updated", "deleted" or "".
 
     ---
 
-    Crea, actualiza o borra la revisión de una tarea según la casilla.
-    Marcada: la tarea pasa a REVISION y su `MachineServiceRecord` lleva
-    la fecha del parte, las lecturas de la tarea, los filtros, el aceite
-    y la próxima revisión. Desmarcada con una revisión ya guardada: se
-    borra y la tarea queda sin clasificar, para que Gemini la clasifique
-    de nuevo. Sin máquina, no se anota nada.
+    Crea, actualiza o borra las revisiones de una tarea según la
+    casilla: una por motor marcado (camión y, en las A con dos motores,
+    grúa). Marcada: la tarea pasa a REVISION y cada revisión lleva la
+    fecha del parte, las lecturas de la tarea (horas o km del camión, u
+    horas de grúa), los filtros, el aceite y la próxima revisión.
+    Desmarcada con revisiones ya guardadas: se borran y la tarea queda
+    sin clasificar, para que Gemini la clasifique de nuevo. Sin máquina,
+    no se anota nada.
     """
     from fleet.models import MachineServiceRecord
     from work_order_processor.models import WorkOrderEntryLine
 
-    record = MachineServiceRecord.objects.filter(
-        work_order_line=line).first()
-    if data is None or line.machine_asset_id is None:
-        if record is None:
-            return ""
-        record.delete()
-        if line.tipo_tarea == SERVICE_TYPE:
+    existing = {record.engine: record for record in
+                MachineServiceRecord.objects.filter(work_order_line=line)}
+    wanted = {}
+    if data is not None and line.machine_asset_id is not None:
+        if data.get("truck", True):
+            wanted[MachineServiceRecord.ENGINE_TRUCK] = {
+                "hours": _whole(line.engine_hours_reading),
+                "km": _whole(line.odometer_reading),
+                "crane_hours": None,
+                "oil_type": data["oil_type"],
+                "oil_litres": data["oil_litres"],
+                "next_service_hours": data["next_hours"],
+                "next_service_km": data["next_km"],
+            }
+        if data.get("crane"):
+            wanted[MachineServiceRecord.ENGINE_CRANE] = {
+                "hours": None,
+                "km": None,
+                "crane_hours": _whole(line.crane_hours_reading),
+                "oil_type": data["crane"]["oil_type"],
+                "oil_litres": data["crane"]["oil_litres"],
+                "next_service_hours": data["crane"]["next_hours"],
+                "next_service_km": None,
+            }
+    for engine, record in existing.items():
+        if engine not in wanted:
+            record.delete()
+    if not wanted:
+        if existing and line.tipo_tarea == SERVICE_TYPE:
             _set_type(line, WorkOrderEntryLine, tipo_tarea="",
                       task_category_free="")
-        return "deleted"
+        return "deleted" if existing else ""
     albaran = data.get("albaran_parts") or []
     filters = ", ".join(
         albaran + [FILTER_LABELS[code] for code in data["filters"]])
+    engines = " y ".join(
+        dict(MachineServiceRecord.ENGINE_CHOICES)[engine].lower()
+        for engine in wanted) if len(wanted) > 1 or (
+        MachineServiceRecord.ENGINE_CRANE in wanted) else ""
+    label = ("cambio de aceite y filtros (%s)" % filters if filters
+             else "cambio de aceite")
     _set_type(
         line, WorkOrderEntryLine,
         tipo_tarea=SERVICE_TYPE,
         task_category_free=(
-            ("cambio de aceite y filtros (%s)" % filters)[:200]
-            if filters else "cambio de aceite"),
+            "%s, %s" % (label, engines) if engines else label)[:200],
         fault_category="",
         fault_subcategory="",
     )
-    values = {
-        "notes": ((ALBARAN_PREFIX + "; ".join(albaran))[:255] if albaran
-                  else (record.notes if record is not None
-                        and record.notes.startswith(ALBARAN_PREFIX)
-                        else "Anotada desde el parte")),
-        "machine": line.machine_asset,
-        "service_date": line.entry.work_date,
-        "hours": _whole(line.engine_hours_reading),
-        "km": _whole(line.odometer_reading),
-        "crane_hours": _whole(line.crane_hours_reading),
-        "filters_changed": ",".join(data["filters"]),
-        "oil_type": data["oil_type"],
-        "oil_litres": data["oil_litres"],
-        "next_service_hours": data["next_hours"],
-        "next_service_km": data["next_km"],
-    }
-    if record is None:
-        MachineServiceRecord.objects.create(
-            work_order_line=line, created_by=company_user, **values)
-        return "created"
-    for field, value in values.items():
-        setattr(record, field, value)
-    record.save(update_fields=list(values))
-    return "updated"
+    action = "updated"
+    for engine, engine_values in wanted.items():
+        record = existing.get(engine)
+        values = dict(
+            engine_values,
+            notes=((ALBARAN_PREFIX + "; ".join(albaran))[:255] if albaran
+                   else (record.notes if record is not None
+                         and record.notes.startswith(ALBARAN_PREFIX)
+                         else "Anotada desde el parte")),
+            machine=line.machine_asset,
+            service_date=line.entry.work_date,
+            filters_changed=",".join(data["filters"]),
+        )
+        if record is None:
+            MachineServiceRecord.objects.create(
+                work_order_line=line, engine=engine,
+                created_by=company_user, **values)
+            action = "created"
+            continue
+        for field, value in values.items():
+            setattr(record, field, value)
+        record.save(update_fields=list(values))
+    return action

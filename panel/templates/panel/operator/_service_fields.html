@@ -3,9 +3,12 @@
 H30 (S137). Casilla "Revisión" de una tarea: repuestos del albarán de
 la máquina (los marca form_entry_service.js, que son las mismas casillas
 de consumo de la tarea), otros filtros, aceite (tipo y litros) y
-próxima revisión. Recibe `idx` (número de la
-tarea, o __IDX__ en la plantilla oculta que usa el JS para las tareas
-nuevas) y `service` (datos guardados o None). Lo procesa
+próxima revisión. En las máquinas con horas de grúa (A con dos motores)
+deja elegir motor del camión, motor de la grúa o los dos, cada uno con
+su aceite y su próxima revisión. Recibe `idx` (número de la tarea, o
+__IDX__ en la plantilla oculta que usa el JS para las tareas nuevas),
+`service` (datos guardados o None) y `crane` (si la máquina tiene horas
+de grúa; el JS lo vuelve a mirar al cambiar de máquina). Lo procesa
 fleet/work_order_service.py.
 {% endcomment %}
 <div class="col-12 service-wrap" data-block-idx="{{ idx }}">
@@ -41,6 +44,27 @@ fleet/work_order_service.py.
                 {% endfor %}
             </div>
         </div>
+        <div class="service-engines mb-2{% if not crane %} d-none{% endif %}" id="service-engines-{{ idx }}">
+            <input type="hidden" name="entrada_{{ idx }}_service_engine_choice" value="1"
+                   class="service-engine-choice"{% if not crane %} disabled{% endif %}>
+            <div class="form-label fw-medium mb-1">Motor revisado</div>
+            <div class="d-flex flex-wrap gap-3">
+                <div class="form-check">
+                    <input class="form-check-input service-engine" type="checkbox" data-block-idx="{{ idx }}"
+                           name="entrada_{{ idx }}_service_truck" id="id_entrada_{{ idx }}_service_truck" value="1"
+                           {% if not service or service.truck %}checked{% endif %}>
+                    <label class="form-check-label" for="id_entrada_{{ idx }}_service_truck">Motor del camión</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input service-engine" type="checkbox" data-block-idx="{{ idx }}"
+                           name="entrada_{{ idx }}_service_crane" id="id_entrada_{{ idx }}_service_crane" value="1"
+                           {% if service.crane %}checked{% endif %}>
+                    <label class="form-check-label" for="id_entrada_{{ idx }}_service_crane">Motor de la grúa</label>
+                </div>
+            </div>
+        </div>
+        <div class="service-truck" id="service-truck-{{ idx }}">
+        <div class="small fw-bold text-secondary mb-1 service-engine-title{% if not crane %} d-none{% endif %}">Motor del camión</div>
         <div class="row g-2">
             <div class="col-12 col-md-4">
                 <label class="form-label fw-medium" for="id_entrada_{{ idx }}_service_oil_type">Aceite</label>
@@ -75,6 +99,37 @@ fleet/work_order_service.py.
                        value="{% if service and service.next_km %}{{ service.next_km }}{% endif %}">
             </div>
         </div>
-        <small class="text-muted">Por horas, salvo los vehículos que van por km (camiones de pluma, furgonetas, turismos).</small>
+        </div>
+        <div class="service-crane mt-2{% if not crane or not service.crane %} d-none{% endif %}" id="service-crane-{{ idx }}">
+            <div class="small fw-bold text-secondary mb-1">Motor de la grúa</div>
+            <div class="row g-2">
+                <div class="col-12 col-md-4">
+                    <label class="form-label fw-medium" for="id_entrada_{{ idx }}_service_crane_oil_type">Aceite</label>
+                    <select class="form-select service-oil-type" data-block-idx="{{ idx }}" data-engine="crane"
+                            name="entrada_{{ idx }}_service_crane_oil_type"
+                            id="id_entrada_{{ idx }}_service_crane_oil_type">
+                        <option value="">—</option>
+                        {% for value, label in service_oil_choices %}
+                        <option value="{{ value }}" {% if service.crane and service.crane.oil_type == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label fw-medium" for="id_entrada_{{ idx }}_service_crane_oil_litres">Litros</label>
+                    <input type="number" step="0.1" min="0" class="form-control"
+                           name="entrada_{{ idx }}_service_crane_oil_litres"
+                           id="id_entrada_{{ idx }}_service_crane_oil_litres"
+                           value="{% if service.crane and service.crane.oil_litres %}{{ service.crane.oil_litres|stringformat:'g' }}{% endif %}">
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="form-label fw-medium" for="id_entrada_{{ idx }}_service_crane_next_hours">Próxima revisión (h grúa)</label>
+                    <input type="number" step="1" min="0" class="form-control"
+                           name="entrada_{{ idx }}_service_crane_next_hours"
+                           id="id_entrada_{{ idx }}_service_crane_next_hours"
+                           value="{% if service.crane and service.crane.next_hours %}{{ service.crane.next_hours }}{% endif %}">
+                </div>
+            </div>
+        </div>
+        <small class="text-muted">Por horas; por km solo turismos, furgonetas y P.</small>
     </div>
 </div>
