@@ -58,6 +58,7 @@ lectura con la que se compara) y la plantilla v4 lo lleva en el
 mensaje. Se usa en cuanto Meta la aprueba; mientras, la v3 o la v2 (y
 el motivo se le dice al pulsar "No, lo corrijo"). Por los brazos (B)
 no se pregunta el dato hasta tener la v4 (Miguel Ángel, S137).
+Escribir AVERIADO vale como el botón "Contador averiado" (S137).
 """
 import logging
 import os
@@ -108,6 +109,9 @@ UNIT_ASK = {
                             "cuentakilómetros",
     GasoGesVehicle.UNIT_HOURS: "las HORAS que marca ahora el horómetro",
 }
+# "AVERIADO", "averiado.", "está averiado": mensaje corto con la palabra.
+_BROKEN_RE = re.compile(r"\baveriad[oa]s?\b", re.I)
+_BROKEN_MAX_LEN = 60
 _NUMBER_RE = re.compile(r"^\s*(\d{1,3}(?:[.\s]\d{3})+|\d+)\s*$")
 OPEN_STATUSES = (RefuelQuestion.STATUS_SENT,
                  RefuelQuestion.STATUS_AWAITING_VALUE)
@@ -477,6 +481,31 @@ def _parse_number(text):
     return int(re.sub(r"[.\s]", "", match.group(1)))
 
 
+def _mark_meter_broken(question, answer):
+    """
+    Mark the question's vehicle meter as broken; return the reply.
+
+    ---
+
+    Marca como averiado el contador del vehículo de la pregunta (botón
+    "Contador averiado" o la palabra AVERIADO escrita) y devuelve la
+    respuesta para el chófer.
+    """
+    vehicle = question.vehicle
+    vehicle.meter_broken = True
+    vehicle.meter_broken_since = question.supply.supplied_at
+    vehicle.save(update_fields=[
+        "meter_broken", "meter_broken_since", "updated_at"])
+    question.status = RefuelQuestion.STATUS_METER_BROKEN
+    question.answer = answer[:255]
+    question.answered_at = timezone.now()
+    question.save(update_fields=["status", "answer", "answered_at"])
+    build_readings(lambda _line: None, vehicle=vehicle)
+    return ("Gracias, queda anotado que el contador está averiado. No "
+            "te volveremos a preguntar por este vehículo hasta que se "
+            "repare.")
+
+
 def handle_whatsapp_reply(company, phone, button_payload, body):
     """
     Process a driver's answer; return the reply text, or None.
@@ -491,6 +520,21 @@ def handle_whatsapp_reply(company, phone, button_payload, body):
     repostaje (sigue el camino normal del webhook).
     """
     if button_payload not in BUTTONS:
+        # S137, Miguel Ángel: si el horómetro o el cuentakilómetros está
+        # mal, el chófer lo indica escribiendo AVERIADO (el aviso de
+        # notify_wrong_confirmations se lo dice), para no recibir más
+        # mensajes por ese vehículo. Vale para su última pregunta de las
+        # últimas 48 horas, contestada o no.
+        if body and len(body) <= _BROKEN_MAX_LEN and _BROKEN_RE.search(
+                body):
+            person = resolve_person_by_phone(company, phone)
+            recent = person and RefuelQuestion.objects.filter(
+                person=person, sent_at__gte=timezone.now() - timedelta(
+                    hours=RECENT_HOURS),
+            ).select_related("supply", "vehicle").order_by(
+                "-sent_at").first()
+            if recent:
+                return _mark_meter_broken(recent, body.strip())
         awaiting = None
         if body:
             person = resolve_person_by_phone(company, phone)
@@ -560,18 +604,7 @@ def handle_whatsapp_reply(company, phone, button_payload, body):
                        _format_value(supply.meter_value), problem)
                    if problem else ""))
     if button_payload == METER_BROKEN:
-        vehicle = question.vehicle
-        vehicle.meter_broken = True
-        vehicle.meter_broken_since = question.supply.supplied_at
-        vehicle.save(update_fields=[
-            "meter_broken", "meter_broken_since", "updated_at"])
-        question.status = RefuelQuestion.STATUS_METER_BROKEN
-        question.answer = "Contador averiado"
-        question.save(update_fields=["status", "answer", "answered_at"])
-        build_readings(lambda _line: None, vehicle=vehicle)
-        return ("Gracias, queda anotado que el contador está averiado. No "
-                "te volveremos a preguntar por este vehículo hasta que se "
-                "repare.")
+        return _mark_meter_broken(question, "Contador averiado")
     unit = (GasoGesVehicle.UNIT_KM if button_payload == UNIT_KM
             else GasoGesVehicle.UNIT_HOURS)
     vehicle = question.vehicle
