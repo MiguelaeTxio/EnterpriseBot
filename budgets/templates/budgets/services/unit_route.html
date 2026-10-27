@@ -28,6 +28,21 @@ del servicio.
         <span><i class="bi bi-pause-circle me-1"></i>{{ route.stops|length }} detenciones · {{ route.stopped_minutes }} min parado</span>
         {% endif %}
     </div>
+    {% if route.count %}
+    <div class="card-body py-2 small border-top d-flex flex-wrap gap-3">
+        {% for m in route.milestones %}
+        <span><i class="bi bi-geo me-1"></i>{{ m.label }}{% if m.time %} {{ m.time }}{% endif %}</span>
+        {% endfor %}
+        {% if route.night %}
+        <span><i class="bi bi-moon me-1"></i>Pernocta en base {{ route.night.base }}: {{ route.night.start }} → {{ route.night.end }} (no cuenta)</span>
+        {% endif %}
+        <span class="text-muted">
+            <span style="display:inline-block;width:18px;height:4px;background:#0d6efd;vertical-align:middle"></span> ida
+            <span style="display:inline-block;width:18px;height:4px;background:#198754;vertical-align:middle;margin-left:6px"></span> con el vehículo
+            <span style="display:inline-block;width:18px;height:4px;background:#6c757d;vertical-align:middle;margin-left:6px"></span> vuelta
+        </span>
+    </div>
+    {% endif %}
     {% if previous or following %}
     <div class="card-body py-2 small border-top d-flex flex-wrap gap-3">
         {% if previous %}
@@ -110,9 +125,22 @@ if (!(window.google && window.google.maps && window.google.maps.importLibrary)) 
     const bounds = new google.maps.LatLngBounds();
     data.path.forEach(function (p) { bounds.extend(p); });
 
-    new mapsLib.Polyline({
-        map: map, path: data.path, strokeColor: "#0d6efd",
-        strokeOpacity: 0.85, strokeWeight: 4
+    // S138: un color por tramo (ida, con el vehículo, vuelta); la noche
+    // de la pernocta no se dibuja.
+    const LEG_COLOURS = {ida: "#0d6efd", servicio: "#198754", vuelta: "#6c757d"};
+    data.segments.forEach(function (segment, index) {
+        // Joined to the next one so the line has no gaps between legs.
+        // Unido al siguiente para que la línea no tenga cortes.
+        const next = data.segments[index + 1];
+        const path = segment.points.slice();
+        if (next && !(data.night && segment.points.length && next.points.length
+                      && segment.leg === next.leg)) {
+            path.push(next.points[0]);
+        }
+        new mapsLib.Polyline({
+            map: map, path: path, strokeColor: LEG_COLOURS[segment.leg] || "#0d6efd",
+            strokeOpacity: 0.85, strokeWeight: 4
+        });
     });
 
     function esc(text) {
@@ -135,16 +163,23 @@ if (!(window.google && window.google.maps && window.google.maps.importLibrary)) 
         return {marker: m, open: open};
     }
 
-    const first = data.path[0];
-    const last = data.path[data.path.length - 1];
-    marker(first, {background: "#198754", borderColor: "#fff", glyphColor: "#fff", glyph: "S"},
-        "Salida", "<div class=\"fw-semibold\">Primera posición</div><div>" + esc(data.start) + "</div>");
-    marker(last, {background: "#212529", borderColor: "#fff", glyphColor: "#fff", glyph: "F"},
-        "Final", "<div class=\"fw-semibold\">Última posición</div><div>" + esc(data.end) + "</div>");
+    // Hitos del chófer: salida, llegada a la recogida, entrega (firma) y fin.
+    const MILESTONE = {
+        start: {background: "#0d6efd", glyph: "S"},
+        pickup: {background: "#fd7e14", glyph: "R"},
+        delivery: {background: "#198754", glyph: "E"},
+        end: {background: "#212529", glyph: "F"}
+    };
+    data.milestones.forEach(function (m) {
+        const style = MILESTONE[m.kind] || MILESTONE.end;
+        marker(m, {background: style.background, borderColor: "#fff", glyphColor: "#fff", glyph: style.glyph},
+            m.label, "<div class=\"fw-semibold\">" + esc(m.label) + "</div><div>" + esc(m.time) + "</div>");
+    });
+    // Recogida y destino previstos, solo de referencia (pequeños).
     data.marks.forEach(function (mark) {
-        marker(mark, {background: "#6f42c1", borderColor: "#fff", glyphColor: "#fff",
-                      glyph: mark.label === "Recogida" ? "R" : "D"},
-            mark.label, "<div class=\"fw-semibold\">" + esc(mark.label) + " del servicio</div>");
+        marker(mark, {background: "#ffffff", borderColor: "#6f42c1", glyphColor: "#6f42c1", scale: 0.8,
+                      glyph: mark.label.indexOf("Recogida") === 0 ? "r" : "d"},
+            mark.label, "<div class=\"fw-semibold\">" + esc(mark.label) + "</div>");
     });
     const stopMarkers = data.stops.map(function (stop) {
         return marker(stop, {background: "#ffc107", borderColor: "#fff", glyphColor: "#212529",

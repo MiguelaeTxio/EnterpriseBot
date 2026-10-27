@@ -46,6 +46,7 @@ from budgets.assistance_traffic import (
 )
 from budgets import service_sheet as sheet
 from budgets.service_chain import chain_on_start
+from budgets.service_route import purge_night
 from budgets.service_geocode import maps_url
 from budgets.models import (
     DriverDeviceToken,
@@ -698,6 +699,11 @@ class DriverAlbaranSubmitView(View):
                 unit, previous, unit.status, by=company_user,
                 detail=detail,
             )
+            if unit.is_overnight:
+                # S138: the night in base is not work: its positions go.
+                # La noche en base no es trabajo: sus posiciones se borran.
+                unit_pk = unit.pk
+                transaction.on_commit(lambda: purge_night(unit_pk))
         logger.info(
             "# [DRIVER API] Albarán %s enviado por %s (%s).",
             unit.albaran_number, company_user.user.username, unit.status,
