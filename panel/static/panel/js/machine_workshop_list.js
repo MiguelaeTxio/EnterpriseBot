@@ -8,6 +8,7 @@
 //   directriz 4.15) y con sus totales en el visor "Selección actual".
 // - Casillas de estado (Abiertas/Cerradas) traducidas a un único valor
 //   ("" ambas, "open", "closed", "none" ninguna), solo en Averías.
+// - Casilleros de columnas visibles, guardados por usuario.
 // - Excel de la selección (POST), pantalla completa de la lista
 //   (formato del laboratorio de análisis, directriz 4.26) y totales de lo
 //   listado, que llegan en #mw-fragment-state con cada repintado.
@@ -44,6 +45,9 @@
                     selection.set(String(item.key), {
                         label: item.label || "",
                         hours: number(item.hours),
+                        ordinary: number(item.ordinary),
+                        extra: number(item.extra),
+                        festive: number(item.festive),
                         cost: number(item.cost),
                     });
                 }
@@ -55,8 +59,9 @@
             var payload = [];
             selection.forEach(function (item, key) {
                 payload.push({
-                    key: key, label: item.label,
-                    hours: item.hours, cost: item.cost,
+                    key: key, label: item.label, hours: item.hours,
+                    ordinary: item.ordinary, extra: item.extra,
+                    festive: item.festive, cost: item.cost,
                 });
             });
             var serialized = JSON.stringify(payload);
@@ -109,6 +114,9 @@
             var list = document.getElementById("mw-selection-list");
             list.innerHTML = "";
             var hours = 0;
+            var ordinary = 0;
+            var extra = 0;
+            var festive = 0;
             var cost = 0;
             if (!selection.size) {
                 var empty = document.createElement("li");
@@ -120,6 +128,9 @@
                 selection.forEach(function (item) {
                     labels.push(item.label);
                     hours += item.hours;
+                    ordinary += item.ordinary;
+                    extra += item.extra;
+                    festive += item.festive;
                     cost += item.cost;
                 });
                 labels.sort().forEach(function (label) {
@@ -131,7 +142,10 @@
             setText(
                 "mw-selection-totals",
                 selection.size
-                    ? format(hours) + " h · " + format(cost) + " € en repuestos"
+                    ? format(hours) + " h (ordinarias " + format(ordinary)
+                        + " · extra " + format(extra) + " · festivas "
+                        + format(festive) + ") · " + format(cost)
+                        + " € en repuestos"
                     : ""
             );
             var idsInput = document.getElementById("mw-selected-ids");
@@ -161,6 +175,9 @@
                 selection.set(cb.dataset.key, {
                     label: cb.dataset.label,
                     hours: number(cb.dataset.hours),
+                    ordinary: number(cb.dataset.ordinary),
+                    extra: number(cb.dataset.extra),
+                    festive: number(cb.dataset.festive),
                     cost: number(cb.dataset.cost),
                 });
             } else {
@@ -242,6 +259,28 @@
                     });
             }
         );
+
+        // Casilleros de columnas: una regla CSS esconde las desmarcadas
+        // (clase mwc-<clave> en cada celda) y se guardan las ocultas.
+        var colStyle = document.getElementById("mw-col-style");
+        document.querySelectorAll(".mw-col-check").forEach(function (cb) {
+            cb.addEventListener("change", function () {
+                var hidden = [];
+                document.querySelectorAll(".mw-col-check").forEach(
+                    function (box) {
+                        if (!box.checked) { hidden.push(box.dataset.col); }
+                    }
+                );
+                if (colStyle) {
+                    colStyle.textContent = hidden.map(function (key) {
+                        return ".mwc-" + key + "{display:none}";
+                    }).join("");
+                }
+                if (window.EbNavState) {
+                    window.EbNavState.save(screenKey, {hidden_columns: hidden});
+                }
+            });
+        });
 
         document.body.addEventListener("htmx:afterSwap", function (evt) {
             if (evt.detail.target && evt.detail.target.id === "mw-table-container") {

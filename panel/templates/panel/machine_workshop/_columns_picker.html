@@ -1,0 +1,28 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/machine_workshop/_columns_picker.html #}
+{% comment %}
+H30 (S139, invasora). Casilleros de columnas visibles (Miguel Ángel:
+"casilleros con las columnas que queremos que salgan, para que la
+persona que lo utiliza ponga justamente las columnas que quiere").
+La tabla pinta siempre todas; esta regla CSS esconde las desmarcadas
+(clase mwc-<clave> en cada celda), así sobrevive a cada repintado del
+fragmento. La elección se guarda por usuario (machine_workshop_list.js,
+clave hidden_columns, directriz 4.15).
+{% endcomment %}
+<style id="mw-col-style">{% for key in hidden_columns %}.mwc-{{ key }}{display:none}{% endfor %}</style>
+<div class="small text-muted fw-bold">Columnas</div>
+<div class="dropdown">
+    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button"
+            data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false"
+            title="Elegir las columnas que se ven en la lista">
+        <i class="bi bi-layout-three-columns me-1"></i>Columnas
+    </button>
+    <div class="dropdown-menu p-2 small shadow-sm">
+        {% for column in columns %}
+        <div class="form-check">
+            <input class="form-check-input mw-col-check" type="checkbox" id="mw-col-{{ column.key }}"
+                   data-col="{{ column.key }}" autocomplete="off"{% if column.visible %} checked{% endif %}>
+            <label class="form-check-label text-nowrap" for="mw-col-{{ column.key }}">{{ column.label }}</label>
+        </div>
+        {% endfor %}
+    </div>
+</div>

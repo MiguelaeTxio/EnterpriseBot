@@ -10,6 +10,7 @@
 #mw-results-scroll table td,
 #mw-results-scroll table th { white-space: nowrap; }
 #mw-results-scroll .mw-col-text { white-space: normal; min-width: 16rem; max-width: 28rem; }
+#mw-results-scroll tfoot.mw-totals td { position: sticky; bottom: 0; background-color: #f8f9fa; z-index: 2; border-top: 2px solid var(--bs-border-color, #dee2e6); }
 #mw-list-box:fullscreen { background: var(--bs-body-bg, #fff); padding: 1rem; }
 #mw-list-box:fullscreen #mw-results-scroll { height: calc(100vh - 4rem); }
 </style>
@@ -105,11 +106,18 @@ pierde de vista), filtrable con las casillas de estado.
                     <strong class="small"><span id="mw-mass-count">0</span> seleccionados</strong>
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="mw-mass-clear">Limpiar</button>
                 </div>
-                <div class="small text-muted fw-bold">Descargar la selección</div>
-                <button type="button" class="btn btn-sm btn-outline-success mw-needs-selection" id="mw-mass-export" disabled
-                        title="Excel con las averías seleccionadas, sus tareas de parte y sus repuestos, con totales">
-                    <i class="bi bi-file-earmark-excel me-1"></i>Excel
-                </button>
+                <div class="row g-1">
+                    <div class="col-md-6 border-end pe-2">
+                        <div class="small text-muted fw-bold">Descargar la selección</div>
+                        <button type="button" class="btn btn-sm btn-outline-success mw-needs-selection" id="mw-mass-export" disabled
+                                title="Excel con las averías seleccionadas, sus tareas de parte y sus repuestos, con totales">
+                            <i class="bi bi-file-earmark-excel me-1"></i>Excel
+                        </button>
+                    </div>
+                    <div class="col-md-6 ps-2">
+                        {% include "panel/machine_workshop/_columns_picker.html" %}
+                    </div>
+                </div>
             </div>
         </div>
     </div>

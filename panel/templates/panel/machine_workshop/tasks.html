@@ -10,6 +10,7 @@
 #mw-results-scroll table td,
 #mw-results-scroll table th { white-space: nowrap; }
 #mw-results-scroll .mw-col-text { white-space: normal; min-width: 16rem; max-width: 28rem; }
+#mw-results-scroll tfoot.mw-totals td { position: sticky; bottom: 0; background-color: #f8f9fa; z-index: 2; border-top: 2px solid var(--bs-border-color, #dee2e6); }
 #mw-list-box:fullscreen { background: var(--bs-body-bg, #fff); padding: 1rem; }
 #mw-list-box:fullscreen #mw-results-scroll { height: calc(100vh - 4rem); }
 </style>
@@ -134,15 +135,17 @@ repuestos) es el de lo listado, y el de la selección va en su visor.
                 <div class="row g-1">
                     <div class="col-md-6 border-end pe-2">
                         <div class="small text-muted fw-bold">Descargar la selección</div>
-                        <button type="button" class="btn btn-sm btn-outline-success mw-needs-selection" id="mw-mass-export" disabled
+                        <button type="button" class="btn btn-sm btn-outline-success mw-needs-selection mb-2" id="mw-mass-export" disabled
                                 title="Excel con las tareas seleccionadas y sus repuestos, con totales">
                             <i class="bi bi-file-earmark-excel me-1"></i>Excel
                         </button>
+                        {% include "panel/machine_workshop/_columns_picker.html" %}
                     </div>
                     <div class="col-md-6 ps-2">
                         <div class="small text-muted fw-bold">Total de la máquina</div>
                         <div class="small" title="Todas las tareas de parte de esta máquina, sin filtros">
                             {{ all_totals.count }} tarea{{ all_totals.count|pluralize }} · {{ all_totals.hours|floatformat:2 }} h<br>
+                            Ordinarias {{ all_totals.ordinary|floatformat:2 }} · extra {{ all_totals.extra|floatformat:2 }} · festivas {{ all_totals.festive|floatformat:2 }}<br>
                             {{ all_totals.cost|floatformat:2 }} € en repuestos{% if all_totals.unpriced %} <span class="text-warning">({{ all_totals.unpriced }} sin precio)</span>{% endif %}
                         </div>
                     </div>

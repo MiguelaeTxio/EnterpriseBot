@@ -138,9 +138,28 @@ def _page_context(request, machine, kind):
     ---
 
     Contexto común de las dos páginas: máquina, pestaña activa, URL de
-    la ficha (destino de "Volver" sin historial) y permisos.
+    la ficha (destino de "Volver" sin historial), permisos y columnas
+    visibles del usuario (todas se pintan; las ocultas las esconde una
+    regla CSS, así el fragmento no depende de la elección).
     """
+    from panel.navigation_persistence import get_saved_state_key
+
+    hidden = get_saved_state_key(
+        request.user.company_user, _screen_key(kind, machine),
+        "hidden_columns", [],
+    )
+    hidden = [key for key in hidden if isinstance(key, str)] if isinstance(
+        hidden, list) else []
+    columns = workshop.column_choices(
+        workshop.TASK_COLUMNS if kind == "tasks"
+        else workshop.TICKET_COLUMNS,
+        hidden,
+    )
     return {
+        "columns": columns,
+        "hidden_columns": [
+            column["key"] for column in columns if not column["visible"]
+        ],
         "machine": machine,
         "active_kind": kind,
         "machine_detail_url": reverse(
@@ -219,9 +238,9 @@ def _append_total(sheet, values):
 
 TASK_COLUMNS = (
     "Fecha", "Mecánico", "Tipo", "Clasificación", "Avería / tarea",
-    "Reparación", "H.C.", "H.F.", "Horas", "O.R.", "Ticket",
-    "Repuestos", "Importe repuestos (€)", "Repuestos sin precio",
-    "Albaranes",
+    "Reparación", "H.C.", "H.F.", "Horas ordinarias", "Horas extra",
+    "Horas festivas", "Horas", "O.R.", "Ticket", "Repuestos",
+    "Importe repuestos (€)", "Repuestos sin precio", "Albaranes",
 )
 PART_COLUMNS = (
     "Fecha", "Mecánico", "Ticket", "Referencia", "Material", "Unidades",
@@ -245,7 +264,9 @@ def _write_tasks(workbook, rows, first=True):
         tasks.append([
             row.work_date, row.worker, row.tipo_label, row.tipo_detail,
             row.description, row.repair, workshop.time_text(row.hc),
-            workshop.time_text(row.hf), _number(row.hours), row.or_val,
+            workshop.time_text(row.hf), _number(row.ordinary_hours),
+            _number(row.extra_hours), _number(row.festive_hours),
+            _number(row.hours), row.or_val,
             row.ticket_code, row.parts_count, _number(row.parts_cost),
             row.parts_unpriced or None, row.delivery_notes_text,
         ])
@@ -261,7 +282,9 @@ def _write_tasks(workbook, rows, first=True):
     totals = workshop.task_totals(rows)
     _append_total(tasks, [
         "TOTAL", "", "", "", "%d tareas" % totals["count"], "", "", "",
-        _number(totals["hours"]), "", "", totals["parts"],
+        _number(totals["ordinary"]), _number(totals["extra"]),
+        _number(totals["festive"]), _number(totals["hours"]), "", "",
+        totals["parts"],
         _number(totals["cost"]), totals["unpriced"] or None,
     ])
     _append_total(parts, [
@@ -513,7 +536,8 @@ class MachineWorkshopTicketsFragmentView(FleetAccessMixin, View):
 
 TICKET_COLUMNS = (
     "Ticket", "Fecha", "Estado", "Urgencia", "Tipo", "Avería",
-    "Asignado a", "Cerrado", "Tareas", "Horas", "Repuestos",
+    "Asignado a", "Cerrado", "Tareas", "Horas ordinarias", "Horas extra",
+    "Horas festivas", "Horas", "Repuestos",
     "Importe repuestos (€)", "Repuestos sin precio",
 )
 
@@ -559,14 +583,18 @@ class MachineWorkshopTicketsExportView(FleetAccessMixin, View):
                 row.summary, row.assigned,
                 timezone.localtime(row.resolved_at).replace(tzinfo=None)
                 if row.resolved_at else None,
-                row.task_count, _number(row.hours), row.parts_count,
+                row.task_count, _number(row.ordinary_hours),
+                _number(row.extra_hours), _number(row.festive_hours),
+                _number(row.hours), row.parts_count,
                 _number(row.parts_cost), row.parts_unpriced or None,
             ])
             tasks.extend(row.tasks)
         totals = workshop.ticket_totals(rows)
         _append_total(sheet, [
             "TOTAL", "", "", "", "", "%d averías" % totals["count"], "", "",
-            totals["tasks"], _number(totals["hours"]), totals["parts"],
+            totals["tasks"], _number(totals["ordinary"]),
+            _number(totals["extra"]), _number(totals["festive"]),
+            _number(totals["hours"]), totals["parts"],
             _number(totals["cost"]), totals["unpriced"] or None,
         ])
         for column in ("B", "H"):

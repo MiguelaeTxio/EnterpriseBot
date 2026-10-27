@@ -1,24 +1,29 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/machine_workshop/_tickets_table.html #}
 {% comment %}
-H30 (S139, invasora). Tabla de averías de la máquina (directriz 4.24).
-En el menú de cada fila: el ticket, sus tareas en Partes de trabajo
-(filtro "Avería") y el documento de cada parte que la atendió.
+H30 (S139, invasora). Tabla de averías de la máquina (directriz 4.24),
+con las mismas columnas a elegir (mwc-<clave>) y la fila de totales al
+pie que Partes de trabajo. En el menú de cada fila: el ticket, sus
+tareas en Partes de trabajo (filtro "Avería") y el documento de cada
+parte que la atendió.
 {% endcomment %}
 {% if rows %}
 <table class="table table-sm table-hover align-middle mb-0 small" id="mw-table">
     <thead class="table-light">
         <tr>
             <th><input class="form-check-input" type="checkbox" id="mw-check-all" title="Marcar/desmarcar todos los visibles"></th>
-            <th>{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.code label="Ticket" %}</th>
-            <th>{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.date label="Fecha" %}</th>
-            <th>{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.status label="Estado" %}</th>
-            <th>{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.urgency label="Urgencia" %}</th>
-            <th>{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.tipo label="Tipo" %}</th>
-            <th>{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.summary label="Avería" %}</th>
-            <th class="text-end">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.tasks label="Tareas" align_end=True %}</th>
-            <th class="text-end">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.hours label="Horas" align_end=True %}</th>
-            <th class="text-end">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.cost label="Importe" align_end=True %}</th>
-            <th>{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.closed label="Cerrada" %}</th>
+            <th class="mwc-code">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.code label="Ticket" %}</th>
+            <th class="mwc-date">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.date label="Fecha" %}</th>
+            <th class="mwc-status">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.status label="Estado" %}</th>
+            <th class="mwc-urgency">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.urgency label="Urgencia" %}</th>
+            <th class="mwc-tipo">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.tipo label="Tipo" %}</th>
+            <th class="mwc-summary">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.summary label="Avería" %}</th>
+            <th class="mwc-tasks text-end">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.tasks label="Tareas" align_end=True %}</th>
+            <th class="mwc-ordinary text-end">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.ordinary label="H. ordinarias" align_end=True %}</th>
+            <th class="mwc-extra text-end">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.extra label="H. extra" align_end=True %}</th>
+            <th class="mwc-festive text-end">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.festive label="H. festivas" align_end=True %}</th>
+            <th class="mwc-hours text-end">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.hours label="Horas" align_end=True %}</th>
+            <th class="mwc-cost text-end">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.cost label="Importe" align_end=True %}</th>
+            <th class="mwc-closed">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.closed label="Cerrada" %}</th>
             <th class="text-end">Acciones</th>
         </tr>
     </thead>
@@ -29,26 +34,32 @@ En el menú de cada fila: el ticket, sus tareas en Partes de trabajo
                 <input class="form-check-input mw-row-check" type="checkbox"
                        data-key="{{ row.key }}" data-label="{{ row.label }}"
                        data-hours="{{ row.hours|stringformat:'s' }}"
+                       data-ordinary="{{ row.ordinary_hours|stringformat:'s' }}"
+                       data-extra="{{ row.extra_hours|stringformat:'s' }}"
+                       data-festive="{{ row.festive_hours|stringformat:'s' }}"
                        data-cost="{{ row.parts_cost|stringformat:'s' }}">
             </td>
-            <td class="fw-semibold">{{ row.code }}</td>
-            <td>{{ row.created_at|date:"d/m/Y H:i" }}</td>
-            <td>
+            <td class="mwc-code fw-semibold">{{ row.code }}</td>
+            <td class="mwc-date">{{ row.created_at|date:"d/m/Y H:i" }}</td>
+            <td class="mwc-status">
                 {% if row.is_closed %}
                 <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">{{ row.status_label }}</span>
                 {% else %}
                 <span class="badge bg-primary-subtle text-primary border border-primary-subtle">{{ row.status_label }}</span>
                 {% endif %}
             </td>
-            <td>{{ row.urgency_label|default:"—" }}</td>
-            <td>{{ row.tipo_label|default:"—" }}</td>
-            <td class="mw-col-text">{{ row.summary|default:"—"|truncatechars:140 }}{% if row.assigned %}<div class="text-muted">Asignada a {{ row.assigned }}</div>{% endif %}</td>
-            <td class="text-end">{% if row.task_count %}{{ row.task_count }}{% else %}—{% endif %}</td>
-            <td class="text-end">{% if row.task_count %}{{ row.hours|floatformat:2 }}{% else %}—{% endif %}</td>
-            <td class="text-end">
+            <td class="mwc-urgency">{{ row.urgency_label|default:"—" }}</td>
+            <td class="mwc-tipo">{{ row.tipo_label|default:"—" }}</td>
+            <td class="mwc-summary mw-col-text">{{ row.summary|default:"—"|truncatechars:140 }}{% if row.assigned %}<div class="text-muted">Asignada a {{ row.assigned }}</div>{% endif %}</td>
+            <td class="mwc-tasks text-end">{% if row.task_count %}{{ row.task_count }}{% else %}—{% endif %}</td>
+            <td class="mwc-ordinary text-end">{% if row.task_count %}{{ row.ordinary_hours|floatformat:2 }}{% else %}—{% endif %}</td>
+            <td class="mwc-extra text-end">{% if row.extra_hours %}{{ row.extra_hours|floatformat:2 }}{% else %}—{% endif %}</td>
+            <td class="mwc-festive text-end">{% if row.festive_hours %}{{ row.festive_hours|floatformat:2 }}{% else %}—{% endif %}</td>
+            <td class="mwc-hours text-end">{% if row.task_count %}{{ row.hours|floatformat:2 }}{% else %}—{% endif %}</td>
+            <td class="mwc-cost text-end">
                 {% if row.parts_count %}{{ row.parts_cost|floatformat:2 }} €{% if row.parts_unpriced %} <i class="bi bi-exclamation-circle text-warning" title="{{ row.parts_unpriced }} repuesto{{ row.parts_unpriced|pluralize }} sin precio grabado"></i>{% endif %}{% else %}—{% endif %}
             </td>
-            <td>{{ row.resolved_at|date:"d/m/Y H:i"|default:"—" }}</td>
+            <td class="mwc-closed">{{ row.resolved_at|date:"d/m/Y H:i"|default:"—" }}</td>
             <td class="text-end">
                 <div class="dropdown">
                     <button class="btn btn-sm btn-outline-secondary border-0 px-2" type="button" data-bs-toggle="dropdown" aria-expanded="false">
@@ -71,6 +82,25 @@ En el menú de cada fila: el ticket, sus tareas en Partes de trabajo
         </tr>
         {% endfor %}
     </tbody>
+    <tfoot class="mw-totals">
+        <tr class="fw-semibold">
+            <td></td>
+            <td class="mwc-code">Total</td>
+            <td class="mwc-date">{{ totals.count }} avería{{ totals.count|pluralize }}</td>
+            <td class="mwc-status"></td>
+            <td class="mwc-urgency"></td>
+            <td class="mwc-tipo"></td>
+            <td class="mwc-summary"></td>
+            <td class="mwc-tasks text-end">{{ totals.tasks }}</td>
+            <td class="mwc-ordinary text-end">{{ totals.ordinary|floatformat:2 }}</td>
+            <td class="mwc-extra text-end">{{ totals.extra|floatformat:2 }}</td>
+            <td class="mwc-festive text-end">{{ totals.festive|floatformat:2 }}</td>
+            <td class="mwc-hours text-end">{{ totals.hours|floatformat:2 }}</td>
+            <td class="mwc-cost text-end">{{ totals.cost|floatformat:2 }} €{% if totals.unpriced %} <i class="bi bi-exclamation-circle text-warning" title="{{ totals.unpriced }} repuesto{{ totals.unpriced|pluralize }} sin precio grabado"></i>{% endif %}</td>
+            <td class="mwc-closed"></td>
+            <td></td>
+        </tr>
+    </tfoot>
 </table>
 {% else %}
 <div class="text-center text-muted py-5">

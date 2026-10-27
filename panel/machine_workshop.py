@@ -59,6 +59,57 @@ ALBARAN_WITH = "with"
 ALBARAN_WITHOUT = "without"
 TICKET_FILTER_KEYS = ("search", "state", "date_from", "date_to", "sort")
 
+# Columnas que cada usuario elige ver (S139, Miguel Ángel: "casilleros
+# con las columnas que queremos que salgan"). (clave, etiqueta, si se
+# suma en la fila de totales). Se guardan las ocultas, para que una
+# columna nueva salga visible por defecto.
+TASK_COLUMNS = (
+    ("date", "Fecha", False),
+    ("worker", "Mecánico", False),
+    ("tipo", "Tipo", False),
+    ("description", "Avería / tarea", False),
+    ("schedule", "Horario", False),
+    ("ordinary", "H. ordinarias", True),
+    ("extra", "H. extra", True),
+    ("festive", "H. festivas", True),
+    ("hours", "Horas", True),
+    ("parts", "Repuestos", True),
+    ("cost", "Importe", True),
+    ("albaranes", "Albaranes", False),
+    ("ticket", "Ticket", False),
+)
+TICKET_COLUMNS = (
+    ("code", "Ticket", False),
+    ("date", "Fecha", False),
+    ("status", "Estado", False),
+    ("urgency", "Urgencia", False),
+    ("tipo", "Tipo", False),
+    ("summary", "Avería", False),
+    ("tasks", "Tareas", True),
+    ("ordinary", "H. ordinarias", True),
+    ("extra", "H. extra", True),
+    ("festive", "H. festivas", True),
+    ("hours", "Horas", True),
+    ("cost", "Importe", True),
+    ("closed", "Cerrada", False),
+)
+
+
+def column_choices(columns, hidden):
+    """
+    Columns of a list with whether the user shows them.
+
+    ---
+
+    Columnas de un listado con si el usuario las muestra (las ocultas
+    vienen de su navegación guardada).
+    """
+    hidden = set(hidden or [])
+    return [
+        {"key": key, "label": label, "visible": key not in hidden}
+        for key, label, _summed in columns
+    ]
+
 STATE_OPEN = "open"
 STATE_CLOSED = "closed"
 
@@ -423,6 +474,11 @@ class TaskRow:
         self.hc = line.hc
         self.hf = line.hf
         self.hours = line.delta_hours
+        # Reparto ordinarias / extra / festivas: lo rellena
+        # apply_hour_split() con los datos del día completo del parte.
+        self.ordinary_hours = Decimal("0")
+        self.extra_hours = Decimal("0")
+        self.festive_hours = Decimal("0")
         self.or_val = line.or_val
         ticket = line.breakdown_ticket
         self.ticket = ticket
@@ -503,6 +559,9 @@ TASK_SORTABLE = {
     "tipo": lambda r: r.tipo_label.lower(),
     "description": lambda r: r.description.lower(),
     "hours": lambda r: r.hours or Decimal("0"),
+    "ordinary": lambda r: r.ordinary_hours,
+    "extra": lambda r: r.extra_hours,
+    "festive": lambda r: r.festive_hours,
     "parts": lambda r: r.parts_count,
     "cost": lambda r: r.parts_cost,
     "ticket": lambda r: r.ticket_code,
@@ -536,7 +595,7 @@ def build_task_rows(machine, params, can_open_stock, only_keys=None):
     Con `only_keys` (mostrar solo la selección) se ignoran los filtros.
     """
     lines = machine_lines(machine).select_related(
-        "entry", "breakdown_ticket",
+        "entry__work_order__uploaded_by__base", "breakdown_ticket",
     ).prefetch_related(_parts_prefetch(), _task_notes_prefetch())
     if only_keys is None:
         date_from = parse_date(params.get("date_from"))
@@ -575,10 +634,64 @@ def build_task_rows(machine, params, can_open_stock, only_keys=None):
     words = _words(params.get("search"))
     if words and only_keys is None:
         rows = [row for row in rows if _matches(words, row.haystack)]
+    apply_hour_split(rows)
     return _sort_rows(
         rows, parse_sort(params.get("sort"), TASK_SORTABLE),
         TASK_SORTABLE, TASK_DEFAULT_ORDER,
     )
+
+
+def apply_hour_split(rows):
+    """
+    Split the hours of each task into ordinary, overtime and festive.
+
+    ---
+
+    Reparte las horas de cada tarea en ordinarias, extra y festivas,
+    con el mismo criterio que la exportación de partes ("H. Extra",
+    work_order_processor/services.py) y festive.py (S133):
+    - El día es el parte completo (todas sus tareas, de cualquier
+      máquina), sin la hora fantasma de vacaciones.
+    - Parte festivo (sábado, domingo o festivo de la base del
+      trabajador): todas sus horas son festivas, ninguna extra.
+    - Si no, son extra las que pasan de 8 en el día, repartidas entre
+      sus tareas en proporción a las horas de cada una; el resto,
+      ordinarias.
+    """
+    from django.db.models import Sum
+
+    from work_order_processor.festive import STANDARD_DAY_HOURS, is_festive
+
+    entry_ids = {row.entry.pk for row in rows}
+    if not entry_ids:
+        return rows
+    day_hours = {
+        item["entry_id"]: item["total"] or Decimal("0")
+        for item in WorkOrderEntryLine.objects.filter(
+            entry_id__in=entry_ids,
+        ).exclude(vacation_period__isnull=False).values(
+            "entry_id",
+        ).annotate(total=Sum("delta_hours"))
+    }
+    festive_cache = {}
+    for row in rows:
+        hours = row.hours or Decimal("0")
+        uploader = row.entry.work_order.uploaded_by
+        cache_key = (row.work_date, uploader.pk if uploader else None)
+        if cache_key not in festive_cache:
+            festive_cache[cache_key] = is_festive(row.work_date, uploader)
+        if festive_cache[cache_key]:
+            row.festive_hours = hours
+            continue
+        day = day_hours.get(row.entry.pk, Decimal("0"))
+        extra = Decimal("0")
+        if day > STANDARD_DAY_HOURS:
+            extra = (hours * (day - STANDARD_DAY_HOURS) / day).quantize(
+                Decimal("0.01"),
+            )
+        row.extra_hours = extra
+        row.ordinary_hours = hours - extra
+    return rows
 
 
 def task_totals(rows):
@@ -595,6 +708,11 @@ def task_totals(rows):
     return {
         "count": len(rows),
         "hours": hours,
+        "ordinary": sum(
+            (row.ordinary_hours for row in rows), Decimal("0"),
+        ),
+        "extra": sum((row.extra_hours for row in rows), Decimal("0")),
+        "festive": sum((row.festive_hours for row in rows), Decimal("0")),
         "parts": sum(row.parts_count for row in rows),
         "cost": _money(cost),
         "unpriced": sum(row.parts_unpriced for row in rows),
@@ -665,7 +783,7 @@ class TicketRow:
     partes (tareas vinculadas), horas y repuestos gastados.
     """
 
-    def __init__(self, ticket, machine_pk, can_open_stock):
+    def __init__(self, ticket, tasks):
         self.ticket = ticket
         self.key = "t%d" % ticket.pk
         self.code = ticket.ticket_date_code or "#%d" % ticket.pk
@@ -679,10 +797,7 @@ class TicketRow:
         self.summary = ticket.fault_summary or ""
         self.assigned = _user_name(ticket.assigned_to)
         self.resolved_at = ticket.resolved_at
-        self.tasks = [
-            TaskRow(line, machine_pk, can_open_stock)
-            for line in ticket.work_entry_lines.all()
-        ]
+        self.tasks = list(tasks)
         self.tasks.sort(
             key=lambda row: (
                 row.work_date or _DATE_MIN, row.hc or datetime.time.min,
@@ -691,6 +806,9 @@ class TicketRow:
         totals = task_totals(self.tasks)
         self.task_count = totals["count"]
         self.hours = totals["hours"]
+        self.ordinary_hours = totals["ordinary"]
+        self.extra_hours = totals["extra"]
+        self.festive_hours = totals["festive"]
         self.parts_count = totals["parts"]
         self.parts_cost = totals["cost"]
         self.parts_unpriced = totals["unpriced"]
@@ -713,6 +831,9 @@ TICKET_SORTABLE = {
     "summary": lambda r: r.summary.lower(),
     "tasks": lambda r: r.task_count,
     "hours": lambda r: r.hours,
+    "ordinary": lambda r: r.ordinary_hours,
+    "extra": lambda r: r.extra_hours,
+    "festive": lambda r: r.festive_hours,
     "cost": lambda r: r.parts_cost,
     "closed": lambda r: r.resolved_at or _DATETIME_MIN,
 }
@@ -735,7 +856,7 @@ def build_ticket_rows(machine, params, can_open_stock, only_keys=None):
     ).prefetch_related(Prefetch(
         "work_entry_lines",
         queryset=machine_lines(machine).select_related(
-            "entry", "breakdown_ticket",
+            "entry__work_order__uploaded_by__base", "breakdown_ticket",
         ).prefetch_related(_parts_prefetch(), _task_notes_prefetch()),
     ))
     state = params.get("state", "")
@@ -759,7 +880,18 @@ def build_ticket_rows(machine, params, can_open_stock, only_keys=None):
         ]
         tickets = tickets.filter(pk__in=pks)
 
-    rows = [TicketRow(ticket, machine.pk, can_open_stock)
+    tickets = list(tickets)
+    tasks_by_ticket = {
+        ticket.pk: [
+            TaskRow(line, machine.pk, can_open_stock)
+            for line in ticket.work_entry_lines.all()
+        ]
+        for ticket in tickets
+    }
+    apply_hour_split([
+        task for tasks in tasks_by_ticket.values() for task in tasks
+    ])
+    rows = [TicketRow(ticket, tasks_by_ticket[ticket.pk])
             for ticket in tickets]
     words = _words(params.get("search"))
     if words and only_keys is None:
@@ -783,6 +915,11 @@ def ticket_totals(rows):
         "count": len(rows),
         "tasks": sum(row.task_count for row in rows),
         "hours": sum((row.hours for row in rows), Decimal("0")),
+        "ordinary": sum(
+            (row.ordinary_hours for row in rows), Decimal("0"),
+        ),
+        "extra": sum((row.extra_hours for row in rows), Decimal("0")),
+        "festive": sum((row.festive_hours for row in rows), Decimal("0")),
         "parts": sum(row.parts_count for row in rows),
         "cost": _money(sum((row.parts_cost for row in rows), Decimal("0"))),
         "unpriced": sum(row.parts_unpriced for row in rows),
