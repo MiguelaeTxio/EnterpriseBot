@@ -5652,11 +5652,6 @@ class WorkOrderAdminExportView(SupervisorAccessMixin, View):
                 f"{export_mode!r}."
             )
 
-        if export_mode == "digital_full":
-            return self._build_digital_full_excel(
-                request, company, pk_list, operator_filter
-            )
-
         raw_pks = request.POST.getlist("pks")
         try:
             pk_list = [int(pk) for pk in raw_pks if pk]
@@ -5677,6 +5672,13 @@ class WorkOrderAdminExportView(SupervisorAccessMixin, View):
                 operator_filter = int(operator_pk_raw)
             except (ValueError, TypeError):
                 operator_filter = None
+
+        # S137: antes se llamaba aquí arriba, antes de leer pk_list y
+        # operator_filter (NameError en la exportación "digital completa").
+        if export_mode == "digital_full":
+            return self._build_digital_full_excel(
+                request, company, pk_list, operator_filter
+            )
 
         qs = WorkOrder.objects.filter(
             pk__in=pk_list,
