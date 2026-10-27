@@ -29,6 +29,25 @@ las fotos. Dentro de la fila de la unidad, plegada.
         <div class="col-6 col-md-3 text-danger"><span>Hora entrada servicio</span><br>{{ unit.arrived_at|date:"d/m/Y H:i"|default:"—" }}</div>
         <div class="col-6 col-md-3"><span class="text-muted">Recogida → destino</span><br>{{ work_order.pickup_location|default:"—" }} → {{ work_order.destination|default:"—" }}</div>
 
+        {# S138: km del chófer (lo que se cobra) y, si se encadenó en ruta, lo cobrado sin hacer (solo oficina). #}
+        <div class="col-6 col-md-3"><span class="text-muted">Km del chófer{% if unit.is_overnight %} (2 tramos){% endif %}</span><br>{% if unit.billed_km is not None %}{{ unit.billed_km|floatformat:"-1" }}{% if unit.is_overnight %} <span class="text-muted">({{ unit.phase1_km|floatformat:"-1" }} + {{ unit.phase2_km|default:0|floatformat:"-1" }})</span>{% endif %}{% else %}—{% endif %}</div>
+        {% if unit.chained_to_id %}
+        <div class="col-12 text-danger">
+            <span>Encadenado en ruta</span><br>
+            Salió a <a href="{% url 'budgets:unit_route' pk=unit.chained_to_id %}">{{ unit.chained_to.albaran_number }}</a>
+            el {{ unit.chain_at|date:"d/m/Y H:i" }} con {{ unit.chain_odometer|floatformat:"-1" }} km sin volver a base.
+            {% if unit.chain_saved_km is not None %}
+            <strong>{{ unit.billed_km|floatformat:"-1" }} km cobrados = {{ unit.chain_driven_km|floatformat:"-1" }} hechos + {{ unit.chain_saved_km|floatformat:"-1" }} de vuelta a base sin hacer.</strong>
+            {% endif %}
+            {% if unit.chain_return_km_est is not None %}
+            <span class="d-block">Google, del punto del cambio a la base: {{ unit.chain_return_km_est|floatformat:"-1" }} km, {{ unit.chain_return_minutes_est }} min.</span>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% with origin=unit.chained_from.first %}{% if origin %}
+        <div class="col-12 text-danger"><span>Encadenado en ruta</span><br>Sale desde donde terminó <a href="{% url 'budgets:unit_route' pk=origin.pk %}">{{ origin.albaran_number }}</a>, sin pasar por base.</div>
+        {% endif %}{% endwith %}
+
         <div class="col-6 col-md-3"><span class="text-muted">Base de llegada</span><br>{{ unit.arrival_base.name|default:"—" }}</div>
         <div class="col-6 col-md-3"><span class="text-muted">Km llegada base</span><br>{{ unit.base_km_end|default:"—" }}</div>
         <div class="col-6 col-md-3"><span class="text-muted">Hora llegada base</span><br>{{ unit.base_arrived_at|date:"d/m/Y H:i"|default:"—" }}</div>

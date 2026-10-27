@@ -45,6 +45,7 @@ from budgets.assistance_traffic import (
     OPEN_ORDER_STATUSES, driver_is_out, route_units, unit_at,
 )
 from budgets import service_sheet as sheet
+from budgets.service_chain import chain_on_start
 from budgets.service_geocode import maps_url
 from budgets.models import (
     DriverDeviceToken,
@@ -525,6 +526,48 @@ def _decimal(data, key, label):
     return value
 
 
+def _missing_km(unit, phase1_km, phase2_km):
+    """
+    Error text if the driver did not write the km of the albarán, or "".
+
+    ---
+
+    Texto de error si el chófer no ha anotado los km, o "". Sin
+    pernocta, un dato (recogida, destino y vuelta a base); con pernocta,
+    dos (recogida y vuelta a base; ida a destino y vuelta a base).
+    """
+    if phase1_km is None:
+        return (
+            "Faltan los km de la recogida con la vuelta a base."
+            if unit.is_overnight else
+            "Faltan los km del servicio, con la vuelta a base."
+        )
+    if unit.is_overnight and phase2_km is None:
+        return "Faltan los km de la ida al destino con la vuelta a base."
+    return ""
+
+
+def _device_time(millis, now):
+    """
+    A phone time in milliseconds if sane (not in the future), else now.
+
+    ---
+
+    Hora del móvil en milisegundos si es razonable (no futura); si no,
+    la de ahora.
+    """
+    if isinstance(millis, (int, float)) and not isinstance(millis, bool):
+        try:
+            taken = datetime.datetime.fromtimestamp(
+                millis / 1000, tz=datetime.timezone.utc,
+            )
+        except (OverflowError, OSError, ValueError):
+            return now
+        if taken <= now:
+            return taken
+    return now
+
+
 @method_decorator(csrf_exempt, name="dispatch")
 class DriverAlbaranSubmitView(View):
     """
@@ -594,6 +637,14 @@ class DriverAlbaranSubmitView(View):
                     % unit.get_status_display().lower(),
                     409,
                 )
+            # S138 (Miguel Ángel): the km are the driver's and always
+            # needed: what he writes, including the return to base he
+            # has not driven yet, is what is billed.
+            # Los km son del chófer y siempre obligatorios: lo que anota,
+            # con la vuelta a base que aún no ha hecho, es lo que se cobra.
+            missing_km = _missing_km(unit, phase1_km, phase2_km)
+            if missing_km:
+                return _error(missing_km, 400)
             # S133: the service sheet is filled before the signature.
             # La hoja de servicio se rellena antes de la firma.
             try:
@@ -620,14 +671,17 @@ class DriverAlbaranSubmitView(View):
             if "driver_notes" in data:
                 unit.driver_notes = str(data.get("driver_notes") or "").strip()
             unit.synced_at = now
+            # S138: when it was really signed (also without coverage).
+            # Cuándo se firmó de verdad (también sin cobertura).
+            signed_at = _device_time(data.get("signed_at"), now)
             if signature_data:
                 unit.status = Unit.STATUS_COMPLETED
-                unit.completed_at = now
+                unit.completed_at = signed_at
                 unit.unsigned_reason = ""
                 detail = "Albarán firmado en la app."
             else:
                 unit.status = Unit.STATUS_CLOSED_UNSIGNED
-                unit.closed_at = now
+                unit.closed_at = signed_at
                 unit.unsigned_reason = unsigned_reason
                 detail = "Cerrado sin firma: %s" % unsigned_reason
             unit.save()
@@ -789,10 +843,22 @@ class DriverAlbaranStartView(View):
                 )
             except sheet.SheetError as exc:
                 return _error(str(exc), 400)
+            # S138: coming back from another albarán, that one ends here
+            # (chained on the road) and is closed in base.
+            # Si volvía de otro albarán, ese acaba aquí (encadenado en
+            # ruta) y se cierra en base.
+            chained = chain_on_start(unit, company_user)
             if previous != unit.status:
                 WorkOrderAssistanceUnitEvent.status_change(
                     unit, previous, unit.status, by=company_user,
-                    detail="Sale de base con %s km." % unit.km_start,
+                    detail=(
+                        "Sale con %s km desde donde estaba, al terminar %s "
+                        "(encadenado en ruta)." % (
+                            unit.km_start, chained.albaran_number,
+                        )
+                        if chained else
+                        "Sale de base con %s km." % unit.km_start
+                    ),
                 )
         unit = _unit_of_driver(company_user, pk) or unit
         return JsonResponse({"albaran": _detail_payload(unit)})
@@ -901,17 +967,7 @@ def _position_row(company_user, data, now):
     """
     latitude = _coordinate(data, "latitude", "latitud", 90)
     longitude = _coordinate(data, "longitude", "longitud", 180)
-    recorded_at = now
-    millis = data.get("recorded_at")
-    if isinstance(millis, (int, float)) and not isinstance(millis, bool):
-        try:
-            taken = datetime.datetime.fromtimestamp(
-                millis / 1000, tz=datetime.timezone.utc,
-            )
-        except (OverflowError, OSError, ValueError):
-            taken = None
-        if taken is not None and taken <= now:
-            recorded_at = taken
+    recorded_at = _device_time(data.get("recorded_at"), now)
     accuracy = data.get("accuracy")
     return DriverPosition(
         company_user=company_user,

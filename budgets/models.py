@@ -3405,6 +3405,58 @@ class WorkOrderAssistanceUnit(models.Model):
         verbose_name="Estimado calculado en",
     )
 
+    # H37 (S138): chained on the road. Coming back from this albarán the
+    # driver left for the next one (`chained_to`) from where he was, so
+    # the return to base he wrote in his km was never driven. Internal
+    # only: the client and the insurer see the driver's km, as always.
+    # Encadenado en ruta: volviendo de este albarán el chófer salió al
+    # siguiente desde donde estaba, así que la vuelta a base que anotó
+    # en sus km no se hizo. Solo interno: el cliente y la compañía ven
+    # los km del chófer, como siempre.
+    chained_to = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="chained_from",
+        verbose_name="Encadenado en ruta con",
+    )
+    chain_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Hora del encadenamiento",
+        help_text="Hora de salida del siguiente albarán.",
+    )
+    chain_odometer = models.DecimalField(
+        max_digits=10,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        verbose_name="Km al encadenar",
+        help_text="Km de salida del siguiente albarán (cuentakilómetros).",
+    )
+    chain_latitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True,
+        verbose_name="Latitud del encadenamiento",
+    )
+    chain_longitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True,
+        verbose_name="Longitud del encadenamiento",
+    )
+    chain_return_km_est = models.DecimalField(
+        max_digits=8,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        verbose_name="Vuelta a base estimada (km)",
+        help_text="Google: del punto de encadenamiento a la base.",
+    )
+    chain_return_minutes_est = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Vuelta a base estimada (min)",
+    )
+
     created_at = models.DateTimeField(
         auto_now_add=True, verbose_name="Fecha de creación"
     )
@@ -3424,6 +3476,49 @@ class WorkOrderAssistanceUnit(models.Model):
             f"{self.operator or 'sin chófer'} — "
             f"{self.get_status_display()}"
         )
+
+    @property
+    def billed_km(self):
+        """
+        Km the driver wrote (both legs with overnight), or None.
+
+        ---
+
+        Km que anotó el chófer (los dos tramos con pernocta), o None: lo
+        que se cobra.
+        """
+        if self.phase1_km is None:
+            return None
+        return self.phase1_km + (self.phase2_km or 0)
+
+    @property
+    def chain_driven_km(self):
+        """
+        Km really driven until the chaining (odometer), or None.
+
+        ---
+
+        Km hechos de verdad hasta el encadenamiento (cuentakilómetros:
+        salida del siguiente menos salida de este), o None.
+        """
+        if self.chain_odometer is None or self.km_start is None:
+            return None
+        return self.chain_odometer - self.km_start
+
+    @property
+    def chain_saved_km(self):
+        """
+        Km billed and not driven thanks to the chaining, or None.
+
+        ---
+
+        Km cobrados sin hacer por encadenar en ruta: los que anotó el
+        chófer menos los hechos hasta el encadenamiento. None sin datos.
+        """
+        billed, driven = self.billed_km, self.chain_driven_km
+        if self.chained_to_id is None or billed is None or driven is None:
+            return None
+        return billed - driven
 
     @property
     def albaran_number(self):
