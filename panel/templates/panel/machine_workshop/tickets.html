@@ -106,18 +106,16 @@ pierde de vista), filtrable con las casillas de estado.
                     <strong class="small"><span id="mw-mass-count">0</span> seleccionados</strong>
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="mw-mass-clear">Limpiar</button>
                 </div>
-                <div class="row g-1">
-                    <div class="col-md-6 border-end pe-2">
-                        <div class="small text-muted fw-bold">Descargar la selección</div>
-                        <button type="button" class="btn btn-sm btn-outline-success mw-needs-selection" id="mw-mass-export" disabled
-                                title="Excel con las averías seleccionadas, sus tareas de parte y sus repuestos, con totales">
-                            <i class="bi bi-file-earmark-excel me-1"></i>Excel
-                        </button>
-                    </div>
-                    <div class="col-md-6 ps-2">
-                        {% include "panel/machine_workshop/_columns_picker.html" %}
-                    </div>
-                </div>
+                <div class="small text-muted fw-bold">Descargar la selección</div>
+                <button type="button" class="btn btn-sm btn-outline-success mw-needs-selection" id="mw-mass-export" disabled
+                        title="Excel con las averías seleccionadas, sus tareas de parte y sus repuestos, con totales">
+                    <i class="bi bi-file-earmark-excel me-1"></i>Excel
+                </button>
+            </div>
+        </div>
+        <div class="col-12">
+            <div class="border rounded px-2 py-1">
+                {% include "panel/machine_workshop/_columns_picker.html" %}
             </div>
         </div>
     </div>

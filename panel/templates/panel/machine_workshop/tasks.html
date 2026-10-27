@@ -135,11 +135,10 @@ repuestos) es el de lo listado, y el de la selección va en su visor.
                 <div class="row g-1">
                     <div class="col-md-6 border-end pe-2">
                         <div class="small text-muted fw-bold">Descargar la selección</div>
-                        <button type="button" class="btn btn-sm btn-outline-success mw-needs-selection mb-2" id="mw-mass-export" disabled
+                        <button type="button" class="btn btn-sm btn-outline-success mw-needs-selection" id="mw-mass-export" disabled
                                 title="Excel con las tareas seleccionadas y sus repuestos, con totales">
                             <i class="bi bi-file-earmark-excel me-1"></i>Excel
                         </button>
-                        {% include "panel/machine_workshop/_columns_picker.html" %}
                     </div>
                     <div class="col-md-6 ps-2">
                         <div class="small text-muted fw-bold">Total de la máquina</div>
@@ -150,6 +149,11 @@ repuestos) es el de lo listado, y el de la selección va en su visor.
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+        <div class="col-12">
+            <div class="border rounded px-2 py-1">
+                {% include "panel/machine_workshop/_columns_picker.html" %}
             </div>
         </div>
     </div>
