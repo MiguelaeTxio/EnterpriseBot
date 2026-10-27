@@ -905,3 +905,123 @@ albarán. **Ya no existen:** `ChatRoom` y `ChatMessage` de H13 se
 retiraron en H17 (en `chat/` solo quedan archivos vacíos; el anexo V13
 está desfasado), así que la sala se construye de cero, con miembros
 `PersonIdentity` (directriz 4.19).
+
+---
+
+## 11. COMPLETADAS EN S138 (sesión invasora, 24-27/10/2026, PEE A)
+
+Invasora sobre H37 con S137 en paralelo y H30 EN PROGRESO (no se movió).
+La hoja de ruta de este anexo (sección 8) no se toca (directriz 4.11).
+SWAP usado: `EnterpriseBot_100.txt` a `EnterpriseBot_103.txt`.
+
+### 11.1. Correcciones a la sección 10 (S136)
+
+- `chat/` no estaba vacío: `chat/models.py` conservaba los modelos
+  heredados de `BreakdownTicket`; se dejaron y se limpiaron de PEP8
+  (AST idéntico) antes de añadir la sala.
+- Las circulares no se mandan por Celery: la sala usa sus propias
+  tareas (`chat/tasks.py`).
+
+### 11.2. Sala de chat de Asistencia (`/sala/`, app `chat`)
+
+- Modelos `ChatRoom`, `ChatRoomMember`, `ChatMessage` y
+  `ChatPushSubscription` (migraciones chat 0011-0014 y 0016; la 0015 es
+  de S137). Miembros `PersonIdentity`; el enlace personal cuenta como
+  la cuenta del panel enlazada por DNI exacto.
+- Página única instalable (PWA con id `/sala/`, separada del fichaje con
+  id `/fichaje/`), formato IRC, marcas de WhatsApp traducidas, adjuntos,
+  micrófono con transcripción (Gemini), botones Instalar y Activar
+  avisos, lista de miembros con punto verde y 🔗 de enlace personal.
+- **Solo quien da servicios** (ADMIN y ASSIST_SUPERVISOR) puede estar
+  en la sala y usar "Añadir"; la lista dice qué le falta a quien no
+  puede (p. ej. DNI). Decisión de Miguel Ángel, tras hablar con Paloma.
+- **Avisos híbridos (Miguel Ángel: "lo principal es usar push, pero
+  necesitamos un legacy para quien no quiera push y quiera WhatsApp")**:
+  push web (pywebpush, claves VAPID en `.env`) y, sin dispositivo con
+  push, plantilla aprobada `chat_room_notice` con respuesta rápida. Un
+  aviso por tanda; presente = ventana abierta en los últimos 15 s (más
+  señal de salida al cerrar).
+- **WhatsApp como camino completo**: `#asistencia` entra, `#salir` sale;
+  dentro, lo que se escribe al bot va a la sala y lo de la sala llega
+  por WhatsApp (sin audio webm). Las respuestas a otros avisos (p. ej.
+  repostaje) no entran en la sala. Notas de voz de WhatsApp transcritas.
+- Dar un servicio con Alia (WhatsApp o `@Alia` en la sala) es entrar en
+  la sala; todo lo de Alia y del miembro va a la sala, PDF incluido.
+- Hojas de servicio en GCS `SERVICIOS_ASISTENCIA/SERVICIO_AAMMDD_HHMMSS.EXT`
+  (ordinal `_N` si coinciden en el mismo segundo), enlazadas a la orden
+  (`source_document_blob/type`, budgets 0048) y **borradas del cubo al
+  cancelar el servicio** (el mensaje queda "(descartado)").
+- Cada servicio nuevo y cada cambio de estado de sus albaranes sale en
+  la sala, con los colores de la leyenda del tablero.
+
+### 11.3. Ubicaciones, posición y rutas (servidor y app EBotDeliveryNotes)
+
+- **Coordenadas de recogida y destino** al dar de alta (Geocoding,
+  budgets 0049), regeocodificadas si cambia la dirección; se usan en el
+  mapa del tablero, los estimados y los enlaces "Cómo llegar" (app) y
+  "📍 … en Maps" (sala).
+- **El aviso de WhatsApp abre la app** (App Link verificado con
+  `/.well-known/assetlinks.json`, huella del certificado fijo publicada
+  por el workflow como anotación "Huella APK"); al abrirse, arranca el
+  envío de posición.
+- **Ubicación obligatoria** (Miguel Ángel: "si no está activo, no se
+  puede acceder al Albarán. Si se desactiva, no se puede acceder"): sin
+  permiso o con la ubicación apagada no se abre ningún albarán, y si se
+  pierde con uno abierto, vuelve a la lista (lo escrito queda en el
+  borrador).
+- **Posiciones sin cobertura** en cola en el móvil y enviadas en lote.
+- **Ruta de cada albarán** (`DriverPosition.unit`, budgets 0050;
+  página `/panel/budgets/work-orders/units/<pk>/ruta/`, enlaces "Ver la
+  ruta" y "Ruta"): cada posición va al albarán que llevaba el chófer a
+  la hora en que se tomó (`assistance_traffic.unit_at`: el que hacía, el
+  que volvía sin otro salido y a menos de 12 h, o el que esperaba).
+  Cortada por los hitos del chófer: salida, llegada a la recogida,
+  **entrega = la firma** (aunque cambien el destino por teléfono) y fin
+  (llegada a base o salida del siguiente). Detenciones: ≥ 3 min sin
+  alejarse más de 150 m; un hueco de cobertura no es detención.
+- **Pernocta**: la noche en base (de la primera posición en una base
+  tras la recogida a la última antes de firmar) no cuenta ni se dibuja,
+  y sus posiciones se borran al firmar. Ningún albarán se cierra solo
+  por tiempo.
+- **Km del chófer obligatorios al firmar** (Miguel Ángel: "es el chófer
+  el que tiene que anotar [...] dejar a GPS cobertura cobrar una
+  factura, no lo veo"): sin pernocta, un dato con la vuelta a base; con
+  pernocta, dos tramos. La firma guarda su hora real (`signed_at`).
+- **Encadenado en ruta** (budgets 0051, `budgets/service_chain.py`): al
+  salir B mientras A vuelve, A se cierra en base solo con nota
+  ("1. (a)"); km cobrados sin hacer = km del chófer de A − (km salida B
+  − km salida A); Google estima la vuelta como apoyo. Solo oficina (hoja
+  de servicio y resumen "Km encadenados" entre fechas); el cliente y la
+  compañía solo ven los km del chófer.
+
+### 11.4. Otros
+
+- Alta de usuario: la sección ya no pisa el rol elegido a mano (pasó
+  con Daniel Anaya).
+- `compile-requirements.yml` lanza `deploy.yml` tras comitear el
+  candado (el push con GITHUB_TOKEN no lo disparaba y pywebpush no se
+  instaló).
+- `deploy.yml`: los archivos nuevos del núcleo (`chat/…`,
+  `budgets/service_geocode.py`, `budgets/signals.py`) reinician el
+  bridge y el worker.
+- Comando S 103: DNI de la cuenta del panel de Paloma, para enlazarla a
+  su ficha.
+
+### 11.5. Commits
+
+EnterpriseBot: `084b858`, `c61b863`, `57e4b00`, `d4401a5`, `ec22099`,
+`b6673ca`, `e58a49d`, `71ff8f1`, `f494ecc`, `87cdb00`, `1bebc55`,
+`08b1f0c`, `87be5b9`, `ccbfeba`, `73dd5b0`, `5332bf9`, `f7fd743`,
+`ae252e0`, `3f4d307`, `dcb893a`, `06cba7d`, `473ad9c`, `1b54693`,
+`fd44a71`. EBotDeliveryNotes: `9bbfc43`, `4bcd2f2`, `43f9a61`,
+`da07ad6`, `5265f64` (app versión 34). Migraciones aplicadas en
+producción y comprobadas en BD: chat 0011-0014 y 0016, budgets
+0048-0051.
+
+### 11.6. Estado al cerrar S138
+
+- Prueba de campo del 27/10 en curso con la app 34: no hay todavía
+  ninguna posición real ni ningún encadenamiento real en BD.
+- Pepe aún no está en la sala; Alberto Álvarez, alejandro_sergio y
+  coco.alvarez no tienen DNI en su cuenta del panel (solo hace falta si
+  van a dar servicios). Sin probar en iPhone.
