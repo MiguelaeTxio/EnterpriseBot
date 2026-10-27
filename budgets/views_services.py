@@ -1140,6 +1140,61 @@ class WorkOrderEditView(AssistanceWorkOrderAccessMixin, View):
         )
 
 
+CHAIN_WINDOW_HOURS = 24
+
+
+def _chain(earlier, later):
+    """
+    How two albaranes of the same driver were chained.
+
+    ---
+
+    Cómo se encadenaron dos albaranes del mismo conductor: "en ruta" si
+    el siguiente salió antes de cerrar el anterior en base (salió desde
+    donde estaba), "en base" si salió después.
+    """
+    if earlier.base_closed_at is None or (
+        earlier.base_closed_at > later.started_at
+    ):
+        return "en ruta"
+    return "en base"
+
+
+def _chained_units(unit):
+    """
+    (previous, next) albarán of the same driver, each with its chaining.
+
+    ---
+
+    El albarán anterior y el siguiente del mismo conductor (S138, rutas
+    encadenadas), salidos a menos de CHAIN_WINDOW_HOURS, cada uno como
+    (albarán, "en ruta" | "en base"); None si no hay.
+    """
+    import datetime
+
+    from budgets.models import WorkOrderAssistanceUnit
+
+    if not unit.operator_id or unit.started_at is None:
+        return None, None
+    window = datetime.timedelta(hours=CHAIN_WINDOW_HOURS)
+    others = WorkOrderAssistanceUnit.objects.filter(
+        operator_id=unit.operator_id,
+        started_at__isnull=False,
+        started_at__gte=unit.started_at - window,
+        started_at__lte=unit.started_at + window,
+    ).exclude(pk=unit.pk).exclude(
+        status=WorkOrderAssistanceUnit.STATUS_CANCELLED,
+    ).select_related("work_order")
+    before = [o for o in others if o.started_at < unit.started_at]
+    after = [o for o in others if o.started_at > unit.started_at]
+    previous = max(before, key=lambda o: o.started_at) if before else None
+    following = min(after, key=lambda o: o.started_at) if after else None
+    return (
+        (previous, _chain(previous, unit)) if previous else None,
+        (following, _chain(unit, following)) if following else None,
+    )
+
+
 class UnitRouteView(AssistanceSupervisorAccessMixin, View):
     """
     Route of an albarán on the map, with its stops.
@@ -1173,7 +1228,10 @@ class UnitRouteView(AssistanceSupervisorAccessMixin, View):
             work_order__company=request.user.company_user.company,
         )
         operator = unit.operator.user if unit.operator_id else None
+        previous, following = _chained_units(unit)
         return render(request, self.template_name, {
+            "previous": previous,
+            "following": following,
             "unit": unit,
             "work_order": unit.work_order,
             "driver": (

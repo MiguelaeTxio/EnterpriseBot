@@ -42,7 +42,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from budgets.assistance_resources import assistance_drivers
 from budgets.assistance_traffic import (
-    OPEN_ORDER_STATUSES, driver_current_unit, driver_is_out,
+    OPEN_ORDER_STATUSES, driver_is_out, route_units, unit_at,
 )
 from budgets import service_sheet as sheet
 from budgets.service_geocode import maps_url
@@ -889,7 +889,7 @@ def _coordinate(data, key, label, limit):
 MAX_POSITION_BATCH = 500
 
 
-def _position_row(company_user, unit, data, now):
+def _position_row(company_user, data, now):
     """
     Unsaved DriverPosition of one position sent by the app.
 
@@ -915,7 +915,6 @@ def _position_row(company_user, unit, data, now):
     accuracy = data.get("accuracy")
     return DriverPosition(
         company_user=company_user,
-        unit=unit,
         latitude=latitude,
         longitude=longitude,
         accuracy_m=(
@@ -951,16 +950,18 @@ class DriverPositionView(View):
         Guarda la posición si el conductor está en un servicio. S138:
         también un lote ({"positions": [...]}), las que el móvil guardó
         sin cobertura, para que la ruta del albarán no tenga huecos.
-        Cada posición queda ligada al albarán en curso.
+        Cada posición queda ligada al albarán que llevaba a la hora en
+        que se tomó (assistance_traffic.unit_at: rutas encadenadas en
+        base o en ruta); la que no es de ninguno no se guarda.
         """
         company_user, _token = _token_user(request)
         if company_user is None:
             return _error("Sesión no válida.", 401)
-        unit = driver_current_unit(company_user)
-        if unit is None:
-            return JsonResponse({"tracking": False})
+        tracking = driver_is_out(company_user)
         data = _json_body(request)
         batch = data.get("positions")
+        if batch is None and not tracking:
+            return JsonResponse({"tracking": False})
         items = batch[:MAX_POSITION_BATCH] if isinstance(batch, list) else [
             data,
         ]
@@ -970,12 +971,19 @@ class DriverPositionView(View):
             if not isinstance(item, dict):
                 continue
             try:
-                rows.append(_position_row(company_user, unit, item, now))
+                rows.append(_position_row(company_user, item, now))
             except ValueError as exc:
                 if batch is None:
                     return _error(str(exc), 400)
-        DriverPosition.objects.bulk_create(rows)
-        return JsonResponse({"tracking": True, "saved": len(rows)})
+        if rows:
+            units = route_units(
+                company_user, min(row.recorded_at for row in rows),
+            )
+            for row in rows:
+                row.unit = unit_at(units, row.recorded_at)
+            rows = [row for row in rows if row.unit is not None]
+            DriverPosition.objects.bulk_create(rows)
+        return JsonResponse({"tracking": tracking, "saved": len(rows)})
 
 
 # ---------------------------------------------------------------------------

@@ -1464,34 +1464,95 @@ def build_map(company):
     }
 
 
-def driver_current_unit(company_user):
+# S138: a return to base never takes longer than this; an albarán left
+# without closing in base does not take the routes of the next days.
+# Una vuelta a base nunca dura más; un albarán sin cerrar en base no se
+# queda con las rutas de los días siguientes.
+MAX_RETURN = datetime.timedelta(hours=12)
+ROUTE_SKIP_STATUSES = (
+    Unit.STATUS_PENDING, Unit.STATUS_NOTIFY_FAILED, Unit.STATUS_CANCELLED,
+)
+
+
+def _work_end(unit):
     """
-    The albarán a driver's position belongs to, or None.
+    When the driver finished the work of an albarán, or None.
 
     ---
 
-    El albarán al que pertenece ahora la posición del conductor (S138,
-    ruta de cada albarán): el que está haciendo (salió de base y aún no
-    lo ha terminado); si no, el que vuelve de terminar (regreso a base);
-    si no, el primero que tiene enviado. None fuera de servicio.
+    Cuándo terminó el conductor el trabajo del albarán (firmado o
+    cerrado sin firma), o None.
     """
-    units = list(Unit.objects.filter(
+    return unit.completed_at or unit.closed_at or unit.signed_received_at
+
+
+def route_units(company_user, since):
+    """
+    Albaranes a driver's positions taken from `since` can belong to.
+
+    ---
+
+    Albaranes del conductor a los que pueden pertenecer posiciones
+    tomadas desde `since`: los enviados que no se cerraron en base antes
+    de esa hora.
+    """
+    return list(Unit.objects.filter(
         operator=company_user,
-        status__in=IN_SERVICE_STATUSES + RETURNING_STATUSES,
-        work_order__status__in=OPEN_ORDER_STATUSES,
+    ).exclude(
+        status__in=ROUTE_SKIP_STATUSES,
+    ).filter(
+        Q(base_closed_at__isnull=True) | Q(base_closed_at__gt=since),
     ).order_by("created_at", "pk"))
+
+
+def unit_at(units, when):
+    """
+    The albarán a position taken at `when` belongs to, or None.
+
+    ---
+
+    El albarán al que pertenece una posición tomada a esa hora (S138,
+    rutas encadenadas: "la ruta acabaría ahí y empezaría la siguiente
+    ruta del siguiente servicio"):
+    1. El que estaba haciendo: salió (hora de salida) y aún no había
+       terminado. Al encadenar en ruta, el siguiente empieza en cuanto
+       el conductor mete su salida, y ahí acaba la vuelta del anterior.
+    2. Si no, el que volvía de terminar: sin cerrar en base, sin otro
+       albarán salido después y sin pasar MAX_RETURN.
+    3. Si no, el que esperaba para salir (enviado y sin salir aún): al
+       encadenar en base, la espera en base va al principio del
+       siguiente.
+    """
     doing = [
         unit for unit in units
-        if unit.status in IN_SERVICE_STATUSES and unit.started_at is not None
+        if unit.started_at is not None and unit.started_at <= when
+        and (_work_end(unit) is None or when < _work_end(unit))
     ]
     if doing:
-        return doing[0]
-    returning = [unit for unit in units if unit.status in RETURNING_STATUSES]
+        return max(doing, key=lambda unit: unit.started_at)
+    returning = []
+    for unit in units:
+        end = _work_end(unit)
+        if end is None or end > when or when - end > MAX_RETURN:
+            continue
+        if unit.base_closed_at is not None and unit.base_closed_at <= when:
+            continue
+        if any(
+            other.started_at is not None and end < other.started_at <= when
+            for other in units if other.pk != unit.pk
+        ):
+            continue
+        returning.append((end, unit))
     if returning:
-        return max(returning, key=lambda unit: (
-            unit.completed_at or unit.closed_at or unit.updated_at
-        ))
-    return units[0] if units else None
+        return max(returning, key=lambda pair: pair[0])[1]
+    waiting = [
+        unit for unit in units
+        if unit.created_at <= when
+        and (unit.started_at is None or unit.started_at > when)
+        and (_work_end(unit) is None or _work_end(unit) > when)
+        and (unit.base_closed_at is None or unit.base_closed_at > when)
+    ]
+    return waiting[0] if waiting else None
 
 
 def driver_is_out(company_user):

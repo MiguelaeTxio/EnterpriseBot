@@ -28,6 +28,20 @@ del servicio.
         <span><i class="bi bi-pause-circle me-1"></i>{{ route.stops|length }} detenciones · {{ route.stopped_minutes }} min parado</span>
         {% endif %}
     </div>
+    {% if previous or following %}
+    <div class="card-body py-2 small border-top d-flex flex-wrap gap-3">
+        {% if previous %}
+        <span><i class="bi bi-arrow-left-circle me-1"></i>Viene de
+            <a href="{% url 'budgets:unit_route' pk=previous.0.pk %}">{{ previous.0.albaran_number }}</a>
+            (encadenado {{ previous.1 }})</span>
+        {% endif %}
+        {% if following %}
+        <span><i class="bi bi-arrow-right-circle me-1"></i>Sigue con
+            <a href="{% url 'budgets:unit_route' pk=following.0.pk %}">{{ following.0.albaran_number }}</a>
+            (encadenado {{ following.1 }}{% if following.1 == "en ruta" %}: esta ruta acaba donde salió{% endif %})</span>
+        {% endif %}
+    </div>
+    {% endif %}
 </div>
 
 {% if not route.count %}
