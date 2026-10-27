@@ -69,6 +69,7 @@ TASK_COLUMNS = (
     ("tipo", "Tipo", False),
     ("description", "Avería / tarea", False),
     ("schedule", "Horario", False),
+    ("shift", "Jornada", False),
     ("ordinary", "H. ordinarias", True),
     ("extra", "H. extra", True),
     ("festive", "H. festivas", True),
@@ -431,6 +432,21 @@ def _parts_totals(parts):
 # Tasks list / Listado de tareas de los partes
 # ---------------------------------------------------------------------------
 
+def shift_label(entry):
+    """
+    Shift type recorded in a parte, or "" if not recorded.
+
+    ---
+
+    Tipo de jornada grabado en el parte (H30, S139): "Intensiva",
+    "Partida" o "" en los partes que no lo guardan (anteriores a S139,
+    PDF o generados).
+    """
+    if entry.is_intensive_shift is None:
+        return ""
+    return "Intensiva" if entry.is_intensive_shift else "Partida"
+
+
 def task_type_label(line):
     """
     Type of a task, with its automatic classification if recorded.
@@ -471,6 +487,7 @@ class TaskRow:
         self.tipo_label, self.tipo_detail = task_type_label(line)
         self.description = line.fault_description or ""
         self.repair = line.repair_notes or ""
+        self.shift_label = shift_label(entry)
         self.hc = line.hc
         self.hf = line.hf
         self.hours = line.delta_hours
@@ -562,6 +579,7 @@ TASK_SORTABLE = {
     "ordinary": lambda r: r.ordinary_hours,
     "extra": lambda r: r.extra_hours,
     "festive": lambda r: r.festive_hours,
+    "shift": lambda r: r.shift_label,
     "parts": lambda r: r.parts_count,
     "cost": lambda r: r.parts_cost,
     "ticket": lambda r: r.ticket_code,
@@ -1120,6 +1138,7 @@ def work_order_document(entry, machine, company_user):
         "end": time_text(max(ends)) if ends else "",
         "lunch": lunch,
         "no_lunch_break": entry.no_lunch_break,
+        "is_intensive_shift": entry.is_intensive_shift,
         "has_diet": entry.has_diet,
         "tasks": tasks,
         "gaps": gaps,

@@ -238,7 +238,8 @@ def _append_total(sheet, values):
 
 TASK_COLUMNS = (
     "Fecha", "Mecánico", "Tipo", "Clasificación", "Avería / tarea",
-    "Reparación", "H.C.", "H.F.", "Horas ordinarias", "Horas extra",
+    "Reparación", "H.C.", "H.F.", "Jornada", "Horas ordinarias",
+    "Horas extra",
     "Horas festivas", "Horas", "O.R.", "Ticket", "Repuestos",
     "Importe repuestos (€)", "Repuestos sin precio", "Albaranes",
 )
@@ -264,7 +265,8 @@ def _write_tasks(workbook, rows, first=True):
         tasks.append([
             row.work_date, row.worker, row.tipo_label, row.tipo_detail,
             row.description, row.repair, workshop.time_text(row.hc),
-            workshop.time_text(row.hf), _number(row.ordinary_hours),
+            workshop.time_text(row.hf), row.shift_label,
+            _number(row.ordinary_hours),
             _number(row.extra_hours), _number(row.festive_hours),
             _number(row.hours), row.or_val,
             row.ticket_code, row.parts_count, _number(row.parts_cost),
@@ -281,7 +283,7 @@ def _write_tasks(workbook, rows, first=True):
             ])
     totals = workshop.task_totals(rows)
     _append_total(tasks, [
-        "TOTAL", "", "", "", "%d tareas" % totals["count"], "", "", "",
+        "TOTAL", "", "", "", "%d tareas" % totals["count"], "", "", "", "",
         _number(totals["ordinary"]), _number(totals["extra"]),
         _number(totals["festive"]), _number(totals["hours"]), "", "",
         totals["parts"],

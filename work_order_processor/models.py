@@ -759,11 +759,59 @@ class WorkOrderEntry(models.Model):
         ),
     )
 
+    # ------------------------------------------------------------------
+    # Shift type at the time of the parte -- H30 (S139)
+    # Tipo de jornada en el momento del parte -- H30 (S139)
+    #
+    # Miguel Ángel: "es importante la trazabilidad [...] guardar lo de
+    # si era jornada intensiva o no, por si surgen problemas con los
+    # horarios". Until S139 the parte did not record it: an intensive
+    # shift and a split one without lunch were stored the same way.
+    # Set once, when a digital parte is created, from the operator's
+    # schedule at that moment (the same one the form used). Null on
+    # partes created before S139 and on PDF/generated ones.
+    #
+    # Hasta S139 el parte no lo guardaba: una jornada intensiva y una
+    # partida sin parar a comer se grababan igual. Se fija una sola vez,
+    # al crear un parte digital, con el horario del operario en ese
+    # momento (el mismo con el que se pintó el formulario). Nulo en los
+    # partes anteriores a S139 y en los de PDF o generados.
+    # ------------------------------------------------------------------
+    is_intensive_shift = models.BooleanField(
+        _("Jornada intensiva"),
+        null=True,
+        blank=True,
+        default=None,
+        help_text=_(
+            "Si la jornada del parte era intensiva (Sí) o partida (No), "
+            "según el horario del operario al crear el parte. Vacío en "
+            "los partes anteriores a S139 y en los de PDF o generados."
+        ),
+    )
+
     class Meta:
         verbose_name        = _("Entrada de Parte")
         verbose_name_plural = _("Entradas de Parte")
         ordering            = ["work_order", "page_number"]
         unique_together     = [("work_order", "page_number")]
+
+    def save(self, *args, **kwargs):
+        """
+        Record the shift type when a digital parte is created.
+
+        ---
+
+        Al crear un parte digital, guarda si la jornada del operario era
+        intensiva (H30, S139). Se hace aquí, y no en cada vista, porque
+        los partes digitales se crean desde varios sitios (formulario,
+        guardado progresivo, añadir día); una vez fijado no cambia
+        aunque el horario del operario cambie después.
+        """
+        if self._state.adding and self.is_intensive_shift is None:
+            from work_order_processor.shift import entry_shift_is_intensive
+
+            self.is_intensive_shift = entry_shift_is_intensive(self)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         fecha = self.work_date.strftime("%d/%m/%Y") if self.work_date else "sin fecha"

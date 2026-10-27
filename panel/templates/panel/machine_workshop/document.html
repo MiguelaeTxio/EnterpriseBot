@@ -56,15 +56,27 @@ panel/machine_workshop.py (work_order_document).
                 <div class="fs-5">{{ start|default:"?" }} – {{ end|default:"?" }}</div>
             </div>
             {% endif %}
+            {% comment %}
+            S139: jornada grabada en el parte (desde S139). En intensiva
+            no parar a comer es lo normal y no se repite; en partida, sí.
+            Los partes sin el dato (anteriores, PDF) solo dicen lo que
+            tienen: la pausa o que no la hubo.
+            {% endcomment %}
+            {% if is_intensive_shift is not None %}
+            <div class="col-6 col-md-3">
+                <div class="wo-label">Jornada</div>
+                <div class="fs-5">{% if is_intensive_shift %}Jornada intensiva{% else %}Jornada partida{% endif %}</div>
+            </div>
+            {% endif %}
             {% if lunch %}
             <div class="col-6 col-md-3">
                 <div class="wo-label">Pausa de comida</div>
                 <div class="fs-5">{{ lunch }}</div>
             </div>
-            {% elif no_lunch_break %}
+            {% elif no_lunch_break and is_intensive_shift is not True %}
             <div class="col-6 col-md-3">
-                <div class="wo-label">Jornada</div>
-                <div class="fs-5">Sin pausa de comida</div>
+                <div class="wo-label">Pausa de comida</div>
+                <div class="fs-5">{% if is_intensive_shift is False %}No paró a comer{% else %}Sin pausa de comida{% endif %}</div>
             </div>
             {% endif %}
             {% if has_diet %}
