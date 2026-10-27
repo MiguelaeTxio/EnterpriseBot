@@ -15,6 +15,7 @@ from django.urls import path, include
 from django.http import HttpResponse
 from django.views.decorators.cache import never_cache as _never_cache
 from hr_calendar import clockin as clockin_views
+from budgets.api_driver import asset_links as _asset_links
 
 urlpatterns = [
 
@@ -59,6 +60,9 @@ urlpatterns = [
     # H37 (S138): salas de chat de la plataforma (formato IRC), con
     # enlace personal para quien no tiene cuenta del panel.
     path('sala/', include('chat.urls_room', namespace='chat_room')),
+    # H37 (S138): App Links of the drivers' app (WhatsApp notice link).
+    # App Links de la app de chóferes (enlace del aviso de WhatsApp).
+    path('.well-known/assetlinks.json', _asset_links, name='asset_links'),
     path('admin/', admin.site.urls),
     # Voice IVR bridge — puente IVR de voz.
     path('api/vox/', include('vox_bridge.urls')),

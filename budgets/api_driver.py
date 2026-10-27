@@ -944,3 +944,40 @@ class DriverPositionView(View):
             recorded_at=recorded_at,
         )
         return JsonResponse({"tracking": True})
+
+
+# ---------------------------------------------------------------------------
+# Android App Links of the drivers' app.
+# App Links de la app de chóferes.
+# ---------------------------------------------------------------------------
+
+# H37 (S138): SHA-256 of the fixed signing certificate of EBotDeliveryNotes
+# (the build workflow prints it as the "Huella APK" annotation).
+# Huella del certificado fijo de firma de la app (anotación "Huella APK"
+# del workflow de compilación).
+DRIVER_APP_PACKAGE = "com.miguelaetxio.ebotdeliverynotes"
+DRIVER_APP_CERT_SHA256 = (
+    "8D:47:D7:C6:2B:3B:AC:F0:5B:FA:3D:7D:9C:80:D5:AB:"
+    "05:7E:0D:32:41:CE:96:32:DF:F2:5D:0E:FF:12:A7:3C"
+)
+
+
+def asset_links(request):
+    """
+    /.well-known/assetlinks.json for the drivers' app.
+
+    ---
+
+    assetlinks.json para que Android abra en la app de chóferes el
+    enlace del aviso de WhatsApp del albarán (Miguel Ángel, S138: con un
+    servicio, el móvil debe mandar su posición al panel, y la manda en
+    cuanto se abre la app).
+    """
+    return JsonResponse([{
+        "relation": ["delegate_permission/common.handle_all_urls"],
+        "target": {
+            "namespace": "android_app",
+            "package_name": DRIVER_APP_PACKAGE,
+            "sha256_cert_fingerprints": [DRIVER_APP_CERT_SHA256],
+        },
+    }], safe=False)
