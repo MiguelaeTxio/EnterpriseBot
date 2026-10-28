@@ -124,9 +124,12 @@ HOURS_CODE_PREFIXES = ("Z",)
 # dudoso y se pregunta al repostador. La familia manda sobre el código
 # (ADOLFO es un turismo aunque empiece por A; PAOLA, una plataforma
 # aunque empiece por P).
+# S137, Miguel Ángel: la familia ASISTENCIA va por km aunque sean A o B
+# (son camiones de rescate o plataformas de transporte, sin pluma ni
+# hidráulico que cuente horas).
 # ---
 # Workshop rule: which unit each kind of vehicle goes by.
-KM_FAMILIES = ("TURISMOS",)
+KM_FAMILIES = ("TURISMOS", "ASISTENCIA")
 HOURS_FAMILIES = ("PLATAFORMAS", "CARRETILLAS", "MÓVILES")
 HOURS_CONVENTION_PREFIXES = ("A", "B", "T", "Z")
 KM_CODE_PREFIXES = ("P", "X")

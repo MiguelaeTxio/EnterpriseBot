@@ -233,6 +233,11 @@ class ConventionUnitTests(unittest.TestCase):
     def test_vans_by_km(self):
         self.assertEqual(convention_unit("X07", "ASISTENCIA"), UNIT_KM)
 
+    def test_assistance_a_and_b_by_km(self):
+        # S137: los A y B de asistencia van por km (manda la familia).
+        self.assertEqual(convention_unit("B44", "ASISTENCIA"), UNIT_KM)
+        self.assertEqual(convention_unit("A30", "ASISTENCIA"), UNIT_KM)
+
     def test_others_have_no_rule(self):
         self.assertIsNone(convention_unit("V05", "ALQUILER"))
         self.assertIsNone(convention_unit("0672KKZ", ""))
