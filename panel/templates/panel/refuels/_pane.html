@@ -19,6 +19,9 @@ vehículos marcados); en Repostadores no aplican y se ocultan.
 S137: cuarta vista, "Preguntas por WhatsApp" (las preguntas enviadas y
 su resumen). En ella no aplican los filtros de estado y de "¿se
 pregunta?" ni las acciones de unidad, contador y preguntar: se ocultan.
+S137: desplegable "Familia" (todas las vistas) y casilla "Todos los
+activos" (solo Vehículos y Repostadores): con ella salen todos, hayan
+repostado o no, y las fechas no cuentan (se desactivan).
 {% endcomment %}
 <div class="border rounded p-2 mb-2" id="rfl-top-panel">
     <div class="row g-2">
@@ -43,8 +46,26 @@ pregunta?" ni las acciones de unidad, contador y preguntar: se ocultan.
                         <input type="text" name="search" id="rfl-filter-search" class="form-control doc-h30-search"
                                placeholder="Buscar por centro de gasto, matrícula, vehículo o chófer…" value="{{ filter_search }}">
                     </div>
+                    <div class="d-flex flex-wrap align-items-center gap-3 mb-2 small">
+                        <div class="d-flex align-items-center gap-2">
+                            <label class="fw-semibold" for="rfl-filter-family">Familia</label>
+                            <select name="family" id="rfl-filter-family" class="form-select form-select-sm w-auto">
+                                <option value="">Todas</option>
+                                {% for family in family_choices %}
+                                <option value="{{ family }}"{% if family == filter_family %} selected{% endif %}>{{ family }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-check rfl-allactive-filter mb-0">
+                            <input class="form-check-input" type="checkbox" name="all_active" value="1" id="rflAllActive"{% if all_active %} checked{% endif %}>
+                            <label class="form-check-label" for="rflAllActive"
+                                   title="Todos los vehículos de centros de gasto activos (o todos los repostadores), hayan repostado o no. Las fechas no cuentan y los totales son de todo el histórico.">
+                                Todos los activos, hayan repostado o no (sin fechas)
+                            </label>
+                        </div>
+                    </div>
                     <div class="d-flex flex-wrap gap-3 align-items-start small">
-                        <div class="rfl-supply-filter">
+                        <div class="rfl-supply-filter rfl-status-filter">
                             <div class="fw-semibold mb-1">Estado</div>
                             {% for choice in status_choices %}
                             <div class="form-check">
@@ -66,7 +87,7 @@ pregunta?" ni las acciones de unidad, contador y preguntar: se ocultan.
                             {% endfor %}
                             <input type="hidden" name="ask" id="rfl-ask-input" value="">
                         </div>
-                        <div>
+                        <div class="rfl-date-filter">
                             <div class="fw-semibold mb-1">Desde</div>
                             <input type="date" name="date_from" class="form-control form-control-sm mb-2" value="{{ date_from|date:'Y-m-d' }}">
                             <div class="fw-semibold mb-1">Hasta</div>
@@ -283,6 +304,7 @@ pregunta?" ni las acciones de unidad, contador y preguntar: se ocultan.
             document.querySelectorAll(".rfl-ask-action, .rfl-supply-filter").forEach(function (el) {
                 el.classList.toggle("d-none", currentView === "questions");
             });
+            syncAllActive();
             document.getElementById("rfl-row-count").textContent = state.dataset.count;
             document.getElementById("rfl-clear-sort").classList.toggle("d-none", !state.dataset.sortActive);
         }
@@ -319,6 +341,7 @@ pregunta?" ni las acciones de unidad, contador y preguntar: se ocultan.
             const sortInput = document.querySelector('#rfl-sort-inputs input[name="sort"]');
             if (sortInput) sortInput.value = "";
             currentView = radio.value;
+            syncAllActive();
         });
     });
 
@@ -333,6 +356,24 @@ pregunta?" ni las acciones de unidad, contador y preguntar: se ocultan.
         radio.checked = true;
         radio.dispatchEvent(new Event("change", {bubbles: true}));
     });
+
+    // S137: "Todos los activos" solo en Vehículos y Repostadores; marcada,
+    // las fechas no cuentan (se desactivan, y no se envían) ni el estado.
+    function syncAllActive() {
+        const box = document.getElementById("rflAllActive");
+        const applies = currentView === "vehicles" || currentView === "users";
+        document.querySelectorAll(".rfl-allactive-filter").forEach(function (el) {
+            el.classList.toggle("d-none", !applies);
+        });
+        const on = applies && box.checked;
+        document.querySelectorAll(".rfl-date-filter input").forEach(function (input) {
+            input.disabled = on;
+        });
+        document.querySelectorAll(".rfl-status-filter").forEach(function (el) {
+            if (currentView !== "questions") el.classList.toggle("d-none", on);
+        });
+    }
+    document.getElementById("rflAllActive").addEventListener("change", syncAllActive);
 
     // Estado: casillas literales -- ninguna marcada = ninguno ("none").
     function syncStatus() {

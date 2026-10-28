@@ -33,6 +33,17 @@ le pregunta, en qué quedó y qué contestó) y, encima, el resumen:
 enviadas, chóferes, contestadas por respuesta, esperando y sin
 respuesta. Los filtros de estado del repostaje y de "¿se pregunta?" no
 aplican a esta vista; las fechas y la búsqueda, sí.
+
+S137, Miguel Ángel: para quitar vehículos de las preguntas o marcar
+contadores averiados hacía falta jugar con las fechas hasta que
+salieran. Dos filtros nuevos:
+- "Todos los activos" (vistas Vehículos y Repostadores): salen todos
+  los vehículos de centros de gasto activos (o todos los repostadores),
+  hayan repostado o no, sin mirar las fechas; los totales son de todo
+  el histórico.
+- "Familia": desplegable con las familias del catálogo, en todas las
+  vistas, para marcar una familia entera (p. ej. quitarla de las
+  preguntas) y luego añadir solo algunos vehículos.
 """
 import datetime
 import io
@@ -60,7 +71,7 @@ from panel.views_vacation_balance import _param, _parse_date
 
 SCREEN_KEY = "refuels"
 FILTER_KEYS = ("view", "search", "status", "ask", "date_from", "date_to",
-               "sort")
+               "sort", "family", "all_active")
 NO_STATUS = "none"
 # Filtro "¿Se pregunta al chófer?": sí / no (S135).
 # ---
@@ -226,6 +237,44 @@ def _ask_values(request):
     return [code == "yes" for code in chosen]
 
 
+def _family(request):
+    """
+    Chosen machine family ("" = all).
+
+    ---
+
+    Familia elegida en el desplegable ("" = todas).
+    """
+    return _param(request, "family").strip()
+
+
+def _family_choices():
+    """
+    Families of the active machines, sorted.
+
+    ---
+
+    Familias del catálogo de los centros de gasto activos, ordenadas.
+    """
+    from fleet.models import MachineAsset
+
+    return sorted(set(MachineAsset.objects.filter(is_active=True).exclude(
+        family="").values_list("family", flat=True)))
+
+
+def _all_active(request, view):
+    """
+    True if "all the active ones" is ticked and applies to the view.
+
+    ---
+
+    True si está marcada "Todos los activos" y la vista es Vehículos o
+    Repostadores (en las otras no aplica).
+    """
+    return (_param(request, "all_active") == "1"
+            and view in (VIEW_VEHICLES, VIEW_USERS))
+
+
 def _view(request):
     """
     Current view: supplies, vehicles or users (default supplies).
@@ -330,6 +379,9 @@ def _filtered_supplies(request):
         supplies = supplies.exclude(asked)
     elif not ask_values:
         supplies = supplies.none()
+    family = _family(request)
+    if family:
+        supplies = supplies.filter(vehicle__machine__family=family)
     search = _param(request, "search").strip()
     if search:
         supplies = supplies.filter(
@@ -417,6 +469,116 @@ def _grouped(supplies, field, other, order):
             "id", filter=Q(status=GasoGesSupply.STATUS_ANOMALY)),
         n_others=Count(other, distinct=True),
     ).order_by(*order)
+
+
+def _all_time_totals(queryset, other):
+    """
+    The supply totals of `_grouped`, over all history, as annotations.
+
+    ---
+
+    Los mismos totales que `_grouped`, de todo el histórico, como
+    anotaciones sobre vehículos o repostadores ("Todos los activos").
+    """
+    return queryset.annotate(
+        n_supplies=Count("supplies", distinct=True),
+        total_litres=Sum("supplies__litres"),
+        last_at=Max("supplies__supplied_at"),
+        n_anomalies=Count("supplies", distinct=True, filter=Q(
+            supplies__status=GasoGesSupply.STATUS_ANOMALY)),
+        n_others=Count("supplies__%s" % other, distinct=True),
+    )
+
+
+def _own_order(order, prefix):
+    """
+    Sort fields of a grouped view, for the vehicle or user queryset.
+
+    ---
+
+    Campos de orden de la vista agrupada pasados al queryset de
+    vehículos o repostadores ("vehicle__plate" -> "plate").
+    """
+    return [("-" if field.startswith("-") else "")
+            + field.lstrip("-").replace(prefix, "", 1) for field in order]
+
+
+def _vehicle_groups(request, order, wanted=None):
+    """
+    Groups of the Vehicles view (from the supplies or all the active).
+
+    ---
+
+    Grupos de la vista Vehículos: los vehículos que repostaron en el
+    filtro o, con "Todos los activos", todos los de centros de gasto
+    activos, hayan repostado o no (S137). `wanted`: solo esos vehículos.
+    """
+    if not _all_active(request, VIEW_VEHICLES):
+        supplies = _filtered_supplies(request)
+        if wanted is not None:
+            supplies = supplies.filter(vehicle_id__in=wanted)
+        return list(_grouped(supplies, "vehicle", "user", order))
+    vehicles = GasoGesVehicle.objects.filter(machine__is_active=True)
+    family = _family(request)
+    if family:
+        vehicles = vehicles.filter(machine__family=family)
+    ask_values = _ask_values(request)
+    if len(ask_values) == 1:
+        vehicles = vehicles.filter(ask_driver=ask_values[0])
+    elif not ask_values:
+        vehicles = vehicles.none()
+    search = _param(request, "search").strip()
+    if search:
+        vehicles = vehicles.filter(
+            Q(machine__code__icontains=search)
+            | Q(plate__icontains=search) | Q(name__icontains=search))
+    if wanted is not None:
+        vehicles = vehicles.filter(pk__in=wanted)
+    groups = _all_time_totals(vehicles, "user").values(
+        "id", "n_supplies", "total_litres", "last_at", "n_anomalies",
+        "n_others").order_by(*_own_order(order, "vehicle__"), "id")
+    return [dict(group, vehicle=group.pop("id")) for group in groups]
+
+
+def _user_groups(request, order, wanted=None):
+    """
+    Groups of the Refuellers view (from the supplies or all of them).
+
+    ---
+
+    Grupos de la vista Repostadores: los que repostaron en el filtro o,
+    con "Todos los activos", todos los usuarios de GasoGes, hayan
+    repostado o no (S137). Con familia, los que han repostado alguna
+    vez un vehículo de esa familia. `wanted`: solo esos (0 = los
+    repostajes sin usuario).
+    """
+    if not _all_active(request, VIEW_USERS):
+        supplies = _filtered_supplies(request)
+        if wanted is not None:
+            chosen = Q(user_id__in=wanted)
+            if 0 in wanted:
+                chosen |= Q(user__isnull=True)
+            supplies = supplies.filter(chosen)
+        return list(_grouped(supplies, "user", "vehicle", order))
+    users = GasoGesUser.objects.all()
+    family = _family(request)
+    if family:
+        users = users.filter(pk__in=GasoGesSupply.objects.filter(
+            vehicle__machine__family=family).values("user_id"))
+    ask_values = _ask_values(request)
+    if len(ask_values) == 1:
+        users = users.filter(ask_driver=ask_values[0])
+    elif not ask_values:
+        users = users.none()
+    search = _param(request, "search").strip()
+    if search:
+        users = users.filter(name__icontains=search)
+    if wanted is not None:
+        users = users.filter(pk__in=wanted)
+    groups = _all_time_totals(users, "vehicle").values(
+        "id", "n_supplies", "total_litres", "last_at", "n_anomalies",
+        "n_others").order_by(*_own_order(order, "user__"), "id")
+    return [dict(group, user=group.pop("id")) for group in groups]
 
 
 def _totals(group):
@@ -529,6 +691,9 @@ def _filtered_questions(request):
     questions = RefuelQuestion.objects.select_related(
         "supply", "vehicle", "vehicle__machine", "person",
     ).filter(sent_at__gte=start, sent_at__lt=end)
+    family = _family(request)
+    if family:
+        questions = questions.filter(vehicle__machine__family=family)
     search = _param(request, "search").strip()
     if search:
         questions = questions.filter(
@@ -643,18 +808,11 @@ def _list_context(request):
         rows = [_question_row(q) for q in questions.order_by(
             *order, "-id")[:_MAX_ROWS]]
     elif view == VIEW_VEHICLES:
-        if wanted is not None:
-            supplies = supplies.filter(vehicle_id__in=wanted)
-        groups = list(_grouped(supplies, "vehicle", "user", order))
+        groups = _vehicle_groups(request, order, wanted)
         total = len(groups)
         rows = _vehicle_rows(groups[:_MAX_ROWS])
     elif view == VIEW_USERS:
-        if wanted is not None:
-            chosen = Q(user_id__in=wanted)
-            if 0 in wanted:
-                chosen |= Q(user__isnull=True)
-            supplies = supplies.filter(chosen)
-        groups = list(_grouped(supplies, "user", "vehicle", order))
+        groups = _user_groups(request, order, wanted)
         total = len(groups)
         rows = _user_rows(groups[:_MAX_ROWS])
     else:
@@ -668,6 +826,9 @@ def _list_context(request):
     asks = _ask_values(request)
     return {
         "view": view,
+        "family_choices": _family_choices(),
+        "filter_family": _family(request),
+        "all_active": _param(request, "all_active") == "1",
         "question_stats": question_stats,
         "view_choices": [
             {"code": code, "label": label, "checked": code == view}
@@ -983,11 +1144,8 @@ class RefuelsExportView(CompanyUserRequiredMixin, View):
         return _excel_response(book, "repostajes", request)
 
     def _vehicles(self, request, book, wanted):
-        supplies = _filtered_supplies(request)
-        if wanted:
-            supplies = supplies.filter(vehicle_id__in=wanted)
-        rows = _vehicle_rows(list(_grouped(
-            supplies, "vehicle", "user", _DEFAULT_ORDER[VIEW_VEHICLES])))
+        rows = _vehicle_rows(_vehicle_groups(
+            request, _DEFAULT_ORDER[VIEW_VEHICLES], wanted or None))
         lines = [[
             row["machine"].code if row["machine"] else "",
             row["vehicle_label"], row["vehicle_name"], row["count"],
@@ -1007,14 +1165,8 @@ class RefuelsExportView(CompanyUserRequiredMixin, View):
         return _excel_response(book, "repostajes_vehiculos", request)
 
     def _users(self, request, book, wanted):
-        supplies = _filtered_supplies(request)
-        if wanted:
-            chosen = Q(user_id__in=wanted)
-            if 0 in wanted:
-                chosen |= Q(user__isnull=True)
-            supplies = supplies.filter(chosen)
-        rows = _user_rows(list(_grouped(
-            supplies, "user", "vehicle", _DEFAULT_ORDER[VIEW_USERS])))
+        rows = _user_rows(_user_groups(
+            request, _DEFAULT_ORDER[VIEW_USERS], wanted or None))
         lines = [[
             row["name"], row["person_label"], row["count"],
             _float(row["litres"]),
