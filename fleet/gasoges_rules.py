@@ -124,12 +124,14 @@ HOURS_CODE_PREFIXES = ("Z",)
 # dudoso y se pregunta al repostador. La familia manda sobre el código
 # (ADOLFO es un turismo aunque empiece por A; PAOLA, una plataforma
 # aunque empiece por P).
-# S137, Miguel Ángel: la familia ASISTENCIA va por km aunque sean A o B
-# (son camiones de rescate o plataformas de transporte, sin pluma ni
-# hidráulico que cuente horas).
+# S137, Miguel Ángel: en la familia ASISTENCIA, las A (grúas de
+# asistencia) van por horas; el resto (B, P, X...: camiones de rescate o
+# plataformas de transporte, sin pluma ni hidráulico que cuente horas),
+# por km.
 # ---
 # Workshop rule: which unit each kind of vehicle goes by.
-KM_FAMILIES = ("TURISMOS", "ASISTENCIA")
+KM_FAMILIES = ("TURISMOS",)
+ASSISTANCE_FAMILY = "ASISTENCIA"
 HOURS_FAMILIES = ("PLATAFORMAS", "CARRETILLAS", "MÓVILES")
 HOURS_CONVENTION_PREFIXES = ("A", "B", "T", "Z")
 KM_CODE_PREFIXES = ("P", "X")
@@ -146,6 +148,8 @@ def convention_unit(code, family):
     """
     code = str(code or "").upper()
     family = str(family or "").upper()
+    if family == ASSISTANCE_FAMILY:
+        return UNIT_HOURS if code.startswith("A") else UNIT_KM
     if family in KM_FAMILIES:
         return UNIT_KM
     if family in HOURS_FAMILIES:
