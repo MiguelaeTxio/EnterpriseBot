@@ -1,17 +1,20 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/ivr_config/management/commands/create_cranes_section_s137.py
 """
-H30 (S137). Creates the "Grúas" section (crane and truck-crane
-drivers) and moves Antonio Javier Mérida there, as a driver.
+H30 (S137). Creates the "Grúas" section (crane operators of mobile
+cranes and truck cranes) and moves Antonio Javier Mérida there, as a
+crane operator.
 
 ---
 
-H30 (S137). Miguel Ángel: Antonio Javier Mérida es chófer y no es de
-Elevación; al darse de alta por WhatsApp eligió Elevación pensando en
-"elevación de cargas". No había sección para los chóferes de grúas
-móviles y brazos, así que se crea "Grúas" (rol por defecto chófer,
-familias de flota MÓVILES y AUTOCARGANTES, sin transferencia de
-llamadas del IVR) y se le pasa a ella: su contacto sale de Elevación y
-entra en Grúas, y su usuario pasa de operario de taller a chófer.
+H30 (S137). Miguel Ángel: Antonio Javier Mérida no es de Elevación;
+al darse de alta por WhatsApp eligió Elevación pensando en "elevación
+de cargas". No había sección para los de grúas móviles y brazos, así
+que se crea "Grúas". Miguel Ángel: son gruistas, no chóferes ("casi
+siempre van a estar trabajando con la pluma"; chófer queda para
+Asistencia), así que su rol por defecto es el nuevo GRUISTA
+(CRANE_OPERATOR). Familias de flota MÓVILES y AUTOCARGANTES, sin
+transferencia de llamadas del IVR. Su contacto sale de Elevación y
+entra en Grúas, y su usuario pasa de operario de taller a gruista.
 
 Idempotente: si la sección ya existe no se crea otra, y lo que ya está
 hecho no se repite. Sin `--apply` solo informa.
@@ -25,8 +28,8 @@ from ivr_config.models import CompanyUser, Section, SectionContact
 
 SECTION_NAME = "Grúas"
 SECTION_DESCRIPTION = (
-    "Chóferes de grúas móviles (A) y de camiones grúa o brazos "
-    "autocargantes (B)."
+    "Gruistas: grúas móviles (A) y camiones grúa o brazos autocargantes "
+    "(B)."
 )
 FLEET_FAMILIES = ["MÓVILES", "AUTOCARGANTES"]
 WORKER_DNI = "74858722R"
@@ -43,8 +46,8 @@ class Command(BaseCommand):
     """
 
     help = (
-        "Crea la sección Grúas (chóferes) y pasa a ella a Antonio Javier "
-        "Mérida como chófer (H30, S137). Sin --apply solo informa."
+        "Crea la sección Grúas (gruistas) y pasa a ella a Antonio Javier "
+        "Mérida como gruista (H30, S137). Sin --apply solo informa."
     )
 
     def add_arguments(self, parser):
@@ -91,14 +94,14 @@ class Command(BaseCommand):
         section = Section.objects.filter(
             company=company, name=SECTION_NAME).first()
         if section is None:
-            self._log("2/4 Sección %s: se crea (rol chófer, familias %s)."
+            self._log("2/4 Sección %s: se crea (rol gruista, familias %s)."
                       % (SECTION_NAME, ", ".join(FLEET_FAMILIES)))
             if apply:
                 section = Section.objects.create(
                     company=company, name=SECTION_NAME,
                     description=SECTION_DESCRIPTION,
                     fleet_families=FLEET_FAMILIES,
-                    default_role=Section.DEFAULT_ROLE_DRIVER,
+                    default_role=Section.DEFAULT_ROLE_CRANE_OPERATOR,
                     ivr_transfer_enabled=False,
                 )
         else:
@@ -124,10 +127,10 @@ class Command(BaseCommand):
                 else:
                     link.section = target
                     link.save(update_fields=["section"])
-        if worker.role != CompanyUser.ROLE_DRIVER:
-            self._log("4/4 Rol: %s -> Chófer." % worker.get_role_display())
+        if worker.role != CompanyUser.ROLE_CRANE_OPERATOR:
+            self._log("4/4 Rol: %s -> Gruista." % worker.get_role_display())
             if apply:
-                worker.role = CompanyUser.ROLE_DRIVER
+                worker.role = CompanyUser.ROLE_CRANE_OPERATOR
                 worker.save(update_fields=["role"])
         else:
-            self._log("4/4 Rol: ya es chófer.")
+            self._log("4/4 Rol: ya es gruista.")
