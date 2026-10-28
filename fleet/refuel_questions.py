@@ -461,9 +461,12 @@ def send_pending_questions(company, log=logger.info):
         if not approved[kind]:
             continue
         # S137, Miguel Ángel: a los brazos (B) se les pregunta el dato
-        # cuando esté aprobada la v4, que dice por qué no encaja.
+        # cuando esté aprobada la v4, que dice por qué no encaja. Solo a
+        # los de horas: los B de asistencia van por km y se les pregunta
+        # como a cualquiera.
         if (kind == RefuelQuestion.KIND_VALUE
                 and templates[kind].name != VALUE_TEMPLATE_V4
+                and supply.vehicle.unit == GasoGesVehicle.UNIT_HOURS
                 and supply.vehicle.machine.code.upper().startswith("B")):
             counters["brazos"] += 1
             continue
