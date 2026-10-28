@@ -10028,3 +10028,101 @@ no tenerlas claras en todas las máquinas no se avanza a los avisos:
 
 Al terminar esta hoja, PCH de vuelta a H37 (Miguel Ángel en S134:
 *"luego volvemos con asistencia"*).
+
+## COMPLETADAS EN S139 (sesión invasora, 27-28/10/2026, PEE PC; punto 7 de S119 -- gestión del taller de la máquina)
+
+Sesión invasora en paralelo con S137 (H30 EN PROGRESO, marcador sin
+mover). La hoja de ruta de arriba queda intacta. Encargo de Miguel
+Ángel: en la sección Taller de la ficha de máquina (Documentación >
+Centros de Gasto), los partes se presentaban con poco detalle; hacía
+falta saber los gastos de la máquina, con sumatorio y Excel, ver cada
+parte con todo lo grabado y gestionar sus averías.
+
+### Lo construido (todo desplegado y comprobado en producción)
+
+- **Botones "Gestión" y "Averías"** en la sección Taller de la ficha
+  (los partes de la ficha siguen como estaban), solo para los roles de
+  Centros de gasto (`FleetAccessMixin`). Pantallas nuevas con el
+  formato de la directriz 4.24: panel fijo con "Buscar y filtrar" y
+  acciones, lista con scroll propio, orden múltiple, casillas, visor
+  "Selección actual" con sus totales, pantalla completa (4.26), Excel
+  de la selección, filtros y selección guardados por usuario y máquina
+  (4.15, `screen_key` `machine_workshop_tasks_<pk>` /
+  `machine_workshop_tickets_<pk>`), "Volver" con historial (4.25).
+- **Gestión (Partes de trabajo):** una fila por tarea de parte de la
+  máquina (`WorkOrderEntryLine` con fecha de parte, mismo conjunto que
+  cuenta la ficha). Filtros: búsqueda, tipo, mecánico, avería (ticket),
+  **albarán (con / sin)** y fechas. Columnas: fecha, mecánico, tipo,
+  avería, horario, **jornada**, **H. ordinarias, H. extra, H.
+  festivas**, horas, repuestos, importe, albaranes y ticket. **Cada
+  columna tiene su casillero a la vista** en el panel fijo (sin
+  desplegable: Miguel Ángel, el desplegable obligaba a hacer scroll),
+  guardado por usuario (`hidden_columns`). **Fila de totales** al pie,
+  fija, con la suma de lo filtrado. **Pulsar la fila abre el parte**;
+  la única acción de fila es el icono de ver el ticket de avería.
+- **Averías:** tickets de la máquina (abiertas y cerradas en
+  casillas), con sus tareas, horas de cada tipo, repuestos e importe;
+  desde cada uno, sus tareas y el documento de cada parte.
+- **"Ver el parte":** documento de solo lectura (no la vista de
+  edición) con todo lo grabado y nada más: horas, horario, jornada,
+  pausa, dieta si la hay, cada tarea con horas, tipo, O.R., ticket,
+  lecturas, revisión por motor (S137), repuestos con enlace al artículo
+  del almacén y a los albaranes de los que dependen, fotos y
+  justificaciones de jornada.
+- **Excel:** hojas TAREAS y REPUESTOS (y AVERIAS en Averías), con
+  fila de total; incluye jornada, horas de cada tipo y albaranes.
+
+### Criterios fijados en la sesión
+
+- **Importe de un repuesto:** unidades x precio unitario de la línea
+  del parte o, si falta, precio de compra del artículo del almacén. En
+  una máquina solo suman los imputados a ella (vehículo vacío o esa
+  máquina). Sin precio: no suma y se avisa "sin precio".
+- **Horas ordinarias / extra / festivas:** el mismo criterio que la
+  exportación de partes y `festive.py` (S133): día = parte completo
+  sin la hora fantasma de vacaciones; sábado, domingo o festivo de la
+  base del trabajador, todas festivas; si no, extra lo que pasa de 8,
+  repartido entre las tareas en proporción a sus horas.
+- **Albaranes de una tarea:** los vinculados directamente a la tarea
+  (`DeliveryNoteLine.work_order_line`) y aquellos de los que dependen
+  sus repuestos.
+- **Jornada intensiva guardada en el parte** (Miguel Ángel: *"es
+  importante la trazabilidad [...] por si surgen problemas con los
+  horarios"*): `WorkOrderEntry.is_intensive_shift` (migración
+  `work_order_processor` 0037, aplicada en producción y comprobada en
+  `django_migrations` el 27/10 a las 11:00 UTC). Se fija al crear un
+  parte digital, en `WorkOrderEntry.save()`, con la misma cadena que
+  usa el formulario (`_resolve_operator_schedule`,
+  `work_order_processor/shift.py`); una vez fijado no cambia. Los partes
+  anteriores a S139, los de PDF y los generados quedan vacíos (no se
+  rellenan con el horario de hoy).
+
+### Dato real de producción visto en la sesión
+
+Consulta de solo lectura del 27/10 (cierre de la Gestión con el total
+de BD): P14 = 21 tareas, 140,00 h, 114,50 € en repuestos (2 sin
+precio). Casi ningún repuesto de los partes tiene precio grabado (A36 y
+B32 suman 0 €, A44 tiene 7 sin precio): el importe será fiable cuando
+los repuestos lleven precio. Ningún registro real se modificó en la
+sesión.
+
+### Commits
+
+`2064447` (gestión, averías y documento del parte), `74dab40` (filtro y
+columna de albaranes), `c94a8a6` (horas ordinarias/extra/festivas,
+columnas y totales), `f1f2623` (jornada intensiva, migración 0037),
+`262c4bc` (casilleros de columnas a la vista), `a6151df` (fila
+clicable e icono de ticket). Archivos nuevos:
+`panel/machine_workshop.py`, `panel/views_machine_workshop.py`,
+`panel/static/panel/js/machine_workshop_list.js`,
+`panel/templates/panel/machine_workshop/*`,
+`work_order_processor/shift.py`. Un despliegue (`2064447`) se quedó en
+rojo por tiempo agotado en la recarga de la web app (curl exit 28); se
+relanzó el job y quedó en verde.
+
+### Otros
+
+- Mensaje de WhatsApp preparado para que Alberto Álvarez Díaz entre
+  por primera vez con su usuario (`Alberto Álvarez`, rol ADMIN, nunca
+  había entrado, cambio de contraseña obligatorio al entrar) y un
+  tutorial de cómo ver los repuestos gastados en una máquina.
