@@ -54,7 +54,7 @@ from django.shortcuts import render
 from django.utils import timezone
 from django.views import View
 
-from fleet.gasoges_sync import build_readings
+from fleet.gasoges_sync import build_readings, redo_vehicle
 from fleet.models import (
     GasoGesSupply,
     GasoGesUser,
@@ -940,6 +940,11 @@ class RefuelsVehicleUnitView(CompanyUserRequiredMixin, View):
         vehicle_ids = _selected_vehicle_ids(request)
         vehicles = GasoGesVehicle.objects.filter(
             pk__in=vehicle_ids, machine__isnull=False)
+        # S137: los que cambian de unidad rehacen su serie entera; antes
+        # solo se miraban los pendientes y los repostajes ya dudosos con
+        # la unidad vieja seguían dudosos (asistencia: de horas a km).
+        switched = list(vehicles.exclude(unit=unit).select_related(
+            "machine"))
         changed = vehicles.update(
             unit=unit, unit_source=GasoGesVehicle.UNIT_SOURCE_MANUAL)
         if not changed:
@@ -947,6 +952,9 @@ class RefuelsVehicleUnitView(CompanyUserRequiredMixin, View):
                 "ok": False,
                 "error": "Ninguno de los marcados tiene centro de gasto.",
             }, status=400)
+        for vehicle in switched:
+            vehicle.unit = unit
+            redo_vehicle(vehicle, lambda _line: None)
         counters = build_readings(lambda _line: None)
         return JsonResponse({
             "ok": True,
