@@ -1306,3 +1306,108 @@ class ServicesChainedView(AssistanceSupervisorAccessMixin, View):
             "total_minutes": sum(m for m in estimated if m is not None),
             "without_km": sum(1 for km in saved if km is None),
         })
+
+
+class RouteTestListView(AssistanceSupervisorAccessMixin, View):
+    """
+    Routes recorded with the test button of the driver app.
+
+    ---
+
+    Rutas grabadas con el botón de prueba de la app (H37, S140), las
+    más nuevas primero.
+    """
+
+    template_name = "budgets/services/route_tests.html"
+
+    def get(self, request):
+        """
+        Render the list.
+
+        ---
+
+        Pinta la lista.
+        """
+        from django.db.models import Count
+
+        from budgets.models import RouteTest
+
+        routes = RouteTest.objects.filter(
+            company_user__company=request.user.company_user.company,
+        ).select_related("company_user__user").annotate(
+            point_count=Count("points"),
+        )[:100]
+        return render(request, self.template_name, {"routes": routes})
+
+
+class RouteTestView(AssistanceSupervisorAccessMixin, View):
+    """
+    One test route on the map, point by point.
+
+    ---
+
+    Una prueba de ruta en el mapa, punto a punto, con su precisión y
+    los huecos entre puntos, para ver cómo graba el móvil.
+    """
+
+    template_name = "budgets/services/route_test.html"
+
+    def get(self, request, pk):
+        """
+        Render the route.
+
+        ---
+
+        Pinta la ruta.
+        """
+        from django.utils import timezone
+
+        from budgets.models import RouteTest
+        from budgets.service_route import distance_m
+
+        route = get_object_or_404(
+            RouteTest.objects.select_related("company_user__user"),
+            pk=pk,
+            company_user__company=request.user.company_user.company,
+        )
+        rows = list(route.points.values_list(
+            "latitude", "longitude", "accuracy_m", "recorded_at",
+        ))
+        points = []
+        meters = 0.0
+        max_gap = 0
+        previous = None
+        for lat, lng, accuracy, at in rows:
+            point = (float(lat), float(lng))
+            if previous is not None:
+                meters += distance_m(previous[0], point)
+                max_gap = max(
+                    max_gap, int((at - previous[1]).total_seconds()),
+                )
+            previous = (point, at)
+            points.append({
+                "lat": point[0],
+                "lng": point[1],
+                "acc": accuracy,
+                "t": timezone.localtime(at).strftime("%H:%M:%S"),
+            })
+        accuracies = [p["acc"] for p in points if p["acc"] is not None]
+        user = route.company_user.user
+        return render(request, self.template_name, {
+            "route": route,
+            "driver": user.get_full_name() or user.username,
+            "points": points,
+            "count": len(points),
+            "km": round(meters / 1000, 2),
+            "minutes": round(
+                (route.finished_at - route.started_at).total_seconds() / 60,
+                1,
+            ),
+            "max_gap": max_gap,
+            "mean_accuracy": (
+                round(sum(accuracies) / len(accuracies)) if accuracies
+                else None
+            ),
+            "google_maps_api_key": os.environ.get("GOOGLE_MAPS_API_KEY", ""),
+            "google_maps_map_id": os.environ.get("GOOGLE_MAPS_MAP_ID", ""),
+        })

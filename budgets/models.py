@@ -5026,3 +5026,76 @@ class AssistanceTimes(models.Model):
         """
         times, _created = cls.objects.get_or_create(company=company)
         return times
+
+
+class RouteTest(models.Model):
+    """
+    A route recorded with the test button of the driver app.
+
+    ---
+
+    Ruta grabada con el botón de prueba de la app del conductor (H37,
+    S140). Miguel Ángel, tras la prueba de campo del 28/10: *"tener un
+    botón de prueba y vamos a probar rutas [...] vemos cómo se guardan
+    las rutas"*; cuando se guarden bien, la grabación pasa al albarán.
+    No está ligada a ningún albarán.
+    """
+
+    company_user = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.CASCADE,
+        related_name="route_tests",
+        verbose_name="Conductor",
+    )
+    started_at = models.DateTimeField(verbose_name="Inicio")
+    finished_at = models.DateTimeField(verbose_name="Fin")
+    settings = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+        verbose_name="Ajustes de la grabación",
+        help_text="Cómo grabó la app los puntos (intervalo, distancia...).",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Recibida",
+    )
+
+    class Meta:
+        verbose_name = "Prueba de ruta"
+        verbose_name_plural = "Pruebas de ruta"
+        ordering = ["-started_at"]
+
+    def __str__(self):
+        return f"{self.company_user} {self.started_at:%d/%m %H:%M}"
+
+
+class RouteTestPoint(models.Model):
+    """
+    A point of a test route.
+
+    ---
+
+    Punto de una prueba de ruta, tal cual lo guardó el móvil.
+    """
+
+    route = models.ForeignKey(
+        RouteTest,
+        on_delete=models.CASCADE,
+        related_name="points",
+        verbose_name="Prueba de ruta",
+    )
+    latitude = models.DecimalField(
+        max_digits=9, decimal_places=6, verbose_name="Latitud",
+    )
+    longitude = models.DecimalField(
+        max_digits=9, decimal_places=6, verbose_name="Longitud",
+    )
+    accuracy_m = models.PositiveIntegerField(
+        null=True, blank=True, verbose_name="Precisión (m)",
+    )
+    recorded_at = models.DateTimeField(verbose_name="Tomado")
+
+    class Meta:
+        verbose_name = "Punto de prueba de ruta"
+        verbose_name_plural = "Puntos de prueba de ruta"
+        ordering = ["recorded_at"]

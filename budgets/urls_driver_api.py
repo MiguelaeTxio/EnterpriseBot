@@ -55,4 +55,9 @@ urlpatterns = [
         api_driver.DriverPositionView.as_view(),
         name="position",
     ),
+    path(
+        "route-test/",
+        api_driver.DriverRouteTestView.as_view(),
+        name="route_test",
+    ),
 ]

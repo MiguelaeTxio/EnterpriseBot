@@ -1,0 +1,89 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/services/route_test.html #}
+{% extends "panel/base.html" %}
+
+{% block title %}Prueba de ruta {{ route.pk }}{% endblock %}
+{% block page_title %}Prueba de ruta {{ route.pk }}{% endblock %}
+
+{% block content %}
+{% comment %}
+H37 (S140). Una prueba de ruta tal cual la grabó el móvil: la línea y
+cada punto (color según la precisión), con su hora y su precisión al
+pulsarlo.
+{% endcomment %}
+<div class="mb-3">
+    <a href="{% url 'budgets:route_tests' %}" class="text-muted text-decoration-none">
+        <i class="bi bi-arrow-left me-1"></i>Todas las pruebas de ruta
+    </a>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-2 small d-flex flex-wrap gap-3">
+        <span><i class="bi bi-person me-1"></i>{{ driver }}</span>
+        <span><i class="bi bi-clock me-1"></i>{{ route.started_at|date:"d/m/Y H:i:s" }} – {{ route.finished_at|date:"H:i:s" }} ({{ minutes }} min)</span>
+        <span><i class="bi bi-geo-alt me-1"></i>{{ count }} puntos</span>
+        <span><i class="bi bi-signpost-split me-1"></i>{{ km }} km</span>
+        <span><i class="bi bi-hourglass-split me-1"></i>Mayor hueco entre puntos: {{ max_gap }} s</span>
+        {% if mean_accuracy is not None %}<span><i class="bi bi-bullseye me-1"></i>Precisión media: {{ mean_accuracy }} m</span>{% endif %}
+        {% if route.settings %}<span class="text-muted"><i class="bi bi-gear me-1"></i>{{ route.settings }}</span>{% endif %}
+    </div>
+    <div class="card-body py-2 small border-top text-muted">
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#198754"></span> hasta 10 m
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ffc107;margin-left:8px"></span> de 10 a 30 m
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#dc3545;margin-left:8px"></span> más de 30 m
+    </div>
+</div>
+
+{% if count %}
+<div id="route-map" class="rounded border mb-3" style="height: 70vh; min-height: 360px;"
+     data-map-id="{{ google_maps_map_id|default:'DEMO_MAP_ID' }}"></div>
+{{ points|json_script:"route-points" }}
+{% else %}
+<div class="alert alert-light border">Esta prueba no tiene puntos.</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+{{ block.super }}
+{% if count and google_maps_api_key %}
+<script>
+if (!(window.google && window.google.maps && window.google.maps.importLibrary)) {
+{# Maps JS API -- Dynamic Library Import (mismo patrón que la ruta del albarán). #}
+(g=>{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={});var d=b.maps||(b.maps={}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`https://maps.${c}apis.com/maps/api/js?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))})
+({key: "{{ google_maps_api_key|escapejs }}", v: "weekly"});
+}
+</script>
+<script>
+(async function () {
+    "use strict";
+    const points = JSON.parse(document.getElementById("route-points").textContent);
+    const mapEl = document.getElementById("route-map");
+    const mapsLib = await google.maps.importLibrary("maps");
+    const map = new mapsLib.Map(mapEl, {
+        center: points[0], zoom: 17,
+        mapId: mapEl.dataset.mapId || "DEMO_MAP_ID",
+        streetViewControl: false, fullscreenControl: true
+    });
+    const bounds = new google.maps.LatLngBounds();
+    points.forEach(function (p) { bounds.extend(p); });
+    map.fitBounds(bounds);
+    new mapsLib.Polyline({
+        map: map, path: points.map(function (p) { return {lat: p.lat, lng: p.lng}; }),
+        strokeColor: "#0d6efd", strokeOpacity: 0.8, strokeWeight: 3
+    });
+    const info = new mapsLib.InfoWindow();
+    points.forEach(function (p, index) {
+        const colour = p.acc == null ? "#6c757d" : (p.acc <= 10 ? "#198754" : (p.acc <= 30 ? "#ffc107" : "#dc3545"));
+        const dot = new mapsLib.Circle({
+            map: map, center: {lat: p.lat, lng: p.lng}, radius: 1.5,
+            strokeColor: colour, strokeWeight: 2, fillColor: colour, fillOpacity: 1, clickable: true
+        });
+        dot.addListener("click", function () {
+            info.setContent("Punto " + (index + 1) + " · " + p.t + (p.acc == null ? "" : " · " + p.acc + " m"));
+            info.setPosition({lat: p.lat, lng: p.lng});
+            info.open({map: map});
+        });
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

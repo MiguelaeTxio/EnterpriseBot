@@ -51,6 +51,8 @@ from budgets.service_geocode import maps_url
 from budgets.models import (
     DriverDeviceToken,
     DriverPosition,
+    RouteTest,
+    RouteTestPoint,
     WorkOrderAssistanceSignature,
     WorkOrderAssistanceUnit,
     WorkOrderAssistanceUnitEvent,
@@ -1060,6 +1062,86 @@ class DriverPositionView(View):
             rows = [row for row in rows if row.unit is not None]
             DriverPosition.objects.bulk_create(rows)
         return JsonResponse({"tracking": tracking, "saved": len(rows)})
+
+
+MAX_ROUTE_TEST_POINTS = 50000
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class DriverRouteTestView(View):
+    """
+    Upload a route recorded with the test button.
+
+    ---
+
+    Sube una ruta grabada con el botón de prueba (H37, S140): inicio,
+    fin, ajustes de la grabación y sus puntos. No depende de ningún
+    albarán. Devuelve el enlace a la ruta en el panel.
+    """
+
+    def post(self, request):
+        """
+        Store the route and its points.
+
+        ---
+
+        Guarda la ruta y sus puntos.
+        """
+        company_user, _token = _token_user(request)
+        if company_user is None:
+            return _error("Sesión no válida.", 401)
+        data = _json_body(request)
+        raw_points = data.get("points")
+        if not isinstance(raw_points, list) or not raw_points:
+            return _error("La ruta no tiene puntos.", 400)
+        now = timezone.now()
+        points = []
+        for item in raw_points[:MAX_ROUTE_TEST_POINTS]:
+            if not isinstance(item, dict):
+                continue
+            try:
+                row = _position_row(company_user, item, now)
+            except ValueError:
+                continue
+            points.append(row)
+        if not points:
+            return _error("Ningún punto de la ruta es válido.", 400)
+        points.sort(key=lambda row: row.recorded_at)
+        with transaction.atomic():
+            route = RouteTest.objects.create(
+                company_user=company_user,
+                started_at=_device_time(
+                    data.get("started_at"), points[0].recorded_at,
+                ),
+                finished_at=_device_time(
+                    data.get("finished_at"), points[-1].recorded_at,
+                ),
+                settings=str(data.get("settings") or "")[:200],
+            )
+            RouteTestPoint.objects.bulk_create(
+                [
+                    RouteTestPoint(
+                        route=route,
+                        latitude=row.latitude,
+                        longitude=row.longitude,
+                        accuracy_m=row.accuracy_m,
+                        recorded_at=row.recorded_at,
+                    )
+                    for row in points
+                ],
+                batch_size=1000,
+            )
+        logger.info(
+            "# [DRIVER API] Prueba de ruta %s de %s: %s puntos.",
+            route.pk, company_user.user.username, len(points),
+        )
+        return JsonResponse({
+            "id": route.pk,
+            "points": len(points),
+            "url": settings.PLATFORM_BASE_URL + reverse(
+                "budgets:route_test", args=[route.pk],
+            ),
+        })
 
 
 # ---------------------------------------------------------------------------

@@ -840,4 +840,16 @@ urlpatterns = [
         views_services.UnitRouteView.as_view(),
         name="unit_route",
     ),
+    # H37 (S140): routes recorded with the test button of the app.
+    # Rutas grabadas con el botón de prueba de la app.
+    path(
+        "route-tests/",
+        views_services.RouteTestListView.as_view(),
+        name="route_tests",
+    ),
+    path(
+        "route-tests/<int:pk>/",
+        views_services.RouteTestView.as_view(),
+        name="route_test",
+    ),
 ]

@@ -1,0 +1,36 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/services/route_tests.html #}
+{% extends "panel/base.html" %}
+
+{% block title %}Pruebas de ruta{% endblock %}
+{% block page_title %}Pruebas de ruta{% endblock %}
+
+{% block content %}
+{% comment %}
+H37 (S140). Rutas grabadas con el botón "Prueba de ruta" de la app del
+conductor, para ver cómo guarda el móvil la ruta antes de llevarlo a
+los albaranes.
+{% endcomment %}
+{% if routes %}
+<div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 align-middle small">
+            <thead><tr><th>#</th><th>Conductor</th><th>Inicio</th><th>Fin</th><th>Puntos</th><th>Ajustes</th></tr></thead>
+            <tbody>
+            {% for route in routes %}
+            <tr>
+                <td><a href="{% url 'budgets:route_test' pk=route.pk %}">{{ route.pk }}</a></td>
+                <td>{{ route.company_user.user.get_full_name|default:route.company_user.user.username }}</td>
+                <td>{{ route.started_at|date:"d/m/Y H:i:s" }}</td>
+                <td>{{ route.finished_at|date:"H:i:s" }}</td>
+                <td>{{ route.point_count }}</td>
+                <td class="text-muted">{{ route.settings|default:"—" }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-light border">Aún no hay pruebas de ruta. Se graban desde la app del conductor, en el menú, con "Prueba de ruta".</div>
+{% endif %}
+{% endblock %}
