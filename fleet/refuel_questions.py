@@ -59,6 +59,11 @@ mensaje. Se usa en cuanto Meta la aprueba; mientras, la v3 o la v2 (y
 el motivo se le dice al pulsar "No, lo corrijo"). Por los brazos (B)
 no se pregunta el dato hasta tener la v4 (Miguel Ángel, S137).
 Escribir AVERIADO vale como el botón "Contador averiado" (S137).
+
+S137, Miguel Ángel: "cuesta mucho meter un número diferente". Se acepta
+el número aunque venga con texto ("Tiene 1625 horas"), y sin haber
+pulsado ningún botón; si no encaja se le dice por qué y basta con
+contestar SÍ para darlo por bueno (`_value_text`).
 """
 import logging
 import os
@@ -112,6 +117,14 @@ UNIT_ASK = {
 # "AVERIADO", "averiado.", "está averiado": mensaje corto con la palabra.
 _BROKEN_RE = re.compile(r"\baveriad[oa]s?\b", re.I)
 _BROKEN_MAX_LEN = 60
+MAX_CREDIBLE_HOURS = 50000
+_ANY_NUMBER_RE = re.compile(r"\d{1,3}(?:\.\d{3})+|\d+")
+_TEXT_MAX_LEN = 80
+# "Sí", "si, es correcto", "correcto", "eso es lo que marca", "está
+# bien" (S137): el chófer confirma escribiendo en vez de pulsar.
+_AFFIRMATIVE_RE = re.compile(
+    r"^\s*(s[ií]\b|correcto|es correcto|est[aá] bien|(eso )?es lo que "
+    r"marca)", re.I)
 _NUMBER_RE = re.compile(r"^\s*(\d{1,3}(?:[.\s]\d{3})+|\d+)\s*$")
 OPEN_STATUSES = (RefuelQuestion.STATUS_SENT,
                  RefuelQuestion.STATUS_AWAITING_VALUE)
@@ -196,6 +209,28 @@ def _variables(question, template_name=""):
     return variables
 
 
+def _references(supply):
+    """
+    Good readings of the same machine and unit to compare a value with.
+
+    ---
+
+    Lecturas buenas del mismo centro de gasto y unidad con las que
+    comparar un número. S137: en un vehículo de horas no cuentan las de
+    50.000 o más (ningún horómetro llega ahí: son kilómetros que se
+    anotaron antes, como en los brazos); si no, las primeras horas de
+    verdad que escriba el chófer saldrían "menos de lo que marcaba".
+    """
+    vehicle = supply.vehicle
+    readings = GasoGesSupply.objects.filter(
+        vehicle__machine_id=vehicle.machine_id, vehicle__unit=vehicle.unit,
+        status=GasoGesSupply.STATUS_READING,
+    ).exclude(pk=supply.pk)
+    if vehicle.unit == GasoGesVehicle.UNIT_HOURS:
+        readings = readings.filter(meter_value__lt=MAX_CREDIBLE_HOURS)
+    return readings
+
+
 def _previous_reading(supply):
     """
     (date, value) of the last good reading before this supply, or None.
@@ -205,12 +240,9 @@ def _previous_reading(supply):
     Fecha y valor de la última lectura buena del mismo centro de gasto
     y unidad anterior a este repostaje, o None.
     """
-    vehicle = supply.vehicle
-    return GasoGesSupply.objects.filter(
-        vehicle__machine_id=vehicle.machine_id, vehicle__unit=vehicle.unit,
-        status=GasoGesSupply.STATUS_READING,
+    return _references(supply).filter(
         supplied_at__lt=supply.supplied_at,
-    ).exclude(pk=supply.pk).order_by("-supplied_at").values_list(
+    ).order_by("-supplied_at").values_list(
         "supplied_at", "meter_value").first()
 
 
@@ -223,12 +255,9 @@ def _next_reading(supply):
     Fecha y valor de la primera lectura buena del mismo centro de gasto
     y unidad posterior a este repostaje, o None.
     """
-    vehicle = supply.vehicle
-    return GasoGesSupply.objects.filter(
-        vehicle__machine_id=vehicle.machine_id, vehicle__unit=vehicle.unit,
-        status=GasoGesSupply.STATUS_READING,
+    return _references(supply).filter(
         supplied_at__gt=supply.supplied_at,
-    ).exclude(pk=supply.pk).order_by("supplied_at").values_list(
+    ).order_by("supplied_at").values_list(
         "supplied_at", "meter_value").first()
 
 
@@ -278,6 +307,10 @@ def value_problem(supply, value):
     if value < MIN_CREDIBLE_VALUE:
         return "%s es demasiado poco para %s de este vehículo" % (
             _format_value(value), meter)
+    if hours and value >= MAX_CREDIBLE_HOURS:
+        return ("%s horas es más de lo que marca ningún horómetro: "
+                "parecen kilómetros, y este vehículo va por horas"
+                % _format_value(value))
     previous = _previous_reading(supply)
     if previous is not None:
         when, last = previous
@@ -506,6 +539,127 @@ def _mark_meter_broken(question, answer):
             "repare.")
 
 
+def _extract_number(text):
+    """
+    The only number written in a short message, or None.
+
+    ---
+
+    El único número de un mensaje corto ("1625", "1.625", "Tiene 1625
+    horas", "1625horas"), o None si no hay ninguno o hay varios (S137:
+    los chóferes no escriben solo el número).
+    """
+    if not text or len(text) > _TEXT_MAX_LEN:
+        return None
+    exact = _parse_number(text)
+    if exact is not None:
+        return exact
+    numbers = _ANY_NUMBER_RE.findall(text)
+    if len(numbers) != 1:
+        return None
+    return int(re.sub(r"[.\s]", "", numbers[0]))
+
+
+def _km_in_hours_reply(question, answer):
+    """
+    Reply for a "yes, correct" to kilometres in an hours vehicle.
+
+    ---
+
+    S137, Miguel Ángel: a quien dice que es correcto un número que
+    parecen kilómetros en un vehículo de horas no se le da por bueno:
+    se le explica que van horas por la revisión, que el valor sigue mal
+    y qué tiene que escribir. Devuelve la respuesta, o "" si no es el
+    caso (y entonces el "sí" vale).
+    """
+    supply = question.supply
+    if supply.vehicle.unit != GasoGesVehicle.UNIT_HOURS or (
+            "parecen kilómetros" not in value_problem(
+                supply, supply.meter_value)):
+        return ""
+    question.status = RefuelQuestion.STATUS_AWAITING_VALUE
+    question.answer = answer[:255]
+    question.answered_at = timezone.now()
+    question.save(update_fields=["status", "answer", "answered_at"])
+    code = supply.vehicle.machine.code if supply.vehicle.machine else (
+        "este vehículo")
+    return ("%s no es correcto: son kilómetros, y en %s hay que anotar "
+            "las HORAS que marca el horómetro. Es por la revisión: el "
+            "cambio de aceite y filtros toca por horas (cada 800 o 1.200), "
+            "y con los kilómetros no sabemos cuándo le toca. Escribe "
+            "ahora las horas que marca el horómetro, por ejemplo 1625. Si "
+            "el horómetro está averiado, escribe AVERIADO."
+            % (_format_value(supply.meter_value), code))
+
+
+def _value_text(question, body):
+    """
+    Process a written answer to a value question; return the reply.
+
+    ---
+
+    Procesa lo que escribe el chófer a una pregunta del dato (haya
+    pulsado "No, lo corrijo" o no). S137, Miguel Ángel: "cuesta mucho
+    meter un número diferente". Ahora:
+    - Un número, aunque venga con texto: si encaja, queda anotado; si
+      no, se le dice por qué y que si es lo que marca conteste SÍ (o
+      lo repita).
+    - "Sí", "es correcto", "eso es lo que marca": si antes escribió un
+      número que no encajaba, se da por bueno ese número (lo ha
+      comprobado); si no había escrito ninguno, vale como el botón
+      "Sí, es correcto".
+    - Otra cosa: se le explica qué escribir, con un ejemplo.
+    """
+    supply = question.supply
+    unit_ask = UNIT_ASK.get(supply.vehicle.unit,
+                            "el número que marca el vehículo")
+    meter = ("el horómetro" if supply.vehicle.unit ==
+             GasoGesVehicle.UNIT_HOURS else "el cuentakilómetros")
+    value = _extract_number(body)
+    previous = _extract_number(question.answer)
+    if value is None and _AFFIRMATIVE_RE.search(body) and previous is None:
+        km_reply = _km_in_hours_reply(question, body.strip())
+        if km_reply:
+            return km_reply
+    if value is None and _AFFIRMATIVE_RE.search(body):
+        question.answered_at = timezone.now()
+        if previous is not None:
+            question.status = RefuelQuestion.STATUS_CORRECTED
+            question.answer = ("%s (confirmado: %s)" % (
+                _format_value(previous), body.strip()))[:255]
+            question.save(update_fields=["status", "answer", "answered_at"])
+            accept_supply(supply, "corregido por el chófer", previous)
+            return "Gracias, queda anotado %s." % _format_value(previous)
+        question.status = RefuelQuestion.STATUS_CONFIRMED
+        question.answer = body.strip()[:255]
+        question.save(update_fields=["status", "answer", "answered_at"])
+        accept_supply(supply, "confirmado por el chófer")
+        return "Gracias, queda anotado como correcto."
+    if value is None:
+        return ("No lo he entendido. Escribe solo %s, por ejemplo 1625. "
+                "Si es correcto %s, contesta SÍ. Si %s está averiado, "
+                "escribe AVERIADO." % (
+                    unit_ask, "el número que escribiste (%s)" % (
+                        _format_value(previous)) if previous is not None
+                    else "lo que anotaste", meter))
+    problem = value_problem(supply, value)
+    if problem and previous != value:
+        # Se guarda lo que escribió: si lo repite o dice que sí, se da
+        # por bueno.
+        question.status = RefuelQuestion.STATUS_AWAITING_VALUE
+        question.answer = body.strip()[:255]
+        question.save(update_fields=["status", "answer"])
+        return ("%s no parece correcto: %s. Si es lo que marca %s, "
+                "contesta SÍ. Si no, escribe el número bueno."
+                % (_format_value(value), problem, meter))
+    question.status = RefuelQuestion.STATUS_CORRECTED
+    question.answer = body.strip()[:255]
+    question.answered_at = timezone.now()
+    question.save(update_fields=["status", "answer", "answered_at"])
+    accept_supply(supply, "corregido por el chófer", value)
+    return "Gracias, queda anotado %s." % _format_value(value)
+
+
 def handle_whatsapp_reply(company, phone, button_payload, body):
     """
     Process a driver's answer; return the reply text, or None.
@@ -535,35 +689,29 @@ def handle_whatsapp_reply(company, phone, button_payload, body):
                 "-sent_at").first()
             if recent:
                 return _mark_meter_broken(recent, body.strip())
-        awaiting = None
-        if body:
-            person = resolve_person_by_phone(company, phone)
-            awaiting = person and RefuelQuestion.objects.filter(
-                person=person, status=RefuelQuestion.STATUS_AWAITING_VALUE,
-            ).select_related("supply__vehicle").order_by("-sent_at").first()
-        if not awaiting:
+        if not body:
             return None
-        value = _parse_number(body)
-        unit_ask = UNIT_ASK.get(awaiting.supply.vehicle.unit,
-                                "el número que marca el vehículo")
-        if value is None:
-            return ("No lo he entendido. Escribe solo %s, por ejemplo "
-                    "125400." % unit_ask)
-        problem = value_problem(awaiting.supply, value)
-        repeated = _parse_number(awaiting.answer) == value
-        if problem and not repeated:
-            # Se guarda lo que escribió: si lo repite, se da por bueno.
-            awaiting.answer = body[:255]
-            awaiting.save(update_fields=["answer"])
-            return ("Ese número tampoco parece correcto: %s. Recuerda que "
-                    "son %s. Escríbelo de nuevo (si es correcto, "
-                    "repítelo)." % (problem, unit_ask))
-        awaiting.status = RefuelQuestion.STATUS_CORRECTED
-        awaiting.answer = body[:255]
-        awaiting.answered_at = timezone.now()
-        awaiting.save(update_fields=["status", "answer", "answered_at"])
-        accept_supply(awaiting.supply, "corregido por el chófer", value)
-        return "Gracias, queda anotado %s." % _format_value(value)
+        person = resolve_person_by_phone(company, phone)
+        if not person:
+            return None
+        awaiting = RefuelQuestion.objects.filter(
+            person=person, status=RefuelQuestion.STATUS_AWAITING_VALUE,
+        ).select_related("supply__vehicle").order_by("-sent_at").first()
+        if awaiting:
+            return _value_text(awaiting, body)
+        # S137, Miguel Ángel: muchos no pulsan el botón y escriben
+        # directamente ("Tiene 1625 horas", "Eso es lo que marca"). Con
+        # una pregunta del dato abierta, un número o un "sí, es correcto"
+        # escrito vale como respuesta; lo demás sigue al chatbot.
+        open_question = RefuelQuestion.objects.filter(
+            person=person, status=RefuelQuestion.STATUS_SENT,
+            kind=RefuelQuestion.KIND_VALUE,
+            sent_at__gte=timezone.now() - timedelta(hours=ANSWER_HOURS),
+        ).select_related("supply__vehicle").order_by("-sent_at").first()
+        if open_question and (_extract_number(body) is not None
+                              or _AFFIRMATIVE_RE.search(body)):
+            return _value_text(open_question, body)
+        return None
 
     person = resolve_person_by_phone(company, phone)
     questions = RefuelQuestion.objects.filter(
@@ -583,6 +731,9 @@ def handle_whatsapp_reply(company, phone, button_payload, body):
                 "caducado; no hace falta hacer nada más.")
     question.answered_at = timezone.now()
     if button_payload == VALUE_OK:
+        km_reply = _km_in_hours_reply(question, "Sí, es correcto")
+        if km_reply:
+            return km_reply
         question.status = RefuelQuestion.STATUS_CONFIRMED
         question.answer = "Sí, es correcto"
         question.save(update_fields=["status", "answer", "answered_at"])
