@@ -64,7 +64,8 @@ from django.core.management.base import BaseCommand, CommandError
 from ivr_config.models import CompanyUser
 
 
-_TARGET_ROLES = {CompanyUser.ROLE_WORKSHOP, CompanyUser.ROLE_DRIVER}
+_TARGET_ROLES = {CompanyUser.ROLE_WORKSHOP, CompanyUser.ROLE_DRIVER,
+                 CompanyUser.ROLE_CRANE_OPERATOR}
 
 
 def _extract_pin(dni: str) -> str | None:

@@ -275,6 +275,13 @@ class CompanyUser(models.Model):
     # and the clock-in.
     ROLE_OFFICE = "OFFICE"
     ROLE_NIGHTGUARD = "NIGHTGUARD"
+    # H30 (S137). CRANE_OPERATOR: gruista. Miguel Ángel: los de grúas
+    # móviles y brazos "casi siempre van a estar trabajando con la pluma
+    # y van a hacer trabajos de grúa": son gruistas, no chóferes; chófer
+    # queda para Asistencia. Mismo rango que DRIVER.
+    # CRANE_OPERATOR: crane operator (mobile cranes and truck cranes).
+    # Same rank as DRIVER.
+    ROLE_CRANE_OPERATOR = "CRANE_OPERATOR"
     ROLE_CHOICES = [
         (ROLE_ADMIN,         "Administrador"),
         (ROLE_OPERATOR,      "Operador"),
@@ -282,6 +289,7 @@ class CompanyUser(models.Model):
         (ROLE_WORKSHOPBOSS,  "Jefe de taller"),
         (ROLE_SUPERVISOR,    "Supervisor"),
         (ROLE_DRIVER,        "Chófer"),
+        (ROLE_CRANE_OPERATOR, "Gruista"),
         (ROLE_ASSISTANCE,    "Operario de Asistencia"),
         (ROLE_ASSIST_SUPERVISOR, "Supervisor de Asistencia"),
         (ROLE_DOCS_SUPERVISOR, "Supervisor de Documentación"),
@@ -291,6 +299,7 @@ class CompanyUser(models.Model):
     # Puestos de trabajador (alta por WhatsApp, fichaje). Worker roles.
     WORKER_ROLES = (
         ROLE_WORKSHOP, ROLE_DRIVER, ROLE_OFFICE, ROLE_NIGHTGUARD,
+        ROLE_CRANE_OPERATOR,
     )
 
     company = models.ForeignKey(
@@ -993,9 +1002,11 @@ class Section(models.Model):
     DEFAULT_ROLE_DRIVER = "DRIVER"
     DEFAULT_ROLE_OFFICE = "OFFICE"
     DEFAULT_ROLE_NIGHTGUARD = "NIGHTGUARD"
+    DEFAULT_ROLE_CRANE_OPERATOR = "CRANE_OPERATOR"
     DEFAULT_ROLE_CHOICES = [
         (DEFAULT_ROLE_WORKSHOP, "Operario de taller"),
         (DEFAULT_ROLE_DRIVER,   "Chófer"),
+        (DEFAULT_ROLE_CRANE_OPERATOR, "Gruista"),
         (DEFAULT_ROLE_OFFICE,   "Administrativo"),
         (DEFAULT_ROLE_NIGHTGUARD, "Guarda nocturno"),
     ]

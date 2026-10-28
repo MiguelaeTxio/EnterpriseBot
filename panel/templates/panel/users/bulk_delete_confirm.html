@@ -70,6 +70,10 @@
                                         <span class="badge badge-external">
                                             <i class="bi bi-truck me-1"></i>Chófer
                                         </span>
+                                    {% elif entry.cu.role == 'CRANE_OPERATOR' %}
+                                        <span class="badge badge-external">
+                                            <i class="bi bi-cone-striped me-1"></i>Gruista
+                                        </span>
                                     {% else %}
                                         <span class="badge badge-external">
                                             <i class="bi bi-person me-1"></i>{{ entry.cu.get_role_display }}
@@ -137,6 +141,10 @@
                                     {% elif cu.role == 'DRIVER' %}
                                         <span class="badge badge-external">
                                             <i class="bi bi-truck me-1"></i>Chófer
+                                        </span>
+                                    {% elif cu.role == 'CRANE_OPERATOR' %}
+                                        <span class="badge badge-external">
+                                            <i class="bi bi-cone-striped me-1"></i>Gruista
                                         </span>
                                     {% else %}
                                         <span class="badge badge-external">

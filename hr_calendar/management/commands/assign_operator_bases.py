@@ -99,6 +99,7 @@ BASE_ASSIGNABLE_ROLES = [
     CompanyUser.ROLE_WORKSHOP,
     CompanyUser.ROLE_WORKSHOPBOSS,
     CompanyUser.ROLE_DRIVER,
+    CompanyUser.ROLE_CRANE_OPERATOR,
     CompanyUser.ROLE_SUPERVISOR,
 ]
 
