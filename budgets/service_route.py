@@ -313,14 +313,26 @@ def build_route(unit):
     from budgets.service_geocode import coordinates
 
     points = _points(unit)
+    work_end = _work_end(unit)
     end_at = unit.chain_at if unit.chained_to_id else unit.base_arrived_at
+    # S140: an arrival in base before the driver's own milestones is a
+    # wrong time (the app sent the time the albarán was opened: test of
+    # 28/10, whole route cut away); the closing time is used instead.
+    # Una llegada a base anterior a los hitos del chófer es una hora
+    # mal puesta (la app mandaba la hora a la que se abrió el albarán:
+    # prueba del 28/10, ruta entera cortada); se usa la hora del cierre.
+    floor = max(
+        (t for t in (unit.started_at, unit.arrived_at, work_end) if t),
+        default=None,
+    )
+    if end_at is not None and floor is not None and end_at < floor:
+        end_at = unit.base_closed_at
     if end_at is not None:
         points = [p for p in points if p[2] <= end_at]
     bases = _bases(unit)
     night = night_window(unit, points, bases)
     if night is not None:
         points = [p for p in points if not night[0] < p[2] < night[1]]
-    work_end = _work_end(unit)
 
     def leg(point):
         if unit.arrived_at is not None and point[2] < unit.arrived_at:

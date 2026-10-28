@@ -771,6 +771,20 @@ class DriverAlbaranCloseBaseView(View):
                     % unit.get_status_display().lower(),
                     409,
                 )
+            # S140: arriving in base before signing is not possible (the
+            # app used to send the time the albarán was opened).
+            # No se llega a base antes de firmar (la app mandaba la hora
+            # a la que se abrió el albarán).
+            work_end = unit.completed_at or unit.closed_at
+            if arrived_at and work_end and arrived_at < work_end:
+                return _error(
+                    "La hora de llegada a base (%s) es anterior a la firma "
+                    "(%s). Corrígela." % (
+                        timezone.localtime(arrived_at).strftime("%H:%M"),
+                        timezone.localtime(work_end).strftime("%H:%M"),
+                    ),
+                    400,
+                )
             if unit.km_start is not None and km_end < unit.km_start:
                 return _error(
                     "Los km de llegada (%s) no pueden ser menos que los de "
