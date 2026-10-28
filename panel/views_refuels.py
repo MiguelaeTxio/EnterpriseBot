@@ -940,11 +940,11 @@ class RefuelsVehicleUnitView(CompanyUserRequiredMixin, View):
         vehicle_ids = _selected_vehicle_ids(request)
         vehicles = GasoGesVehicle.objects.filter(
             pk__in=vehicle_ids, machine__isnull=False)
-        # S137: los que cambian de unidad rehacen su serie entera; antes
-        # solo se miraban los pendientes y los repostajes ya dudosos con
-        # la unidad vieja seguían dudosos (asistencia: de horas a km).
-        switched = list(vehicles.exclude(unit=unit).select_related(
-            "machine"))
+        # S137: los marcados rehacen su serie entera con la unidad, aunque
+        # ya la tuvieran; antes solo se miraban los pendientes y los
+        # repostajes ya dudosos con la unidad vieja seguían dudosos
+        # (asistencia: de horas a km). Así basta con el botón.
+        switched = list(vehicles.select_related("machine"))
         changed = vehicles.update(
             unit=unit, unit_source=GasoGesVehicle.UNIT_SOURCE_MANUAL)
         if not changed:
