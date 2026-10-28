@@ -422,7 +422,17 @@ def post_message(room, body, author=None, author_name="", kind=None,
         tone=tone or "",
     )
     message_pk = message.pk
-    transaction.on_commit(lambda: schedule_delivery(message_pk))
+    # S140: the message is already saved; if the notices cannot be
+    # scheduled (Redis or Celery down) it is logged, and whoever posted
+    # it does not get an error (Paloma, 28/10/2026: a 500 on uploading a
+    # service sheet stopped the service from starting).
+    # El mensaje ya está guardado; si no se pueden programar los avisos
+    # (Redis o Celery caídos) queda en el log y quien escribe no recibe
+    # un error (Paloma, 28/10/2026: un 500 al subir una hoja de servicio
+    # impidió arrancar el servicio).
+    transaction.on_commit(
+        lambda: schedule_delivery(message_pk), robust=True,
+    )
     return message
 
 

@@ -325,6 +325,18 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_ENABLE_UTC = True
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_DEFAULT_QUEUE = 'work_orders'
+# S140 (H37): no task result is ever read (no AsyncResult, .get(), chord
+# or group in the project). With results on, every process that sends a
+# task (web, bridge, worker) keeps its own pub/sub connection to Redis to
+# wait for results nobody reads; on 28/10/2026 Redis reached its client
+# limit ("max number of clients reached") and uploading a service sheet
+# to the room failed with a 500.
+# No se lee nunca el resultado de una tarea (ni AsyncResult, ni .get(),
+# ni chord ni group). Con resultados, cada proceso que manda una tarea
+# (web, bridge, worker) deja abierta su propia conexión pub/sub a Redis
+# para esperar resultados que nadie lee; el 28/10/2026 Redis llegó a su
+# límite de clientes y subir una hoja de servicio a la sala dio un 500.
+CELERY_TASK_IGNORE_RESULT = True
 
 # ---------------------------------------------------------------------------
 # Resiliencia ante caída del worker (S025) -- hallazgo real de Miguel
