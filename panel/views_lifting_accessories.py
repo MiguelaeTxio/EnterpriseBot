@@ -59,7 +59,10 @@ from panel.navigation_persistence import (
 
 SCREEN_KEY = "lifting_accessories"
 FILTER_KEYS = ("search", "type", "status", "sort")
-MANAGE_ROLES = {CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_DOCS_SUPERVISOR}
+MANAGE_ROLES = {
+    CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_ADMIN_SUPERVISOR,
+    CompanyUser.ROLE_DOCS_SUPERVISOR,
+}
 
 # Columnas ordenables -> función que da el valor de cada fila ya
 # calculada (_annotate). Todo el orden se aplica en Python: el volumen

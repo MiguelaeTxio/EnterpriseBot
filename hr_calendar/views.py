@@ -264,8 +264,8 @@ def build_calendar_context(request):
     cu = request.user.company_user
     company = cu.company
     is_elevated = cu.role in (
-        CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR,
-        CompanyUser.ROLE_DOCS_SUPERVISOR,
+        CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_ADMIN_SUPERVISOR,
+        CompanyUser.ROLE_SUPERVISOR, CompanyUser.ROLE_DOCS_SUPERVISOR,
     )
 
     operators = None
@@ -425,7 +425,8 @@ class VacationPeriodCreateView(SupervisorAccessMixin, View):
 
     POST /panel/vacaciones/crear/
         Body params:
-          operator_pk (int) — pk of the target CompanyUser (must belong to company).
+          operator_pk (int) — pk of the target CompanyUser (must belong to
+                              company).
           date_start  (str) — ISO date YYYY-MM-DD.
           date_end    (str) — ISO date YYYY-MM-DD.
     ---
@@ -437,7 +438,8 @@ class VacationPeriodCreateView(SupervisorAccessMixin, View):
 
     POST /panel/vacaciones/crear/
         Parámetros del cuerpo:
-          operator_pk (int) — pk del CompanyUser objetivo (debe pertenecer a empresa).
+          operator_pk (int) — pk del CompanyUser objetivo (debe pertenecer a
+                              empresa).
           date_start  (str) — fecha ISO YYYY-MM-DD.
           date_end    (str) — fecha ISO YYYY-MM-DD.
     """
@@ -527,7 +529,9 @@ class VacationPeriodCreateView(SupervisorAccessMixin, View):
                 "operator_pk=%r date_start=%r date_end=%r: %s",
                 operator_pk, date_start, date_end, exc, exc_info=True,
             )
-            if isinstance(exc, (MachineAsset.DoesNotExist, AbsenceCategory.DoesNotExist)):
+            if isinstance(exc, (
+                MachineAsset.DoesNotExist, AbsenceCategory.DoesNotExist,
+            )):
                 user_message = (
                     "No se ha podido registrar el periodo: faltan datos "
                     "base de configuración para esta empresa (centro de "
@@ -603,7 +607,8 @@ class VacationPeriodUpdateView(SupervisorAccessMixin, View):
         except VacationPeriod.DoesNotExist:
             django_messages.error(
                 request,
-                "Periodo de vacaciones no encontrado o no pertenece a esta empresa.",
+                "Periodo de vacaciones no encontrado o no pertenece a esta "
+                "empresa.",
             )
             return redirect(LIST_URL)
 
@@ -625,7 +630,9 @@ class VacationPeriodUpdateView(SupervisorAccessMixin, View):
             )
             return redirect(LIST_URL)
 
-        person_name = f"{period.person.given_name} {period.person.first_surname}".strip()
+        person_name = (
+            f"{period.person.given_name} {period.person.first_surname}"
+        ).strip()
 
         try:
             from hr_calendar.services import update_vacation_period
@@ -682,11 +689,14 @@ class VacationPeriodDeleteView(SupervisorAccessMixin, View):
         except VacationPeriod.DoesNotExist:
             django_messages.error(
                 request,
-                "Periodo de vacaciones no encontrado o no pertenece a esta empresa.",
+                "Periodo de vacaciones no encontrado o no pertenece a esta "
+                "empresa.",
             )
             return redirect(LIST_URL)
 
-        person_name = f"{period.person.given_name} {period.person.first_surname}".strip()
+        person_name = (
+            f"{period.person.given_name} {period.person.first_surname}"
+        ).strip()
 
         # Borra primero el WorkOrder fantasma completo (cascada Entry/
         # Line) -- si se dejara huérfano, dejaría de excluirse de los

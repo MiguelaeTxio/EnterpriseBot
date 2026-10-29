@@ -88,7 +88,7 @@
     {# Queda fuera del acordeón: siempre visible, sin colapsar.            #}
     {# Stays outside the accordion: always visible, never collapsed.        #}
     {# ------------------------------------------------------------------ #}
-    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
+    {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
         <li class="nav-item">
             <a class="nav-link {% if active_nav == 'dashboard' %}active{% endif %}"
                href="{% url 'panel:dashboard' %}">
@@ -156,7 +156,7 @@
                             <i class="bi bi-envelope"></i>Mi buzón
                         </a>
                     </li>
-                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
+                    {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'presence' %}active{% endif %}"
                                href="{% url 'panel:presence_status' %}">
@@ -180,7 +180,7 @@
     {# Section: Telephony — ADMIN only                                      #}
     {# Covers IVR (voice) and WhatsApp (messaging).                        #}
     {# ------------------------------------------------------------------ #}
-    {% if company_user.role == 'ADMIN' %}
+    {% if company_user.is_admin_level %}
         <li class="nav-item sidebar-accordion-section">
             <button class="nav-link sidebar-accordion-toggle w-100 text-start"
                     type="button"
@@ -271,7 +271,7 @@
     {# PDFs moved here from the old Taller subgroup (removed) 2026-07-10   #}
     {# at Miguel Ángel's request.                                          #}
     {# ------------------------------------------------------------------ #}
-    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
+    {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
         <li class="nav-item sidebar-accordion-section">
             <button class="nav-link sidebar-accordion-toggle w-100 text-start"
                     type="button"
@@ -319,7 +319,7 @@
                             <i class="bi bi-person-lines-fill"></i>Contactos
                         </a>
                     </li>
-                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
+                    {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'analytics_costs' %}active{% endif %}"
                                href="{% url 'analytics:analytics_costs' %}">
@@ -340,7 +340,7 @@
                             <i class="bi bi-calendar-week"></i>Horarios de jornada
                         </a>
                     </li>
-                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
+                    {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'analytics_lab' %}active{% endif %}"
                                href="{% url 'analytics:analytics_lab' %}">
@@ -426,7 +426,7 @@
     {# explicit correction from Miguel Ángel in S024, see                  #}
     {# ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md "Corrección de rumbo".      #}
     {# ------------------------------------------------------------------ #}
-    {% if company_user.role == 'ADMIN' or company_user.role == 'DOCS_SUPERVISOR' %}
+    {% if company_user.is_admin_level or company_user.role == 'DOCS_SUPERVISOR' %}
         <li class="nav-item">
             <a class="nav-link {% if active_nav == 'documentation_hub' %}active{% endif %}"
                href="{{ documentation_hub_href }}">
@@ -500,7 +500,7 @@
                             <small class="sidebar-subgroup-label">Centro de gasto</small>
                         </li>
                         {# S117: puerta "taller"; DOCS_SUPERVISOR entra por Documentación #}
-                        {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
+                        {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
                             <li class="nav-item">
                                 <a class="nav-link {% if active_nav == 'fleet' %}active{% endif %}"
                                    href="{% url 'panel:fleet_list' %}">
@@ -537,11 +537,11 @@
 
                     {# --- Subgrupo: Almacén (gate ADMIN/SUPERVISOR/WORKSHOPBOSS/WORKSHOP -- unión de sus 4 ítems, cada uno con su propio gate interior sin cambios) --- #}
                     {# Orden alfabético dentro del subgrupo (a petición de Miguel Ángel, 2026-07-15). #}
-                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'WORKSHOP' %}
+                    {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'WORKSHOP' %}
                         <li class="nav-item px-2 pt-2">
                             <small class="sidebar-subgroup-label">Almacén</small>
                         </li>
-                        {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
+                        {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
                             <li class="nav-item">
                                 <a class="nav-link {% if active_nav == 'delivery_notes_admin' %}active{% endif %}"
                                    href="{% url 'delivery_notes:list' %}">
@@ -549,7 +549,7 @@
                                 </a>
                             </li>
                         {% endif %}
-                        {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOP' or company_user.role == 'WORKSHOPBOSS' %}
+                        {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOP' or company_user.role == 'WORKSHOPBOSS' %}
                             <li class="nav-item">
                                 <a class="nav-link {% if active_nav == 'workorder_spare_parts_warehouse' %}active{% endif %}"
                                    href="{% url 'workorder_spare_parts:warehouse_list' %}">
@@ -557,7 +557,7 @@
                                 </a>
                             </li>
                         {% endif %}
-                        {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
+                        {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' %}
                             <li class="nav-item">
                                 <a class="nav-link {% if active_nav == 'workorder_spare_parts_catalog' %}active{% endif %}"
                                    href="{% url 'workorder_spare_parts:catalog_list' %}">
@@ -565,7 +565,7 @@
                                 </a>
                             </li>
                         {% endif %}
-                        {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
+                        {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
                             <li class="nav-item">
                                 <a class="nav-link {% if active_nav == 'suppliers' %}active{% endif %}"
                                    href="{% url 'spare_parts:supplier_list' %}">
@@ -597,7 +597,7 @@
                     {# replaces the old Partes Digitales, Mis partes and operator          #}
                     {# Historial views, removed 2026-07-10 at Miguel Ángel's explicit      #}
                     {# request (no leftovers: view + template + URL + nav entry gone).     #}
-                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'WORKSHOP' %}
+                    {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'WORKSHOP' %}
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'work_order_admin_history' %}active{% endif %}"
                                href="{% url 'panel:work_order_admin_history' %}">
@@ -607,7 +607,7 @@
                     {% endif %}
                     {# Subir albarán de proveedor — WORKSHOP y ADMIN (Hito 10, S003).      #}
                     {# Upload supplier delivery note — WORKSHOP and ADMIN (Hito 10, S003). #}
-                    {% if company_user.role == 'WORKSHOP' or company_user.role == 'ADMIN' %}
+                    {% if company_user.role == 'WORKSHOP' or company_user.is_admin_level %}
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'spare_parts_upload' %}active{% endif %}"
                                href="{% url 'spare_parts:delivery_note_upload' %}">
@@ -623,7 +623,7 @@
                     {# 2026-07-10 at Miguel Ángel's request. Opened to WORKSHOP the same     #}
                     {# day (same request): operators must be able to create tickets and      #}
                     {# close their own from the panel, in addition to via work orders.       #}
-                    {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'WORKSHOP' %}
+                    {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' or company_user.role == 'WORKSHOP' %}
                         <li class="nav-item">
                             <a class="nav-link {% if active_nav == 'breakdown_ticket_list' %}active{% endif %}"
                                href="{% url 'panel:breakdown_ticket_list' %}">
@@ -640,7 +640,7 @@
     {# Section: ASISTENCIA Budgets — ASSISTANCE and ADMIN roles            #}
     {# Hito 16 (2026-05-26)                                               #}
     {# ------------------------------------------------------------------ #}
-    {% if company_user.role == 'ASSISTANCE' or company_user.role == 'ASSIST_SUPERVISOR' or company_user.role == 'ADMIN' %}
+    {% if company_user.role == 'ASSISTANCE' or company_user.role == 'ASSIST_SUPERVISOR' or company_user.role == 'ADMIN' or company_user.role == 'ADMIN_SUPERVISOR' %}
         <li class="nav-item sidebar-accordion-section">
             <button class="nav-link sidebar-accordion-toggle w-100 text-start"
                     type="button"
@@ -658,6 +658,21 @@
                     {# Orden alfabético dentro de la sección (a petición de #}
                     {# Miguel Ángel, 2026-07-15). Los gates de cada ítem no #}
                     {# han cambiado, solo el orden.                         #}
+                    {# S141: el supervisor de administración, de Asistencia, solo ve Bases y Calendarios laborales. #}
+                    {% if company_user.role == 'ADMIN_SUPERVISOR' %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'budgets_bases' %}active{% endif %}"
+                               href="{% url 'budgets:base_global' %}">
+                                <i class="bi bi-geo-alt-fill"></i>Bases
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if active_nav == 'budgets_calendars' %}active{% endif %}"
+                               href="{% url 'budgets:base_calendar_list' %}">
+                                <i class="bi bi-calendar3"></i>Calendarios laborales
+                            </a>
+                        </li>
+                    {% endif %}
                     {# Aseguradoras / Bases / Conceptos / Calendarios / Franja nocturna — ADMIN y ASSIST_SUPERVISOR. #}
                     {# Insurers / Bases / Concepts / Calendars / Night-shift window — ADMIN and ASSIST_SUPERVISOR. #}
                     {% if company_user.role == 'ADMIN' or company_user.role == 'ASSIST_SUPERVISOR' %}

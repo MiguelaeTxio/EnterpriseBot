@@ -72,7 +72,7 @@ def is_unrestricted(company_user) -> bool:
 
     Si este usuario se salta las concesiones por completo.
     """
-    return company_user.role == CompanyUser.ROLE_ADMIN
+    return company_user.role in CompanyUser.ADMIN_ROLES
 
 
 def grants_for(company_user, bucket=None):

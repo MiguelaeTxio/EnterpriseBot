@@ -324,7 +324,7 @@
          id="pane-pending" role="tabpanel" aria-labelledby="tab-pending">
 
         {# Duplicate search — ADMIN / SUPERVISOR only                   #}
-        {% if company_user.role == 'ADMIN' or company_user.role == 'SUPERVISOR' %}
+        {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' %}
         <div class="d-flex justify-content-end mb-3">
             <button type="button"
                     class="btn btn-outline-warning btn-sm"

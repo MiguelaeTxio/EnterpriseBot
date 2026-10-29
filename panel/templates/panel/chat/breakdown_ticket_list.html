@@ -231,7 +231,7 @@
         <small class="text-muted fw-normal ms-2">{{ company_user.company.name }}</small>
       </span>
       <div class="d-flex align-items-center gap-1">
-        {% if company_user.role == "ADMIN" or company_user.role == "SUPERVISOR" or company_user.role == "WORKSHOPBOSS" or company_user.role == "WORKSHOP" %}
+        {% if company_user.is_admin_level or company_user.role == "SUPERVISOR" or company_user.role == "WORKSHOPBOSS" or company_user.role == "WORKSHOP" %}
         <a href="{% url 'panel:breakdown_ticket_create' %}" class="btn btn-sm btn-primary">
           <i class="bi bi-plus-lg me-1"></i>Nuevo ticket
         </a>
@@ -362,7 +362,7 @@
   {# assigned to a WORKSHOPBOSS). See operators_qs in                  #}
   {# chat/views_tickets.py, BreakdownTicketListView.get().             #}
   {# ================================================================ #}
-  {% if company_user.role == "ADMIN" or company_user.role == "SUPERVISOR" or company_user.role == "WORKSHOPBOSS" or company_user.role == "WORKSHOP" %}
+  {% if company_user.is_admin_level or company_user.role == "SUPERVISOR" or company_user.role == "WORKSHOPBOSS" or company_user.role == "WORKSHOP" %}
   <div id="tk-bottom">
 
     {# ---- Operarios ---- #}

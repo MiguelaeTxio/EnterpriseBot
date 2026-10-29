@@ -24,7 +24,6 @@ from spare_parts.gcs_service import (
 from work_order_processor.models import (
     FaultCategory,
     FaultSubcategory,
-    WorkOrderEntry,
     WorkOrderEntryLine,
 )
 
@@ -90,6 +89,7 @@ _FAULT_SUBCAT_LABELS[""] = "—"
 # ---------------------------------------------------------------------------
 
 _DEFAULT_DAYS = 365
+
 
 class MachineHistoryView(CompanyUserRequiredMixin, View):
     """
@@ -354,6 +354,7 @@ class MachineHistoryView(CompanyUserRequiredMixin, View):
             "documents": documents,
             "can_upload_documents": company_user.role in {
                 company_user.ROLE_DOCS_SUPERVISOR, company_user.ROLE_ADMIN,
+                company_user.ROLE_ADMIN_SUPERVISOR,
             },
             # Summary
             "total_intervenciones": total_intervenciones,
@@ -366,6 +367,7 @@ class MachineHistoryView(CompanyUserRequiredMixin, View):
             # abierta a todos los roles.
             "can_export": company_user.role in {
                 company_user.ROLE_ADMIN,
+                company_user.ROLE_ADMIN_SUPERVISOR,
                 company_user.ROLE_SUPERVISOR,
                 company_user.ROLE_WORKSHOPBOSS,
             },
@@ -416,7 +418,9 @@ class MachineHistoryView(CompanyUserRequiredMixin, View):
         generar un informe descargable se trata como acción de reporting.
         """
         import io
-        from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden
+        from django.http import (
+            HttpResponse, HttpResponseBadRequest, HttpResponseForbidden,
+        )
         from django.utils.timezone import now as tz_now
         from work_order_processor.models import ExportTemplate, WorkOrder
         from work_order_processor.services import (
@@ -427,7 +431,8 @@ class MachineHistoryView(CompanyUserRequiredMixin, View):
         cu = request.user.company_user
 
         if cu.role not in (
-            cu.ROLE_ADMIN, cu.ROLE_SUPERVISOR, cu.ROLE_WORKSHOPBOSS,
+            cu.ROLE_ADMIN, cu.ROLE_ADMIN_SUPERVISOR, cu.ROLE_SUPERVISOR,
+            cu.ROLE_WORKSHOPBOSS,
         ):
             return HttpResponseForbidden("Acción no disponible para tu rol.")
 
@@ -494,10 +499,14 @@ class MachineHistoryView(CompanyUserRequiredMixin, View):
                 f"{tz_now().strftime('%Y%m%d_%H%M%S')}.pdf"
             )
             response = HttpResponse(pdf_bytes, content_type="application/pdf")
-            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+            response["Content-Disposition"] = (
+                f'attachment; filename="{filename}"'
+            )
             logger.info(
-                "# [MACHINE HISTORY EXPORT] PDF '%s' máquina=%s (%d partes) por %s.",
-                template.name, selected_machine.code, qs.count(), cu.user.username,
+                "# [MACHINE HISTORY EXPORT] PDF '%s' máquina=%s (%d partes) "
+                "por %s.",
+                template.name, selected_machine.code, qs.count(),
+                cu.user.username,
             )
             return response
 
@@ -511,11 +520,15 @@ class MachineHistoryView(CompanyUserRequiredMixin, View):
         )
         response = HttpResponse(
             buf.getvalue(),
-            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            content_type=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
         )
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         logger.info(
-            "# [MACHINE HISTORY EXPORT] Excel '%s' máquina=%s (%d partes) por %s.",
+            "# [MACHINE HISTORY EXPORT] Excel '%s' máquina=%s (%d partes) "
+            "por %s.",
             template.name, selected_machine.code, qs.count(), cu.user.username,
         )
         return response
@@ -564,5 +577,3 @@ def django_max(field):
     """
     from django.db.models import Max
     return Max(field)
-
-

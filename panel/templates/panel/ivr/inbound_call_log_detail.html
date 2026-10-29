@@ -23,7 +23,7 @@
     {% url 'panel:inbound_call_log_list' as back_fallback %}<a href="{{ panel_back_url|default:back_fallback }}" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-arrow-left me-1"></i>Volver al listado
     </a>
-    {% if company_user.role == "ADMIN" %}
+    {% if company_user.is_admin_level %}
     <form method="post" action="{% url 'panel:inbound_call_log_delete' pk=log.pk %}"
           onsubmit="return confirm('¿Eliminar este registro de llamada? Esta acción no se puede deshacer.');">
       {% csrf_token %}

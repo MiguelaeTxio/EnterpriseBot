@@ -48,7 +48,7 @@
     <span class="text-sm">
         Se han detectado <strong>{{ duplicate_groups|length }}</strong>
         grupo(s) con entradas duplicadas entre distintos partes.
-        {% if company_user.role == 'ADMIN' %}
+        {% if company_user.is_admin_level %}
         El botón <strong>Eliminar</strong> borra el parte antiguo en cascada (acción irreversible).
         {% else %}
         Contacta con un ADMIN para resolver los duplicados.
@@ -91,7 +91,7 @@
                         <th class="text-center">Estado</th>
                         <th class="text-center">Revisado</th>
                         <th class="text-center">Rol</th>
-                        {% if company_user.role == 'ADMIN' %}
+                        {% if company_user.is_admin_level %}
                         <th class="text-center pe-3">Acción</th>
                         {% endif %}
                     </tr>
@@ -131,7 +131,7 @@
                                 <i class="bi bi-shield-check me-1"></i>Conservar
                             </span>
                         </td>
-                        {% if company_user.role == 'ADMIN' %}
+                        {% if company_user.is_admin_level %}
                         <td class="text-center pe-3">
                             {# No action for keeper row / Sin acción para la fila conservada #}
                             <span class="text-muted text-sm">—</span>
@@ -170,7 +170,7 @@
                                 <i class="bi bi-trash me-1"></i>Duplicado
                             </span>
                         </td>
-                        {% if company_user.role == 'ADMIN' %}
+                        {% if company_user.is_admin_level %}
                         <td class="text-center pe-3">
                             {# ------------------------------------------ #}
                             {# Delete button with confirmation modal        #}
@@ -207,7 +207,7 @@
 {# Shown only when company_user is ADMIN.                               #}
 {# Solo visible cuando company_user es ADMIN.                           #}
 {# ================================================================== #}
-{% if company_user.role == 'ADMIN' and not no_duplicates %}
+{% if company_user.is_admin_level and not no_duplicates %}
 <div class="modal fade" id="dupDeleteModal" tabindex="-1"
      aria-labelledby="dupDeleteModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">

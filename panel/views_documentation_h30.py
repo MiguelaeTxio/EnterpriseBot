@@ -537,15 +537,16 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
         # H30 (S126): "Bandeja de entrada" solo para quien puede subir
         # documentación (mismos roles que DocsUploadAccessMixin).
         can_use_inbox = request.user.company_user.role in (
-            CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_DOCS_SUPERVISOR,
+            CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_ADMIN_SUPERVISOR,
+            CompanyUser.ROLE_DOCS_SUPERVISOR,
         )
         if not can_use_inbox:
             valid_tabs = tuple(t for t in valid_tabs if t != "bandeja")
         # H24 (S129): "Fichajes" lleva posiciones GPS -- solo los roles
         # de SupervisorAccessMixin.
         can_view_clock_events = request.user.company_user.role in (
-            CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR,
-            CompanyUser.ROLE_WORKSHOPBOSS,
+            CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_ADMIN_SUPERVISOR,
+            CompanyUser.ROLE_SUPERVISOR, CompanyUser.ROLE_WORKSHOPBOSS,
         )
         if not can_view_clock_events:
             valid_tabs = tuple(t for t in valid_tabs if t != "fichajes")
@@ -755,7 +756,7 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
     roles que FleetManageAccessMixin), lectura para el resto.
     """
 
-    EDIT_ROLES = {"ADMIN", "DOCS_SUPERVISOR"}
+    EDIT_ROLES = {"ADMIN", "ADMIN_SUPERVISOR", "DOCS_SUPERVISOR"}
 
     def _can_edit(self, request):
         return request.user.company_user.role in self.EDIT_ROLES
@@ -1246,13 +1247,14 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
         # H31 (S129): exportar a Excel con plantilla, mismos roles que
         # la exportación de partes (lleva DNI, dirección y n.º de SS).
         ctx["can_export_personal"] = request.user.company_user.role in (
-            CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR,
-            CompanyUser.ROLE_WORKSHOPBOSS,
+            CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_ADMIN_SUPERVISOR,
+            CompanyUser.ROLE_SUPERVISOR, CompanyUser.ROLE_WORKSHOPBOSS,
         )
         # H31 (S136): "Volver a sacar la foto" masivo, mismos roles que
         # la gestión de la foto en la ficha.
         ctx["can_manage_photo"] = request.user.company_user.role in (
             CompanyUser.ROLE_DOCS_SUPERVISOR, CompanyUser.ROLE_ADMIN,
+            CompanyUser.ROLE_ADMIN_SUPERVISOR,
         )
         return render(
             request, "panel/documentation_h30/_personal_pane.html", ctx
@@ -2120,8 +2122,8 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         from django.utils import timezone as _tz_clk
         _today_clk = _tz_clk.localdate()
         can_view_clock = request.user.company_user.role in (
-            CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR,
-            CompanyUser.ROLE_WORKSHOPBOSS,
+            CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_ADMIN_SUPERVISOR,
+            CompanyUser.ROLE_SUPERVISOR, CompanyUser.ROLE_WORKSHOPBOSS,
         )
         return render(
             request,
@@ -2182,6 +2184,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
                 in (
                     CompanyUser.ROLE_DOCS_SUPERVISOR,
                     CompanyUser.ROLE_ADMIN,
+                    CompanyUser.ROLE_ADMIN_SUPERVISOR,
                 ),
                 "doc_types": doc_types,
                 "epi_deliveries": epi_deliveries,
@@ -3885,6 +3888,7 @@ class DocumentDownloadPickerView(CompanyUserRequiredMixin, View):
                 "can_trash": request.user.company_user.role in (
                     CompanyUser.ROLE_DOCS_SUPERVISOR,
                     CompanyUser.ROLE_ADMIN,
+                    CompanyUser.ROLE_ADMIN_SUPERVISOR,
                 ),
                 "trash_url": reverse(url_name, args=[pk]),
             },

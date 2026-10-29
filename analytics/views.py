@@ -337,7 +337,10 @@ def _period_label(work_period):
     """
     if work_period.label:
         return work_period.label
-    end = work_period.end_date.isoformat() if work_period.end_date else "abierto"
+    end = (
+        work_period.end_date.isoformat() if work_period.end_date
+        else "abierto"
+    )
     return f"{work_period.start_date.isoformat()} — {end}"
 
 
@@ -496,7 +499,6 @@ class AnalyticsLabView(SupervisorAccessMixin, View):
     """
 
     template_name = "panel/analytics_lab.html"
-
 
     def get(self, request):
         """
@@ -843,14 +845,14 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
     """
 
     _DEFAULT_CHART = {
-        "d1":  "bar",
-        "d2":  "bar",
-        "d3":  "pie",
-        "d4":  "bar",
-        "d6":  "pie",
-        "d7":  "pie",
-        "d8":  "bar",
-        "d9":  "pie",
+        "d1": "bar",
+        "d2": "bar",
+        "d3": "pie",
+        "d4": "bar",
+        "d6": "pie",
+        "d7": "pie",
+        "d8": "bar",
+        "d9": "pie",
         "d10": "bar",
         "d11": "pie",
         "d12": "pie",
@@ -1324,80 +1326,6 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
         )
         total_hours = sum(hours_series)
         total_parts = sum(count_series)
-        # When a specific machine is selected, show aggregated
-        # series. When "all" is selected, break down by machine.
-        # Con maquina especifica: serie agregada. Con "Todas":
-        # desglosar por maquina.
-        if machine:
-            chart_series = [
-                {
-                    "name": "Horas de mano de obra",
-                    "data": hours_series,
-                },
-                {"name": "Intervenciones", "data": count_series},
-            ]
-            table_cols = [
-                "Periodo", "Horas de mano de obra",
-                "Intervenciones",
-            ]
-            table_rows_d2 = [
-                [b, round(bucket_hours.get(b, 0.0), 2),
-                 bucket_counts.get(b, 0)]
-                for b in all_buckets
-            ]
-        else:
-            # Breakdown by machine -- Desglose por maquina
-            all_machines = list(
-                MachineAsset.objects
-                .filter(
-                    company=company,
-                    workorderentryline__entry__work_date__gte=(
-                        date_from
-                    ),
-                    workorderentryline__entry__work_date__lte=(
-                        date_to
-                    ),
-                )
-                .distinct()
-                .order_by("code")
-            )
-            m_bucket_hours = defaultdict(
-                lambda: defaultdict(float)
-            )
-            for line in lines_qs.select_related(
-                "entry", "machine_asset"
-            ):
-                m_pk = line.machine_asset.pk
-                b = self._bucket(
-                    line.entry.work_date, granularity
-                )
-                m_bucket_hours[m_pk][b] += float(
-                    line.delta_hours or 0
-                )
-            chart_series = [
-                {
-                    "name": m.code,
-                    "data": [
-                        round(
-                            m_bucket_hours[m.pk].get(b, 0.0), 2
-                        )
-                        for b in all_buckets
-                    ],
-                }
-                for m in all_machines
-            ]
-            table_cols = [
-                "Maquina", "Periodo", "Horas de mano de obra",
-            ]
-            table_rows_d2 = [
-                [
-                    m.code, b,
-                    round(m_bucket_hours[m.pk].get(b, 0.0), 2),
-                ]
-                for m in all_machines
-                for b in all_buckets
-                if m_bucket_hours[m.pk].get(b, 0.0) > 0
-            ]
         return {
             "ok": True,
             "chart": {
@@ -1891,24 +1819,24 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
     # Mapeo tipo de campo -> codigo de dimension legacy
     # ----------------------------------------------------------
     _FIELD_TYPE_TO_DIM = {
-        "worker":            "d1",
-        "machine":           "d2",
-        "fault_category":    "d3",
-        "period":            "d4",
+        "worker": "d1",
+        "machine": "d2",
+        "fault_category": "d3",
+        "period": "d4",
         "fault_subcategory": "d6",
-        "machine_family":    "d7",
-        "machine_type":      "d8",
+        "machine_family": "d7",
+        "machine_type": "d8",
         "work_order_source": "d9",
-        "or_val":            "d10",
-        "has_diet":          "d11",
-        "is_on_site":        "d12",
-        "has_ticket":        "d13",
-        "reviewed":          "d14",
-        "no_lunch_break":    "d15",
-        "machine_company":   "d16",
-        "ordinary_hours":    "d18",
-        "extra_hours":       "d19",
-        "cost":              "d20",
+        "or_val": "d10",
+        "has_diet": "d11",
+        "is_on_site": "d12",
+        "has_ticket": "d13",
+        "reviewed": "d14",
+        "no_lunch_break": "d15",
+        "machine_company": "d16",
+        "ordinary_hours": "d18",
+        "extra_hours": "d19",
+        "cost": "d20",
     }
 
     def get(self, request):
@@ -1979,7 +1907,10 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
                     fields_raw, exc, exc_info=True,
                 )
                 return JsonResponse(
-                    {"ok": False, "error": "Parámetros de consulta inválidos."},
+                    {
+                        "ok": False,
+                        "error": "Parámetros de consulta inválidos.",
+                    },
                     status=400,
                 )
             # Filter out empty types -- Filtrar tipos vacios
@@ -2182,24 +2113,24 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
             # grouping dimensions
 
         # Determine group-by dimensions -- Determinar dimensiones de agrupacion
-        group_by_worker         = "worker"            in type_set
-        group_by_machine        = "machine"           in type_set
-        group_by_fault          = "fault_category"    in type_set
-        group_by_fault_sub      = "fault_subcategory" in type_set
-        group_by_machine_family = "machine_family"    in type_set
-        group_by_machine_type   = "machine_type"      in type_set
-        group_by_source         = "work_order_source" in type_set
-        group_by_or_val         = "or_val"            in type_set
-        group_by_has_diet       = "has_diet"          in type_set
-        group_by_is_on_site     = "is_on_site"        in type_set
-        group_by_has_ticket     = "has_ticket"        in type_set
-        group_by_reviewed       = "reviewed"          in type_set
-        group_by_no_lunch       = "no_lunch_break"    in type_set
-        group_by_mach_company   = "machine_company"   in type_set
+        "worker" in type_set
+        "machine" in type_set
+        "fault_category" in type_set
+        "fault_subcategory" in type_set
+        "machine_family" in type_set
+        "machine_type" in type_set
+        "work_order_source" in type_set
+        "or_val" in type_set
+        "has_diet" in type_set
+        "is_on_site" in type_set
+        "has_ticket" in type_set
+        "reviewed" in type_set
+        "no_lunch_break" in type_set
+        "machine_company" in type_set
         show_ordinary_hours = "ordinary_hours" in type_set  # metric col only
-        show_extra_hours    = "extra_hours"    in type_set  # metric col only
-        show_cost           = "cost"           in type_set  # metric col only
-        group_by_period         = "period"            in type_set
+        show_extra_hours = "extra_hours" in type_set  # metric col only
+        show_cost = "cost" in type_set  # metric col only
+        group_by_period = "period" in type_set
 
         lines_qs = (
             WorkOrderEntryLine.objects
@@ -2366,18 +2297,22 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
         )
 
         # Helper: extract grouping value for a field type from a line
-        # Helper: extraer valor de agrupacion para un tipo de campo desde una linea
+        # Helper: extraer valor de agrupacion para un tipo de campo desde una
+        # linea
         _SRC_LABELS = {
             "PDF_UPLOAD": "PDF",
-            "DIGITAL":    "Digital",
-            "GENERATED":  "Generado",
+            "DIGITAL": "Digital",
+            "GENERATED": "Generado",
         }
 
         def _field_value(ftype, line):
             if ftype == "worker":
                 return line.entry.worker_name or "Desconocido"
             if ftype == "machine":
-                return line.machine_asset.code if line.machine_asset else "Sin maquina"
+                return (
+                    line.machine_asset.code if line.machine_asset
+                    else "Sin maquina"
+                )
             if ftype == "fault_category":
                 return (
                     self._translate_fault_cat(line.fault_category)
@@ -2402,7 +2337,10 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
                     else "Sin tipo"
                 )
             if ftype == "work_order_source":
-                src = line.entry.work_order.source if line.entry.work_order else ""
+                src = (
+                    line.entry.work_order.source if line.entry.work_order
+                    else ""
+                )
                 return _SRC_LABELS.get(src, src or "Desconocido")
             if ftype == "or_val":
                 return line.or_val or "Sin O.R."
@@ -2411,9 +2349,15 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
             if ftype == "is_on_site":
                 return "In situ" if line.is_on_site else "En taller"
             if ftype == "has_ticket":
-                return "Con ticket" if line.breakdown_ticket_id else "Sin ticket"
+                return (
+                    "Con ticket" if line.breakdown_ticket_id
+                    else "Sin ticket"
+                )
             if ftype == "reviewed":
-                return "Revisado" if line.entry.work_order.reviewed else "Sin revisar"
+                return (
+                    "Revisado" if line.entry.work_order.reviewed
+                    else "Sin revisar"
+                )
             if ftype == "no_lunch_break":
                 return (
                     "Sin pausa comida"
@@ -2432,7 +2376,8 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
             return None
 
         # Ordered field types that produce grouping keys (metrics excluded)
-        # Tipos de campo ordenados que producen claves de agrupacion (metricas excluidas)
+        # Tipos de campo ordenados que producen claves de agrupacion
+        # (metricas excluidas)
         _METRIC_TYPES = frozenset(("ordinary_hours", "extra_hours", "cost"))
         ordered_dim_types = [
             f["type"] for f in fields
@@ -2452,7 +2397,7 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
             if total_day > 0:
                 if total_day > 8.0:
                     prop = line_hours / total_day
-                    agg[key]["extra"]    += prop * (total_day - 8.0)
+                    agg[key]["extra"] += prop * (total_day - 8.0)
                     agg[key]["ordinary"] += prop * 8.0
                 else:
                     agg[key]["ordinary"] += line_hours
@@ -2461,29 +2406,32 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
 
         # Build column headers in field order -- Cabeceras en orden de campos
         _DIM_LABELS = {
-            "worker":            "Operario",
-            "machine":           "Maquina / CdG",
-            "fault_category":    "Familia averia",
+            "worker": "Operario",
+            "machine": "Maquina / CdG",
+            "fault_category": "Familia averia",
             "fault_subcategory": "Subcategoria averia",
-            "machine_family":    "Familia flota",
-            "machine_type":      "Tipo maquina",
+            "machine_family": "Familia flota",
+            "machine_type": "Tipo maquina",
             "work_order_source": "Origen parte",
-            "or_val":            "O.R.",
-            "has_diet":          "Dieta",
-            "is_on_site":        "In situ",
-            "has_ticket":        "Ticket averia",
-            "reviewed":          "Revisado",
-            "no_lunch_break":    "Pausa comida",
-            "machine_company":   "Empresa maquina",
-            "period":            "Periodo",
+            "or_val": "O.R.",
+            "has_diet": "Dieta",
+            "is_on_site": "In situ",
+            "has_ticket": "Ticket averia",
+            "reviewed": "Revisado",
+            "no_lunch_break": "Pausa comida",
+            "machine_company": "Empresa maquina",
+            "period": "Periodo",
         }
         col_labels = [
             _DIM_LABELS[ft] for ft in ordered_dim_types if ft in _DIM_LABELS
         ]
         col_labels += ["Horas trabajadas", "Intervenciones"]
-        if show_ordinary_hours: col_labels.append("Horas ordinarias")
-        if show_extra_hours:    col_labels.append("Horas extra")
-        if show_cost:           col_labels.append("Coste (EUR)")
+        if show_ordinary_hours:
+            col_labels.append("Horas ordinarias")
+        if show_extra_hours:
+            col_labels.append("Horas extra")
+        if show_cost:
+            col_labels.append("Coste (EUR)")
 
         # Sort keys -- Ordenar claves
         sorted_keys = sorted(agg.keys())
@@ -2566,30 +2514,33 @@ class AnalyticsLabDataView(SupervisorAccessMixin, View):
 
         # Build cross title in field order -- Titulo en orden de campos
         _TITLE_LABELS = {
-            "worker":            "Operario",
-            "machine":           "Maquina",
-            "fault_category":    "Familia averia",
+            "worker": "Operario",
+            "machine": "Maquina",
+            "fault_category": "Familia averia",
             "fault_subcategory": "Subcategoria averia",
-            "machine_family":    "Familia flota",
-            "machine_type":      "Tipo maquina",
+            "machine_family": "Familia flota",
+            "machine_type": "Tipo maquina",
             "work_order_source": "Origen parte",
-            "or_val":            "O.R.",
-            "has_diet":          "Dieta",
-            "is_on_site":        "In situ",
-            "has_ticket":        "Ticket averia",
-            "reviewed":          "Revisado",
-            "no_lunch_break":    "Pausa comida",
-            "machine_company":   "Empresa maquina",
-            "period":            "Periodo",
+            "or_val": "O.R.",
+            "has_diet": "Dieta",
+            "is_on_site": "In situ",
+            "has_ticket": "Ticket averia",
+            "reviewed": "Revisado",
+            "no_lunch_break": "Pausa comida",
+            "machine_company": "Empresa maquina",
+            "period": "Periodo",
         }
         dim_names = [
             _TITLE_LABELS[ft]
             for ft in ordered_dim_types
             if ft in _TITLE_LABELS
         ]
-        if show_ordinary_hours: dim_names.append("Horas ordinarias")
-        if show_extra_hours:    dim_names.append("Horas extra")
-        if show_cost:           dim_names.append("Coste (EUR)")
+        if show_ordinary_hours:
+            dim_names.append("Horas ordinarias")
+        if show_extra_hours:
+            dim_names.append("Horas extra")
+        if show_cost:
+            dim_names.append("Coste (EUR)")
         title = " x ".join(dim_names) + f" ({date_from} / {date_to})"
 
         summary = {
@@ -2933,7 +2884,10 @@ class AnalyticsProfileUpdateView(SupervisorAccessMixin, View):
                 nombre=nuevo_nombre,
             ).exclude(pk=pk).exists():
                 return JsonResponse(
-                    {"error": f"Ya existe una plantilla con el nombre '{nuevo_nombre}'."},
+                    {"error": (
+                        "Ya existe una plantilla con el nombre "
+                        f"'{nuevo_nombre}'."
+                    )},
                     status=409,
                 )
             profile.nombre = nuevo_nombre
@@ -3010,7 +2964,10 @@ class AnalyticsProfileCloneView(SupervisorAccessMixin, View):
             nombre=nuevo_nombre,
         ).exists():
             return JsonResponse(
-                {"error": f"Ya existe una plantilla con el nombre '{nuevo_nombre}'."},
+                {"error": (
+                    "Ya existe una plantilla con el nombre "
+                    f"'{nuevo_nombre}'."
+                )},
                 status=409,
             )
 
@@ -3634,6 +3591,7 @@ class BotManagementView(CompanyUserRequiredMixin, View):
 
     ALLOWED_ROLES = {
         CompanyUser.ROLE_ADMIN,
+        CompanyUser.ROLE_ADMIN_SUPERVISOR,
         CompanyUser.ROLE_SUPERVISOR,
         CompanyUser.ROLE_WORKSHOPBOSS,
         CompanyUser.ROLE_WORKSHOP,
@@ -3651,7 +3609,8 @@ class BotManagementView(CompanyUserRequiredMixin, View):
         """
         role = company_user.role
         if role in (
-            CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_SUPERVISOR,
+            CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_ADMIN_SUPERVISOR,
+            CompanyUser.ROLE_SUPERVISOR,
         ):
             return None
         if role == CompanyUser.ROLE_WORKSHOPBOSS:
@@ -3725,7 +3684,7 @@ class BotManagementView(CompanyUserRequiredMixin, View):
         if company_user.role not in self.ALLOWED_ROLES:
             return redirect("panel:dashboard")
 
-        is_admin = company_user.role == CompanyUser.ROLE_ADMIN
+        is_admin = company_user.role in CompanyUser.ADMIN_ROLES
         is_supervisor = (
             company_user.role == CompanyUser.ROLE_SUPERVISOR
         )
@@ -3797,7 +3756,7 @@ class BotManagementView(CompanyUserRequiredMixin, View):
         direct_broadcast. Solo el rol ADMIN puede alcanzar este handler.
         """
         company_user = request.user.company_user
-        is_admin = company_user.role == CompanyUser.ROLE_ADMIN
+        is_admin = company_user.role in CompanyUser.ADMIN_ROLES
         if not is_admin:
             return redirect("analytics:bot_management")
 
@@ -4096,6 +4055,3 @@ class BotManagementView(CompanyUserRequiredMixin, View):
 
         django_messages.warning(request, "Accion no reconocida.")
         return redirect("analytics:bot_management")
-
-
-

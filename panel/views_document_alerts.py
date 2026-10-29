@@ -72,6 +72,7 @@ MONTH_NAMES = (
 DOC_REQUEST_ROLES = {
     CompanyUser.ROLE_DOCS_SUPERVISOR,
     CompanyUser.ROLE_ADMIN,
+    CompanyUser.ROLE_ADMIN_SUPERVISOR,
 }
 
 
@@ -228,7 +229,7 @@ def _can_edit_scope(editor, supervisor):
     """
     return (
         editor.pk == supervisor.pk
-        or editor.role == CompanyUser.ROLE_ADMIN
+        or editor.role in CompanyUser.ADMIN_ROLES
     )
 
 

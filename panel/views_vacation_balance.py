@@ -80,6 +80,7 @@ SCREEN_KEY = "vacation_balance"
 FILTER_KEYS = ("search", "active", "company", "section", "year", "sort")
 MANAGE_ROLES = {
     CompanyUser.ROLE_ADMIN,
+    CompanyUser.ROLE_ADMIN_SUPERVISOR,
     CompanyUser.ROLE_SUPERVISOR,
     CompanyUser.ROLE_WORKSHOPBOSS,
 }

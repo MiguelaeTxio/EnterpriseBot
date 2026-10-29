@@ -2,13 +2,10 @@
 
 
 from django.contrib import messages as django_messages
-from django.views.generic import View, ListView
+from django.views.generic import View
 from django.shortcuts import redirect, render
 from django.db.models import Q, Prefetch
 from django.utils.timezone import now
-from django.forms import modelformset_factory
-from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator
 
 from panel.mixins import (
     SupervisorAccessMixin,
@@ -20,7 +17,6 @@ from panel.mixins import (
 from ivr_config.models import (
     CompanyUser,
     PresenceStatus,
-    Section,
 )
 from work_order_processor.models import (
     SparePartLine,
@@ -29,17 +25,11 @@ from work_order_processor.models import (
     WorkOrderEntry,
     WorkOrderEntryLine,
 )
-from work_order_processor.services import find_cached_classification
 from work_order_processor.tasks import (
-    classify_fault_line,
-    generate_period_excel,
     process_work_order_pdf,
 )
-from fleet.models import MachineAsset
 from work_order_processor.festive import is_festive, split_hours
 import logging
-import plotly.graph_objects as go
-import plotly.io as pio
 
 logger = logging.getLogger(__name__)
 
@@ -828,7 +818,6 @@ class WorkOrderEditView(SupervisorAccessMixin, View):
         Bloquea sin excepción los WorkOrder DIGITAL/GENERATED — ver
         docstring de la clase.
         """
-        from work_order_processor.models import WorkOrderEntry
         from django.urls import reverse as _reverse_get
 
         company_user = request.user.company_user
@@ -925,7 +914,6 @@ class WorkOrderEditView(SupervisorAccessMixin, View):
         docstring de la clase.
         """
         from work_order_processor.models import (
-            WorkOrderEntry,
             WorkOrderEntryLine,
         )
         from work_order_processor.services import (
@@ -935,7 +923,6 @@ class WorkOrderEditView(SupervisorAccessMixin, View):
         )
         from datetime import time as dt_time
         from django.urls import reverse as _reverse_post
-        import json
 
         company_user = request.user.company_user
         company = company_user.company
@@ -982,7 +969,6 @@ class WorkOrderEditView(SupervisorAccessMixin, View):
                 update_fields=["status", "excel_file", "error_log"]
             )
             from work_order_processor.services import generate_work_order_excel
-            from work_order_processor.tasks import process_work_order_pdf
 
             generate_work_order_excel(work_order.pk)
             django_messages.success(
@@ -1690,7 +1676,7 @@ class WorkOrderEntryAddView(SupervisorAccessMixin, View):
                 extraction_confidence=WorkOrderEntry.Confidence.HIGH,
                 raw_gemini_response=None,
             )
-            new_line = WorkOrderEntryLine.objects.create(
+            WorkOrderEntryLine.objects.create(
                 entry=entry,
                 line_number=1,
                 machine_norm="",
@@ -2461,7 +2447,6 @@ class WorkOrderExportView(SupervisorAccessMixin, View):
         from django.http import HttpResponse, HttpResponseBadRequest
         from django.utils.timezone import now as tz_now
         from work_order_processor.models import (
-            WorkOrderEntry,
             WorkOrderEntryLine,
         )
         from work_order_processor.services import (
@@ -2544,8 +2529,6 @@ class WorkOrderExportView(SupervisorAccessMixin, View):
             return f"Operario #{wo.pk}"
 
         if export_mode == "single_sheet":
-
-            wo_map = {wo.pk: wo for wo in work_orders}
 
             lines_qs = (
                 WorkOrderEntryLine.objects.filter(
@@ -3819,6 +3802,7 @@ class WorkOrderDetailView(CompanyUserRequiredMixin, View):
     # añade la corrección con el mismo gate, sin ampliar el acceso.
     _ELEVATED_ROLES = (
         CompanyUser.ROLE_ADMIN,
+        CompanyUser.ROLE_ADMIN_SUPERVISOR,
         CompanyUser.ROLE_SUPERVISOR,
         CompanyUser.ROLE_WORKSHOPBOSS,
     )
@@ -4053,7 +4037,6 @@ class WorkOrderDetailView(CompanyUserRequiredMixin, View):
         return _redirect_det(_url)
 
 
-
 def _hours_totals(work_orders):
     """
     Hour totals of a list of enriched work orders (same as Revisados).
@@ -4077,6 +4060,7 @@ def _hours_totals(work_orders):
             (wo["horas_festivas"] for wo in work_orders), Decimal("0")),
         "dietas": sum(1 for wo in work_orders if wo["dieta"]),
     }
+
 
 class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
     """
@@ -4639,6 +4623,7 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
         # (operator_pk is ignored for WORKSHOP inside _apply_filters).
         is_elevated = cu.role in (
             CompanyUser.ROLE_ADMIN,
+            CompanyUser.ROLE_ADMIN_SUPERVISOR,
             CompanyUser.ROLE_SUPERVISOR,
             CompanyUser.ROLE_WORKSHOPBOSS,
         )
@@ -5027,7 +5012,6 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
 
         # Compute aggregate totals for the Revisados tab.
         # Calcular totales agregados para la pestaña Revisados.
-        from decimal import Decimal as _Dec
 
         # S133 (directriz 4.24): selección de filas guardada por usuario.
         _saved_selection = get_saved_state_key(
@@ -5097,7 +5081,7 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
             "absences_list": absences_list,
             "templates_propias": _templates_propias,
             "templates_globales": _templates_globales,
-            "is_admin": cu.role == "ADMIN",
+            "is_admin": cu.role in CompanyUser.ADMIN_ROLES,
             "period_operator_groups": period_operator_groups,
             "period_groups": period_groups,
             "own_period_groups": own_period_groups,
@@ -5143,7 +5127,7 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
           delete
                                    a un conjunto de PKs.
         """
-        from datetime import timedelta, date as dt_date
+        from datetime import timedelta
         from django.db import transaction
         from ivr_config.models import WorkerAbsence
         from work_order_processor.models import (
@@ -5171,6 +5155,7 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
         # not redundant.
         if cu.role not in (
             CompanyUser.ROLE_ADMIN,
+            CompanyUser.ROLE_ADMIN_SUPERVISOR,
             CompanyUser.ROLE_SUPERVISOR,
             CompanyUser.ROLE_WORKSHOPBOSS,
         ):
@@ -5635,7 +5620,6 @@ class WorkOrderAdminExportView(SupervisorAccessMixin, View):
         from django.http import HttpResponse, HttpResponseBadRequest
         from django.utils.timezone import now as tz_now
         from work_order_processor.models import (
-            WorkOrderEntry,
             WorkOrderEntryLine,
         )
         from work_order_processor.services import (
@@ -6507,7 +6491,7 @@ class ExportTemplateListView(SupervisorAccessMixin, View):
             ] + [_serialize(t, is_global=True) for t in templates_globales]
             return JsonResponse({"templates": data})
 
-        _is_admin = cu.role == "ADMIN"
+        _is_admin = cu.role in CompanyUser.ADMIN_ROLES
         context = {
             "company": company,
             "company_user": cu,
@@ -6586,7 +6570,8 @@ class ExportTemplateCreateView(SupervisorAccessMixin, View):
             body.get("operator_scope", ExportTemplate.OperatorScope.ALL)
         ).strip()
         is_default = bool(body.get("is_default", False))
-        want_global = bool(body.get("is_global", False)) and cu.role == "ADMIN"
+        want_global = (bool(body.get("is_global", False))
+                       and cu.role in CompanyUser.ADMIN_ROLES)
 
         if not name:
             return JsonResponse(
@@ -6752,7 +6737,8 @@ class ExportTemplateUpdateView(SupervisorAccessMixin, View):
 
         # Global template + non-ADMIN → create personal copy, do not touch
         # original
-        if template.is_global and cu.role != "ADMIN":
+        if (template.is_global
+                and cu.role not in CompanyUser.ADMIN_ROLES):
             copy_name = f"{name} (copia)"
             # If a personal copy with that name already exists, just return it
             existing_copy = ExportTemplate.objects.filter(
@@ -7171,6 +7157,7 @@ class WorkPeriodGroupDetailView(CompanyUserRequiredMixin, View):
 
         is_elevated = cu.role in (
             CompanyUser.ROLE_ADMIN,
+            CompanyUser.ROLE_ADMIN_SUPERVISOR,
             CompanyUser.ROLE_SUPERVISOR,
             CompanyUser.ROLE_WORKSHOPBOSS,
         )
@@ -7257,7 +7244,7 @@ class WorkPeriodGroupDetailView(CompanyUserRequiredMixin, View):
             "group": group,
             "assigned_periods": assigned_periods,
             "available_operators": available_operators,
-            "is_admin": cu.role == "ADMIN",
+            "is_admin": cu.role in CompanyUser.ADMIN_ROLES,
             "is_elevated": is_elevated,
             "overtime_operator": overtime_operator,
             "overtime_hours_period": overtime_hours_period,

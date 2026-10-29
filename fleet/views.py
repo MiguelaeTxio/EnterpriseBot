@@ -95,7 +95,8 @@ _SORTABLE_FIELDS = {
     "plate": "plate",
     "is_active": "is_active",
     "use_count": "use_count",  # anotado en _build_fragment_context
-    "doc_count": "doc_count",  # recuento en Python, ver _build_fragment_context
+    # recuento en Python, ver _build_fragment_context
+    "doc_count": "doc_count",
     # H30 (S123), punto 6: ordenar por requisito de documentación.
     "requirement": "document_requirement__name",
 }
@@ -223,7 +224,7 @@ def _fleet_permissions(company_user):
     role = company_user.role
     return {
         "can_manage": role in FleetManageAccessMixin.allowed_roles,
-        "can_delete": role == CompanyUser.ROLE_ADMIN,
+        "can_delete": role in CompanyUser.ADMIN_ROLES,
     }
 
 
@@ -371,6 +372,7 @@ def _fleet_back_url(door):
         return reverse("panel:documentation_hub")
     return reverse("panel:fleet_list")
 
+
 def _build_fragment_context(company, company_user, request):
     """
     Builds the shared context dict used by the table fragment.
@@ -448,19 +450,19 @@ def _build_fragment_context(company, company_user, request):
         assets, machine_ct, requirement_field="document_requirement",
     )
     return {
-        "assets":           assets,
-        "families":         _get_families(company),
-        "company":          company,
-        "company_user":     company_user,
-        "filter_family":    _p("family"),
+        "assets": assets,
+        "families": _get_families(company),
+        "company": company,
+        "company_user": company_user,
+        "filter_family": _p("family"),
         "filter_requirement": _p("requirement"),
         "filter_is_active": _p("is_active"),
-        "filter_search":    _p("search"),
-        "only_selected":    request.GET.get("only_selected") == "1",
+        "filter_search": _p("search"),
+        "only_selected": request.GET.get("only_selected") == "1",
         **_build_sort_controls(_p("sort")),
         **_fleet_permissions(company_user),
-        "fleet_door":       _fleet_door(_p("door")),
-        "fleet_back_url":   _fleet_back_url(_fleet_door(_p("door"))),
+        "fleet_door": _fleet_door(_p("door")),
+        "fleet_back_url": _fleet_back_url(_fleet_door(_p("door"))),
     }
 
 
@@ -622,7 +624,8 @@ class MachineAssetCreateView(FleetManageAccessMixin, View):
 
     Crea un nuevo MachineAsset para la empresa del usuario autenticado.
     Acepta peticiones POST HTMX y devuelve un fragmento de tabla actualizado
-    en caso de éxito, o un fragmento de formulario con errores en caso de fallo.
+    en caso de éxito, o un fragmento de formulario con errores en caso de
+    fallo.
 
     POST /panel/fleet/create/
     """
@@ -1128,7 +1131,8 @@ class MachineAssetAnalyticsView(SupervisorAccessMixin, View):
 
     ---
 
-    Muestra un informe de actividad agrupado por centro de gasto (MachineAsset).
+    Muestra un informe de actividad agrupado por centro de gasto
+    (MachineAsset).
     Agrega el total de horas trabajadas y el total de líneas de parte asociadas
     por activo, con filtros opcionales por rango de fechas, familia y estado.
     Soporta exportación CSV mediante el parámetro GET `export`.
@@ -1277,7 +1281,10 @@ class MachineAssetAnalyticsView(SupervisorAccessMixin, View):
                     asset.brand_model,
                     asset.plate,
                     "Activo" if asset.is_active else "Inactivo",
-                    f"{asset.total_hours:.2f}" if asset.total_hours else "0.00",
+                    (
+                        f"{asset.total_hours:.2f}" if asset.total_hours
+                        else "0.00"
+                    ),
                     asset.total_entries,
                 ])
             return response
@@ -1295,4 +1302,3 @@ class MachineAssetAnalyticsView(SupervisorAccessMixin, View):
             **filters,
         }
         return render(request, self.template_name, ctx)
-

@@ -3,11 +3,12 @@
 Ticket management views for the chat module (Hito 14).
 Extracted from chat/views.py to keep the module focused and maintainable.
 
-H17 — Paso 1: room__company lookups replaced by company. BreakdownConversationTurn
-import removed. ChatRoom dependency eliminated.
+H17 — Paso 1: room__company lookups replaced by company.
+BreakdownConversationTurn import removed. ChatRoom dependency eliminated.
 
 BreakdownTicketListView   — list of all BreakdownTickets for the company.
-BreakdownTicketDetailView — detail + actions (assign, self_assign, set_urgency, pause, close).
+BreakdownTicketDetailView — detail + actions (assign, self_assign,
+                            set_urgency, pause, close).
 BreakdownTicketCreateView — manual creation of BreakdownTicket from the panel.
 
 Access control: CompanyUserRequiredMixin on all views.
@@ -25,7 +26,8 @@ H17 — Paso 1: lookups room__company sustituidos por company. Import de
 BreakdownConversationTurn eliminado. Dependencia de ChatRoom eliminada.
 
 BreakdownTicketListView   — lista de todos los BreakdownTickets de la empresa.
-BreakdownTicketDetailView — detalle + acciones (asignar, autoasignar, urgencia, pausar, cerrar).
+BreakdownTicketDetailView — detalle + acciones (asignar, autoasignar,
+                            urgencia, pausar, cerrar).
 BreakdownTicketCreateView — creación manual de BreakdownTicket desde el panel.
 
 Control de acceso: CompanyUserRequiredMixin en todas las vistas.
@@ -77,10 +79,11 @@ class BreakdownTicketListView(CompanyUserRequiredMixin, View):
         from ivr_config.models import CompanyUser as CU
 
         company_user = request.user.company_user
-        company      = company_user.company
+        company = company_user.company
 
         if company_user.role not in (
             company_user.ROLE_ADMIN,
+            company_user.ROLE_ADMIN_SUPERVISOR,
             company_user.ROLE_SUPERVISOR,
             company_user.ROLE_WORKSHOPBOSS,
             company_user.ROLE_WORKSHOP,
@@ -91,8 +94,8 @@ class BreakdownTicketListView(CompanyUserRequiredMixin, View):
         qs = (
             BreakdownTicket.objects
             .filter(company=company)
-            .select_related("contact", "machine", "section", "resolved_by__user",
-                            "assigned_to__user")
+            .select_related("contact", "machine", "section",
+                            "resolved_by__user", "assigned_to__user")
             .order_by("-created_at")
         )
 
@@ -139,8 +142,10 @@ class BreakdownTicketListView(CompanyUserRequiredMixin, View):
                 ticket.machine_label for ticket in op.open_tickets
             ))
 
-        # Assignable tickets panel: OPEN and PAUSED tickets available for assignment.
-        # Panel de tickets asignables: tickets OPEN y PAUSED disponibles para asignar.
+        # Assignable tickets panel: OPEN and PAUSED tickets available for
+        # assignment.
+        # Panel de tickets asignables: tickets OPEN y PAUSED disponibles para
+        # asignar.
         assignable_tickets = (
             BreakdownTicket.objects
             .filter(
@@ -156,14 +161,14 @@ class BreakdownTicketListView(CompanyUserRequiredMixin, View):
         )
 
         return render(request, self.template_name, {
-            "tickets":            qs,
-            "company":            company,
-            "company_user":       company_user,
-            "own_presence":       own_presence,
-            "active_nav":         "breakdown_ticket_list",
-            "status_filter":      status_filter,
-            "STATUS_CHOICES":     BreakdownTicket.STATUS_CHOICES,
-            "operators":          operators_qs,
+            "tickets": qs,
+            "company": company,
+            "company_user": company_user,
+            "own_presence": own_presence,
+            "active_nav": "breakdown_ticket_list",
+            "status_filter": status_filter,
+            "STATUS_CHOICES": BreakdownTicket.STATUS_CHOICES,
+            "operators": operators_qs,
             "assignable_tickets": assignable_tickets,
         })
 
@@ -172,10 +177,12 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
     """
     Displays a single BreakdownTicket with its photos.
     Provides POST actions:
-      action=assign         — assigns/unassigns a WORKSHOP operator; sets IN_PROGRESS.
+      action=assign         — assigns/unassigns a WORKSHOP operator; sets
+                              IN_PROGRESS.
       action=self_assign    — operator self-assigns; sets IN_PROGRESS.
       action=set_urgency    — updates urgency level.
-      action=pause          — sets status=PAUSED, clears assigned_to, sets paused_at.
+      action=pause          — sets status=PAUSED, clears assigned_to, sets
+                              paused_at.
       action=close          — sets status=CLOSED, resolved_by, resolved_at.
     Accessible to ADMIN, SUPERVISOR, WORKSHOPBOSS and WORKSHOP roles.
     action=assign executed by ADMIN/SUPERVISOR/WORKSHOPBOSS; target is
@@ -185,10 +192,12 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
     ---
     Muestra un BreakdownTicket individual con sus fotos.
     Proporciona acciones POST:
-      action=assign         — asigna/desasigna un operario WORKSHOP; pone IN_PROGRESS.
+      action=assign         — asigna/desasigna un operario WORKSHOP; pone
+                              IN_PROGRESS.
       action=self_assign    — el operario se autoasigna; pone IN_PROGRESS.
       action=set_urgency    — actualiza el nivel de urgencia.
-      action=pause          — pone PAUSED, limpia assigned_to, registra paused_at.
+      action=pause          — pone PAUSED, limpia assigned_to, registra
+                              paused_at.
       action=close          — pone CLOSED, resolved_by, resolved_at.
     Accesible para los roles ADMIN, SUPERVISOR, WORKSHOPBOSS y WORKSHOP.
     action=assign lo ejecuta ADMIN/SUPERVISOR/WORKSHOPBOSS; el destino
@@ -201,9 +210,11 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
 
     def _get_ticket(self, request, pk):
         """
-        Resolves the BreakdownTicket scoped to the company. Returns 404 if not found.
+        Resolves the BreakdownTicket scoped to the company. Returns 404 if
+        not found.
         ---
-        Resuelve el BreakdownTicket acotado a la empresa. Devuelve 404 si no existe.
+        Resuelve el BreakdownTicket acotado a la empresa. Devuelve 404 si no
+        existe.
         """
         from chat.models import BreakdownTicket
         return get_object_or_404(
@@ -225,6 +236,7 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
 
         if company_user.role not in (
             company_user.ROLE_ADMIN,
+            company_user.ROLE_ADMIN_SUPERVISOR,
             company_user.ROLE_SUPERVISOR,
             company_user.ROLE_WORKSHOPBOSS,
             company_user.ROLE_WORKSHOP,
@@ -287,7 +299,9 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
         # tontas): gcs_blob_name -> URL firmada bajo demanda;
         # drive_web_link (legado) se usa tal cual. Mismo criterio que
         # history.views.MachineHistoryView.
-        from spare_parts.gcs_service import TASK_PHOTOS_BUCKET, generate_signed_url
+        from spare_parts.gcs_service import (
+            TASK_PHOTOS_BUCKET, generate_signed_url,
+        )
         for photo in ticket.task_photos.all():
             photo.download_url = None
             if photo.gcs_blob_name:
@@ -305,12 +319,12 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
                 photo.download_url = photo.drive_web_link
 
         return render(request, self.template_name, {
-            "ticket":                 ticket,
-            "company_user":           company_user,
-            "own_presence":           own_presence,
-            "active_nav":             "breakdown_ticket_list",
-            "assignable_operators":   assignable_operators,
-            "URGENCY_CHOICES":        ticket.URGENCY_CHOICES,
+            "ticket": ticket,
+            "company_user": company_user,
+            "own_presence": own_presence,
+            "active_nav": "breakdown_ticket_list",
+            "assignable_operators": assignable_operators,
+            "URGENCY_CHOICES": ticket.URGENCY_CHOICES,
             "fault_category_display": fault_category_display,
         })
 
@@ -325,10 +339,11 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
         from chat.models import BreakdownTicket
 
         company_user = request.user.company_user
-        company      = company_user.company
+        company = company_user.company
 
         if company_user.role not in (
             company_user.ROLE_ADMIN,
+            company_user.ROLE_ADMIN_SUPERVISOR,
             company_user.ROLE_SUPERVISOR,
             company_user.ROLE_WORKSHOPBOSS,
             company_user.ROLE_WORKSHOP,
@@ -341,6 +356,7 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
         if action == "assign":
             if company_user.role not in (
                 company_user.ROLE_ADMIN,
+                company_user.ROLE_ADMIN_SUPERVISOR,
                 company_user.ROLE_SUPERVISOR,
                 company_user.ROLE_WORKSHOPBOSS,
             ):
@@ -363,66 +379,78 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
                         status=BreakdownTicket.STATUS_IN_PROGRESS,
                     ).exclude(pk=ticket.pk)
                     for prev in CU_active:
-                        prev.status      = BreakdownTicket.STATUS_PAUSED
+                        prev.status = BreakdownTicket.STATUS_PAUSED
                         prev.assigned_to = None
-                        prev.paused_at   = now()
-                        prev.save(update_fields=["status", "assigned_to", "paused_at"])
+                        prev.paused_at = now()
+                        prev.save(update_fields=[
+                            "status", "assigned_to", "paused_at",
+                        ])
                         logger.info(
-                            "# [BREAKDOWN] Ticket pk=%s pausado por reasignacion de CU pk=%s.",
+                            "# [BREAKDOWN] Ticket pk=%s pausado por "
+                            "reasignacion de CU pk=%s.",
                             prev.pk, assignee.pk,
                         )
                     ticket.assigned_to = assignee
-                    ticket.status      = BreakdownTicket.STATUS_IN_PROGRESS
-                    ticket.paused_at   = None
-                    ticket.save(update_fields=["assigned_to", "status", "paused_at"])
+                    ticket.status = BreakdownTicket.STATUS_IN_PROGRESS
+                    ticket.paused_at = None
+                    ticket.save(update_fields=[
+                        "assigned_to", "status", "paused_at",
+                    ])
                     logger.info(
-                        "# [BREAKDOWN] Ticket pk=%s asignado a CU pk=%s (IN_PROGRESS) por usuario pk=%s.",
+                        "# [BREAKDOWN] Ticket pk=%s asignado a CU pk=%s "
+                        "(IN_PROGRESS) por usuario pk=%s.",
                         ticket.pk, assignee.pk, company_user.pk,
                     )
                 except CU.DoesNotExist:
                     logger.warning(
-                        "# [BREAKDOWN] assign fallido: assignee_pk=%s no valido empresa pk=%s.",
+                        "# [BREAKDOWN] assign fallido: assignee_pk=%s no "
+                        "valido empresa pk=%s.",
                         assignee_pk, company.pk,
                     )
             else:
                 ticket.assigned_to = None
-                ticket.status      = BreakdownTicket.STATUS_OPEN
+                ticket.status = BreakdownTicket.STATUS_OPEN
                 ticket.save(update_fields=["assigned_to", "status"])
                 logger.info(
-                    "# [BREAKDOWN] Ticket pk=%s desasignado (OPEN) por usuario pk=%s.",
+                    "# [BREAKDOWN] Ticket pk=%s desasignado (OPEN) por "
+                    "usuario pk=%s.",
                     ticket.pk, company_user.pk,
                 )
 
         elif action == "self_assign":
-            # Operator self-assigns. Sets IN_PROGRESS. Pauses previous active ticket.
-            # El operario se autoasigna. Pone IN_PROGRESS. Pausa su ticket activo previo.
+            # Operator self-assigns. Sets IN_PROGRESS. Pauses previous active
+            # ticket.
+            # El operario se autoasigna. Pone IN_PROGRESS. Pausa su ticket
+            # activo previo.
             prev_active = BreakdownTicket.objects.filter(
                 company=company,
                 assigned_to=company_user,
                 status=BreakdownTicket.STATUS_IN_PROGRESS,
             ).exclude(pk=ticket.pk)
             for prev in prev_active:
-                prev.status      = BreakdownTicket.STATUS_PAUSED
+                prev.status = BreakdownTicket.STATUS_PAUSED
                 prev.assigned_to = None
-                prev.paused_at   = now()
+                prev.paused_at = now()
                 prev.save(update_fields=["status", "assigned_to", "paused_at"])
                 logger.info(
-                    "# [BREAKDOWN] Ticket pk=%s pausado por autoasignacion de CU pk=%s.",
+                    "# [BREAKDOWN] Ticket pk=%s pausado por autoasignacion "
+                    "de CU pk=%s.",
                     prev.pk, company_user.pk,
                 )
             ticket.assigned_to = company_user
-            ticket.status      = BreakdownTicket.STATUS_IN_PROGRESS
-            ticket.paused_at   = None
+            ticket.status = BreakdownTicket.STATUS_IN_PROGRESS
+            ticket.paused_at = None
             ticket.save(update_fields=["assigned_to", "status", "paused_at"])
             logger.info(
-                "# [BREAKDOWN] Ticket pk=%s autoasignado por CU pk=%s (IN_PROGRESS).",
+                "# [BREAKDOWN] Ticket pk=%s autoasignado por CU pk=%s "
+                "(IN_PROGRESS).",
                 ticket.pk, company_user.pk,
             )
 
         elif action == "pause":
-            ticket.status      = BreakdownTicket.STATUS_PAUSED
+            ticket.status = BreakdownTicket.STATUS_PAUSED
             ticket.assigned_to = None
-            ticket.paused_at   = now()
+            ticket.paused_at = now()
             ticket.save(update_fields=["status", "assigned_to", "paused_at"])
             logger.info(
                 "# [BREAKDOWN] Ticket pk=%s pausado por usuario pk=%s.",
@@ -430,23 +458,25 @@ class BreakdownTicketDetailView(CompanyUserRequiredMixin, View):
             )
 
         elif action == "set_urgency":
-            urgency_value   = request.POST.get("urgency", "").strip()
+            urgency_value = request.POST.get("urgency", "").strip()
             valid_urgencies = {u[0] for u in BreakdownTicket.URGENCY_CHOICES}
             if urgency_value in valid_urgencies:
                 ticket.urgency = urgency_value
                 ticket.save(update_fields=["urgency"])
                 logger.info(
-                    "# [BREAKDOWN] Ticket pk=%s urgencia=%s por usuario pk=%s.",
+                    "# [BREAKDOWN] Ticket pk=%s urgencia=%s por usuario "
+                    "pk=%s.",
                     ticket.pk, urgency_value, company_user.pk,
                 )
             else:
                 logger.warning(
-                    "# [BREAKDOWN] set_urgency valor=%s invalido ticket pk=%s.",
+                    "# [BREAKDOWN] set_urgency valor=%s invalido ticket "
+                    "pk=%s.",
                     urgency_value, ticket.pk,
                 )
 
         elif action == "close":
-            ticket.status      = BreakdownTicket.STATUS_CLOSED
+            ticket.status = BreakdownTicket.STATUS_CLOSED
             ticket.resolved_by = company_user
             ticket.resolved_at = now()
             ticket.save(update_fields=["status", "resolved_by", "resolved_at"])
@@ -494,7 +524,7 @@ class BreakdownTicketCreateView(CompanyUserRequiredMixin, View):
         from fleet.models import MachineAsset
 
         company_user = request.user.company_user
-        company      = company_user.company
+        company = company_user.company
 
         own_presence = PresenceStatus.objects.filter(
             company_user=company_user,
@@ -521,12 +551,12 @@ class BreakdownTicketCreateView(CompanyUserRequiredMixin, View):
         )
 
         return {
-            "contacts":     contacts,
-            "machines":     machines,
-            "sections":     sections,
+            "contacts": contacts,
+            "machines": machines,
+            "sections": sections,
             "company_user": company_user,
             "own_presence": own_presence,
-            "active_nav":   "breakdown_ticket_list",
+            "active_nav": "breakdown_ticket_list",
         }
 
     def get(self, request, *args, **kwargs):
@@ -538,6 +568,7 @@ class BreakdownTicketCreateView(CompanyUserRequiredMixin, View):
         company_user = request.user.company_user
         if company_user.role not in (
             company_user.ROLE_ADMIN,
+            company_user.ROLE_ADMIN_SUPERVISOR,
             company_user.ROLE_SUPERVISOR,
             company_user.ROLE_WORKSHOPBOSS,
             company_user.ROLE_WORKSHOP,
@@ -564,20 +595,21 @@ class BreakdownTicketCreateView(CompanyUserRequiredMixin, View):
         from chat.models import BreakdownTicket
 
         company_user = request.user.company_user
-        company      = company_user.company
+        company = company_user.company
 
         if company_user.role not in (
             company_user.ROLE_ADMIN,
+            company_user.ROLE_ADMIN_SUPERVISOR,
             company_user.ROLE_SUPERVISOR,
             company_user.ROLE_WORKSHOPBOSS,
             company_user.ROLE_WORKSHOP,
         ):
             return HttpResponseForbidden()
 
-        contact_pk    = request.POST.get("contact_pk", "").strip()
+        contact_pk = request.POST.get("contact_pk", "").strip()
         fault_summary = request.POST.get("fault_summary", "").strip()
-        errors        = {}
-        contact       = None
+        errors = {}
+        contact = None
 
         if not contact_pk:
             errors["contact_pk"] = "Debes seleccionar un contacto."
@@ -588,42 +620,44 @@ class BreakdownTicketCreateView(CompanyUserRequiredMixin, View):
                 errors["contact_pk"] = "Contacto no válido."
 
         if not fault_summary:
-            errors["fault_summary"] = "La descripción de la avería es obligatoria."
+            errors["fault_summary"] = (
+                "La descripción de la avería es obligatoria."
+            )
 
         if errors:
             ctx = self._get_context(request)
-            ctx["errors"]    = errors
+            ctx["errors"] = errors
             ctx["post_data"] = request.POST
             return render(request, self.template_name, ctx)
 
-        machine    = None
+        machine = None
         machine_pk = request.POST.get("machine_pk", "").strip()
         if machine_pk:
             machine = MachineAsset.objects.filter(
                 pk=machine_pk, company=company, is_active=True,
             ).first()
 
-        section    = None
+        section = None
         section_pk = request.POST.get("section_pk", "").strip()
         if section_pk:
             section = Section.objects.filter(
                 pk=section_pk, company=company, is_active=True,
             ).first()
 
-        urgency_value   = request.POST.get("urgency", "").strip()
+        urgency_value = request.POST.get("urgency", "").strip()
         valid_urgencies = {u[0] for u in BreakdownTicket.URGENCY_CHOICES}
         if urgency_value not in valid_urgencies:
             urgency_value = ""
 
         ticket = BreakdownTicket.objects.create(
-            company       = company,
-            contact       = contact,
-            machine       = machine,
-            machine_raw   = machine.code if machine else "",
-            section       = section,
-            fault_summary = fault_summary,
-            urgency       = urgency_value,
-            status        = BreakdownTicket.STATUS_OPEN,
+            company=company,
+            contact=contact,
+            machine=machine,
+            machine_raw=machine.code if machine else "",
+            section=section,
+            fault_summary=fault_summary,
+            urgency=urgency_value,
+            status=BreakdownTicket.STATUS_OPEN,
         )
         logger.info(
             "# [BREAKDOWN] Ticket pk=%s creado manualmente por usuario pk=%s.",

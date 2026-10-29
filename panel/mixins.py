@@ -209,6 +209,7 @@ class WorkshopRequiredMixin(CompanyUserRequiredMixin):
             CompanyUser.ROLE_WORKSHOP,
             CompanyUser.ROLE_WORKSHOPBOSS,
             CompanyUser.ROLE_ADMIN,
+            CompanyUser.ROLE_ADMIN_SUPERVISOR,
         }
         if company_user.role not in allowed_roles:
             return HttpResponseForbidden(
@@ -246,7 +247,8 @@ class AdminRoleRequiredMixin(CompanyUserRequiredMixin):
 
         # Block access if the user does not hold the ADMIN role.
         # Bloquear el acceso si el usuario no posee el rol ADMIN.
-        if company_user.role != "ADMIN":
+        # S141: también el supervisor de administración.
+        if company_user.role not in CompanyUser.ADMIN_ROLES:
             return HttpResponseForbidden(
                 "Acceso denegado. Esta sección requiere el rol de "
                 "Administrador."
@@ -436,6 +438,47 @@ class AssistanceSupervisorAccessMixin(CompanyUserRequiredMixin):
         return super().dispatch(request, *args, **kwargs)
 
 
+class BaseCalendarAccessMixin(CompanyUserRequiredMixin):
+    """
+    Bases and labour calendars: assistance supervisors and both admins.
+
+    ---
+
+    H24 (S141). Bases y Calendarios laborales: los de
+    AssistanceSupervisorAccessMixin más el supervisor de administración
+    (Miguel Ángel: de Asistencia, el supervisor de administración solo
+    entra a Bases y Calendarios laborales). Rol comprobado antes de
+    ejecutar la vista (S117).
+    """
+
+    allowed_roles = {
+        CompanyUser.ROLE_ADMIN,
+        CompanyUser.ROLE_ADMIN_SUPERVISOR,
+        CompanyUser.ROLE_ASSIST_SUPERVISOR,
+    }
+
+    def dispatch(self, request, *args, **kwargs):
+        """
+        Check the role, then run the view.
+
+        ---
+
+        Comprueba el rol y después ejecuta la vista.
+        """
+        company_user = _company_user_for_role_check(request)
+        if company_user is None:
+            return super().dispatch(request, *args, **kwargs)
+        if company_user.role not in self.allowed_roles:
+            messages.error(
+                request,
+                "Acceso denegado. Esta sección requiere el rol de "
+                "Supervisor de Asistencia, Supervisor de Administración "
+                "o Administrador.",
+            )
+            return redirect("/panel/")
+        return super().dispatch(request, *args, **kwargs)
+
+
 class BudgetAuditAccessMixin(CompanyUserRequiredMixin):
     """
     Mixin that grants access to the budget history list and detail/
@@ -558,6 +601,7 @@ class SupervisorAccessMixin(CompanyUserRequiredMixin):
             CompanyUser.ROLE_SUPERVISOR,
             CompanyUser.ROLE_WORKSHOPBOSS,
             CompanyUser.ROLE_ADMIN,
+            CompanyUser.ROLE_ADMIN_SUPERVISOR,
         }
         if company_user.role not in allowed_roles:
             messages.error(
@@ -587,6 +631,7 @@ class FleetAccessMixin(CompanyUserRequiredMixin):
 
     allowed_roles = {
         CompanyUser.ROLE_ADMIN,
+        CompanyUser.ROLE_ADMIN_SUPERVISOR,
         CompanyUser.ROLE_SUPERVISOR,
         CompanyUser.ROLE_WORKSHOPBOSS,
         CompanyUser.ROLE_DOCS_SUPERVISOR,
@@ -627,6 +672,7 @@ class FleetManageAccessMixin(FleetAccessMixin):
 
     allowed_roles = {
         CompanyUser.ROLE_ADMIN,
+        CompanyUser.ROLE_ADMIN_SUPERVISOR,
         CompanyUser.ROLE_DOCS_SUPERVISOR,
     }
 
@@ -687,6 +733,7 @@ class DocsUploadAccessMixin(CompanyUserRequiredMixin):
         allowed_roles = {
             CompanyUser.ROLE_DOCS_SUPERVISOR,
             CompanyUser.ROLE_ADMIN,
+            CompanyUser.ROLE_ADMIN_SUPERVISOR,
         }
         if company_user.role not in allowed_roles:
             messages.error(
@@ -765,6 +812,7 @@ class WorkOrderFormAccessMixin(CompanyUserRequiredMixin):
             CompanyUser.ROLE_WORKSHOPBOSS,
             CompanyUser.ROLE_SUPERVISOR,
             CompanyUser.ROLE_ADMIN,
+            CompanyUser.ROLE_ADMIN_SUPERVISOR,
         }
         if company_user.role not in allowed_roles:
             messages.error(

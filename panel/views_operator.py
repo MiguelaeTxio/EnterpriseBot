@@ -51,6 +51,7 @@ class OperatorDashboardView(WorkshopRequiredMixin, TemplateView):
     # Quién escribe el aviso para los operarios.
     NOTICE_EDITOR_ROLES = (
         CompanyUser.ROLE_ADMIN,
+        CompanyUser.ROLE_ADMIN_SUPERVISOR,
         CompanyUser.ROLE_WORKSHOPBOSS,
     )
 
@@ -2241,6 +2242,7 @@ def _resolve_editable_work_order(pk, cu, company):
     )
     if cu.role in (
         CompanyUser.ROLE_ADMIN,
+        CompanyUser.ROLE_ADMIN_SUPERVISOR,
         CompanyUser.ROLE_SUPERVISOR,
         CompanyUser.ROLE_WORKSHOPBOSS,
     ):
@@ -2647,6 +2649,7 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
 
             _is_elevated_edit = cu.role in (
                 CompanyUser.ROLE_ADMIN,
+                CompanyUser.ROLE_ADMIN_SUPERVISOR,
                 CompanyUser.ROLE_SUPERVISOR,
                 CompanyUser.ROLE_WORKSHOPBOSS,
             )
@@ -3164,6 +3167,7 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
 
             if cu.role not in (
                 CompanyUser.ROLE_ADMIN,
+                CompanyUser.ROLE_ADMIN_SUPERVISOR,
                 CompanyUser.ROLE_SUPERVISOR,
                 CompanyUser.ROLE_WORKSHOPBOSS,
             ):
@@ -6406,6 +6410,7 @@ class OperatorClockStretchesView(WorkOrderFormAccessMixin, View):
         # trabajador ve las horas en punto y a y media del parte.
         show_real = cu.role in (
             CompanyUser.ROLE_ADMIN,
+            CompanyUser.ROLE_ADMIN_SUPERVISOR,
             CompanyUser.ROLE_SUPERVISOR,
             CompanyUser.ROLE_WORKSHOPBOSS,
         )

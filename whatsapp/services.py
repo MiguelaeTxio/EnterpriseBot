@@ -1662,6 +1662,7 @@ class BreakdownAgentService:
             and company_user.role in (
                 _CU.ROLE_WORKSHOPBOSS,
                 _CU.ROLE_ADMIN,
+                _CU.ROLE_ADMIN_SUPERVISOR,
             )
         ):
             lines.append("")

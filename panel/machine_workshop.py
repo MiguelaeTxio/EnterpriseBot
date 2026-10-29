@@ -44,6 +44,7 @@ MAX_SORT_KEYS = 4
 # SupervisorAccessMixin) y la del ticket (BreakdownTicketDetailView).
 STOCK_ROLES = {
     CompanyUser.ROLE_ADMIN,
+    CompanyUser.ROLE_ADMIN_SUPERVISOR,
     CompanyUser.ROLE_SUPERVISOR,
     CompanyUser.ROLE_WORKSHOPBOSS,
 }
@@ -110,6 +111,7 @@ def column_choices(columns, hidden):
         {"key": key, "label": label, "visible": key not in hidden}
         for key, label, _summed in columns
     ]
+
 
 STATE_OPEN = "open"
 STATE_CLOSED = "closed"

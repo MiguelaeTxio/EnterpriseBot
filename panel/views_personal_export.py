@@ -102,7 +102,7 @@ def column_choices():
 
 
 def _is_admin(company_user):
-    return company_user.role == CompanyUser.ROLE_ADMIN
+    return company_user.role in CompanyUser.ADMIN_ROLES
 
 
 def _visible_templates(company_user):

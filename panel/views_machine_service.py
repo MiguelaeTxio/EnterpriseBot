@@ -33,10 +33,11 @@ from panel.mixins import CompanyUserRequiredMixin
 # Roles que anotan revisiones y lecturas: los que editan la ficha
 # (ADMIN, DOCS_SUPERVISOR) y los de taller (SUPERVISOR, WORKSHOPBOSS).
 SERVICE_EDIT_ROLES = {
-    "ADMIN", "DOCS_SUPERVISOR", "SUPERVISOR", "WORKSHOPBOSS",
+    "ADMIN", "ADMIN_SUPERVISOR", "DOCS_SUPERVISOR", "SUPERVISOR",
+    "WORKSHOPBOSS",
 }
 # La antelación de los avisos la fija quien configura los avisos.
-SERVICE_SETTINGS_ROLES = {"ADMIN", "DOCS_SUPERVISOR"}
+SERVICE_SETTINGS_ROLES = {"ADMIN", "ADMIN_SUPERVISOR", "DOCS_SUPERVISOR"}
 SERVICE_LIST_LIMIT = 20
 SERVICE_ANCHOR = "#machineServicePlan"
 

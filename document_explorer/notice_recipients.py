@@ -28,7 +28,9 @@ from document_explorer.document_notice_service import DOMAIN_PERSONAL
 
 DOCS_SUPERVISOR_ROLE = "DOCS_SUPERVISOR"
 ADMIN_ROLE = "ADMIN"
-RECIPIENT_ROLES = (DOCS_SUPERVISOR_ROLE, ADMIN_ROLE)
+# S141: el supervisor de administración, como el administrador.
+ADMIN_SUPERVISOR_ROLE = "ADMIN_SUPERVISOR"
+RECIPIENT_ROLES = (DOCS_SUPERVISOR_ROLE, ADMIN_ROLE, ADMIN_SUPERVISOR_ROLE)
 
 
 def _squash_company(value):

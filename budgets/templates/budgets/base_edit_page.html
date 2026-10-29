@@ -16,9 +16,12 @@
   {# ── Breadcrumb ──────────────────────────────────────────────────── #}
   <nav aria-label="breadcrumb" class="mb-3">
     <ol class="breadcrumb small">
+      {# S141: el supervisor de administración no entra a Aseguradoras. #}
+      {% if company_user.role != 'ADMIN_SUPERVISOR' %}
       <li class="breadcrumb-item">
         <a href="{% url 'budgets:insurer_list' %}">Aseguradoras</a>
       </li>
+      {% endif %}
       <li class="breadcrumb-item">
         <a href="{% url 'budgets:base_global' %}">Bases de servicio</a>
       </li>

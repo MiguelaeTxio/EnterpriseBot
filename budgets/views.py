@@ -50,6 +50,7 @@ from panel.mixins import (
     AssistanceRequiredMixin,
     AssistanceSupervisorAccessMixin,
     AssistanceWorkOrderAccessMixin,
+    BaseCalendarAccessMixin,
     BudgetAuditAccessMixin,
 )
 
@@ -823,14 +824,14 @@ class BudgetRouteCalcView(AssistanceRequiredMixin, View):
         # Extraer la ruta primaria del nuevo contrato dual.
         primary = result["route_with_tolls"]
         return render(request, self.template_name, {
-            "distance_km":  primary["distance_km"],
-            "has_tolls":    primary["has_tolls"],
-            "road_name":    road_name,
-            "pk_km":        pk_km,
+            "distance_km": primary["distance_km"],
+            "has_tolls": primary["has_tolls"],
+            "road_name": road_name,
+            "pk_km": pk_km,
             "service_time": service_time_str,
-            "base_name":    base.name,
-            "base_lat":     base.latitude,
-            "base_lng":     base.longitude,
+            "base_name": base.name,
+            "base_lat": base.latitude,
+            "base_lng": base.longitude,
         })
 
 
@@ -1009,15 +1010,15 @@ class BudgetRouteDualView(AssistanceRequiredMixin, View):
         )
 
         return render(request, self.template_name, {
-            "route_with_tolls":         route_with_tolls,
-            "route_without_tolls":      route_without_tolls,
-            "show_dual":                show_dual,
-            "route_with_tolls_json":    route_with_tolls_json,
+            "route_with_tolls": route_with_tolls,
+            "route_without_tolls": route_without_tolls,
+            "show_dual": show_dual,
+            "route_with_tolls_json": route_with_tolls_json,
             "route_without_tolls_json": route_without_tolls_json,
-            "calendar_warning":         calendar_warning,
-            "calendar_warning_year":    calendar_warning_year,
-            "service_year":             service_date.year,
-            "error":                    None,
+            "calendar_warning": calendar_warning,
+            "calendar_warning_year": calendar_warning_year,
+            "service_year": service_date.year,
+            "error": None,
         })
 
 
@@ -1233,15 +1234,15 @@ class BudgetWaypointView(AssistanceRequiredMixin, View):
             return JsonResponse({"error": result["error"]}, status=502)
 
         return JsonResponse({
-            "route_distance_km":      result["distance_km"],
-            "km_phase1":              result["km_phase1"],
-            "km_phase2":              result["km_phase2"],
-            "is_overnight":           result["is_overnight"],
-            "has_tolls":              result["has_tolls"],
+            "route_distance_km": result["distance_km"],
+            "km_phase1": result["km_phase1"],
+            "km_phase2": result["km_phase2"],
+            "is_overnight": result["is_overnight"],
+            "has_tolls": result["has_tolls"],
             "route_toll_budget_cost": result.get("route_toll_budget_cost"),
-            "encoded_polyline":       result.get("encoded_polyline"),
-            "encoded_polyline_alt":   result.get("encoded_polyline_alt", ""),
-            "distance_km_alt":        result.get("distance_km_alt"),
+            "encoded_polyline": result.get("encoded_polyline"),
+            "encoded_polyline_alt": result.get("encoded_polyline_alt", ""),
+            "distance_km_alt": result.get("distance_km_alt"),
         })
 
 
@@ -1553,21 +1554,21 @@ class BudgetStepsView(AssistanceRequiredMixin, View):
         ]
 
         return render(request, self.template_name, {
-            "concepts":             concepts,
+            "concepts": concepts,
             "has_loaded_surcharge": has_loaded,
-            "loaded_percent":       loaded_percent,
-            "always_apply_iva":     always_apply_iva,
-            "base_has_coords":      base_has_coords,
-            "base_id":              base_id_int,
-            "base_lat":             base_lat,
-            "base_lng":             base_lng,
-            "base_name":            base_name,
-            "google_maps_map_id":   google_maps_map_id,
-            "google_maps_api_key":  os.environ.get(
+            "loaded_percent": loaded_percent,
+            "always_apply_iva": always_apply_iva,
+            "base_has_coords": base_has_coords,
+            "base_id": base_id_int,
+            "base_lat": base_lat,
+            "base_lng": base_lng,
+            "base_name": base_name,
+            "google_maps_map_id": google_maps_map_id,
+            "google_maps_api_key": os.environ.get(
                 "GOOGLE_MAPS_API_KEY", ""
             ),
-            "no_tariff_lines":      no_tariff_lines,
-            "toll_segments":        toll_segments,
+            "no_tariff_lines": no_tariff_lines,
+            "toll_segments": toll_segments,
         })
 
 
@@ -3779,7 +3780,7 @@ class InsurerBaseToggleView(AssistanceSupervisorAccessMixin, View):
         )
 
 
-class BaseCreateView(AssistanceSupervisorAccessMixin, View):
+class BaseCreateView(BaseCalendarAccessMixin, View):
     """
     Creates a new Base for the given insurer.
     Accepts POST only. Returns HTMX fragment with updated base list on success.
@@ -3839,7 +3840,7 @@ class BaseCreateView(AssistanceSupervisorAccessMixin, View):
         )
 
 
-class BaseUpdateView(AssistanceSupervisorAccessMixin, View):
+class BaseUpdateView(BaseCalendarAccessMixin, View):
     """
     Updates an existing Base record.
     GET renders a dedicated edit page with Google Maps geolocation.
@@ -3896,7 +3897,7 @@ class BaseUpdateView(AssistanceSupervisorAccessMixin, View):
         return render(request, self.template_name, ctx)
 
 
-class BaseToggleView(AssistanceSupervisorAccessMixin, View):
+class BaseToggleView(BaseCalendarAccessMixin, View):
     """
     Toggles the is_active flag of a Base record via HTMX POST.
     Returns the updated row fragment.
@@ -3924,7 +3925,7 @@ class BaseToggleView(AssistanceSupervisorAccessMixin, View):
         )
 
 
-class BaseDeleteView(AssistanceSupervisorAccessMixin, View):
+class BaseDeleteView(BaseCalendarAccessMixin, View):
     """
     Deletes a Base record via POST with modal confirmation.
     Returns empty 200 response for HTMX swap-oob removal.
@@ -5101,7 +5102,7 @@ class BudgetExportWordView(AssistanceSupervisorAccessMixin, View):
 # ---------------------------------------------------------------------------
 
 
-class BaseClearCoordsView(AssistanceSupervisorAccessMixin, View):
+class BaseClearCoordsView(BaseCalendarAccessMixin, View):
     """
     HTMX POST endpoint. Receives a list of base PKs and sets their
     latitude and longitude to null. Returns an HTML fragment with
@@ -5158,7 +5159,7 @@ class BaseClearCoordsView(AssistanceSupervisorAccessMixin, View):
         )
 
 
-class BaseSyncCalendarsView(AssistanceSupervisorAccessMixin, View):
+class BaseSyncCalendarsView(BaseCalendarAccessMixin, View):
     """
     HTMX POST endpoint. Syncs the labour calendars of all active company
     bases via the calendariosnacionales.com public API. Returns an inline
@@ -5281,7 +5282,7 @@ class BaseSyncCalendarsView(AssistanceSupervisorAccessMixin, View):
         return _HR("".join(html_parts))
 
 
-class BaseGlobalView(AssistanceSupervisorAccessMixin, View):
+class BaseGlobalView(BaseCalendarAccessMixin, View):
     """
     Lists all service bases for the company with optional filter by insurer.
     Shows per-base coordinates, labor calendar sync status and global is_active
@@ -5435,9 +5436,9 @@ class AlbaranDemoView(AssistanceRequiredMixin, View):
         company_user = get_object_or_404(CompanyUser, user=request.user)
         submitted = request.session.pop("albaran_demo_submitted", False)
         return render(request, self.template_name, {
-            "active_nav":   "albaran_demo",
+            "active_nav": "albaran_demo",
             "company_user": company_user,
-            "submitted":    submitted,
+            "submitted": submitted,
         })
 
     def post(self, request, *args, **kwargs):
@@ -6050,7 +6051,8 @@ class WorkOrderAlbaranView(AssistanceAlbaranAccessMixin, View):
         )
         if unit.status in _ALBARAN_CLOSED_STATUSES:
             messages.error(
-                request, "Este albarán ya está cerrado: no se puede modificar.",
+                request,
+                "Este albarán ya está cerrado: no se puede modificar.",
             )
             return redirect("budgets:work_order_pdf", pk=unit.pk)
         phase1_km = request.POST.get("phase1_km", "").strip() or None
@@ -6085,7 +6087,7 @@ class WorkOrderAlbaranView(AssistanceAlbaranAccessMixin, View):
                     unit=unit,
                     defaults={
                         "signature_data": signature_data,
-                        "signer_name":    signer_name,
+                        "signer_name": signer_name,
                         "signed_offline": signed_offline,
                     },
                 )
@@ -6143,14 +6145,14 @@ class TollSegmentListView(AssistanceSupervisorAccessMixin, View):
         )
 
         ctx = _build_base_context(request, {
-            "segments":             qs,
-            "road_codes":           road_codes,
-            "road_filter":          road_filter,
-            "level_filter":         level_filter,
-            "active_filter":        active_filter,
+            "segments": qs,
+            "road_codes": road_codes,
+            "road_filter": road_filter,
+            "level_filter": level_filter,
+            "active_filter": active_filter,
             "tariff_level_choices": TollSegment.TARIFF_LEVEL_CHOICES,
-            "active_nav":           "budgets_toll_segments",
-            "total":                qs.count(),
+            "active_nav": "budgets_toll_segments",
+            "total": qs.count(),
             "toll_vehicle_type": (
                 _get_company_user(request).company.toll_vehicle_type
             ),
@@ -6158,7 +6160,7 @@ class TollSegmentListView(AssistanceSupervisorAccessMixin, View):
                 _get_company_user(request).company.toll_markup_percent
             ),
             "toll_vehicle_choices": [
-                ("LIGHT",   "Ligero"),
+                ("LIGHT", "Ligero"),
                 ("HEAVY_1", "Pesado 1"),
                 ("HEAVY_2", "Pesado 2"),
             ],
@@ -6228,10 +6230,10 @@ class TollSegmentCreateView(AssistanceSupervisorAccessMixin, View):
             initial={"is_active": True, "valid_from": localdate()}
         )
         ctx = _build_base_context(request, {
-            "form":                 form,
-            "editing":              None,
+            "form": form,
+            "editing": None,
             "tariff_level_choices": TollSegment.TARIFF_LEVEL_CHOICES,
-            "active_nav":           "budgets_toll_segments",
+            "active_nav": "budgets_toll_segments",
         })
         return render(request, self.template_name, ctx)
 
@@ -6248,10 +6250,10 @@ class TollSegmentCreateView(AssistanceSupervisorAccessMixin, View):
             )
             return redirect("budgets:toll_segment_list")
         ctx = _build_base_context(request, {
-            "form":                 form,
-            "editing":              None,
+            "form": form,
+            "editing": None,
             "tariff_level_choices": TollSegment.TARIFF_LEVEL_CHOICES,
-            "active_nav":           "budgets_toll_segments",
+            "active_nav": "budgets_toll_segments",
         })
         return render(request, self.template_name, ctx)
 
@@ -6477,9 +6479,9 @@ class WorkOrderPdfView(AssistanceAlbaranAccessMixin, View):
             request,
             self.template_name,
             {
-                "unit":        unit,
-                "work_order":  unit.work_order,
-                "company":     company_user.company,
+                "unit": unit,
+                "work_order": unit.work_order,
+                "company": company_user.company,
             },
         ).content.decode("utf-8")
         pdf_file = weasyprint.HTML(string=html_string).write_pdf()
@@ -6502,7 +6504,7 @@ class WorkOrderPdfView(AssistanceAlbaranAccessMixin, View):
 # Gestión de calendarios laborales de bases — solo ADMIN
 # ---------------------------------------------------------------------------
 
-class BaseCalendarView(AssistanceSupervisorAccessMixin, View):
+class BaseCalendarView(BaseCalendarAccessMixin, View):
     """
     List all active bases for the company with their labour calendar summary.
     Provides an entry point to manage each base's holiday dates manually.
@@ -6561,7 +6563,7 @@ class BaseCalendarView(AssistanceSupervisorAccessMixin, View):
         return render(request, self.template_name, ctx)
 
 
-class BaseCalendarDetailView(AssistanceSupervisorAccessMixin, View):
+class BaseCalendarDetailView(BaseCalendarAccessMixin, View):
     """
     Manage the labour calendar of a single Base: view, add and remove
     individual holiday dates. Also provides an HTMX endpoint for adding
@@ -6702,7 +6704,7 @@ class BaseCalendarDetailView(AssistanceSupervisorAccessMixin, View):
             return render(request, self.FRAGMENT_TEMPLATE, ctx)
 
 
-class BaseCalendarCopyView(AssistanceSupervisorAccessMixin, View):
+class BaseCalendarCopyView(BaseCalendarAccessMixin, View):
     """
     Copy the labour calendar of one Base to another Base of the same
     company. Only the target base's labor_calendar is overwritten —

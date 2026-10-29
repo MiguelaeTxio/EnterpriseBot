@@ -52,7 +52,7 @@
                         </div>
                     </div>
                 </a>
-                {% if room.room_type == "BREAKDOWNS" and company_user.role == "ADMIN" %}
+                {% if room.room_type == "BREAKDOWNS" and company_user.is_admin_level %}
                 <a href="{% url 'panel:breakdown_room_manage' %}"
                    class="btn btn-sm btn-outline-danger w-100">
                     <i class="bi bi-people me-1"></i>Gestionar membresía de Averías

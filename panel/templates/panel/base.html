@@ -22,7 +22,7 @@
          cabecera para que exista antes que cualquier script de página. -->
     <script src="{% static 'panel/js/nav_state.js' %}"></script>
     {% block extra_head %}{% endblock %}
-    {% if request.user.company_user.role == 'WORKSHOP' or request.user.company_user.role == 'ADMIN' %}
+    {% if request.user.company_user.role == 'WORKSHOP' or request.user.company_user.is_admin_level %}
     {% include "panel/_tour_driver_cdn.html" %}
     {% endif %}
 </head>

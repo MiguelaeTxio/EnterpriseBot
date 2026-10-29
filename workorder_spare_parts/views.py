@@ -33,7 +33,9 @@ import logging
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
-from django.db.models import Count, IntegerField, Max, Q, Case, Sum, Value, When
+from django.db.models import (
+    Count, IntegerField, Max, Q, Case, Sum, Value, When,
+)
 from django.http import Http404, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -57,7 +59,9 @@ from spare_parts.services import (
 )
 from work_order_processor.models import WorkOrderEntryLine
 
-from .forms import QuickWarehouseIntakeForm, SalvageEntryForm, SparePartEntryCatalogForm
+from .forms import (
+    QuickWarehouseIntakeForm, SalvageEntryForm, SparePartEntryCatalogForm,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +92,7 @@ class CatalogReadAccessMixin(CompanyUserRequiredMixin):
 
     _allowed_roles = {
         CompanyUser.ROLE_ADMIN,
+        CompanyUser.ROLE_ADMIN_SUPERVISOR,
         CompanyUser.ROLE_SUPERVISOR,
         CompanyUser.ROLE_WORKSHOP,
         CompanyUser.ROLE_WORKSHOPBOSS,
@@ -478,10 +483,16 @@ class SparePartEntryCreateView(SupervisorAccessMixin, View):
                 quantity=entry.stock_quantity,
                 level_after=entry.stock_level,
                 machine=entry.machine,
-                notes='Alta manual desde el catálogo (fuera del circuito de albaranes).',
+                notes=(
+                    'Alta manual desde el catálogo (fuera del circuito de '
+                    'albaranes).'
+                ),
                 created_by=request.user.company_user,
             )
-        messages.success(request, f"Repuesto '{entry.description}' creado correctamente.")
+        messages.success(
+            request,
+            f"Repuesto '{entry.description}' creado correctamente.",
+        )
         return redirect(
             'workorder_spare_parts:catalog_article_detail',
             entry.internal_reference,
@@ -547,7 +558,10 @@ class SparePartEntryUpdateView(SupervisorAccessMixin, View):
                 notes='Corrección manual de stock desde el catálogo.',
                 created_by=request.user.company_user,
             )
-        messages.success(request, f"Repuesto '{entry.description}' actualizado correctamente.")
+        messages.success(
+            request,
+            f"Repuesto '{entry.description}' actualizado correctamente.",
+        )
         # S116-H10: vuelve a la ficha del artículo (agrupado por
         # internal_reference), no al catálogo plano -- el catálogo ya
         # no lista entradas individuales, así que ese "de vuelta"
@@ -572,7 +586,9 @@ class SparePartEntryDeleteView(SupervisorAccessMixin, View):
     de datos de consumo.
     """
 
-    template_name = 'workorder_spare_parts/spare_part_entry_confirm_delete.html'
+    template_name = (
+        'workorder_spare_parts/spare_part_entry_confirm_delete.html'
+    )
 
     def get(self, request, pk):
         entry = get_object_or_404(
@@ -595,7 +611,8 @@ class SparePartEntryDeleteView(SupervisorAccessMixin, View):
             messages.error(
                 request,
                 "No se puede eliminar: este repuesto ya tiene movimientos de "
-                "stock registrados (afectaría al historial de analítica de costes).",
+                "stock registrados (afectaría al historial de analítica de "
+                "costes).",
             )
             if internal_reference:
                 return redirect(
@@ -605,7 +622,9 @@ class SparePartEntryDeleteView(SupervisorAccessMixin, View):
             return redirect('workorder_spare_parts:catalog_list')
         description = entry.description
         entry.delete()
-        messages.success(request, f"Repuesto '{description}' eliminado correctamente.")
+        messages.success(
+            request, f"Repuesto '{description}' eliminado correctamente.",
+        )
         # S116-H10: si era la última entrada de este artículo, la
         # ficha ya no existe (0 resultados) -- vuelve al catálogo en
         # ese caso, a la ficha si todavía quedan otras entradas.
@@ -659,7 +678,8 @@ class SparePartEntryBulkDeleteView(SupervisorAccessMixin, View):
                 request,
                 f"{blocked_count} repuesto{'s' if blocked_count != 1 else ''} "
                 f"no se {'han' if blocked_count != 1 else 'ha'} tocado -- ya "
-                f"{'tenían' if blocked_count != 1 else 'tenía'} movimientos de "
+                f"{'tenían' if blocked_count != 1 else 'tenía'} "
+                f"movimientos de "
                 f"stock reales registrados.",
             )
         if not deleted_count and not blocked_count:
@@ -1128,7 +1148,10 @@ class SparePartStockAdjustView(CatalogReadAccessMixin, View):
                 quantity=delta,
                 machine=entry.machine,
                 created_by=request.user.company_user,
-                notes='Ajuste de cantidad de stock desde el almacén (mecánico).',
+                notes=(
+                    'Ajuste de cantidad de stock desde el almacén '
+                    '(mecánico).'
+                ),
             )
 
         messages.success(
@@ -1191,7 +1214,9 @@ class SparePartConsumeFromWarehouseView(CatalogReadAccessMixin, View):
     etc.).
     """
 
-    results_template_name = 'workorder_spare_parts/_warehouse_search_results.html'
+    results_template_name = (
+        'workorder_spare_parts/_warehouse_search_results.html'
+    )
     confirm_template_name = 'workorder_spare_parts/_consumption_confirmed.html'
 
     def post(self, request, entry_line_pk, entry_pk):
@@ -1324,7 +1349,8 @@ class SparePartConsumePreAssignedView(CatalogReadAccessMixin, View):
                     machine=entry_line.machine_asset,
                 )
             return render(request, self.results_template_name, {
-                'entry_line': entry_line, 'results': results, 'error': str(exc),
+                'entry_line': entry_line, 'results': results,
+                'error': str(exc),
             })
 
         return render(request, self.confirm_template_name, {
@@ -1358,7 +1384,9 @@ class SparePartRegisterNewAndConsumeView(CatalogReadAccessMixin, View):
             pk=entry_line_pk,
             entry__work_order__company=request.user.company_user.company,
         )
-        return render(request, self.form_template_name, {'entry_line': entry_line})
+        return render(
+            request, self.form_template_name, {'entry_line': entry_line},
+        )
 
     def post(self, request, entry_line_pk):
         company = request.user.company_user.company
@@ -1382,8 +1410,12 @@ class SparePartRegisterNewAndConsumeView(CatalogReadAccessMixin, View):
             except InvalidOperation:
                 return None
 
-        stock_quantity_remaining = _to_decimal(request.POST.get('stock_quantity_remaining'))
-        stock_level_remaining = request.POST.get('stock_level_remaining', '').strip() or None
+        stock_quantity_remaining = _to_decimal(
+            request.POST.get('stock_quantity_remaining'),
+        )
+        stock_level_remaining = (
+            request.POST.get('stock_level_remaining', '').strip() or None
+        )
         quantity_used = _to_decimal(request.POST.get('quantity_used'))
 
         try:
@@ -1514,12 +1546,14 @@ class TaskTicketResolutionView(CatalogReadAccessMixin, View):
 
     def get(self, request):
         from chat.ticket_resolution import resolve_ticket_for_machine
-        from work_order_processor.management.commands.seed_personal_asset import (
-            PERSONAL_ASSET_CODE,
-        )
-        from work_order_processor.management.commands.seed_empresa_assets import (
-            EMPRESA_ASSETS,
-        )
+        from work_order_processor.management.commands.\
+            seed_personal_asset import (
+                PERSONAL_ASSET_CODE,
+            )
+        from work_order_processor.management.commands.\
+            seed_empresa_assets import (
+                EMPRESA_ASSETS,
+            )
 
         code = request.GET.get('code', '').strip()
         block_idx = request.GET.get('block_idx', '').strip()
@@ -1760,7 +1794,9 @@ class SparePartSalvageCreateView(CatalogReadAccessMixin, View):
     template_name = 'workorder_spare_parts/spare_part_salvage_form.html'
 
     def _get_form(self, request, data=None):
-        return SalvageEntryForm(data, company=request.user.company_user.company)
+        return SalvageEntryForm(
+            data, company=request.user.company_user.company,
+        )
 
     def get(self, request):
         return render(request, self.template_name, {
@@ -1789,7 +1825,9 @@ class SparePartSalvageCreateView(CatalogReadAccessMixin, View):
                 is_uncountable=cleaned['is_uncountable'],
                 stock_quantity=cleaned['stock_quantity'],
                 stock_level=cleaned['stock_level'],
-                origin_work_order_entry_line=cleaned['origin_work_order_entry_line'],
+                origin_work_order_entry_line=cleaned[
+                    'origin_work_order_entry_line'
+                ],
                 destination_machine=cleaned['destination_machine'],
             )
         except ValueError as exc:
@@ -1930,7 +1968,9 @@ class SparePartMaterialSearchView(CatalogReadAccessMixin, View):
             return JsonResponse({'results': []})
 
         company = request.user.company_user.company
-        results = StockAssignmentService.search_warehouse(company, query, limit=15)
+        results = StockAssignmentService.search_warehouse(
+            company, query, limit=15,
+        )
         payload = []
         for entry in results:
             stock_label = (
@@ -1980,7 +2020,9 @@ class SparePartMaterialQuickCreateView(CatalogReadAccessMixin, View):
             try:
                 stock_quantity = Decimal(stock_quantity_raw)
             except (InvalidOperation, ValueError):
-                return JsonResponse({'error': 'Cantidad no válida.'}, status=400)
+                return JsonResponse(
+                    {'error': 'Cantidad no válida.'}, status=400,
+                )
 
         try:
             entry = register_uninventoried_warehouse_stock(

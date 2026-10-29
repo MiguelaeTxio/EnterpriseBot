@@ -282,8 +282,19 @@ class CompanyUser(models.Model):
     # CRANE_OPERATOR: crane operator (mobile cranes and truck cranes).
     # Same rank as DRIVER.
     ROLE_CRANE_OPERATOR = "CRANE_OPERATOR"
+    # H24 (S141). ADMIN_SUPERVISOR: supervisor de administración. Miguel
+    # Ángel (para Juan Francisco): el mismo acceso que un administrador
+    # excepto la sección Asistencia; de Asistencia, solo Bases y
+    # Calendarios laborales. En el código, todo lo que no es de
+    # Asistencia comprueba ADMIN_ROLES en vez de ROLE_ADMIN.
+    # ADMIN_SUPERVISOR: administration supervisor. Same access as ADMIN
+    # except the Asistencia section, where only Bases and Calendarios
+    # laborales.
+    ROLE_ADMIN_SUPERVISOR = "ADMIN_SUPERVISOR"
+    ADMIN_ROLES = (ROLE_ADMIN, ROLE_ADMIN_SUPERVISOR)
     ROLE_CHOICES = [
         (ROLE_ADMIN,         "Administrador"),
+        (ROLE_ADMIN_SUPERVISOR, "Supervisor de Administración"),
         (ROLE_OPERATOR,      "Operador"),
         (ROLE_WORKSHOP,      "Operario de taller"),
         (ROLE_WORKSHOPBOSS,  "Jefe de taller"),
@@ -336,7 +347,9 @@ class CompanyUser(models.Model):
             "ASSIST_SUPERVISOR: supervisor de Asistencia — página Servicios. "
             "DOCS_SUPERVISOR: puede subir documentación de centros de gasto "
             "(el listado es de solo lectura para cualquier usuario). "
-            "OFFICE: administrativo. NIGHTGUARD: guarda nocturno."
+            "OFFICE: administrativo. NIGHTGUARD: guarda nocturno. "
+            "ADMIN_SUPERVISOR: como ADMIN salvo Asistencia (de "
+            "Asistencia, solo Bases y Calendarios laborales)."
         ),
     )
     is_active = models.BooleanField(
@@ -604,6 +617,16 @@ class CompanyUser(models.Model):
 
     def __str__(self):
         return f"{self.company.name} — {self.user.username}"
+
+    @property
+    def is_admin_level(self):
+        """
+        True for ADMIN and ADMIN_SUPERVISOR (H24, S141).
+        ---
+        True para ADMIN y ADMIN_SUPERVISOR: el acceso de administrador
+        en todo lo que no es Asistencia. Lo usan las plantillas.
+        """
+        return self.role in self.ADMIN_ROLES
 
 
 class TrustedDevice(models.Model):

@@ -163,7 +163,7 @@
         {# confirmado por Miguel Ángel. Un WORKSHOP no ve esta tarjeta (no   #}
         {# puede ejecutar assign) pero sí puede autoasignarse vía            #}
         {# "Asignarme este ticket" arriba (action=self_assign).              #}
-        {% if company_user.role == "ADMIN" or company_user.role == "SUPERVISOR" or company_user.role == "WORKSHOPBOSS" %}
+        {% if company_user.is_admin_level or company_user.role == "SUPERVISOR" or company_user.role == "WORKSHOPBOSS" %}
         <div class="card border-0 shadow-sm mt-3">
           <div class="card-header fw-semibold border-bottom py-3">
             <i class="bi bi-person-fill-gear me-2"></i>Asignar operario
