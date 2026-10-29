@@ -239,7 +239,8 @@ def send_clock_reminders(company, now=None, log=logger.info):
         if not _day_rule(company_user)(day):
             counters["festivo"] += 1
             continue
-        schedule = _resolve_operator_schedule(company_user, company)
+        # S141: el horario de hoy (puede ser distinto según el día).
+        schedule = _resolve_operator_schedule(company_user, company, day)
         if schedule is None:
             counters["sin_horario"] += 1
             continue

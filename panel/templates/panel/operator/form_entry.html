@@ -138,7 +138,7 @@
                                {% if is_intensive_override %}checked{% endif %}
                                hx-post="{% url 'panel:operator_intensive_toggle' %}"
                                hx-trigger="change"
-                               hx-include="[name=csrfmiddlewaretoken]"
+                               hx-include="[name=csrfmiddlewaretoken],[name=fecha]"
                                hx-vals='js:{"value": event.target.checked ? "1" : "0"}'
                                hx-target="#schedule-dependent-fields"
                                hx-swap="outerHTML"

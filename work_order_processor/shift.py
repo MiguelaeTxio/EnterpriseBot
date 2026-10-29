@@ -42,7 +42,11 @@ def entry_shift_is_intensive(entry):
     try:
         from panel.views_operator import _resolve_operator_schedule
 
-        schedule = _resolve_operator_schedule(operator, work_order.company)
+        # S141: el horario del día del parte (puede ser distinto según
+        # el día de la semana).
+        schedule = _resolve_operator_schedule(
+            operator, work_order.company, work_order.work_date,
+        )
     except Exception:
         logger.exception(
             "# [S139 jornada] No se pudo resolver el horario del operario "

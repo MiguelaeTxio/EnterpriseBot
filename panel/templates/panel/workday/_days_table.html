@@ -1,0 +1,40 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/workday/_days_table.html #}
+{% comment %}
+H24 (S141). Horario distinto según el día: una fila por día (lunes a
+domingo) con "se trabaja", mañana y tarde. Miguel Ángel: se hace el
+lunes y el martes ya lo trae copiado sin hacer nada; si es distinto se
+cambia y, desde ahí, los días siguientes copian el nuevo. Un día copia
+al anterior mientras sea igual que él (schedule_form.html, JS). Tarde
+vacía = jornada intensiva ese día. Recibe `prefix` (create o edit) y
+`rows` (filas con number, name, works, sm, em, sa, ea).
+{% endcomment %}
+<div class="table-responsive wd-days" data-prefix="{{ prefix }}">
+    <table class="table table-sm align-middle mb-1">
+        <thead class="table-light">
+            <tr>
+                <th class="text-sm">Día</th>
+                <th class="text-sm text-center">Se trabaja</th>
+                <th class="text-sm">Entrada mañana</th>
+                <th class="text-sm">Salida mañana</th>
+                <th class="text-sm">Entrada tarde</th>
+                <th class="text-sm">Salida tarde</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in rows %}
+            <tr class="wd-day-row" data-day="{{ row.number }}">
+                <td class="text-sm fw-semibold">{{ row.name }}</td>
+                <td class="text-center">
+                    <input class="form-check-input wd-works" type="checkbox" name="day_{{ row.number }}_works"
+                           aria-label="{{ row.name }}: se trabaja"{% if row.works %} checked{% endif %}>
+                </td>
+                <td><input type="time" class="form-control form-control-sm wd-sm" name="day_{{ row.number }}_sm" value="{{ row.sm }}" aria-label="{{ row.name }}: entrada mañana"></td>
+                <td><input type="time" class="form-control form-control-sm wd-em" name="day_{{ row.number }}_em" value="{{ row.em }}" aria-label="{{ row.name }}: salida mañana"></td>
+                <td><input type="time" class="form-control form-control-sm wd-sa" name="day_{{ row.number }}_sa" value="{{ row.sa }}" aria-label="{{ row.name }}: entrada tarde"></td>
+                <td><input type="time" class="form-control form-control-sm wd-ea" name="day_{{ row.number }}_ea" value="{{ row.ea }}" aria-label="{{ row.name }}: salida tarde"></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <div class="form-text">Al rellenar un día, los siguientes que eran iguales se copian solos; cambia solo los que sean distintos. Tarde vacía = jornada intensiva ese día.</div>
+</div>

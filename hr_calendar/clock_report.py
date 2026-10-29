@@ -566,15 +566,18 @@ def expected_start(starts, pressed_at):
 
 def _schedule_times_by_user(company, company_user_ids):
     """
-    {user id: (start times, end times, is_day_compared)} -- the times of
-    the user's schedule, and a function telling whether a day is
-    compared with it (S130, Miguel Ángel: Saturdays, Sundays and the
-    holidays of the worker's base are not, except for night guards).
+    {user id: (times_of, is_day_compared)} -- a function giving the
+    (start times, end times) of the user's schedule on a day, and a
+    function telling whether a day is compared with it (S130, Miguel
+    Ángel: Saturdays, Sundays and the holidays of the worker's base are
+    not, except for night guards).
     ---
-    {id de usuario: (horas de entrada, horas de salida, se_compara)} --
-    las horas de su horario y una función que dice si un día se compara
-    con él (S130, Miguel Ángel: sábados, domingos y festivos de la base
-    del trabajador no, salvo los guardas nocturnos).
+    {id de usuario: (horas_del_dia, se_compara)} -- una función que da
+    (horas de entrada, horas de salida) de su horario un día dado (S141:
+    el horario puede ser distinto según el día de la semana) y otra que
+    dice si un día se compara con él (S130, Miguel Ángel: sábados,
+    domingos y festivos de la base del trabajador no, salvo los guardas
+    nocturnos).
     """
     from ivr_config.models import CompanyUser
     from panel.views_operator import _resolve_operator_schedule
@@ -586,10 +589,28 @@ def _schedule_times_by_user(company, company_user_ids):
     for company_user in users:
         schedule = _resolve_operator_schedule(company_user, company)
         result[company_user.pk] = (
-            schedule_starts(schedule), schedule_ends(schedule),
-            _day_rule(company_user),
+            _times_of(schedule), _day_rule(company_user),
         )
     return result
+
+
+def _times_of(schedule):
+    """
+    day -> (start times, end times) of `schedule` on that day.
+    ---
+    día -> (horas de entrada, horas de salida) de `schedule` ese día; un
+    día que no se trabaja (horario distinto según el día) no tiene
+    ninguna.
+    """
+    if schedule is not None and schedule.varies_by_day:
+        from django.db.models import prefetch_related_objects
+
+        prefetch_related_objects([schedule], "days")
+
+    def times(day):
+        on_day = schedule.for_day(day) if schedule is not None else None
+        return schedule_starts(on_day), schedule_ends(on_day)
+    return times
 
 
 def _day_rule(company_user):
@@ -704,14 +725,15 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
             s for s in build_shifts(user_events)
             if date_from <= s.day <= date_to
         ]
-        starts, ends, is_day_compared = times_by_user.get(
-            user_id, ([], [], lambda day: True),
+        times_of, is_day_compared = times_by_user.get(
+            user_id, (lambda day: ([], []), lambda day: True),
         )
         for shift in report.shifts:
             if not is_day_compared(shift.day):
                 # S130: sábado, domingo o festivo de su base (salvo
                 # guardas): sin horario con el que comparar.
                 continue
+            starts, ends = times_of(shift.day)
             if shift.clock_in is not None:
                 shift.expected_start = expected_start(
                     starts, shift.clock_in.pressed_at,

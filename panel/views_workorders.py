@@ -29,6 +29,7 @@ from work_order_processor.tasks import (
     process_work_order_pdf,
 )
 from work_order_processor.festive import is_festive, split_hours
+import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -3254,6 +3255,66 @@ class WorkerAbsenceDeleteView(SupervisorAccessMixin, View):
         return redirect(ABSENCES_TAB_URL)
 
 
+WEEKDAY_NAMES = [
+    "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado",
+    "Domingo",
+]
+
+
+def _fmt_hm(value):
+    return value.strftime("%H:%M") if value else ""
+
+
+def _schedule_day_rows(sched):
+    """
+    [{number, name, works, sm, em, sa, ea}] of a schedule, Monday first.
+    ---
+    Las horas de cada día de un horario (S141), de lunes a domingo, como
+    texto HH:MM. Sin "distinto según el día", todos los días con las
+    horas del horario.
+    """
+    by_day = {d.weekday: d for d in sched.days.all()}
+    rows = []
+    for number, name in enumerate(WEEKDAY_NAMES, start=1):
+        day = by_day.get(number - 1)
+        if sched.varies_by_day and day is not None:
+            rows.append({
+                "number": number, "name": name, "works": day.works,
+                "sm": _fmt_hm(day.start_time_morning),
+                "em": _fmt_hm(day.end_time_morning),
+                "sa": _fmt_hm(day.start_time_afternoon),
+                "ea": _fmt_hm(day.end_time_afternoon),
+            })
+        else:
+            rows.append({
+                "number": number, "name": name, "works": True,
+                "sm": _fmt_hm(sched.start_time_morning),
+                "em": _fmt_hm(sched.end_time_morning),
+                "sa": ("" if sched.is_intensive
+                       else _fmt_hm(sched.start_time_afternoon)),
+                "ea": ("" if sched.is_intensive
+                       else _fmt_hm(sched.end_time_afternoon)),
+            })
+    return rows
+
+
+def _post_day_rows(post):
+    """
+    The weekday rows as typed, to re-render the form after an error.
+    ---
+    Las filas de días tal como se escribieron, para volver a pintar el
+    formulario tras un error.
+    """
+    return [{
+        "number": number, "name": name,
+        "works": bool(post.get("day_%d_works" % number)),
+        "sm": post.get("day_%d_sm" % number, ""),
+        "em": post.get("day_%d_em" % number, ""),
+        "sa": post.get("day_%d_sa" % number, ""),
+        "ea": post.get("day_%d_ea" % number, ""),
+    } for number, name in enumerate(WEEKDAY_NAMES, start=1)]
+
+
 class WorkdayScheduleView(SupervisorAccessMixin, View):
     """
     Creates or updates the WorkdaySchedule records for the authenticated
@@ -3326,6 +3387,67 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
         except ValueError:
             return None
 
+    def _parse_days(self, post):
+        """
+        ([{weekday, works, sm, em, sa, ea}], errors) from the form.
+        ---
+        Las horas de cada día de la semana del formulario (S141) y los
+        errores. Un día que se trabaja necesita la mañana; la tarde va
+        entera o vacía (vacía = jornada intensiva ese día).
+        """
+        days, errors = [], []
+        for number, name in enumerate(WEEKDAY_NAMES, start=1):
+            prefix = "day_%d_" % number
+            works = bool(post.get(prefix + "works"))
+            values = {
+                key: self._parse_time(post.get(prefix + key, ""))
+                for key in ("sm", "em", "sa", "ea")
+            }
+            if not works:
+                days.append({"weekday": number - 1, "works": False,
+                             "sm": None, "em": None, "sa": None, "ea": None})
+                continue
+            if values["sm"] is None or values["em"] is None:
+                errors.append("%s: indica la entrada y la salida de la "
+                              "mañana." % name)
+            elif values["em"] <= values["sm"]:
+                errors.append("%s: la salida de la mañana debe ser "
+                              "posterior a la entrada." % name)
+            if (values["sa"] is None) != (values["ea"] is None):
+                errors.append("%s: la tarde necesita la entrada y la "
+                              "salida (o ninguna, si ese día es jornada "
+                              "intensiva)." % name)
+            elif values["sa"] is not None:
+                if values["em"] and values["sa"] <= values["em"]:
+                    errors.append("%s: la entrada de la tarde debe ser "
+                                  "posterior a la salida de la mañana."
+                                  % name)
+                if values["ea"] <= values["sa"]:
+                    errors.append("%s: la salida de la tarde debe ser "
+                                  "posterior a la entrada." % name)
+            days.append({"weekday": number - 1, "works": True, **values})
+        return days, errors
+
+    def _save_days(self, sched, day_values):
+        """
+        Replace the schedule's weekday rows (none when it does not vary).
+        ---
+        Sustituye las filas de días del horario (ninguna si no varía según
+        el día).
+        """
+        from ivr_config.models import WorkdayScheduleDay
+
+        sched.days.all().delete()
+        if not sched.varies_by_day:
+            return
+        WorkdayScheduleDay.objects.bulk_create([
+            WorkdayScheduleDay(
+                schedule=sched, weekday=d["weekday"], works=d["works"],
+                start_time_morning=d["sm"], end_time_morning=d["em"],
+                start_time_afternoon=d["sa"], end_time_afternoon=d["ea"],
+            ) for d in day_values
+        ])
+
     def _build_context(self, request, errors=None, post_data=None):
         """
         Builds the template context with the list of existing schedules,
@@ -3338,16 +3460,31 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
 
         cu = request.user.company_user
         company = cu.company
+        schedules = list(WorkdaySchedule.objects.filter(
+            company=company
+        ).prefetch_related("days").order_by("label"))
+        for sched in schedules:
+            # S141: las horas de cada día, para el modal de edición y la
+            # lista.
+            sched.day_rows = _schedule_day_rows(sched)
+            sched.days_json = json.dumps([
+                {key: row[key] for key in ("works", "sm", "em", "sa", "ea")}
+                for row in sched.day_rows
+            ])
         return {
             "company": company,
             "company_user": cu,
             "own_presence": self._get_own_presence(cu),
             "active_nav": "workday_schedule",
-            "schedules": WorkdaySchedule.objects.filter(
-                company=company
-            ).order_by("label"),
+            "schedules": schedules,
             "errors": errors or [],
             "post_data": post_data or {},
+            "post_days": _post_day_rows(post_data) if post_data else [],
+            "weekday_names": WEEKDAY_NAMES,
+            "empty_day_rows": [{
+                "number": n, "name": name, "works": True,
+                "sm": "", "em": "", "sa": "", "ea": "",
+            } for n, name in enumerate(WEEKDAY_NAMES, start=1)],
         }
 
     def get(self, request, *args, **kwargs):
@@ -3411,10 +3548,34 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
         end_afternoon_val = request.POST.get("end_time_afternoon", "").strip()
         tol_val = request.POST.get("tolerance_minutes", "15").strip()
         is_default_val = bool(request.POST.get("is_default"))
+        # S141: horario distinto según el día de la semana.
+        varies_val = bool(request.POST.get("varies_by_day"))
 
         errors = []
         if not label_val:
             errors.append("El nombre del horario es obligatorio.")
+
+        day_values = []
+        if varies_val:
+            day_values, day_errors = self._parse_days(request.POST)
+            errors.extend(day_errors)
+            first = next((d for d in day_values if d["works"]), None)
+            if first is None and not day_errors:
+                errors.append("Marca al menos un día que se trabaje.")
+            elif first is not None:
+                # Las horas generales del horario son las del primer día
+                # que se trabaja.
+                start_morning_val = first["sm"].strftime("%H:%M")
+                end_morning_val = first["em"].strftime("%H:%M")
+                is_intensive_val = first["sa"] is None
+                start_afternoon_val = (first["sa"].strftime("%H:%M")
+                                       if first["sa"] else "")
+                end_afternoon_val = (first["ea"].strftime("%H:%M")
+                                     if first["ea"] else "")
+            else:
+                # Ya hay errores de los días: solo para no añadir otros.
+                start_morning_val, end_morning_val = "00:00", "00:01"
+                is_intensive_val = True
 
         if season_val not in dict(_WDS_choices.Season.choices):
             errors.append("La temporada seleccionada no es válida.")
@@ -3502,7 +3663,9 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
                 sched.end_time_afternoon = end_afternoon
                 sched.tolerance_minutes = tolerance
                 sched.is_default = is_default_val
+                sched.varies_by_day = varies_val
                 sched.save()
+                self._save_days(sched, day_values)
                 django_messages.success(
                     request,
                     f"Horario '{label_val}' actualizado correctamente.",
@@ -3514,8 +3677,9 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
                 )
             return redirect(REDIRECT_URL)
 
-        WorkdaySchedule.objects.create(
+        sched = WorkdaySchedule.objects.create(
             company=company,
+            varies_by_day=varies_val,
             label=label_val,
             season=season_val,
             is_intensive=is_intensive_val,
@@ -3526,6 +3690,7 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
             tolerance_minutes=tolerance,
             is_default=is_default_val,
         )
+        self._save_days(sched, day_values)
         django_messages.success(
             request,
             f"Horario '{label_val}' creado correctamente.",

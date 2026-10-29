@@ -11,6 +11,7 @@
 {#   Cada horario existente puede editarse o eliminarse desde la misma página.                  #}
 {#   Soporta modelo de turno partido por temporada: INVIERNO (partido) y VERANO (intensivo).   #}
 {#   Los campos del tramo de tarde se muestran/ocultan por JS según el checkbox is_intensive.  #}
+{# S141: casilla "Horario distinto según el día" con una fila por día (panel/workday/_days_table.html). #}
 {% extends "panel/base.html" %}
 
 {% block title %}Horarios de jornada{% endblock %}
@@ -85,6 +86,15 @@
                             <span class="badge bg-secondary ms-1">Intensiva</span>
                             {% endif %}
                         </td>
+                        {% if sched.varies_by_day %}
+                        <td class="text-sm" colspan="2">
+                            <span class="badge bg-primary mb-1">Según el día</span>
+                            {% for row in sched.day_rows %}
+                            <div class="text-nowrap"><span class="fw-semibold">{{ row.name|slice:":3" }}</span>
+                                {% if not row.works %}<span class="text-muted">no se trabaja</span>{% else %}{{ row.sm }}–{{ row.em }}{% if row.sa %} / {{ row.sa }}–{{ row.ea }}{% endif %}{% endif %}</div>
+                            {% endfor %}
+                        </td>
+                        {% else %}
                         <td class="text-sm">
                             {{ sched.start_time_morning|time:"H:i" }}–{{ sched.end_time_morning|time:"H:i" }}
                         </td>
@@ -99,6 +109,7 @@
                                 {% endif %}
                             {% endif %}
                         </td>
+                        {% endif %}
                         <td class="text-sm">{{ sched.tolerance_minutes }} min</td>
                         <td class="text-sm">
                             {% if sched.is_default %}
@@ -126,6 +137,8 @@
                                         data-end-afternoon="{{ sched.end_time_afternoon|time:'H:i'|default:'' }}"
                                         data-tolerance="{{ sched.tolerance_minutes }}"
                                         data-is-default="{{ sched.is_default|yesno:'true,false' }}"
+                                        data-varies="{{ sched.varies_by_day|yesno:'true,false' }}"
+                                        data-days="{{ sched.days_json }}"
                                         title="Editar horario">
                                     <i class="bi bi-pencil"></i>
                                 </button>
@@ -209,7 +222,7 @@
                     </div>
 
                     {# Jornada intensiva — Intensive shift flag #}
-                    <div class="col-12 col-md-2 d-flex align-items-end pb-1">
+                    <div class="col-12 col-md-2 d-flex align-items-end pb-1 create-general-tract">
                         <div class="form-check mb-0">
                             <input class="form-check-input schedule-intensive-check"
                                    type="checkbox"
@@ -223,8 +236,27 @@
                         </div>
                     </div>
 
-                    {# Tramo mañana — Morning tract #}
+                    {# Horario distinto según el día (S141) #}
                     <div class="col-12">
+                        <div class="form-check mb-0">
+                            <input class="form-check-input schedule-varies-check" type="checkbox"
+                                   name="varies_by_day" id="createVaries" data-target="create"
+                                   {% if post_data.varies_by_day %}checked{% endif %}>
+                            <label class="form-check-label text-sm fw-semibold" for="createVaries">
+                                Horario distinto según el día
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-12 create-days-tract">
+                        {% if post_days %}
+                        {% include "panel/workday/_days_table.html" with prefix="create" rows=post_days %}
+                        {% else %}
+                        {% include "panel/workday/_days_table.html" with prefix="create" rows=empty_day_rows %}
+                        {% endif %}
+                    </div>
+
+                    {# Tramo mañana — Morning tract #}
+                    <div class="col-12 create-general-tract">
                         <div class="text-sm fw-semibold text-muted mb-2">
                             <i class="bi bi-sunrise me-1"></i>Tramo de mañana
                         </div>
@@ -251,7 +283,7 @@
                     </div>
 
                     {# Tramo tarde — Afternoon tract (hidden when intensive) #}
-                    <div class="col-12 create-afternoon-tract"
+                    <div class="col-12 create-afternoon-tract create-general-tract"
                          {% if post_data.is_intensive %}style="display:none"{% endif %}>
                         <div class="text-sm fw-semibold text-muted mb-2">
                             <i class="bi bi-sunset me-1"></i>Tramo de tarde
@@ -350,7 +382,7 @@
                         </div>
 
                         {# Jornada intensiva — Intensive shift flag #}
-                        <div class="col-12 col-md-2 d-flex align-items-end pb-1">
+                        <div class="col-12 col-md-2 d-flex align-items-end pb-1 edit-general-tract">
                             <div class="form-check mb-0">
                                 <input class="form-check-input schedule-intensive-check"
                                        type="checkbox"
@@ -363,8 +395,22 @@
                             </div>
                         </div>
 
-                        {# Tramo mañana — Morning tract #}
+                        {# Horario distinto según el día (S141) #}
                         <div class="col-12">
+                            <div class="form-check mb-0">
+                                <input class="form-check-input schedule-varies-check" type="checkbox"
+                                       name="varies_by_day" id="editVaries" data-target="edit">
+                                <label class="form-check-label text-sm fw-semibold" for="editVaries">
+                                    Horario distinto según el día
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-12 edit-days-tract">
+                            {% include "panel/workday/_days_table.html" with prefix="edit" rows=empty_day_rows %}
+                        </div>
+
+                        {# Tramo mañana — Morning tract #}
+                        <div class="col-12 edit-general-tract">
                             <div class="text-sm fw-semibold text-muted mb-2">
                                 <i class="bi bi-sunrise me-1"></i>Tramo de mañana
                             </div>
@@ -387,7 +433,7 @@
                         </div>
 
                         {# Tramo tarde — Afternoon tract (hidden when intensive) #}
-                        <div class="col-12 edit-afternoon-tract">
+                        <div class="col-12 edit-afternoon-tract edit-general-tract">
                             <div class="text-sm fw-semibold text-muted mb-2">
                                 <i class="bi bi-sunset me-1"></i>Tramo de tarde
                             </div>
@@ -473,6 +519,9 @@
         var isIntensive = checkEl.checked;
 
         if (!tractEl) { return; }
+        // S141: con "según el día", las horas generales no se usan.
+        var varies = document.querySelector(".schedule-varies-check[data-target='" + target + "']");
+        if (varies && varies.checked) { return; }
 
         if (isIntensive) {
             tractEl.style.display = "none";
@@ -488,7 +537,115 @@
         }
     }
 
+    // ---- S141: horario distinto según el día -------------------------
+    // Miguel Ángel: se hace el lunes y el martes ya lo trae; si es
+    // distinto se cambia y los siguientes copian el nuevo. Regla: al
+    // cambiar un día, cada día siguiente que era igual que él (antes del
+    // cambio) pasa a ser igual que él ahora; el primero distinto corta.
+    var FIELDS = ["sm", "em", "sa", "ea"];
+    function rowValues(row) {
+        var v = {works: row.querySelector(".wd-works").checked};
+        FIELDS.forEach(function (f) { v[f] = row.querySelector(".wd-" + f).value; });
+        return v;
+    }
+    function sameValues(a, b) {
+        return a.works === b.works && FIELDS.every(function (f) { return a[f] === b[f]; });
+    }
+    function setValues(row, v) {
+        row.querySelector(".wd-works").checked = v.works;
+        FIELDS.forEach(function (f) { row.querySelector(".wd-" + f).value = v[f]; });
+        paintRow(row);
+        row.dataset.prev = JSON.stringify(v);
+    }
+    function paintRow(row) {
+        var works = row.querySelector(".wd-works").checked;
+        FIELDS.forEach(function (f) {
+            var input = row.querySelector(".wd-" + f);
+            input.disabled = !works;
+            input.required = works && (f === "sm" || f === "em");
+        });
+    }
+    function onDayChange(row) {
+        var old = row.dataset.prev ? JSON.parse(row.dataset.prev) : null;
+        var now = rowValues(row);
+        paintRow(row);
+        row.dataset.prev = JSON.stringify(now);
+        if (!old) { return; }
+        var next = row.nextElementSibling;
+        while (next && next.classList.contains("wd-day-row") && sameValues(rowValues(next), old)) {
+            setValues(next, now);
+            next = next.nextElementSibling;
+        }
+    }
+    function initDays(table) {
+        table.querySelectorAll(".wd-day-row").forEach(function (row) {
+            paintRow(row);
+            row.dataset.prev = JSON.stringify(rowValues(row));
+            row.addEventListener("input", function () { onDayChange(row); });
+            row.addEventListener("change", function () { onDayChange(row); });
+        });
+    }
+    function loadDays(table, days) {
+        table.querySelectorAll(".wd-day-row").forEach(function (row, i) {
+            var d = days && days[i] ? days[i] : {works: true, sm: "", em: "", sa: "", ea: ""};
+            setValues(row, d);
+        });
+    }
+    function toggleVaries(checkEl) {
+        var target = checkEl.getAttribute("data-target");
+        var on = checkEl.checked;
+        var days = document.querySelector("." + target + "-days-tract");
+        if (days) {
+            days.style.display = on ? "" : "none";
+            days.querySelectorAll("input").forEach(function (inp) {
+                if (!on) { inp.required = false; inp.disabled = true; }
+            });
+            if (on) {
+                days.querySelectorAll(".wd-works").forEach(function (inp) { inp.disabled = false; });
+                days.querySelectorAll(".wd-day-row").forEach(paintRow);
+            }
+        }
+        document.querySelectorAll("." + target + "-general-tract").forEach(function (el) {
+            el.style.display = on ? "none" : "";
+            el.querySelectorAll("input[type='time']").forEach(function (inp) {
+                if (on) { inp.required = false; }
+            });
+        });
+        if (!on) {
+            document.querySelectorAll("." + target + "-general-tract input[name$='_morning']").forEach(function (inp) {
+                inp.required = true;
+            });
+            var intensive = document.querySelector(".schedule-intensive-check[data-target='" + target + "']");
+            if (intensive) { toggleAfternoon(intensive); }
+        }
+    }
+
     document.addEventListener("DOMContentLoaded", function () {
+
+        document.querySelectorAll(".wd-days").forEach(initDays);
+        document.querySelectorAll(".schedule-varies-check").forEach(function (chk) {
+            chk.addEventListener("change", function () {
+                var table = document.querySelector("." + chk.getAttribute("data-target") + "-days-tract .wd-days");
+                // Al marcarla, si los días están vacíos, el lunes trae las
+                // horas generales y los demás lo copian.
+                if (chk.checked && table) {
+                    var first = table.querySelector(".wd-day-row");
+                    if (first && !rowValues(first).sm) {
+                        var form = chk.closest("form");
+                        var general = {
+                            works: true,
+                            sm: form.querySelector("[name='start_time_morning']").value,
+                            em: form.querySelector("[name='end_time_morning']").value,
+                            sa: form.querySelector("[name='start_time_afternoon']").value,
+                            ea: form.querySelector("[name='end_time_afternoon']").value,
+                        };
+                        loadDays(table, [0, 1, 2, 3, 4, 5, 6].map(function () { return general; }));
+                    }
+                }
+                toggleVaries(chk);
+            });
+            toggleVaries(chk);
+        });
 
         /* Initialise all intensive checkboxes on page load.
            Inicializar todos los checkboxes de intensiva al cargar la página. */
@@ -522,6 +679,15 @@
                Establecer checkbox is_intensive y disparar el toggle. */
             var chk = document.getElementById("editIsIntensive");
             chk.checked = btn.getAttribute("data-is-intensive") === "true";
+
+            /* S141: horario según el día. */
+            var varies = document.getElementById("editVaries");
+            varies.checked = btn.getAttribute("data-varies") === "true";
+            var table = document.querySelector(".edit-days-tract .wd-days");
+            var days = [];
+            try { days = JSON.parse(btn.getAttribute("data-days") || "[]"); } catch (e) { days = []; }
+            loadDays(table, days);
+            toggleVaries(varies);
             toggleAfternoon(chk);
         });
 

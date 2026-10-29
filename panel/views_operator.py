@@ -3,6 +3,7 @@ from django.contrib import messages as django_messages
 from django.views.generic import TemplateView, View
 from django.shortcuts import get_object_or_404, redirect, render
 from django.db.models import Q
+from django.utils import timezone
 from django.utils.timezone import now
 
 from panel.mixins import (
@@ -451,7 +452,39 @@ class WorkOrderEntryUploadView(WorkshopRequiredMixin, View):
         return redirect("/panel/operator/confirm/")
 
 
-def _resolve_operator_schedule(cu, company):
+def _resolve_operator_schedule(cu, company, day=None):
+    """
+    The WorkdaySchedule of a CompanyUser that applies on `day`.
+    ---
+    El horario del usuario que vale el día `day` (S141): el de
+    _resolve_base_schedule y, si es "distinto según el día", con las
+    horas de ese día de la semana (None si ese día no se trabaja). Sin
+    `day`, el horario tal cual (las horas del primer día que se trabaja).
+    """
+    schedule = _resolve_base_schedule(cu, company)
+    if schedule is None or day is None:
+        return schedule
+    return schedule.for_day(day)
+
+
+def _parse_parte_date(text):
+    """
+    The date of a parte typed in the form (dd/mm/yyyy or yyyy-mm-dd), or
+    None.
+    ---
+    La fecha del parte escrita en el formulario, o None.
+    """
+    from datetime import datetime as _datetime_pp
+
+    for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+        try:
+            return _datetime_pp.strptime((text or "").strip(), fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _resolve_base_schedule(cu, company):
     """
     Resolves the effective WorkdaySchedule for a CompanyUser following
     the Gate 4 priority chain:
@@ -2594,7 +2627,11 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                     _opts.append(_rep["vehiculo_raw"])
                 _rep["cdg_options"] = _opts
 
-            _schedule_edit = _resolve_operator_schedule(cu, company)
+            # S141: el horario del día del parte.
+            _schedule_edit = _resolve_operator_schedule(
+                cu, company,
+                first_entry.work_date if first_entry else None,
+            )
             _lunch_start_edit = ""
             _lunch_end_edit = ""
             _show_lunch_edit = False
@@ -2870,7 +2907,10 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                     _ip_opts.append(_ip_rep["vehiculo_raw"])
                 _ip_rep["cdg_options"] = _ip_opts
 
-            _schedule_ip = _resolve_operator_schedule(cu, company)
+            _schedule_ip = _resolve_operator_schedule(
+                cu, company,
+                _ip_first_entry.work_date if _ip_first_entry else None,
+            )
             _ip_lunch_start = ""
             _ip_lunch_end = ""
             _ip_show_lunch = False
@@ -3006,7 +3046,10 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
             )
             return render(request, self.template_name, context)
 
-        _schedule_create = _resolve_operator_schedule(cu, company)
+        # S141: el parte nuevo es de hoy por defecto.
+        _schedule_create = _resolve_operator_schedule(
+            cu, company, timezone.localdate(),
+        )
         _lunch_start = ""
         _lunch_end = ""
         _first_hc = ""
@@ -3235,7 +3278,9 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
 
         _form_action = POST.get("form_action", "close_order").strip()
 
-        _post_schedule = _resolve_operator_schedule(cu, company)
+        _post_schedule = _resolve_operator_schedule(
+            cu, company, _parse_parte_date(POST.get("fecha", "")),
+        )
         _post_lb_start = ""
         _post_lb_end = ""
         _post_show_lunch = False
@@ -6276,7 +6321,13 @@ class WorkshopIntensiveToggleView(WorkshopRequiredMixin, View):
 
         # -- Resolve updated schedule and build response payload. --
         # -- Resolver horario actualizado y construir payload de respuesta. --
-        schedule = _resolve_operator_schedule(cu, company)
+        # S141: el horario del día del parte que hay en el formulario
+        # (hoy si no viene).
+        schedule = _resolve_operator_schedule(
+            cu, company,
+            _parse_parte_date(request.POST.get("fecha", ""))
+            or timezone.localdate(),
+        )
 
         def _fmt(t):
             """

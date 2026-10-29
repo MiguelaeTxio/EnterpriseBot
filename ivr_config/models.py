@@ -3138,6 +3138,18 @@ class WorkdaySchedule(models.Model):
             "min."
         ),
     )
+    # S141 (Miguel Ángel): "una casilla que marque diversidad de horarios
+    # según el día": con ella, cada día de la semana tiene su horario
+    # (WorkdayScheduleDay) y los campos de arriba quedan como los del
+    # primer día que se trabaja.
+    varies_by_day = models.BooleanField(
+        default=False,
+        verbose_name="Horario distinto según el día",
+        help_text=(
+            "Si está activo, cada día de la semana (lunes a domingo) tiene "
+            "su propio horario de mañana y tarde."
+        ),
+    )
     is_default = models.BooleanField(
         default=False,
         verbose_name="Horario por defecto",
@@ -3225,6 +3237,34 @@ class WorkdaySchedule(models.Model):
             ).exclude(pk=self.pk).update(is_default=False)
         super().save(*args, **kwargs)
 
+    def for_day(self, day):
+        """
+        The schedule that applies on `day` (a date), or None.
+        ---
+        El horario que vale el día `day` (una fecha), o None. Sin
+        "horario distinto según el día", el propio horario. Con él, una
+        copia sin guardar de este horario con las horas de ese día de la
+        semana (sin tarde = jornada intensiva ese día), o None si ese día
+        no se trabaja. Nunca se guarda la copia.
+        """
+        import copy
+
+        if not self.varies_by_day or day is None:
+            return self
+        row = next(
+            (d for d in self.days.all() if d.weekday == day.weekday()),
+            None,
+        )
+        if row is None or not row.works or row.start_time_morning is None:
+            return None
+        result = copy.copy(self)
+        result.start_time_morning = row.start_time_morning
+        result.end_time_morning = row.end_time_morning
+        result.start_time_afternoon = row.start_time_afternoon
+        result.end_time_afternoon = row.end_time_afternoon
+        result.is_intensive = row.start_time_afternoon is None
+        return result
+
     def __str__(self):
         """
         Returns a human-readable string combining company, label, season,
@@ -3257,6 +3297,63 @@ class WorkdaySchedule(models.Model):
             f"(±{self.tolerance_minutes} min)"
             f"{intensive_marker}{default_marker}"
         )
+
+
+class WorkdayScheduleDay(models.Model):
+    """
+    The hours of one weekday of a WorkdaySchedule that varies by day.
+    ---
+    Las horas de un día de la semana de un horario "distinto según el
+    día" (S141). Sin tarde, ese día es jornada intensiva; sin trabajar,
+    ese día no tiene horario (ni recordatorios ni comparación).
+    """
+
+    WEEKDAY_CHOICES = [
+        (0, "Lunes"),
+        (1, "Martes"),
+        (2, "Miércoles"),
+        (3, "Jueves"),
+        (4, "Viernes"),
+        (5, "Sábado"),
+        (6, "Domingo"),
+    ]
+
+    schedule = models.ForeignKey(
+        WorkdaySchedule,
+        on_delete=models.CASCADE,
+        related_name="days",
+        verbose_name="Horario",
+    )
+    weekday = models.PositiveSmallIntegerField(
+        choices=WEEKDAY_CHOICES, verbose_name="Día de la semana",
+    )
+    works = models.BooleanField(default=True, verbose_name="Se trabaja")
+    start_time_morning = models.TimeField(
+        null=True, blank=True, verbose_name="Entrada mañana",
+    )
+    end_time_morning = models.TimeField(
+        null=True, blank=True, verbose_name="Salida mañana",
+    )
+    start_time_afternoon = models.TimeField(
+        null=True, blank=True, verbose_name="Entrada tarde",
+    )
+    end_time_afternoon = models.TimeField(
+        null=True, blank=True, verbose_name="Salida tarde",
+    )
+
+    class Meta:
+        verbose_name = "Día de horario de jornada"
+        verbose_name_plural = "Días de horario de jornada"
+        ordering = ["schedule", "weekday"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["schedule", "weekday"],
+                name="workdayscheduleday_unique_schedule_weekday",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.schedule.label} — {self.get_weekday_display()}"
 
 
 # ---------------------------------------------------------------------------
