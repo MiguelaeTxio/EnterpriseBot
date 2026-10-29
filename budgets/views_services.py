@@ -1553,6 +1553,13 @@ class WorkOrderInvoiceSimulationExcelView(
                     ])
             sheet.append([label(), "Total sin IVA", None, None, None, float(row["total"])])
             sheet[sheet.max_row][1].font = bold
+            iva = row["iva_line"]
+            if iva is not None:
+                sheet.append([
+                    label(), iva.concept_label, None, None,
+                    float(iva.unit_price * Decimal("100")),
+                    float(iva.subtotal),
+                ])
             if row["total_with_iva"] is not None:
                 sheet.append([
                     label(), "Total con IVA", None, None, None,

@@ -66,7 +66,8 @@ def simulate_unit(unit):
     valorar.
     """
     work_order = unit.work_order
-    result = {"unit": unit, "lines": [], "notes": [], "error": None,
+    result = {"unit": unit, "lines": [], "iva_line": None, "notes": [],
+              "error": None,
               "total": None, "total_with_iva": None, "budget": None}
     if work_order.insurer_id is None:
         result["error"] = "La orden no tiene aseguradora."
@@ -82,8 +83,14 @@ def simulate_unit(unit):
     except ValueError as exc:
         result["error"] = str(exc)
         return result
+    # S140: the IVA goes between the total without IVA and the total with
+    # IVA, as in an invoice.
+    # El IVA va entre el total sin IVA y el total con IVA, como en una
+    # factura.
+    iva = [line for line in lines if line.concept_code == "IVA"]
     result.update(
-        lines=lines,
+        lines=[line for line in lines if line.concept_code != "IVA"],
+        iva_line=iva[0] if iva else None,
         budget=budget,
         total=budget.total_amount,
         total_with_iva=budget.total_amount_with_iva,

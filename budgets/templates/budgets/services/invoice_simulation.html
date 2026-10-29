@@ -69,6 +69,14 @@ simulación entera se descarga en Excel.
                     </tbody>
                     <tfoot>
                     <tr class="fw-semibold"><td colspan="3">Total sin IVA</td><td class="text-end">{{ row.total|es_number }} €<button type="button" class="btn btn-link btn-sm p-0 ms-1 copy-btn" data-copy="{{ row.total|es_number }}" title="Copiar"><i class="bi bi-clipboard"></i></button></td></tr>
+                    {% with iva=row.iva_line %}{% if iva %}
+                    <tr>
+                        <td>{{ iva.concept_label }}<button type="button" class="btn btn-link btn-sm p-0 ms-1 copy-btn" data-copy="{{ iva.concept_label }}" title="Copiar"><i class="bi bi-clipboard"></i></button></td>
+                        <td class="text-end text-muted">sobre {{ iva.units|es_number }} €<button type="button" class="btn btn-link btn-sm p-0 ms-1 copy-btn" data-copy="{{ iva.units|es_number }}" title="Copiar"><i class="bi bi-clipboard"></i></button></td>
+                        <td class="text-end">{{ iva.unit_price|es_percent }} %<button type="button" class="btn btn-link btn-sm p-0 ms-1 copy-btn" data-copy="{{ iva.unit_price|es_percent }}" title="Copiar"><i class="bi bi-clipboard"></i></button></td>
+                        <td class="text-end">{{ iva.subtotal|es_number }} €<button type="button" class="btn btn-link btn-sm p-0 ms-1 copy-btn" data-copy="{{ iva.subtotal|es_number }}" title="Copiar"><i class="bi bi-clipboard"></i></button></td>
+                    </tr>
+                    {% endif %}{% endwith %}
                     {% if row.total_with_iva is not None %}
                     <tr class="fw-semibold"><td colspan="3">Total con IVA</td><td class="text-end">{{ row.total_with_iva|es_number }} €<button type="button" class="btn btn-link btn-sm p-0 ms-1 copy-btn" data-copy="{{ row.total_with_iva|es_number }}" title="Copiar"><i class="bi bi-clipboard"></i></button></td></tr>
                     {% endif %}
