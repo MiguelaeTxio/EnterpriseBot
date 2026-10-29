@@ -992,3 +992,81 @@ class ClockEvent(models.Model):
         Segundos entre la pulsación y su llegada al servidor.
         """
         return round((self.received_at - self.pressed_at).total_seconds())
+
+
+class ClockReminder(models.Model):
+    """
+    A WhatsApp reminder sent because a clock press is missing (H24,
+    S141): the IN a quarter of an hour after the scheduled start, or
+    the OUT a quarter of an hour after the scheduled end. At most one
+    per user, day and kind -- the row is what stops it being sent
+    twice, and the proof that it was sent.
+
+    ---
+
+    Recordatorio por WhatsApp de un fichaje que falta (H24, S141): la
+    entrada un cuarto de hora después de la hora de entrada del
+    horario, o la salida un cuarto de hora después de la de salida.
+    Como mucho uno por usuario, día y tipo: la fila es lo que impide
+    mandarlo dos veces y la prueba de que se mandó.
+    """
+
+    class Kind(models.TextChoices):
+        IN = "IN", "Entrada"
+        OUT = "OUT", "Salida"
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="clock_reminders",
+        verbose_name="Empresa",
+    )
+    company_user = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.CASCADE,
+        related_name="clock_reminders",
+        verbose_name="Trabajador",
+    )
+    day = models.DateField(verbose_name="Día")
+    kind = models.CharField(
+        max_length=3,
+        choices=Kind.choices,
+        verbose_name="Fichaje que falta",
+    )
+    scheduled_time = models.TimeField(
+        verbose_name="Hora del horario",
+        help_text="Hora de entrada o de salida del horario del "
+                  "trabajador ese día.",
+    )
+    phone = models.CharField(max_length=20, verbose_name="Móvil")
+    message_sid = models.CharField(
+        max_length=64, blank=True,
+        verbose_name="Mensaje de Twilio",
+    )
+    sent_as_text = models.BooleanField(
+        default=False,
+        verbose_name="Enviado como texto",
+        help_text="Dentro de la ventana de 24 horas sale como texto "
+                  "libre; fuera, con la plantilla.",
+    )
+    sent_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Enviado",
+    )
+
+    class Meta:
+        verbose_name = "Recordatorio de fichaje"
+        verbose_name_plural = "Recordatorios de fichaje"
+        ordering = ["-sent_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company_user", "day", "kind"],
+                name="clockreminder_unique_user_day_kind",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.company_user} — {self.get_kind_display()} "
+            f"{self.day:%d/%m/%Y}"
+        )

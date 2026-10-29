@@ -522,6 +522,14 @@ CELERY_BEAT_SCHEDULE = {
         'task':     'fleet.tasks.sync_gasoges_task',
         'schedule': crontab(minute='*/5'),
     },
+
+    # H24 (S141): recordatorio por WhatsApp a quien no ha fichado la
+    # entrada un cuarto de hora después de su hora de entrada, o la
+    # salida un cuarto de hora después de su hora de salida.
+    'send-clock-reminders': {
+        'task':     'hr_calendar.tasks.send_clock_reminders_task',
+        'schedule': crontab(minute='*/5'),
+    },
 }
 
 # H30 (S123): destinatarios (PersonIdentity.pk) de la alerta de caída
