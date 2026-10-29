@@ -484,7 +484,15 @@ def _parse_parte_date(text):
     return None
 
 
-def _resolve_base_schedule(cu, company):
+# S141: de dónde sale el horario de un trabajador (pestaña Horarios).
+ORIGIN_INTENSIVE = "intensive"
+ORIGIN_OWN = "own"
+ORIGIN_SECTION = "section"
+ORIGIN_DEFAULT = "default"
+ORIGIN_NONE = "none"
+
+
+def _resolve_base_schedule_with_origin(cu, company):
     """
     Resolves the effective WorkdaySchedule for a CompanyUser following
     the Gate 4 priority chain:
@@ -496,7 +504,8 @@ def _resolve_base_schedule(cu, company):
          workday_schedule assigned.
       3. Company-level default WorkdaySchedule (is_default=True).
       4. None — no schedule available.
-    Returns the resolved WorkdaySchedule instance or None.
+    Returns (WorkdaySchedule or None, (origin, Section or None)); S141:
+    the origin says which gate gave it (pestaña Horarios).
     ---
     Resuelve el WorkdaySchedule efectivo para un CompanyUser siguiendo
     la cadena de prioridad de Gate 4:
@@ -519,7 +528,7 @@ def _resolve_base_schedule(cu, company):
             is_intensive=True,
         ).first()
         if _intensive is not None:
-            return _intensive
+            return _intensive, (ORIGIN_INTENSIVE, None)
 
     # Gate 1 — individual schedule assignment.
     # Only apply if the assigned schedule is coherent with
@@ -548,7 +557,7 @@ def _resolve_base_schedule(cu, company):
         _sched_is_intensive = getattr(_cu_sched, "is_intensive", False)
         _gate1_coherent = not (not _override_active and _sched_is_intensive)
         if _gate1_coherent:
-            return _cu_sched
+            return _cu_sched, (ORIGIN_OWN, None)
 
     contact = (
         _Contact_R.objects.filter(company_user=cu)
@@ -558,19 +567,30 @@ def _resolve_base_schedule(cu, company):
     if contact is not None:
         section_schedule = next(
             (
-                sec.workday_schedule
+                (sec.workday_schedule, sec)
                 for sec in contact.sections.filter(
                     is_active=True, workday_schedule__isnull=False
                 )
                 .select_related("workday_schedule")
                 .order_by("name")
             ),
-            None,
+            (None, None),
         )
+        section_schedule, _section_of = section_schedule
         if section_schedule is not None:
-            return section_schedule
+            return section_schedule, (ORIGIN_SECTION, _section_of)
 
-    return _WDS_R.objects.filter(company=company, is_default=True).first()
+    default = _WDS_R.objects.filter(company=company, is_default=True).first()
+    return default, ((ORIGIN_DEFAULT if default else ORIGIN_NONE), None)
+
+
+def _resolve_base_schedule(cu, company):
+    """
+    The WorkdaySchedule of _resolve_base_schedule_with_origin, alone.
+    ---
+    Solo el horario de _resolve_base_schedule_with_origin.
+    """
+    return _resolve_base_schedule_with_origin(cu, company)[0]
 
 
 def _parse_entry_lines_from_post(POST, company):

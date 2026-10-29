@@ -109,6 +109,11 @@ from panel.views_clock_events import (
     ClockEventsResultsView,
     ClockEventsTabView,
 )
+from panel.views_worker_schedules import (
+    WorkerSchedulesAssignView,
+    WorkerSchedulesResultsView,
+    WorkerSchedulesTabView,
+)
 from panel.views_lifting_accessories import (
     LiftingAccessoryAssignView,
     LiftingAccessoryBulkReviewView,
@@ -1749,6 +1754,23 @@ urlpatterns = [
         "documentacion/fichajes/ajustes/tipos/",
         ClockTypeSaveView.as_view(),
         name="clock_settings_type",
+    ),
+    # H24 (S141): pestaña Horarios -- el horario de cada trabajador,
+    # por secciones (panel/views_worker_schedules.py).
+    path(
+        "documentacion/horarios/",
+        WorkerSchedulesTabView.as_view(),
+        name="worker_schedules_tab",
+    ),
+    path(
+        "documentacion/horarios/resultados/",
+        WorkerSchedulesResultsView.as_view(),
+        name="worker_schedules_results",
+    ),
+    path(
+        "documentacion/horarios/asignar/",
+        WorkerSchedulesAssignView.as_view(),
+        name="worker_schedules_assign",
     ),
     path(
         "documentacion/fichajes/exportar/",

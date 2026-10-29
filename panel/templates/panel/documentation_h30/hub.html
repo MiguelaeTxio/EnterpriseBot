@@ -137,6 +137,15 @@ EbTypePicker.init() (ver panel/_doc_type_picker.html).
             <i class="bi bi-stopwatch me-1"></i>Fichajes
         </a>
     </li>
+    <li class="nav-item">
+        {# H24 (S141). Horarios: el horario de cada trabajador, por secciones (mismos roles que Fichajes). #}
+        <a class="nav-link {% if persisted_active_tab == 'horarios' %}active{% endif %}" id="tab-horarios" data-bs-toggle="tab" href="#pane-horarios"
+           hx-get="{% url 'panel:worker_schedules_tab' %}"
+           hx-target="#pane-horarios"
+           hx-trigger="{% if persisted_active_tab == 'horarios' %}load once{% else %}click once{% endif %}">
+            <i class="bi bi-clock me-1"></i>Horarios
+        </a>
+    </li>
     {% endif %}
     <li class="nav-item">
         <a class="nav-link {% if persisted_active_tab == 'calendario' %}active{% endif %}" id="tab-calendario" data-bs-toggle="tab" href="#pane-calendario"
@@ -234,6 +243,9 @@ EbTypePicker.init() (ver panel/_doc_type_picker.html).
     </div>
     {% if can_view_clock_events %}
     <div class="tab-pane fade {% if persisted_active_tab == 'fichajes' %}show active{% endif %}" id="pane-fichajes">
+        <div class="text-muted small py-3">Cargando…</div>
+    </div>
+    <div class="tab-pane fade {% if persisted_active_tab == 'horarios' %}show active{% endif %}" id="pane-horarios">
         <div class="text-muted small py-3">Cargando…</div>
     </div>
     {% endif %}

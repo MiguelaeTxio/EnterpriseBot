@@ -1,0 +1,67 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/worker_schedules/_table.html #}
+{% comment %}
+H24 (S141). Tabla de Horarios, hecha sobre la de Fichajes: casilla,
+aviso y "Apellidos, Nombre" fijos a la izquierda; una fila por
+trabajador con su sección, el horario que le toca, de dónde le viene
+(propio, de la sección, por defecto o jornada intensiva de verano) y
+sus horas. Todas las columnas ordenables.
+{% endcomment %}
+<div id="hor-fragment-state" class="d-none"
+     data-count="{{ rows|length }}"
+     data-sort-active="{% if sort_active %}1{% endif %}"></div>
+<span id="hor-sort-inputs" class="d-none">
+    <input type="hidden" name="sort" value="{{ current_sort }}">
+</span>
+<table class="table table-hover table-light align-middle" id="hor-table">
+    <thead class="table-light">
+        <tr>
+            <th class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input" id="hor-check-all" title="Seleccionar todos los que cumplen el filtro actual"></th>
+            <th class="sticky-col sticky-col-2"></th>
+            {% for column in sort_columns %}
+            <th class="{% if column.key == 'person' %}sticky-col sticky-col-3 sticky-col-last{% endif %}">
+                <a href="#" class="text-decoration-none text-dark"
+                   hx-get="{% url 'panel:worker_schedules_results' %}"
+                   hx-target="#hor-results"
+                   hx-include="#hor-filters"
+                   hx-vals='{"sort": "{{ column.next }}"}'>
+                    {{ column.label }}
+                    {% if column.arrow %}<i class="bi bi-chevron-{% if column.arrow == 'up' %}up{% else %}down{% endif %}"></i>{% if column.priority %}<sup>{{ column.priority }}</sup>{% endif %}{% endif %}
+                </a>
+            </th>
+            {% endfor %}
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            <td class="sticky-col sticky-col-1">
+                <input type="checkbox" class="form-check-input hor-row-check" data-pk="{{ row.person.pk }}" data-label="{{ row.label }}">
+            </td>
+            <td class="sticky-col sticky-col-2">
+                {% if not row.has_account %}<i class="bi bi-person-x text-muted" title="Sin usuario del panel: no puede tener horario"></i>{% elif not row.schedule %}<i class="bi bi-exclamation-triangle-fill text-warning" title="No tiene ningún horario"></i>{% endif %}
+            </td>
+            <td class="sticky-col sticky-col-3 sticky-col-last">{{ row.label }}</td>
+            <td data-label="Sección">{{ row.state.section_name|default:"—" }}</td>
+            <td data-label="Horario">{% if row.schedule %}{{ row.schedule.label }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td data-label="De dónde le viene">{% if not row.has_account %}<span class="text-muted">Sin usuario del panel</span>{% elif row.origin == "own" %}<span class="fw-semibold">{{ row.origin_label }}</span>{% else %}<span class="text-muted">{{ row.origin_label }}</span>{% endif %}</td>
+            <td data-label="Mañana"{% if row.varies %} title="{{ row.days_title }}"{% endif %}>{% if row.varies %}<span class="badge bg-primary">Según el día</span>{% else %}{{ row.morning_label|default:"—" }}{% endif %}</td>
+            <td data-label="Tarde"{% if row.varies %} title="{{ row.days_title }}"{% endif %}>{% if row.varies %}<span class="text-muted">{{ row.days_title|truncatechars:60 }}</span>{% elif row.schedule %}{{ row.afternoon_label|default:"intensiva" }}{% else %}—{% endif %}</td>
+            {# Acciones de la fila en el menú de tres puntos (directriz 4.24, regla 9). #}
+            <td class="text-end">
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-link text-dark py-0" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Acciones">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="{% url 'panel:documentation_personal_detail' pk=row.person.pk %}"><i class="bi bi-person-vcard me-1"></i>Abrir la ficha</a></li>
+                        <li><a class="dropdown-item" href="{% url 'panel:workday_schedule' %}"><i class="bi bi-clock me-1"></i>Gestionar los horarios</a></li>
+                    </ul>
+                </div>
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="9" class="text-muted small py-3">No se encontró personal.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>

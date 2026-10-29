@@ -531,7 +531,8 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
         )
         valid_tabs = (
             "maquinaria", "personal", "epis", "accesorios", "vacaciones",
-            "fichajes", "calendario", "requisitos", "avisos", "circulares",
+            "fichajes", "horarios", "calendario", "requisitos", "avisos",
+            "circulares",
             "plantillas", "bandeja", "revisiones", "repostajes",
         )
         # H30 (S126): "Bandeja de entrada" solo para quien puede subir
@@ -549,7 +550,9 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
             CompanyUser.ROLE_SUPERVISOR, CompanyUser.ROLE_WORKSHOPBOSS,
         )
         if not can_view_clock_events:
-            valid_tabs = tuple(t for t in valid_tabs if t != "fichajes")
+            valid_tabs = tuple(
+                t for t in valid_tabs if t not in ("fichajes", "horarios")
+            )
         # H30 (S119): "Circulares", "Plantillas" y "Requisitos" pasan
         # de botones "Gestionar..." en la barra de acción de Personal a
         # pestañas propias del hub -- Miguel Ángel: "las gestiones
