@@ -51,7 +51,10 @@ _MAX_SORT_KEYS = 4
 
 ORIGIN_LABELS = {
     "intensive": "Jornada intensiva (verano)",
-    "own": "Propio",
+    # S141: puesto desde esta pestaña (en el trabajador) o, de antes,
+    # en su usuario del panel (Administración > Usuarios).
+    "own": "Puesto en Horarios",
+    "user": "Puesto en su usuario del panel",
     "section": "De la sección",
     "default": "Por defecto de la empresa",
     "none": "Sin horario",

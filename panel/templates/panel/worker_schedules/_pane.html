@@ -79,7 +79,7 @@ filtrar la sección, marcar todos y poner el horario.
                                 <option value="">Todos</option>
                                 <option value="{{ no_schedule }}"{% if filter_schedule == no_schedule %} selected{% endif %}>Sin horario</option>
                                 {% for schedule in schedules %}
-                                <option value="{{ schedule.pk }}"{% if filter_schedule == schedule.pk|stringformat:"d" %} selected{% endif %}>{{ schedule.label }}</option>
+                                <option value="{{ schedule.pk }}"{% if filter_schedule == schedule.pk|stringformat:"d" %} selected{% endif %}>{{ schedule.label }} ({{ schedule.get_season_display|lower }})</option>
                                 {% endfor %}
                             </select>
                         </div>
@@ -101,7 +101,7 @@ filtrar la sección, marcar todos y poner el horario.
                         <div class="d-flex flex-wrap gap-1 align-items-center">
                             <select class="form-select form-select-sm w-auto" id="hor-assign-schedule" aria-label="Horario">
                                 {% for schedule in schedules %}
-                                <option value="{{ schedule.pk }}">{{ schedule.label }}{% if schedule.varies_by_day %} (según el día){% endif %}</option>
+                                <option value="{{ schedule.pk }}">{{ schedule.label }} ({{ schedule.get_season_display|lower }}){% if schedule.varies_by_day %} · según el día{% endif %}</option>
                                 {% empty %}
                                 <option value="">No hay horarios</option>
                                 {% endfor %}

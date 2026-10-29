@@ -487,6 +487,7 @@ def _parse_parte_date(text):
 # S141: de dónde sale el horario de un trabajador (pestaña Horarios).
 ORIGIN_INTENSIVE = "intensive"
 ORIGIN_OWN = "own"
+ORIGIN_USER = "user"
 ORIGIN_SECTION = "section"
 ORIGIN_DEFAULT = "default"
 ORIGIN_NONE = "none"
@@ -635,7 +636,7 @@ def _resolve_base_schedule_with_origin(cu, company):
         _sched_is_intensive = getattr(_cu_sched, "is_intensive", False)
         _gate1_coherent = not (not _override_active and _sched_is_intensive)
         if _gate1_coherent:
-            return _cu_sched, (ORIGIN_OWN, None)
+            return _cu_sched, (ORIGIN_USER, None)
 
     contact = (
         _Contact_R.objects.filter(company_user=cu)
