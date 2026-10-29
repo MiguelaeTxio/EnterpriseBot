@@ -466,7 +466,8 @@
     {# inner gate exactly as it was before merging -- no item changes      #}
     {# visibility, only location.                                         #}
     {# ------------------------------------------------------------------ #}
-    {% if company_user.role != 'ASSISTANCE' %}
+    {# S141 (Miguel Ángel): chófer, gruista, administrativo y guarda nocturno solo ven lo del fichaje (Mi perfil). #}
+    {% if company_user.role != 'ASSISTANCE' and company_user.role != 'DRIVER' and company_user.role != 'CRANE_OPERATOR' and company_user.role != 'OFFICE' and company_user.role != 'NIGHTGUARD' %}
         <li class="nav-item sidebar-accordion-section">
             <button class="nav-link sidebar-accordion-toggle w-100 text-start"
                     type="button"

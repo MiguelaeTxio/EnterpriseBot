@@ -12,7 +12,7 @@ from datetime import date, timedelta
 
 from django.db.models import Sum
 from django.views.generic import View
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 
 from fleet.models import MachineAsset
 from panel.mixins import CompanyUserRequiredMixin
@@ -132,6 +132,17 @@ class MachineHistoryView(CompanyUserRequiredMixin, View):
     """
 
     template_name = "panel/machine_history.html"
+
+    # S141 (Miguel Ángel): chófer, gruista, administrativo y guarda
+    # nocturno solo tienen el fichaje; van a su página de fichaje.
+    CLOCK_ONLY_ROLES = ("DRIVER", "CRANE_OPERATOR", "OFFICE", "NIGHTGUARD")
+
+    def dispatch(self, request, *args, **kwargs):
+        company_user = getattr(request.user, "company_user", None)
+        if (request.user.is_authenticated and company_user is not None
+                and company_user.role in self.CLOCK_ONLY_ROLES):
+            return redirect("clockin:page")
+        return super().dispatch(request, *args, **kwargs)
 
     # ------------------------------------------------------------------
     # Helpers
