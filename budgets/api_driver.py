@@ -243,13 +243,32 @@ class DriverLogoutView(View):
         return JsonResponse({"ok": True})
 
 
+def _list_payload(unit):
+    """
+    JSON of one albarán for the list of the app.
+
+    ---
+
+    JSON de un albarán para la lista de la app (S140, Miguel Ángel: "debe
+    de salir única y exclusivamente el expediente del albarán, el número
+    del albarán, y ya está"). Nada más sale del servidor hasta la salida.
+    """
+    return {
+        "id": unit.pk,
+        "number": unit.albaran_number,
+        "status": unit.status,
+        "status_label": unit.get_status_display(),
+        "expediente": unit.work_order.expediente,
+    }
+
+
 def _unit_payload(unit):
     """
     JSON of one albarán for the app.
 
     ---
 
-    JSON de un albarán para la app.
+    JSON de un albarán para la app, ya salido de base.
     """
     work_order = unit.work_order
     return {
@@ -340,7 +359,7 @@ class DriverAlbaranesView(View):
         )
         return JsonResponse({
             "driver": _display_name(company_user),
-            "albaranes": [_unit_payload(unit) for unit in units],
+            "albaranes": [_list_payload(unit) for unit in units],
             # S133: whether the app sends the phone position (map).
             # Si la app envía la posición del móvil (mapa de tráfico).
             "tracking": driver_is_out(company_user),
@@ -402,8 +421,24 @@ def _detail_payload(unit):
     """
     work_order = unit.work_order
     signature = getattr(unit, "signature", None)
-    payload = _unit_payload(unit)
     operator = unit.operator
+    if unit.km_start is None:
+        # S140 (Miguel Ángel): "Esa información no debe de aparecer hasta
+        # que no se pongan la hora de salida y los kilómetros [...] No se
+        # puede conocer absolutamente ningún dato". Before departure the
+        # server only sends the number, the file number and the gate.
+        # Antes de la salida el servidor solo manda el número, el
+        # expediente y la puerta.
+        payload = _list_payload(unit)
+        payload.update({
+            "started": False,
+            "km_start": "",
+            "departed_at": "",
+            "editable": unit.status in EDITABLE_STATUSES,
+            "can_close_base": False,
+        })
+        return payload
+    payload = _unit_payload(unit)
     # H37 (S133): Pepe's service sheet. "started" is the gate: without
     # the km at departure the app only shows the header.
     # Hoja de servicio de Pepe. "started" es la puerta: sin los km de
@@ -416,7 +451,20 @@ def _detail_payload(unit):
             timezone.localtime(unit.started_at).strftime("%H:%M")
             if unit.started_at and unit.km_start is not None else ""
         ),
-        "arrived": unit.arrived_at is not None,
+        # S140: arrival with the odometer, mandatory, with the GPS km as
+        # a guide; then the photos, the km and the signature.
+        # Llegada con el cuentakilómetros, obligatoria, con los km del
+        # GPS como orientación; después fotos, km y firma.
+        "arrived": unit.km_arrival is not None,
+        "km_arrival": _number(unit.km_arrival),
+        "gps_km": (
+            _number(sheet.gps_km(unit)) if unit.km_arrival is None else ""
+        ),
+        "needs_delivery_km": sheet.needs_delivery_km(unit),
+        "km_delivery": _number(unit.km_delivery),
+        "km_return": _number(unit.km_return),
+        "service_km": _number(sheet.service_km(unit)),
+        "closed_in_route": unit.closed_in_route,
         "vehicle_pma": _number(work_order.vehicle_pma),
         "vehicle_tare": _number(work_order.vehicle_tare),
         "vehicle_length": _number(work_order.vehicle_length),
@@ -550,6 +598,29 @@ def _missing_km(unit, phase1_km, phase2_km):
     return ""
 
 
+def _missing_return_km(unit, km_delivery, km_return):
+    """
+    Error text if the km of the signature step are missing, or "".
+
+    ---
+
+    Texto de error si faltan los km del paso de la firma (S140), o "":
+    en remolque, el cuentakilómetros en la entrega (no menos que al
+    llegar); siempre, los km de vuelta a base.
+    """
+    if sheet.needs_delivery_km(unit):
+        if km_delivery is None:
+            return "Faltan los km del cuentakilómetros en la entrega."
+        if unit.km_arrival is not None and km_delivery < unit.km_arrival:
+            return (
+                "Los km en la entrega (%s) no pueden ser menos que al "
+                "llegar (%s)." % (km_delivery, unit.km_arrival)
+            )
+    if km_return is None:
+        return "Faltan los km de vuelta a base."
+    return ""
+
+
 def _device_time(millis, now):
     """
     A phone time in milliseconds if sane (not in the future), else now.
@@ -600,6 +671,8 @@ class DriverAlbaranSubmitView(View):
         try:
             phase1_km = _decimal(data, "phase1_km", "Km")
             phase2_km = _decimal(data, "phase2_km", "Km del 2º tramo")
+            km_delivery = _decimal(data, "km_delivery", "Km en la entrega")
+            km_return = _decimal(data, "km_return", "Km de vuelta a base")
             rescue_hours = _decimal(
                 data, "rescue_hours", "Horas de rescate",
             )
@@ -640,14 +713,22 @@ class DriverAlbaranSubmitView(View):
                     % unit.get_status_display().lower(),
                     409,
                 )
-            # S138 (Miguel Ángel): the km are the driver's and always
-            # needed: what he writes, including the return to base he
-            # has not driven yet, is what is billed.
-            # Los km son del chófer y siempre obligatorios: lo que anota,
-            # con la vuelta a base que aún no ha hecho, es lo que se cobra.
-            missing_km = _missing_km(unit, phase1_km, phase2_km)
-            if missing_km:
-                return _error(missing_km, 400)
+            if unit.is_overnight:
+                # S138 (Miguel Ángel): with overnight the driver writes
+                # the km of both legs, with the return to base.
+                # Con pernocta el chófer anota los km de los dos tramos.
+                missing_km = _missing_km(unit, phase1_km, phase2_km)
+                if missing_km:
+                    return _error(missing_km, 400)
+            else:
+                # S140: odometer at delivery (tow) and km back to base,
+                # mandatory; the km of the service are worked out.
+                # Cuentakilómetros en la entrega (remolque) y km de
+                # vuelta a base, obligatorios; los km salen de ahí.
+                missing_km = _missing_return_km(unit, km_delivery, km_return)
+                if missing_km:
+                    return _error(missing_km, 400)
+                phase1_km = sheet.service_km(unit, km_delivery, km_return)
             # S133: the service sheet is filled before the signature.
             # La hoja de servicio se rellena antes de la firma.
             try:
@@ -664,10 +745,18 @@ class DriverAlbaranSubmitView(View):
                 )
             previous = unit.status
             now = timezone.now()
-            if "phase1_km" in data:
+            if unit.is_overnight:
+                if "phase1_km" in data:
+                    unit.phase1_km = phase1_km
+                if "phase2_km" in data:
+                    unit.phase2_km = phase2_km
+            else:
+                unit.km_delivery = (
+                    km_delivery if sheet.needs_delivery_km(unit) else None
+                )
+                unit.km_return = km_return
                 unit.phase1_km = phase1_km
-            if "phase2_km" in data:
-                unit.phase2_km = phase2_km if unit.is_overnight else None
+                unit.phase2_km = None
             unit.rescue_hours = rescue_hours
             unit.wait_hours = wait_hours
             unit.work_hours = work_hours
@@ -745,9 +834,8 @@ class DriverAlbaranCloseBaseView(View):
             liters = _decimal(data, "liters", "Litros")
         except ValueError as exc:
             return _error(str(exc), 400)
-        refueled = data.get("refueled")
         if km_end is None:
-            return _error("Faltan los km finales.", 400)
+            return _error("Faltan los km de llegada a base.", 400)
         # S133: Pepe's sheet: base, time of arrival and litres too.
         # Hoja de Pepe: también base y hora de llegada y litros.
         arrival_base = sheet.bases_of(company_user.company).filter(
@@ -756,10 +844,14 @@ class DriverAlbaranCloseBaseView(View):
         if arrival_base is None:
             return _error("Indica la base a la que llegas.", 400)
         arrived_at = sheet.client_time(data.get("arrived_at"))
-        if not isinstance(refueled, bool):
-            return _error("Indica si has repostado.", 400)
-        if refueled and not liters:
-            return _error("Indica cuántos litros has repostado.", 400)
+        # S140 (Miguel Ángel): "Cerrar en base conlleva el repostaje. Si no
+        # reposta, no puede cerrar."
+        if not liters:
+            return _error(
+                "Para cerrar en base hay que repostar: indica los litros.",
+                400,
+            )
+        refueled = True
 
         with transaction.atomic():
             unit = _driver_units(company_user).select_for_update().filter(
@@ -912,10 +1004,152 @@ class DriverAlbaranArriveView(View):
         if unit is None:
             return _error("Este albarán ya no está asignado a ti.", 404)
         try:
-            sheet.arrive(unit, data.get("at"))
+            sheet.arrive(unit, data.get("at"), data.get("km_arrival"))
         except sheet.SheetError as exc:
             return _error(str(exc), 400)
         return JsonResponse({"albaran": _detail_payload(unit)})
+
+
+def _return_base(unit):
+    """
+    Base the driver goes back to.
+
+    ---
+
+    Base a la que vuelve el chófer: la de salida, la suya o la de la
+    orden.
+    """
+    if unit.departure_base_id:
+        return unit.departure_base
+    base = getattr(unit.operator, "base", None) if unit.operator_id else None
+    return base or unit.work_order.base
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class DriverAlbaranReturnEstimateView(View):
+    """
+    Road distance from where the driver is to his base.
+
+    ---
+
+    Distancia por carretera desde donde está el chófer hasta su base
+    (S140, Miguel Ángel: "decirle desde el punto donde está [...] hasta
+    la base [...] cuánto es", orientación para los km de vuelta).
+    """
+
+    def post(self, request, pk):
+        """
+        Ask Google for the distance.
+
+        ---
+
+        Pide la distancia a Google.
+        """
+        from budgets.service_eta import EtaError, Router, base_point
+
+        company_user, _token = _token_user(request)
+        if company_user is None:
+            return _error("Sesión no válida.", 401)
+        unit = _unit_of_driver(company_user, pk)
+        if unit is None:
+            return _error("Este albarán ya no está asignado a ti.", 404)
+        data = _json_body(request)
+        try:
+            latitude = _coordinate(data, "latitude", "latitud", 90)
+            longitude = _coordinate(data, "longitude", "longitud", 180)
+        except ValueError as exc:
+            return _error(str(exc), 400)
+        base = _return_base(unit)
+        destination = base_point(base)
+        if destination is None:
+            return _error("No hay base a la que volver.", 400)
+        try:
+            _seconds, meters = Router().leg(
+                {
+                    "lat": float(latitude), "lng": float(longitude),
+                    "label": "posición del chófer",
+                },
+                destination,
+            )
+        except EtaError as exc:
+            return _error(str(exc), 502)
+        return JsonResponse({
+            "km": _number((Decimal(meters) / 1000).quantize(Decimal("0.1"))),
+            "base": base.name,
+        })
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class DriverAlbaranCloseRouteView(View):
+    """
+    Close the albarán on the road (no return to base).
+
+    ---
+
+    Cierre en ruta (S140, Miguel Ángel: "Cuando cierra en ruta, ya
+    marcamos el punto de cierre en ruta y ya hacemos el cálculo ficticio
+    de vuelta a base. Y se cerrará cuando haga el repostaje en el
+    siguiente albarán"): se apunta el punto y la hora, se estima con
+    Google la vuelta a base que no se hace y el albarán queda cerrado;
+    el chófer y la máquina quedan libres para el siguiente, cuyo cierre
+    en base lleva el repostaje.
+    """
+
+    def post(self, request, pk):
+        """
+        Validate and close.
+
+        ---
+
+        Valida y cierra.
+        """
+        from budgets.service_chain import estimate_return
+
+        company_user, _token = _token_user(request)
+        if company_user is None:
+            return _error("Sesión no válida.", 401)
+        data = _json_body(request)
+        try:
+            latitude = _coordinate(data, "latitude", "latitud", 90)
+            longitude = _coordinate(data, "longitude", "longitud", 180)
+        except ValueError as exc:
+            return _error(str(exc), 400)
+        with transaction.atomic():
+            unit = _driver_units(company_user).select_for_update().filter(
+                pk=pk,
+            ).first()
+            if unit is None:
+                return _error("Este albarán ya no está asignado a ti.", 404)
+            if unit.status not in CLOSABLE_IN_BASE:
+                return _error(
+                    "Este albarán no se puede cerrar en ruta: está %s."
+                    % unit.get_status_display().lower(),
+                    409,
+                )
+            now = timezone.now()
+            previous = unit.status
+            unit.closed_in_route = True
+            unit.chain_at = _device_time(data.get("at"), now)
+            unit.chain_latitude = latitude
+            unit.chain_longitude = longitude
+            unit.base_closed_at = now
+            unit.base_closed_by = company_user
+            unit.status = Unit.STATUS_CLOSED_BASE
+            unit.save()
+            WorkOrderAssistanceUnitEvent.status_change(
+                unit, previous, unit.status, by=company_user,
+                detail=(
+                    "Cerrado en ruta: no vuelve a base; el repostaje va con "
+                    "el siguiente albarán."
+                ),
+            )
+            unit_pk = unit.pk
+            transaction.on_commit(lambda: estimate_return(unit_pk))
+        logger.info(
+            "# [DRIVER API] Albarán %s cerrado en ruta por %s.",
+            unit.albaran_number, company_user.user.username,
+        )
+        return JsonResponse({"ok": True, "number": unit.albaran_number})
 
 
 @method_decorator(csrf_exempt, name="dispatch")

@@ -3456,6 +3456,47 @@ class WorkOrderAssistanceUnit(models.Model):
         blank=True,
         verbose_name="Vuelta a base estimada (min)",
     )
+    # H37 (S140), Miguel Ángel tras la prueba de campo del 28/10: the
+    # driver writes the odometer when he arrives (with the GPS km as a
+    # guide) and the km back to base as a distance (with Google's
+    # distance from where he is as a guide); the km of the service are
+    # worked out from them.
+    # El chófer anota el cuentakilómetros al llegar (con los km del GPS
+    # como orientación) y los km de vuelta a base como distancia (con la
+    # de Google desde donde está como orientación); los km del servicio
+    # salen de ahí.
+    km_arrival = models.DecimalField(
+        max_digits=9,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        verbose_name="Km al llegar al servicio",
+        help_text="Cuentakilómetros al llegar a la recogida o al trabajo.",
+    )
+    km_delivery = models.DecimalField(
+        max_digits=9,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        verbose_name="Km en la entrega",
+        help_text="Cuentakilómetros al entregar el vehículo (remolque).",
+    )
+    km_return = models.DecimalField(
+        max_digits=7,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        verbose_name="Km de vuelta a base",
+        help_text="Distancia de vuelta a base que anota el chófer.",
+    )
+    closed_in_route = models.BooleanField(
+        default=False,
+        verbose_name="Cerrado en ruta",
+        help_text=(
+            "El chófer lo cerró en ruta: la vuelta a base no se hizo; el "
+            "repostaje va con el siguiente albarán."
+        ),
+    )
 
     created_at = models.DateTimeField(
         auto_now_add=True, verbose_name="Fecha de creación"
@@ -4828,11 +4869,21 @@ class WorkOrderAssistanceUnitPhoto(models.Model):
     KIND_BEFORE = "BEFORE"
     KIND_LOADED = "LOADED"
     KIND_UNLOADED = "UNLOADED"
+    # S140: a repair on site also has its photos (Miguel Ángel: "hay que
+    # terminar todas las fotos y cuando esté todo terminado, entonces
+    # podemos firmar").
+    # Una reparación en el sitio también lleva sus fotos.
+    KIND_REPAIR_BEFORE = "REP_BEFORE"
+    KIND_REPAIR_DONE = "REP_DONE"
     KIND_CHOICES = [
         (KIND_BEFORE, "Antes de cargar"),
         (KIND_LOADED, "Cargado en altura"),
         (KIND_UNLOADED, "Descargado"),
+        (KIND_REPAIR_BEFORE, "Antes de la reparación"),
+        (KIND_REPAIR_DONE, "Reparación terminada"),
     ]
+    TOW_KINDS = (KIND_BEFORE, KIND_LOADED, KIND_UNLOADED)
+    REPAIR_KINDS = (KIND_REPAIR_BEFORE, KIND_REPAIR_DONE)
 
     unit = models.ForeignKey(
         WorkOrderAssistanceUnit,

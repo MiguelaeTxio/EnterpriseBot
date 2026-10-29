@@ -51,6 +51,16 @@ urlpatterns = [
         name="albaran_close_base",
     ),
     path(
+        "albaranes/<int:pk>/return-estimate/",
+        api_driver.DriverAlbaranReturnEstimateView.as_view(),
+        name="albaran_return_estimate",
+    ),
+    path(
+        "albaranes/<int:pk>/close-route/",
+        api_driver.DriverAlbaranCloseRouteView.as_view(),
+        name="albaran_close_route",
+    ),
+    path(
         "position/",
         api_driver.DriverPositionView.as_view(),
         name="position",

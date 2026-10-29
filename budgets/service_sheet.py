@@ -25,6 +25,20 @@ Pepe ("HOJA DE SERVICIO - Registro de asistencia y remolque"):
 - 04 Fotos: antes de cargar, cargado en altura y descargado. Sin ellas
   no aparece la firma (reunión con Pepe, S133), salvo reparación en el
   sitio, donde no se carga nada.
+
+S140 (Miguel Ángel, tras la prueba de campo del 28/10), cada paso es
+obligatorio y sin él no aparece el siguiente:
+1. Salida: km y hora (hasta entonces el chófer no ve ningún dato).
+2. Llegada: cuentakilómetros al llegar, con los km del GPS desde la
+   salida como orientación.
+3. Fotos, todas: las de remolque o, en reparación en el sitio, antes y
+   después de la reparación.
+4. Km: en remolque, el cuentakilómetros en la entrega; siempre, los km
+   de vuelta a base como distancia (con la de Google desde donde está
+   como orientación). Los km del servicio salen de ahí.
+5. Firma, que envía el albarán.
+6. Cierre en base (km de llegada y repostaje) o en ruta.
+Con pernocta siguen los dos tramos de km que anota el chófer (S138).
 """
 import base64
 import binascii
@@ -185,19 +199,84 @@ def start(unit, by, km_raw, at_raw):
     return previous
 
 
-def arrive(unit, at_raw):
+def arrive(unit, at_raw, km_raw):
     """
-    Mark the arrival at the service (first one counts).
+    Mark the arrival at the service with the odometer.
 
     ---
 
-    Marca la llegada al servicio (vale la primera).
+    Marca la llegada al servicio con el cuentakilómetros, obligatorio
+    (S140). La hora vale la primera; los km se pueden corregir.
     """
     if unit.km_start is None:
         raise SheetError("Primero los km de salida.")
+    km = decimal_or_none(km_raw, "Km al llegar")
+    if km is None:
+        raise SheetError("Faltan los km del cuentakilómetros al llegar.")
+    if km < unit.km_start:
+        raise SheetError(
+            "Los km al llegar (%s) no pueden ser menos que los de salida "
+            "(%s)." % (km, unit.km_start)
+        )
+    unit.km_arrival = km
     if unit.arrived_at is None:
         unit.arrived_at = client_time(at_raw)
-        unit.save(update_fields=["arrived_at", "updated_at"])
+    unit.save(update_fields=["km_arrival", "arrived_at", "updated_at"])
+
+
+def needs_delivery_km(unit):
+    """
+    Whether the odometer at delivery is asked (tow without overnight).
+
+    ---
+
+    Si se pide el cuentakilómetros en la entrega: remolque sin pernocta
+    (en reparación en el sitio, la entrega es el mismo sitio).
+    """
+    return not unit.work_order.repair_on_site and not unit.is_overnight
+
+
+def service_km(unit, km_delivery=None, km_return=None):
+    """
+    Km of the service worked out from the driver's data, or None.
+
+    ---
+
+    Km del servicio a partir de lo que anota el chófer (S140): del
+    cuentakilómetros de salida al de la entrega (en reparación en el
+    sitio, al de la llegada) más los km de vuelta a base.
+    """
+    km_delivery = km_delivery if km_delivery is not None else unit.km_delivery
+    km_return = km_return if km_return is not None else unit.km_return
+    end = km_delivery if needs_delivery_km(unit) else unit.km_arrival
+    if unit.km_start is None or end is None or km_return is None:
+        return None
+    return end - unit.km_start + km_return
+
+
+def gps_km(unit):
+    """
+    Km driven since departure according to the phone positions.
+
+    ---
+
+    Km recorridos desde la salida según las posiciones del móvil (hasta
+    la llegada si ya llegó): orientación para el cuentakilómetros.
+    """
+    from budgets.service_route import _points, distance_m
+
+    if unit.started_at is None:
+        return None
+    points = [
+        p for p in _points(unit)
+        if p[2] >= unit.started_at
+        and (unit.arrived_at is None or p[2] <= unit.arrived_at)
+    ]
+    meters = sum(
+        distance_m(points[k][:2], points[k + 1][:2])
+        for k in range(len(points) - 1)
+    )
+    return (Decimal(meters) / 1000).quantize(Decimal("0.1"))
 
 
 def required_photo_kinds(unit):
@@ -206,12 +285,12 @@ def required_photo_kinds(unit):
 
     ---
 
-    Fotos obligatorias antes de la firma: las tres, salvo reparación en
-    el sitio (no se carga nada).
+    Fotos obligatorias antes de la firma: las tres de remolque o, en
+    reparación en el sitio, antes y después de la reparación (S140).
     """
     if unit.work_order.repair_on_site:
-        return []
-    return [kind for kind, _label in Photo.KIND_CHOICES]
+        return list(Photo.REPAIR_KINDS)
+    return list(Photo.TOW_KINDS)
 
 
 def photo_counts(unit):
@@ -235,13 +314,14 @@ def save_photo(unit, by, kind, client_uid, image_b64, taken_at_raw):
     ---
 
     Guarda una foto de la hoja en GCS. Si ya llegó (mismo id del
-    móvil), no la duplica. La primera foto marca también la llegada al
-    servicio si el conductor no la marcó.
+    móvil), no la duplica. S140: las fotos van después de la llegada.
     """
     from spare_parts.gcs_service import upload_bytes
 
     if unit.km_start is None:
         raise SheetError("Primero los km de salida.")
+    if unit.km_arrival is None:
+        raise SheetError("Primero la llegada, con los km.")
     if kind not in dict(Photo.KIND_CHOICES):
         raise SheetError("Tipo de foto no válido.")
     client_uid = str(client_uid or "").strip()[:64] or uuid.uuid4().hex
@@ -260,14 +340,10 @@ def save_photo(unit, by, kind, client_uid, image_b64, taken_at_raw):
         unit.albaran_number, kind.lower(), client_uid,
     )
     upload_bytes(PHOTO_BUCKET, blob_name, data, content_type="image/jpeg")
-    photo = Photo.objects.create(
+    return Photo.objects.create(
         unit=unit, kind=kind, blob_name=blob_name, client_uid=client_uid,
         taken_at=taken_at, uploaded_by=by,
     )
-    if unit.arrived_at is None:
-        unit.arrived_at = taken_at
-        unit.save(update_fields=["arrived_at", "updated_at"])
-    return photo
 
 
 def apply_order_fields(unit, data):
@@ -302,13 +378,15 @@ def missing_for_signature(unit):
 
     ---
 
-    Lo que falta para que el cliente pueda firmar: km de salida, los
-    obligatorios de la hoja y las fotos.
+    Lo que falta para que el cliente pueda firmar: km de salida, km al
+    llegar, los obligatorios de la hoja y las fotos.
     """
     work_order = unit.work_order
     missing = []
     if unit.km_start is None:
         missing.append("Km salida")
+    if unit.km_arrival is None:
+        missing.append("Km al llegar")
     for _arg, (field, label, required) in ORDER_FIELDS.items():
         if required and getattr(work_order, field) in (None, ""):
             missing.append(label)

@@ -314,7 +314,10 @@ def build_route(unit):
 
     points = _points(unit)
     work_end = _work_end(unit)
-    end_at = unit.chain_at if unit.chained_to_id else unit.base_arrived_at
+    end_at = (
+        unit.chain_at if unit.chained_to_id or unit.closed_in_route
+        else unit.base_arrived_at
+    )
     # S140: an arrival in base before the driver's own milestones is a
     # wrong time (the app sent the time the albarán was opened: test of
     # 28/10, whole route cut away); the closing time is used instead.
@@ -410,6 +413,8 @@ def build_route(unit):
             label = "Encadenado en ruta con %s" % (
                 unit.chained_to.albaran_number
             )
+        elif unit.closed_in_route:
+            label = "Cerrado en ruta"
         elif unit.base_arrived_at:
             label = "Llegada a base%s" % (
                 " %s" % unit.arrival_base.name if unit.arrival_base_id else ""

@@ -101,7 +101,24 @@ def chain_on_start(unit, by):
         chained_to=unit,
     ).first() or returning_unit(unit)
     if previous is None:
-        return None
+        # S140: closed on the road before leaving to this one: it is
+        # chained now (the point and the estimate were taken then).
+        # Cerrado en ruta antes de salir a este: se encadena ahora (el
+        # punto y la estimación se tomaron al cerrarlo).
+        closed = closed_in_route_unit(unit)
+        if closed is not None:
+            closed.chained_to = unit
+            closed.chain_odometer = unit.km_start
+            closed.save(update_fields=[
+                "chained_to", "chain_odometer", "updated_at",
+            ])
+        return closed
+    if previous.closed_in_route:
+        # Departure corrected: only the odometer follows it.
+        # Salida corregida: solo cambia el cuentakilómetros.
+        previous.chain_odometer = unit.km_start
+        previous.save(update_fields=["chain_odometer", "updated_at"])
+        return previous
     first_time = previous.chained_to_id is None
     previous.chained_to = unit
     previous.chain_at = unit.started_at
@@ -128,6 +145,29 @@ def chain_on_start(unit, by):
     previous_pk = previous.pk
     transaction.on_commit(lambda: estimate_return(previous_pk))
     return previous
+
+
+def closed_in_route_unit(unit):
+    """
+    The albarán closed on the road before `unit` left, or None.
+
+    ---
+
+    El albarán que el conductor cerró en ruta antes de salir a `unit`,
+    aún sin encadenar y dentro de MAX_RETURN (S140).
+    """
+    from budgets.assistance_traffic import MAX_RETURN
+    from budgets.models import WorkOrderAssistanceUnit as Unit
+
+    if not unit.operator_id or unit.started_at is None:
+        return None
+    return Unit.objects.select_for_update().filter(
+        operator_id=unit.operator_id,
+        closed_in_route=True,
+        chained_to__isnull=True,
+        chain_at__lte=unit.started_at,
+        chain_at__gte=unit.started_at - MAX_RETURN,
+    ).exclude(pk=unit.pk).order_by("-chain_at").first()
 
 
 def _base_of(unit):
@@ -189,10 +229,19 @@ def estimate_return(unit_pk):
     unit = Unit.objects.select_related(
         "work_order", "arrival_base", "operator",
     ).filter(pk=unit_pk).first()
-    if unit is None or unit.chained_to_id is None:
+    if unit is None or (
+        unit.chained_to_id is None and not unit.closed_in_route
+    ):
         return
     try:
-        point = _change_point(unit)
+        # S140: closed on the road, the point is the one of the phone.
+        # Cerrado en ruta, el punto es el que mandó el móvil.
+        point = (
+            (unit.chain_latitude, unit.chain_longitude)
+            if unit.chain_latitude is not None
+            and unit.chain_longitude is not None
+            else _change_point(unit)
+        )
         changes = {}
         if point is not None:
             origin = {
