@@ -109,21 +109,23 @@ deja de hacerlo en cuanto cambia de estado.
                 </button>
             </form>
             {% endif %}
+            {% comment %}S140: un albarán ya cerrado no se vuelve a rellenar ni a firmar desde aquí: se ve su PDF.{% endcomment %}
+            {% if unit.status == 'COMPLETED' or unit.status == 'CLOSED_UNSIGNED' or unit.status == 'SIGNED_RECEIVED' or unit.status == 'CLOSED_BASE' %}
+            <a href="{% url 'budgets:work_order_pdf' pk=unit.pk %}"
+               class="btn btn-sm btn-outline-primary"
+               target="_blank" rel="noopener">
+                <i class="bi bi-filetype-pdf me-1"></i>Albarán (PDF)
+            </a>
+            {% else %}
             <a href="{% url 'budgets:work_order_albaran' pk=unit.pk %}"
                class="btn btn-sm btn-outline-primary">
                 <i class="bi bi-pencil-square me-1"></i>Albarán
             </a>
+            {% endif %}
             <a href="{% url 'budgets:unit_route' pk=unit.pk %}"
                class="btn btn-sm btn-outline-secondary">
                 <i class="bi bi-geo-alt me-1"></i>Ruta
             </a>
-            {% if unit.status == 'COMPLETED' %}
-            <a href="{% url 'budgets:work_order_pdf' pk=unit.pk %}"
-               class="btn btn-sm btn-outline-success"
-               target="_blank">
-                <i class="bi bi-filetype-pdf me-1"></i>PDF
-            </a>
-            {% endif %}
         </div>
     </div>
 </div>

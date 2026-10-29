@@ -1413,6 +1413,43 @@ class RouteTestView(AssistanceSupervisorAccessMixin, View):
         })
 
 
+class WorkOrderInvoiceSimulationView(AssistanceSupervisorAccessMixin, View):
+    """
+    Invoice simulation of a finished order with the insurer tariff.
+
+    ---
+
+    Simulación de factura de una orden terminada con la tarifa de la
+    aseguradora (S140). No guarda nada.
+    """
+
+    template_name = "budgets/services/invoice_simulation.html"
+
+    def get(self, request, pk):
+        """
+        Price the closed albaranes and show the lines.
+
+        ---
+
+        Valora los albaranes cerrados y muestra las líneas.
+        """
+        from budgets.service_invoice import simulate_order
+
+        work_order = get_object_or_404(
+            WorkOrderAssistance.objects.select_related(
+                "insurer", "vehicle_type",
+            ),
+            pk=pk,
+            company=request.user.company_user.company,
+        )
+        ctx = _build_base_context(request, {
+            "work_order": work_order,
+            "simulation": simulate_order(work_order),
+            "active_nav": "work_orders",
+        })
+        return render(request, self.template_name, ctx)
+
+
 class WorkOrderInvoicedView(AssistanceSupervisorAccessMixin, View):
     """
     Mark a completed order as invoiced, or undo it.

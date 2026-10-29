@@ -5946,6 +5946,16 @@ class WorkOrderUnitNotifyView(AssistanceWorkOrderAccessMixin, View):
         return redirect("budgets:work_order_detail", pk=unit.work_order_id)
 
 
+# H37 (S140): albaranes already closed (signed, closed without signature,
+# paper signature received or closed in base, and cancelled).
+# Albaranes ya cerrados (firmados, cerrados sin firma, con la firma en
+# papel recibida o cerrados en base, y anulados).
+_ALBARAN_CLOSED_STATUSES = (
+    "COMPLETED", "CLOSED_UNSIGNED", "SIGNED_RECEIVED", "CLOSED_BASE",
+    "CANCELLED",
+)
+
+
 class WorkOrderAlbaranView(AssistanceAlbaranAccessMixin, View):
     """
     Renders the mobile-first albarán form for a WorkOrderAssistanceUnit.
@@ -5979,6 +5989,13 @@ class WorkOrderAlbaranView(AssistanceAlbaranAccessMixin, View):
             pk=pk,
             work_order__company=company_user.company,
         )
+        # H37 (S140): a closed albarán is not filled in or signed again
+        # here (it would overwrite what the driver recorded in the app):
+        # its PDF is shown.
+        # Un albarán cerrado no se vuelve a rellenar ni a firmar aquí
+        # (pisaría lo que anotó el chófer en la app): se muestra su PDF.
+        if unit.status in _ALBARAN_CLOSED_STATUSES:
+            return redirect("budgets:work_order_pdf", pk=unit.pk)
         # H37 (S132): the albarán link now arrives in the template button,
         # so the unit becomes DOWNLOADED when its own operator opens it
         # (an office user opening it from the panel does not count).
@@ -6031,6 +6048,11 @@ class WorkOrderAlbaranView(AssistanceAlbaranAccessMixin, View):
             pk=pk,
             work_order__company=company_user.company,
         )
+        if unit.status in _ALBARAN_CLOSED_STATUSES:
+            messages.error(
+                request, "Este albarán ya está cerrado: no se puede modificar.",
+            )
+            return redirect("budgets:work_order_pdf", pk=unit.pk)
         phase1_km = request.POST.get("phase1_km", "").strip() or None
         phase2_km = request.POST.get("phase2_km", "").strip() or None
         departure_fee = request.POST.get("departure_fee", "").strip() or None
@@ -6467,7 +6489,11 @@ class WorkOrderPdfView(AssistanceAlbaranAccessMixin, View):
             f"{unit.unit_number:02d}.pdf"
         )
         response = HttpResponse(pdf_file, content_type="application/pdf")
-        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        # H37 (S140): opened in the browser (it is the "Albarán" button
+        # of a closed albarán); it can still be saved from there.
+        # Se abre en el navegador (es el botón "Albarán" de un albarán
+        # cerrado); desde ahí se puede guardar igual.
+        response["Content-Disposition"] = f'inline; filename="{filename}"'
         return response
 
 

@@ -24,6 +24,12 @@
         </div>
         <div class="d-flex gap-2">
             {% comment %}S140: facturar una orden completada (o deshacerlo).{% endcomment %}
+            {% if work_order.status == 'COMPLETED' or work_order.status == 'INVOICED' %}
+            <a href="{% url 'budgets:work_order_invoice_simulation' pk=work_order.pk %}"
+               class="btn btn-outline-dark btn-sm">
+                <i class="bi bi-calculator me-1"></i>Simular factura
+            </a>
+            {% endif %}
             {% if work_order.status == 'COMPLETED' %}
             <form method="post" action="{% url 'budgets:work_order_invoiced' pk=work_order.pk %}" class="m-0">
                 {% csrf_token %}

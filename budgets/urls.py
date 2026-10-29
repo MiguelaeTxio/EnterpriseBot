@@ -847,6 +847,13 @@ urlpatterns = [
         views_services.WorkOrderInvoicedView.as_view(),
         name="work_order_invoiced",
     ),
+    # H37 (S140): invoice simulation of a finished order.
+    # Simulación de factura de una orden terminada.
+    path(
+        "work-orders/<int:pk>/simulacion-factura/",
+        views_services.WorkOrderInvoiceSimulationView.as_view(),
+        name="work_order_invoice_simulation",
+    ),
     # H37 (S140): routes recorded with the test button of the app.
     # Rutas grabadas con el botón de prueba de la app.
     path(
