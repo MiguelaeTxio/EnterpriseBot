@@ -1025,3 +1025,132 @@ producción y comprobadas en BD: chat 0011-0014 y 0016, budgets
 - Pepe aún no está en la sala; Alberto Álvarez, alejandro_sergio y
   coco.alvarez no tienen DNI en su cuenta del panel (solo hace falta si
   van a dar servicios). Sin probar en iPhone.
+
+---
+
+## 12. COMPLETADAS EN S140 (sesión invasora, 28-29/10/2026)
+
+Sesión invasora sobre H37 en paralelo con S137 (H30) y después S141
+(H24 EN PROGRESO); el marcador no se mueve y ninguna hoja de ruta se
+reescribe. SWAP del 100 al 104. Tarea de partida: prueba de campo
+controlada de un servicio de asistencia con Miguel Ángel de chófer y su
+coche 7245GBM (cambio de rueda de un camión de 35.000 kg en la esquina
+de Calle del Romero con Pasaje Bergantín, Santa Rosalía-Maqueda, hoja
+con formato TIREA, orden 20261029002, albarán 20261029002-01).
+
+### 12.1. Redis y Celery (incidencia real)
+
+- Redis Cloud sin clientes libres: la BD era compartida con
+  CampuStudiOnline. `fcf70dc`: `CELERY_TASK_IGNORE_RESULT = True` y el
+  aviso de un mensaje de la sala con `on_commit(..., robust=True)` (ya
+  no tumba la subida de la hoja de servicio).
+- EnterpriseBot pasa a su propia BD gratuita de Redis Cloud
+  `enterprisebot-celery` (AWS us-east-1, 30 conexiones), puesta en el
+  `.env` con los Comandos S 103 (falló por un pegado incompleto) y 104.
+  Miguel Ángel recargó la web y reinició las tareas 270439 (bridge) y
+  270440 (worker).
+- Comando S 100 falló con MySQL 4031 (la conexión caducaba esperando la
+  contraseña); el patrón correcto es pedir la contraseña primero y
+  cerrar con `connection.close()` (Comando S 101).
+- Los MySQL 2003 del alta de usuario del 28/10 fueron una caída de
+  PythonAnywhere, no Redis.
+
+### 12.2. Albarán paso a paso (Miguel Ángel, 28/10 11:06, reiterado el 29/10)
+
+Flujo exigido y construido (`1212ee8`, app `7e7f581`):
+1. La lista solo enseña número de albarán y expediente.
+2. Nada (ni datos ni Maps) hasta meter hora de salida y km de salida.
+3. Llegada: km del cuentakilómetros obligatorios (`km_arrival`), con
+   los km del GPS como guía.
+4. Todas las fotos obligatorias antes de la firma (reparación in situ:
+   `REP_BEFORE` y `REP_DONE`; remolque: las de siempre).
+5. Km de entrega (si hay traslado) y km de vuelta a base como
+   distancia; el botón calcula con Google la distancia desde el punto
+   actual a la base.
+6. Aceptar la firma envía el albarán.
+7. Cerrar en base (base, km, hora y litros obligatorios) o cerrar en
+   ruta.
+Migración `budgets 0053_unit_km_steps_s140` (campos `km_arrival`,
+`km_delivery`, `km_return`, `closed_in_route` y tipos de foto),
+aplicada y comprobada en BD. Las horas de salida y llegada a base son
+las del momento de pulsar el botón (`88ffeea`); la ruta salía vacía si
+la llegada a base era anterior a la firma (`4e5ec26`).
+
+### 12.3. Ruta como un tracker (petición de Miguel Ángel)
+
+- Botón "Prueba de ruta" en la app (`3a0c25e`, `0aa36ad`) y páginas
+  `route-tests/` del panel (`23a5144`, migración `0052_routetest_s140`):
+  GPS cada segundo, un punto cada 5 m o en cada giro de 30° o más, uno
+  cada 30 s parado, precisión hasta 30 m, envío en lotes cada 30 s.
+  Primera prueba: "Bastante acertado, no es igual igual". Después se
+  integró en el albarán (`7e7f581`).
+- Incidencia: una llamada que Miguel Ángel rechazó dejó subido igual el
+  commit de la app `07407a6` (tracker a 10 m en `LocationService`);
+  se le dijo al principio que el albarán no estaba tocado y se corrigió
+  después.
+
+### 12.4. App: actualización obligatoria y fotos en segundo plano
+
+- Actualización obligatoria al arrancar (`f074e2c`): aviso sin cerrar,
+  Instalar o Salir; "si no instalas la actualización, la aplicación no
+  va a funcionar".
+- Fotos guardadas en el móvil y subidas en segundo plano; la hoja sigue
+  sin esperar (`fcb74aa`; Miguel Ángel: tardaban mucho y una falló).
+- Versiones de la app en la sesión: 35 a 43.
+
+### 12.5. Orden facturable y cierre en ruta con el GPS (`a953b97`, app `10742cc`)
+
+- La orden sigue a sus albaranes (`WorkOrderAssistance.refresh_status`:
+  En curso / Completada / Pendiente; nunca toca Facturada). Botones
+  "Marcar como facturada" y "Quitar facturada" en el detalle. Migración
+  `0054_order_status_s140` (recalcula los estados), aplicada y
+  comprobada en BD: órdenes 1-4 y 8-10 en COMPLETED.
+- Cerrar en ruta no pide nada (Miguel Ángel: "ni siquiera va a parar"):
+  el servidor toma el último punto del GPS, los km del GPS hasta ahí y
+  estima la vuelta a base (`service_chain.close_in_route`). Si la
+  oficina le envía otro servicio mientras vuelve, el albarán se cierra
+  en ruta solo (`close_returning_in_route`).
+- En la app, tras la firma, dos opciones: "Cerrar en base" (solo
+  entonces salen base, km, hora y litros) y "Cerrar en ruta".
+
+### 12.6. Albarán cerrado, simulación de factura y Excel
+
+- El botón azul "Albarán" de la orden era el formulario web de antes de
+  la app y, al guardarlo, borraba los km del chófer. En un albarán
+  cerrado pasa a "Albarán (PDF)" (se abre en el navegador) y el
+  formulario redirige al PDF y rechaza el guardado (`9f19c64`).
+- "Simular factura" en las órdenes completadas o facturadas
+  (`budgets/service_invoice.py`): valora cada albarán cerrado con la
+  tarifa activa de la aseguradora y el mismo motor que los presupuestos
+  (`calculate_budget`), siempre con IVA, sin guardar nada. No incluye
+  peajes, desbloqueo, vehículo cargado, ayudantes ni custodia.
+- Botón de copiar en cada dato (concepto, cantidad, precio o %,
+  importe y totales), números con coma decimal y sin euro, para pasarlos
+  a un programa de facturación (`76cdc62`); exportación a Excel de la
+  simulación (número de albarán solo al inicio de su bloque, `ab65efb`;
+  IVA entre el total sin IVA y el total con IVA, `a1bc1ec`) y Excel de
+  cada albarán cerrado (dato y valor).
+- Comprobado por Miguel Ángel con la orden 20261029002: servicio local
+  383,66 + mano de obra 0,50 h × 91,74 = 429,53 sin IVA, 519,73 con IVA.
+
+### 12.7. Commits y migraciones
+
+EnterpriseBot: `fcf70dc`, `4e5ec26`, `23a5144`, `1212ee8`, `a953b97`,
+`9f19c64`, `76cdc62`, `ab65efb`, `a1bc1ec`. EBotDeliveryNotes:
+`f074e2c`, `88ffeea`, `b05081f`, `07407a6`, `3a0c25e`, `0aa36ad`,
+`7e7f581`, `fcb74aa`, `10742cc`. Migraciones aplicadas en producción y
+comprobadas en BD: budgets 0052, 0053 y 0054.
+
+### 12.8. Estado al cerrar S140
+
+- La segunda prueba de ruta (5 m y giros) y la siguiente prueba de
+  campo con la app 43 las hará Miguel Ángel; la de campo se comprueba
+  con una consulta a BD de la unidad: `km_start`, `km_arrival`,
+  `km_delivery`/`km_return`, `phase1_km`, horas de cada paso,
+  `closed_in_route` o `base_arrived_at`, y posiciones de la ruta.
+- Las órdenes de prueba 8 y 9 tienen en `phase1_km` la lectura del
+  cuentakilómetros (252.058 y 252.242), de antes del cambio: su
+  simulación de factura sale disparatada.
+- Vistos de paso, sin tocar: respuesta de Gemini que no era JSON al
+  clasificar la línea de parte pk 3975, y las coordenadas de la base de
+  Maqueda pueden estar a ~1 km.
