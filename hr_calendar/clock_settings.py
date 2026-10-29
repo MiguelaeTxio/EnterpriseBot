@@ -99,7 +99,43 @@ def current_sections(person_ids, day=None):
         person_id__in=list(person_ids), valid_from__lte=day,
     ).select_related("section").order_by("person_id", "valid_from"):
         result[assignment.person_id] = assignment.section
+    _fill_from_ivr_contacts(result)
     return result
+
+
+def _fill_from_ivr_contacts(result):
+    """
+    Fill the workers without a Personal section with their IVR one.
+    ---
+    S141 (Miguel Ángel: "en taller mecánico había una pila de gente"):
+    casi nadie tiene todavía asignación de sección de Personal; la
+    sección de verdad es la de la centralita (los contactos de cada
+    sección, SectionContact). A quien no tiene asignación de Personal se
+    le da la sección activa de su contacto (el de su usuario del panel),
+    la de prioridad más alta si está en varias. La asignación de Personal
+    manda siempre que exista.
+    """
+    from document_explorer.models import PersonIdentity
+    from ivr_config.models import SectionContact
+
+    missing = [pk for pk, section in result.items() if section is None]
+    if not missing:
+        return
+    person_of_user = dict(PersonIdentity.objects.filter(
+        pk__in=missing, company_user__isnull=False,
+    ).values_list("company_user_id", "pk"))
+    if not person_of_user:
+        return
+    links = SectionContact.objects.filter(
+        contact__company_user_id__in=list(person_of_user),
+        section__is_active=True,
+    ).select_related("section", "contact").order_by(
+        "priority", "section__name",
+    )
+    for link in links:
+        person_id = person_of_user.get(link.contact.company_user_id)
+        if person_id is not None and result.get(person_id) is None:
+            result[person_id] = link.section
 
 
 def section_clocks_map(section_ids):
