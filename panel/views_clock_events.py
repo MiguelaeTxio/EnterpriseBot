@@ -57,8 +57,9 @@ from panel.views_vacation_balance import (
 SCREEN_KEY = "clock_events"
 FILTER_KEYS = (
     "search", "active", "company", "date_from", "date_to", "sort",
-    "issues_only", "events",
+    "issues_only", "events", "section",
 )
+NO_SECTION = "none"
 _MAX_SORT_KEYS = 4
 _MAX_RANGE_DAYS = 366
 
@@ -93,9 +94,16 @@ _SORT_VALUES = {
     "entry": lambda r: _last_day_time(r, "clock_in"),
     "exit": lambda r: _last_day_time(r, "clock_out"),
     "place": _last_day_place,
+    # S141: sección, si ficha y si recibe recordatorios.
+    "section": lambda r: r.state.section_name.upper() or None,
+    "clocks": lambda r: r.state.must_clock,
+    "reminders": lambda r: r.state.reminders,
 }
 _COLUMNS = (
     ("person", "Apellidos, Nombre"),
+    ("section", "Sección"),
+    ("clocks", "Ficha"),
+    ("reminders", "Recordatorios"),
     ("events", "Fichajes"),
     ("issues", "Incidencias"),
     ("last", "Último día"),
@@ -203,9 +211,12 @@ class _Row:
     Un trabajador del listado con el informe del intervalo.
     """
 
-    def __init__(self, person, report):
+    def __init__(self, person, report, state=None):
+        from hr_calendar.clock_settings import WorkerClockState
+
         self.person = person
         self.report = report
+        self.state = state or WorkerClockState()
         self.label = _person_label(person)
         self.sort_name = self.label.upper()
         self.has_account = person.company_user_id is not None
@@ -222,16 +233,65 @@ def _sort_rows(rows, sort_keys):
 
 
 def _rows(request, people, date_from, date_to):
+    from hr_calendar.clock_settings import worker_states
+
     company = request.user.company_user.company
     reports = reports_by_user(
         company,
         [p.company_user_id for p in people if p.company_user_id],
         date_from, date_to,
     )
+    states = worker_states(people)
     return [
-        _Row(p, reports.get(p.company_user_id) or _EmptyReport())
+        _Row(p, reports.get(p.company_user_id) or _EmptyReport(),
+             states.get(p.pk))
         for p in people
     ]
+
+
+def _with_section_filter(request, rows):
+    """
+    "Sección" filter (S141): the section in force today, or none.
+    ---
+    Filtro "Sección" (S141, Miguel Ángel: "poder discriminar por
+    secciones"): la sección vigente hoy, o "Sin sección".
+    """
+    section = _param(request, "section")
+    if section == NO_SECTION:
+        return [r for r in rows if r.state.section is None]
+    if section.isdigit():
+        return [
+            r for r in rows
+            if r.state.section is not None
+            and r.state.section.pk == int(section)
+        ]
+    return rows
+
+
+def _sections(company):
+    from ivr_config.models import Section
+
+    return list(Section.objects.filter(company=company).order_by("name"))
+
+
+def _settings_context(company):
+    """
+    The clock-in settings block: company switch and sections.
+    ---
+    El bloque de ajustes de fichaje: el permiso general de envío y las
+    secciones con si fichan con la plataforma.
+    """
+    from hr_calendar.clock_settings import reminders_enabled
+    from hr_calendar.clock_settings import section_clocks_map
+
+    sections = _sections(company)
+    clocks = section_clocks_map([s.pk for s in sections])
+    return {
+        "reminders_on": reminders_enabled(company),
+        "section_settings": [
+            {"section": s, "clocks": clocks[s.pk]} for s in sections
+        ],
+    }
 
 
 def _with_issues_filter(request, rows):
@@ -282,8 +342,10 @@ def _list_context(request):
             "company_user",
         ).filter(pk__in=wanted))
     rows = _sort_rows(
-        _with_events_filter(request, _with_issues_filter(
-            request, _rows(request, people, date_from, date_to),
+        _with_section_filter(request, _with_events_filter(
+            request, _with_issues_filter(
+                request, _rows(request, people, date_from, date_to),
+            ),
         )),
         _parse_sort(_param(request, "sort")),
     )
@@ -302,6 +364,7 @@ def _list_context(request):
         "date_to": date_to,
         "filter_issues_only": _param(request, "issues_only") == "1",
         "filter_events": _csv_param(request, "events", _EVENTS_CHOICES),
+        "filter_section": _param(request, "section"),
         "total_label": format_duration(
             sum(r.report.total_seconds for r in rows),
         ),
@@ -327,8 +390,12 @@ class ClockEventsTabView(SupervisorAccessMixin, View):
         )
         if not isinstance(saved_selection, list):
             saved_selection = []
+        company = request.user.company_user.company
         return render(request, "panel/clock_events/_pane.html", {
             **_list_context(request),
+            **_settings_context(company),
+            "sections": _sections(company),
+            "no_section": NO_SECTION,
             "screen_key": SCREEN_KEY,
             "saved_selection": saved_selection,
             # H24 (S129): mapa del fichaje con la API de Google Maps
@@ -351,6 +418,121 @@ class ClockEventsResultsView(SupervisorAccessMixin, View):
         return render(
             request, "panel/clock_events/_table.html",
             _list_context(request),
+        )
+
+
+def _settings_response(request, message, error=False):
+    """
+    Table plus the settings block (out of band), with a message.
+    ---
+    La tabla y, fuera de banda, el bloque de ajustes de fichaje, con un
+    mensaje en cabecera que pinta el aviso flotante de la pestaña.
+    """
+    from urllib.parse import quote
+
+    from django.template.loader import render_to_string
+
+    company = request.user.company_user.company
+    html = render_to_string(
+        "panel/clock_events/_table.html", _list_context(request),
+        request=request,
+    ) + render_to_string(
+        "panel/clock_events/_settings.html",
+        {**_settings_context(company), "oob": True}, request=request,
+    )
+    response = HttpResponse(html)
+    response["X-Clock-Message"] = quote(message)
+    if error:
+        response["X-Clock-Error"] = "1"
+    return response
+
+
+class ClockWorkerSettingsView(SupervisorAccessMixin, View):
+    """
+    POST: set "ficha" / "recordatorios" for the marked workers.
+    ---
+    POST: a los trabajadores marcados, "ficha" / "no ficha" o "con
+    recordatorios" / "sin recordatorios" (H24, S141). Devuelve la tabla
+    con los filtros que se veían.
+    """
+
+    ACTIONS = {
+        "clocks_on": ("clocks", True, "obligados a fichar"),
+        "clocks_off": ("clocks", False, "sin obligación de fichar"),
+        "reminders_on": ("reminders", True, "con recordatorios"),
+        "reminders_off": ("reminders", False, "sin recordatorios"),
+    }
+
+    def post(self, request):
+        from hr_calendar.clock_settings import set_worker_flag
+
+        action = self.ACTIONS.get(request.POST.get("action", ""))
+        company = request.user.company_user.company
+        wanted = [
+            int(pk) for pk in request.POST.getlist("selected")
+            if pk.isdigit()
+        ]
+        ids = list(PersonIdentity.objects.filter(
+            Q(company=company) | Q(company__isnull=True), pk__in=wanted,
+        ).values_list("pk", flat=True))
+        if action is None or not ids:
+            return _settings_response(
+                request, "Marca algún trabajador y elige la acción.",
+                error=True,
+            )
+        field, value, label = action
+        count = set_worker_flag(ids, field, value,
+                                request.user.company_user)
+        return _settings_response(
+            request, "%d trabajador(es) %s." % (count, label),
+        )
+
+
+class ClockRemindersSwitchView(SupervisorAccessMixin, View):
+    """
+    POST: switch the company's reminders on or off.
+    ---
+    POST: activa o desactiva el envío de recordatorios de fichaje de la
+    empresa (H24, S141).
+    """
+
+    def post(self, request):
+        from hr_calendar.clock_settings import set_reminders_enabled
+
+        enabled = request.POST.get("enabled") == "1"
+        set_reminders_enabled(request.user.company_user.company, enabled,
+                              request.user.company_user)
+        return _settings_response(
+            request,
+            "Envío de recordatorios %s." % (
+                "activado" if enabled else "desactivado"),
+        )
+
+
+class ClockSectionSettingView(SupervisorAccessMixin, View):
+    """
+    POST: put a section in or out of clocking with the platform.
+    ---
+    POST: pone o quita una sección del fichaje con la plataforma (H24,
+    S141; Plataformas ficha con Prologic).
+    """
+
+    def post(self, request):
+        from hr_calendar.clock_settings import set_section_clocks
+        from ivr_config.models import Section
+
+        section = Section.objects.filter(
+            pk=request.POST.get("section_id") or 0,
+            company=request.user.company_user.company,
+        ).first()
+        if section is None:
+            return _settings_response(request, "No existe esa sección.",
+                                      error=True)
+        clocks = request.POST.get("clocks") == "1"
+        set_section_clocks(section, clocks, request.user.company_user)
+        return _settings_response(
+            request, "%s %s con la plataforma." % (
+                section.name, "ficha" if clocks else "ya no ficha"),
         )
 
 

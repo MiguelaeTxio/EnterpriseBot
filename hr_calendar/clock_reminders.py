@@ -28,6 +28,9 @@ la entrada y olvido de la salida.
 - Festivos: `_day_rule` del informe de fichajes (sábados, domingos y
   festivos de la base; los guardas nocturnos, todos los días).
 - Un recordatorio por trabajador, día y tipo (`ClockReminder`).
+- A quién (S141, desde la pestaña Fichajes, hr_calendar/clock_settings):
+  envío activado en la empresa, sección que ficha con la plataforma,
+  trabajador obligado a fichar y con los recordatorios activados.
 - Dentro de la ventana de 24 horas sale como texto libre; fuera, con
   la plantilla, solo cuando Meta la ha aprobado.
 """
@@ -181,10 +184,12 @@ def send_clock_reminders(company, now=None, log=logger.info):
     Envía los recordatorios que tocan ahora, con las condiciones del
     docstring del módulo. Devuelve los contadores.
     """
+    from document_explorer.models import PersonIdentity
     from hr_calendar.clock_report import _day_rule
     from hr_calendar.clock_report import schedule_ends
     from hr_calendar.clock_report import schedule_starts
-    from ivr_config.models import CompanyUser
+    from hr_calendar.clock_settings import reminders_enabled
+    from hr_calendar.clock_settings import worker_states
     from panel.views_operator import _resolve_operator_schedule
     from whatsapp.services import _build_twilio_client
     from whatsapp.window_service import send_notification
@@ -194,6 +199,10 @@ def send_clock_reminders(company, now=None, log=logger.info):
     day = now.date()
     counters = {"enviados": 0, "festivo": 0, "fuera": 0, "sin_horario": 0,
                 "sin_movil": 0, "sin_plantilla": 0, "errores": 0}
+    # S141: el permiso de envío se da en la pestaña Fichajes.
+    if not reminders_enabled(company):
+        log("Recordatorios de fichaje: desactivados en Fichajes.")
+        return counters
     sender = os.environ.get("TWILIO_WHATSAPP_SENDER", "")
     if not sender:
         log("Recordatorios de fichaje: sin TWILIO_WHATSAPP_SENDER.")
@@ -213,9 +222,17 @@ def send_clock_reminders(company, now=None, log=logger.info):
     ).order_by("pressed_at"):
         events_by_user.setdefault(event.company_user_id, []).append(event)
     client = None
-    users = CompanyUser.objects.filter(
-        company=company, is_active=True, role__in=CompanyUser.WORKER_ROLES,
-    ).select_related("base", "user")
+    # S141: solo los trabajadores con los recordatorios activados, que
+    # están obligados a fichar y cuya sección ficha con la plataforma.
+    people = list(PersonIdentity.objects.filter(
+        clock_setting__reminders=True,
+        company_user__company=company,
+        company_user__is_active=True,
+    ).select_related("company_user__base", "company_user__user"))
+    states = worker_states(people, day)
+    users = [
+        p.company_user for p in people if states[p.pk].must_clock
+    ]
     for company_user in users:
         if not _day_rule(company_user)(day):
             counters["festivo"] += 1

@@ -27,16 +27,9 @@ def send_clock_reminders_task():
     ahora. Idempotente: un recordatorio ya enviado no se repite
     (ClockReminder).
     """
-    from django.conf import settings
-
     from hr_calendar.clock_reminders import send_clock_reminders
     from ivr_config.models import Company
 
-    # S141: parados hasta que Miguel Ángel apruebe plantillas,
-    # destinatarios y horarios.
-    if not settings.CLOCK_REMINDERS_ENABLED:
-        logger.info("Recordatorios de fichaje: desactivados.")
-        return {"desactivados": True}
     company = Company.objects.filter(slug=COMPANY_SLUG).first()
     if company is None:
         logger.warning("Recordatorios de fichaje: no existe la empresa "

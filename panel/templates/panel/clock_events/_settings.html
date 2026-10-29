@@ -1,0 +1,48 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/clock_events/_settings.html #}
+{% comment %}
+H24 (S141). Ajustes de fichaje de la empresa en el panel de acciones de
+Fichajes: el permiso general para enviar los recordatorios de fichaje
+olvidado y qué secciones fichan con la plataforma (Plataformas ficha
+con Prologic: se quita o se pone según digan los jefes). Se vuelve a
+pintar fuera de banda (oob) tras cada acción de ajustes.
+{% endcomment %}
+<div id="clk-settings" class="col-12"{% if oob %} hx-swap-oob="true"{% endif %}>
+    <div class="small text-muted fw-bold mt-1">Envío de recordatorios</div>
+    <div class="d-flex flex-wrap align-items-center gap-1">
+        {% if reminders_on %}
+        <span class="badge text-bg-success">Activado</span>
+        <button type="button" class="btn btn-sm btn-outline-danger clk-setting-btn"
+                data-url="{% url 'panel:clock_settings_reminders' %}" data-enabled="0"
+                data-confirm="¿Desactivar el envío de recordatorios de fichaje a todos?"
+                title="Deja de enviar los recordatorios de fichaje olvidado a todo el mundo.">
+            <i class="bi bi-bell-slash me-1"></i>Desactivar
+        </button>
+        {% else %}
+        <span class="badge text-bg-secondary">Desactivado</span>
+        <button type="button" class="btn btn-sm btn-outline-success clk-setting-btn"
+                data-url="{% url 'panel:clock_settings_reminders' %}" data-enabled="1"
+                data-confirm="¿Activar el envío de recordatorios de fichaje? Solo lo reciben los trabajadores con recordatorios activados, que fichan y cuya sección ficha con la plataforma."
+                title="Envía el recordatorio a quien no ha fichado la entrada o la salida un cuarto de hora después de su horario (salvo vacaciones, ausencias, bajas y festivos de su base). Solo a los trabajadores con recordatorios activados, que fichan y cuya sección ficha con la plataforma.">
+            <i class="bi bi-bell me-1"></i>Activar
+        </button>
+        {% endif %}
+        <div class="dropdown">
+            <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
+                    data-bs-auto-close="outside" title="Qué secciones fichan con la plataforma. Una sección que ficha por otro sistema (por ejemplo, Plataformas con Prologic) se quita aquí y nadie de ella recibe recordatorios.">
+                <i class="bi bi-diagram-3 me-1"></i>Secciones que fichan
+            </button>
+            <div class="dropdown-menu p-2 small">
+                {% for item in section_settings %}
+                <div class="form-check form-switch text-nowrap">
+                    <input class="form-check-input clk-section-switch" type="checkbox" id="clkSection{{ item.section.pk }}"
+                           data-url="{% url 'panel:clock_settings_section' %}" data-section="{{ item.section.pk }}"
+                           data-name="{{ item.section.name }}"{% if item.clocks %} checked{% endif %}>
+                    <label class="form-check-label" for="clkSection{{ item.section.pk }}">{{ item.section.name }}</label>
+                </div>
+                {% empty %}
+                <div class="text-muted">No hay secciones.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>

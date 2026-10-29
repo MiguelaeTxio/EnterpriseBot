@@ -532,11 +532,6 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 
-# H24 (S141): recordatorios de fichaje olvidado. Apagados hasta que
-# Miguel Ángel apruebe plantillas, destinatarios y horarios; se
-# encienden con CLOCK_REMINDERS_ENABLED=1 en .env.
-CLOCK_REMINDERS_ENABLED = os.getenv('CLOCK_REMINDERS_ENABLED', '0') == '1'
-
 # H30 (S123): destinatarios (PersonIdentity.pk) de la alerta de caída
 # de agentes de sistema -- Miguel Ángel (ficha 250).
 SYSTEM_AGENT_ALERT_PERSON_IDS = [

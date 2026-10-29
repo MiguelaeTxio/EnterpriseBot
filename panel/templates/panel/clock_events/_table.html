@@ -57,6 +57,10 @@ y Albaranes de Servicios.
                    hx-get="{% url 'panel:clock_events_detail' row.person.pk %}?date_from={{ date_from|date:'Y-m-d' }}&date_to={{ date_to|date:'Y-m-d' }}"
                    hx-target="#clk-detail-container">{{ row.label }}</a>
             </td>
+            {# S141: sección vigente hoy, si ficha (él y su sección) y si recibe recordatorios. #}
+            <td data-label="Sección">{{ row.state.section_name|default:"—" }}</td>
+            <td data-label="Ficha">{% if not row.state.section_clocks %}<span class="text-muted" title="Su sección no ficha con la plataforma">No (sección)</span>{% elif row.state.worker_clocks %}Sí{% else %}<span class="text-muted">No</span>{% endif %}</td>
+            <td data-label="Recordatorios">{% if row.state.reminders %}<i class="bi bi-bell-fill text-success" title="Recibe recordatorios"></i> Sí{% else %}<span class="text-muted">No</span>{% endif %}</td>
             <td class="text-end" data-label="Fichajes">{{ row.report.events|length }}</td>
             <td class="text-end{% if row.report.incident_count %} text-danger fw-bold{% endif %}" data-label="Incidencias">{{ row.report.incident_count }}</td>
             {% with last=row.report.last_day %}
@@ -85,7 +89,7 @@ y Albaranes de Servicios.
             </td>
         </tr>
         {% empty %}
-        <tr><td colspan="10" class="text-muted small py-3">No se encontró personal.</td></tr>
+        <tr><td colspan="13" class="text-muted small py-3">No se encontró personal.</td></tr>
         {% endfor %}
     </tbody>
 </table>

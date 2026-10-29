@@ -1281,3 +1281,137 @@ class ClockCorrection(models.Model):
             f"{self.get_action_display()} de {self.event} "
             f"por {self.corrected_by}"
         )
+
+
+class ClockSettings(models.Model):
+    """
+    Company-wide clock-in settings, managed from the panel (H24, S141).
+
+    ---
+
+    Ajustes de fichaje de la empresa, desde el panel (H24, S141).
+    `reminders_enabled` es el permiso general para enviar los
+    recordatorios de fichaje olvidado: apagado hasta que un supervisor
+    lo enciende en la pestaña Fichajes.
+    """
+
+    company = models.OneToOneField(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="clock_settings",
+        verbose_name="Empresa",
+    )
+    reminders_enabled = models.BooleanField(
+        default=False,
+        verbose_name="Enviar recordatorios de fichaje",
+    )
+    updated_by = models.ForeignKey(
+        CompanyUser,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name="Cambiado por",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Último cambio",
+    )
+
+    class Meta:
+        verbose_name = "Ajustes de fichaje"
+        verbose_name_plural = "Ajustes de fichaje"
+
+    def __str__(self) -> str:
+        return f"Ajustes de fichaje de {self.company}"
+
+
+class SectionClockSetting(models.Model):
+    """
+    Whether a section clocks in with the platform (H24, S141).
+
+    ---
+
+    Si una sección ficha con la plataforma (H24, S141). Miguel Ángel:
+    hay secciones que fichan por otro sistema (Plataformas, por
+    Prologic) y se quitan o se ponen según lo que digan los jefes. Sin
+    fila, la sección ficha.
+    """
+
+    section = models.OneToOneField(
+        "ivr_config.Section",
+        on_delete=models.CASCADE,
+        related_name="clock_setting",
+        verbose_name="Sección",
+    )
+    clocks = models.BooleanField(
+        default=True,
+        verbose_name="Ficha con la plataforma",
+    )
+    updated_by = models.ForeignKey(
+        CompanyUser,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name="Cambiado por",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Último cambio",
+    )
+
+    class Meta:
+        verbose_name = "Fichaje de una sección"
+        verbose_name_plural = "Fichaje de las secciones"
+
+    def __str__(self) -> str:
+        return f"{self.section} — {'ficha' if self.clocks else 'no ficha'}"
+
+
+class WorkerClockSetting(models.Model):
+    """
+    Clock-in settings of one worker (H24, S141).
+
+    ---
+
+    Ajustes de fichaje de un trabajador (H24, S141). `clocks`: está
+    obligado a fichar (Miguel Ángel: un jefe de sección, o quien sea,
+    puede no estar obligado). `reminders`: recibe los recordatorios de
+    fichaje olvidado; el permiso se da a cada trabajador desde la
+    pestaña Fichajes. Sin fila: ficha y no recibe recordatorios.
+    """
+
+    person = models.OneToOneField(
+        PersonIdentity,
+        on_delete=models.CASCADE,
+        related_name="clock_setting",
+        verbose_name="Trabajador",
+    )
+    clocks = models.BooleanField(
+        default=True,
+        verbose_name="Obligado a fichar",
+    )
+    reminders = models.BooleanField(
+        default=False,
+        verbose_name="Recibe recordatorios",
+    )
+    updated_by = models.ForeignKey(
+        CompanyUser,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name="Cambiado por",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Último cambio",
+    )
+
+    class Meta:
+        verbose_name = "Fichaje de un trabajador"
+        verbose_name_plural = "Fichaje de los trabajadores"
+
+    def __str__(self) -> str:
+        return f"{self.person} — {'ficha' if self.clocks else 'no ficha'}"

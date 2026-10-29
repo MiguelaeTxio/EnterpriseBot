@@ -100,6 +100,9 @@ from panel.views_vacation_balance import (
 )
 from panel.views_clock_events import (
     ClockEventCorrectView,
+    ClockRemindersSwitchView,
+    ClockSectionSettingView,
+    ClockWorkerSettingsView,
     ClockEventsDetailView,
     ClockEventsExportView,
     ClockEventsResultsView,
@@ -1722,6 +1725,23 @@ urlpatterns = [
         "documentacion/fichajes/<int:pk>/corregir/",
         ClockEventCorrectView.as_view(),
         name="clock_events_correct",
+    ),
+    # H24 (S141): ajustes de fichaje desde la pestaña (quién ficha,
+    # quién recibe recordatorios, secciones y permiso de envío).
+    path(
+        "documentacion/fichajes/ajustes/trabajadores/",
+        ClockWorkerSettingsView.as_view(),
+        name="clock_settings_workers",
+    ),
+    path(
+        "documentacion/fichajes/ajustes/recordatorios/",
+        ClockRemindersSwitchView.as_view(),
+        name="clock_settings_reminders",
+    ),
+    path(
+        "documentacion/fichajes/ajustes/seccion/",
+        ClockSectionSettingView.as_view(),
+        name="clock_settings_section",
     ),
     path(
         "documentacion/fichajes/exportar/",

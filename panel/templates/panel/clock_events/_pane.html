@@ -12,6 +12,9 @@ Vacaciones (directriz 4.24):
 Pulsar el nombre abre sus jornadas día a día. Solo consulta: los
 registros se conservan cuatro años (art. 34.9 ET). Filtros, orden y
 selección persistidos por usuario (screen_key "clock_events").
+S141: filtro por sección, columnas Sección, Ficha y Recordatorios, y
+acciones de ajustes de fichaje (quién ficha, quién recibe los
+recordatorios, secciones que fichan y permiso de envío).
 {% endcomment %}
 <div class="border rounded p-2 mb-2" id="clk-top-panel">
     <div class="row g-2">
@@ -88,6 +91,17 @@ selección persistidos por usuario (screen_key "clock_events").
                             </div>
                             <input type="hidden" name="events" id="clk-events-input" value="{{ filter_events|join:',' }}">
                         </div>
+                        {# H24 (S141): sección vigente hoy (PersonSectionAssignment). #}
+                        <div>
+                            <div class="fw-semibold mb-1">Sección</div>
+                            <select name="section" class="form-select form-select-sm">
+                                <option value="">Todas</option>
+                                <option value="{{ no_section }}"{% if filter_section == no_section %} selected{% endif %}>Sin sección</option>
+                                {% for section in sections %}
+                                <option value="{{ section.pk }}"{% if filter_section == section.pk|stringformat:"d" %} selected{% endif %}>{{ section.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
                         {# H24 (S129): solo los trabajadores con alguna incidencia en las fechas elegidas (también al exportar). #}
                         <div>
                             <div class="fw-semibold mb-1">Incidencias</div>
@@ -116,6 +130,21 @@ selección persistidos por usuario (screen_key "clock_events").
                             <i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel
                         </button>
                     </div>
+                    {# S141: ajustes de fichaje de los marcados. #}
+                    <div class="col-6">
+                        <div class="small text-muted fw-bold">Fichaje de los marcados</div>
+                        <div class="d-flex flex-wrap gap-1">
+                            <button type="button" class="btn btn-sm btn-outline-primary clk-worker-btn" data-action="clocks_on"
+                                    title="Los marcados están obligados a fichar.">Ficha</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary clk-worker-btn" data-action="clocks_off"
+                                    title="Los marcados no están obligados a fichar (por ejemplo, un jefe de sección): no reciben recordatorios.">No ficha</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary clk-worker-btn" data-action="reminders_on"
+                                    title="Los marcados reciben el recordatorio si no fichan la entrada o la salida (cuando el envío está activado).">Con recordatorios</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary clk-worker-btn" data-action="reminders_off"
+                                    title="Los marcados no reciben recordatorios.">Sin recordatorios</button>
+                        </div>
+                    </div>
+                    {% include "panel/clock_events/_settings.html" %}
                 </div>
             </div>
         </div>
@@ -181,6 +210,14 @@ selección persistidos por usuario (screen_key "clock_events").
                     <div class="text-muted small">Cargando…</div>
                 </div>
             </div>
+        </div>
+    </div>
+</div>
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="clk-toast" class="toast align-items-center text-bg-dark border-0" role="status" aria-live="polite">
+        <div class="d-flex">
+            <div class="toast-body" id="clk-toast-msg"></div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
         </div>
     </div>
 </div>
@@ -315,6 +352,71 @@ document.getElementById("clkDetailModal").addEventListener("show.bs.modal", func
         });
         params.set("selected_ids", Array.from(selection.keys()).join(","));
         window.location.href = EXPORT_URL + "?" + params.toString();
+    });
+
+    // S141: ajustes de fichaje. Cada acción devuelve la tabla con los
+    // filtros que se veían (_f_) y, fuera de banda, el bloque de
+    // ajustes; el mensaje llega en X-Clock-Message.
+    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    function showToast(text, danger) {
+        const toast = document.getElementById("clk-toast");
+        toast.classList.toggle("text-bg-danger", !!danger);
+        toast.classList.toggle("text-bg-dark", !danger);
+        document.getElementById("clk-toast-msg").textContent = text;
+        new bootstrap.Toast(toast).show();
+    }
+    function postSetting(url, fields, withSelection) {
+        const body = new FormData();
+        new FormData(filters).forEach(function (value, key) { body.append("_f_" + key, value); });
+        const sortInput = results.querySelector('#clk-sort-inputs input[name="sort"]');
+        body.append("_f_sort", sortInput ? sortInput.value : "");
+        Object.keys(fields).forEach(function (key) { body.append(key, fields[key]); });
+        if (withSelection) selection.forEach(function (_label, pk) { body.append("selected", pk); });
+        return fetch(url, {
+            method: "POST", headers: {"X-CSRFToken": csrfMeta ? csrfMeta.content : ""}, body: body,
+        }).then(function (r) {
+            if (!r.ok) { showToast("No se ha podido guardar (" + r.status + ").", true); return; }
+            const message = r.headers.get("X-Clock-Message");
+            const isError = r.headers.get("X-Clock-Error") === "1";
+            return r.text().then(function (html) {
+                const holder = document.createElement("div");
+                holder.innerHTML = html;
+                const settings = holder.querySelector("#clk-settings");
+                if (settings) {
+                    settings.removeAttribute("hx-swap-oob");
+                    document.getElementById("clk-settings").replaceWith(settings);
+                    htmx.process(settings);
+                }
+                results.innerHTML = holder.innerHTML;
+                htmx.process(results);
+                refreshFromFragment();
+                if (message) showToast(decodeURIComponent(message), isError);
+            });
+        }).catch(function () {
+            showToast("Sin conexión con el servidor: no se ha guardado nada.", true);
+        });
+    }
+    document.querySelectorAll(".clk-worker-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+            if (!selection.size) { showToast("Marca algún trabajador.", true); return; }
+            if (!confirm(btn.textContent.trim() + ": " + selection.size + " trabajador(es). ¿Seguro?")) return;
+            postSetting("{% url 'panel:clock_settings_workers' %}", {action: btn.dataset.action}, true);
+        });
+    });
+    document.getElementById("clk-top-panel").addEventListener("click", function (evt) {
+        const btn = evt.target.closest(".clk-setting-btn");
+        if (!btn) return;
+        if (!confirm(btn.dataset.confirm)) return;
+        postSetting(btn.dataset.url, {enabled: btn.dataset.enabled}, false);
+    });
+    document.getElementById("clk-top-panel").addEventListener("change", function (evt) {
+        const sw = evt.target.closest(".clk-section-switch");
+        if (!sw) return;
+        const text = sw.checked
+            ? "¿" + sw.dataset.name + " ficha con la plataforma?"
+            : "¿Quitar " + sw.dataset.name + " del fichaje con la plataforma? Nadie de esa sección recibirá recordatorios.";
+        if (!confirm(text)) { sw.checked = !sw.checked; return; }
+        postSetting(sw.dataset.url, {section_id: sw.dataset.section, clocks: sw.checked ? "1" : "0"}, false);
     });
 
     // S136: pantalla completa con el formato del laboratorio de análisis (4.26).

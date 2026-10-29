@@ -11,8 +11,11 @@ presupuestos) si hay clave y todavía no está cargada.
         <div class="small fw-semibold clk-map-title"></div>
         <button type="button" class="btn btn-sm btn-outline-secondary py-0 clk-map-close">Cerrar mapa</button>
     </div>
-    <div class="clk-map rounded border" style="height: 320px;"></div>
+    <div class="clk-map rounded border"></div>
 </div>
+<style>
+.clk-map { height: 320px; }
+</style>
 {% if google_maps_api_key %}
 <script>
 if (!(window.google && window.google.maps && window.google.maps.importLibrary)) {
