@@ -9916,118 +9916,237 @@ hoja de ruta siguiente detrás de la recuperación de revisiones.
 
 ---
 
-## Hoja de Ruta para la Siguiente Sesión de H30 (desde el 26/10/2026) -- sustituye a la Hoja de Ruta S135
+## COMPLETADAS EN S137 (24/10/2026 → 29/10/2026, PEE A; H30 -- revisiones, GasoGes y preguntas por WhatsApp)
 
-Miguel Ángel al cierre de S135: con los repostajes que vayan llegando,
-la ficha de cada vehículo tendrá sus km u horas correctos; queda
-recuperar cuándo se hicieron las revisiones (fecha, horas y km) y
-después los avisos y su configuración. Se hace en este orden:
+Sesión larga de H30, sobre la hoja de ruta "desde el 26/10/2026". En
+paralelo hubo tres sesiones invasoras: S138 y S140 sobre H37 y S139
+sobre H30 (ver su sección, más abajo). Al cierre, Miguel Ángel decide
+pasar a H24 (fichajes) en la sesión siguiente. Esta hoja de ruta se
+retoma al volver a H30.
 
-**Reglas del taller para las revisiones** (S137, 26/10/2026; Miguel
-Ángel tras hablar con Antonio Fontalba Serón, jefe de mecánicos). Hasta
-no tenerlas claras en todas las máquinas no se avanza a los avisos:
+### Reglas del taller fijadas en la sesión (Miguel Ángel y Antonio Fontalba)
 
-- **Todo va por horas**, salvo los vehículos sin horómetro de trabajo:
-  camiones con pluma que no son grúas móviles, furgonetas, turismos,
-  camiones de remolque y demás camiones que no trabajan por horas, que
-  van **por km**. Hay máquinas que se dieron por km y no lo son: se
-  revisan todas con la hoja de toma de datos.
-- **800 o 1200 horas según el aceite:** sintético cada 1200 h,
-  semisintético cada 800 h. Las de km, cada los km que diga el taller.
-- Grúa con motor propio: horas de grúa aparte de las del camión.
-- **Mantenimiento de una máquina = revisión = cambio de aceite** (y de
-  los filtros que toquen). En la clasificación de partes es el tipo de
-  tarea REVISION ("Revisión / cambio de aceite", S137); el
-  MANTENIMIENTO de Gemini queda para limpieza, pintura, traslados,
-  montajes y tareas del taller.
-- La situación de hoy la toma a mano **José Antonio Mora** (mozo de
-  taller) con la hoja impresa "Revisiones_hoja_para_imprimir.xlsx"
-  (S137): código, matrícula, km / horas camión / horas grúa de hoy,
-  fecha y km / horas camión / horas grúa de la última revisión, y si la
-  pasa cada 800 h, cada 1200 h o cada X km.
+- **Unidad de cada vehículo** (`fleet/gasoges_rules.convention_unit`).
+  La familia manda sobre el código.
+  - **Por km:** turismos y furgonetas (X), P y, dentro de la familia
+    ASISTENCIA, todo lo que no empiece por A (B, P, X, 7245GBM).
+  - **Por horas:** grúas móviles (A y la familia MÓVILES), brazos (B),
+    carretillas (T), plataformas (Z) y las A de ASISTENCIA.
+  - Se aplica a mano: la sincronización de GasoGes NO la aplica sola
+    (incidente del 27/10: se desplegó dentro de `run_sync` y cambió
+    100 vehículos, 10 de ellos inactivos; se quitó en `92a549f`).
+    Siempre solo centros de gasto activos.
+- **Intervalos:** 800 h con aceite semisintético y 1200 h con
+  sintético. Las A con dos motores llevan dos revisiones: motor del
+  camión y motor de la grúa.
+- **Mantenimiento de una máquina = revisión = cambio de aceite.**
+- **Gruistas, no chóferes:** los de grúas móviles y brazos son
+  gruistas; chófer queda para Asistencia.
+- **Preguntas por WhatsApp:**
+  - A todos los repostadores salvo a los dueños (ADELAIDA, ADOLFO,
+    ALBERTO, ALEJANDRO S, JOSÉ CARLOS, JOSÉ LUIS y sus vehículos). La
+    Mercedes de José Luis se quitará más adelante.
+  - Por los brazos de horas no se pregunta hasta que esté aprobada la
+    plantilla v4.
 
-1. **Recuperar las revisiones ya hechas**, por tres vías:
-   a. **Hoja de José Antonio Mora** (la de arriba). El modelo carga lo
-      que traiga con un Comando S en `MachineAsset`
-      (`service_hours_interval`, `service_crane_hours_interval`,
-      `service_every_km`, unidad de GasoGes) y `MachineServiceRecord`
-      (`service_date`, `hours`, `km`). Los datos de revisiones los
-      tiene también Alberto Álvarez Díaz (Jerónimo solo dio el
-      contacto de GasoGes).
-   b. **Partes digitales e históricos de PDF:** tipo REVISION en la
-      clasificación (commit `3a9f85d`) y `reclassify_revisions`
-      (commit `4f56cb2`, por el texto del mecánico, sin Gemini). El
-      ensayo (SWAP 011) dio 121 bloques; la hoja
-      "Revisiones_en_partes_para_revisar.xlsx" lleva la propuesta del
-      modelo (49 Sí, 59 No, 13 dudosos) y la confirman Miguel Ángel o
-      Antonio. Solo después se marcan como REVISION los confirmados y
-      se cargan como `MachineServiceRecord`. Confirmada en S137
-      (devuelta por Miguel Ángel): solo lo marcado "sí" es revisión
-      (52 bloques, se marcan con `reclassify_revisions --ids`); lo que
-      dejó en blanco no lo es (el taller es una dependencia, no se le
-      cambia el aceite). Falta cargar los `MachineServiceRecord`,
-      cruzados con la hoja de José Antonio Mora (horas y km de cada
-      revisión).
-   c. **Parte nuevo con revisión:** en crear y editar parte, casilla
-      "revisión" que, marcada, pide qué filtros se cambiaron (aceite,
-      aire, todos...; del albarán si lo hay, y si no, lo que se cambia
-      normalmente), cuánto aceite y cuál, y la próxima revisión en
-      horas (o km si es camión). Marca el bloque como REVISION y crea
-      su `MachineServiceRecord`.
-      Construido en S137 (commit `54a0073`): parte por formulario
-      (guardar tareas y cerrar, también al reeditar), migración fleet
-      0027, `fleet/work_order_service.py`. El parte subido por foto
-      (confirmar) no lleva la casilla. Falta la prueba real de un
-      mecánico.
-   **Cierre:** consulta a BD donde todo `MachineAsset` con intervalo
-   tiene al menos un `MachineServiceRecord`, el número de centros de
-   gasto con intervalo coincide con la hoja de José Antonio Mora, y un
-   parte real con la casilla de revisión marcada tiene su
-   `MachineServiceRecord`.
-2. **Avisos de revisión con las lecturas de GasoGes** (el punto 5 de
-   S135 y la prueba de cierre del punto 1 de S131). **Cierre:** consulta
-   a BD con un centro de gasto real cuya última lectura GASOGES supera
-   revisión + intervalo y que sale como vencido en Avisos, y otro sin
-   revisión anotada que no sale.
+### Lo construido (todo desplegado)
+
+**Revisiones**
+- **Tipo de tarea REVISION** ("Revisión / cambio de aceite") en la
+  clasificación de partes (`3a9f85d`; migraciones
+  `work_order_processor` 0035 y `chat` 0015).
+- **`reclassify_revisions`** por el texto del mecánico, sin Gemini
+  (`4f56cb2`), con `--ids` para los confirmados a mano (`c13c53a`).
+  Hay 53 tareas REVISION: las 52 que confirmó Miguel Ángel más la 353
+  (B32, "Manten motor", 12/03/2026, SWAP 024).
+- **Casilla "Revisión" en cada tarea del parte** (`54a0073`,
+  `1319f3e`, `8d55c8d`, `14a3fba`; migraciones `fleet` 0027 y 0030):
+  - filtros, aceite (tipo y litros) y próxima revisión;
+  - los repuestos del albarán se marcan una sola vez;
+  - motor del camión y motor de la grúa por separado;
+  - crea el `MachineServiceRecord` de la tarea y deja la tarea como
+    REVISION.
+- **`recover_service_records_s137`** (`a9533ac`, SWAP 023): la última
+  revisión de cada máquina sacada de los partes. 34 máquinas: 17
+  revisiones nuevas y 17 completadas sobre las de S131.
+  - Grupo 1, horas fiables (9): A34, A44, A45, 2655KSF (km), Z132,
+    Z14, Z29, Z96, T22.
+  - Grupo 2, horas aproximadas por GasoGes (7): Z79, Z77, Z91, Z116,
+    Z115, Z15, Z78.
+  - Grupo 3, solo fecha (18): 5462FJP, A29, A52, A53, A68, Z97, A66,
+    B27, B28, B41, B42, Z17, Z08, Z114, Z25, Z83, B32 y Z117 (fecha
+    del parte mal puesta: 26/04/2010).
+  - El origen de cada dato va en `notes` ("Recuperada del parte
+    (S137): ...").
+- **Hallazgo:** los mecánicos casi nunca teclean horas en el parte. El
+  formulario precarga las del catálogo y se dejan así. De 52 tareas
+  REVISION, solo 3 tenían horas reales.
+- **Grúas móviles y brazos:** solo 14 de 58 activos tienen revisión
+  anotada. 9 de ellos no tienen ningún parte, y en el resto los partes
+  son averías y montajes. Esas fechas solo pueden salir de la hoja de
+  José Antonio Mora o de facturas de talleres de fuera.
+
+**GasoGes y repostajes**
+- **Lecturas por serie del contador**, no contra la última aceptada
+  (`caaae7a`). Lecturas también desde los partes digitales (`3d58eea`,
+  `072c924`).
+- **Contador averiado**: botón en las preguntas y marca por vehículo
+  (`4c03a87`). Escribir AVERIADO cuenta igual que el botón (`f2e6713`).
+- **Preguntar por chófer y por vehículo**: `GasoGesUser.ask_driver`,
+  migración `fleet` 0028 (`2a006be`, `9ea414a`). En Repostadores la
+  marca va al chófer; en Repostajes y Vehículos, al vehículo.
+- **Regla del taller** `convention_unit` (`9048ab4`, `e881147`) y
+  `apply_unit_convention`, con `UNIT_SOURCE_CONVENTION` (migración
+  `fleet` 0029). ASISTENCIA: `2639899` y `ec3012d`.
+- **Sincronización** cada 5 minutos con cerrojo `fcntl` (`e5268e4`).
+- **Pantalla Repostajes**:
+  - vistas Vehículos y Repostadores (`9c57185`);
+  - cambiar un filtro ya no deja nada marcado (`97040c9`);
+  - vista "Preguntas por WhatsApp", con resumen de enviadas y
+    respuestas y Excel (`1097c8d`, `7df6fd5`);
+  - filtro "Familia" y casilla "Todos los activos" (`a0a71d2`);
+  - el botón de unidad rehace la serie entera de los vehículos
+    marcados (`43f9276`, `292037e`). Antes los dudosos de la unidad
+    vieja seguían dudosos.
+- **Preguntas al chófer**:
+  - recuerdan si son horas o km y comprueban la corrección
+    (`a0af7c6`);
+  - guardan el motivo, que va en la plantilla v4 (`9d504fe`; campo
+    `RefuelQuestion.reason`, migración `fleet` 0031);
+  - aceptan respuestas escritas sin pulsar botón ("Tiene 1625 horas",
+    "SÍ" para dar por bueno el número que escribió) (`f40b151`);
+  - quien confirma km en un vehículo de horas recibe la explicación de
+    la revisión y la confirmación no se acepta;
+  - en vehículos de horas no cuenta como referencia ninguna lectura de
+    50.000 o más.
+- **Plantillas de WhatsApp**:
+  - `refuel_value_check_v2` y `refuel_unit_check_v2` están aprobadas;
+  - `refuel_value_check_v3` está enviada;
+  - `refuel_value_check_v4` (con el motivo) está enviada el 27/10, SID
+    `HX27e687045808aacb00fd072881017508`, estado "received" (SWAP
+    026). Se usa sola en cuanto Meta la apruebe.
+- **Avisos y correcciones con datos reales**:
+  - Aviso en texto libre a B43, B34, B47 y B44, que confirmaron km
+    (`notify_wrong_confirmations`, SWAP 027). Se deshicieron sus
+    confirmaciones.
+  - Error: B44 es de ASISTENCIA y va por km; el aviso de horas no le
+    correspondía (ver hoja de ruta).
+  - Datos perdidos del 27/10 guardados: Z40 1.625 h y A58 26.708
+    (`apply_lost_driver_answers_s137`, SWAP 028).
+  - Las B de asistencia, rehechas en km desde el panel: B31 117
+    lecturas buenas / 7 dudosas, B35 131/4, B37 46/0, B39 10/5, B40
+    273/11, B44 189/7.
+- **Estado de las preguntas a 29/10:** 29 en total (todas del dato):
+  4 corregidas, 9 confirmadas, 7 caducadas, 8 sin respuesta y 1
+  esperando el número.
+
+**Personal, secciones y partes**
+- Buscar en Personal también por teléfono (`0d20730`, H31).
+- **Rol nuevo GRUISTA** (`CRANE_OPERATOR`; migración `ivr_config`
+  0050, `afbda4e`).
+- **Sección "Grúas"** (rol Gruista, familias MÓVILES y AUTOCARGANTES,
+  sin transferencia del IVR). Antonio Javier Mérida pasa a ella como
+  gruista; se había dado de alta en Elevación por error (SWAP 032).
+- **La sección "Elevación" pasa a llamarse "Plataformas"** (SWAP 033).
+- **Partes**:
+  - el aviso de Nuevo parte sale una vez por operario, con 5 segundos
+    antes de Aceptar (`0db7668`; `WorkshopNoticeRead`, migración
+    `work_order_processor` 0036);
+  - en Pendientes, fila TOTAL y resumen del periodo sin liquidar del
+    operario (`dd52d3f`);
+  - la exportación digital completa usaba `pk_list` antes de leerlo
+    (`f1b5bfe`, encontrado con flake8).
+
+### Incidencias
+
+- **Gemini devolvía 429** al reclasificar. Se reintenta y se pasó a
+  la regla por texto.
+- **La regla del taller se aplicó sola** dentro de la sincronización.
+  Revertida.
+- **La base de datos de PythonAnywhere no respondió** el 28/10 hacia
+  las 07:05 (error 2003). El comando no hizo nada y se relanzó.
+- **La recarga de la web app tardó demasiado** (curl exit 28) en dos
+  despliegues. Se relanzó el job.
+- **Docuten aparcado:** sin permiso de plantillas y con la API
+  descartada por precio.
+
+### Migraciones aplicadas en producción en S137
+
+`work_order_processor` 0035 y 0036, `chat` 0015, `fleet` de la 0027 a
+la 0031 e `ivr_config` 0050. Ninguna dio error.
+
+---
+
+## Hoja de Ruta al reactivar H30 (escrita al cierre de S137, sustituye a la de "desde el 26/10/2026")
+
+1. **Recuperar las revisiones que faltan.**
+   - a. **Hoja de José Antonio Mora** (en el taller). Con ella se
+     cargan los intervalos (`MachineAsset.service_hours_interval`,
+     `service_crane_hours_interval`, `service_every_km`) y las
+     revisiones (`MachineServiceRecord`).
+     - Las 18 del grupo 3 pasan de solo fecha a fecha con horas y km.
+     - La Z117 se corrige: la fecha de su parte (26/04/2010) está mal.
+     - Las 7 del grupo 2 se sustituyen por los datos de la hoja.
+     - Las notas "Recuperada del parte (S137)" se dejan como están.
+   - b. **Parte nuevo con la casilla Revisión:** falta la prueba real
+     de un mecánico.
+   **Cierre:**
+   - consulta a BD en la que todo `MachineAsset` activo con intervalo
+     tiene al menos un `MachineServiceRecord` con horas o km;
+   - el número de centros de gasto con intervalo coincide con la hoja;
+   - un parte real con la casilla marcada tiene su
+     `MachineServiceRecord` con `work_order_line` relleno.
+2. **Avisos de revisión con las lecturas de GasoGes.** **Cierre:**
+   consulta a BD con un centro de gasto real cuya última lectura
+   GASOGES supera la revisión más el intervalo y que sale como vencido
+   en Avisos, y otro sin revisión anotada que no sale.
 3. **Configuración de los avisos** (a quién, cuándo, con qué
-   antelación) sobre `MachineServiceAlertSettings`, tal como la defina
+   antelación) sobre `MachineServiceAlertSettings`, como la defina
    Miguel Ángel al llegar a este punto. **Cierre:** la configuración
    guardada en BD y un aviso real enviado según ella (consulta a BD del
    envío).
-4. **Regla de km u horas por litro** (ampliación de S135): en
-   `fleet/gasoges_rules.py`, un suministro es dudoso si los km (u
-   horas) desde el anterior no cuadran con los litros según la media
-   del vehículo. **Cierre:** pruebas nuevas en verde con casos reales,
-   flake8 a 0, `sync_gasoges --rebuild` en producción y consulta a BD
-   con los suministros ANOMALY cuyo motivo es la regla de litros.
-5. **Prueba real de las preguntas por WhatsApp.** **Cierre:**
-   `GET https://content.twilio.com/v1/Content/{sid}/ApprovalRequests`
-   con `whatsapp.status == "approved"` para los dos SID de arriba, y
-   consulta a BD con al menos una `RefuelQuestion` en CONFIRMED,
-   CORRECTED o UNIT_SET.
-6. Lo "Pendiente de H30 al pausarlo" que queda (más arriba):
-   - Prueba de cierre del punto 2 de S131: cerrar desde la lista uno de
-     los tickets de Pablo Cañamero; **cierre:** consulta a BD con ese
-     ticket en `CLOSED` (arrastrado 1.ª sesión sin avanzar).
-   - Aprobación de Meta de `machine_service_notice`; **cierre:** su
-     `ApprovalRequests` en `approved`.
-   - Puntos 7, 8 y 9 de la hoja de ruta de S128, con los criterios de
-     cierre que allí constan (arrastrado 1.ª sesión sin avanzar).
-   - **Firma certificada de circulares en Docuten (APARCADO en S137
-     hasta que Alejandro dé permiso para crear plantillas).** Sin
-     permiso de Administrar > Plantillas PDF, el PDF con campos de
-     `panel/docuten_export.py` se subió como documento normal en
-     "Nuevo envío de firma" y Docuten pidió al firmante rellenar sus
-     datos. La API de Docuten se descarta por precio. Según el blog de
-     Docuten (Fast Templates), una plantilla solo se rellena sola con
-     nombre, NIF y móvil del firmante; el resto de campos los rellena
-     el firmante. Alternativa sin plantilla: PDF fijo sin campos ni
-     datos del trabajador en el texto, CSV sin metadatos (los datos del
-     firmante quedan en la hoja de evidencias de Docuten). **Cierre:**
-     un envío real a Miguel Ángel en el que solo lee y firma.
+4. **Regla de km u horas por litro** en `fleet/gasoges_rules.py`.
+   **Cierre:** pruebas nuevas en verde con casos reales, flake8 a 0,
+   `sync_gasoges --rebuild` en producción y consulta a BD con
+   suministros ANOMALY cuyo motivo es la regla de litros.
+5. **Preguntas por WhatsApp con la v4.** **Cierre:**
+   - `ApprovalRequests` de `HX27e687045808aacb00fd072881017508` en
+     `approved`;
+   - consulta a BD con una `RefuelQuestion` enviada después de la
+     aprobación, con `reason` relleno;
+   - una pregunta del dato enviada por un brazo de horas (B de
+     AUTOCARGANTES).
+6. **B44 (Salvador David) anota km.** Recibió el 27/10 el aviso de que
+   anotara horas, pero va por km. Se le dice en texto libre si escribe
+   por WhatsApp o, si no, en persona. **Cierre:** consulta a BD con su
+   siguiente repostaje en B44 como lectura buena (READING), en km y
+   cuadrando con 987.895.
+7. **Las A de asistencia por horas** (A30, A39, A50, A55, A66) siguen
+   con muchos dudosos (A30 114, A39 95, A55 111): los chóferes anotan
+   otra cosa. Se revisa con la vista "Preguntas por WhatsApp" lo que
+   contestan. **Cierre:** consulta a BD con los dudosos de cada una y
+   la causa anotada (km tecleados, contador averiado o lectura
+   corregida).
+8. **Prueba de cierre del punto 2 de S131:** cerrar desde la lista uno
+   de los tickets de Pablo Cañamero. Se mantiene por decisión de Miguel
+   Ángel al cierre de S137. **Cierre:** consulta a BD con ese ticket en
+   `CLOSED`.
+9. **Avisos de revisiones de accesorios de elevación y de EPIs** (punto
+   8 de la hoja de ruta de S128). Se mantiene por decisión de Miguel
+   Ángel al cierre de S137. **Cierre:** consulta a BD con los
+   accesorios y EPIs de revisión vencida o en 30 días o menos, y los
+   mismos en Avisos > Pendientes con su fecha.
+10. **Aprobación de Meta de `machine_service_notice`.** **Cierre:** su
+    `ApprovalRequests` en `approved`.
+11. **Bloqueados, solo se empiezan cuando se levante el bloqueo:**
+    - Punto 7 de S128 y firma certificada de circulares en Docuten:
+      esperan al permiso de plantillas de Alejandro. **Cierre:** un
+      envío real a Miguel Ángel en el que solo lee y firma.
+    - Punto 9 de S128: espera a que Miguel Ángel coteje con Yolanda los
+      avisos de falta de documentación. Cierres como constan en S128.
 
-Al terminar esta hoja, PCH de vuelta a H37 (Miguel Ángel en S134:
-*"luego volvemos con asistencia"*).
+Al terminar esta hoja, PCH a H37 (Miguel Ángel en S134: *"luego
+volvemos con asistencia"*).
 
 ## COMPLETADAS EN S139 (sesión invasora, 27-28/10/2026, PEE PC; punto 7 de S119 -- gestión del taller de la máquina)
 

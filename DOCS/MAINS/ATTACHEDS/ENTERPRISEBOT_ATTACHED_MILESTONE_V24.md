@@ -1212,3 +1212,55 @@ al repostar. Habrá que tomar kilómetros y horas del programa de
 repostaje, pero ese enlace NO se hace todavía (decisión de Miguel
 Ángel).
 
+
+### 7.8. REACTIVADO AL CIERRE DE S137 (PCH desde H30) -- Hoja de Ruta S141
+
+Miguel Ángel al cierre de S137 (29/10/2026), tal cual: *"la siguiente
+vamos a iniciarla con el tema de fichajes, el tema de vacaciones y otro
+par de cosas más. En principio empezaremos con el tema de los fichajes
+para definir mejor cómo se ficha, avisos, etcétera."* Las sesiones
+S138, S139 y S140 fueron invasoras, así que la siguiente es la S141.
+
+Contexto que ya hay (leerlo antes de nada, no de memoria):
+
+- **Fichaje con un solo botón y fichaje manual por olvido**, cerrados
+  en S130 (7.7): `hr_calendar/clockin.py` (`record_press`,
+  `_decide_kind`, `status`, `page`), página `/fichaje/`, el
+  `ClockEvent` con `sent_by=MANUAL` y la incidencia "Fichaje manual".
+- **Turnos, incidencias y Excel** en `hr_calendar/clock_report.py`.
+  Redondeo en `clock_rounding.py`, municipio en `clock_geocode.py`.
+  Unión con los partes en `clock_parts.py`.
+- **Diseño decidido en S129:** 7.4bis.
+- **Envío de avisos por WhatsApp:** `whatsapp/window_service.py`
+  (`send_notification`: texto libre dentro de la ventana de 24 horas,
+  plantilla fuera de ella).
+- **Roles de trabajador** (`CompanyUser.WORKER_ROLES`): operario de
+  taller, chófer, gruista (nuevo en S137), administrativo y guarda
+  nocturno. Todos fichan.
+
+1. **Fichajes: cómo se ficha y avisos.** Miguel Ángel lo define al
+   empezar la sesión.
+   - Antes de que lo cuente, el modelo saca el estado real con una
+     consulta de solo lectura: fichajes de los últimos 30 días por
+     trabajador y rol, cuántos manuales, cuántos turnos sin salida y
+     qué incidencias salen. Así la conversación parte de datos.
+   - Cada cambio se construye, se despliega y se prueba en producción.
+   **Cierre:** por cada cambio, una consulta a BD con un fichaje real
+   (`hr_calendar_clockevent`) que lo demuestre. Para cada aviso nuevo,
+   el aviso enviado en BD (`WhatsAppMessage` o el modelo de avisos que
+   se defina).
+2. **Vacaciones: datos de Carolina y saldo** (punto 3 de 7.5).
+   **Cierre:** consulta a BD de un trabajador real con sus periodos y
+   ajustes, y la pantalla Vacaciones muestra los mismos días que le
+   corresponden, del año anterior, disfrutados y pendientes. Una
+   importación con la plantilla deja los ajustes en BD.
+3. **Prueba en iPhone** (punto 2 de 7.5), cuando Pablo fiche en el
+   taller. **Cierre:** una entrada y una salida reales desde un iPhone
+   en `hr_calendar_clockevent`, con coordenadas y `user_agent` de
+   iPhone.
+4. **Las otras cosas que traiga Miguel Ángel** después de fichajes y
+   vacaciones, cada una con su criterio de cierre por consulta a BD.
+
+Al terminar, el hito siguiente lo decide Miguel Ángel con un PCH. H30
+tiene su "Hoja de Ruta al reactivar H30" (escrita al cierre de S137) y
+H37 está pausado desde S134.
