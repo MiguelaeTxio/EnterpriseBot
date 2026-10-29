@@ -157,7 +157,7 @@ def day_stretches(company_user, work_date):
     start = timezone.make_aware(
         datetime.datetime.combine(work_date, datetime.time.min), tz,
     )
-    events = list(ClockEvent.objects.filter(
+    events = list(ClockEvent.objects.current().filter(
         company_user=company_user,
         pressed_at__gte=start,
         pressed_at__lt=start + datetime.timedelta(days=1),
@@ -332,7 +332,7 @@ def clock_required(company_user, work_date):
     if company_user is None or work_date is None:
         return False
     first = (
-        ClockEvent.objects.filter(company_user=company_user)
+        ClockEvent.objects.current().filter(company_user=company_user)
         .order_by("pressed_at").values_list("pressed_at", flat=True)
         .first()
     )
@@ -405,7 +405,7 @@ def closing_out_of(clock_in):
     si esa jornada todavía no tiene salida.
     """
     margin = datetime.timedelta(hours=MAX_SHIFT_HOURS)
-    events = list(ClockEvent.objects.filter(
+    events = list(ClockEvent.objects.current().filter(
         company_user_id=clock_in.company_user_id,
         pressed_at__gte=clock_in.pressed_at - margin,
         pressed_at__lte=clock_in.pressed_at + margin,

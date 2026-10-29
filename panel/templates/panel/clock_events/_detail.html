@@ -6,9 +6,14 @@ parte, si llegó tarde (sin cobertura), el municipio y su posición en
 el mapa del panel (API de Google Maps); de
 cada entrada y salida, la hora del horario y los minutos de diferencia;
 y las incidencias de cada jornada explicadas, con la casilla "Ver solo
-incidencias" (S129). Solo consulta.
+incidencias" (S129). S141: los fichajes no se modifican; el lápiz de
+cada pulsación abre la corrección (cambiar hora o tipo, o anular, con
+motivo obligatorio), que crea un fichaje nuevo y deja el original en
+el "Historial de correcciones" con quién, cuándo y por qué.
 {% endcomment %}
 <div class="clk-detail">
+{% if message %}<div class="alert alert-success py-1 px-2 small">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger py-1 px-2 small">{{ error }}</div>{% endif %}
 <div class="d-flex align-items-baseline justify-content-between mb-1">
     <div class="fw-bold">{{ person_label }}</div>
     <div class="small text-muted">{{ person.dni }} · {{ date_from|date:"d/m/Y" }} – {{ date_to|date:"d/m/Y" }}</div>
@@ -47,6 +52,11 @@ incidencias" (S129). Solo consulta.
                 {% if forloop.last and shift.early_minutes is not None %}<div class="text-muted">horario {{ shift.expected_end|time:"H:i" }} · {% if shift.early_minutes > 0 %}{{ shift.early_minutes }} min antes{% elif shift.early_minutes < 0 %}{{ shift.early_minutes|stringformat:"d"|slice:"1:" }} min después{% else %}en punto{% endif %}</div>{% endif %}
                 {% if press.is_manual %}<div class="text-danger fw-semibold">fichaje manual, apuntado {{ press.received|date:"d/m H:i" }}</div>{% endif %}
                 {% if press.is_late %}<div class="text-muted">se recibió {{ press.received|date:"d/m H:i" }} ({{ press.delay_label }} h después)</div>{% endif %}
+                {% if press.correction %}<div class="text-primary">corregido por {{ press.corrected_by }} el {{ press.correction.corrected_at|date:"d/m H:i" }}: antes {{ press.correction.get_old_kind_display|lower }} {{ press.old_time|date:"d/m H:i" }} · {{ press.correction.reason }}</div>{% endif %}
+                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" title="Corregir este fichaje"
+                        data-event="{{ press.event.pk }}" data-kind="{{ press.event.kind }}" data-time="{{ press.input_value }}"
+                        data-label="{{ press.event.get_kind_display }} del {{ press.time|date:'d/m/Y H:i' }}"
+                        onclick="var f = this.closest('.clk-detail').querySelector('.clk-correct-form'); f.classList.remove('d-none'); f.elements.event_id.value = this.dataset.event; f.elements.label.value = this.dataset.label; f.elements.new_kind.value = this.dataset.kind; f.elements.new_pressed_at.value = this.dataset.time; f.querySelector('.clk-correct-label').textContent = this.dataset.label; f.scrollIntoView({block: 'nearest'});"><i class="bi bi-pencil"></i></button>
                 {% else %}
                 <span class="text-warning-emphasis">—</span>
                 {% endif %}
@@ -58,5 +68,64 @@ incidencias" (S129). Solo consulta.
         {% endfor %}
     </tbody>
 </table>
+{% endif %}
+{% if has_account %}
+<form class="clk-correct-form border rounded p-2 mb-3 small{% if not error %} d-none{% endif %}"
+      hx-post="{% url 'panel:clock_events_correct' person.pk %}" hx-target="#clk-detail-container">
+    <input type="hidden" name="event_id" value="{{ form.event_id }}">
+    <input type="hidden" name="label" value="{{ form.label }}">
+    <input type="hidden" name="date_from" value="{{ date_from|date:'Y-m-d' }}">
+    <input type="hidden" name="date_to" value="{{ date_to|date:'Y-m-d' }}">
+    <div class="fw-bold mb-1">Corregir: <span class="clk-correct-label">{{ form.label }}</span></div>
+    <div class="text-muted mb-2">El fichaje original no se borra: queda en el historial con quién lo corrigió, cuándo y por qué.</div>
+    <div class="d-flex flex-wrap gap-3 mb-2">
+        <div class="form-check">
+            <input class="form-check-input" type="radio" name="action" value="CHANGE" id="clkFixChange{{ person.pk }}"{% if form.action != "CANCEL" %} checked{% endif %}>
+            <label class="form-check-label" for="clkFixChange{{ person.pk }}">Cambiar hora o tipo</label>
+        </div>
+        <div class="form-check">
+            <input class="form-check-input" type="radio" name="action" value="CANCEL" id="clkFixCancel{{ person.pk }}"{% if form.action == "CANCEL" %} checked{% endif %}>
+            <label class="form-check-label" for="clkFixCancel{{ person.pk }}">Anular el fichaje</label>
+        </div>
+    </div>
+    <div class="row g-2 mb-2">
+        <div class="col-sm-4">
+            <label class="form-label mb-0" for="clkFixKind{{ person.pk }}">Tipo</label>
+            <select class="form-select form-select-sm" name="new_kind" id="clkFixKind{{ person.pk }}">
+                {% for value, label in kind_choices %}<option value="{{ value }}"{% if form.new_kind == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+        </div>
+        <div class="col-sm-8">
+            <label class="form-label mb-0" for="clkFixTime{{ person.pk }}">Fecha y hora correctas</label>
+            <input class="form-control form-control-sm" type="datetime-local" name="new_pressed_at" id="clkFixTime{{ person.pk }}" value="{{ form.new_pressed_at }}">
+        </div>
+    </div>
+    <label class="form-label mb-0" for="clkFixReason{{ person.pk }}">Motivo (obligatorio)</label>
+    <textarea class="form-control form-control-sm mb-2" name="reason" id="clkFixReason{{ person.pk }}" rows="2" maxlength="1000" required>{{ form.reason }}</textarea>
+    <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check2 me-1"></i>Guardar la corrección</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="this.closest('form').classList.add('d-none');">Cancelar</button>
+    </div>
+</form>
+<div class="fw-bold small mb-1">Historial de correcciones</div>
+{% if history %}
+<table class="table table-sm small align-middle">
+    <thead><tr><th>Corregido</th><th>Por</th><th>Corrección</th><th>Antes</th><th>Después</th><th>Motivo</th></tr></thead>
+    <tbody>
+        {% for item in history %}
+        <tr>
+            <td>{{ item.corrected_at|date:"d/m/Y H:i" }}</td>
+            <td>{{ item.corrected_by }}</td>
+            <td>{{ item.correction.get_action_display }}</td>
+            <td>{{ item.correction.get_old_kind_display }} {{ item.old_time|date:"d/m H:i" }}</td>
+            <td>{% if item.is_cancel %}<span class="text-danger">anulado</span>{% else %}{{ item.correction.get_new_kind_display }} {{ item.new_time|date:"d/m H:i" }}{% endif %}</td>
+            <td>{{ item.correction.reason }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="small text-muted">Ningún fichaje corregido en estas fechas.</div>
+{% endif %}
 {% endif %}
 </div>

@@ -99,6 +99,7 @@ from panel.views_vacation_balance import (
     VacationSectionAssignView,
 )
 from panel.views_clock_events import (
+    ClockEventCorrectView,
     ClockEventsDetailView,
     ClockEventsExportView,
     ClockEventsResultsView,
@@ -1714,6 +1715,13 @@ urlpatterns = [
         "documentacion/fichajes/<int:pk>/",
         ClockEventsDetailView.as_view(),
         name="clock_events_detail",
+    ),
+    # H24 (S141): corrección de un fichaje (nunca se modifica el
+    # original; queda en el historial con quién y por qué).
+    path(
+        "documentacion/fichajes/<int:pk>/corregir/",
+        ClockEventCorrectView.as_view(),
+        name="clock_events_correct",
     ),
     path(
         "documentacion/fichajes/exportar/",

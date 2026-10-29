@@ -188,7 +188,10 @@ def record_press(company_user, payload, user_agent=""):
     if pressed_at is None or not timezone.is_aware(pressed_at):
         raise ClockInError("La pulsación no trae una hora válida.")
     sent_by = str(payload.get("sent_by") or "").upper()
-    if sent_by not in ClockEvent.SentBy.values:
+    # S141: CORRECTION es solo de las correcciones del supervisor;
+    # nunca la envía el móvil.
+    if (sent_by not in ClockEvent.SentBy.values
+            or sent_by == ClockEvent.SentBy.CORRECTION):
         sent_by = ClockEvent.SentBy.ONLINE
     manual = sent_by == ClockEvent.SentBy.MANUAL
     kind = str(payload.get("kind") or "").upper()
@@ -248,7 +251,7 @@ def _decide_kind(company_user, pressed_at):
         pk=company_user.pk,
     ).first()
     last = (
-        ClockEvent.objects.filter(
+        ClockEvent.objects.current().filter(
             company_user=company_user, pressed_at__lte=pressed_at,
         ).order_by("-pressed_at", "-pk").first()
     )
@@ -408,7 +411,7 @@ def status(request):
 
     now = timezone.now()
     last = (
-        ClockEvent.objects.filter(
+        ClockEvent.objects.current().filter(
             company_user=company_user, pressed_at__lte=now,
         ).order_by("-pressed_at", "-pk").first()
     )

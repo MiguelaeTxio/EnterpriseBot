@@ -619,7 +619,7 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
     """
     start, end = _range_bounds(date_from, date_to)
     margin = datetime.timedelta(hours=MAX_SHIFT_HOURS)
-    events = ClockEvent.objects.filter(
+    events = ClockEvent.objects.current().filter(
         company=company,
         company_user_id__in=list(company_user_ids),
         pressed_at__gte=start - margin,

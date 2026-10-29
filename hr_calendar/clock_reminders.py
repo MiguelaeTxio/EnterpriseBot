@@ -207,7 +207,7 @@ def send_clock_reminders(company, now=None, log=logger.info):
     day_start = timezone.make_aware(
         datetime.datetime.combine(day, datetime.time.min), tz)
     events_by_user = {}
-    for event in ClockEvent.objects.filter(
+    for event in ClockEvent.objects.current().filter(
         company=company, pressed_at__gte=day_start,
         pressed_at__lt=day_start + datetime.timedelta(days=1),
     ).order_by("pressed_at"):

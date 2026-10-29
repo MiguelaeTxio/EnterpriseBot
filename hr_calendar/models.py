@@ -820,6 +820,55 @@ class VacationBalanceAdjustment(models.Model):
         )
 
 
+class ImmutableClockRecord(Exception):
+    """
+    A clock record (press or correction) was about to be changed or
+    deleted (H24, S141).
+
+    ---
+
+    Se iba a modificar o borrar un registro de jornada (pulsación o
+    corrección) (H24, S141). Un fichaje solo se corrige con
+    ClockCorrection, que conserva el original.
+    """
+
+
+# Campos de una pulsación que se pueden escribir después de crearla:
+# solo los derivados (municipio de las coordenadas, S129). Nunca el
+# tipo, la hora, la posición ni quién fichó.
+CLOCK_EVENT_DERIVED_FIELDS = frozenset({"municipality"})
+
+
+class ClockEventQuerySet(models.QuerySet):
+    """
+    Presses: append-only, plus the current ones (H24, S141).
+
+    ---
+
+    Pulsaciones: solo se añaden. `update()` solo admite los campos
+    derivados y `delete()` no se permite. `current()` son las vigentes:
+    las que no tienen corrección (una corregida queda sustituida por la
+    pulsación nueva de su corrección, o anulada).
+    """
+
+    def current(self):
+        return self.filter(correction__isnull=True)
+
+    def update(self, **kwargs):
+        blocked = set(kwargs) - CLOCK_EVENT_DERIVED_FIELDS
+        if blocked:
+            raise ImmutableClockRecord(
+                "Los fichajes no se modifican (%s); se corrigen con "
+                "ClockCorrection." % ", ".join(sorted(blocked))
+            )
+        return super().update(**kwargs)
+
+    def delete(self):
+        raise ImmutableClockRecord(
+            "Los fichajes no se borran; se anulan con ClockCorrection."
+        )
+
+
 class ClockEvent(models.Model):
     """
     One clock-in or clock-out press (H24, S129, roadmap point 3). The
@@ -830,8 +879,10 @@ class ClockEvent(models.Model):
     visible. `client_id` is generated on the phone for each press: a
     press sent twice (the Android test sent one twice) is stored once.
 
-    Records are never edited or deleted from the panel: art. 34.9 ET
-    requires keeping them four years.
+    Records are never edited or deleted (S141: enforced here, see
+    ClockEventQuerySet and save/delete): art. 34.9 ET requires keeping
+    them four years. A wrong press is corrected with ClockCorrection,
+    which keeps the original.
 
     ---
 
@@ -844,8 +895,10 @@ class ClockEvent(models.Model):
     cada pulsación: una pulsación enviada dos veces (en la prueba de
     Android llegó una dos veces) se guarda una sola vez.
 
-    Los registros no se editan ni se borran desde el panel: el art.
-    34.9 ET obliga a conservarlos cuatro años.
+    Los registros no se editan ni se borran (S141: lo impide el propio
+    modelo, ver ClockEventQuerySet y save/delete): el art. 34.9 ET
+    obliga a conservarlos cuatro años. Una pulsación equivocada se
+    corrige con ClockCorrection, que conserva la original.
     """
 
     class Kind(models.TextChoices):
@@ -861,6 +914,9 @@ class ClockEvent(models.Model):
         BACKGROUND = "BACKGROUND", "Al volver la cobertura (segundo plano)"
         PAGE = "PAGE", "Desde la página (al abrirla o con su botón)"
         MANUAL = "MANUAL", "Fichaje manual (olvido)"
+        # S141: la pulsación nueva de una corrección del supervisor
+        # (ClockCorrection). Nunca la envía el móvil.
+        CORRECTION = "CORRECTION", "Corrección del supervisor"
 
     company = models.ForeignKey(
         Company,
@@ -948,6 +1004,8 @@ class ClockEvent(models.Model):
         verbose_name="Navegador",
     )
 
+    objects = ClockEventQuerySet.as_manager()
+
     class Meta:
         verbose_name = "Fichaje"
         verbose_name_plural = "Fichajes"
@@ -971,12 +1029,28 @@ class ClockEvent(models.Model):
         """
         from hr_calendar.clock_rounding import round_pressed_at
 
+        # S141: una pulsación ya guardada solo admite sus campos
+        # derivados.
+        if not self._state.adding:
+            update_fields = kwargs.get("update_fields")
+            if update_fields is None or (
+                    set(update_fields) - CLOCK_EVENT_DERIVED_FIELDS):
+                raise ImmutableClockRecord(
+                    "Los fichajes no se modifican; se corrigen con "
+                    "ClockCorrection."
+                )
+            return super().save(*args, **kwargs)
         if self.pressed_at is not None:
             self.rounded_at = round_pressed_at(self.pressed_at, self.kind)
             update_fields = kwargs.get("update_fields")
             if update_fields is not None and "pressed_at" in update_fields:
                 kwargs["update_fields"] = set(update_fields) | {"rounded_at"}
         super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ImmutableClockRecord(
+            "Los fichajes no se borran; se anulan con ClockCorrection."
+        )
 
     def __str__(self) -> str:
         return (
@@ -1069,4 +1143,141 @@ class ClockReminder(models.Model):
         return (
             f"{self.company_user} — {self.get_kind_display()} "
             f"{self.day:%d/%m/%Y}"
+        )
+
+
+class ClockCorrectionQuerySet(models.QuerySet):
+    """
+    Corrections: append-only (H24, S141).
+    ---
+    Correcciones: solo se añaden; ni `update()` ni `delete()`.
+    """
+
+    def update(self, **kwargs):
+        raise ImmutableClockRecord(
+            "Las correcciones de fichaje no se modifican."
+        )
+
+    def delete(self):
+        raise ImmutableClockRecord(
+            "Las correcciones de fichaje no se borran."
+        )
+
+
+class ClockCorrection(models.Model):
+    """
+    A supervisor's correction of one press (H24, S141). The press is
+    never touched: a change creates a new press (sent_by CORRECTION)
+    that replaces it, and a cancellation leaves it out of the reports.
+    Who, when, the old and new values and the mandatory reason stay
+    here for good -- the history of every modification of the record
+    (draft royal decree on digital time records: every correction
+    leaves a trace and the original is kept). Corrections are not
+    edited or deleted either; a correction of a correction corrects
+    the new press.
+
+    ---
+
+    Corrección de una pulsación por un supervisor (H24, S141). La
+    pulsación no se toca nunca: un cambio crea una pulsación nueva
+    (sent_by CORRECTION) que la sustituye, y una anulación la deja
+    fuera de los informes. Quién, cuándo, el valor anterior, el nuevo y
+    el motivo (obligatorio) quedan aquí para siempre: el historial de
+    cada modificación del registro (borrador del real decreto de
+    registro digital: cada corrección deja rastro y se conserva el
+    original). Tampoco se editan ni se borran; para corregir una
+    corrección se corrige la pulsación nueva.
+    """
+
+    class Action(models.TextChoices):
+        CHANGE = "CHANGE", "Cambio de hora o de tipo"
+        CANCEL = "CANCEL", "Anulación"
+
+    event = models.OneToOneField(
+        ClockEvent,
+        on_delete=models.PROTECT,
+        related_name="correction",
+        verbose_name="Fichaje corregido",
+    )
+    action = models.CharField(
+        max_length=6,
+        choices=Action.choices,
+        verbose_name="Corrección",
+    )
+    replacement = models.OneToOneField(
+        ClockEvent,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="replaces",
+        verbose_name="Fichaje que lo sustituye",
+    )
+    old_kind = models.CharField(
+        max_length=3,
+        choices=ClockEvent.Kind.choices,
+        verbose_name="Tipo anterior",
+    )
+    old_pressed_at = models.DateTimeField(verbose_name="Hora anterior")
+    new_kind = models.CharField(
+        max_length=3,
+        choices=ClockEvent.Kind.choices,
+        blank=True,
+        verbose_name="Tipo nuevo",
+    )
+    new_pressed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Hora nueva",
+    )
+    reason = models.TextField(verbose_name="Motivo")
+    corrected_by = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.PROTECT,
+        related_name="clock_corrections",
+        verbose_name="Corregido por",
+    )
+    corrected_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de la corrección",
+    )
+    user_agent = models.CharField(
+        max_length=200,
+        blank=True,
+        verbose_name="Navegador",
+    )
+
+    objects = ClockCorrectionQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "Corrección de fichaje"
+        verbose_name_plural = "Correcciones de fichaje"
+        ordering = ["-corrected_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(reason=""),
+                name="clockcorrection_reason_required",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        """
+        Only new corrections are saved.
+        ---
+        Solo se guardan correcciones nuevas: no se modifican.
+        """
+        if not self._state.adding:
+            raise ImmutableClockRecord(
+                "Las correcciones de fichaje no se modifican."
+            )
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ImmutableClockRecord(
+            "Las correcciones de fichaje no se borran."
+        )
+
+    def __str__(self) -> str:
+        return (
+            f"{self.get_action_display()} de {self.event} "
+            f"por {self.corrected_by}"
         )

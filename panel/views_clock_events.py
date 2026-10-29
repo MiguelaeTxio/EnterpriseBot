@@ -30,13 +30,16 @@ import datetime
 import io
 import os
 
+from django.db.models import Q
 from django.http import Http404, HttpResponse
 from django.shortcuts import render
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from django.views import View
 
 from document_explorer.models import PersonIdentity
 from hr_calendar.clock_report import format_duration, reports_by_user
+from hr_calendar.models import ClockCorrection
 from hr_calendar.models import ClockEvent
 from panel.mixins import SupervisorAccessMixin
 from panel.navigation_persistence import (
@@ -359,27 +362,47 @@ def _maps_url(event):
     )
 
 
-def _press_view(event):
+def _user_label(company_user):
+    """
+    Name of a panel user for the history.
+    ---
+    Nombre de un usuario del panel para el historial.
+    """
+    user = company_user.user
+    return user.get_full_name() or user.username
+
+
+def _press_view(event, corrections_by_replacement=None):
     """
     One press ready for the template (local time, delay, map link).
     ---
     Una pulsación lista para el template (hora local, retraso, enlace
-    al mapa).
+    al mapa). S141: si es la pulsación nueva de una corrección, la
+    corrección (quién, cuándo, valor anterior y motivo).
     """
     if event is None:
         return None
     delay = event.delay_seconds
     is_manual = event.sent_by == ClockEvent.SentBy.MANUAL
+    is_correction = event.sent_by == ClockEvent.SentBy.CORRECTION
+    correction = (corrections_by_replacement or {}).get(event.pk)
+    local = timezone.localtime(event.pressed_at)
     return {
         "event": event,
         # S130: fichaje manual por olvido; su "retraso" es cuándo se
         # apuntó, no un envío tardío.
         "is_manual": is_manual,
-        "time": timezone.localtime(event.pressed_at),
+        "correction": correction,
+        "corrected_by": (_user_label(correction.corrected_by)
+                         if correction else ""),
+        "old_time": (timezone.localtime(correction.old_pressed_at)
+                     if correction else None),
+        "input_value": local.strftime("%Y-%m-%dT%H:%M"),
+        "time": local,
         "rounded": (timezone.localtime(event.rounded_at)
                     if event.rounded_at else None),
         "received": timezone.localtime(event.received_at),
-        "is_late": delay > 300 and not is_manual,
+        "is_late": delay > 300 and not (is_manual or is_correction),
         "delay_label": format_duration(delay) if delay > 300 else "",
         "maps_url": _maps_url(event),
         "accuracy": event.accuracy_m,
@@ -387,6 +410,104 @@ def _press_view(event):
         "lat": float(event.latitude) if event.latitude is not None else None,
         "lon": float(event.longitude) if event.longitude is not None else None,
     }
+
+
+def _corrections_in_range(company_user_id, date_from, date_to):
+    """
+    Corrections of a user's presses whose old or new time falls in the
+    range, newest first.
+    ---
+    Correcciones de las pulsaciones de un usuario cuya hora anterior o
+    nueva cae en el intervalo, de la más reciente a la más antigua.
+    """
+    from hr_calendar.clock_report import _range_bounds
+
+    start, end = _range_bounds(date_from, date_to)
+    return list(ClockCorrection.objects.filter(
+        event__company_user_id=company_user_id,
+    ).filter(
+        Q(old_pressed_at__gte=start, old_pressed_at__lt=end)
+        | Q(new_pressed_at__gte=start, new_pressed_at__lt=end),
+    ).select_related("corrected_by__user").order_by("-corrected_at"))
+
+
+def _render_detail(request, person, date_from, date_to, error="",
+                   message="", form=None):
+    """
+    The day-by-day detail of one worker (also after a correction).
+    ---
+    El detalle día a día de un trabajador (también tras una
+    corrección, con su mensaje o su error).
+    """
+    report = _EmptyReport()
+    corrections = []
+    if person.company_user_id:
+        report = reports_by_user(
+            request.user.company_user.company,
+            [person.company_user_id], date_from, date_to,
+        ).get(person.company_user_id) or report
+        corrections = _corrections_in_range(
+            person.company_user_id, date_from, date_to,
+        )
+    from hr_calendar.clock_geocode import fill_missing
+
+    fill_missing([
+        e for s in report.shifts for e in (s.clock_in, s.clock_out)
+    ])
+    by_replacement = {
+        c.replacement_id: c for c in corrections if c.replacement_id
+    }
+    shifts = [{
+        "day": s.day,
+        "presses": [_press_view(s.clock_in, by_replacement),
+                    _press_view(s.clock_out, by_replacement)],
+        "duration": s.duration_label,
+        "issue": s.issue,
+        "incidents": s.incidents,
+        "expected_start": s.expected_start,
+        "late_minutes": s.late_minutes,
+        "expected_end": s.expected_end,
+        "early_minutes": s.early_minutes,
+        "start_off": s.start_off_schedule,
+        "end_off": s.end_off_schedule,
+    } for s in report.shifts]
+    history = [{
+        "correction": c,
+        "corrected_by": _user_label(c.corrected_by),
+        "corrected_at": timezone.localtime(c.corrected_at),
+        "old_time": timezone.localtime(c.old_pressed_at),
+        "new_time": (timezone.localtime(c.new_pressed_at)
+                     if c.new_pressed_at else None),
+        "is_cancel": c.action == ClockCorrection.Action.CANCEL,
+    } for c in corrections]
+    return render(request, "panel/clock_events/_detail.html", {
+        "person": person,
+        "person_label": _person_label(person),
+        "has_account": person.company_user_id is not None,
+        "date_from": date_from,
+        "date_to": date_to,
+        "shifts": shifts,
+        "history": history,
+        "error": error,
+        "message": message,
+        "form": form or {},
+        "kind_choices": ClockEvent.Kind.choices,
+        "total_label": report.total_label,
+        "issues_count": report.incident_count,
+        "punctuality_label": report.punctuality_label,
+        "habitually_late": report.habitually_late,
+        "early_label": report.early_label,
+        "habitually_early": report.habitually_early,
+    })
+
+
+def _person_or_404(pk):
+    person = PersonIdentity.objects.select_related(
+        "company_user",
+    ).filter(pk=pk).first()
+    if person is None:
+        raise Http404
+    return person
 
 
 class ClockEventsDetailView(SupervisorAccessMixin, View):
@@ -397,50 +518,66 @@ class ClockEventsDetailView(SupervisorAccessMixin, View):
     """
 
     def get(self, request, pk):
-        person = PersonIdentity.objects.select_related(
-            "company_user",
-        ).filter(pk=pk).first()
-        if person is None:
-            raise Http404
         date_from, date_to = _date_range(request)
-        report = _EmptyReport()
-        if person.company_user_id:
-            report = reports_by_user(
-                request.user.company_user.company,
-                [person.company_user_id], date_from, date_to,
-            ).get(person.company_user_id) or report
-        from hr_calendar.clock_geocode import fill_missing
+        return _render_detail(request, _person_or_404(pk), date_from,
+                              date_to)
 
-        fill_missing([
-            e for s in report.shifts for e in (s.clock_in, s.clock_out)
-        ])
-        shifts = [{
-            "day": s.day,
-            "presses": [_press_view(s.clock_in), _press_view(s.clock_out)],
-            "duration": s.duration_label,
-            "issue": s.issue,
-            "incidents": s.incidents,
-            "expected_start": s.expected_start,
-            "late_minutes": s.late_minutes,
-            "expected_end": s.expected_end,
-            "early_minutes": s.early_minutes,
-            "start_off": s.start_off_schedule,
-            "end_off": s.end_off_schedule,
-        } for s in report.shifts]
-        return render(request, "panel/clock_events/_detail.html", {
-            "person": person,
-            "person_label": _person_label(person),
-            "has_account": person.company_user_id is not None,
-            "date_from": date_from,
-            "date_to": date_to,
-            "shifts": shifts,
-            "total_label": report.total_label,
-            "issues_count": report.incident_count,
-            "punctuality_label": report.punctuality_label,
-            "habitually_late": report.habitually_late,
-            "early_label": report.early_label,
-            "habitually_early": report.habitually_early,
-        })
+
+class ClockEventCorrectView(SupervisorAccessMixin, View):
+    """
+    POST: correct (change or cancel) one press of the worker.
+    ---
+    POST: corrige (cambia o anula) una pulsación del trabajador (H24,
+    S141). La pulsación no se toca: hr_calendar.clock_corrections
+    guarda la corrección con quién, cuándo, el valor anterior, el nuevo
+    y el motivo. Devuelve el detalle del trabajador actualizado.
+    """
+
+    def post(self, request, pk):
+        from hr_calendar.clock_corrections import ClockCorrectionError
+        from hr_calendar.clock_corrections import correct_event
+
+        person = _person_or_404(pk)
+        date_from = _parse_date(request.POST.get("date_from"))
+        date_to = _parse_date(request.POST.get("date_to"))
+        if date_from is None or date_to is None:
+            date_from, date_to = _date_range(request)
+        form = {
+            "event_id": request.POST.get("event_id", ""),
+            "action": request.POST.get("action", ""),
+            "new_kind": request.POST.get("new_kind", ""),
+            "new_pressed_at": request.POST.get("new_pressed_at", ""),
+            "reason": request.POST.get("reason", ""),
+            "label": request.POST.get("label", ""),
+        }
+        new_pressed_at = parse_datetime(form["new_pressed_at"])
+        if new_pressed_at is not None and timezone.is_naive(new_pressed_at):
+            new_pressed_at = timezone.make_aware(new_pressed_at)
+        event_id = form["event_id"]
+        if (not event_id.isdigit() or person.company_user_id is None
+                or not ClockEvent.objects.filter(
+                    pk=int(event_id),
+                    company_user_id=person.company_user_id,
+                ).exists()):
+            return _render_detail(
+                request, person, date_from, date_to,
+                error="Ese fichaje no es de este trabajador.", form=form,
+            )
+        try:
+            correction = correct_event(
+                int(event_id), request.user.company_user, form["action"],
+                form["reason"], new_kind=form["new_kind"],
+                new_pressed_at=new_pressed_at,
+                user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            )
+        except ClockCorrectionError as exc:
+            return _render_detail(request, person, date_from, date_to,
+                                  error=str(exc), form=form)
+        return _render_detail(
+            request, person, date_from, date_to,
+            message="%s guardada. El fichaje original se conserva en el "
+                    "historial." % correction.get_action_display(),
+        )
 
 
 def _hour(event, field_name, day, seconds=False):
@@ -470,8 +607,9 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
     ---
     GET: Excel del intervalo para los marcados (o todos los filtrados):
     hoja "Jornadas" (una fila por jornada, con la hora real, la del
-    parte y la del horario) y hoja "Pulsaciones" (cada
-    pulsación tal como llegó, con su posición).
+    parte y la del horario), hoja "Pulsaciones" (cada
+    pulsación tal como llegó, con su posición) y, desde S141, hoja
+    "Correcciones" (el historial de modificaciones del registro).
     """
 
     def get(self, request):
@@ -560,7 +698,34 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
                     event.accuracy_m, event.gps_error,
                     event.get_sent_by_display(), event.user_agent,
                 ])
-        for sheet, headers in ((days, day_headers), (presses, press_headers)):
+        # S141: historial de correcciones (quién, cuándo, antes, después
+        # y motivo); el fichaje original no se borra nunca.
+        fixes = book.create_sheet("Correcciones")
+        fix_headers = [
+            ("DNI", 12), ("Apellidos y nombre", 34), ("Corrección", 24),
+            ("Tipo anterior", 10), ("Hora anterior", 17),
+            ("Tipo nuevo", 10), ("Hora nueva", 17), ("Motivo", 60),
+            ("Corregido por", 28), ("Fecha de la corrección", 17),
+        ]
+        fixes.append([h for h, _w in fix_headers])
+        stamp = "%d/%m/%Y %H:%M"
+        for row in rows:
+            if not row.person.company_user_id:
+                continue
+            for fix in reversed(_corrections_in_range(
+                    row.person.company_user_id, date_from, date_to)):
+                fixes.append([
+                    row.person.dni, row.label, fix.get_action_display(),
+                    fix.get_old_kind_display(),
+                    timezone.localtime(fix.old_pressed_at).strftime(stamp),
+                    fix.get_new_kind_display(),
+                    timezone.localtime(fix.new_pressed_at).strftime(stamp)
+                    if fix.new_pressed_at else "",
+                    fix.reason, _user_label(fix.corrected_by),
+                    timezone.localtime(fix.corrected_at).strftime(stamp),
+                ])
+        for sheet, headers in ((days, day_headers), (presses, press_headers),
+                               (fixes, fix_headers)):
             for cell in sheet[1]:
                 cell.font = Font(bold=True)
             sheet.freeze_panes = "A2"
