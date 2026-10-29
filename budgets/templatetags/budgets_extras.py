@@ -109,3 +109,42 @@ def weekday_name(iso_date_str):
         return _WEEKDAY_NAMES[d.weekday()]
     except (ValueError, TypeError):
         return str(iso_date_str)
+
+
+# H37 (S140): numbers to copy into a billing program (Spanish decimal
+# comma, two decimals, no thousands separator).
+# Números para copiar a un programa de facturación (coma decimal, dos
+# decimales, sin separador de miles).
+@register.filter(name="es_number")
+def es_number(value):
+    """
+    Number with a decimal comma and two decimals, or "".
+
+    ---
+
+    Número con coma decimal y dos decimales, o "".
+    """
+    from decimal import Decimal, ROUND_HALF_UP
+
+    if value is None or value == "":
+        return ""
+    number = Decimal(str(value)).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP,
+    )
+    return f"{number:.2f}".replace(".", ",")
+
+
+@register.filter(name="es_percent")
+def es_percent(value):
+    """
+    A fraction (0.21) as a percentage with a decimal comma ("21,00").
+
+    ---
+
+    Una fracción (0.21) como porcentaje con coma decimal ("21,00").
+    """
+    from decimal import Decimal
+
+    if value is None or value == "":
+        return ""
+    return es_number(Decimal(str(value)) * 100)

@@ -1450,6 +1450,246 @@ class WorkOrderInvoiceSimulationView(AssistanceSupervisorAccessMixin, View):
         return render(request, self.template_name, ctx)
 
 
+def _xlsx_response(workbook, filename):
+    """
+    Workbook as a download.
+
+    ---
+
+    El libro como descarga.
+    """
+    import io
+
+    from django.http import HttpResponse
+
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    response = HttpResponse(
+        buffer.getvalue(),
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
+    )
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+_MONEY_FORMAT = "#,##0.00"
+
+
+class WorkOrderInvoiceSimulationExcelView(
+    AssistanceSupervisorAccessMixin, View,
+):
+    """
+    Invoice simulation of the order as an Excel workbook.
+
+    ---
+
+    La simulación de factura de la orden en un Excel (S140): una fila
+    por concepto, con unidades, precio e importe.
+    """
+
+    def get(self, request, pk):
+        """
+        Build and return the workbook.
+
+        ---
+
+        Construye y devuelve el libro.
+        """
+        from decimal import Decimal
+
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+
+        from budgets.service_invoice import simulate_order
+
+        work_order = get_object_or_404(
+            WorkOrderAssistance.objects.select_related("insurer"),
+            pk=pk,
+            company=request.user.company_user.company,
+        )
+        simulation = simulate_order(work_order)
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "SIMULACION FACTURA"
+        bold = Font(bold=True)
+        sheet.append(["Orden", work_order.work_order_number])
+        sheet.append([
+            "Aseguradora",
+            work_order.insurer.name if work_order.insurer else "",
+        ])
+        sheet.append(["Expediente", work_order.expediente or ""])
+        sheet.append([])
+        sheet.append(["Albarán", "Concepto", "Unidades", "Precio", "%", "Importe"])
+        for cell in sheet[sheet.max_row]:
+            cell.font = bold
+        for row in simulation["results"]:
+            number = row["unit"].albaran_number
+            if row["error"]:
+                sheet.append([number, row["error"]])
+                continue
+            for line in row["lines"]:
+                if line.is_surcharge:
+                    sheet.append([
+                        number, line.concept_label, None, None,
+                        float(line.unit_price * Decimal("100")),
+                        float(line.subtotal),
+                    ])
+                else:
+                    sheet.append([
+                        number, line.concept_label, float(line.units),
+                        float(line.unit_price), None, float(line.subtotal),
+                    ])
+            sheet.append([number, "Total sin IVA", None, None, None, float(row["total"])])
+            sheet[sheet.max_row][1].font = bold
+            if row["total_with_iva"] is not None:
+                sheet.append([
+                    number, "Total con IVA", None, None, None,
+                    float(row["total_with_iva"]),
+                ])
+                sheet[sheet.max_row][1].font = bold
+        if len(simulation["results"]) > 1:
+            sheet.append([])
+            sheet.append(["", "Total de la orden sin IVA", None, None, None, float(simulation["total"])])
+            if simulation["total_with_iva"] is not None:
+                sheet.append([
+                    "", "Total de la orden con IVA", None, None, None,
+                    float(simulation["total_with_iva"]),
+                ])
+        for column in ("C", "D", "E", "F"):
+            for cell in sheet[column][5:]:
+                cell.number_format = _MONEY_FORMAT
+        sheet.column_dimensions["A"].width = 16
+        sheet.column_dimensions["B"].width = 42
+        for column in ("C", "D", "E", "F"):
+            sheet.column_dimensions[column].width = 12
+        return _xlsx_response(
+            workbook,
+            f"simulacion_factura_{work_order.work_order_number}.xlsx",
+        )
+
+
+class UnitAlbaranExcelView(AssistanceSupervisorAccessMixin, View):
+    """
+    One albarán as an Excel workbook (field and value).
+
+    ---
+
+    Un albarán en Excel (S140): una fila por dato, campo y valor, para
+    pasarlo a otro programa.
+    """
+
+    def get(self, request, pk):
+        """
+        Build and return the workbook.
+
+        ---
+
+        Construye y devuelve el libro.
+        """
+        from django.utils import timezone
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+
+        from budgets.models import WorkOrderAssistanceUnit
+
+        unit = get_object_or_404(
+            WorkOrderAssistanceUnit.objects.select_related(
+                "work_order__insurer", "operator__user", "departure_base",
+                "arrival_base",
+            ),
+            pk=pk,
+            work_order__company=request.user.company_user.company,
+        )
+        order = unit.work_order
+        user = unit.operator.user if unit.operator_id else None
+        signature = getattr(unit, "signature", None)
+
+        def when(value):
+            if value is None:
+                return None
+            return timezone.localtime(value).replace(tzinfo=None)
+
+        def num(value):
+            return float(value) if value is not None else None
+
+        def yes_no(value):
+            return "Sí" if value else "No"
+
+        rows = [
+            ("Albarán", unit.albaran_number),
+            ("Fecha del servicio", order.service_date),
+            ("Aseguradora", order.insurer.name if order.insurer else ""),
+            ("Expediente", order.expediente or ""),
+            ("Cliente", order.client_name or ""),
+            ("Matrícula", order.vehicle_plate or ""),
+            ("Vehículo", " ".join(
+                part for part in (order.vehicle_brand, order.vehicle_model)
+                if part
+            )),
+            ("Avería", order.breakdown_description or ""),
+            ("Recogida", order.pickup_location or ""),
+            ("Destino", order.destination or ""),
+            ("Conductor", (
+                (user.get_full_name() or user.username) if user else ""
+            )),
+            ("Máquina", unit.machine or ""),
+            ("Ayudantes", ", ".join(unit.helper_names)),
+            ("Estado", unit.get_status_display()),
+            ("Base de salida", (
+                unit.departure_base.name if unit.departure_base else ""
+            )),
+            ("Hora salida base", when(unit.started_at)),
+            ("Km salida", num(unit.km_start)),
+            ("Hora llegada al servicio", when(unit.arrived_at)),
+            ("Km llegada al servicio", num(unit.km_arrival)),
+            ("Km en la entrega", num(unit.km_delivery)),
+            ("Km de vuelta a base", num(unit.km_return)),
+            ("Km 1.º tramo", num(unit.phase1_km)),
+            ("Km 2.º tramo", num(unit.phase2_km)),
+            ("Horas de trabajo", num(unit.work_hours)),
+            ("Horas de espera", num(unit.wait_hours)),
+            ("Horas de rescate", num(unit.rescue_hours)),
+            ("Nocturno", yes_no(unit.is_night)),
+            ("Pernocta", yes_no(unit.is_overnight)),
+            ("Firmado por", signature.signer_name if signature else ""),
+            ("Fecha de la firma", when(signature.signed_at) if signature else None),
+            ("Motivo sin firma", unit.unsigned_reason or ""),
+            ("Cierre", (
+                "En ruta" if unit.closed_in_route
+                else "En base" if unit.base_arrived_at else ""
+            )),
+            ("Hora de cierre en ruta", when(unit.chain_at) if unit.closed_in_route else None),
+            ("Base de llegada", (
+                unit.arrival_base.name if unit.arrival_base else ""
+            )),
+            ("Hora llegada base", when(unit.base_arrived_at)),
+            ("Km llegada base", num(unit.base_km_end)),
+            ("Litros repostados", num(unit.refuel_liters)),
+            ("Notas del conductor", unit.driver_notes or ""),
+        ]
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "ALBARAN"
+        sheet.append(["Dato", "Valor"])
+        for cell in sheet[1]:
+            cell.font = Font(bold=True)
+        for label, value in rows:
+            sheet.append([label, value])
+            cell = sheet.cell(row=sheet.max_row, column=2)
+            if label == "Fecha del servicio":
+                cell.number_format = "DD/MM/YYYY"
+            elif label.startswith(("Hora", "Fecha de la")):
+                cell.number_format = "DD/MM/YYYY HH:MM"
+        sheet.column_dimensions["A"].width = 26
+        sheet.column_dimensions["B"].width = 60
+        return _xlsx_response(
+            workbook, f"albaran_{unit.albaran_number}.xlsx",
+        )
+
+
 class WorkOrderInvoicedView(AssistanceSupervisorAccessMixin, View):
     """
     Mark a completed order as invoiced, or undo it.

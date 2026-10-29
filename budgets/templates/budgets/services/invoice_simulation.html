@@ -1,5 +1,6 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/services/invoice_simulation.html #}
 {% extends "panel/base.html" %}
+{% load budgets_extras %}
 
 {% block title %}Simulación de factura {{ work_order.work_order_number }}{% endblock %}
 {% block page_title %}Simulación de factura · Orden {{ work_order.work_order_number }}{% endblock %}
@@ -8,27 +9,34 @@
 {% comment %}
 H37 (S140). Cómo quedaría la factura de la orden con la tarifa activa de
 la aseguradora, con los datos que anotó el chófer en cada albarán. No
-guarda nada.
+guarda nada. Cada dato tiene su botón de copiar (números con coma
+decimal) para pasarlo a mano a un programa de facturación, y la
+simulación entera se descarga en Excel.
 {% endcomment %}
 <div class="container-fluid px-3 py-3">
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <div>
-            <div class="fw-semibold">{{ work_order.insurer.name|default:"Sin aseguradora" }} · Expediente {{ work_order.expediente|default:"—" }}</div>
+            <div class="fw-semibold">{{ work_order.insurer.name|default:"Sin aseguradora" }} · Expediente {{ work_order.expediente|default:"—" }}{% if work_order.expediente %}<button type="button" class="btn btn-link btn-sm p-0 ms-1 copy-btn" data-copy="{{ work_order.expediente }}" title="Copiar"><i class="bi bi-clipboard"></i></button>{% endif %}</div>
             <div class="text-muted small">Tipo de vehículo de tarifa: {{ work_order.vehicle_type|default:"sin indicar" }}</div>
         </div>
-        <a href="{% url 'budgets:work_order_detail' pk=work_order.pk %}" class="btn btn-outline-secondary btn-sm">
-            <i class="bi bi-arrow-left me-1"></i>Volver a la orden
-        </a>
+        <div class="d-flex gap-2">
+            <a href="{% url 'budgets:work_order_invoice_simulation_excel' pk=work_order.pk %}" class="btn btn-outline-success btn-sm">
+                <i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel
+            </a>
+            <a href="{% url 'budgets:work_order_detail' pk=work_order.pk %}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-arrow-left me-1"></i>Volver a la orden
+            </a>
+        </div>
     </div>
 
     <div class="alert alert-light border small">
-        Es una simulación: no se guarda ni se envía nada. No incluye peajes, desbloqueo, vehículo cargado, ayudantes ni custodia, porque el albarán no los recoge.
+        Es una simulación: no se guarda ni se envía nada. No incluye peajes, desbloqueo, vehículo cargado, ayudantes ni custodia, porque el albarán no los recoge. Con <i class="bi bi-clipboard"></i> se copia cada dato para pegarlo en el programa de facturación.
     </div>
 
     {% for row in simulation.results %}
     <div class="card border-0 shadow-sm mb-3">
         <div class="card-header bg-white d-flex flex-wrap justify-content-between gap-2">
-            <span class="fw-semibold">Albarán {{ row.unit.albaran_number }}</span>
+            <span class="fw-semibold">Albarán {{ row.unit.albaran_number }}<button type="button" class="btn btn-link btn-sm p-0 ms-1 copy-btn" data-copy="{{ row.unit.albaran_number }}" title="Copiar"><i class="bi bi-clipboard"></i></button></span>
             <span class="text-muted small">
                 {{ row.unit.operator.user.get_full_name|default:"—" }} · {{ row.unit.machine|default:"" }}
                 {% if row.budget %} · Tarifa: {{ row.budget.tariff }}{% if row.budget.is_night_or_holiday %} · Nocturno/festivo{% endif %}{% endif %}
@@ -41,28 +49,28 @@ guarda nada.
             {% for note in row.notes %}<div class="px-3 pt-3 text-warning small">{{ note }}</div>{% endfor %}
             <div class="table-responsive">
                 <table class="table table-sm mb-0 align-middle">
-                    <thead><tr><th>Concepto</th><th class="text-end">Unidades</th><th class="text-end">Precio</th><th class="text-end">Importe</th></tr></thead>
+                    <thead><tr><th>Concepto</th><th class="text-end">Cantidad</th><th class="text-end">Precio / %</th><th class="text-end">Importe</th></tr></thead>
                     <tbody>
                     {% for line in row.lines %}
                     <tr>
-                        <td>{{ line.concept_label }}</td>
+                        <td>{{ line.concept_label }}<button type="button" class="btn btn-link btn-sm p-0 ms-1 copy-btn" data-copy="{{ line.concept_label }}" title="Copiar"><i class="bi bi-clipboard"></i></button></td>
                         {% if line.is_surcharge %}
-                        <td class="text-end text-muted">sobre {{ line.units|floatformat:2 }} €</td>
-                        <td></td>
+                        <td class="text-end text-muted">sobre {{ line.units|es_number }} €<button type="button" class="btn btn-link btn-sm p-0 ms-1 copy-btn" data-copy="{{ line.units|es_number }}" title="Copiar"><i class="bi bi-clipboard"></i></button></td>
+                        <td class="text-end">{{ line.unit_price|es_percent }} %<button type="button" class="btn btn-link btn-sm p-0 ms-1 copy-btn" data-copy="{{ line.unit_price|es_percent }}" title="Copiar"><i class="bi bi-clipboard"></i></button></td>
                         {% else %}
-                        <td class="text-end">{{ line.units|floatformat:2 }}</td>
-                        <td class="text-end">{{ line.unit_price|floatformat:2 }} €</td>
+                        <td class="text-end">{{ line.units|es_number }}<button type="button" class="btn btn-link btn-sm p-0 ms-1 copy-btn" data-copy="{{ line.units|es_number }}" title="Copiar"><i class="bi bi-clipboard"></i></button></td>
+                        <td class="text-end">{{ line.unit_price|es_number }} €<button type="button" class="btn btn-link btn-sm p-0 ms-1 copy-btn" data-copy="{{ line.unit_price|es_number }}" title="Copiar"><i class="bi bi-clipboard"></i></button></td>
                         {% endif %}
-                        <td class="text-end">{{ line.subtotal|floatformat:2 }} €</td>
+                        <td class="text-end">{{ line.subtotal|es_number }} €<button type="button" class="btn btn-link btn-sm p-0 ms-1 copy-btn" data-copy="{{ line.subtotal|es_number }}" title="Copiar"><i class="bi bi-clipboard"></i></button></td>
                     </tr>
                     {% empty %}
                     <tr><td colspan="4" class="text-muted">La tarifa no da ningún concepto para estos datos.</td></tr>
                     {% endfor %}
                     </tbody>
                     <tfoot>
-                    <tr class="fw-semibold"><td colspan="3">Total sin IVA</td><td class="text-end">{{ row.total|floatformat:2 }} €</td></tr>
+                    <tr class="fw-semibold"><td colspan="3">Total sin IVA</td><td class="text-end">{{ row.total|es_number }} €<button type="button" class="btn btn-link btn-sm p-0 ms-1 copy-btn" data-copy="{{ row.total|es_number }}" title="Copiar"><i class="bi bi-clipboard"></i></button></td></tr>
                     {% if row.total_with_iva is not None %}
-                    <tr class="fw-semibold"><td colspan="3">Total con IVA</td><td class="text-end">{{ row.total_with_iva|floatformat:2 }} €</td></tr>
+                    <tr class="fw-semibold"><td colspan="3">Total con IVA</td><td class="text-end">{{ row.total_with_iva|es_number }} €<button type="button" class="btn btn-link btn-sm p-0 ms-1 copy-btn" data-copy="{{ row.total_with_iva|es_number }}" title="Copiar"><i class="bi bi-clipboard"></i></button></td></tr>
                     {% endif %}
                     </tfoot>
                 </table>
@@ -78,9 +86,41 @@ guarda nada.
     <div class="card border-0 shadow-sm">
         <div class="card-body d-flex flex-wrap justify-content-between gap-2 fw-semibold">
             <span>Total de la orden{% if not simulation.complete %} (sin los albaranes que no se han podido valorar){% endif %}</span>
-            <span>{{ simulation.total|floatformat:2 }} €{% if simulation.total_with_iva is not None %} · con IVA {{ simulation.total_with_iva|floatformat:2 }} €{% endif %}</span>
+            <span>
+                {{ simulation.total|es_number }} €<button type="button" class="btn btn-link btn-sm p-0 ms-1 copy-btn" data-copy="{{ simulation.total|es_number }}" title="Copiar"><i class="bi bi-clipboard"></i></button>
+                {% if simulation.total_with_iva is not None %} · con IVA {{ simulation.total_with_iva|es_number }} €<button type="button" class="btn btn-link btn-sm p-0 ms-1 copy-btn" data-copy="{{ simulation.total_with_iva|es_number }}" title="Copiar"><i class="bi bi-clipboard"></i></button>{% endif %}
+            </span>
         </div>
     </div>
     {% endif %}
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// S140: copia el dato del botón al portapapeles y marca el botón un momento.
+document.addEventListener("click", function (event) {
+    var button = event.target.closest(".copy-btn");
+    if (!button) { return; }
+    var text = button.getAttribute("data-copy") || "";
+    var done = function () {
+        var icon = button.querySelector("i");
+        icon.className = "bi bi-clipboard-check text-success";
+        setTimeout(function () { icon.className = "bi bi-clipboard"; }, 1200);
+    };
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(done);
+        return;
+    }
+    var area = document.createElement("textarea");
+    area.value = text;
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    document.execCommand("copy");
+    document.body.removeChild(area);
+    done();
+});
+</script>
 {% endblock %}

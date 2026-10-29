@@ -50,6 +50,9 @@ def _budget_for(unit):
         rescue_hours=unit.rescue_hours,
         worker_hours=unit.work_hours,
         route_calculation_mode=Budget.ROUTE_MODE_MANUAL,
+        # S140: an invoice carries IVA (Miguel Ángel: "con el IVA").
+        # Una factura lleva IVA.
+        apply_iva=True,
     )
 
 

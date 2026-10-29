@@ -854,6 +854,18 @@ urlpatterns = [
         views_services.WorkOrderInvoiceSimulationView.as_view(),
         name="work_order_invoice_simulation",
     ),
+    path(
+        "work-orders/<int:pk>/simulacion-factura/excel/",
+        views_services.WorkOrderInvoiceSimulationExcelView.as_view(),
+        name="work_order_invoice_simulation_excel",
+    ),
+    # H37 (S140): one albarán as an Excel workbook.
+    # Un albarán en Excel.
+    path(
+        "work-orders/units/<int:pk>/excel/",
+        views_services.UnitAlbaranExcelView.as_view(),
+        name="unit_albaran_excel",
+    ),
     # H37 (S140): routes recorded with the test button of the app.
     # Rutas grabadas con el botón de prueba de la app.
     path(
