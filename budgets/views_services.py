@@ -1526,11 +1526,20 @@ class WorkOrderInvoiceSimulationExcelView(
         for cell in sheet[sheet.max_row]:
             cell.font = bold
         for row in simulation["results"]:
-            number = row["unit"].albaran_number
+            # S140: the albarán number only on the first row of its block.
+            # El número de albarán solo en la primera fila de su bloque.
+            first = [row["unit"].albaran_number]
+
+            def label():
+                return first.pop() if first else None
+
+            number = None
             if row["error"]:
+                number = label()
                 sheet.append([number, row["error"]])
                 continue
             for line in row["lines"]:
+                number = label()
                 if line.is_surcharge:
                     sheet.append([
                         number, line.concept_label, None, None,
@@ -1542,11 +1551,11 @@ class WorkOrderInvoiceSimulationExcelView(
                         number, line.concept_label, float(line.units),
                         float(line.unit_price), None, float(line.subtotal),
                     ])
-            sheet.append([number, "Total sin IVA", None, None, None, float(row["total"])])
+            sheet.append([label(), "Total sin IVA", None, None, None, float(row["total"])])
             sheet[sheet.max_row][1].font = bold
             if row["total_with_iva"] is not None:
                 sheet.append([
-                    number, "Total con IVA", None, None, None,
+                    label(), "Total con IVA", None, None, None,
                     float(row["total_with_iva"]),
                 ])
                 sheet[sheet.max_row][1].font = bold
