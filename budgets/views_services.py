@@ -1411,3 +1411,50 @@ class RouteTestView(AssistanceSupervisorAccessMixin, View):
             "google_maps_api_key": os.environ.get("GOOGLE_MAPS_API_KEY", ""),
             "google_maps_map_id": os.environ.get("GOOGLE_MAPS_MAP_ID", ""),
         })
+
+
+class WorkOrderInvoicedView(AssistanceSupervisorAccessMixin, View):
+    """
+    Mark a completed order as invoiced, or undo it.
+
+    ---
+
+    Marca como facturada una orden completada, o lo deshace (S140,
+    Miguel Ángel: al cerrar el albarán "no sale ningún sitio donde
+    ponerlo como facturado").
+    """
+
+    def post(self, request, pk):
+        """
+        Change the status and go back to the order.
+
+        ---
+
+        Cambia el estado y vuelve a la orden.
+        """
+        work_order = get_object_or_404(
+            WorkOrderAssistance,
+            pk=pk,
+            company=request.user.company_user.company,
+        )
+        if request.POST.get("undo"):
+            if work_order.status == WorkOrderAssistance.STATUS_INVOICED:
+                work_order.status = WorkOrderAssistance.STATUS_COMPLETED
+                work_order.save(update_fields=["status", "updated_at"])
+                work_order.refresh_status()
+                messages.success(request, "Orden ya no está facturada.")
+        elif work_order.status == WorkOrderAssistance.STATUS_COMPLETED:
+            work_order.status = WorkOrderAssistance.STATUS_INVOICED
+            work_order.save(update_fields=["status", "updated_at"])
+            messages.success(
+                request,
+                "Orden %s marcada como facturada."
+                % work_order.work_order_number,
+            )
+        else:
+            messages.error(
+                request,
+                "Solo se puede facturar una orden completada (todos sus "
+                "albaranes cerrados).",
+            )
+        return redirect("budgets:work_order_detail", pk=work_order.pk)

@@ -108,16 +108,15 @@ def chain_on_start(unit, by):
         closed = closed_in_route_unit(unit)
         if closed is not None:
             closed.chained_to = unit
-            closed.chain_odometer = unit.km_start
-            closed.save(update_fields=[
-                "chained_to", "chain_odometer", "updated_at",
-            ])
+            fields = ["chained_to", "updated_at"]
+            if closed.chain_odometer is None:
+                closed.chain_odometer = unit.km_start
+                fields.append("chain_odometer")
+            closed.save(update_fields=fields)
         return closed
     if previous.closed_in_route:
-        # Departure corrected: only the odometer follows it.
-        # Salida corregida: solo cambia el cuentakilómetros.
-        previous.chain_odometer = unit.km_start
-        previous.save(update_fields=["chain_odometer", "updated_at"])
+        # Departure corrected: the closing on the road does not change.
+        # Salida corregida: el cierre en ruta no cambia.
         return previous
     first_time = previous.chained_to_id is None
     previous.chained_to = unit
@@ -145,6 +144,129 @@ def chain_on_start(unit, by):
     previous_pk = previous.pk
     transaction.on_commit(lambda: estimate_return(previous_pk))
     return previous
+
+
+def gps_odometer(unit, until):
+    """
+    Odometer at a moment worked out with the GPS, or None.
+
+    ---
+
+    Cuentakilómetros a esa hora calculado con el GPS (S140): los km de
+    salida más los km de la ruta del móvil desde la salida.
+    """
+    from budgets.service_route import _points, distance_m
+
+    if unit.km_start is None or unit.started_at is None:
+        return None
+    points = [
+        p for p in _points(unit) if unit.started_at <= p[2] <= until
+    ]
+    meters = sum(
+        distance_m(points[k][:2], points[k + 1][:2])
+        for k in range(len(points) - 1)
+    )
+    return unit.km_start + (Decimal(meters) / 1000).quantize(Decimal("0.1"))
+
+
+def _last_point(unit, until):
+    """
+    Last phone position of the driver up to a moment, or None.
+
+    ---
+
+    Última posición del móvil del conductor hasta esa hora (dentro de
+    POINT_MARGIN), como (lat, lng), o None.
+    """
+    from budgets.models import DriverPosition
+
+    if not unit.operator_id:
+        return None
+    last = DriverPosition.objects.filter(
+        company_user_id=unit.operator_id,
+        recorded_at__lte=until,
+        recorded_at__gte=until - POINT_MARGIN,
+    ).order_by("-recorded_at").first()
+    return (last.latitude, last.longitude) if last else None
+
+
+def close_in_route(unit, by=None, point=None, at=None, detail=""):
+    """
+    Close an albarán on the road with the GPS; no data from the driver.
+
+    ---
+
+    Cierre en ruta (S140, Miguel Ángel: "hay que anotar el punto
+    kilométrico donde se encuentra y hacer el cálculo con la ruta GPS
+    [...] de los kilómetros que tendría que recorrer a base y cerrar esa
+    parte de la ruta con lo que nos dé el GPS"): punto y hora del
+    cierre, cuentakilómetros calculado con la ruta del GPS y, tras el
+    commit, la vuelta a base estimada con Google. Ni km ni repostaje:
+    el repostaje va con el siguiente albarán. La ruta del albarán acaba
+    ahí. El chófer y la máquina quedan libres.
+    """
+    from budgets.models import (
+        WorkOrderAssistanceUnit as Unit,
+        WorkOrderAssistanceUnitEvent as Event,
+    )
+
+    now = timezone.now()
+    at = at or now
+    point = point or _last_point(unit, at)
+    previous = unit.status
+    unit.closed_in_route = True
+    unit.chain_at = at
+    if point is not None:
+        unit.chain_latitude, unit.chain_longitude = point
+    unit.chain_odometer = gps_odometer(unit, at)
+    unit.base_closed_at = now
+    unit.base_closed_by = by
+    unit.status = Unit.STATUS_CLOSED_BASE
+    unit.save()
+    Event.status_change(
+        unit, previous, unit.status, by=by,
+        detail=(detail or (
+            "Cerrado en ruta con el GPS%s: no vuelve a base; el repostaje "
+            "va con el siguiente albarán." % (
+                " (%s km)" % unit.chain_odometer
+                if unit.chain_odometer is not None else ""
+            )
+        ))[:255],
+    )
+    unit_pk = unit.pk
+    transaction.on_commit(lambda: estimate_return(unit_pk))
+    return unit
+
+
+def close_returning_in_route(new_unit, by=None):
+    """
+    Close on the road what the driver comes back from, on a new send.
+
+    ---
+
+    Al enviar un albarán nuevo a un conductor, cierra en ruta los que
+    volvía de terminar (firmados o cerrados sin firma, sin cerrar en
+    base). Nunca lanza excepciones: el envío no se para por esto.
+    """
+    from budgets.assistance_traffic import RETURNING_STATUSES
+    from budgets.models import WorkOrderAssistanceUnit as Unit
+
+    try:
+        for unit in Unit.objects.select_related("work_order").filter(
+            operator_id=new_unit.operator_id,
+            status__in=RETURNING_STATUSES,
+            base_closed_at__isnull=True,
+        ).exclude(pk=new_unit.pk):
+            close_in_route(unit, by=by, detail=(
+                "Cerrado en ruta con el GPS al enviarle %s: no vuelve a "
+                "base; el repostaje va con el siguiente albarán."
+                % new_unit.albaran_number
+            ))
+    except Exception:  # noqa: BLE001 -- el envío sigue
+        logger.exception(
+            "# [CIERRE EN RUTA] No se pudo cerrar en ruta al enviar %s.",
+            new_unit.pk,
+        )
 
 
 def closed_in_route_unit(unit):

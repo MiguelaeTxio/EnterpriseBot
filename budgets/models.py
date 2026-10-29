@@ -2768,6 +2768,42 @@ class WorkOrderAssistance(models.Model):
             self.work_order_number = f"{date_str}{count + 1:03d}"
         super().save(*args, **kwargs)
 
+    def refresh_status(self):
+        """
+        Move the order status after a change of its albaranes.
+
+        ---
+
+        Estado de la orden según sus albaranes (S140; hasta ahora se
+        quedaba siempre en "Pendiente"): en curso en cuanto uno sale del
+        estado inicial; completada cuando todos están cerrados (en base,
+        en ruta o anulados, con al menos uno cerrado). "Facturada" solo la
+        pone la oficina y no se toca. Devuelve el estado.
+        """
+        Unit = WorkOrderAssistanceUnit
+        if self.status == self.STATUS_INVOICED:
+            return self.status
+        statuses = list(self.units.values_list("status", flat=True))
+        gone = (Unit.STATUS_CLOSED_BASE, Unit.STATUS_CANCELLED)
+        waiting = (
+            Unit.STATUS_PENDING, Unit.STATUS_NOTIFY_FAILED,
+            Unit.STATUS_CANCELLED,
+        )
+        if not statuses:
+            return self.status
+        if all(s in gone for s in statuses):
+            if Unit.STATUS_CLOSED_BASE not in statuses:
+                return self.status
+            new = self.STATUS_COMPLETED
+        elif any(s not in waiting for s in statuses):
+            new = self.STATUS_IN_PROGRESS
+        else:
+            new = self.STATUS_PENDING
+        if new != self.status:
+            WorkOrderAssistance.objects.filter(pk=self.pk).update(status=new)
+            self.status = new
+        return new
+
     def __str__(self):
         return (
             f"OT {self.work_order_number} — "
@@ -3685,6 +3721,27 @@ class WorkOrderAssistanceUnitEvent(models.Model):
             detail=(detail or "")[:255],
             created_by=by,
         )
+        # S140: the order follows its albaranes (it stayed "Pendiente").
+        # La orden sigue a sus albaranes (se quedaba en "Pendiente").
+        unit.work_order.refresh_status()
+        # S140 (Miguel Ángel): a driver coming back is given another
+        # service by phone and does not even stop; when the new albarán
+        # is sent to him, the one he comes back from is closed on the
+        # road with the GPS.
+        # A un chófer que vuelve le dan otro servicio por teléfono y ni
+        # para; al enviarle el nuevo, el que volvía se cierra en ruta
+        # con el GPS.
+        if (
+            to_status == WorkOrderAssistanceUnit.STATUS_NOTIFY_SENDING
+            and from_status in (
+                WorkOrderAssistanceUnit.STATUS_PENDING,
+                WorkOrderAssistanceUnit.STATUS_NOTIFY_FAILED,
+            )
+            and unit.operator_id
+        ):
+            from budgets.service_chain import close_returning_in_route
+
+            close_returning_in_route(unit, by)
         # S133: when a driver finishes, his next queued albarán is sent
         # (after the commit, so the finished one is already saved).
         # Al terminar un conductor se envía su siguiente albarán en cola

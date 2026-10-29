@@ -1097,23 +1097,27 @@ class DriverAlbaranCloseRouteView(View):
 
     def post(self, request, pk):
         """
-        Validate and close.
+        Close with the GPS.
 
         ---
 
-        Valida y cierra.
+        Cierra con el GPS: el chófer no anota nada (S140).
         """
-        from budgets.service_chain import estimate_return
+        from budgets.service_chain import close_in_route
 
         company_user, _token = _token_user(request)
         if company_user is None:
             return _error("Sesión no válida.", 401)
         data = _json_body(request)
-        try:
-            latitude = _coordinate(data, "latitude", "latitud", 90)
-            longitude = _coordinate(data, "longitude", "longitud", 180)
-        except ValueError as exc:
-            return _error(str(exc), 400)
+        point = None
+        if data.get("latitude") is not None:
+            try:
+                point = (
+                    _coordinate(data, "latitude", "latitud", 90),
+                    _coordinate(data, "longitude", "longitud", 180),
+                )
+            except ValueError:
+                point = None
         with transaction.atomic():
             unit = _driver_units(company_user).select_for_update().filter(
                 pk=pk,
@@ -1126,25 +1130,10 @@ class DriverAlbaranCloseRouteView(View):
                     % unit.get_status_display().lower(),
                     409,
                 )
-            now = timezone.now()
-            previous = unit.status
-            unit.closed_in_route = True
-            unit.chain_at = _device_time(data.get("at"), now)
-            unit.chain_latitude = latitude
-            unit.chain_longitude = longitude
-            unit.base_closed_at = now
-            unit.base_closed_by = company_user
-            unit.status = Unit.STATUS_CLOSED_BASE
-            unit.save()
-            WorkOrderAssistanceUnitEvent.status_change(
-                unit, previous, unit.status, by=company_user,
-                detail=(
-                    "Cerrado en ruta: no vuelve a base; el repostaje va con "
-                    "el siguiente albarán."
-                ),
+            close_in_route(
+                unit, by=company_user, point=point,
+                at=_device_time(data.get("at"), timezone.now()),
             )
-            unit_pk = unit.pk
-            transaction.on_commit(lambda: estimate_return(unit_pk))
         logger.info(
             "# [DRIVER API] Albarán %s cerrado en ruta por %s.",
             unit.albaran_number, company_user.user.username,

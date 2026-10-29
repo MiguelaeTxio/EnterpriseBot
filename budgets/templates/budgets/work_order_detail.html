@@ -23,6 +23,23 @@
             </span>
         </div>
         <div class="d-flex gap-2">
+            {% comment %}S140: facturar una orden completada (o deshacerlo).{% endcomment %}
+            {% if work_order.status == 'COMPLETED' %}
+            <form method="post" action="{% url 'budgets:work_order_invoiced' pk=work_order.pk %}" class="m-0">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-success btn-sm">
+                    <i class="bi bi-receipt me-1"></i>Marcar como facturada
+                </button>
+            </form>
+            {% elif work_order.status == 'INVOICED' %}
+            <form method="post" action="{% url 'budgets:work_order_invoiced' pk=work_order.pk %}" class="m-0">
+                {% csrf_token %}
+                <input type="hidden" name="undo" value="1">
+                <button type="submit" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Quitar facturada
+                </button>
+            </form>
+            {% endif %}
             <a href="{% url 'budgets:work_order_edit' pk=work_order.pk %}"
                class="btn btn-outline-primary btn-sm">
                 <i class="bi bi-pencil me-1"></i>Editar datos

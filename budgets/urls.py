@@ -840,6 +840,13 @@ urlpatterns = [
         views_services.UnitRouteView.as_view(),
         name="unit_route",
     ),
+    # H37 (S140): mark an order as invoiced (or undo it).
+    # Marcar una orden como facturada (o deshacerlo).
+    path(
+        "work-orders/<int:pk>/facturada/",
+        views_services.WorkOrderInvoicedView.as_view(),
+        name="work_order_invoiced",
+    ),
     # H37 (S140): routes recorded with the test button of the app.
     # Rutas grabadas con el botón de prueba de la app.
     path(
