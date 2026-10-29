@@ -112,6 +112,7 @@ from panel.views_clock_events import (
 from panel.views_worker_schedules import (
     WorkerSchedulesAssignView,
     WorkerSchedulesResultsView,
+    WorkerSchedulesSectionView,
     WorkerSchedulesTabView,
 )
 from panel.views_lifting_accessories import (
@@ -1771,6 +1772,11 @@ urlpatterns = [
         "documentacion/horarios/asignar/",
         WorkerSchedulesAssignView.as_view(),
         name="worker_schedules_assign",
+    ),
+    path(
+        "documentacion/horarios/seccion/",
+        WorkerSchedulesSectionView.as_view(),
+        name="worker_schedules_section",
     ),
     path(
         "documentacion/fichajes/exportar/",

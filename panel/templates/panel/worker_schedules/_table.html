@@ -4,7 +4,8 @@ H24 (S141). Tabla de Horarios, hecha sobre la de Fichajes: casilla,
 aviso y "Apellidos, Nombre" fijos a la izquierda; una fila por
 trabajador con su sección, el horario que le toca, de dónde le viene
 (propio, de la sección, por defecto o jornada intensiva de verano) y
-sus horas. Todas las columnas ordenables.
+sus horas. Todas las columnas ordenables. El horario va en el
+trabajador: no hace falta usuario del panel.
 {% endcomment %}
 <div id="hor-fragment-state" class="d-none"
      data-count="{{ rows|length }}"
@@ -39,12 +40,12 @@ sus horas. Todas las columnas ordenables.
                 <input type="checkbox" class="form-check-input hor-row-check" data-pk="{{ row.person.pk }}" data-label="{{ row.label }}">
             </td>
             <td class="sticky-col sticky-col-2">
-                {% if not row.has_account %}<i class="bi bi-person-x text-muted" title="Sin usuario del panel: no puede tener horario"></i>{% elif not row.schedule %}<i class="bi bi-exclamation-triangle-fill text-warning" title="No tiene ningún horario"></i>{% endif %}
+                {% if not row.schedule %}<i class="bi bi-exclamation-triangle-fill text-warning" title="No tiene ningún horario"></i>{% endif %}
             </td>
             <td class="sticky-col sticky-col-3 sticky-col-last">{{ row.label }}</td>
             <td data-label="Sección">{{ row.state.section_name|default:"—" }}</td>
             <td data-label="Horario">{% if row.schedule %}{{ row.schedule.label }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
-            <td data-label="De dónde le viene">{% if not row.has_account %}<span class="text-muted">Sin usuario del panel</span>{% elif row.origin == "own" %}<span class="fw-semibold">{{ row.origin_label }}</span>{% else %}<span class="text-muted">{{ row.origin_label }}</span>{% endif %}</td>
+            <td data-label="De dónde le viene">{% if row.origin == "own" %}<span class="fw-semibold">{{ row.origin_label }}</span>{% else %}<span class="text-muted">{{ row.origin_label }}</span>{% endif %}</td>
             <td data-label="Mañana"{% if row.varies %} title="{{ row.days_title }}"{% endif %}>{% if row.varies %}<span class="badge bg-primary">Según el día</span>{% else %}{{ row.morning_label|default:"—" }}{% endif %}</td>
             <td data-label="Tarde"{% if row.varies %} title="{{ row.days_title }}"{% endif %}>{% if row.varies %}<span class="text-muted">{{ row.days_title|truncatechars:60 }}</span>{% elif row.schedule %}{{ row.afternoon_label|default:"intensiva" }}{% else %}—{% endif %}</td>
             {# Acciones de la fila en el menú de tres puntos (directriz 4.24, regla 9). #}

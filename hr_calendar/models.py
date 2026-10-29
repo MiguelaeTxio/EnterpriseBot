@@ -1433,6 +1433,18 @@ class WorkerClockSetting(models.Model):
         default=False,
         verbose_name="Recibe recordatorios",
     )
+    # S141 (Miguel Ángel): el horario va en el trabajador, no en su
+    # usuario del panel: chóferes, gruistas y administrativos no tienen
+    # (ni tendrán de momento) acceso al panel, solo al fichaje. Se pone
+    # desde la pestaña Horarios de Documentación.
+    workday_schedule = models.ForeignKey(
+        "ivr_config.WorkdaySchedule",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="worker_settings",
+        verbose_name="Horario de jornada",
+    )
     updated_by = models.ForeignKey(
         CompanyUser,
         null=True,

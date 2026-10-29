@@ -5,7 +5,8 @@ Personal y Vacaciones (directriz 4.24): panel fijo con los filtros de
 siempre (búsqueda, Estado, Empresa, Selección) más Sección y Horario;
 a la derecha, la selección y las acciones: poner un horario propio a
 los marcados o quitárselo (vuelven al de su sección o al de por
-defecto). Debajo, la lista (3/4, pantalla completa, 4.26) y la
+defecto) y ponerles sección. El horario va en el trabajador: no hace
+falta usuario del panel. Debajo, la lista (3/4, pantalla completa, 4.26) y la
 selección actual (1/4). Filtros, orden y selección persistidos por
 usuario (screen_key "worker_schedules"). Para trabajar por secciones:
 filtrar la sección, marcar todos y poner el horario.
@@ -112,6 +113,21 @@ filtrar la sección, marcar todos y poner el horario.
                             <button type="button" class="btn btn-sm btn-outline-secondary" id="hor-unassign"
                                     title="Quita el horario propio a los marcados: les toca el de su sección o el de por defecto de la empresa.">
                                 Quitar horario propio
+                            </button>
+                        </div>
+                    </div>
+                    {# S141: sin sección no se puede trabajar por secciones; se asigna aquí mismo. #}
+                    <div class="col-12">
+                        <div class="small text-muted fw-bold mt-1">Sección de los marcados</div>
+                        <div class="d-flex flex-wrap gap-1 align-items-center">
+                            <select class="form-select form-select-sm w-auto" id="hor-section" aria-label="Sección">
+                                {% for section in sections %}<option value="{{ section.pk }}">{{ section.name }}</option>{% endfor %}
+                            </select>
+                            <input type="date" class="form-control form-control-sm w-auto" id="hor-section-from" value="{% now 'Y-m-d' %}"
+                                   aria-label="Desde" title="Desde qué día está en esa sección">
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="hor-section-assign"
+                                    title="Pone a los marcados en esa sección desde ese día (lo mismo que en Vacaciones; lo anterior se conserva).">
+                                <i class="bi bi-diagram-3 me-1"></i>Poner sección
                             </button>
                         </div>
                     </div>
@@ -303,7 +319,7 @@ filtrar la sección, marcar todos y poner el horario.
     }
     // Cada acción devuelve la tabla con los filtros que se veían (_f_);
     // el mensaje llega en X-Schedule-Message.
-    function assign(scheduleId, question) {
+    function assign(scheduleId, question, url, extra) {
         if (!selection.size) { showToast("Marca algún trabajador.", true); return; }
         if (!confirm(question + " (" + selection.size + " trabajador(es)). ¿Seguro?")) return;
         const body = new FormData();
@@ -311,8 +327,9 @@ filtrar la sección, marcar todos y poner el horario.
         const sortInput = results.querySelector('#hor-sort-inputs input[name="sort"]');
         body.append("_f_sort", sortInput ? sortInput.value : "");
         body.append("schedule_id", scheduleId);
+        Object.keys(extra || {}).forEach(function (key) { body.append(key, extra[key]); });
         selection.forEach(function (_label, pk) { body.append("selected", pk); });
-        fetch(ASSIGN_URL, {
+        fetch(url || ASSIGN_URL, {
             method: "POST", headers: {"X-CSRFToken": csrfMeta ? csrfMeta.content : ""}, body: body,
         }).then(function (r) {
             if (!r.ok) { showToast("No se ha podido guardar (" + r.status + ").", true); return; }
@@ -335,6 +352,13 @@ filtrar la sección, marcar todos y poner el horario.
     });
     document.getElementById("hor-unassign").addEventListener("click", function () {
         assign("", "Quitar el horario propio");
+    });
+    document.getElementById("hor-section-assign").addEventListener("click", function () {
+        const select = document.getElementById("hor-section");
+        const from = document.getElementById("hor-section-from").value;
+        if (!select.value) { showToast("No hay secciones.", true); return; }
+        assign("", "Poner la sección " + select.options[select.selectedIndex].textContent.trim() + " desde " + from,
+               "{% url 'panel:worker_schedules_section' %}", {section_id: select.value, valid_from: from});
     });
 
     // Pantalla completa con el formato del laboratorio de análisis (4.26).

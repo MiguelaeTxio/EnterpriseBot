@@ -492,6 +492,74 @@ ORIGIN_DEFAULT = "default"
 ORIGIN_NONE = "none"
 
 
+def _person_of_user(cu):
+    """
+    The PersonIdentity of a CompanyUser, or None.
+    ---
+    La ficha de Personal de un usuario del panel, o None.
+    """
+    from django.core.exceptions import ObjectDoesNotExist
+
+    try:
+        return cu.person_identity
+    except (ObjectDoesNotExist, AttributeError):
+        return None
+
+
+def _person_schedule(person):
+    """
+    The worker's own WorkdaySchedule (S141), or None.
+    ---
+    El horario propio del trabajador (S141, pestaña Horarios), o None.
+    """
+    from hr_calendar.models import WorkerClockSetting
+
+    if person is None:
+        return None
+    setting = WorkerClockSetting.objects.filter(
+        person=person,
+    ).select_related("workday_schedule").first()
+    return setting.workday_schedule if setting else None
+
+
+def _person_section(person):
+    """
+    The worker's Personal section in force today, or None.
+    ---
+    La sección de Personal vigente hoy del trabajador, o None.
+    """
+    from hr_calendar.clock_settings import current_sections
+
+    if person is None:
+        return None
+    return current_sections([person.pk]).get(person.pk)
+
+
+def resolve_person_schedule(person, company):
+    """
+    (schedule, (origin, section)) of a worker, with or without a panel user.
+    ---
+    El horario de un trabajador y de dónde le viene (S141), tenga o no
+    usuario del panel: con usuario, el de _resolve_base_schedule_with_origin;
+    sin él, el suyo propio, el de su sección de Personal o el de por
+    defecto de la empresa.
+    """
+    from ivr_config.models import WorkdaySchedule as _WDS_P
+
+    if person.company_user_id:
+        return _resolve_base_schedule_with_origin(
+            person.company_user, company,
+        )
+    own = _person_schedule(person)
+    if own is not None:
+        return own, (ORIGIN_OWN, None)
+    section = _person_section(person)
+    if section is not None and section.workday_schedule_id:
+        return section.workday_schedule, (ORIGIN_SECTION, section)
+    default = _WDS_P.objects.filter(company=company, is_default=True).first()
+    return default, ((ORIGIN_DEFAULT if default else ORIGIN_NONE), None)
+
+
 def _resolve_base_schedule_with_origin(cu, company):
     """
     Resolves the effective WorkdaySchedule for a CompanyUser following
@@ -499,9 +567,11 @@ def _resolve_base_schedule_with_origin(cu, company):
       0. If cu.is_intensive_override=True, returns the company's intensive
          WorkdaySchedule (is_intensive=True) when one exists. Falls through
          to the normal chain if no intensive schedule is configured.
-      1. CompanyUser.workday_schedule (individual assignment).
+      1. S141: the worker's own schedule (WorkerClockSetting of their
+         PersonIdentity), then CompanyUser.workday_schedule.
       2. First active Section of the operator's Contact that has a
-         workday_schedule assigned.
+         workday_schedule assigned; S141: then the schedule of their
+         Personal section in force today.
       3. Company-level default WorkdaySchedule (is_default=True).
       4. None — no schedule available.
     Returns (WorkdaySchedule or None, (origin, Section or None)); S141:
@@ -529,6 +599,14 @@ def _resolve_base_schedule_with_origin(cu, company):
         ).first()
         if _intensive is not None:
             return _intensive, (ORIGIN_INTENSIVE, None)
+
+    # S141: horario propio del trabajador (su ficha de Personal, pestaña
+    # Horarios); va antes del de su usuario del panel, que queda para lo
+    # asignado antes de S141. Se ha elegido a propósito para él, así que
+    # vale aunque sea de jornada intensiva (p. ej. administración).
+    _own = _person_schedule(_person_of_user(cu))
+    if _own is not None:
+        return _own, (ORIGIN_OWN, None)
 
     # Gate 1 — individual schedule assignment.
     # Only apply if the assigned schedule is coherent with
@@ -579,6 +657,11 @@ def _resolve_base_schedule_with_origin(cu, company):
         section_schedule, _section_of = section_schedule
         if section_schedule is not None:
             return section_schedule, (ORIGIN_SECTION, _section_of)
+
+    # S141: el de su sección de Personal (la vigente hoy).
+    _section = _person_section(_person_of_user(cu))
+    if _section is not None and _section.workday_schedule_id:
+        return _section.workday_schedule, (ORIGIN_SECTION, _section)
 
     default = _WDS_R.objects.filter(company=company, is_default=True).first()
     return default, ((ORIGIN_DEFAULT if default else ORIGIN_NONE), None)

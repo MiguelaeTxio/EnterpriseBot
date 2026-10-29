@@ -234,6 +234,33 @@ def set_worker_flag(person_ids, field, value, by):
     return count
 
 
+def set_worker_schedule(people, schedule, by):
+    """
+    Set (or clear) the own WorkdaySchedule of several workers.
+    ---
+    Pone (o quita, con None) el horario propio de varios trabajadores
+    (S141, pestaña Horarios). Al quitarlo se quita también el que
+    pudiera tener su usuario del panel de antes de S141, para que les
+    toque el de su sección o el de por defecto. Devuelve cuántos.
+    """
+    from ivr_config.models import CompanyUser
+
+    count = 0
+    for person in people:
+        setting, _created = WorkerClockSetting.objects.get_or_create(
+            person=person,
+        )
+        setting.workday_schedule = schedule
+        setting.updated_by = by
+        setting.save()
+        count += 1
+    if schedule is None:
+        CompanyUser.objects.filter(
+            pk__in=[p.company_user_id for p in people if p.company_user_id],
+        ).update(workday_schedule=None)
+    return count
+
+
 def set_section_clocks(section, clocks, by):
     """
     Put a section in or out of clocking with the platform.

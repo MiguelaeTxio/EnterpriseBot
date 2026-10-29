@@ -61,7 +61,7 @@ _SORT_VALUES = {
     "person": lambda r: r.sort_name,
     "section": lambda r: r.state.section_name.upper() or None,
     "schedule": lambda r: r.schedule.label.upper() if r.schedule else None,
-    "origin": lambda r: r.origin_label if r.has_account else None,
+    "origin": lambda r: r.origin_label,
     "morning": lambda r: r.morning_label or None,
     "afternoon": lambda r: r.afternoon_label or None,
 }
@@ -203,17 +203,16 @@ def _sort_rows(rows, sort_keys):
 
 def _rows(company, people):
     from hr_calendar.clock_settings import worker_states
-    from panel.views_operator import _resolve_base_schedule_with_origin
+    from panel.views_operator import resolve_person_schedule
 
     states = worker_states(people)
     rows = []
     for person in people:
-        schedule, (origin, section) = None, ("none", None)
-        company_user = person.company_user
-        if company_user is not None:
-            schedule, (origin, section) = (
-                _resolve_base_schedule_with_origin(company_user, company)
-            )
+        # S141: el horario va en el trabajador; no hace falta usuario
+        # del panel.
+        schedule, (origin, section) = resolve_person_schedule(
+            person, company,
+        )
         rows.append(_Row(person, states[person.pk], schedule, origin,
                          section))
     return rows
@@ -364,21 +363,18 @@ class WorkerSchedulesAssignView(SupervisorAccessMixin, View):
     ---
     POST: pone a los trabajadores marcados un horario propio
     (schedule_id) o se lo quita (schedule_id vacío): entonces les toca
-    el de su sección o el de por defecto de la empresa. Los que no
-    tienen usuario del panel no pueden tener horario.
+    el de su sección o el de por defecto de la empresa. S141 (Miguel
+    Ángel): el horario va en el trabajador, así que no hace falta que
+    tenga usuario del panel (chóferes, gruistas y administrativos solo
+    fichan).
     """
 
     def post(self, request):
-        from ivr_config.models import CompanyUser, WorkdaySchedule
+        from hr_calendar.clock_settings import set_worker_schedule
+        from ivr_config.models import WorkdaySchedule
 
         company = request.user.company_user.company
-        wanted = [
-            int(pk) for pk in request.POST.getlist("selected")
-            if pk.isdigit()
-        ]
-        people = list(PersonIdentity.objects.filter(
-            Q(company=company) | Q(company__isnull=True), pk__in=wanted,
-        ))
+        people = _marked_people(request, company)
         if not people:
             return _table_response(request, "Marca algún trabajador.",
                                    error=True)
@@ -391,11 +387,8 @@ class WorkerSchedulesAssignView(SupervisorAccessMixin, View):
             if schedule is None:
                 return _table_response(request, "No existe ese horario.",
                                        error=True)
-        user_ids = [p.company_user_id for p in people if p.company_user_id]
-        count = CompanyUser.objects.filter(
-            company=company, pk__in=user_ids,
-        ).update(workday_schedule=schedule)
-        skipped = len(people) - count
+        count = set_worker_schedule(people, schedule,
+                                    request.user.company_user)
         if schedule is not None:
             message = "Horario %s puesto a %d trabajador(es)." % (
                 schedule.label, count)
@@ -403,7 +396,53 @@ class WorkerSchedulesAssignView(SupervisorAccessMixin, View):
             message = ("Horario propio quitado a %d trabajador(es): les "
                        "toca el de su sección o el de por defecto."
                        % count)
-        if skipped:
-            message += (" %d sin usuario del panel no pueden tener "
-                        "horario." % skipped)
-        return _table_response(request, message, error=count == 0)
+        return _table_response(request, message)
+
+
+class WorkerSchedulesSectionView(SupervisorAccessMixin, View):
+    """
+    POST: assign a section from a date to the marked workers.
+    ---
+    POST: asigna a los marcados una sección desde una fecha (hoy por
+    defecto), la misma asignación que en Vacaciones
+    (hr_calendar.balance.assign_section). Miguel Ángel (S141): sin
+    sección no se puede trabajar por secciones.
+    """
+
+    def post(self, request):
+        from django.utils import timezone
+
+        from hr_calendar.balance import assign_section
+        from ivr_config.models import Section
+        from panel.views_vacation_balance import _parse_date
+
+        company = request.user.company_user.company
+        people = _marked_people(request, company)
+        raw = request.POST.get("section_id", "")
+        section = Section.objects.filter(
+            pk=raw if raw.isdigit() else 0, company=company,
+        ).first()
+        valid_from = (_parse_date(request.POST.get("valid_from"))
+                      or timezone.localdate())
+        if section is None or not people:
+            return _table_response(
+                request, "Elige la sección y marca algún trabajador.",
+                error=True,
+            )
+        assign_section(people, section, valid_from,
+                       request.user.company_user)
+        return _table_response(
+            request, "Sección %s desde el %s para %d trabajador(es)." % (
+                section.name, valid_from.strftime("%d/%m/%Y"),
+                len(people)),
+        )
+
+
+def _marked_people(request, company):
+    wanted = [
+        int(pk) for pk in request.POST.getlist("selected")
+        if pk.isdigit()
+    ]
+    return list(PersonIdentity.objects.filter(
+        Q(company=company) | Q(company__isnull=True), pk__in=wanted,
+    ).select_related("company_user"))
