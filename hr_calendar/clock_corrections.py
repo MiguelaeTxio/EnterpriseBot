@@ -27,6 +27,7 @@ from django.db import transaction
 
 from hr_calendar.models import ClockCorrection
 from hr_calendar.models import ClockEvent
+from hr_calendar.models import ClockType
 
 MAX_REASON = 1000
 
@@ -40,7 +41,7 @@ class ClockCorrectionError(Exception):
 
 
 def correct_event(event_id, corrected_by, action, reason, new_kind="",
-                  new_pressed_at=None, user_agent=""):
+                  new_pressed_at=None, user_agent="", new_clock_type_id=None):
     """
     Correct one current press. Returns the ClockCorrection.
 
@@ -52,6 +53,8 @@ def correct_event(event_id, corrected_by, action, reason, new_kind="",
     El motivo es obligatorio. Solo se corrigen pulsaciones de la misma
     empresa que quien corrige y que no tengan ya una corrección (para
     corregir otra vez se corrige la pulsación nueva).
+    S141: `new_clock_type_id` es el tipo de fichaje de la pulsación nueva
+    (entrada o cambio de tipo); la salida nunca lleva tipo.
     """
     reason = (reason or "").strip()[:MAX_REASON]
     if not reason:
@@ -79,7 +82,10 @@ def correct_event(event_id, corrected_by, action, reason, new_kind="",
                 raise ClockCorrectionError("Indique la hora correcta.")
             new_pressed_at = new_pressed_at.replace(second=0,
                                                     microsecond=0)
-            if (new_kind == event.kind and new_pressed_at
+            new_clock_type = _clock_type(event, new_kind, new_clock_type_id)
+            if (new_kind == event.kind
+                    and new_clock_type == event.clock_type
+                    and new_pressed_at
                     == event.pressed_at.replace(second=0, microsecond=0)):
                 raise ClockCorrectionError("La corrección no cambia nada.")
             replacement = ClockEvent.objects.create(
@@ -92,9 +98,10 @@ def correct_event(event_id, corrected_by, action, reason, new_kind="",
                 gps_error="Corrección del supervisor",
                 sent_by=ClockEvent.SentBy.CORRECTION,
                 user_agent=(user_agent or "")[:200],
+                clock_type=new_clock_type,
             )
         else:
-            new_kind, new_pressed_at = "", None
+            new_kind, new_pressed_at, new_clock_type = "", None, None
         return ClockCorrection.objects.create(
             event=event,
             action=action,
@@ -103,7 +110,35 @@ def correct_event(event_id, corrected_by, action, reason, new_kind="",
             old_pressed_at=event.pressed_at,
             new_kind=new_kind,
             new_pressed_at=new_pressed_at,
+            old_clock_type=event.clock_type,
+            new_clock_type=new_clock_type,
             reason=reason,
             corrected_by=corrected_by,
             user_agent=(user_agent or "")[:200],
         )
+
+
+def _clock_type(event, new_kind, clock_type_id):
+    """
+    The ClockType of the replacement press, or None.
+    ---
+    El tipo de fichaje de la pulsación nueva, o None. Una salida no lleva
+    tipo; un cambio de tipo lo necesita. Debe ser un tipo de la empresa
+    (activo, o el mismo que ya tenía la pulsación).
+    """
+    if new_kind == ClockEvent.Kind.OUT or clock_type_id in (None, ""):
+        if new_kind == ClockEvent.Kind.CHANGE:
+            raise ClockCorrectionError("Un cambio de tipo tiene que indicar "
+                                       "el tipo de fichaje.")
+        return None
+    try:
+        pk = int(clock_type_id)
+    except (TypeError, ValueError):
+        raise ClockCorrectionError("El tipo de fichaje no es válido.")
+    clock_type = ClockType.objects.filter(
+        pk=pk, company=event.company,
+    ).first()
+    if clock_type is None or not (clock_type.is_active
+                                  or clock_type.pk == event.clock_type_id):
+        raise ClockCorrectionError("El tipo de fichaje no es válido.")
+    return clock_type

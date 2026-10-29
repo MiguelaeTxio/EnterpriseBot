@@ -53,7 +53,11 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
+from hr_calendar.clock_settings import active_types
+from hr_calendar.clock_settings import default_type
+from hr_calendar.clock_settings import uses_types
 from hr_calendar.models import ClockEvent
+from hr_calendar.models import ClockType
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +206,12 @@ def record_press(company_user, payload, user_agent=""):
     auto = bool(payload.get("auto")) and not manual
     if not auto and kind not in ClockEvent.Kind.values:
         raise ClockInError("Falta indicar si es entrada o salida.")
+    # S141: tipos de fichaje (secciones que fichan por tipos, como en
+    # Sesame). Quien ficha con el botón único nunca lleva tipo.
+    by_types = uses_types(company_user)
+    clock_type = _clock_type_of(company_user, payload) if by_types else None
+    if not auto and kind == ClockEvent.Kind.CHANGE and clock_type is None:
+        raise ClockInError("Un cambio de tipo tiene que indicar el tipo.")
     if manual and pressed_at > timezone.now() + MANUAL_FUTURE_MARGIN:
         raise ClockInError(
             "Un fichaje manual no puede ser de una hora que todavía no "
@@ -217,10 +227,19 @@ def record_press(company_user, payload, user_agent=""):
         with transaction.atomic():
             if auto:
                 kind = _decide_kind(company_user, pressed_at)
+                # S141: con la jornada abierta, elegir un tipo es cambiar
+                # de tipo; la salida llega sin tipo.
+                if kind == ClockEvent.Kind.OUT and clock_type is not None:
+                    kind = ClockEvent.Kind.CHANGE
+            if kind == ClockEvent.Kind.OUT:
+                clock_type = None
+            elif by_types and clock_type is None:
+                clock_type = default_type(company_user.company)
             event = _build_event(
                 company_user, payload, client_id, kind, pressed_at,
                 latitude, longitude, accuracy, sent_by, user_agent,
             )
+            event.clock_type = clock_type
             event.save()
     except IntegrityError:
         # Two sends of the same press at once (page and background).
@@ -231,6 +250,34 @@ def record_press(company_user, payload, user_agent=""):
             raise
         return PressResult(existing, False)
     return _after_save(event, company_user)
+
+
+def _clock_type_of(company_user, payload):
+    """
+    The active ClockType of the user's company named in the payload
+    (`clock_type`, its id), or None when it does not come. Raises
+    ClockInError when it is not one of them.
+    ---
+    El tipo de fichaje activo de la empresa del usuario que indica la
+    pulsación (`clock_type`, su id), o None si no viene. Lanza
+    ClockInError si no es uno de ellos.
+    """
+    value = payload.get("clock_type")
+    if value in (None, ""):
+        return None
+    try:
+        pk = int(value)
+    except (TypeError, ValueError):
+        raise ClockInError("El tipo de fichaje no es válido.")
+    clock_type = ClockType.objects.filter(
+        pk=pk, company=company_user.company, is_active=True,
+    ).first()
+    if clock_type is None:
+        raise ClockInError(
+            "Ese tipo de fichaje ya no está disponible. Vuelve a abrir la "
+            "página de fichaje."
+        )
+    return clock_type
 
 
 def _decide_kind(company_user, pressed_at):
@@ -341,6 +388,19 @@ def _event_json(event):
         "received_at": event.received_at.isoformat(),
         "delay_seconds": event.delay_seconds,
         "manual": event.sent_by == ClockEvent.SentBy.MANUAL,
+        # S141: tipo de fichaje del tramo que abre (o None).
+        "clock_type": event.clock_type_id,
+        "clock_type_name": (event.clock_type.name
+                            if event.clock_type_id else ""),
+    }
+
+
+def _type_json(clock_type):
+    return {
+        "id": clock_type.pk,
+        "name": clock_type.name,
+        "icon": clock_type.icon,
+        "is_default": clock_type.is_default,
     }
 
 
@@ -413,8 +473,11 @@ def status(request):
     last = (
         ClockEvent.objects.current().filter(
             company_user=company_user, pressed_at__lte=now,
-        ).order_by("-pressed_at", "-pk").first()
+        ).select_related("clock_type").order_by("-pressed_at", "-pk").first()
     )
+    # S141: quien ficha por tipos ve la lista de tipos activos.
+    by_types = uses_types(company_user)
+    types = active_types(company_user.company) if by_types else []
     # S130: lo que registrará el botón único ahora mismo, y el límite
     # de turno abierto para que el móvil decida igual sin cobertura.
     return JsonResponse({
@@ -423,6 +486,8 @@ def status(request):
         "last": _event_json(last) if last is not None else None,
         "next_kind": next_kind(last, now),
         "max_shift_hours": MAX_SHIFT_HOURS,
+        "uses_types": by_types,
+        "clock_types": [_type_json(t) for t in types],
     })
 
 

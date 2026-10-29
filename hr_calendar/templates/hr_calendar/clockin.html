@@ -9,6 +9,9 @@ saludar también sin cobertura.
 S130: un solo botón "Fichar" (entrada o salida según la última pulsación,
 clock_report.next_kind) y fichaje manual por olvido (sent_by=MANUAL, sin
 GPS, queda como incidencia en la pestaña Fichajes).
+S141: quien ficha por tipos (su sección lo tiene activado en Fichajes,
+como en Sesame) elige el tipo al entrar, puede cambiar de tipo con la
+jornada abierta y ficha la salida con su propio botón.
 {% endcomment %}
 <!doctype html>
 <html lang="es">
@@ -38,6 +41,14 @@ GPS, queda como incidencia en la pestaña Fichajes).
         #btn-fichar { display: block; width: 100%; font-size: 1.5rem; font-weight: 700; padding: 26px 8px; border: 0; border-radius: 12px; color: #fff; background: #198754; }
         #btn-fichar.out { background: #dc3545; }
         #btn-fichar:disabled { opacity: .6; }
+        #types { display: none; margin-bottom: 10px; }
+        #types-title { font-weight: 700; margin-bottom: 6px; }
+        #types-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        #types-grid button { font-size: 1.05rem; font-weight: 700; padding: 18px 6px; border: 0; border-radius: 10px; color: #fff; background: #198754; }
+        #types-grid button.chg { background: #0d6efd; }
+        #types-grid button:disabled { opacity: .6; }
+        #current-type { font-weight: 700; color: #0f5132; text-align: center; margin-bottom: 8px; }
+        .hidden { display: none !important; }
         #manual summary { font-weight: 600; cursor: pointer; }
         #manual label { display: block; font-size: .85rem; font-weight: 600; margin-top: 8px; }
         #manual select, #manual input { width: 100%; font-size: 1rem; padding: 8px; border: 1px solid #ced4da; border-radius: 8px; background: #fff; }
@@ -84,6 +95,11 @@ GPS, queda como incidencia en la pestaña Fichajes).
     </div>
 
     <div id="clock">--:--:--</div>
+    <div id="types">
+        <div id="current-type"></div>
+        <div id="types-title">Fichar entrada como:</div>
+        <div id="types-grid"></div>
+    </div>
     <button type="button" id="btn-fichar">Fichar entrada</button>
     <div id="status"></div>
 
@@ -94,7 +110,12 @@ GPS, queda como incidencia en la pestaña Fichajes).
         <select id="manual-kind">
             <option value="IN">Entrada</option>
             <option value="OUT">Salida</option>
+            <option value="CHG" id="manual-kind-chg" class="hidden">Cambio de tipo</option>
         </select>
+        <div id="manual-type-box" class="hidden">
+            <label for="manual-type">Tipo de fichaje</label>
+            <select id="manual-type"></select>
+        </div>
         <label for="manual-date">Día</label>
         <input type="date" id="manual-date">
         <label for="manual-time">Hora</label>
@@ -138,7 +159,11 @@ GPS, queda como incidencia en la pestaña Fichajes).
     const SEND_URL = "/fichaje/enviar/";
     const STATUS_URL = "/fichaje/estado/";
     const KEEP_DAYS = 31;
-    const LABELS = {IN: "Entrada", OUT: "Salida"};
+    const LABELS = {IN: "Entrada", OUT: "Salida", CHG: "Cambio de tipo"};
+    // S141: con tipo de fichaje, "Entrada · Presencia".
+    function label(r) {
+        return LABELS[r.kind] + (r.clock_type_name ? " · " + r.clock_type_name : "");
+    }
 
     const statusEl = document.getElementById("status");
     function setStatus(text, cls, pendingId) {
@@ -250,13 +275,60 @@ GPS, queda como incidencia en la pestaña Fichajes).
         const info = load("fichaje-estado");
         const hours = info && info.max_shift_hours ? info.max_shift_hours : 24;
         const last = lastKnown(records);
-        if (!last || last.kind !== "IN") return "IN";
+        // S141: un cambio de tipo deja la jornada abierta, como la entrada.
+        if (!last || (last.kind !== "IN" && last.kind !== "CHG")) return "IN";
         return (Date.now() - Date.parse(last.pressed_at)) > hours * 3600000 ? "IN" : "OUT";
     }
     function showNext(kind) {
         const btn = document.getElementById("btn-fichar");
         btn.textContent = "Fichar " + LABELS[kind].toLowerCase();
         btn.classList.toggle("out", kind === "OUT");
+    }
+    // S141: fichaje por tipos. Con la jornada cerrada, un botón por tipo
+    // para entrar; con ella abierta, el tipo en curso, un botón por cada
+    // otro tipo para cambiar y el botón rojo de salida.
+    function byTypes() {
+        const info = load("fichaje-estado");
+        return !!(info && info.uses_types && info.clock_types && info.clock_types.length);
+    }
+    function showTypes(records) {
+        const info = load("fichaje-estado");
+        const box = document.getElementById("types");
+        const btn = document.getElementById("btn-fichar");
+        const on = byTypes();
+        box.style.display = on ? "block" : "none";
+        document.getElementById("manual-kind-chg").classList.toggle("hidden", !on);
+        document.getElementById("manual-type-box").classList.toggle("hidden", !on);
+        if (!on) { btn.classList.remove("hidden"); return; }
+        const kind = decideKind(records);
+        const open = kind === "OUT";
+        const last = lastKnown(records);
+        const current = open && last ? last.clock_type : null;
+        btn.classList.toggle("hidden", !open);
+        document.getElementById("current-type").textContent = open && last && last.clock_type_name
+            ? "En curso: " + last.clock_type_name : "";
+        document.getElementById("types-title").textContent = open ? "Cambiar a:" : "Fichar entrada como:";
+        const grid = document.getElementById("types-grid");
+        grid.innerHTML = "";
+        info.clock_types.forEach(function (t) {
+            if (open && t.id === current) return;
+            const b = document.createElement("button");
+            b.type = "button";
+            b.textContent = t.name;
+            b.className = open ? "chg" : "";
+            b.addEventListener("click", function () { press(t); });
+            grid.appendChild(b);
+        });
+        const select = document.getElementById("manual-type");
+        const chosen = select.value;
+        select.innerHTML = "";
+        info.clock_types.forEach(function (t) {
+            const o = document.createElement("option");
+            o.value = t.id;
+            o.textContent = t.name;
+            if (String(t.id) === chosen || (!chosen && t.is_default)) o.selected = true;
+            select.appendChild(o);
+        });
     }
     function refreshStatus() {
         if (!navigator.onLine) return Promise.resolve();
@@ -283,8 +355,9 @@ GPS, queda como incidencia en la pestaña Fichajes).
             const info = load("fichaje-estado");
             const serverLast = info && info.last ? info.last : null;
             showNext(decideKind(records));
+            showTypes(records);
             document.getElementById("last").textContent = serverLast
-                ? "Último fichaje recibido: " + LABELS[serverLast.kind] + " · " + fmt(serverLast.pressed_at)
+                ? "Último fichaje recibido: " + label(serverLast) + " · " + fmt(serverLast.pressed_at)
                 : "";
             // El aviso "se enviará al volver la cobertura" se cambia en
             // cuanto esa pulsación llega al servidor.
@@ -292,7 +365,7 @@ GPS, queda como incidencia en la pestaña Fichajes).
             if (waiting && waiting.received_at) {
                 // S133: si la salida no cuadra con el parte, se le dice
                 // (el parte queda guardado, sin cerrar).
-                setStatus(LABELS[waiting.kind] + " de las " + new Date(waiting.pressed_at).toLocaleTimeString("es-ES", {hour: "2-digit", minute: "2-digit"}) + " recibida." +
+                setStatus(label(waiting) + " de las " + new Date(waiting.pressed_at).toLocaleTimeString("es-ES", {hour: "2-digit", minute: "2-digit"}) + " recibida." +
                           (waiting.parte_notice ? " " + waiting.parte_notice : ""),
                           waiting.parte_ok === false ? "err" : "ok");
             }
@@ -304,7 +377,7 @@ GPS, queda como incidencia en la pestaña Fichajes).
                 const div = document.createElement("div");
                 div.className = "rec";
                 const title = document.createElement("strong");
-                title.textContent = LABELS[r.kind] + " · " + fmt(r.pressed_at);
+                title.textContent = label(r) + " · " + fmt(r.pressed_at);
                 div.appendChild(title);
                 const where = document.createElement("div");
                 if (r.manual) {
@@ -361,6 +434,9 @@ GPS, queda como incidencia en la pestaña Fichajes).
                             if (response.ok) {
                                 // S130: con `auto` el tipo lo ha decidido el servidor.
                                 if (data.kind) record.kind = data.kind;
+                                // S141: tipo de fichaje que ha quedado guardado.
+                                record.clock_type = data.clock_type || null;
+                                record.clock_type_name = data.clock_type_name || "";
                                 record.auto = false;
                                 record.received_at = data.received_at;
                                 record.delay_seconds = data.delay_seconds;
@@ -427,19 +503,28 @@ GPS, queda como incidencia en la pestaña Fichajes).
         });
     }
 
-    function press() {
+    // S141: `type` es el tipo de fichaje elegido (o nada: botón único o
+    // salida). Con la jornada abierta, elegir un tipo es un cambio de tipo.
+    function setPressing(disabled) {
+        document.getElementById("btn-fichar").disabled = disabled;
+        document.querySelectorAll("#types-grid button").forEach(function (b) { b.disabled = disabled; });
+    }
+    function press(type) {
         const pressedAt = new Date();   // la hora se toma AL PULSAR
-        const btn = document.getElementById("btn-fichar");
-        btn.disabled = true;
+        const chosen = type && type.id ? type : null;
+        setPressing(true);
         let decided = null;
         setStatus("Fichaje a las " + pressedAt.toLocaleTimeString("es-ES") + ". Buscando la ubicación…", "wait");
         allRecords().then(function (records) {
             decided = decideKind(records);
+            if (chosen && decided === "OUT") decided = "CHG";
             const nothingPending = !records.some(function (r) { return !r.received_at && !r.rejected; });
             return getPosition().then(function (pos) {
                 return {
                     id: newId(pressedAt),
                     kind: decided,
+                    clock_type: chosen ? chosen.id : null,
+                    clock_type_name: chosen ? chosen.name : "",
                     // Con cobertura y nada pendiente decide el servidor.
                     auto: navigator.onLine && nothingPending,
                     pressed_at: pressedAt.toISOString(),
@@ -450,13 +535,13 @@ GPS, queda como incidencia en la pestaña Fichajes).
                 };
             });
         }).then(function (record) {
-            setStatus(LABELS[decided] + " de las " + hhmm(pressedAt) +
+            setStatus(label(record) + " de las " + hhmm(pressedAt) +
                       " guardada" + (navigator.onLine ? "." : " en el móvil: se enviará al volver la cobertura."), "ok", record.id);
             return queueAndSend(record, "ONLINE");
         }).catch(function (err) {
             setStatus("No se ha podido guardar: " + err, "err");
         }).finally(function () {
-            btn.disabled = false;
+            setPressing(false);
             render();
         });
     }
@@ -484,11 +569,22 @@ GPS, queda como incidencia en la pestaña Fichajes).
             setStatus("Un fichaje manual no puede ser de una hora que todavía no ha llegado.", "err");
             return;
         }
+        // S141: quien ficha por tipos indica el tipo de la entrada o del
+        // cambio; la salida no lleva tipo.
+        let typeId = null;
+        let typeName = "";
+        if (byTypes() && kind !== "OUT") {
+            const select = document.getElementById("manual-type");
+            typeId = select.value ? Number(select.value) : null;
+            typeName = select.selectedIndex >= 0 ? select.options[select.selectedIndex].textContent : "";
+        }
         const btn = document.getElementById("btn-manual");
         btn.disabled = true;
         const record = {
             id: newId(registeredAt),
             kind: kind,
+            clock_type: typeId,
+            clock_type_name: typeName,
             manual: true,
             pressed_at: pressedAt.toISOString(),
             registered_at: registeredAt.toISOString(),
@@ -509,7 +605,7 @@ GPS, queda como incidencia en la pestaña Fichajes).
     }
     resetManualForm();
 
-    document.getElementById("btn-fichar").addEventListener("click", press);
+    document.getElementById("btn-fichar").addEventListener("click", function () { press(null); });
     document.getElementById("btn-manual").addEventListener("click", saveManual);
     document.getElementById("btn-send").addEventListener("click", function () {
         if (!navigator.onLine) { setStatus("Sin conexión: se enviarán al volver.", "wait"); return; }

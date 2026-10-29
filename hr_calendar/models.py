@@ -904,6 +904,10 @@ class ClockEvent(models.Model):
     class Kind(models.TextChoices):
         IN = "IN", "Entrada"
         OUT = "OUT", "Salida"
+        # S141: cambio de tipo de fichaje con la jornada abierta (secciones
+        # que fichan por tipos): cierra el tramo anterior y abre otro del
+        # tipo nuevo en el mismo momento, sin salida ni entrada.
+        CHANGE = "CHG", "Cambio de tipo"
 
     class SentBy(models.TextChoices):
         # S130: MANUAL pasa a ser el fichaje manual por olvido (anexo
@@ -1002,6 +1006,17 @@ class ClockEvent(models.Model):
     user_agent = models.CharField(
         max_length=200, blank=True,
         verbose_name="Navegador",
+    )
+    clock_type = models.ForeignKey(
+        "hr_calendar.ClockType",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="clock_events",
+        verbose_name="Tipo de fichaje",
+        help_text="S141: tipo del tramo que abre una entrada o un cambio "
+                  "de tipo (secciones que fichan por tipos). Vacío en "
+                  "las salidas y en quien ficha con el botón único.",
     )
 
     objects = ClockEventQuerySet.as_manager()
@@ -1229,6 +1244,22 @@ class ClockCorrection(models.Model):
         blank=True,
         verbose_name="Hora nueva",
     )
+    old_clock_type = models.ForeignKey(
+        "hr_calendar.ClockType",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="+",
+        verbose_name="Tipo de fichaje anterior",
+    )
+    new_clock_type = models.ForeignKey(
+        "hr_calendar.ClockType",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="+",
+        verbose_name="Tipo de fichaje nuevo",
+    )
     reason = models.TextField(verbose_name="Motivo")
     corrected_by = models.ForeignKey(
         CompanyUser,
@@ -1348,6 +1379,12 @@ class SectionClockSetting(models.Model):
         default=True,
         verbose_name="Ficha con la plataforma",
     )
+    # S141: Grúas y Asistencia fichan por tipos (normal, desplazamiento,
+    # presencia, trabajo efectivo, varios), como en Sesame.
+    uses_types = models.BooleanField(
+        default=False,
+        verbose_name="Ficha por tipos",
+    )
     updated_by = models.ForeignKey(
         CompanyUser,
         null=True,
@@ -1415,3 +1452,74 @@ class WorkerClockSetting(models.Model):
 
     def __str__(self) -> str:
         return f"{self.person} — {'ficha' if self.clocks else 'no ficha'}"
+
+
+class ClockType(models.Model):
+    """
+    A clock-in type (H24, S141), as in Sesame: the worker of a section
+    that clocks by types picks one when clocking in or when changing
+    what they are doing. Managed from the Fichajes tab (create, rename,
+    reorder, deactivate). `counts_as_work`: whether its time counts as
+    working hours (Miguel Ángel: presencia and desplazamiento are shown
+    apart and do not count).
+
+    ---
+
+    Tipo de fichaje (H24, S141), como en Sesame: quien ficha por tipos
+    elige uno al entrar o al cambiar de lo que está haciendo. Se
+    gestiona desde la pestaña Fichajes (crear, renombrar, ordenar,
+    desactivar). `counts_as_work`: si su tiempo cuenta como horas de
+    jornada (Miguel Ángel: presencia y desplazamiento se ven aparte y no
+    cuentan). `is_default`: el que se usa cuando una entrada llega sin
+    tipo ("Fichaje normal").
+    """
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="clock_types",
+        verbose_name="Empresa",
+    )
+    name = models.CharField(max_length=60, verbose_name="Nombre")
+    icon = models.CharField(
+        max_length=40,
+        default="bi-box-arrow-in-right",
+        verbose_name="Icono",
+        help_text="Nombre de un icono de Bootstrap Icons (bi-...).",
+    )
+    counts_as_work = models.BooleanField(
+        default=True,
+        verbose_name="Cuenta como jornada",
+    )
+    is_default = models.BooleanField(
+        default=False,
+        verbose_name="Tipo por defecto",
+    )
+    is_active = models.BooleanField(default=True, verbose_name="Activo")
+    order = models.PositiveSmallIntegerField(default=0, verbose_name="Orden")
+    updated_by = models.ForeignKey(
+        CompanyUser,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name="Cambiado por",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Último cambio",
+    )
+
+    class Meta:
+        verbose_name = "Tipo de fichaje"
+        verbose_name_plural = "Tipos de fichaje"
+        ordering = ["order", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "name"],
+                name="clocktype_unique_company_name",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name

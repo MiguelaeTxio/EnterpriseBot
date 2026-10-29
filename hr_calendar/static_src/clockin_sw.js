@@ -21,7 +21,7 @@
  * Mismo almacén y mismas reglas de envío que la página (clockin.html).
  */
 // S130: v2 = página con botón único y fichaje manual.
-const CACHE_NAME = "fichaje-v2";
+const CACHE_NAME = "fichaje-v3";
 const PAGE_URL = "/fichaje/";
 const CACHED = [PAGE_URL, PAGE_URL + "manifest.json"];
 const DB_NAME = "fichaje";
@@ -124,6 +124,9 @@ function sendPending(sentBy) {
                             if (response.ok) {
                                 // S130: con `auto` el tipo lo ha decidido el servidor.
                                 if (data.kind) record.kind = data.kind;
+                                // S141: tipo de fichaje que ha quedado guardado.
+                                record.clock_type = data.clock_type || null;
+                                record.clock_type_name = data.clock_type_name || "";
                                 record.auto = false;
                                 record.received_at = data.received_at;
                                 record.delay_seconds = data.delay_seconds;

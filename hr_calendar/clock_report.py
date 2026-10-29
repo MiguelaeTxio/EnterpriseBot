@@ -39,6 +39,12 @@ S133: solo se ficha el inicio y el fin de la jornada; las horas de la
 jornada descuentan la pausa de comida del parte de ese día (la del
 horario o la metida a mano), como en el parte.
 
+S141: en las secciones que fichan por tipos, un CAMBIO DE TIPO con la
+jornada abierta cierra un tramo y abre otro sin salir de la jornada
+(Shift.changes). Las horas de la jornada solo suman los tramos de los
+tipos que cuentan como jornada (presencia y desplazamiento no);
+Shift.type_seconds da el desglose por tipo.
+
 Puntualidad: cada entrada se compara con la hora de entrada más
 cercana del horario actual del trabajador (la de mañana o, en jornada
 partida, la de tarde); un minuto después ya es llegada tarde. Cada
@@ -79,7 +85,9 @@ def next_kind(last_event, at):
     build_shifts, para que un turno de noche que cruza la medianoche
     cierre bien); ENTRADA en cualquier otro caso.
     """
-    if last_event is None or last_event.kind != ClockEvent.Kind.IN:
+    # S141: un cambio de tipo deja la jornada abierta, como la entrada.
+    if last_event is None or last_event.kind not in (
+            ClockEvent.Kind.IN, ClockEvent.Kind.CHANGE):
         return ClockEvent.Kind.IN
     limit = datetime.timedelta(hours=MAX_SHIFT_HOURS)
     if at - last_event.pressed_at > limit:
@@ -122,6 +130,8 @@ class Shift:
     # Pausa de comida del parte de ese día dentro de la jornada (ya no
     # se ficha): no es tiempo trabajado.
     lunch_seconds: int = 0
+    # S141: cambios de tipo dentro de la jornada, en orden.
+    changes: list = field(default_factory=list)
 
     @property
     def _raw_early(self):
@@ -194,12 +204,62 @@ class Shift:
         return timezone.localtime(event.pressed_at).date()
 
     @property
+    def segments(self):
+        """
+        [(ClockType or None, start, end)] of a closed shift (S141).
+        ---
+        Los tramos de una jornada cerrada: el de la entrada y uno por
+        cada cambio de tipo, hasta la salida. [] si falta la entrada o
+        la salida.
+        """
+        if self.clock_in is None or self.clock_out is None:
+            return []
+        marks = [self.clock_in] + list(self.changes)
+        ends = [m.pressed_at for m in marks[1:]] + [
+            self.clock_out.pressed_at]
+        return [
+            (mark.clock_type, mark.pressed_at, end)
+            for mark, end in zip(marks, ends)
+        ]
+
+    @property
+    def type_seconds(self):
+        """
+        {type name: seconds} of a closed shift with types (S141).
+        ---
+        {nombre del tipo: segundos} de una jornada cerrada con tipos;
+        {} si nadie eligió tipo.
+        """
+        result = {}
+        for clock_type, start, end in self.segments:
+            if clock_type is None:
+                continue
+            seconds = int((end - start).total_seconds())
+            result[clock_type.name] = result.get(clock_type.name, 0) + max(
+                seconds, 0)
+        return result
+
+    @property
+    def uncounted_seconds(self):
+        """
+        Seconds of the types that do not count as working time (S141).
+        ---
+        Segundos de los tipos que no cuentan como jornada (presencia,
+        desplazamiento).
+        """
+        return sum(
+            max(int((end - start).total_seconds()), 0)
+            for clock_type, start, end in self.segments
+            if clock_type is not None and not clock_type.counts_as_work
+        )
+
+    @property
     def seconds(self):
         if self.clock_in is None or self.clock_out is None:
             return 0
         gross = int((self.clock_out.pressed_at
                      - self.clock_in.pressed_at).total_seconds())
-        return max(gross - self.lunch_seconds, 0)
+        return max(gross - self.lunch_seconds - self.uncounted_seconds, 0)
 
     @property
     def issue(self):
@@ -433,7 +493,13 @@ def build_shifts(events):
         ):
             shifts.append(open_shift)
             open_shift = None
-        if event.kind == ClockEvent.Kind.IN:
+        # S141: un cambio de tipo con la jornada abierta es un tramo más
+        # de esa jornada; sin jornada abierta, la abre (como una
+        # entrada).
+        if event.kind == ClockEvent.Kind.CHANGE and open_shift is not None:
+            open_shift.changes.append(event)
+            continue
+        if event.kind in (ClockEvent.Kind.IN, ClockEvent.Kind.CHANGE):
             if open_shift is not None:
                 shifts.append(open_shift)
             open_shift = Shift(clock_in=event)
@@ -624,7 +690,9 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
         company_user_id__in=list(company_user_ids),
         pressed_at__gte=start - margin,
         pressed_at__lt=end + margin,
-    ).order_by("company_user_id", "pressed_at", "pk")
+    ).select_related("clock_type").order_by(
+        "company_user_id", "pressed_at", "pk",
+    )
     grouped = {}
     for event in events:
         grouped.setdefault(event.company_user_id, []).append(event)

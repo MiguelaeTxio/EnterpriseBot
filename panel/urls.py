@@ -102,6 +102,7 @@ from panel.views_clock_events import (
     ClockEventCorrectView,
     ClockRemindersSwitchView,
     ClockSectionSettingView,
+    ClockTypeSaveView,
     ClockWorkerSettingsView,
     ClockEventsDetailView,
     ClockEventsExportView,
@@ -1742,6 +1743,12 @@ urlpatterns = [
         "documentacion/fichajes/ajustes/seccion/",
         ClockSectionSettingView.as_view(),
         name="clock_settings_section",
+    ),
+    # H24 (S141): tipos de fichaje (crear, renombrar, desactivar...).
+    path(
+        "documentacion/fichajes/ajustes/tipos/",
+        ClockTypeSaveView.as_view(),
+        name="clock_settings_type",
     ),
     path(
         "documentacion/fichajes/exportar/",

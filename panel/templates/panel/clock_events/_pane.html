@@ -194,6 +194,9 @@ recordatorios, secciones que fichan y permiso de envío).
 .clk-scroll-both { overflow: auto; }
 #clk-bottom-panel:fullscreen { background-color: var(--bs-body-bg); padding: 1rem; }
 #clk-bottom-panel:fullscreen #clk-results-scroll { height: calc(100vh - 5rem); }
+.clk-types-menu { min-width: 34rem; max-height: 70vh; overflow-y: auto; }
+.clk-types-menu .clk-type-name { width: 11rem !important; }
+.clk-types-menu .clk-type-order { width: 4.5rem !important; }
 </style>
 
 <div class="modal fade" id="clkDetailModal" tabindex="-1" aria-labelledby="clkDetailModalLabel" aria-hidden="true">
@@ -417,6 +420,31 @@ document.getElementById("clkDetailModal").addEventListener("show.bs.modal", func
             : "¿Quitar " + sw.dataset.name + " del fichaje con la plataforma? Nadie de esa sección recibirá recordatorios.";
         if (!confirm(text)) { sw.checked = !sw.checked; return; }
         postSetting(sw.dataset.url, {section_id: sw.dataset.section, clocks: sw.checked ? "1" : "0"}, false);
+    });
+    // S141: secciones que fichan por tipos y lista de tipos de fichaje.
+    document.getElementById("clk-top-panel").addEventListener("change", function (evt) {
+        const sw = evt.target.closest(".clk-section-types-switch");
+        if (!sw) return;
+        const text = sw.checked
+            ? "¿" + sw.dataset.name + " ficha por tipos (fichaje normal, desplazamiento, presencia...)?"
+            : "¿" + sw.dataset.name + " vuelve al botón único de fichar?";
+        if (!confirm(text)) { sw.checked = !sw.checked; return; }
+        postSetting(sw.dataset.url, {section_id: sw.dataset.section, uses_types: sw.checked ? "1" : "0"}, false);
+    });
+    document.getElementById("clk-top-panel").addEventListener("click", function (evt) {
+        const btn = evt.target.closest(".clk-type-save");
+        if (!btn) return;
+        const row = btn.closest(".clk-type-row");
+        const name = row.querySelector(".clk-type-name").value.trim();
+        if (!name) { showToast("Escribe el nombre del tipo.", true); return; }
+        postSetting(btn.dataset.url, {
+            type_id: row.dataset.type,
+            name: name,
+            icon: row.querySelector(".clk-type-icon").value,
+            order: row.querySelector(".clk-type-order").value,
+            counts_as_work: row.querySelector(".clk-type-counts").checked ? "1" : "0",
+            is_active: row.querySelector(".clk-type-active").checked ? "1" : "0",
+        }, false);
     });
 
     // S136: pantalla completa con el formato del laboratorio de análisis (4.26).

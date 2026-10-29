@@ -10,6 +10,9 @@ incidencias" (S129). S141: los fichajes no se modifican; el lápiz de
 cada pulsación abre la corrección (cambiar hora o tipo, o anular, con
 motivo obligatorio), que crea un fichaje nuevo y deja el original en
 el "Historial de correcciones" con quién, cuándo y por qué.
+S141: quien ficha por tipos lleva el tipo bajo la entrada y, en una
+fila debajo de la jornada, sus cambios de tipo (con su lápiz) y las
+horas de cada tipo (presencia y desplazamiento no cuentan como jornada).
 {% endcomment %}
 <div class="clk-detail">
 {% if message %}<div class="alert alert-success py-1 px-2 small">{{ message }}</div>{% endif %}
@@ -53,10 +56,8 @@ el "Historial de correcciones" con quién, cuándo y por qué.
                 {% if press.is_manual %}<div class="text-danger fw-semibold">fichaje manual, apuntado {{ press.received|date:"d/m H:i" }}</div>{% endif %}
                 {% if press.is_late %}<div class="text-muted">se recibió {{ press.received|date:"d/m H:i" }} ({{ press.delay_label }} h después)</div>{% endif %}
                 {% if press.correction %}<div class="text-primary">corregido por {{ press.corrected_by }} el {{ press.correction.corrected_at|date:"d/m H:i" }}: antes {{ press.correction.get_old_kind_display|lower }} {{ press.old_time|date:"d/m H:i" }} · {{ press.correction.reason }}</div>{% endif %}
-                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" title="Corregir este fichaje"
-                        data-event="{{ press.event.pk }}" data-kind="{{ press.event.kind }}" data-time="{{ press.input_value }}"
-                        data-label="{{ press.event.get_kind_display }} del {{ press.time|date:'d/m/Y H:i' }}"
-                        onclick="var f = this.closest('.clk-detail').querySelector('.clk-correct-form'); f.classList.remove('d-none'); f.elements.event_id.value = this.dataset.event; f.elements.label.value = this.dataset.label; f.elements.new_kind.value = this.dataset.kind; f.elements.new_pressed_at.value = this.dataset.time; f.querySelector('.clk-correct-label').textContent = this.dataset.label; f.scrollIntoView({block: 'nearest'});"><i class="bi bi-pencil"></i></button>
+                {% if press.event.clock_type_id %}<div class="fw-semibold">{{ press.event.clock_type.name }}</div>{% endif %}
+                {% include "panel/clock_events/_fix_button.html" %}
                 {% else %}
                 <span class="text-warning-emphasis">—</span>
                 {% endif %}
@@ -65,6 +66,15 @@ el "Historial de correcciones" con quién, cuándo y por qué.
             <td class="text-end">{{ shift.duration|default:"—" }}</td>
             <td>{% for incident in shift.incidents %}<div class="text-danger fw-semibold">{{ incident }}</div>{% endfor %}</td>
         </tr>
+        {% if shift.changes or shift.type_hours %}
+        <tr{% if not shift.incidents %} data-ok{% endif %} class="clk-types-row">
+            <td></td>
+            <td colspan="4">
+                {% for press in shift.changes %}<span class="me-3 text-nowrap">{{ press.time|date:"H:i" }} cambio a <strong>{{ press.event.clock_type.name|default:"—" }}</strong>{% if press.correction %} <span class="text-primary">(corregido por {{ press.corrected_by }})</span>{% endif %} {% include "panel/clock_events/_fix_button.html" %}</span>{% endfor %}
+                {% if shift.type_hours %}<div class="text-muted">{% for item in shift.type_hours %}{{ item.name }} {{ item.label }} h{% if not item.counts %} (no cuenta){% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}</div>{% endif %}
+            </td>
+        </tr>
+        {% endif %}
         {% endfor %}
     </tbody>
 </table>
@@ -95,7 +105,14 @@ el "Historial de correcciones" con quién, cuándo y por qué.
                 {% for value, label in kind_choices %}<option value="{{ value }}"{% if form.new_kind == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
             </select>
         </div>
-        <div class="col-sm-8">
+        <div class="col-sm-4">
+            <label class="form-label mb-0" for="clkFixType{{ person.pk }}">Tipo de fichaje</label>
+            <select class="form-select form-select-sm" name="new_clock_type" id="clkFixType{{ person.pk }}">
+                <option value="">— (botón único o salida)</option>
+                {% for clock_type in clock_types %}<option value="{{ clock_type.pk }}"{% if form.new_clock_type == clock_type.pk|stringformat:"d" %} selected{% endif %}>{{ clock_type.name }}{% if not clock_type.is_active %} (desactivado){% endif %}</option>{% endfor %}
+            </select>
+        </div>
+        <div class="col-sm-4">
             <label class="form-label mb-0" for="clkFixTime{{ person.pk }}">Fecha y hora correctas</label>
             <input class="form-control form-control-sm" type="datetime-local" name="new_pressed_at" id="clkFixTime{{ person.pk }}" value="{{ form.new_pressed_at }}">
         </div>
@@ -117,8 +134,8 @@ el "Historial de correcciones" con quién, cuándo y por qué.
             <td>{{ item.corrected_at|date:"d/m/Y H:i" }}</td>
             <td>{{ item.corrected_by }}</td>
             <td>{{ item.correction.get_action_display }}</td>
-            <td>{{ item.correction.get_old_kind_display }} {{ item.old_time|date:"d/m H:i" }}</td>
-            <td>{% if item.is_cancel %}<span class="text-danger">anulado</span>{% else %}{{ item.correction.get_new_kind_display }} {{ item.new_time|date:"d/m H:i" }}{% endif %}</td>
+            <td>{{ item.correction.get_old_kind_display }}{% if item.correction.old_clock_type %} ({{ item.correction.old_clock_type.name }}){% endif %} {{ item.old_time|date:"d/m H:i" }}</td>
+            <td>{% if item.is_cancel %}<span class="text-danger">anulado</span>{% else %}{{ item.correction.get_new_kind_display }}{% if item.correction.new_clock_type %} ({{ item.correction.new_clock_type.name }}){% endif %} {{ item.new_time|date:"d/m H:i" }}{% endif %}</td>
             <td>{{ item.correction.reason }}</td>
         </tr>
         {% endfor %}

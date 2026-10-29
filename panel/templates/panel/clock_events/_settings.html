@@ -5,6 +5,11 @@ Fichajes: el permiso general para enviar los recordatorios de fichaje
 olvidado y qué secciones fichan con la plataforma (Plataformas ficha
 con Prologic: se quita o se pone según digan los jefes). Se vuelve a
 pintar fuera de banda (oob) tras cada acción de ajustes.
+S141: qué secciones fichan por tipos (Grúas, Asistencia: entrada con
+tipo, cambio de tipo y salida) y la lista de tipos de fichaje, que se
+renombra, se desactiva, se reordena y se amplía como en Sesame. Los
+tipos que no cuentan como jornada (presencia, desplazamiento) se ven
+aparte en el detalle y no suman horas.
 {% endcomment %}
 <div id="clk-settings" class="col-12"{% if oob %} hx-swap-oob="true"{% endif %}>
     <div class="small text-muted fw-bold mt-1">Envío de recordatorios</div>
@@ -42,6 +47,38 @@ pintar fuera de banda (oob) tras cada acción de ajustes.
                 {% empty %}
                 <div class="text-muted">No hay secciones.</div>
                 {% endfor %}
+            </div>
+        </div>
+        <div class="dropdown">
+            <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
+                    data-bs-auto-close="outside" title="Qué secciones fichan por tipos (fichaje normal, desplazamiento, presencia...). Las demás siguen con el botón único.">
+                <i class="bi bi-ui-checks-grid me-1"></i>Fichan por tipos
+            </button>
+            <div class="dropdown-menu p-2 small">
+                {% for item in section_settings %}
+                <div class="form-check form-switch text-nowrap">
+                    <input class="form-check-input clk-section-types-switch" type="checkbox" id="clkSectionTypes{{ item.section.pk }}"
+                           data-url="{% url 'panel:clock_settings_section' %}" data-section="{{ item.section.pk }}"
+                           data-name="{{ item.section.name }}"{% if item.uses_types %} checked{% endif %}>
+                    <label class="form-check-label" for="clkSectionTypes{{ item.section.pk }}">{{ item.section.name }}</label>
+                </div>
+                {% empty %}
+                <div class="text-muted">No hay secciones.</div>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="dropdown">
+            <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
+                    data-bs-auto-close="outside" title="Tipos de fichaje: renombrar, desactivar, ordenar, añadir. Los que no cuentan como jornada se ven aparte y no suman horas.">
+                <i class="bi bi-tags me-1"></i>Tipos de fichaje
+            </button>
+            <div class="dropdown-menu p-2 small clk-types-menu">
+                <div class="text-muted mb-1">Los tipos no se borran: se desactivan (los fichajes hechos los conservan).</div>
+                {% for clock_type in clock_types %}
+                {% include "panel/clock_events/_type_row.html" %}
+                {% endfor %}
+                <div class="fw-bold mt-2">Nuevo tipo</div>
+                {% include "panel/clock_events/_type_row.html" with clock_type=None %}
             </div>
         </div>
     </div>

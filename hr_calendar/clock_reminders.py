@@ -141,11 +141,13 @@ def due_reminder(schedule_starts, schedule_ends, events, now):
     start_at = timezone.make_aware(datetime.datetime.combine(day, start), tz)
     end_at = timezone.make_aware(datetime.datetime.combine(day, end), tz)
     kinds = [event.kind for event in events]
-    if ClockEvent.Kind.IN not in kinds:
+    if not set(kinds) & {ClockEvent.Kind.IN, ClockEvent.Kind.CHANGE}:
         if start_at + REMINDER_DELAY <= now < end_at:
             return ClockReminder.Kind.IN, start
         return None
-    if (end > start and kinds[-1] == ClockEvent.Kind.IN
+    # S141: un cambio de tipo deja la jornada abierta, como la entrada.
+    if (end > start
+            and kinds[-1] in (ClockEvent.Kind.IN, ClockEvent.Kind.CHANGE)
             and now >= end_at + REMINDER_DELAY):
         return ClockReminder.Kind.OUT, end
     return None

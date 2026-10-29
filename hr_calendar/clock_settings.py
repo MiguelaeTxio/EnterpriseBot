@@ -26,9 +26,11 @@ fichar y tiene los recordatorios activados.
 """
 from dataclasses import dataclass
 
+from django.core.exceptions import ObjectDoesNotExist
 from django.utils import timezone
 
 from hr_calendar.models import ClockSettings
+from hr_calendar.models import ClockType
 from hr_calendar.models import PersonSectionAssignment
 from hr_calendar.models import SectionClockSetting
 from hr_calendar.models import WorkerClockSetting
@@ -46,6 +48,8 @@ class WorkerClockState:
     section_clocks: bool = True
     worker_clocks: bool = True
     reminders: bool = False
+    # S141: su sección ficha por tipos (Grúas, Asistencia).
+    uses_types: bool = False
 
     @property
     def must_clock(self):
@@ -112,6 +116,72 @@ def section_clocks_map(section_ids):
     return result
 
 
+def section_types_map(section_ids):
+    """
+    {section id: clocks by types} (no row = False).
+    ---
+    {id de sección: ficha por tipos} (sin fila = no).
+    """
+    result = {pk: False for pk in section_ids}
+    for setting in SectionClockSetting.objects.filter(
+        section_id__in=list(section_ids),
+    ):
+        result[setting.section_id] = setting.uses_types
+    return result
+
+
+def uses_types(company_user, day=None):
+    """
+    True if the user's section (today) clocks by types.
+    ---
+    True si la sección vigente del usuario ficha por tipos. Sin ficha de
+    Personal o sin sección, no.
+    """
+    try:
+        person = company_user.person_identity
+    except ObjectDoesNotExist:
+        return False
+    section = current_sections([person.pk], day).get(person.pk)
+    if section is None:
+        return False
+    return section_types_map([section.pk])[section.pk]
+
+
+def active_types(company):
+    """
+    The company's active clock types, in order.
+    ---
+    Los tipos de fichaje activos de la empresa, en orden.
+    """
+    return list(ClockType.objects.filter(company=company, is_active=True))
+
+
+def default_type(company):
+    """
+    The default clock type ("Fichaje normal"), or None.
+    ---
+    El tipo por defecto ("Fichaje normal"), o None.
+    """
+    return ClockType.objects.filter(
+        company=company, is_default=True, is_active=True,
+    ).first()
+
+
+def set_section_types(section, value, by):
+    """
+    Put a section in or out of clocking by types.
+    ---
+    Pone o quita una sección del fichaje por tipos.
+    """
+    setting, _created = SectionClockSetting.objects.get_or_create(
+        section=section,
+    )
+    setting.uses_types = bool(value)
+    setting.updated_by = by
+    setting.save()
+    return setting
+
+
 def worker_states(people, day=None):
     """
     {person id: WorkerClockState} for a list of PersonIdentity.
@@ -121,9 +191,9 @@ def worker_states(people, day=None):
     """
     ids = [p.pk for p in people]
     sections = current_sections(ids, day)
-    clocks = section_clocks_map(
-        {s.pk for s in sections.values() if s is not None},
-    )
+    section_ids = {s.pk for s in sections.values() if s is not None}
+    clocks = section_clocks_map(section_ids)
+    by_types = section_types_map(section_ids)
     settings = {
         s.person_id: s
         for s in WorkerClockSetting.objects.filter(person_id__in=ids)
@@ -138,6 +208,8 @@ def worker_states(people, day=None):
                             if section is not None else True),
             worker_clocks=setting.clocks if setting else True,
             reminders=setting.reminders if setting else False,
+            uses_types=(by_types.get(section.pk, False)
+                        if section is not None else False),
         )
     return states
 

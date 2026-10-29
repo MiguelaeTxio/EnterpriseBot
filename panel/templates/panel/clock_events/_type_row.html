@@ -1,0 +1,27 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/clock_events/_type_row.html #}
+{% comment %}
+H24 (S141). Una fila de la lista de tipos de fichaje (o la del tipo
+nuevo, con clock_type vacío): nombre, icono, orden, si cuenta como
+jornada y si está activo, con su botón de guardar.
+{% endcomment %}
+<div class="clk-type-row d-flex flex-wrap align-items-center gap-1 border-top pt-1 mt-1" data-type="{{ clock_type.pk|default:'' }}">
+    <i class="bi {{ clock_type.icon|default:'bi-box-arrow-in-right' }}"></i>
+    <input type="text" class="form-control form-control-sm w-auto clk-type-name" maxlength="60" placeholder="Nombre"
+           value="{{ clock_type.name|default:'' }}" aria-label="Nombre del tipo">
+    <select class="form-select form-select-sm w-auto clk-type-icon" aria-label="Icono">
+        {% for value, label in type_icons %}<option value="{{ value }}"{% if clock_type.icon == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <input type="number" class="form-control form-control-sm w-auto clk-type-order" min="0" max="999" title="Orden en la lista"
+           value="{{ clock_type.order|default:'0' }}" aria-label="Orden">
+    <div class="form-check mb-0 text-nowrap">
+        <input class="form-check-input clk-type-counts" type="checkbox" id="clkTypeCounts{{ clock_type.pk|default:'new' }}"{% if not clock_type or clock_type.counts_as_work %} checked{% endif %}>
+        <label class="form-check-label" for="clkTypeCounts{{ clock_type.pk|default:'new' }}">Cuenta como jornada</label>
+    </div>
+    <div class="form-check mb-0 text-nowrap">
+        <input class="form-check-input clk-type-active" type="checkbox" id="clkTypeActive{{ clock_type.pk|default:'new' }}"{% if not clock_type or clock_type.is_active %} checked{% endif %}{% if clock_type.is_default %} disabled title="El tipo por defecto no se puede desactivar."{% endif %}>
+        <label class="form-check-label" for="clkTypeActive{{ clock_type.pk|default:'new' }}">Activo{% if clock_type.is_default %} (por defecto){% endif %}</label>
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-primary clk-type-save" data-url="{% url 'panel:clock_settings_type' %}">
+        <i class="bi bi-{% if clock_type %}check2{% else %}plus-lg{% endif %}"></i>{% if not clock_type %} Añadir{% endif %}
+    </button>
+</div>

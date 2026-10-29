@@ -41,6 +41,7 @@ from document_explorer.models import PersonIdentity
 from hr_calendar.clock_report import format_duration, reports_by_user
 from hr_calendar.models import ClockCorrection
 from hr_calendar.models import ClockEvent
+from hr_calendar.models import ClockType
 from panel.mixins import SupervisorAccessMixin
 from panel.navigation_persistence import (
     apply_list_navigation,
@@ -268,6 +269,24 @@ def _with_section_filter(request, rows):
     return rows
 
 
+# S141: iconos que se pueden elegir para un tipo de fichaje (Bootstrap
+# Icons, los del panel).
+TYPE_ICONS = [
+    ("bi-box-arrow-in-right", "Entrada"),
+    ("bi-truck", "Camión"),
+    ("bi-people", "Personas"),
+    ("bi-star", "Estrella"),
+    ("bi-arrow-bar-right", "Flecha"),
+    ("bi-tools", "Herramientas"),
+    ("bi-hourglass-split", "Espera"),
+    ("bi-clock", "Reloj"),
+    ("bi-cup-hot", "Pausa"),
+    ("bi-briefcase", "Maletín"),
+    ("bi-geo-alt", "Ubicación"),
+    ("bi-telephone", "Teléfono"),
+]
+
+
 def _sections(company):
     from ivr_config.models import Section
 
@@ -283,14 +302,20 @@ def _settings_context(company):
     """
     from hr_calendar.clock_settings import reminders_enabled
     from hr_calendar.clock_settings import section_clocks_map
+    from hr_calendar.clock_settings import section_types_map
 
     sections = _sections(company)
     clocks = section_clocks_map([s.pk for s in sections])
+    by_types = section_types_map([s.pk for s in sections])
     return {
         "reminders_on": reminders_enabled(company),
         "section_settings": [
-            {"section": s, "clocks": clocks[s.pk]} for s in sections
+            {"section": s, "clocks": clocks[s.pk],
+             "uses_types": by_types[s.pk]} for s in sections
         ],
+        # S141: tipos de fichaje (como en Sesame), gestionables.
+        "clock_types": list(ClockType.objects.filter(company=company)),
+        "type_icons": TYPE_ICONS,
     }
 
 
@@ -519,6 +544,7 @@ class ClockSectionSettingView(SupervisorAccessMixin, View):
 
     def post(self, request):
         from hr_calendar.clock_settings import set_section_clocks
+        from hr_calendar.clock_settings import set_section_types
         from ivr_config.models import Section
 
         section = Section.objects.filter(
@@ -528,11 +554,85 @@ class ClockSectionSettingView(SupervisorAccessMixin, View):
         if section is None:
             return _settings_response(request, "No existe esa sección.",
                                       error=True)
+        # S141: el mismo ajuste sirve para "ficha por tipos".
+        if "uses_types" in request.POST:
+            value = request.POST.get("uses_types") == "1"
+            set_section_types(section, value, request.user.company_user)
+            return _settings_response(
+                request, "%s %s." % (
+                    section.name,
+                    "ficha por tipos" if value
+                    else "ficha con el botón único"),
+            )
         clocks = request.POST.get("clocks") == "1"
         set_section_clocks(section, clocks, request.user.company_user)
         return _settings_response(
             request, "%s %s con la plataforma." % (
                 section.name, "ficha" if clocks else "ya no ficha"),
+        )
+
+
+class ClockTypeSaveView(SupervisorAccessMixin, View):
+    """
+    POST: create or change one clock type (name, icon, counts, active,
+    order).
+    ---
+    POST: crea o cambia un tipo de fichaje (H24, S141; Miguel Ángel:
+    "poder gestionarla, para renombrarla, desactivarla, etcétera. Como
+    en Sesame"). Los tipos no se borran: se desactivan, porque los
+    fichajes ya hechos los conservan.
+    """
+
+    def post(self, request):
+        company = request.user.company_user.company
+        type_id = request.POST.get("type_id") or ""
+        clock_type = None
+        if type_id:
+            clock_type = ClockType.objects.filter(
+                pk=type_id if type_id.isdigit() else 0, company=company,
+            ).first()
+            if clock_type is None:
+                return _settings_response(
+                    request, "No existe ese tipo de fichaje.", error=True)
+        name = " ".join((request.POST.get("name") or "").split())[:60]
+        if not name:
+            return _settings_response(
+                request, "El tipo de fichaje necesita un nombre.",
+                error=True)
+        same_name = ClockType.objects.filter(
+            company=company, name__iexact=name,
+        )
+        if clock_type is not None:
+            same_name = same_name.exclude(pk=clock_type.pk)
+        if same_name.exists():
+            return _settings_response(
+                request, "Ya hay un tipo de fichaje llamado %s." % name,
+                error=True)
+        active = request.POST.get("is_active") == "1"
+        if clock_type is not None and clock_type.is_default and not active:
+            return _settings_response(
+                request, "%s es el tipo por defecto y no se puede "
+                         "desactivar." % clock_type.name, error=True)
+        icon = request.POST.get("icon") or ""
+        if icon not in dict(TYPE_ICONS):
+            icon = TYPE_ICONS[0][0]
+        try:
+            order = max(0, min(int(request.POST.get("order") or 0), 999))
+        except ValueError:
+            order = 0
+        if clock_type is None:
+            clock_type = ClockType(company=company)
+        clock_type.name = name
+        clock_type.icon = icon
+        clock_type.counts_as_work = request.POST.get("counts_as_work") == "1"
+        clock_type.is_active = active
+        clock_type.order = order
+        clock_type.updated_by = request.user.company_user
+        created = clock_type.pk is None
+        clock_type.save()
+        return _settings_response(
+            request, "Tipo de fichaje %s %s." % (
+                clock_type.name, "creado" if created else "guardado"),
         )
 
 
@@ -610,7 +710,9 @@ def _corrections_in_range(company_user_id, date_from, date_to):
     ).filter(
         Q(old_pressed_at__gte=start, old_pressed_at__lt=end)
         | Q(new_pressed_at__gte=start, new_pressed_at__lt=end),
-    ).select_related("corrected_by__user").order_by("-corrected_at"))
+    ).select_related(
+        "corrected_by__user", "old_clock_type", "new_clock_type",
+    ).order_by("-corrected_at"))
 
 
 def _render_detail(request, person, date_from, date_to, error="",
@@ -634,7 +736,8 @@ def _render_detail(request, person, date_from, date_to, error="",
     from hr_calendar.clock_geocode import fill_missing
 
     fill_missing([
-        e for s in report.shifts for e in (s.clock_in, s.clock_out)
+        e for s in report.shifts
+        for e in [s.clock_in, s.clock_out] + list(s.changes)
     ])
     by_replacement = {
         c.replacement_id: c for c in corrections if c.replacement_id
@@ -652,6 +755,9 @@ def _render_detail(request, person, date_from, date_to, error="",
         "early_minutes": s.early_minutes,
         "start_off": s.start_off_schedule,
         "end_off": s.end_off_schedule,
+        # S141: cambios de tipo y horas por tipo (fichaje por tipos).
+        "changes": [_press_view(c, by_replacement) for c in s.changes],
+        "type_hours": _type_hours(s),
     } for s in report.shifts]
     history = [{
         "correction": c,
@@ -674,6 +780,9 @@ def _render_detail(request, person, date_from, date_to, error="",
         "message": message,
         "form": form or {},
         "kind_choices": ClockEvent.Kind.choices,
+        "clock_types": list(ClockType.objects.filter(
+            company=request.user.company_user.company,
+        )),
         "total_label": report.total_label,
         "issues_count": report.incident_count,
         "punctuality_label": report.punctuality_label,
@@ -681,6 +790,25 @@ def _render_detail(request, person, date_from, date_to, error="",
         "early_label": report.early_label,
         "habitually_early": report.habitually_early,
     })
+
+
+def _type_hours(shift):
+    """
+    [{"name", "label", "counts"}] hours per clock type of one shift.
+    ---
+    Horas por tipo de fichaje de una jornada (S141), con si cuentan como
+    jornada; [] si nadie eligió tipo.
+    """
+    counts = {
+        clock_type.name: clock_type.counts_as_work
+        for clock_type, _start, _end in shift.segments
+        if clock_type is not None
+    }
+    return [{
+        "name": name,
+        "label": format_duration(seconds),
+        "counts": counts.get(name, True),
+    } for name, seconds in shift.type_seconds.items()]
 
 
 def _person_or_404(pk):
@@ -729,6 +857,7 @@ class ClockEventCorrectView(SupervisorAccessMixin, View):
             "action": request.POST.get("action", ""),
             "new_kind": request.POST.get("new_kind", ""),
             "new_pressed_at": request.POST.get("new_pressed_at", ""),
+            "new_clock_type": request.POST.get("new_clock_type", ""),
             "reason": request.POST.get("reason", ""),
             "label": request.POST.get("label", ""),
         }
@@ -751,6 +880,7 @@ class ClockEventCorrectView(SupervisorAccessMixin, View):
                 form["reason"], new_kind=form["new_kind"],
                 new_pressed_at=new_pressed_at,
                 user_agent=request.META.get("HTTP_USER_AGENT", ""),
+                new_clock_type_id=form["new_clock_type"] or None,
             )
         except ClockCorrectionError as exc:
             return _render_detail(request, person, date_from, date_to,
@@ -797,6 +927,7 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
     def get(self, request):
         from openpyxl import Workbook
         from openpyxl.styles import Font
+        from openpyxl.utils import get_column_letter
 
         date_from, date_to = _date_range(request)
         wanted = [
@@ -826,6 +957,17 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
             ("Minutos tarde", 9), ("Salida según horario", 10),
             ("Minutos antes", 9), ("Horas", 8), ("Incidencias", 60),
         ]
+        # S141: horas de cada tipo de fichaje, al final (los que no
+        # cuentan como jornada se marcan en la cabecera).
+        type_names = [
+            (t.name, t.counts_as_work) for t in ClockType.objects.filter(
+                company=request.user.company_user.company,
+            )
+        ]
+        day_headers += [
+            ("%s%s" % (name, "" if counts else " (no cuenta)"), 14)
+            for name, counts in type_names
+        ]
         days.append([h for h, _w in day_headers])
         presses = book.create_sheet("Pulsaciones")
         press_headers = [
@@ -835,6 +977,7 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
             ("Retraso (min)", 9), ("Municipio", 28), ("Latitud", 11),
             ("Longitud", 11), ("Precisión (m)", 9), ("Sin GPS porque", 24),
             ("Cómo se envió", 34), ("Navegador", 40),
+            ("Tipo de fichaje", 20),
         ]
         presses.append([h for h, _w in press_headers])
         from hr_calendar.clock_geocode import fill_missing
@@ -862,6 +1005,10 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
                     shift.expected_end if early is not None else None,
                     max(early, 0) if early is not None else None,
                     shift.duration_label, "; ".join(shift.incidents),
+                ] + [
+                    format_duration(shift.type_seconds[name])
+                    if name in shift.type_seconds else ""
+                    for name, _counts in type_names
                 ])
             for event in row.report.events:
                 pressed = timezone.localtime(event.pressed_at)
@@ -879,6 +1026,7 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
                     else None,
                     event.accuracy_m, event.gps_error,
                     event.get_sent_by_display(), event.user_agent,
+                    event.clock_type.name if event.clock_type_id else "",
                 ])
         # S141: historial de correcciones (quién, cuándo, antes, después
         # y motivo); el fichaje original no se borra nunca.
@@ -888,6 +1036,7 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
             ("Tipo anterior", 10), ("Hora anterior", 17),
             ("Tipo nuevo", 10), ("Hora nueva", 17), ("Motivo", 60),
             ("Corregido por", 28), ("Fecha de la corrección", 17),
+            ("Tipo de fichaje anterior", 20), ("Tipo de fichaje nuevo", 20),
         ]
         fixes.append([h for h, _w in fix_headers])
         stamp = "%d/%m/%Y %H:%M"
@@ -905,6 +1054,8 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
                     if fix.new_pressed_at else "",
                     fix.reason, _user_label(fix.corrected_by),
                     timezone.localtime(fix.corrected_at).strftime(stamp),
+                    fix.old_clock_type.name if fix.old_clock_type else "",
+                    fix.new_clock_type.name if fix.new_clock_type else "",
                 ])
         for sheet, headers in ((days, day_headers), (presses, press_headers),
                                (fixes, fix_headers)):
@@ -912,7 +1063,7 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
                 cell.font = Font(bold=True)
             sheet.freeze_panes = "A2"
             for index, (_header, width) in enumerate(headers):
-                letter = chr(ord("A") + index)
+                letter = get_column_letter(index + 1)
                 sheet.column_dimensions[letter].width = width
         for cell in days["C"][1:]:
             cell.number_format = "DD/MM/YYYY"
