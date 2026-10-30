@@ -75,7 +75,7 @@ filtrar la sección, marcar todos y poner el horario.
                         {# El horario que le toca (propio, de la sección o por defecto). #}
                         <div>
                             <div class="fw-semibold mb-1">Horario</div>
-                            <select name="schedule" class="form-select form-select-sm">
+                            <select name="schedule" class="form-select form-select-sm" id="hor-filter-schedule">
                                 <option value="">Todos</option>
                                 <option value="{{ no_schedule }}"{% if filter_schedule == no_schedule %} selected{% endif %}>Sin horario</option>
                                 {% for schedule in schedules %}
@@ -133,7 +133,7 @@ filtrar la sección, marcar todos y poner el horario.
                     </div>
                     <div class="col-12">
                         <div class="small text-muted fw-bold mt-1">Horarios</div>
-                        <a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:workday_schedule' %}"
+                        <a target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary" href="{% url 'panel:workday_schedule' %}"
                            title="Crear, cambiar o borrar horarios (también los distintos según el día).">
                             <i class="bi bi-pencil-square me-1"></i>Gestionar los horarios
                         </a>
@@ -350,6 +350,45 @@ filtrar la sección, marcar todos y poner el horario.
         if (!select.value) { showToast("Primero crea algún horario en Gestionar los horarios.", true); return; }
         assign(select.value, "Poner el horario " + select.options[select.selectedIndex].textContent.trim());
     });
+    // S141 (Miguel Ángel): un horario recién creado en "Gestionar los
+    // horarios" aparece ya en los desplegables, sin recargar: se vuelven
+    // a pedir al volver a esta página o a esta ventana.
+    function refreshSchedules() {
+        fetch("{% url 'panel:worker_schedules_list' %}", {credentials: "same-origin"})
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (data) {
+                if (!data) return;
+                const assignSel = document.getElementById("hor-assign-schedule");
+                const filterSel = document.getElementById("hor-filter-schedule");
+                const keepAssign = assignSel.value;
+                const keepFilter = filterSel.value;
+                assignSel.innerHTML = "";
+                data.schedules.forEach(function (s) {
+                    const o = document.createElement("option");
+                    o.value = s.pk;
+                    o.textContent = s.label + (s.varies ? " · según el día" : "");
+                    assignSel.appendChild(o);
+                });
+                if (!data.schedules.length) {
+                    const o = document.createElement("option");
+                    o.value = ""; o.textContent = "No hay horarios";
+                    assignSel.appendChild(o);
+                }
+                if (Array.from(assignSel.options).some(function (o) { return o.value === keepAssign; })) assignSel.value = keepAssign;
+                Array.from(filterSel.options).slice(2).forEach(function (o) { o.remove(); });
+                data.schedules.forEach(function (s) {
+                    const o = document.createElement("option");
+                    o.value = s.pk; o.textContent = s.label;
+                    filterSel.appendChild(o);
+                });
+                if (Array.from(filterSel.options).some(function (o) { return o.value === keepFilter; })) filterSel.value = keepFilter;
+            }).catch(function () { /* sin conexión: se queda la lista que había */ });
+    }
+    window.addEventListener("focus", refreshSchedules);
+    window.addEventListener("pageshow", function (ev) { if (ev.persisted) refreshSchedules(); });
+    document.addEventListener("visibilitychange", function () { if (!document.hidden) refreshSchedules(); });
+    document.getElementById("tab-horarios") && document.getElementById("tab-horarios").addEventListener("click", refreshSchedules);
+
     document.getElementById("hor-unassign").addEventListener("click", function () {
         assign("", "Quitar el horario propio");
     });

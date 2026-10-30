@@ -328,6 +328,27 @@ class WorkerSchedulesTabView(SupervisorAccessMixin, View):
         })
 
 
+class WorkerSchedulesListView(SupervisorAccessMixin, View):
+    """
+    GET (JSON): the company's schedules, to refresh the dropdowns.
+    ---
+    GET (JSON): los horarios de la empresa, para refrescar los
+    desplegables de la pestaña sin recargar la página (S141, Miguel
+    Ángel: al crear un horario tiene que aparecer ya en el desplegable).
+    """
+
+    def get(self, request):
+        from django.http import JsonResponse
+
+        company = request.user.company_user.company
+        return JsonResponse({"schedules": [{
+            "pk": sched.pk,
+            "label": "%s (%s)" % (sched.label,
+                                  sched.get_season_display().lower()),
+            "varies": sched.varies_by_day,
+        } for sched in _schedules(company)]})
+
+
 class WorkerSchedulesResultsView(SupervisorAccessMixin, View):
     """
     GET: table only.

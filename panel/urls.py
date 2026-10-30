@@ -115,6 +115,7 @@ from panel.views_personal_access import (
 )
 from panel.views_worker_schedules import (
     WorkerSchedulesAssignView,
+    WorkerSchedulesListView,
     WorkerSchedulesResultsView,
     WorkerSchedulesSectionView,
     WorkerSchedulesTabView,
@@ -1790,6 +1791,11 @@ urlpatterns = [
         "documentacion/horarios/resultados/",
         WorkerSchedulesResultsView.as_view(),
         name="worker_schedules_results",
+    ),
+    path(
+        "documentacion/horarios/lista/",
+        WorkerSchedulesListView.as_view(),
+        name="worker_schedules_list",
     ),
     path(
         "documentacion/horarios/asignar/",
