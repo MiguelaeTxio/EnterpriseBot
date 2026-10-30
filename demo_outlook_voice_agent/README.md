@@ -15,7 +15,15 @@ Gemini Vision y clics en pantalla.
    transcribe con Gemini y localiza con su vision el boton de correo
    nuevo, llevando el cursor encima sin clic. No envia nada. Al
    cerrar el modal vuelve a vigilar.
-2. Agente completo: pendiente del resultado de la prueba.
+   Superada en S142 tras dar a la cuenta de servicio
+   `roles/aiplatform.user`.
+2. **Agente completo** (`main.py`, con `common.py`, `desktop.py` y
+   `gemini_ops.py`): mismo disparo y modal. Al detener, transcribe y
+   envia el correo manejando Outlook con vision de Gemini y clics:
+   (1) correo nuevo, (2) Para, (3) Asunto, (4) cuerpo, (5) comprobacion
+   visual del borrador (si no cuadra, se queda abierto SIN enviar),
+   (6) Enviar. Capturas de cada paso en `demo_data/`, log en
+   `demo_agent.log`.
 
 ## Entorno
 
