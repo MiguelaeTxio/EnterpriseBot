@@ -33,6 +33,7 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
                             <option value="">Todas</option>
                             <option value="WINTER"{% if saved_filters.season == "WINTER" %} selected{% endif %}>Invierno</option>
                             <option value="SUMMER"{% if saved_filters.season == "SUMMER" %} selected{% endif %}>Verano</option>
+                            <option value="ALL_YEAR"{% if saved_filters.season == "ALL_YEAR" %} selected{% endif %}>Todo el año</option>
                         </select>
                     </div>
                     <div>
@@ -130,7 +131,7 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
                                 <td class="sticky-col sticky-col-2">{% if sched.is_default %}<i class="bi bi-star-fill text-success" title="Horario por defecto"></i>{% endif %}</td>
                                 <td class="sticky-col sticky-col-3 sticky-col-last"><a href="#" class="wd-edit-link" data-pk="{{ sched.pk }}">{{ sched.label }}</a></td>
                                 <td>
-                                    {% if sched.season == "SUMMER" %}<span class="badge bg-warning text-dark"><i class="bi bi-sun me-1"></i>Verano</span>{% else %}<span class="badge bg-info text-dark"><i class="bi bi-snow me-1"></i>Invierno</span>{% endif %}
+                                    {% if sched.season == "SUMMER" %}<span class="badge bg-warning text-dark"><i class="bi bi-sun me-1"></i>Verano</span>{% elif sched.season == "ALL_YEAR" %}<span class="badge bg-secondary"><i class="bi bi-calendar3 me-1"></i>Todo el año</span>{% else %}<span class="badge bg-info text-dark"><i class="bi bi-snow me-1"></i>Invierno</span>{% endif %}
                                     {% if sched.is_intensive and not sched.varies_by_day %}<span class="badge bg-secondary ms-1">Intensiva</span>{% endif %}
                                 </td>
                                 <td>
@@ -219,7 +220,8 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
                         <div class="col-6 col-md-3">
                             <label class="form-label small fw-semibold mb-1" for="editSeason">Temporada <span class="text-danger">*</span></label>
                             <select name="season" id="editSeason" class="form-select form-select-sm">
-                                <option value="WINTER"{% if post_data.season != "SUMMER" %} selected{% endif %}>Invierno</option>
+                                <option value="ALL_YEAR"{% if not post_data.season or post_data.season == "ALL_YEAR" %} selected{% endif %}>Todo el año</option>
+                                <option value="WINTER"{% if post_data.season == "WINTER" %} selected{% endif %}>Invierno</option>
                                 <option value="SUMMER"{% if post_data.season == "SUMMER" %} selected{% endif %}>Verano</option>
                             </select>
                         </div>
@@ -544,7 +546,7 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
                 document.getElementById(id).value = "";
             });
             document.getElementById("editTolerance").value = "15";
-            document.getElementById("editSeason").value = "WINTER";
+            document.getElementById("editSeason").value = "ALL_YEAR";
             intensive.checked = false;
             varies.checked = false;
             document.getElementById("editIsDefault").checked = false;

@@ -3043,6 +3043,9 @@ class WorkdaySchedule(models.Model):
         """
         WINTER = "WINTER", "Invierno"
         SUMMER = "SUMMER", "Verano"
+        # S141 (Miguel Ángel): horarios que valen todo el año (solo
+        # Taller tiene uno de invierno y otro de verano).
+        ALL_YEAR = "ALL_YEAR", "Todo el año"
 
     company = models.ForeignKey(
         Company,
@@ -3070,7 +3073,8 @@ class WorkdaySchedule(models.Model):
         help_text=(
             "Temporada a la que aplica este horario. "
             "INVIERNO: turno partido con tramo de mañana y tarde. "
-            "VERANO: jornada intensiva (solo mañana si is_intensive=True)."
+            "VERANO: jornada intensiva (solo mañana si is_intensive=True). "
+            "TODO EL AÑO: el mismo horario en cualquier temporada."
         ),
     )
     # ------------------------------------------------------------------

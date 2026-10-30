@@ -860,7 +860,7 @@
                                             <option value="{{ sched.pk }}"
                                                     {% if w.workday_schedule_id == sched.pk %}selected{% endif %}>
                                                 {{ sched.label }}
-                                                ({% if sched.season == 'WINTER' %}Invierno{% else %}Verano{% endif %}
+                                                ({{ sched.get_season_display }}
                                                 {% if sched.is_intensive %}· Intensiva{% endif %})
                                             </option>
                                             {% endfor %}
@@ -937,7 +937,7 @@
                                     {% for sched in workday_schedules %}
                                     <option value="{{ sched.pk }}">
                                         {{ sched.label }}
-                                        ({% if sched.season == 'WINTER' %}Invierno{% else %}Verano{% endif %}
+                                        ({{ sched.get_season_display }}
                                         {% if sched.is_intensive %}· Intensiva{% endif %})
                                     </option>
                                     {% endfor %}
