@@ -731,6 +731,45 @@ urlpatterns = [
         views_services.ServicesDeliveryNotesExportView.as_view(),
         name="services_delivery_notes_export",
     ),
+    # H37 (S142): Services tab — services uploaded from a folder,
+    # valued (estimated budget, cost and yield) — and the averages.
+    # Pestaña Servicios: servicios subidos desde una carpeta y valorados,
+    # y las medias de coste.
+    path(
+        "services/evaluations/",
+        views_services.ServicesEvaluationsPaneView.as_view(),
+        name="services_evaluations_pane",
+    ),
+    path(
+        "services/evaluations/table/",
+        views_services.ServicesEvaluationsFragmentView.as_view(),
+        name="services_evaluations_table",
+    ),
+    path(
+        "services/evaluations/upload/",
+        views_services.ServicesEvaluationsUploadView.as_view(),
+        name="services_evaluations_upload",
+    ),
+    path(
+        "services/evaluations/action/<slug:action>/",
+        views_services.ServicesEvaluationsActionView.as_view(),
+        name="services_evaluations_action",
+    ),
+    path(
+        "services/evaluations/<int:pk>/document/",
+        views_services.ServiceEvaluationDocumentView.as_view(),
+        name="service_evaluation_document",
+    ),
+    path(
+        "services/evaluations/<int:pk>/order/",
+        views_services.ServiceEvaluationOrderView.as_view(),
+        name="service_evaluation_order",
+    ),
+    path(
+        "services/costs/",
+        views_services.ServicesCostSettingsView.as_view(),
+        name="services_cost_settings",
+    ),
     # H37 (S133): traffic panel tab, its board and its actions
     # (pair, separate, assign, unassign, send) — POST for the actions —
     # and the map data.

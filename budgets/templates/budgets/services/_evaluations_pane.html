@@ -1,0 +1,421 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/services/_evaluations_pane.html #}
+{% comment %}
+H37 (S142). Pestaña Servicios: servicios subidos desde una carpeta
+(fotos o PDF de TIREA), cada uno valorado en el worker con su
+presupuesto estimado según tarifa, su coste estimado y su rendimiento.
+Formato único de listado de la directriz 4.24 (referencia: pestaña
+Albaranes, _delivery_notes_pane.html):
+- #eva-top-panel (fijo): "Buscar y filtrar" y las acciones, siempre
+  visibles (subir carpeta, medias de coste para administración y,
+  sobre la selección, volver a valorar y borrar).
+- #eva-bottom-panel: la lista con su scroll y cabecera fija, y el
+  visor de la selección actual. Pantalla completa como el laboratorio.
+Sin orden elegido, presupuesto estimado de mayor a menor (Miguel
+Ángel). Mientras quede alguno por valorar, la tabla se refresca sola.
+Filtros, orden y selección se guardan por usuario (directriz 4.15,
+screen_key services_evaluations).
+{% endcomment %}
+<style>
+#eva-results-scroll table td,
+#eva-results-scroll table th { white-space: nowrap; }
+#eva-results-scroll thead th { position: sticky; top: 0; background-color: #f8f9fa; z-index: 2; }
+#eva-results-scroll .eva-spinner { width: .6rem; height: .6rem; }
+#eva-list-box:fullscreen { background: var(--bs-body-bg, #fff); padding: 1rem; }
+#eva-list-box:fullscreen #eva-results-scroll { height: calc(100vh - 4rem); }
+</style>
+
+<div class="border rounded p-2 mb-2" id="eva-top-panel">
+    <div class="row g-2">
+        <div class="col-lg-6">
+            <div class="border rounded p-2 h-100" id="eva-filters">
+                <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                <input id="eva-filter-search" type="search" class="form-control form-control-sm mb-2"
+                       placeholder="Buscar por cualquier dato: expediente, matrícula, recogida, aseguradora, archivo…"
+                       name="search" value="{{ filter_search }}" autocomplete="off"
+                       hx-get="{% url 'budgets:services_evaluations_table' %}"
+                       hx-target="#eva-table-container"
+                       hx-include="#eva-filters, #eva-sort"
+                       hx-trigger="input changed delay:300ms, search">
+                <div class="d-flex flex-wrap gap-3">
+                    <div>
+                        <div class="small fw-bold">Orden de trabajo</div>
+                        {% comment %}
+                        Casillas sin "name": el JS traduce la combinación al
+                        valor único de state -- ambas = todos, ninguna =
+                        ninguno (semántica literal de casilla).
+                        {% endcomment %}
+                        <div class="form-check">
+                            <input class="form-check-input eva-state-check" type="checkbox" id="eva-state-without" autocomplete="off"
+                                   {% if filter_state == '' or filter_state == 'without' %}checked{% endif %}>
+                            <label class="form-check-label small" for="eva-state-without">Sin orden</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input eva-state-check" type="checkbox" id="eva-state-with" autocomplete="off"
+                                   {% if filter_state == '' or filter_state == 'with' %}checked{% endif %}>
+                            <label class="form-check-label small" for="eva-state-with">Con orden</label>
+                        </div>
+                        <input type="hidden" id="eva-filter-state" name="state" value="{{ filter_state }}"
+                               hx-get="{% url 'budgets:services_evaluations_table' %}"
+                               hx-target="#eva-table-container"
+                               hx-include="#eva-filters, #eva-sort"
+                               hx-trigger="eva-state-change">
+                    </div>
+                    <div class="flex-grow-1">
+                        <div class="small fw-bold">Aseguradora</div>
+                        <select id="eva-filter-insurer" class="form-select form-select-sm" name="insurer" autocomplete="off"
+                                hx-get="{% url 'budgets:services_evaluations_table' %}"
+                                hx-target="#eva-table-container"
+                                hx-include="#eva-filters, #eva-sort"
+                                hx-trigger="change">
+                            <option value="">Todas</option>
+                            {% for insurer in insurers %}
+                            <option value="{{ insurer.pk }}" {% if filter_insurer == insurer.pk|stringformat:"s" %}selected{% endif %}>{{ insurer.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <div class="small fw-bold">Fecha del servicio</div>
+                        <div class="d-flex gap-1">
+                            <input type="date" class="form-control form-control-sm" name="date_from" value="{{ filter_date_from }}" title="Desde"
+                                   hx-get="{% url 'budgets:services_evaluations_table' %}"
+                                   hx-target="#eva-table-container"
+                                   hx-include="#eva-filters, #eva-sort"
+                                   hx-trigger="change">
+                            <input type="date" class="form-control form-control-sm" name="date_to" value="{{ filter_date_to }}" title="Hasta"
+                                   hx-get="{% url 'budgets:services_evaluations_table' %}"
+                                   hx-target="#eva-table-container"
+                                   hx-include="#eva-filters, #eva-sort"
+                                   hx-trigger="change">
+                        </div>
+                    </div>
+                </div>
+                <div class="small fw-bold mt-2">Selección</div>
+                <div class="d-flex align-items-center justify-content-between gap-2">
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" id="eva-only-selected" name="only_selected" value="1" autocomplete="off"
+                               {% if only_selected %}checked{% endif %}
+                               hx-get="{% url 'budgets:services_evaluations_table' %}"
+                               hx-target="#eva-table-container"
+                               hx-include="#eva-filters, #eva-sort"
+                               hx-trigger="change, eva-selection-refresh">
+                        <label class="form-check-label small" for="eva-only-selected">Mostrar solo la selección actual</label>
+                    </div>
+                    <input type="hidden" id="eva-selected-ids" name="selected_ids" value="">
+                    <button type="button"
+                            class="btn btn-sm btn-outline-secondary{% if not sort_active %} d-none{% endif %}"
+                            id="eva-clear-sort"
+                            hx-get="{% url 'budgets:services_evaluations_table' %}"
+                            hx-target="#eva-table-container"
+                            hx-include="#eva-filters"
+                            hx-vals='{"sort": ""}'
+                            title="Volver al orden por presupuesto estimado, de mayor a menor">
+                        <i class="bi bi-x-circle me-1"></i>Quitar orden
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="border rounded p-2 h-100">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <strong class="small"><span id="eva-mass-count">0</span> seleccionados</strong>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="eva-mass-clear">Limpiar</button>
+                </div>
+                <div class="row g-1">
+                    <div class="col-md-6 border-end pe-2">
+                        <div class="small text-muted fw-bold">Añadir servicios</div>
+                        <form method="post" enctype="multipart/form-data"
+                              action="{% url 'budgets:services_evaluations_upload' %}"
+                              id="eva-upload-form" class="d-flex gap-1 flex-wrap">
+                            {% csrf_token %}
+                            <input type="file" name="documents" id="eva-upload-input" class="d-none"
+                                   webkitdirectory directory multiple>
+                            <button type="button" class="btn btn-sm btn-primary" id="eva-upload-button"
+                                    title="Elige una carpeta con fotos o PDF de TIREA: cada uno se lee, se mide la ruta y se valora con la tarifa de su aseguradora">
+                                <i class="bi bi-folder2-open me-1"></i>Subir carpeta
+                            </button>
+                            {% if can_edit_costs %}
+                            <a href="{% url 'budgets:services_cost_settings' %}" class="btn btn-sm btn-outline-secondary"
+                               title="Precio del gasoil, coste por hora de operario y consumo y coste por km de cada clase de vehículo">
+                                <i class="bi bi-sliders me-1"></i>Medias de coste
+                            </a>
+                            {% endif %}
+                        </form>
+                        <div class="small text-muted mt-1" id="eva-upload-summary"></div>
+                    </div>
+                    <div class="col-md-6 ps-2">
+                        <div class="small text-muted fw-bold">Sobre la selección</div>
+                        <div class="d-flex gap-1 flex-wrap">
+                            <button type="button" class="btn btn-sm btn-outline-primary eva-needs-selection" id="eva-mass-requeue" disabled
+                                    title="Volver a leer el documento y a calcular ruta, presupuesto y coste">
+                                <i class="bi bi-arrow-repeat me-1"></i>Volver a valorar
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger eva-needs-selection" id="eva-mass-delete" disabled
+                                    title="Borrar los servicios y su documento (no el de los que ya tienen orden)">
+                                <i class="bi bi-trash me-1"></i>Borrar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="border rounded p-2" id="eva-bottom-panel">
+    <div class="row g-2 h-100">
+        <div class="col-lg-9 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column" id="eva-list-box">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <div class="fw-bold small">
+                        <span id="eva-row-count">{{ rows|length }}</span> servicios
+                        <span id="eva-row-filtered" class="text-muted fw-normal{% if not is_filtered %} d-none{% endif %}">(filtrado)</span>
+                        <span class="text-muted fw-normal">· importes sin IVA</span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" id="eva-fullscreen" title="Pantalla completa">
+                        <i class="bi bi-fullscreen"></i>
+                    </button>
+                </div>
+                <div id="eva-results-scroll" class="fixed-list-scroll flex-scroll-xy">
+                    <div id="eva-table-container">
+                        {% include "budgets/services/_evaluations_table.html" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1">Selección actual (<span id="eva-selection-count">0</span>)</div>
+                <div class="flex-scroll-y">
+                    <ul class="mb-0 small ps-0 list-unstyled" id="eva-selection-list">
+                        <li class="text-muted">Nada seleccionado todavía.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<span id="eva-sort" class="d-none"><input type="hidden" name="sort" value="{{ current_sort }}"></span>
+{% comment %}
+Refresco de la tabla mientras haya servicios por valorar: cada 5 s, solo
+si el fragmento dice que queda alguno en cola o valorándose.
+{% endcomment %}
+<div id="eva-poller" class="d-none"
+     hx-get="{% url 'budgets:services_evaluations_table' %}"
+     hx-target="#eva-table-container"
+     hx-include="#eva-filters, #eva-sort"
+     hx-trigger="every 5s [document.getElementById('eva-fragment-state') && document.getElementById('eva-fragment-state').dataset.waiting === '1']"></div>
+<form id="eva-action-urls" class="d-none"
+      data-requeue="{% url 'budgets:services_evaluations_action' action='requeue' %}"
+      data-delete="{% url 'budgets:services_evaluations_action' action='delete' %}"></form>
+{{ saved_selection|json_script:"eva-saved-selection" }}
+{{ screen_key|json_script:"eva-screen-key" }}
+{% include "panel/_fixed_list_layout.html" with top_id="eva-top-panel" bottom_id="eva-bottom-panel" %}
+<script>
+(function () {
+    "use strict";
+    const container = document.getElementById("eva-table-container");
+    const urls = document.getElementById("eva-action-urls").dataset;
+    const screenKey = JSON.parse(document.getElementById("eva-screen-key").textContent);
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute("content");
+    const stateHidden = document.getElementById("eva-filter-state");
+
+    // Subir carpeta: el botón abre el selector de carpeta y, al elegirla,
+    // se sube por tandas de 10 (límite de archivos por petición y tiempo
+    // de cada petición), con el avance en el botón; al acabar, resumen y
+    // la tabla se refresca (y sigue sola mientras se valoran).
+    const BATCH = 10;
+    const uploadForm = document.getElementById("eva-upload-form");
+    const uploadInput = document.getElementById("eva-upload-input");
+    const uploadButton = document.getElementById("eva-upload-button");
+    const uploadLabel = uploadButton.innerHTML;
+    const uploadSummary = document.getElementById("eva-upload-summary");
+    uploadButton.addEventListener("click", function () { uploadInput.click(); });
+    uploadInput.addEventListener("change", async function () {
+        const files = Array.from(uploadInput.files);
+        if (!files.length) return;
+        uploadButton.disabled = true;
+        uploadSummary.textContent = "";
+        const totals = {queued: 0, skipped: 0, failed: 0};
+        for (let start = 0; start < files.length; start += BATCH) {
+            uploadButton.textContent = "Subiendo " + Math.min(start + BATCH, files.length) + " de " + files.length + "…";
+            const body = new FormData();
+            body.append("csrfmiddlewaretoken", csrfToken);
+            files.slice(start, start + BATCH).forEach(function (file) { body.append("documents", file, file.name); });
+            try {
+                const response = await fetch(uploadForm.action, {
+                    method: "POST", body: body, headers: {"X-Requested-With": "fetch"},
+                });
+                if (!response.ok) throw new Error("HTTP " + response.status);
+                const counts = await response.json();
+                totals.queued += counts.queued;
+                totals.skipped += counts.skipped;
+                totals.failed += counts.failed;
+            } catch (err) {
+                console.warn("Tanda no subida:", err);
+                totals.failed += Math.min(BATCH, files.length - start);
+            }
+        }
+        uploadInput.value = "";
+        uploadButton.disabled = false;
+        uploadButton.innerHTML = uploadLabel;
+        const parts = [totals.queued + " en cola para valorar"];
+        if (totals.skipped) parts.push(totals.skipped + " saltados (no son foto ni PDF)");
+        if (totals.failed) parts.push(totals.failed + " sin subir (vuelve a intentarlo)");
+        uploadSummary.textContent = parts.join(" · ");
+        uploadSummary.classList.toggle("text-danger", totals.failed > 0);
+        htmx.trigger(stateHidden, "eva-state-change");
+    });
+
+    // Selección (clave de fila -> etiqueta): sobrevive a cada repintado
+    // del fragmento y se guarda por usuario (directriz 4.15).
+    const selection = new Map();
+    try {
+        JSON.parse(document.getElementById("eva-saved-selection").textContent).forEach(function (item) {
+            if (item && item.key) {
+                selection.set(String(item.key), item.label || "");
+            }
+        });
+    } catch (e) { /* estado guardado ilegible: se empieza sin selección */ }
+    let lastSaved = "";
+    function saveSelection() {
+        const payload = Array.from(selection.entries()).map(function ([key, label]) {
+            return {key: key, label: label};
+        });
+        const serialized = JSON.stringify(payload);
+        if (serialized === lastSaved) return;
+        lastSaved = serialized;
+        window.EbNavState.save(screenKey, {selection: payload});
+    }
+
+    function refreshFromFragment() {
+        const state = document.getElementById("eva-fragment-state");
+        if (state) {
+            document.getElementById("eva-row-count").textContent = state.dataset.count;
+            document.getElementById("eva-row-filtered").classList.toggle("d-none", !state.dataset.filtered);
+            document.getElementById("eva-clear-sort").classList.toggle("d-none", !state.dataset.sortActive);
+            document.querySelector("#eva-sort input[name=sort]").value = state.dataset.sort || "";
+        }
+        container.querySelectorAll(".eva-row-check").forEach(function (cb) {
+            cb.checked = selection.has(cb.dataset.key);
+        });
+        updateSelectionUi();
+    }
+
+    function updateSelectionUi() {
+        saveSelection();
+        document.getElementById("eva-mass-count").textContent = selection.size;
+        document.getElementById("eva-selection-count").textContent = selection.size;
+        const list = document.getElementById("eva-selection-list");
+        list.innerHTML = "";
+        if (!selection.size) {
+            const empty = document.createElement("li");
+            empty.className = "text-muted";
+            empty.textContent = "Nada seleccionado todavía.";
+            list.appendChild(empty);
+        } else {
+            Array.from(selection.values()).sort().forEach(function (label) {
+                const li = document.createElement("li");
+                li.textContent = label;
+                list.appendChild(li);
+            });
+        }
+        const idsInput = document.getElementById("eva-selected-ids");
+        const newIds = Array.from(selection.keys()).join(",");
+        if (idsInput.value !== newIds) {
+            idsInput.value = newIds;
+            const onlySel = document.getElementById("eva-only-selected");
+            if (onlySel.checked) htmx.trigger(onlySel, "eva-selection-refresh");
+        }
+        document.querySelectorAll(".eva-needs-selection").forEach(function (btn) {
+            btn.disabled = selection.size === 0;
+        });
+        const all = document.getElementById("eva-check-all");
+        if (!all) return;
+        const rows = container.querySelectorAll(".eva-row-check");
+        const checked = container.querySelectorAll(".eva-row-check:checked");
+        all.checked = rows.length > 0 && checked.length === rows.length;
+        all.indeterminate = checked.length > 0 && checked.length < rows.length;
+    }
+
+    // Orden de trabajo (casillas) -> valor único: "" ambas, "without",
+    // "with", "none".
+    document.querySelectorAll(".eva-state-check").forEach(function (cb) {
+        cb.addEventListener("change", function () {
+            const without = document.getElementById("eva-state-without").checked;
+            const withOrder = document.getElementById("eva-state-with").checked;
+            stateHidden.value = without && withOrder ? "" : (without ? "without" : (withOrder ? "with" : "none"));
+            htmx.trigger(stateHidden, "eva-state-change");
+        });
+    });
+
+    container.addEventListener("change", function (evt) {
+        const target = evt.target;
+        if (target.classList.contains("eva-row-check")) {
+            if (target.checked) selection.set(target.dataset.key, target.dataset.label);
+            else selection.delete(target.dataset.key);
+            updateSelectionUi();
+        } else if (target.id === "eva-check-all") {
+            container.querySelectorAll(".eva-row-check").forEach(function (cb) {
+                cb.checked = target.checked;
+                if (target.checked) selection.set(cb.dataset.key, cb.dataset.label);
+                else selection.delete(cb.dataset.key);
+            });
+            updateSelectionUi();
+        }
+    });
+
+    document.getElementById("eva-mass-clear").addEventListener("click", function () {
+        selection.clear();
+        refreshFromFragment();
+    });
+
+    // Acciones sobre la selección: formulario POST temporal.
+    function postSelection(url, confirmText) {
+        if (!selection.size) return;
+        if (confirmText && !window.confirm(confirmText)) return;
+        const form = document.createElement("form");
+        form.method = "post";
+        form.action = url;
+        form.style.display = "none";
+        const csrf = document.createElement("input");
+        csrf.type = "hidden"; csrf.name = "csrfmiddlewaretoken"; csrf.value = csrfToken;
+        form.appendChild(csrf);
+        selection.forEach(function (_label, key) {
+            const input = document.createElement("input");
+            input.type = "hidden"; input.name = "selected"; input.value = key;
+            form.appendChild(input);
+        });
+        document.body.appendChild(form);
+        selection.clear();
+        saveSelection();
+        form.submit();
+    }
+    document.getElementById("eva-mass-requeue").addEventListener("click", function () {
+        postSelection(urls.requeue, "");
+    });
+    document.getElementById("eva-mass-delete").addEventListener("click", function () {
+        postSelection(urls.delete, "¿Borrar " + selection.size + " servicio(s) y su documento?");
+    });
+
+    // Pantalla completa de la lista (formato del laboratorio de análisis).
+    document.getElementById("eva-fullscreen").addEventListener("click", function () {
+        if (document.fullscreenElement) {
+            document.exitFullscreen();
+            return;
+        }
+        document.getElementById("eva-list-box").requestFullscreen().catch(function (err) {
+            console.warn("Pantalla completa no disponible:", err);
+        });
+    });
+
+    document.body.addEventListener("htmx:afterSwap", function (evt) {
+        if (evt.detail.target && evt.detail.target.id === "eva-table-container") {
+            refreshFromFragment();
+        }
+    });
+
+    refreshFromFragment();
+}());
+</script>

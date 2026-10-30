@@ -9,6 +9,8 @@
 H37 (S132). Página Servicios del servicio de asistencia, con pestañas
 en el formato de Documentación (panel/documentation_h30/hub.html).
 H37 (S133): pestaña principal Tráfico (panel de tráfico del dossier).
+H37 (S142): pestaña Servicios, servicios subidos desde una carpeta y
+valorados (presupuesto estimado, coste y rendimiento).
 Cada pestaña carga su contenido por htmx; la que el usuario dejó
 activa carga al abrir la página, el resto al pulsarlas.
 {% endcomment %}
@@ -35,6 +37,17 @@ activa carga al abrir la página, el resto al pulsarlas.
             <i class="bi bi-file-earmark-text me-1"></i>Albaranes
         </a>
     </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'servicios' %}active{% endif %}"
+           id="tab-servicios"
+           data-bs-toggle="tab"
+           href="#pane-servicios"
+           hx-get="{% url 'budgets:services_evaluations_pane' %}"
+           hx-target="#pane-servicios"
+           hx-trigger="{% if active_tab == 'servicios' %}load once{% else %}click once{% endif %}">
+            <i class="bi bi-cash-coin me-1"></i>Servicios
+        </a>
+    </li>
 </ul>
 
 <div class="tab-content">
@@ -44,6 +57,10 @@ activa carga al abrir la página, el resto al pulsarlas.
     </div>
     <div class="tab-pane fade {% if active_tab == 'albaranes' %}show active{% endif %}"
          id="pane-albaranes">
+        <div class="text-muted small p-3">Cargando…</div>
+    </div>
+    <div class="tab-pane fade {% if active_tab == 'servicios' %}show active{% endif %}"
+         id="pane-servicios">
         <div class="text-muted small p-3">Cargando…</div>
     </div>
 </div>

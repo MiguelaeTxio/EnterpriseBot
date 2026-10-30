@@ -1,0 +1,108 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/services/_evaluations_table.html #}
+{% comment %}
+H37 (S142). Fragmento de tabla de la pestaña Servicios (directriz
+4.24): orden múltiple con prioridad (resuelto en la vista; sin orden,
+presupuesto estimado de mayor a menor), casilla por fila y "todos",
+cabecera fija. Importes sin IVA. Los avisos del cálculo (lo que falta
+de las medias, ruta no medida...) salen en el icono de aviso.
+{% endcomment %}
+{% if rows %}
+<table class="table table-sm table-hover align-middle mb-0 small" id="eva-table">
+    <thead class="table-light">
+        <tr>
+            <th><input class="form-check-input" type="checkbox" id="eva-check-all" title="Marcar/desmarcar todos los visibles"></th>
+            <th>{% include "budgets/services/_eva_sort_th.html" with col=sort_cols.date label="Fecha" %}</th>
+            <th>{% include "budgets/services/_eva_sort_th.html" with col=sort_cols.insurer label="Aseguradora" %}</th>
+            <th>Expediente</th>
+            <th>Recogida → destino</th>
+            <th>Trabajo</th>
+            <th>{% include "budgets/services/_eva_sort_th.html" with col=sort_cols.km label="Km" end=1 %}</th>
+            <th>{% include "budgets/services/_eva_sort_th.html" with col=sort_cols.hours label="Horas" end=1 %}</th>
+            <th>{% include "budgets/services/_eva_sort_th.html" with col=sort_cols.budget label="Presupuesto estimado según tarifa" end=1 %}</th>
+            <th>{% include "budgets/services/_eva_sort_th.html" with col=sort_cols.cost label="Coste estimado" end=1 %}</th>
+            <th>{% include "budgets/services/_eva_sort_th.html" with col=sort_cols.margin label="Rendimiento" end=1 %}</th>
+            <th>{% include "budgets/services/_eva_sort_th.html" with col=sort_cols.file label="Archivo" %}</th>
+            <th class="text-end">Acciones</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr class="{% if row.evaluation.work_order_id %}text-muted{% endif %}">
+            <td>
+                <input class="form-check-input eva-row-check" type="checkbox"
+                       data-key="{{ row.key }}" data-label="{{ row.label }}">
+            </td>
+            <td>{% if row.service_at %}{{ row.service_at|date:"d/m/Y H:i" }}{% else %}—{% endif %}</td>
+            <td>{{ row.insurer|default:"—" }}</td>
+            <td>{{ row.expediente|default:"—" }}</td>
+            <td class="eva-col-place" title="{{ row.pickup }}{% if row.delivery %} → {{ row.delivery }}{% endif %}">
+                {{ row.pickup|default:"—"|truncatechars:35 }}{% if row.delivery %} → {{ row.delivery|truncatechars:30 }}{% endif %}
+            </td>
+            <td title="{{ row.evaluation.job_label }}{% if row.evaluation.base %} · base {{ row.evaluation.base.name }}{% endif %}">
+                {% if row.evaluation.crews %}{{ row.evaluation.crews }} veh. · {% endif %}{{ row.evaluation.job_label|default:"—"|truncatechars:30 }}
+            </td>
+            <td class="text-end">{{ row.evaluation.km|default_if_none:"—" }}</td>
+            <td class="text-end">{{ row.evaluation.hours|default_if_none:"—" }}</td>
+            <td class="text-end fw-semibold">
+                {% if row.evaluation.budget_amount is not None %}{{ row.evaluation.budget_amount }} €{% else %}—{% endif %}
+            </td>
+            <td class="text-end"
+                title="Operarios: {{ row.evaluation.operators_cost|default_if_none:'—' }} € · Vehículos: {{ row.evaluation.vehicles_cost|default_if_none:'—' }} € · Gasoil: {{ row.evaluation.fuel_cost|default_if_none:'—' }} €">
+                {% if row.evaluation.total_cost is not None %}{{ row.evaluation.total_cost }} €{% else %}—{% endif %}
+            </td>
+            <td class="text-end fw-semibold {% if row.margin_negative %}text-danger{% elif row.evaluation.margin is not None %}text-success{% endif %}">
+                {% if row.evaluation.margin is not None %}{{ row.evaluation.margin }} €{% else %}—{% endif %}
+            </td>
+            <td>
+                {% if row.is_waiting %}
+                <span class="badge bg-info-subtle text-info border border-info-subtle">
+                    <span class="spinner-border spinner-border-sm me-1 eva-spinner"></span>{{ row.evaluation.get_status_display }}
+                </span>
+                {% elif row.is_error %}
+                <span class="badge bg-danger-subtle text-danger border border-danger-subtle" title="{{ row.evaluation.error }}">Error</span>
+                {% endif %}
+                {% if row.notes %}
+                <i class="bi bi-exclamation-triangle-fill text-warning" title="{{ row.notes|join:' · ' }}"></i>
+                {% endif %}
+                {% if row.evaluation.work_order_id %}
+                <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">Con orden</span>
+                {% endif %}
+                <span title="{{ row.evaluation.file_name }}">{{ row.evaluation.file_name|truncatechars:24 }}</span>
+            </td>
+            <td class="text-end">
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-secondary border-0 px-2" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                        <li><a class="dropdown-item" href="{% url 'budgets:service_evaluation_document' pk=row.evaluation.pk %}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-image me-2"></i>Ver el documento</a></li>
+                        {% if row.can_create_order %}
+                        <li><a class="dropdown-item" href="{% url 'budgets:service_evaluation_order' pk=row.evaluation.pk %}"><i class="bi bi-plus-lg me-2"></i>Crear la orden</a></li>
+                        {% endif %}
+                        {% if row.evaluation.work_order_id %}
+                        <li><a class="dropdown-item" href="{% url 'budgets:work_order_detail' pk=row.evaluation.work_order_id %}"><i class="bi bi-folder2-open me-2"></i>Ver la orden</a></li>
+                        {% endif %}
+                    </ul>
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="text-center text-muted py-5">
+    <i class="bi bi-cash-coin fs-1 d-block mb-2 opacity-25"></i>
+    <p class="mb-0">No hay servicios que coincidan. Sube una carpeta con fotos o PDF de TIREA.</p>
+</div>
+{% endif %}
+{% comment %}
+Estado del fragmento para el panel fijo (que no se repinta): nº de
+filas, si hay filtro, el orden vigente y si queda alguno por valorar
+(la tabla se refresca sola mientras tanto).
+{% endcomment %}
+<span id="eva-fragment-state" class="d-none"
+      data-count="{{ rows|length }}"
+      data-filtered="{% if is_filtered %}1{% endif %}"
+      data-sort-active="{% if sort_active %}1{% endif %}"
+      data-sort="{{ current_sort }}"
+      data-waiting="{% if has_waiting %}1{% endif %}"></span>

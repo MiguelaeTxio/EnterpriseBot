@@ -22,10 +22,15 @@ from django.urls import reverse
 from django.views import View
 
 from budgets.forms_services import WorkOrderAssistanceForm
-from budgets.models import Insurer, WorkOrderAssistance
+from budgets.models import (
+    Insurer,
+    ServiceEvaluation,
+    WorkOrderAssistance,
+)
 from budgets.views import _build_base_context
 from chat import room_service
 from panel.mixins import (
+    AdminRoleRequiredMixin,
     AssistanceSupervisorAccessMixin,
     AssistanceWorkOrderAccessMixin,
 )
@@ -36,7 +41,7 @@ logger = logging.getLogger(__name__)
 SCREEN_KEY = "services_hub"
 # H37 (S133): the traffic panel is the main tab (dossier, 4.4).
 # El panel de tráfico es la pestaña principal (dossier, 4.4).
-TABS = ("trafico", "albaranes")
+TABS = ("trafico", "albaranes", "servicios")
 DEFAULT_TAB = "trafico"
 
 
@@ -896,7 +901,7 @@ def _initial_from_extraction(company, data):
 
 
 def _render_order_form(request, form, title, action_url, hints=None,
-                       origin="", source_token=""):
+                       origin="", source_token="", evaluation_pk=""):
     """
     Render the order form page.
 
@@ -915,6 +920,9 @@ def _render_order_form(request, form, title, action_url, hints=None,
                       # H37 (S138): documento de TIREA ya guardado en
                       # GCS, para que el bot lo publique en la sala.
                       "source_token": source_token,
+                      # H37 (S142): servicio valorado del que sale la
+                      # orden, para enlazarlo al guardarla.
+                      "evaluation_pk": evaluation_pk,
                   }))
 
 
@@ -1037,10 +1045,12 @@ class WorkOrderSaveView(AssistanceSupervisorAccessMixin, View):
         if origin not in dict(WorkOrderAssistance.ORIGIN_CHOICES):
             origin = WorkOrderAssistance.ORIGIN_PANEL
         source_token = request.POST.get("source_token", "")
+        evaluation_pk = request.POST.get("evaluation", "")
         if not form.is_valid():
             return _render_order_form(
                 request, form, "Nueva orden", "budgets:work_order_save",
                 origin=origin, source_token=source_token,
+                evaluation_pk=evaluation_pk,
             )
         work_order = form.save(commit=False)
         work_order.origin = origin
@@ -1052,6 +1062,12 @@ class WorkOrderSaveView(AssistanceSupervisorAccessMixin, View):
         work_order.operator = company_user
         work_order.created_by = company_user
         form.save()
+        if evaluation_pk.isdigit():
+            # H37 (S142): the valued service now has its order.
+            # El servicio valorado ya tiene su orden.
+            ServiceEvaluation.objects.filter(
+                pk=int(evaluation_pk), company=company_user.company,
+            ).update(work_order=work_order)
         messages.success(
             request,
             "Orden de trabajo %s creada." % work_order.work_order_number,
@@ -1751,3 +1767,501 @@ class WorkOrderInvoicedView(AssistanceSupervisorAccessMixin, View):
                 "albaranes cerrados).",
             )
         return redirect("budgets:work_order_detail", pk=work_order.pk)
+
+
+# ---------------------------------------------------------------------------
+# H37 (S142, invasive session). Services tab: services uploaded from a
+# folder, valued (estimated budget by tariff, cost and yield).
+# Pestaña Servicios: servicios subidos desde una carpeta y valorados.
+# ---------------------------------------------------------------------------
+
+EVALUATIONS_SCREEN_KEY = "services_evaluations"
+
+
+def _evaluations_params(request):
+    """
+    Filters of the Services list: GET, then POST (_f_ prefix).
+
+    ---
+
+    Filtros del listado de Servicios: los de GET y, en las acciones por
+    POST, los vigentes con el prefijo _f_.
+    """
+    from budgets.service_evaluation import FILTER_KEYS
+
+    return {
+        key: request.GET.get(key) or request.POST.get("_f_" + key, "")
+        for key in FILTER_KEYS
+    }
+
+
+def _evaluations_context(request):
+    """
+    Context of the Services table fragment.
+
+    ---
+
+    Contexto del fragmento de tabla de Servicios: filas, filtros
+    vigentes, controles de orden y si queda alguno por valorar (para
+    refrescar la tabla sola), resueltos aquí (plantillas tontas).
+    """
+    from budgets import service_evaluation
+
+    company = request.user.company_user.company
+    params = _evaluations_params(request)
+    only_selected = request.GET.get("only_selected") == "1"
+    only_keys = None
+    if only_selected:
+        only_keys = {
+            key for key in request.GET.get("selected_ids", "").split(",")
+            if key
+        }
+    rows = service_evaluation.build_rows(company, params, only_keys)
+    return {
+        "rows": rows,
+        "has_waiting": any(row.is_waiting for row in rows),
+        "filter_search": params["search"],
+        "filter_state": params["state"],
+        "filter_insurer": params["insurer"],
+        "filter_date_from": params["date_from"],
+        "filter_date_to": params["date_to"],
+        "only_selected": only_selected,
+        "is_filtered": bool(
+            params["search"] or params["state"] or params["insurer"]
+            or params["date_from"] or params["date_to"] or only_selected
+        ),
+        **service_evaluation.sort_controls(params["sort"]),
+    }
+
+
+def _open_services_tab(company_user):
+    """
+    Leave the Services tab active for the user (directive 4.15).
+
+    ---
+
+    Deja activa la pestaña Servicios del usuario, para volver a ella
+    tras subir una carpeta o lanzar una acción.
+    """
+    nav_state, _created = PanelNavigationState.objects.get_or_create(
+        company_user=company_user, screen_key=SCREEN_KEY,
+        defaults={"state": {}},
+    )
+    state = nav_state.state if isinstance(nav_state.state, dict) else {}
+    state["active_tab"] = "servicios"
+    nav_state.state = state
+    nav_state.save(update_fields=["state"])
+
+
+class ServicesEvaluationsPaneView(AssistanceSupervisorAccessMixin, View):
+    """
+    Services tab: uploaded services, valued and sorted.
+
+    ---
+
+    Pestaña Servicios: los servicios subidos desde una carpeta con su
+    presupuesto estimado según tarifa, su coste estimado y su
+    rendimiento, con el formato de la directriz 4.24 (filtros, orden y
+    selección guardados por usuario, directriz 4.15).
+    """
+
+    template_name = "budgets/services/_evaluations_pane.html"
+
+    def get(self, request):
+        """
+        Render the tab content.
+
+        ---
+
+        Pinta el contenido de la pestaña.
+        """
+        from budgets.service_evaluation import FILTER_KEYS
+        from panel.navigation_persistence import (
+            apply_list_navigation,
+            get_saved_state_key,
+        )
+
+        company_user = request.user.company_user
+        apply_list_navigation(request, EVALUATIONS_SCREEN_KEY, FILTER_KEYS)
+        saved_selection = get_saved_state_key(
+            company_user, EVALUATIONS_SCREEN_KEY, "selection", [],
+        )
+        return render(request, self.template_name, {
+            **_evaluations_context(request),
+            "insurers": Insurer.objects.filter(
+                company=company_user.company,
+            ).order_by("name"),
+            "can_edit_costs": company_user.is_admin_level,
+            "screen_key": EVALUATIONS_SCREEN_KEY,
+            "saved_selection": (
+                saved_selection if isinstance(saved_selection, list) else []
+            ),
+        })
+
+
+class ServicesEvaluationsFragmentView(AssistanceSupervisorAccessMixin, View):
+    """
+    Services table fragment (filters, order, selection, refresh).
+
+    ---
+
+    Fragmento de tabla de Servicios, para filtros, orden, "mostrar solo
+    la selección" y el refresco mientras hay servicios por valorar.
+    """
+
+    def get(self, request):
+        """
+        Return the table fragment.
+
+        ---
+
+        Devuelve el fragmento de tabla.
+        """
+        from budgets.service_evaluation import FILTER_KEYS
+        from panel.navigation_persistence import apply_list_navigation
+
+        apply_list_navigation(request, EVALUATIONS_SCREEN_KEY, FILTER_KEYS)
+        return render(
+            request, "budgets/services/_evaluations_table.html",
+            _evaluations_context(request),
+        )
+
+
+class ServicesEvaluationsUploadView(AssistanceSupervisorAccessMixin, View):
+    """
+    Upload a folder of service documents to value them.
+
+    ---
+
+    Sube una carpeta de documentos de servicios (fotos o PDF de TIREA):
+    cada uno se guarda y se manda a valorar al worker. Lo que no es
+    foto ni PDF se salta. La pestaña la manda por tandas (fetch, cabecera
+    X-Requested-With: fetch) y recibe los contadores en JSON, para no
+    pasar del límite de archivos por petición de Django (100) ni del
+    tiempo de una petición; sin JavaScript, vuelve a la pestaña.
+    """
+
+    def post(self, request):
+        """
+        Queue every accepted file of the folder.
+
+        ---
+
+        Encola cada archivo aceptado de la carpeta.
+        """
+        from budgets.service_evaluation import content_type_of, queue_upload
+
+        company_user = request.user.company_user
+        queued, skipped, failed = 0, 0, 0
+        for upload in request.FILES.getlist("documents"):
+            content_type = content_type_of(upload)
+            if not content_type:
+                skipped += 1
+                continue
+            if queue_upload(company_user, upload, content_type) is None:
+                failed += 1
+            else:
+                queued += 1
+        if request.headers.get("X-Requested-With") == "fetch":
+            return JsonResponse({
+                "queued": queued, "skipped": skipped, "failed": failed,
+            })
+        if queued:
+            messages.success(
+                request,
+                "%d documento(s) en cola para valorar. La tabla se "
+                "actualiza sola." % queued,
+            )
+        if skipped:
+            messages.warning(
+                request,
+                "%d archivo(s) saltados: no son foto (JPG, PNG, WEBP) ni "
+                "PDF." % skipped,
+            )
+        if failed:
+            messages.error(
+                request,
+                "%d documento(s) no se pudieron guardar. Vuelve a "
+                "subirlos." % failed,
+            )
+        if not (queued or skipped or failed):
+            messages.error(request, "La carpeta no tiene archivos.")
+        _open_services_tab(company_user)
+        return redirect("budgets:services_hub")
+
+
+class ServicesEvaluationsActionView(AssistanceSupervisorAccessMixin, View):
+    """
+    Mass actions on the selected services: value again or delete.
+
+    ---
+
+    Acciones sobre los servicios seleccionados: volver a valorarlos
+    (leer el documento y calcular de nuevo) o borrarlos. Al borrar, su
+    documento se borra del cubo salvo que ya sea el de una orden.
+    """
+
+    def post(self, request, action):
+        """
+        Run the action on the selection.
+
+        ---
+
+        Ejecuta la acción sobre la selección.
+        """
+        from budgets.service_evaluation import requeue
+        from chat.room_service import ATTACHMENT_BUCKET
+        from spare_parts.gcs_service import delete_file
+
+        company_user = request.user.company_user
+        pks = [
+            int(key[1:]) for key in request.POST.getlist("selected")
+            if key.startswith("e") and key[1:].isdigit()
+        ]
+        evaluations = ServiceEvaluation.objects.filter(
+            company=company_user.company, pk__in=pks,
+        )
+        if action == "requeue":
+            count = 0
+            for evaluation in evaluations:
+                requeue(evaluation)
+                count += 1
+            messages.success(
+                request, "%d servicio(s) en cola para valorar de nuevo." % (
+                    count,
+                ),
+            )
+        elif action == "delete":
+            count = 0
+            for evaluation in evaluations:
+                blob = evaluation.source_document_blob
+                if blob and not WorkOrderAssistance.objects.filter(
+                    source_document_blob=blob,
+                ).exists():
+                    try:
+                        delete_file(ATTACHMENT_BUCKET, blob)
+                    except Exception:  # noqa: BLE001 -- se borra la fila
+                        logger.exception(
+                            "# [VALORACION] No se pudo borrar %s.", blob,
+                        )
+                evaluation.delete()
+                count += 1
+            messages.success(request, "%d servicio(s) borrados." % count)
+        else:
+            messages.error(request, "Acción no válida.")
+        _open_services_tab(company_user)
+        return redirect("budgets:services_hub")
+
+
+class ServiceEvaluationDocumentView(AssistanceSupervisorAccessMixin, View):
+    """
+    Open the document of an uploaded service.
+
+    ---
+
+    Abre el documento de un servicio subido (enlace firmado al cubo).
+    """
+
+    def get(self, request, pk):
+        """
+        Redirect to the signed URL of the document.
+
+        ---
+
+        Redirige al enlace firmado del documento.
+        """
+        from chat.room_service import ATTACHMENT_BUCKET
+        from spare_parts.gcs_service import generate_signed_url
+
+        evaluation = get_object_or_404(
+            ServiceEvaluation, pk=pk,
+            company=request.user.company_user.company,
+        )
+        if not evaluation.source_document_blob:
+            messages.error(request, "Este servicio no tiene documento.")
+            return redirect("budgets:services_hub")
+        return redirect(generate_signed_url(
+            ATTACHMENT_BUCKET, evaluation.source_document_blob,
+        ))
+
+
+class ServiceEvaluationOrderView(AssistanceSupervisorAccessMixin, View):
+    """
+    Create the order of a valued service.
+
+    ---
+
+    Crea la orden de un servicio valorado: abre el formulario de alta
+    relleno con los datos leídos (como la foto de TIREA), con su
+    documento, para revisarlo y guardarlo. Al guardar, el servicio
+    queda enlazado a su orden.
+    """
+
+    def get(self, request, pk):
+        """
+        Render the prefilled order form.
+
+        ---
+
+        Pinta el formulario de alta relleno.
+        """
+        from budgets.service_evaluation import restore_data
+
+        company = request.user.company_user.company
+        evaluation = get_object_or_404(
+            ServiceEvaluation, pk=pk, company=company,
+            status=ServiceEvaluation.STATUS_DONE,
+        )
+        if evaluation.work_order_id:
+            messages.info(request, "Este servicio ya tiene su orden.")
+            return redirect(
+                "budgets:work_order_detail", pk=evaluation.work_order_id,
+            )
+        data = restore_data(evaluation.data)
+        form = WorkOrderAssistanceForm(
+            initial=_initial_from_extraction(company, data), company=company,
+        )
+        hints = {key: data[key] for key in _HINT_KEYS if key in data}
+        return _render_order_form(
+            request, form, "Nueva orden desde un servicio valorado",
+            "budgets:work_order_save", hints,
+            origin=WorkOrderAssistance.ORIGIN_PHOTO,
+            source_token=room_service.sign_source(
+                evaluation.source_document_blob,
+                evaluation.source_document_type,
+            ),
+            evaluation_pk=str(evaluation.pk),
+        )
+
+
+class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
+    """
+    Average costs used to value the services.
+
+    ---
+
+    Medias de coste para valorar los servicios (solo administración):
+    precio del gasoil, coste por hora de operario y, por clase de
+    vehículo, consumo, coste por km y tipos de máquina. Al guardar se
+    recalcula el coste de todos los servicios valorados.
+    """
+
+    template_name = "budgets/services/cost_settings.html"
+
+    def _context(self, request, settings, vehicles, errors=None):
+        """
+        Context of the page, with the machine types already marked.
+
+        ---
+
+        Contexto de la página, con los tipos de máquina ya marcados por
+        clase (plantillas tontas).
+        """
+        from budgets.dispatch_vehicle import MACHINE_USES
+
+        type_names = list(MACHINE_USES)
+        rows = []
+        for vehicle in vehicles:
+            marked = set(vehicle.type_names())
+            rows.append({
+                "vehicle": vehicle,
+                "types": [
+                    {"name": name, "checked": name in marked}
+                    for name in type_names
+                ],
+            })
+        return _build_base_context(request, {
+            "active_nav": "services_hub",
+            "settings": settings,
+            "vehicle_rows": rows,
+            "errors": errors or [],
+        })
+
+    def get(self, request):
+        """
+        Render the averages.
+
+        ---
+
+        Pinta las medias.
+        """
+        from budgets.models import AssistanceCostSettings
+
+        company = request.user.company_user.company
+        settings = AssistanceCostSettings.for_company(company)
+        vehicles = company.assistance_vehicle_costs.all()
+        return render(
+            request, self.template_name,
+            self._context(request, settings, vehicles),
+        )
+
+    def post(self, request):
+        """
+        Save the averages and recompute the costs.
+
+        ---
+
+        Guarda las medias y recalcula los costes de los servicios.
+        """
+        from decimal import Decimal, InvalidOperation
+
+        from budgets.models import AssistanceCostSettings
+        from budgets.service_evaluation import recompute_company
+
+        company = request.user.company_user.company
+        settings = AssistanceCostSettings.for_company(company)
+        vehicles = list(company.assistance_vehicle_costs.all())
+        errors = []
+
+        def amount(name, label, required=False):
+            raw = (request.POST.get(name) or "").strip().replace(",", ".")
+            if not raw:
+                if required:
+                    errors.append("%s: falta el valor." % label)
+                return None
+            try:
+                value = Decimal(raw)
+            except InvalidOperation:
+                errors.append("%s: «%s» no es un número." % (label, raw))
+                return None
+            if value < 0:
+                errors.append("%s: no puede ser negativo." % label)
+                return None
+            return value
+
+        settings.fuel_price_per_liter = amount(
+            "fuel_price_per_liter", "Precio del gasoil",
+        )
+        settings.operator_cost_per_hour = amount(
+            "operator_cost_per_hour", "Coste por operario",
+        )
+        for vehicle in vehicles:
+            liters = amount(
+                "liters_%d" % vehicle.pk, "Consumo de %s" % vehicle.name,
+                required=True,
+            )
+            if liters is not None:
+                vehicle.fuel_liters_per_100km = liters
+            vehicle.cost_per_km = amount(
+                "cost_km_%d" % vehicle.pk,
+                "Coste por km de %s" % vehicle.name,
+            )
+            vehicle.machine_types = "\n".join(
+                request.POST.getlist("types_%d" % vehicle.pk),
+            )
+        if errors:
+            return render(
+                request, self.template_name,
+                self._context(request, settings, vehicles, errors),
+            )
+        settings.save()
+        for vehicle in vehicles:
+            vehicle.save()
+        recompute_company(company)
+        messages.success(
+            request,
+            "Medias guardadas. Coste y rendimiento recalculados en todos "
+            "los servicios valorados.",
+        )
+        _open_services_tab(request.user.company_user)
+        return redirect("budgets:services_hub")
