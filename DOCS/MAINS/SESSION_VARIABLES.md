@@ -876,6 +876,22 @@ la sesión, comprobar cuántas hay:
 gcloud iam service-accounts keys list --iam-account=enterprisebot-h28-migration-ag@gen-lang-client-0961484137.iam.gserviceaccount.com
 ```
 
+**ROL DE VERTEX AI AÑADIDO EN S142 (2026-10-30, sesión invasora,
+demo `demo_outlook_voice_agent/`):** esta cuenta de servicio no podía
+llamar a Gemini (`403 PERMISSION_DENIED`,
+`aiplatform.endpoints.predict`). Se le dio `roles/aiplatform.user` en
+el proyecto `gen-lang-client-0961484137` con:
+
+```
+gcloud projects add-iam-policy-binding gen-lang-client-0961484137 --member="serviceAccount:enterprisebot-h28-migration-ag@gen-lang-client-0961484137.iam.gserviceaccount.com" --role="roles/aiplatform.user" --condition=None
+```
+
+El permiso tardó en propagarse entre 30 segundos y 2 minutos (la
+primera prueba, 30 s después, siguió dando 403). La demo usa la misma
+clave local del agente H28 (`%LOCALAPPDATA%\EnterpriseBot\H28MigrationAgent\service_account_key.json`),
+sin clave nueva. La cuenta del servidor (`enterprisebot-vertex@...`)
+ya tenía ese rol.
+
 ⛔ **INCIDENTE REAL 1b, CONFIRMADO EN S65 -- ESTA MISMA CUENTA DE
 SERVICIO LA USA TAMBIÉN EL AGENTE H28 DE ESCRITORIO DEL PC DE MIGUEL
 ÁNGEL, NO SOLO LAS VMs.** `enterprisebot-h28-migration-ag@...` es
