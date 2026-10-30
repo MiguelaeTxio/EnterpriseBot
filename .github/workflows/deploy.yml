@@ -32,7 +32,17 @@ on:
   # S138: lanzado también por compile-requirements.yml tras comitear el
   # candado (un push hecho con GITHUB_TOKEN no dispara este workflow,
   # así que el pip-sync de la dependencia nueva no llegaba a ejecutarse).
+  # S142: `restart_worker` reinicia el worker Celery aunque no haya
+  # archivos cambiados (el bridge de voz no: cortaría una llamada). Incidencia real: el primer intento
+  # del despliegue de e108ed4 falló, su reintento ya no vio cambios
+  # (OLD_HEAD = NEW_HEAD) y el worker siguió con el código viejo de
+  # budgets/service_evaluation.py; no había forma de reiniciarlo.
   workflow_dispatch:
+    inputs:
+      restart_worker:
+        description: "Reiniciar el worker Celery aunque no haya cambios"
+        type: boolean
+        default: false
 
 concurrency:
   group: enterprisebot-pythonanywhere-ssh
@@ -272,6 +282,11 @@ jobs:
         run: |
           set -o pipefail
           CHANGED=$(sed -n '/--- CHANGED_FILES_START ---/,/--- CHANGED_FILES_END ---/p' /tmp/deploy_output.txt | sed '1d;$d')
+          # S142: reinicio forzado del worker (workflow_dispatch
+          # restart_worker): un nombre que solo casa con su patrón.
+          if [ "${{ inputs.restart_worker }}" = "true" ]; then
+            CHANGED=$(printf '%s\n%s' "$CHANGED" "budgets/tasks.py")
+          fi
           FAILED=0
           {
             echo "Archivos cambiados en este despliegue:"
