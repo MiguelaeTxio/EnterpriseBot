@@ -152,7 +152,8 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                     </button>
                     {% endif %}
                 </div>
-                <div class="col-6 border-top pt-1 mt-1">
+                {# S141: Información y Alta y baja a todo el ancho, en una o dos líneas, para que el panel no necesite scroll. #}
+                <div class="col-12 border-top pt-1 mt-1">
                     <div class="small text-muted fw-bold">Información</div>
                     <div class="d-flex gap-1 flex-wrap">
                         <select id="person-mass-notify" class="form-select form-select-sm ppane-select-auto">
@@ -161,11 +162,12 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                             <option value="{{ ntype.code }}">{{ ntype.label }}</option>
                             {% endfor %}
                         </select>
-                        <button type="button" class="btn btn-sm btn-primary" id="person-mass-notify-submit" title="Descarga los correos (.eml) para enviarlos desde Outlook.">Enviar por correo</button>
+                        <button type="button" class="btn btn-sm btn-primary" id="person-mass-notify-submit" title="Enviar por correo: descarga los correos (.eml) para enviarlos desde Outlook."><i class="bi bi-envelope me-1"></i>Correo</button>
                         {# H24 (S141): la misma circular por WhatsApp (plantilla circular_notification, solo al teléfono de empresa). #}
                         <button type="button" class="btn btn-sm btn-outline-success" id="person-mass-notify-whatsapp" title="Se la envía por WhatsApp al teléfono de empresa (número 1). Con 'Leer aquí' recibe el texto; también la ve en Mi buzón.">
-                            <i class="bi bi-whatsapp me-1"></i>Enviar por WhatsApp
+                            <i class="bi bi-whatsapp me-1"></i>WhatsApp
                         </button>
+                        <span class="vr mx-1"></span>
                         {% comment %}
                         H30 (S124), punto 4: los tres archivos sueltos
                         (nunca ZIP) para que Yolanda lance la firma
@@ -186,7 +188,7 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                             <option value="{{ worksite.pk }}">{{ worksite.name }}</option>
                             {% endfor %}
                         </select>
-                        <button type="button" class="btn btn-sm btn-outline-primary" id="person-mass-docuten-submit">Preparar para Docuten</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="person-mass-docuten-submit" title="Preparar para Docuten: PDF, CSV y hoja de pasos para la firma masiva.">Docuten</button>
                     </div>
                 </div>
                 {% comment %}
@@ -196,7 +198,7 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                 (Miguel Ángel): se marcan en el listado, el botón se activa
                 con 1 o más y el modal solo confirma, con fecha de hoy.
                 {% endcomment %}
-                <div class="col-6 border-top border-start pt-1 mt-1 ps-2">
+                <div class="col-12 border-top pt-1 mt-1">
                     <div class="small text-muted fw-bold">Alta y baja en la empresa</div>
                     <div class="d-flex gap-1 flex-wrap">
                         {% comment %}
@@ -223,7 +225,7 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                         {# H24 (S141): cuentas del panel creadas por el supervisor (usuario nombre.apellido, contraseña las 4 últimas cifras del DNI). #}
                         <button type="button" class="btn btn-sm btn-outline-primary" id="person-mass-access" disabled
                                 title="Crea el usuario del panel de los marcados para que puedan fichar. Después se les envía la circular de fichaje.">
-                            <i class="bi bi-key me-1"></i>Dar acceso al fichaje
+                            <i class="bi bi-key me-1"></i>Acceso al fichaje
                         </button>
                         {% endif %}
                     </div>
@@ -257,7 +259,7 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                             <option value="zip">ZIP (originales)</option>
                         </select>
                         <button type="button" class="btn btn-sm btn-primary" data-dossier-action="download" data-dossier-result="person-mass-result">Descargar</button>
-                        <button type="button" class="btn btn-sm btn-outline-primary" data-dossier-action="email" data-dossier-result="person-mass-result">Enviar por correo</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" data-dossier-action="email" data-dossier-result="person-mass-result" title="Enviar por correo"><i class="bi bi-envelope me-1"></i>Correo</button>
                     </div>
                     <div class="small text-muted" data-dossier-counts></div>
                 </div>
