@@ -2,7 +2,7 @@
 from django.contrib import messages as django_messages
 from django.views.generic import TemplateView, View
 from django.shortcuts import get_object_or_404, redirect, render
-from django.db.models import Q
+from django.db.models import Case, Q, When
 from django.utils import timezone
 from django.utils.timezone import now
 
@@ -618,19 +618,33 @@ def _resolve_base_schedule_with_origin(cu, company):
     from ivr_config.models import WorkdaySchedule as _WDS_R
     from ivr_config.models import Contact as _Contact_R
 
-    if getattr(cu, "is_intensive_override", False):
+    # S141: horario propio del trabajador (su ficha de Personal, pestaña
+    # Horarios). Manda sobre todo lo demás, salvo que el trabajador haya
+    # marcado la jornada intensiva (verano) y su horario sea de invierno:
+    # entonces le toca el intensivo. Un horario de "todo el año" no cambia
+    # con la jornada intensiva.
+    _own = _person_schedule(_person_of_user(cu))
+    _override = getattr(cu, "is_intensive_override", False)
+    if _own is not None and not (
+            _override and _own.season == _WDS_R.Season.WINTER):
+        return _own, (ORIGIN_OWN, None)
+
+    if _override:
+        # S141 (incidente real): antes valía el primer horario con
+        # is_intensive por orden alfabético, y un horario personal "según
+        # el día" cuyo lunes es de un solo tramo (is_intensive=True) se
+        # colaba como "la jornada intensiva" de todos los que la tienen
+        # marcada. Ahora solo un horario intensivo de verdad: igual toda
+        # la semana y de verano (si no hay, uno de "todo el año").
         _intensive = _WDS_R.objects.filter(
-            company=company,
-            is_intensive=True,
+            company=company, is_intensive=True, varies_by_day=False,
+        ).exclude(season=_WDS_R.Season.WINTER).order_by(
+            Case(When(season=_WDS_R.Season.SUMMER, then=0), default=1),
+            "label",
         ).first()
         if _intensive is not None:
             return _intensive, (ORIGIN_INTENSIVE, None)
 
-    # S141: horario propio del trabajador (su ficha de Personal, pestaña
-    # Horarios); va antes del de su usuario del panel, que queda para lo
-    # asignado antes de S141. Se ha elegido a propósito para él, así que
-    # vale aunque sea de jornada intensiva (p. ej. administración).
-    _own = _person_schedule(_person_of_user(cu))
     if _own is not None:
         return _own, (ORIGIN_OWN, None)
 
