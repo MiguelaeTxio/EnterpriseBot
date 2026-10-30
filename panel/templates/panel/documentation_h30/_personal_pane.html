@@ -105,7 +105,6 @@ pantalla completa aparte, no un fragmento htmx de este pane.
     {% endcomment %}
     <div class="col-lg-5">
         <div id="person-mass-bar" class="border rounded p-2 h-100">
-            {# S141 (Miguel Ángel): el contador, la nota de limpiar y Exportar a Excel pasan a la cabecera del listado "Trabajadores". #}
             <div class="row g-1">
                 <div class="col-6 border-end pe-2">
                     <div class="small text-muted fw-bold">Requisitos de documentación</div>
@@ -127,7 +126,12 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                     </div>
                 </div>
                 <div class="col-6">
-                    <div class="small text-muted fw-bold">EPIs</div>
+                    {# S141 (Miguel Ángel, opción 3): "N seleccionados / Limpiar" en la línea de la primera fila de acciones, sin línea propia. #}
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="small text-muted fw-bold">EPIs</span>
+                        <strong class="small ms-auto"><span id="person-mass-count">0</span> seleccionados</strong>
+                        <button type="button" class="btn btn-sm btn-outline-secondary py-0" id="person-mass-clear">Limpiar</button>
+                    </div>
                     <button type="button" class="btn btn-sm btn-primary" id="person-mass-epi-submit">Entregar EPIs…</button>
                     {% if can_manage_photo %}
                     {% comment %}
@@ -158,6 +162,13 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                         <button type="button" class="btn btn-sm btn-outline-success" id="person-mass-notify-whatsapp" title="Se la envía por WhatsApp al teléfono de empresa (número 1). Con 'Leer aquí' recibe el texto; también la ve en Mi buzón.">
                             <i class="bi bi-whatsapp me-1"></i>WhatsApp
                         </button>
+                        {% if can_export_personal %}
+                        {# H31 (S129): exportar a Excel con plantilla -- los marcados o, sin marcar, todo el listado filtrado. S141: vive en Información. #}
+                        <button type="button" class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#personalExportModal"
+                                title="Exportar a Excel: los marcados o, si no hay nadie marcado, todo el listado filtrado.">
+                            <i class="bi bi-file-earmark-excel me-1"></i>Excel
+                        </button>
+                        {% endif %}
                         <span class="vr mx-1"></span>
                         {% comment %}
                         H30 (S124), punto 4: los tres archivos sueltos
@@ -300,16 +311,7 @@ superior.
 <div class="row g-2 h-100" id="personal-results-row">
     <div class="col-lg-8 h-100" id="personal-results-col">
         <div class="border rounded p-2 h-100 d-flex flex-column">
-            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
-                <span class="fw-bold small">Trabajadores · <span id="person-mass-count">0</span> seleccionados</span>
-                <span class="small text-muted">Para limpiar la selección, marca y desmarca la casilla de seleccionar todos.</span>
-                {% if can_export_personal %}
-                {# H31 (S129): exportar a Excel con plantilla -- los marcados o, sin marcar, todo el listado filtrado. #}
-                <button type="button" class="btn btn-sm btn-outline-success ms-auto" data-bs-toggle="modal" data-bs-target="#personalExportModal">
-                    <i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel
-                </button>
-                {% endif %}
-            </div>
+            <div class="fw-bold small mb-1">Trabajadores</div>
             <div id="personal-results-scroll" class="ppane-scroll-fill ppane-scroll-x">
             <div id="personal-results">
                 {% include "panel/documentation_h30/_personal_results.html" with page=page sort_key=sort_key sort_dir=sort_dir search=search %}
@@ -571,8 +573,7 @@ las filas de debajo se desplacen de verdad.
         }
     });
 
-    const massClearBtn = document.getElementById('person-mass-clear');
-    if (massClearBtn) massClearBtn.addEventListener('click', function () {
+    document.getElementById('person-mass-clear').addEventListener('click', function () {
         selection.clear();
         selectionNames.clear();
         syncCheckboxesToSelection();
