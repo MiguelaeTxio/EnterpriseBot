@@ -10,6 +10,7 @@ Insurer, VehicleType, InsurerTariff, TariffLine, Budget, BudgetLine.
 
 import os as _os
 
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
 
 from ivr_config.models import Company, CompanyUser
@@ -5207,3 +5208,319 @@ class RouteTestPoint(models.Model):
         verbose_name = "Punto de prueba de ruta"
         verbose_name_plural = "Puntos de prueba de ruta"
         ordering = ["recorded_at"]
+
+
+# ---------------------------------------------------------------------------
+# H37 (S142, invasive session). Service evaluation: estimated budget by
+# tariff, estimated cost and yield of the services uploaded from a folder.
+# Valoración de servicios: presupuesto estimado según tarifa, coste
+# estimado y rendimiento de los servicios subidos desde una carpeta.
+# ---------------------------------------------------------------------------
+
+# Fuel consumption given by Miguel Ángel (S142), litres per 100 km, and
+# the assistance machine types (budgets.dispatch_vehicle) of each kind.
+# Consumos dados por Miguel Ángel (S142), litros a los 100 km, y los
+# tipos de máquina de asistencia de cada clase.
+DEFAULT_VEHICLE_COSTS = (
+    ("Turismo", "5", ""),
+    ("Furgoneta", "8", "VEHICULOS DE PERSONAL"),
+    ("Remolcador/tractora", "20", (
+        "ASISTENCIA EN CARRETERA\nCABEZA TRACTORA\n"
+        "CABEZA TRACTORA ASISTENCIA"
+    )),
+    ("Grúa móvil", "25", (
+        "RESCATE CON GRUA MOVIL ASISTENCIA\nGRUA MOVIL DE 20 TM\n"
+        "GRUA MOVIL DE 30 TM"
+    )),
+)
+
+
+class AssistanceCostSettings(models.Model):
+    """
+    Average costs used to estimate what an assistance service costs.
+
+    ---
+
+    Medias de coste para estimar lo que cuesta un servicio de
+    asistencia (S142): precio del gasoil y coste por hora de operario.
+    Los consumos y el coste por km de cada clase de vehículo van en
+    `AssistanceVehicleCost`. Uno por empresa. Miguel Ángel: "a medida
+    que se vayan teniendo lecturas, iremos sacando medias de los
+    propios servicios".
+    """
+
+    company = models.OneToOneField(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="assistance_cost_settings",
+        verbose_name="Empresa",
+    )
+    fuel_price_per_liter = models.DecimalField(
+        max_digits=6,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        verbose_name="Precio del gasoil (€/l)",
+    )
+    operator_cost_per_hour = models.DecimalField(
+        max_digits=7,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Coste por operario (€/h)",
+        help_text="Coste medio de una hora de un operario en servicio.",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True, verbose_name="Fecha de modificación",
+    )
+
+    class Meta:
+        verbose_name = "Medias de coste de asistencia"
+        verbose_name_plural = "Medias de coste de asistencia"
+
+    def __str__(self):
+        return "Medias de coste de %s" % self.company
+
+    @classmethod
+    def for_company(cls, company):
+        """
+        The settings of a company, created with the defaults if missing.
+
+        ---
+
+        Las medias de la empresa; si no existen, se crean, y también
+        las clases de vehículo con los consumos dados por Miguel Ángel.
+        """
+        settings, _created = cls.objects.get_or_create(company=company)
+        if not AssistanceVehicleCost.objects.filter(company=company).exists():
+            from decimal import Decimal
+
+            for order, (name, liters, types) in enumerate(
+                DEFAULT_VEHICLE_COSTS, start=1,
+            ):
+                AssistanceVehicleCost.objects.create(
+                    company=company, name=name,
+                    fuel_liters_per_100km=Decimal(liters),
+                    machine_types=types, sort_order=order,
+                )
+        return settings
+
+
+class AssistanceVehicleCost(models.Model):
+    """
+    Average consumption and cost of one kind of our vehicles.
+
+    ---
+
+    Consumo y coste medios de una clase de vehículo nuestro (turismo,
+    furgoneta, remolcador/tractora, grúa móvil) y qué tipos de máquina
+    de asistencia (`budgets.dispatch_vehicle`) entran en ella.
+    """
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="assistance_vehicle_costs",
+        verbose_name="Empresa",
+    )
+    name = models.CharField(max_length=60, verbose_name="Clase de vehículo")
+    fuel_liters_per_100km = models.DecimalField(
+        max_digits=5,
+        decimal_places=1,
+        default=0,
+        verbose_name="Consumo (l/100 km)",
+    )
+    cost_per_km = models.DecimalField(
+        max_digits=6,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        verbose_name="Coste del vehículo (€/km)",
+        help_text="Desgaste, mantenimiento... sin el gasoil.",
+    )
+    machine_types = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Tipos de máquina",
+        help_text="Tipos de máquina de asistencia de esta clase, uno por "
+                  "línea.",
+    )
+    sort_order = models.PositiveSmallIntegerField(
+        default=0, verbose_name="Orden",
+    )
+
+    class Meta:
+        verbose_name = "Clase de vehículo (coste)"
+        verbose_name_plural = "Clases de vehículo (coste)"
+        ordering = ["sort_order", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("company", "name"),
+                name="unique_assistance_vehicle_cost_name",
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
+
+    def type_names(self):
+        """
+        Machine types of this kind, one per line.
+
+        ---
+
+        Tipos de máquina de esta clase.
+        """
+        return [
+            line.strip() for line in self.machine_types.splitlines()
+            if line.strip()
+        ]
+
+
+class ServiceEvaluation(models.Model):
+    """
+    A service uploaded to be valued: estimated budget, cost and yield.
+
+    ---
+
+    Servicio subido para valorarlo (S142, pestaña Servicios): su
+    documento (foto o PDF de TIREA), los datos leídos, el presupuesto
+    estimado según la tarifa, el coste estimado y el rendimiento. No
+    crea ninguna orden; desde aquí se puede crear.
+    """
+
+    STATUS_PENDING = "PENDING"
+    STATUS_PROCESSING = "PROCESSING"
+    STATUS_DONE = "DONE"
+    STATUS_ERROR = "ERROR"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "En cola"),
+        (STATUS_PROCESSING, "Valorando"),
+        (STATUS_DONE, "Valorado"),
+        (STATUS_ERROR, "Error"),
+    ]
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="service_evaluations",
+        verbose_name="Empresa",
+    )
+    created_by = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="service_evaluations",
+        verbose_name="Subido por",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Subido",
+    )
+    file_name = models.CharField(max_length=255, verbose_name="Archivo")
+    source_document_blob = models.CharField(
+        max_length=500, blank=True, default="",
+        verbose_name="Documento (GCS)",
+    )
+    source_document_type = models.CharField(
+        max_length=100, blank=True, default="",
+        verbose_name="Tipo del documento",
+    )
+    status = models.CharField(
+        max_length=12,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING,
+        verbose_name="Estado",
+    )
+    error = models.TextField(blank=True, default="", verbose_name="Error")
+    data = models.JSONField(
+        default=dict,
+        blank=True,
+        encoder=DjangoJSONEncoder,
+        verbose_name="Datos leídos",
+    )
+    insurer = models.ForeignKey(
+        Insurer,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="service_evaluations",
+        verbose_name="Aseguradora",
+    )
+    vehicle_type = models.ForeignKey(
+        VehicleType,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="service_evaluations",
+        verbose_name="Tipo de vehículo",
+    )
+    base = models.ForeignKey(
+        Base,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="service_evaluations",
+        verbose_name="Base",
+    )
+    km = models.DecimalField(
+        max_digits=8, decimal_places=1, null=True, blank=True,
+        verbose_name="Km (base a base)",
+    )
+    hours = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True,
+        verbose_name="Horas estimadas",
+    )
+    crews = models.PositiveSmallIntegerField(
+        default=0, verbose_name="Vehículos (y operarios)",
+    )
+    job_label = models.CharField(
+        max_length=255, blank=True, default="", verbose_name="Trabajo",
+    )
+    budget_amount = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        verbose_name="Presupuesto estimado según tarifa",
+    )
+    operators_cost = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        verbose_name="Coste de operarios",
+    )
+    vehicles_cost = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        verbose_name="Coste de vehículos",
+    )
+    fuel_cost = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        verbose_name="Coste de gasoil",
+    )
+    total_cost = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        verbose_name="Coste estimado",
+    )
+    margin = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        verbose_name="Rendimiento",
+        help_text="Presupuesto estimado menos coste estimado.",
+    )
+    notes = models.TextField(
+        blank=True, default="", verbose_name="Avisos del cálculo",
+    )
+    work_order = models.ForeignKey(
+        WorkOrderAssistance,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="evaluations",
+        verbose_name="Orden creada",
+    )
+    processed_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Valorado",
+    )
+
+    class Meta:
+        verbose_name = "Servicio a valorar"
+        verbose_name_plural = "Servicios a valorar"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.file_name
