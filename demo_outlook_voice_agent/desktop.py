@@ -24,6 +24,8 @@ MOUSEEVENTF_LEFTUP = 0x0004
 KEYEVENTF_KEYUP = 0x0002
 KEYEVENTF_UNICODE = 0x0004
 VK_RETURN = 0x0D
+VK_CONTROL = 0x11
+VK_HOME = 0x24
 
 
 class _Rect(ctypes.Structure):
@@ -325,6 +327,21 @@ def _key_event(vk, scan, flags):
     event = _Input(type=INPUT_KEYBOARD)
     event.union.ki = _KeybdInput(vk, scan, flags, 0, 0)
     return event
+
+
+def key_combo(*vks):
+    """
+    Presses virtual keys in order and releases them in reverse order
+    (e.g. Ctrl+Home).
+
+    ---
+
+    Pulsa teclas virtuales en orden y las suelta en orden inverso
+    (p. ej. Ctrl+Inicio).
+    """
+    events = [_key_event(vk, 0, 0) for vk in vks]
+    events += [_key_event(vk, 0, KEYEVENTF_KEYUP) for vk in reversed(vks)]
+    _send(events)
 
 
 def type_text(text):

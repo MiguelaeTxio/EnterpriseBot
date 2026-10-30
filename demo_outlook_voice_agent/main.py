@@ -132,9 +132,9 @@ def send_mail(client, outlook, body, report):
          'el campo de texto "Asunto" (Subject) de la ventana de '
          'redaccion del correo nuevo', SUBJECT),
         ('Paso 4/6: cuerpo', 'paso4_cuerpo',
-         'la zona grande en blanco del cuerpo del mensaje, debajo del '
-         'campo Asunto, en la ventana de redaccion del correo nuevo',
-         body),
+         'la zona en blanco del cuerpo del mensaje justo debajo del '
+         'campo Asunto y por encima de la firma, en la ventana de '
+         'redaccion del correo nuevo', body),
     )
     for status, step_name, description, text in steps:
         report(status)
@@ -142,6 +142,14 @@ def send_mail(client, outlook, body, report):
                 client, compose['hwnd'], step_name, description):
             return '%s: elemento no encontrado. No se envio nada.' % status
         time.sleep(0.4)
+        if step_name == 'paso4_cuerpo':
+            # The body may hold a signature: Ctrl+Home puts the caret at
+            # the very start so the text goes above it.
+            # El cuerpo puede llevar firma: Ctrl+Inicio deja el cursor
+            # al principio para que el texto quede por encima.
+            desktop.key_combo(desktop.VK_CONTROL, desktop.VK_HOME)
+            time.sleep(0.3)
+            text = text + '\n\n'
         desktop.type_text(text)
         log('Escrito en %s (%d caracteres)' % (step_name, len(text)))
         time.sleep(0.6)

@@ -160,8 +160,10 @@ def verify_compose(client, png_path, recipient, subject, body):
             'Microsoft Outlook. Comprueba: to_ok si el campo Para '
             'contiene %s (o un destinatario ya resuelto con esa '
             'direccion); subject_ok si el Asunto es exactamente "%s"; '
-            'body_ok si el cuerpo empieza por el texto "%s". Explica en '
-            'notes lo que no cuadre.' % (recipient, subject, body[:60]),
+            'body_ok si el cuerpo contiene el texto "%s" por encima de '
+            'la firma (la firma de correo debajo es normal y no cuenta '
+            'como error). Explica en notes lo que no cuadre.'
+            % (recipient, subject, body[:60]),
         ],
         config=types.GenerateContentConfig(
             response_mime_type='application/json',
