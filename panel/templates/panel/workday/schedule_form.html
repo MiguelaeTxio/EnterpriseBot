@@ -19,40 +19,70 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
 {% block content %}
 <div class="border rounded p-2 mb-2" id="wd-top-panel">
     <div class="row g-2">
-        <div class="col-lg-8">
+        <div class="col-lg-7">
             <div class="border rounded p-2 h-100">
                 <div class="fw-bold small mb-1">Buscar y filtrar</div>
-                <div class="d-flex flex-wrap gap-3 align-items-end small">
-                    <div class="flex-grow-1">
-                        <input type="text" id="wd-search" class="form-control" placeholder="Buscar por nombre…" autocomplete="off">
-                    </div>
+                <div class="d-flex gap-2 mb-2">
+                    <input type="text" id="wd-search" class="form-control doc-h30-search" placeholder="Buscar por nombre…"
+                           autocomplete="off" value="{{ saved_filters.search|default:'' }}">
+                </div>
+                <div class="d-flex flex-wrap gap-3 align-items-start small">
                     <div>
                         <div class="fw-semibold mb-1">Temporada</div>
                         <select id="wd-season" class="form-select form-select-sm">
                             <option value="">Todas</option>
-                            <option value="WINTER">Invierno</option>
-                            <option value="SUMMER">Verano</option>
+                            <option value="WINTER"{% if saved_filters.season == "WINTER" %} selected{% endif %}>Invierno</option>
+                            <option value="SUMMER"{% if saved_filters.season == "SUMMER" %} selected{% endif %}>Verano</option>
                         </select>
                     </div>
                     <div>
                         <div class="fw-semibold mb-1">Tipo</div>
                         <select id="wd-kind" class="form-select form-select-sm">
                             <option value="">Todos</option>
-                            <option value="days">Según el día</option>
-                            <option value="split">Partida</option>
-                            <option value="intensive">Intensiva</option>
+                            <option value="days"{% if saved_filters.kind == "days" %} selected{% endif %}>Según el día</option>
+                            <option value="split"{% if saved_filters.kind == "split" %} selected{% endif %}>Partida</option>
+                            <option value="intensive"{% if saved_filters.kind == "intensive" %} selected{% endif %}>Intensiva</option>
                         </select>
+                    </div>
+                    <div>
+                        <div class="fw-semibold mb-1">Selección</div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="wdOnlySelected">
+                            <label class="form-check-label" for="wdOnlySelected">Mostrar solo la selección actual</label>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="col-lg-4">
+        <div class="col-lg-5">
             <div class="border rounded p-2 h-100">
-                <div class="small text-muted fw-bold">Horarios</div>
-                <button type="button" class="btn btn-sm btn-primary" id="wd-new">
-                    <i class="bi bi-plus-circle me-1"></i>Nuevo horario
-                </button>
-                <div class="small text-muted mt-1">Los horarios se asignan a cada trabajador, o a su sección, en Documentación → Horarios.</div>
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <strong class="small"><span id="wd-mass-count">0</span> seleccionados</strong>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="wd-mass-clear">Limpiar</button>
+                </div>
+                {# Acciones en cuadrícula por categoría (4.24, regla 6); la explicación, en el título del botón. #}
+                <div class="row g-1">
+                    <div class="col-6 pe-2">
+                        <div class="small text-muted fw-bold">Horarios</div>
+                        <button type="button" class="btn btn-sm btn-primary" id="wd-new" title="Crear un horario nuevo (igual toda la semana o distinto según el día).">
+                            <i class="bi bi-plus-circle me-1"></i>Nuevo horario
+                        </button>
+                    </div>
+                    <div class="col-6">
+                        <div class="small text-muted fw-bold">Los marcados</div>
+                        <div class="d-flex flex-wrap gap-1">
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="wd-mass-edit" disabled title="Editar el horario marcado (marca solo uno).">
+                                <i class="bi bi-pencil me-1"></i>Editar
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" id="wd-mass-delete" disabled title="Eliminar los horarios marcados. Quien los tuviera asignados pasa al de su sección o al de por defecto.">
+                                <i class="bi bi-trash me-1"></i>Eliminar
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-12 border-top pt-1 mt-1 small text-muted">
+                        Los horarios se asignan a cada trabajador, o a su sección, en Documentación → Horarios.
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -65,69 +95,104 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
 </div>
 
 <div class="border rounded p-2" id="wd-bottom-panel">
-    <div class="border rounded p-2 h-100 d-flex flex-column">
-        <div class="fw-bold small mb-1">Horarios configurados (<span id="wd-count">{{ schedules|length }}</span>)</div>
-        <div class="fixed-list-scroll wd-scroll flex-grow-1">
-            <table class="table table-sm table-hover align-middle mb-0" id="wd-table">
-                <thead class="table-light">
-                    <tr>
-                        <th class="small"><a href="#" class="text-dark text-decoration-none wd-sort" data-key="name">Nombre <i class="bi"></i></a></th>
-                        <th class="small"><a href="#" class="text-dark text-decoration-none wd-sort" data-key="season">Temporada <i class="bi"></i></a></th>
-                        <th class="small"><a href="#" class="text-dark text-decoration-none wd-sort" data-key="hours">Horario <i class="bi"></i></a></th>
-                        <th class="small"><a href="#" class="text-dark text-decoration-none wd-sort" data-key="tolerance">Tolerancia <i class="bi"></i></a></th>
-                        <th class="small"><a href="#" class="text-dark text-decoration-none wd-sort" data-key="default">Por defecto <i class="bi"></i></a></th>
-                        <th class="small text-end"><a href="#" class="text-dark text-decoration-none wd-sort" data-key="users">Operarios <i class="bi"></i></a></th>
-                        <th class="small text-end">Acciones</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for sched in schedules %}
-                    <tr class="wd-row" data-name="{{ sched.label|lower }}" data-season="{{ sched.season }}"
-                        data-kind="{% if sched.varies_by_day %}days{% elif sched.is_intensive %}intensive{% else %}split{% endif %}"
-                        data-tolerance="{{ sched.tolerance_minutes }}" data-default="{{ sched.is_default|yesno:'1,0' }}"
-                        data-users="{{ sched.assigned_users.count }}"
-                        data-hours="{% if sched.varies_by_day %}{{ sched.day_summary.0 }}{% else %}{{ sched.start_time_morning|time:'H:i' }}{% endif %}">
-                        <td class="small fw-semibold">{{ sched.label }}</td>
-                        <td class="small">
-                            {% if sched.season == "SUMMER" %}<span class="badge bg-warning text-dark"><i class="bi bi-sun me-1"></i>Verano</span>{% else %}<span class="badge bg-info text-dark"><i class="bi bi-snow me-1"></i>Invierno</span>{% endif %}
-                            {% if sched.is_intensive and not sched.varies_by_day %}<span class="badge bg-secondary ms-1">Intensiva</span>{% endif %}
-                        </td>
-                        <td class="small">
-                            {% if sched.varies_by_day %}
-                            <span class="badge bg-primary me-1">Según el día</span>{% for line in sched.day_summary %}<span class="text-nowrap">{{ line }}</span>{% if not forloop.last %} · {% endif %}{% endfor %}
-                            {% else %}
-                            {{ sched.start_time_morning|time:"H:i" }}–{{ sched.end_time_morning|time:"H:i" }}{% if not sched.is_intensive and sched.start_time_afternoon %} / {{ sched.start_time_afternoon|time:"H:i" }}–{{ sched.end_time_afternoon|time:"H:i" }}{% endif %}
-                            {% endif %}
-                        </td>
-                        <td class="small text-nowrap">{{ sched.tolerance_minutes }} min</td>
-                        <td class="small">{% if sched.is_default %}<span class="badge bg-success">Sí</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
-                        <td class="small text-end">{{ sched.assigned_users.count }}</td>
-                        <td class="small text-end text-nowrap">
-                            <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 wd-edit" title="Editar horario"
-                                    data-pk="{{ sched.pk }}" data-label="{{ sched.label }}" data-season="{{ sched.season }}"
-                                    data-is-intensive="{{ sched.is_intensive|yesno:'true,false' }}"
-                                    data-start-morning="{{ sched.start_time_morning|time:'H:i' }}" data-end-morning="{{ sched.end_time_morning|time:'H:i' }}"
-                                    data-start-afternoon="{{ sched.start_time_afternoon|time:'H:i'|default:'' }}" data-end-afternoon="{{ sched.end_time_afternoon|time:'H:i'|default:'' }}"
-                                    data-tolerance="{{ sched.tolerance_minutes }}" data-is-default="{{ sched.is_default|yesno:'true,false' }}"
-                                    data-varies="{{ sched.varies_by_day|yesno:'true,false' }}" data-days="{{ sched.days_json }}">
-                                <i class="bi bi-pencil"></i>
-                            </button>
-                            <form method="post" class="d-inline" onsubmit="return confirm('¿Eliminar el horario \'{{ sched.label|escapejs }}\'? Los operarios asignados quedarán sin horario específico.')">
-                                {% csrf_token %}
-                                <input type="hidden" name="action" value="delete">
-                                <input type="hidden" name="schedule_pk" value="{{ sched.pk }}">
-                                <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-2" title="Eliminar horario"><i class="bi bi-trash"></i></button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr><td colspan="7" class="text-muted small py-3">No hay horarios configurados para esta empresa.</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+    <div class="row g-2 h-100">
+        <div class="col-lg-9 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1">Horarios (<span id="wd-count">{{ schedules|length }}</span>)
+                    {# Pantalla completa, formato del laboratorio de análisis (directriz 4.26). #}
+                    <button type="button" class="btn btn-sm btn-outline-secondary float-end" id="wd-fullscreen" title="Pantalla completa">
+                        <i class="bi bi-fullscreen"></i>
+                    </button>
+                </div>
+                <div id="wd-results-scroll" class="wd-fill wd-scroll-both">
+                    <table class="table table-hover table-light align-middle" id="wd-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input" id="wd-check-all" title="Seleccionar todos los que cumplen el filtro actual"></th>
+                                <th class="sticky-col sticky-col-2"></th>
+                                <th class="sticky-col sticky-col-3 sticky-col-last"><a href="#" class="text-dark text-decoration-none wd-sort" data-key="name">Nombre <i class="bi"></i></a></th>
+                                <th><a href="#" class="text-dark text-decoration-none wd-sort" data-key="season">Temporada <i class="bi"></i></a></th>
+                                <th><a href="#" class="text-dark text-decoration-none wd-sort" data-key="hours">Horario <i class="bi"></i></a></th>
+                                <th><a href="#" class="text-dark text-decoration-none wd-sort" data-key="tolerance">Tolerancia <i class="bi"></i></a></th>
+                                <th><a href="#" class="text-dark text-decoration-none wd-sort" data-key="default">Por defecto <i class="bi"></i></a></th>
+                                <th class="text-end"><a href="#" class="text-dark text-decoration-none wd-sort" data-key="users">Trabajadores <i class="bi"></i></a></th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for sched in schedules %}
+                            <tr class="wd-row" data-pk="{{ sched.pk }}" data-name="{{ sched.label|lower }}" data-label="{{ sched.label }} ({{ sched.get_season_display|lower }})" data-season="{{ sched.season }}"
+                                data-kind="{% if sched.varies_by_day %}days{% elif sched.is_intensive %}intensive{% else %}split{% endif %}"
+                                data-tolerance="{{ sched.tolerance_minutes }}" data-default="{{ sched.is_default|yesno:'1,0' }}"
+                                data-users="{{ sched.user_count }}"
+                                data-hours="{% if sched.varies_by_day %}{{ sched.day_summary.0 }}{% else %}{{ sched.start_time_morning|time:'H:i' }}{% endif %}">
+                                <td class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input wd-row-check" data-pk="{{ sched.pk }}"></td>
+                                <td class="sticky-col sticky-col-2">{% if sched.is_default %}<i class="bi bi-star-fill text-success" title="Horario por defecto"></i>{% endif %}</td>
+                                <td class="sticky-col sticky-col-3 sticky-col-last"><a href="#" class="wd-edit-link" data-pk="{{ sched.pk }}">{{ sched.label }}</a></td>
+                                <td>
+                                    {% if sched.season == "SUMMER" %}<span class="badge bg-warning text-dark"><i class="bi bi-sun me-1"></i>Verano</span>{% else %}<span class="badge bg-info text-dark"><i class="bi bi-snow me-1"></i>Invierno</span>{% endif %}
+                                    {% if sched.is_intensive and not sched.varies_by_day %}<span class="badge bg-secondary ms-1">Intensiva</span>{% endif %}
+                                </td>
+                                <td>
+                                    {% if sched.varies_by_day %}
+                                    <span class="badge bg-primary me-1">Según el día</span>{% for line in sched.day_summary %}{{ line }}{% if not forloop.last %} · {% endif %}{% endfor %}
+                                    {% else %}
+                                    {{ sched.start_time_morning|time:"H:i" }}–{{ sched.end_time_morning|time:"H:i" }}{% if not sched.is_intensive and sched.start_time_afternoon %} / {{ sched.start_time_afternoon|time:"H:i" }}–{{ sched.end_time_afternoon|time:"H:i" }}{% endif %}
+                                    {% endif %}
+                                </td>
+                                <td>{{ sched.tolerance_minutes }} min</td>
+                                <td>{% if sched.is_default %}<span class="badge bg-success">Sí</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                                <td class="text-end">{{ sched.user_count }}</td>
+                                {# Acciones de la fila en el menú de tres puntos (directriz 4.24, regla 9). #}
+                                <td class="text-end">
+                                    <div class="dropdown">
+                                        <button class="btn btn-sm btn-link text-dark py-0" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Acciones">
+                                            <i class="bi bi-three-dots-vertical"></i>
+                                        </button>
+                                        <ul class="dropdown-menu dropdown-menu-end">
+                                            <li><a class="dropdown-item wd-edit-link" href="#" data-pk="{{ sched.pk }}"><i class="bi bi-pencil me-1"></i>Editar</a></li>
+                                            <li>
+                                                <form method="post" onsubmit="return confirm('¿Eliminar el horario \'{{ sched.label|escapejs }}\'? Quien lo tuviera asignado pasa al de su sección o al de por defecto.')">
+                                                    {% csrf_token %}
+                                                    <input type="hidden" name="action" value="delete">
+                                                    <input type="hidden" name="schedule_pk" value="{{ sched.pk }}">
+                                                    <button type="submit" class="dropdown-item text-danger"><i class="bi bi-trash me-1"></i>Eliminar</button>
+                                                </form>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                    <button type="button" class="d-none wd-edit" data-pk="{{ sched.pk }}" data-label="{{ sched.label }}" data-season="{{ sched.season }}"
+                                            data-is-intensive="{{ sched.is_intensive|yesno:'true,false' }}"
+                                            data-start-morning="{{ sched.start_time_morning|time:'H:i' }}" data-end-morning="{{ sched.end_time_morning|time:'H:i' }}"
+                                            data-start-afternoon="{{ sched.start_time_afternoon|time:'H:i'|default:'' }}" data-end-afternoon="{{ sched.end_time_afternoon|time:'H:i'|default:'' }}"
+                                            data-tolerance="{{ sched.tolerance_minutes }}" data-is-default="{{ sched.is_default|yesno:'true,false' }}"
+                                            data-varies="{{ sched.varies_by_day|yesno:'true,false' }}" data-days="{{ sched.days_json }}"></button>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="9" class="text-muted small py-3">No hay horarios configurados para esta empresa.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1">Selección actual (<span id="wd-selection-count">0</span>)</div>
+                <div class="wd-fill wd-scroll-y">
+                    <ul class="mb-0 small ps-0 list-unstyled" id="wd-selection-list">
+                        <li class="text-muted">Nada seleccionado todavía.</li>
+                    </ul>
+                </div>
+            </div>
         </div>
     </div>
 </div>
+<form method="post" id="wd-mass-delete-form" class="d-none">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="delete_many">
+</form>
 
 {# Modal único para crear y editar (S141). #}
 <div class="modal fade" id="scheduleModal" tabindex="-1" aria-labelledby="scheduleModalLabel" aria-hidden="true">
@@ -230,11 +295,20 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
 </div>
 {% include "panel/_fixed_list_layout.html" with top_id="wd-top-panel" bottom_id="wd-bottom-panel" %}
 {{ errors|length|json_script:"wd-has-errors" }}
+{{ saved_selection|json_script:"wd-saved-selection" }}
+{{ saved_sort|json_script:"wd-saved-sort" }}
 {% endblock %}
 
 {% block extra_head %}
 <style>
-    .wd-scroll { overflow: auto; min-height: 0; }
+    #wd-results-scroll thead th { position: sticky; top: 0; background-color: #f8f9fa; z-index: 2; }
+    #wd-results-scroll thead th.sticky-col { z-index: 3; }
+    #wd-results-scroll table td, #wd-results-scroll table th { white-space: nowrap; }
+    .wd-fill { flex: 1 1 auto; min-height: 0; }
+    .wd-scroll-y { overflow-y: auto; }
+    .wd-scroll-both { overflow: auto; }
+    #wd-bottom-panel:fullscreen { background-color: var(--bs-body-bg); padding: 1rem; }
+    #wd-bottom-panel:fullscreen #wd-results-scroll { height: calc(100vh - 5rem); }
 </style>
 <script>
 /*
@@ -351,36 +425,88 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
         }
     }
 
-    // ---- Listado: filtros y orden ------------------------------------
+    // ---- Listado: filtros, orden y selección (formato 4.24) ----------
+    var SCREEN_KEY = "workday_schedules";
     var sortState = {key: "name", desc: false};
+    var selection = new Map();
+    // Orden y selección recordados (se leen ya con la página cargada).
+    function loadSaved() {
+        try {
+            var savedSort = JSON.parse(document.getElementById("wd-saved-sort").textContent) || "";
+            if (savedSort) { sortState = {key: savedSort.replace(/^-/, ""), desc: savedSort.charAt(0) === "-"}; }
+        } catch (e) { /* sin orden guardado */ }
+        try {
+            JSON.parse(document.getElementById("wd-saved-selection").textContent).forEach(function (item) {
+                if (item && item.pk) { selection.set(String(item.pk), item.label || ""); }
+            });
+        } catch (e) { /* estado ilegible: se empieza sin selección */ }
+    }
+    function save(update) {
+        if (window.EbNavState) { window.EbNavState.save(SCREEN_KEY, update); }
+    }
+    function rows() { return Array.from(document.querySelectorAll("#wd-table tbody tr.wd-row")); }
+    function refreshSelection() {
+        // Solo cuenta lo que sigue existiendo.
+        var existing = new Set(rows().map(function (tr) { return tr.dataset.pk; }));
+        Array.from(selection.keys()).forEach(function (pk) { if (!existing.has(pk)) { selection.delete(pk); } });
+        document.getElementById("wd-mass-count").textContent = selection.size;
+        document.getElementById("wd-selection-count").textContent = selection.size;
+        document.getElementById("wd-mass-edit").disabled = selection.size !== 1;
+        document.getElementById("wd-mass-delete").disabled = selection.size === 0;
+        var list = document.getElementById("wd-selection-list");
+        list.innerHTML = "";
+        var names = Array.from(selection.values()).sort(function (a, b) { return a.localeCompare(b, "es"); });
+        if (!names.length) {
+            var empty = document.createElement("li");
+            empty.className = "text-muted";
+            empty.textContent = "Nada seleccionado todavía.";
+            list.appendChild(empty);
+        }
+        names.forEach(function (name) {
+            var li = document.createElement("li");
+            li.textContent = name;
+            list.appendChild(li);
+        });
+        document.querySelectorAll(".wd-row-check").forEach(function (cb) { cb.checked = selection.has(cb.dataset.pk); });
+        var visible = rows().filter(function (tr) { return !tr.classList.contains("d-none"); });
+        var checked = visible.filter(function (tr) { return selection.has(tr.dataset.pk); });
+        var all = document.getElementById("wd-check-all");
+        all.checked = visible.length > 0 && checked.length === visible.length;
+        all.indeterminate = checked.length > 0 && checked.length < visible.length;
+        save({selection: Array.from(selection.entries()).map(function (e) { return {pk: e[0], label: e[1]}; })});
+    }
     function applyList() {
         var q = document.getElementById("wd-search").value.trim().toLowerCase();
         var season = document.getElementById("wd-season").value;
         var kind = document.getElementById("wd-kind").value;
+        var onlySelected = document.getElementById("wdOnlySelected").checked;
         var tbody = document.querySelector("#wd-table tbody");
-        var rows = Array.from(tbody.querySelectorAll("tr.wd-row"));
         var shown = 0;
-        rows.forEach(function (tr) {
+        rows().forEach(function (tr) {
             var ok = (!q || tr.dataset.name.indexOf(q) !== -1)
                 && (!season || tr.dataset.season === season)
-                && (!kind || tr.dataset.kind === kind);
+                && (!kind || tr.dataset.kind === kind)
+                && (!onlySelected || selection.has(tr.dataset.pk));
             tr.classList.toggle("d-none", !ok);
             if (ok) { shown += 1; }
         });
         var numeric = ["tolerance", "users", "default"].indexOf(sortState.key) !== -1;
-        rows.sort(function (a, b) {
+        rows().sort(function (a, b) {
             var va = a.dataset[sortState.key] || "", vb = b.dataset[sortState.key] || "";
             var cmp = numeric ? (Number(va) - Number(vb)) : va.localeCompare(vb, "es");
             return sortState.desc ? -cmp : cmp;
         }).forEach(function (tr) { tbody.appendChild(tr); });
         document.getElementById("wd-count").textContent = shown;
         document.querySelectorAll(".wd-sort").forEach(function (a) {
-            var icon = a.querySelector("i");
-            icon.className = "bi" + (a.dataset.key === sortState.key ? (sortState.desc ? " bi-chevron-down" : " bi-chevron-up") : "");
+            a.querySelector("i").className = "bi" + (a.dataset.key === sortState.key ? (sortState.desc ? " bi-chevron-down" : " bi-chevron-up") : "");
         });
+        save({filters: {search: document.getElementById("wd-search").value, season: season, kind: kind},
+              sort: (sortState.desc ? "-" : "") + sortState.key});
+        refreshSelection();
     }
 
     document.addEventListener("DOMContentLoaded", function () {
+        loadSaved();
         document.querySelectorAll(".wd-days").forEach(initDays);
         var varies = document.getElementById("editVaries");
         var intensive = document.getElementById("editIsIntensive");
@@ -460,7 +586,7 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
             modal.show();
         }
 
-        ["wd-search", "wd-season", "wd-kind"].forEach(function (id) {
+        ["wd-search", "wd-season", "wd-kind", "wdOnlySelected"].forEach(function (id) {
             document.getElementById(id).addEventListener("input", applyList);
             document.getElementById(id).addEventListener("change", applyList);
         });
@@ -471,6 +597,51 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
                 else { sortState = {key: a.dataset.key, desc: false}; }
                 applyList();
             });
+        });
+        document.getElementById("wd-table").addEventListener("change", function (ev) {
+            var t = ev.target;
+            if (t.classList.contains("wd-row-check")) {
+                var tr = t.closest("tr");
+                if (t.checked) { selection.set(tr.dataset.pk, tr.dataset.label); } else { selection.delete(tr.dataset.pk); }
+                refreshSelection();
+            } else if (t.id === "wd-check-all") {
+                rows().filter(function (tr) { return !tr.classList.contains("d-none"); }).forEach(function (tr) {
+                    if (t.checked) { selection.set(tr.dataset.pk, tr.dataset.label); } else { selection.delete(tr.dataset.pk); }
+                });
+                refreshSelection();
+            }
+        });
+        document.getElementById("wd-mass-clear").addEventListener("click", function () {
+            selection.clear();
+            applyList();
+        });
+        function openEdit(pk) {
+            var btn = document.querySelector('.wd-edit[data-pk="' + pk + '"]');
+            if (btn) { btn.click(); }
+        }
+        document.querySelectorAll(".wd-edit-link").forEach(function (a) {
+            a.addEventListener("click", function (ev) { ev.preventDefault(); openEdit(a.dataset.pk); });
+        });
+        document.getElementById("wd-mass-edit").addEventListener("click", function () {
+            if (selection.size === 1) { openEdit(Array.from(selection.keys())[0]); }
+        });
+        document.getElementById("wd-mass-delete").addEventListener("click", function () {
+            if (!selection.size) { return; }
+            if (!confirm("Eliminar " + selection.size + " horario(s): " + Array.from(selection.values()).join(", ") +
+                         ". Quien los tuviera asignados pasa al de su sección o al de por defecto. ¿Seguro?")) { return; }
+            var form = document.getElementById("wd-mass-delete-form");
+            selection.forEach(function (_label, pk) {
+                var input = document.createElement("input");
+                input.type = "hidden"; input.name = "schedule_pks"; input.value = pk;
+                form.appendChild(input);
+            });
+            selection.clear();
+            save({selection: []});
+            form.submit();
+        });
+        var bottom = document.getElementById("wd-bottom-panel");
+        document.getElementById("wd-fullscreen").addEventListener("click", function () {
+            if (document.fullscreenElement) { document.exitFullscreen(); } else { bottom.requestFullscreen(); }
         });
         applyList();
     });

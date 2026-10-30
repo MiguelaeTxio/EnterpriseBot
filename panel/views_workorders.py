@@ -3298,6 +3298,30 @@ def _schedule_day_rows(sched):
     return rows
 
 
+SCHEDULES_SCREEN_KEY = "workday_schedules"
+
+
+def _saved_list(company_user, key):
+    from panel.navigation_persistence import get_saved_state_key
+
+    value = get_saved_state_key(company_user, SCHEDULES_SCREEN_KEY, key, [])
+    return value if isinstance(value, list) else []
+
+
+def _saved_text(company_user, key):
+    from panel.navigation_persistence import get_saved_state_key
+
+    value = get_saved_state_key(company_user, SCHEDULES_SCREEN_KEY, key, "")
+    return value if isinstance(value, str) else ""
+
+
+def _saved_dict(company_user, key):
+    from panel.navigation_persistence import get_saved_state_key
+
+    value = get_saved_state_key(company_user, SCHEDULES_SCREEN_KEY, key, {})
+    return value if isinstance(value, dict) else {}
+
+
 def _days_summary(rows):
     """
     ["L–J 08:00–13:30 / 15:00–18:00", "V 08:00–14:00", ...] -- the days
@@ -3501,6 +3525,9 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
             # lista.
             sched.day_rows = _schedule_day_rows(sched)
             sched.day_summary = _days_summary(sched.day_rows)
+            # Trabajadores con este horario propio (S141) o en su usuario.
+            sched.user_count = (sched.assigned_users.count()
+                                + sched.worker_settings.count())
             sched.days_json = json.dumps([
                 {key: row[key] for key in ("works", "sm", "em", "sa", "ea")}
                 for row in sched.day_rows
@@ -3514,6 +3541,10 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
             "errors": errors or [],
             "post_data": post_data or {},
             "post_days": _post_day_rows(post_data) if post_data else [],
+            # S141: selección y filtros recordados (formato 4.24).
+            "saved_selection": _saved_list(cu, "selection"),
+            "saved_filters": _saved_dict(cu, "filters"),
+            "saved_sort": _saved_text(cu, "sort"),
             "weekday_names": WEEKDAY_NAMES,
             "empty_day_rows": [{
                 "number": n, "name": name, "works": True,
@@ -3545,6 +3576,24 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
         action = request.POST.get("action", "").strip()
 
         REDIRECT_URL = reverse("panel:workday_schedule")
+
+        if action == "delete_many":
+            # S141: "Eliminar los marcados" del panel de acciones.
+            pks = [int(pk) for pk in request.POST.getlist("schedule_pks")
+                   if pk.isdigit()]
+            schedules = WorkdaySchedule.objects.filter(
+                company=company, pk__in=pks,
+            )
+            labels = [sched.label for sched in schedules]
+            CompanyUser.objects.filter(
+                company=company, workday_schedule__in=schedules,
+            ).update(workday_schedule=None)
+            schedules.delete()
+            if labels:
+                django_messages.success(
+                    request, "Horarios eliminados: %s." % ", ".join(labels),
+                )
+            return redirect(REDIRECT_URL)
 
         if action == "delete":
             try:
