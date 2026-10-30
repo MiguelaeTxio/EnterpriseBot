@@ -23,7 +23,21 @@ Gemini Vision y clics en pantalla.
    (1) correo nuevo, (2) Para, (3) Asunto, (4) cuerpo, (5) comprobacion
    visual del borrador (si no cuadra, se queda abierto SIN enviar),
    (6) Enviar. Capturas de cada paso en `demo_data/`, log en
-   `demo_agent.log`.
+   `demo_agent.log`. El texto se escribe al principio del cuerpo
+   (Ctrl+Inicio), por encima de la firma de correo. Prueba real
+   superada en S142 (2026-10-30): correo recibido en
+   `nummenor@gmail.com` con asunto `prueba` y la transcripcion.
+
+## Uso
+
+```powershell
+cd C:\EnterpriseBot\demo_outlook_voice_agent
+.\demo_agent_venv\Scripts\python.exe main.py
+```
+
+Con la consola vigilando, maximizar Outlook (si ya estaba maximizado
+al arrancar no cuenta), grabar, pulsar Detener y no tocar raton ni
+teclado hasta que vuelva el modal.
 
 ## Entorno
 
