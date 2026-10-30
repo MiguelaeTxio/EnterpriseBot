@@ -1,0 +1,29 @@
+# Outlook voice demo agent (S142, invasive session outside milestones):
+# direct dependencies. Single editable source. requirements.txt is
+# generated from this file with pip-compile and is NEVER edited by hand
+# (com-environment-management, section 2).
+#
+# The lock MUST be compiled on Miguel Angel's Windows PC, inside this
+# folder's own virtual environment (demo_agent_venv) -- platform specific
+# wheels make a lock generated elsewhere invalid
+# (com-environment-management, section 3.4).
+# ---
+# Agente demo de voz para Outlook (S142, sesion invasora fuera de
+# hitos): dependencias directas. Unica fuente editable. requirements.txt
+# se genera desde este archivo con pip-compile y NUNCA se edita a mano.
+#
+# El candado DEBE compilarse en el PC Windows de Miguel Angel, dentro del
+# entorno virtual propio de esta carpeta (demo_agent_venv).
+
+# Gemini on Vertex AI: speech transcription and screen vision
+# (directive 4.1 of the master document, model gemini-3.5-flash).
+# Gemini en Vertex AI: transcripcion de voz y vision de pantalla.
+google-genai>=2.7.0
+
+# Microphone recording / Grabacion de microfono.
+sounddevice>=0.5.0
+numpy>=2.0.0
+
+# Screen capture / Captura de pantalla.
+mss>=10.0.0
+Pillow>=10.0.0

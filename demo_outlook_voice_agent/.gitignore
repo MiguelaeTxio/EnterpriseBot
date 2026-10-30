@@ -1,0 +1,6 @@
+# Local run artefacts of the demo agent: logs, recordings, screenshots.
+# Artefactos locales de ejecucion del agente demo: logs, audios, capturas.
+*.log
+*.wav
+*.png
+demo_data/
