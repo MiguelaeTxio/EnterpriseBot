@@ -161,7 +161,11 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                             <option value="{{ ntype.code }}">{{ ntype.label }}</option>
                             {% endfor %}
                         </select>
-                        <button type="button" class="btn btn-sm btn-primary" id="person-mass-notify-submit">Enviar</button>
+                        <button type="button" class="btn btn-sm btn-primary" id="person-mass-notify-submit" title="Descarga los correos (.eml) para enviarlos desde Outlook.">Enviar por correo</button>
+                        {# H24 (S141): la misma circular por WhatsApp (plantilla circular_notification, solo al teléfono de empresa). #}
+                        <button type="button" class="btn btn-sm btn-outline-success" id="person-mass-notify-whatsapp" title="Se la envía por WhatsApp al teléfono de empresa (número 1). Con 'Leer aquí' recibe el texto; también la ve en Mi buzón.">
+                            <i class="bi bi-whatsapp me-1"></i>Enviar por WhatsApp
+                        </button>
                         {% comment %}
                         H30 (S124), punto 4: los tres archivos sueltos
                         (nunca ZIP) para que Yolanda lance la firma
@@ -215,6 +219,13 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                         <button type="button" class="btn btn-sm btn-outline-success" id="person-mass-reactivate" disabled>
                             <i class="bi bi-person-check me-1"></i>Reactivar
                         </button>
+                        {% if can_create_accounts %}
+                        {# H24 (S141): cuentas del panel creadas por el supervisor (usuario nombre.apellido, contraseña las 4 últimas cifras del DNI). #}
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="person-mass-access" disabled
+                                title="Crea el usuario del panel de los marcados para que puedan fichar. Después se les envía la circular de fichaje.">
+                            <i class="bi bi-key me-1"></i>Dar acceso al fichaje
+                        </button>
+                        {% endif %}
                     </div>
                 </div>
                 <div class="col-12 border-top pt-1 mt-1">
@@ -450,6 +461,8 @@ las filas de debajo se desplacen de verdad.
         if (reactivateBtn) reactivateBtn.disabled = selection.size === 0;
         const photoQueueBtn = document.getElementById('person-mass-photo-queue');
         if (photoQueueBtn) photoQueueBtn.disabled = selection.size === 0;
+        const accessBtn = document.getElementById('person-mass-access');
+        if (accessBtn) accessBtn.disabled = selection.size === 0;
     }
 
     // H31 (S113), Miguel Ángel: "el visor de seleccionados [...]
@@ -1032,6 +1045,86 @@ las filas de debajo se desplacen de verdad.
         });
     });
 
+    // H24 (S141): "Dar acceso al fichaje".
+    const accessBtn = document.getElementById('person-mass-access');
+    if (accessBtn) {
+        const accessModalEl = document.getElementById('personalAccessModal');
+        const accessBody = document.getElementById('personalAccessBody');
+        const accessResult = document.getElementById('personalAccessResult');
+        accessBtn.addEventListener('click', function () {
+            if (selection.size === 0) return;
+            accessBody.innerHTML = '<div class="text-muted small">Cargando…</div>';
+            accessResult.innerHTML = '';
+            bootstrap.Modal.getOrCreateInstance(accessModalEl).show();
+            fetch("{% url 'panel:documentation_personal_access_preview' %}?ids=" + Array.from(selection).join(','))
+                .then((r) => r.text()).then((html) => { accessBody.innerHTML = html; })
+                .catch(() => { accessBody.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red.</div>'; });
+        });
+        document.getElementById('personalAccessConfirm').addEventListener('click', function () {
+            const rows = Array.from(accessBody.querySelectorAll('tr[data-person]:not([data-skip])')).map((tr) => ({
+                person: tr.dataset.person,
+                username: tr.querySelector('.pa-username').value.trim(),
+                section: tr.querySelector('.pa-section').value,
+                base: tr.querySelector('.pa-base').value,
+                role: tr.querySelector('.pa-role').value,
+            }));
+            if (!rows.length) { accessResult.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">No hay nadie a quien crear usuario.</div>'; return; }
+            const btn = this;
+            btn.disabled = true;
+            accessResult.innerHTML = '<div class="text-muted">Creando usuarios…</div>';
+            fetch("{% url 'panel:documentation_personal_access_create' %}", {
+                method: 'POST',
+                headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json'},
+                body: JSON.stringify({rows: rows}),
+            }).then((r) => r.json()).then((data) => {
+                let html = '';
+                if (data.created && data.created.length) {
+                    html += '<div class="alert alert-success py-1 px-2 mb-1">' + data.created.length + ' usuario(s) creado(s): ' +
+                        data.created.map((c) => c.name + ' → <strong>' + c.username + '</strong>').join(', ') + '</div>';
+                }
+                if (data.errors && data.errors.length) {
+                    html += '<div class="alert alert-warning py-1 px-2 mb-0">No creados: ' + data.errors.join('; ') + '</div>';
+                }
+                accessResult.innerHTML = html || '<div class="alert alert-danger py-1 px-2 mb-0">' + (data.error || 'No se ha creado ninguno.') + '</div>';
+            }).catch(() => {
+                accessResult.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red: no se ha creado nada.</div>';
+            }).finally(() => { btn.disabled = false; });
+        });
+    }
+
+    // H24 (S141): circular por WhatsApp a los marcados.
+    document.getElementById('person-mass-notify-whatsapp').addEventListener('click', function () {
+        const select = document.getElementById('person-mass-notify');
+        if (selection.size === 0) {
+            resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">No hay personas seleccionadas.</div>';
+            return;
+        }
+        if (!select.value) {
+            resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">Falta elegir la circular/notificación.</div>';
+            return;
+        }
+        const label = select.options[select.selectedIndex].textContent.trim();
+        if (!confirm('¿Enviar "' + label + '" por WhatsApp a ' + selection.size + ' persona(s)?')) return;
+        const formData = new FormData();
+        selection.forEach((pk) => formData.append('person_ids', pk));
+        formData.append('tipo', select.value);
+        const btn = this;
+        btn.disabled = true;
+        resultEl.innerHTML = '<div class="text-muted">Enviando por WhatsApp…</div>';
+        fetch("{% url 'panel:documentation_personal_notify_whatsapp' %}", {
+            method: 'POST',
+            headers: {'X-CSRFToken': getCookie('csrftoken')},
+            body: formData,
+        }).then((r) => r.json()).then((data) => {
+            let html = '';
+            if (data.sent) html += `<div class="alert alert-success py-1 px-2 mb-1">${data.sent} enviada(s) por WhatsApp.</div>`;
+            if (data.errors && data.errors.length) html += '<div class="alert alert-warning py-1 px-2 mb-0">No enviadas: ' + data.errors.join('; ') + '</div>';
+            resultEl.innerHTML = html || `<div class="alert alert-danger py-1 px-2 mb-0">${data.error || 'No se ha enviado ninguna.'}</div>`;
+        }).catch(() => {
+            resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red: no se ha enviado nada.</div>';
+        }).finally(() => { btn.disabled = false; });
+    });
+
     document.getElementById('person-mass-notify-submit').addEventListener('click', function () {
         const typeCode = document.getElementById('person-mass-notify').value;
         if (selection.size === 0) {
@@ -1431,6 +1524,38 @@ PersonalReactivateView.
         </div>
     </div>
 </div>
+
+{% comment %}
+H24 (S141). "Dar acceso al fichaje": el cuerpo lo pinta
+PersonalAccessPreviewView (_access_rows.html) con los marcados; al
+confirmar, PersonalAccessCreateView crea las cuentas.
+{% endcomment %}
+{% if can_create_accounts %}
+<div class="modal fade" id="personalAccessModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-key me-1"></i>Dar acceso al fichaje</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="small text-muted mb-2">
+                    Usuario <strong>nombre.apellido</strong> (con los dos apellidos si ya existe; cámbialo si hace falta viendo los que ya hay).
+                    La contraseña es siempre <strong>las cuatro últimas cifras de su DNI</strong>. Después, envíales la circular de fichaje desde Información.
+                </div>
+                <div id="personalAccessBody"><div class="text-muted small">Cargando…</div></div>
+                <div id="personalAccessResult" class="small mt-2"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
+                <button type="button" class="btn btn-sm btn-primary" id="personalAccessConfirm">
+                    <i class="bi bi-key me-1"></i>Crear los usuarios
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <div class="modal fade" id="personalCreateModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog">

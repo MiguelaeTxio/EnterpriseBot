@@ -1253,6 +1253,12 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
             CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_ADMIN_SUPERVISOR,
             CompanyUser.ROLE_SUPERVISOR, CompanyUser.ROLE_WORKSHOPBOSS,
         )
+        # H24 (S141): "Dar acceso al fichaje", mismos roles que crear
+        # usuarios (SupervisorAccessMixin).
+        ctx["can_create_accounts"] = request.user.company_user.role in (
+            CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_ADMIN_SUPERVISOR,
+            CompanyUser.ROLE_SUPERVISOR, CompanyUser.ROLE_WORKSHOPBOSS,
+        )
         # H31 (S136): "Volver a sacar la foto" masivo, mismos roles que
         # la gestión de la foto en la ficha.
         ctx["can_manage_photo"] = request.user.company_user.role in (
@@ -6565,6 +6571,57 @@ class PersonalNotificationMassSendView(DocsUploadAccessMixin, View):
         response["X-Mass-Created-Count"] = str(created_count)
         response["X-Mass-Errors"] = json.dumps(errors)
         return response
+
+
+class PersonalNotificationWhatsAppMassView(DocsUploadAccessMixin, View):
+    """
+    H24 (S141). POST: send ONE circular by WhatsApp to the selected
+    people (template circular_notification, button "Leer aquí").
+    ---
+    H24 (S141). POST: envía UNA circular por WhatsApp a los marcados
+    (plantilla circular_notification: "Leer aquí" le contesta con el
+    texto de la circular y la da por leída; también la ve en Mi buzón).
+    Solo al teléfono de empresa (número 1). Cada envío correcto deja su
+    DocumentAcknowledgment (canal WhatsApp); si Twilio falla no queda
+    registrado y se dice por qué persona.
+    """
+
+    def post(self, request):
+        from whatsapp.services import send_circular_notification_whatsapp
+        from document_explorer.person_phone_service import mobile_of
+
+        person_ids = request.POST.getlist("person_ids")
+        type_code = request.POST.get("tipo", "").strip()
+        if not person_ids or not type_code:
+            return JsonResponse(
+                {"ok": False,
+                 "error": "Marca a alguien y elige la circular."},
+                status=400,
+            )
+        document_type = get_object_or_404(
+            DocumentTypeCatalog, code=type_code, is_active=True,
+        )
+        sent, errors = 0, []
+        for person in PersonIdentity.objects.filter(pk__in=[
+                pk for pk in person_ids if str(pk).isdigit()]):
+            label = "%s %s" % (person.given_name, person.first_surname)
+            if not mobile_of(person):
+                errors.append("%s: sin teléfono de empresa" % label)
+                continue
+            ack = DocumentAcknowledgment.objects.create(
+                person=person,
+                document_type=document_type,
+                delivery_date=timezone.localdate(),
+                extraction_method=DocumentAcknowledgment.METHOD_MANUAL,
+                channel=DocumentAcknowledgment.CHANNEL_WHATSAPP,
+            )
+            if send_circular_notification_whatsapp(ack):
+                sent += 1
+            else:
+                ack.delete()
+                errors.append("%s: no se ha podido enviar" % label)
+        return JsonResponse({"ok": sent > 0, "sent": sent,
+                             "errors": errors})
 
 
 class DossierTemplateMissingCheckView(CompanyUserRequiredMixin, View):

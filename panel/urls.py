@@ -109,6 +109,10 @@ from panel.views_clock_events import (
     ClockEventsResultsView,
     ClockEventsTabView,
 )
+from panel.views_personal_access import (
+    PersonalAccessCreateView,
+    PersonalAccessPreviewView,
+)
 from panel.views_worker_schedules import (
     WorkerSchedulesAssignView,
     WorkerSchedulesResultsView,
@@ -192,6 +196,7 @@ from panel.views_documentation_h30 import (
     PersonalIntakeExtractView,
     PersonalListFragmentView,
     PersonalNotificationMassSendView,
+    PersonalNotificationWhatsAppMassView,
     PersonalNotificationSendView,
     PersonalResultsFragmentView,
     PersonalUpdateView,
@@ -1418,6 +1423,24 @@ urlpatterns = [
         "documentacion/personal/notificar-masivo/",
         PersonalNotificationMassSendView.as_view(),
         name="documentation_personal_notify_mass",
+    ),
+    # H24 (S141): circular por WhatsApp a los marcados.
+    path(
+        "documentacion/personal/notificar-whatsapp/",
+        PersonalNotificationWhatsAppMassView.as_view(),
+        name="documentation_personal_notify_whatsapp",
+    ),
+    # H24 (S141): dar acceso al fichaje (cuentas del panel) a los
+    # marcados en Personal.
+    path(
+        "documentacion/personal/acceso/",
+        PersonalAccessPreviewView.as_view(),
+        name="documentation_personal_access_preview",
+    ),
+    path(
+        "documentacion/personal/acceso/crear/",
+        PersonalAccessCreateView.as_view(),
+        name="documentation_personal_access_create",
     ),
     # H30 (S124), punto 4: material para el envío masivo en Docuten.
     path(

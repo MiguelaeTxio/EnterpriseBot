@@ -710,6 +710,9 @@ def is_letter_format(content_html):
     return content_html.strip().startswith("<div")
 
 
+PUBLIC_BASE_URL = "https://enterprisebot-miguelaetxio.pythonanywhere.com"
+
+
 def _render_document_variables(content_html, *, worker=None, administrator=None, company=None, worksite=None):
     """
     H31 (S114, ampliado S115 con {{obra.*}}). Sustituye tokens
@@ -729,6 +732,10 @@ def _render_document_variables(content_html, *, worker=None, administrator=None,
         # H30 (S124): puesto (categoría profesional de la ficha), lo pide
         # la entrega de información PRL real.
         tokens["trabajador.puesto"] = worker.professional_category
+        # H24 (S141): usuario del panel (circular de alta y fichaje).
+        account = getattr(worker, "company_user", None)
+        if account is not None and account.user_id:
+            tokens["trabajador.usuario"] = account.user.username
     if administrator is not None:
         tokens["administrador.nombre_completo"] = (
             "%s %s %s" % (administrator.given_name, administrator.first_surname, administrator.second_surname)
@@ -743,6 +750,9 @@ def _render_document_variables(content_html, *, worker=None, administrator=None,
         tokens["obra.direccion"] = worksite.address
         tokens["obra.cliente"] = worksite.client_name
     tokens["fecha"] = timezone.now().strftime("%d/%m/%Y")
+    # H24 (S141): enlaces de la circular de alta y fichaje.
+    tokens["enlace.fichaje"] = PUBLIC_BASE_URL + "/fichaje/"
+    tokens["enlace.panel"] = PUBLIC_BASE_URL + "/panel/"
 
     result = content_html
     for key, value in tokens.items():

@@ -72,6 +72,7 @@ CircularImportDocumentView/CircularExportPdfView/CircularExportWordView.
                             <option value="{% templatetag openvariable %}trabajador.dni{% templatetag closevariable %}">DNI</option>
                             <option value="{% templatetag openvariable %}trabajador.num_seguridad_social{% templatetag closevariable %}">Nº afiliación S.S.</option>
                             <option value="{% templatetag openvariable %}trabajador.puesto{% templatetag closevariable %}">Puesto</option>
+                            <option value="{% templatetag openvariable %}trabajador.usuario{% templatetag closevariable %}">Usuario del panel</option>
                         </optgroup>
                         <optgroup label="Empresa">
                             <option value="{% templatetag openvariable %}empresa.razon_social{% templatetag closevariable %}">Razón social</option>
@@ -89,6 +90,8 @@ CircularImportDocumentView/CircularExportPdfView/CircularExportWordView.
                         </optgroup>
                         <optgroup label="Otros">
                             <option value="{% templatetag openvariable %}fecha{% templatetag closevariable %}">Fecha de generación</option>
+                            <option value="{% templatetag openvariable %}enlace.fichaje{% templatetag closevariable %}">Enlace de fichaje</option>
+                            <option value="{% templatetag openvariable %}enlace.panel{% templatetag closevariable %}">Enlace del panel</option>
                         </optgroup>
                     </select>
                     <span class="vr mx-1"></span>
