@@ -3298,6 +3298,36 @@ def _schedule_day_rows(sched):
     return rows
 
 
+def _days_summary(rows):
+    """
+    ["L–J 08:00–13:30 / 15:00–18:00", "V 08:00–14:00", ...] -- the days
+    with the same hours grouped, so the list stays one or two lines.
+    ---
+    Resumen de un horario según el día (S141): los días seguidos con las
+    mismas horas se agrupan, para que la fila del listado no crezca.
+    """
+    def hours(row):
+        if not row["works"]:
+            return "no se trabaja"
+        return " / ".join(
+            "%s–%s" % (row[a], row[b])
+            for a, b in (("sm", "em"), ("sa", "ea")) if row[a]
+        )
+
+    groups = []
+    for row in rows:
+        text = hours(row)
+        if groups and groups[-1][2] == text:
+            groups[-1][1] = row["name"]
+        else:
+            groups.append([row["name"], row["name"], text])
+    return [
+        "%s %s" % (first[:2] if first == last else
+                   "%s–%s" % (first[:2], last[:2]), text)
+        for first, last, text in groups
+    ]
+
+
 def _post_day_rows(post):
     """
     The weekday rows as typed, to re-render the form after an error.
@@ -3470,6 +3500,7 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
             # S141: las horas de cada día, para el modal de edición y la
             # lista.
             sched.day_rows = _schedule_day_rows(sched)
+            sched.day_summary = _days_summary(sched.day_rows)
             sched.days_json = json.dumps([
                 {key: row[key] for key in ("works", "sm", "em", "sa", "ea")}
                 for row in sched.day_rows

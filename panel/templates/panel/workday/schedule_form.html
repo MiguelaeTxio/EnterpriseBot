@@ -1,547 +1,272 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/workday/schedule_form.html #}
-{#                                                                                              #}
-{# Workday schedule management page — SUPERVISOR and ADMIN roles.                              #}
-{#   Lists all WorkdaySchedule records for the company and provides a creation form.           #}
-{#   Each existing schedule can be edited or deleted inline.                                    #}
-{#   Supports season-aware split-shift model: WINTER (split) and SUMMER (intensive).           #}
-{#   Afternoon tract fields are shown/hidden by JS based on is_intensive checkbox.             #}
-{#                                                                                              #}
-{# Página de gestión de horarios de jornada — roles SUPERVISOR y ADMIN.                        #}
-{#   Lista todos los registros WorkdaySchedule de la empresa y ofrece un formulario de alta.   #}
-{#   Cada horario existente puede editarse o eliminarse desde la misma página.                  #}
-{#   Soporta modelo de turno partido por temporada: INVIERNO (partido) y VERANO (intensivo).   #}
-{#   Los campos del tramo de tarde se muestran/ocultan por JS según el checkbox is_intensive.  #}
-{# S141: casilla "Horario distinto según el día" con una fila por día (panel/workday/_days_table.html). #}
 {% extends "panel/base.html" %}
+{% comment %}
+Horarios de jornada -- roles SUPERVISOR y ADMIN.
+S141 (Miguel Ángel): mismo formato que el resto de listados (directriz
+4.24): panel fijo arriba (buscar y filtrar, acciones) y debajo el
+listado de horarios con scroll propio y columnas ordenables. Crear y
+editar se hace en un modal; al guardar se cierra y queda el listado.
+Un horario puede ser igual toda la semana (mañana y, si no es
+intensiva, tarde) o "distinto según el día" (panel/workday/
+_days_table.html): en el listado, los días con las mismas horas se
+agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
+{% endcomment %}
 
 {% block title %}Horarios de jornada{% endblock %}
 
 {% block page_title %}Horarios de jornada{% endblock %}
 
 {% block content %}
-<div class="container-fluid px-0 workday-container">
-
-    {# ------------------------------------------------------------------ #}
-    {# Validation errors banner                                            #}
-    {# Banner de errores de validación                                     #}
-    {# ------------------------------------------------------------------ #}
-    {% if errors %}
-    <div class="alert alert-danger border-0 shadow-sm mb-4" role="alert">
-        <div class="d-flex align-items-start gap-2">
-            <i class="bi bi-exclamation-triangle-fill mt-1 flex-shrink-0"></i>
-            <div>
-                <strong>Corrige los siguientes errores:</strong>
-                <ul class="mb-0 mt-1 ps-3">
-                    {% for error in errors %}
-                    <li class="text-sm">{{ error }}</li>
-                    {% endfor %}
-                </ul>
+<div class="border rounded p-2 mb-2" id="wd-top-panel">
+    <div class="row g-2">
+        <div class="col-lg-8">
+            <div class="border rounded p-2 h-100">
+                <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                <div class="d-flex flex-wrap gap-3 align-items-end small">
+                    <div class="flex-grow-1">
+                        <input type="text" id="wd-search" class="form-control" placeholder="Buscar por nombre…" autocomplete="off">
+                    </div>
+                    <div>
+                        <div class="fw-semibold mb-1">Temporada</div>
+                        <select id="wd-season" class="form-select form-select-sm">
+                            <option value="">Todas</option>
+                            <option value="WINTER">Invierno</option>
+                            <option value="SUMMER">Verano</option>
+                        </select>
+                    </div>
+                    <div>
+                        <div class="fw-semibold mb-1">Tipo</div>
+                        <select id="wd-kind" class="form-select form-select-sm">
+                            <option value="">Todos</option>
+                            <option value="days">Según el día</option>
+                            <option value="split">Partida</option>
+                            <option value="intensive">Intensiva</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="border rounded p-2 h-100">
+                <div class="small text-muted fw-bold">Horarios</div>
+                <button type="button" class="btn btn-sm btn-primary" id="wd-new">
+                    <i class="bi bi-plus-circle me-1"></i>Nuevo horario
+                </button>
+                <div class="small text-muted mt-1">Los horarios se asignan a cada trabajador, o a su sección, en Documentación → Horarios.</div>
             </div>
         </div>
     </div>
+    {% if errors %}
+    <div class="alert alert-danger py-1 px-2 small mt-2 mb-0">
+        <strong>Corrige los siguientes errores:</strong>
+        {% for error in errors %}<div>{{ error }}</div>{% endfor %}
+    </div>
     {% endif %}
+</div>
 
-    {# ------------------------------------------------------------------ #}
-    {# Existing schedules list                                             #}
-    {# Lista de horarios existentes                                        #}
-    {# ------------------------------------------------------------------ #}
-    <div class="card border-0 shadow-sm mb-4">
-        <div class="card-header bg-light border-bottom py-2 px-4 d-flex align-items-center justify-content-between">
-            <span class="fw-semibold text-sm">
-                <i class="bi bi-clock me-2 text-muted"></i>Horarios configurados
-            </span>
-            <span class="badge bg-secondary">{{ schedules|length }}</span>
-        </div>
-
-        {% if schedules %}
-        <div class="table-responsive">
-            <table class="table table-sm table-hover align-middle mb-0">
+<div class="border rounded p-2" id="wd-bottom-panel">
+    <div class="border rounded p-2 h-100 d-flex flex-column">
+        <div class="fw-bold small mb-1">Horarios configurados (<span id="wd-count">{{ schedules|length }}</span>)</div>
+        <div class="fixed-list-scroll wd-scroll flex-grow-1">
+            <table class="table table-sm table-hover align-middle mb-0" id="wd-table">
                 <thead class="table-light">
                     <tr>
-                        <th class="px-4 text-sm fw-semibold">Nombre</th>
-                        <th class="text-sm fw-semibold">Temporada</th>
-                        <th class="text-sm fw-semibold">Mañana</th>
-                        <th class="text-sm fw-semibold">Tarde</th>
-                        <th class="text-sm fw-semibold">Tolerancia</th>
-                        <th class="text-sm fw-semibold">Por defecto</th>
-                        <th class="text-sm fw-semibold">Operarios</th>
-                        <th class="text-sm fw-semibold">Acciones</th>
+                        <th class="small"><a href="#" class="text-dark text-decoration-none wd-sort" data-key="name">Nombre <i class="bi"></i></a></th>
+                        <th class="small"><a href="#" class="text-dark text-decoration-none wd-sort" data-key="season">Temporada <i class="bi"></i></a></th>
+                        <th class="small"><a href="#" class="text-dark text-decoration-none wd-sort" data-key="hours">Horario <i class="bi"></i></a></th>
+                        <th class="small"><a href="#" class="text-dark text-decoration-none wd-sort" data-key="tolerance">Tolerancia <i class="bi"></i></a></th>
+                        <th class="small"><a href="#" class="text-dark text-decoration-none wd-sort" data-key="default">Por defecto <i class="bi"></i></a></th>
+                        <th class="small text-end"><a href="#" class="text-dark text-decoration-none wd-sort" data-key="users">Operarios <i class="bi"></i></a></th>
+                        <th class="small text-end">Acciones</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for sched in schedules %}
-                    <tr>
-                        <td class="px-4 text-sm fw-semibold">{{ sched.label }}</td>
-                        <td class="text-sm">
-                            {% if sched.season == "SUMMER" %}
-                            <span class="badge bg-warning text-dark">
-                                <i class="bi bi-sun me-1"></i>Verano
-                            </span>
+                    <tr class="wd-row" data-name="{{ sched.label|lower }}" data-season="{{ sched.season }}"
+                        data-kind="{% if sched.varies_by_day %}days{% elif sched.is_intensive %}intensive{% else %}split{% endif %}"
+                        data-tolerance="{{ sched.tolerance_minutes }}" data-default="{{ sched.is_default|yesno:'1,0' }}"
+                        data-users="{{ sched.assigned_users.count }}"
+                        data-hours="{% if sched.varies_by_day %}{{ sched.day_summary.0 }}{% else %}{{ sched.start_time_morning|time:'H:i' }}{% endif %}">
+                        <td class="small fw-semibold">{{ sched.label }}</td>
+                        <td class="small">
+                            {% if sched.season == "SUMMER" %}<span class="badge bg-warning text-dark"><i class="bi bi-sun me-1"></i>Verano</span>{% else %}<span class="badge bg-info text-dark"><i class="bi bi-snow me-1"></i>Invierno</span>{% endif %}
+                            {% if sched.is_intensive and not sched.varies_by_day %}<span class="badge bg-secondary ms-1">Intensiva</span>{% endif %}
+                        </td>
+                        <td class="small">
+                            {% if sched.varies_by_day %}
+                            <span class="badge bg-primary me-1">Según el día</span>{% for line in sched.day_summary %}<span class="text-nowrap">{{ line }}</span>{% if not forloop.last %} · {% endif %}{% endfor %}
                             {% else %}
-                            <span class="badge bg-info text-dark">
-                                <i class="bi bi-snow me-1"></i>Invierno
-                            </span>
-                            {% endif %}
-                            {% if sched.is_intensive %}
-                            <span class="badge bg-secondary ms-1">Intensiva</span>
+                            {{ sched.start_time_morning|time:"H:i" }}–{{ sched.end_time_morning|time:"H:i" }}{% if not sched.is_intensive and sched.start_time_afternoon %} / {{ sched.start_time_afternoon|time:"H:i" }}–{{ sched.end_time_afternoon|time:"H:i" }}{% endif %}
                             {% endif %}
                         </td>
-                        {% if sched.varies_by_day %}
-                        <td class="text-sm" colspan="2">
-                            <span class="badge bg-primary mb-1">Según el día</span>
-                            {% for row in sched.day_rows %}
-                            <div class="text-nowrap"><span class="fw-semibold">{{ row.name|slice:":3" }}</span>
-                                {% if not row.works %}<span class="text-muted">no se trabaja</span>{% else %}{% if row.sm %}{{ row.sm }}–{{ row.em }}{% endif %}{% if row.sm and row.sa %} / {% endif %}{% if row.sa %}{{ row.sa }}–{{ row.ea }}{% endif %}{% endif %}</div>
-                            {% endfor %}
-                        </td>
-                        {% else %}
-                        <td class="text-sm">
-                            {{ sched.start_time_morning|time:"H:i" }}–{{ sched.end_time_morning|time:"H:i" }}
-                        </td>
-                        <td class="text-sm">
-                            {% if sched.is_intensive %}
-                            <span class="text-muted">—</span>
-                            {% else %}
-                                {% if sched.start_time_afternoon and sched.end_time_afternoon %}
-                                {{ sched.start_time_afternoon|time:"H:i" }}–{{ sched.end_time_afternoon|time:"H:i" }}
-                                {% else %}
-                                <span class="text-muted">—</span>
-                                {% endif %}
-                            {% endif %}
-                        </td>
-                        {% endif %}
-                        <td class="text-sm">{{ sched.tolerance_minutes }} min</td>
-                        <td class="text-sm">
-                            {% if sched.is_default %}
-                            <span class="badge bg-success">Sí</span>
-                            {% else %}
-                            <span class="text-muted">—</span>
-                            {% endif %}
-                        </td>
-                        <td class="text-sm text-muted">
-                            {{ sched.assigned_users.count }}
-                        </td>
-                        <td class="text-sm">
-                            <div class="d-flex gap-2">
-                                <button type="button"
-                                        class="btn btn-outline-primary btn-sm py-0 px-2"
-                                        data-bs-toggle="modal"
-                                        data-bs-target="#modalEditSchedule"
-                                        data-pk="{{ sched.pk }}"
-                                        data-label="{{ sched.label|escapejs }}"
-                                        data-season="{{ sched.season }}"
-                                        data-is-intensive="{{ sched.is_intensive|yesno:'true,false' }}"
-                                        data-start-morning="{{ sched.start_time_morning|time:'H:i' }}"
-                                        data-end-morning="{{ sched.end_time_morning|time:'H:i' }}"
-                                        data-start-afternoon="{{ sched.start_time_afternoon|time:'H:i'|default:'' }}"
-                                        data-end-afternoon="{{ sched.end_time_afternoon|time:'H:i'|default:'' }}"
-                                        data-tolerance="{{ sched.tolerance_minutes }}"
-                                        data-is-default="{{ sched.is_default|yesno:'true,false' }}"
-                                        data-varies="{{ sched.varies_by_day|yesno:'true,false' }}"
-                                        data-days="{{ sched.days_json }}"
-                                        title="Editar horario">
-                                    <i class="bi bi-pencil"></i>
-                                </button>
-                                <form method="post" class="d-inline"
-                                      onsubmit="return confirm('¿Eliminar el horario \'{{ sched.label|escapejs }}\'? Los operarios asignados quedarán sin horario específico.')">
-                                    {% csrf_token %}
-                                    <input type="hidden" name="action" value="delete">
-                                    <input type="hidden" name="schedule_pk" value="{{ sched.pk }}">
-                                    <button type="submit"
-                                            class="btn btn-outline-danger btn-sm py-0 px-2"
-                                            title="Eliminar horario">
-                                        <i class="bi bi-trash"></i>
-                                    </button>
-                                </form>
-                            </div>
+                        <td class="small text-nowrap">{{ sched.tolerance_minutes }} min</td>
+                        <td class="small">{% if sched.is_default %}<span class="badge bg-success">Sí</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                        <td class="small text-end">{{ sched.assigned_users.count }}</td>
+                        <td class="small text-end text-nowrap">
+                            <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 wd-edit" title="Editar horario"
+                                    data-pk="{{ sched.pk }}" data-label="{{ sched.label }}" data-season="{{ sched.season }}"
+                                    data-is-intensive="{{ sched.is_intensive|yesno:'true,false' }}"
+                                    data-start-morning="{{ sched.start_time_morning|time:'H:i' }}" data-end-morning="{{ sched.end_time_morning|time:'H:i' }}"
+                                    data-start-afternoon="{{ sched.start_time_afternoon|time:'H:i'|default:'' }}" data-end-afternoon="{{ sched.end_time_afternoon|time:'H:i'|default:'' }}"
+                                    data-tolerance="{{ sched.tolerance_minutes }}" data-is-default="{{ sched.is_default|yesno:'true,false' }}"
+                                    data-varies="{{ sched.varies_by_day|yesno:'true,false' }}" data-days="{{ sched.days_json }}">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <form method="post" class="d-inline" onsubmit="return confirm('¿Eliminar el horario \'{{ sched.label|escapejs }}\'? Los operarios asignados quedarán sin horario específico.')">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="delete">
+                                <input type="hidden" name="schedule_pk" value="{{ sched.pk }}">
+                                <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-2" title="Eliminar horario"><i class="bi bi-trash"></i></button>
+                            </form>
                         </td>
                     </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="text-muted small py-3">No hay horarios configurados para esta empresa.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
-        {% else %}
-        <div class="px-4 py-5 text-center text-muted">
-            <i class="bi bi-clock fs-3 d-block mb-2"></i>
-            <span class="text-sm">No hay horarios configurados para esta empresa.</span>
-        </div>
-        {% endif %}
     </div>
-
-    {# ------------------------------------------------------------------ #}
-    {# Create new schedule form                                            #}
-    {# Formulario de alta de nuevo horario                                 #}
-    {# ------------------------------------------------------------------ #}
-    <div class="card border-0 shadow-sm">
-        <div class="card-header bg-light border-bottom py-2 px-4">
-            <span class="fw-semibold text-sm">
-                <i class="bi bi-plus-circle me-2 text-muted"></i>Nuevo horario
-            </span>
-        </div>
-        <div class="card-body px-4 py-4">
-            <form method="post" id="formCreateSchedule">
-                {% csrf_token %}
-                <input type="hidden" name="action" value="create">
-                <div class="row g-3">
-
-                    {# Nombre — Name #}
-                    <div class="col-12 col-md-5">
-                        <label class="form-label text-sm fw-semibold mb-1">
-                            Nombre <span class="text-danger">*</span>
-                        </label>
-                        <input type="text" name="label"
-                               class="form-control form-control-sm"
-                               placeholder="Ej: Mecánicos invierno, Chóferes verano…"
-                               value="{{ post_data.label|default:'' }}"
-                               required>
-                    </div>
-
-                    {# Temporada — Season #}
-                    <div class="col-6 col-md-3">
-                        <label class="form-label text-sm fw-semibold mb-1">
-                            Temporada <span class="text-danger">*</span>
-                        </label>
-                        <select name="season" id="createSeason"
-                                class="form-select form-select-sm">
-                            <option value="WINTER" {% if post_data.season == "WINTER" or not post_data.season %}selected{% endif %}>
-                                Invierno
-                            </option>
-                            <option value="SUMMER" {% if post_data.season == "SUMMER" %}selected{% endif %}>
-                                Verano
-                            </option>
-                        </select>
-                    </div>
-
-                    {# Tolerancia — Tolerance #}
-                    <div class="col-6 col-md-2">
-                        <label class="form-label text-sm fw-semibold mb-1">Tolerancia (min)</label>
-                        <input type="number" name="tolerance_minutes"
-                               class="form-control form-control-sm"
-                               min="0" max="60"
-                               value="{{ post_data.tolerance_minutes|default:'15' }}">
-                    </div>
-
-                    {# Jornada intensiva — Intensive shift flag #}
-                    <div class="col-12 col-md-2 d-flex align-items-end pb-1 create-general-tract">
-                        <div class="form-check mb-0">
-                            <input class="form-check-input schedule-intensive-check"
-                                   type="checkbox"
-                                   name="is_intensive"
-                                   id="createIsIntensive"
-                                   data-target="create"
-                                   {% if post_data.is_intensive %}checked{% endif %}>
-                            <label class="form-check-label text-sm" for="createIsIntensive">
-                                Jornada intensiva
-                            </label>
-                        </div>
-                    </div>
-
-                    {# Horario distinto según el día (S141) #}
-                    <div class="col-12">
-                        <div class="form-check mb-0">
-                            <input class="form-check-input schedule-varies-check" type="checkbox"
-                                   name="varies_by_day" id="createVaries" data-target="create"
-                                   {% if post_data.varies_by_day %}checked{% endif %}>
-                            <label class="form-check-label text-sm fw-semibold" for="createVaries">
-                                Horario distinto según el día
-                            </label>
-                        </div>
-                    </div>
-                    <div class="col-12 create-days-tract">
-                        {% if post_days %}
-                        {% include "panel/workday/_days_table.html" with prefix="create" rows=post_days %}
-                        {% else %}
-                        {% include "panel/workday/_days_table.html" with prefix="create" rows=empty_day_rows %}
-                        {% endif %}
-                    </div>
-
-                    {# Tramo mañana — Morning tract #}
-                    <div class="col-12 create-general-tract">
-                        <div class="text-sm fw-semibold text-muted mb-2">
-                            <i class="bi bi-sunrise me-1"></i>Tramo de mañana
-                        </div>
-                        <div class="row g-2">
-                            <div class="col-6 col-md-2">
-                                <label class="form-label text-sm mb-1">
-                                    Entrada <span class="text-danger">*</span>
-                                </label>
-                                <input type="time" name="start_time_morning"
-                                       class="form-control form-control-sm"
-                                       value="{{ post_data.start_time_morning|default:'' }}"
-                                       required>
-                            </div>
-                            <div class="col-6 col-md-2">
-                                <label class="form-label text-sm mb-1">
-                                    Salida <span class="text-danger">*</span>
-                                </label>
-                                <input type="time" name="end_time_morning"
-                                       class="form-control form-control-sm"
-                                       value="{{ post_data.end_time_morning|default:'' }}"
-                                       required>
-                            </div>
-                        </div>
-                    </div>
-
-                    {# Tramo tarde — Afternoon tract (hidden when intensive) #}
-                    <div class="col-12 create-afternoon-tract create-general-tract"
-                         {% if post_data.is_intensive %}style="display:none"{% endif %}>
-                        <div class="text-sm fw-semibold text-muted mb-2">
-                            <i class="bi bi-sunset me-1"></i>Tramo de tarde
-                        </div>
-                        <div class="row g-2">
-                            <div class="col-6 col-md-2">
-                                <label class="form-label text-sm mb-1">
-                                    Entrada <span class="text-danger">*</span>
-                                </label>
-                                <input type="time" name="start_time_afternoon"
-                                       id="createStartAfternoon"
-                                       class="form-control form-control-sm"
-                                       value="{{ post_data.start_time_afternoon|default:'' }}">
-                            </div>
-                            <div class="col-6 col-md-2">
-                                <label class="form-label text-sm mb-1">
-                                    Salida <span class="text-danger">*</span>
-                                </label>
-                                <input type="time" name="end_time_afternoon"
-                                       id="createEndAfternoon"
-                                       class="form-control form-control-sm"
-                                       value="{{ post_data.end_time_afternoon|default:'' }}">
-                            </div>
-                        </div>
-                    </div>
-
-                    {# Por defecto + submit #}
-                    <div class="col-12 d-flex align-items-center gap-3 flex-wrap">
-                        <div class="form-check mb-0">
-                            <input class="form-check-input" type="checkbox"
-                                   name="is_default" id="createIsDefault"
-                                   {% if post_data.is_default %}checked{% endif %}>
-                            <label class="form-check-label text-sm" for="createIsDefault">
-                                Establecer como horario por defecto
-                            </label>
-                        </div>
-                        <button type="submit" class="btn btn-primary btn-sm px-4 ms-auto">
-                            <i class="bi bi-plus-circle me-1"></i>Crear horario
-                        </button>
-                    </div>
-
-                </div>
-            </form>
-        </div>
-    </div>
-
 </div>
 
-{# ------------------------------------------------------------------ #}
-{# Modal — Edit existing schedule                                      #}
-{# Modal — Editar horario existente                                    #}
-{# ------------------------------------------------------------------ #}
-<div class="modal fade" id="modalEditSchedule" tabindex="-1"
-     aria-labelledby="modalEditScheduleLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
+{# Modal único para crear y editar (S141). #}
+<div class="modal fade" id="scheduleModal" tabindex="-1" aria-labelledby="scheduleModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-xl">
         <div class="modal-content border-0 shadow">
-            <div class="modal-header border-bottom py-3">
-                <h6 class="modal-title fw-semibold" id="modalEditScheduleLabel">
-                    <i class="bi bi-pencil me-2 text-muted"></i>Editar horario
-                </h6>
+            <div class="modal-header border-bottom py-2">
+                <h6 class="modal-title fw-semibold" id="scheduleModalLabel">Horario</h6>
                 <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body p-4">
-                <form method="post" id="formEditSchedule">
+            <div class="modal-body p-3">
+                {% if errors %}
+                <div class="alert alert-danger py-1 px-2 small">{% for error in errors %}<div>{{ error }}</div>{% endfor %}</div>
+                {% endif %}
+                <form method="post" id="formSchedule">
                     {% csrf_token %}
-                    <input type="hidden" name="action" value="update">
-                    <input type="hidden" name="schedule_pk" id="editSchedulePk">
+                    <input type="hidden" name="action" id="editAction" value="{{ post_data.action|default:'create' }}">
+                    <input type="hidden" name="schedule_pk" id="editSchedulePk" value="{{ post_data.schedule_pk|default:'' }}">
                     <div class="row g-3">
-
-                        {# Nombre — Name #}
                         <div class="col-12 col-md-5">
-                            <label class="form-label text-sm fw-semibold mb-1">
-                                Nombre <span class="text-danger">*</span>
-                            </label>
-                            <input type="text" name="label" id="editLabel"
-                                   class="form-control form-control-sm" required>
+                            <label class="form-label small fw-semibold mb-1" for="editLabel">Nombre <span class="text-danger">*</span></label>
+                            <input type="text" name="label" id="editLabel" class="form-control form-control-sm" required
+                                   placeholder="Ej: Mecánicos invierno, Chóferes verano…" value="{{ post_data.label|default:'' }}">
                         </div>
-
-                        {# Temporada — Season #}
                         <div class="col-6 col-md-3">
-                            <label class="form-label text-sm fw-semibold mb-1">
-                                Temporada <span class="text-danger">*</span>
-                            </label>
-                            <select name="season" id="editSeason"
-                                    class="form-select form-select-sm">
-                                <option value="WINTER">Invierno</option>
-                                <option value="SUMMER">Verano</option>
+                            <label class="form-label small fw-semibold mb-1" for="editSeason">Temporada <span class="text-danger">*</span></label>
+                            <select name="season" id="editSeason" class="form-select form-select-sm">
+                                <option value="WINTER"{% if post_data.season != "SUMMER" %} selected{% endif %}>Invierno</option>
+                                <option value="SUMMER"{% if post_data.season == "SUMMER" %} selected{% endif %}>Verano</option>
                             </select>
                         </div>
-
-                        {# Tolerancia — Tolerance #}
                         <div class="col-6 col-md-2">
-                            <label class="form-label text-sm fw-semibold mb-1">Tolerancia (min)</label>
-                            <input type="number" name="tolerance_minutes" id="editTolerance"
-                                   class="form-control form-control-sm" min="0" max="60">
+                            <label class="form-label small fw-semibold mb-1" for="editTolerance">Tolerancia (min)</label>
+                            <input type="number" name="tolerance_minutes" id="editTolerance" class="form-control form-control-sm" min="0" max="60"
+                                   value="{{ post_data.tolerance_minutes|default:'15' }}">
                         </div>
-
-                        {# Jornada intensiva — Intensive shift flag #}
                         <div class="col-12 col-md-2 d-flex align-items-end pb-1 edit-general-tract">
                             <div class="form-check mb-0">
-                                <input class="form-check-input schedule-intensive-check"
-                                       type="checkbox"
-                                       name="is_intensive"
-                                       id="editIsIntensive"
-                                       data-target="edit">
-                                <label class="form-check-label text-sm" for="editIsIntensive">
-                                    Jornada intensiva
-                                </label>
+                                <input class="form-check-input schedule-intensive-check" type="checkbox" name="is_intensive" id="editIsIntensive" data-target="edit"
+                                       {% if post_data.is_intensive %}checked{% endif %}>
+                                <label class="form-check-label small" for="editIsIntensive">Jornada intensiva</label>
                             </div>
                         </div>
-
-                        {# Horario distinto según el día (S141) #}
                         <div class="col-12">
                             <div class="form-check mb-0">
-                                <input class="form-check-input schedule-varies-check" type="checkbox"
-                                       name="varies_by_day" id="editVaries" data-target="edit">
-                                <label class="form-check-label text-sm fw-semibold" for="editVaries">
-                                    Horario distinto según el día
-                                </label>
+                                <input class="form-check-input schedule-varies-check" type="checkbox" name="varies_by_day" id="editVaries" data-target="edit"
+                                       {% if post_data.varies_by_day %}checked{% endif %}>
+                                <label class="form-check-label small fw-semibold" for="editVaries">Horario distinto según el día</label>
                             </div>
                         </div>
                         <div class="col-12 edit-days-tract">
+                            {% if post_days %}
+                            {% include "panel/workday/_days_table.html" with prefix="edit" rows=post_days %}
+                            {% else %}
                             {% include "panel/workday/_days_table.html" with prefix="edit" rows=empty_day_rows %}
+                            {% endif %}
                         </div>
-
-                        {# Tramo mañana — Morning tract #}
                         <div class="col-12 edit-general-tract">
-                            <div class="text-sm fw-semibold text-muted mb-2">
-                                <i class="bi bi-sunrise me-1"></i>Tramo de mañana
-                            </div>
+                            <div class="small fw-semibold text-muted mb-2"><i class="bi bi-sunrise me-1"></i>Tramo de mañana</div>
                             <div class="row g-2">
                                 <div class="col-6 col-md-3">
-                                    <label class="form-label text-sm mb-1">
-                                        Entrada <span class="text-danger">*</span>
-                                    </label>
-                                    <input type="time" name="start_time_morning" id="editStartMorning"
-                                           class="form-control form-control-sm" required>
+                                    <label class="form-label small mb-1" for="editStartMorning">Entrada <span class="text-danger">*</span></label>
+                                    <input type="time" name="start_time_morning" id="editStartMorning" class="form-control form-control-sm" value="{{ post_data.start_time_morning|default:'' }}">
                                 </div>
                                 <div class="col-6 col-md-3">
-                                    <label class="form-label text-sm mb-1">
-                                        Salida <span class="text-danger">*</span>
-                                    </label>
-                                    <input type="time" name="end_time_morning" id="editEndMorning"
-                                           class="form-control form-control-sm" required>
+                                    <label class="form-label small mb-1" for="editEndMorning">Salida <span class="text-danger">*</span></label>
+                                    <input type="time" name="end_time_morning" id="editEndMorning" class="form-control form-control-sm" value="{{ post_data.end_time_morning|default:'' }}">
                                 </div>
                             </div>
                         </div>
-
-                        {# Tramo tarde — Afternoon tract (hidden when intensive) #}
                         <div class="col-12 edit-afternoon-tract edit-general-tract">
-                            <div class="text-sm fw-semibold text-muted mb-2">
-                                <i class="bi bi-sunset me-1"></i>Tramo de tarde
-                            </div>
+                            <div class="small fw-semibold text-muted mb-2"><i class="bi bi-sunset me-1"></i>Tramo de tarde</div>
                             <div class="row g-2">
                                 <div class="col-6 col-md-3">
-                                    <label class="form-label text-sm mb-1">
-                                        Entrada <span class="text-danger">*</span>
-                                    </label>
-                                    <input type="time" name="start_time_afternoon" id="editStartAfternoon"
-                                           class="form-control form-control-sm">
+                                    <label class="form-label small mb-1" for="editStartAfternoon">Entrada <span class="text-danger">*</span></label>
+                                    <input type="time" name="start_time_afternoon" id="editStartAfternoon" class="form-control form-control-sm" value="{{ post_data.start_time_afternoon|default:'' }}">
                                 </div>
                                 <div class="col-6 col-md-3">
-                                    <label class="form-label text-sm mb-1">
-                                        Salida <span class="text-danger">*</span>
-                                    </label>
-                                    <input type="time" name="end_time_afternoon" id="editEndAfternoon"
-                                           class="form-control form-control-sm">
+                                    <label class="form-label small mb-1" for="editEndAfternoon">Salida <span class="text-danger">*</span></label>
+                                    <input type="time" name="end_time_afternoon" id="editEndAfternoon" class="form-control form-control-sm" value="{{ post_data.end_time_afternoon|default:'' }}">
                                 </div>
                             </div>
                         </div>
-
-                        {# Por defecto — Default flag #}
                         <div class="col-12">
                             <div class="form-check mb-0">
-                                <input class="form-check-input" type="checkbox"
-                                       name="is_default" id="editIsDefault">
-                                <label class="form-check-label text-sm" for="editIsDefault">
-                                    Establecer como horario por defecto
-                                </label>
+                                <input class="form-check-input" type="checkbox" name="is_default" id="editIsDefault"{% if post_data.is_default %} checked{% endif %}>
+                                <label class="form-check-label small" for="editIsDefault">Establecer como horario por defecto</label>
                             </div>
                         </div>
-
                     </div>
                 </form>
             </div>
-            <div class="modal-footer border-top py-3">
-                <button type="button" class="btn btn-outline-secondary btn-sm px-3"
-                        data-bs-dismiss="modal">Cancelar</button>
-                <button type="submit" form="formEditSchedule"
-                        class="btn btn-primary btn-sm px-4">
-                    <i class="bi bi-check2 me-1"></i>Guardar cambios
+            <div class="modal-footer border-top py-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm px-3" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" form="formSchedule" class="btn btn-primary btn-sm px-4" id="scheduleSubmit">
+                    <i class="bi bi-check2 me-1"></i>Guardar
                 </button>
             </div>
         </div>
     </div>
 </div>
+{% include "panel/_fixed_list_layout.html" with top_id="wd-top-panel" bottom_id="wd-bottom-panel" %}
+{{ errors|length|json_script:"wd-has-errors" }}
 {% endblock %}
 
 {% block extra_head %}
 <style>
-    /* Workday management container max-width
-       Anchura máxima del contenedor de gestión de jornada */
-    .workday-container { max-width: 960px; }
+    .wd-scroll { overflow: auto; min-height: 0; }
 </style>
 <script>
 /*
- * schedule_form.js (inline)
- * Manages show/hide of the afternoon tract fields based on the
- * is_intensive checkbox state. Applies to both the create form
- * and the edit modal independently.
- *
- * Gestiona la visibilidad del tramo de tarde según el estado del
- * checkbox is_intensive. Se aplica al formulario de creación y al
- * modal de edición de forma independiente.
+ * Horarios de jornada (S141): filtros y orden del listado en el
+ * navegador (son pocos horarios), modal único para crear y editar, tramo
+ * de tarde según "Jornada intensiva" y horario según el día con copia a
+ * los días siguientes que eran iguales.
  */
 (function () {
     "use strict";
 
-    /**
-     * Toggles the afternoon tract section visibility for a given context
-     * (create or edit) based on the is_intensive checkbox state.
-     * When intensive: hides afternoon tract and clears its inputs.
-     * When not intensive: shows afternoon tract.
-     * ---
-     * Alterna la visibilidad del tramo de tarde para un contexto dado
-     * (create o edit) según el estado del checkbox is_intensive.
-     * Intensiva: oculta el tramo de tarde y limpia sus inputs.
-     * No intensiva: muestra el tramo de tarde.
-     */
     function toggleAfternoon(checkEl) {
-        var target    = checkEl.getAttribute("data-target");
-        var tractEl   = document.querySelector("." + target + "-afternoon-tract");
-        var isIntensive = checkEl.checked;
-
+        var target = checkEl.getAttribute("data-target");
+        var tractEl = document.querySelector("." + target + "-afternoon-tract");
         if (!tractEl) { return; }
-        // S141: con "según el día", las horas generales no se usan.
+        // Con "según el día", las horas generales no se usan.
         var varies = document.querySelector(".schedule-varies-check[data-target='" + target + "']");
         if (varies && varies.checked) { return; }
-
-        if (isIntensive) {
+        if (checkEl.checked) {
             tractEl.style.display = "none";
-            tractEl.querySelectorAll("input[type='time']").forEach(function (inp) {
-                inp.value    = "";
-                inp.required = false;
-            });
+            tractEl.querySelectorAll("input[type='time']").forEach(function (inp) { inp.value = ""; inp.required = false; });
         } else {
             tractEl.style.display = "";
-            tractEl.querySelectorAll("input[type='time']").forEach(function (inp) {
-                inp.required = true;
-            });
+            tractEl.querySelectorAll("input[type='time']").forEach(function (inp) { inp.required = true; });
         }
     }
 
-    // ---- S141: horario distinto según el día -------------------------
+    // ---- Horario distinto según el día -------------------------------
     // Miguel Ángel: se hace el lunes y el martes ya lo trae; si es
-    // distinto se cambia y los siguientes copian el nuevo. Regla: al
-    // cambiar un día, cada día siguiente que era igual que él (antes del
-    // cambio) pasa a ser igual que él ahora; el primero distinto corta.
+    // distinto se cambia y los siguientes copian el nuevo. Al cambiar un
+    // día, cada día siguiente que era igual que él (antes del cambio)
+    // pasa a ser igual que él ahora; el primero distinto corta.
     var FIELDS = ["sm", "em", "sa", "ea"];
     function rowValues(row) {
         var v = {works: row.querySelector(".wd-works").checked};
@@ -551,12 +276,6 @@
     function sameValues(a, b) {
         return a.works === b.works && FIELDS.every(function (f) { return a[f] === b[f]; });
     }
-    function setValues(row, v) {
-        row.querySelector(".wd-works").checked = v.works;
-        FIELDS.forEach(function (f) { row.querySelector(".wd-" + f).value = v[f]; });
-        paintRow(row);
-        row.dataset.prev = JSON.stringify(v);
-    }
     function paintRow(row) {
         var works = row.querySelector(".wd-works").checked;
         FIELDS.forEach(function (f) {
@@ -565,6 +284,12 @@
             input.required = false;
         });
         row.querySelectorAll(".wd-clear").forEach(function (b) { b.disabled = !works; });
+    }
+    function setValues(row, v) {
+        row.querySelector(".wd-works").checked = v.works;
+        FIELDS.forEach(function (f) { row.querySelector(".wd-" + f).value = v[f]; });
+        paintRow(row);
+        row.dataset.prev = JSON.stringify(v);
     }
     function onDayChange(row) {
         var old = row.dataset.prev ? JSON.parse(row.dataset.prev) : null;
@@ -583,7 +308,8 @@
             paintRow(row);
             row.dataset.prev = JSON.stringify(rowValues(row));
             row.addEventListener("input", function () { onDayChange(row); });
-            // S141: vaciar la mañana o la tarde de un día (y de los
+            row.addEventListener("change", function () { onDayChange(row); });
+            // Vaciar la mañana o la tarde de un día (y de los
             // siguientes que eran iguales, como cualquier cambio).
             row.querySelectorAll(".wd-clear").forEach(function (btn) {
                 btn.addEventListener("click", function () {
@@ -592,7 +318,6 @@
                     onDayChange(row);
                 });
             });
-            row.addEventListener("change", function () { onDayChange(row); });
         });
     }
     function loadDays(table, days) {
@@ -617,90 +342,137 @@
         }
         document.querySelectorAll("." + target + "-general-tract").forEach(function (el) {
             el.style.display = on ? "none" : "";
-            el.querySelectorAll("input[type='time']").forEach(function (inp) {
-                if (on) { inp.required = false; }
-            });
+            el.querySelectorAll("input[type='time']").forEach(function (inp) { if (on) { inp.required = false; } });
         });
         if (!on) {
-            document.querySelectorAll("." + target + "-general-tract input[name$='_morning']").forEach(function (inp) {
-                inp.required = true;
-            });
+            document.querySelectorAll("." + target + "-general-tract input[name$='_morning']").forEach(function (inp) { inp.required = true; });
             var intensive = document.querySelector(".schedule-intensive-check[data-target='" + target + "']");
             if (intensive) { toggleAfternoon(intensive); }
         }
     }
 
+    // ---- Listado: filtros y orden ------------------------------------
+    var sortState = {key: "name", desc: false};
+    function applyList() {
+        var q = document.getElementById("wd-search").value.trim().toLowerCase();
+        var season = document.getElementById("wd-season").value;
+        var kind = document.getElementById("wd-kind").value;
+        var tbody = document.querySelector("#wd-table tbody");
+        var rows = Array.from(tbody.querySelectorAll("tr.wd-row"));
+        var shown = 0;
+        rows.forEach(function (tr) {
+            var ok = (!q || tr.dataset.name.indexOf(q) !== -1)
+                && (!season || tr.dataset.season === season)
+                && (!kind || tr.dataset.kind === kind);
+            tr.classList.toggle("d-none", !ok);
+            if (ok) { shown += 1; }
+        });
+        var numeric = ["tolerance", "users", "default"].indexOf(sortState.key) !== -1;
+        rows.sort(function (a, b) {
+            var va = a.dataset[sortState.key] || "", vb = b.dataset[sortState.key] || "";
+            var cmp = numeric ? (Number(va) - Number(vb)) : va.localeCompare(vb, "es");
+            return sortState.desc ? -cmp : cmp;
+        }).forEach(function (tr) { tbody.appendChild(tr); });
+        document.getElementById("wd-count").textContent = shown;
+        document.querySelectorAll(".wd-sort").forEach(function (a) {
+            var icon = a.querySelector("i");
+            icon.className = "bi" + (a.dataset.key === sortState.key ? (sortState.desc ? " bi-chevron-down" : " bi-chevron-up") : "");
+        });
+    }
+
     document.addEventListener("DOMContentLoaded", function () {
-
         document.querySelectorAll(".wd-days").forEach(initDays);
-        document.querySelectorAll(".schedule-varies-check").forEach(function (chk) {
-            chk.addEventListener("change", function () {
-                var table = document.querySelector("." + chk.getAttribute("data-target") + "-days-tract .wd-days");
-                // Al marcarla, si los días están vacíos, el lunes trae las
-                // horas generales y los demás lo copian.
-                if (chk.checked && table) {
-                    var first = table.querySelector(".wd-day-row");
-                    if (first && !rowValues(first).sm) {
-                        var form = chk.closest("form");
-                        var general = {
-                            works: true,
-                            sm: form.querySelector("[name='start_time_morning']").value,
-                            em: form.querySelector("[name='end_time_morning']").value,
-                            sa: form.querySelector("[name='start_time_afternoon']").value,
-                            ea: form.querySelector("[name='end_time_afternoon']").value,
-                        };
-                        loadDays(table, [0, 1, 2, 3, 4, 5, 6].map(function () { return general; }));
-                    }
+        var varies = document.getElementById("editVaries");
+        var intensive = document.getElementById("editIsIntensive");
+        var table = document.querySelector(".edit-days-tract .wd-days");
+        varies.addEventListener("change", function () {
+            // Al marcarla, si los días están vacíos, el lunes trae las
+            // horas generales y los demás lo copian.
+            if (varies.checked && table) {
+                var first = table.querySelector(".wd-day-row");
+                if (first && !rowValues(first).sm && !rowValues(first).sa) {
+                    var general = {
+                        works: true,
+                        sm: document.getElementById("editStartMorning").value,
+                        em: document.getElementById("editEndMorning").value,
+                        sa: document.getElementById("editStartAfternoon").value,
+                        ea: document.getElementById("editEndAfternoon").value,
+                    };
+                    loadDays(table, [0, 1, 2, 3, 4, 5, 6].map(function () { return general; }));
                 }
-                toggleVaries(chk);
-            });
-            toggleVaries(chk);
-        });
-
-        /* Initialise all intensive checkboxes on page load.
-           Inicializar todos los checkboxes de intensiva al cargar la página. */
-        document.querySelectorAll(".schedule-intensive-check").forEach(function (chk) {
-            toggleAfternoon(chk);
-            chk.addEventListener("change", function () {
-                toggleAfternoon(chk);
-            });
-        });
-
-        /* Populate edit modal from data attributes on the trigger button.
-           Rellenar modal de edición desde atributos data del botón disparador. */
-        var modalEl = document.getElementById("modalEditSchedule");
-        if (!modalEl) { return; }
-
-        modalEl.addEventListener("show.bs.modal", function (event) {
-            var btn = event.relatedTarget;
-            if (!btn) { return; }
-
-            document.getElementById("editSchedulePk").value     = btn.getAttribute("data-pk")             || "";
-            document.getElementById("editLabel").value          = btn.getAttribute("data-label")           || "";
-            document.getElementById("editSeason").value         = btn.getAttribute("data-season")          || "WINTER";
-            document.getElementById("editTolerance").value      = btn.getAttribute("data-tolerance")       || "15";
-            document.getElementById("editIsDefault").checked    = btn.getAttribute("data-is-default")      === "true";
-            document.getElementById("editStartMorning").value   = btn.getAttribute("data-start-morning")   || "";
-            document.getElementById("editEndMorning").value     = btn.getAttribute("data-end-morning")     || "";
-            document.getElementById("editStartAfternoon").value = btn.getAttribute("data-start-afternoon") || "";
-            document.getElementById("editEndAfternoon").value   = btn.getAttribute("data-end-afternoon")   || "";
-
-            /* Set is_intensive checkbox and trigger toggle.
-               Establecer checkbox is_intensive y disparar el toggle. */
-            var chk = document.getElementById("editIsIntensive");
-            chk.checked = btn.getAttribute("data-is-intensive") === "true";
-
-            /* S141: horario según el día. */
-            var varies = document.getElementById("editVaries");
-            varies.checked = btn.getAttribute("data-varies") === "true";
-            var table = document.querySelector(".edit-days-tract .wd-days");
-            var days = [];
-            try { days = JSON.parse(btn.getAttribute("data-days") || "[]"); } catch (e) { days = []; }
-            loadDays(table, days);
+            }
             toggleVaries(varies);
-            toggleAfternoon(chk);
+        });
+        intensive.addEventListener("change", function () { toggleAfternoon(intensive); });
+        toggleVaries(varies);
+        toggleAfternoon(intensive);
+
+        var modalEl = document.getElementById("scheduleModal");
+        var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        var title = document.getElementById("scheduleModalLabel");
+
+        document.getElementById("wd-new").addEventListener("click", function () {
+            document.getElementById("editAction").value = "create";
+            document.getElementById("editSchedulePk").value = "";
+            ["editLabel", "editStartMorning", "editEndMorning", "editStartAfternoon", "editEndAfternoon"].forEach(function (id) {
+                document.getElementById(id).value = "";
+            });
+            document.getElementById("editTolerance").value = "15";
+            document.getElementById("editSeason").value = "WINTER";
+            intensive.checked = false;
+            varies.checked = false;
+            document.getElementById("editIsDefault").checked = false;
+            loadDays(table, []);
+            toggleVaries(varies);
+            toggleAfternoon(intensive);
+            title.textContent = "Nuevo horario";
+            modal.show();
         });
 
+        document.querySelectorAll(".wd-edit").forEach(function (btn) {
+            btn.addEventListener("click", function () {
+                document.getElementById("editAction").value = "update";
+                document.getElementById("editSchedulePk").value = btn.dataset.pk || "";
+                document.getElementById("editLabel").value = btn.dataset.label || "";
+                document.getElementById("editSeason").value = btn.dataset.season || "WINTER";
+                document.getElementById("editTolerance").value = btn.dataset.tolerance || "15";
+                document.getElementById("editIsDefault").checked = btn.dataset.isDefault === "true";
+                document.getElementById("editStartMorning").value = btn.dataset.startMorning || "";
+                document.getElementById("editEndMorning").value = btn.dataset.endMorning || "";
+                document.getElementById("editStartAfternoon").value = btn.dataset.startAfternoon || "";
+                document.getElementById("editEndAfternoon").value = btn.dataset.endAfternoon || "";
+                intensive.checked = btn.dataset.isIntensive === "true";
+                varies.checked = btn.dataset.varies === "true";
+                var days = [];
+                try { days = JSON.parse(btn.dataset.days || "[]"); } catch (e) { days = []; }
+                loadDays(table, days);
+                toggleVaries(varies);
+                toggleAfternoon(intensive);
+                title.textContent = "Editar horario: " + (btn.dataset.label || "");
+                modal.show();
+            });
+        });
+
+        // Con errores de validación se vuelve a abrir el modal con lo escrito.
+        var hasErrors = JSON.parse(document.getElementById("wd-has-errors").textContent);
+        if (hasErrors) {
+            title.textContent = document.getElementById("editAction").value === "update" ? "Editar horario" : "Nuevo horario";
+            modal.show();
+        }
+
+        ["wd-search", "wd-season", "wd-kind"].forEach(function (id) {
+            document.getElementById(id).addEventListener("input", applyList);
+            document.getElementById(id).addEventListener("change", applyList);
+        });
+        document.querySelectorAll(".wd-sort").forEach(function (a) {
+            a.addEventListener("click", function (ev) {
+                ev.preventDefault();
+                if (sortState.key === a.dataset.key) { sortState.desc = !sortState.desc; }
+                else { sortState = {key: a.dataset.key, desc: false}; }
+                applyList();
+            });
+        });
+        applyList();
     });
 }());
 </script>
