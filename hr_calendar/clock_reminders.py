@@ -53,6 +53,10 @@ logger = logging.getLogger(__name__)
 REMINDER_DELAY = datetime.timedelta(minutes=15)
 IN_TEMPLATE = "clock_in_reminder"
 OUT_TEMPLATE = "clock_out_reminder"
+# S141 (Miguel Ángel): las mismas con un botón «Fichar ahora». Se usan
+# en cuanto Meta las aprueba; hasta entonces, las de texto plano.
+IN_LINK_TEMPLATE = "clock_in_reminder_link"
+OUT_LINK_TEMPLATE = "clock_out_reminder_link"
 
 
 def _away(company_user, person, day):
@@ -166,15 +170,23 @@ def _templates(company):
     from whatsapp.models import WhatsAppTemplate
 
     result = {}
-    for kind, name in ((ClockReminder.Kind.IN, IN_TEMPLATE),
-                       (ClockReminder.Kind.OUT, OUT_TEMPLATE)):
-        template = WhatsAppTemplate.objects.filter(
-            company=company, name=name,
-        ).first()
-        result[kind] = (
-            template,
-            template is not None and template_approved(template.content_sid),
-        )
+    for kind, names in (
+            (ClockReminder.Kind.IN, (IN_LINK_TEMPLATE, IN_TEMPLATE)),
+            (ClockReminder.Kind.OUT, (OUT_LINK_TEMPLATE, OUT_TEMPLATE))):
+        # La del botón si ya está aprobada; si no, la de texto plano.
+        result[kind] = (None, False)
+        for name in names:
+            template = WhatsAppTemplate.objects.filter(
+                company=company, name=name,
+            ).first()
+            if template is None:
+                continue
+            # Sin ninguna aprobada se queda la de texto plano (la
+            # última), que dentro de la ventana sale como texto libre.
+            approved = template_approved(template.content_sid)
+            result[kind] = (template, approved)
+            if approved:
+                break
     return result
 
 
@@ -277,8 +289,11 @@ def send_clock_reminders(company, now=None, log=logger.info):
                 approved or window_open(company, phone)):
             counters["sin_plantilla"] += 1
             continue
-        name = (person.given_name if person is not None else "") or (
-            company_user.user.first_name or "trabajador")
+        # S141: como en el aviso de la sala («Miguel Angel», no
+        # «MIGUEL ANGEL»).
+        name = ((person.given_name if person is not None else "")
+                or company_user.user.first_name or "trabajador")
+        name = name.strip().title()
         variables = {
             "1": name,
             "2": day.strftime("%d/%m"),
