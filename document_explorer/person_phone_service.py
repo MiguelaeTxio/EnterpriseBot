@@ -58,16 +58,19 @@ def whatsapp_address(raw):
 
 def mobile_of(person):
     """
-    First valid mobile of a person (phone, then phone_secondary).
+    The company mobile of a person (`phone` only), or None.
 
     ---
 
-    Primer móvil válido de la persona (`phone` y, si no, el segundo
-    teléfono), en formato E.164, o None.
+    El móvil de empresa de la persona, en formato E.164, o None. S141
+    (Miguel Ángel): el número 1 (`phone`) es el teléfono de empresa y el
+    número 2 (`phone_secondary`) el particular; los mensajes se envían
+    únicamente al número 1. Al particular nunca se envía nada (Juan
+    Carlos Rodríguez pidió no recibir mensajes en su teléfono
+    particular). Para reconocer quién escribe se siguen mirando los dos
+    números (resolve_person_by_phone).
     """
-    return whatsapp_address(person.phone) or whatsapp_address(
-        person.phone_secondary,
-    )
+    return whatsapp_address(person.phone)
 
 
 def resolve_person_by_phone(company, raw_phone):

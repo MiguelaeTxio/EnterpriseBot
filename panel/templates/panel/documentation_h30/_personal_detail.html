@@ -158,7 +158,7 @@ y se habilita "Guardar".
                     <input type="text" class="form-control form-control-sm bg-secondary-subtle" value="{{ person.dni }}" readonly title="Identificador, no editable">
                 </div>
                 <div class="col-12 col-md-4">
-                    <label class="form-label small mb-0">Teléfono</label>
+                    <label class="form-label small mb-0" title="Los mensajes de WhatsApp se envían solo a este número (S141).">Teléfono de empresa</label>
                     <input type="text" name="phone" class="form-control form-control-sm personal-edit-field" value="{{ person.phone }}" readonly>
                 </div>
                 {% comment %}
@@ -168,7 +168,7 @@ y se habilita "Guardar".
                 libre, sin distinguir a nivel de esquema cuál es cuál.
                 {% endcomment %}
                 <div class="col-12 col-md-4">
-                    <label class="form-label small mb-0">Segundo teléfono</label>
+                    <label class="form-label small mb-0" title="No se le envía ningún mensaje a este número (S141).">Teléfono particular</label>
                     <input type="text" name="phone_secondary" class="form-control form-control-sm personal-edit-field" value="{{ person.phone_secondary }}" readonly>
                 </div>
                 {% comment %}
