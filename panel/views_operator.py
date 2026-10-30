@@ -536,6 +536,31 @@ def _person_section(person):
     return current_sections([person.pk]).get(person.pk)
 
 
+def has_assigned_schedule(cu):
+    """
+    True if the user has a schedule assigned on purpose (S141).
+    ---
+    True si al usuario se le ha asignado un horario de verdad: el suyo
+    (pestaña Horarios o su usuario del panel) o el de su sección (de la
+    centralita o de Personal). El horario por defecto de la empresa no
+    cuenta: Miguel Ángel (S141), los recordatorios de fichaje se envían
+    "única y exclusivamente a las personas que tengan un horario
+    asignado".
+    """
+    from ivr_config.models import SectionContact
+
+    person = _person_of_user(cu)
+    if _person_schedule(person) is not None or cu.workday_schedule_id:
+        return True
+    if SectionContact.objects.filter(
+        contact__company_user=cu, section__is_active=True,
+        section__workday_schedule__isnull=False,
+    ).exists():
+        return True
+    section = _person_section(person)
+    return section is not None and section.workday_schedule_id is not None
+
+
 def resolve_person_schedule(person, company):
     """
     (schedule, (origin, section)) of a worker, with or without a panel user.

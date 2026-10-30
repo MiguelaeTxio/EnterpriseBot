@@ -23,7 +23,8 @@ festivo del calendario laboral de su base. Dos plantillas: olvido de
 la entrada y olvido de la salida.
 
 - Horario: `_resolve_operator_schedule` (el mismo que usan los partes
-  y el informe de fichajes); entrada = la primera hora de entrada,
+  y el informe de fichajes), y solo si tiene un horario asignado, suyo
+  o de su sección (S141: el de por defecto de la empresa no cuenta); entrada = la primera hora de entrada,
   salida = la última hora de salida (la comida ya no se ficha, S133).
 - Festivos: `_day_rule` del informe de fichajes (sábados, domingos y
   festivos de la base; los guardas nocturnos, todos los días).
@@ -193,6 +194,7 @@ def send_clock_reminders(company, now=None, log=logger.info):
     from hr_calendar.clock_settings import reminders_enabled
     from hr_calendar.clock_settings import worker_states
     from panel.views_operator import _resolve_operator_schedule
+    from panel.views_operator import has_assigned_schedule
     from whatsapp.services import _build_twilio_client
     from whatsapp.window_service import send_notification
     from whatsapp.window_service import window_open
@@ -240,6 +242,11 @@ def send_clock_reminders(company, now=None, log=logger.info):
             counters["festivo"] += 1
             continue
         # S141: el horario de hoy (puede ser distinto según el día).
+        # S141 (Miguel Ángel): solo a quien tiene un horario asignado
+        # (el suyo o el de su sección); el de por defecto no cuenta.
+        if not has_assigned_schedule(company_user):
+            counters["sin_horario"] += 1
+            continue
         schedule = _resolve_operator_schedule(company_user, company, day)
         if schedule is None:
             counters["sin_horario"] += 1
