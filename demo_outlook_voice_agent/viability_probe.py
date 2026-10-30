@@ -1,29 +1,33 @@
 """
 Minimal viability probe for the Outlook voice demo agent (S142).
 
-Checks, one by one and independently, the four building blocks the
-real agent needs on Miguel Angel's Windows PC: (1) finding the
-Outlook window and its maximised state, (2) recording from the
-microphone, (3) transcribing that recording with Gemini on Vertex AI,
-and (4) locating the "new mail" button on a screenshot with Gemini
-vision, moving the cursor onto it without clicking. Nothing is sent.
+Follows the real agent flow: it watches the screen and does nothing
+until Outlook goes from not maximised to maximised. Only then it shows
+a modal with start and stop recording buttons. When recording stops,
+it transcribes the message with Gemini on Vertex AI and, with Gemini
+vision, locates the "new mail" button and moves the cursor onto it
+without clicking. Nothing is sent. Afterwards it goes back to
+watching. Ctrl+C in the console stops it.
 
 ---
 
 Prueba minima de viabilidad del agente demo de voz para Outlook (S142).
 
-Comprueba, uno a uno y por separado, los cuatro bloques que necesita
-el agente real en el PC Windows de Miguel Angel: (1) encontrar la
-ventana de Outlook y si esta maximizada, (2) grabar del microfono,
-(3) transcribir esa grabacion con Gemini en Vertex AI, y (4) localizar
-el boton de correo nuevo en una captura con la vision de Gemini,
-llevando el cursor encima sin hacer clic. No se envia nada.
+Sigue el flujo real del agente: vigila la pantalla y no hace nada
+hasta que Outlook pasa de no maximizado a maximizado. Solo entonces
+muestra un modal con botones de iniciar y detener grabacion. Al
+detener, transcribe el mensaje con Gemini en Vertex AI y, con la
+vision de Gemini, localiza el boton de correo nuevo y lleva el cursor
+encima sin hacer clic. No se envia nada. Despues vuelve a vigilar.
+Ctrl+C en la consola lo detiene.
 """
 
 import ctypes
 import json
 import os
+import queue
 import sys
+import threading
 import time
 import wave
 from ctypes import wintypes
@@ -37,9 +41,8 @@ PNG_PATH = BASE_DIR / 'viability_probe.png'
 
 GEMINI_MODEL = 'gemini-3.5-flash'
 GEMINI_LOCATION = 'global'
-RECORD_SECONDS = 6
 SAMPLE_RATE = 16000
-SCREENSHOT_COUNTDOWN = 6
+WATCH_INTERVAL_SECONDS = 1.0
 OUTLOOK_EXES = ('outlook.exe', 'olk.exe')
 DEFAULT_KEY_PATH = (
     Path(os.environ.get('LOCALAPPDATA', ''))
@@ -59,20 +62,6 @@ def _log(message):
     print(line, flush=True)
     with open(LOG_PATH, 'a', encoding='utf-8') as handle:
         handle.write(line + '\n')
-        handle.flush()
-
-
-def _log_plain(message):
-    """
-    Writes a line without timestamp to screen and log (final summary).
-
-    ---
-
-    Escribe una linea sin hora en pantalla y log (resumen final).
-    """
-    print(message, flush=True)
-    with open(LOG_PATH, 'a', encoding='utf-8') as handle:
-        handle.write(message + '\n')
         handle.flush()
 
 
@@ -157,14 +146,15 @@ def _process_exe(pid):
         kernel32.CloseHandle(handle)
 
 
-def find_outlook_windows():
+def find_maximized_outlook():
     """
-    Lists visible top-level windows owned by classic or new Outlook.
+    Returns the first visible, maximised Outlook window (classic or
+    new Outlook), or None.
 
     ---
 
-    Lista las ventanas visibles de primer nivel de Outlook clasico o
-    del nuevo Outlook.
+    Devuelve la primera ventana visible y maximizada de Outlook
+    (clasico o nuevo), o None.
     """
     user32 = ctypes.windll.user32
     found = []
@@ -172,27 +162,23 @@ def find_outlook_windows():
         wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 
     def _callback(hwnd, _lparam):
-        if not user32.IsWindowVisible(hwnd):
+        if not user32.IsWindowVisible(hwnd) or not user32.IsZoomed(hwnd):
             return True
         length = user32.GetWindowTextLengthW(hwnd)
         if length == 0:
             return True
-        title = ctypes.create_unicode_buffer(length + 1)
-        user32.GetWindowTextW(hwnd, title, length + 1)
         pid = wintypes.DWORD()
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
         exe = _process_exe(pid.value)
         if exe in OUTLOOK_EXES:
-            found.append({
-                'hwnd': hwnd,
-                'title': title.value,
-                'exe': exe,
-                'maximized': bool(user32.IsZoomed(hwnd)),
-            })
+            title = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, title, length + 1)
+            found.append({'hwnd': hwnd, 'exe': exe, 'title': title.value})
+            return False
         return True
 
     user32.EnumWindows(enum_proc(_callback), 0)
-    return found
+    return found[0] if found else None
 
 
 def monitor_rect_for(hwnd):
@@ -213,64 +199,6 @@ def monitor_rect_for(hwnd):
     return rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top
 
 
-def step_windows():
-    """
-    Step 1: detect the Outlook window and whether it is maximised.
-
-    ---
-
-    Paso 1: detectar la ventana de Outlook y si esta maximizada.
-    """
-    _log('PASO 1/4 -- Buscando ventanas de Outlook (OUTLOOK.EXE / olk.exe)')
-    windows = find_outlook_windows()
-    if not windows:
-        _log('  Ninguna ventana de Outlook visible.')
-        return False, 'Outlook no encontrado', None
-    for index, item in enumerate(windows, start=1):
-        _log('  Ventana %d: exe=%s maximizada=%s titulo="%s"' % (
-            index, item['exe'], 'SI' if item['maximized'] else 'NO',
-            item['title']))
-    maximized = [item for item in windows if item['maximized']]
-    if maximized:
-        return True, '%s maximizado' % maximized[0]['exe'], maximized[0]
-    return False, 'Outlook visible pero no maximizado', windows[0]
-
-
-def step_record():
-    """
-    Step 2: record a few seconds from the default microphone.
-
-    ---
-
-    Paso 2: grabar unos segundos del microfono por defecto.
-    """
-    import numpy
-    import sounddevice
-
-    _log('PASO 2/4 -- Grabacion de microfono')
-    device = sounddevice.query_devices(kind='input')
-    _log('  Microfono por defecto: %s' % device['name'])
-    for remaining in (3, 2, 1):
-        _log('  Empieza a hablar en %d...' % remaining)
-        time.sleep(1)
-    _log('  GRABANDO %d segundos: di una frase corta en voz alta.'
-         % RECORD_SECONDS)
-    audio = sounddevice.rec(
-        int(RECORD_SECONDS * SAMPLE_RATE), samplerate=SAMPLE_RATE,
-        channels=1, dtype='int16')
-    sounddevice.wait()
-    peak = int(numpy.abs(audio).max())
-    with wave.open(str(WAV_PATH), 'wb') as handle:
-        handle.setnchannels(1)
-        handle.setsampwidth(2)
-        handle.setframerate(SAMPLE_RATE)
-        handle.writeframes(audio.tobytes())
-    _log('  Grabacion guardada en %s (pico=%d de 32767)' % (WAV_PATH, peak))
-    if peak < 300:
-        return False, 'grabacion casi muda (pico %d)' % peak
-    return True, 'pico %d' % peak
-
-
 def build_client():
     """
     Builds a Vertex AI Gemini client from the local service key.
@@ -283,13 +211,13 @@ def build_client():
     from google.genai import types
 
     key_path = Path(os.environ.get('H28_AGENT_KEY_PATH', DEFAULT_KEY_PATH))
-    _log('  Clave de servicio: %s' % key_path)
+    _log('Clave de servicio: %s' % key_path)
     if not key_path.is_file():
         raise FileNotFoundError('no existe la clave %s' % key_path)
     with open(key_path, encoding='utf-8') as handle:
         key_data = json.load(handle)
     os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = str(key_path)
-    _log('  Proyecto: %s | cuenta: %s' % (
+    _log('Proyecto: %s | cuenta: %s' % (
         key_data.get('project_id'), key_data.get('client_email')))
     return genai.Client(
         vertexai=True,
@@ -299,69 +227,76 @@ def build_client():
     )
 
 
-def step_transcribe(client):
+def save_wav(chunks):
     """
-    Step 3: transcribe the recording with Gemini.
+    Joins the recorded int16 chunks and writes them as a mono WAV.
 
     ---
 
-    Paso 3: transcribir la grabacion con Gemini.
+    Une los bloques int16 grabados y los guarda como WAV mono.
+    """
+    import numpy
+
+    audio = numpy.concatenate(chunks) if chunks else numpy.zeros(
+        (0, 1), dtype='int16')
+    with wave.open(str(WAV_PATH), 'wb') as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(SAMPLE_RATE)
+        handle.writeframes(audio.tobytes())
+    peak = int(numpy.abs(audio).max()) if audio.size else 0
+    seconds = audio.shape[0] / SAMPLE_RATE
+    _log('Grabacion guardada en %s (%.1f s, pico=%d de 32767)' % (
+        WAV_PATH, seconds, peak))
+    return seconds
+
+
+def transcribe(client):
+    """
+    Transcribes the saved recording with Gemini.
+
+    ---
+
+    Transcribe la grabacion guardada con Gemini.
     """
     from google.genai import types
 
-    _log('PASO 3/4 -- Transcripcion con %s' % GEMINI_MODEL)
-    audio = WAV_PATH.read_bytes()
+    _log('Transcribiendo con %s' % GEMINI_MODEL)
     response = client.models.generate_content(
         model=GEMINI_MODEL,
         contents=[
-            types.Part.from_bytes(data=audio, mime_type='audio/wav'),
+            types.Part.from_bytes(
+                data=WAV_PATH.read_bytes(), mime_type='audio/wav'),
             'Transcribe literalmente este audio en castellano. Devuelve '
             'solo el texto transcrito, sin comentarios. Si no se oye '
             'voz, devuelve exactamente: (sin voz)',
         ],
     )
     text = (response.text or '').strip()
-    _log('  Transcripcion: "%s"' % text)
-    if not text or text == '(sin voz)':
-        return False, 'transcripcion vacia'
-    return True, 'texto recibido (%d caracteres)' % len(text)
+    _log('Transcripcion: "%s"' % text)
+    return text
 
 
-def step_vision(client, outlook):
+def locate_new_mail(client, outlook):
     """
-    Step 4: screenshot the Outlook monitor, ask Gemini where the
-    new-mail button is, and move the cursor there without clicking.
+    Screenshots the Outlook monitor, asks Gemini where the new-mail
+    button is and moves the cursor there without clicking.
 
     ---
 
-    Paso 4: capturar el monitor de Outlook, preguntar a Gemini donde
-    esta el boton de correo nuevo y llevar alli el cursor sin clic.
+    Captura el monitor de Outlook, pregunta a Gemini donde esta el
+    boton de correo nuevo y lleva alli el cursor sin hacer clic.
     """
     import mss
     from google.genai import types
     from PIL import Image
 
-    _log('PASO 4/4 -- Vision: localizar el boton de correo nuevo')
-    for remaining in range(SCREENSHOT_COUNTDOWN, 0, -1):
-        _log('  Pon Outlook maximizado delante de todo: captura en %d...'
-             % remaining)
-        time.sleep(1)
-    if outlook:
-        left, top, width, height = monitor_rect_for(outlook['hwnd'])
-    else:
-        left, top, width, height = 0, 0, 0, 0
+    left, top, width, height = monitor_rect_for(outlook['hwnd'])
     with mss.mss() as grabber:
-        if width and height:
-            region = {'left': left, 'top': top,
-                      'width': width, 'height': height}
-        else:
-            region = grabber.monitors[1]
-            left, top = region['left'], region['top']
-            width, height = region['width'], region['height']
-        shot = grabber.grab(region)
-    image = Image.frombytes('RGB', shot.size, shot.rgb)
-    image.save(PNG_PATH)
-    _log('  Captura %dx%d guardada en %s' % (width, height, PNG_PATH))
+        shot = grabber.grab(
+            {'left': left, 'top': top, 'width': width, 'height': height})
+    Image.frombytes('RGB', shot.size, shot.rgb).save(PNG_PATH)
+    _log('Captura %dx%d guardada en %s' % (width, height, PNG_PATH))
     schema = {
         'type': 'OBJECT',
         'properties': {
@@ -371,6 +306,7 @@ def step_vision(client, outlook):
         },
         'required': ['found'],
     }
+    _log('Preguntando a Gemini por el boton de correo nuevo')
     response = client.models.generate_content(
         model=GEMINI_MODEL,
         contents=[
@@ -389,76 +325,244 @@ def step_vision(client, outlook):
         ),
     )
     result = json.loads(response.text)
-    _log('  Respuesta de Gemini: %s' % json.dumps(result, ensure_ascii=False))
+    _log('Respuesta de Gemini: %s' % json.dumps(result, ensure_ascii=False))
     box = result.get('box_2d') or []
     if not result.get('found') or len(box) != 4:
-        return False, 'boton no localizado'
+        return None
     center_x = left + int((box[1] + box[3]) / 2 / 1000 * width)
     center_y = top + int((box[0] + box[2]) / 2 / 1000 * height)
     ctypes.windll.user32.SetCursorPos(center_x, center_y)
-    _log('  Cursor llevado a (%d, %d) SIN hacer clic: comprueba que esta '
-         'encima de "%s".' % (center_x, center_y, result.get('label')))
-    return True, 'boton "%s" en (%d, %d)' % (
-        result.get('label'), center_x, center_y)
+    _log('Cursor llevado a (%d, %d) SIN clic, sobre "%s"' % (
+        center_x, center_y, result.get('label')))
+    return result.get('label'), center_x, center_y
+
+
+class RecordingModal:
+    """
+    Topmost modal shown when Outlook is maximised: start and stop
+    recording buttons, then transcription and button location run in
+    a worker thread while the modal reports progress.
+
+    ---
+
+    Modal siempre encima que aparece al maximizar Outlook: botones de
+    iniciar y detener grabacion; despues la transcripcion y la
+    localizacion del boton corren en un hilo mientras el modal informa.
+    """
+
+    def __init__(self, client, outlook):
+        """
+        Builds the modal window.
+
+        ---
+
+        Construye la ventana modal.
+        """
+        import tkinter
+
+        self._client = client
+        self._outlook = outlook
+        self._chunks = []
+        self._stream = None
+        self._events = queue.Queue()
+        self.root = tkinter.Tk()
+        self.root.title('Agente demo -- mensaje de voz')
+        self.root.attributes('-topmost', True)
+        self.root.resizable(False, False)
+        self.root.protocol('WM_DELETE_WINDOW', self._close)
+        self._status = tkinter.Label(
+            self.root, text='Outlook maximizado. Pulsa Iniciar para '
+            'grabar tu mensaje.', wraplength=380, justify='left',
+            padx=16, pady=12)
+        self._status.pack()
+        buttons = tkinter.Frame(self.root, padx=16, pady=12)
+        buttons.pack()
+        self._start = tkinter.Button(
+            buttons, text='Iniciar grabacion', width=18,
+            command=self._start_recording)
+        self._start.pack(side='left', padx=6)
+        self._stop = tkinter.Button(
+            buttons, text='Detener', width=12, state='disabled',
+            command=self._stop_recording)
+        self._stop.pack(side='left', padx=6)
+        self.root.update_idletasks()
+        width = self.root.winfo_width()
+        x_pos = (self.root.winfo_screenwidth() - width) // 2
+        self.root.geometry('+%d+%d' % (x_pos, 120))
+        self.root.after(200, self._poll_events)
+
+    def _set_status(self, text):
+        """
+        Shows a message in the modal and logs it.
+
+        ---
+
+        Muestra un mensaje en el modal y lo registra en el log.
+        """
+        self._status.config(text=text)
+        _log('Modal: %s' % text)
+
+    def _start_recording(self):
+        """
+        Opens the microphone stream and starts collecting audio.
+
+        ---
+
+        Abre el flujo del microfono y empieza a acumular audio.
+        """
+        import sounddevice
+
+        self._chunks = []
+
+        def _callback(data, _frames, _time_info, status):
+            if status:
+                _log('Aviso de audio: %s' % status)
+            self._chunks.append(data.copy())
+
+        device = sounddevice.query_devices(kind='input')
+        _log('Microfono por defecto: %s' % device['name'])
+        self._stream = sounddevice.InputStream(
+            samplerate=SAMPLE_RATE, channels=1, dtype='int16',
+            callback=_callback)
+        self._stream.start()
+        self._start.config(state='disabled')
+        self._stop.config(state='normal')
+        self._set_status('GRABANDO... habla y pulsa Detener al acabar.')
+
+    def _stop_recording(self):
+        """
+        Stops the microphone and launches the processing thread.
+
+        ---
+
+        Detiene el microfono y lanza el hilo de procesamiento.
+        """
+        self._stream.stop()
+        self._stream.close()
+        self._stream = None
+        self._stop.config(state='disabled')
+        self._set_status('Grabacion detenida. Transcribiendo...')
+        threading.Thread(target=self._process, daemon=True).start()
+
+    def _process(self):
+        """
+        Worker: saves, transcribes and locates the new-mail button.
+
+        ---
+
+        Hilo: guarda, transcribe y localiza el boton de correo nuevo.
+        """
+        try:
+            if save_wav(self._chunks) < 0.5:
+                self._events.put(('done', 'Grabacion demasiado corta.'))
+                return
+            text = transcribe(self._client)
+            self._events.put(('status', 'Transcripcion: "%s"\n\nBuscando '
+                              'el boton de correo nuevo...' % text))
+            self._events.put(('hide', None))
+            time.sleep(0.8)
+            found = locate_new_mail(self._client, self._outlook)
+            if found:
+                summary = ('Transcripcion: "%s"\n\nBoton "%s" localizado: '
+                           'el cursor esta encima (sin clic).' % (
+                               text, found[0]))
+            else:
+                summary = ('Transcripcion: "%s"\n\nGemini NO localizo el '
+                           'boton de correo nuevo.' % text)
+            self._events.put(('show', None))
+            self._events.put(('done', summary))
+        except Exception as exc:  # noqa: BLE001 -- shown in the modal
+            _log('ERROR en el procesamiento: %r' % exc)
+            self._events.put(('show', None))
+            self._events.put(('done', 'ERROR: %r' % exc))
+
+    def _poll_events(self):
+        """
+        Applies worker events to the UI from the Tk thread.
+
+        ---
+
+        Aplica en la interfaz los eventos del hilo, desde el hilo de Tk.
+        """
+        try:
+            while True:
+                kind, payload = self._events.get_nowait()
+                if kind == 'status':
+                    self._set_status(payload)
+                elif kind == 'hide':
+                    self.root.withdraw()
+                elif kind == 'show':
+                    self.root.deiconify()
+                elif kind == 'done':
+                    self._set_status(payload + '\n\nCierra esta ventana '
+                                     'para volver a vigilar.')
+        except queue.Empty:
+            pass
+        self.root.after(200, self._poll_events)
+
+    def _close(self):
+        """
+        Closes the modal, stopping the microphone if still open.
+
+        ---
+
+        Cierra el modal, deteniendo el microfono si seguia abierto.
+        """
+        if self._stream is not None:
+            self._stream.stop()
+            self._stream.close()
+            self._stream = None
+        _log('Modal cerrado.')
+        self.root.destroy()
+
+    def run(self):
+        """
+        Runs the modal until the user closes it.
+
+        ---
+
+        Ejecuta el modal hasta que el usuario lo cierra.
+        """
+        self.root.mainloop()
 
 
 def main():
     """
-    Runs the four probe steps and prints an OK/FAILED summary.
+    Watches for Outlook becoming maximised and shows the modal only
+    at that transition.
 
     ---
 
-    Ejecuta los cuatro pasos y muestra un resumen OK/FALLO.
+    Vigila cuando Outlook pasa a maximizado y muestra el modal solo en
+    esa transicion.
     """
     if sys.platform != 'win32':
         print('Esta prueba solo funciona en Windows.', flush=True)
         return 1
     _log('=== PRUEBA DE VIABILIDAD -- agente demo de voz para Outlook ===')
     _log('DPI: %s' % _set_dpi_awareness())
-    results = []
-    outlook = None
-    client = None
-    detail_client = 'sin cliente'
+    client = build_client()
+    was_maximized = find_maximized_outlook() is not None
+    if was_maximized:
+        _log('Outlook ya esta maximizado al arrancar: no cuenta. '
+             'Restauralo o minimizalo y vuelve a maximizarlo.')
+    _log('Vigilando la pantalla (Ctrl+C para salir)...')
     try:
-        ok, detail, outlook = step_windows()
-    except Exception as exc:  # noqa: BLE001 -- probe reports, never stops
-        ok, detail = False, 'error: %r' % exc
-    results.append(('1. Ventana de Outlook maximizada', ok, detail))
-    try:
-        ok, detail = step_record()
-    except Exception as exc:  # noqa: BLE001
-        ok, detail = False, 'error: %r' % exc
-    results.append(('2. Grabacion de microfono', ok, detail))
-    try:
-        _log('Conectando con Vertex AI')
-        client = build_client()
-    except Exception as exc:  # noqa: BLE001
-        _log('  ERROR creando el cliente: %r' % exc)
-        detail_client = 'error: %r' % exc
-    if client and WAV_PATH.is_file():
-        try:
-            ok, detail = step_transcribe(client)
-        except Exception as exc:  # noqa: BLE001
-            ok, detail = False, 'error: %r' % exc
-    elif client:
-        ok, detail = False, 'no hay grabacion que transcribir'
-    else:
-        ok, detail = False, detail_client
-    results.append(('3. Transcripcion con Gemini', ok, detail))
-    if client:
-        try:
-            ok, detail = step_vision(client, outlook)
-        except Exception as exc:  # noqa: BLE001
-            ok, detail = False, 'error: %r' % exc
-    else:
-        ok, detail = False, detail_client
-    results.append(('4. Vision y posicion del boton', ok, detail))
-    _log_plain('')
-    _log_plain('=== RESUMEN ===')
-    for name, ok, detail in results:
-        _log_plain('%s: %s -- %s' % (name, 'OK' if ok else 'FALLO', detail))
-    _log_plain('Log completo: %s' % LOG_PATH)
-    return 0 if all(item[1] for item in results) else 2
+        while True:
+            outlook = find_maximized_outlook()
+            if outlook and not was_maximized:
+                _log('Outlook MAXIMIZADO detectado (%s, "%s"): '
+                     'mostrando el modal' % (outlook['exe'],
+                                             outlook['title']))
+                RecordingModal(client, outlook).run()
+                outlook = find_maximized_outlook()
+                _log('Vuelvo a vigilar. Para repetir, restaura o '
+                     'minimiza Outlook y vuelve a maximizarlo.')
+            was_maximized = outlook is not None
+            time.sleep(WATCH_INTERVAL_SECONDS)
+    except KeyboardInterrupt:
+        _log('Detenido por el usuario.')
+    return 0
 
 
 if __name__ == '__main__':

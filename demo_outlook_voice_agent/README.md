@@ -9,10 +9,12 @@ Gemini Vision y clics en pantalla.
 
 ## Estado
 
-1. **Prueba de viabilidad** (`viability_probe.py`): comprueba por
-   separado detección de Outlook maximizado, micrófono, transcripción
-   y localización del botón de correo nuevo (mueve el cursor, no hace
-   clic, no envía nada).
+1. **Prueba de viabilidad** (`viability_probe.py`): sigue el flujo
+   real. Vigila la pantalla y solo cuando Outlook pasa a maximizado
+   muestra el modal (Iniciar grabacion / Detener); al detener,
+   transcribe con Gemini y localiza con su vision el boton de correo
+   nuevo, llevando el cursor encima sin clic. No envia nada. Al
+   cerrar el modal vuelve a vigilar.
 2. Agente completo: pendiente del resultado de la prueba.
 
 ## Entorno
