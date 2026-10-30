@@ -6,7 +6,9 @@ lunes y el martes ya lo trae copiado sin hacer nada; si es distinto se
 cambia y, desde ahí, los días siguientes copian el nuevo. Un día copia
 al anterior mientras sea igual que él (schedule_form.html, JS). Tarde
 vacía = jornada intensiva ese día. Recibe `prefix` (create o edit) y
-`rows` (filas con number, name, works, sm, em, sa, ea).
+`rows` (filas con number, name, works, sm, em, sa, ea). Cada tramo
+tiene su botón para vaciarlo: un día puede ser solo de mañana o solo de
+tarde (S141).
 {% endcomment %}
 <div class="table-responsive wd-days" data-prefix="{{ prefix }}">
     <table class="table table-sm align-middle mb-1">
@@ -16,8 +18,10 @@ vacía = jornada intensiva ese día. Recibe `prefix` (create o edit) y
                 <th class="text-sm text-center">Se trabaja</th>
                 <th class="text-sm">Entrada mañana</th>
                 <th class="text-sm">Salida mañana</th>
+                <th></th>
                 <th class="text-sm">Entrada tarde</th>
                 <th class="text-sm">Salida tarde</th>
+                <th></th>
             </tr>
         </thead>
         <tbody>
@@ -30,11 +34,13 @@ vacía = jornada intensiva ese día. Recibe `prefix` (create o edit) y
                 </td>
                 <td><input type="time" class="form-control form-control-sm wd-sm" name="day_{{ row.number }}_sm" value="{{ row.sm }}" aria-label="{{ row.name }}: entrada mañana"></td>
                 <td><input type="time" class="form-control form-control-sm wd-em" name="day_{{ row.number }}_em" value="{{ row.em }}" aria-label="{{ row.name }}: salida mañana"></td>
+                <td><button type="button" class="btn btn-sm btn-link text-danger p-0 wd-clear" data-tract="m" title="Quitar la mañana de este día"><i class="bi bi-x-circle"></i></button></td>
                 <td><input type="time" class="form-control form-control-sm wd-sa" name="day_{{ row.number }}_sa" value="{{ row.sa }}" aria-label="{{ row.name }}: entrada tarde"></td>
                 <td><input type="time" class="form-control form-control-sm wd-ea" name="day_{{ row.number }}_ea" value="{{ row.ea }}" aria-label="{{ row.name }}: salida tarde"></td>
+                <td><button type="button" class="btn btn-sm btn-link text-danger p-0 wd-clear" data-tract="a" title="Quitar la tarde de este día"><i class="bi bi-x-circle"></i></button></td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
-    <div class="form-text">Al rellenar un día, los siguientes que eran iguales se copian solos; cambia solo los que sean distintos. Tarde vacía = jornada intensiva ese día.</div>
+    <div class="form-text">Al rellenar un día, los siguientes que eran iguales se copian solos; cambia solo los que sean distintos. Con <i class="bi bi-x-circle text-danger"></i> se quita la mañana o la tarde de un día (días solo de mañana o solo de tarde).</div>
 </div>

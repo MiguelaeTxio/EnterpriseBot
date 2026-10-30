@@ -136,9 +136,9 @@ def _days_title(schedule):
         if not row["works"]:
             parts.append("%s: no se trabaja" % row["name"][:3])
             continue
-        text = "%s %s–%s" % (row["name"][:3], row["sm"], row["em"])
-        if row["sa"]:
-            text += " / %s–%s" % (row["sa"], row["ea"])
+        tracts = ["%s–%s" % (row[a], row[b])
+                  for a, b in (("sm", "em"), ("sa", "ea")) if row[a]]
+        text = "%s %s" % (row["name"][:3], " / ".join(tracts))
         parts.append(text)
     return " · ".join(parts)
 

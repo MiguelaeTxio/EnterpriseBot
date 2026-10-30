@@ -3255,14 +3255,25 @@ class WorkdaySchedule(models.Model):
             (d for d in self.days.all() if d.weekday == day.weekday()),
             None,
         )
-        if row is None or not row.works or row.start_time_morning is None:
+        if row is None or not row.works:
+            return None
+        # S141: un día puede ser solo de mañana o solo de tarde; con un
+        # solo tramo se trata como jornada continua (intensiva) de ese
+        # tramo, para quien lea "mañana" como el primer tramo del día.
+        tracts = [(start, end) for start, end in (
+            (row.start_time_morning, row.end_time_morning),
+            (row.start_time_afternoon, row.end_time_afternoon),
+        ) if start is not None and end is not None]
+        if not tracts:
             return None
         result = copy.copy(self)
-        result.start_time_morning = row.start_time_morning
-        result.end_time_morning = row.end_time_morning
-        result.start_time_afternoon = row.start_time_afternoon
-        result.end_time_afternoon = row.end_time_afternoon
-        result.is_intensive = row.start_time_afternoon is None
+        result.start_time_morning, result.end_time_morning = tracts[0]
+        if len(tracts) > 1:
+            (result.start_time_afternoon,
+             result.end_time_afternoon) = tracts[1]
+        else:
+            result.start_time_afternoon = result.end_time_afternoon = None
+        result.is_intensive = len(tracts) == 1
         return result
 
     def __str__(self):

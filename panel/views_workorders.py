@@ -3392,8 +3392,9 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
         ([{weekday, works, sm, em, sa, ea}], errors) from the form.
         ---
         Las horas de cada día de la semana del formulario (S141) y los
-        errores. Un día que se trabaja necesita la mañana; la tarde va
-        entera o vacía (vacía = jornada intensiva ese día).
+        errores. Cada tramo (mañana, tarde) va entero o vacío; un día que
+        se trabaja necesita al menos uno (S141, Miguel Ángel: hay días
+        solo de mañana y días solo de tarde).
         """
         days, errors = [], []
         for number, name in enumerate(WEEKDAY_NAMES, start=1):
@@ -3407,16 +3408,18 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
                 days.append({"weekday": number - 1, "works": False,
                              "sm": None, "em": None, "sa": None, "ea": None})
                 continue
-            if values["sm"] is None or values["em"] is None:
-                errors.append("%s: indica la entrada y la salida de la "
-                              "mañana." % name)
-            elif values["em"] <= values["sm"]:
+            if (values["sm"] is None) != (values["em"] is None):
+                errors.append("%s: la mañana necesita la entrada y la "
+                              "salida (o ninguna)." % name)
+            elif values["sm"] is not None and values["em"] <= values["sm"]:
                 errors.append("%s: la salida de la mañana debe ser "
                               "posterior a la entrada." % name)
             if (values["sa"] is None) != (values["ea"] is None):
                 errors.append("%s: la tarde necesita la entrada y la "
-                              "salida (o ninguna, si ese día es jornada "
-                              "intensiva)." % name)
+                              "salida (o ninguna)." % name)
+            elif values["sm"] is None and values["sa"] is None:
+                errors.append("%s: pon el horario de mañana, el de tarde o "
+                              "los dos (o desmarca «Se trabaja»)." % name)
             elif values["sa"] is not None:
                 if values["em"] and values["sa"] <= values["em"]:
                     errors.append("%s: la entrada de la tarde debe ser "
@@ -3565,13 +3568,17 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
             elif first is not None:
                 # Las horas generales del horario son las del primer día
                 # que se trabaja.
-                start_morning_val = first["sm"].strftime("%H:%M")
-                end_morning_val = first["em"].strftime("%H:%M")
-                is_intensive_val = first["sa"] is None
-                start_afternoon_val = (first["sa"].strftime("%H:%M")
-                                       if first["sa"] else "")
-                end_afternoon_val = (first["ea"].strftime("%H:%M")
-                                     if first["ea"] else "")
+                # Un día solo de tarde cuenta como un tramo único.
+                tracts = [(a, b) for a, b in (
+                    (first["sm"], first["em"]), (first["sa"], first["ea"]),
+                ) if a is not None]
+                start_morning_val = tracts[0][0].strftime("%H:%M")
+                end_morning_val = tracts[0][1].strftime("%H:%M")
+                is_intensive_val = len(tracts) == 1
+                start_afternoon_val = (tracts[1][0].strftime("%H:%M")
+                                       if len(tracts) > 1 else "")
+                end_afternoon_val = (tracts[1][1].strftime("%H:%M")
+                                     if len(tracts) > 1 else "")
             else:
                 # Ya hay errores de los días: solo para no añadir otros.
                 start_morning_val, end_morning_val = "00:00", "00:01"

@@ -91,7 +91,7 @@
                             <span class="badge bg-primary mb-1">Según el día</span>
                             {% for row in sched.day_rows %}
                             <div class="text-nowrap"><span class="fw-semibold">{{ row.name|slice:":3" }}</span>
-                                {% if not row.works %}<span class="text-muted">no se trabaja</span>{% else %}{{ row.sm }}–{{ row.em }}{% if row.sa %} / {{ row.sa }}–{{ row.ea }}{% endif %}{% endif %}</div>
+                                {% if not row.works %}<span class="text-muted">no se trabaja</span>{% else %}{% if row.sm %}{{ row.sm }}–{{ row.em }}{% endif %}{% if row.sm and row.sa %} / {% endif %}{% if row.sa %}{{ row.sa }}–{{ row.ea }}{% endif %}{% endif %}</div>
                             {% endfor %}
                         </td>
                         {% else %}
@@ -562,8 +562,9 @@
         FIELDS.forEach(function (f) {
             var input = row.querySelector(".wd-" + f);
             input.disabled = !works;
-            input.required = works && (f === "sm" || f === "em");
+            input.required = false;
         });
+        row.querySelectorAll(".wd-clear").forEach(function (b) { b.disabled = !works; });
     }
     function onDayChange(row) {
         var old = row.dataset.prev ? JSON.parse(row.dataset.prev) : null;
@@ -582,6 +583,15 @@
             paintRow(row);
             row.dataset.prev = JSON.stringify(rowValues(row));
             row.addEventListener("input", function () { onDayChange(row); });
+            // S141: vaciar la mañana o la tarde de un día (y de los
+            // siguientes que eran iguales, como cualquier cambio).
+            row.querySelectorAll(".wd-clear").forEach(function (btn) {
+                btn.addEventListener("click", function () {
+                    var keys = btn.dataset.tract === "m" ? ["sm", "em"] : ["sa", "ea"];
+                    keys.forEach(function (k) { row.querySelector(".wd-" + k).value = ""; });
+                    onDayChange(row);
+                });
+            });
             row.addEventListener("change", function () { onDayChange(row); });
         });
     }
