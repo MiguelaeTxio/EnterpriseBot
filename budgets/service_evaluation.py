@@ -325,6 +325,171 @@ def _route(company, data, kinds, notes):
     return base, km, hours
 
 
+# ---------------------------------------------------------------------------
+# Inference from the names, until the documents bring the data (S142).
+# Deducción por los nombres, hasta que los documentos traigan el dato.
+# ---------------------------------------------------------------------------
+
+# Words of an insurer name that do not tell which insurer it is.
+# Palabras del nombre de una aseguradora que no dicen cuál es.
+GENERIC_INSURER_WORDS = {
+    "asistencia", "assistance", "seguros", "seguro", "compania", "cia",
+    "sa", "sl", "slu", "s", "a", "l", "de", "y", "del", "la", "el",
+}
+
+
+def _brand_words(name):
+    """
+    Words of an insurer name that tell which insurer it is, in order.
+
+    ---
+
+    Palabras de un nombre de aseguradora que dicen cuál es, en orden.
+    """
+    from budgets.views_services import _plain
+
+    return [w for w in _plain(name).split() if w not in GENERIC_INSURER_WORDS]
+
+
+def infer_insurer(company, data):
+    """
+    Insurer card inferred from the read name, or None.
+
+    ---
+
+    Ficha de aseguradora deducida del nombre leído cuando el alta de
+    TIREA no la reconoce (Miguel Ángel, S142: "inferirlo del nombre
+    hasta el martes"). Entre las fichas de la empresa del grupo del CIF
+    del documento (todas, si no hay CIF del grupo), las que comparten
+    alguna palabra de marca con el nombre leído; si son varias, la que
+    empieza por la primera palabra leída ("RACC ASISTENCIA" -> "RACC -
+    Zurich", no "Zurich - RACC"). None si no queda una sola.
+    """
+    from budgets.models import Insurer
+    from budgets.views_services import _plain, own_company_for_tax_id
+
+    read = _brand_words(data.get("insurer_name"))
+    if not read:
+        return None
+    insurers = list(Insurer.objects.filter(company=company, is_active=True))
+    profile = own_company_for_tax_id(data.get("company_tax_id"))
+    if profile is not None:
+        own = [_plain(profile.legal_name)] + [
+            _plain(alias) for alias in profile.name_aliases.splitlines()
+            if alias.strip()
+        ]
+        mine = [
+            insurer for insurer in insurers
+            if _brand_words(insurer.service_company_name)
+            and any(
+                all(w in name.split() for w in _brand_words(
+                    insurer.service_company_name,
+                ))
+                for name in own
+            )
+        ]
+        insurers = mine or insurers
+    candidates = [
+        insurer for insurer in insurers
+        if set(read) & set(_brand_words(insurer.insurer_company_name))
+    ]
+    if len(candidates) > 1:
+        candidates = [
+            insurer for insurer in candidates
+            if _brand_words(insurer.insurer_company_name)[:1] == read[:1]
+        ]
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _kg_range(name):
+    """
+    (from, to) kilograms of a tariff vehicle type, or None.
+
+    ---
+
+    Tramo de kilos de un tipo de vehículo de la tarifa ("3.500 Kg. -
+    5.000 Kg.", "> 20.000 Kg.", "Camiones hasta 8.000 KG"), o None si
+    el nombre no lleva kilos.
+    """
+    import re
+
+    text = _norm(name)
+    if "kg" not in text:
+        return None
+    numbers = [
+        int(n.replace(".", ""))
+        for n in re.findall(r"\d{1,3}(?:\.\d{3})+|\d{4,}", text)
+    ]
+    if not numbers:
+        return None
+    if ">" in text or "mas de" in text:
+        return numbers[0], float("inf")
+    if len(numbers) == 1:
+        return 0, numbers[0]
+    return numbers[0], numbers[1]
+
+
+def infer_vehicle_type(insurer, data, job):
+    """
+    Tariff vehicle type inferred from the service, or (None, "").
+
+    ---
+
+    Tipo de vehículo de la tarifa deducido cuando el documento no trae
+    uno reconocible (S142, hasta que lo traiga): reparación in situ ->
+    furgón taller / coche piloto; semirremolque o tractora -> cabezas
+    tractoras; autobús -> autocares; con peso, el tramo de kilos que le
+    toca; sin peso, turismo si la tarifa lo tiene y, si no, el tramo
+    más bajo (estimado a la baja). Devuelve (tipo, motivo).
+    """
+    from budgets.dispatch_vehicle import ON_SITE_KINDS, _weight_kg
+
+    types = list(insurer.vehicle_types.filter(is_active=True))
+    if not types:
+        return None, ""
+
+    def named(*words):
+        for vehicle_type in types:
+            if any(word in _norm(vehicle_type.name) for word in words):
+                return vehicle_type
+        return None
+
+    kinds = job.get("trabajos") or []
+    text = _norm(" ".join(str(data.get(field) or "") for field in (
+        "vehicle_brand", "vehicle_model", "vehicle_subtype_label",
+        "breakdown_description", "insurer_comments",
+    )))
+    if kinds and all(kind in ON_SITE_KINDS for kind in kinds):
+        found = named("taller", "piloto")
+        if found:
+            return found, "reparación in situ"
+    if "semitrailer" in kinds or "tractora" in text:
+        found = named("tractora")
+        if found:
+            return found, "tractora"
+    if any(word in text for word in ("autobus", "autocar")):
+        found = named("autocar", "autobus")
+        if found:
+            return found, "autobús"
+    ranges = [
+        (vehicle_type, _kg_range(vehicle_type.name)) for vehicle_type in types
+    ]
+    ranges = [(vt, r) for vt, r in ranges if r is not None]
+    weight = _weight_kg(data)
+    if weight is not None:
+        for vehicle_type, (low, high) in ranges:
+            if low <= weight <= high:
+                return vehicle_type, "%d kg" % weight
+    if not job.get("pesado"):
+        found = named("turismo")
+        if found:
+            return found, "vehículo ligero"
+    if ranges:
+        lowest = min(ranges, key=lambda item: item[1][0])[0]
+        return lowest, "sin peso: tramo más bajo"
+    return None, ""
+
+
 def _budget_amount(evaluation, when, notes):
     """
     Estimated budget by the active tariff, without IVA, or None.
@@ -514,8 +679,24 @@ def evaluate(evaluation_pk):
         initial = _initial_from_extraction(company, data)
         evaluation.insurer_id = initial.get("insurer")
         evaluation.vehicle_type_id = initial.get("vehicle_type")
-        job = job_for(data) or {"trabajos": ["tow_light"]}
+        job = job_for(data) or {"trabajos": ["tow_light"], "pesado": False}
         kinds = job["trabajos"]
+        if evaluation.insurer_id is None:
+            insurer = infer_insurer(company, data)
+            if insurer is not None:
+                evaluation.insurer = insurer
+                notes.append("Aseguradora deducida del nombre: %s." % (
+                    insurer.name,
+                ))
+        if evaluation.insurer_id and evaluation.vehicle_type_id is None:
+            vehicle_type, reason = infer_vehicle_type(
+                evaluation.insurer, data, job,
+            )
+            if vehicle_type is not None:
+                evaluation.vehicle_type = vehicle_type
+                notes.append("Tipo de vehículo deducido (%s): %s." % (
+                    reason, vehicle_type.name,
+                ))
         crew_types = _crew_types(kinds)
         evaluation.crews = len(crew_types)
         evaluation.job_label = "; ".join(
