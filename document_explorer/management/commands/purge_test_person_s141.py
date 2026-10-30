@@ -43,6 +43,9 @@ class Command(BaseCommand):
         parser.add_argument("--phone", default="",
                             help="9 cifras del móvil de prueba (sesiones "
                                  "de WhatsApp a borrar)")
+        parser.add_argument("--sessions", default="",
+                            help="ids de sesión de WhatsApp separados por "
+                                 "comas: con él, solo esas (del --phone)")
         parser.add_argument("--apply", action="store_true")
         parser.add_argument("--log-file", required=True)
 
@@ -117,6 +120,10 @@ class Command(BaseCommand):
         sessions = (WhatsAppSession.objects.filter(
             phone_number__endswith=phone) if len(phone) == 9
             else WhatsAppSession.objects.none())
+        wanted = [int(x) for x in options["sessions"].split(",")
+                  if x.strip().isdigit()]
+        if wanted:
+            sessions = sessions.filter(pk__in=wanted)
         for session in sessions:
             self._log("Sesión de WhatsApp #%d %s (%s, %d mensajes)." % (
                 session.pk, session.phone_number,
