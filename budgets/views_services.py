@@ -2195,45 +2195,15 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
         que tenga datos y precio medio del gasoil. Las clases sin datos
         (las grúas apuntan horas) se quedan como estaban.
         """
-        from budgets.fleet_fuel_averages import fleet_averages
-        from budgets.models import AssistanceCostSettings
+        from budgets.fleet_fuel_averages import apply_real_averages
         from budgets.service_evaluation import recompute_company
 
-        real = fleet_averages(company)
-        settings = AssistanceCostSettings.for_company(company)
-        if real["fuel_price"] is not None:
-            settings.fuel_price_per_liter = real["fuel_price"]
-            settings.save(update_fields=["fuel_price_per_liter",
-                                         "updated_at"])
-        applied = []
-        for vehicle in company.assistance_vehicle_costs.all():
-            averages = real["classes"].get(vehicle.name) or {}
-            fields = []
-            if averages.get("km"):
-                vehicle.fuel_liters_per_100km = averages["km"]["l_100km"]
-                fields.append("fuel_liters_per_100km")
-                applied.append("%s %s l/100 km" % (
-                    vehicle.name, averages["km"]["l_100km"],
-                ))
-            if averages.get("h"):
-                # Hour-metered: from now on its fuel goes by hours.
-                # Por horas: desde ahora su gasoil va por horas.
-                vehicle.fuel_liters_per_hour = averages["h"]["l_hour"]
-                fields.append("fuel_liters_per_hour")
-                applied.append("%s %s l/h" % (
-                    vehicle.name, averages["h"]["l_hour"],
-                ))
-            if fields:
-                vehicle.save(update_fields=fields)
+        _real, applied = apply_real_averages(company)
         recompute_company(company)
         messages.success(
             request,
-            "Medias reales aplicadas: %s%s. Coste y rendimiento "
-            "recalculados." % (
-                ", ".join(applied) or "ningún consumo",
-                "; gasoil %s €/l" % real["fuel_price"]
-                if real["fuel_price"] is not None else "",
-            ),
+            "Medias reales aplicadas: %s. Coste y rendimiento "
+            "recalculados." % (", ".join(applied) or "ninguna"),
         )
         return redirect("budgets:services_cost_settings")
 
