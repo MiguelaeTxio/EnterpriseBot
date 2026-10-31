@@ -18,7 +18,9 @@ Servicios (solo administración). El coste de un servicio es: operarios
 gasoil (km × l/100 km × €/l). Lo que se deje vacío no suma y se avisa en
 la fila. Al guardar se recalculan todos los servicios valorados. Los
 consumos iniciales los dio Miguel Ángel (S142); se irán sacando medias
-de los propios servicios.
+de los propios servicios. Desde S142 la página muestra las medias
+reales de los repostajes de GasoGes (budgets/fleet_fuel_averages.py) y
+un botón para usarlas.
 {% endcomment %}
 <div class="container-fluid px-3 py-3">
     {% if errors %}
@@ -26,6 +28,63 @@ de los propios servicios.
         {% for error in errors %}<div>{{ error }}</div>{% endfor %}
     </div>
     {% endif %}
+    <div class="card shadow-sm mb-3">
+        <div class="card-header py-2 d-flex align-items-center justify-content-between gap-2">
+            <span class="fw-semibold small">Medias reales de los repostajes (GasoGes)</span>
+            {% if has_real %}
+            <form method="post" action="{% url 'budgets:services_cost_settings' %}" class="m-0">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="use_real">
+                <button type="submit" class="btn btn-sm btn-primary"
+                        title="Pone el consumo real en cada clase que tenga datos y el precio medio del gasoil, y recalcula los servicios">
+                    <i class="bi bi-arrow-down-circle me-1"></i>Usar las medias reales
+                </button>
+            </form>
+            {% endif %}
+        </div>
+        <div class="card-body p-0">
+            {% if has_real %}
+            <div class="small text-muted px-3 pt-2">
+                {% if real.period.0 %}Del {{ real.period.0|date:"d/m/Y" }} al {{ real.period.1|date:"d/m/Y" }}.{% endif %}
+                Precio medio del gasoil: <strong>{{ real.fuel_price|default_if_none:"—" }} €/l</strong>.
+                {% if real.hours_vehicles %}Sin consumo por km (el surtidor apunta horas): {{ real.hours_vehicles|join:", " }}.{% endif %}
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0 small">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Vehículo</th>
+                            <th>Tipo</th>
+                            <th>Clase</th>
+                            <th class="text-end">Km</th>
+                            <th class="text-end">Litros</th>
+                            <th class="text-end">l/100 km</th>
+                            <th class="text-end">Gasoil €/km</th>
+                            <th class="text-end" title="Tramos entre repostajes descartados por KM mal tecleado o consumo imposible">Descartados</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for vehicle in real.vehicles %}
+                        <tr>
+                            <td class="fw-semibold">{{ vehicle.code }}</td>
+                            <td>{{ vehicle.type_name|lower|capfirst }}</td>
+                            <td>{{ vehicle.class_name|default:"—" }}</td>
+                            <td class="text-end">{{ vehicle.km }}</td>
+                            <td class="text-end">{{ vehicle.litres }}</td>
+                            <td class="text-end">{{ vehicle.l_100km|default_if_none:"—" }}</td>
+                            <td class="text-end">{{ vehicle.eur_km|default_if_none:"—" }}</td>
+                            <td class="text-end">{{ vehicle.discarded }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="small text-muted p-3">No hay repostajes de vehículos de asistencia con km.</div>
+            {% endif %}
+        </div>
+    </div>
+
     <form method="post" action="{% url 'budgets:services_cost_settings' %}">
         {% csrf_token %}
         <div class="card shadow-sm mb-3">
@@ -58,6 +117,7 @@ de los propios servicios.
                             <tr>
                                 <th>Clase</th>
                                 <th>Consumo (l/100 km)</th>
+                                <th>Real (GasoGes)</th>
                                 <th>Coste del vehículo (€/km)</th>
                                 <th>Tipos de máquina de asistencia</th>
                             </tr>
@@ -70,6 +130,11 @@ de los propios servicios.
                                     <input type="text" inputmode="decimal" class="form-control form-control-sm"
                                            name="liters_{{ row.vehicle.pk }}"
                                            value="{{ row.vehicle.fuel_liters_per_100km }}">
+                                </td>
+                                <td class="text-nowrap">
+                                    {% if row.real %}
+                                    <span title="{{ row.real.codes|join:', ' }} · {{ row.real.km }} km · {{ row.real.legs }} tramos">{{ row.real.l_100km }} l/100 km · {{ row.real.eur_km }} €/km</span>
+                                    {% else %}<span class="text-muted">—</span>{% endif %}
                                 </td>
                                 <td class="cost-input-cell">
                                     <input type="text" inputmode="decimal" class="form-control form-control-sm"

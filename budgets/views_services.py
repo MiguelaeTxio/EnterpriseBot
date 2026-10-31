@@ -2150,21 +2150,26 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
 
     def _context(self, request, settings, vehicles, errors=None):
         """
-        Context of the page, with the machine types already marked.
+        Context of the page, with the machine types already marked and
+        the real averages of the GasoGes refuels.
 
         ---
 
         Contexto de la página, con los tipos de máquina ya marcados por
-        clase (plantillas tontas).
+        clase y las medias reales de los repostajes de GasoGes por clase
+        y por vehículo (plantillas tontas).
         """
         from budgets.dispatch_vehicle import MACHINE_USES
+        from budgets.fleet_fuel_averages import fleet_averages
 
+        real = fleet_averages(request.user.company_user.company)
         type_names = list(MACHINE_USES)
         rows = []
         for vehicle in vehicles:
             marked = set(vehicle.type_names())
             rows.append({
                 "vehicle": vehicle,
+                "real": real["classes"].get(vehicle.name),
                 "types": [
                     {"name": name, "checked": name in marked}
                     for name in type_names
@@ -2174,8 +2179,51 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
             "active_nav": "services_hub",
             "settings": settings,
             "vehicle_rows": rows,
+            "real": real,
+            "has_real": bool(real["classes"] or real["fuel_price"]),
             "errors": errors or [],
         })
+
+    def _use_real(self, request, company):
+        """
+        Copy the real averages into the settings and recompute.
+
+        ---
+
+        Copia las medias reales de los repostajes: consumo de cada clase
+        que tenga datos y precio medio del gasoil. Las clases sin datos
+        (las grúas apuntan horas) se quedan como estaban.
+        """
+        from budgets.fleet_fuel_averages import fleet_averages
+        from budgets.models import AssistanceCostSettings
+        from budgets.service_evaluation import recompute_company
+
+        real = fleet_averages(company)
+        settings = AssistanceCostSettings.for_company(company)
+        if real["fuel_price"] is not None:
+            settings.fuel_price_per_liter = real["fuel_price"]
+            settings.save(update_fields=["fuel_price_per_liter",
+                                         "updated_at"])
+        applied = []
+        for vehicle in company.assistance_vehicle_costs.all():
+            averages = real["classes"].get(vehicle.name)
+            if averages and averages["l_100km"] is not None:
+                vehicle.fuel_liters_per_100km = averages["l_100km"]
+                vehicle.save(update_fields=["fuel_liters_per_100km"])
+                applied.append("%s %s l/100 km" % (
+                    vehicle.name, averages["l_100km"],
+                ))
+        recompute_company(company)
+        messages.success(
+            request,
+            "Medias reales aplicadas: %s%s. Coste y rendimiento "
+            "recalculados." % (
+                ", ".join(applied) or "ningún consumo",
+                "; gasoil %s €/l" % real["fuel_price"]
+                if real["fuel_price"] is not None else "",
+            ),
+        )
+        return redirect("budgets:services_cost_settings")
 
     def get(self, request):
         """
@@ -2209,6 +2257,8 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
         from budgets.service_evaluation import recompute_company
 
         company = request.user.company_user.company
+        if request.POST.get("action") == "use_real":
+            return self._use_real(request, company)
         settings = AssistanceCostSettings.for_company(company)
         vehicles = list(company.assistance_vehicle_costs.all())
         errors = []
