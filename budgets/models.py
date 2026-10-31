@@ -5302,6 +5302,11 @@ class AssistanceCostSettings(models.Model):
                     company=company, name=name,
                     fuel_liters_per_100km=Decimal(liters),
                     machine_types=types, sort_order=order,
+                    # S142: una grúa de gran tonelaje, 75 km/h como mucho.
+                    max_speed_kmh=75 if name == "Grúa móvil" else None,
+                    dead_time_hours=(
+                        Decimal("1") if name == "Grúa móvil" else None
+                    ),
                 )
         return settings
 
@@ -5337,6 +5342,34 @@ class AssistanceVehicleCost(models.Model):
         blank=True,
         verbose_name="Coste del vehículo (€/km)",
         help_text="Desgaste, mantenimiento... sin el gasoil.",
+    )
+    # S142: mobile cranes meter hours in the pump, not km.
+    # Las grúas móviles apuntan horas en el surtidor, no km.
+    fuel_liters_per_hour = models.DecimalField(
+        max_digits=5,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        verbose_name="Consumo (l/h)",
+        help_text="Si se rellena, el gasoil se calcula por horas del "
+                  "servicio (viaje y trabajo) en vez de por km.",
+    )
+    max_speed_kmh = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Velocidad máxima (km/h)",
+        help_text="El viaje dura como mínimo los km a esta velocidad, "
+                  "aunque Google diga menos.",
+    )
+    # S142, Miguel Ángel: "el camión no va a ir a 75 km/h el 100 por
+    # cien del tiempo [...] siempre hay tiempos muertos": una hora más.
+    dead_time_hours = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Tiempos muertos (h)",
+        help_text="Horas que se suman a cada servicio de esta clase.",
     )
     machine_types = models.TextField(
         blank=True,

@@ -2142,8 +2142,9 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
 
     Medias de coste para valorar los servicios (solo administración):
     precio del gasoil, coste por hora de operario y, por clase de
-    vehículo, consumo, coste por km y tipos de máquina. Al guardar se
-    recalcula el coste de todos los servicios valorados.
+    vehículo, consumo por km o por hora, velocidad máxima, tiempos
+    muertos, coste por km y tipos de máquina. Al guardar se recalcula el
+    coste de todos los servicios valorados.
     """
 
     template_name = "budgets/services/cost_settings.html"
@@ -2206,13 +2207,24 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
                                          "updated_at"])
         applied = []
         for vehicle in company.assistance_vehicle_costs.all():
-            averages = real["classes"].get(vehicle.name)
-            if averages and averages["l_100km"] is not None:
-                vehicle.fuel_liters_per_100km = averages["l_100km"]
-                vehicle.save(update_fields=["fuel_liters_per_100km"])
+            averages = real["classes"].get(vehicle.name) or {}
+            fields = []
+            if averages.get("km"):
+                vehicle.fuel_liters_per_100km = averages["km"]["l_100km"]
+                fields.append("fuel_liters_per_100km")
                 applied.append("%s %s l/100 km" % (
-                    vehicle.name, averages["l_100km"],
+                    vehicle.name, averages["km"]["l_100km"],
                 ))
+            if averages.get("h"):
+                # Hour-metered: from now on its fuel goes by hours.
+                # Por horas: desde ahora su gasoil va por horas.
+                vehicle.fuel_liters_per_hour = averages["h"]["l_hour"]
+                fields.append("fuel_liters_per_hour")
+                applied.append("%s %s l/h" % (
+                    vehicle.name, averages["h"]["l_hour"],
+                ))
+            if fields:
+                vehicle.save(update_fields=fields)
         recompute_company(company)
         messages.success(
             request,
@@ -2296,6 +2308,26 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
                 "cost_km_%d" % vehicle.pk,
                 "Coste por km de %s" % vehicle.name,
             )
+            vehicle.fuel_liters_per_hour = amount(
+                "liters_hour_%d" % vehicle.pk,
+                "Consumo por hora de %s" % vehicle.name,
+            )
+            vehicle.dead_time_hours = amount(
+                "dead_%d" % vehicle.pk,
+                "Tiempos muertos de %s" % vehicle.name,
+            )
+            speed = amount(
+                "speed_%d" % vehicle.pk,
+                "Velocidad máxima de %s" % vehicle.name,
+            )
+            if speed is not None and not (10 <= speed <= 200):
+                errors.append(
+                    "Velocidad máxima de %s: entre 10 y 200 km/h." % (
+                        vehicle.name,
+                    ),
+                )
+                speed = None
+            vehicle.max_speed_kmh = int(speed) if speed is not None else None
             vehicle.machine_types = "\n".join(
                 request.POST.getlist("types_%d" % vehicle.pk),
             )

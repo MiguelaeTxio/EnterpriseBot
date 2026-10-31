@@ -9,8 +9,10 @@ repostajes de GasoGes (H37, S142). Miguel Ángel: "ya que tenemos las
 lecturas de km y repostajes, podemos sacar la media de gasto por km de
 los vehículos de la familia asistencia".
 
-Método, por vehículo (solo los que apuntan km en el surtidor; las grúas
-y rescates apuntan horas y no dan consumo por km):
+Método, por vehículo: los que apuntan km en el surtidor dan l/100 km y
+€/km; los que apuntan horas (grúas móviles y rescates, S142) dan l/h y
+€/h, con el mismo método en horas (tramos de hasta MAX_LEG_HOURS, de
+MIN_L_HOUR a MAX_L_HOUR):
 - Repostajes con lectura creada (los que pasaron la comprobación de
   GasoGes), por fecha.
 - Cada tramo entre dos repostajes seguidos: km de diferencia y litros
@@ -30,6 +32,11 @@ from budgets.assistance_resources import ASSISTANCE_MACHINE_FAMILY
 MAX_LEG_KM = 3000
 MIN_L_100KM = Decimal("2")
 MAX_L_100KM = Decimal("80")
+# S142: the cranes meter hours: same method, in hours.
+# Las grúas apuntan horas: el mismo método, en horas.
+MAX_LEG_HOURS = 300
+MIN_L_HOUR = Decimal("1")
+MAX_L_HOUR = Decimal("60")
 
 
 def _round(value, places):
@@ -54,31 +61,37 @@ def _empty():
     Acumulador vacío.
     """
     return {
-        "km": Decimal("0"), "litres": Decimal("0"), "cost": Decimal("0"),
-        "legs": 0, "discarded": 0,
+        "km": Decimal("0"), "hours": Decimal("0"), "litres": Decimal("0"),
+        "cost": Decimal("0"), "legs": 0, "discarded": 0,
     }
 
 
 def _finish(acc):
     """
-    Averages of an accumulator (None when there are no km).
+    Averages of an accumulator (None when there is nothing measured).
 
     ---
 
-    Medias de un acumulador: l/100 km, €/km y €/l (None sin km).
+    Medias de un acumulador: por km (l/100 km y €/km) si se midió en
+    km, por hora (l/h y €/h) si se midió en horas, y €/l.
     """
-    if not acc["km"]:
-        return {**acc, "l_100km": None, "eur_km": None, "eur_l": None}
-    return {
+    result = {
         **acc,
         "km": int(acc["km"]),
+        "hours": int(acc["hours"]),
         "litres": _round(acc["litres"], 1),
-        "l_100km": _round(acc["litres"] / acc["km"] * 100, 1),
-        "eur_km": _round(acc["cost"] / acc["km"], 3),
+        "l_100km": None, "eur_km": None, "l_hour": None, "eur_hour": None,
         "eur_l": (
             _round(acc["cost"] / acc["litres"], 3) if acc["litres"] else None
         ),
     }
+    if acc["km"]:
+        result["l_100km"] = _round(acc["litres"] / acc["km"] * 100, 1)
+        result["eur_km"] = _round(acc["cost"] / acc["km"], 3)
+    if acc["hours"]:
+        result["l_hour"] = _round(acc["litres"] / acc["hours"], 1)
+        result["eur_hour"] = _round(acc["cost"] / acc["hours"], 2)
+    return result
 
 
 def fleet_averages(company):
@@ -91,8 +104,8 @@ def fleet_averages(company):
     precio medio del gasoil (ponderado por litros, todos los repostajes
     con precio de la flota de asistencia). Devuelve un diccionario con
     `vehicles` (lista), `classes` (nombre de clase -> medias),
-    `fuel_price`, `period` (desde, hasta) y `hours_vehicles` (los que
-    apuntan horas).
+    `fuel_price` y `period` (desde, hasta). Los que apuntan km dan
+    l/100 km; los que apuntan horas (grúas), l/h.
     """
     from budgets.service_evaluation import _norm, _vehicle_classes
     from fleet.models import GasoGesSupply, GasoGesVehicle
@@ -108,7 +121,6 @@ def fleet_averages(company):
     price_cost = Decimal("0")
     first = last = None
     per_vehicle = {}
-    hours_vehicles = set()
     previous = {}
     pending = {}
     for supply in supplies:
@@ -117,9 +129,11 @@ def fleet_averages(company):
         if supply.litres and supply.price:
             price_litres += supply.litres
             price_cost += supply.litres * supply.price
-        if vehicle.unit != GasoGesVehicle.UNIT_KM:
-            hours_vehicles.add(machine.code)
+        if vehicle.unit not in (
+            GasoGesVehicle.UNIT_KM, GasoGesVehicle.UNIT_HOURS,
+        ):
             continue
+        in_hours = vehicle.unit == GasoGesVehicle.UNIT_HOURS
         if supply.status != GasoGesSupply.STATUS_READING:
             continue
         if supply.meter_value is None or not supply.litres:
@@ -129,6 +143,7 @@ def fleet_averages(company):
         acc = per_vehicle.setdefault(machine.pk, {
             "code": machine.code,
             "type_name": machine.type_name,
+            "unit": "h" if in_hours else "km",
             **_empty(),
         })
         before = previous.get(machine.pk)
@@ -148,11 +163,22 @@ def fleet_averages(company):
         legs_supplies = pending.pop(machine.pk, []) + [supply]
         litres = sum(item.litres for item in legs_supplies)
         cost = sum(item.litres * (item.price or 0) for item in legs_supplies)
-        rate = litres / leg_km * 100
-        if leg_km > MAX_LEG_KM or rate < MIN_L_100KM or rate > MAX_L_100KM:
+        if in_hours:
+            rate = litres / leg_km
+            wrong = (
+                leg_km > MAX_LEG_HOURS or rate < MIN_L_HOUR
+                or rate > MAX_L_HOUR
+            )
+        else:
+            rate = litres / leg_km * 100
+            wrong = (
+                leg_km > MAX_LEG_KM or rate < MIN_L_100KM
+                or rate > MAX_L_100KM
+            )
+        if wrong:
             acc["discarded"] += 1
             continue
-        acc["km"] += leg_km
+        acc["hours" if in_hours else "km"] += leg_km
         acc["litres"] += litres
         acc["cost"] += cost
         acc["legs"] += 1
@@ -162,21 +188,30 @@ def fleet_averages(company):
         vehicle_class = classes.get(_norm(acc["type_name"]))
         class_name = vehicle_class.name if vehicle_class else ""
         vehicles.append({**_finish(acc), "class_name": class_name})
-        if vehicle_class and acc["km"]:
-            total = by_class.setdefault(class_name, _empty())
-            for key in ("km", "litres", "cost", "legs", "discarded"):
-                total[key] += acc[key]
-            total.setdefault("codes", []).append(acc["code"])
+        if vehicle_class and (acc["km"] or acc["hours"]):
+            # Per km and per hour apart: a class may mix both.
+            # Por km y por hora aparte: una clase puede mezclar los dos.
+            total = by_class.setdefault(class_name, {
+                "km": _empty(), "h": _empty(), "codes": [],
+            })
+            part = total[acc["unit"]]
+            for key in ("km", "hours", "litres", "cost", "legs",
+                        "discarded"):
+                part[key] += acc[key]
+            total["codes"].append(acc["code"])
     vehicles.sort(key=lambda v: (v["class_name"] or "~", v["code"]))
     return {
         "vehicles": vehicles,
         "classes": {
-            name: {**_finish(total), "codes": sorted(total["codes"])}
+            name: {
+                "km": _finish(total["km"]) if total["km"]["km"] else None,
+                "h": _finish(total["h"]) if total["h"]["hours"] else None,
+                "codes": sorted(total["codes"]),
+            }
             for name, total in by_class.items()
         },
         "fuel_price": (
             _round(price_cost / price_litres, 3) if price_litres else None
         ),
         "period": (first, last),
-        "hours_vehicles": sorted(hours_vehicles),
     }

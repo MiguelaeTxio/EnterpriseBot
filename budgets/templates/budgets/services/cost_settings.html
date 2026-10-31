@@ -15,7 +15,10 @@
 H37 (S142). Medias de coste para valorar los servicios de la pestaña
 Servicios (solo administración). El coste de un servicio es: operarios
 (uno por vehículo) × horas × €/h, más por cada vehículo km × €/km y el
-gasoil (km × l/100 km × €/l). Lo que se deje vacío no suma y se avisa en
+gasoil (km × l/100 km × €/l, o horas × l/h × €/l si la clase tiene
+consumo por hora). Horas de cada equipo (S142): trabajo + el viaje más
+largo entre el de Google y los km a la velocidad máxima de la clase +
+sus tiempos muertos. Lo que se deje vacío no suma y se avisa en
 la fila. Al guardar se recalculan todos los servicios valorados. Los
 consumos iniciales los dio Miguel Ángel (S142); se irán sacando medias
 de los propios servicios. Desde S142 la página muestra las medias
@@ -47,7 +50,7 @@ un botón para usarlas.
             <div class="small text-muted px-3 pt-2">
                 {% if real.period.0 %}Del {{ real.period.0|date:"d/m/Y" }} al {{ real.period.1|date:"d/m/Y" }}.{% endif %}
                 Precio medio del gasoil: <strong>{{ real.fuel_price|default_if_none:"—" }} €/l</strong>.
-                {% if real.hours_vehicles %}Sin consumo por km (el surtidor apunta horas): {{ real.hours_vehicles|join:", " }}.{% endif %}
+                Las grúas y rescates apuntan horas en el surtidor: dan litros por hora.
             </div>
             <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0 small">
@@ -56,10 +59,10 @@ un botón para usarlas.
                             <th>Vehículo</th>
                             <th>Tipo</th>
                             <th>Clase</th>
-                            <th class="text-end">Km</th>
+                            <th class="text-end">Km u horas</th>
                             <th class="text-end">Litros</th>
-                            <th class="text-end">l/100 km</th>
-                            <th class="text-end">Gasoil €/km</th>
+                            <th class="text-end">Consumo</th>
+                            <th class="text-end">Gasto en gasoil</th>
                             <th class="text-end" title="Tramos entre repostajes descartados por KM mal tecleado o consumo imposible">Descartados</th>
                         </tr>
                     </thead>
@@ -69,10 +72,17 @@ un botón para usarlas.
                             <td class="fw-semibold">{{ vehicle.code }}</td>
                             <td>{{ vehicle.type_name|lower|capfirst }}</td>
                             <td>{{ vehicle.class_name|default:"—" }}</td>
-                            <td class="text-end">{{ vehicle.km }}</td>
+                            {% if vehicle.unit == "h" %}
+                            <td class="text-end">{{ vehicle.hours }} h</td>
                             <td class="text-end">{{ vehicle.litres }}</td>
-                            <td class="text-end">{{ vehicle.l_100km|default_if_none:"—" }}</td>
-                            <td class="text-end">{{ vehicle.eur_km|default_if_none:"—" }}</td>
+                            <td class="text-end">{{ vehicle.l_hour|default_if_none:"—" }} l/h</td>
+                            <td class="text-end">{{ vehicle.eur_hour|default_if_none:"—" }} €/h</td>
+                            {% else %}
+                            <td class="text-end">{{ vehicle.km }} km</td>
+                            <td class="text-end">{{ vehicle.litres }}</td>
+                            <td class="text-end">{{ vehicle.l_100km|default_if_none:"—" }} l/100 km</td>
+                            <td class="text-end">{{ vehicle.eur_km|default_if_none:"—" }} €/km</td>
+                            {% endif %}
                             <td class="text-end">{{ vehicle.discarded }}</td>
                         </tr>
                         {% endfor %}
@@ -117,6 +127,9 @@ un botón para usarlas.
                             <tr>
                                 <th>Clase</th>
                                 <th>Consumo (l/100 km)</th>
+                                <th title="Si se rellena, el gasoil de esta clase va por horas del servicio">Consumo (l/h)</th>
+                                <th title="El viaje dura como mínimo los km a esta velocidad">Velocidad máx. (km/h)</th>
+                                <th title="Horas que se suman a cada servicio">Tiempos muertos (h)</th>
                                 <th>Real (GasoGes)</th>
                                 <th>Coste del vehículo (€/km)</th>
                                 <th>Tipos de máquina de asistencia</th>
@@ -131,10 +144,25 @@ un botón para usarlas.
                                            name="liters_{{ row.vehicle.pk }}"
                                            value="{{ row.vehicle.fuel_liters_per_100km }}">
                                 </td>
-                                <td class="text-nowrap">
-                                    {% if row.real %}
-                                    <span title="{{ row.real.codes|join:', ' }} · {{ row.real.km }} km · {{ row.real.legs }} tramos">{{ row.real.l_100km }} l/100 km · {{ row.real.eur_km }} €/km</span>
-                                    {% else %}<span class="text-muted">—</span>{% endif %}
+                                <td class="cost-input-cell">
+                                    <input type="text" inputmode="decimal" class="form-control form-control-sm"
+                                           name="liters_hour_{{ row.vehicle.pk }}"
+                                           value="{{ row.vehicle.fuel_liters_per_hour|default_if_none:'' }}">
+                                </td>
+                                <td class="cost-input-cell">
+                                    <input type="text" inputmode="numeric" class="form-control form-control-sm"
+                                           name="speed_{{ row.vehicle.pk }}"
+                                           value="{{ row.vehicle.max_speed_kmh|default_if_none:'' }}">
+                                </td>
+                                <td class="cost-input-cell">
+                                    <input type="text" inputmode="decimal" class="form-control form-control-sm"
+                                           name="dead_{{ row.vehicle.pk }}"
+                                           value="{{ row.vehicle.dead_time_hours|default_if_none:'' }}">
+                                </td>
+                                <td class="text-nowrap" title="{{ row.real.codes|join:', ' }}">
+                                    {% if row.real.km %}<div>{{ row.real.km.l_100km }} l/100 km · {{ row.real.km.eur_km }} €/km</div>{% endif %}
+                                    {% if row.real.h %}<div>{{ row.real.h.l_hour }} l/h · {{ row.real.h.eur_hour }} €/h</div>{% endif %}
+                                    {% if not row.real %}<span class="text-muted">—</span>{% endif %}
                                 </td>
                                 <td class="cost-input-cell">
                                     <input type="text" inputmode="decimal" class="form-control form-control-sm"

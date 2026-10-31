@@ -255,8 +255,8 @@ def _route(company, data, kinds, notes):
 
     Base más cercana a la recogida (por tiempo de trayecto), km y
     horas del circuito base → recogida → entrega → base, más los
-    tiempos de trabajo de la empresa. Devuelve (base, km, horas) o
-    (None, None, None) si no se puede medir.
+    tiempos de trabajo de la empresa. Devuelve (base, km, horas de
+    viaje, horas de trabajo) o cuatro None si no se puede medir.
     """
     from budgets.dispatch_vehicle import ON_SITE_KINDS
     from budgets.service_eta import (
@@ -273,7 +273,7 @@ def _route(company, data, kinds, notes):
     ) if data.get("pickup_location") else ""
     if not pickup:
         notes.append("Sin dirección de recogida: no se mide la ruta.")
-        return None, None, None
+        return None, None, None, None
     delivery_place = data.get("delivery_address") or ""
     delivery = _join(
         delivery_place, data.get("delivery_locality"),
@@ -286,7 +286,7 @@ def _route(company, data, kinds, notes):
     bases = [(base, point) for base, point in bases if point is not None]
     if not bases:
         notes.append("No hay bases con ubicación: no se mide la ruta.")
-        return None, None, None
+        return None, None, None, None
     router = Router()
     pickup_point = address_point(pickup)
     try:
@@ -311,7 +311,7 @@ def _route(company, data, kinds, notes):
         meters += leg_meters
     except EtaError as exc:
         notes.append("Ruta no calculada: %s" % exc)
-        return None, None, None
+        return None, None, None, None
     times = AssistanceTimes.for_company(company)
     if on_site:
         work = times.on_site_minutes
@@ -319,10 +319,9 @@ def _route(company, data, kinds, notes):
         first = times.lift_minutes if "lift" in kinds else times.load_minutes
         work = first + (times.unload_minutes if delivery else 0)
     km = (Decimal(meters) / 1000).quantize(Decimal("0.1"))
-    hours = (
-        Decimal(seconds) / 3600 + Decimal(work) / 60
-    ).quantize(CENT)
-    return base, km, hours
+    travel = (Decimal(seconds) / 3600).quantize(CENT)
+    work_hours = (Decimal(work) / 60).quantize(CENT)
+    return base, km, travel, work_hours
 
 
 # ---------------------------------------------------------------------------
@@ -564,6 +563,46 @@ def _crew_types(kinds):
     ]
 
 
+def _split_hours(evaluation):
+    """
+    (travel hours, work hours) of an evaluation, or (None, None).
+
+    ---
+
+    (horas de viaje, horas de trabajo) guardadas al valorar; las
+    valoraciones anteriores a S142 (tarde) no las tienen: (None, None).
+    """
+    data = evaluation.data or {}
+    travel, work = data.get("_travel_hours"), data.get("_work_hours")
+    if travel is None or work is None:
+        return None, None
+    return Decimal(str(travel)), Decimal(str(work))
+
+
+def crew_hours_for(vehicle, km, travel, work, hours):
+    """
+    Hours of one crew: work plus the longer of the two travel times.
+
+    ---
+
+    Horas de un equipo: el trabajo más el viaje, el que sea mayor de
+    los dos: el de Google o el de los km a la velocidad máxima de su
+    clase (Miguel Ángel, S142: una grúa de gran tonelaje va como mucho a
+    75 km/h, "como mínimo va a tardar"), más los tiempos muertos de la
+    clase ("siempre hay tiempos muertos"). Sin el desglose (valoraciones
+    antiguas), las horas totales más los tiempos muertos.
+    """
+    dead = (
+        vehicle.dead_time_hours
+        if vehicle is not None and vehicle.dead_time_hours else Decimal("0")
+    )
+    if travel is None:
+        return hours + dead
+    if vehicle is not None and vehicle.max_speed_kmh:
+        travel = max(travel, km / Decimal(vehicle.max_speed_kmh))
+    return travel + work + dead
+
+
 def compute_costs(evaluation, settings=None, classes=None):
     """
     Estimated cost and yield of an evaluated service (no save).
@@ -591,18 +630,15 @@ def compute_costs(evaluation, settings=None, classes=None):
         evaluation.margin = None
         return notes
     km, hours = evaluation.km, evaluation.hours
-    operators = None
-    if settings.operator_cost_per_hour is None:
-        notes.append("Falta el coste por hora de operario.")
-    else:
-        operators = _money(
-            len(crew_types) * hours * settings.operator_cost_per_hour,
-        )
+    travel, work = _split_hours(evaluation)
+    operator_hours = Decimal("0")
     vehicles = Decimal("0")
     fuel = Decimal("0")
     vehicles_known = fuel_known = True
     for type_name in crew_types:
         vehicle = classes.get(_norm(type_name))
+        crew_hours = crew_hours_for(vehicle, km, travel, work, hours)
+        operator_hours += crew_hours
         if vehicle is None:
             notes.append("«%s» no está en ninguna clase de vehículo." % (
                 type_name,
@@ -616,6 +652,13 @@ def compute_costs(evaluation, settings=None, classes=None):
             vehicles += km * vehicle.cost_per_km
         if settings.fuel_price_per_liter is None:
             fuel_known = False
+        elif vehicle.fuel_liters_per_hour:
+            # Hour-metered (mobile cranes): litres per hour of the crew.
+            # Por horas (grúas móviles): litros por hora del equipo.
+            fuel += (
+                crew_hours * vehicle.fuel_liters_per_hour
+                * settings.fuel_price_per_liter
+            )
         else:
             fuel += (
                 km * vehicle.fuel_liters_per_100km / 100
@@ -623,6 +666,11 @@ def compute_costs(evaluation, settings=None, classes=None):
             )
     if settings.fuel_price_per_liter is None:
         notes.append("Falta el precio del gasoil.")
+    operators = None
+    if settings.operator_cost_per_hour is None:
+        notes.append("Falta el coste por hora de operario.")
+    else:
+        operators = _money(operator_hours * settings.operator_cost_per_hour)
     evaluation.operators_cost = operators
     evaluation.vehicles_cost = _money(vehicles) if vehicles_known else None
     evaluation.fuel_cost = _money(fuel) if fuel_known else None
@@ -702,13 +750,18 @@ def evaluate(evaluation_pk):
         evaluation.job_label = "; ".join(
             JOB_LABELS[kind] for kind in kinds
         )[:255]
-        base, km, hours = _route(company, data, kinds, notes)
+        base, km, travel, work_hours = _route(company, data, kinds, notes)
         evaluation.base = base
         evaluation.km = km
-        evaluation.hours = hours
+        evaluation.hours = (
+            travel + work_hours if travel is not None else None
+        )
         when = _service_moment(data)
         evaluation.budget_amount = _budget_amount(evaluation, when, notes)
-        evaluation.data = dict(data, _crew_types=crew_types)
+        evaluation.data = dict(
+            data, _crew_types=crew_types,
+            _travel_hours=travel, _work_hours=work_hours,
+        )
         notes += compute_costs(evaluation)
         evaluation.notes = "\n".join(notes)
         evaluation.status = ServiceEvaluation.STATUS_DONE
