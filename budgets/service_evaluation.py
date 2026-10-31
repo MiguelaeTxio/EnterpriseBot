@@ -803,19 +803,32 @@ def recompute_company(company):
     classes = _vehicle_classes(company)
     fields = [
         "operators_cost", "vehicles_cost", "fuel_cost", "total_cost",
-        "margin", "notes",
+        "margin", "notes", "budget_amount",
     ]
     for evaluation in ServiceEvaluation.objects.filter(
         company=company, status=ServiceEvaluation.STATUS_DONE,
-    ):
+    ).select_related("insurer", "vehicle_type"):
         kept = [
             line for line in evaluation.notes.splitlines()
             if not line.startswith(COST_NOTE_PREFIXES)
         ]
+        if evaluation.budget_amount == 0:
+            # Valued before S142 (tarde): a 0 € budget is a tariff
+            # without prices for the type, not a budget.
+            # Valorado antes del cambio: 0 € es una tarifa sin precios
+            # para el tipo, no un presupuesto.
+            evaluation.budget_amount = None
+            kept.append(
+                "La tarifa de %s no tiene precios para «%s»: sin "
+                "presupuesto." % (
+                    evaluation.insurer.name if evaluation.insurer else "?",
+                    evaluation.vehicle_type.name
+                    if evaluation.vehicle_type else "?",
+                ),
+            )
         notes = compute_costs(evaluation, settings, classes)
         evaluation.notes = "\n".join(kept + notes)
         evaluation.save(update_fields=fields)
-
 
 
 # ---------------------------------------------------------------------------

@@ -35,6 +35,10 @@ MAX_L_100KM = Decimal("80")
 # S142: the cranes meter hours: same method, in hours.
 # Las grúas apuntan horas: el mismo método, en horas.
 MAX_LEG_HOURS = 300
+# S142: a class average is only used with at least this many good legs
+# (the cranes had 1 or 2 legs per vehicle and gave 1,2 to 26,5 l/h).
+# La media de una clase solo se usa con al menos estos tramos buenos.
+MIN_CLASS_LEGS = 10
 MIN_L_HOUR = Decimal("1")
 MAX_L_HOUR = Decimal("60")
 
@@ -217,7 +221,7 @@ def fleet_averages(company):
     }
 
 
-def apply_real_averages(company):
+def apply_real_averages(company, clear_thin=False):
     """
     Copy the real averages into the cost settings of a company.
 
@@ -227,14 +231,17 @@ def apply_real_averages(company):
     consumo por km de cada clase con vehículos que apuntan km, consumo
     por hora de cada clase con vehículos que apuntan horas, y precio
     medio del gasoil. Las clases sin datos se quedan como estaban. No
-    recalcula los servicios (lo hace quien llama). Devuelve (real,
-    lista de lo aplicado en texto).
+    recalcula los servicios (lo hace quien llama). Una media de clase
+    con menos de MIN_CLASS_LEGS tramos buenos no se usa; con
+    `clear_thin`, además se quita el consumo por hora que tuviera la
+    clase. Devuelve (real, lo aplicado, lo saltado), en texto.
     """
     from budgets.models import AssistanceCostSettings
 
     real = fleet_averages(company)
     settings = AssistanceCostSettings.for_company(company)
     applied = []
+    skipped = []
     if real["fuel_price"] is not None:
         settings.fuel_price_per_liter = real["fuel_price"]
         settings.save(update_fields=["fuel_price_per_liter", "updated_at"])
@@ -242,6 +249,26 @@ def apply_real_averages(company):
     for vehicle in company.assistance_vehicle_costs.all():
         averages = real["classes"].get(vehicle.name) or {}
         fields = []
+        if averages.get("km") and averages["km"]["legs"] < MIN_CLASS_LEGS:
+            skipped.append("%s por km (%d tramos)" % (
+                vehicle.name, averages["km"]["legs"],
+            ))
+            averages = dict(averages, km=None)
+        if averages.get("h") and averages["h"]["legs"] < MIN_CLASS_LEGS:
+            skipped.append("%s por hora (%d tramos)" % (
+                vehicle.name, averages["h"]["legs"],
+            ))
+            averages = dict(averages, h=None)
+            if vehicle.fuel_liters_per_hour is not None and clear_thin:
+                # A per-hour figure from too few legs is not kept: the
+                # class goes back to its per-km consumption.
+                # Un consumo por hora de tan pocos tramos no se deja:
+                # la clase vuelve a su consumo por km.
+                vehicle.fuel_liters_per_hour = None
+                vehicle.save(update_fields=["fuel_liters_per_hour"])
+                applied.append("%s: consumo por hora quitado" % (
+                    vehicle.name,
+                ))
         if averages.get("km"):
             vehicle.fuel_liters_per_100km = averages["km"]["l_100km"]
             fields.append("fuel_liters_per_100km")
@@ -258,4 +285,4 @@ def apply_real_averages(company):
             ))
         if fields:
             vehicle.save(update_fields=fields)
-    return real, applied
+    return real, applied, skipped

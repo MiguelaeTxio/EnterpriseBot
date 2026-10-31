@@ -17,8 +17,12 @@ Para cada empresa con medias de coste:
    tipo. Crea la clase que falte.
 2. Medias reales de los repostajes de GasoGes
    (`fleet_fuel_averages.apply_real_averages`): consumo por km o por
-   hora de cada clase con datos y precio medio del gasoil.
-3. Recalcula coste y rendimiento de los servicios valorados.
+   hora de cada clase con al menos 10 tramos buenos y precio medio del
+   gasoil; el consumo por hora de una clase con menos tramos se quita
+   (vuelve a su consumo por km).
+3. Recalcula coste y rendimiento de los servicios valorados (un
+   presupuesto de 0 € de antes, tarifa sin precios, queda sin
+   presupuesto).
 
 Sin `--apply` lo hace todo dentro de una transacción y la deshace al
 final: muestra lo que quedaría sin guardar nada. Log propio en
@@ -172,9 +176,14 @@ class Command(BaseCommand):
 
         Aplica las medias reales de GasoGes y las muestra por vehículo.
         """
-        from budgets.fleet_fuel_averages import apply_real_averages
+        from budgets.fleet_fuel_averages import (
+            MIN_CLASS_LEGS,
+            apply_real_averages,
+        )
 
-        real, applied = apply_real_averages(company)
+        real, applied, skipped = apply_real_averages(
+            company, clear_thin=True,
+        )
         start, end = real["period"]
         if start:
             self._log("Repostajes del %s al %s." % (
@@ -193,6 +202,9 @@ class Command(BaseCommand):
                 vehicle["legs"], vehicle["discarded"],
             ))
         self._log("Aplicado: %s." % (", ".join(applied) or "nada"))
+        if skipped:
+            self._log("No usado por tener menos de %d tramos buenos: "
+                      "%s." % (MIN_CLASS_LEGS, ", ".join(skipped)))
 
     def _recompute(self, company):
         """

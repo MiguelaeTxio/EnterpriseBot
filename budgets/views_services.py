@@ -2198,13 +2198,20 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
         from budgets.fleet_fuel_averages import apply_real_averages
         from budgets.service_evaluation import recompute_company
 
-        _real, applied = apply_real_averages(company)
+        _real, applied, skipped = apply_real_averages(company)
         recompute_company(company)
         messages.success(
             request,
             "Medias reales aplicadas: %s. Coste y rendimiento "
             "recalculados." % (", ".join(applied) or "ninguna"),
         )
+        if skipped:
+            messages.warning(
+                request,
+                "No se usan, por tener muy pocos tramos buenos: %s." % (
+                    ", ".join(skipped),
+                ),
+            )
         return redirect("budgets:services_cost_settings")
 
     def get(self, request):
