@@ -155,6 +155,7 @@ screen_key services_evaluations).
                                 <i class="bi bi-trash me-1"></i>Borrar
                             </button>
                         </div>
+                        <div class="small text-muted mt-1" id="eva-action-summary"></div>
                     </div>
                 </div>
             </div>
@@ -371,26 +372,35 @@ si el fragmento dice que queda alguno en cola o valorándose.
         refreshFromFragment();
     });
 
-    // Acciones sobre la selección: formulario POST temporal.
-    function postSelection(url, confirmText) {
+    // Acciones sobre la selección (S142): por fetch, sin recargar la
+    // página; al acabar, aviso junto a los botones y la tabla se refresca
+    // (y sigue sola mientras se valoran).
+    const actionSummary = document.getElementById("eva-action-summary");
+    async function postSelection(url, confirmText) {
         if (!selection.size) return;
         if (confirmText && !window.confirm(confirmText)) return;
-        const form = document.createElement("form");
-        form.method = "post";
-        form.action = url;
-        form.style.display = "none";
-        const csrf = document.createElement("input");
-        csrf.type = "hidden"; csrf.name = "csrfmiddlewaretoken"; csrf.value = csrfToken;
-        form.appendChild(csrf);
-        selection.forEach(function (_label, key) {
-            const input = document.createElement("input");
-            input.type = "hidden"; input.name = "selected"; input.value = key;
-            form.appendChild(input);
-        });
-        document.body.appendChild(form);
-        selection.clear();
-        saveSelection();
-        form.submit();
+        const body = new FormData();
+        body.append("csrfmiddlewaretoken", csrfToken);
+        selection.forEach(function (_label, key) { body.append("selected", key); });
+        const buttons = document.querySelectorAll(".eva-needs-selection");
+        buttons.forEach(function (button) { button.disabled = true; });
+        actionSummary.classList.remove("text-danger");
+        actionSummary.textContent = "Un momento…";
+        try {
+            const response = await fetch(url, {
+                method: "POST", body: body, headers: {"X-Requested-With": "fetch"},
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.message || ("HTTP " + response.status));
+            actionSummary.textContent = result.message;
+            selection.clear();
+            saveSelection();
+        } catch (err) {
+            console.warn("Acción no hecha:", err);
+            actionSummary.textContent = "No se pudo hacer: vuelve a intentarlo.";
+            actionSummary.classList.add("text-danger");
+        }
+        htmx.trigger(stateHidden, "eva-state-change");
     }
     document.getElementById("eva-mass-requeue").addEventListener("click", function () {
         postSelection(urls.requeue, "");

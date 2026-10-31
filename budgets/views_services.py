@@ -2014,6 +2014,7 @@ class ServicesEvaluationsActionView(AssistanceSupervisorAccessMixin, View):
         from spare_parts.gcs_service import delete_file
 
         company_user = request.user.company_user
+        notices = []
         pks = [
             int(key[1:]) for key in request.POST.getlist("selected")
             if key.startswith("e") and key[1:].isdigit()
@@ -2026,10 +2027,8 @@ class ServicesEvaluationsActionView(AssistanceSupervisorAccessMixin, View):
             for evaluation in evaluations:
                 requeue(evaluation)
                 count += 1
-            messages.success(
-                request, "%d servicio(s) en cola para valorar de nuevo." % (
-                    count,
-                ),
+            notices.append(
+                "%d servicio(s) en cola para valorar de nuevo." % count,
             )
         elif action == "delete":
             count = 0
@@ -2046,9 +2045,22 @@ class ServicesEvaluationsActionView(AssistanceSupervisorAccessMixin, View):
                         )
                 evaluation.delete()
                 count += 1
-            messages.success(request, "%d servicio(s) borrados." % count)
+            notices.append("%d servicio(s) borrados." % count)
         else:
+            if request.headers.get("X-Requested-With") == "fetch":
+                return JsonResponse(
+                    {"message": "Acción no válida."}, status=400,
+                )
             messages.error(request, "Acción no válida.")
+            _open_services_tab(company_user)
+            return redirect("budgets:services_hub")
+        # S142: desde la pestaña llega por fetch y la tabla se refresca
+        # sola, sin recargar la página (Miguel Ángel: "cada vez que le
+        # doy a valorar, recarga la página").
+        if request.headers.get("X-Requested-With") == "fetch":
+            return JsonResponse({"message": " ".join(notices)})
+        for notice in notices:
+            messages.success(request, notice)
         _open_services_tab(company_user)
         return redirect("budgets:services_hub")
 
