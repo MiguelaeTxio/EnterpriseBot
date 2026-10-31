@@ -9,6 +9,7 @@ Insurer, VehicleType, InsurerTariff, TariffLine, Budget, BudgetLine.
 """
 
 import os as _os
+from decimal import Decimal
 
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
@@ -5235,6 +5236,19 @@ DEFAULT_VEHICLE_COSTS = (
 )
 
 
+# S142: cost per worked hour of an operator, from a real payslip of the
+# group (Miguel Ángel: "calcula como si los trabajadores cobran como yo";
+# "las vacaciones y festivos van repercutidos en las horas que se
+# pagan"): yearly company cost (gross pay with prorated extra payments
+# plus employer social security) divided by the hours really worked in a
+# year, 1.800 (225 working days of 8 h, after weekends, 22 working days
+# of holidays and 14 bank holidays). Editable in "Medias de coste".
+# ---
+# Coste por hora trabajada de un operario, sacado de una nómina real del
+# grupo: coste empresa anual entre 1.800 horas trabajadas al año.
+DEFAULT_OPERATOR_COST_HOUR = Decimal("15.34")
+
+
 class AssistanceCostSettings(models.Model):
     """
     Average costs used to estimate what an assistance service costs.
@@ -5291,10 +5305,11 @@ class AssistanceCostSettings(models.Model):
         Las medias de la empresa; si no existen, se crean, y también
         las clases de vehículo con los consumos dados por Miguel Ángel.
         """
-        settings, _created = cls.objects.get_or_create(company=company)
+        settings, _created = cls.objects.get_or_create(
+            company=company,
+            defaults={"operator_cost_per_hour": DEFAULT_OPERATOR_COST_HOUR},
+        )
         if not AssistanceVehicleCost.objects.filter(company=company).exists():
-            from decimal import Decimal
-
             for order, (name, liters, types) in enumerate(
                 DEFAULT_VEHICLE_COSTS, start=1,
             ):
