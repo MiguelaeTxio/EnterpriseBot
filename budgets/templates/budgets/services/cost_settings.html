@@ -50,7 +50,7 @@ un botón para usarlas.
             <div class="small text-muted px-3 pt-2">
                 {% if real.period.0 %}Del {{ real.period.0|date:"d/m/Y" }} al {{ real.period.1|date:"d/m/Y" }}.{% endif %}
                 Precio medio del gasoil: <strong>{{ real.fuel_price|default_if_none:"—" }} €/l</strong>.
-                Las grúas y rescates apuntan horas en el surtidor: dan litros por hora.
+                Toda la familia asistencia, grúas incluidas, apunta km en el surtidor (S142).
             </div>
             <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0 small">
