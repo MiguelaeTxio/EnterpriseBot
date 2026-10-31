@@ -128,6 +128,11 @@ HOURS_CODE_PREFIXES = ("Z",)
 # asistencia) van por horas; el resto (B, P, X...: camiones de rescate o
 # plataformas de transporte, sin pluma ni hidráulico que cuente horas),
 # por km.
+# S142 (sesión invasora), Miguel Ángel, corrige lo de las A: "apuntan
+# km. En asistencia se dijo que bueno, que vale." Los chóferes de las
+# grúas de asistencia teclean en el surtidor los km del camión (A50 de
+# 613.533 a 617.204, A39 de 53.048 a 66.973 en diez meses): toda la
+# familia ASISTENCIA va por km.
 # ---
 # Workshop rule: which unit each kind of vehicle goes by.
 KM_FAMILIES = ("TURISMOS",)
@@ -149,7 +154,7 @@ def convention_unit(code, family):
     code = str(code or "").upper()
     family = str(family or "").upper()
     if family == ASSISTANCE_FAMILY:
-        return UNIT_HOURS if code.startswith("A") else UNIT_KM
+        return UNIT_KM
     if family in KM_FAMILIES:
         return UNIT_KM
     if family in HOURS_FAMILIES:
