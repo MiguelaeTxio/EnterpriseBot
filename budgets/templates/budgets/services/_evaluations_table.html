@@ -4,7 +4,9 @@ H37 (S142). Fragmento de tabla de la pestaña Servicios (directriz
 4.24): orden múltiple con prioridad (resuelto en la vista; sin orden,
 presupuesto estimado de mayor a menor), casilla por fila y "todos",
 cabecera fija. Importes sin IVA. Los avisos del cálculo (lo que falta
-de las medias, ruta no medida...) salen en el icono de aviso.
+de las medias, ruta no medida...) salen en el triángulo naranja; lo que
+se dedujo (aseguradora, tipo de vehículo), en el icono azul de
+información (S142).
 {% endcomment %}
 {% if rows %}
 <table class="table table-sm table-hover align-middle mb-0 small" id="eva-table">
@@ -62,7 +64,10 @@ de las medias, ruta no medida...) salen en el icono de aviso.
                 <span class="badge bg-danger-subtle text-danger border border-danger-subtle" title="{{ row.evaluation.error }}">Error</span>
                 {% endif %}
                 {% if row.notes %}
-                <i class="bi bi-exclamation-triangle-fill text-warning" title="{{ row.notes|join:' · ' }}"></i>
+                <i class="bi bi-exclamation-triangle-fill text-warning" title="Falta: {{ row.notes|join:' · ' }}"></i>
+                {% endif %}
+                {% if row.infos %}
+                <i class="bi bi-info-circle text-primary" title="{{ row.infos|join:' · ' }}"></i>
                 {% endif %}
                 {% if row.evaluation.work_order_id %}
                 <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">Con orden</span>

@@ -65,6 +65,9 @@ CENT = Decimal("0.01")
 # Notes written by compute_costs (replaced when the averages change).
 # Avisos que escribe compute_costs (se reemplazan al cambiar las medias).
 COST_NOTE_PREFIXES = ("Falta ", "«")
+# Notes that only say what was deduced (shown as information).
+# Avisos que solo dicen qué se dedujo (se muestran como información).
+INFO_NOTE_PREFIXES = ("Aseguradora deducida", "Tipo de vehículo deducido")
 
 STATE_WITHOUT_ORDER = "without"
 STATE_WITH_ORDER = "with"
@@ -529,7 +532,19 @@ def _budget_amount(evaluation, when, notes):
         logger.warning("# [VALORACION] Presupuesto no calculado: %s", exc)
         notes.append("Presupuesto no calculado: %s" % exc)
         return None
-    return _money(budget.total_amount or 0)
+    if not budget.total_amount:
+        # S142: a tariff without prices for this vehicle type gives 0 €,
+        # which is not a budget (it made the yield negative).
+        # Una tarifa sin precios para este tipo da 0 €, que no es un
+        # presupuesto (dejaba el rendimiento en negativo).
+        notes.append(
+            "La tarifa de %s no tiene precios para «%s»: sin "
+            "presupuesto." % (
+                evaluation.insurer.name, evaluation.vehicle_type.name,
+            ),
+        )
+        return None
+    return _money(budget.total_amount)
 
 
 def _vehicle_classes(company):
@@ -743,7 +758,7 @@ def evaluate(evaluation_pk):
             if vehicle_type is not None:
                 evaluation.vehicle_type = vehicle_type
                 notes.append("Tipo de vehículo deducido (%s): %s." % (
-                    reason, vehicle_type.name,
+                    reason, vehicle_type.name.rstrip("."),
                 ))
         crew_types = _crew_types(kinds)
         evaluation.crews = len(crew_types)
@@ -876,8 +891,17 @@ class EvaluationRow:
                 self.plate,
             ) if part
         )
+        lines = [line for line in evaluation.notes.splitlines() if line]
+        # S142: what was deduced is information, not a warning; the
+        # warning triangle is only for what is missing.
+        # Lo deducido es información, no aviso: el triángulo naranja
+        # queda solo para lo que falta.
+        self.infos = [
+            line for line in lines if line.startswith(INFO_NOTE_PREFIXES)
+        ]
         self.notes = [
-            line for line in evaluation.notes.splitlines() if line
+            line for line in lines
+            if not line.startswith(INFO_NOTE_PREFIXES)
         ]
         self.is_done = evaluation.status == ServiceEvaluation.STATUS_DONE
         self.is_error = evaluation.status == ServiceEvaluation.STATUS_ERROR
