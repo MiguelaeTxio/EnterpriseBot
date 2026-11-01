@@ -618,6 +618,36 @@ def crew_hours_for(vehicle, km, travel, work, hours):
     return travel + work + dead
 
 
+def _store_crew_hours(evaluation, hours):
+    """
+    Keep the crew hours of the service in its data.
+
+    ---
+
+    Guarda en `data` las horas de equipo del servicio (suma de las de
+    cada vehículo con su operario: trabajo, viaje y tiempos muertos),
+    las mismas que paga el coste de operarios. Son el divisor del
+    rendimiento por hora (S142).
+    """
+    data = dict(evaluation.data or {})
+    data["_crew_hours"] = (
+        str(_money(hours)) if hours is not None else None
+    )
+    evaluation.data = data
+
+
+def crew_hours_of(evaluation):
+    """
+    Crew hours kept in the data, or None.
+
+    ---
+
+    Horas de equipo guardadas en `data`, o None.
+    """
+    raw = (evaluation.data or {}).get("_crew_hours")
+    return Decimal(raw) if raw not in (None, "") else None
+
+
 def compute_costs(evaluation, settings=None, classes=None):
     """
     Estimated cost and yield of an evaluated service (no save).
@@ -638,6 +668,7 @@ def compute_costs(evaluation, settings=None, classes=None):
     notes = []
     crew_types = (evaluation.data or {}).get("_crew_types") or []
     if evaluation.km is None or evaluation.hours is None or not crew_types:
+        _store_crew_hours(evaluation, None)
         evaluation.operators_cost = None
         evaluation.vehicles_cost = None
         evaluation.fuel_cost = None
@@ -679,6 +710,7 @@ def compute_costs(evaluation, settings=None, classes=None):
                 km * vehicle.fuel_liters_per_100km / 100
                 * settings.fuel_price_per_liter
             )
+    _store_crew_hours(evaluation, operator_hours)
     if settings.fuel_price_per_liter is None:
         notes.append("Falta el precio del gasoil.")
     operators = None
@@ -803,7 +835,7 @@ def recompute_company(company):
     classes = _vehicle_classes(company)
     fields = [
         "operators_cost", "vehicles_cost", "fuel_cost", "total_cost",
-        "margin", "notes", "budget_amount",
+        "margin", "notes", "budget_amount", "data",
     ]
     for evaluation in ServiceEvaluation.objects.filter(
         company=company, status=ServiceEvaluation.STATUS_DONE,
@@ -851,6 +883,7 @@ SORTABLE = {
     "budget": lambda row: _num(row.evaluation.budget_amount),
     "cost": lambda row: _num(row.evaluation.total_cost),
     "margin": lambda row: _num(row.evaluation.margin),
+    "margin_hour": lambda row: _num(row.margin_per_hour),
     "km": lambda row: _num(row.evaluation.km),
     "hours": lambda row: _num(row.evaluation.hours),
     "date": lambda row: row.service_at.timestamp() if row.service_at
@@ -922,6 +955,14 @@ class EvaluationRow:
         self.margin_negative = (
             evaluation.margin is not None and evaluation.margin < 0
         )
+        # S142 (Miguel Ángel): rendimiento por hora de equipo, para
+        # comparar servicios que ocupan la máquina tiempos distintos.
+        self.crew_hours = crew_hours_of(evaluation)
+        self.margin_per_hour = (
+            _money(evaluation.margin / self.crew_hours)
+            if evaluation.margin is not None and self.crew_hours
+            else None
+        )
         self.can_create_order = (
             self.is_done and evaluation.work_order_id is None
         )
@@ -978,8 +1019,8 @@ def sort_controls(raw):
             arrow, priority = "", ""
             # Amounts start from the highest; the rest, A to Z.
             # Los importes empiezan por el mayor; lo demás, de la A a la Z.
-            first_desc = key in ("budget", "cost", "margin", "km", "hours",
-                                 "date", "uploaded")
+            first_desc = key in ("budget", "cost", "margin", "margin_hour",
+                                 "km", "hours", "date", "uploaded")
             new = [(key, first_desc)] + keys
         cols[key] = {
             "next": ",".join(
