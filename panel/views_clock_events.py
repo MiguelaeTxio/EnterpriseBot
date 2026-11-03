@@ -924,6 +924,44 @@ def _coordinates(event):
     return "%s, %s" % (float(event.latitude), float(event.longitude))
 
 
+def _letterhead(row, date_from, date_to, sheets):
+    """
+    One-worker Excel: name, DNI, company and period on top of each sheet.
+    ---
+    Excel de un solo trabajador (S141): en cada hoja se quitan las
+    columnas DNI y nombre y se ponen arriba, como membrete, con la
+    empresa y el periodo.
+    """
+    from openpyxl.styles import Font
+    from openpyxl.utils import get_column_letter
+
+    person = row.person
+    lines = [
+        ("Registro de jornada", ""),
+        ("Trabajador", row.label),
+        ("DNI/NIE", person.dni),
+        ("Empresa", person.employer_legal_name or ""),
+        ("Periodo", "%s – %s" % (date_from.strftime("%d/%m/%Y"),
+                                 date_to.strftime("%d/%m/%Y"))),
+    ]
+    for sheet, headers in sheets:
+        sheet.delete_cols(1, 2)
+        sheet.insert_rows(1, amount=len(lines) + 1)
+        for index, (label, value) in enumerate(lines, start=1):
+            sheet.cell(row=index, column=1, value=label).font = Font(
+                bold=True, size=13 if index == 1 else 11,
+            )
+            if value:
+                sheet.cell(row=index, column=2, value=value)
+        sheet.freeze_panes = "A%d" % (len(lines) + 3)
+        for index, (_header, width) in enumerate(headers[2:], start=1):
+            sheet.column_dimensions[get_column_letter(index)].width = width
+        # La primera columna lleva también las etiquetas del membrete.
+        sheet.column_dimensions["A"].width = max(
+            sheet.column_dimensions["A"].width or 0, 20,
+        )
+
+
 class ClockEventsExportView(SupervisorAccessMixin, View):
     """
     GET: Excel of the range for the marked workers (or all filtered).
@@ -1094,6 +1132,15 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
         for column in ("F", "G"):
             for cell in presses[column][1:]:
                 cell.number_format = "HH:MM:SS" if column == "G" else "HH:MM"
+        # S141 (Miguel Ángel): con un solo trabajador, sus datos van una
+        # vez arriba, como membrete, y no en cada fila.
+        people_in_book = {row.person.pk for row in rows}
+        if len(people_in_book) == 1:
+            _letterhead(
+                rows[0], date_from, date_to,
+                ((days, day_headers), (presses, press_headers),
+                 (fixes, fix_headers)),
+            )
         buffer = io.BytesIO()
         book.save(buffer)
         filename = "fichajes_%s_%s.xlsx" % (
