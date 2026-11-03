@@ -752,20 +752,20 @@ def _corrections_in_range(company_user_id, date_from, date_to):
     ).order_by("-corrected_at"))
 
 
-def _render_detail(request, person, date_from, date_to, error="",
-                   message="", form=None):
+def worker_detail_data(company, person, date_from, date_to):
     """
-    The day-by-day detail of one worker (also after a correction).
+    Shifts, corrections history and report of one worker in a range.
     ---
-    El detalle día a día de un trabajador (también tras una
-    corrección, con su mensaje o su error).
+    Las jornadas (con sus pulsaciones listas para la plantilla y las
+    anuladas en su día), el historial de correcciones y el informe de un
+    trabajador en un intervalo. Lo usan el detalle (modal de la ficha) y
+    la página de fichajes del trabajador (S144).
     """
     report = _EmptyReport()
     corrections = []
     if person.company_user_id:
         report = reports_by_user(
-            request.user.company_user.company,
-            [person.company_user_id], date_from, date_to,
+            company, [person.company_user_id], date_from, date_to,
         ).get(person.company_user_id) or report
         corrections = _corrections_in_range(
             person.company_user_id, date_from, date_to,
@@ -784,6 +784,7 @@ def _render_detail(request, person, date_from, date_to, error="",
         "presses": [_press_view(s.clock_in, by_replacement),
                     _press_view(s.clock_out, by_replacement)],
         "duration": s.duration_label,
+        "seconds": s.seconds,
         "issue": s.issue,
         "incidents": s.incidents,
         "expected_start": s.expected_start,
@@ -814,14 +815,29 @@ def _render_detail(request, person, date_from, date_to, error="",
                      if c.new_pressed_at else None),
         "is_cancel": c.action == ClockCorrection.Action.CANCEL,
     } for c in corrections]
+    return {"report": report, "shifts": shifts, "history": history}
+
+
+def _render_detail(request, person, date_from, date_to, error="",
+                   message="", form=None):
+    """
+    The day-by-day detail of one worker (also after a correction).
+    ---
+    El detalle día a día de un trabajador (también tras una
+    corrección, con su mensaje o su error).
+    """
+    data = worker_detail_data(
+        request.user.company_user.company, person, date_from, date_to,
+    )
+    report = data["report"]
     return render(request, "panel/clock_events/_detail.html", {
         "person": person,
         "person_label": _person_label(person),
         "has_account": person.company_user_id is not None,
         "date_from": date_from,
         "date_to": date_to,
-        "shifts": shifts,
-        "history": history,
+        "shifts": data["shifts"],
+        "history": data["history"],
         "error": error,
         "message": message,
         "form": form or {},
@@ -918,113 +934,106 @@ class ClockEventsDetailView(SupervisorAccessMixin, View):
                               date_to)
 
 
+def apply_correction(request, person):
+    """
+    Apply the posted correction to a worker's presses.
+    ---
+    Aplica la corrección enviada (S141/S144) y devuelve (mensaje, error,
+    form): cambiar u anular una pulsación (event_id), anular varias de
+    una vez (event_ids: una jornada entera o las jornadas marcadas) o
+    añadir una (ADD). Lo usan el detalle (modal) y la página de
+    fichajes del trabajador. La pulsación nunca se toca:
+    hr_calendar.clock_corrections guarda quién, cuándo, antes, después
+    y el motivo.
+    """
+    from django.db import transaction
+
+    from hr_calendar.clock_corrections import ClockCorrectionError
+    from hr_calendar.clock_corrections import add_event
+    from hr_calendar.clock_corrections import correct_event
+
+    form = {
+        "event_id": request.POST.get("event_id", ""),
+        "action": request.POST.get("action", ""),
+        "new_kind": request.POST.get("new_kind", ""),
+        "new_pressed_at": request.POST.get("new_pressed_at", ""),
+        "new_clock_type": request.POST.get("new_clock_type", ""),
+        "reason": request.POST.get("reason", ""),
+        "label": request.POST.get("label", ""),
+    }
+    agent = request.META.get("HTTP_USER_AGENT", "")
+    by = request.user.company_user
+    new_pressed_at = parse_datetime(form["new_pressed_at"])
+    if new_pressed_at is not None and timezone.is_naive(new_pressed_at):
+        new_pressed_at = timezone.make_aware(new_pressed_at)
+    # S144: anular varias pulsaciones (una jornada entera, o las
+    # jornadas marcadas en la página del trabajador).
+    event_ids = [
+        int(pk) for pk in request.POST.get("event_ids", "").split(",")
+        if pk.isdigit()
+    ]
+    if form["action"] == ClockCorrection.Action.CANCEL and event_ids:
+        own = list(ClockEvent.objects.current().filter(
+            pk__in=event_ids, company_user_id=person.company_user_id,
+        ).values_list("pk", flat=True))
+        if not own:
+            return "", "Esas jornadas no son de este trabajador.", form
+        try:
+            with transaction.atomic():
+                for pk in own:
+                    correct_event(pk, by, ClockCorrection.Action.CANCEL,
+                                  form["reason"], user_agent=agent)
+        except ClockCorrectionError as exc:
+            return "", str(exc), form
+        return ("Anulados %d fichajes. Se ven tachados en su día y quedan "
+                "en el historial." % len(own)), "", {}
+    # S144: añadir una pulsación (partir un tramo, o la que falta).
+    if form["action"] == ClockCorrection.Action.ADD:
+        try:
+            add_event(person.company_user, person, by, form["new_kind"],
+                      new_pressed_at, form["reason"], user_agent=agent,
+                      new_clock_type_id=form["new_clock_type"] or None)
+        except ClockCorrectionError as exc:
+            return "", str(exc), form
+        return ("Fichaje añadido. Queda en el historial con quién lo "
+                "añadió, cuándo y por qué."), "", {}
+    event_id = form["event_id"]
+    if (not event_id.isdigit() or person.company_user_id is None
+            or not ClockEvent.objects.filter(
+                pk=int(event_id),
+                company_user_id=person.company_user_id,
+            ).exists()):
+        return "", "Ese fichaje no es de este trabajador.", form
+    try:
+        correction = correct_event(
+            int(event_id), by, form["action"], form["reason"],
+            new_kind=form["new_kind"], new_pressed_at=new_pressed_at,
+            user_agent=agent,
+            new_clock_type_id=form["new_clock_type"] or None,
+        )
+    except ClockCorrectionError as exc:
+        return "", str(exc), form
+    return ("%s guardada. El fichaje original se conserva en el "
+            "historial." % correction.get_action_display()), "", {}
+
+
 class ClockEventCorrectView(SupervisorAccessMixin, View):
     """
-    POST: correct (change or cancel) one press of the worker.
+    POST: correct (change, cancel or add) presses of the worker.
     ---
-    POST: corrige (cambia o anula) una pulsación del trabajador (H24,
-    S141). La pulsación no se toca: hr_calendar.clock_corrections
-    guarda la corrección con quién, cuándo, el valor anterior, el nuevo
-    y el motivo. Devuelve el detalle del trabajador actualizado.
+    POST: corrige pulsaciones del trabajador (apply_correction) y
+    devuelve el detalle actualizado.
     """
 
     def post(self, request, pk):
-        from hr_calendar.clock_corrections import ClockCorrectionError
-        from hr_calendar.clock_corrections import add_event
-        from hr_calendar.clock_corrections import correct_event
-
         person = _person_or_404(pk)
         date_from = _parse_date(request.POST.get("date_from"))
         date_to = _parse_date(request.POST.get("date_to"))
         if date_from is None or date_to is None:
             date_from, date_to = _date_range(request)
-        form = {
-            "event_id": request.POST.get("event_id", ""),
-            "action": request.POST.get("action", ""),
-            "new_kind": request.POST.get("new_kind", ""),
-            "new_pressed_at": request.POST.get("new_pressed_at", ""),
-            "new_clock_type": request.POST.get("new_clock_type", ""),
-            "reason": request.POST.get("reason", ""),
-            "label": request.POST.get("label", ""),
-        }
-        new_pressed_at = parse_datetime(form["new_pressed_at"])
-        if new_pressed_at is not None and timezone.is_naive(new_pressed_at):
-            new_pressed_at = timezone.make_aware(new_pressed_at)
-        # S144: anular la jornada entera (todas sus pulsaciones).
-        event_ids = [
-            int(pk) for pk in request.POST.get("event_ids", "").split(",")
-            if pk.isdigit()
-        ]
-        if form["action"] == ClockCorrection.Action.CANCEL and event_ids:
-            own = list(ClockEvent.objects.current().filter(
-                pk__in=event_ids, company_user_id=person.company_user_id,
-            ).values_list("pk", flat=True))
-            if not own:
-                return _render_detail(
-                    request, person, date_from, date_to,
-                    error="Esa jornada no es de este trabajador.", form=form)
-            from django.db import transaction
-
-            try:
-                with transaction.atomic():
-                    for pk in own:
-                        correct_event(
-                            pk, request.user.company_user,
-                            ClockCorrection.Action.CANCEL, form["reason"],
-                            user_agent=request.META.get(
-                                "HTTP_USER_AGENT", ""),
-                        )
-            except ClockCorrectionError as exc:
-                return _render_detail(request, person, date_from, date_to,
-                                      error=str(exc), form=form)
-            return _render_detail(
-                request, person, date_from, date_to,
-                message="Jornada anulada (%d fichajes). Se ven tachados en "
-                        "su día y quedan en el historial." % len(own),
-            )
-        # S144: añadir una pulsación (partir un tramo, o la que falta).
-        if form["action"] == ClockCorrection.Action.ADD:
-            try:
-                add_event(
-                    person.company_user, person, request.user.company_user,
-                    form["new_kind"], new_pressed_at, form["reason"],
-                    user_agent=request.META.get("HTTP_USER_AGENT", ""),
-                    new_clock_type_id=form["new_clock_type"] or None,
-                )
-            except ClockCorrectionError as exc:
-                return _render_detail(request, person, date_from, date_to,
-                                      error=str(exc), form=form)
-            return _render_detail(
-                request, person, date_from, date_to,
-                message="Fichaje añadido. Queda en el historial con quién "
-                        "lo añadió, cuándo y por qué.",
-            )
-        event_id = form["event_id"]
-        if (not event_id.isdigit() or person.company_user_id is None
-                or not ClockEvent.objects.filter(
-                    pk=int(event_id),
-                    company_user_id=person.company_user_id,
-                ).exists()):
-            return _render_detail(
-                request, person, date_from, date_to,
-                error="Ese fichaje no es de este trabajador.", form=form,
-            )
-        try:
-            correction = correct_event(
-                int(event_id), request.user.company_user, form["action"],
-                form["reason"], new_kind=form["new_kind"],
-                new_pressed_at=new_pressed_at,
-                user_agent=request.META.get("HTTP_USER_AGENT", ""),
-                new_clock_type_id=form["new_clock_type"] or None,
-            )
-        except ClockCorrectionError as exc:
-            return _render_detail(request, person, date_from, date_to,
-                                  error=str(exc), form=form)
-        return _render_detail(
-            request, person, date_from, date_to,
-            message="%s guardada. El fichaje original se conserva en el "
-                    "historial." % correction.get_action_display(),
-        )
+        message, error, form = apply_correction(request, person)
+        return _render_detail(request, person, date_from, date_to,
+                              error=error, message=message, form=form)
 
 
 def _hour(event, field_name, day, seconds=False):
