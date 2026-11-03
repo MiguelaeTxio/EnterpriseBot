@@ -136,7 +136,9 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
                                     {% if sched.is_open %}<span class="badge bg-dark ms-1" title="El fichaje no se compara con sus horas y no hay recordatorios">Abierto</span>{% endif %}
                                 </td>
                                 <td>
-                                    {% if sched.varies_by_day %}
+                                    {% if sched.is_open %}
+                                    <span class="text-muted">Sin horas (abierto)</span>
+                                    {% elif sched.varies_by_day %}
                                     <span class="badge bg-primary me-1">Según el día</span>{% for line in sched.day_summary %}{{ line }}{% if not forloop.last %} · {% endif %}{% endfor %}
                                     {% else %}
                                     {{ sched.start_time_morning|time:"H:i" }}–{{ sched.end_time_morning|time:"H:i" }}{% if not sched.is_intensive and sched.start_time_afternoon %} / {{ sched.start_time_afternoon|time:"H:i" }}–{{ sched.end_time_afternoon|time:"H:i" }}{% endif %}
@@ -239,7 +241,7 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
                                 <label class="form-check-label small" for="editIsIntensive">Jornada intensiva</label>
                             </div>
                         </div>
-                        <div class="col-12">
+                        <div class="col-12 edit-varies-row">
                             <div class="form-check mb-0">
                                 <input class="form-check-input schedule-varies-check" type="checkbox" name="varies_by_day" id="editVaries" data-target="edit"
                                        {% if post_data.varies_by_day %}checked{% endif %}>
@@ -252,7 +254,7 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
                                 <input class="form-check-input" type="checkbox" name="is_open" id="editIsOpen"
                                        {% if post_data.is_open %}checked{% endif %}>
                                 <label class="form-check-label small fw-semibold" for="editIsOpen"
-                                       title="Para las secciones en las que cada trabajador entra y sale a horas distintas según la obra o la tarea. El fichaje no se compara con las horas (sin llegadas tarde, salidas antes ni fuera de horario) y no hay recordatorios: lo controla la oficina. Las horas de abajo solo sirven de referencia en el parte.">Horario abierto (sin comparar el fichaje ni recordatorios)</label>
+                                       title="Para las secciones en las que cada trabajador entra y sale a horas distintas según la obra o la tarea. Sin horas: el fichaje no se compara (sin llegadas tarde, salidas antes ni fuera de horario) y no hay recordatorios; lo controla la oficina.">Horario abierto (sin horas: sin comparar el fichaje ni recordatorios)</label>
                             </div>
                         </div>
                         <div class="col-12 edit-days-tract">
@@ -438,6 +440,24 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
         }
     }
 
+    // S144: horario abierto, sin horas. Oculta las horas, la intensiva y
+    // "según el día"; al desmarcarlo vuelve todo como estaba.
+    function toggleOpen() {
+        var open = document.getElementById("editIsOpen");
+        var varies = document.getElementById("editVaries");
+        var on = open.checked;
+        var hide = document.querySelectorAll(".edit-general-tract, .edit-days-tract, .edit-varies-row");
+        if (on) {
+            hide.forEach(function (el) {
+                el.style.display = "none";
+                el.querySelectorAll("input").forEach(function (inp) { inp.required = false; });
+            });
+        } else {
+            document.querySelector(".edit-varies-row").style.display = "";
+            toggleVaries(varies);
+        }
+    }
+
     // ---- Listado: filtros, orden y selección (formato 4.24) ----------
     var SCREEN_KEY = "workday_schedules";
     var sortState = {key: "name", desc: false};
@@ -543,8 +563,10 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
             toggleVaries(varies);
         });
         intensive.addEventListener("change", function () { toggleAfternoon(intensive); });
+        document.getElementById("editIsOpen").addEventListener("change", toggleOpen);
         toggleVaries(varies);
         toggleAfternoon(intensive);
+        toggleOpen();
 
         var modalEl = document.getElementById("scheduleModal");
         var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
@@ -565,6 +587,7 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
             loadDays(table, []);
             toggleVaries(varies);
             toggleAfternoon(intensive);
+            toggleOpen();
             title.textContent = "Nuevo horario";
             modal.show();
         });
@@ -589,6 +612,7 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
                 loadDays(table, days);
                 toggleVaries(varies);
                 toggleAfternoon(intensive);
+                toggleOpen();
                 title.textContent = "Editar horario: " + (btn.dataset.label || "");
                 modal.show();
             });

@@ -3634,7 +3634,16 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
         # S141: horario distinto según el día de la semana.
         varies_val = bool(request.POST.get("varies_by_day"))
         # S144: horario abierto (sin comparar el fichaje ni recordatorios).
+        # Sin horas: se guardan las de por defecto del modelo (07:00-15:00,
+        # intensiva), que nadie compara; solo evitan horas vacías en los
+        # partes, que leen el horario para rellenar su primera hora.
         is_open_val = bool(request.POST.get("is_open"))
+        if is_open_val:
+            varies_val = False
+            is_intensive_val = True
+            start_afternoon_val = end_afternoon_val = ""
+            if not start_morning_val or not end_morning_val:
+                start_morning_val, end_morning_val = "07:00", "15:00"
 
         errors = []
         if not label_val:
