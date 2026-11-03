@@ -9,7 +9,8 @@ Vacaciones (directriz 4.24):
   con fichajes, horas, incidencias y último fichaje del intervalo, con
   su menú de tres puntos -- y "Selección actual" (1/4). Pantalla
   completa de la lista (directriz 4.26). S136: alineado con Repostajes.
-Pulsar el nombre abre sus jornadas día a día. Solo consulta: los
+Pulsar el nombre abre la página de sus fichajes (S144,
+panel/clock_worker/page.html). Solo consulta: los
 registros se conservan cuatro años (art. 34.9 ET). Filtros, orden y
 selección persistidos por usuario (screen_key "clock_events").
 S141: filtro por sección, columnas Sección, Ficha y Recordatorios, y
@@ -229,23 +230,6 @@ recordatorios, secciones que fichan y permiso de envío).
 .clk-types-menu .clk-type-order { width: 4.5rem !important; }
 </style>
 
-<div class="modal fade" id="clkDetailModal" tabindex="-1" aria-labelledby="clkDetailModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="clkDetailModalLabel">Fichajes del trabajador</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" data-clk-map-root data-map-id="{{ google_maps_map_id }}">
-                {# H24 (S129): mapa del fichaje (API de Google Maps), se abre al pulsar el icono de posición. #}
-                {% include "panel/clock_events/_map_block.html" %}
-                <div id="clk-detail-container">
-                    <div class="text-muted small">Cargando…</div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
 <div class="toast-container position-fixed bottom-0 end-0 p-3">
     <div id="clk-toast" class="toast align-items-center text-bg-dark border-0" role="status" aria-live="polite">
         <div class="d-flex">
@@ -255,12 +239,6 @@ recordatorios, secciones que fichan y permiso de envío).
     </div>
 </div>
 {{ saved_selection|json_script:"clk-saved-selection" }}
-<script>
-// H24 (S129): al abrir el detalle de otro trabajador, el mapa empieza cerrado.
-document.getElementById("clkDetailModal").addEventListener("show.bs.modal", function () {
-    this.querySelector(".clk-map-wrap").classList.add("d-none");
-});
-</script>
 {% include "panel/_fixed_list_layout.html" with top_id="clk-top-panel" bottom_id="clk-bottom-panel" %}
 <script>
 (function () {

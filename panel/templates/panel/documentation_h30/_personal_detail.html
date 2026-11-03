@@ -492,9 +492,13 @@ H30 (S128), punto 6: tablas `stack-mobile` -- en el móvil cada fila es una tarj
                         <label class="form-label small mb-0" for="personClockTo">Hasta</label>
                         <input type="date" class="form-control form-control-sm" id="personClockTo" name="date_to" value="{{ clock_date_to|date:'Y-m-d' }}">
                     </div>
+                    {# S144: la página de sus fichajes (filtrar, ordenar, corregir, añadir, anular). #}
+                    <a class="btn btn-sm btn-outline-primary ms-auto" href="{% url 'panel:clock_worker' person.pk %}">
+                        <i class="bi bi-calendar-week me-1"></i>Ver todos sus fichajes
+                    </a>
                 </form>
                 {% include "panel/clock_events/_map_block.html" %}
-                <div id="personClockDetail"><div class="text-muted small">Cargando…</div></div>
+                <div id="personClockDetail" data-clk-detail-root><div class="text-muted small">Cargando…</div></div>
             </div>
         </div>
     </div>

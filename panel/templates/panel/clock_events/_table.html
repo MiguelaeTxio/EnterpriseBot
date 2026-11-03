@@ -53,9 +53,8 @@ y Albaranes de Servicios.
                 {% if not row.has_account %}<i class="bi bi-person-x text-muted" title="Sin usuario del panel: todavía no puede fichar"></i>{% elif row.report.incident_count %}<i class="bi bi-exclamation-triangle-fill text-danger" title="Tiene incidencias: ábrelo para verlas"></i>{% endif %}
             </td>
             <td class="sticky-col sticky-col-3 sticky-col-last">
-                <a href="#" data-bs-toggle="modal" data-bs-target="#clkDetailModal"
-                   hx-get="{% url 'panel:clock_events_detail' row.person.pk %}?date_from={{ date_from|date:'Y-m-d' }}&date_to={{ date_to|date:'Y-m-d' }}"
-                   hx-target="#clk-detail-container">{{ row.label }}</a>
+                {# S144: sus fichajes en página propia (formato 4.24), con las fechas de la pestaña. #}
+                <a href="{% url 'panel:clock_worker' row.person.pk %}?date_from={{ date_from|date:'Y-m-d' }}&date_to={{ date_to|date:'Y-m-d' }}">{{ row.label }}</a>
             </td>
             {# S141: sección vigente hoy, si ficha (él y su sección) y si recibe recordatorios. #}
             <td data-label="Sección">{{ row.state.section_name|default:"—" }}</td>
@@ -82,9 +81,7 @@ y Albaranes de Servicios.
                         <i class="bi bi-three-dots-vertical"></i>
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end">
-                        <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#clkDetailModal"
-                               hx-get="{% url 'panel:clock_events_detail' row.person.pk %}?date_from={{ date_from|date:'Y-m-d' }}&date_to={{ date_to|date:'Y-m-d' }}"
-                               hx-target="#clk-detail-container"><i class="bi bi-calendar-week me-1"></i>Ver las jornadas</a></li>
+                        <li><a class="dropdown-item" href="{% url 'panel:clock_worker' row.person.pk %}?date_from={{ date_from|date:'Y-m-d' }}&date_to={{ date_to|date:'Y-m-d' }}"><i class="bi bi-calendar-week me-1"></i>Ver sus fichajes</a></li>
                         <li><a class="dropdown-item" href="{% url 'panel:documentation_personal_detail' pk=row.person.pk %}"><i class="bi bi-person-vcard me-1"></i>Abrir la ficha</a></li>
                     </ul>
                 </div>

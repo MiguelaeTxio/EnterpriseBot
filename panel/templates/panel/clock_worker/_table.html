@@ -1,0 +1,140 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/clock_worker/_table.html #}
+{% comment %}
+H24 (S144). Lista de la página de fichajes de un trabajador: una fila
+por jornada (y por día con todo anulado), con entrada, salida, horas,
+horas por tipo, incidencias y estado. Las pulsaciones anuladas se ven
+tachadas en su día. Cada fila lleva su menú de tres puntos (corregir
+la entrada, la salida o un cambio de tipo, partir el tramo, anular la
+jornada). Todo calculado en la vista (panel/views_clock_worker.py).
+Fuera de banda: el historial de correcciones (modal de la página).
+{% endcomment %}
+<div id="cw-fragment-state" class="d-none"
+     data-count="{{ rows|length }}"
+     data-sort-active="{% if sort_active %}1{% endif %}"
+     data-total="{{ total_label }}"
+     data-issues="{{ issues_count }}"
+     data-late="{{ punctuality_label }}"
+     data-early="{{ early_label }}"></div>
+<span id="cw-sort-inputs" class="d-none">
+    <input type="hidden" name="sort" value="{{ current_sort }}">
+</span>
+<table class="table table-hover table-light align-middle small" id="cw-table">
+    <thead class="table-light">
+        <tr>
+            <th class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input" id="cw-check-all" title="Seleccionar todas las que cumplen el filtro actual"></th>
+            <th class="sticky-col sticky-col-2"></th>
+            {% for column in sort_columns %}
+            <th class="{% if column.key == 'day' %}sticky-col sticky-col-3 sticky-col-last{% elif column.key == 'hours' or column.key == 'incidents' %}text-end{% endif %}">
+                <a href="#" class="text-decoration-none text-dark"
+                   hx-get="{% url 'panel:clock_worker_results' person.pk %}"
+                   hx-target="#cw-results" hx-include="#cw-filters"
+                   hx-vals='{"sort": "{{ column.next }}"}'>
+                    {{ column.label }}
+                    {% if column.arrow %}<i class="bi bi-chevron-{% if column.arrow == 'up' %}up{% else %}down{% endif %}"></i>{% if column.priority %}<sup>{{ column.priority }}</sup>{% endif %}{% endif %}
+                </a>
+            </th>
+            {% endfor %}
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr class="{% if row.status == 'cancelled' %}table-secondary{% elif row.status == 'issues' %}table-danger{% endif %}">
+            <td class="sticky-col sticky-col-1">
+                <input type="checkbox" class="form-check-input cw-row-check" data-pk="{{ row.key }}" data-label="{{ row.label }}" data-ids="{{ row.event_ids|default:'' }}">
+            </td>
+            <td class="sticky-col sticky-col-2">
+                {% if row.status == 'issues' %}<i class="bi bi-exclamation-triangle-fill text-danger" title="Con incidencias"></i>{% elif row.corrected %}<i class="bi bi-pencil-square text-primary" title="Tiene correcciones"></i>{% endif %}
+            </td>
+            <td class="sticky-col sticky-col-3 sticky-col-last text-nowrap" data-label="Día">{{ row.day|date:"D d/m/Y" }}</td>
+            {% if row.only_cancelled %}
+            <td colspan="4" class="text-muted">
+                {% for item in row.cancelled %}<span class="me-3 text-nowrap" title="Anulado por {{ item.by }} el {{ item.at|date:'d/m H:i' }} · {{ item.reason }}"><s>{{ item.kind|lower }}{% if item.clock_type %} ({{ item.clock_type.name }}){% endif %} {{ item.time|date:"H:i" }}</s></span>{% endfor %}
+            </td>
+            <td class="text-end">—</td>
+            {% else %}
+            {% for press in row.presses %}
+            <td data-label="{% if forloop.first %}Entrada{% else %}Salida{% endif %}">
+                {% if press %}
+                <div class="text-nowrap">{{ press.time|date:"H:i" }}{% if press.rounded %} <span class="text-muted">→ {{ press.rounded|date:"H:i" }}</span>{% endif %}{% if press.time|date:"Ymd" != row.day|date:"Ymd" %} <span class="text-muted">({{ press.time|date:"d/m" }})</span>{% endif %}
+                    {% if press.maps_url %}<a href="{{ press.maps_url }}" target="_blank" rel="noopener" title="Ver en el mapa{% if press.accuracy %} (±{{ press.accuracy }} m){% endif %}"><i class="bi bi-geo-alt"></i></a>{% else %}<i class="bi bi-geo-alt text-muted" title="Sin posición GPS{% if press.event.gps_error %}: {{ press.event.gps_error }}{% endif %}"></i>{% endif %}
+                    {% if press.municipality %}<span class="text-muted">{{ press.municipality }}</span>{% endif %}
+                </div>
+                {% if press.event.clock_type_id %}<div class="fw-semibold">{{ press.event.clock_type.name }}</div>{% endif %}
+                {% if forloop.first and row.late_minutes is not None %}<div class="text-muted">horario {{ row.expected_start|time:"H:i" }} · {% if row.late_minutes > 0 %}{{ row.late_minutes }} min tarde{% elif row.late_minutes < 0 %}{{ row.late_minutes|stringformat:"d"|slice:"1:" }} min antes{% else %}en punto{% endif %}</div>{% endif %}
+                {% if forloop.last and row.early_minutes is not None %}<div class="text-muted">horario {{ row.expected_end|time:"H:i" }} · {% if row.early_minutes > 0 %}{{ row.early_minutes }} min antes{% elif row.early_minutes < 0 %}{{ row.early_minutes|stringformat:"d"|slice:"1:" }} min después{% else %}en punto{% endif %}</div>{% endif %}
+                {% if press.is_manual %}<div class="text-danger">fichaje manual, apuntado {{ press.received|date:"d/m H:i" }}</div>{% endif %}
+                {% if press.is_added %}<div class="text-primary">añadido por {{ press.corrected_by }} · {{ press.correction.reason }}</div>{% elif press.correction %}<div class="text-primary">corregido por {{ press.corrected_by }}: antes {{ press.correction.get_old_kind_display|lower }} {{ press.old_time|date:"d/m H:i" }} · {{ press.correction.reason }}</div>{% endif %}
+                {% else %}
+                <span class="text-warning-emphasis">—</span>
+                {% endif %}
+            </td>
+            {% endfor %}
+            <td class="text-end" data-label="Horas">{{ row.duration|default:"—" }}</td>
+            <td data-label="Tipos">
+                {% for press in row.changes %}<div class="text-nowrap">{{ press.time|date:"H:i" }} → <strong>{{ press.event.clock_type.name|default:"—" }}</strong>{% if press.is_added %} <span class="text-primary">(añadido)</span>{% elif press.correction %} <span class="text-primary">(corregido)</span>{% endif %}</div>{% endfor %}
+                {% for item in row.type_hours %}<span class="text-muted text-nowrap me-2">{{ item.name }} {{ item.label }} h{% if not item.counts %} (no cuenta){% endif %}</span>{% endfor %}
+            </td>
+            {% endif %}
+            <td data-label="Incidencias">
+                {% for incident in row.incidents %}<div class="text-danger">{{ incident }}</div>{% endfor %}
+                {% if row.rest_note %}<div class="text-muted">{{ row.rest_note }}</div>{% endif %}
+                {% if row.cancelled and not row.only_cancelled %}<div class="text-muted">Anulado ese día: {% for item in row.cancelled %}<s>{{ item.kind|lower }} {{ item.time|date:"H:i" }}</s>{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+            </td>
+            <td data-label="Estado"><span class="badge text-bg-{{ row.status_badge }} fw-normal">{% if row.only_cancelled %}Día anulado{% else %}{{ row.status_label }}{% endif %}</span></td>
+            {# Acciones de la fila (directriz 4.24, regla 9). #}
+            <td class="text-end">
+                {% if has_account and not row.only_cancelled %}
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-link text-dark py-0" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Acciones">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        {% for press in row.presses %}{% if press %}
+                        <li><a class="dropdown-item cw-fix" href="#" data-action="CHANGE" data-event="{{ press.event.pk }}" data-kind="{{ press.event.kind }}" data-type="{{ press.event.clock_type_id|default:'' }}" data-time="{{ press.input_value }}"
+                               data-label="{{ press.event.get_kind_display }}{% if press.event.clock_type_id %} ({{ press.event.clock_type.name }}){% endif %} del {{ press.time|date:'d/m/Y H:i' }}"><i class="bi bi-pencil me-1"></i>Corregir la {% if forloop.first %}entrada{% else %}salida{% endif %}</a></li>
+                        {% endif %}{% endfor %}
+                        {% for press in row.changes %}
+                        <li><a class="dropdown-item cw-fix" href="#" data-action="CHANGE" data-event="{{ press.event.pk }}" data-kind="{{ press.event.kind }}" data-type="{{ press.event.clock_type_id|default:'' }}" data-time="{{ press.input_value }}"
+                               data-label="Cambio de tipo ({{ press.event.clock_type.name|default:'—' }}) del {{ press.time|date:'d/m/Y H:i' }}"><i class="bi bi-pencil me-1"></i>Corregir el cambio de las {{ press.time|date:"H:i" }}</a></li>
+                        {% endfor %}
+                        {% if row.entry and row.exit %}
+                        <li><a class="dropdown-item cw-fix" href="#" data-action="ADD" data-kind="CHG" data-time="{{ row.entry.input_value }}"
+                               data-label="Cambio de tipo en la jornada del {{ row.day|date:'d/m/Y' }}"
+                               title="Añadir un cambio de tipo dentro de la jornada (p. ej. de presencia a trabajo efectivo a una hora): el tramo queda partido en dos."><i class="bi bi-scissors me-1"></i>Partir el tramo</a></li>
+                        {% endif %}
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item text-danger cw-fix" href="#" data-action="CANCEL" data-ids="{{ row.event_ids }}"
+                               data-label="Jornada del {{ row.day|date:'d/m/Y' }} entera"><i class="bi bi-x-circle me-1"></i>Anular la jornada</a></li>
+                    </ul>
+                </div>
+                {% endif %}
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="10" class="text-muted py-3">Ningún fichaje con estos filtros en estas fechas.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<div id="cw-history-body" hx-swap-oob="true">
+    {% if history %}
+    <table class="table table-sm small align-middle">
+        <thead><tr><th>Corregido</th><th>Por</th><th>Corrección</th><th>Antes</th><th>Después</th><th>Motivo</th></tr></thead>
+        <tbody>
+            {% for item in history %}
+            <tr>
+                <td>{{ item.corrected_at|date:"d/m/Y H:i" }}</td>
+                <td>{{ item.corrected_by }}</td>
+                <td>{{ item.correction.get_action_display }}</td>
+                <td>{% if item.old_time %}{{ item.correction.get_old_kind_display }}{% if item.correction.old_clock_type %} ({{ item.correction.old_clock_type.name }}){% endif %} {{ item.old_time|date:"d/m H:i" }}{% else %}—{% endif %}</td>
+                <td>{% if item.is_cancel %}<span class="text-danger">anulado</span>{% else %}{{ item.correction.get_new_kind_display }}{% if item.correction.new_clock_type %} ({{ item.correction.new_clock_type.name }}){% endif %} {{ item.new_time|date:"d/m H:i" }}{% endif %}</td>
+                <td>{{ item.correction.reason }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="small text-muted">Ningún fichaje corregido en estas fechas.</div>
+    {% endif %}
+</div>

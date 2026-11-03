@@ -115,6 +115,11 @@ from panel.views_clock_events import (
     ClockEventsResultsView,
     ClockEventsTabView,
 )
+from panel.views_clock_worker import (
+    ClockWorkerActionView,
+    ClockWorkerPageView,
+    ClockWorkerResultsView,
+)
 from panel.views_personal_access import (
     PersonalAccessCreateView,
     PersonalAccessPreviewView,
@@ -1785,6 +1790,22 @@ urlpatterns = [
         "documentacion/fichajes/<int:pk>/",
         ClockEventsDetailView.as_view(),
         name="clock_events_detail",
+    ),
+    # H24 (S144): página de fichajes de un trabajador (formato 4.24).
+    path(
+        "documentacion/fichajes/<int:pk>/jornadas/",
+        ClockWorkerPageView.as_view(),
+        name="clock_worker",
+    ),
+    path(
+        "documentacion/fichajes/<int:pk>/jornadas/resultados/",
+        ClockWorkerResultsView.as_view(),
+        name="clock_worker_results",
+    ),
+    path(
+        "documentacion/fichajes/<int:pk>/jornadas/accion/",
+        ClockWorkerActionView.as_view(),
+        name="clock_worker_action",
     ),
     # H24 (S141): corrección de un fichaje (nunca se modifica el
     # original; queda en el historial con quién y por qué).
