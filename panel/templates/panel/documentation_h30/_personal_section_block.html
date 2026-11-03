@@ -1,0 +1,45 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_personal_section_block.html #}
+{% comment %}
+H24 (S144). Sección del trabajador en su ficha: la vigente hoy (de su
+asignación de Personal o, sin ella, de la centralita), asignar otra
+desde una fecha (la misma asignación que Vacaciones y Horarios, se
+conserva el historial) y el historial. Vista:
+panel/views_personal_section.py. Se repinta solo (htmx outerHTML).
+{% endcomment %}
+<div class="col-12" id="personal-section-block">
+    <div class="border rounded p-2 small">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <strong><i class="bi bi-diagram-3 me-1"></i>Sección:</strong>
+            {% if section_current %}
+            <span class="badge text-bg-primary fw-normal">{{ section_current.name }}</span>
+            {% if section_assignment %}<span class="text-muted">desde el {{ section_assignment.valid_from|date:"d/m/Y" }}</span>{% elif section_from_ivr %}<span class="text-muted" title="No tiene asignación de Personal: es la de su contacto en la centralita">(de la centralita)</span>{% endif %}
+            {% else %}
+            <span class="text-muted">Sin sección</span>
+            {% endif %}
+            {% if can_assign_section %}
+            <form class="d-flex flex-wrap align-items-center gap-1 ms-md-auto"
+                  hx-post="{% url 'panel:documentation_personal_section_assign' person.pk %}"
+                  hx-target="#personal-section-block" hx-swap="outerHTML">
+                {% csrf_token %}
+                <select name="section_id" class="form-select form-select-sm w-auto" aria-label="Sección" required>
+                    <option value="">Elegir sección…</option>
+                    {% for section in section_choices %}
+                    <option value="{{ section.pk }}"{% if section_current and section_current.pk == section.pk %} selected{% endif %}>{{ section.name }}</option>
+                    {% endfor %}
+                </select>
+                <label class="text-muted" for="personalSectionFrom">desde</label>
+                <input type="date" name="valid_from" id="personalSectionFrom" class="form-control form-control-sm w-auto" value="{{ section_today|date:'Y-m-d' }}">
+                <button type="submit" class="btn btn-sm btn-outline-primary" title="Desde esa fecha esta es su sección (la anterior queda en el historial). Su horario por defecto es el de la sección.">
+                    <i class="bi bi-check2 me-1"></i>Asignar
+                </button>
+            </form>
+            {% endif %}
+        </div>
+        {% if section_message %}<div class="mt-1 {% if section_error %}text-danger{% else %}text-success{% endif %}">{{ section_message }}</div>{% endif %}
+        {% if section_assignments %}
+        <div class="mt-1 text-muted">
+            Historial: {% for row in section_assignments %}{{ row.section.name }} desde el {{ row.valid_from|date:"d/m/Y" }}{% if not forloop.last %} · {% endif %}{% endfor %}
+        </div>
+        {% endif %}
+    </div>
+</div>

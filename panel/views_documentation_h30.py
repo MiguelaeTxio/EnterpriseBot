@@ -2172,10 +2172,14 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_ADMIN_SUPERVISOR,
             CompanyUser.ROLE_SUPERVISOR, CompanyUser.ROLE_WORKSHOPBOSS,
         )
+        # H24 (S144): bloque Sección de la ficha.
+        from panel.views_personal_section import section_block_context
+
         return render(
             request,
             "panel/documentation_h30/_personal_detail.html",
             {
+                **section_block_context(request, person),
                 "can_view_clock_events": can_view_clock,
                 "clock_date_from": _today_clk.replace(day=1),
                 "clock_date_to": _today_clk,

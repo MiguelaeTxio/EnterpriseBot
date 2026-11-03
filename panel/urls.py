@@ -37,6 +37,7 @@ from panel.views_refuels import (
     RefuelsVehicleMeterView,
     RefuelsVehicleUnitView,
 )
+from panel.views_personal_section import PersonalSectionAssignView
 from panel.views_refuels_export import (
     RefuelsExportTemplateDeleteView,
     RefuelsExportTemplateListView,
@@ -1465,6 +1466,12 @@ urlpatterns = [
         "documentacion/personal/acceso/crear/",
         PersonalAccessCreateView.as_view(),
         name="documentation_personal_access_create",
+    ),
+    # H24 (S144): sección del trabajador desde su ficha.
+    path(
+        "documentacion/personal/<int:pk>/seccion/",
+        PersonalSectionAssignView.as_view(),
+        name="documentation_personal_section_assign",
     ),
     # H24 (S144): "Reenviar el alta" (Personal y Fichajes).
     path(
