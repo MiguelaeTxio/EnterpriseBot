@@ -41,6 +41,10 @@ la entrada y olvido de la salida.
   primera entrada del horario, ni mientras sigue abierta una jornada
   empezada el día anterior fuera de horario (trabajo nocturno), ni el
   de salida de una jornada que entró fuera de horario.
+- S144 (guardas): horario de noche (la salida del último tramo es menor
+  que su entrada: sale al día siguiente). El de entrada sale esa noche;
+  el de salida, a la mañana siguiente si la jornada sigue abierta, y se
+  apunta en el día de la entrada.
 """
 import datetime
 import logging
@@ -152,6 +156,9 @@ def due_reminder(schedule_starts, schedule_ends, events, now):
     tz = timezone.get_current_timezone()
     start_at = timezone.make_aware(datetime.datetime.combine(day, start), tz)
     end_at = timezone.make_aware(datetime.datetime.combine(day, end), tz)
+    if end <= start:
+        # S144: horario de noche, la salida es del día siguiente.
+        end_at += datetime.timedelta(days=1)
     kinds = [event.kind for event in events]
     if not set(kinds) & {ClockEvent.Kind.IN, ClockEvent.Kind.CHANGE}:
         if start_at + REMINDER_DELAY <= now < end_at:
@@ -164,6 +171,45 @@ def due_reminder(schedule_starts, schedule_ends, events, now):
             and not _off_schedule(_opening(events), schedule_starts)):
         return ClockReminder.Kind.OUT, end
     return None
+
+
+def overnight_out_due(company_user, company, day, events, now):
+    """
+    The OUT reminder of last night's shift, as (kind, time), or None.
+    ---
+    S144 (guardas): el recordatorio de salida de la jornada de noche de
+    ayer, como (tipo, hora del horario), o None. Toca si el horario de
+    ayer acaba hoy (salida del último tramo menor que su entrada), ya
+    ha pasado un cuarto de hora de esa salida y sigue abierta una
+    jornada que entró ayer dentro de horario. `events` son las
+    pulsaciones desde 24 h antes del día hasta ahora, en orden.
+    """
+    from hr_calendar.clock_report import MAX_SHIFT_HOURS
+    from hr_calendar.clock_report import schedule_ends
+    from hr_calendar.clock_report import schedule_starts
+    from panel.views_operator import _resolve_operator_schedule
+
+    yesterday = day - datetime.timedelta(days=1)
+    schedule = _resolve_operator_schedule(company_user, company, yesterday)
+    if schedule is None or schedule.is_open:
+        return None
+    starts, ends = schedule_starts(schedule), schedule_ends(schedule)
+    if not starts or not ends or ends[-1] > starts[-1]:
+        return None
+    end_at = timezone.make_aware(
+        datetime.datetime.combine(day, ends[-1]),
+        timezone.get_current_timezone())
+    if now < end_at + REMINDER_DELAY:
+        return None
+    opening = _opening(events)
+    if opening is None or opening.kind == ClockEvent.Kind.OUT:
+        return None
+    opened = opening.pressed_at
+    if (timezone.localtime(opened).date() != yesterday
+            or now - opened > datetime.timedelta(hours=MAX_SHIFT_HOURS)
+            or _off_schedule(opening, starts)):
+        return None
+    return ClockReminder.Kind.OUT, ends[-1]
 
 
 def _opening(events):
@@ -310,9 +356,12 @@ def send_clock_reminders(company, now=None, log=logger.info):
         return counters
     # Se pregunta a Twilio por la aprobación solo cuando toca enviar.
     templates = None
+    # S144: también los de ayer (el de salida del turno de noche se
+    # apunta en el día de la entrada).
     already = set(ClockReminder.objects.filter(
-        company=company, day=day,
-    ).values_list("company_user_id", "kind"))
+        company=company,
+        day__in=[day, day - datetime.timedelta(days=1)],
+    ).values_list("company_user_id", "day", "kind"))
     tz = timezone.get_current_timezone()
     day_start = timezone.make_aware(
         datetime.datetime.combine(day, datetime.time.min), tz)
@@ -350,29 +399,38 @@ def send_clock_reminders(company, now=None, log=logger.info):
             counters["sin_horario"] += 1
             continue
         schedule = _resolve_operator_schedule(company_user, company, day)
-        if schedule is None:
-            counters["sin_horario"] += 1
-            continue
         # S144 (Miguel Ángel): "en los horarios abiertos no tenemos
         # ningún recordatorio".
-        if schedule.is_open:
+        if schedule is not None and schedule.is_open:
             counters["abierto"] += 1
             continue
-        if exceptional_day(
-                company_user, company, day, schedule_starts(schedule),
-                [e for e in window_by_user.get(company_user.pk, [])
-                 if e.pressed_at <= now], now):
-            counters["excepcional"] += 1
+        window = [e for e in window_by_user.get(company_user.pk, [])
+                  if e.pressed_at <= now]
+        due, reminder_day = None, day
+        if schedule is not None:
+            if exceptional_day(
+                    company_user, company, day, schedule_starts(schedule),
+                    window, now):
+                counters["excepcional"] += 1
+                continue
+            due = due_reminder(
+                schedule_starts(schedule), schedule_ends(schedule),
+                events_by_user.get(company_user.pk, []), now,
+            )
+        if due is None:
+            # S144: la salida del turno de noche de ayer (también si hoy
+            # no trabaja).
+            due = overnight_out_due(company_user, company, day, window, now)
+            reminder_day = day - datetime.timedelta(days=1)
+        if due is None:
+            if schedule is None:
+                counters["sin_horario"] += 1
             continue
-        due = due_reminder(
-            schedule_starts(schedule), schedule_ends(schedule),
-            events_by_user.get(company_user.pk, []), now,
-        )
-        if due is None or (company_user.pk, due[0]) in already:
+        if (company_user.pk, reminder_day, due[0]) in already:
             continue
         kind, scheduled_time = due
         person = _person(company_user)
-        if _away(company_user, person, day):
+        if _away(company_user, person, reminder_day):
             counters["fuera"] += 1
             continue
         phone = _phone(company_user, person)
@@ -397,7 +455,7 @@ def send_clock_reminders(company, now=None, log=logger.info):
         name = name.strip().title()
         variables = {
             "1": name,
-            "2": day.strftime("%d/%m"),
+            "2": reminder_day.strftime("%d/%m"),
             "3": scheduled_time.strftime("%H:%M"),
         }
         if client is None:
@@ -413,7 +471,8 @@ def send_clock_reminders(company, now=None, log=logger.info):
                 % (company_user.user.username, exc))
             continue
         ClockReminder.objects.create(
-            company=company, company_user=company_user, day=day, kind=kind,
+            company=company, company_user=company_user, day=reminder_day,
+            kind=kind,
             scheduled_time=scheduled_time, phone=phone,
             message_sid=getattr(message, "sid", "") or "",
             sent_as_text=getattr(message, "sent_as_text", False),

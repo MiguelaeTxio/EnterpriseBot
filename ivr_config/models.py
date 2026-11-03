@@ -3228,14 +3228,16 @@ class WorkdaySchedule(models.Model):
                     "La hora de entrada de tarde debe ser posterior a la hora "
                     "de salida de mañana."
                 )
+            # S144 (guardas): la tarde puede acabar al día siguiente
+            # (salida menor que la entrada); igual, no.
             if (
                 self.start_time_afternoon
                 and self.end_time_afternoon
-                and self.end_time_afternoon <= self.start_time_afternoon
+                and self.end_time_afternoon == self.start_time_afternoon
             ):
                 raise ValidationError(
-                    "La hora de salida de tarde debe ser posterior a la hora "
-                    "de entrada de tarde."
+                    "La hora de salida de tarde no puede ser igual que la de "
+                    "entrada de tarde."
                 )
 
     def save(self, *args, **kwargs):

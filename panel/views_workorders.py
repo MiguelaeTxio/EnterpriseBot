@@ -3333,8 +3333,9 @@ def _days_summary(rows):
     def hours(row):
         if not row["works"]:
             return "no se trabaja"
+        # S144: "(+1)" cuando la salida es del día siguiente.
         return " / ".join(
-            "%s–%s" % (row[a], row[b])
+            "%s–%s%s" % (row[a], row[b], " (+1)" if row[b] < row[a] else "")
             for a, b in (("sm", "em"), ("sa", "ea")) if row[a]
         )
 
@@ -3462,10 +3463,16 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
                 days.append({"weekday": number - 1, "works": False,
                              "sm": None, "em": None, "sa": None, "ea": None})
                 continue
+            # S144 (guardas): el último tramo del día puede acabar al día
+            # siguiente (salida menor que la entrada, p. ej. 20:00-08:00).
+            # La mañana solo si es el único tramo; nunca igual.
             if (values["sm"] is None) != (values["em"] is None):
                 errors.append("%s: la mañana necesita la entrada y la "
                               "salida (o ninguna)." % name)
-            elif values["sm"] is not None and values["em"] <= values["sm"]:
+            elif values["sm"] is not None and (
+                    values["em"] == values["sm"]
+                    or (values["em"] < values["sm"]
+                        and values["sa"] is not None)):
                 errors.append("%s: la salida de la mañana debe ser "
                               "posterior a la entrada." % name)
             if (values["sa"] is None) != (values["ea"] is None):
@@ -3479,9 +3486,9 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
                     errors.append("%s: la entrada de la tarde debe ser "
                                   "posterior a la salida de la mañana."
                                   % name)
-                if values["ea"] <= values["sa"]:
-                    errors.append("%s: la salida de la tarde debe ser "
-                                  "posterior a la entrada." % name)
+                if values["ea"] == values["sa"]:
+                    errors.append("%s: la salida de la tarde no puede ser "
+                                  "igual que la entrada." % name)
             days.append({"weekday": number - 1, "works": True, **values})
         return days, errors
 
@@ -3691,7 +3698,12 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
                 "La hora de salida de mañana debe tener formato HH:MM."
             )
 
-        if start_morning and end_morning and end_morning <= start_morning:
+        # S144 (guardas): con un solo tramo (intensiva), la salida puede
+        # ser del día siguiente (20:00-08:00); en partida, la mañana no.
+        if start_morning and end_morning and (
+            end_morning == start_morning
+            or (end_morning < start_morning and not is_intensive_val)
+        ):
             errors.append(
                 "La hora de salida de mañana debe ser posterior a la de "
                 "entrada."
@@ -3721,14 +3733,15 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
                     "La hora de entrada de tarde debe ser posterior a la de "
                     "salida de mañana."
                 )
+            # S144: la tarde puede acabar al día siguiente; igual, no.
             if (
                 start_afternoon
                 and end_afternoon
-                and end_afternoon <= start_afternoon
+                and end_afternoon == start_afternoon
             ):
                 errors.append(
-                    "La hora de salida de tarde debe ser posterior a la de "
-                    "entrada."
+                    "La hora de salida de tarde no puede ser igual que la "
+                    "de entrada."
                 )
 
         try:

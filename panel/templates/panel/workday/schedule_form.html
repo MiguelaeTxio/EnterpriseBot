@@ -141,7 +141,7 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
                                     {% elif sched.varies_by_day %}
                                     <span class="badge bg-primary me-1">Según el día</span>{% for line in sched.day_summary %}{{ line }}{% if not forloop.last %} · {% endif %}{% endfor %}
                                     {% else %}
-                                    {{ sched.start_time_morning|time:"H:i" }}–{{ sched.end_time_morning|time:"H:i" }}{% if not sched.is_intensive and sched.start_time_afternoon %} / {{ sched.start_time_afternoon|time:"H:i" }}–{{ sched.end_time_afternoon|time:"H:i" }}{% endif %}
+                                    {{ sched.start_time_morning|time:"H:i" }}–{{ sched.end_time_morning|time:"H:i" }}{% if sched.end_time_morning < sched.start_time_morning %} (+1){% endif %}{% if not sched.is_intensive and sched.start_time_afternoon %} / {{ sched.start_time_afternoon|time:"H:i" }}–{{ sched.end_time_afternoon|time:"H:i" }}{% if sched.end_time_afternoon < sched.start_time_afternoon %} (+1){% endif %}{% endif %}
                                     {% endif %}
                                 </td>
                                 <td>{{ sched.tolerance_minutes }} min</td>
@@ -263,6 +263,10 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
                             {% else %}
                             {% include "panel/workday/_days_table.html" with prefix="edit" rows=empty_day_rows %}
                             {% endif %}
+                        </div>
+                        {# S144 (guardas): turno de noche. #}
+                        <div class="col-12 edit-night-hint small text-muted">
+                            <i class="bi bi-moon me-1"></i>Turno de noche: pon la salida menor que la entrada (p. ej. 20:00–08:00) y se entiende que sale al día siguiente. Solo en el último tramo del día: con jornada intensiva, en la tarde, o según el día en la tarde (o en la mañana si es el único tramo).
                         </div>
                         <div class="col-12 edit-general-tract">
                             <div class="small fw-semibold text-muted mb-2"><i class="bi bi-sunrise me-1"></i>Tramo de mañana</div>
@@ -446,7 +450,7 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
         var open = document.getElementById("editIsOpen");
         var varies = document.getElementById("editVaries");
         var on = open.checked;
-        var hide = document.querySelectorAll(".edit-general-tract, .edit-days-tract, .edit-varies-row");
+        var hide = document.querySelectorAll(".edit-general-tract, .edit-days-tract, .edit-varies-row, .edit-night-hint");
         if (on) {
             hide.forEach(function (el) {
                 el.style.display = "none";
@@ -454,6 +458,7 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
             });
         } else {
             document.querySelector(".edit-varies-row").style.display = "";
+            document.querySelector(".edit-night-hint").style.display = "";
             toggleVaries(varies);
         }
     }
