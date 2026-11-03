@@ -47,14 +47,27 @@ repostado o no, y las fechas no cuentan (se desactivan).
                                placeholder="Buscar por centro de gasto, matrícula, vehículo o chófer…" value="{{ filter_search }}">
                     </div>
                     <div class="d-flex flex-wrap align-items-center gap-3 mb-2 small">
+                        {# S141: familias por casillas (entran las marcadas), no un desplegable de una sola. #}
                         <div class="d-flex align-items-center gap-2">
-                            <label class="fw-semibold" for="rfl-filter-family">Familia</label>
-                            <select name="family" id="rfl-filter-family" class="form-select form-select-sm w-auto">
-                                <option value="">Todas</option>
-                                {% for family in family_choices %}
-                                <option value="{{ family }}"{% if family == filter_family %} selected{% endif %}>{{ family }}</option>
-                                {% endfor %}
-                            </select>
+                            <span class="fw-semibold">Familias</span>
+                            <div class="dropdown">
+                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" id="rfl-family-button"
+                                        data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">Todas</button>
+                                <div class="dropdown-menu p-2 small" style="max-height: 60vh; overflow-y: auto;">
+                                    <div class="d-flex gap-2 mb-1">
+                                        <a href="#" class="rfl-family-all" data-check="1">Todas</a>
+                                        <a href="#" class="rfl-family-all" data-check="0">Ninguna</a>
+                                    </div>
+                                    {% for choice in family_choices %}
+                                    <div class="form-check">
+                                        <input class="form-check-input rfl-family-check" type="checkbox" value="{{ choice.code }}"
+                                               id="rflFamily{{ forloop.counter }}"{% if choice.checked %} checked{% endif %}>
+                                        <label class="form-check-label text-nowrap" for="rflFamily{{ forloop.counter }}">{{ choice.code }}</label>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <input type="hidden" name="family" id="rfl-family-input" value="">
                         </div>
                         {# S141: vehículos de horas a los que les anotan km o nada. #}
                         <div class="d-flex align-items-center gap-2 rfl-supply-filter">
@@ -404,6 +417,32 @@ repostado o no, y las fechas no cuentan (se desactivan).
         cb.addEventListener("change", syncStatus);
     });
     syncStatus();
+
+    // S141: familias, casillas literales como el estado. Todas marcadas
+    // = sin filtro (entran también los vehículos sin centro de gasto);
+    // ninguna = ninguna ("none").
+    function syncFamilies(notify) {
+        const boxes = Array.from(document.querySelectorAll(".rfl-family-check"));
+        const values = boxes.filter(function (cb) { return cb.checked; }).map(function (cb) { return cb.value; });
+        const input = document.getElementById("rfl-family-input");
+        input.value = values.length === boxes.length ? "" : (values.length ? values.join(",") : "none");
+        document.getElementById("rfl-family-button").textContent =
+            values.length === boxes.length ? "Todas" : (values.length ? values.length + " de " + boxes.length : "Ninguna");
+        if (notify) input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    document.querySelectorAll(".rfl-family-check").forEach(function (cb) {
+        cb.addEventListener("change", function () { syncFamilies(false); });
+    });
+    document.querySelectorAll(".rfl-family-all").forEach(function (link) {
+        link.addEventListener("click", function (evt) {
+            evt.preventDefault();
+            document.querySelectorAll(".rfl-family-check").forEach(function (cb) {
+                cb.checked = link.dataset.check === "1";
+            });
+            syncFamilies(true);
+        });
+    });
+    syncFamilies(false);
 
     // ¿Se pregunta al chófer?: mismas casillas literales que el estado.
     function syncAsk() {

@@ -257,15 +257,24 @@ def _ask_values(request):
     return [code == "yes" for code in chosen]
 
 
-def _family(request):
+def _families(request):
     """
-    Chosen machine family ("" = all).
+    Chosen machine families, or None for all.
 
     ---
 
-    Familia elegida en el desplegable ("" = todas).
+    Familias marcadas, o None si son todas. S141 (Miguel Ángel: "quiero
+    ver los repostajes de 4 familias o de 2"): casillas en sentido
+    literal, como el estado: sin el parámetro, todas; "none", ninguna;
+    si no, las de la lista separada por comas. Una sola familia (el
+    desplegable de antes, guardado en la navegación) sigue valiendo.
     """
-    return _param(request, "family").strip()
+    raw = _param(request, "family").strip()
+    if not raw:
+        return None
+    if raw == NO_STATUS:
+        return []
+    return [family for family in raw.split(",") if family]
 
 
 def _family_choices():
@@ -402,9 +411,9 @@ def _filtered_supplies(request):
         supplies = supplies.exclude(asked)
     elif not ask_values:
         supplies = supplies.none()
-    family = _family(request)
-    if family:
-        supplies = supplies.filter(vehicle__machine__family=family)
+    families = _families(request)
+    if families is not None:
+        supplies = supplies.filter(vehicle__machine__family__in=families)
     hours_issues = _HOURS_FILTERS.get(_param(request, "hours"))
     if hours_issues:
         supplies = supplies.filter(hours_issue__in=hours_issues)
@@ -560,9 +569,9 @@ def _vehicle_groups(request, order, wanted=None):
             supplies = supplies.filter(vehicle_id__in=wanted)
         return list(_grouped(supplies, "vehicle", "user", order))
     vehicles = GasoGesVehicle.objects.filter(machine__is_active=True)
-    family = _family(request)
-    if family:
-        vehicles = vehicles.filter(machine__family=family)
+    families = _families(request)
+    if families is not None:
+        vehicles = vehicles.filter(machine__family__in=families)
     ask_values = _ask_values(request)
     if len(ask_values) == 1:
         vehicles = vehicles.filter(ask_driver=ask_values[0])
@@ -602,10 +611,10 @@ def _user_groups(request, order, wanted=None):
             supplies = supplies.filter(chosen)
         return list(_grouped(supplies, "user", "vehicle", order))
     users = GasoGesUser.objects.all()
-    family = _family(request)
-    if family:
+    families = _families(request)
+    if families is not None:
         users = users.filter(pk__in=GasoGesSupply.objects.filter(
-            vehicle__machine__family=family).values("user_id"))
+            vehicle__machine__family__in=families).values("user_id"))
     ask_values = _ask_values(request)
     if len(ask_values) == 1:
         users = users.filter(ask_driver=ask_values[0])
@@ -735,9 +744,10 @@ def _filtered_questions(request):
     questions = RefuelQuestion.objects.select_related(
         "supply", "vehicle", "vehicle__machine", "person",
     ).filter(sent_at__gte=start, sent_at__lt=end)
-    family = _family(request)
-    if family:
-        questions = questions.filter(vehicle__machine__family=family)
+    families = _families(request)
+    if families is not None:
+        questions = questions.filter(
+            vehicle__machine__family__in=families)
     search = _param(request, "search").strip()
     if search:
         questions = questions.filter(
@@ -870,8 +880,11 @@ def _list_context(request):
     asks = _ask_values(request)
     return {
         "view": view,
-        "family_choices": _family_choices(),
-        "filter_family": _family(request),
+        "family_choices": [
+            {"code": family,
+             "checked": _families(request) is None
+             or family in _families(request)}
+            for family in _family_choices()],
         "all_active": (_param(request, "all_active") == "1"
                        and not _HOURS_FILTERS.get(_param(request, "hours"))),
         "question_stats": question_stats,
