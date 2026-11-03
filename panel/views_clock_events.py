@@ -913,6 +913,17 @@ def _hour(event, field_name, day, seconds=False):
     )
 
 
+def _coordinates(event):
+    """
+    "lat, lon" of a press for the Excel, or "" without position.
+    ---
+    "lat, lon" de una pulsación para el Excel, o "" sin posición.
+    """
+    if event is None or event.latitude is None or event.longitude is None:
+        return ""
+    return "%s, %s" % (float(event.latitude), float(event.longitude))
+
+
 class ClockEventsExportView(SupervisorAccessMixin, View):
     """
     GET: Excel of the range for the marked workers (or all filtered).
@@ -953,7 +964,11 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
             ("DNI", 12), ("Apellidos y nombre", 34), ("Fecha", 12),
             ("Entrada", 9), ("Salida", 9), ("Entrada (parte)", 9),
             ("Salida (parte)", 9), ("Municipio entrada", 26),
-            ("Municipio salida", 26), ("Entrada según horario", 10),
+            ("Municipio salida", 26),
+            # S141 (Miguel Ángel): el municipio, si hay, y además las
+            # coordenadas.
+            ("Coordenadas entrada", 22), ("Coordenadas salida", 22),
+            ("Entrada según horario", 10),
             ("Minutos tarde", 9), ("Salida según horario", 10),
             ("Minutos antes", 9), ("Horas", 8), ("Incidencias", 60),
         ]
@@ -998,6 +1013,8 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
                     if shift.clock_in else "",
                     (shift.clock_out.municipality or "")
                     if shift.clock_out else "",
+                    _coordinates(shift.clock_in),
+                    _coordinates(shift.clock_out),
                     shift.expected_start
                     if shift.late_minutes is not None else None,
                     max(shift.late_minutes, 0)
@@ -1067,7 +1084,7 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
                 sheet.column_dimensions[letter].width = width
         for cell in days["C"][1:]:
             cell.number_format = "DD/MM/YYYY"
-        for column in ("D", "E", "F", "G", "J", "L"):
+        for column in ("D", "E", "F", "G", "L", "N"):
             for cell in days[column][1:]:
                 cell.number_format = "HH:MM"
         for cell in presses["D"][1:]:
