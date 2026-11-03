@@ -10245,3 +10245,32 @@ relanzó el job y quedó en verde.
   por primera vez con su usuario (`Alberto Álvarez`, rol ADMIN, nunca
   había entrado, cambio de contraseña obligatorio al entrar) y un
   tutorial de cómo ver los repuestos gastados en una máquina.
+
+---
+
+## COMPLETADAS EN S142 (sesión invasora, 30/10 → 03/11/2026, PEE PC; regla de unidad de las grúas de asistencia)
+
+Trabajo hecho desde H37 (pestaña Servicios, ver anexo V37 sección 13)
+que toca la flota de H30. La hoja de ruta de H30 no se reescribe.
+
+- **Toda la familia ASISTENCIA va por km**, grúas incluidas (Miguel
+  Ángel: *"Apuntan km. En asistencia se dijo que bueno, que vale."*):
+  `fleet/gasoges_rules.convention_unit` devuelve `UNIT_KM` para
+  ASISTENCIA antes que cualquier otra regla (`64c9ddc`; test
+  `test_assistance_all_by_km`, 25 tests en verde). El resto de familias
+  no cambia: PLATAFORMAS, CARRETILLAS y MÓVILES por horas; prefijos A,
+  B, T y Z por horas; TURISMOS y prefijos P y X por km.
+- Aplicado en producción con `apply_unit_convention` (log 102, 31/10):
+  24 vehículos con la regla del taller; 5 grúas pasan de horas a km y se
+  rehace su serie: A30 100 lecturas (18 dudosas), A39 90 (11), A50 29
+  (1), A55 112 (4), A66 4 (2). Los otros 19 ya iban por km.
+- Consumo real de las grúas en km (log 103): A30 52,6, A39 47,6, A50
+  43,5, A55 57,0 l/100 km (A66 solo 2 tramos, no cuenta).
+
+### Pendiente que deja S142 en H30 (decisión de Miguel Ángel: queda en su hito, con los repostajes)
+
+- **Revisar en Repostajes las lecturas dudosas de las grúas de
+  asistencia tras el paso a km**: A30 (18), A39 (11), A50 (1), A55 (4)
+  y A66 (2). **Cierre:** consulta a BD de las lecturas de esos cinco
+  vehículos con estado dudoso = 0, cada una confirmada o corregida en
+  Repostajes.

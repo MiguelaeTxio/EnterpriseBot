@@ -1154,3 +1154,112 @@ comprobadas en BD: budgets 0052, 0053 y 0054.
 - Vistos de paso, sin tocar: respuesta de Gemini que no era JSON al
   clasificar la línea de parte pk 3975, y las coordenadas de la base de
   Maqueda pueden estar a ~1 km.
+
+---
+
+## 13. COMPLETADAS EN S142 (sesión invasora, 30/10 → 03/11/2026, PEE PC)
+
+Sesión invasora sin hito propio en paralelo con S141 (H24 EN PROGRESO,
+intacto). El trabajo de H37 es la pestaña **Servicios** de Asistencia →
+Servicios: valorar avisos de TIREA antes de crear la orden. Las hojas de
+ruta de H37 no se tocan.
+
+### 13.1. Pestaña Servicios (decisiones de Miguel Ángel)
+
+- **Subida desde una carpeta** (fotos o PDF de TIREA), por tandas de 10
+  con `fetch`. Opción (b) de Miguel Ángel: lista aparte, **no se crean
+  órdenes**; cada fila tiene la acción «Crear la orden» (el formulario
+  de orden recibe la valoración y la enlaza al guardar).
+- **Formato 4.24**: panel fijo, lista con desplazamiento, orden múltiple
+  (por defecto presupuesto de mayor a menor, vacíos al final), casillas,
+  visor de selección, pantalla completa; selección guardada (4.15).
+  «Volver a valorar» y «Borrar» van por `fetch` y no recargan la página.
+  Mientras queda algo en cola, la tabla se refresca cada 5 s.
+- **Columnas**: presupuesto estimado según tarifa (sin IVA,
+  `services.calculate_budget`), coste estimado, rendimiento y
+  **rendimiento por hora** (rendimiento entre las horas de equipo).
+- **Coste** = operarios + desgaste del vehículo + gasoil:
+  - Operarios: uno por vehículo; horas de equipo = trabajo + el viaje
+    más largo entre el de Google y los km a la velocidad máxima de la
+    clase + tiempos muertos de la clase (grúa móvil: 75 km/h y 1 h).
+    15,34 €/h por defecto: coste empresa anual de una nómina real del
+    grupo entre 1.800 h trabajadas (vacaciones y festivos repercutidos
+    en las horas); editable.
+  - Gasoil: km × l/100 km × €/l (o h × l/h si la clase tiene consumo por
+    hora). Consumos iniciales de Miguel Ángel (turismo 5, furgoneta 8,
+    remolcador/tractora 20, grúa móvil 25), sustituidos por las medias
+    reales de GasoGes (1,293 €/l; furgoneta 7,9, remolcador/tractora
+    30,8, grúa móvil 51,5 l/100 km).
+  - Desgaste (€/km, sin gasoil ni amortización): Observatorio de Costes
+    del Transporte de Mercancías por Carretera, julio 2025
+    (mantenimiento + reparaciones + neumáticos). Furgoneta 0,044;
+    remolcador/tractora 0,100; grúa móvil 0,126 (rígido de 3 ejes, 0,108,
+    más la diferencia entre el de 2 y el de 3 ejes, por decisión de
+    Miguel Ángel). Los partes de taller no sirven todavía: en asistencia
+    solo hay mano de obra propia y ningún material con precio (una
+    línea de albarán de 4,74 € en A66), y los aceites a granel no se
+    apuntan.
+- **Aseguradora y tipo de vehículo deducidos del nombre** hasta tener
+  el código de proveedor (Miguel Ángel: *"inferirlo del nombre hasta el
+  martes"*). Lo deducido sale como información (icono azul); el
+  triángulo naranja queda para lo que falta. Un presupuesto de 0 € es
+  una tarifa sin precios para ese tipo: queda sin presupuesto con aviso.
+- **Medias de coste** (solo administración): precio del gasoil, €/h de
+  operario y, por clase, l/100 km, l/h, velocidad máxima, tiempos
+  muertos, €/km y tipos de máquina; tarjeta con las medias reales por
+  vehículo y botón «Usar las medias reales». Al guardar se recalcula
+  todo.
+
+### 13.2. Código y migraciones
+
+- Modelos `AssistanceCostSettings`, `AssistanceVehicleCost`,
+  `ServiceEvaluation` (`budgets/models.py`); migraciones budgets
+  **0055** (modelos), **0056** (l/h, velocidad máxima y tiempos
+  muertos), **0057** (15,34 €/h por defecto, comprobada en producción) y
+  **0058** (recalcula para guardar las horas de equipo; sin cambios de
+  esquema).
+- `budgets/service_evaluation.py` (lectura, ruta, presupuesto, coste,
+  deducciones, listado), `budgets/fleet_fuel_averages.py` (consumo real
+  por tramos entre repostajes, con filtros y mínimo de 10 tramos por
+  clase), tarea Celery `budgets.tasks.evaluate_service_task`, vistas en
+  `budgets/views_services.py` y plantillas en
+  `budgets/templates/budgets/services/`.
+- Comandos: `fix_assistance_cost_classes` (cada tipo de máquina en su
+  clase, medias reales y recálculo; log 103) y
+  `set_assistance_wear_costs` (desgaste del Observatorio; log 104).
+- `deploy.yml`: el worker se reinicia también con
+  `service_evaluation`; entrada `restart_worker` para forzarlo a mano;
+  el reinicio de Always-on con tiempo agotado (curl 28) ya no deja el
+  worker con código viejo.
+
+### 13.3. Commits
+
+`28499ed`, `77e98fd`, `e108ed4`, `7521d22`, `9b7697f`, `d223a3b`,
+`2fb6191`, `654c9c7`, `5d0d9f3`, `9a89053`, `75a9ba4`, `4ef181e`,
+`ab50698`, `889e651`, `f9d0e3e`. Cambio de flota asociado en H30
+(`64c9ddc`).
+
+### 13.4. Resultado con los 6 servicios de prueba (log 104 y 0058)
+
+Remolque turismo 109,63 € (80,02 €/h), remolque camión 272,76 €
+(64,03 €/h), tractora 250,69 € (42,42 €/h), vuelco 131,16 € (39,99 €/h).
+Batería y pinchazo sin presupuesto: la tarifa de RACC - Zurich /
+Transgrual no tiene precios para «Furgón Taller / Coche Piloto». Esas
+líneas las mete quien lleve las tarifas (decisión de Miguel Ángel); no
+es tarea de las sesiones.
+
+### 13.5. Fuera de hito: demo de voz para Outlook (S142DEMO)
+
+`demo_outlook_voice_agent/` (`8b1cdbe` → `026f865`): agente residente en
+el PC que vigila la pantalla; al maximizar Outlook abre un modal, graba,
+transcribe con Gemini y envía el correo con Gemini Vision y clics
+(texto sobre la firma). Candado `requirements.in`/`.txt` comiteado;
+`roles/aiplatform.user` para la cuenta del agente documentado en
+`SESSION_VARIABLES.md` (`30b57c0`). Prueba real superada.
+
+### 13.6. Siguiente (sesión invasora nueva, por decisión de Miguel Ángel)
+
+Se trabaja en la vista **Medias de coste**
+(`budgets:services_cost_settings`). Ningún dato real de producción se
+modificó salvo las medias de coste, la regla de unidad de las grúas de
+asistencia (H30) y los 6 servicios de prueba.
