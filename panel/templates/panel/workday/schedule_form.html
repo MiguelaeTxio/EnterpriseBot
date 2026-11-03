@@ -272,7 +272,7 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
                                 <input class="form-check-input" type="checkbox" name="works_holidays" id="editWorksHolidays"
                                        {% if post_data.works_holidays %}checked{% endif %}>
                                 <label class="form-check-label small fw-semibold" for="editWorksHolidays"
-                                       title="Los festivos del calendario laboral de la base son días de trabajo: se comparan con el horario y llevan recordatorios. Sin marcar, los festivos no se comparan ni llevan recordatorios.">Se trabaja en festivos</label>
+                                       title="Los festivos del calendario laboral de la base son días de trabajo: se comparan con el horario y llevan recordatorios. Con «Horario distinto según el día», sus horas van en la fila Festivos; si no, son las del horario. Sin marcar, los festivos no se comparan ni llevan recordatorios.">Se trabaja en festivos (con «según el día», sus horas en la fila Festivos)</label>
                             </div>
                         </div>
                         {# S144 (guardas): turno de noche. #}
@@ -426,7 +426,9 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
     }
     function loadDays(table, days) {
         table.querySelectorAll(".wd-day-row").forEach(function (row, i) {
-            var d = days && days[i] ? days[i] : {works: true, sm: "", em: "", sa: "", ea: ""};
+            // S144: la fila de festivos (la octava) no se trabaja si no
+            // venía guardada.
+            var d = days && days[i] ? days[i] : {works: !row.classList.contains("wd-holiday-row"), sm: "", em: "", sa: "", ea: ""};
             setValues(row, d);
         });
     }
@@ -473,6 +475,14 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
             document.querySelector(".edit-holidays-row").style.display = "";
             toggleVaries(varies);
         }
+    }
+
+    // S144: la fila de festivos solo con "Se trabaja en festivos".
+    function toggleHolidays() {
+        var on = document.getElementById("editWorksHolidays").checked;
+        document.querySelectorAll(".wd-holiday-row").forEach(function (row) {
+            row.style.display = on ? "" : "none";
+        });
     }
 
     // ---- Listado: filtros, orden y selección (formato 4.24) ----------
@@ -581,6 +591,8 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
         });
         intensive.addEventListener("change", function () { toggleAfternoon(intensive); });
         document.getElementById("editIsOpen").addEventListener("change", toggleOpen);
+        document.getElementById("editWorksHolidays").addEventListener("change", toggleHolidays);
+        toggleHolidays();
         toggleVaries(varies);
         toggleAfternoon(intensive);
         toggleOpen();
@@ -606,6 +618,7 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
             toggleVaries(varies);
             toggleAfternoon(intensive);
             toggleOpen();
+            toggleHolidays();
             title.textContent = "Nuevo horario";
             modal.show();
         });
@@ -632,6 +645,7 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
                 toggleVaries(varies);
                 toggleAfternoon(intensive);
                 toggleOpen();
+                toggleHolidays();
                 title.textContent = "Editar horario: " + (btn.dataset.label || "");
                 modal.show();
             });

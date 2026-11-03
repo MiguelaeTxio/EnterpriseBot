@@ -3255,10 +3255,13 @@ class WorkerAbsenceDeleteView(SupervisorAccessMixin, View):
         return redirect(ABSENCES_TAB_URL)
 
 
+# S144: la octava fila son los festivos (WorkdayScheduleDay.HOLIDAY = 7),
+# que solo cuentan con "Se trabaja en festivos".
 WEEKDAY_NAMES = [
     "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado",
-    "Domingo",
+    "Domingo", "Festivos",
 ]
+HOLIDAY_ROW = len(WEEKDAY_NAMES)
 
 
 def _fmt_hm(value):
@@ -3277,7 +3280,13 @@ def _schedule_day_rows(sched):
     rows = []
     for number, name in enumerate(WEEKDAY_NAMES, start=1):
         day = by_day.get(number - 1)
-        if sched.varies_by_day and day is not None:
+        if (sched.varies_by_day and number == HOLIDAY_ROW
+                and (day is None or not sched.works_holidays)):
+            # S144: sin fila de festivos, o sin "Se trabaja en
+            # festivos", los festivos no se trabajan.
+            rows.append({"number": number, "name": name, "works": False,
+                         "sm": "", "em": "", "sa": "", "ea": ""})
+        elif sched.varies_by_day and day is not None:
             rows.append({
                 "number": number, "name": name, "works": day.works,
                 "sm": _fmt_hm(day.start_time_morning),
@@ -3340,17 +3349,25 @@ def _days_summary(rows):
         )
 
     groups = []
+    holiday = None
     for row in rows:
+        if row["number"] == HOLIDAY_ROW:
+            # S144: los festivos van aparte, y solo si se trabajan.
+            holiday = row
+            continue
         text = hours(row)
         if groups and groups[-1][2] == text:
             groups[-1][1] = row["name"]
         else:
             groups.append([row["name"], row["name"], text])
-    return [
+    summary = [
         "%s %s" % (first[:2] if first == last else
                    "%s–%s" % (first[:2], last[:2]), text)
         for first, last, text in groups
     ]
+    if holiday is not None and holiday["works"]:
+        summary.append("Festivos %s" % hours(holiday))
+    return summary
 
 
 def _post_day_rows(post):
@@ -3452,9 +3469,14 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
         solo de mañana y días solo de tarde).
         """
         days, errors = [], []
+        works_holidays = bool(post.get("works_holidays"))
         for number, name in enumerate(WEEKDAY_NAMES, start=1):
             prefix = "day_%d_" % number
             works = bool(post.get(prefix + "works"))
+            # S144: la fila de festivos solo vale con "Se trabaja en
+            # festivos"; sin ella, se guarda como no trabajada.
+            if number == HOLIDAY_ROW and not works_holidays:
+                works = False
             values = {
                 key: self._parse_time(post.get(prefix + key, ""))
                 for key in ("sm", "em", "sa", "ea")
@@ -3662,7 +3684,8 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
         if varies_val:
             day_values, day_errors = self._parse_days(request.POST)
             errors.extend(day_errors)
-            first = next((d for d in day_values if d["works"]), None)
+            first = next((d for d in day_values if d["works"]
+                          and d["weekday"] < HOLIDAY_ROW - 1), None)
             if first is None and not day_errors:
                 errors.append("Marca al menos un día que se trabaje.")
             elif first is not None:

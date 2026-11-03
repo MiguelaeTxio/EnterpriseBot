@@ -3268,7 +3268,7 @@ class WorkdaySchedule(models.Model):
             ).exclude(pk=self.pk).update(is_default=False)
         super().save(*args, **kwargs)
 
-    def for_day(self, day):
+    def for_day(self, day, holiday=False):
         """
         The schedule that applies on `day` (a date), or None.
         ---
@@ -3277,13 +3277,22 @@ class WorkdaySchedule(models.Model):
         copia sin guardar de este horario con las horas de ese día de la
         semana (sin tarde = jornada intensiva ese día), o None si ese día
         no se trabaja. Nunca se guarda la copia.
+
+        S144: `holiday` (el día es festivo del calendario de la base del
+        trabajador) con "Se trabaja en festivos" toma la fila Festivos
+        (WorkdayScheduleDay.HOLIDAY) en lugar de la del día de la semana
+        (Miguel Ángel: Antonio trabaja de día los festivos aunque caigan
+        en uno de sus días de noche).
         """
         import copy
 
         if not self.varies_by_day or day is None:
             return self
+        weekday = day.weekday()
+        if holiday and self.works_holidays:
+            weekday = WorkdayScheduleDay.HOLIDAY
         row = next(
-            (d for d in self.days.all() if d.weekday == day.weekday()),
+            (d for d in self.days.all() if d.weekday == weekday),
             None,
         )
         if row is None or not row.works:
@@ -3350,6 +3359,8 @@ class WorkdayScheduleDay(models.Model):
     ese día no tiene horario (ni recordatorios ni comparación).
     """
 
+    # S144: la fila 7 son los festivos ("Se trabaja en festivos").
+    HOLIDAY = 7
     WEEKDAY_CHOICES = [
         (0, "Lunes"),
         (1, "Martes"),
@@ -3358,6 +3369,7 @@ class WorkdayScheduleDay(models.Model):
         (4, "Viernes"),
         (5, "Sábado"),
         (6, "Domingo"),
+        (HOLIDAY, "Festivos"),
     ]
 
     schedule = models.ForeignKey(

@@ -637,12 +637,13 @@ def _schedule_times_by_user(company, company_user_ids):
     for company_user in users:
         schedule = _resolve_operator_schedule(company_user, company)
         result[company_user.pk] = (
-            _times_of(schedule), _day_rule(company_user, schedule),
+            _times_of(schedule, company_user.base),
+            _day_rule(company_user, schedule),
         )
     return result
 
 
-def _times_of(schedule):
+def _times_of(schedule, base=None):
     """
     day -> (start times, end times) of `schedule` on that day.
     ---
@@ -656,7 +657,10 @@ def _times_of(schedule):
         prefetch_related_objects([schedule], "days")
 
     def times(day):
-        on_day = schedule.for_day(day) if schedule is not None else None
+        # S144: festivo de la base -> fila Festivos del horario.
+        on_day = schedule.for_day(
+            day, holiday=public_holiday(day, base),
+        ) if schedule is not None else None
         return schedule_starts(on_day), schedule_ends(on_day)
     return times
 

@@ -8,7 +8,8 @@ al anterior mientras sea igual que él (schedule_form.html, JS). Tarde
 vacía = jornada intensiva ese día. Recibe `prefix` (create o edit) y
 `rows` (filas con number, name, works, sm, em, sa, ea). Cada tramo
 tiene su botón para vaciarlo: un día puede ser solo de mañana o solo de
-tarde (S141).
+tarde (S141). S144: la octava fila es la de los festivos; solo se ve
+con «Se trabaja en festivos» marcada.
 {% endcomment %}
 <div class="table-responsive wd-days" data-prefix="{{ prefix }}">
     <table class="table table-sm align-middle mb-1">
@@ -26,7 +27,7 @@ tarde (S141).
         </thead>
         <tbody>
             {% for row in rows %}
-            <tr class="wd-day-row" data-day="{{ row.number }}">
+            <tr class="wd-day-row{% if row.number == 8 %} wd-holiday-row{% endif %}" data-day="{{ row.number }}"{% if row.number == 8 %} title="Horas de los festivos del calendario laboral de su base (solo con «Se trabaja en festivos»)"{% endif %}>
                 <td class="text-sm fw-semibold">{{ row.name }}</td>
                 <td class="text-center">
                     <input class="form-check-input wd-works" type="checkbox" name="day_{{ row.number }}_works"

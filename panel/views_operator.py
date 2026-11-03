@@ -464,7 +464,13 @@ def _resolve_operator_schedule(cu, company, day=None):
     schedule = _resolve_base_schedule(cu, company)
     if schedule is None or day is None:
         return schedule
-    return schedule.for_day(day)
+    # S144: los festivos de su base, con las horas de la fila Festivos si
+    # el horario tiene "Se trabaja en festivos".
+    from hr_calendar.clock_report import public_holiday
+
+    return schedule.for_day(
+        day, holiday=public_holiday(day, getattr(cu, "base", None)),
+    )
 
 
 def _parse_parte_date(text):
