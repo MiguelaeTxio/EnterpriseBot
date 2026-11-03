@@ -586,7 +586,8 @@ def _vehicle_groups(request, order, wanted=None):
         vehicles = vehicles.filter(pk__in=wanted)
     groups = _all_time_totals(vehicles, "user").values(
         "id", "n_supplies", "total_litres", "last_at", "n_anomalies",
-        "n_others", "n_hours", "n_km", "n_empty").order_by(*_own_order(order, "vehicle__"), "id")
+        "n_others", "n_hours", "n_km", "n_empty").order_by(
+        *_own_order(order, "vehicle__"), "id")
     return [dict(group, vehicle=group.pop("id")) for group in groups]
 
 
@@ -627,7 +628,8 @@ def _user_groups(request, order, wanted=None):
         users = users.filter(pk__in=wanted)
     groups = _all_time_totals(users, "vehicle").values(
         "id", "n_supplies", "total_litres", "last_at", "n_anomalies",
-        "n_others", "n_hours", "n_km", "n_empty").order_by(*_own_order(order, "user__"), "id")
+        "n_others", "n_hours", "n_km", "n_empty").order_by(
+        *_own_order(order, "user__"), "id")
     return [dict(group, user=group.pop("id")) for group in groups]
 
 
@@ -711,6 +713,56 @@ def _user_rows(groups):
             **_totals(group),
         })
     return rows
+
+
+def _vehicle_code(vehicle):
+    return vehicle.machine.code if vehicle.machine else _vehicle_label(vehicle)
+
+
+def _user_vehicle_codes(request, rows):
+    """
+    Vehicles each refueller used, all and with km instead of hours.
+
+    ---
+
+    Vehículos que repostó cada repostador de `rows` (por pk, 0 = sin
+    usuario), con cuántos repostajes en cada uno: todos, y solo los de
+    km en vez de horas (S144, lista de Alberto). Mismo alcance que los
+    totales de la fila: los repostajes del filtro o, con "Todos los
+    activos", todo el histórico.
+    """
+    pks = [row["pk"] for row in rows]
+    if _all_active(request, VIEW_USERS):
+        supplies = GasoGesSupply.objects.all()
+    else:
+        supplies = _filtered_supplies(request)
+    chosen = Q(user_id__in=[pk for pk in pks if pk])
+    if 0 in pks:
+        chosen |= Q(user__isnull=True)
+    counts = supplies.filter(chosen).order_by().values(
+        "user_id", "vehicle_id").annotate(
+        n_all=Count("id"),
+        n_km=Count("id", filter=Q(
+            hours_issue=GasoGesSupply.HOURS_ISSUE_KM)))
+    counts = list(counts)
+    vehicles = GasoGesVehicle.objects.select_related("machine").in_bulk(
+        {line["vehicle_id"] for line in counts})
+    per_user = {}
+    for line in counts:
+        vehicle = vehicles.get(line["vehicle_id"])
+        if vehicle is None:
+            continue
+        per_user.setdefault(line["user_id"] or 0, []).append(
+            (_vehicle_code(vehicle), line["n_all"], line["n_km"]))
+
+    def joined(items, index):
+        items = sorted((item for item in items if item[index]),
+                       key=lambda item: (-item[index], item[0]))
+        return ", ".join("%s (%d)" % (item[0], item[index])
+                         for item in items)
+
+    return {pk: (joined(items, 1), joined(items, 2))
+            for pk, items in per_user.items()}
 
 
 def _local_range(request):
@@ -1242,20 +1294,26 @@ class RefuelsExportView(CompanyUserRequiredMixin, View):
     def _users(self, request, book, wanted):
         rows = _user_rows(_user_groups(
             request, _DEFAULT_ORDER[VIEW_USERS], wanted or None))
+        codes = _user_vehicle_codes(request, rows)
         lines = [[
             row["name"], row["person_label"], row["count"],
             _float(row["litres"]),
             row["last"].replace(tzinfo=None) if row["last"] else None,
             row["anomalies"], row["hours_count"], row["hours_km"],
+            codes.get(row["pk"], ("", ""))[1],
             row["hours_empty"], row["others"],
+            codes.get(row["pk"], ("", ""))[0],
             "Sí" if row["ask_driver"] else "No",
         ] for row in rows]
         _write_sheet(book, "Repostadores", [
             ("Repostador (GasoGes)", 32), ("Ficha de trabajador", 36),
             ("Repostajes", 11), ("Litros", 10), ("Último repostaje", 17),
             ("Dudosos", 9), ("En vehículos de horas", 12),
-            ("Km en vez de horas", 12), ("Sin anotar", 10),
-            ("Vehículos", 10), ("Se le pregunta", 14),
+            ("Km en vez de horas", 12),
+            ("Km en vez de horas en (repostajes)", 40),
+            ("Sin anotar", 10), ("Vehículos", 10),
+            ("Vehículos repostados (repostajes)", 40),
+            ("Se le pregunta", 14),
         ], lines, (("E", "DD/MM/YYYY HH:MM"),))
         return _excel_response(book, "repostajes_repostadores", request)
 
