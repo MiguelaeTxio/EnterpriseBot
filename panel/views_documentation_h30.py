@@ -1041,6 +1041,22 @@ def _person_list_page(request):
         qs = qs.filter(pk__in=selected_ids)
     else:
         qs = _apply_personal_filters(qs, request)
+    # H24 (S144): filtro "Alta en el fichaje" (estado calculado en
+    # panel/personal_access.py, no es una columna de BD).
+    from panel.personal_access import (
+        ONBOARDING_CHOICES,
+        filter_by_onboarding,
+        onboarding_filter,
+        onboarding_states,
+    )
+
+    onboarding_raw = request.GET.get("onboarding", "")
+    onboarding_codes = onboarding_filter(onboarding_raw)
+    if onboarding_codes is not None and not only_selected:
+        qs = qs.filter(pk__in=[
+            p.pk for p in filter_by_onboarding(
+                qs.select_related("company_user"), onboarding_codes)
+        ])
     search = request.GET.get("q", "").strip()
     if search:
         # S110: buscar "ALVAREZ VIEIRA" no encontraba a nadie -- el
@@ -1113,9 +1129,18 @@ def _person_list_page(request):
         # H30 (S123), punto 6: ordenar por requisito de documentación.
         ("job_position__name", "Requisito"),
     ]
-    qs, sort_key, sort_dir = _apply_sort(
-        request, qs, sort_columns, "first_surname",
-    )
+    # H24 (S144): "Alta en el fichaje" se ordena en Python (no es un
+    # campo de BD); la base, por apellidos y nombre.
+    sort_columns.append(("onboarding", "Alta en el fichaje"))
+    if request.GET.get("sort") == "onboarding":
+        qs = qs.order_by("first_surname", "second_surname", "given_name")
+        sort_key = "onboarding"
+        sort_dir = "desc" if request.GET.get("dir") == "desc" else "asc"
+    else:
+        qs, sort_key, sort_dir = _apply_sort(
+            request, qs, [c for c in sort_columns if c[0] != "onboarding"],
+            "first_surname",
+        )
     if sort_key == "job_position__name":
         # Dentro de un mismo requisito, por apellidos y nombre.
         qs = qs.order_by(
@@ -1139,12 +1164,25 @@ def _person_list_page(request):
     )
     page.object_list = _attach_person_avatars(page.object_list, person_ct)
     page.object_list = _attach_contract_alerts(page.object_list)
+    states = onboarding_states(page.object_list)
+    for person in page.object_list:
+        person.onboarding = states[person.pk]
+    if sort_key == "onboarding":
+        page.object_list = sorted(
+            page.object_list,
+            key=lambda p: (p.onboarding.rank, p.onboarding.when is None,
+                           p.onboarding.when or 0),
+            reverse=sort_dir == "desc",
+        )
     return {
         "page": page, "sort_key": sort_key, "sort_dir": sort_dir,
         "search": search, "sort_columns_person": sort_columns,
         "active_filter": request.GET.getlist("active"),
         "company_filter": request.GET.getlist("company"),
         "requirement_filter": request.GET.get("requirement", ""),
+        "onboarding_filter": onboarding_raw,
+        "onboarding_checked": onboarding_codes,
+        "onboarding_choices": ONBOARDING_CHOICES,
     }
 
 

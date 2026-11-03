@@ -58,7 +58,7 @@ from panel.views_vacation_balance import (
 SCREEN_KEY = "clock_events"
 FILTER_KEYS = (
     "search", "active", "company", "date_from", "date_to", "sort",
-    "issues_only", "events", "section",
+    "issues_only", "events", "section", "onboarding",
 )
 NO_SECTION = "none"
 _MAX_SORT_KEYS = 4
@@ -99,12 +99,17 @@ _SORT_VALUES = {
     "section": lambda r: r.state.section_name.upper() or None,
     "clocks": lambda r: r.state.must_clock,
     "reminders": lambda r: r.state.reminders,
+    # S144: alta en el fichaje (de lo que más falta a "Ya ficha").
+    "onboarding": lambda r: (r.onboarding.rank,
+                             r.onboarding.when.timestamp()
+                             if r.onboarding.when else 0),
 }
 _COLUMNS = (
     ("person", "Apellidos, Nombre"),
     ("section", "Sección"),
     ("clocks", "Ficha"),
     ("reminders", "Recordatorios"),
+    ("onboarding", "Alta en el fichaje"),
     ("events", "Fichajes"),
     ("issues", "Incidencias"),
     ("last", "Último día"),
@@ -212,12 +217,13 @@ class _Row:
     Un trabajador del listado con el informe del intervalo.
     """
 
-    def __init__(self, person, report, state=None):
+    def __init__(self, person, report, state=None, onboarding=None):
         from hr_calendar.clock_settings import WorkerClockState
 
         self.person = person
         self.report = report
         self.state = state or WorkerClockState()
+        self.onboarding = onboarding
         self.label = _person_label(person)
         self.sort_name = self.label.upper()
         self.has_account = person.company_user_id is not None
@@ -235,6 +241,7 @@ def _sort_rows(rows, sort_keys):
 
 def _rows(request, people, date_from, date_to):
     from hr_calendar.clock_settings import worker_states
+    from panel.personal_access import onboarding_states
 
     company = request.user.company_user.company
     reports = reports_by_user(
@@ -243,9 +250,10 @@ def _rows(request, people, date_from, date_to):
         date_from, date_to,
     )
     states = worker_states(people)
+    onboarding = onboarding_states(people)
     return [
         _Row(p, reports.get(p.company_user_id) or _EmptyReport(),
-             states.get(p.pk))
+             states.get(p.pk), onboarding[p.pk])
         for p in people
     ]
 
@@ -319,6 +327,21 @@ def _settings_context(company):
     }
 
 
+def _with_onboarding_filter(request, rows):
+    """
+    "Alta en el fichaje" filter (S144), literal checkboxes.
+    ---
+    Filtro "Alta en el fichaje" (S144): solo los estados marcados
+    (panel/personal_access.py, onboarding_filter).
+    """
+    from panel.personal_access import onboarding_filter
+
+    codes = onboarding_filter(_param(request, "onboarding"))
+    if codes is None:
+        return rows
+    return [r for r in rows if r.onboarding.code in codes]
+
+
 def _with_issues_filter(request, rows):
     """
     "Solo con incidencias" (Miguel Ángel, S129: "un filtro para
@@ -356,6 +379,8 @@ def _list_context(request):
     Contexto de la tabla: trabajadores filtrados con su informe,
     ordenados.
     """
+    from panel.personal_access import ONBOARDING_CHOICES, onboarding_filter
+
     date_from, date_to = _date_range(request)
     people, active, companies, search = _filtered_people(request)
     if request.GET.get("only_selected") == "1":
@@ -367,10 +392,10 @@ def _list_context(request):
             "company_user",
         ).filter(pk__in=wanted))
     rows = _sort_rows(
-        _with_section_filter(request, _with_events_filter(
-            request, _with_issues_filter(
+        _with_onboarding_filter(request, _with_section_filter(
+            request, _with_events_filter(request, _with_issues_filter(
                 request, _rows(request, people, date_from, date_to),
-            ),
+            )),
         )),
         _parse_sort(_param(request, "sort")),
     )
@@ -390,6 +415,10 @@ def _list_context(request):
         "filter_issues_only": _param(request, "issues_only") == "1",
         "filter_events": _csv_param(request, "events", _EVENTS_CHOICES),
         "filter_section": _param(request, "section"),
+        "filter_onboarding": _param(request, "onboarding"),
+        "onboarding_checked": onboarding_filter(
+            _param(request, "onboarding")),
+        "onboarding_choices": ONBOARDING_CHOICES,
         "total_label": format_duration(
             sum(r.report.total_seconds for r in rows),
         ),
@@ -990,8 +1019,12 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
             rows = _rows(request, people, date_from, date_to)
         else:
             people, _a, _c, _s = _filtered_people(request)
-            rows = _with_events_filter(request, _with_issues_filter(
-                request, _rows(request, people, date_from, date_to),
+            # S144: los mismos filtros que el listado (la sección no se
+            # aplicaba al exportar).
+            rows = _with_onboarding_filter(request, _with_section_filter(
+                request, _with_events_filter(request, _with_issues_filter(
+                    request, _rows(request, people, date_from, date_to),
+                )),
             ))
         rows = sorted(rows, key=lambda r: r.sort_name)
         book = Workbook()

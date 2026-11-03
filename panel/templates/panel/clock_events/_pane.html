@@ -102,6 +102,28 @@ recordatorios, secciones que fichan y permiso de envío).
                                 {% endfor %}
                             </select>
                         </div>
+                        {% comment %}
+                        H24 (S144): filtro "Alta en el fichaje", casillas con
+                        semántica literal; el campo oculto lleva los marcados
+                        ("" = todos, "none" = ninguno). También al exportar.
+                        {% endcomment %}
+                        <div>
+                            <div class="fw-semibold mb-1">Alta en el fichaje</div>
+                            <div class="dropdown">
+                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" id="clk-onboarding-button"
+                                        data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">Todos</button>
+                                <div class="dropdown-menu p-2 small">
+                                    {% for code, label in onboarding_choices %}
+                                    <div class="form-check">
+                                        <input class="form-check-input clk-onboarding-check" type="checkbox" value="{{ code }}"
+                                               id="clkOnboarding{{ forloop.counter }}" {% if onboarding_checked is None or code in onboarding_checked %}checked{% endif %}>
+                                        <label class="form-check-label text-nowrap" for="clkOnboarding{{ forloop.counter }}">{{ label }}</label>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <input type="hidden" name="onboarding" id="clk-onboarding-input" value="{{ filter_onboarding }}">
+                        </div>
                         {# H24 (S129): solo los trabajadores con alguna incidencia en las fechas elegidas (también al exportar). #}
                         <div>
                             <div class="fw-semibold mb-1">Incidencias</div>
@@ -143,6 +165,14 @@ recordatorios, secciones que fichan y permiso de envío).
                             <button type="button" class="btn btn-sm btn-outline-secondary clk-worker-btn" data-action="reminders_off"
                                     title="Los marcados no reciben recordatorios.">Sin recordatorios</button>
                         </div>
+                    </div>
+                    {# S144: reenvío del alta (la misma acción que en Personal). #}
+                    <div class="col-6 pe-2 border-top pt-1 mt-1">
+                        <div class="small text-muted fw-bold">Alta en el fichaje</div>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="clk-access-resend"
+                                title="Vuelve a enviar por WhatsApp la circular Alta en el fichaje a los marcados y, si sale, les pone otra vez la contraseña de las 4 últimas cifras del DNI y les quita los dispositivos de confianza (por si han cambiado de móvil).">
+                            <i class="bi bi-arrow-repeat me-1"></i>Reenviar el alta
+                        </button>
                     </div>
                     {% include "panel/clock_events/_settings.html" %}
                 </div>
@@ -316,6 +346,22 @@ document.getElementById("clkDetailModal").addEventListener("show.bs.modal", func
     document.querySelectorAll(".clk-company-check").forEach(function (cb) {
         cb.addEventListener("change", function () { syncCsv(".clk-company-check", "clk-company-input"); });
     });
+    // S144: filtro "Alta en el fichaje" ("" = todas marcadas, "none" = ninguna).
+    const onboardingBoxes = document.querySelectorAll(".clk-onboarding-check");
+    function onboardingLabel() {
+        const marked = Array.from(onboardingBoxes).filter(function (b) { return b.checked; }).length;
+        document.getElementById("clk-onboarding-button").textContent = marked === onboardingBoxes.length ? "Todos"
+            : (marked === 0 ? "Ninguno" : marked + " de " + onboardingBoxes.length);
+    }
+    onboardingBoxes.forEach(function (cb) {
+        cb.addEventListener("change", function () {
+            const marked = Array.from(onboardingBoxes).filter(function (b) { return b.checked; }).map(function (b) { return b.value; });
+            document.getElementById("clk-onboarding-input").value = marked.length === onboardingBoxes.length ? ""
+                : (marked.length ? marked.join(",") : "none");
+            onboardingLabel();
+        });
+    });
+    onboardingLabel();
     document.getElementById("clk-company-all").addEventListener("click", function (ev) {
         ev.preventDefault();
         const boxes = document.querySelectorAll(".clk-company-check");
@@ -445,6 +491,26 @@ document.getElementById("clkDetailModal").addEventListener("show.bs.modal", func
             counts_as_work: row.querySelector(".clk-type-counts").checked ? "1" : "0",
             is_active: row.querySelector(".clk-type-active").checked ? "1" : "0",
         }, false);
+    });
+
+    // S144: "Reenviar el alta" a los marcados; después se repinta la tabla.
+    document.getElementById("clk-access-resend").addEventListener("click", function () {
+        const btn = this;
+        if (!selection.size) { showToast("Marca algún trabajador.", true); return; }
+        if (!confirm("¿Reenviar el alta en el fichaje a " + selection.size + " trabajador(es)? Se les vuelve a poner la contraseña de las 4 últimas cifras del DNI y se les quitan los dispositivos de confianza.")) return;
+        const body = new FormData();
+        selection.forEach(function (_label, pk) { body.append("person_ids", pk); });
+        btn.disabled = true;
+        fetch("{% url 'panel:documentation_personal_access_resend' %}", {
+            method: "POST", headers: {"X-CSRFToken": csrfMeta ? csrfMeta.content : ""}, body: body,
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            let text = data.sent ? "Alta reenviada a " + data.sent + "." : (data.error || "No se ha reenviado a nadie.");
+            if (data.errors && data.errors.length) text += " No enviadas: " + data.errors.join("; ");
+            showToast(text, !data.sent);
+            if (data.sent) htmx.trigger(filters, "change");
+        }).catch(function () {
+            showToast("Sin conexión con el servidor: no se ha reenviado nada.", true);
+        }).finally(function () { btn.disabled = false; });
     });
 
     // S136: pantalla completa con el formato del laboratorio de análisis (4.26).

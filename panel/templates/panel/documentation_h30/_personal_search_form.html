@@ -76,6 +76,29 @@ para un momento distinto.
             </select>
         </div>
         {% comment %}
+        H24 (S144): filtro "Alta en el fichaje" -- casillas con
+        semántica literal (directriz 4.24); el JS de abajo deja en el
+        campo oculto `onboarding` los marcados ("" = todos, "none" =
+        ninguno) y dispara la búsqueda.
+        {% endcomment %}
+        <div>
+            <div class="fw-semibold mb-1">Alta en el fichaje</div>
+            <div class="dropdown">
+                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" id="personalOnboardingButton"
+                        data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">Todos</button>
+                <div class="dropdown-menu p-2 small">
+                    {% for code, label in onboarding_choices %}
+                    <div class="form-check">
+                        <input class="form-check-input personal-onboarding-box" type="checkbox" value="{{ code }}"
+                               id="filterOnboarding{{ forloop.counter }}" {% if onboarding_checked is None or code in onboarding_checked %}checked{% endif %}>
+                        <label class="form-check-label text-nowrap" for="filterOnboarding{{ forloop.counter }}">{{ label }}</label>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <input type="hidden" name="onboarding" id="personalOnboardingInput" class="personal-filter-checkbox" value="{{ onboarding_filter }}">
+        </div>
+        {% comment %}
         H31 (S113). Miguel Ángel: "si tuviésemos una casilla que
         dijese mostrar y la diéramos y nos mostrase en el listado de
         trabajadores [...] justamente los trabajadores que están en
@@ -104,6 +127,27 @@ para un momento distinto.
     // clics"). Puramente client-side, no dispara guardado por sí solo
     // -- el `change` de cada checkbox real que toca sí lo hace (htmx
     // change event delegation ya cubre esto).
+    // H24 (S144): casillas del filtro "Alta en el fichaje" -> campo
+    // oculto `onboarding` ("" = todas marcadas, "none" = ninguna).
+    (function () {
+        const boxes = document.querySelectorAll('.personal-onboarding-box');
+        const input = document.getElementById('personalOnboardingInput');
+        const button = document.getElementById('personalOnboardingButton');
+        if (!input || !boxes.length) return;
+        function label() {
+            const marked = Array.from(boxes).filter((b) => b.checked);
+            button.textContent = marked.length === boxes.length ? 'Todos'
+                : (marked.length === 0 ? 'Ninguno' : marked.length + ' de ' + boxes.length);
+        }
+        boxes.forEach((box) => box.addEventListener('change', function () {
+            const marked = Array.from(boxes).filter((b) => b.checked).map((b) => b.value);
+            input.value = marked.length === boxes.length ? '' : (marked.length ? marked.join(',') : 'none');
+            label();
+            input.dispatchEvent(new Event('change', {bubbles: true}));
+        }));
+        label();
+    }());
+
     function togglePersonalCompanyAll(ev) {
         ev.preventDefault();
         const boxes = document.querySelectorAll('.personal-company-checkbox');

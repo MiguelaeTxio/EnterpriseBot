@@ -123,3 +123,38 @@ class PersonalAccessCreateView(SupervisorAccessMixin, View):
                             "username": account.user.username})
         return JsonResponse({"ok": bool(created), "created": created,
                              "errors": errors})
+
+
+class PersonalAccessResendView(SupervisorAccessMixin, View):
+    """
+    POST person_ids: send the clock-in onboarding again to the marked.
+    ---
+    POST person_ids: "Reenviar el alta" (H24, S144), desde Personal y
+    desde Fichajes. A cada marcado le vuelve a enviar por WhatsApp la
+    circular "Alta en el fichaje" y, si sale, le pone otra vez la
+    contraseña de las cuatro últimas cifras del DNI y le quita los
+    dispositivos de confianza (panel/personal_access.py,
+    resend_onboarding). Devuelve los enviados y, por persona, el motivo
+    de los que no.
+    """
+
+    def post(self, request):
+        from panel.personal_access import resend_onboarding
+
+        company = request.user.company_user.company
+        people = _people(company, request.POST.getlist("person_ids"))
+        if not people:
+            return JsonResponse(
+                {"ok": False, "error": "Marca antes a alguien."},
+                status=400)
+        sent, errors = [], []
+        for person in people:
+            label = ("%s %s" % (person.given_name,
+                                person.first_surname)).strip()
+            ok, reason = resend_onboarding(person)
+            if ok:
+                sent.append(label)
+            else:
+                errors.append("%s: %s" % (label, reason))
+        return JsonResponse({"ok": bool(sent), "sent": len(sent),
+                             "errors": errors})

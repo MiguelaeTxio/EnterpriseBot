@@ -117,6 +117,7 @@ from panel.views_clock_events import (
 from panel.views_personal_access import (
     PersonalAccessCreateView,
     PersonalAccessPreviewView,
+    PersonalAccessResendView,
 )
 from panel.views_worker_schedules import (
     WorkerSchedulesAssignView,
@@ -1464,6 +1465,12 @@ urlpatterns = [
         "documentacion/personal/acceso/crear/",
         PersonalAccessCreateView.as_view(),
         name="documentation_personal_access_create",
+    ),
+    # H24 (S144): "Reenviar el alta" (Personal y Fichajes).
+    path(
+        "documentacion/personal/acceso/reenviar/",
+        PersonalAccessResendView.as_view(),
+        name="documentation_personal_access_resend",
     ),
     # H30 (S124), punto 4: material para el envío masivo en Docuten.
     path(

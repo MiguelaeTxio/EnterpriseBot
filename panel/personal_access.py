@@ -24,6 +24,7 @@ import unicodedata
 
 from django.contrib.auth.models import User
 from django.db import transaction
+from django.utils import timezone
 
 from ivr_config.models import CompanyUser, Contact, SectionContact
 
@@ -214,3 +215,208 @@ def create_access(person, username, section, base, role, by):
                 defaults={"priority": 99},
             )
     return account
+
+
+# ---------------------------------------------------------------------------
+# H24 (S144): estado del alta en el fichaje y reenvío.
+# ---------------------------------------------------------------------------
+
+ONBOARDING_CIRCULAR = "ALTA_FICHAJE"
+ONBOARDING_NO_USER = "no_user"
+ONBOARDING_NO_PHONE = "no_phone"
+ONBOARDING_NOT_SENT = "not_sent"
+ONBOARDING_SENT = "sent"
+ONBOARDING_ENTERED = "entered"
+ONBOARDING_CLOCKS = "clocks"
+# Orden del listado y del filtro: del que más falta al que ya ficha.
+ONBOARDING_CHOICES = (
+    (ONBOARDING_NO_USER, "Sin usuario"),
+    (ONBOARDING_NO_PHONE, "Sin teléfono 1"),
+    (ONBOARDING_NOT_SENT, "Usuario creado, alta sin enviar"),
+    (ONBOARDING_SENT, "Alta enviada (sin entrar)"),
+    (ONBOARDING_ENTERED, "Ha entrado, sin fichar"),
+    (ONBOARDING_CLOCKS, "Ya ficha"),
+)
+ONBOARDING_CODES = tuple(code for code, _label in ONBOARDING_CHOICES)
+_ONBOARDING_BADGES = {
+    ONBOARDING_NO_USER: "secondary",
+    ONBOARDING_NO_PHONE: "danger",
+    ONBOARDING_NOT_SENT: "warning",
+    ONBOARDING_SENT: "info",
+    ONBOARDING_ENTERED: "primary",
+    ONBOARDING_CLOCKS: "success",
+}
+
+
+class OnboardingState:
+    """
+    Where one worker is in the clock-in onboarding.
+    ---
+    En qué punto del alta en el fichaje está un trabajador (S144):
+    `code` (uno de ONBOARDING_CODES), `label` con la fecha cuando la
+    hay ("Alta enviada el 03/11 (sin entrar)", "Ya ficha desde el
+    03/11/2026"), `rank` para ordenar y `badge` para la plantilla.
+    """
+
+    def __init__(self, code, when=None):
+        self.code = code
+        self.when = when
+        self.rank = ONBOARDING_CODES.index(code)
+        self.badge = _ONBOARDING_BADGES[code]
+        if code == ONBOARDING_SENT and when:
+            self.label = "Alta enviada el %s (sin entrar)" % (
+                when.strftime("%d/%m"))
+        elif code == ONBOARDING_CLOCKS and when:
+            self.label = "Ya ficha desde el %s" % when.strftime("%d/%m/%Y")
+        else:
+            self.label = dict(ONBOARDING_CHOICES)[code]
+
+
+def onboarding_states(people):
+    """
+    {person pk: OnboardingState} for a list of PersonIdentity.
+    ---
+    El estado del alta en el fichaje de cada persona, con tres consultas
+    para toda la lista:
+    - "Ya ficha": tiene algún fichaje (por su ficha o por su usuario);
+      la fecha es la del primero. Manda sobre todo lo demás.
+    - "Sin usuario": sin cuenta del panel activa (o solo pre-registro).
+    - "Ha entrado, sin fichar": su usuario ha entrado alguna vez
+      (`User.last_login`).
+    - "Sin teléfono 1": no tiene teléfono de empresa válido, así que el
+      alta no le puede llegar por WhatsApp.
+    - "Alta enviada": hay un envío por WhatsApp de la circular
+      ALTA_FICHAJE (DocumentAcknowledgment); fecha del último.
+    - Si no, "Usuario creado, alta sin enviar".
+    """
+    from django.db.models import Max, Min
+
+    from document_explorer.models import DocumentAcknowledgment
+    from document_explorer.person_phone_service import mobile_of
+    from hr_calendar.models import ClockEvent
+
+    people = list(people)
+    pks = [p.pk for p in people]
+    account_ids = [p.company_user_id for p in people if p.company_user_id]
+    first_by_person = dict(
+        ClockEvent.objects.filter(person_id__in=pks).order_by()
+        .values("person_id").annotate(first=Min("pressed_at"))
+        .values_list("person_id", "first"))
+    first_by_account = dict(
+        ClockEvent.objects.filter(company_user_id__in=account_ids)
+        .order_by().values("company_user_id")
+        .annotate(first=Min("pressed_at"))
+        .values_list("company_user_id", "first"))
+    sent_by_person = dict(
+        DocumentAcknowledgment.objects.filter(
+            person_id__in=pks,
+            document_type__code=ONBOARDING_CIRCULAR,
+            channel=DocumentAcknowledgment.CHANNEL_WHATSAPP,
+        ).order_by().values("person_id").annotate(last=Max("created_at"))
+        .values_list("person_id", "last"))
+    accounts = {
+        account.pk: account for account in CompanyUser.objects.filter(
+            pk__in=account_ids).select_related("user")
+    }
+    states = {}
+    for person in people:
+        account = accounts.get(person.company_user_id)
+        firsts = [when for when in (
+            first_by_person.get(person.pk),
+            first_by_account.get(person.company_user_id),
+        ) if when]
+        if firsts:
+            states[person.pk] = OnboardingState(
+                ONBOARDING_CLOCKS, timezone.localtime(min(firsts)))
+        elif (account is None or account.pending_onboarding
+              or not account.is_active):
+            states[person.pk] = OnboardingState(ONBOARDING_NO_USER)
+        elif account.user.last_login:
+            states[person.pk] = OnboardingState(ONBOARDING_ENTERED)
+        elif not mobile_of(person):
+            states[person.pk] = OnboardingState(ONBOARDING_NO_PHONE)
+        elif person.pk in sent_by_person:
+            states[person.pk] = OnboardingState(
+                ONBOARDING_SENT, timezone.localtime(sent_by_person[person.pk]))
+        else:
+            states[person.pk] = OnboardingState(ONBOARDING_NOT_SENT)
+    return states
+
+
+def onboarding_filter(raw):
+    """
+    The onboarding codes of the "Alta en el fichaje" filter, or None.
+    ---
+    Los estados marcados en el filtro (parámetro `onboarding`, códigos
+    separados por comas). Sin el parámetro o vacío (todas las casillas
+    marcadas), None: no se filtra. "none" (ninguna marcada), ningún
+    estado: semántica literal de las casillas (directriz 4.24).
+    """
+    if not raw:
+        return None
+    codes = [code for code in raw.split(",") if code in ONBOARDING_CODES]
+    return None if set(codes) == set(ONBOARDING_CODES) else codes
+
+
+def filter_by_onboarding(people, codes):
+    """
+    The people whose onboarding state is in `codes` (None = everyone).
+    ---
+    Las personas cuyo estado del alta está entre `codes`.
+    """
+    people = list(people)
+    if codes is None:
+        return people
+    states = onboarding_states(people)
+    return [p for p in people if states[p.pk].code in codes]
+
+
+def resend_onboarding(person):
+    """
+    Send the clock-in circular again and reset the access. (ok, reason).
+    ---
+    Reenvía el alta en el fichaje a un trabajador (S144): vuelve a
+    enviar por WhatsApp la circular ALTA_FICHAJE (queda anotado el envío
+    como DocumentAcknowledgment, igual que el envío normal) y, solo si
+    el WhatsApp sale, vuelve a poner la contraseña en las cuatro
+    últimas cifras del DNI y quita sus dispositivos de confianza (por si
+    ha cambiado de móvil). Si no se puede enviar, no se cambia nada.
+    Devuelve (True, "") o (False, motivo).
+    """
+    from document_explorer.models import (
+        DocumentAcknowledgment,
+        DocumentTypeCatalog,
+    )
+    from document_explorer.person_phone_service import mobile_of
+    from whatsapp.services import send_circular_notification_whatsapp
+
+    if not has_account(person):
+        return False, "sin usuario (primero, Acceso al fichaje)"
+    account = person.company_user
+    if not account.is_active:
+        return False, "su usuario está desactivado"
+    password = password_of(person)
+    if not password:
+        return False, "no tiene DNI con cifras para la contraseña"
+    if not mobile_of(person):
+        return False, "sin teléfono 1 (de empresa)"
+    circular = DocumentTypeCatalog.objects.filter(
+        code=ONBOARDING_CIRCULAR, is_active=True).first()
+    if circular is None:
+        return False, "no existe la circular Alta en el fichaje"
+    ack = DocumentAcknowledgment.objects.create(
+        person=person,
+        document_type=circular,
+        delivery_date=timezone.localdate(),
+        extraction_method=DocumentAcknowledgment.METHOD_MANUAL,
+        channel=DocumentAcknowledgment.CHANNEL_WHATSAPP,
+    )
+    if not send_circular_notification_whatsapp(ack):
+        ack.delete()
+        return False, "no se ha podido enviar el WhatsApp"
+    with transaction.atomic():
+        user = account.user
+        user.set_password(password)
+        user.save(update_fields=["password"])
+        account.trusted_devices.all().delete()
+    return True, ""

@@ -229,6 +229,11 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                                 title="Crea el usuario del panel de los marcados para que puedan fichar. Después se les envía la circular de fichaje.">
                             <i class="bi bi-key me-1"></i>Acceso al fichaje
                         </button>
+                        {# H24 (S144): reenvío del alta a quien no ha entrado o ha cambiado de móvil. #}
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="person-mass-access-resend" disabled
+                                title="Vuelve a enviar por WhatsApp la circular Alta en el fichaje a los marcados y, si sale, les pone otra vez la contraseña de las 4 últimas cifras del DNI y les quita los dispositivos de confianza (por si han cambiado de móvil).">
+                            <i class="bi bi-arrow-repeat me-1"></i>Reenviar el alta
+                        </button>
                         {% endif %}
                     </div>
                 </div>
@@ -467,6 +472,8 @@ las filas de debajo se desplacen de verdad.
         if (photoQueueBtn) photoQueueBtn.disabled = selection.size === 0;
         const accessBtn = document.getElementById('person-mass-access');
         if (accessBtn) accessBtn.disabled = selection.size === 0;
+        const resendBtn = document.getElementById('person-mass-access-resend');
+        if (resendBtn) resendBtn.disabled = selection.size === 0;
     }
 
     // H31 (S113), Miguel Ángel: "el visor de seleccionados [...]
@@ -1093,6 +1100,33 @@ las filas de debajo se desplacen de verdad.
             }).catch(() => {
                 accessResult.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red: no se ha creado nada.</div>';
             }).finally(() => { btn.disabled = false; });
+        });
+    }
+
+    // H24 (S144): "Reenviar el alta" a los marcados.
+    const resendBtn = document.getElementById('person-mass-access-resend');
+    if (resendBtn) {
+        resendBtn.addEventListener('click', function () {
+            if (selection.size === 0) return;
+            if (!confirm('¿Reenviar el alta en el fichaje a ' + selection.size + ' persona(s)? Se les vuelve a poner la contraseña de las 4 últimas cifras del DNI y se les quitan los dispositivos de confianza.')) return;
+            const formData = new FormData();
+            selection.forEach((pk) => formData.append('person_ids', pk));
+            resendBtn.disabled = true;
+            resultEl.innerHTML = '<div class="text-muted">Reenviando el alta…</div>';
+            fetch("{% url 'panel:documentation_personal_access_resend' %}", {
+                method: 'POST',
+                headers: {'X-CSRFToken': getCookie('csrftoken')},
+                body: formData,
+            }).then((r) => r.json()).then((data) => {
+                let html = '';
+                if (data.sent) html += `<div class="alert alert-success py-1 px-2 mb-1">Alta reenviada a ${data.sent} persona(s).</div>`;
+                if (data.errors && data.errors.length) html += '<div class="alert alert-warning py-1 px-2 mb-0">No enviadas: ' + data.errors.join('; ') + '</div>';
+                resultEl.innerHTML = html || `<div class="alert alert-danger py-1 px-2 mb-0">${data.error || 'No se ha reenviado a nadie.'}</div>`;
+                const form = document.getElementById('personal-search-form');
+                if (form && data.sent) htmx.trigger(form, 'submit');
+            }).catch(() => {
+                resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red: no se ha reenviado nada.</div>';
+            }).finally(() => { resendBtn.disabled = selection.size === 0; });
         });
     }
 

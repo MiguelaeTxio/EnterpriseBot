@@ -616,6 +616,8 @@ la plantilla de algún grupo marcado se abre este modal para elegirla.
             filters[hit.tab].active = parsed.searchParams.getAll('active');
             filters[hit.tab].company = parsed.searchParams.getAll('company');
             filters[hit.tab].requirement = parsed.searchParams.get('requirement') || '';
+            // H24 (S144): filtro "Alta en el fichaje".
+            filters[hit.tab].onboarding = parsed.searchParams.get('onboarding') || '';
         }
         lastFilters[hit.tab] = filters[hit.tab];
         saveState({filters: filters});
