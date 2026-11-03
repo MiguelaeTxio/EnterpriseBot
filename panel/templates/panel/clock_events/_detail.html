@@ -19,7 +19,11 @@ horas de cada tipo (presencia y desplazamiento no cuentan como jornada).
 {% if error %}<div class="alert alert-danger py-1 px-2 small">{{ error }}</div>{% endif %}
 <div class="d-flex align-items-baseline justify-content-between mb-1">
     <div class="fw-bold">{{ person_label }}</div>
-    <div class="small text-muted">{{ person.dni }} · {{ date_from|date:"d/m/Y" }} – {{ date_to|date:"d/m/Y" }}</div>
+    <div class="small text-muted">{{ person.dni }} · {{ date_from|date:"d/m/Y" }} – {{ date_to|date:"d/m/Y" }}
+        {% if has_account and shifts %}{# S141: el Excel de este trabajador en estas fechas. #}
+        <a class="btn btn-sm btn-outline-success py-0 ms-2" href="{% url 'panel:clock_events_export' %}?selected_ids={{ person.pk }}&amp;date_from={{ date_from|date:'Y-m-d' }}&amp;date_to={{ date_to|date:'Y-m-d' }}"><i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel</a>
+        {% endif %}
+    </div>
 </div>
 {% if not has_account %}
 <div class="alert alert-secondary py-1 px-2 small">Sin usuario del panel: no puede fichar hasta darse de alta por WhatsApp.</div>
