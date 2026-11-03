@@ -41,14 +41,15 @@ pantalla completa aparte, no un fragmento htmx de este pane.
     usaban border rounded p-2 desde S113.
     {% endcomment %}
     <div class="row g-2" id="personal-fixed-row">
-        <div class="col-lg-3">
+        {# S144: filtros más anchos (caben en menos filas) y grupos de reparto más estrechos. #}
+        <div class="col-lg-4">
             <div class="border rounded p-2 h-100">
             <div class="fw-bold small mb-1">Buscar y filtrar</div>
             {% include "panel/documentation_h30/_personal_search_form.html" with search=search %}
         </div>
     </div>
 
-    <div class="col-lg-4">
+    <div class="col-lg-3">
         {% comment %}
         H31 (S113). Miguel Ángel: "bajamos esa parte [la gestión] en
         la gestión de grupos de reparto para que nos quede todo el
@@ -104,9 +105,30 @@ pantalla completa aparte, no un fragmento htmx de este pane.
     en la misma altura poner [...] las acciones".
     {% endcomment %}
     <div class="col-lg-5">
+        {% comment %}
+        H24 (S144), Miguel Ángel: "eliminar dentro de lo posible el scroll
+        vertical [...] dividir las acciones". Pestañas por categoría en vez
+        de acordeones: el panel mantiene siempre el alto de la pestaña más
+        grande (las pestañas se apilan en la misma celda de una rejilla), así
+        que la lista de abajo no salta al cambiar. "N seleccionados" y
+        "Limpiar" quedan siempre a la vista; la pestaña elegida se recuerda
+        (screen_key "personal_actions").
+        {% endcomment %}
         <div id="person-mass-bar" class="border rounded p-2 h-100">
-            <div class="row g-1">
-                <div class="col-6 border-end pe-2">
+            <div class="d-flex align-items-end gap-2 mb-1">
+                <ul class="nav nav-tabs small flex-grow-1 ppane-action-tabs" role="tablist">
+                    <li class="nav-item" role="presentation"><button type="button" class="nav-link py-1 px-2" data-pane="#ppaneActDoc" data-tab="doc" role="tab">Documentación</button></li>
+                    <li class="nav-item" role="presentation"><button type="button" class="nav-link py-1 px-2" data-pane="#ppaneActInfo" data-tab="info" role="tab">Información</button></li>
+                    <li class="nav-item" role="presentation"><button type="button" class="nav-link py-1 px-2" data-pane="#ppaneActAlta" data-tab="alta" role="tab">Alta y baja</button></li>
+                    {% if can_create_accounts %}
+                    <li class="nav-item" role="presentation"><button type="button" class="nav-link py-1 px-2" data-pane="#ppaneActClock" data-tab="clock" role="tab">Fichaje</button></li>
+                    {% endif %}
+                </ul>
+                <strong class="small text-nowrap mb-1"><span id="person-mass-count">0</span> seleccionados</strong>
+                <button type="button" class="btn btn-sm btn-outline-secondary py-0 mb-1" id="person-mass-clear">Limpiar</button>
+            </div>
+            <div class="tab-content ppane-action-panes" data-saved-tab="{{ person_actions_tab }}">
+                <div class="tab-pane" id="ppaneActDoc" role="tabpanel">
                     <div class="small text-muted fw-bold">Requisitos de documentación</div>
                     <div class="d-flex gap-1 flex-wrap">
                         {% comment %}
@@ -124,14 +146,7 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                         </select>
                         <button type="button" class="btn btn-sm btn-primary" id="person-mass-job-position-submit">Asignar</button>
                     </div>
-                </div>
-                <div class="col-6">
-                    {# S141 (Miguel Ángel, opción 3): "N seleccionados / Limpiar" en la línea de la primera fila de acciones, sin línea propia. #}
-                    <div class="d-flex align-items-center gap-2">
-                        <span class="small text-muted fw-bold">EPIs</span>
-                        <strong class="small ms-auto"><span id="person-mass-count">0</span> seleccionados</strong>
-                        <button type="button" class="btn btn-sm btn-outline-secondary py-0" id="person-mass-clear">Limpiar</button>
-                    </div>
+                    <div class="small text-muted fw-bold mt-1">EPIs</div>
                     <button type="button" class="btn btn-sm btn-primary" id="person-mass-epi-submit">Entregar EPIs…</button>
                     {% if can_manage_photo %}
                     {% comment %}
@@ -147,9 +162,8 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                     </button>
                     {% endif %}
                 </div>
-                {# S141: Información y Alta y baja a todo el ancho, en una o dos líneas, para que el panel no necesite scroll. #}
-                <div class="col-12 border-top pt-1 mt-1">
-                    <div class="small text-muted fw-bold">Información</div>
+                <div class="tab-pane" id="ppaneActInfo" role="tabpanel">
+                    <div class="small text-muted fw-bold">Circulares y exportación</div>
                     <div class="d-flex gap-1 flex-wrap">
                         <select id="person-mass-notify" class="form-select form-select-sm ppane-select-auto">
                             <option value="">Circular/notificación…</option>
@@ -192,6 +206,39 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                         </select>
                         <button type="button" class="btn btn-sm btn-outline-primary" id="person-mass-docuten-submit" title="Preparar para Docuten: PDF, CSV y hoja de pasos para la firma masiva.">Docuten</button>
                     </div>
+                    <div class="border-top pt-1 mt-1">
+                    {% comment %}
+                    H35 (S105): "Generar dosieres" para varios
+                    trabajadores a la vez. El modo de agrupación se
+                    pregunta explícitamente, nunca se asume.
+
+                    S115: columna ampliada de col-6 a col-12 -- con
+                    dos selects + dos botones, el ancho de media
+                    columna (col-6) no daba espacio suficiente y el
+                    select "Plantilla…" desbordaba su columna,
+                    solapando visualmente el borde de la columna
+                    "Información" contigua (fallo real reportado por
+                    Miguel Ángel, capturado en pantalla).
+                    {% endcomment %}
+                    <div class="small text-muted fw-bold">Dosieres</div>
+                    <div class="d-flex gap-1 flex-wrap">
+                        {# S130: plantilla, formato, Descargar y Enviar son los mismos que en Centros de gasto (hub.html, data-dossier-*): las dos selecciones van juntas. #}
+                        <select id="person-mass-dossier-template" data-dossier-bind="personTemplate" class="form-select form-select-sm ppane-select-auto">
+                            <option value="">Plantilla…</option>
+                            {% for template in dossier_templates %}
+                            <option value="{{ template.pk }}">{{ template.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <select id="person-mass-dossier-mode" data-dossier-bind="format" class="form-select form-select-sm ppane-select-auto">
+                            <option value="combined">Todo en un PDF</option>
+                            <option value="per_subject">Un PDF por cada uno</option>
+                            <option value="zip">ZIP (originales)</option>
+                        </select>
+                        <button type="button" class="btn btn-sm btn-primary" data-dossier-action="download" data-dossier-result="person-mass-result">Descargar</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" data-dossier-action="email" data-dossier-result="person-mass-result" title="Enviar por correo"><i class="bi bi-envelope me-1"></i>Correo</button>
+                    </div>
+                    <div class="small text-muted" data-dossier-counts></div>
+                    </div>
                 </div>
                 {% comment %}
                 H31 (S117): baja por RESCISIÓN DE CONTRATO (el trabajador
@@ -200,7 +247,7 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                 (Miguel Ángel): se marcan en el listado, el botón se activa
                 con 1 o más y el modal solo confirma, con fecha de hoy.
                 {% endcomment %}
-                <div class="col-12 border-top pt-1 mt-1">
+                <div class="tab-pane" id="ppaneActAlta" role="tabpanel">
                     <div class="small text-muted fw-bold">Alta y baja en la empresa</div>
                     <div class="d-flex gap-1 flex-wrap">
                         {% comment %}
@@ -223,7 +270,12 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                         <button type="button" class="btn btn-sm btn-outline-success" id="person-mass-reactivate" disabled>
                             <i class="bi bi-person-check me-1"></i>Reactivar
                         </button>
-                        {% if can_create_accounts %}
+                    </div>
+                </div>
+                {% if can_create_accounts %}
+                <div class="tab-pane" id="ppaneActClock" role="tabpanel">
+                    <div class="small text-muted fw-bold">Acceso al fichaje</div>
+                    <div class="d-flex gap-1 flex-wrap">
                         {# H24 (S141): cuentas del panel creadas por el supervisor (usuario nombre.apellido, contraseña las 4 últimas cifras del DNI). #}
                         <button type="button" class="btn btn-sm btn-outline-primary" id="person-mass-access" disabled
                                 title="Crea el usuario del panel de los marcados para que puedan fichar. Después se les envía la circular de fichaje.">
@@ -234,17 +286,9 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                                 title="Vuelve a enviar por WhatsApp la circular Alta en el fichaje a los marcados y, si sale, les pone otra vez la contraseña de las 4 últimas cifras del DNI y les quita los dispositivos de confianza (por si han cambiado de móvil).">
                             <i class="bi bi-arrow-repeat me-1"></i>Reenviar el alta
                         </button>
-                        {% endif %}
                     </div>
-                </div>
-                {% if can_create_accounts %}
-                {% comment %}
-                H24 (S144), Miguel Ángel: "copiamos el pipeline de horarios
-                [...] y lo replicamos en la pestaña de personal". Las mismas
-                acciones que la pestaña Horarios sobre los marcados: horario
-                propio (poner o quitar) y sección desde una fecha.
-                {% endcomment %}
-                <div class="col-12 border-top pt-1 mt-1">
+                    {# H24 (S144): horario y sección de los marcados, lo mismo que la pestaña Horarios. #}
+                    <div class="border-top pt-1 mt-1">
                     <div class="small text-muted fw-bold">Horario de los marcados</div>
                     <div class="d-flex flex-wrap gap-1 align-items-center">
                         <select class="form-select form-select-sm ppane-select-auto" id="person-mass-schedule" aria-label="Horario">
@@ -279,48 +323,24 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                             <i class="bi bi-diagram-3 me-1"></i>Poner sección
                         </button>
                     </div>
+                    </div>
                 </div>
                 {% endif %}
-                <div class="col-12 border-top pt-1 mt-1">
-                    {% comment %}
-                    H35 (S105): "Generar dosieres" para varios
-                    trabajadores a la vez. El modo de agrupación se
-                    pregunta explícitamente, nunca se asume.
-
-                    S115: columna ampliada de col-6 a col-12 -- con
-                    dos selects + dos botones, el ancho de media
-                    columna (col-6) no daba espacio suficiente y el
-                    select "Plantilla…" desbordaba su columna,
-                    solapando visualmente el borde de la columna
-                    "Información" contigua (fallo real reportado por
-                    Miguel Ángel, capturado en pantalla).
-                    {% endcomment %}
-                    <div class="small text-muted fw-bold">Dosieres</div>
-                    <div class="d-flex gap-1 flex-wrap">
-                        {# S130: plantilla, formato, Descargar y Enviar son los mismos que en Centros de gasto (hub.html, data-dossier-*): las dos selecciones van juntas. #}
-                        <select id="person-mass-dossier-template" data-dossier-bind="personTemplate" class="form-select form-select-sm ppane-select-auto">
-                            <option value="">Plantilla…</option>
-                            {% for template in dossier_templates %}
-                            <option value="{{ template.pk }}">{{ template.name }}</option>
-                            {% endfor %}
-                        </select>
-                        <select id="person-mass-dossier-mode" data-dossier-bind="format" class="form-select form-select-sm ppane-select-auto">
-                            <option value="combined">Todo en un PDF</option>
-                            <option value="per_subject">Un PDF por cada uno</option>
-                            <option value="zip">ZIP (originales)</option>
-                        </select>
-                        <button type="button" class="btn btn-sm btn-primary" data-dossier-action="download" data-dossier-result="person-mass-result">Descargar</button>
-                        <button type="button" class="btn btn-sm btn-outline-primary" data-dossier-action="email" data-dossier-result="person-mass-result" title="Enviar por correo"><i class="bi bi-envelope me-1"></i>Correo</button>
-                    </div>
-                    <div class="small text-muted" data-dossier-counts></div>
-                </div>
             </div>
             <div id="person-mass-result" class="small mt-1"></div>
         </div>
+
     </div>
     </div>
 </div>
 
+<style>
+/* S144: las pestañas de acciones se apilan en la misma celda; el panel
+   toma el alto de la más grande y no cambia al pasar de una a otra. */
+.ppane-action-panes { display: grid; }
+.ppane-action-panes > .tab-pane { grid-area: 1 / 1; display: block; visibility: hidden; }
+.ppane-action-panes > .tab-pane.active { visibility: visible; }
+</style>
 {% comment %}
 H31 (S113), Miguel Ángel: "el listado de trabajadores [...] ocupe dos
 tercios del ancho y un tercio [...] para el listado de los que están
@@ -1178,6 +1198,33 @@ las filas de debajo se desplacen de verdad.
             }).finally(() => { resendBtn.disabled = selection.size === 0; });
         });
     }
+
+    // H24 (S144): pestañas de acciones -- la elegida se recuerda.
+    (function () {
+        const panes = document.querySelector('.ppane-action-panes');
+        if (!panes) return;
+        const buttons = document.querySelectorAll('.ppane-action-tabs [data-tab]');
+        const saved = panes.dataset.savedTab;
+        let current = Array.from(buttons).find((b) => b.dataset.tab === saved) || buttons[0];
+        function show(btn) {
+            buttons.forEach((b) => {
+                const on = b === btn;
+                b.classList.toggle('active', on);
+                b.setAttribute('aria-selected', on ? 'true' : 'false');
+                document.querySelector(b.dataset.pane).classList.toggle('active', on);
+            });
+        }
+        show(current);
+        buttons.forEach((b) => b.addEventListener('click', function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            show(b);
+            if (b !== current) {
+                current = b;
+                window.EbNavState.save('personal_actions', {tab: b.dataset.tab});
+            }
+        }));
+    }());
 
     // H24 (S144): horario y sección de los marcados, lo mismo que la
     // pestaña Horarios; después se repinta el listado (columnas Sección

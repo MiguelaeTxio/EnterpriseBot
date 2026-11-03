@@ -36,7 +36,8 @@ para un momento distinto.
         <input type="text" name="q" class="form-control doc-h30-search" placeholder="Buscar por nombre, apellidos, DNI, teléfono…"
                value="{{ search }}">
     </div>
-    <div class="d-flex flex-wrap gap-3 align-items-start small">
+    {# S144: más compacto (menos hueco y desplegables estrechos) para quitar el scroll del panel fijo. #}
+    <div class="d-flex flex-wrap column-gap-3 row-gap-1 align-items-start small personal-filters-compact">
         <div>
             <div class="fw-semibold mb-1">Estado</div>
             <div class="form-check">
@@ -66,7 +67,7 @@ para un momento distinto.
         {% comment %}H30 (S123): filtro por requisito de documentación.{% endcomment %}
         <div>
             <div class="fw-semibold mb-1">Requisito</div>
-            <select name="requirement" class="form-select form-select-sm personal-filter-checkbox" data-requirement-select
+            <select name="requirement" class="form-select form-select-sm personal-filter-checkbox personal-filter-select" data-requirement-select
                     id="filterRequirement" autocomplete="off">
                 <option value="" data-fixed {% if not requirement_filter %}selected{% endif %}>Todos</option>
                 <option value="none" data-fixed {% if requirement_filter == "none" %}selected{% endif %}>Sin requisito</option>
@@ -78,7 +79,7 @@ para un momento distinto.
         {# H24 (S144): sección vigente hoy y horario que le toca, como en la pestaña Horarios. #}
         <div>
             <div class="fw-semibold mb-1">Sección</div>
-            <select name="section" class="form-select form-select-sm personal-filter-checkbox" id="filterSection" autocomplete="off">
+            <select name="section" class="form-select form-select-sm personal-filter-checkbox personal-filter-select" id="filterSection" autocomplete="off">
                 <option value=""{% if not section_filter %} selected{% endif %}>Todas</option>
                 <option value="{{ no_section }}"{% if section_filter == no_section %} selected{% endif %}>Sin sección</option>
                 {% for section in ws_sections %}
@@ -88,7 +89,7 @@ para un momento distinto.
         </div>
         <div>
             <div class="fw-semibold mb-1">Horario</div>
-            <select name="schedule" class="form-select form-select-sm personal-filter-checkbox" id="filterSchedule" autocomplete="off">
+            <select name="schedule" class="form-select form-select-sm personal-filter-checkbox personal-filter-select" id="filterSchedule" autocomplete="off">
                 <option value=""{% if not schedule_filter %} selected{% endif %}>Todos</option>
                 <option value="{{ no_schedule }}"{% if schedule_filter == no_schedule %} selected{% endif %}>Sin horario</option>
                 {% for schedule in ws_schedules %}
@@ -142,6 +143,11 @@ para un momento distinto.
         </div>
     </div>
 </form>
+<style>
+.personal-filters-compact .fw-semibold.mb-1 { margin-bottom: .1rem !important; }
+.personal-filters-compact .personal-filter-select { width: auto; max-width: 11rem; }
+.personal-filters-compact .form-check { margin-bottom: 0; min-height: 1.3rem; }
+</style>
 <script>
     // H31 (S76). Convenience toggle -- marca/desmarca todas las
     // empresas de un clic (Miguel Ángel: "te ahorras un montón de

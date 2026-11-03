@@ -1331,6 +1331,10 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
         ctx["saved_person_selection"] = (
             saved_selection if isinstance(saved_selection, list) else []
         )
+        # H24 (S144): pestaña de acciones elegida la última vez.
+        ctx["person_actions_tab"] = get_saved_state_key(
+            request.user.company_user, "personal_actions", "tab", "doc",
+        )
         ctx["dossier_templates"] = company.dossier_templates.filter(
             scope=PersonalDossierTemplate.SCOPE_PERSONAL,
         ).order_by("name")
