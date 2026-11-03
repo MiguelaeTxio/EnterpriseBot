@@ -2290,7 +2290,10 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
         """
         from budgets.cost_vehicles_list import FILTER_KEYS
         from budgets.dispatch_vehicle import MACHINE_USES
-        from budgets.fleet_fuel_averages import fleet_averages
+        from budgets.fleet_fuel_averages import (
+            class_fuel_maximums,
+            fleet_averages,
+        )
         from panel.navigation_persistence import apply_list_navigation
 
         company_user = request.user.company_user
@@ -2302,12 +2305,16 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
         if request.method == "GET":
             apply_list_navigation(request, COST_SCREEN_KEY, FILTER_KEYS)
         real = fleet_averages(company_user.company)
+        maximums = class_fuel_maximums(company_user.company, real)
         type_names = list(MACHINE_USES)
         rows = []
         for vehicle in vehicles:
             marked = set(vehicle.type_names())
+            used = maximums.get(vehicle.pk) or {}
             rows.append({
                 "vehicle": vehicle,
+                "used_km": used.get("l_100km"),
+                "used_hour": used.get("l_hour"),
                 "real": real["classes"].get(vehicle.name),
                 "types": [
                     {"name": name, "checked": name in marked}

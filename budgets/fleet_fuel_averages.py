@@ -39,6 +39,9 @@ MAX_LEG_HOURS = 300
 # (the cranes had 1 or 2 legs per vehicle and gave 1,2 to 26,5 l/h).
 # La media de una clase solo se usa con al menos estos tramos buenos.
 MIN_CLASS_LEGS = 10
+# S143: the same for the consumption of one vehicle.
+# Lo mismo para el consumo de un vehículo.
+MIN_VEHICLE_LEGS = MIN_CLASS_LEGS
 MIN_L_HOUR = Decimal("1")
 MAX_L_HOUR = Decimal("60")
 
@@ -111,10 +114,10 @@ def fleet_averages(company):
     `fuel_price` y `period` (desde, hasta). Los que apuntan km dan
     l/100 km; los que apuntan horas (grúas), l/h.
     """
-    from budgets.service_evaluation import _norm, _vehicle_classes
+    from budgets.service_evaluation import _norm, _vehicle_class_map
     from fleet.models import GasoGesSupply, GasoGesVehicle
 
-    classes = _vehicle_classes(company)
+    classes = _vehicle_class_map(company)
     supplies = GasoGesSupply.objects.filter(
         vehicle__machine__company=company,
         vehicle__machine__family__iexact=ASSISTANCE_MACHINE_FAMILY,
@@ -145,6 +148,7 @@ def fleet_averages(company):
         first = first or supply.supplied_at
         last = supply.supplied_at
         acc = per_vehicle.setdefault(machine.pk, {
+            "machine_pk": machine.pk,
             "code": machine.code,
             "type_name": machine.type_name,
             "unit": "h" if in_hours else "km",
@@ -286,3 +290,64 @@ def apply_real_averages(company, clear_thin=False):
         if fields:
             vehicle.save(update_fields=fields)
     return real, applied, skipped
+
+
+def class_fuel_maximums(company, real=None):
+    """
+    Consumption of each cost class: that of its vehicle that uses most.
+
+    ---
+
+    Consumo que cuenta para cada clase de coste (S143): el del vehículo
+    de la clase que más gasta. Miguel Ángel: "deberíamos dar el coste
+    máximo, el del vehículo que más gasta. Además, es orientativo a
+    modo de presupuesto". Cada vehículo de la familia asistencia de la
+    clase aporta su consumo real de GasoGes si tiene al menos
+    MIN_VEHICLE_LEGS tramos buenos; si no (o no tiene repostajes),
+    aporta el consumo de su clase ("el consumo de su clase, la opción
+    1"). Por km (l/100 km) siempre; por hora (l/h) solo en las clases
+    que tienen consumo por hora. Devuelve {pk de la clase: {"l_100km":
+    (valor, origen), "l_hour": (valor, origen) o None}}, con origen el
+    código del vehículo o "" si es el consumo de la clase.
+    """
+    from budgets.service_evaluation import _norm, _vehicle_class_map
+    from fleet.models import MachineAsset
+
+    real = real if real is not None else fleet_averages(company)
+    measured = {vehicle["machine_pk"]: vehicle for vehicle in real["vehicles"]}
+    classes = _vehicle_class_map(company)
+    members = {}
+    for machine in MachineAsset.objects.filter(
+        company=company, family__iexact=ASSISTANCE_MACHINE_FAMILY,
+    ).only("pk", "code", "type_name"):
+        vehicle_class = classes.get(_norm(machine.type_name))
+        if vehicle_class is not None:
+            members.setdefault(vehicle_class.pk, []).append(machine)
+    result = {}
+    for vehicle_class in set(classes.values()):
+        best_km = (vehicle_class.fuel_liters_per_100km, "")
+        best_hour = (
+            (vehicle_class.fuel_liters_per_hour, "")
+            if vehicle_class.fuel_liters_per_hour else None
+        )
+        candidates_km = []
+        candidates_hour = []
+        for machine in members.get(vehicle_class.pk, []):
+            data = measured.get(machine.pk)
+            enough = data is not None and data["legs"] >= MIN_VEHICLE_LEGS
+            if enough and data["l_100km"] is not None:
+                candidates_km.append((data["l_100km"], machine.code))
+            else:
+                candidates_km.append(best_km)
+            if best_hour is None:
+                continue
+            if enough and data["l_hour"] is not None:
+                candidates_hour.append((data["l_hour"], machine.code))
+            else:
+                candidates_hour.append(best_hour)
+        if candidates_km:
+            best_km = max(candidates_km, key=lambda item: item[0])
+        if best_hour is not None and candidates_hour:
+            best_hour = max(candidates_hour, key=lambda item: item[0])
+        result[vehicle_class.pk] = {"l_100km": best_km, "l_hour": best_hour}
+    return result

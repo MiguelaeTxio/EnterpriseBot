@@ -11,8 +11,13 @@ formato único de listado de la directriz 4.24: búsqueda, filtro por
 clase, orden múltiple con prioridad (resuelto aquí, plantillas tontas)
 y "mostrar solo la selección actual".
 """
-from budgets.fleet_fuel_averages import fleet_averages
-from budgets.service_evaluation import _norm
+from budgets.assistance_resources import ASSISTANCE_MACHINE_FAMILY
+from budgets.fleet_fuel_averages import (
+    MIN_VEHICLE_LEGS,
+    class_fuel_maximums,
+    fleet_averages,
+)
+from budgets.service_evaluation import _norm, _vehicle_class_map
 
 FILTER_KEYS = ("search", "class_name", "sort")
 MAX_SORT_KEYS = 4
@@ -32,11 +37,14 @@ SORTABLE = {
     "spend": lambda row: (
         row["eur_hour"] if row["unit"] == "h" else row["eur_km"]
     ),
+    "legs": lambda row: row["legs"],
     "discarded": lambda row: row["discarded"],
 }
 # Columns that start from the highest on the first click.
 # Columnas que empiezan por el mayor en el primer clic.
-DESC_FIRST = ("measure", "litres", "rate", "spend", "discarded")
+DESC_FIRST = (
+    "measure", "litres", "rate", "spend", "legs", "discarded",
+)
 
 
 def parse_sort(raw):
@@ -126,10 +134,43 @@ def build_list(company, params, only_keys=None):
     gasoil. `only_keys`: solo esos códigos ("mostrar solo la selección
     actual").
     """
+    from fleet.models import MachineAsset
+
     real = fleet_averages(company)
+    maximums = class_fuel_maximums(company, real)
+    class_by_name = {
+        vehicle_class.name: vehicle_class
+        for vehicle_class in _vehicle_class_map(company).values()
+    }
+    vehicles = list(real["vehicles"])
+    # S143: the assistance vehicles without refuels also count (with
+    # the consumption of their class).
+    # Los vehículos de asistencia sin repostajes también cuentan (con el
+    # consumo de su clase).
+    measured = {vehicle["machine_pk"] for vehicle in vehicles}
+    by_type = _vehicle_class_map(company)
+    for machine in MachineAsset.objects.filter(
+        company=company, family__iexact=ASSISTANCE_MACHINE_FAMILY,
+    ).exclude(pk__in=measured).only("pk", "code", "type_name"):
+        vehicle_class = by_type.get(_norm(machine.type_name))
+        vehicles.append({
+            "machine_pk": machine.pk, "code": machine.code,
+            "type_name": machine.type_name, "unit": "",
+            "class_name": vehicle_class.name if vehicle_class else "",
+            "km": 0, "hours": 0, "litres": None, "legs": 0,
+            "discarded": 0, "l_100km": None, "eur_km": None,
+            "l_hour": None, "eur_hour": None,
+        })
     rows = []
-    for vehicle in real["vehicles"]:
+    for vehicle in vehicles:
         row = dict(vehicle)
+        row["few_legs"] = vehicle["legs"] < MIN_VEHICLE_LEGS
+        vehicle_class = class_by_name.get(vehicle["class_name"])
+        used = maximums.get(vehicle_class.pk) if vehicle_class else None
+        row["is_max"] = bool(used) and vehicle["code"] in (
+            used["l_100km"][1],
+            used["l_hour"][1] if used["l_hour"] else "",
+        )
         row["key"] = vehicle["code"]
         row["label"] = "%s · %s" % (
             vehicle["code"], (vehicle["type_name"] or "").capitalize(),
@@ -157,7 +198,10 @@ def build_list(company, params, only_keys=None):
     keys = parse_sort(params.get("sort", ""))
     if keys:
         rows = _sort_rows(rows, keys)
+    else:
+        rows.sort(key=lambda row: (row["class_name"] or "~", row["code"]))
     return {
+        "min_legs": MIN_VEHICLE_LEGS,
         "rows": rows,
         "class_names": class_names,
         "fuel_price": real["fuel_price"],

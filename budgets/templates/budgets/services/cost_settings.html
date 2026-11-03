@@ -35,6 +35,9 @@ dividir la vista en pestañas"); abre en la que el usuario dejó activa
   orden múltiple, casillas, visor de selección, pantalla completa) y
   "Usar las medias reales".
 - Clases de vehículo: lo editable por clase y el precio del gasoil.
+  S143: el gasoil de los servicios va con el consumo del vehículo de la
+  clase que más gasta (columna "Consumo que cuenta"); el consumo de la
+  clase lo aportan los vehículos sin bastantes repostajes.
 - Costes de trabajadores: coste por hora de operario.
 {% endcomment %}
 <ul class="nav nav-tabs mb-3" id="costTabs">
@@ -138,7 +141,7 @@ dividir la vista en pestañas"); abre en la que el usuario dejó activa
                                 {% csrf_token %}
                                 <input type="hidden" name="action" value="use_real">
                                 <button type="submit" class="btn btn-sm btn-primary"
-                                        title="Pone el consumo real en cada clase que tenga datos y el precio medio del gasoil, y recalcula los servicios">
+                                        title="Pone la media real de cada clase con datos como consumo de la clase (el que aportan sus vehículos sin bastantes repostajes) y el precio medio del gasoil, y recalcula los servicios">
                                     <i class="bi bi-arrow-down-circle me-1"></i>Usar las medias reales
                                 </button>
                             </form>
@@ -229,8 +232,9 @@ dividir la vista en pestañas"); abre en la que el usuario dejó activa
                             <thead class="table-light">
                                 <tr>
                                     <th>Clase</th>
-                                    <th>Consumo (l/100 km)</th>
-                                    <th title="Si se rellena, el gasoil de esta clase va por horas del servicio">Consumo (l/h)</th>
+                                    <th title="Lo aportan a su clase los vehículos sin bastantes repostajes">Consumo de la clase (l/100 km)</th>
+                                    <th title="Si se rellena, el gasoil de esta clase va por horas del servicio">Consumo de la clase (l/h)</th>
+                                    <th title="El del vehículo de la clase que más gasta: cada uno con su consumo real de GasoGes o, si no tiene bastantes repostajes, con el de la clase">Consumo que cuenta</th>
                                     <th title="El viaje dura como mínimo los km a esta velocidad">Velocidad máx. (km/h)</th>
                                     <th title="Horas que se suman a cada servicio">Tiempos muertos (h)</th>
                                     <th>Real (GasoGes)</th>
@@ -251,6 +255,13 @@ dividir la vista en pestañas"); abre en la que el usuario dejó activa
                                         <input type="text" inputmode="decimal" class="form-control form-control-sm"
                                                name="liters_hour_{{ row.vehicle.pk }}"
                                                value="{{ row.vehicle.fuel_liters_per_hour|default_if_none:'' }}">
+                                    </td>
+                                    <td class="text-nowrap fw-semibold">
+                                        {% if row.vehicle.fuel_liters_per_hour and row.used_hour %}
+                                        {{ row.used_hour.0 }} l/h <span class="text-muted fw-normal">({% if row.used_hour.1 %}{{ row.used_hour.1 }}{% else %}la clase{% endif %})</span>
+                                        {% elif row.used_km %}
+                                        {{ row.used_km.0 }} l/100 km <span class="text-muted fw-normal">({% if row.used_km.1 %}{{ row.used_km.1 }}{% else %}la clase{% endif %})</span>
+                                        {% else %}<span class="text-muted">—</span>{% endif %}
                                     </td>
                                     <td class="cost-input-cell">
                                         <input type="text" inputmode="numeric" class="form-control form-control-sm"

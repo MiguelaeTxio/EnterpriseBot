@@ -30,7 +30,8 @@ rendimiento."
 - Presupuesto: `services.calculate_budget` con la tarifa activa de la
   aseguradora, sin IVA y sin guardar nada.
 - Coste: operarios × horas × €/h, vehículos × km × €/km y gasoil
-  (km × l/100 km × €/l) según la clase de cada vehículo. Lo que falte
+  (km × l/100 km × €/l) según la clase de cada vehículo; desde S143 el
+  consumo es el del vehículo de la clase que más gasta. Lo que falte
   de las medias se avisa en la fila y no suma.
 """
 import datetime
@@ -547,7 +548,7 @@ def _budget_amount(evaluation, when, notes):
     return _money(budget.total_amount)
 
 
-def _vehicle_classes(company):
+def _vehicle_class_map(company):
     """
     Cost class of every machine type of the company.
 
@@ -559,6 +560,32 @@ def _vehicle_classes(company):
     for vehicle in AssistanceVehicleCost.objects.filter(company=company):
         for type_name in vehicle.type_names():
             classes.setdefault(_norm(type_name), vehicle)
+    return classes
+
+
+def _vehicle_classes(company):
+    """
+    Cost classes by machine type, with the consumption that counts.
+
+    ---
+
+    Clase de coste de cada tipo de máquina, con el consumo que cuenta
+    para el gasoil ya puesto (S143): el del vehículo de la clase que
+    más gasta (`fleet_fuel_averages.class_fuel_maximums`), en
+    `fuel_used_l_100km` y `fuel_used_l_hour`.
+    """
+    from budgets.fleet_fuel_averages import class_fuel_maximums
+
+    classes = _vehicle_class_map(company)
+    maximums = class_fuel_maximums(company)
+    for vehicle in set(classes.values()):
+        used = maximums.get(vehicle.pk) or {}
+        vehicle.fuel_used_l_100km = (
+            used.get("l_100km") or (vehicle.fuel_liters_per_100km, "")
+        )[0]
+        vehicle.fuel_used_l_hour = (
+            used.get("l_hour") or (vehicle.fuel_liters_per_hour, "")
+        )[0]
     return classes
 
 
@@ -699,15 +726,17 @@ def compute_costs(evaluation, settings=None, classes=None):
         if settings.fuel_price_per_liter is None:
             fuel_known = False
         elif vehicle.fuel_liters_per_hour:
-            # Hour-metered (mobile cranes): litres per hour of the crew.
-            # Por horas (grúas móviles): litros por hora del equipo.
+            # Hour-metered (mobile cranes): litres per hour of the crew,
+            # those of the vehicle of the class that uses most (S143).
+            # Por horas (grúas móviles): litros por hora del equipo, los
+            # del vehículo de la clase que más gasta.
             fuel += (
-                crew_hours * vehicle.fuel_liters_per_hour
+                crew_hours * vehicle.fuel_used_l_hour
                 * settings.fuel_price_per_liter
             )
         else:
             fuel += (
-                km * vehicle.fuel_liters_per_100km / 100
+                km * vehicle.fuel_used_l_100km / 100
                 * settings.fuel_price_per_liter
             )
     _store_crew_hours(evaluation, operator_hours)

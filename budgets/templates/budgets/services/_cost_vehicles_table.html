@@ -6,6 +6,10 @@ familia asistencia con sus medias reales de los repostajes de GasoGes.
 Orden múltiple con prioridad (resuelto en la vista; sin orden, por clase
 y código), casilla por fila y "todos", cabecera fija. Los que apuntan
 horas en el surtidor dan l/h y €/h; los que apuntan km, l/100 km y €/km.
+S143: también salen los vehículos de asistencia sin repostajes. Con
+menos de min_legs tramos buenos un vehículo cuenta con el consumo de su
+clase (icono azul); la estrella marca el que más gasta de su clase, el
+que cuenta para el gasoil de los servicios.
 {% endcomment %}
 {% if rows %}
 <table class="table table-sm table-hover align-middle mb-0 small" id="cvh-table">
@@ -19,6 +23,7 @@ horas en el surtidor dan l/h y €/h; los que apuntan km, l/100 km y €/km.
             <th>{% include "budgets/services/_cost_sort_th.html" with col=sort_cols.litres label="Litros" end=1 %}</th>
             <th>{% include "budgets/services/_cost_sort_th.html" with col=sort_cols.rate label="Consumo" end=1 %}</th>
             <th>{% include "budgets/services/_cost_sort_th.html" with col=sort_cols.spend label="Gasto en gasoil" end=1 %}</th>
+            <th title="Tramos buenos entre repostajes: con menos de {{ min_legs }}, el vehículo cuenta con el consumo de su clase">{% include "budgets/services/_cost_sort_th.html" with col=sort_cols.legs label="Tramos" end=1 %}</th>
             <th title="Tramos entre repostajes descartados por KM mal tecleado o consumo imposible">{% include "budgets/services/_cost_sort_th.html" with col=sort_cols.discarded label="Descartados" end=1 %}</th>
         </tr>
     </thead>
@@ -29,7 +34,11 @@ horas en el surtidor dan l/h y €/h; los que apuntan km, l/100 km y €/km.
                 <input class="form-check-input cvh-row-check" type="checkbox"
                        data-key="{{ row.key }}" data-label="{{ row.label }}">
             </td>
-            <td class="fw-semibold">{{ row.code }}</td>
+            <td class="fw-semibold">
+                {{ row.code }}
+                {% if row.is_max %}<i class="bi bi-star-fill text-warning" title="El que más gasta de su clase: su consumo es el que cuenta para el gasoil de los servicios"></i>{% endif %}
+                {% if row.few_legs %}<i class="bi bi-info-circle text-primary" title="Menos de {{ min_legs }} tramos buenos: cuenta con el consumo de su clase"></i>{% endif %}
+            </td>
             <td>{{ row.type_name|lower|capfirst }}</td>
             <td>{{ row.class_name|default:"—" }}</td>
             {% if row.unit == "h" %}
@@ -37,12 +46,15 @@ horas en el surtidor dan l/h y €/h; los que apuntan km, l/100 km y €/km.
             <td class="text-end">{{ row.litres }}</td>
             <td class="text-end">{{ row.l_hour|default_if_none:"—" }} l/h</td>
             <td class="text-end">{{ row.eur_hour|default_if_none:"—" }} €/h</td>
+            {% elif row.unit == "" %}
+            <td class="text-end text-muted" colspan="4">Sin repostajes</td>
             {% else %}
             <td class="text-end">{{ row.km }} km</td>
             <td class="text-end">{{ row.litres }}</td>
             <td class="text-end">{{ row.l_100km|default_if_none:"—" }} l/100 km</td>
             <td class="text-end">{{ row.eur_km|default_if_none:"—" }} €/km</td>
             {% endif %}
+            <td class="text-end">{{ row.legs }}</td>
             <td class="text-end">{{ row.discarded }}</td>
         </tr>
         {% endfor %}
