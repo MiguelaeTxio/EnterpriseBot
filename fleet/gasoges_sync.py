@@ -551,6 +551,10 @@ def build_readings(log, heartbeat=None, vehicle=None, recheck_all=False):
         "%(lecturas)d lecturas y %(dudosos)d dudosas; %(sin_centro)d "
         "sin centro de gasto, %(sin_unidad)d sin unidad, %(averiados)d "
         "con el contador averiado." % counters)
+    # S141: qué repostajes de vehículos de horas no traen horas.
+    from fleet.gasoges_hours import classify_hours_issues
+
+    counters["marcas_horas"] = classify_hours_issues()
     return counters
 
 
@@ -585,8 +589,11 @@ def accept_supply(supply, note, value=None):
         )
         supply.status = GasoGesSupply.STATUS_READING
         supply.status_note = note[:255]
+        # S141: ya es lectura, así que trae lo que tenía que traer.
+        supply.hours_issue = GasoGesSupply.HOURS_ISSUE_NONE
         supply.save(update_fields=[
-            "meter_value", "reading", "status", "status_note"])
+            "meter_value", "reading", "status", "status_note",
+            "hours_issue"])
     return True
 
 

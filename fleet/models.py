@@ -882,6 +882,23 @@ class GasoGesSupply(models.Model):
     )
     status_note = models.CharField(_("Motivo"), max_length=255,
                                    blank=True)
+    # S141, Miguel Ángel: saber qué vehículos que van por horas reciben
+    # km y qué repostadores no anotan las horas. Lo calcula
+    # fleet/gasoges_hours.py cada vez que se rehacen las lecturas.
+    # ---
+    # Whether the supply of an hours vehicle has no hours typed.
+    HOURS_ISSUE_NONE = ""
+    HOURS_ISSUE_KM = "KM"
+    HOURS_ISSUE_EMPTY = "EMPTY"
+    HOURS_ISSUE_CHOICES = [
+        (HOURS_ISSUE_NONE, _("Sin problema")),
+        (HOURS_ISSUE_KM, _("Km en vez de horas")),
+        (HOURS_ISSUE_EMPTY, _("Sin anotar (vacío o 0)")),
+    ]
+    hours_issue = models.CharField(
+        _("Horas sin anotar"), max_length=6, choices=HOURS_ISSUE_CHOICES,
+        blank=True, default=HOURS_ISSUE_NONE, db_index=True,
+    )
     reading = models.OneToOneField(
         MachineMeterReading,
         null=True,
