@@ -1039,10 +1039,15 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
             [e for row in rows for e in row.report.events], limit=80,
         )
         for row in rows:
+            # S141 (Miguel Ángel): varias filas del mismo día llevan la
+            # fecha solo en la primera.
+            last_day = None
             for shift in row.report.shifts:
                 early = shift.early_minutes
+                shown_day = shift.day if shift.day != last_day else None
+                last_day = shift.day
                 days.append([
-                    row.person.dni, row.label, shift.day,
+                    row.person.dni, row.label, shown_day,
                     _hour(shift.clock_in, "pressed_at", shift.day),
                     _hour(shift.clock_out, "pressed_at", shift.day),
                     _hour(shift.clock_in, "rounded_at", shift.day),
@@ -1065,11 +1070,15 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
                     if name in shift.type_seconds else ""
                     for name, _counts in type_names
                 ])
+            last_day = None
             for event in row.report.events:
                 pressed = timezone.localtime(event.pressed_at)
+                shown_day = (pressed.date() if pressed.date() != last_day
+                             else None)
+                last_day = pressed.date()
                 presses.append([
                     row.person.dni, row.label, event.get_kind_display(),
-                    pressed.date(),
+                    shown_day,
                     pressed.time().replace(microsecond=0),
                     _hour(event, "rounded_at", pressed.date()),
                     _hour(event, "received_at", pressed.date(), True),
