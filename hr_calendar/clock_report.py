@@ -53,6 +53,19 @@ es salida antes de hora. Con la hora real, no con la redondeada.
 Hacerlo al menos la mitad de los días (y 3 o más) se marca como
 costumbre. Sábados, domingos y festivos de la base del trabajador no
 se comparan (S130), salvo en los guardas nocturnos.
+
+S144 (Miguel Ángel), horario abierto y jornadas excepcionales:
+- Con un horario abierto (WorkdaySchedule.is_open) no se compara nada:
+  ni llegadas tarde, ni salidas antes, ni fuera de horario. Lo controla
+  una persona desde la oficina.
+- La jornada es del día de su entrada, aunque la salida sea al día
+  siguiente.
+- Descanso mínimo (REST_HOURS): si la salida de la jornada anterior
+  queda a menos de REST_HOURS de la primera hora de entrada del horario
+  del día siguiente, ese día es flexible: no se compara su puntualidad
+  (Shift.after_short_rest) ni hay recordatorios
+  (hr_calendar/clock_reminders.py). La jornada excepcional en sí sigue
+  marcándose como incidencia (fuera de horario) para que se vea.
 """
 import datetime
 from dataclasses import dataclass, field
@@ -66,6 +79,11 @@ LATE_SEND_SECONDS = 300
 HABITUAL_SHARE = 0.5
 HABITUAL_MIN_DAYS = 3
 MAX_COMPARE_MINUTES = 180
+# S144 (Miguel Ángel, "pongamos 10 horas"): descanso mínimo entre la
+# salida de una jornada y la entrada del día siguiente.
+REST_HOURS = 10
+REST_NOTE = ("Día flexible: menos de %d h de descanso desde la jornada "
+             "anterior; no se compara con el horario" % REST_HOURS)
 NO_OUT = "Entrada sin salida"
 NO_IN = "Salida sin entrada"
 OFF_SCHEDULE = "Fuera de horario"
@@ -132,6 +150,9 @@ class Shift:
     lunch_seconds: int = 0
     # S141: cambios de tipo dentro de la jornada, en orden.
     changes: list = field(default_factory=list)
+    # S144: día flexible tras una jornada con poco descanso (REST_HOURS):
+    # no se compara con el horario.
+    after_short_rest: bool = False
 
     @property
     def _raw_early(self):
@@ -522,7 +543,7 @@ def schedule_ends(schedule):
     Las horas de salida de un horario: la de mañana y, en jornada
     partida, la de tarde.
     """
-    if schedule is None:
+    if schedule is None or schedule.is_open:
         return []
     ends = [schedule.end_time_morning]
     if not schedule.is_intensive and schedule.end_time_afternoon:
@@ -538,7 +559,7 @@ def schedule_starts(schedule):
     Las horas de entrada de un horario: la de mañana y, en jornada
     partida, la de tarde.
     """
-    if schedule is None:
+    if schedule is None or schedule.is_open:
         return []
     starts = [schedule.start_time_morning]
     if not schedule.is_intensive and schedule.start_time_afternoon:
@@ -562,6 +583,25 @@ def expected_start(starts, pressed_at):
     return min(
         starts, key=lambda t: abs(t.hour * 60 + t.minute - real_minutes),
     )
+
+
+def short_rest(day, starts, last_out):
+    """
+    True if `last_out` (an aware datetime, or None) is less than
+    REST_HOURS before the first scheduled start of `day`.
+    ---
+    True si la salida `last_out` queda a menos de REST_HOURS de la
+    primera hora de entrada del horario de `day` (S144): ese día es
+    flexible. Sin horas de entrada o sin salida anterior, False.
+    """
+    if not starts or last_out is None:
+        return False
+    start_at = timezone.make_aware(
+        datetime.datetime.combine(day, min(starts)),
+        timezone.get_current_timezone(),
+    )
+    rest = start_at - last_out
+    return rest < datetime.timedelta(hours=REST_HOURS)
 
 
 def _schedule_times_by_user(company, company_user_ids):
@@ -721,9 +761,9 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
     reports = {}
     for user_id, user_events in grouped.items():
         report = PersonReport()
+        all_shifts = build_shifts(user_events)
         report.shifts = [
-            s for s in build_shifts(user_events)
-            if date_from <= s.day <= date_to
+            s for s in all_shifts if date_from <= s.day <= date_to
         ]
         times_of, is_day_compared = times_by_user.get(
             user_id, (lambda day: ([], []), lambda day: True),
@@ -734,6 +774,16 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
                 # guardas): sin horario con el que comparar.
                 continue
             starts, ends = times_of(shift.day)
+            # S144: tras una jornada que acabó con menos de REST_HOURS de
+            # descanso, el día es flexible: no se compara.
+            previous = [
+                s.clock_out.pressed_at for s in all_shifts
+                if s.clock_out is not None and s.day < shift.day
+            ]
+            if short_rest(shift.day, starts,
+                          max(previous) if previous else None):
+                shift.after_short_rest = True
+                continue
             if shift.clock_in is not None:
                 shift.expected_start = expected_start(
                     starts, shift.clock_in.pressed_at,

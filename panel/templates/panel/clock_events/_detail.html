@@ -68,7 +68,7 @@ horas de cada tipo (presencia y desplazamiento no cuentan como jornada).
             </td>
             {% endfor %}
             <td class="text-end">{{ shift.duration|default:"—" }}</td>
-            <td>{% for incident in shift.incidents %}<div class="text-danger fw-semibold">{{ incident }}</div>{% endfor %}</td>
+            <td>{% for incident in shift.incidents %}<div class="text-danger fw-semibold">{{ incident }}</div>{% endfor %}{% if shift.rest_note %}<div class="text-muted small">{{ shift.rest_note }}</div>{% endif %}</td>
         </tr>
         {% if shift.changes or shift.type_hours %}
         <tr{% if not shift.incidents %} data-ok{% endif %} class="clk-types-row">

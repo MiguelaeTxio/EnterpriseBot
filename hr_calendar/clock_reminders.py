@@ -24,8 +24,9 @@ la entrada y olvido de la salida.
 
 - Horario: `_resolve_operator_schedule` (el mismo que usan los partes
   y el informe de fichajes), y solo si tiene un horario asignado, suyo
-  o de su sección (S141: el de por defecto de la empresa no cuenta); entrada = la primera hora de entrada,
-  salida = la última hora de salida (la comida ya no se ficha, S133).
+  o de su sección (S141: el de por defecto de la empresa no cuenta);
+  entrada = la primera hora de entrada, salida = la última hora de
+  salida (la comida ya no se ficha, S133).
 - Festivos: `_day_rule` del informe de fichajes (sábados, domingos y
   festivos de la base; los guardas nocturnos, todos los días).
 - Un recordatorio por trabajador, día y tipo (`ClockReminder`).
@@ -34,6 +35,12 @@ la entrada y olvido de la salida.
   trabajador obligado a fichar y con los recordatorios activados.
 - Dentro de la ventana de 24 horas sale como texto libre; fuera, con
   la plantilla, solo cuando Meta la ha aprobado.
+- S144 (Miguel Ángel): con horario abierto, ningún recordatorio. Tras
+  una jornada excepcional, tampoco: ni el día en que la salida anterior
+  queda a menos de REST_HOURS (hr_calendar/clock_report.py) de la
+  primera entrada del horario, ni mientras sigue abierta una jornada
+  empezada el día anterior fuera de horario (trabajo nocturno), ni el
+  de salida de una jornada que entró fuera de horario.
 """
 import datetime
 import logging
@@ -153,9 +160,86 @@ def due_reminder(schedule_starts, schedule_ends, events, now):
     # S141: un cambio de tipo deja la jornada abierta, como la entrada.
     if (end > start
             and kinds[-1] in (ClockEvent.Kind.IN, ClockEvent.Kind.CHANGE)
-            and now >= end_at + REMINDER_DELAY):
+            and now >= end_at + REMINDER_DELAY
+            and not _off_schedule(_opening(events), schedule_starts)):
         return ClockReminder.Kind.OUT, end
     return None
+
+
+def _opening(events):
+    """
+    The press that opened the last open shift of `events`, or None.
+    ---
+    La pulsación que abrió la última jornada abierta: la última entrada
+    (los cambios de tipo de después no la cierran).
+    """
+    for event in reversed(events):
+        if event.kind == ClockEvent.Kind.OUT:
+            return None
+        if event.kind == ClockEvent.Kind.IN:
+            return event
+    return events[-1] if events else None
+
+
+def _off_schedule(event, starts):
+    """
+    True if the press is more than MAX_COMPARE_MINUTES away from every
+    start time: a shift begun out of schedule (S144).
+    ---
+    True si la pulsación está a más de MAX_COMPARE_MINUTES de todas las
+    horas de entrada: una jornada empezada fuera de horario, que no
+    lleva recordatorios (S144).
+    """
+    from hr_calendar.clock_report import MAX_COMPARE_MINUTES
+
+    if event is None or not starts:
+        return False
+    real = timezone.localtime(event.pressed_at)
+    minutes = real.hour * 60 + real.minute
+    return min(
+        abs(t.hour * 60 + t.minute - minutes) for t in starts
+    ) > MAX_COMPARE_MINUTES
+
+
+def exceptional_day(company_user, company, day, starts, events, now):
+    """
+    True if no reminder goes today after an exceptional shift (S144).
+    ---
+    True si hoy no va ningún recordatorio por una jornada excepcional
+    (S144). `events` son las pulsaciones desde 24 h antes del día hasta
+    ahora, en orden.
+    - La salida anterior a la primera entrada del horario de hoy queda a
+      menos de REST_HOURS de ella (clock_report.short_rest).
+    - O sigue abierta una jornada empezada ayer fuera del horario de
+      ayer (un trabajo nocturno que todavía no ha terminado).
+    """
+    from hr_calendar.clock_report import MAX_SHIFT_HOURS
+    from hr_calendar.clock_report import build_shifts
+    from hr_calendar.clock_report import schedule_starts
+    from hr_calendar.clock_report import short_rest
+    from panel.views_operator import _resolve_operator_schedule
+
+    if not starts:
+        return False
+    tz = timezone.get_current_timezone()
+    start_at = timezone.make_aware(
+        datetime.datetime.combine(day, min(starts)), tz)
+    outs = [e.pressed_at for e in events
+            if e.kind == ClockEvent.Kind.OUT and e.pressed_at < start_at]
+    if short_rest(day, starts, max(outs) if outs else None):
+        return True
+    shifts = build_shifts(events)
+    last = shifts[-1] if shifts else None
+    if (last is None or last.clock_in is None
+            or last.clock_out is not None):
+        return False
+    opened = last.clock_in.pressed_at
+    if timezone.localtime(opened).date() >= day or (
+            now - opened > datetime.timedelta(hours=MAX_SHIFT_HOURS)):
+        return False
+    yesterday = day - datetime.timedelta(days=1)
+    schedule = _resolve_operator_schedule(company_user, company, yesterday)
+    return _off_schedule(last.clock_in, schedule_starts(schedule))
 
 
 def _templates(company):
@@ -214,7 +298,8 @@ def send_clock_reminders(company, now=None, log=logger.info):
     now = timezone.localtime(now or timezone.now())
     day = now.date()
     counters = {"enviados": 0, "festivo": 0, "fuera": 0, "sin_horario": 0,
-                "sin_movil": 0, "sin_plantilla": 0, "errores": 0}
+                "abierto": 0, "excepcional": 0, "sin_movil": 0,
+                "sin_plantilla": 0, "errores": 0}
     # S141: el permiso de envío se da en la pestaña Fichajes.
     if not reminders_enabled(company):
         log("Recordatorios de fichaje: desactivados en Fichajes.")
@@ -231,12 +316,17 @@ def send_clock_reminders(company, now=None, log=logger.info):
     tz = timezone.get_current_timezone()
     day_start = timezone.make_aware(
         datetime.datetime.combine(day, datetime.time.min), tz)
-    events_by_user = {}
+    events_by_user, window_by_user = {}, {}
+    # S144: desde 24 h antes, para ver la jornada de ayer (excepcional).
     for event in ClockEvent.objects.current().filter(
-        company=company, pressed_at__gte=day_start,
+        company=company,
+        pressed_at__gte=day_start - datetime.timedelta(days=1),
         pressed_at__lt=day_start + datetime.timedelta(days=1),
     ).order_by("pressed_at"):
-        events_by_user.setdefault(event.company_user_id, []).append(event)
+        window_by_user.setdefault(event.company_user_id, []).append(event)
+        if event.pressed_at >= day_start:
+            events_by_user.setdefault(
+                event.company_user_id, []).append(event)
     client = None
     # S141: solo los trabajadores con los recordatorios activados, que
     # están obligados a fichar y cuya sección ficha con la plataforma.
@@ -262,6 +352,17 @@ def send_clock_reminders(company, now=None, log=logger.info):
         schedule = _resolve_operator_schedule(company_user, company, day)
         if schedule is None:
             counters["sin_horario"] += 1
+            continue
+        # S144 (Miguel Ángel): "en los horarios abiertos no tenemos
+        # ningún recordatorio".
+        if schedule.is_open:
+            counters["abierto"] += 1
+            continue
+        if exceptional_day(
+                company_user, company, day, schedule_starts(schedule),
+                [e for e in window_by_user.get(company_user.pk, [])
+                 if e.pressed_at <= now], now):
+            counters["excepcional"] += 1
             continue
         due = due_reminder(
             schedule_starts(schedule), schedule_ends(schedule),
@@ -323,7 +424,9 @@ def send_clock_reminders(company, now=None, log=logger.info):
             company_user.user.username, variables["3"],
         ))
     log("Recordatorios de fichaje: %(enviados)d enviados, %(festivo)d "
-        "con el día festivo, %(sin_horario)d sin horario, %(fuera)d de "
+        "con el día festivo, %(sin_horario)d sin horario, %(abierto)d con "
+        "horario abierto, %(excepcional)d tras una jornada excepcional, "
+        "%(fuera)d de "
         "vacaciones/ausencia/baja, %(sin_movil)d sin móvil, "
         "%(sin_plantilla)d sin plantilla aprobada, %(errores)d errores."
         % counters)

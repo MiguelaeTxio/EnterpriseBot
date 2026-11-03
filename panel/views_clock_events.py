@@ -38,6 +38,7 @@ from django.utils.dateparse import parse_datetime
 from django.views import View
 
 from document_explorer.models import PersonIdentity
+from hr_calendar.clock_report import REST_NOTE
 from hr_calendar.clock_report import format_duration, reports_by_user
 from hr_calendar.models import ClockCorrection
 from hr_calendar.models import ClockEvent
@@ -787,6 +788,8 @@ def _render_detail(request, person, date_from, date_to, error="",
         # S141: cambios de tipo y horas por tipo (fichaje por tipos).
         "changes": [_press_view(c, by_replacement) for c in s.changes],
         "type_hours": _type_hours(s),
+        # S144: día flexible tras una jornada con poco descanso.
+        "rest_note": REST_NOTE if s.after_short_rest else "",
     } for s in report.shifts]
     history = [{
         "correction": c,

@@ -3633,6 +3633,8 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
         is_default_val = bool(request.POST.get("is_default"))
         # S141: horario distinto según el día de la semana.
         varies_val = bool(request.POST.get("varies_by_day"))
+        # S144: horario abierto (sin comparar el fichaje ni recordatorios).
+        is_open_val = bool(request.POST.get("is_open"))
 
         errors = []
         if not label_val:
@@ -3751,6 +3753,7 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
                 sched.tolerance_minutes = tolerance
                 sched.is_default = is_default_val
                 sched.varies_by_day = varies_val
+                sched.is_open = is_open_val
                 sched.save()
                 self._save_days(sched, day_values)
                 django_messages.success(
@@ -3767,6 +3770,7 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
         sched = WorkdaySchedule.objects.create(
             company=company,
             varies_by_day=varies_val,
+            is_open=is_open_val,
             label=label_val,
             season=season_val,
             is_intensive=is_intensive_val,

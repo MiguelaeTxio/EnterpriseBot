@@ -3154,6 +3154,20 @@ class WorkdaySchedule(models.Model):
             "su propio horario de mañana y tarde."
         ),
     )
+    # S144 (Miguel Ángel): "horario abierto" para las secciones en las
+    # que cada trabajador entra a una hora distinta según la obra o la
+    # tarea. El fichaje no compara con sus horas (ni llegadas tarde, ni
+    # salidas antes, ni fuera de horario) y no hay recordatorios: lo
+    # controla una persona desde la oficina. Sus horas, si las tiene,
+    # solo sirven de referencia al rellenar el parte.
+    is_open = models.BooleanField(
+        default=False,
+        verbose_name="Horario abierto",
+        help_text=(
+            "Cada trabajador entra y sale a horas distintas: el fichaje "
+            "no se compara con este horario y no hay recordatorios."
+        ),
+    )
     is_default = models.BooleanField(
         default=False,
         verbose_name="Horario por defecto",
