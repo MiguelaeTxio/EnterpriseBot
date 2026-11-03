@@ -74,15 +74,16 @@ _SORT_VALUES = {
     "status": lambda r: r["status_label"],
 }
 _MAX_SORT_KEYS = 4
-_MAX_RANGE_DAYS = 3 * 366
+# Los registros se conservan cuatro años (art. 34.9 ET).
+_MAX_RANGE_DAYS = 4 * 366
 
 
 def _date_range(request):
     """
-    (date_from, date_to); default this month so far, at most 3 years.
+    (date_from, date_to); default this month so far, at most 4 years.
     ---
-    (desde, hasta); por defecto lo que va de mes. Hasta tres años de
-    una vez (S144: "han pasado 2 años").
+    (desde, hasta); por defecto lo que va de mes. Hasta cuatro años de
+    una vez: lo que se conservan los registros (art. 34.9 ET).
     """
     today = timezone.localdate()
     date_from = _parse_date(_param(request, "date_from")) or today.replace(

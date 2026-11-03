@@ -45,7 +45,7 @@ screen_key "clock_worker"); la selección, por trabajador.
                                 <button type="button" class="btn btn-sm btn-outline-secondary cw-range" data-range="prev">Mes anterior</button>
                                 <button type="button" class="btn btn-sm btn-outline-secondary cw-range" data-range="year">Este año</button>
                                 <button type="button" class="btn btn-sm btn-outline-secondary cw-range" data-range="all"
-                                        title="Los tres últimos años (los fichajes se conservan cuatro).">Tres años</button>
+                                        title="Los cuatro últimos años: lo que se conservan los fichajes (art. 34.9 ET).">Cuatro años</button>
                             </div>
                         </div>
                         {% comment %}
@@ -363,7 +363,7 @@ screen_key "clock_worker"); la selección, por trabajador.
             } else if (btn.dataset.range === "year") {
                 from = new Date(today.getFullYear(), 0, 1);
             } else if (btn.dataset.range === "all") {
-                from = new Date(today.getFullYear() - 3, today.getMonth(), today.getDate() + 1);
+                from = new Date(today.getFullYear() - 4, today.getMonth(), today.getDate() + 1);
             }
             filters.querySelector('[name="date_from"]').value = isoDate(from);
             filters.querySelector('[name="date_to"]').value = isoDate(to);
