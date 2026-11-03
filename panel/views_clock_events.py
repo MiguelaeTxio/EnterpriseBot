@@ -830,11 +830,16 @@ def _render_detail(request, person, date_from, date_to, error="",
         request.user.company_user.company, person, date_from, date_to,
     )
     report = data["report"]
-    from panel.clock_calendar import calendar_months
+    from panel.clock_calendar import calendar_range
+    from panel.clock_calendar import calendar_years
 
+    # S144: pestaña Calendario del detalle, siempre los cuatro años.
+    cal_from, cal_to = calendar_range()
+    cal_shifts = worker_detail_data(
+        request.user.company_user.company, person, cal_from, cal_to,
+    )["shifts"]
     return render(request, "panel/clock_events/_detail.html", {
-        # S144: pestaña Calendario del detalle.
-        "calendar": calendar_months(data["shifts"], date_from, date_to),
+        "calendar": calendar_years(cal_shifts),
         "person": person,
         "person_label": _person_label(person),
         "has_account": person.company_user_id is not None,

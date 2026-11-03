@@ -499,11 +499,15 @@ screen_key "clock_worker"); la selección, por trabajador.
     document.querySelectorAll(".cw-view-btn").forEach(function (btn) {
         btn.addEventListener("click", function () { showView(btn.dataset.view); });
     });
-    // En el calendario, el clic en un día lleva a esa jornada en la lista.
+    // En el calendario, el clic en un día lleva a esa jornada en la
+    // lista, con las fechas de su mes (el calendario abarca cuatro años).
     results.addEventListener("click", function (evt) {
         const cell = evt.target.closest(".cw-cal-day");
         if (!cell || cell.classList.contains("cw-cal-empty")) return;
         pendingDay = cell.dataset.day;
+        const parts = pendingDay.split("-").map(Number);
+        filters.querySelector('[name="date_from"]').value = isoDate(new Date(parts[0], parts[1] - 1, 1));
+        filters.querySelector('[name="date_to"]').value = isoDate(new Date(parts[0], parts[1], 0));
         showView("jornadas");
     });
     function goToPendingDay() {

@@ -228,7 +228,18 @@ def _context(request, person):
 
     company = request.user.company_user.company
     date_from, date_to = _date_range(request)
-    data = worker_detail_data(company, person, date_from, date_to)
+    view = _param(request, "view")
+    if view not in {code for code, _l, _i in VIEW_CHOICES}:
+        view = VIEW_SHIFTS
+    # S144: el calendario muestra siempre los cuatro años completos (el
+    # actual y los tres anteriores), sea cual sea el intervalo de arriba;
+    # el resto de filtros sí se aplica.
+    data_from, data_to = date_from, date_to
+    if view == VIEW_CALENDAR:
+        from panel.clock_calendar import calendar_range
+
+        data_from, data_to = calendar_range()
+    data = worker_detail_data(company, person, data_from, data_to)
     rows = [_row(shift) for shift in data["shifts"]]
     statuses = _statuses(request)
     rows = [r for r in rows if r["status"] in statuses]
@@ -246,14 +257,11 @@ def _context(request, person):
     raw_sort = _param(request, "sort")
     rows = _sort_rows(rows, _parse_sort(raw_sort))
     report = data["report"]
-    view = _param(request, "view")
-    if view not in {code for code, _l, _i in VIEW_CHOICES}:
-        view = VIEW_SHIFTS
     calendar = {}
     if view == VIEW_CALENDAR:
-        from panel.clock_calendar import calendar_months
+        from panel.clock_calendar import calendar_years
 
-        calendar = calendar_months(rows, date_from, date_to)
+        calendar = calendar_years(rows)
     return {
         "view": view,
         "view_choices": VIEW_CHOICES,

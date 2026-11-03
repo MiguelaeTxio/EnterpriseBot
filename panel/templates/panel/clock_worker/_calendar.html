@@ -2,19 +2,25 @@
 {% comment %}
 H24 (S144). Vista de calendario de los fichajes de un trabajador (Miguel
 Ángel: "echo de menos una vista de tipo calendario, que es muy
-gráfica"). Un bloque por año, el actual arriba, y dentro de cada año
-los meses en sentido de lectura (enero a la izquierda, diciembre a la
-derecha; S144: "no está en sentido de lectura"); cada día con sus
-jornadas (entrada–salida) y las horas, en verde si es correcto, en rojo
-con incidencias y en gris si está anulado. Al pasar por encima, el
-detalle; en la página del trabajador, el clic lleva a esa jornada en la
-lista (data-day). Datos de panel/clock_calendar.py.
+gráfica"). Siempre los cuatro años de conservación del registro,
+completos aunque no haya fichajes ("que se vea la vista exactamente
+igual tanto si el trabajador lleva trabajando ya años como si es una
+persona que llega nueva"): el año actual arriba y, dentro de cada año,
+de enero a diciembre. Casillas de alto fijo ("no veo bien que adaptemos
+el alto del casillero"): azul correcta, rojo con incidencias, gris
+anulada, blanco sin fichajes; hoy, con borde grueso azul oscuro. Una
+línea de horas por día (primera entrada–última salida) y el total; el
+detalle de cada jornada, al pasar por encima. En la página del
+trabajador, el clic en un día lleva a su jornada en la lista
+(data-day). Datos de panel/clock_calendar.py.
 {% endcomment %}
-<div class="d-flex flex-wrap gap-3 small mb-2 cw-cal-legend">
+<div class="d-flex flex-wrap align-items-center gap-3 small mb-2">
     <span><span class="cw-cal-swatch cw-cal-ok"></span>Correcta</span>
     <span><span class="cw-cal-swatch cw-cal-issues"></span>Con incidencias</span>
     <span><span class="cw-cal-swatch cw-cal-cancelled"></span>Anulada</span>
     <span><span class="cw-cal-swatch cw-cal-empty"></span>Sin fichajes</span>
+    <span><span class="cw-cal-swatch cw-cal-today"></span>Hoy</span>
+    <span class="text-muted">Siempre los cuatro años que se conservan los fichajes (art. 34.9 ET), sean cuales sean las fechas de arriba.</span>
 </div>
 {% for year in calendar.years %}
 <div class="d-flex justify-content-between align-items-baseline border-bottom mb-2{% if not forloop.first %} mt-4{% endif %}">
@@ -23,7 +29,7 @@ lista (data-day). Datos de panel/clock_calendar.py.
 </div>
 <div class="row g-3">
     {% for month in year.months %}
-    <div class="col-xl-6 col-xxl-4">
+    <div class="col-lg-6">
         <div class="d-flex justify-content-between align-items-baseline">
             <div class="fw-bold small">{{ month.label }}</div>
             <div class="small text-muted">Total {{ month.total }} h</div>
@@ -37,16 +43,14 @@ lista (data-day). Datos de panel/clock_calendar.py.
                 <tr>
                     {% for cell in week %}
                     {% if cell %}
-                    <td class="cw-cal-day cw-cal-{{ cell.status }}{% if cell.weekend %} cw-cal-weekend{% endif %}{% if not cell.in_range %} cw-cal-out{% endif %}{% if cell.today %} cw-cal-today{% endif %}"
+                    <td class="cw-cal-day cw-cal-{{ cell.status }}{% if cell.weekend %} cw-cal-weekend{% endif %}{% if cell.today %} cw-cal-today{% endif %}"
                         title="{{ cell.title }}" data-day="{{ cell.day|date:'Y-m-d' }}">
                         <div class="d-flex justify-content-between">
                             <span class="fw-semibold">{{ cell.day.day }}</span>
-                            {% if cell.incident_count %}<span class="badge text-bg-danger fw-normal">{{ cell.incident_count }}</span>{% endif %}
+                            {% if cell.incident_count %}<span class="badge text-bg-danger fw-normal">{{ cell.incident_count }}</span>{% elif cell.shift_count > 1 %}<span class="badge text-bg-primary fw-normal" title="{{ cell.shift_count }} jornadas">{{ cell.shift_count }}</span>{% endif %}
                         </div>
-                        {% if cell.in_range %}
-                        {% for line in cell.lines %}<div class="cw-cal-line">{{ line }}</div>{% endfor %}
-                        {% if cell.hours %}<div class="fw-semibold">{{ cell.hours }} h</div>{% elif cell.status == "cancelled" %}<div class="cw-cal-line">anulado</div>{% endif %}
-                        {% endif %}
+                        {% if cell.span %}<div class="cw-cal-line">{{ cell.span }}</div>{% endif %}
+                        {% if cell.hours %}<div class="cw-cal-line fw-semibold">{{ cell.hours }} h</div>{% elif cell.status == "cancelled" %}<div class="cw-cal-line">anulado</div>{% endif %}
                     </td>
                     {% else %}
                     <td class="cw-cal-blank"></td>
@@ -59,24 +63,24 @@ lista (data-day). Datos de panel/clock_calendar.py.
     </div>
     {% endfor %}
 </div>
-{% empty %}
-<div class="text-muted small">Sin fechas.</div>
 {% endfor %}
 <style>
-.cw-cal { table-layout: fixed; font-size: .75rem; }
+.cw-cal { table-layout: fixed; font-size: .72rem; }
 .cw-cal thead th { position: static !important; }
 /* Sin las bandas alternas de panel.css: aquí el gris significa "anulada". */
 .table.cw-cal:not(.table-striped) > tbody > tr > * { --bs-table-bg-type: transparent !important; --bs-table-color-type: initial !important; }
-.cw-cal td { height: 4.2rem; vertical-align: top; padding: .15rem .25rem; white-space: normal; }
+/* Alto fijo: el contenido nunca estira la casilla. */
+.cw-cal td { height: 3.6rem; max-height: 3.6rem; vertical-align: top; padding: .15rem .25rem; white-space: nowrap; overflow: hidden; }
+.cw-cal-line { line-height: 1.15; overflow: hidden; text-overflow: ellipsis; }
+.cw-cal .badge { font-size: .65rem; padding: .1rem .3rem; }
 .cw-cal-day { cursor: default; }
-.cw-cal-ok { --bs-table-bg: #d1e7dd; background-color: #d1e7dd; }
+.cw-cal-ok { --bs-table-bg: #cfe2ff; background-color: #cfe2ff; }
 .cw-cal-issues { --bs-table-bg: #f8d7da; background-color: #f8d7da; }
-.cw-cal-cancelled { --bs-table-bg: #e2e3e5; background-color: #e2e3e5; color: #6c757d; }
-.cw-cal-empty.cw-cal-weekend { --bs-table-bg: #f8f9fa; }
-.cw-cal-out { opacity: .35; }
-.cw-cal-today { outline: 2px solid #0d6efd; outline-offset: -2px; }
-.cw-cal-blank { background-color: transparent; }
-.cw-cal-line { line-height: 1.15; }
+.cw-cal-cancelled { --bs-table-bg: #dee2e6; background-color: #dee2e6; color: #6c757d; }
+.cw-cal-empty { --bs-table-bg: #fff; background-color: #fff; }
+.cw-cal-empty.cw-cal-weekend { --bs-table-bg: #f8f9fa; background-color: #f8f9fa; }
+.cw-cal td.cw-cal-today { box-shadow: inset 0 0 0 3px #052c65 !important; }
+.cw-cal-blank { --bs-table-bg: #fff; background-color: #fff; }
 .cw-cal-swatch { display: inline-block; width: .9rem; height: .9rem; border: 1px solid #ced4da; margin-right: .3rem; vertical-align: -2px; }
-.cw-cal-swatch.cw-cal-empty { background-color: #fff; }
+.cw-cal-swatch.cw-cal-today { border: 3px solid #052c65; }
 </style>
