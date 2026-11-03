@@ -708,7 +708,10 @@ def _press_view(event, corrections_by_replacement=None):
         "corrected_by": (_user_label(correction.corrected_by)
                          if correction else ""),
         "old_time": (timezone.localtime(correction.old_pressed_at)
-                     if correction else None),
+                     if correction and correction.old_pressed_at else None),
+        # S144: pulsación añadida por el supervisor (no corrige otra).
+        "is_added": bool(correction and correction.action
+                         == ClockCorrection.Action.ADD),
         "input_value": local.strftime("%Y-%m-%dT%H:%M"),
         "time": local,
         "rounded": (timezone.localtime(event.rounded_at)
@@ -735,8 +738,12 @@ def _corrections_in_range(company_user_id, date_from, date_to):
     from hr_calendar.clock_report import _range_bounds
 
     start, end = _range_bounds(date_from, date_to)
+    # S144: un fichaje añadido no tiene pulsación corregida; es del
+    # trabajador por la nueva.
     return list(ClockCorrection.objects.filter(
-        event__company_user_id=company_user_id,
+        Q(event__company_user_id=company_user_id)
+        | Q(event__isnull=True,
+            replacement__company_user_id=company_user_id),
     ).filter(
         Q(old_pressed_at__gte=start, old_pressed_at__lt=end)
         | Q(new_pressed_at__gte=start, new_pressed_at__lt=end),
@@ -795,7 +802,8 @@ def _render_detail(request, person, date_from, date_to, error="",
         "correction": c,
         "corrected_by": _user_label(c.corrected_by),
         "corrected_at": timezone.localtime(c.corrected_at),
-        "old_time": timezone.localtime(c.old_pressed_at),
+        "old_time": (timezone.localtime(c.old_pressed_at)
+                     if c.old_pressed_at else None),
         "new_time": (timezone.localtime(c.new_pressed_at)
                      if c.new_pressed_at else None),
         "is_cancel": c.action == ClockCorrection.Action.CANCEL,
@@ -877,6 +885,7 @@ class ClockEventCorrectView(SupervisorAccessMixin, View):
 
     def post(self, request, pk):
         from hr_calendar.clock_corrections import ClockCorrectionError
+        from hr_calendar.clock_corrections import add_event
         from hr_calendar.clock_corrections import correct_event
 
         person = _person_or_404(pk)
@@ -896,6 +905,23 @@ class ClockEventCorrectView(SupervisorAccessMixin, View):
         new_pressed_at = parse_datetime(form["new_pressed_at"])
         if new_pressed_at is not None and timezone.is_naive(new_pressed_at):
             new_pressed_at = timezone.make_aware(new_pressed_at)
+        # S144: añadir una pulsación (partir un tramo, o la que falta).
+        if form["action"] == ClockCorrection.Action.ADD:
+            try:
+                add_event(
+                    person.company_user, person, request.user.company_user,
+                    form["new_kind"], new_pressed_at, form["reason"],
+                    user_agent=request.META.get("HTTP_USER_AGENT", ""),
+                    new_clock_type_id=form["new_clock_type"] or None,
+                )
+            except ClockCorrectionError as exc:
+                return _render_detail(request, person, date_from, date_to,
+                                      error=str(exc), form=form)
+            return _render_detail(
+                request, person, date_from, date_to,
+                message="Fichaje añadido. Queda en el historial con quién "
+                        "lo añadió, cuándo y por qué.",
+            )
         event_id = form["event_id"]
         if (not event_id.isdigit() or person.company_user_id is None
                 or not ClockEvent.objects.filter(
@@ -1148,7 +1174,8 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
                 fixes.append([
                     row.person.dni, row.label, fix.get_action_display(),
                     fix.get_old_kind_display(),
-                    timezone.localtime(fix.old_pressed_at).strftime(stamp),
+                    timezone.localtime(fix.old_pressed_at).strftime(stamp)
+                    if fix.old_pressed_at else "",
                     fix.get_new_kind_display(),
                     timezone.localtime(fix.new_pressed_at).strftime(stamp)
                     if fix.new_pressed_at else "",

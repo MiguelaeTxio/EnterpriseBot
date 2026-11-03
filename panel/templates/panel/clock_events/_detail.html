@@ -13,6 +13,12 @@ el "Historial de correcciones" con quién, cuándo y por qué.
 S141: quien ficha por tipos lleva el tipo bajo la entrada y, en una
 fila debajo de la jornada, sus cambios de tipo (con su lápiz) y las
 horas de cada tipo (presencia y desplazamiento no cuentan como jornada).
+S144 (Miguel Ángel: fichan la entrada como presencia y la salida, y todo
+el tramo queda como presencia): "Partir el tramo" en cada jornada abre
+el formulario en "Añadir fichaje" con un cambio de tipo a la hora que
+se elija; "Añadir fichaje" arriba, para una pulsación que falta. Igual
+que las correcciones: el registro original no se toca y queda quién,
+cuándo y por qué.
 {% endcomment %}
 <div class="clk-detail">
 {% if message %}<div class="alert alert-success py-1 px-2 small">{{ message }}</div>{% endif %}
@@ -20,6 +26,11 @@ horas de cada tipo (presencia y desplazamiento no cuentan como jornada).
 <div class="d-flex align-items-baseline justify-content-between mb-1">
     <div class="fw-bold">{{ person_label }}</div>
     <div class="small text-muted">{{ person.dni }} · {{ date_from|date:"d/m/Y" }} – {{ date_to|date:"d/m/Y" }}
+        {% if has_account %}{# S144: añadir una pulsación que falta (queda en el historial). #}
+        <button type="button" class="btn btn-sm btn-outline-primary py-0 ms-2" title="Añadir una entrada, una salida o un cambio de tipo que el trabajador no fichó. Queda en el historial con quién, cuándo y por qué."
+                data-label="Fichaje nuevo" data-kind="IN" data-time="{{ date_to|date:'Y-m-d' }}T08:00"
+                onclick="clkOpenAdd(this)"><i class="bi bi-plus-lg me-1"></i>Añadir fichaje</button>
+        {% endif %}
         {% if has_account and shifts %}{# S141: el Excel de este trabajador en estas fechas. #}
         <a class="btn btn-sm btn-outline-success py-0 ms-2" href="{% url 'panel:clock_events_export' %}?selected_ids={{ person.pk }}&amp;date_from={{ date_from|date:'Y-m-d' }}&amp;date_to={{ date_to|date:'Y-m-d' }}"><i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel</a>
         {% endif %}
@@ -59,7 +70,7 @@ horas de cada tipo (presencia y desplazamiento no cuentan como jornada).
                 {% if forloop.last and shift.early_minutes is not None %}<div class="text-muted">horario {{ shift.expected_end|time:"H:i" }} · {% if shift.early_minutes > 0 %}{{ shift.early_minutes }} min antes{% elif shift.early_minutes < 0 %}{{ shift.early_minutes|stringformat:"d"|slice:"1:" }} min después{% else %}en punto{% endif %}</div>{% endif %}
                 {% if press.is_manual %}<div class="text-danger fw-semibold">fichaje manual, apuntado {{ press.received|date:"d/m H:i" }}</div>{% endif %}
                 {% if press.is_late %}<div class="text-muted">se recibió {{ press.received|date:"d/m H:i" }} ({{ press.delay_label }} h después)</div>{% endif %}
-                {% if press.correction %}<div class="text-primary">corregido por {{ press.corrected_by }} el {{ press.correction.corrected_at|date:"d/m H:i" }}: antes {{ press.correction.get_old_kind_display|lower }} {{ press.old_time|date:"d/m H:i" }} · {{ press.correction.reason }}</div>{% endif %}
+                {% if press.is_added %}<div class="text-primary">añadido por {{ press.corrected_by }} el {{ press.correction.corrected_at|date:"d/m H:i" }} · {{ press.correction.reason }}</div>{% elif press.correction %}<div class="text-primary">corregido por {{ press.corrected_by }} el {{ press.correction.corrected_at|date:"d/m H:i" }}: antes {{ press.correction.get_old_kind_display|lower }} {{ press.old_time|date:"d/m H:i" }} · {{ press.correction.reason }}</div>{% endif %}
                 {% if press.event.clock_type_id %}<div class="fw-semibold">{{ press.event.clock_type.name }}</div>{% endif %}
                 {% include "panel/clock_events/_fix_button.html" %}
                 {% else %}
@@ -68,13 +79,20 @@ horas de cada tipo (presencia y desplazamiento no cuentan como jornada).
             </td>
             {% endfor %}
             <td class="text-end">{{ shift.duration|default:"—" }}</td>
-            <td>{% for incident in shift.incidents %}<div class="text-danger fw-semibold">{{ incident }}</div>{% endfor %}{% if shift.rest_note %}<div class="text-muted small">{{ shift.rest_note }}</div>{% endif %}</td>
+            <td>{% for incident in shift.incidents %}<div class="text-danger fw-semibold">{{ incident }}</div>{% endfor %}{% if shift.rest_note %}<div class="text-muted small">{{ shift.rest_note }}</div>{% endif %}
+                {% if has_account and shift.presses.0 and shift.presses.1 %}
+                {# S144: partir el tramo con un cambio de tipo a la hora que se elija. #}
+                <button type="button" class="btn btn-link btn-sm p-0 text-nowrap" title="Añadir un cambio de tipo dentro de esta jornada (p. ej. de presencia a trabajo efectivo a una hora): el tramo queda partido en dos."
+                        data-label="Cambio de tipo en la jornada del {{ shift.day|date:'d/m/Y' }}" data-kind="CHG" data-time="{{ shift.presses.0.input_value }}"
+                        onclick="clkOpenAdd(this)"><i class="bi bi-scissors me-1"></i>Partir el tramo</button>
+                {% endif %}
+            </td>
         </tr>
         {% if shift.changes or shift.type_hours %}
         <tr{% if not shift.incidents %} data-ok{% endif %} class="clk-types-row">
             <td></td>
             <td colspan="4">
-                {% for press in shift.changes %}<span class="me-3 text-nowrap">{{ press.time|date:"H:i" }} cambio a <strong>{{ press.event.clock_type.name|default:"—" }}</strong>{% if press.correction %} <span class="text-primary">(corregido por {{ press.corrected_by }})</span>{% endif %} {% include "panel/clock_events/_fix_button.html" %}</span>{% endfor %}
+                {% for press in shift.changes %}<span class="me-3 text-nowrap">{{ press.time|date:"H:i" }} cambio a <strong>{{ press.event.clock_type.name|default:"—" }}</strong>{% if press.is_added %} <span class="text-primary">(añadido por {{ press.corrected_by }})</span>{% elif press.correction %} <span class="text-primary">(corregido por {{ press.corrected_by }})</span>{% endif %} {% include "panel/clock_events/_fix_button.html" %}</span>{% endfor %}
                 {% if shift.type_hours %}<div class="text-muted">{% for item in shift.type_hours %}{{ item.name }} {{ item.label }} h{% if not item.counts %} (no cuenta){% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}</div>{% endif %}
             </td>
         </tr>
@@ -100,6 +118,11 @@ horas de cada tipo (presencia y desplazamiento no cuentan como jornada).
         <div class="form-check">
             <input class="form-check-input" type="radio" name="action" value="CANCEL" id="clkFixCancel{{ person.pk }}"{% if form.action == "CANCEL" %} checked{% endif %}>
             <label class="form-check-label" for="clkFixCancel{{ person.pk }}">Anular el fichaje</label>
+        </div>
+        {# S144: pulsación nueva (partir un tramo o la que falta). #}
+        <div class="form-check">
+            <input class="form-check-input" type="radio" name="action" value="ADD" id="clkFixAdd{{ person.pk }}"{% if form.action == "ADD" %} checked{% endif %}>
+            <label class="form-check-label" for="clkFixAdd{{ person.pk }}">Añadir fichaje</label>
         </div>
     </div>
     <div class="row g-2 mb-2">
@@ -128,6 +151,22 @@ horas de cada tipo (presencia y desplazamiento no cuentan como jornada).
         <button type="button" class="btn btn-sm btn-outline-secondary" onclick="this.closest('form').classList.add('d-none');">Cancelar</button>
     </div>
 </form>
+<script>
+// S144: abre el formulario en "Añadir fichaje" con el tipo y la hora
+// propuestos (el supervisor los cambia y escribe el motivo).
+function clkOpenAdd(btn) {
+    var f = btn.closest('.clk-detail').querySelector('.clk-correct-form');
+    f.classList.remove('d-none');
+    f.elements.event_id.value = '';
+    f.elements.label.value = btn.dataset.label;
+    f.querySelector('.clk-correct-label').textContent = btn.dataset.label;
+    f.querySelector('input[name="action"][value="ADD"]').checked = true;
+    f.elements.new_kind.value = btn.dataset.kind;
+    f.elements.new_clock_type.value = '';
+    f.elements.new_pressed_at.value = btn.dataset.time;
+    f.scrollIntoView({block: 'nearest'});
+}
+</script>
 <div class="fw-bold small mb-1">Historial de correcciones</div>
 {% if history %}
 <table class="table table-sm small align-middle">
@@ -138,7 +177,7 @@ horas de cada tipo (presencia y desplazamiento no cuentan como jornada).
             <td>{{ item.corrected_at|date:"d/m/Y H:i" }}</td>
             <td>{{ item.corrected_by }}</td>
             <td>{{ item.correction.get_action_display }}</td>
-            <td>{{ item.correction.get_old_kind_display }}{% if item.correction.old_clock_type %} ({{ item.correction.old_clock_type.name }}){% endif %} {{ item.old_time|date:"d/m H:i" }}</td>
+            <td>{% if item.old_time %}{{ item.correction.get_old_kind_display }}{% if item.correction.old_clock_type %} ({{ item.correction.old_clock_type.name }}){% endif %} {{ item.old_time|date:"d/m H:i" }}{% else %}—{% endif %}</td>
             <td>{% if item.is_cancel %}<span class="text-danger">anulado</span>{% else %}{{ item.correction.get_new_kind_display }}{% if item.correction.new_clock_type %} ({{ item.correction.new_clock_type.name }}){% endif %} {{ item.new_time|date:"d/m H:i" }}{% endif %}</td>
             <td>{{ item.correction.reason }}</td>
         </tr>

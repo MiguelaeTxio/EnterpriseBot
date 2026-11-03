@@ -60,7 +60,8 @@ def correct_event(event_id, corrected_by, action, reason, new_kind="",
     if not reason:
         raise ClockCorrectionError("El motivo de la corrección es "
                                    "obligatorio.")
-    if action not in ClockCorrection.Action.values:
+    if action not in (ClockCorrection.Action.CHANGE,
+                      ClockCorrection.Action.CANCEL):
         raise ClockCorrectionError("Corrección no válida.")
     with transaction.atomic():
         event = ClockEvent.objects.select_for_update().filter(
@@ -111,6 +112,66 @@ def correct_event(event_id, corrected_by, action, reason, new_kind="",
             new_kind=new_kind,
             new_pressed_at=new_pressed_at,
             old_clock_type=event.clock_type,
+            new_clock_type=new_clock_type,
+            reason=reason,
+            corrected_by=corrected_by,
+            user_agent=(user_agent or "")[:200],
+        )
+
+
+def add_event(company_user, person, corrected_by, new_kind, new_pressed_at,
+              reason, user_agent="", new_clock_type_id=None):
+    """
+    Add a press the worker did not make. Returns the ClockCorrection.
+
+    ---
+
+    Añade una pulsación que el trabajador no hizo (S144, Miguel Ángel):
+    sobre todo un cambio de tipo para partir un tramo que se fichó
+    entero como presencia o desplazamiento ("hay que editar esos
+    tramos"), y también una entrada o una salida que falta. Como el
+    resto de correcciones, no toca ninguna pulsación: crea la nueva
+    (sent_by CORRECTION) y la ClockCorrection con quién, cuándo y el
+    motivo (obligatorio), sin fichaje corregido ni valor anterior.
+    """
+    reason = (reason or "").strip()[:MAX_REASON]
+    if not reason:
+        raise ClockCorrectionError("El motivo de la corrección es "
+                                   "obligatorio.")
+    if company_user is None or company_user.company_id != (
+            corrected_by.company_id):
+        raise ClockCorrectionError("Ese trabajador no tiene usuario del "
+                                   "panel en esta empresa.")
+    if new_kind not in ClockEvent.Kind.values:
+        raise ClockCorrectionError("Indique si es entrada, salida o "
+                                   "cambio de tipo.")
+    if new_pressed_at is None:
+        raise ClockCorrectionError("Indique la fecha y la hora.")
+    new_pressed_at = new_pressed_at.replace(second=0, microsecond=0)
+    probe = ClockEvent(company=company_user.company)
+    new_clock_type = _clock_type(probe, new_kind, new_clock_type_id)
+    with transaction.atomic():
+        added = ClockEvent.objects.create(
+            company=company_user.company,
+            company_user=company_user,
+            person=person,
+            kind=new_kind,
+            client_id="add-%s" % uuid.uuid4().hex,
+            pressed_at=new_pressed_at,
+            gps_error="Añadido por el supervisor",
+            sent_by=ClockEvent.SentBy.CORRECTION,
+            user_agent=(user_agent or "")[:200],
+            clock_type=new_clock_type,
+        )
+        return ClockCorrection.objects.create(
+            event=None,
+            action=ClockCorrection.Action.ADD,
+            replacement=added,
+            old_kind="",
+            old_pressed_at=None,
+            new_kind=new_kind,
+            new_pressed_at=new_pressed_at,
+            old_clock_type=None,
             new_clock_type=new_clock_type,
             reason=reason,
             corrected_by=corrected_by,

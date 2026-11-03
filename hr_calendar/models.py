@@ -1207,9 +1207,16 @@ class ClockCorrection(models.Model):
     class Action(models.TextChoices):
         CHANGE = "CHANGE", "Cambio de hora o de tipo"
         CANCEL = "CANCEL", "Anulación"
+        # S144 (Miguel Ángel): partir un tramo fichado entero como
+        # presencia o desplazamiento; también una pulsación que falta.
+        ADD = "ADD", "Fichaje añadido"
 
+    # S144: vacío en un fichaje añadido (no corrige ninguna pulsación;
+    # la nueva va en `replacement`).
     event = models.OneToOneField(
         ClockEvent,
+        null=True,
+        blank=True,
         on_delete=models.PROTECT,
         related_name="correction",
         verbose_name="Fichaje corregido",
@@ -1230,9 +1237,14 @@ class ClockCorrection(models.Model):
     old_kind = models.CharField(
         max_length=3,
         choices=ClockEvent.Kind.choices,
+        blank=True,
         verbose_name="Tipo anterior",
     )
-    old_pressed_at = models.DateTimeField(verbose_name="Hora anterior")
+    old_pressed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Hora anterior",
+    )
     new_kind = models.CharField(
         max_length=3,
         choices=ClockEvent.Kind.choices,
@@ -1309,8 +1321,8 @@ class ClockCorrection(models.Model):
 
     def __str__(self) -> str:
         return (
-            f"{self.get_action_display()} de {self.event} "
-            f"por {self.corrected_by}"
+            f"{self.get_action_display()} de "
+            f"{self.event or self.replacement} por {self.corrected_by}"
         )
 
 
