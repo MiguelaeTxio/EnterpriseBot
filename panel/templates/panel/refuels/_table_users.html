@@ -33,7 +33,7 @@ Todo llega calculado desde panel/views_refuels.py (_user_rows).
                 <input type="checkbox" class="form-check-input rfl-row-check" data-pk="{{ row.pk }}" data-label="{{ row.label }}">
             </td>
             <td class="sticky-col sticky-col-2">
-                {% if row.anomalies %}<i class="bi bi-exclamation-triangle-fill text-danger" title="Tiene repostajes con KM dudoso en el periodo"></i>{% endif %}
+                {% if row.hours_km or row.hours_empty %}<i class="bi bi-clock-history text-danger" title="En vehículos que van por horas ha anotado km o nada"></i>{% elif row.anomalies %}<i class="bi bi-exclamation-triangle-fill text-danger" title="Tiene repostajes con KM dudoso en el periodo"></i>{% endif %}
             </td>
             <td class="sticky-col sticky-col-3 sticky-col-last" data-label="Repostador (GasoGes)">{% if row.known %}{{ row.name }}{% else %}<span class="text-muted">{{ row.name }}</span>{% endif %}</td>
             <td data-label="Ficha de trabajador">{% if row.person %}{{ row.person_label }}{% elif row.known %}<span class="text-muted"><i class="bi bi-person-x me-1" title="Sin ficha de trabajador: no se le puede escribir"></i>Sin ficha</span>{% endif %}</td>
@@ -41,6 +41,9 @@ Todo llega calculado desde panel/views_refuels.py (_user_rows).
             <td class="text-end" data-label="Litros">{% if row.litres is not None %}{{ row.litres }}{% else %}—{% endif %}</td>
             <td data-label="Último repostaje">{% if row.last %}{{ row.last|date:"d/m/Y H:i" }}{% else %}—{% endif %}</td>
             <td class="text-end{% if row.anomalies %} text-danger fw-bold{% endif %}" data-label="Dudosos">{{ row.anomalies }}</td>
+            <td class="text-end" data-label="En vehículos de horas">{{ row.hours_count }}</td>
+            <td class="text-end{% if row.hours_km %} text-danger fw-bold{% endif %}" data-label="Km en vez de horas">{{ row.hours_km }}</td>
+            <td class="text-end{% if row.hours_empty %} text-danger fw-bold{% endif %}" data-label="Sin anotar">{{ row.hours_empty }}</td>
             <td class="text-end" data-label="Vehículos">{{ row.others }}</td>
             <td data-label="Se le pregunta">{% if row.known %}{% if row.ask_driver %}<i class="bi bi-chat-square-text text-success me-1"></i>Sí{% else %}<i class="bi bi-bell-slash text-secondary me-1"></i>No{% endif %}{% endif %}</td>
             <td class="text-end">
@@ -63,7 +66,7 @@ Todo llega calculado desde panel/views_refuels.py (_user_rows).
             </td>
         </tr>
         {% empty %}
-        <tr><td colspan="11" class="text-muted small py-3">No hay repostadores con repostajes con estos filtros.</td></tr>
+        <tr><td colspan="14" class="text-muted small py-3">No hay repostadores con repostajes con estos filtros.</td></tr>
         {% endfor %}
     </tbody>
 </table>

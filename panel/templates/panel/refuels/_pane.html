@@ -56,6 +56,16 @@ repostado o no, y las fechas no cuentan (se desactivan).
                                 {% endfor %}
                             </select>
                         </div>
+                        {# S141: vehículos de horas a los que les anotan km o nada. #}
+                        <div class="d-flex align-items-center gap-2 rfl-supply-filter rfl-status-filter">
+                            <label class="fw-semibold" for="rfl-filter-hours"><i class="bi bi-clock-history me-1"></i>Horas</label>
+                            <select name="hours" id="rfl-filter-hours" class="form-select form-select-sm w-auto"
+                                    title="Repostajes de vehículos que van por horas en los que no se anotaron horas">
+                                {% for choice in hours_choices %}
+                                <option value="{{ choice.code }}"{% if choice.checked %} selected{% endif %}>{{ choice.label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
                         <div class="form-check rfl-allactive-filter mb-0">
                             <input class="form-check-input" type="checkbox" name="all_active" value="1" id="rflAllActive"{% if all_active %} checked{% endif %}>
                             <label class="form-check-label" for="rflAllActive"

@@ -74,7 +74,7 @@ mantiene columnas y cabecera en cualquier pantalla, con scroll lateral.
             <td data-label="Quién repostó">{{ row.driver }}{% if not row.has_person %} <i class="bi bi-person-x text-muted" title="Sin ficha de trabajador: no se le puede escribir"></i>{% endif %}</td>
             <td class="text-end{% if row.status_badge == 'danger' %} text-danger fw-bold{% endif %}" data-label="KM tecleado">{% if row.value is not None %}{{ row.value }}{% else %}—{% endif %}</td>
             <td class="text-end" data-label="Litros">{% if row.litres is not None %}{{ row.litres }}{% else %}—{% endif %}</td>
-            <td data-label="Estado"><span class="badge text-bg-{{ row.status_badge }}">{{ row.status }}</span></td>
+            <td data-label="Estado"><span class="badge text-bg-{{ row.status_badge }}">{{ row.status }}</span>{% if row.hours_issue %} <span class="badge bg-danger-subtle text-danger border border-danger-subtle" title="El vehículo va por horas"><i class="bi bi-clock-history me-1"></i>{{ row.hours_issue }}</span>{% endif %}</td>
             <td data-label="Unidad">{% if row.unit_known %}{{ row.unit }}{% if row.unit_source %} <span class="text-muted">({{ row.unit_source }})</span>{% endif %}{% else %}<span class="text-warning-emphasis">{{ row.unit }}</span>{% endif %}</td>
             <td class="small text-muted" data-label="Motivo">{{ row.note|default:"" }}</td>
             <td class="text-end">

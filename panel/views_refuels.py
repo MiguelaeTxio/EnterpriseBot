@@ -71,12 +71,27 @@ from panel.views_vacation_balance import _param, _parse_date
 
 SCREEN_KEY = "refuels"
 FILTER_KEYS = ("view", "search", "status", "ask", "date_from", "date_to",
-               "sort", "family", "all_active")
+               "sort", "family", "all_active", "hours")
 NO_STATUS = "none"
 # Filtro "¿Se pregunta al chófer?": sí / no (S135).
 # ---
 # "Is the driver asked?" filter: yes / no.
 ASK_CHOICES = (("yes", "Sí"), ("no", "No"))
+# S141 (Miguel Ángel): vehículos que van por horas y repostadores que no
+# anotan las horas. Filtro sobre la marca de fleet/gasoges_hours.py.
+# ---
+# "Hours not typed" filter.
+HOURS_CHOICES = (
+    ("", "Todos"),
+    ("issue", "No anotó horas (km o sin anotar)"),
+    ("km", "Km en vez de horas"),
+    ("empty", "Sin anotar (vacío o 0)"),
+)
+_HOURS_FILTERS = {
+    "issue": [GasoGesSupply.HOURS_ISSUE_KM, GasoGesSupply.HOURS_ISSUE_EMPTY],
+    "km": [GasoGesSupply.HOURS_ISSUE_KM],
+    "empty": [GasoGesSupply.HOURS_ISSUE_EMPTY],
+}
 _MAX_SORT_KEYS = 4
 _MAX_RANGE_DAYS = 366
 _DEFAULT_DAYS = 30
@@ -115,6 +130,8 @@ _COLUMNS = {
         ("vlast", "Último repostaje", "last_at"),
         ("vkm", "Últimos KM (GasoGes)", "vehicle__last_km"),
         ("vanomaly", "Dudosos", "n_anomalies"),
+        ("vhkm", "Km en vez de horas", "n_km"),
+        ("vhempty", "Sin anotar", "n_empty"),
         ("vdrivers", "Repostadores", "n_others"),
     ),
     VIEW_USERS: (
@@ -124,6 +141,9 @@ _COLUMNS = {
         ("ulitres", "Litros", "total_litres"),
         ("ulast", "Último repostaje", "last_at"),
         ("uanomaly", "Dudosos", "n_anomalies"),
+        ("uhours", "En vehículos de horas", "n_hours"),
+        ("uhkm", "Km en vez de horas", "n_km"),
+        ("uhempty", "Sin anotar", "n_empty"),
         ("uvehicles", "Vehículos", "n_others"),
     ),
     VIEW_QUESTIONS: (
@@ -382,6 +402,9 @@ def _filtered_supplies(request):
     family = _family(request)
     if family:
         supplies = supplies.filter(vehicle__machine__family=family)
+    hours_issues = _HOURS_FILTERS.get(_param(request, "hours"))
+    if hours_issues:
+        supplies = supplies.filter(hours_issue__in=hours_issues)
     search = _param(request, "search").strip()
     if search:
         supplies = supplies.filter(
@@ -421,6 +444,8 @@ def _row(supply):
         "litres": supply.litres,
         "status": supply.get_status_display(),
         "status_badge": _STATUS_BADGES.get(supply.status, "light"),
+        "hours_issue": supply.get_hours_issue_display()
+        if supply.hours_issue else "",
         "note": supply.status_note,
         "label": "%s %s %s" % (
             timezone.localtime(supply.supplied_at).strftime("%d/%m %H:%M"),
@@ -468,6 +493,13 @@ def _grouped(supplies, field, other, order):
         n_anomalies=Count(
             "id", filter=Q(status=GasoGesSupply.STATUS_ANOMALY)),
         n_others=Count(other, distinct=True),
+        # S141: repostajes en vehículos de horas y los que no las traen.
+        n_hours=Count("id", filter=Q(
+            vehicle__unit=GasoGesVehicle.UNIT_HOURS)),
+        n_km=Count("id", filter=Q(
+            hours_issue=GasoGesSupply.HOURS_ISSUE_KM)),
+        n_empty=Count("id", filter=Q(
+            hours_issue=GasoGesSupply.HOURS_ISSUE_EMPTY)),
     ).order_by(*order)
 
 
@@ -487,6 +519,12 @@ def _all_time_totals(queryset, other):
         n_anomalies=Count("supplies", distinct=True, filter=Q(
             supplies__status=GasoGesSupply.STATUS_ANOMALY)),
         n_others=Count("supplies__%s" % other, distinct=True),
+        n_hours=Count("supplies", distinct=True, filter=Q(
+            supplies__vehicle__unit=GasoGesVehicle.UNIT_HOURS)),
+        n_km=Count("supplies", distinct=True, filter=Q(
+            supplies__hours_issue=GasoGesSupply.HOURS_ISSUE_KM)),
+        n_empty=Count("supplies", distinct=True, filter=Q(
+            supplies__hours_issue=GasoGesSupply.HOURS_ISSUE_EMPTY)),
     )
 
 
@@ -536,7 +574,7 @@ def _vehicle_groups(request, order, wanted=None):
         vehicles = vehicles.filter(pk__in=wanted)
     groups = _all_time_totals(vehicles, "user").values(
         "id", "n_supplies", "total_litres", "last_at", "n_anomalies",
-        "n_others").order_by(*_own_order(order, "vehicle__"), "id")
+        "n_others", "n_hours", "n_km", "n_empty").order_by(*_own_order(order, "vehicle__"), "id")
     return [dict(group, vehicle=group.pop("id")) for group in groups]
 
 
@@ -577,7 +615,7 @@ def _user_groups(request, order, wanted=None):
         users = users.filter(pk__in=wanted)
     groups = _all_time_totals(users, "vehicle").values(
         "id", "n_supplies", "total_litres", "last_at", "n_anomalies",
-        "n_others").order_by(*_own_order(order, "user__"), "id")
+        "n_others", "n_hours", "n_km", "n_empty").order_by(*_own_order(order, "user__"), "id")
     return [dict(group, user=group.pop("id")) for group in groups]
 
 
@@ -589,6 +627,9 @@ def _totals(group):
                  if group["last_at"] else None),
         "anomalies": group["n_anomalies"],
         "others": group["n_others"],
+        "hours_count": group["n_hours"],
+        "hours_km": group["n_km"],
+        "hours_empty": group["n_empty"],
     }
 
 
@@ -842,6 +883,10 @@ def _list_context(request):
         "status_choices": [
             {"code": code, "label": label, "checked": code in statuses}
             for code, label in GasoGesSupply.STATUS_CHOICES],
+        "hours_choices": [
+            {"code": code, "label": label,
+             "checked": code == _param(request, "hours")}
+            for code, label in HOURS_CHOICES],
         "ask_choices": [
             {"code": code, "label": label,
              "checked": (code == "yes") in asks}
@@ -1142,12 +1187,15 @@ class RefuelsExportView(CompanyUserRequiredMixin, View):
                 supply.meter_value, vehicle.get_unit_display(),
                 _float(supply.litres), _float(supply.price),
                 supply.get_status_display(), supply.status_note,
+                supply.get_hours_issue_display() if supply.hours_issue
+                else "",
             ])
         _write_sheet(book, "Repostajes", [
             ("Fecha", 12), ("Hora", 8), ("Centro de gasto", 14),
             ("Matrícula (GasoGes)", 16), ("Nombre (GasoGes)", 28),
             ("Quién repostó", 32), ("KM tecleado", 12), ("Unidad", 11),
             ("Litros", 9), ("Precio", 9), ("Estado", 24), ("Motivo", 48),
+            ("Horas sin anotar", 20),
         ], lines, (("A", "DD/MM/YYYY"), ("B", "HH:MM")))
         return _excel_response(book, "repostajes", request)
 
@@ -1159,7 +1207,8 @@ class RefuelsExportView(CompanyUserRequiredMixin, View):
             row["vehicle_label"], row["vehicle_name"], row["count"],
             _float(row["litres"]),
             row["last"].replace(tzinfo=None) if row["last"] else None,
-            row["last_km"], row["unit"], row["anomalies"], row["others"],
+            row["last_km"], row["unit"], row["anomalies"],
+            row["hours_km"], row["hours_empty"], row["others"],
             "Sí" if row["ask_driver"] else "No",
             "Sí" if row["meter_broken"] else "No",
         ] for row in rows]
@@ -1167,7 +1216,8 @@ class RefuelsExportView(CompanyUserRequiredMixin, View):
             ("Centro de gasto", 14), ("Vehículo (GasoGes)", 18),
             ("Nombre (GasoGes)", 28), ("Repostajes", 11), ("Litros", 10),
             ("Último repostaje", 17), ("Últimos KM (GasoGes)", 18),
-            ("Unidad", 11), ("Dudosos", 9), ("Repostadores", 12),
+            ("Unidad", 11), ("Dudosos", 9), ("Km en vez de horas", 12),
+            ("Sin anotar", 10), ("Repostadores", 12),
             ("Se pregunta al chófer", 18), ("Contador averiado", 16),
         ], lines, (("F", "DD/MM/YYYY HH:MM"),))
         return _excel_response(book, "repostajes_vehiculos", request)
@@ -1179,13 +1229,16 @@ class RefuelsExportView(CompanyUserRequiredMixin, View):
             row["name"], row["person_label"], row["count"],
             _float(row["litres"]),
             row["last"].replace(tzinfo=None) if row["last"] else None,
-            row["anomalies"], row["others"],
+            row["anomalies"], row["hours_count"], row["hours_km"],
+            row["hours_empty"], row["others"],
             "Sí" if row["ask_driver"] else "No",
         ] for row in rows]
         _write_sheet(book, "Repostadores", [
             ("Repostador (GasoGes)", 32), ("Ficha de trabajador", 36),
             ("Repostajes", 11), ("Litros", 10), ("Último repostaje", 17),
-            ("Dudosos", 9), ("Vehículos", 10), ("Se le pregunta", 14),
+            ("Dudosos", 9), ("En vehículos de horas", 12),
+            ("Km en vez de horas", 12), ("Sin anotar", 10),
+            ("Vehículos", 10), ("Se le pregunta", 14),
         ], lines, (("E", "DD/MM/YYYY HH:MM"),))
         return _excel_response(book, "repostajes_repostadores", request)
 
