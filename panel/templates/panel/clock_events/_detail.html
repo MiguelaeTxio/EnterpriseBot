@@ -57,6 +57,7 @@ cuándo y por qué.
     <thead><tr><th>Día</th><th>Entrada</th><th>Salida</th><th class="text-end">Horas</th><th>Incidencias</th></tr></thead>
     <tbody>
         {% for shift in shifts %}
+        {% if not shift.only_cancelled %}
         <tr{% if shift.incidents %} class="table-danger"{% else %} data-ok{% endif %}>
             <td>{{ shift.day|date:"D d/m" }}</td>
             {% for press in shift.presses %}
@@ -80,11 +81,19 @@ cuándo y por qué.
             {% endfor %}
             <td class="text-end">{{ shift.duration|default:"—" }}</td>
             <td>{% for incident in shift.incidents %}<div class="text-danger fw-semibold">{{ incident }}</div>{% endfor %}{% if shift.rest_note %}<div class="text-muted small">{{ shift.rest_note }}</div>{% endif %}
-                {% if has_account and shift.presses.0 and shift.presses.1 %}
+                {% if has_account %}
+                <div class="d-flex flex-wrap gap-2">
+                {% if shift.presses.0 and shift.presses.1 %}
                 {# S144: partir el tramo con un cambio de tipo a la hora que se elija. #}
                 <button type="button" class="btn btn-link btn-sm p-0 text-nowrap" title="Añadir un cambio de tipo dentro de esta jornada (p. ej. de presencia a trabajo efectivo a una hora): el tramo queda partido en dos."
                         data-label="Cambio de tipo en la jornada del {{ shift.day|date:'d/m/Y' }}" data-kind="CHG" data-time="{{ shift.presses.0.input_value }}"
                         onclick="clkOpenAdd(this)"><i class="bi bi-scissors me-1"></i>Partir el tramo</button>
+                {% endif %}
+                {# S144: anular la jornada entera de una vez. #}
+                <button type="button" class="btn btn-link btn-sm p-0 text-nowrap text-danger" title="Anula todas las pulsaciones de esta jornada (entrada, cambios de tipo y salida). Se ven tachadas en su día y quedan en el historial."
+                        data-label="Jornada del {{ shift.day|date:'d/m/Y' }} entera" data-ids="{{ shift.event_ids }}"
+                        onclick="clkOpenCancelShift(this)"><i class="bi bi-x-circle me-1"></i>Anular la jornada</button>
+                </div>
                 {% endif %}
             </td>
         </tr>
@@ -97,6 +106,22 @@ cuándo y por qué.
             </td>
         </tr>
         {% endif %}
+        {% endif %}
+        {% comment %}
+        S144: pulsaciones anuladas de ese día, tachadas y en gris, con quién,
+        cuándo y por qué; no cuentan horas ni incidencias. Un día con todo
+        anulado sale como "Día anulado".
+        {% endcomment %}
+        {% if shift.cancelled %}
+        <tr data-ok class="table-secondary clk-cancelled-row">
+            <td>{% if shift.only_cancelled %}{{ shift.day|date:"D d/m" }}{% endif %}</td>
+            <td colspan="4" class="text-muted">
+                <span class="badge text-bg-secondary me-1">{% if shift.only_cancelled %}Día anulado{% else %}Anulado{% endif %}</span>
+                {% for item in shift.cancelled %}<span class="me-3 text-nowrap" title="Anulado por {{ item.by }} el {{ item.at|date:'d/m H:i' }} · {{ item.reason }}"><s>{{ item.kind|lower }}{% if item.clock_type %} ({{ item.clock_type.name }}){% endif %} {{ item.time|date:"H:i" }}</s></span>{% endfor %}
+                <div class="small">Anulado por {{ shift.cancelled.0.by }} el {{ shift.cancelled.0.at|date:"d/m H:i" }} · {{ shift.cancelled.0.reason }}</div>
+            </td>
+        </tr>
+        {% endif %}
         {% endfor %}
     </tbody>
 </table>
@@ -105,6 +130,8 @@ cuándo y por qué.
 <form class="clk-correct-form border rounded p-2 mb-3 small{% if not error %} d-none{% endif %}"
       hx-post="{% url 'panel:clock_events_correct' person.pk %}" hx-target="#clk-detail-container">
     <input type="hidden" name="event_id" value="{{ form.event_id }}">
+    {# S144: "Anular la jornada" (todas sus pulsaciones). #}
+    <input type="hidden" name="event_ids" value="">
     <input type="hidden" name="label" value="{{ form.label }}">
     <input type="hidden" name="date_from" value="{{ date_from|date:'Y-m-d' }}">
     <input type="hidden" name="date_to" value="{{ date_to|date:'Y-m-d' }}">
@@ -158,12 +185,24 @@ function clkOpenAdd(btn) {
     var f = btn.closest('.clk-detail').querySelector('.clk-correct-form');
     f.classList.remove('d-none');
     f.elements.event_id.value = '';
+    f.elements.event_ids.value = '';
     f.elements.label.value = btn.dataset.label;
     f.querySelector('.clk-correct-label').textContent = btn.dataset.label;
     f.querySelector('input[name="action"][value="ADD"]').checked = true;
     f.elements.new_kind.value = btn.dataset.kind;
     f.elements.new_clock_type.value = '';
     f.elements.new_pressed_at.value = btn.dataset.time;
+    f.scrollIntoView({block: 'nearest'});
+}
+// S144: anular la jornada entera (todas sus pulsaciones, un solo motivo).
+function clkOpenCancelShift(btn) {
+    var f = btn.closest('.clk-detail').querySelector('.clk-correct-form');
+    f.classList.remove('d-none');
+    f.elements.event_id.value = '';
+    f.elements.event_ids.value = btn.dataset.ids;
+    f.elements.label.value = btn.dataset.label;
+    f.querySelector('.clk-correct-label').textContent = btn.dataset.label;
+    f.querySelector('input[name="action"][value="CANCEL"]').checked = true;
     f.scrollIntoView({block: 'nearest'});
 }
 </script>

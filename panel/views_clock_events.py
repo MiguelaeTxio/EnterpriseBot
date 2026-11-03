@@ -797,7 +797,13 @@ def _render_detail(request, person, date_from, date_to, error="",
         "type_hours": _type_hours(s),
         # S144: día flexible tras una jornada con poco descanso.
         "rest_note": REST_NOTE if s.after_short_rest else "",
+        # S144: las pulsaciones de la jornada, para anularla entera.
+        "event_ids": ",".join(
+            str(e.pk) for e in [s.clock_in] + list(s.changes)
+            + [s.clock_out] if e is not None),
+        "cancelled": [],
     } for s in report.shifts]
+    _attach_cancelled(shifts, corrections, date_from, date_to)
     history = [{
         "correction": c,
         "corrected_by": _user_label(c.corrected_by),
@@ -830,6 +836,45 @@ def _render_detail(request, person, date_from, date_to, error="",
         "early_label": report.early_label,
         "habitually_early": report.habitually_early,
     })
+
+
+def _attach_cancelled(shifts, corrections, date_from, date_to):
+    """
+    Put the cancelled presses of each day with that day's shifts.
+    ---
+    S144 (Miguel Ángel, con captura: "no queda muy claro en la interfaz
+    los días que están anulados"): las pulsaciones anuladas se ven en su
+    día, tachadas, con quién, cuándo y por qué, debajo de la última
+    jornada de ese día; un día con todo anulado sale como "Día
+    anulado". No cuentan horas ni incidencias.
+    """
+    by_day = {}
+    for correction in corrections:
+        if (correction.action != ClockCorrection.Action.CANCEL
+                or correction.old_pressed_at is None):
+            continue
+        when = timezone.localtime(correction.old_pressed_at)
+        if not date_from <= when.date() <= date_to:
+            continue
+        by_day.setdefault(when.date(), []).append({
+            "time": when,
+            "kind": correction.get_old_kind_display(),
+            "clock_type": correction.old_clock_type,
+            "by": _user_label(correction.corrected_by),
+            "at": timezone.localtime(correction.corrected_at),
+            "reason": correction.reason,
+        })
+    last_of_day = {}
+    for shift in shifts:
+        last_of_day[shift["day"]] = shift
+    for day, items in by_day.items():
+        items.sort(key=lambda item: item["time"])
+        if day in last_of_day:
+            last_of_day[day]["cancelled"] = items
+        else:
+            shifts.append({"day": day, "only_cancelled": True,
+                           "cancelled": items})
+    shifts.sort(key=lambda shift: shift["day"])
 
 
 def _type_hours(shift):
@@ -905,6 +950,38 @@ class ClockEventCorrectView(SupervisorAccessMixin, View):
         new_pressed_at = parse_datetime(form["new_pressed_at"])
         if new_pressed_at is not None and timezone.is_naive(new_pressed_at):
             new_pressed_at = timezone.make_aware(new_pressed_at)
+        # S144: anular la jornada entera (todas sus pulsaciones).
+        event_ids = [
+            int(pk) for pk in request.POST.get("event_ids", "").split(",")
+            if pk.isdigit()
+        ]
+        if form["action"] == ClockCorrection.Action.CANCEL and event_ids:
+            own = list(ClockEvent.objects.current().filter(
+                pk__in=event_ids, company_user_id=person.company_user_id,
+            ).values_list("pk", flat=True))
+            if not own:
+                return _render_detail(
+                    request, person, date_from, date_to,
+                    error="Esa jornada no es de este trabajador.", form=form)
+            from django.db import transaction
+
+            try:
+                with transaction.atomic():
+                    for pk in own:
+                        correct_event(
+                            pk, request.user.company_user,
+                            ClockCorrection.Action.CANCEL, form["reason"],
+                            user_agent=request.META.get(
+                                "HTTP_USER_AGENT", ""),
+                        )
+            except ClockCorrectionError as exc:
+                return _render_detail(request, person, date_from, date_to,
+                                      error=str(exc), form=form)
+            return _render_detail(
+                request, person, date_from, date_to,
+                message="Jornada anulada (%d fichajes). Se ven tachados en "
+                        "su día y quedan en el historial." % len(own),
+            )
         # S144: añadir una pulsación (partir un tramo, o la que falta).
         if form["action"] == ClockCorrection.Action.ADD:
             try:
