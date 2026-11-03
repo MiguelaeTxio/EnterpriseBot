@@ -1,0 +1,341 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/refuels/_export_modal.html #}
+{% comment %}
+H30 (S144). Exportar Repostajes a Excel con plantilla -- Miguel Ángel:
+"cuando se da al botón de exportar a Excel, da la opción de elegir las
+columnas que queremos que salgan. Incluso de poder usar plantillas como
+hacemos en otras vistas". Mismo modal que la exportación de Personal
+(_personal_export_modal.html): plantillas propias con una por defecto,
+globales de empresa que solo edita un ADMIN, y "usar como base". Cada
+vista de la pestaña (Repostajes, Vehículos, Repostadores, Preguntas)
+tiene sus columnas y sus plantillas. Los filtros, la vista y la
+selección los da _pane.html en window.__rflExport.
+Vista: panel/views_refuels_export.py.
+{% endcomment %}
+<div class="modal fade" id="refuelsExportModal" tabindex="-1" aria-labelledby="refuelsExportModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-bottom py-3">
+                <h6 class="modal-title fw-semibold" id="refuelsExportModalLabel">
+                    <i class="bi bi-file-earmark-excel me-2 text-success"></i><span id="rexp-title">Exportar a Excel</span>
+                </h6>
+                <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+
+            {# ---- Vista 1: exportar ---- #}
+            <div class="modal-body p-4" id="rexp-export-view">
+                <label class="form-label small fw-semibold" for="rexp-template">Plantilla de exportación</label>
+                <div class="d-flex gap-2 align-items-center mb-3">
+                    <select id="rexp-template" class="form-select form-select-sm">
+                        <option value="">Cargando plantillas…</option>
+                    </select>
+                    <button type="button" class="btn btn-outline-secondary btn-sm px-2 text-nowrap" id="rexp-manage" title="Gestionar plantillas">
+                        <i class="bi bi-gear"></i>
+                    </button>
+                </div>
+                <div id="rexp-summary" class="p-3 bg-light rounded border small d-none">
+                    <span class="text-muted">Columnas:</span> <span id="rexp-summary-columns"></span>
+                </div>
+                <div id="rexp-error" class="alert alert-danger small py-2 mt-3 mb-0 d-none"></div>
+            </div>
+
+            {# ---- Vista 2: gestionar plantillas ---- #}
+            <div class="modal-body p-4 d-none" id="rexp-manage-view">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="fw-semibold small">Plantillas</div>
+                    <button type="button" class="btn btn-success btn-sm" id="rexp-new"><i class="bi bi-plus-lg me-1"></i>Nueva plantilla</button>
+                </div>
+                <ul class="list-group list-group-flush small mb-3" id="rexp-template-list"></ul>
+
+                <div class="border rounded p-3 d-none" id="rexp-editor">
+                    <div class="fw-semibold small mb-2" id="rexp-editor-title">Nueva plantilla</div>
+                    <input type="hidden" id="rexp-edit-id" value="">
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold" for="rexp-edit-name">Nombre</label>
+                        <input type="text" id="rexp-edit-name" class="form-control form-control-sm" maxlength="100" placeholder="Ej. Km en vez de horas por vehículo">
+                    </div>
+                    <div class="mb-1 small fw-semibold">Columnas <span class="text-muted fw-normal">(el Excel las pone en el orden en que las marques)</span></div>
+                    <div class="d-flex flex-wrap gap-2 mb-2" id="rexp-edit-columns"></div>
+                    <div class="small text-muted mb-2">Orden: <span id="rexp-edit-order">—</span></div>
+                    <div class="form-check" id="rexp-edit-default-wrap">
+                        <input class="form-check-input" type="checkbox" id="rexp-edit-default">
+                        <label class="form-check-label small" for="rexp-edit-default">Plantilla por defecto</label>
+                    </div>
+                    <div class="form-check d-none" id="rexp-edit-global-wrap">
+                        <input class="form-check-input" type="checkbox" id="rexp-edit-global">
+                        <label class="form-check-label small" for="rexp-edit-global">Global de empresa (la ven todos; solo un administrador la edita)</label>
+                    </div>
+                    <div id="rexp-edit-error" class="alert alert-danger small py-1 px-2 mt-2 mb-0 d-none"></div>
+                    <div class="d-flex gap-2 justify-content-end mt-2">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="rexp-edit-cancel">Cancelar</button>
+                        <button type="button" class="btn btn-success btn-sm" id="rexp-edit-save"><i class="bi bi-check2 me-1"></i>Guardar</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer border-top py-3 d-flex justify-content-between align-items-center">
+                <small class="text-muted" id="rexp-count"></small>
+                <div class="d-flex gap-2" id="rexp-export-buttons">
+                    <button type="button" class="btn btn-outline-secondary btn-sm px-3" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-success btn-sm px-4" id="rexp-submit"><i class="bi bi-file-earmark-excel me-1"></i>Exportar</button>
+                </div>
+                <div class="d-none" id="rexp-manage-buttons">
+                    <button type="button" class="btn btn-outline-secondary btn-sm px-3" id="rexp-back"><i class="bi bi-arrow-left me-1"></i>Volver a exportar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    "use strict";
+    const LIST_URL = "{% url 'panel:refuels_export_templates' %}";
+    const SAVE_URL = "{% url 'panel:refuels_export_template_save' %}";
+    const DELETE_URL = "{% url 'panel:refuels_export_template_delete' 0 %}";
+    const EXPORT_URL = "{% url 'panel:refuels_export' %}";
+    const VIEW_LABELS = {
+        supplies: "repostajes", vehicles: "vehículos",
+        users: "repostadores", questions: "preguntas",
+    };
+    const modalEl = document.getElementById("refuelsExportModal");
+    if (!modalEl) { return; }
+    const $ = function (id) { return document.getElementById(id); };
+
+    let templates = [];
+    let columns = [];
+    let isAdmin = false;
+    let editOrder = [];
+    let view = "supplies";
+
+    function host() { return window.__rflExport; }
+    function csrf() {
+        const m = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/);
+        return m ? decodeURIComponent(m[1]) : "";
+    }
+    function labelOf(key) {
+        const c = columns.find(function (x) { return x.key === key; });
+        return c ? c.label : key;
+    }
+    function current() {
+        const id = parseInt($("rexp-template").value, 10);
+        return templates.find(function (t) { return t.id === id; }) || null;
+    }
+
+    // ---- Vista exportar ----
+    function showExportView() {
+        $("rexp-export-view").classList.remove("d-none");
+        $("rexp-manage-view").classList.add("d-none");
+        $("rexp-export-buttons").classList.remove("d-none");
+        $("rexp-manage-buttons").classList.add("d-none");
+        $("rexp-title").textContent = "Exportar " + (VIEW_LABELS[view] || "") + " a Excel";
+        updateCount();
+    }
+    function updateSummary() {
+        const tpl = current();
+        $("rexp-summary").classList.toggle("d-none", !tpl);
+        if (tpl) { $("rexp-summary-columns").textContent = tpl.columns.map(labelOf).join(", "); }
+    }
+    function updateCount() {
+        const marked = host().marked();
+        const what = VIEW_LABELS[view] || "filas";
+        const fem = view === "questions";
+        $("rexp-count").textContent = marked
+            ? "Se exportarán " + (fem ? "las " : "los ") + marked + " " + what + (fem ? " marcadas." : " marcados.")
+            : "Se exportarán " + (fem ? "todas las " : "todos los ") + what + " del filtro actual.";
+    }
+    function fillSelect(keepId) {
+        const sel = $("rexp-template");
+        sel.innerHTML = "";
+        templates.forEach(function (t) {
+            const opt = document.createElement("option");
+            opt.value = t.id;
+            opt.textContent = t.name + (t.is_global ? " (empresa)" : "") + (t.is_default ? " ★" : "");
+            sel.appendChild(opt);
+        });
+        const keep = templates.find(function (t) { return t.id === keepId; });
+        const def = templates.find(function (t) { return t.is_default; });
+        if (keep) { sel.value = keep.id; } else if (def) { sel.value = def.id; }
+        updateSummary();
+    }
+    function load(keepId) {
+        return fetch(LIST_URL + "?view=" + encodeURIComponent(view), {credentials: "same-origin"})
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                templates = data.templates || [];
+                columns = data.columns || [];
+                isAdmin = !!data.is_admin;
+                fillSelect(keepId);
+                renderList();
+            })
+            .catch(function () {
+                $("rexp-template").innerHTML = "<option value=''>Error al cargar las plantillas</option>";
+            });
+    }
+
+    modalEl.addEventListener("show.bs.modal", function () {
+        const newView = host().view();
+        const keep = newView === view && current() ? current().id : null;
+        view = newView;
+        $("rexp-error").classList.add("d-none");
+        showExportView();
+        load(keep);
+    });
+    $("rexp-template").addEventListener("change", updateSummary);
+
+    $("rexp-submit").addEventListener("click", function () {
+        const tpl = current();
+        if (!tpl) {
+            $("rexp-error").textContent = "Elige una plantilla.";
+            $("rexp-error").classList.remove("d-none");
+            return;
+        }
+        const params = host().params();
+        params.set("template_pk", tpl.id);
+        window.location.href = EXPORT_URL + "?" + params.toString();
+        bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+    });
+
+    // ---- Vista gestionar ----
+    $("rexp-manage").addEventListener("click", function () {
+        $("rexp-export-view").classList.add("d-none");
+        $("rexp-manage-view").classList.remove("d-none");
+        $("rexp-export-buttons").classList.add("d-none");
+        $("rexp-manage-buttons").classList.remove("d-none");
+        $("rexp-title").textContent = "Plantillas de exportación de " + (VIEW_LABELS[view] || "");
+        $("rexp-count").textContent = "";
+        $("rexp-editor").classList.add("d-none");
+        renderList();
+    });
+    $("rexp-back").addEventListener("click", showExportView);
+
+    function button(cls, icon, text, title, onClick) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "btn btn-sm py-0 px-2 " + cls;
+        b.title = title;
+        b.innerHTML = '<i class="bi ' + icon + '"></i>' + (text ? " " + text : "");
+        b.addEventListener("click", onClick);
+        return b;
+    }
+    function renderList() {
+        const list = $("rexp-template-list");
+        list.innerHTML = "";
+        templates.forEach(function (t) {
+            const li = document.createElement("li");
+            li.className = "list-group-item px-1 d-flex justify-content-between align-items-start gap-2";
+            const info = document.createElement("div");
+            const name = document.createElement("div");
+            name.className = "fw-semibold";
+            name.textContent = t.name + (t.is_default ? " ★" : "");
+            if (t.is_global) {
+                const badge = document.createElement("span");
+                badge.className = "badge bg-primary ms-1";
+                badge.textContent = "Empresa";
+                name.appendChild(badge);
+            }
+            const cols = document.createElement("div");
+            cols.className = "text-muted";
+            cols.textContent = t.columns.map(labelOf).join(", ");
+            info.appendChild(name);
+            info.appendChild(cols);
+            const actions = document.createElement("div");
+            actions.className = "d-flex gap-1 flex-shrink-0";
+            if (t.editable) {
+                actions.appendChild(button("btn-outline-secondary", "bi-pencil", "", "Editar", function () { openEditor(t, false); }));
+                actions.appendChild(button("btn-outline-danger", "bi-trash", "", "Borrar", function () { remove(t); }));
+            } else {
+                actions.appendChild(button("btn-outline-primary", "bi-copy", "Usar como base", "Crear una copia propia que puedes cambiar", function () { openEditor(t, true); }));
+            }
+            li.appendChild(info);
+            li.appendChild(actions);
+            list.appendChild(li);
+        });
+    }
+
+    function renderOrder() {
+        $("rexp-edit-order").textContent = editOrder.length ? editOrder.map(labelOf).join(" · ") : "—";
+    }
+    function openEditor(tpl, asCopy) {
+        const editing = tpl && !asCopy;
+        $("rexp-editor-title").textContent = editing ? "Editar plantilla" : (tpl ? "Nueva plantilla a partir de «" + tpl.name + "»" : "Nueva plantilla");
+        $("rexp-edit-id").value = editing ? tpl.id : "";
+        $("rexp-edit-name").value = editing ? tpl.name : (tpl ? tpl.name + " (copia)" : "");
+        editOrder = tpl ? tpl.columns.slice() : [];
+        const box = $("rexp-edit-columns");
+        box.innerHTML = "";
+        columns.forEach(function (c) {
+            const wrap = document.createElement("div");
+            wrap.className = "form-check";
+            const input = document.createElement("input");
+            input.type = "checkbox";
+            input.className = "form-check-input";
+            input.id = "rexp-col-" + c.key;
+            input.checked = editOrder.indexOf(c.key) !== -1;
+            input.addEventListener("change", function () {
+                if (input.checked) { editOrder.push(c.key); }
+                else { editOrder = editOrder.filter(function (k) { return k !== c.key; }); }
+                renderOrder();
+            });
+            const label = document.createElement("label");
+            label.className = "form-check-label small";
+            label.htmlFor = input.id;
+            label.textContent = c.label;
+            wrap.appendChild(input);
+            wrap.appendChild(label);
+            box.appendChild(wrap);
+        });
+        renderOrder();
+        const isGlobal = editing && tpl.is_global;
+        $("rexp-edit-default").checked = editing ? tpl.is_default : false;
+        $("rexp-edit-default-wrap").classList.toggle("d-none", isGlobal);
+        $("rexp-edit-global").checked = false;
+        $("rexp-edit-global-wrap").classList.toggle("d-none", !(isAdmin && !editing));
+        $("rexp-edit-error").classList.add("d-none");
+        $("rexp-editor").classList.remove("d-none");
+        $("rexp-edit-name").focus();
+    }
+    $("rexp-new").addEventListener("click", function () { openEditor(null, false); });
+    $("rexp-edit-cancel").addEventListener("click", function () { $("rexp-editor").classList.add("d-none"); });
+    $("rexp-edit-global").addEventListener("change", function () {
+        $("rexp-edit-default-wrap").classList.toggle("d-none", this.checked);
+    });
+
+    function showEditError(text) {
+        $("rexp-edit-error").textContent = text;
+        $("rexp-edit-error").classList.remove("d-none");
+    }
+    $("rexp-edit-save").addEventListener("click", function () {
+        const id = $("rexp-edit-id").value;
+        const payload = {
+            id: id ? parseInt(id, 10) : null,
+            view: view,
+            name: $("rexp-edit-name").value.trim(),
+            columns: editOrder,
+            is_default: $("rexp-edit-default").checked,
+            is_global: $("rexp-edit-global").checked,
+        };
+        if (!payload.name) { showEditError("Falta el nombre."); return; }
+        if (!payload.columns.length) { showEditError("Elige al menos una columna."); return; }
+        fetch(SAVE_URL, {
+            method: "POST", credentials: "same-origin",
+            headers: {"Content-Type": "application/json", "X-CSRFToken": csrf()},
+            body: JSON.stringify(payload),
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (!data.ok) { showEditError(data.error || "No se ha podido guardar."); return; }
+            $("rexp-editor").classList.add("d-none");
+            load(data.id);
+        }).catch(function () { showEditError("Error de red al guardar."); });
+    });
+
+    function remove(tpl) {
+        if (!window.confirm("¿Borrar la plantilla «" + tpl.name + "»?")) { return; }
+        fetch(DELETE_URL.replace("/0/", "/" + tpl.id + "/"), {
+            method: "POST", credentials: "same-origin",
+            headers: {"X-CSRFToken": csrf()},
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (!data.ok) { window.alert(data.error || "No se ha podido borrar."); return; }
+            load(null);
+        });
+    }
+}());
+</script>

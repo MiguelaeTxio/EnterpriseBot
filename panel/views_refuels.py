@@ -46,10 +46,9 @@ salieran. Dos filtros nuevos:
   preguntas) y luego añadir solo algunos vehículos.
 """
 import datetime
-import io
 
 from django.db.models import Count, Max, Q, Sum
-from django.http import HttpResponse, JsonResponse
+from django.http import JsonResponse
 from django.shortcuts import render
 from django.utils import timezone
 from django.views import View
@@ -715,56 +714,6 @@ def _user_rows(groups):
     return rows
 
 
-def _vehicle_code(vehicle):
-    return vehicle.machine.code if vehicle.machine else _vehicle_label(vehicle)
-
-
-def _user_vehicle_codes(request, rows):
-    """
-    Vehicles each refueller used, all and with km instead of hours.
-
-    ---
-
-    Vehículos que repostó cada repostador de `rows` (por pk, 0 = sin
-    usuario), con cuántos repostajes en cada uno: todos, y solo los de
-    km en vez de horas (S144, lista de Alberto). Mismo alcance que los
-    totales de la fila: los repostajes del filtro o, con "Todos los
-    activos", todo el histórico.
-    """
-    pks = [row["pk"] for row in rows]
-    if _all_active(request, VIEW_USERS):
-        supplies = GasoGesSupply.objects.all()
-    else:
-        supplies = _filtered_supplies(request)
-    chosen = Q(user_id__in=[pk for pk in pks if pk])
-    if 0 in pks:
-        chosen |= Q(user__isnull=True)
-    counts = supplies.filter(chosen).order_by().values(
-        "user_id", "vehicle_id").annotate(
-        n_all=Count("id"),
-        n_km=Count("id", filter=Q(
-            hours_issue=GasoGesSupply.HOURS_ISSUE_KM)))
-    counts = list(counts)
-    vehicles = GasoGesVehicle.objects.select_related("machine").in_bulk(
-        {line["vehicle_id"] for line in counts})
-    per_user = {}
-    for line in counts:
-        vehicle = vehicles.get(line["vehicle_id"])
-        if vehicle is None:
-            continue
-        per_user.setdefault(line["user_id"] or 0, []).append(
-            (_vehicle_code(vehicle), line["n_all"], line["n_km"]))
-
-    def joined(items, index):
-        items = sorted((item for item in items if item[index]),
-                       key=lambda item: (-item[index], item[0]))
-        return ", ".join("%s (%d)" % (item[0], item[index])
-                         for item in items)
-
-    return {pk: (joined(items, 1), joined(items, 2))
-            for pk, items in per_user.items()}
-
-
 def _local_range(request):
     """
     Aware [start, end) of the date filter, in local time.
@@ -1126,59 +1075,6 @@ class RefuelsVehicleAskView(CompanyUserRequiredMixin, View):
         })
 
 
-def _excel_response(book, prefix, request):
-    """
-    The workbook as an .xlsx download named with the date range.
-
-    ---
-
-    El libro como descarga .xlsx, con las fechas del filtro en el nombre.
-    """
-    buffer = io.BytesIO()
-    book.save(buffer)
-    date_from, date_to = _date_range(request)
-    response = HttpResponse(
-        buffer.getvalue(),
-        content_type=("application/vnd.openxmlformats-officedocument."
-                      "spreadsheetml.sheet"))
-    response["Content-Disposition"] = (
-        'attachment; filename="%s_%s_%s.xlsx"' % (
-            prefix, date_from.strftime("%Y%m%d"),
-            date_to.strftime("%Y%m%d")))
-    return response
-
-
-def _write_sheet(book, title, headers, lines, date_cols=()):
-    """
-    One sheet: bold frozen header, column widths, date formats.
-
-    ---
-
-    Una hoja: cabecera en negrita fija, anchos de columna y formato de
-    fecha en las columnas indicadas.
-    """
-    from openpyxl.styles import Font
-    from openpyxl.utils import get_column_letter
-
-    sheet = book.active
-    sheet.title = title
-    sheet.append([header for header, _width in headers])
-    for line in lines:
-        sheet.append(line)
-    for cell in sheet[1]:
-        cell.font = Font(bold=True)
-    sheet.freeze_panes = "A2"
-    for index, (_header, width) in enumerate(headers, start=1):
-        sheet.column_dimensions[get_column_letter(index)].width = width
-    for letter, number_format in date_cols:
-        for cell in sheet[letter][1:]:
-            cell.number_format = number_format
-
-
-def _float(value):
-    return float(value) if value is not None else None
-
-
 class RefuelsVehicleMeterView(CompanyUserRequiredMixin, View):
     """
     POST: mark the meter of the marked vehicles broken or repaired.
@@ -1215,128 +1111,3 @@ class RefuelsVehicleMeterView(CompanyUserRequiredMixin, View):
             "message": "%d vehículo(s): contador %s." % (
                 len(vehicles), "averiado" if broken else "reparado"),
         })
-
-
-class RefuelsExportView(CompanyUserRequiredMixin, View):
-    """
-    GET: Excel of the current view, marked rows or all the filtered.
-
-    ---
-
-    GET: Excel de la vista actual (repostajes, vehículos o
-    repostadores): de las filas marcadas o, si no hay ninguna, de todas
-    las del filtro (sin el tope de 1.000 de la pantalla).
-    """
-
-    def get(self, request):
-        from openpyxl import Workbook
-
-        view = _view(request)
-        wanted = [int(pk) for pk in request.GET.get(
-            "selected_ids", "").split(",") if pk.isdigit()]
-        book = Workbook()
-        if view == VIEW_VEHICLES:
-            return self._vehicles(request, book, wanted)
-        if view == VIEW_USERS:
-            return self._users(request, book, wanted)
-        if view == VIEW_QUESTIONS:
-            return self._questions(request, book, wanted)
-        supplies = (GasoGesSupply.objects.select_related(
-            "vehicle", "vehicle__machine", "user").filter(pk__in=wanted)
-            if wanted else _filtered_supplies(request))
-        lines = []
-        for supply in supplies.order_by("supplied_at", "id"):
-            local = timezone.localtime(supply.supplied_at)
-            vehicle = supply.vehicle
-            lines.append([
-                local.date(), local.time().replace(microsecond=0),
-                vehicle.machine.code if vehicle.machine else "",
-                vehicle.plate, vehicle.name,
-                supply.user.name if supply.user else "",
-                supply.meter_value, vehicle.get_unit_display(),
-                _float(supply.litres), _float(supply.price),
-                supply.get_status_display(), supply.status_note,
-                supply.get_hours_issue_display() if supply.hours_issue
-                else "",
-            ])
-        _write_sheet(book, "Repostajes", [
-            ("Fecha", 12), ("Hora", 8), ("Centro de gasto", 14),
-            ("Matrícula (GasoGes)", 16), ("Nombre (GasoGes)", 28),
-            ("Quién repostó", 32), ("KM tecleado", 12), ("Unidad", 11),
-            ("Litros", 9), ("Precio", 9), ("Estado", 24), ("Motivo", 48),
-            ("Horas sin anotar", 20),
-        ], lines, (("A", "DD/MM/YYYY"), ("B", "HH:MM")))
-        return _excel_response(book, "repostajes", request)
-
-    def _vehicles(self, request, book, wanted):
-        rows = _vehicle_rows(_vehicle_groups(
-            request, _DEFAULT_ORDER[VIEW_VEHICLES], wanted or None))
-        lines = [[
-            row["machine"].code if row["machine"] else "",
-            row["vehicle_label"], row["vehicle_name"], row["count"],
-            _float(row["litres"]),
-            row["last"].replace(tzinfo=None) if row["last"] else None,
-            row["last_km"], row["unit"], row["anomalies"],
-            row["hours_km"], row["hours_empty"], row["others"],
-            "Sí" if row["ask_driver"] else "No",
-            "Sí" if row["meter_broken"] else "No",
-        ] for row in rows]
-        _write_sheet(book, "Vehículos", [
-            ("Centro de gasto", 14), ("Vehículo (GasoGes)", 18),
-            ("Nombre (GasoGes)", 28), ("Repostajes", 11), ("Litros", 10),
-            ("Último repostaje", 17), ("Últimos KM (GasoGes)", 18),
-            ("Unidad", 11), ("Dudosos", 9), ("Km en vez de horas", 12),
-            ("Sin anotar", 10), ("Repostadores", 12),
-            ("Se pregunta al chófer", 18), ("Contador averiado", 16),
-        ], lines, (("F", "DD/MM/YYYY HH:MM"),))
-        return _excel_response(book, "repostajes_vehiculos", request)
-
-    def _users(self, request, book, wanted):
-        rows = _user_rows(_user_groups(
-            request, _DEFAULT_ORDER[VIEW_USERS], wanted or None))
-        codes = _user_vehicle_codes(request, rows)
-        lines = [[
-            row["name"], row["person_label"], row["count"],
-            _float(row["litres"]),
-            row["last"].replace(tzinfo=None) if row["last"] else None,
-            row["anomalies"], row["hours_count"], row["hours_km"],
-            codes.get(row["pk"], ("", ""))[1],
-            row["hours_empty"], row["others"],
-            codes.get(row["pk"], ("", ""))[0],
-            "Sí" if row["ask_driver"] else "No",
-        ] for row in rows]
-        _write_sheet(book, "Repostadores", [
-            ("Repostador (GasoGes)", 32), ("Ficha de trabajador", 36),
-            ("Repostajes", 11), ("Litros", 10), ("Último repostaje", 17),
-            ("Dudosos", 9), ("En vehículos de horas", 12),
-            ("Km en vez de horas", 12),
-            ("Km en vez de horas en (repostajes)", 40),
-            ("Sin anotar", 10), ("Vehículos", 10),
-            ("Vehículos repostados (repostajes)", 40),
-            ("Se le pregunta", 14),
-        ], lines, (("E", "DD/MM/YYYY HH:MM"),))
-        return _excel_response(book, "repostajes_repostadores", request)
-
-    def _questions(self, request, book, wanted):
-        questions = _filtered_questions(request)
-        if wanted:
-            questions = questions.filter(pk__in=wanted)
-        lines = []
-        for question in questions.order_by("sent_at", "id"):
-            row = _question_row(question)
-            lines.append([
-                row["sent"].replace(tzinfo=None), row["driver"],
-                row["machine"].code if row["machine"] else "",
-                row["vehicle_label"], row["kind"], row["value"],
-                row["unit"], row["reason"], row["status"], row["answer"],
-                row["answered"].replace(tzinfo=None) if row["answered"]
-                else None,
-            ])
-        _write_sheet(book, "Preguntas", [
-            ("Enviada", 17), ("Chófer", 34), ("Centro de gasto", 14),
-            ("Vehículo (GasoGes)", 18), ("Pregunta", 22),
-            ("Dato tecleado", 13), ("Unidad", 11),
-            ("Por qué se pregunta", 60), ("En qué quedó", 30),
-            ("Respuesta", 20), ("Respondida", 17),
-        ], lines, (("A", "DD/MM/YYYY HH:MM"), ("K", "DD/MM/YYYY HH:MM")))
-        return _excel_response(book, "repostajes_preguntas", request)

@@ -1003,6 +1003,92 @@ class RefuelQuestion(models.Model):
         return f"{self.get_kind_display()} -- {self.supply}"
 
 
+class RefuelExportTemplate(models.Model):
+    """
+    H30 (S144). Named column set for the Excel export of Refuels.
+
+    One per view of the Refuels tab (supplies, vehicles, refuellers,
+    WhatsApp questions), same idea as the Personal export templates
+    (document_explorer.PersonalExportTemplate): personal ones per user,
+    one default per user and view, plus company-wide global ones that
+    only ADMIN creates or edits. Column keys live in
+    panel/views_refuels_export.py.
+
+    ---
+
+    H30 (S144). Juego de columnas con nombre para exportar a Excel
+    Repostajes, una por vista de la pestaña (repostajes, vehículos,
+    repostadores, preguntas). Miguel Ángel: "da la opción de elegir las
+    columnas que queremos que salgan. Incluso de poder usar plantillas
+    como hacemos en otras vistas". Mismo planteamiento que las
+    plantillas de Personal: propias (una por defecto por usuario y
+    vista) y globales de empresa, que solo crea o edita un ADMIN.
+    """
+
+    VIEW_SUPPLIES = "supplies"
+    VIEW_VEHICLES = "vehicles"
+    VIEW_USERS = "users"
+    VIEW_QUESTIONS = "questions"
+    VIEW_CHOICES = [
+        (VIEW_SUPPLIES, _("Repostajes")),
+        (VIEW_VEHICLES, _("Vehículos")),
+        (VIEW_USERS, _("Repostadores")),
+        (VIEW_QUESTIONS, _("Preguntas por WhatsApp")),
+    ]
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="refuel_export_templates",
+        verbose_name=_("Empresa"),
+    )
+    company_user = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="refuel_export_templates",
+        verbose_name=_("Usuario"),
+        help_text=_("Dueño de la plantilla personal; vacío en las globales."),
+    )
+    view = models.CharField(
+        _("Vista"), max_length=10, choices=VIEW_CHOICES,
+        default=VIEW_SUPPLIES,
+    )
+    is_global = models.BooleanField(
+        _("Plantilla global"), default=False,
+        help_text=_("Visible para todos; solo un ADMIN la crea o edita."),
+    )
+    name = models.CharField(_("Nombre"), max_length=100)
+    is_default = models.BooleanField(
+        _("Por defecto"), default=False,
+        help_text=_("La que sale elegida al abrir el modal (una por "
+                    "usuario y vista)."),
+    )
+    columns = models.JSONField(
+        _("Columnas"), default=list,
+        help_text=_("Claves de columna, en el orden del Excel."),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _("Plantilla de exportación de repostajes")
+        verbose_name_plural = _("Plantillas de exportación de repostajes")
+        ordering = ["view", "-is_global", "-is_default", "name"]
+
+    def __str__(self) -> str:
+        return self.name
+
+    def save(self, *args, **kwargs):
+        if self.is_default and not self.is_global and self.company_user_id:
+            RefuelExportTemplate.objects.filter(
+                company_user_id=self.company_user_id, view=self.view,
+                is_default=True,
+            ).exclude(pk=self.pk).update(is_default=False)
+        super().save(*args, **kwargs)
+
+
 # ---------------------------------------------------------------------------
 # MaintenanceLog — one record per intervention / un registro por intervención
 # ---------------------------------------------------------------------------

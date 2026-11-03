@@ -31,12 +31,17 @@ from panel.views_circulars_h31 import (
     PersonalDocutenExportView,
 )
 from panel.views_refuels import (
-    RefuelsExportView,
     RefuelsResultsView,
     RefuelsTabView,
     RefuelsVehicleAskView,
     RefuelsVehicleMeterView,
     RefuelsVehicleUnitView,
+)
+from panel.views_refuels_export import (
+    RefuelsExportTemplateDeleteView,
+    RefuelsExportTemplateListView,
+    RefuelsExportTemplateSaveView,
+    RefuelsExportView,
 )
 from panel.views_service_tab import (
     ServiceBulkPlanView,
@@ -1210,6 +1215,23 @@ urlpatterns = [
         "documentacion/repostajes/exportar/",
         RefuelsExportView.as_view(),
         name="refuels_export",
+    ),
+    # H30 (S144): plantillas de la exportación a Excel de Repostajes --
+    # panel/views_refuels_export.py.
+    path(
+        "documentacion/repostajes/exportar/plantillas/",
+        RefuelsExportTemplateListView.as_view(),
+        name="refuels_export_templates",
+    ),
+    path(
+        "documentacion/repostajes/exportar/plantillas/guardar/",
+        RefuelsExportTemplateSaveView.as_view(),
+        name="refuels_export_template_save",
+    ),
+    path(
+        "documentacion/repostajes/exportar/plantillas/<int:pk>/borrar/",
+        RefuelsExportTemplateDeleteView.as_view(),
+        name="refuels_export_template_delete",
     ),
     path(
         "documentacion/avisos/revisiones/antelacion/",

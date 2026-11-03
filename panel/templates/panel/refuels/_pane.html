@@ -53,7 +53,7 @@ repostado o no, y las fechas no cuentan (se desactivan).
                             <div class="dropdown">
                                 <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" id="rfl-family-button"
                                         data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">Todas</button>
-                                <div class="dropdown-menu p-2 small" style="max-height: 60vh; overflow-y: auto;">
+                                <div class="dropdown-menu p-2 small rfl-family-menu">
                                     <div class="d-flex gap-2 mb-1">
                                         <a href="#" class="rfl-family-all" data-check="1">Todas</a>
                                         <a href="#" class="rfl-family-all" data-check="0">Ninguna</a>
@@ -145,7 +145,8 @@ repostado o no, y las fechas no cuentan (se desactivan).
                     <div class="col-6 border-end pe-2">
                         <div class="small text-muted fw-bold">Exportar</div>
                         <button type="button" class="btn btn-sm btn-outline-success" id="rfl-export"
-                                title="De los marcados o, si no hay ninguno, de todos los del filtro.">
+                                data-bs-toggle="modal" data-bs-target="#refuelsExportModal"
+                                title="De los marcados o, si no hay ninguno, de todos los del filtro, con las columnas de la plantilla que elijas.">
                             <i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel
                         </button>
                     </div>
@@ -229,6 +230,7 @@ repostado o no, y las fechas no cuentan (se desactivan).
 </div>
 
 <style>
+.rfl-family-menu { max-height: 60vh; overflow-y: auto; }
 #rfl-results-scroll table td,
 #rfl-results-scroll table th { white-space: nowrap; }
 #rfl-results-scroll table td.rfl-wrap { white-space: normal; min-width: 22rem; }
@@ -249,7 +251,6 @@ repostado o no, y las fechas no cuentan (se desactivan).
     const results = document.getElementById("rfl-results");
     const filters = document.getElementById("rfl-filters");
     const SCREEN_KEY = "{{ screen_key|escapejs }}";
-    const EXPORT_URL = "{% url 'panel:refuels_export' %}";
     const UNIT_URL = "{% url 'panel:refuels_vehicle_unit' %}";
     const ASK_URL = "{% url 'panel:refuels_vehicle_ask' %}";
     const METER_URL = "{% url 'panel:refuels_vehicle_meter' %}";
@@ -477,14 +478,20 @@ repostado o no, y las fechas no cuentan (se desactivan).
         refreshFromFragment();
     });
 
-    document.getElementById("rfl-export").addEventListener("click", function () {
-        const params = new URLSearchParams();
-        new FormData(filters).forEach(function (value, key) {
-            if (key !== "only_selected" && key !== "selected_ids") params.append(key, value);
-        });
-        params.set("selected_ids", Array.from(current().keys()).join(","));
-        window.location.href = EXPORT_URL + "?" + params.toString();
-    });
+    // S144: el botón abre el modal de plantillas (_export_modal.html),
+    // que pide aquí la vista, los filtros y la selección.
+    window.__rflExport = {
+        view: function () { return currentView; },
+        marked: function () { return current().size; },
+        params: function () {
+            const params = new URLSearchParams();
+            new FormData(filters).forEach(function (value, key) {
+                if (key !== "only_selected" && key !== "selected_ids") params.append(key, value);
+            });
+            params.set("selected_ids", Array.from(current().keys()).join(","));
+            return params;
+        },
+    };
 
     function csrfToken() {
         const meta = document.querySelector('meta[name="csrf-token"]');
@@ -546,3 +553,4 @@ repostado o no, y las fechas no cuentan (se desactivan).
     refreshFromFragment();
 }());
 </script>
+{% include "panel/refuels/_export_modal.html" %}
