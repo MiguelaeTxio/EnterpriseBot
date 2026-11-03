@@ -84,6 +84,9 @@ MAX_COMPARE_MINUTES = 180
 REST_HOURS = 10
 REST_NOTE = ("Día flexible: menos de %d h de descanso desde la jornada "
              "anterior; no se compara con el horario" % REST_HOURS)
+# S144 (Miguel Ángel): el día flexible sí debe llegar a las 8 horas; si
+# no, incidencia "para revisión si fuese necesaria".
+FLEX_MIN_HOURS = 8
 NO_OUT = "Entrada sin salida"
 NO_IN = "Salida sin entrada"
 OFF_SCHEDULE = "Fuera de horario"
@@ -153,6 +156,9 @@ class Shift:
     # S144: día flexible tras una jornada con poco descanso (REST_HOURS):
     # no se compara con el horario.
     after_short_rest: bool = False
+    # S144: incidencia de revisión del día flexible (menos de
+    # FLEX_MIN_HOURS en todo el día), en la última jornada de ese día.
+    review: str = ""
 
     @property
     def _raw_early(self):
@@ -335,6 +341,8 @@ class Shift:
                 self.early_minutes, hhmm(self.clock_out),
                 self.expected_end.strftime("%H:%M"),
             ))
+        if self.review:
+            found.append(self.review)
         return found
 
     @property
@@ -732,6 +740,29 @@ def _deduct_parte_lunch(company, user_id, shifts):
         shift.lunch_seconds = max(int(overlap), 0)
 
 
+def _review_flexible_days(shifts):
+    """
+    Flag a finished flexible day with less than FLEX_MIN_HOURS worked.
+    ---
+    S144 (Miguel Ángel): el día flexible (tras poco descanso) no se
+    compara con el horario, pero sí debe sumar FLEX_MIN_HOURS; si no,
+    incidencia de revisión en la última jornada de ese día. Solo los
+    días ya terminados (antes de hoy), para no marcar uno en curso.
+    """
+    today = timezone.localdate()
+    by_day = {}
+    for shift in shifts:
+        by_day.setdefault(shift.day, []).append(shift)
+    for day, same in by_day.items():
+        if day >= today or not any(s.after_short_rest for s in same):
+            continue
+        worked = sum(s.seconds for s in same)
+        if worked < FLEX_MIN_HOURS * 3600:
+            same[-1].review = (
+                "Revisar: día flexible con %s trabajadas (menos de %d h)"
+                % (format_duration(worked), FLEX_MIN_HOURS))
+
+
 def reports_by_user(company, company_user_ids, date_from, date_to):
     """
     {company_user_id: PersonReport} for the shifts whose day falls in
@@ -795,6 +826,7 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
                     ends, shift.clock_out.pressed_at,
                 )
         _deduct_parte_lunch(company, user_id, report.shifts)
+        _review_flexible_days(report.shifts)
         report.events = [
             e for e in user_events if start <= e.pressed_at < end
         ]
