@@ -450,7 +450,7 @@ recordatorios, secciones que fichan y permiso de envío).
         const sw = evt.target.closest(".clk-section-types-switch");
         if (!sw) return;
         const text = sw.checked
-            ? "¿" + sw.dataset.name + " ficha por tipos (fichaje normal, desplazamiento, presencia...)?"
+            ? "¿" + sw.dataset.name + " ficha por tipos (trabajo efectivo, presencia, desplazamiento, varios)?"
             : "¿" + sw.dataset.name + " vuelve al botón único de fichar?";
         if (!confirm(text)) { sw.checked = !sw.checked; return; }
         postSetting(sw.dataset.url, {section_id: sw.dataset.section, uses_types: sw.checked ? "1" : "0"}, false);

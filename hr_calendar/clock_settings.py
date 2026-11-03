@@ -194,9 +194,9 @@ def active_types(company):
 
 def default_type(company):
     """
-    The default clock type ("Fichaje normal"), or None.
+    The default clock type ("Trabajo efectivo" since S144), or None.
     ---
-    El tipo por defecto ("Fichaje normal"), o None.
+    El tipo por defecto ("Trabajo efectivo" desde S144), o None.
     """
     return ClockType.objects.filter(
         company=company, is_default=True, is_active=True,

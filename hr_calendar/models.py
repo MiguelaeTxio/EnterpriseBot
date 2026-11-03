@@ -1391,8 +1391,9 @@ class SectionClockSetting(models.Model):
         default=True,
         verbose_name="Ficha con la plataforma",
     )
-    # S141: Grúas y Asistencia fichan por tipos (normal, desplazamiento,
-    # presencia, trabajo efectivo, varios), como en Sesame.
+    # S141: Grúas y Asistencia fichan por tipos (trabajo efectivo,
+    # desplazamiento, presencia, varios), como en Sesame. S144: sin
+    # "Fichaje normal".
     uses_types = models.BooleanField(
         default=False,
         verbose_name="Ficha por tipos",
@@ -1495,7 +1496,8 @@ class ClockType(models.Model):
     desactivar). `counts_as_work`: si su tiempo cuenta como horas de
     jornada (Miguel Ángel: presencia y desplazamiento se ven aparte y no
     cuentan). `is_default`: el que se usa cuando una entrada llega sin
-    tipo ("Fichaje normal").
+    tipo ("Trabajo efectivo" desde S144: el "Fichaje normal" se retiró
+    porque llevaba a confusión).
     """
 
     company = models.ForeignKey(
