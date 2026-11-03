@@ -6,7 +6,8 @@ gráfica"). Siempre los cuatro años de conservación del registro,
 completos aunque no haya fichajes ("que se vea la vista exactamente
 igual tanto si el trabajador lleva trabajando ya años como si es una
 persona que llega nueva"): el año actual arriba y, dentro de cada año,
-de enero a diciembre. Casillas de alto fijo ("no veo bien que adaptemos
+de enero a diciembre, en una parrilla de 4 × 12 (S144: "horizontal a
+lo largo de un año, vertical a lo largo de los años"). Casillas de alto fijo ("no veo bien que adaptemos
 el alto del casillero"): azul correcta, rojo con incidencias, gris
 anulada, blanco sin fichajes; hoy, con borde grueso azul oscuro. Una
 línea de horas por día (primera entrada–última salida) y el total; el
@@ -14,22 +15,23 @@ detalle de cada jornada, al pasar por encima. En la página del
 trabajador, el clic en un día lleva a su jornada en la lista
 (data-day). Datos de panel/clock_calendar.py.
 {% endcomment %}
-<div class="d-flex flex-wrap align-items-center gap-3 small mb-2">
+{# Parrilla de 4 × 12: una fila por año (el actual arriba), los doce meses en línea; scroll horizontal a lo largo del año, vertical entre años. #}
+<div class="cw-cal-grid">
+<div class="cw-cal-legend d-flex flex-wrap align-items-center gap-3 small mb-2">
     <span><span class="cw-cal-swatch cw-cal-ok"></span>Correcta</span>
     <span><span class="cw-cal-swatch cw-cal-issues"></span>Con incidencias</span>
     <span><span class="cw-cal-swatch cw-cal-cancelled"></span>Anulada</span>
     <span><span class="cw-cal-swatch cw-cal-empty"></span>Sin fichajes</span>
     <span><span class="cw-cal-swatch cw-cal-today"></span>Hoy</span>
-    <span class="text-muted">Siempre los cuatro años que se conservan los fichajes (art. 34.9 ET), sean cuales sean las fechas de arriba.</span>
+    <span class="text-muted">Siempre los cuatro años de conservación (art. 34.9 ET), sin las fechas de arriba.</span>
 </div>
 {% for year in calendar.years %}
-<div class="d-flex justify-content-between align-items-baseline border-bottom mb-2{% if not forloop.first %} mt-4{% endif %}">
-    <div class="fw-bold">{{ year.year }}</div>
-    <div class="small text-muted">Total del año {{ year.total }} h</div>
+<div class="cw-cal-yearhead border-bottom mb-2{% if not forloop.first %} mt-4{% endif %}">
+    <span class="cw-cal-yearlabel"><span class="fw-bold">{{ year.year }}</span><span class="small text-muted ms-3">Total del año {{ year.total }} h</span></span>
 </div>
-<div class="row g-3">
+<div class="cw-cal-year">
     {% for month in year.months %}
-    <div class="col-lg-6">
+    <div class="cw-cal-month">
         <div class="d-flex justify-content-between align-items-baseline">
             <div class="fw-bold small">{{ month.label }}</div>
             <div class="small text-muted">Total {{ month.total }} h</div>
@@ -64,7 +66,17 @@ trabajador, el clic en un día lleva a su jornada en la lista
     {% endfor %}
 </div>
 {% endfor %}
+</div>
 <style>
+/* En la ficha, la parrilla lleva sus propios scrolls; en la página del
+   trabajador, los del listado (#cw-results-scroll). */
+.cw-cal-grid { overflow: auto; max-height: 75vh; padding-bottom: .5rem; }
+#cw-results .cw-cal-grid { overflow: visible; max-height: none; width: max-content; }
+/* La leyenda y el año se quedan a la izquierda al desplazarse por los meses. */
+.cw-cal-legend { position: sticky; left: 0; width: fit-content; max-width: 100vw; }
+.cw-cal-year { display: flex; flex-wrap: nowrap; gap: 1rem; width: max-content; }
+.cw-cal-month { flex: 0 0 30rem; width: 30rem; }
+.cw-cal-yearlabel { position: sticky; left: 0; display: inline-block; }
 .cw-cal { table-layout: fixed; font-size: .72rem; }
 .cw-cal thead th { position: static !important; }
 /* Sin las bandas alternas de panel.css: aquí el gris significa "anulada". */

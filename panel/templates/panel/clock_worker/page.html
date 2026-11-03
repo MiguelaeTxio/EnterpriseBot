@@ -520,13 +520,26 @@ screen_key "clock_worker"); la selección, por trabajador.
         setTimeout(function () { row.classList.remove("cw-flash"); }, 2500);
     }
 
+    // Calendario: al abrirlo, el mes actual a la vista (scroll horizontal).
+    function showTodayInCalendar() {
+        const scroller = document.getElementById("cw-results-scroll");
+        const today = results.querySelector("td.cw-cal-today");
+        if (!today) return;
+        const month = today.closest(".cw-cal-month").getBoundingClientRect();
+        const box = scroller.getBoundingClientRect();
+        scroller.scrollLeft += month.left - box.left - (box.width - month.width) / 2;
+    }
+
     document.body.addEventListener("htmx:afterSwap", function (evt) {
         if (evt.detail.target && evt.detail.target.id === "cw-results") {
             refreshFromFragment();
             goToPendingDay();
+            showTodayInCalendar();
         }
     });
     refreshFromFragment();
+    // Al cargar la página, cuando el panel ya tiene su alto definitivo.
+    window.addEventListener("load", function () { setTimeout(showTodayInCalendar, 50); });
 }());
 </script>
 {% endblock %}
