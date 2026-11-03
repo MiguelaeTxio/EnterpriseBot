@@ -75,6 +75,27 @@ para un momento distinto.
                 {% endfor %}
             </select>
         </div>
+        {# H24 (S144): sección vigente hoy y horario que le toca, como en la pestaña Horarios. #}
+        <div>
+            <div class="fw-semibold mb-1">Sección</div>
+            <select name="section" class="form-select form-select-sm personal-filter-checkbox" id="filterSection" autocomplete="off">
+                <option value=""{% if not section_filter %} selected{% endif %}>Todas</option>
+                <option value="{{ no_section }}"{% if section_filter == no_section %} selected{% endif %}>Sin sección</option>
+                {% for section in ws_sections %}
+                <option value="{{ section.pk }}"{% if section_filter == section.pk|stringformat:"d" %} selected{% endif %}>{{ section.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <div class="fw-semibold mb-1">Horario</div>
+            <select name="schedule" class="form-select form-select-sm personal-filter-checkbox" id="filterSchedule" autocomplete="off">
+                <option value=""{% if not schedule_filter %} selected{% endif %}>Todos</option>
+                <option value="{{ no_schedule }}"{% if schedule_filter == no_schedule %} selected{% endif %}>Sin horario</option>
+                {% for schedule in ws_schedules %}
+                <option value="{{ schedule.pk }}"{% if schedule_filter == schedule.pk|stringformat:"d" %} selected{% endif %}>{{ schedule.label }} ({{ schedule.get_season_display|lower }})</option>
+                {% endfor %}
+            </select>
+        </div>
         {% comment %}
         H24 (S144): filtro "Alta en el fichaje" -- casillas con
         semántica literal (directriz 4.24); el JS de abajo deja en el

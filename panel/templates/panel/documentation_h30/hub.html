@@ -618,6 +618,9 @@ la plantilla de algún grupo marcado se abre este modal para elegirla.
             filters[hit.tab].requirement = parsed.searchParams.get('requirement') || '';
             // H24 (S144): filtro "Alta en el fichaje".
             filters[hit.tab].onboarding = parsed.searchParams.get('onboarding') || '';
+            // H24 (S144): filtros "Sección" y "Horario".
+            filters[hit.tab].section = parsed.searchParams.get('section') || '';
+            filters[hit.tab].schedule = parsed.searchParams.get('schedule') || '';
         }
         lastFilters[hit.tab] = filters[hit.tab];
         saveState({filters: filters});

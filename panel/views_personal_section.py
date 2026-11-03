@@ -95,3 +95,84 @@ class PersonalSectionAssignView(SupervisorAccessMixin, View):
         return render(request, TEMPLATE, section_block_context(
             request, person, "Sección %s desde el %s." % (
                 section.name, valid_from.strftime("%d/%m/%Y"))))
+
+
+class PersonalMassScheduleView(SupervisorAccessMixin, View):
+    """
+    POST selected, schedule_id: own schedule of the marked workers.
+    ---
+    POST selected (pks), schedule_id: pone a los marcados del listado de
+    Personal un horario propio o se lo quita (schedule_id vacío: les
+    toca el de su sección o el de por defecto). S144 (Miguel Ángel):
+    "copiamos el pipeline de horarios [...] y lo replicamos en la
+    pestaña de personal". La misma acción que la pestaña Horarios
+    (hr_calendar.clock_settings.set_worker_schedule). Responde JSON
+    {message, error}.
+    """
+
+    def post(self, request):
+        from django.http import JsonResponse
+
+        from hr_calendar.clock_settings import set_worker_schedule
+        from ivr_config.models import WorkdaySchedule
+        from panel.views_worker_schedules import _marked_people
+
+        company = request.user.company_user.company
+        people = _marked_people(request, company)
+        if not people:
+            return JsonResponse({"error": "Marca algún trabajador."})
+        raw = request.POST.get("schedule_id", "")
+        schedule = None
+        if raw:
+            schedule = WorkdaySchedule.objects.filter(
+                pk=raw if raw.isdigit() else 0, company=company,
+            ).first()
+            if schedule is None:
+                return JsonResponse({"error": "No existe ese horario."})
+        count = set_worker_schedule(people, schedule,
+                                    request.user.company_user)
+        if schedule is not None:
+            message = "Horario %s puesto a %d trabajador(es)." % (
+                schedule.label, count)
+        else:
+            message = ("Horario propio quitado a %d trabajador(es): les "
+                       "toca el de su sección o el de por defecto."
+                       % count)
+        return JsonResponse({"message": message})
+
+
+class PersonalMassSectionView(SupervisorAccessMixin, View):
+    """
+    POST selected, section_id, valid_from: section of the marked.
+    ---
+    POST selected, section_id, valid_from (hoy si no viene): pone a los
+    marcados del listado de Personal en esa sección desde esa fecha,
+    conservando el historial (la misma acción que Horarios y Vacaciones,
+    hr_calendar.balance.assign_section). Responde JSON {message, error}.
+    """
+
+    def post(self, request):
+        from django.http import JsonResponse
+
+        from hr_calendar.balance import assign_section
+        from panel.views_vacation_balance import _parse_date
+        from panel.views_worker_schedules import _marked_people
+
+        company = request.user.company_user.company
+        people = _marked_people(request, company)
+        raw = request.POST.get("section_id", "")
+        section = Section.objects.filter(
+            pk=raw if raw.isdigit() else 0, company=company,
+        ).first()
+        valid_from = (_parse_date(request.POST.get("valid_from"))
+                      or timezone.localdate())
+        if section is None or not people:
+            return JsonResponse(
+                {"error": "Elige la sección y marca algún trabajador."})
+        assign_section(people, section, valid_from,
+                       request.user.company_user)
+        return JsonResponse({"message": "Sección %s desde el %s para %d "
+                             "trabajador(es)." % (
+                                 section.name,
+                                 valid_from.strftime("%d/%m/%Y"),
+                                 len(people))})

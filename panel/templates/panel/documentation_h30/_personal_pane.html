@@ -237,6 +237,50 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                         {% endif %}
                     </div>
                 </div>
+                {% if can_create_accounts %}
+                {% comment %}
+                H24 (S144), Miguel Ángel: "copiamos el pipeline de horarios
+                [...] y lo replicamos en la pestaña de personal". Las mismas
+                acciones que la pestaña Horarios sobre los marcados: horario
+                propio (poner o quitar) y sección desde una fecha.
+                {% endcomment %}
+                <div class="col-12 border-top pt-1 mt-1">
+                    <div class="small text-muted fw-bold">Horario de los marcados</div>
+                    <div class="d-flex flex-wrap gap-1 align-items-center">
+                        <select class="form-select form-select-sm ppane-select-auto" id="person-mass-schedule" aria-label="Horario">
+                            {% for schedule in ws_schedules %}
+                            <option value="{{ schedule.pk }}">{{ schedule.label }} ({{ schedule.get_season_display|lower }}){% if schedule.varies_by_day %} · según el día{% endif %}</option>
+                            {% empty %}
+                            <option value="">No hay horarios</option>
+                            {% endfor %}
+                        </select>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="person-mass-schedule-assign" disabled
+                                title="Pone el horario elegido como horario propio de los marcados.">
+                            <i class="bi bi-clock me-1"></i>Poner horario
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="person-mass-schedule-clear" disabled
+                                title="Quita el horario propio a los marcados: les toca el de su sección o el de por defecto de la empresa.">
+                            Quitar horario propio
+                        </button>
+                        <a target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary" href="{% url 'panel:workday_schedule' %}"
+                           title="Crear, cambiar o borrar horarios (también los distintos según el día).">
+                            <i class="bi bi-pencil-square me-1"></i>Gestionar los horarios
+                        </a>
+                    </div>
+                    <div class="small text-muted fw-bold mt-1">Sección de los marcados</div>
+                    <div class="d-flex flex-wrap gap-1 align-items-center">
+                        <select class="form-select form-select-sm ppane-select-auto" id="person-mass-section" aria-label="Sección">
+                            {% for section in ws_sections %}<option value="{{ section.pk }}">{{ section.name }}</option>{% endfor %}
+                        </select>
+                        <input type="date" class="form-control form-control-sm w-auto" id="person-mass-section-from" value="{% now 'Y-m-d' %}"
+                               aria-label="Desde" title="Desde qué día está en esa sección">
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="person-mass-section-assign" disabled
+                                title="Pone a los marcados en esa sección desde ese día (lo mismo que en Horarios y Vacaciones; lo anterior se conserva).">
+                            <i class="bi bi-diagram-3 me-1"></i>Poner sección
+                        </button>
+                    </div>
+                </div>
+                {% endif %}
                 <div class="col-12 border-top pt-1 mt-1">
                     {% comment %}
                     H35 (S105): "Generar dosieres" para varios
@@ -474,6 +518,11 @@ las filas de debajo se desplacen de verdad.
         if (accessBtn) accessBtn.disabled = selection.size === 0;
         const resendBtn = document.getElementById('person-mass-access-resend');
         if (resendBtn) resendBtn.disabled = selection.size === 0;
+        // H24 (S144): horario y sección de los marcados.
+        ['person-mass-schedule-assign', 'person-mass-schedule-clear', 'person-mass-section-assign'].forEach((id) => {
+            const btn = document.getElementById(id);
+            if (btn) btn.disabled = selection.size === 0;
+        });
     }
 
     // H31 (S113), Miguel Ángel: "el visor de seleccionados [...]
@@ -1129,6 +1178,99 @@ las filas de debajo se desplacen de verdad.
             }).finally(() => { resendBtn.disabled = selection.size === 0; });
         });
     }
+
+    // H24 (S144): horario y sección de los marcados, lo mismo que la
+    // pestaña Horarios; después se repinta el listado (columnas Sección
+    // y Horario).
+    function postScheduleAction(url, fields, question) {
+        if (selection.size === 0) return;
+        if (!confirm(question + ' (' + selection.size + ' trabajador(es)). ¿Seguro?')) return;
+        const formData = new FormData();
+        selection.forEach((pk) => formData.append('selected', pk));
+        Object.keys(fields).forEach((key) => formData.append(key, fields[key]));
+        resultEl.innerHTML = '<div class="text-muted">Guardando…</div>';
+        fetch(url, {
+            method: 'POST',
+            headers: {'X-CSRFToken': getCookie('csrftoken')},
+            body: formData,
+        }).then((r) => r.json()).then((data) => {
+            const div = document.createElement('div');
+            div.className = 'alert py-1 px-2 mb-0 ' + (data.error ? 'alert-danger' : 'alert-success');
+            div.textContent = data.error || data.message;
+            resultEl.innerHTML = '';
+            resultEl.appendChild(div);
+            const form = document.getElementById('personal-search-form');
+            if (form && !data.error) htmx.trigger(form, 'submit');
+        }).catch(() => {
+            resultEl.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red: no se ha guardado nada.</div>';
+        });
+    }
+    const scheduleAssignBtn = document.getElementById('person-mass-schedule-assign');
+    if (scheduleAssignBtn) {
+        const scheduleUrl = "{% url 'panel:documentation_personal_mass_schedule' %}";
+        scheduleAssignBtn.addEventListener('click', function () {
+            const select = document.getElementById('person-mass-schedule');
+            if (!select.value) {
+                resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">Primero crea algún horario en Gestionar los horarios.</div>';
+                return;
+            }
+            postScheduleAction(scheduleUrl, {schedule_id: select.value},
+                'Poner el horario ' + select.options[select.selectedIndex].textContent.trim());
+        });
+        document.getElementById('person-mass-schedule-clear').addEventListener('click', function () {
+            postScheduleAction(scheduleUrl, {schedule_id: ''}, 'Quitar el horario propio');
+        });
+        document.getElementById('person-mass-section-assign').addEventListener('click', function () {
+            const select = document.getElementById('person-mass-section');
+            const from = document.getElementById('person-mass-section-from').value;
+            if (!select.value) {
+                resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">No hay secciones.</div>';
+                return;
+            }
+            postScheduleAction("{% url 'panel:documentation_personal_mass_section' %}",
+                {section_id: select.value, valid_from: from},
+                'Poner la sección ' + select.options[select.selectedIndex].textContent.trim() + ' desde ' + from);
+        });
+    }
+    // Como en Horarios: un horario recién creado en "Gestionar los
+    // horarios" (otra pestaña) aparece en los desplegables al volver.
+    function refreshPersonSchedules() {
+        const assignSel = document.getElementById('person-mass-schedule');
+        const filterSel = document.getElementById('filterSchedule');
+        if (!assignSel && !filterSel) return;
+        fetch("{% url 'panel:worker_schedules_list' %}", {credentials: 'same-origin'})
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => {
+                if (!data) return;
+                if (assignSel) {
+                    const keep = assignSel.value;
+                    assignSel.innerHTML = '';
+                    data.schedules.forEach((sch) => {
+                        const o = document.createElement('option');
+                        o.value = sch.pk;
+                        o.textContent = sch.label + (sch.varies ? ' · según el día' : '');
+                        assignSel.appendChild(o);
+                    });
+                    if (!data.schedules.length) {
+                        const o = document.createElement('option');
+                        o.value = ''; o.textContent = 'No hay horarios';
+                        assignSel.appendChild(o);
+                    }
+                    if (Array.from(assignSel.options).some((o) => o.value === keep)) assignSel.value = keep;
+                }
+                if (filterSel) {
+                    const keep = filterSel.value;
+                    Array.from(filterSel.options).slice(2).forEach((o) => o.remove());
+                    data.schedules.forEach((sch) => {
+                        const o = document.createElement('option');
+                        o.value = sch.pk; o.textContent = sch.label;
+                        filterSel.appendChild(o);
+                    });
+                    if (Array.from(filterSel.options).some((o) => o.value === keep)) filterSel.value = keep;
+                }
+            }).catch(() => { /* sin conexión: se queda la lista que había */ });
+    }
+    window.addEventListener('focus', refreshPersonSchedules);
 
     // H24 (S141): circular por WhatsApp a los marcados.
     document.getElementById('person-mass-notify-whatsapp').addEventListener('click', function () {

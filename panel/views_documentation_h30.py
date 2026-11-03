@@ -645,6 +645,11 @@ def _build_personal_tab_querystring(filters):
     requirement_value = personal_filters.get("requirement", "")
     if isinstance(requirement_value, str) and requirement_value:
         params.append(("requirement", requirement_value))
+    # H24 (S144): "Alta en el fichaje", "Sección" y "Horario".
+    for key in ("onboarding", "section", "schedule"):
+        value = personal_filters.get(key, "")
+        if isinstance(value, str) and value:
+            params.append((key, value))
 
     return urlencode(params)
 
@@ -1023,7 +1028,9 @@ def _attach_person_avatars(persons, person_ct):
 
 
 def _person_list_page(request):
-    qs = PersonIdentity.objects.select_related("job_position")
+    qs = PersonIdentity.objects.select_related(
+        "job_position", "company_user__workday_schedule",
+    )
     # H31 (S113). Miguel Ángel: "si tuviésemos una casilla que dijese
     # mostrar [...] que mostrase en el listado de trabajadores
     # justamente los trabajadores que están en el grupo de reparto".
@@ -1057,6 +1064,39 @@ def _person_list_page(request):
             p.pk for p in filter_by_onboarding(
                 qs.select_related("company_user"), onboarding_codes)
         ])
+    # H24 (S144): filtros "Sección" (la vigente hoy) y "Horario" (el que
+    # le toca), los mismos que la pestaña Horarios (Miguel Ángel:
+    # "copiamos el pipeline de horarios [...] en la pestaña de
+    # personal"). Se calculan en Python, como en Horarios.
+    from panel.views_worker_schedules import (
+        NO_SCHEDULE,
+        NO_SECTION,
+        _rows as schedule_rows,
+        _schedules,
+        _sections,
+    )
+
+    company = request.user.company_user.company
+    section_raw = request.GET.get("section", "")
+    schedule_raw = request.GET.get("schedule", "")
+    if (section_raw or schedule_raw) and not only_selected:
+        wanted = []
+        for row in schedule_rows(company, list(qs.select_related(
+                "company_user__workday_schedule"))):
+            if section_raw == NO_SECTION and row.state.section is not None:
+                continue
+            if section_raw.isdigit() and (
+                    row.state.section is None
+                    or row.state.section.pk != int(section_raw)):
+                continue
+            if schedule_raw == NO_SCHEDULE and row.schedule is not None:
+                continue
+            if schedule_raw.isdigit() and (
+                    row.schedule is None
+                    or row.schedule.pk != int(schedule_raw)):
+                continue
+            wanted.append(row.person.pk)
+        qs = qs.filter(pk__in=wanted)
     search = request.GET.get("q", "").strip()
     if search:
         # S110: buscar "ALVAREZ VIEIRA" no encontraba a nadie -- el
@@ -1132,13 +1172,17 @@ def _person_list_page(request):
     # H24 (S144): "Alta en el fichaje" se ordena en Python (no es un
     # campo de BD); la base, por apellidos y nombre.
     sort_columns.append(("onboarding", "Alta en el fichaje"))
-    if request.GET.get("sort") == "onboarding":
+    # H24 (S144): sección y horario, también en Python.
+    python_sorts = ("onboarding", "section", "schedule")
+    sort_columns += [("section", "Sección"), ("schedule", "Horario")]
+    if request.GET.get("sort") in python_sorts:
         qs = qs.order_by("first_surname", "second_surname", "given_name")
-        sort_key = "onboarding"
+        sort_key = request.GET.get("sort")
         sort_dir = "desc" if request.GET.get("dir") == "desc" else "asc"
     else:
         qs, sort_key, sort_dir = _apply_sort(
-            request, qs, [c for c in sort_columns if c[0] != "onboarding"],
+            request, qs,
+            [c for c in sort_columns if c[0] not in python_sorts],
             "first_surname",
         )
     if sort_key == "job_position__name":
@@ -1167,6 +1211,9 @@ def _person_list_page(request):
     states = onboarding_states(page.object_list)
     for person in page.object_list:
         person.onboarding = states[person.pk]
+    # H24 (S144): sección vigente y horario que le toca (como Horarios).
+    for row in schedule_rows(company, page.object_list):
+        row.person.ws_row = row
     if sort_key == "onboarding":
         page.object_list = sorted(
             page.object_list,
@@ -1174,6 +1221,21 @@ def _person_list_page(request):
                            p.onboarding.when or 0),
             reverse=sort_dir == "desc",
         )
+    elif sort_key in ("section", "schedule"):
+        def _sort_value(person):
+            row = person.ws_row
+            if sort_key == "section":
+                value = row.state.section.name if row.state.section else ""
+            else:
+                value = row.schedule.label if row.schedule else ""
+            return value.upper()
+
+        # Los que no tienen, siempre al final.
+        people = list(page.object_list)
+        page.object_list = sorted(
+            [p for p in people if _sort_value(p)], key=_sort_value,
+            reverse=sort_dir == "desc",
+        ) + [p for p in people if not _sort_value(p)]
     return {
         "page": page, "sort_key": sort_key, "sort_dir": sort_dir,
         "search": search, "sort_columns_person": sort_columns,
@@ -1183,6 +1245,12 @@ def _person_list_page(request):
         "onboarding_filter": onboarding_raw,
         "onboarding_checked": onboarding_codes,
         "onboarding_choices": ONBOARDING_CHOICES,
+        "section_filter": section_raw,
+        "schedule_filter": schedule_raw,
+        "no_section": NO_SECTION,
+        "no_schedule": NO_SCHEDULE,
+        "ws_sections": _sections(company),
+        "ws_schedules": _schedules(company),
     }
 
 

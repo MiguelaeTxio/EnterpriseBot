@@ -37,7 +37,11 @@ from panel.views_refuels import (
     RefuelsVehicleMeterView,
     RefuelsVehicleUnitView,
 )
-from panel.views_personal_section import PersonalSectionAssignView
+from panel.views_personal_section import (
+    PersonalMassScheduleView,
+    PersonalMassSectionView,
+    PersonalSectionAssignView,
+)
 from panel.views_refuels_export import (
     RefuelsExportTemplateDeleteView,
     RefuelsExportTemplateListView,
@@ -1473,6 +1477,18 @@ urlpatterns = [
         name="documentation_personal_access_create",
     ),
     # H24 (S144): sección del trabajador desde su ficha.
+    # H24 (S144): horario y sección de los marcados desde Personal (lo
+    # mismo que la pestaña Horarios).
+    path(
+        "documentacion/personal/horario/",
+        PersonalMassScheduleView.as_view(),
+        name="documentation_personal_mass_schedule",
+    ),
+    path(
+        "documentacion/personal/seccion/",
+        PersonalMassSectionView.as_view(),
+        name="documentation_personal_mass_section",
+    ),
     path(
         "documentacion/personal/<int:pk>/seccion/",
         PersonalSectionAssignView.as_view(),
