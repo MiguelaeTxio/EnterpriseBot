@@ -67,7 +67,28 @@ CENT = Decimal("0.01")
 COST_NOTE_PREFIXES = ("Falta ", "«")
 # Notes that only say what was deduced (shown as information).
 # Avisos que solo dicen qué se dedujo (se muestran como información).
-INFO_NOTE_PREFIXES = ("Aseguradora deducida", "Tipo de vehículo deducido")
+INFO_NOTE_PREFIXES = (
+    "Aseguradora deducida", "Tipo de vehículo deducido",
+    # S143: night, holiday and tariff concepts of the budget.
+    # Nocturno, festivo y conceptos de la tarifa del presupuesto.
+    "Nocturno", "Festivo", "Incluye de la tarifa",
+)
+# Notes written by _budget_amount (replaced when it is recomputed, S143).
+# Avisos que escribe _budget_amount (se reemplazan al recalcularlo).
+BUDGET_NOTE_PREFIXES = (
+    "Aseguradora no reconocida", "Tipo de vehículo no reconocido",
+    "Presupuesto no calculado", "La tarifa de ", "Sin fecha del servicio",
+    "Calendario de festivos", "Nocturno", "Festivo",
+    "Incluye de la tarifa",
+)
+# Tariff concept of a task (AssistanceTaskTime) -> Budget field of hours.
+# Concepto de la tarifa de una tarea -> campo de horas del presupuesto.
+CONCEPT_HOUR_FIELDS = {
+    "RESCUE_HOUR": "rescue_hours",
+    "WORKER_HOUR": "worker_hours",
+    "ASSISTANT_HOUR": "assistant_hours",
+    "WAIT_HOUR": "wait_hours",
+}
 
 STATE_WITHOUT_ORDER = "without"
 STATE_WITH_ORDER = "with"
@@ -205,18 +226,20 @@ def restore_data(data):
     return restored
 
 
-def _service_moment(data):
+def _service_moment(data, fallback=None):
     """
-    Date and time of the service, or now.
+    Date and time of the service, or the fallback (or now).
 
     ---
 
     Fecha y hora del servicio (la del documento o, si no la trae, la
-    de la solicitud; en su defecto, ahora), en hora de Madrid.
+    de la solicitud; en su defecto, `fallback` -la de subida, S143, para
+    que recalcular no cambie el nocturno ni el festivo- o ahora), en
+    hora de Madrid.
     """
     when = data.get("service_datetime") or data.get("request_time")
     if not isinstance(when, datetime.datetime):
-        when = timezone.now()
+        when = fallback or timezone.now()
     if timezone.is_naive(when):
         when = timezone.make_aware(when)
     return timezone.localtime(when)
@@ -250,7 +273,37 @@ def _is_night(insurer, company, when):
     return moment >= start or moment < end
 
 
-def _route(company, data, kinds, notes):
+def _route_bases(company, insurer, notes):
+    """
+    Active bases the route may start from.
+
+    ---
+
+    Bases activas desde las que puede salir el servicio (S143, Miguel
+    Ángel: "las bases, los calendarios de las bases"): las activas de la
+    aseguradora (`InsurerBase`); si no tiene ninguna, las activas de la
+    empresa, con aviso. La base decide los km y el calendario de
+    festivos del presupuesto.
+    """
+    from budgets.models import InsurerBase
+
+    if insurer is not None:
+        bases = [
+            link.base for link in InsurerBase.objects.filter(
+                insurer=insurer, is_active=True, base__is_active=True,
+                base__company=company,
+            ).select_related("base")
+        ]
+        if bases:
+            return bases
+        notes.append(
+            "La aseguradora no tiene bases activas: se usa la más cercana "
+            "de la empresa.",
+        )
+    return list(Base.objects.filter(company=company, is_active=True))
+
+
+def _route(company, data, kinds, notes, insurer=None):
     """
     Base, km and travel hours of the service, base to base.
 
@@ -285,7 +338,7 @@ def _route(company, data, kinds, notes):
     ) if delivery_place else ""
     bases = [
         (base, base_point(base))
-        for base in Base.objects.filter(company=company)
+        for base in _route_bases(company, insurer, notes)
     ]
     bases = [(base, point) for base, point in bases if point is not None]
     if not bases:
@@ -566,7 +619,65 @@ def infer_vehicle_type(insurer, data, job):
     return None, ""
 
 
-def _budget_amount(evaluation, when, notes):
+def _calendar_year(base):
+    """
+    Year of the labour calendar of a base, or None.
+
+    ---
+
+    Año del calendario de festivos de la base (el de su primera fecha,
+    igual que `services._is_holiday`), o None.
+    """
+    import json
+
+    try:
+        days = json.loads((base.labor_calendar or "").strip() or "[]")
+        return int(days[0][:4]) if days else None
+    except (ValueError, TypeError, IndexError):
+        return None
+
+
+def _apply_task_concepts(budget, data, task_times, notes):
+    """
+    Put the tariffed tasks of the service into the budget.
+
+    ---
+
+    Pone en el presupuesto los conceptos de la tarifa de las tareas del
+    servicio (S143): desbloqueo una vez; los de hora, con el tiempo
+    medio de la tarea (el mayor si varias van al mismo). Anota qué
+    incluye.
+    """
+    from budgets.models import TASK_TARIFF_CONCEPTS
+
+    labels = dict(TASK_TARIFF_CONCEPTS)
+    keys, _unknown = task_keys(data)
+    included = {}
+    for key in keys:
+        task = task_times.get(key)
+        if task is None or not task.tariff_concept:
+            continue
+        concept = task.tariff_concept
+        if concept == "UNLOCK":
+            budget.has_unlock = True
+            included[concept] = labels[concept]
+            continue
+        field = CONCEPT_HOUR_FIELDS.get(concept)
+        if field is None:
+            continue
+        hours = max(getattr(budget, field) or Decimal("0"), task.hours)
+        setattr(budget, field, hours)
+        included[concept] = "%s (%s h)" % (
+            labels[concept], str(hours).replace(".", ","),
+        )
+    if included:
+        notes.append("Incluye de la tarifa: %s." % "; ".join(
+            included.values(),
+        ))
+
+
+def _budget_amount(evaluation, when, notes, data=None, task_times=None,
+                   dated=True):
     """
     Estimated budget by the active tariff, without IVA, or None.
 
@@ -574,9 +685,14 @@ def _budget_amount(evaluation, when, notes):
 
     Presupuesto estimado con la tarifa activa de la aseguradora, sin
     IVA y sin guardar nada (mismo motor que los presupuestos y la
-    simulación de factura), o None si faltan datos o tarifa.
+    simulación de factura), o None si faltan datos o tarifa. Desde S143
+    lleva los conceptos de la tarifa de sus tareas y avisa de lo que
+    decide el precio: nocturno (horario de la aseguradora), festivo
+    (fin de semana o calendario de la base), calendario de otro año y
+    servicio sin fecha (`dated`).
     """
-    from budgets.services import calculate_budget
+    from budgets.models import AssistanceTaskTime
+    from budgets.services import _is_holiday, calculate_budget
 
     if evaluation.insurer is None:
         notes.append("Aseguradora no reconocida: sin presupuesto.")
@@ -600,6 +716,28 @@ def _budget_amount(evaluation, when, notes):
         route_calculation_mode=Budget.ROUTE_MODE_MANUAL,
         apply_iva=False,
     )
+    _apply_task_concepts(
+        budget, data if data is not None else evaluation.data,
+        task_times if task_times is not None
+        else AssistanceTaskTime.for_company(evaluation.company),
+        notes,
+    )
+    if not dated:
+        notes.append(
+            "Sin fecha del servicio en el documento: nocturno y festivo "
+            "con la hora de subida.",
+        )
+    base = evaluation.base
+    calendar_year = _calendar_year(base) if base is not None else None
+    if base is not None and calendar_year != when.year:
+        notes.append(
+            "Calendario de festivos de %s %s: el servicio es de %d; "
+            "pueden faltar festivos." % (
+                base.name,
+                "de %d" % calendar_year if calendar_year else "vacío",
+                when.year,
+            ),
+        )
     try:
         calculate_budget(budget)
     except Exception as exc:  # noqa: BLE001 -- se avisa en la fila
@@ -618,6 +756,15 @@ def _budget_amount(evaluation, when, notes):
             ),
         )
         return None
+    if budget.is_night:
+        notes.append("Nocturno: tarifa de noche (%s)." % (
+            when.strftime("%H:%M"),
+        ))
+    if _is_holiday(when.date(), base):
+        notes.append("Festivo%s: tarifa de festivo (%s)." % (
+            " en %s" % base.name if base is not None else "",
+            when.strftime("%d/%m/%Y"),
+        ))
     return _money(budget.total_amount)
 
 
@@ -925,15 +1072,20 @@ def evaluate(evaluation_pk):
         evaluation.job_label = "; ".join(
             JOB_LABELS[kind] for kind in kinds
         )[:255]
-        base, km, travel = _route(company, data, kinds, notes)
+        base, km, travel = _route(
+            company, data, kinds, notes, insurer=evaluation.insurer,
+        )
         work_hours, _task_notes = task_work_hours(company, data)
         evaluation.base = base
         evaluation.km = km
         evaluation.hours = (
             travel + work_hours if travel is not None else None
         )
-        when = _service_moment(data)
-        evaluation.budget_amount = _budget_amount(evaluation, when, notes)
+        when = _service_moment(data, evaluation.created_at)
+        evaluation.budget_amount = _budget_amount(
+            evaluation, when, notes, data=data,
+            dated=_has_service_date(data),
+        )
         evaluation.data = dict(
             data, _crew_types=crew_types,
             _travel_hours=travel, _work_hours=work_hours,
@@ -951,6 +1103,20 @@ def evaluate(evaluation_pk):
     logger.info("# [VALORACION] %s: %s.", evaluation.pk, evaluation.status)
 
 
+def _has_service_date(data):
+    """
+    Whether the document brings the date of the service.
+
+    ---
+
+    Si el documento trae la fecha del servicio o la de la solicitud.
+    """
+    return any(
+        isinstance(data.get(key), datetime.datetime)
+        for key in ("service_datetime", "request_time")
+    )
+
+
 def recompute_company(company):
     """
     Recompute the cost of every evaluated service of a company.
@@ -958,7 +1124,10 @@ def recompute_company(company):
     ---
 
     Recalcula el coste y el rendimiento de todos los servicios
-    valorados de la empresa con las medias vigentes (al guardarlas).
+    valorados de la empresa con las medias vigentes (al guardarlas) y,
+    desde S143, también el presupuesto (conceptos de la tarifa de sus
+    tareas, nocturno y festivo), sin volver a leer el documento ni a
+    medir la ruta.
     """
     from budgets.models import AssistanceTaskTime
 
@@ -971,27 +1140,21 @@ def recompute_company(company):
     ]
     for evaluation in ServiceEvaluation.objects.filter(
         company=company, status=ServiceEvaluation.STATUS_DONE,
-    ).select_related("insurer", "vehicle_type"):
+    ).select_related("insurer", "vehicle_type", "base"):
         kept = [
             line for line in evaluation.notes.splitlines()
             if not line.startswith(COST_NOTE_PREFIXES)
+            and not line.startswith(BUDGET_NOTE_PREFIXES)
         ]
-        if evaluation.budget_amount == 0:
-            # Valued before S142 (tarde): a 0 € budget is a tariff
-            # without prices for the type, not a budget.
-            # Valorado antes del cambio: 0 € es una tarifa sin precios
-            # para el tipo, no un presupuesto.
-            evaluation.budget_amount = None
-            kept.append(
-                "La tarifa de %s no tiene precios para «%s»: sin "
-                "presupuesto." % (
-                    evaluation.insurer.name if evaluation.insurer else "?",
-                    evaluation.vehicle_type.name
-                    if evaluation.vehicle_type else "?",
-                ),
-            )
+        data = restore_data(evaluation.data)
+        budget_notes = []
+        evaluation.budget_amount = _budget_amount(
+            evaluation, _service_moment(data, evaluation.created_at),
+            budget_notes, data=data, task_times=task_times,
+            dated=_has_service_date(data),
+        )
         notes = compute_costs(evaluation, settings, classes, task_times)
-        evaluation.notes = "\n".join(kept + notes)
+        evaluation.notes = "\n".join(kept + budget_notes + notes)
         evaluation.save(update_fields=fields)
 
 

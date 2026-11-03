@@ -5444,6 +5444,21 @@ DEFAULT_TASK_TIMES = (
 )
 
 
+# S143, Miguel Ángel: a task may match something we have in the tariff
+# ("el remolque [...] se puede corresponder con el desbloqueo"). Only the
+# concepts the budget engine applies (`services.calculate_budget`).
+# Conceptos de la tarifa que puede llevar una tarea: los que aplica el
+# motor de presupuestos.
+TASK_TARIFF_CONCEPTS = (
+    ("", "Sin concepto de la tarifa"),
+    ("UNLOCK", "Desbloqueo / enganche con eslingas"),
+    ("RESCUE_HOUR", "Hora de rescate"),
+    ("WORKER_HOUR", "Hora de mano de obra"),
+    ("ASSISTANT_HOUR", "Hora de ayudante"),
+    ("WAIT_HOUR", "Hora de espera"),
+)
+
+
 class AssistanceTaskTime(models.Model):
     """
     Average working time of one kind of assistance task.
@@ -5469,6 +5484,16 @@ class AssistanceTaskTime(models.Model):
         max_digits=4,
         decimal_places=2,
         verbose_name="Tiempo medio (h)",
+    )
+    tariff_concept = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        choices=TASK_TARIFF_CONCEPTS,
+        verbose_name="Concepto de la tarifa",
+        help_text="Si la tarea está tarifada, el presupuesto estimado lo "
+                  "incluye: el desbloqueo una vez; las horas, con el "
+                  "tiempo medio de la tarea.",
     )
     sort_order = models.PositiveSmallIntegerField(
         default=0, verbose_name="Orden",

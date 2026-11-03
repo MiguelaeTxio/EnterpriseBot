@@ -2333,8 +2333,11 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
                 ).values(),
                 key=lambda task: (task.sort_order, task.name),
             )
+        from budgets.models import TASK_TARIFF_CONCEPTS
+
         return _build_base_context(request, {
             "task_times": task_times,
+            "task_concepts": TASK_TARIFF_CONCEPTS,
             "active_nav": "services_hub",
             "active_tab": active_tab,
             "screen_key": COST_SCREEN_KEY,
@@ -2484,12 +2487,17 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
         from budgets.models import AssistanceCostSettings, AssistanceTaskTime
         from budgets.service_evaluation import recompute_company
 
+        from budgets.models import TASK_TARIFF_CONCEPTS
+
+        concepts = {code for code, _label in TASK_TARIFF_CONCEPTS}
         tasks = sorted(
             AssistanceTaskTime.for_company(company).values(),
             key=lambda task: (task.sort_order, task.name),
         )
         errors = []
         for task in tasks:
+            concept = request.POST.get("concept_%d" % task.pk, "")
+            task.tariff_concept = concept if concept in concepts else ""
             raw = (
                 request.POST.get("task_%d" % task.pk) or ""
             ).strip().replace(",", ".")
@@ -2518,13 +2526,13 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
                 ),
             )
         for task in tasks:
-            task.save(update_fields=["hours"])
+            task.save(update_fields=["hours", "tariff_concept"])
         recompute_company(company)
         _set_cost_tab(request.user.company_user, "tareas")
         messages.success(
             request,
-            "Tiempos de tareas guardados. Horas, coste y rendimiento "
-            "recalculados en todos los servicios valorados.",
+            "Tiempos de tareas guardados. Presupuesto, horas, coste y "
+            "rendimiento recalculados en todos los servicios valorados.",
         )
         _open_services_tab(request.user.company_user)
         return redirect("budgets:services_hub")

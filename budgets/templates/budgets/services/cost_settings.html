@@ -358,14 +358,14 @@ dividir la vista en pestañas"); abre en la que el usuario dejó activa
                     <div class="col-lg-6">
                         <div class="border rounded p-2 h-100">
                             <div class="fw-bold small mb-1">Tiempo medio de cada tarea</div>
-                            <div class="small text-muted">Lo que se tarda en el sitio, sin los viajes. Si un servicio lleva varias tareas, cuenta la más larga.</div>
+                            <div class="small text-muted">Lo que se tarda en el sitio, sin los viajes. Si un servicio lleva varias tareas, cuenta la más larga. Si la tarea está tarifada, elige su concepto: el presupuesto estimado lo incluye.</div>
                         </div>
                     </div>
                     <div class="col-lg-6">
                         <div class="border rounded p-2 h-100">
                             <div class="small text-muted fw-bold">Guardar</div>
                             <button type="submit" class="btn btn-sm btn-primary"
-                                    title="Guarda los tiempos y recalcula horas, coste y rendimiento de todos los servicios valorados">
+                                    title="Guarda los tiempos y los conceptos y recalcula presupuesto, horas, coste y rendimiento de todos los servicios valorados">
                                 <i class="bi bi-check-lg me-1"></i>Guardar y recalcular
                             </button>
                         </div>
@@ -387,6 +387,7 @@ dividir la vista en pestañas"); abre en la que el usuario dejó activa
                                 <tr>
                                     <th>Tarea</th>
                                     <th>Tiempo medio (h)</th>
+                                    <th title="Si la tarea está tarifada, el presupuesto estimado la incluye: el desbloqueo una vez; las horas, con el tiempo medio de la tarea">Concepto de la tarifa</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -396,6 +397,13 @@ dividir la vista en pestañas"); abre en la que el usuario dejó activa
                                     <td class="cost-input-cell">
                                         <input type="text" inputmode="decimal" class="form-control form-control-sm"
                                                name="task_{{ task.pk }}" value="{{ task.hours }}">
+                                    </td>
+                                    <td>
+                                        <select class="form-select form-select-sm" name="concept_{{ task.pk }}" autocomplete="off">
+                                            {% for code, label in task_concepts %}
+                                            <option value="{{ code }}" {% if task.tariff_concept == code %}selected{% endif %}>{{ label }}</option>
+                                            {% endfor %}
+                                        </select>
                                     </td>
                                 </tr>
                                 {% endfor %}
