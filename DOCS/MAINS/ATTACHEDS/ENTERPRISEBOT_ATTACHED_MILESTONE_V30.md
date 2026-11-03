@@ -10274,3 +10274,39 @@ que toca la flota de H30. La hoja de ruta de H30 no se reescribe.
   y A66 (2). **Cierre:** consulta a BD de las lecturas de esos cinco
   vehículos con estado dudoso = 0, cada una confirmada o corregida en
   Repostajes.
+
+---
+
+## COMPLETADAS EN S141 (desvío desde H24, 03/11/2026; Repostajes)
+
+Trabajo hecho desde H24 que toca Repostajes de H30. La hoja de ruta de
+H30 no se reescribe. Miguel Ángel: *"no hay forma de saber qué
+vehículos deberían estar anotándose horas y se están anotando
+kilómetros. Y qué repostadores están haciendo caso omiso de la orden de
+anotar horas"*.
+
+- **Marca `GasoGesSupply.hours_issue`** (fleet 0032). La calcula
+  `fleet/gasoges_hours.py` (`classify_hours_issues`) al final de cada
+  `build_readings`, es decir, en cada sincronización y en cada cambio
+  de unidad. `accept_supply` la limpia.
+  - Solo se marcan repostajes de vehículos de horas que no son lectura
+    y sin contador averiado.
+  - **Km en vez de horas:** sube más de `MAX_HOURS_PER_DAY` (24) al día
+    desde el dato válido anterior.
+  - **Sin anotar:** vacío, 0 o un valor menor que `MIN_CREDIBLE_VALUE`.
+  - Limitación conocida: el primer repostaje de un vehículo que siempre
+    recibe km no tiene dato anterior y queda sin marca.
+- Primera pasada en producción (03/11): km en vez de horas 1.139
+  repostajes (55 vehículos, 42 repostadores); sin anotar 206 (34
+  vehículos, 19 repostadores); sin problema 4.440.
+- **Cambios en Repostajes:**
+  - Filtro **Horas** en las cuatro vistas.
+  - Columnas "Km en vez de horas" y "Sin anotar" en Vehículos y
+    Repostadores, más "En vehículos de horas" en Repostadores.
+    Ordenables, con un aviso en rojo y también en el Excel.
+  - Etiqueta junto al estado de cada repostaje.
+  - Elegir Horas desmarca "Todos los activos", que antes ignoraba el
+    filtro y desactivaba las fechas.
+  - **Familias por casillas**, varias a la vez, con Todas / Ninguna;
+    sustituye al desplegable de una sola.
+- Commits: 5550036, 82a7080, 35a5aa3, 5303e08.

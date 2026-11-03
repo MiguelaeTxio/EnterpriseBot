@@ -605,6 +605,7 @@ explícitamente no abordada por decisión de Miguel Ángel.
 | S128 | 2026-10-16 | Sin trabajo propio de H24 (la sesión cerró la incidencia del agente H28 y los puntos 1-6 de H30, ver anexo V30). **PCH al cierre: H30 → H24**, por decisión de Miguel Ángel. La hoja de ruta 7.5 queda tal cual: se empieza por el punto 1. |
 | S129 | 2026-10-16 → 2026-10-19 | Punto 1 (saldo de vacaciones) construido y a la espera de los datos de Carolina; punto 3 (fichaje) construido entero y cerrado con el fichaje real de Miguel Ángel del 17/10 (entrada 12:33 y salida 18:27 con GPS, Loja), salvo la prueba en iPhone. Partes y fichajes integrados (el parte se cierra con la salida, redondeo a hora/media), pestaña Fichajes de supervisores con municipio, mapa en el panel, incidencias y Excel, y fichajes en la ficha del trabajador. Ver 7.4bis y "COMPLETADAS EN S129" (7.6). |
 | S130 | 2026-10-19 → 2026-10-20 | Puntos 1 (fichaje con un solo botón y fichaje manual por olvido) y 4 (ausencias) cerrados con datos reales; punto 2 (iPhone) postergado por Miguel Ángel a producción con Pablo; punto 3 a la espera de los datos de Carolina. Base del trabajador editable y festivos por base en Fichajes. Desvíos a H30/H31: dosieres por correo en un solo borrador (trabajadores y máquinas juntos, desde Personal y Centros de gasto), comprobación de tipo y datos al subir desde la ficha, 26 matrículas de centros de gasto rellenadas, secciones del alta por WhatsApp. Ver "COMPLETADAS EN S130" (7.7). |
+| S141 | 2026-10-29 → 2026-11-03 | Fichajes completos para arrancar con la plantilla: recordatorios por WhatsApp (activados y comprobados con un aviso real leído), fichajes inmodificables con corrección e historial, tipos de fichaje, horarios por día y "Todo el año", pestaña Horarios por trabajador y sección, acceso al fichaje creado por el supervisor y circular "Alta en el fichaje" por WhatsApp, teléfono 1 de empresa, Excel de fichajes con coordenadas, membrete y detalle por trabajador. Desvío a H30: marca de horas sin anotar en Repostajes. Ver "COMPLETADAS EN S141" (7.9) y la hoja de ruta S144 (7.10). |
 
 ---
 
@@ -1264,3 +1265,295 @@ Contexto que ya hay (leerlo antes de nada, no de memoria):
 Al terminar, el hito siguiente lo decide Miguel Ángel con un PCH. H30
 tiene su "Hoja de Ruta al reactivar H30" (escrita al cierre de S137) y
 H37 está pausado desde S134.
+
+---
+
+### 7.9. COMPLETADAS EN S141 (29/10/2026 → 03/11/2026)
+
+Sesión principal de H24. En paralelo corrieron las invasoras S142
+(H37/H30 y demo de Outlook) y S143 (H37). Todo lo de abajo está
+desplegado en producción y comprobado.
+
+#### Recordatorios por WhatsApp de fichaje olvidado
+
+- `hr_calendar/clock_reminders.py`, tarea Celery cada 5 minutos
+  (`hr_calendar.tasks.send_clock_reminders_task`). Un cuarto de hora
+  después de la primera hora de entrada sin entrada, o de la última
+  hora de salida con la jornada abierta, sale un recordatorio. Uno por
+  trabajador, día y tipo (`ClockReminder`). Nunca en vacaciones,
+  ausencia, baja o festivo de su base.
+- Se envía solo si se cumplen las cuatro condiciones:
+  1. Envío activado en Fichajes (`ClockSettings.reminders_enabled`).
+     **Está activado en producción.**
+  2. La sección del trabajador ficha.
+  3. El trabajador tiene "Ficha" y "Con recordatorios".
+  4. Tiene **horario asignado**: el suyo propio, el de su usuario o el
+     de su sección. El horario por defecto de la empresa no cuenta
+     (`has_assigned_schedule`).
+- Plantillas `clock_in_reminder` y `clock_out_reminder`, aprobadas.
+- Comprobado el 30/10:
+  - Entrada a las 13:50 y salida a las 14:15 a Miguel Ángel.
+  - Twilio devuelve "read" en los dos, sin error.
+- **Plantillas con botón «Fichar ahora»**, que abre `/fichaje/`:
+  - `clock_in_reminder_link` (HX19ef559129d0adc192f10f9f0c6332c0) y
+    `clock_out_reminder_link` (HXa3242945bcbe93875956564adeb6a9bc).
+  - Creadas y enviadas a Meta el 30/10 a las 18:33. Meta tarda unas
+    24 h.
+  - `_templates()` usa la del botón en cuanto está aprobada; mientras
+    no lo esté, la de texto.
+  - El nombre del saludo va en formato título: "Miguel Angel".
+- El mensaje llega al teléfono 1 (empresa) de la ficha
+  (`mobile_of`), por el chat de la empresa ("Chatbot Twilio").
+
+#### Fichajes y su corrección
+
+- Los fichajes no se modifican ni se borran. La corrección (cambiar la
+  hora, cambiar el tipo o anular) crea un fichaje nuevo y deja en
+  `ClockCorrection` quién, cuándo y por qué. Se ve en el detalle del
+  trabajador y en la hoja "Correcciones" del Excel.
+- **Tipos de fichaje como en Sesame** (`ClockType`), por sección
+  ("Fichan por tipos"). Hay 5 de partida:
+  - Fichaje normal: por defecto, cuenta como jornada.
+  - Desplazamiento: no cuenta.
+  - Presencia: no cuenta.
+  - Trabajo efectivo: cuenta.
+  - Varios: cuenta.
+
+  Detalles:
+  - Al cambiar de actividad se ficha un cambio de tipo
+    (`ClockEvent.Kind.CHANGE`).
+  - El informe reparte las horas por tipo.
+  - La caché del service worker es `fichaje-v3`.
+- **Pestaña Fichajes, ajustes:**
+  - Envío de recordatorios.
+  - Secciones que fichan.
+  - Fichan por tipos.
+  - Tipos de fichaje.
+  - Por trabajador: Ficha / No ficha y Con / Sin recordatorios.
+- **Excel de fichajes:**
+  - Hoja Jornadas: municipio y coordenadas de entrada y salida.
+  - Hojas Jornadas y Pulsaciones: la fecha solo en la primera fila de
+    cada día.
+  - Con un solo trabajador, membrete en cada hoja (Registro de
+    jornada, trabajador, DNI/NIE, empresa, periodo) y sin las columnas
+    DNI y nombre.
+  - Botón "Exportar a Excel" en el detalle de cada trabajador.
+
+#### Horarios
+
+- **Horario distinto según el día** (`WorkdayScheduleDay`,
+  `varies_by_day`, `for_day()`):
+  - Se copia el día anterior y solo se cambia lo distinto.
+  - Un día puede ser solo de mañana o solo de tarde.
+  - Ese día se trata como jornada continua.
+- **Temporada "Todo el año"** (`Season.ALL_YEAR`, ivr_config 0053): los
+  horarios que no son del taller pasaron de invierno a todo el año.
+  Solo Taller tiene invierno y verano.
+- **Página Horarios de jornada** con el formato de listado 4.24 de
+  verdad: panel fijo, listado, selección y un modal para crear y
+  editar.
+- **Pestaña Horarios en Documentación:**
+  - El horario va en el trabajador (`WorkerClockSetting.workday_schedule`,
+    hr_calendar 0017), sin necesidad de usuario del panel.
+  - Desde ahí también se pone la sección (`assign_section`).
+  - Si no tiene sección de Personal, sale la de la centralita
+    (`SectionContact`).
+  - Origen visible: "Puesto en Horarios" o "Puesto en su usuario del
+    panel".
+  - Los desplegables se refrescan sin recargar.
+- **Corrección de la jornada intensiva** (`07c51f5`):
+  - Antes cogía el primer horario intensivo por orden alfabético, y le
+    tocó "MiguelAE" a Carvajal. Además tapaba el horario propio.
+  - Ahora solo cuenta un horario de verano o de todo el año que sea
+    igual toda la semana.
+  - Manda el horario propio, salvo que sea de invierno y el trabajador
+    tenga marcada la intensiva.
+  - Estado al cerrar: Carvajal (ficha 218) tiene horario propio Taller
+    (invierno) y la intensiva marcada, así que le sale Taller (verano).
+    Miguel Ángel (ficha 250) tiene MiguelAE (id 7, todo el año).
+
+#### Alta en el fichaje (onboarding)
+
+- **Personal → Información → "Acceso al fichaje"**:
+  - Crea el usuario del panel de los marcados.
+  - Usuario `nombre.apellido`, o con los dos apellidos si se repite.
+    Es editable viendo los usuarios que ya existen.
+  - Contraseña: siempre las 4 últimas cifras del DNI.
+  - En el mismo modal se eligen sección, base y puesto.
+  - Código: `panel/personal_access.py` y `views_personal_access.py`.
+- **Circulares por WhatsApp** (botón WhatsApp de Información, plantilla
+  `circular_notification`, solo al teléfono 1).
+- **Circular "Alta en el fichaje"** (`ALTA_FICHAJE`, document_explorer
+  0193):
+  - Lleva usuario, contraseña, enlace, los pasos de la primera vez y
+    cómo fichar cada día.
+  - Tokens `{{trabajador.usuario}}`, `{{enlace.fichaje}}` y
+    `{{enlace.panel}}`.
+- **Roles que solo fichan** (chófer, gruista, administrativo, guarda
+  nocturno): solo ven lo del fichaje. Sin Nuevo parte ni Historial de
+  máquina.
+- **Teléfonos de la ficha:**
+  - Número 1 = empresa, número 2 = particular.
+  - Los mensajes automáticos solo van al 1.
+  - Juan Carlos Rodríguez pasó su número al 2.
+- **Rol Supervisor de Administración:** como Administrador, salvo
+  Asistencia.
+
+#### Datos de producción tocados
+
+- **Excel de trabajadores** (adjunto el 30/10, 71 personas en 5 hojas):
+  - Las 71 ya estaban en BD con su empresa. Regla de Miguel Ángel:
+    manda la BD.
+  - No se cambió ninguna empresa ni ninguna sección, salvo los dos
+    guardas, que pasan a **Guardas** desde el 30/10 (log
+    EnterpriseBot_006): Antonio Domínguez Sánchez (ficha 146) e Ismael
+    García Sánchez (ficha 147).
+  - Las demás secciones las pone Miguel Ángel a mano. Las hojas de
+    empresa (Grúas Málaga, Transgrual, Granada) no dicen la sección.
+- **Persona de prueba "Encarnación Cervera Romero" borrada del todo**,
+  incluido el cubo (`purge_test_person_s141`). Se conservaron las
+  sesiones de WhatsApp 10 y 2. Era una ficha de prueba, no un dato
+  real.
+- Comando `b781063`: alta como periodos de vacaciones de los 17 partes
+  de vacaciones 2025-2026 del cubo.
+
+#### Desvío a H30 (Repostajes) -- ver también el anexo V30
+
+- `GasoGesSupply.hours_issue` (fleet 0032), calculado por
+  `fleet/gasoges_hours.py` al rehacer las lecturas. Solo afecta a los
+  repostajes de vehículos que van por horas que no son lectura:
+  - **Km en vez de horas:** sube más de 24 al día desde el dato válido
+    anterior.
+  - **Sin anotar:** vacío, 0 o un número menor de 10.
+- Datos reales tras la primera pasada (03/11):
+
+  | Marca | Repostajes | Vehículos | Repostadores |
+  |---|---|---|---|
+  | Km en vez de horas | 1.139 | 55 | 42 |
+  | Sin anotar | 206 | 34 | 19 |
+  | Sin problema | 4.440 | — | — |
+
+- **Cambios en Repostajes:**
+  - Filtro **Horas**: todos / no anotó horas / km / sin anotar.
+  - Columnas "Km en vez de horas" y "Sin anotar" (y "En vehículos de
+    horas" en Repostadores), ordenables y en el Excel.
+  - Elegir Horas desmarca "Todos los activos".
+  - **Familias por casillas**, en lugar del desplegable de una sola.
+
+#### Migraciones de la sesión (todas aplicadas en producción)
+
+hr_calendar 0016 (tipos de fichaje) y 0017 (horario del trabajador);
+ivr_config 0052 (horario según el día) y 0053 (todo el año);
+document_explorer 0193 (circular Alta en el fichaje); fleet 0032
+(horas sin anotar).
+
+---
+
+### 7.10. Hoja de Ruta S144 (escrita al cierre de S141)
+
+S142 y S143 son invasoras, así que la siguiente sesión principal es la
+S144. Miguel Ángel al cierre de S141: *"la siguiente sesión que vamos a
+comenzar lo vamos a hacer con el tema de los fichajes [...] ¿Qué ocurre
+si alguien no sigue las instrucciones? [...] queremos volver a enviarle
+el onboarding [...] tenemos un Excel que nos van a dar actualizado con
+las diferentes secciones de la empresa [...] hay que respetar esos
+horarios que ya están hechos y el resto meterlos con un horario por
+defecto de su sección para que empiecen ya con el tema de los
+fichajes."*
+
+Flujo de arranque que ya existe (explicado a Miguel Ángel el 03/11):
+
+1. Horarios: sección y horario.
+2. Personal: Acceso al fichaje.
+3. Personal: circular "Alta en el fichaje" por WhatsApp.
+4. Fichajes: secciones que fichan, Ficha y Con recordatorios.
+5. Envío de recordatorios, que ya está activado.
+
+1. **Estado del alta en el fichaje de cada trabajador, y reenvío.** Se
+   cubren los supuestos en que el alta falla:
+   - No tiene teléfono 1 y no le llega nada.
+   - Ignora o no lee el mensaje.
+   - No sabe entrar o ha olvidado la contraseña.
+   - Ha cambiado de móvil (dispositivo de confianza).
+   - Entra pero no ficha nunca.
+
+   Pasos:
+   - Antes de construir, comprobar en el código dónde queda registrado
+     el envío de una circular por WhatsApp (Mi buzón /
+     `DocumentAcknowledgment` o el modelo que use
+     `PersonalNotificationWhatsAppMassView`) y el último acceso del
+     usuario (`User.last_login`), y construir sobre eso.
+   - Una columna **"Alta en el fichaje"** en Personal y en Fichajes,
+     con un filtro, y estos estados:
+     - Sin usuario.
+     - Sin teléfono 1.
+     - Usuario creado, alta sin enviar.
+     - Alta enviada el dd/mm (sin entrar).
+     - Ha entrado, sin fichar.
+     - Ya ficha (fecha del primer fichaje).
+   - Una acción **"Reenviar el alta"** para los marcados:
+     - Vuelve a poner la contraseña en las 4 últimas cifras del DNI.
+     - Quita los dispositivos de confianza (por el cambio de móvil).
+     - Envía otra vez la circular `ALTA_FICHAJE` por WhatsApp.
+     - Anota el envío.
+   - Quien no tiene teléfono 1 sale en el resultado como no enviado,
+     con el motivo.
+
+   **Cierre:**
+   - Consulta a BD de un trabajador real reenviado con: el envío
+     registrado con fecha, la contraseña nueva válida (un login de
+     prueba con las 4 cifras) y sus dispositivos de confianza a 0.
+   - El estado pasa a "Ya ficha" en cuanto hay su primer
+     `hr_calendar_clockevent`.
+2. **Importar el Excel actualizado de secciones** en cuanto Miguel
+   Ángel lo adjunte. Primero se mira el Excel, como en S141. Después,
+   un comando con simulación y `--apply`, con la lista nombre a nombre
+   antes de aplicar.
+   - **Sección:**
+     - Solo a quien no la tenga en BD (`PersonSectionAssignment` ni
+       centralita). Es la regla fijada en S141: lo que ya está en BD no
+       se cambia.
+     - Se asigna desde la fecha de la importación.
+   - **Horario:**
+     - Se respeta todo horario ya elegido: el propio del trabajador
+       (`WorkerClockSetting.workday_schedule`, p. ej. MiguelAE de
+       Miguel Ángel, o el de Ani) y el de su usuario del panel
+       (`CompanyUser.workday_schedule`).
+     - El resto se queda con el **horario por defecto de su sección**
+       (`Section.workday_schedule`).
+     - Si alguna sección no tiene horario, el comando la lista y no
+       asigna nada a sus trabajadores hasta que se le ponga uno en
+       Horarios de jornada.
+   - **Fichaje:** a los importados con sección y horario, "Ficha" y "Con
+     recordatorios" (`set_worker_flag`), para que empiecen ya.
+
+   **Cierre:**
+   - Consulta a BD tras `--apply`: cada trabajador del Excel tiene
+     sección vigente y `has_assigned_schedule` = True.
+   - Los que tenían horario propio conservan el mismo `workday_schedule`
+     que antes, comparado con la consulta previa: MiguelAE (id 7) en la
+     ficha 250.
+   - Ninguna empresa ni sección previa ha cambiado (mismas filas que en
+     la consulta previa).
+3. **Plantillas con botón «Fichar ahora».**
+   **Cierre:**
+   - `template_approved()` devuelve True para HX19ef559129d0adc192f10f9f0c6332c0
+     y HXa3242945bcbe93875956564adeb6a9bc (Comando S).
+   - El primer `ClockReminder` enviado después lleva el `message_sid` de
+     un mensaje de Twilio cuyo `content_sid` es el de la plantilla con
+     botón.
+4. **Vacaciones: datos de saldo** (los lleva Juan Francisco Arrabalí,
+   supervisor de Administración).
+   **Cierre:**
+   - Consulta a BD de un trabajador real con sus periodos y ajustes.
+   - La pantalla Vacaciones muestra los mismos días que le
+     corresponden: del año anterior, disfrutados y pendientes.
+   - Una importación con la plantilla deja los ajustes en BD.
+5. **Prueba en iPhone** (arrastrado 1.ª sesión sin avanzar), cuando
+   Pablo fiche en el taller.
+   **Cierre:** una entrada y una salida reales desde un iPhone en
+   `hr_calendar_clockevent`, con coordenadas y `user_agent` de iPhone.
+
+Al terminar, el hito siguiente lo decide Miguel Ángel con un PCH. H30
+tiene su hoja de ruta, más el pendiente de S142 (lecturas dudosas de
+las grúas de asistencia), y H37 sigue con sus invasoras.
