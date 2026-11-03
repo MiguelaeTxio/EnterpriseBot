@@ -134,6 +134,7 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
                                     {% if sched.season == "SUMMER" %}<span class="badge bg-warning text-dark"><i class="bi bi-sun me-1"></i>Verano</span>{% elif sched.season == "ALL_YEAR" %}<span class="badge bg-secondary"><i class="bi bi-calendar3 me-1"></i>Todo el año</span>{% else %}<span class="badge bg-info text-dark"><i class="bi bi-snow me-1"></i>Invierno</span>{% endif %}
                                     {% if sched.is_intensive and not sched.varies_by_day %}<span class="badge bg-secondary ms-1">Intensiva</span>{% endif %}
                                     {% if sched.is_open %}<span class="badge bg-dark ms-1" title="El fichaje no se compara con sus horas y no hay recordatorios">Abierto</span>{% endif %}
+                                    {% if sched.works_holidays %}<span class="badge bg-success ms-1" title="Los festivos se trabajan">Festivos</span>{% endif %}
                                 </td>
                                 <td>
                                     {% if sched.is_open %}
@@ -171,7 +172,8 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
                                             data-start-afternoon="{{ sched.start_time_afternoon|time:'H:i'|default:'' }}" data-end-afternoon="{{ sched.end_time_afternoon|time:'H:i'|default:'' }}"
                                             data-tolerance="{{ sched.tolerance_minutes }}" data-is-default="{{ sched.is_default|yesno:'true,false' }}"
                                             data-varies="{{ sched.varies_by_day|yesno:'true,false' }}" data-days="{{ sched.days_json }}"
-                                            data-is-open="{{ sched.is_open|yesno:'true,false' }}"></button>
+                                            data-is-open="{{ sched.is_open|yesno:'true,false' }}"
+                                            data-works-holidays="{{ sched.works_holidays|yesno:'true,false' }}"></button>
                                 </td>
                             </tr>
                             {% empty %}
@@ -263,6 +265,15 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
                             {% else %}
                             {% include "panel/workday/_days_table.html" with prefix="edit" rows=empty_day_rows %}
                             {% endif %}
+                        </div>
+                        {# S144: festivos (Ismael no los trabaja, Antonio sí). #}
+                        <div class="col-12 edit-holidays-row">
+                            <div class="form-check mb-0">
+                                <input class="form-check-input" type="checkbox" name="works_holidays" id="editWorksHolidays"
+                                       {% if post_data.works_holidays %}checked{% endif %}>
+                                <label class="form-check-label small fw-semibold" for="editWorksHolidays"
+                                       title="Los festivos del calendario laboral de la base son días de trabajo: se comparan con el horario y llevan recordatorios. Sin marcar, los festivos no se comparan ni llevan recordatorios.">Se trabaja en festivos</label>
+                            </div>
                         </div>
                         {# S144 (guardas): turno de noche. #}
                         <div class="col-12 edit-night-hint small text-muted">
@@ -450,7 +461,7 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
         var open = document.getElementById("editIsOpen");
         var varies = document.getElementById("editVaries");
         var on = open.checked;
-        var hide = document.querySelectorAll(".edit-general-tract, .edit-days-tract, .edit-varies-row, .edit-night-hint");
+        var hide = document.querySelectorAll(".edit-general-tract, .edit-days-tract, .edit-varies-row, .edit-night-hint, .edit-holidays-row");
         if (on) {
             hide.forEach(function (el) {
                 el.style.display = "none";
@@ -459,6 +470,7 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
         } else {
             document.querySelector(".edit-varies-row").style.display = "";
             document.querySelector(".edit-night-hint").style.display = "";
+            document.querySelector(".edit-holidays-row").style.display = "";
             toggleVaries(varies);
         }
     }
@@ -589,6 +601,7 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
             varies.checked = false;
             document.getElementById("editIsDefault").checked = false;
             document.getElementById("editIsOpen").checked = false;
+            document.getElementById("editWorksHolidays").checked = false;
             loadDays(table, []);
             toggleVaries(varies);
             toggleAfternoon(intensive);
@@ -606,6 +619,7 @@ agrupan (Lu–Ju 08:00–13:30 / 15:00–18:00 · Vi 08:00–14:00).
                 document.getElementById("editTolerance").value = btn.dataset.tolerance || "15";
                 document.getElementById("editIsDefault").checked = btn.dataset.isDefault === "true";
                 document.getElementById("editIsOpen").checked = btn.dataset.isOpen === "true";
+                document.getElementById("editWorksHolidays").checked = btn.dataset.worksHolidays === "true";
                 document.getElementById("editStartMorning").value = btn.dataset.startMorning || "";
                 document.getElementById("editEndMorning").value = btn.dataset.endMorning || "";
                 document.getElementById("editStartAfternoon").value = btn.dataset.startAfternoon || "";

@@ -3168,6 +3168,17 @@ class WorkdaySchedule(models.Model):
             "no se compara con este horario y no hay recordatorios."
         ),
     )
+    # S144 (Miguel Ángel): un guarda no trabaja los festivos (Ismael) y
+    # otro sí (Antonio). Sin marcar, los festivos del calendario laboral
+    # de su base no se comparan ni llevan recordatorios.
+    works_holidays = models.BooleanField(
+        default=False,
+        verbose_name="Se trabaja en festivos",
+        help_text=(
+            "Los festivos del calendario laboral de la base son días de "
+            "trabajo: se comparan con el horario y llevan recordatorios."
+        ),
+    )
     is_default = models.BooleanField(
         default=False,
         verbose_name="Horario por defecto",

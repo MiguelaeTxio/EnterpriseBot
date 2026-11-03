@@ -637,7 +637,7 @@ def _schedule_times_by_user(company, company_user_ids):
     for company_user in users:
         schedule = _resolve_operator_schedule(company_user, company)
         result[company_user.pk] = (
-            _times_of(schedule), _day_rule(company_user),
+            _times_of(schedule), _day_rule(company_user, schedule),
         )
     return result
 
@@ -661,24 +661,53 @@ def _times_of(schedule):
     return times
 
 
-def _day_rule(company_user):
+def public_holiday(day, base):
+    """
+    True if `day` is a public holiday of the base's labour calendar.
+    ---
+    True si `day` es festivo del calendario laboral de la base (S144),
+    sin contar sábados y domingos: misma lectura que
+    budgets.services._is_holiday (fecha exacta y, para los festivos de
+    fecha fija, mes-día aunque el calendario sea de otro año).
+    """
+    import json
+
+    if base is None:
+        return False
+    try:
+        holidays = json.loads((base.labor_calendar or "").strip() or "[]")
+    except (ValueError, TypeError):
+        return False
+    iso = day.isoformat()
+    return any(h == iso or h[5:] == iso[5:] for h in holidays
+               if isinstance(h, str))
+
+
+def _day_rule(company_user, schedule=None):
     """
     The is_day_compared function of one user (see
-    _schedule_times_by_user): night guards, every day; anyone else, only
-    working days of their base's labour calendar (weekends only when the
-    user has no base).
+    _schedule_times_by_user).
     ---
-    La función se_compara de un usuario: los guardas nocturnos, todos
-    los días; los demás, solo los laborables del calendario laboral de
-    su base (sin base, solo se descartan sábados y domingos).
+    La función se_compara de un usuario, según su horario (S144):
+    - Festivo del calendario de su base: solo si el horario tiene "Se
+      trabaja en festivos" (Miguel Ángel: Ismael no los trabaja,
+      Antonio sí).
+    - Sábado y domingo: los guardas nocturnos y los horarios "distinto
+      según el día" (ahí manda qué días se trabajan); los demás, no.
+    - El resto de días, sí.
     """
-    from budgets.services import _is_holiday
     from ivr_config.models import CompanyUser
 
-    if company_user.role == CompanyUser.ROLE_NIGHTGUARD:
-        return lambda day: True
     base = company_user.base
-    return lambda day: not _is_holiday(day, base)
+    works_holidays = bool(schedule is not None and schedule.works_holidays)
+    weekends = (company_user.role == CompanyUser.ROLE_NIGHTGUARD
+                or bool(schedule is not None and schedule.varies_by_day))
+
+    def rule(day):
+        if not works_holidays and public_holiday(day, base):
+            return False
+        return weekends or day.weekday() < 5
+    return rule
 
 
 def _range_bounds(date_from, date_to):

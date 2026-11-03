@@ -27,8 +27,9 @@ la entrada y olvido de la salida.
   o de su sección (S141: el de por defecto de la empresa no cuenta);
   entrada = la primera hora de entrada, salida = la última hora de
   salida (la comida ya no se ficha, S133).
-- Festivos: `_day_rule` del informe de fichajes (sábados, domingos y
-  festivos de la base; los guardas nocturnos, todos los días).
+- Festivos: `_day_rule` del informe de fichajes (S144: festivos de la
+  base solo con "Se trabaja en festivos" en el horario; sábados y
+  domingos, los guardas y los horarios según el día).
 - Un recordatorio por trabajador, día y tipo (`ClockReminder`).
 - A quién (S141, desde la pestaña Fichajes, hr_calendar/clock_settings):
   envío activado en la empresa, sección que ficha con la plataforma,
@@ -335,6 +336,7 @@ def send_clock_reminders(company, now=None, log=logger.info):
     from hr_calendar.clock_report import schedule_starts
     from hr_calendar.clock_settings import reminders_enabled
     from hr_calendar.clock_settings import worker_states
+    from panel.views_operator import _resolve_base_schedule
     from panel.views_operator import _resolve_operator_schedule
     from panel.views_operator import has_assigned_schedule
     from whatsapp.services import _build_twilio_client
@@ -389,7 +391,10 @@ def send_clock_reminders(company, now=None, log=logger.info):
         p.company_user for p in people if states[p.pk].must_clock
     ]
     for company_user in users:
-        if not _day_rule(company_user)(day):
+        # S144: el festivo depende del horario ("Se trabaja en festivos").
+        if not _day_rule(
+                company_user,
+                _resolve_base_schedule(company_user, company))(day):
             counters["festivo"] += 1
             continue
         # S141: el horario de hoy (puede ser distinto según el día).

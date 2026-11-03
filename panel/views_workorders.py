@@ -3645,6 +3645,8 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
         # intensiva), que nadie compara; solo evitan horas vacías en los
         # partes, que leen el horario para rellenar su primera hora.
         is_open_val = bool(request.POST.get("is_open"))
+        # S144: "Se trabaja en festivos".
+        works_holidays_val = bool(request.POST.get("works_holidays"))
         if is_open_val:
             varies_val = False
             is_intensive_val = True
@@ -3776,6 +3778,7 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
                 sched.is_default = is_default_val
                 sched.varies_by_day = varies_val
                 sched.is_open = is_open_val
+                sched.works_holidays = works_holidays_val
                 sched.save()
                 self._save_days(sched, day_values)
                 django_messages.success(
@@ -3793,6 +3796,7 @@ class WorkdayScheduleView(SupervisorAccessMixin, View):
             company=company,
             varies_by_day=varies_val,
             is_open=is_open_val,
+            works_holidays=works_holidays_val,
             label=label_val,
             season=season_val,
             is_intensive=is_intensive_val,
