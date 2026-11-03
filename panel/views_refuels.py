@@ -291,8 +291,11 @@ def _all_active(request, view):
     True si está marcada "Todos los activos" y la vista es Vehículos o
     Repostadores (en las otras no aplica).
     """
+    # S141: con el filtro Horas no (Miguel Ángel: "no filtra bien");
+    # ese filtro va siempre sobre los repostajes de las fechas elegidas.
     return (_param(request, "all_active") == "1"
-            and view in (VIEW_VEHICLES, VIEW_USERS))
+            and view in (VIEW_VEHICLES, VIEW_USERS)
+            and not _HOURS_FILTERS.get(_param(request, "hours")))
 
 
 def _view(request):
@@ -869,7 +872,8 @@ def _list_context(request):
         "view": view,
         "family_choices": _family_choices(),
         "filter_family": _family(request),
-        "all_active": _param(request, "all_active") == "1",
+        "all_active": (_param(request, "all_active") == "1"
+                       and not _HOURS_FILTERS.get(_param(request, "hours"))),
         "question_stats": question_stats,
         "view_choices": [
             {"code": code, "label": label, "checked": code == view}

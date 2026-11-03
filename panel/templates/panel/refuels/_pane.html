@@ -57,7 +57,7 @@ repostado o no, y las fechas no cuentan (se desactivan).
                             </select>
                         </div>
                         {# S141: vehículos de horas a los que les anotan km o nada. #}
-                        <div class="d-flex align-items-center gap-2 rfl-supply-filter rfl-status-filter">
+                        <div class="d-flex align-items-center gap-2 rfl-supply-filter">
                             <label class="fw-semibold" for="rfl-filter-hours"><i class="bi bi-clock-history me-1"></i>Horas</label>
                             <select name="hours" id="rfl-filter-hours" class="form-select form-select-sm w-auto"
                                     title="Repostajes de vehículos que van por horas en los que no se anotaron horas">
@@ -383,7 +383,16 @@ repostado o no, y las fechas no cuentan (se desactivan).
             if (currentView !== "questions") el.classList.toggle("d-none", on);
         });
     }
-    document.getElementById("rflAllActive").addEventListener("change", syncAllActive);
+    document.getElementById("rflAllActive").addEventListener("change", function () {
+        // S141: "Todos los activos" es todo el histórico; el filtro Horas
+        // va con fechas. Los dos a la vez no tienen sentido.
+        if (this.checked) document.getElementById("rfl-filter-hours").value = "";
+        syncAllActive();
+    });
+    document.getElementById("rfl-filter-hours").addEventListener("change", function () {
+        if (this.value) document.getElementById("rflAllActive").checked = false;
+        syncAllActive();
+    });
 
     // Estado: casillas literales -- ninguna marcada = ninguno ("none").
     function syncStatus() {
