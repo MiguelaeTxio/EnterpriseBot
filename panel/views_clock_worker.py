@@ -41,6 +41,17 @@ from panel.views_vacation_balance import _param, _parse_date, _person_label
 SCREEN_KEY = "clock_worker"
 FILTER_KEYS = (
     "date_from", "date_to", "status", "corrected", "clock_type", "sort",
+    "view",
+)
+# S144 (Miguel Ángel): "separar las vistas de las jornadas con el tema
+# de las correcciones" y "una vista de tipo calendario".
+VIEW_SHIFTS = "jornadas"
+VIEW_CALENDAR = "calendario"
+VIEW_CORRECTIONS = "correcciones"
+VIEW_CHOICES = (
+    (VIEW_SHIFTS, "Jornadas", "bi-list-ul"),
+    (VIEW_CALENDAR, "Calendario", "bi-calendar3"),
+    (VIEW_CORRECTIONS, "Correcciones", "bi-clock-history"),
 )
 STATUS_OK = "ok"
 STATUS_ISSUES = "issues"
@@ -235,7 +246,22 @@ def _context(request, person):
     raw_sort = _param(request, "sort")
     rows = _sort_rows(rows, _parse_sort(raw_sort))
     report = data["report"]
+    view = _param(request, "view")
+    if view not in {code for code, _l, _i in VIEW_CHOICES}:
+        view = VIEW_SHIFTS
+    calendar = {}
+    if view == VIEW_CALENDAR:
+        from panel.clock_calendar import calendar_months
+
+        calendar = calendar_months(rows, date_from, date_to)
     return {
+        "view": view,
+        "view_choices": VIEW_CHOICES,
+        "view_label": dict(
+            (code, label) for code, label, _i in VIEW_CHOICES)[view],
+        "view_count": (len(data["history"]) if view == VIEW_CORRECTIONS
+                       else len(rows)),
+        "calendar": calendar,
         "person": person,
         "person_label": _person_label(person),
         "has_account": person.company_user_id is not None,

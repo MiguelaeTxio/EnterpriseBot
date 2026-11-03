@@ -6,10 +6,14 @@ horas por tipo, incidencias y estado. Las pulsaciones anuladas se ven
 tachadas en su día. Cada fila lleva su menú de tres puntos (corregir
 la entrada, la salida o un cambio de tipo, partir el tramo, anular la
 jornada). Todo calculado en la vista (panel/views_clock_worker.py).
-Fuera de banda: el historial de correcciones (modal de la página).
+S144: tres vistas (Miguel Ángel: "separar las vistas de las jornadas
+con el tema de las correcciones" y "una vista de tipo calendario"):
+Jornadas (esta lista), Calendario (_calendar.html) y Correcciones (el
+historial: quién, cuándo, antes, después y motivo).
 {% endcomment %}
 <div id="cw-fragment-state" class="d-none"
-     data-count="{{ rows|length }}"
+     data-view="{{ view }}" data-view-label="{{ view_label }}"
+     data-count="{{ view_count }}"
      data-sort-active="{% if sort_active %}1{% endif %}"
      data-total="{{ total_label }}"
      data-issues="{{ issues_count }}"
@@ -18,6 +22,30 @@ Fuera de banda: el historial de correcciones (modal de la página).
 <span id="cw-sort-inputs" class="d-none">
     <input type="hidden" name="sort" value="{{ current_sort }}">
 </span>
+{% if view == "calendario" %}
+{% include "panel/clock_worker/_calendar.html" %}
+{% elif view == "correcciones" %}
+{# Historial de correcciones de las fechas elegidas, la más reciente arriba. #}
+<table class="table table-hover table-light align-middle small" id="cw-history-table">
+    <thead class="table-light">
+        <tr><th>Corregido</th><th>Por</th><th>Corrección</th><th>Antes</th><th>Después</th><th>Motivo</th></tr>
+    </thead>
+    <tbody>
+        {% for item in history %}
+        <tr{% if item.is_cancel %} class="table-secondary"{% endif %}>
+            <td class="text-nowrap">{{ item.corrected_at|date:"d/m/Y H:i" }}</td>
+            <td>{{ item.corrected_by }}</td>
+            <td>{{ item.correction.get_action_display }}</td>
+            <td class="text-nowrap">{% if item.old_time %}{{ item.correction.get_old_kind_display }}{% if item.correction.old_clock_type %} ({{ item.correction.old_clock_type.name }}){% endif %} {{ item.old_time|date:"d/m/Y H:i" }}{% else %}—{% endif %}</td>
+            <td class="text-nowrap">{% if item.is_cancel %}<span class="text-danger">anulado</span>{% else %}{{ item.correction.get_new_kind_display }}{% if item.correction.new_clock_type %} ({{ item.correction.new_clock_type.name }}){% endif %} {{ item.new_time|date:"d/m/Y H:i" }}{% endif %}</td>
+            <td class="text-wrap">{{ item.correction.reason }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-muted py-3">Ningún fichaje corregido en estas fechas.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
 <table class="table table-hover table-light align-middle small" id="cw-table">
     <thead class="table-light">
         <tr>
@@ -39,7 +67,7 @@ Fuera de banda: el historial de correcciones (modal de la página).
     </thead>
     <tbody>
         {% for row in rows %}
-        <tr class="{% if row.status == 'cancelled' %}table-secondary{% elif row.status == 'issues' %}table-danger{% endif %}">
+        <tr class="{% if row.status == 'cancelled' %}table-secondary{% elif row.status == 'issues' %}table-danger{% endif %}" data-day="{{ row.day|date:'Y-m-d' }}">
             <td class="sticky-col sticky-col-1">
                 <input type="checkbox" class="form-check-input cw-row-check" data-pk="{{ row.key }}" data-label="{{ row.label }}" data-ids="{{ row.event_ids|default:'' }}">
             </td>
@@ -116,25 +144,4 @@ Fuera de banda: el historial de correcciones (modal de la página).
         {% endfor %}
     </tbody>
 </table>
-
-<div id="cw-history-body" hx-swap-oob="true">
-    {% if history %}
-    <table class="table table-sm small align-middle">
-        <thead><tr><th>Corregido</th><th>Por</th><th>Corrección</th><th>Antes</th><th>Después</th><th>Motivo</th></tr></thead>
-        <tbody>
-            {% for item in history %}
-            <tr>
-                <td>{{ item.corrected_at|date:"d/m/Y H:i" }}</td>
-                <td>{{ item.corrected_by }}</td>
-                <td>{{ item.correction.get_action_display }}</td>
-                <td>{% if item.old_time %}{{ item.correction.get_old_kind_display }}{% if item.correction.old_clock_type %} ({{ item.correction.old_clock_type.name }}){% endif %} {{ item.old_time|date:"d/m H:i" }}{% else %}—{% endif %}</td>
-                <td>{% if item.is_cancel %}<span class="text-danger">anulado</span>{% else %}{{ item.correction.get_new_kind_display }}{% if item.correction.new_clock_type %} ({{ item.correction.new_clock_type.name }}){% endif %} {{ item.new_time|date:"d/m H:i" }}{% endif %}</td>
-                <td>{{ item.correction.reason }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% else %}
-    <div class="small text-muted">Ningún fichaje corregido en estas fechas.</div>
-    {% endif %}
-</div>
+{% endif %}

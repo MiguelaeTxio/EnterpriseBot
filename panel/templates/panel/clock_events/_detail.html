@@ -36,6 +36,25 @@ cuándo y por qué.
         {% endif %}
     </div>
 </div>
+{% comment %}
+S144 (Miguel Ángel): "separar las vistas de las jornadas con el tema de
+las correcciones" (antes el historial quedaba debajo, había que bajar
+con scroll) y "una vista de tipo calendario". Tres pestañas de las
+mismas fechas: Jornadas, Calendario y Correcciones.
+{% endcomment %}
+<ul class="nav nav-tabs small mb-2" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active py-1" type="button" data-bs-toggle="tab" data-bs-target="#clkShifts{{ person.pk }}" role="tab"><i class="bi bi-list-ul me-1"></i>Jornadas</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link py-1" type="button" data-bs-toggle="tab" data-bs-target="#clkCalendar{{ person.pk }}" role="tab"><i class="bi bi-calendar3 me-1"></i>Calendario</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link py-1" type="button" data-bs-toggle="tab" data-bs-target="#clkHistory{{ person.pk }}" role="tab"><i class="bi bi-clock-history me-1"></i>Correcciones ({{ history|length }})</button>
+    </li>
+</ul>
+<div class="tab-content">
+<div class="tab-pane fade show active" id="clkShifts{{ person.pk }}" role="tabpanel">
 {% if not has_account %}
 <div class="alert alert-secondary py-1 px-2 small">Sin usuario del panel: no puede fichar hasta darse de alta por WhatsApp.</div>
 {% elif not shifts %}
@@ -206,7 +225,12 @@ function clkOpenCancelShift(btn) {
     f.scrollIntoView({block: 'nearest'});
 }
 </script>
-<div class="fw-bold small mb-1">Historial de correcciones</div>
+{% endif %}
+</div>
+<div class="tab-pane fade" id="clkCalendar{{ person.pk }}" role="tabpanel">
+{% include "panel/clock_worker/_calendar.html" %}
+</div>
+<div class="tab-pane fade" id="clkHistory{{ person.pk }}" role="tabpanel">
 {% if history %}
 <table class="table table-sm small align-middle">
     <thead><tr><th>Corregido</th><th>Por</th><th>Corrección</th><th>Antes</th><th>Después</th><th>Motivo</th></tr></thead>
@@ -226,5 +250,6 @@ function clkOpenCancelShift(btn) {
 {% else %}
 <div class="small text-muted">Ningún fichaje corregido en estas fechas.</div>
 {% endif %}
-{% endif %}
+</div>
+</div>
 </div>

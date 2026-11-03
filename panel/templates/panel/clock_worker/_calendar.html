@@ -1,0 +1,72 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/clock_worker/_calendar.html #}
+{% comment %}
+H24 (S144). Vista de calendario de los fichajes de un trabajador (Miguel
+Ángel: "echo de menos una vista de tipo calendario, que es muy
+gráfica"). Un bloque por mes, el más reciente arriba; cada día con sus
+jornadas (entrada–salida) y las horas, en verde si es correcto, en rojo
+con incidencias y en gris si está anulado. Al pasar por encima, el
+detalle; en la página del trabajador, el clic lleva a esa jornada en la
+lista (data-day). Datos de panel/clock_calendar.py.
+{% endcomment %}
+<div class="d-flex flex-wrap gap-3 small mb-2 cw-cal-legend">
+    <span><span class="cw-cal-swatch cw-cal-ok"></span>Correcta</span>
+    <span><span class="cw-cal-swatch cw-cal-issues"></span>Con incidencias</span>
+    <span><span class="cw-cal-swatch cw-cal-cancelled"></span>Anulada</span>
+    <span><span class="cw-cal-swatch cw-cal-empty"></span>Sin fichajes</span>
+</div>
+<div class="row g-3">
+    {% for month in calendar.months %}
+    <div class="col-xl-6">
+        <div class="d-flex justify-content-between align-items-baseline">
+            <div class="fw-bold small">{{ month.label }}</div>
+            <div class="small text-muted">Total {{ month.total }} h</div>
+        </div>
+        <table class="table table-bordered table-sm cw-cal mb-0">
+            <thead>
+                <tr>{% for name in calendar.weekday_names %}<th class="text-center small fw-semibold">{{ name }}</th>{% endfor %}</tr>
+            </thead>
+            <tbody>
+                {% for week in month.weeks %}
+                <tr>
+                    {% for cell in week %}
+                    {% if cell %}
+                    <td class="cw-cal-day cw-cal-{{ cell.status }}{% if cell.weekend %} cw-cal-weekend{% endif %}{% if not cell.in_range %} cw-cal-out{% endif %}{% if cell.today %} cw-cal-today{% endif %}"
+                        title="{{ cell.title }}" data-day="{{ cell.day|date:'Y-m-d' }}">
+                        <div class="d-flex justify-content-between">
+                            <span class="fw-semibold">{{ cell.day.day }}</span>
+                            {% if cell.incident_count %}<span class="badge text-bg-danger fw-normal">{{ cell.incident_count }}</span>{% endif %}
+                        </div>
+                        {% if cell.in_range %}
+                        {% for line in cell.lines %}<div class="cw-cal-line">{{ line }}</div>{% endfor %}
+                        {% if cell.hours %}<div class="fw-semibold">{{ cell.hours }} h</div>{% elif cell.status == "cancelled" %}<div class="cw-cal-line">anulado</div>{% endif %}
+                        {% endif %}
+                    </td>
+                    {% else %}
+                    <td class="cw-cal-blank"></td>
+                    {% endif %}
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% empty %}
+    <div class="text-muted small">Sin fechas.</div>
+    {% endfor %}
+</div>
+<style>
+.cw-cal { table-layout: fixed; font-size: .75rem; }
+.cw-cal thead th { position: static !important; }
+.cw-cal td { height: 4.2rem; vertical-align: top; padding: .15rem .25rem; white-space: normal; }
+.cw-cal-day { cursor: default; }
+.cw-cal-ok { --bs-table-bg: #d1e7dd; background-color: #d1e7dd; }
+.cw-cal-issues { --bs-table-bg: #f8d7da; background-color: #f8d7da; }
+.cw-cal-cancelled { --bs-table-bg: #e2e3e5; background-color: #e2e3e5; color: #6c757d; }
+.cw-cal-empty.cw-cal-weekend { --bs-table-bg: #f8f9fa; }
+.cw-cal-out { opacity: .35; }
+.cw-cal-today { outline: 2px solid #0d6efd; outline-offset: -2px; }
+.cw-cal-blank { background-color: transparent; }
+.cw-cal-line { line-height: 1.15; }
+.cw-cal-swatch { display: inline-block; width: .9rem; height: .9rem; border: 1px solid #ced4da; margin-right: .3rem; vertical-align: -2px; }
+.cw-cal-swatch.cw-cal-empty { background-color: #fff; }
+</style>

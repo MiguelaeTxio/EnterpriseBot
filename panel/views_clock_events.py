@@ -830,7 +830,11 @@ def _render_detail(request, person, date_from, date_to, error="",
         request.user.company_user.company, person, date_from, date_to,
     )
     report = data["report"]
+    from panel.clock_calendar import calendar_months
+
     return render(request, "panel/clock_events/_detail.html", {
+        # S144: pestaña Calendario del detalle.
+        "calendar": calendar_months(data["shifts"], date_from, date_to),
         "person": person,
         "person_label": _person_label(person),
         "has_account": person.company_user_id is not None,

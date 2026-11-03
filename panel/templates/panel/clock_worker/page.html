@@ -8,10 +8,12 @@ incidencias, poder ordenar, poder listar, poder editar los fichajes,
 crear fichajes nuevos, anular". Formato de la directriz 4.24:
 - #cw-top-panel (fijo): "Buscar y filtrar" (fechas, estado de la
   jornada, solo corregidas, tipo de fichaje, selección) y las acciones
-  por categoría (fichajes, jornadas marcadas, exportar, historial).
-- #cw-bottom-panel: "Jornadas" (3/4, scroll propio, cabecera fija,
-  orden múltiple, menú de tres puntos, pantalla completa 4.26) y
-  "Selección actual" (1/4).
+  por categoría (fichajes, jornadas marcadas, exportar).
+- #cw-bottom-panel: tres vistas de las mismas fechas y filtros --
+  "Jornadas" (scroll propio, cabecera fija, orden múltiple, menú de tres
+  puntos), "Calendario" (un mes por bloque; el clic en un día lleva a
+  su jornada) y "Correcciones" (el historial) -- con pantalla completa
+  (4.26), y "Selección actual" (1/4).
 Se llega desde la pestaña Fichajes (nombre del trabajador) y desde la
 ficha de Personal. Filtros y orden recordados por usuario (4.15,
 screen_key "clock_worker"); la selección, por trabajador.
@@ -91,6 +93,7 @@ screen_key "clock_worker"); la selección, por trabajador.
                             <input type="hidden" name="selected_ids" id="cw-selected-ids" value="">
                         </div>
                     </div>
+                    <input type="hidden" name="view" id="cw-view-input" value="{{ view }}">
                 </form>
                 <div class="small mt-2 border-top pt-1" id="cw-totals"></div>
             </div>
@@ -127,13 +130,6 @@ screen_key "clock_worker"); la selección, por trabajador.
                             <i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel
                         </button>
                     </div>
-                    <div class="col-6 border-top pt-1 mt-1">
-                        <div class="small text-muted fw-bold">Correcciones</div>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#cwHistoryModal"
-                                title="Todas las correcciones de las fechas elegidas: quién, cuándo, antes, después y motivo.">
-                            <i class="bi bi-clock-history me-1"></i>Historial
-                        </button>
-                    </div>
                 </div>
             </div>
         </div>
@@ -144,7 +140,17 @@ screen_key "clock_worker"); la selección, por trabajador.
     <div class="row g-2 h-100">
         <div class="col-lg-9 h-100">
             <div class="border rounded p-2 h-100 d-flex flex-column">
-                <div class="fw-bold small mb-1">Jornadas (<span id="cw-row-count">{{ rows|length }}</span>)
+                {# S144: tres vistas de lo mismo (fechas y filtros de arriba). #}
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Vista">
+                        {% for code, label, icon in view_choices %}
+                        <button type="button" class="btn btn-outline-primary cw-view-btn{% if code == view %} active{% endif %}" data-view="{{ code }}">
+                            <i class="bi {{ icon }} me-1"></i>{{ label }}
+                        </button>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="fw-bold small mb-1"><span id="cw-view-label">{{ view_label }}</span> (<span id="cw-row-count">{{ view_count }}</span>)
                     <button type="button" class="btn btn-sm btn-link py-0{% if not sort_active %} d-none{% endif %}" id="cw-clear-sort"
                             hx-get="{% url 'panel:clock_worker_results' person.pk %}" hx-target="#cw-results"
                             hx-include="#cw-filters" hx-vals='{"sort": ""}'>Quitar orden</button>
@@ -179,7 +185,9 @@ screen_key "clock_worker"); la selección, por trabajador.
 .cw-scroll-y { overflow-y: auto; }
 .cw-scroll-both { overflow: auto; }
 #cw-bottom-panel:fullscreen { background-color: var(--bs-body-bg); padding: 1rem; }
-#cw-bottom-panel:fullscreen #cw-results-scroll { height: calc(100vh - 5rem); }
+#cw-bottom-panel:fullscreen #cw-results-scroll { height: calc(100vh - 7rem); }
+#cw-results-scroll tr.cw-flash > td { box-shadow: inset 0 0 0 9999px rgba(13, 110, 253, .18); }
+#cw-results-scroll .cw-cal-day:not(.cw-cal-empty) { cursor: pointer; }
 </style>
 
 {# Corrección (cambiar, anular, añadir): se envía con los filtros que se ven (_f_). #}
@@ -229,20 +237,6 @@ screen_key "clock_worker"); la selección, por trabajador.
                 <button type="button" class="btn btn-sm btn-primary" id="cw-fix-save">Guardar</button>
             </div>
         </form>
-    </div>
-</div>
-
-<div class="modal fade" id="cwHistoryModal" tabindex="-1" aria-labelledby="cwHistoryModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-xl modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="cwHistoryModalLabel">Historial de correcciones</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div id="cw-history-body"></div>
-            </div>
-        </div>
     </div>
 </div>
 
@@ -325,6 +319,10 @@ screen_key "clock_worker"); la selección, por trabajador.
         const state = document.getElementById("cw-fragment-state");
         if (state) {
             document.getElementById("cw-row-count").textContent = state.dataset.count;
+            document.getElementById("cw-view-label").textContent = state.dataset.viewLabel;
+            document.querySelectorAll(".cw-view-btn").forEach(function (btn) {
+                btn.classList.toggle("active", btn.dataset.view === state.dataset.view);
+            });
             document.getElementById("cw-clear-sort").classList.toggle("d-none", !state.dataset.sortActive);
             const parts = ["Total trabajado: <strong>" + state.dataset.total + "</strong>",
                            "Incidencias: <strong>" + state.dataset.issues + "</strong>"];
@@ -401,8 +399,9 @@ screen_key "clock_worker"); la selección, por trabajador.
 
     // Corrección: un único modal para cambiar, anular (una pulsación,
     // una jornada o las marcadas) y añadir.
+    // Bootstrap se carga al final de base.html: la instancia, al usarla.
     const fixModalEl = document.getElementById("cwFixModal");
-    const fixModal = new bootstrap.Modal(fixModalEl);
+    function fixModal() { return bootstrap.Modal.getOrCreateInstance(fixModalEl); }
     const fixForm = document.getElementById("cw-fix-form");
     function openFix(opts) {
         fixForm.reset();
@@ -419,7 +418,7 @@ screen_key "clock_worker"); la selección, por trabajador.
         if (opts.kind) document.getElementById("cwFixKind").value = opts.kind;
         document.getElementById("cwFixType").value = opts.type || "";
         document.getElementById("cwFixTime").value = opts.time || "";
-        fixModal.show();
+        fixModal().show();
     }
     document.getElementById("cwFixCancel").addEventListener("change", function () {
         document.getElementById("cw-fix-action").value = this.checked ? "CANCEL" : "CHANGE";
@@ -463,18 +462,11 @@ screen_key "clock_worker"); la selección, por trabajador.
             return r.text().then(function (html) {
                 if (message) showToast(decodeURIComponent(message), isError);
                 if (isError) return;
-                const holder = document.createElement("div");
-                holder.innerHTML = html;
-                const history = holder.querySelector("#cw-history-body");
-                if (history) {
-                    history.removeAttribute("hx-swap-oob");
-                    document.getElementById("cw-history-body").replaceWith(history);
-                }
-                results.innerHTML = holder.innerHTML;
+                results.innerHTML = html;
                 htmx.process(results);
                 if (body.get("event_ids")) selection.clear();
                 refreshFromFragment();
-                fixModal.hide();
+                fixModal().hide();
             });
         }).catch(function () {
             showToast("Sin conexión con el servidor: no se ha guardado nada.", true);
@@ -497,15 +489,39 @@ screen_key "clock_worker"); la selección, por trabajador.
         else bottom.requestFullscreen();
     });
 
-    // El historial llega fuera de banda con cada listado.
-    document.body.addEventListener("htmx:afterSwap", function (evt) {
-        if (evt.detail.target && evt.detail.target.id === "cw-results") refreshFromFragment();
-    });
-    const initialHistory = results.querySelector("#cw-history-body");
-    if (initialHistory) {
-        initialHistory.removeAttribute("hx-swap-oob");
-        document.getElementById("cw-history-body").replaceWith(initialHistory);
+    // S144: vistas Jornadas, Calendario y Correcciones (recordada).
+    const viewInput = document.getElementById("cw-view-input");
+    let pendingDay = null;
+    function showView(view) {
+        viewInput.value = view;
+        htmx.trigger(filters, "change");
     }
+    document.querySelectorAll(".cw-view-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () { showView(btn.dataset.view); });
+    });
+    // En el calendario, el clic en un día lleva a esa jornada en la lista.
+    results.addEventListener("click", function (evt) {
+        const cell = evt.target.closest(".cw-cal-day");
+        if (!cell || cell.classList.contains("cw-cal-empty")) return;
+        pendingDay = cell.dataset.day;
+        showView("jornadas");
+    });
+    function goToPendingDay() {
+        if (!pendingDay) return;
+        const row = results.querySelector('tr[data-day="' + pendingDay + '"]');
+        pendingDay = null;
+        if (!row) { showToast("Esa jornada no está en la lista con estos filtros.", true); return; }
+        row.scrollIntoView({block: "center"});
+        row.classList.add("cw-flash");
+        setTimeout(function () { row.classList.remove("cw-flash"); }, 2500);
+    }
+
+    document.body.addEventListener("htmx:afterSwap", function (evt) {
+        if (evt.detail.target && evt.detail.target.id === "cw-results") {
+            refreshFromFragment();
+            goToPendingDay();
+        }
+    });
     refreshFromFragment();
 }());
 </script>
