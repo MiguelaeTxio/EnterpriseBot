@@ -25,8 +25,8 @@ rendimiento."
 - Trabajo y vehículos: `dispatch_vehicle.job_for`; un vehículo con su
   operario por cada trabajo (como Alia).
 - Ruta: base más cercana a la recogida → recogida → entrega → base,
-  con la matriz de rutas de Google (`service_eta.Router`), más los
-  tiempos de trabajo de la empresa (`AssistanceTimes`).
+  con la matriz de rutas de Google (`service_eta.Router`), más el
+  tiempo medio de la tarea (`AssistanceTaskTime`, S143).
 - Presupuesto: `services.calculate_budget` con la tarifa activa de la
   aseguradora, sin IVA y sin guardar nada.
 - Coste: operarios × horas × €/h, vehículos × km × €/km y gasoil
@@ -44,7 +44,6 @@ from django.utils import timezone
 
 from budgets.models import (
     AssistanceCostSettings,
-    AssistanceTimes,
     AssistanceVehicleCost,
     Base,
     Budget,
@@ -253,14 +252,15 @@ def _is_night(insurer, company, when):
 
 def _route(company, data, kinds, notes):
     """
-    Base, km and hours of the service, base to base.
+    Base, km and travel hours of the service, base to base.
 
     ---
 
     Base más cercana a la recogida (por tiempo de trayecto), km y
-    horas del circuito base → recogida → entrega → base, más los
-    tiempos de trabajo de la empresa. Devuelve (base, km, horas de
-    viaje, horas de trabajo) o cuatro None si no se puede medir.
+    horas de viaje del circuito base → recogida → entrega → base.
+    Devuelve (base, km, horas de viaje) o tres None si no se puede
+    medir. Las horas de trabajo van aparte, por tipo de tarea
+    (`task_work_hours`, S143).
     """
     from budgets.dispatch_vehicle import ON_SITE_KINDS
     from budgets.service_eta import (
@@ -277,7 +277,7 @@ def _route(company, data, kinds, notes):
     ) if data.get("pickup_location") else ""
     if not pickup:
         notes.append("Sin dirección de recogida: no se mide la ruta.")
-        return None, None, None, None
+        return None, None, None
     delivery_place = data.get("delivery_address") or ""
     delivery = _join(
         delivery_place, data.get("delivery_locality"),
@@ -290,7 +290,7 @@ def _route(company, data, kinds, notes):
     bases = [(base, point) for base, point in bases if point is not None]
     if not bases:
         notes.append("No hay bases con ubicación: no se mide la ruta.")
-        return None, None, None, None
+        return None, None, None
     router = Router()
     pickup_point = address_point(pickup)
     try:
@@ -315,17 +315,90 @@ def _route(company, data, kinds, notes):
         meters += leg_meters
     except EtaError as exc:
         notes.append("Ruta no calculada: %s" % exc)
-        return None, None, None, None
-    times = AssistanceTimes.for_company(company)
-    if on_site:
-        work = times.on_site_minutes
-    else:
-        first = times.lift_minutes if "lift" in kinds else times.load_minutes
-        work = first + (times.unload_minutes if delivery else 0)
+        return None, None, None
     km = (Decimal(meters) / 1000).quantize(Decimal("0.1"))
     travel = (Decimal(seconds) / 3600).quantize(CENT)
-    work_hours = (Decimal(work) / 60).quantize(CENT)
-    return base, km, travel, work_hours
+    return base, km, travel
+
+
+# S143: which of the three tasks of "lifting" it is, by the words of the
+# notice (same fields as `dispatch_vehicle.job_for`).
+# Cuál de las tres tareas de "levantar" es, por las palabras del aviso.
+LIFT_TASKS = (
+    ("lift_fall", (
+        "terraplen", "barranco", "desnivel", "caido", "caida", "precipit",
+        "talud",
+    )),
+    ("lift_overturn", ("volc", "vuelc")),
+    ("lift_ditch", (
+        "cuneta", "salida de via", "salido de la via", "fuera de la via",
+    )),
+)
+LIFT_UNKNOWN_NOTE = (
+    "«Levantar» sin saber si es cuneta, vuelco o terraplén: se cuenta "
+    "el tiempo más largo de los tres."
+)
+
+
+def task_keys(data):
+    """
+    Tasks of the service (AssistanceTaskTime keys) and whether the kind
+    of lifting is unknown.
+
+    ---
+
+    Tareas del servicio (claves de `AssistanceTaskTime`) según los datos
+    leídos: las de `dispatch_vehicle.job_for` y, si es levantar, cuál de
+    las tres (cuneta, vuelco, terraplén) por las palabras del aviso.
+    Si dice varias, todas; si no dice ninguna, las tres y se avisa.
+    Devuelve (claves, levantar sin saber cuál).
+    """
+    from budgets.dispatch_vehicle import _has, job_for
+    from budgets.dispatch_vehicle import _norm as job_norm
+
+    job = job_for(data or {}) or {"trabajos": ["tow_light"]}
+    keys = []
+    unknown = False
+    for kind in job["trabajos"]:
+        if kind != "lift":
+            keys.append(kind)
+            continue
+        text = job_norm(" ".join(
+            str((data or {}).get(field) or "") for field in (
+                "breakdown_description", "breakdown_code",
+                "insurer_comments", "company_observations", "extra_notes",
+            )
+        ))
+        found = [key for key, words in LIFT_TASKS if _has(text, words)]
+        if not found:
+            unknown = True
+            found = [key for key, _words in LIFT_TASKS]
+        keys.extend(found)
+    return keys, unknown
+
+
+def task_work_hours(company, data, task_times=None):
+    """
+    Working hours of the service and the notes about them.
+
+    ---
+
+    Horas de trabajo del servicio (S143): el tiempo medio de su tarea
+    en Medias de coste → Tiempos de tareas; si tiene varias (levantar y
+    semirremolque, o un levantar sin saber cuál), la más larga, como el
+    gasoil ("el coste máximo [...] es orientativo"). Devuelve (horas,
+    avisos).
+    """
+    from budgets.models import AssistanceTaskTime
+
+    task_times = (
+        task_times if task_times is not None
+        else AssistanceTaskTime.for_company(company)
+    )
+    keys, unknown = task_keys(data)
+    hours = [task_times[key].hours for key in keys if key in task_times]
+    notes = [LIFT_UNKNOWN_NOTE] if unknown else []
+    return (max(hours) if hours else Decimal("0")), notes
 
 
 # ---------------------------------------------------------------------------
@@ -675,7 +748,32 @@ def crew_hours_of(evaluation):
     return Decimal(raw) if raw not in (None, "") else None
 
 
-def compute_costs(evaluation, settings=None, classes=None):
+def _refresh_work_hours(evaluation, task_times, notes):
+    """
+    Put the current task time into the hours of the service.
+
+    ---
+
+    Pone en las horas del servicio el tiempo de su tarea vigente (S143):
+    horas = viaje + trabajo, con el trabajo de Tiempos de tareas, para
+    que cambiar un tiempo recalcule horas, coste y rendimiento sin
+    volver a leer el documento ni a medir la ruta.
+    """
+    data = dict(evaluation.data or {})
+    travel = data.get("_travel_hours")
+    if travel is None:
+        return
+    work, task_notes = task_work_hours(
+        evaluation.company, data, task_times,
+    )
+    notes.extend(task_notes)
+    data["_work_hours"] = str(work)
+    evaluation.data = data
+    evaluation.hours = (Decimal(str(travel)) + work).quantize(CENT)
+
+
+def compute_costs(evaluation, settings=None, classes=None,
+                  task_times=None):
     """
     Estimated cost and yield of an evaluated service (no save).
 
@@ -693,6 +791,7 @@ def compute_costs(evaluation, settings=None, classes=None):
         evaluation.company,
     )
     notes = []
+    _refresh_work_hours(evaluation, task_times, notes)
     crew_types = (evaluation.data or {}).get("_crew_types") or []
     if evaluation.km is None or evaluation.hours is None or not crew_types:
         _store_crew_hours(evaluation, None)
@@ -826,7 +925,8 @@ def evaluate(evaluation_pk):
         evaluation.job_label = "; ".join(
             JOB_LABELS[kind] for kind in kinds
         )[:255]
-        base, km, travel, work_hours = _route(company, data, kinds, notes)
+        base, km, travel = _route(company, data, kinds, notes)
+        work_hours, _task_notes = task_work_hours(company, data)
         evaluation.base = base
         evaluation.km = km
         evaluation.hours = (
@@ -860,11 +960,14 @@ def recompute_company(company):
     Recalcula el coste y el rendimiento de todos los servicios
     valorados de la empresa con las medias vigentes (al guardarlas).
     """
+    from budgets.models import AssistanceTaskTime
+
     settings = AssistanceCostSettings.for_company(company)
     classes = _vehicle_classes(company)
+    task_times = AssistanceTaskTime.for_company(company)
     fields = [
         "operators_cost", "vehicles_cost", "fuel_cost", "total_cost",
-        "margin", "notes", "budget_amount", "data",
+        "margin", "notes", "budget_amount", "data", "hours",
     ]
     for evaluation in ServiceEvaluation.objects.filter(
         company=company, status=ServiceEvaluation.STATUS_DONE,
@@ -887,7 +990,7 @@ def recompute_company(company):
                     if evaluation.vehicle_type else "?",
                 ),
             )
-        notes = compute_costs(evaluation, settings, classes)
+        notes = compute_costs(evaluation, settings, classes, task_times)
         evaluation.notes = "\n".join(kept + notes)
         evaluation.save(update_fields=fields)
 

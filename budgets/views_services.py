@@ -2149,7 +2149,7 @@ class ServiceEvaluationOrderView(AssistanceSupervisorAccessMixin, View):
 COST_SCREEN_KEY = "services_cost_settings"
 # H37 (S143): Medias de coste in tabs (Miguel Ángel: "dividir la vista en
 # pestañas"). Las pestañas de Medias de coste.
-COST_TABS = ("vehiculos", "clases", "trabajadores")
+COST_TABS = ("vehiculos", "clases", "trabajadores", "tareas")
 COST_DEFAULT_TAB = "vehiculos"
 
 
@@ -2271,13 +2271,15 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
       o por hora, velocidad máxima, tiempos muertos, coste por km y
       tipos de máquina.
     - Costes de trabajadores: coste por hora de operario.
+    - Tiempos de tareas (S143): tiempo medio de trabajo de cada tipo de
+      tarea, que meten los encargados de los servicios.
     Al guardar se recalcula el coste de todos los servicios valorados.
     """
 
     template_name = "budgets/services/cost_settings.html"
 
     def _context(self, request, settings, vehicles, errors=None,
-                 active_tab=None):
+                 active_tab=None, task_times=None):
         """
         Context of the page: the three tabs.
 
@@ -2322,7 +2324,17 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
                 ],
             })
         saved_selection = state.get("selection")
+        if task_times is None:
+            from budgets.models import AssistanceTaskTime
+
+            task_times = sorted(
+                AssistanceTaskTime.for_company(
+                    company_user.company,
+                ).values(),
+                key=lambda task: (task.sort_order, task.name),
+            )
         return _build_base_context(request, {
+            "task_times": task_times,
             "active_nav": "services_hub",
             "active_tab": active_tab,
             "screen_key": COST_SCREEN_KEY,
@@ -2401,7 +2413,11 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
         action = request.POST.get("action")
         if action == "use_real":
             return self._use_real(request, company)
-        tab = "trabajadores" if action == "save_workers" else "clases"
+        tab = {
+            "save_workers": "trabajadores", "save_tasks": "tareas",
+        }.get(action, "clases")
+        if tab == "tareas":
+            return self._save_tasks(request, company)
         settings = AssistanceCostSettings.for_company(company)
         vehicles = list(company.assistance_vehicle_costs.all())
         errors = []
@@ -2449,6 +2465,66 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
             request,
             "Medias guardadas. Coste y rendimiento recalculados en todos "
             "los servicios valorados.",
+        )
+        _open_services_tab(request.user.company_user)
+        return redirect("budgets:services_hub")
+
+    def _save_tasks(self, request, company):
+        """
+        Save the average time of every task and recompute.
+
+        ---
+
+        Guarda el tiempo medio de cada tipo de tarea (S143) y recalcula
+        horas, coste y rendimiento de los servicios valorados. Con
+        errores, la página vuelve en su pestaña con lo tecleado.
+        """
+        from decimal import Decimal, InvalidOperation
+
+        from budgets.models import AssistanceCostSettings, AssistanceTaskTime
+        from budgets.service_evaluation import recompute_company
+
+        tasks = sorted(
+            AssistanceTaskTime.for_company(company).values(),
+            key=lambda task: (task.sort_order, task.name),
+        )
+        errors = []
+        for task in tasks:
+            raw = (
+                request.POST.get("task_%d" % task.pk) or ""
+            ).strip().replace(",", ".")
+            try:
+                value = Decimal(raw)
+            except InvalidOperation:
+                errors.append("%s: «%s» no es un número de horas." % (
+                    task.name, raw,
+                ))
+                # Shown again as typed (never saved).
+                # Se vuelve a mostrar tal cual (nunca se guarda).
+                task.hours = raw
+                continue
+            if not (Decimal("0") <= value < Decimal("100")):
+                errors.append("%s: entre 0 y 99,99 horas." % task.name)
+                task.hours = raw
+                continue
+            task.hours = value.quantize(Decimal("0.01"))
+        if errors:
+            return render(
+                request, self.template_name,
+                self._context(
+                    request, AssistanceCostSettings.for_company(company),
+                    company.assistance_vehicle_costs.all(), errors,
+                    active_tab="tareas", task_times=tasks,
+                ),
+            )
+        for task in tasks:
+            task.save(update_fields=["hours"])
+        recompute_company(company)
+        _set_cost_tab(request.user.company_user, "tareas")
+        messages.success(
+            request,
+            "Tiempos de tareas guardados. Horas, coste y rendimiento "
+            "recalculados en todos los servicios valorados.",
         )
         _open_services_tab(request.user.company_user)
         return redirect("budgets:services_hub")

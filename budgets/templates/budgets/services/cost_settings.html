@@ -8,10 +8,13 @@
 <style>
 .cost-input-cell { max-width: 8rem; min-width: 6rem; }
 #cvh-results-scroll table td, #cvh-results-scroll table th,
-#cls-results-scroll table th { white-space: nowrap; }
-#cvh-list-box:fullscreen, #cls-list-box:fullscreen { background: var(--bs-body-bg, #fff); padding: 1rem; }
+#cls-results-scroll table th,
+#tsk-results-scroll table th { white-space: nowrap; }
+#cvh-list-box:fullscreen, #cls-list-box:fullscreen,
+#tsk-list-box:fullscreen { background: var(--bs-body-bg, #fff); padding: 1rem; }
 #cvh-list-box:fullscreen #cvh-results-scroll,
-#cls-list-box:fullscreen #cls-results-scroll { height: calc(100vh - 4rem); }
+#cls-list-box:fullscreen #cls-results-scroll,
+#tsk-list-box:fullscreen #tsk-results-scroll { height: calc(100vh - 4rem); }
 </style>
 {% endblock %}
 
@@ -39,6 +42,9 @@ dividir la vista en pestañas"); abre en la que el usuario dejó activa
   clase que más gasta (columna "Consumo que cuenta"); el consumo de la
   clase lo aportan los vehículos sin bastantes repostajes.
 - Costes de trabajadores: coste por hora de operario.
+- Tiempos de tareas (S143): tiempo medio de trabajo de cada tipo de
+  tarea, sin los viajes; lo meten los encargados de los servicios.
+  Un servicio con varias tareas cuenta la más larga.
 {% endcomment %}
 <ul class="nav nav-tabs mb-3" id="costTabs">
     <li class="nav-item">
@@ -57,6 +63,12 @@ dividir la vista en pestañas"); abre en la que el usuario dejó activa
         <a class="nav-link {% if active_tab == 'trabajadores' %}active{% endif %}"
            id="tab-trabajadores" data-bs-toggle="tab" href="#pane-trabajadores">
             <i class="bi bi-people me-1"></i>Costes de trabajadores
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'tareas' %}active{% endif %}"
+           id="tab-tareas" data-bs-toggle="tab" href="#pane-tareas">
+            <i class="bi bi-stopwatch me-1"></i>Tiempos de tareas
         </a>
     </li>
     <li class="nav-item ms-auto">
@@ -335,12 +347,72 @@ dividir la vista en pestañas"); abre en la que el usuario dejó activa
             </div>
         </form>
     </div>
+
+    {# ── Tiempos de tareas ─────────────────────────────────────── #}
+    <div class="tab-pane fade {% if active_tab == 'tareas' %}show active{% endif %}" id="pane-tareas">
+        <form method="post" action="{% url 'budgets:services_cost_settings' %}">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="save_tasks">
+            <div class="border rounded p-2 mb-2" id="tsk-top-panel">
+                <div class="row g-2">
+                    <div class="col-lg-6">
+                        <div class="border rounded p-2 h-100">
+                            <div class="fw-bold small mb-1">Tiempo medio de cada tarea</div>
+                            <div class="small text-muted">Lo que se tarda en el sitio, sin los viajes. Si un servicio lleva varias tareas, cuenta la más larga.</div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="border rounded p-2 h-100">
+                            <div class="small text-muted fw-bold">Guardar</div>
+                            <button type="submit" class="btn btn-sm btn-primary"
+                                    title="Guarda los tiempos y recalcula horas, coste y rendimiento de todos los servicios valorados">
+                                <i class="bi bi-check-lg me-1"></i>Guardar y recalcular
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="border rounded p-2" id="tsk-bottom-panel">
+                <div class="border rounded p-2 h-100 d-flex flex-column" id="tsk-list-box">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <div class="fw-bold small">{{ task_times|length }} tareas</div>
+                        <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" id="tsk-fullscreen" title="Pantalla completa">
+                            <i class="bi bi-fullscreen"></i>
+                        </button>
+                    </div>
+                    <div id="tsk-results-scroll" class="fixed-list-scroll flex-scroll-xy">
+                        <table class="table table-sm align-middle mb-0 small">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Tarea</th>
+                                    <th>Tiempo medio (h)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for task in task_times %}
+                                <tr>
+                                    <td class="fw-semibold">{{ task.name }}</td>
+                                    <td class="cost-input-cell">
+                                        <input type="text" inputmode="decimal" class="form-control form-control-sm"
+                                               name="task_{{ task.pk }}" value="{{ task.hours }}">
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
 </div>
 
 {{ saved_selection|json_script:"cvh-saved-selection" }}
 {{ screen_key|json_script:"cost-screen-key" }}
 {% include "panel/_fixed_list_layout.html" with top_id="cvh-top-panel" bottom_id="cvh-bottom-panel" %}
 {% include "panel/_fixed_list_layout.html" with top_id="cls-top-panel" bottom_id="cls-bottom-panel" %}
+{% include "panel/_fixed_list_layout.html" with top_id="tsk-top-panel" bottom_id="tsk-bottom-panel" %}
 {% endblock %}
 
 {% block extra_scripts %}
@@ -451,7 +523,7 @@ dividir la vista en pestañas"); abre en la que el usuario dejó activa
 
     // Pantalla completa de cada lista (formato del laboratorio de
     // análisis, directriz 4.26).
-    [["cvh-fullscreen", "cvh-list-box"], ["cls-fullscreen", "cls-list-box"]].forEach(function ([buttonId, boxId]) {
+    [["cvh-fullscreen", "cvh-list-box"], ["cls-fullscreen", "cls-list-box"], ["tsk-fullscreen", "tsk-list-box"]].forEach(function ([buttonId, boxId]) {
         document.getElementById(buttonId).addEventListener("click", function () {
             if (document.fullscreenElement) {
                 document.exitFullscreen();

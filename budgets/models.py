@@ -5425,6 +5425,93 @@ class AssistanceVehicleCost(models.Model):
         ]
 
 
+# H37 (S143): average time of each kind of task, editable. Miguel Ángel:
+# "el tiempo medio del tipo de tarea [...] configurable [...] esos datos
+# los deben de meter los que están encargados de los servicios". Key,
+# label and starting hours (no real data yet).
+# Tiempo medio de cada tipo de tarea: clave, nombre y horas de partida.
+DEFAULT_TASK_TIMES = (
+    ("tow_light", "Remolque de un vehículo ligero", "1"),
+    ("tow_heavy", "Remolque de un vehículo pesado", "1"),
+    ("tyre", "Cambio de rueda o neumático", "0.5"),
+    ("battery", "Batería", "0.5"),
+    ("fuel", "Combustible", "0.5"),
+    ("repair", "Reparación pequeña en el sitio", "0.5"),
+    ("lift_ditch", "Salida a la cuneta", "1"),
+    ("lift_overturn", "Vuelco", "1.5"),
+    ("lift_fall", "Caída por un terraplén o desnivel", "3.5"),
+    ("semitrailer", "Llevar el semirremolque a su destino", "1"),
+)
+
+
+class AssistanceTaskTime(models.Model):
+    """
+    Average working time of one kind of assistance task.
+
+    ---
+
+    Tiempo medio de trabajo de un tipo de tarea de asistencia (S143):
+    lo que se tarda en el sitio, sin los viajes (cargar, levantar,
+    cambiar la rueda, descargar...). Lo meten los encargados de los
+    servicios en Medias de coste → Tiempos de tareas; con él se calculan
+    las horas, el coste y el rendimiento de los servicios valorados.
+    """
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="assistance_task_times",
+        verbose_name="Empresa",
+    )
+    key = models.CharField(max_length=30, verbose_name="Clave")
+    name = models.CharField(max_length=80, verbose_name="Tarea")
+    hours = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        verbose_name="Tiempo medio (h)",
+    )
+    sort_order = models.PositiveSmallIntegerField(
+        default=0, verbose_name="Orden",
+    )
+
+    class Meta:
+        verbose_name = "Tiempo de tarea de asistencia"
+        verbose_name_plural = "Tiempos de tareas de asistencia"
+        ordering = ["sort_order", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("company", "key"),
+                name="unique_assistance_task_time_key",
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
+
+    @classmethod
+    def for_company(cls, company):
+        """
+        The task times of a company, creating the missing ones.
+
+        ---
+
+        Los tiempos de tareas de la empresa, por clave; crea con los
+        valores de partida los que falten.
+        """
+        times = {
+            task.key: task for task in cls.objects.filter(company=company)
+        }
+        for order, (key, name, hours) in enumerate(
+            DEFAULT_TASK_TIMES, start=1,
+        ):
+            if key not in times:
+                times[key] = cls.objects.create(
+                    company=company, key=key, name=name,
+                    hours=Decimal(hours), sort_order=order,
+                )
+        return times
+
+
 class ServiceEvaluation(models.Model):
     """
     A service uploaded to be valued: estimated budget, cost and yield.
