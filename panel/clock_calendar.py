@@ -78,11 +78,14 @@ def _day_cell(day, shifts, date_from, date_to, today):
 
 def calendar_months(shifts, date_from, date_to):
     """
-    Months of the range (newest first), each a list of weeks of 7 days.
+    Months of the range grouped by year (current year first, months in
+    reading order), each a list of weeks of 7 days.
     ---
-    Los meses del intervalo (el más reciente arriba), cada uno con sus
-    semanas de lunes a domingo. Los días fuera del intervalo salen
-    vacíos y atenuados.
+    Los meses del intervalo agrupados por año: el año más reciente
+    arriba y, dentro de cada año, los meses en sentido de lectura (enero
+    a la izquierda, diciembre a la derecha; S144, Miguel Ángel). Cada
+    mes con sus semanas de lunes a domingo; los días fuera del
+    intervalo salen atenuados.
     """
     by_day = {}
     for shift in shifts:
@@ -109,12 +112,27 @@ def calendar_months(shifts, date_from, date_to):
                                  if not s.get("only_cancelled"))
             weeks.append(cells)
         months.append({
-            "label": "%s %d" % (MONTH_NAMES[month], year),
+            "year": year,
+            "label": MONTH_NAMES[month],
             "weeks": weeks,
-            "total": "%d:%02d" % (total // 3600, total % 3600 // 60),
+            "seconds": total,
+            "total": _hours(total),
         })
         month += 1
         if month > 12:
             year, month = year + 1, 1
-    months.reverse()
-    return {"months": months, "weekday_names": WEEKDAY_NAMES}
+    years = []
+    for month_data in months:
+        if not years or years[-1]["year"] != month_data["year"]:
+            years.append({"year": month_data["year"], "months": [],
+                          "seconds": 0})
+        years[-1]["months"].append(month_data)
+        years[-1]["seconds"] += month_data["seconds"]
+    for year_data in years:
+        year_data["total"] = _hours(year_data["seconds"])
+    years.reverse()
+    return {"years": years, "weekday_names": WEEKDAY_NAMES}
+
+
+def _hours(seconds):
+    return "%d:%02d" % (seconds // 3600, seconds % 3600 // 60)
