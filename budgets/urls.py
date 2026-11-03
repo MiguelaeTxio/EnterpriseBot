@@ -770,6 +770,11 @@ urlpatterns = [
         views_services.ServicesCostSettingsView.as_view(),
         name="services_cost_settings",
     ),
+    path(
+        "services/costs/vehicles/",
+        views_services.ServicesCostVehiclesFragmentView.as_view(),
+        name="services_cost_vehicles_table",
+    ),
     # H37 (S133): traffic panel tab, its board and its actions
     # (pair, separate, assign, unassign, send) — POST for the actions —
     # and the map data.

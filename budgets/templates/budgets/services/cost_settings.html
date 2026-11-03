@@ -6,7 +6,12 @@
 
 {% block extra_head %}
 <style>
-.cost-input-cell { max-width: 8rem; }
+.cost-input-cell { max-width: 8rem; min-width: 6rem; }
+#cvh-results-scroll table td, #cvh-results-scroll table th,
+#cls-results-scroll table th { white-space: nowrap; }
+#cvh-list-box:fullscreen, #cls-list-box:fullscreen { background: var(--bs-body-bg, #fff); padding: 1rem; }
+#cvh-list-box:fullscreen #cvh-results-scroll,
+#cls-list-box:fullscreen #cls-results-scroll { height: calc(100vh - 4rem); }
 </style>
 {% endblock %}
 
@@ -18,185 +23,442 @@ Servicios (solo administración). El coste de un servicio es: operarios
 gasoil (km × l/100 km × €/l, o horas × l/h × €/l si la clase tiene
 consumo por hora). Horas de cada equipo (S142): trabajo + el viaje más
 largo entre el de Google y los km a la velocidad máxima de la clase +
-sus tiempos muertos. Lo que se deje vacío no suma y se avisa en
-la fila. Al guardar se recalculan todos los servicios valorados. Los
-consumos iniciales los dio Miguel Ángel (S142); se irán sacando medias
-de los propios servicios. Desde S142 la página muestra las medias
-reales de los repostajes de GasoGes (budgets/fleet_fuel_averages.py) y
-un botón para usarlas.
+sus tiempos muertos. Lo que se deje vacío no suma y se avisa en la fila.
+Al guardar se recalculan todos los servicios valorados.
+
+H37 (S143). En pestañas, con el formato de todas las vistas (Miguel
+Ángel: "mantener el formato que tenemos en todas las vistas [...]
+dividir la vista en pestañas"); abre en la que el usuario dejó activa
+(directriz 4.15, screen_key services_cost_settings):
+- Costes de vehículos de servicio: medias reales de los repostajes de
+  GasoGes por vehículo, listado de la directriz 4.24 (búsqueda, clase,
+  orden múltiple, casillas, visor de selección, pantalla completa) y
+  "Usar las medias reales".
+- Clases de vehículo: lo editable por clase y el precio del gasoil.
+- Costes de trabajadores: coste por hora de operario.
 {% endcomment %}
-<div class="container-fluid px-3 py-3">
-    {% if errors %}
-    <div class="alert alert-danger small">
-        {% for error in errors %}<div>{{ error }}</div>{% endfor %}
-    </div>
-    {% endif %}
-    <div class="card shadow-sm mb-3">
-        <div class="card-header py-2 d-flex align-items-center justify-content-between gap-2">
-            <span class="fw-semibold small">Medias reales de los repostajes (GasoGes)</span>
-            {% if has_real %}
-            <form method="post" action="{% url 'budgets:services_cost_settings' %}" class="m-0">
-                {% csrf_token %}
-                <input type="hidden" name="action" value="use_real">
-                <button type="submit" class="btn btn-sm btn-primary"
-                        title="Pone el consumo real en cada clase que tenga datos y el precio medio del gasoil, y recalcula los servicios">
-                    <i class="bi bi-arrow-down-circle me-1"></i>Usar las medias reales
-                </button>
-            </form>
-            {% endif %}
-        </div>
-        <div class="card-body p-0">
-            {% if has_real %}
-            <div class="small text-muted px-3 pt-2">
-                {% if real.period.0 %}Del {{ real.period.0|date:"d/m/Y" }} al {{ real.period.1|date:"d/m/Y" }}.{% endif %}
-                Precio medio del gasoil: <strong>{{ real.fuel_price|default_if_none:"—" }} €/l</strong>.
-                Toda la familia asistencia, grúas incluidas, apunta km en el surtidor (S142).
-            </div>
-            <div class="table-responsive">
-                <table class="table table-sm align-middle mb-0 small">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Vehículo</th>
-                            <th>Tipo</th>
-                            <th>Clase</th>
-                            <th class="text-end">Km u horas</th>
-                            <th class="text-end">Litros</th>
-                            <th class="text-end">Consumo</th>
-                            <th class="text-end">Gasto en gasoil</th>
-                            <th class="text-end" title="Tramos entre repostajes descartados por KM mal tecleado o consumo imposible">Descartados</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for vehicle in real.vehicles %}
-                        <tr>
-                            <td class="fw-semibold">{{ vehicle.code }}</td>
-                            <td>{{ vehicle.type_name|lower|capfirst }}</td>
-                            <td>{{ vehicle.class_name|default:"—" }}</td>
-                            {% if vehicle.unit == "h" %}
-                            <td class="text-end">{{ vehicle.hours }} h</td>
-                            <td class="text-end">{{ vehicle.litres }}</td>
-                            <td class="text-end">{{ vehicle.l_hour|default_if_none:"—" }} l/h</td>
-                            <td class="text-end">{{ vehicle.eur_hour|default_if_none:"—" }} €/h</td>
-                            {% else %}
-                            <td class="text-end">{{ vehicle.km }} km</td>
-                            <td class="text-end">{{ vehicle.litres }}</td>
-                            <td class="text-end">{{ vehicle.l_100km|default_if_none:"—" }} l/100 km</td>
-                            <td class="text-end">{{ vehicle.eur_km|default_if_none:"—" }} €/km</td>
-                            {% endif %}
-                            <td class="text-end">{{ vehicle.discarded }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="small text-muted p-3">No hay repostajes de vehículos de asistencia con km.</div>
-            {% endif %}
-        </div>
-    </div>
+<ul class="nav nav-tabs mb-3" id="costTabs">
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'vehiculos' %}active{% endif %}"
+           id="tab-vehiculos" data-bs-toggle="tab" href="#pane-vehiculos">
+            <i class="bi bi-truck me-1"></i>Costes de vehículos de servicio
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'clases' %}active{% endif %}"
+           id="tab-clases" data-bs-toggle="tab" href="#pane-clases">
+            <i class="bi bi-sliders me-1"></i>Clases de vehículo
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'trabajadores' %}active{% endif %}"
+           id="tab-trabajadores" data-bs-toggle="tab" href="#pane-trabajadores">
+            <i class="bi bi-people me-1"></i>Costes de trabajadores
+        </a>
+    </li>
+    <li class="nav-item ms-auto">
+        <a href="{% if panel_back_url %}{{ panel_back_url }}{% else %}{% url 'budgets:services_hub' %}{% endif %}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Volver
+        </a>
+    </li>
+</ul>
 
-    <form method="post" action="{% url 'budgets:services_cost_settings' %}">
-        {% csrf_token %}
-        <div class="card shadow-sm mb-3">
-            <div class="card-header py-2 fw-semibold small">Medias generales</div>
-            <div class="card-body">
-                <div class="row g-3">
-                    <div class="col-12 col-md-4 col-xl-3">
-                        <label class="form-label small" for="fuel-price">Precio del gasoil (€/l)</label>
-                        <input type="text" inputmode="decimal" class="form-control form-control-sm" id="fuel-price"
-                               name="fuel_price_per_liter"
-                               value="{{ settings.fuel_price_per_liter|default_if_none:'' }}">
-                    </div>
-                    <div class="col-12 col-md-4 col-xl-3">
-                        <label class="form-label small" for="operator-cost">Coste por operario (€/h)</label>
-                        <input type="text" inputmode="decimal" class="form-control form-control-sm" id="operator-cost"
-                               name="operator_cost_per_hour"
-                               value="{{ settings.operator_cost_per_hour|default_if_none:'' }}">
-                        <div class="form-text small">Va un operario por vehículo.</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="card shadow-sm mb-3">
-            <div class="card-header py-2 fw-semibold small">Clases de vehículo</div>
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-sm align-middle mb-0 small">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Clase</th>
-                                <th>Consumo (l/100 km)</th>
-                                <th title="Si se rellena, el gasoil de esta clase va por horas del servicio">Consumo (l/h)</th>
-                                <th title="El viaje dura como mínimo los km a esta velocidad">Velocidad máx. (km/h)</th>
-                                <th title="Horas que se suman a cada servicio">Tiempos muertos (h)</th>
-                                <th>Real (GasoGes)</th>
-                                <th>Coste del vehículo (€/km)</th>
-                                <th>Tipos de máquina de asistencia</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for row in vehicle_rows %}
-                            <tr>
-                                <td class="fw-semibold">{{ row.vehicle.name }}</td>
-                                <td class="cost-input-cell">
-                                    <input type="text" inputmode="decimal" class="form-control form-control-sm"
-                                           name="liters_{{ row.vehicle.pk }}"
-                                           value="{{ row.vehicle.fuel_liters_per_100km }}">
-                                </td>
-                                <td class="cost-input-cell">
-                                    <input type="text" inputmode="decimal" class="form-control form-control-sm"
-                                           name="liters_hour_{{ row.vehicle.pk }}"
-                                           value="{{ row.vehicle.fuel_liters_per_hour|default_if_none:'' }}">
-                                </td>
-                                <td class="cost-input-cell">
-                                    <input type="text" inputmode="numeric" class="form-control form-control-sm"
-                                           name="speed_{{ row.vehicle.pk }}"
-                                           value="{{ row.vehicle.max_speed_kmh|default_if_none:'' }}">
-                                </td>
-                                <td class="cost-input-cell">
-                                    <input type="text" inputmode="decimal" class="form-control form-control-sm"
-                                           name="dead_{{ row.vehicle.pk }}"
-                                           value="{{ row.vehicle.dead_time_hours|default_if_none:'' }}">
-                                </td>
-                                <td class="text-nowrap" title="{{ row.real.codes|join:', ' }}">
-                                    {% if row.real.km %}<div>{{ row.real.km.l_100km }} l/100 km · {{ row.real.km.eur_km }} €/km</div>{% endif %}
-                                    {% if row.real.h %}<div>{{ row.real.h.l_hour }} l/h · {{ row.real.h.eur_hour }} €/h</div>{% endif %}
-                                    {% if not row.real %}<span class="text-muted">—</span>{% endif %}
-                                </td>
-                                <td class="cost-input-cell">
-                                    <input type="text" inputmode="decimal" class="form-control form-control-sm"
-                                           name="cost_km_{{ row.vehicle.pk }}"
-                                           value="{{ row.vehicle.cost_per_km|default_if_none:'' }}"
-                                           title="Desgaste, mantenimiento... sin el gasoil">
-                                </td>
-                                <td>
-                                    {% for type in row.types %}
-                                    <div class="form-check form-check-inline mb-0">
-                                        <input class="form-check-input" type="checkbox"
-                                               id="type-{{ row.vehicle.pk }}-{{ forloop.counter }}"
-                                               name="types_{{ row.vehicle.pk }}" value="{{ type.name }}"
-                                               {% if type.checked %}checked{% endif %}>
-                                        <label class="form-check-label" for="type-{{ row.vehicle.pk }}-{{ forloop.counter }}">{{ type.name|lower|capfirst }}</label>
-                                    </div>
-                                    {% endfor %}
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <div class="d-flex gap-2">
-            <button type="submit" class="btn btn-primary">
-                <i class="bi bi-check-lg me-1"></i>Guardar y recalcular
-            </button>
-            <a href="{% if panel_back_url %}{{ panel_back_url }}{% else %}{% url 'budgets:services_hub' %}{% endif %}" class="btn btn-outline-secondary">
-                <i class="bi bi-arrow-left me-1"></i>Volver
-            </a>
-        </div>
-    </form>
+{% if errors %}
+<div class="alert alert-danger small">
+    {% for error in errors %}<div>{{ error }}</div>{% endfor %}
 </div>
+{% endif %}
+
+<div class="tab-content">
+    {# ── Costes de vehículos de servicio ───────────────────────── #}
+    <div class="tab-pane fade {% if active_tab == 'vehiculos' %}show active{% endif %}" id="pane-vehiculos">
+        <div class="border rounded p-2 mb-2" id="cvh-top-panel">
+            <div class="row g-2">
+                <div class="col-lg-6">
+                    <div class="border rounded p-2 h-100" id="cvh-filters">
+                        <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                        <input id="cvh-filter-search" type="search" class="form-control form-control-sm mb-2"
+                               placeholder="Buscar por código, tipo o clase…"
+                               name="search" value="{{ filter_search }}" autocomplete="off"
+                               hx-get="{% url 'budgets:services_cost_vehicles_table' %}"
+                               hx-target="#cvh-table-container"
+                               hx-include="#cvh-filters, #cvh-sort"
+                               hx-trigger="input changed delay:300ms, search">
+                        <div class="d-flex flex-wrap gap-3">
+                            <div class="flex-grow-1">
+                                <div class="small fw-bold">Clase</div>
+                                <select class="form-select form-select-sm" name="class_name" autocomplete="off"
+                                        hx-get="{% url 'budgets:services_cost_vehicles_table' %}"
+                                        hx-target="#cvh-table-container"
+                                        hx-include="#cvh-filters, #cvh-sort"
+                                        hx-trigger="change">
+                                    <option value="">Todas</option>
+                                    {% for name in class_names %}
+                                    <option value="{{ name }}" {% if filter_class == name %}selected{% endif %}>{{ name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="small fw-bold mt-2">Selección</div>
+                        <div class="d-flex align-items-center justify-content-between gap-2">
+                            <div class="form-check mb-0">
+                                <input class="form-check-input" type="checkbox" id="cvh-only-selected" name="only_selected" value="1" autocomplete="off"
+                                       {% if only_selected %}checked{% endif %}
+                                       hx-get="{% url 'budgets:services_cost_vehicles_table' %}"
+                                       hx-target="#cvh-table-container"
+                                       hx-include="#cvh-filters, #cvh-sort"
+                                       hx-trigger="change, cvh-selection-refresh">
+                                <label class="form-check-label small" for="cvh-only-selected">Mostrar solo la selección actual</label>
+                            </div>
+                            <input type="hidden" id="cvh-selected-ids" name="selected_ids" value="">
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-secondary{% if not sort_active %} d-none{% endif %}"
+                                    id="cvh-clear-sort"
+                                    hx-get="{% url 'budgets:services_cost_vehicles_table' %}"
+                                    hx-target="#cvh-table-container"
+                                    hx-include="#cvh-filters"
+                                    hx-vals='{"sort": ""}'
+                                    title="Volver al orden por clase y código">
+                                <i class="bi bi-x-circle me-1"></i>Quitar orden
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-6">
+                    <div class="border rounded p-2 h-100">
+                        <div class="d-flex align-items-center gap-2 mb-1">
+                            <strong class="small"><span id="cvh-mass-count">0</span> seleccionados</strong>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="cvh-mass-clear">Limpiar</button>
+                        </div>
+                        <div class="small text-muted fw-bold">Medias reales (GasoGes)</div>
+                        <div class="d-flex gap-1 flex-wrap align-items-center">
+                            {% if has_real %}
+                            <form method="post" action="{% url 'budgets:services_cost_settings' %}" class="m-0">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="use_real">
+                                <button type="submit" class="btn btn-sm btn-primary"
+                                        title="Pone el consumo real en cada clase que tenga datos y el precio medio del gasoil, y recalcula los servicios">
+                                    <i class="bi bi-arrow-down-circle me-1"></i>Usar las medias reales
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                        <div class="small text-muted mt-1">
+                            {% if period.0 %}Del {{ period.0|date:"d/m/Y" }} al {{ period.1|date:"d/m/Y" }}. {% endif %}
+                            Precio medio del gasoil: <strong>{{ fuel_price|default_if_none:"—" }} €/l</strong>.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="border rounded p-2" id="cvh-bottom-panel">
+            <div class="row g-2 h-100">
+                <div class="col-lg-9 h-100">
+                    <div class="border rounded p-2 h-100 d-flex flex-column" id="cvh-list-box">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <div class="fw-bold small">
+                                <span id="cvh-row-count">{{ rows|length }}</span> vehículos
+                                <span id="cvh-row-filtered" class="text-muted fw-normal{% if not is_filtered %} d-none{% endif %}">(filtrado)</span>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" id="cvh-fullscreen" title="Pantalla completa">
+                                <i class="bi bi-fullscreen"></i>
+                            </button>
+                        </div>
+                        <div id="cvh-results-scroll" class="fixed-list-scroll flex-scroll-xy">
+                            <div id="cvh-table-container">
+                                {% include "budgets/services/_cost_vehicles_table.html" %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-3 h-100">
+                    <div class="border rounded p-2 h-100 d-flex flex-column">
+                        <div class="fw-bold small mb-1">Selección actual (<span id="cvh-selection-count">0</span>)</div>
+                        <div class="flex-scroll-y">
+                            <ul class="mb-0 small ps-0 list-unstyled" id="cvh-selection-list">
+                                <li class="text-muted">Nada seleccionado todavía.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <span id="cvh-sort" class="d-none"><input type="hidden" name="sort" value="{{ current_sort }}"></span>
+    </div>
+
+    {# ── Clases de vehículo ────────────────────────────────────── #}
+    <div class="tab-pane fade {% if active_tab == 'clases' %}show active{% endif %}" id="pane-clases">
+        <form method="post" action="{% url 'budgets:services_cost_settings' %}">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="save_classes">
+            <div class="border rounded p-2 mb-2" id="cls-top-panel">
+                <div class="row g-2">
+                    <div class="col-lg-6">
+                        <div class="border rounded p-2 h-100">
+                            <div class="fw-bold small mb-1">Medias generales</div>
+                            <label class="form-label small mb-1" for="fuel-price">Precio del gasoil (€/l)</label>
+                            <input type="text" inputmode="decimal" class="form-control form-control-sm cost-input-cell" id="fuel-price"
+                                   name="fuel_price_per_liter"
+                                   value="{{ settings.fuel_price_per_liter|default_if_none:'' }}">
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="border rounded p-2 h-100">
+                            <div class="small text-muted fw-bold">Guardar</div>
+                            <button type="submit" class="btn btn-sm btn-primary"
+                                    title="Guarda el gasoil y las clases y recalcula coste y rendimiento de todos los servicios valorados">
+                                <i class="bi bi-check-lg me-1"></i>Guardar y recalcular
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="border rounded p-2" id="cls-bottom-panel">
+                <div class="border rounded p-2 h-100 d-flex flex-column" id="cls-list-box">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <div class="fw-bold small">{{ vehicle_rows|length }} clases de vehículo</div>
+                        <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" id="cls-fullscreen" title="Pantalla completa">
+                            <i class="bi bi-fullscreen"></i>
+                        </button>
+                    </div>
+                    <div id="cls-results-scroll" class="fixed-list-scroll flex-scroll-xy">
+                        <table class="table table-sm align-middle mb-0 small">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Clase</th>
+                                    <th>Consumo (l/100 km)</th>
+                                    <th title="Si se rellena, el gasoil de esta clase va por horas del servicio">Consumo (l/h)</th>
+                                    <th title="El viaje dura como mínimo los km a esta velocidad">Velocidad máx. (km/h)</th>
+                                    <th title="Horas que se suman a cada servicio">Tiempos muertos (h)</th>
+                                    <th>Real (GasoGes)</th>
+                                    <th>Coste del vehículo (€/km)</th>
+                                    <th>Tipos de máquina de asistencia</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in vehicle_rows %}
+                                <tr>
+                                    <td class="fw-semibold">{{ row.vehicle.name }}</td>
+                                    <td class="cost-input-cell">
+                                        <input type="text" inputmode="decimal" class="form-control form-control-sm"
+                                               name="liters_{{ row.vehicle.pk }}"
+                                               value="{{ row.vehicle.fuel_liters_per_100km }}">
+                                    </td>
+                                    <td class="cost-input-cell">
+                                        <input type="text" inputmode="decimal" class="form-control form-control-sm"
+                                               name="liters_hour_{{ row.vehicle.pk }}"
+                                               value="{{ row.vehicle.fuel_liters_per_hour|default_if_none:'' }}">
+                                    </td>
+                                    <td class="cost-input-cell">
+                                        <input type="text" inputmode="numeric" class="form-control form-control-sm"
+                                               name="speed_{{ row.vehicle.pk }}"
+                                               value="{{ row.vehicle.max_speed_kmh|default_if_none:'' }}">
+                                    </td>
+                                    <td class="cost-input-cell">
+                                        <input type="text" inputmode="decimal" class="form-control form-control-sm"
+                                               name="dead_{{ row.vehicle.pk }}"
+                                               value="{{ row.vehicle.dead_time_hours|default_if_none:'' }}">
+                                    </td>
+                                    <td class="text-nowrap" title="{{ row.real.codes|join:', ' }}">
+                                        {% if row.real.km %}<div>{{ row.real.km.l_100km }} l/100 km · {{ row.real.km.eur_km }} €/km</div>{% endif %}
+                                        {% if row.real.h %}<div>{{ row.real.h.l_hour }} l/h · {{ row.real.h.eur_hour }} €/h</div>{% endif %}
+                                        {% if not row.real %}<span class="text-muted">—</span>{% endif %}
+                                    </td>
+                                    <td class="cost-input-cell">
+                                        <input type="text" inputmode="decimal" class="form-control form-control-sm"
+                                               name="cost_km_{{ row.vehicle.pk }}"
+                                               value="{{ row.vehicle.cost_per_km|default_if_none:'' }}"
+                                               title="Desgaste, mantenimiento... sin el gasoil">
+                                    </td>
+                                    <td>
+                                        {% for type in row.types %}
+                                        <div class="form-check form-check-inline mb-0">
+                                            <input class="form-check-input" type="checkbox"
+                                                   id="type-{{ row.vehicle.pk }}-{{ forloop.counter }}"
+                                                   name="types_{{ row.vehicle.pk }}" value="{{ type.name }}"
+                                                   {% if type.checked %}checked{% endif %}>
+                                            <label class="form-check-label" for="type-{{ row.vehicle.pk }}-{{ forloop.counter }}">{{ type.name|lower|capfirst }}</label>
+                                        </div>
+                                        {% endfor %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    {# ── Costes de trabajadores ────────────────────────────────── #}
+    <div class="tab-pane fade {% if active_tab == 'trabajadores' %}show active{% endif %}" id="pane-trabajadores">
+        <form method="post" action="{% url 'budgets:services_cost_settings' %}">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="save_workers">
+            <div class="border rounded p-2">
+                <div class="row g-2">
+                    <div class="col-lg-6">
+                        <div class="border rounded p-2 h-100">
+                            <div class="fw-bold small mb-1">Operarios</div>
+                            <label class="form-label small mb-1" for="operator-cost">Coste por operario (€/h)</label>
+                            <input type="text" inputmode="decimal" class="form-control form-control-sm cost-input-cell" id="operator-cost"
+                                   name="operator_cost_per_hour"
+                                   value="{{ settings.operator_cost_per_hour|default_if_none:'' }}">
+                            <div class="form-text small">Va un operario por vehículo.</div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="border rounded p-2 h-100">
+                            <div class="small text-muted fw-bold">Guardar</div>
+                            <button type="submit" class="btn btn-sm btn-primary"
+                                    title="Guarda el coste de los operarios y recalcula coste y rendimiento de todos los servicios valorados">
+                                <i class="bi bi-check-lg me-1"></i>Guardar y recalcular
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+{{ saved_selection|json_script:"cvh-saved-selection" }}
+{{ screen_key|json_script:"cost-screen-key" }}
+{% include "panel/_fixed_list_layout.html" with top_id="cvh-top-panel" bottom_id="cvh-bottom-panel" %}
+{% include "panel/_fixed_list_layout.html" with top_id="cls-top-panel" bottom_id="cls-bottom-panel" %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+    "use strict";
+    const screenKey = JSON.parse(document.getElementById("cost-screen-key").textContent);
+    const container = document.getElementById("cvh-table-container");
+
+    // Pestaña activa por usuario (directriz 4.15). Igual que en
+    // Servicios: 'click' nativo, no 'shown.bs.tab' (S94).
+    document.querySelectorAll('#costTabs a[data-bs-toggle="tab"]').forEach(function (tabLink) {
+        tabLink.addEventListener("click", function (ev) {
+            const tabKey = ev.currentTarget.id.replace("tab-", "");
+            window.EbNavState.save(screenKey, {active_tab: tabKey});
+        });
+    });
+
+    // Selección (código -> etiqueta): sobrevive a cada repintado del
+    // fragmento y se guarda por usuario (directriz 4.15).
+    const selection = new Map();
+    try {
+        JSON.parse(document.getElementById("cvh-saved-selection").textContent).forEach(function (item) {
+            if (item && item.key) {
+                selection.set(String(item.key), item.label || "");
+            }
+        });
+    } catch (e) { /* estado guardado ilegible: se empieza sin selección */ }
+    let lastSaved = null;
+    function saveSelection() {
+        const payload = Array.from(selection.entries()).map(function ([key, label]) {
+            return {key: key, label: label};
+        });
+        const serialized = JSON.stringify(payload);
+        if (lastSaved === null) { lastSaved = serialized; return; }
+        if (serialized === lastSaved) return;
+        lastSaved = serialized;
+        window.EbNavState.save(screenKey, {selection: payload});
+    }
+
+    function refreshFromFragment() {
+        const state = document.getElementById("cvh-fragment-state");
+        if (state) {
+            document.getElementById("cvh-row-count").textContent = state.dataset.count;
+            document.getElementById("cvh-row-filtered").classList.toggle("d-none", !state.dataset.filtered);
+            document.getElementById("cvh-clear-sort").classList.toggle("d-none", !state.dataset.sortActive);
+            document.querySelector("#cvh-sort input[name=sort]").value = state.dataset.sort || "";
+        }
+        container.querySelectorAll(".cvh-row-check").forEach(function (cb) {
+            cb.checked = selection.has(cb.dataset.key);
+        });
+        updateSelectionUi();
+    }
+
+    function updateSelectionUi() {
+        saveSelection();
+        document.getElementById("cvh-mass-count").textContent = selection.size;
+        document.getElementById("cvh-selection-count").textContent = selection.size;
+        const list = document.getElementById("cvh-selection-list");
+        list.innerHTML = "";
+        if (!selection.size) {
+            const empty = document.createElement("li");
+            empty.className = "text-muted";
+            empty.textContent = "Nada seleccionado todavía.";
+            list.appendChild(empty);
+        } else {
+            Array.from(selection.values()).sort().forEach(function (label) {
+                const li = document.createElement("li");
+                li.textContent = label;
+                list.appendChild(li);
+            });
+        }
+        const idsInput = document.getElementById("cvh-selected-ids");
+        const newIds = Array.from(selection.keys()).join(",");
+        if (idsInput.value !== newIds) {
+            idsInput.value = newIds;
+            const onlySel = document.getElementById("cvh-only-selected");
+            if (onlySel.checked) htmx.trigger(onlySel, "cvh-selection-refresh");
+        }
+        const all = document.getElementById("cvh-check-all");
+        if (!all) return;
+        const rows = container.querySelectorAll(".cvh-row-check");
+        const checked = container.querySelectorAll(".cvh-row-check:checked");
+        all.checked = rows.length > 0 && checked.length === rows.length;
+        all.indeterminate = checked.length > 0 && checked.length < rows.length;
+    }
+
+    container.addEventListener("change", function (evt) {
+        const target = evt.target;
+        if (target.classList.contains("cvh-row-check")) {
+            if (target.checked) selection.set(target.dataset.key, target.dataset.label);
+            else selection.delete(target.dataset.key);
+            updateSelectionUi();
+        } else if (target.id === "cvh-check-all") {
+            container.querySelectorAll(".cvh-row-check").forEach(function (cb) {
+                cb.checked = target.checked;
+                if (target.checked) selection.set(cb.dataset.key, cb.dataset.label);
+                else selection.delete(cb.dataset.key);
+            });
+            updateSelectionUi();
+        }
+    });
+
+    document.getElementById("cvh-mass-clear").addEventListener("click", function () {
+        selection.clear();
+        refreshFromFragment();
+    });
+
+    // Pantalla completa de cada lista (formato del laboratorio de
+    // análisis, directriz 4.26).
+    [["cvh-fullscreen", "cvh-list-box"], ["cls-fullscreen", "cls-list-box"]].forEach(function ([buttonId, boxId]) {
+        document.getElementById(buttonId).addEventListener("click", function () {
+            if (document.fullscreenElement) {
+                document.exitFullscreen();
+                return;
+            }
+            document.getElementById(boxId).requestFullscreen().catch(function (err) {
+                console.warn("Pantalla completa no disponible:", err);
+            });
+        });
+    });
+
+    document.body.addEventListener("htmx:afterSwap", function (evt) {
+        if (evt.detail.target && evt.detail.target.id === "cvh-table-container") {
+            refreshFromFragment();
+        }
+    });
+
+    refreshFromFragment();
+})();
+</script>
 {% endblock %}

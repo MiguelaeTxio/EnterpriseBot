@@ -1,0 +1,65 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/budgets/templates/budgets/services/_cost_vehicles_table.html #}
+{% comment %}
+H37 (S143). Fragmento de tabla de la pestaña "Costes de vehículos de
+servicio" de Medias de coste (directriz 4.24): cada vehículo de la
+familia asistencia con sus medias reales de los repostajes de GasoGes.
+Orden múltiple con prioridad (resuelto en la vista; sin orden, por clase
+y código), casilla por fila y "todos", cabecera fija. Los que apuntan
+horas en el surtidor dan l/h y €/h; los que apuntan km, l/100 km y €/km.
+{% endcomment %}
+{% if rows %}
+<table class="table table-sm table-hover align-middle mb-0 small" id="cvh-table">
+    <thead class="table-light">
+        <tr>
+            <th><input class="form-check-input" type="checkbox" id="cvh-check-all" title="Marcar/desmarcar todos los visibles"></th>
+            <th>{% include "budgets/services/_cost_sort_th.html" with col=sort_cols.code label="Vehículo" %}</th>
+            <th>{% include "budgets/services/_cost_sort_th.html" with col=sort_cols.type label="Tipo" %}</th>
+            <th>{% include "budgets/services/_cost_sort_th.html" with col=sort_cols.class label="Clase" %}</th>
+            <th>{% include "budgets/services/_cost_sort_th.html" with col=sort_cols.measure label="Km u horas" end=1 %}</th>
+            <th>{% include "budgets/services/_cost_sort_th.html" with col=sort_cols.litres label="Litros" end=1 %}</th>
+            <th>{% include "budgets/services/_cost_sort_th.html" with col=sort_cols.rate label="Consumo" end=1 %}</th>
+            <th>{% include "budgets/services/_cost_sort_th.html" with col=sort_cols.spend label="Gasto en gasoil" end=1 %}</th>
+            <th title="Tramos entre repostajes descartados por KM mal tecleado o consumo imposible">{% include "budgets/services/_cost_sort_th.html" with col=sort_cols.discarded label="Descartados" end=1 %}</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            <td>
+                <input class="form-check-input cvh-row-check" type="checkbox"
+                       data-key="{{ row.key }}" data-label="{{ row.label }}">
+            </td>
+            <td class="fw-semibold">{{ row.code }}</td>
+            <td>{{ row.type_name|lower|capfirst }}</td>
+            <td>{{ row.class_name|default:"—" }}</td>
+            {% if row.unit == "h" %}
+            <td class="text-end">{{ row.hours }} h</td>
+            <td class="text-end">{{ row.litres }}</td>
+            <td class="text-end">{{ row.l_hour|default_if_none:"—" }} l/h</td>
+            <td class="text-end">{{ row.eur_hour|default_if_none:"—" }} €/h</td>
+            {% else %}
+            <td class="text-end">{{ row.km }} km</td>
+            <td class="text-end">{{ row.litres }}</td>
+            <td class="text-end">{{ row.l_100km|default_if_none:"—" }} l/100 km</td>
+            <td class="text-end">{{ row.eur_km|default_if_none:"—" }} €/km</td>
+            {% endif %}
+            <td class="text-end">{{ row.discarded }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="text-center text-muted py-5">
+    <i class="bi bi-fuel-pump fs-1 d-block mb-2 opacity-25"></i>
+    <p class="mb-0">{% if has_real %}No hay vehículos que coincidan.{% else %}No hay repostajes de vehículos de asistencia.{% endif %}</p>
+</div>
+{% endif %}
+{% comment %}
+Estado del fragmento para el panel fijo (que no se repinta): nº de
+filas, si hay filtro y el orden vigente.
+{% endcomment %}
+<span id="cvh-fragment-state" class="d-none"
+      data-count="{{ rows|length }}"
+      data-filtered="{% if is_filtered %}1{% endif %}"
+      data-sort-active="{% if sort_active %}1{% endif %}"
+      data-sort="{{ current_sort }}"></span>

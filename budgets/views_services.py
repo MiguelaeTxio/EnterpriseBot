@@ -2146,36 +2146,162 @@ class ServiceEvaluationOrderView(AssistanceSupervisorAccessMixin, View):
         )
 
 
-class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
+COST_SCREEN_KEY = "services_cost_settings"
+# H37 (S143): Medias de coste in tabs (Miguel Ángel: "dividir la vista en
+# pestañas"). Las pestañas de Medias de coste.
+COST_TABS = ("vehiculos", "clases", "trabajadores")
+COST_DEFAULT_TAB = "vehiculos"
+
+
+def _cost_nav_state(company_user):
     """
-    Average costs used to value the services.
+    Saved navigation state of Medias de coste for the user.
 
     ---
 
-    Medias de coste para valorar los servicios (solo administración):
-    precio del gasoil, coste por hora de operario y, por clase de
-    vehículo, consumo por km o por hora, velocidad máxima, tiempos
-    muertos, coste por km y tipos de máquina. Al guardar se recalcula el
-    coste de todos los servicios valorados.
+    Estado de navegación guardado de Medias de coste (directriz 4.15):
+    pestaña activa, filtros y orden del listado y selección, siempre
+    como diccionario.
+    """
+    nav_state = PanelNavigationState.objects.filter(
+        company_user=company_user, screen_key=COST_SCREEN_KEY,
+    ).first()
+    state = nav_state.state if nav_state else {}
+    return state if isinstance(state, dict) else {}
+
+
+def _set_cost_tab(company_user, tab):
+    """
+    Leave a tab of Medias de coste active for the user.
+
+    ---
+
+    Deja activa una pestaña de Medias de coste del usuario, para volver
+    a ella tras una acción que recarga la página.
+    """
+    nav_state, _created = PanelNavigationState.objects.get_or_create(
+        company_user=company_user, screen_key=COST_SCREEN_KEY,
+        defaults={"state": {}},
+    )
+    state = nav_state.state if isinstance(nav_state.state, dict) else {}
+    state["active_tab"] = tab
+    nav_state.state = state
+    nav_state.save(update_fields=["state"])
+
+
+def _cost_vehicles_context(request):
+    """
+    Context of the service vehicles list fragment.
+
+    ---
+
+    Contexto del fragmento del listado de vehículos de servicio con sus
+    medias reales de GasoGes: filas, filtros vigentes y controles de
+    orden, resueltos aquí (plantillas tontas).
+    """
+    from budgets import cost_vehicles_list
+
+    params = {
+        key: request.GET.get(key, "")
+        for key in cost_vehicles_list.FILTER_KEYS
+    }
+    only_selected = request.GET.get("only_selected") == "1"
+    only_keys = None
+    if only_selected:
+        only_keys = {
+            key for key in request.GET.get("selected_ids", "").split(",")
+            if key
+        }
+    data = cost_vehicles_list.build_list(
+        request.user.company_user.company, params, only_keys,
+    )
+    return {
+        **data,
+        "filter_search": params["search"],
+        "filter_class": params["class_name"],
+        "only_selected": only_selected,
+        "is_filtered": bool(
+            params["search"] or params["class_name"] or only_selected
+        ),
+        **cost_vehicles_list.sort_controls(params["sort"]),
+    }
+
+
+class ServicesCostVehiclesFragmentView(AdminRoleRequiredMixin, View):
+    """
+    Service vehicles list fragment (filters, order, selection).
+
+    ---
+
+    Fragmento del listado de vehículos de servicio de Medias de coste,
+    para la búsqueda, el filtro por clase, el orden y "mostrar solo la
+    selección actual" (directriz 4.24, guardados por usuario, 4.15).
+    """
+
+    def get(self, request):
+        """
+        Return the table fragment.
+
+        ---
+
+        Devuelve el fragmento de tabla.
+        """
+        from budgets.cost_vehicles_list import FILTER_KEYS
+        from panel.navigation_persistence import apply_list_navigation
+
+        apply_list_navigation(request, COST_SCREEN_KEY, FILTER_KEYS)
+        return render(
+            request, "budgets/services/_cost_vehicles_table.html",
+            _cost_vehicles_context(request),
+        )
+
+
+class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
+    """
+    Average costs used to value the services, in tabs.
+
+    ---
+
+    Medias de coste para valorar los servicios (solo administración),
+    en pestañas (S143) que abren en la que el usuario dejó activa:
+    - Costes de vehículos de servicio: medias reales de los repostajes
+      de GasoGes por vehículo, en el formato de listado de la directriz
+      4.24, con "Usar las medias reales".
+    - Clases de vehículo: precio del gasoil y, por clase, consumo por km
+      o por hora, velocidad máxima, tiempos muertos, coste por km y
+      tipos de máquina.
+    - Costes de trabajadores: coste por hora de operario.
+    Al guardar se recalcula el coste de todos los servicios valorados.
     """
 
     template_name = "budgets/services/cost_settings.html"
 
-    def _context(self, request, settings, vehicles, errors=None):
+    def _context(self, request, settings, vehicles, errors=None,
+                 active_tab=None):
         """
-        Context of the page, with the machine types already marked and
-        the real averages of the GasoGes refuels.
+        Context of the page: the three tabs.
 
         ---
 
-        Contexto de la página, con los tipos de máquina ya marcados por
-        clase y las medias reales de los repostajes de GasoGes por clase
-        y por vehículo (plantillas tontas).
+        Contexto de la página: la pestaña activa, el listado de
+        vehículos de servicio (con los filtros guardados), las clases con
+        sus tipos de máquina marcados y su media real de GasoGes, y el
+        coste de los trabajadores (plantillas tontas).
         """
+        from budgets.cost_vehicles_list import FILTER_KEYS
         from budgets.dispatch_vehicle import MACHINE_USES
         from budgets.fleet_fuel_averages import fleet_averages
+        from panel.navigation_persistence import apply_list_navigation
 
-        real = fleet_averages(request.user.company_user.company)
+        company_user = request.user.company_user
+        state = _cost_nav_state(company_user)
+        if active_tab is None:
+            active_tab = state.get("active_tab")
+        if active_tab not in COST_TABS:
+            active_tab = COST_DEFAULT_TAB
+        if request.method == "GET":
+            apply_list_navigation(request, COST_SCREEN_KEY, FILTER_KEYS)
+        real = fleet_averages(company_user.company)
         type_names = list(MACHINE_USES)
         rows = []
         for vehicle in vehicles:
@@ -2188,13 +2314,18 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
                     for name in type_names
                 ],
             })
+        saved_selection = state.get("selection")
         return _build_base_context(request, {
             "active_nav": "services_hub",
+            "active_tab": active_tab,
+            "screen_key": COST_SCREEN_KEY,
             "settings": settings,
             "vehicle_rows": rows,
-            "real": real,
-            "has_real": bool(real["classes"] or real["fuel_price"]),
             "errors": errors or [],
+            "saved_selection": (
+                saved_selection if isinstance(saved_selection, list) else []
+            ),
+            **_cost_vehicles_context(request),
         })
 
     def _use_real(self, request, company):
@@ -2205,7 +2336,7 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
 
         Copia las medias reales de los repostajes: consumo de cada clase
         que tenga datos y precio medio del gasoil. Las clases sin datos
-        (las grúas apuntan horas) se quedan como estaban.
+        se quedan como estaban. Vuelve a la pestaña de vehículos.
         """
         from budgets.fleet_fuel_averages import apply_real_averages
         from budgets.service_evaluation import recompute_company
@@ -2224,15 +2355,16 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
                     ", ".join(skipped),
                 ),
             )
+        _set_cost_tab(request.user.company_user, "vehiculos")
         return redirect("budgets:services_cost_settings")
 
     def get(self, request):
         """
-        Render the averages.
+        Render the averages on the persisted tab.
 
         ---
 
-        Pinta las medias.
+        Pinta las medias en la pestaña guardada.
         """
         from budgets.models import AssistanceCostSettings
 
@@ -2246,11 +2378,12 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
 
     def post(self, request):
         """
-        Save the averages and recompute the costs.
+        Save the averages of one tab and recompute the costs.
 
         ---
 
-        Guarda las medias y recalcula los costes de los servicios.
+        Guarda las medias de una pestaña (clases de vehículo o
+        trabajadores) y recalcula los costes de los servicios.
         """
         from decimal import Decimal, InvalidOperation
 
@@ -2258,8 +2391,10 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
         from budgets.service_evaluation import recompute_company
 
         company = request.user.company_user.company
-        if request.POST.get("action") == "use_real":
+        action = request.POST.get("action")
+        if action == "use_real":
             return self._use_real(request, company)
+        tab = "trabajadores" if action == "save_workers" else "clases"
         settings = AssistanceCostSettings.for_company(company)
         vehicles = list(company.assistance_vehicle_costs.all())
         errors = []
@@ -2280,55 +2415,29 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
                 return None
             return value
 
-        settings.fuel_price_per_liter = amount(
-            "fuel_price_per_liter", "Precio del gasoil",
-        )
-        settings.operator_cost_per_hour = amount(
-            "operator_cost_per_hour", "Coste por operario",
-        )
-        for vehicle in vehicles:
-            liters = amount(
-                "liters_%d" % vehicle.pk, "Consumo de %s" % vehicle.name,
-                required=True,
+        if tab == "trabajadores":
+            settings.operator_cost_per_hour = amount(
+                "operator_cost_per_hour", "Coste por operario",
             )
-            if liters is not None:
-                vehicle.fuel_liters_per_100km = liters
-            vehicle.cost_per_km = amount(
-                "cost_km_%d" % vehicle.pk,
-                "Coste por km de %s" % vehicle.name,
+        else:
+            settings.fuel_price_per_liter = amount(
+                "fuel_price_per_liter", "Precio del gasoil",
             )
-            vehicle.fuel_liters_per_hour = amount(
-                "liters_hour_%d" % vehicle.pk,
-                "Consumo por hora de %s" % vehicle.name,
-            )
-            vehicle.dead_time_hours = amount(
-                "dead_%d" % vehicle.pk,
-                "Tiempos muertos de %s" % vehicle.name,
-            )
-            speed = amount(
-                "speed_%d" % vehicle.pk,
-                "Velocidad máxima de %s" % vehicle.name,
-            )
-            if speed is not None and not (10 <= speed <= 200):
-                errors.append(
-                    "Velocidad máxima de %s: entre 10 y 200 km/h." % (
-                        vehicle.name,
-                    ),
-                )
-                speed = None
-            vehicle.max_speed_kmh = int(speed) if speed is not None else None
-            vehicle.machine_types = "\n".join(
-                request.POST.getlist("types_%d" % vehicle.pk),
-            )
+            for vehicle in vehicles:
+                self._read_vehicle(request, vehicle, amount, errors)
         if errors:
             return render(
                 request, self.template_name,
-                self._context(request, settings, vehicles, errors),
+                self._context(
+                    request, settings, vehicles, errors, active_tab=tab,
+                ),
             )
         settings.save()
-        for vehicle in vehicles:
-            vehicle.save()
+        if tab == "clases":
+            for vehicle in vehicles:
+                vehicle.save()
         recompute_company(company)
+        _set_cost_tab(request.user.company_user, tab)
         messages.success(
             request,
             "Medias guardadas. Coste y rendimiento recalculados en todos "
@@ -2336,3 +2445,46 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
         )
         _open_services_tab(request.user.company_user)
         return redirect("budgets:services_hub")
+
+    @staticmethod
+    def _read_vehicle(request, vehicle, amount, errors):
+        """
+        Read the posted values of one vehicle class.
+
+        ---
+
+        Lee del formulario los valores de una clase de vehículo.
+        """
+        liters = amount(
+            "liters_%d" % vehicle.pk, "Consumo de %s" % vehicle.name,
+            required=True,
+        )
+        if liters is not None:
+            vehicle.fuel_liters_per_100km = liters
+        vehicle.cost_per_km = amount(
+            "cost_km_%d" % vehicle.pk,
+            "Coste por km de %s" % vehicle.name,
+        )
+        vehicle.fuel_liters_per_hour = amount(
+            "liters_hour_%d" % vehicle.pk,
+            "Consumo por hora de %s" % vehicle.name,
+        )
+        vehicle.dead_time_hours = amount(
+            "dead_%d" % vehicle.pk,
+            "Tiempos muertos de %s" % vehicle.name,
+        )
+        speed = amount(
+            "speed_%d" % vehicle.pk,
+            "Velocidad máxima de %s" % vehicle.name,
+        )
+        if speed is not None and not (10 <= speed <= 200):
+            errors.append(
+                "Velocidad máxima de %s: entre 10 y 200 km/h." % (
+                    vehicle.name,
+                ),
+            )
+            speed = None
+        vehicle.max_speed_kmh = int(speed) if speed is not None else None
+        vehicle.machine_types = "\n".join(
+            request.POST.getlist("types_%d" % vehicle.pk),
+        )
