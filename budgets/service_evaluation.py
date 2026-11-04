@@ -304,6 +304,29 @@ def _route_bases(company, insurer, notes):
     return list(Base.objects.filter(company=company, is_active=True))
 
 
+def service_addresses(data):
+    """
+    (pickup, delivery) address texts of the service ("" if missing).
+
+    ---
+
+    Textos de la dirección de recogida y de entrega del servicio, tal
+    como se miden ("" si faltan).
+    """
+    from budgets.service_eta import _join
+
+    pickup = _join(
+        data.get("pickup_location"), data.get("vehicle_locality"),
+        data.get("pickup_province"),
+    ) if data.get("pickup_location") else ""
+    delivery_place = data.get("delivery_address") or ""
+    delivery = _join(
+        delivery_place, data.get("delivery_locality"),
+        data.get("delivery_province"),
+    ) if delivery_place else ""
+    return pickup, delivery
+
+
 def _route(company, data, kinds, notes, insurer=None):
     """
     Base, km and travel hours of the service, base to base.
@@ -320,23 +343,14 @@ def _route(company, data, kinds, notes, insurer=None):
     from budgets.service_eta import (
         EtaError,
         Router,
-        _join,
         address_point,
         base_point,
     )
 
-    pickup = _join(
-        data.get("pickup_location"), data.get("vehicle_locality"),
-        data.get("pickup_province"),
-    ) if data.get("pickup_location") else ""
+    pickup, delivery = service_addresses(data)
     if not pickup:
         notes.append("Sin dirección de recogida: no se mide la ruta.")
         return None, None, None
-    delivery_place = data.get("delivery_address") or ""
-    delivery = _join(
-        delivery_place, data.get("delivery_locality"),
-        data.get("delivery_province"),
-    ) if delivery_place else ""
     bases = [
         (base, base_point(base))
         for base in _route_bases(company, insurer, notes)
@@ -677,6 +691,41 @@ def _apply_task_concepts(budget, data, task_times, notes):
         ))
 
 
+def estimate_budget(evaluation, when, notes, data=None, task_times=None):
+    """
+    The unsaved Budget of the estimate, ready for the engine.
+
+    ---
+
+    El presupuesto (sin guardar ni calcular) con el que se estima un
+    servicio: su aseguradora, tipo, base, fecha y hora, km del circuito
+    y los conceptos de la tarifa de sus tareas. Lo usan la valoración y
+    la comparación con el presupuesto manual (S143,
+    `compare_service_budgets`).
+    """
+    from budgets.models import AssistanceTaskTime
+
+    budget = Budget(
+        company=evaluation.company,
+        insurer=evaluation.insurer,
+        vehicle_type=evaluation.vehicle_type,
+        base=evaluation.base,
+        service_date=when.date(),
+        service_time=when.time().replace(microsecond=0),
+        km_phase1=evaluation.km,
+        is_night=_is_night(evaluation.insurer, evaluation.company, when),
+        route_calculation_mode=Budget.ROUTE_MODE_MANUAL,
+        apply_iva=False,
+    )
+    _apply_task_concepts(
+        budget, data if data is not None else evaluation.data,
+        task_times if task_times is not None
+        else AssistanceTaskTime.for_company(evaluation.company),
+        notes,
+    )
+    return budget
+
+
 def _budget_amount(evaluation, when, notes, data=None, task_times=None,
                    dated=True):
     """
@@ -705,23 +754,10 @@ def _budget_amount(evaluation, when, notes, data=None, task_times=None,
         return None
     if evaluation.km is None:
         return None
-    budget = Budget(
-        company=evaluation.company,
-        insurer=evaluation.insurer,
-        vehicle_type=evaluation.vehicle_type,
-        base=evaluation.base,
-        service_date=when.date(),
-        service_time=when.time().replace(microsecond=0),
-        km_phase1=evaluation.km,
-        is_night=_is_night(evaluation.insurer, evaluation.company, when),
-        route_calculation_mode=Budget.ROUTE_MODE_MANUAL,
-        apply_iva=False,
-    )
-    _apply_task_concepts(
-        budget, data if data is not None else evaluation.data,
-        task_times if task_times is not None
+    budget = estimate_budget(
+        evaluation, when, notes, data=data,
+        task_times=task_times if task_times is not None
         else AssistanceTaskTime.for_company(evaluation.company),
-        notes,
     )
     if not dated:
         notes.append(
