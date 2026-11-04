@@ -555,6 +555,17 @@ la plantilla de algún grupo marcado se abre este modal para elegirla.
         tabLink.addEventListener('click', function (ev) {
             const tabKey = ev.currentTarget.id.replace('tab-', '');
             saveState({active_tab: tabKey});
+            // S144 (Miguel Ángel: "desde fichajes recargo la página...
+            // vuelvo a personal"): la URL lleva ?tab= desde el Volver
+            // por pestañas; se actualiza al cambiar, para que recargar
+            // abra la pestaña que se está viendo.
+            try {
+                const url = new URL(window.location.href);
+                if (url.searchParams.has('tab')) {
+                    url.searchParams.set('tab', tabKey);
+                    history.replaceState(history.state, '', url.toString());
+                }
+            } catch (e) { /* sin URL API: recargar usa el estado guardado */ }
         });
     });
 
