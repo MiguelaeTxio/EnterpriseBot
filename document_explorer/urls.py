@@ -100,6 +100,12 @@ urlpatterns = [
         views.ResolveDuplicatesView.as_view(),
         name="duplicates_resolve",
     ),
+    # H24 (S144): descargar los archivos seleccionados.
+    path(
+        "descargar/",
+        views.BulkDownloadView.as_view(),
+        name="bulk_download",
+    ),
     path(
         "agente/registrar/",
         views.RegisterUploadedObjectView.as_view(),

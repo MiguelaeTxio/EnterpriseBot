@@ -130,6 +130,7 @@ tiene por qué saber que son cubos diferentes". Ver
 """
 from urllib.parse import urlencode
 import datetime
+import io
 
 from django.contrib import messages
 from django.core.paginator import Paginator
@@ -1187,6 +1188,84 @@ class OpenDocumentView(ExplorerAccessMixin, View):
 
         return HttpResponseRedirect(
             generate_signed_url(entry.bucket, entry.blob_name)
+        )
+
+
+class BulkDownloadView(ExplorerAccessMixin, View):
+    """
+    Download the selected files: one file as is, several in a ZIP.
+
+    ---
+
+    H24 (S144). Descarga los archivos seleccionados en el explorador
+    (Miguel Ángel: "en el explorador de archivos deberíamos tener la
+    opción poder descargar los archivos seleccionados"). Un solo
+    archivo se descarga tal cual; varios, en un ZIP con sus nombres
+    (un nombre repetido lleva " (2)", " (3)"...). Mismo permiso que
+    abrir un documento (`OpenDocumentView`): los que el usuario no
+    puede ver se omiten. Selección vacía: no hace nada.
+    """
+
+    def post(self, request):
+        import tempfile
+        import zipfile
+        from django.http import FileResponse
+
+        pks = request.POST.getlist("entries")
+        entries = list(DocumentIndexEntry.objects.filter(
+            pk__in=pks, entry_kind=DocumentIndexEntry.KIND_FILE,
+            deleted_at__isnull=True, purged_at__isnull=True,
+        ).order_by("parent_path", "name"))
+        company_user = request.user.company_user
+        grants_by_bucket = {}
+        readable = []
+        for entry in entries:
+            if entry.bucket not in grants_by_bucket:
+                grants_by_bucket[entry.bucket] = permissions.grants_for(
+                    company_user, entry.bucket,
+                )
+            mode, _allowed = permissions.visibility(
+                company_user, entry.bucket, entry.parent_path,
+                grants=grants_by_bucket[entry.bucket],
+            )
+            if mode == permissions.ALL:
+                readable.append(entry)
+        if not readable:
+            messages.info(
+                request, "No has seleccionado ningún archivo que puedas "
+                "descargar.",
+            )
+            return redirect(
+                request.META.get("HTTP_REFERER")
+                or reverse("document_explorer:explorer")
+            )
+        if len(readable) == 1:
+            entry = readable[0]
+            return FileResponse(
+                io.BytesIO(download_bytes(entry.bucket, entry.blob_name)),
+                as_attachment=True, filename=entry.name,
+            )
+        spool = tempfile.SpooledTemporaryFile(max_size=50 * 1024 * 1024)
+        used = {}
+        with zipfile.ZipFile(spool, "w", zipfile.ZIP_DEFLATED) as archive:
+            for entry in readable:
+                name = entry.name
+                count = used.get(name.lower(), 0) + 1
+                used[name.lower()] = count
+                if count > 1:
+                    stem, dot, ext = name.rpartition(".")
+                    name = (
+                        "%s (%d).%s" % (stem, count, ext) if dot
+                        else "%s (%d)" % (name, count)
+                    )
+                archive.writestr(
+                    name, download_bytes(entry.bucket, entry.blob_name),
+                )
+        spool.seek(0)
+        stamp = timezone.localtime().strftime("%Y%m%d_%H%M")
+        return FileResponse(
+            spool, as_attachment=True,
+            filename="archivos_%s.zip" % stamp,
         )
 
 

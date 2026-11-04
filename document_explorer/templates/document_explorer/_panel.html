@@ -117,13 +117,12 @@ no perder el sitio donde se estaba navegando al alternar.
     </p>
 {% endif %}
 
-{% if can_move or show_delete %}
-    <form id="bulk-actions-form" method="post"
-          action="{% url 'document_explorer:classify' %}">
-        {% csrf_token %}
-        <input type="hidden" name="path" value="{{ folder_path }}">
-    </form>
-{% endif %}
+{# S144: siempre, para descargar los seleccionados con cualquier permiso de lectura. #}
+<form id="bulk-actions-form" method="post"
+      action="{% url 'document_explorer:classify' %}">
+    {% csrf_token %}
+    <input type="hidden" name="path" value="{{ folder_path }}">
+</form>
 
 {% if is_no_conformes_folder and show_delete and entries %}
     <div class="alert alert-secondary py-2 mb-2">
@@ -138,7 +137,7 @@ no perder el sitio donde se estaba navegando al alternar.
     </div>
 {% endif %}
 
-{% if can_move or show_delete %}
+{% if entries %}
     <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
         <label class="form-check-label small text-muted mb-0">
             <input type="checkbox" class="form-check-input me-1"
@@ -147,6 +146,14 @@ no perder el sitio donde se estaba navegando al alternar.
             Seleccionar todo
         </label>
         <span id="selected-count" class="small text-muted">0 seleccionados</span>
+
+        {# H24 (S144): descargar los seleccionados (uno tal cual, varios en ZIP). #}
+        <button type="submit" form="bulk-actions-form"
+                formaction="{% url 'document_explorer:bulk_download' %}"
+                class="btn btn-sm btn-outline-primary"
+                title="Descargar los archivos seleccionados (varios, en un ZIP)">
+            <i class="bi bi-download"></i> Descargar seleccionados
+        </button>
 
         {% if can_move %}
             <button type="button" class="btn btn-sm btn-outline-primary"
@@ -352,7 +359,7 @@ no perder el sitio donde se estaba navegando al alternar.
         <table class="table table-sm table-hover align-middle mb-0 dx-explorer-table">
             <thead>
                 <tr>
-                    {% if can_move or show_delete %}<th class="dx-col-select"></th>{% endif %}
+                    <th class="dx-col-select"></th>
                     <th class="dx-col-icon"></th>
                     <th>
                         <a href="#" class="dx-sort-link"

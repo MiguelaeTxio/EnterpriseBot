@@ -68,15 +68,13 @@
 
 {% for entry in entries %}
     <tr>
-        {% if can_move or show_delete %}
-            <td>
-                {% if entry.pk and not entry.is_folder %}
-                    <input type="checkbox" name="entries" value="{{ entry.pk }}"
-                           form="bulk-actions-form"
-                           class="form-check-input" aria-label="Seleccionar">
-                {% endif %}
-            </td>
-        {% endif %}
+        <td>
+            {% if entry.pk and not entry.is_folder %}
+                <input type="checkbox" name="entries" value="{{ entry.pk }}"
+                       form="bulk-actions-form"
+                       class="form-check-input" aria-label="Seleccionar">
+            {% endif %}
+        </td>
         <td>
             {% if entry.is_folder %}
                 <i class="bi bi-folder-fill text-warning"></i>
