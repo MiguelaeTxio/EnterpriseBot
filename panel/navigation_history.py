@@ -45,6 +45,11 @@ PANEL_PREFIX = "/panel/"
 # Endpoints that are never pages of their own.
 # Endpoints que nunca son páginas por sí mismos.
 EXCLUDED_PREFIXES = ("/panel/navegacion/",)
+# S144: anterior/siguiente de la ficha de Personal. Con `?nav=sibling`
+# la página sustituye a la de arriba de la pila en vez de apilarse, para
+# que "Volver" siga llevando a la lista y no a la persona anterior.
+SIBLING_PARAM = "nav"
+SIBLING_VALUE = "sibling"
 # S144: el hub de Documentación, una dirección para todas sus pestañas.
 HUB_PATH = "/panel/documentacion/"
 HUB_SCREEN_KEY = "documentation_hub"
@@ -189,6 +194,14 @@ class NavigationHistoryMiddleware:
         if not isinstance(stack, list):
             stack = []
         current = request.get_full_path()
+        if request.GET.get(SIBLING_PARAM) == SIBLING_VALUE:
+            # S144: la ficha vecina ocupa el sitio de la que se deja; se
+            # guarda sin el parámetro.
+            query = request.GET.copy()
+            query.pop(SIBLING_PARAM, None)
+            current = request.path + (
+                "?" + query.urlencode() if query else "")
+            stack = stack[:-1]
         # S144: el hub, con su pestaña. La que tiene recordada ahora es
         # en la que estaba al salir (la entrada de arriba de la pila) y
         # en la que se abre si se entra sin ?tab=.

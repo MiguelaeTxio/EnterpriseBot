@@ -47,6 +47,21 @@ H30 (S123): breadcrumb hacia la pantalla de origen (mismo destino que
     <i class="bi bi-arrow-left"></i> Volver
 </a>
 {% comment %}
+S144, Miguel Ángel: "debería dejarme pasar hacia el anterior o hacia la
+siguiente persona sin salir de ahí (según el filtro escogido)". El
+orden y los filtros son los que dejó en la lista de Personal;
+`nav=sibling` hace que "Volver" siga llevando a la lista.
+{% endcomment %}
+{% if nav_position %}
+<span class="btn-group btn-group-sm ms-2 align-middle" role="group" aria-label="Persona anterior o siguiente">
+    {% if nav_previous %}<a href="{% url 'panel:documentation_personal_detail' pk=nav_previous.pk %}?nav=sibling" class="btn btn-outline-secondary" id="person-nav-previous" title="Anterior: {{ nav_previous.first_surname }} {{ nav_previous.second_surname }}, {{ nav_previous.given_name }}"><i class="bi bi-chevron-left"></i></a>{% else %}<span class="btn btn-outline-secondary disabled"><i class="bi bi-chevron-left"></i></span>{% endif %}
+    <span class="btn btn-outline-secondary disabled text-body" id="person-nav-position" title="Posición en la lista de Personal con sus filtros">{{ nav_position }} de {{ nav_total }}</span>
+    {% if nav_next %}<a href="{% url 'panel:documentation_personal_detail' pk=nav_next.pk %}?nav=sibling" class="btn btn-outline-secondary" id="person-nav-next" title="Siguiente: {{ nav_next.first_surname }} {{ nav_next.second_surname }}, {{ nav_next.given_name }}"><i class="bi bi-chevron-right"></i></a>{% else %}<span class="btn btn-outline-secondary disabled"><i class="bi bi-chevron-right"></i></span>{% endif %}
+</span>
+{% else %}
+<span class="small text-muted ms-2" id="person-nav-position">No está en la lista con los filtros actuales de Personal</span>
+{% endif %}
+{% comment %}
 H31 (S103). Botón fijo, fuera de cualquier acordeón, para que la
 vista previa de la selección de documentos sea accesible sin
 importar qué sección esté abierta -- los documentos marcados pueden

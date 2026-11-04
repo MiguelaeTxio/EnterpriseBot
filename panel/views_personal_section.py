@@ -55,8 +55,12 @@ def section_block_context(request, person, message="", error=False):
         "section_assignment": in_force,
         "section_from_ivr": current is not None and in_force is None,
         "section_assignments": assignments,
+        # S144, Miguel Ángel: "desde la ficha de personal no me deja
+        # añadir todas las secciones". `is_active` es la sección
+        # operativa para el IVR; un trabajador puede pertenecer a
+        # cualquiera (como en Horarios y en "Sección de los marcados").
         "section_choices": Section.objects.filter(
-            company=company_user.company, is_active=True,
+            company=company_user.company,
         ).order_by("name"),
         "section_today": today,
         "can_assign_section": company_user.role in _ASSIGN_ROLES,

@@ -1030,7 +1030,15 @@ def _attach_person_avatars(persons, person_ct):
     return persons
 
 
-def _person_list_page(request):
+def _person_list_page(request, ids_only=False):
+    """
+    The Personal list (filters, search, sort). With ids_only, only the
+    ordered pks.
+    ---
+    El listado de Personal con sus filtros, búsqueda y orden. Con
+    `ids_only`, solo los pks en el orden de la lista, sin alertas ni
+    avatares (S144: anterior/siguiente en la ficha).
+    """
     qs = PersonIdentity.objects.select_related(
         "job_position", "company_user__workday_schedule",
     )
@@ -1207,6 +1215,10 @@ def _person_list_page(request):
     # cabe siempre entero.
     paginator = Paginator(qs, 2000)
     page = paginator.get_page(request.GET.get("page"))
+    if ids_only:
+        return _ordered_person_pks(
+            company, list(page.object_list), sort_key, sort_dir,
+        )
     page.object_list = _attach_required_document_alerts(
         list(page.object_list), person_ct,
     )
@@ -1218,28 +1230,8 @@ def _person_list_page(request):
     # H24 (S144): sección vigente y horario que le toca (como Horarios).
     for row in schedule_rows(company, page.object_list):
         row.person.ws_row = row
-    if sort_key == "onboarding":
-        page.object_list = sorted(
-            page.object_list,
-            key=lambda p: (p.onboarding.rank, p.onboarding.when is None,
-                           p.onboarding.when or 0),
-            reverse=sort_dir == "desc",
-        )
-    elif sort_key in ("section", "schedule"):
-        def _sort_value(person):
-            row = person.ws_row
-            if sort_key == "section":
-                value = row.state.section.name if row.state.section else ""
-            else:
-                value = row.schedule.label if row.schedule else ""
-            return value.upper()
-
-        # Los que no tienen, siempre al final.
-        people = list(page.object_list)
-        page.object_list = sorted(
-            [p for p in people if _sort_value(p)], key=_sort_value,
-            reverse=sort_dir == "desc",
-        ) + [p for p in people if not _sort_value(p)]
+    page.object_list = _python_sorted(
+        list(page.object_list), sort_key, sort_dir)
     return {
         "page": page, "sort_key": sort_key, "sort_dir": sort_dir,
         "search": search, "sort_columns_person": sort_columns,
@@ -1280,6 +1272,93 @@ def _clear_last_person_pointer(request):
         state["last_person_pk"] = None
         nav_state.state = state
         nav_state.save(update_fields=["state", "updated_at"])
+
+
+def _python_sorted(people, sort_key, sort_dir):
+    """
+    Sorts that are not DB columns (onboarding, section, schedule).
+    ---
+    Los órdenes que no son columnas de BD: "Alta en el fichaje"
+    (necesita `person.onboarding`), "Sección" y "Horario" (necesitan
+    `person.ws_row`). Los que no tienen sección u horario, al final.
+    """
+    if sort_key == "onboarding":
+        return sorted(
+            people,
+            key=lambda p: (p.onboarding.rank, p.onboarding.when is None,
+                           p.onboarding.when or 0),
+            reverse=sort_dir == "desc",
+        )
+    if sort_key in ("section", "schedule"):
+        def _sort_value(person):
+            row = person.ws_row
+            if sort_key == "section":
+                value = row.state.section.name if row.state.section else ""
+            else:
+                value = row.schedule.label if row.schedule else ""
+            return value.upper()
+
+        return sorted(
+            [p for p in people if _sort_value(p)], key=_sort_value,
+            reverse=sort_dir == "desc",
+        ) + [p for p in people if not _sort_value(p)]
+    return people
+
+
+def _ordered_person_pks(company, people, sort_key, sort_dir):
+    """
+    Pks of the list in its order, computing only what the sort needs.
+    ---
+    Los pks del listado en su orden; solo calcula el estado del alta o
+    la sección/horario si el orden los necesita.
+    """
+    if sort_key == "onboarding":
+        from panel.personal_access import onboarding_states
+
+        states = onboarding_states(people)
+        for person in people:
+            person.onboarding = states[person.pk]
+    elif sort_key in ("section", "schedule"):
+        from panel.views_worker_schedules import _rows as schedule_rows
+
+        for row in schedule_rows(company, people):
+            row.person.ws_row = row
+    return [p.pk for p in _python_sorted(people, sort_key, sort_dir)]
+
+
+def personal_list_neighbours(request, pk):
+    """
+    Previous and next person of the Personal list, with its saved filters.
+    ---
+    S144, Miguel Ángel: "debería dejarme pasar hacia el anterior o
+    hacia la siguiente persona sin salir de ahí (según el filtro
+    escogido)". Rehace el listado con los filtros y el orden que el
+    usuario dejó en Personal (los mismos que restaura la pestaña) y
+    devuelve (anterior, siguiente, posición 1-based, total). Si la
+    persona no está en esa lista, (None, None, None, total).
+    """
+    import copy
+
+    from django.http import QueryDict
+
+    state = PanelNavigationState.objects.filter(
+        company_user=request.user.company_user,
+        screen_key="documentation_hub",
+    ).values_list("state", flat=True).first()
+    filters = state.get("filters") if isinstance(state, dict) else None
+    fake = copy.copy(request)
+    fake.GET = QueryDict(_build_personal_tab_querystring(filters or {}))
+    pks = _person_list_page(fake, ids_only=True)
+    if pk not in pks:
+        return None, None, None, len(pks)
+    index = pks.index(pk)
+    previous_pk = pks[index - 1] if index > 0 else None
+    next_pk = pks[index + 1] if index + 1 < len(pks) else None
+    people = PersonIdentity.objects.in_bulk(
+        [p for p in (previous_pk, next_pk) if p])
+    return (
+        people.get(previous_pk), people.get(next_pk), index + 1, len(pks),
+    )
 
 
 class PersonalListFragmentView(CompanyUserRequiredMixin, View):
@@ -2254,11 +2333,18 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         )
         from panel.views_personal_section import section_block_context
 
+        # S144: anterior/siguiente según los filtros de Personal.
+        (nav_previous, nav_next, nav_position,
+         nav_total) = personal_list_neighbours(request, person.pk)
         return render(
             request,
             "panel/documentation_h30/_personal_detail.html",
             {
                 **section_block_context(request, person),
+                "nav_previous": nav_previous,
+                "nav_next": nav_next,
+                "nav_position": nav_position,
+                "nav_total": nav_total,
                 # H24 (S144): bajas médicas (acordeón Laboral).
                 **medical_leave_block_context(request, person),
                 "can_view_clock_events": can_view_clock,
