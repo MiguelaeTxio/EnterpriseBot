@@ -606,6 +606,7 @@ explícitamente no abordada por decisión de Miguel Ángel.
 | S129 | 2026-10-16 → 2026-10-19 | Punto 1 (saldo de vacaciones) construido y a la espera de los datos de Carolina; punto 3 (fichaje) construido entero y cerrado con el fichaje real de Miguel Ángel del 17/10 (entrada 12:33 y salida 18:27 con GPS, Loja), salvo la prueba en iPhone. Partes y fichajes integrados (el parte se cierra con la salida, redondeo a hora/media), pestaña Fichajes de supervisores con municipio, mapa en el panel, incidencias y Excel, y fichajes en la ficha del trabajador. Ver 7.4bis y "COMPLETADAS EN S129" (7.6). |
 | S130 | 2026-10-19 → 2026-10-20 | Puntos 1 (fichaje con un solo botón y fichaje manual por olvido) y 4 (ausencias) cerrados con datos reales; punto 2 (iPhone) postergado por Miguel Ángel a producción con Pablo; punto 3 a la espera de los datos de Carolina. Base del trabajador editable y festivos por base en Fichajes. Desvíos a H30/H31: dosieres por correo en un solo borrador (trabajadores y máquinas juntos, desde Personal y Centros de gasto), comprobación de tipo y datos al subir desde la ficha, 26 matrículas de centros de gasto rellenadas, secciones del alta por WhatsApp. Ver "COMPLETADAS EN S130" (7.7). |
 | S141 | 2026-10-29 → 2026-11-03 | Fichajes completos para arrancar con la plantilla: recordatorios por WhatsApp (activados y comprobados con un aviso real leído), fichajes inmodificables con corrección e historial, tipos de fichaje, horarios por día y "Todo el año", pestaña Horarios por trabajador y sección, acceso al fichaje creado por el supervisor y circular "Alta en el fichaje" por WhatsApp, teléfono 1 de empresa, Excel de fichajes con coordenadas, membrete y detalle por trabajador. Desvío a H30: marca de horas sin anotar en Repostajes. Ver "COMPLETADAS EN S141" (7.9) y la hoja de ruta S144 (7.10). |
+| S144 | 2026-11-03 → 2026-11-04 | Estado del alta en el fichaje y "Reenviar el alta"; motes y secciones del Excel de motes; recordatorios con botón y pre-aviso "Recuerde fichar". Añadido en la sesión: horarios abiertos, de noche y con festivos; correcciones de fichajes; página "Fichajes del trabajador"; bolsa de horas, vehículo propio con km y pausa para comer; confirmación de 3 s en acciones masivas; altas y bajas en la carpeta local de OneDrive por el agente H28; anterior/siguiente y todas las secciones en la ficha. Ver "COMPLETADAS EN S144" (7.11) y la hoja de ruta S145 (7.12). |
 
 ---
 
@@ -1557,3 +1558,190 @@ Flujo de arranque que ya existe (explicado a Miguel Ángel el 03/11):
 Al terminar, el hito siguiente lo decide Miguel Ángel con un PCH. H30
 tiene su hoja de ruta, más el pendiente de S142 (lecturas dudosas de
 las grúas de asistencia), y H37 sigue con sus invasoras.
+
+---
+
+### 7.11. COMPLETADAS EN S144 (03/11/2026 → 04/11/2026)
+
+#### Hoja de ruta 7.10
+
+1. **Estado del alta en el fichaje y "Reenviar el alta"** (`8205307`).
+   - Columna y filtro "Alta en el fichaje" en Personal y Fichajes, con
+     los seis estados de 7.10 (`panel/personal_access.py`).
+   - Acción "Reenviar el alta" para los marcados: contraseña a las 4
+     últimas cifras del DNI, fuera los dispositivos de confianza, la
+     circular `ALTA_FICHAJE` otra vez y el envío anotado.
+   - **Queda:** el cierre con un reenvío real y su consulta a BD (7.12,
+     punto 3).
+2. **Excel de secciones.** Miguel Ángel no trajo el Excel de secciones:
+   asigna las secciones a mano desde Horarios, Personal y la ficha. Sí
+   trajo el Excel de **motes**, aplicado con Comando S 005:
+   - Todos los del mote a **Grúas**, salvo los guardas (siguen en
+     Guardas), García Luque (chapista) a **Taller Mecánico** y Ruiz
+     Portillo «Patacabra» (inactivo) sin sección.
+   - Desde su fecha de alta (`hire_date`) y, si no tiene, desde el
+     01/01/2026 (Miguel Ángel: *"si tenemos un alta, el alta es el
+     alta que tengamos"*). Sin alta: Gómez Gómez (Paco Trailer) y
+     López Montilla (Monti).
+   - 26 motes cargados en `PersonIdentity.nickname` (campo nuevo, 0196).
+   - **Asignar sección a los que no tienen:** Miguel Ángel rechazó mi
+     propuesta. No se toca nada más hasta que traiga los listados
+     (7.12, punto 2).
+3. **Recordatorios con botón "Fichar ahora":** funcionando en
+   producción. Además, **plantillas de pre-aviso** (`f87f897`): si el
+   recordatorio sale antes de la hora (p. ej. 5 min antes), dice
+   "Recuerde fichar la entrada al empezar" en vez de "no ha fichado"
+   (incidencia real de Cañamero, avisado a las 07:55 y fichó a las
+   07:59). Plantillas `clock_in_prereminder_link` y
+   `clock_out_prereminder_link` enviadas a Meta (HX2126c52d…,
+   HX87456ae2…); mientras no estén aprobadas se usa la de siempre.
+4. **Saldos de vacaciones:** sin avance (sin datos de Juan Francisco).
+5. **iPhone:** sin avance (Pablo aún no ha fichado desde su iPhone).
+
+#### Trabajo añadido por Miguel Ángel durante la sesión
+
+- **Horarios** (`605eec9`…`ad08124`, `9deb278`, `0396db5`):
+  - horario abierto (se guarda sin horas) y descanso mínimo tras una
+    jornada excepcional;
+  - incidencia de día flexible con menos de 8 h;
+  - horarios de noche de los guardas (salida al día siguiente);
+  - "Se trabaja en festivos" y horas de los festivos por día;
+  - momento del recordatorio configurable (5 min antes por defecto) y
+    elegido por cada trabajador.
+- **Correcciones de fichajes** (`9a92500`, `fcacde2`, `8e26313`):
+  partir un tramo, añadir pulsaciones que faltan, anulaciones visibles y
+  "Anular la jornada", con `apply_correction` compartido.
+- **Página "Fichajes del trabajador"** (`be1ed29`…`62d2190`,
+  `10918e2`): vistas Jornadas, Calendario (parrilla 4 × 12 de cuatro
+  años completos) y Correcciones; botón Volver.
+- **Personal:**
+  - sección desde la ficha (`d3e961b`) y, desde el cierre (`07a1bbe`),
+    con **todas** las secciones: el selector filtraba `is_active`
+    (operativa para la centralita) y faltaban Administración*,
+    Asistencia y Plataformas;
+  - **anterior/siguiente en la ficha** ("‹ N de M ›") según los
+    filtros y el orden guardados en Personal; `?nav=sibling` sustituye
+    la ficha en el historial, así "Volver" lleva a la lista
+    (`07a1bbe`, `panel/navigation_history.py`);
+  - horario, sección y empresa de los marcados (`1fcedb4`, `6a11cbf`);
+  - acciones en pestañas y filtros compactos (`a4ebb5e`);
+  - bajas médicas en la ficha (`0b7243a`, `41278b7`);
+  - botón derecho sobre un trabajador: menú con todas sus vistas
+    (`ec8f8d1`);
+  - **confirmación de 3 s** en toda acción masiva, con los marcados
+    ocultos por el filtro en rojo (`172267b`,
+    `panel/static/panel/js/mass_confirm.js`). Origen: Carlín quitó la
+    sección entera de Taller queriendo quitar a una persona.
+- **Navegación:** "Volver" distingue las pestañas del hub
+  (`fb524d5`) y recargar Documentación abre la pestaña que se ve
+  (`065f5c5`).
+- **Bolsa de horas, vehículo propio y comida** (`a53bb66`, decisiones
+  1B, 2A y 3B de Miguel Ángel):
+  - bolsa: solo cuenta el exceso diario sobre el horario, desde el
+    01/01/2026; los días por debajo no restan; ajustes a mano
+    (`OvertimeAdjustment`);
+  - "Desplazamiento con mi vehículo": km automáticos por Routes API
+    (`OwnVehicleTrip`), corregibles a mano;
+  - tipo "Pausa para comer": almuerzo 12–17 h y cena 19–24 h; cuenta
+    para dietas si está desplazado y a más de 1 km de una base
+    (`budgets.Base`; Huelva no tiene coordenadas).
+- **Altas y bajas en la carpeta local de OneDrive** (agente H28 en el
+  PC de Miguel Ángel, como buzón; da igual desde qué equipo se dé el
+  alta):
+  - `LocalDownloadJob` (0194, 0195, 0197) y
+    `document_explorer/local_download_service.py`; el agente los
+    recoge en cada pasada (`h28_migration_agent/local_download.py`).
+  - El local sigue **su** organización, no la del cubo: OPERARIOS
+    (por defecto), TALLER, ADMINISTRACION, GUARDA y PERSONAL
+    ASISTENCIA GRANADA, cada una con su carpeta de bajas. La categoría
+    sale de la sección. Si la persona ya tiene carpeta, se usa con su
+    nombre; si no, "APELLIDOS, NOMBRE (GR/TR/GL/AGG)". "PTE" se ignora.
+  - Alta, baja, reactivación y cambio de empresa mueven la carpeta
+    **entera** de la persona y descargan solo lo subido desde el panel.
+    Nunca toca nada fuera de la carpeta de la persona. Reintenta si
+    falla; el alta espera a que termine la descarga.
+  - El alta de un DNI inactivo lo **reactiva** en vez de dar error, y
+    no vuelve a subir documentos que ya estén en el cubo (MD5).
+  - Agente recompilado por Miguel Ángel en `a1750b2`.
+  - **Incidencia real y corrección:** el primer diseño copiaba la
+    estructura del cubo y movió archivos sueltos de otras carpetas al
+    probar con Cruces Gómez (inactivo de prueba). Restaurado del todo:
+    11 archivos devueltos a su sitio en local y la BD tal cual estaba
+    con Comando S 007 (inactivo, sin fechas ni empresa, documentos en
+    INACTIVOS/CRUCES_GOMEZ_MANUEL, sin las 7 entradas duplicadas ni el
+    trabajo de descarga).
+- **Explorador de archivos:** "Descargar seleccionados" (uno suelto o
+  ZIP) (`d597b7d`).
+- **Desvíos:**
+  - H30, Repostajes (`6fd6f13`, `1b1dac0`): Excel de repostadores con
+    sus vehículos y exportación con plantillas (0033).
+  - Los `feat(H37, S143 invasora)` del rango son de la invasora S143,
+    no de esta sesión.
+
+#### Incidencias de despliegue
+
+- El `git pull` de `deploy.yml` falla a veces con "Permission denied
+  (publickey)" aunque `id_rsa` autentica (Comando S 003/004). Miguel
+  Ángel lo deja así: se relanza el job o recarga a mano. Solo si se
+  vuelve pesado, `ssh.github.com:443`.
+- El paso de recarga falla a veces por tiempo: se relanza con
+  `rerun-failed-jobs`.
+
+#### Migraciones de la sesión (todas aplicadas en producción)
+
+document_explorer 0194–0197 (descargas locales, carpeta previa, mote,
+carpeta destino); hr_calendar 0018 (corrección añadir), 0022 (extras)
+y 0023 (tipo "Pausa para comer" y rol de "Desplazamiento"); fleet 0033
+(plantillas de exportación de repostajes).
+
+---
+
+### 7.12. Hoja de Ruta S145 (escrita al cierre de S144)
+
+Miguel Ángel al cierre: *"continuamos en la siguiente con los partes
+digitales, en el listado es preferente incluir un par de columnas con
+el fichaje de entrada y de salida."*
+
+**Depende de Miguel Ángel (sin tarea hasta que lo traiga):**
+- Prueba en iPhone (2 sesiones sin avanzar). Falta que Pablo fiche una
+  entrada y una salida desde su iPhone en el taller. Cierre: esas dos
+  filas en `hr_calendar_clockevent` con coordenadas y `user_agent` de
+  iPhone.
+- Saldos de vacaciones (1 sesión sin avanzar). Faltan los datos de
+  Juan Francisco Arrabalí. Cierre: el de 7.10, punto 4.
+
+1. **Partes digitales: columnas "Entrada" y "Salida" en el listado.**
+   - Antes de construir, leer la vista y la plantilla del listado de
+     partes digitales y cómo se enlaza un parte con su trabajador y su
+     día (S129 ya integró partes y fichajes: el parte se cierra con la
+     salida).
+   - Cada fila muestra la hora de la primera entrada y de la última
+     salida del fichaje de ese trabajador ese día; "—" si no fichó.
+   - **Cierre:** en producción, un parte real de un trabajador que fichó
+     ese día muestra las mismas horas que su jornada en "Fichajes del
+     trabajador"; uno sin fichaje muestra "—".
+   - Después, lo que Miguel Ángel pida de partes digitales en la sesión.
+2. **Secciones de los que no tienen.** Cuando Miguel Ángel traiga los
+   listados (Plataformas, Taller de plataformas y los dos de Plataformas
+   que son transportistas), se cruzan con la BD y se muestra la lista
+   nombre a nombre antes de escribir. El resto de activos sin sección
+   va a **Asistencia**, salvo dueños sin empresa y Administración.
+   Desde `hire_date` o, sin alta, desde el 01/01/2026. Lo ya asignado
+   no se toca. **Cierre:** consulta a BD tras aplicar: 0 activos sin
+   `PersonSectionAssignment` vigente, salvo los excluidos, nombrados.
+3. **Reenviar el alta, cierre real.** Con el primer reenvío real que
+   haga Miguel Ángel: consulta a BD con el envío anotado y fechado, los
+   dispositivos de confianza a 0 y la contraseña de 4 cifras válida
+   (login de prueba). El estado pasa a "Ya ficha" con su primer
+   fichaje.
+4. **Alta y baja reales en la carpeta local.** En la primera alta o
+   baja real desde el panel, comprobar con la conexión a su PC que la
+   carpeta de la persona queda en la categoría de su sección (activos o
+   bajas) con todos sus archivos, y que nada fuera de su carpeta ha
+   cambiado. **Cierre:** `LocalDownloadJob` en `done` con
+   `downloaded_count` igual al total, y el listado local coincide.
+5. **Pre-aviso de fichaje.** Cierre: `template_approved()` devuelve True
+   para las dos plantillas `*_prereminder_link` (Comando S) y el primer
+   recordatorio enviado antes de la hora lleva su `content_sid`.
+
+Al terminar, el hito siguiente lo decide Miguel Ángel con un PCH.
