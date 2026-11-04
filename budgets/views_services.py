@@ -2227,6 +2227,83 @@ def _cost_vehicles_context(request):
     }
 
 
+def _operator_roles(company):
+    """
+    Job positions of the operators of a company, in order.
+
+    ---
+
+    Puestos de los operarios de la empresa, en orden (los de partida si
+    no tiene ninguno).
+    """
+    from budgets.models import AssistanceOperatorRole
+
+    return sorted(
+        AssistanceOperatorRole.for_company(company).values(),
+        key=lambda role: (role.sort_order, role.name),
+    )
+
+
+def _posted_roles(request, company, roles, errors):
+    """
+    Put the typed names and costs into the positions; the new one.
+
+    ---
+
+    Pone en los puestos el nombre y el coste por hora tecleados en
+    Costes de trabajadores (sin guardar) y devuelve el puesto nuevo de
+    la última fila si se rellenó (sin guardar), o None. Anota en
+    `errors` lo que no vale: nombre vacío o repetido, coste no numérico
+    o negativo.
+    """
+    from decimal import Decimal, InvalidOperation
+
+    from budgets.models import AssistanceOperatorRole
+
+    def cost_of(raw, label):
+        raw = (raw or "").strip().replace(",", ".")
+        if not raw:
+            return None
+        try:
+            value = Decimal(raw)
+        except InvalidOperation:
+            errors.append("%s: «%s» no es un número." % (label, raw))
+            return None
+        if value < 0:
+            errors.append("%s: no puede ser negativo." % label)
+            return None
+        return value.quantize(Decimal("0.01"))
+
+    for role in roles:
+        name = (request.POST.get("role_name_%d" % role.pk) or "").strip()
+        if not name:
+            errors.append("Falta el nombre de un puesto (%s)." % role.name)
+        else:
+            role.name = name[:80]
+        role.cost_per_hour = cost_of(
+            request.POST.get("role_cost_%d" % role.pk),
+            "Coste por hora de %s" % role.name,
+        )
+    new_role = None
+    new_name = (request.POST.get("role_name_new") or "").strip()[:80]
+    if new_name:
+        new_role = AssistanceOperatorRole(
+            company=company, name=new_name,
+            cost_per_hour=cost_of(
+                request.POST.get("role_cost_new"),
+                "Coste por hora de %s" % new_name,
+            ),
+            sort_order=max([role.sort_order for role in roles] or [0]) + 1,
+        )
+    names = [role.name for role in roles] + (
+        [new_role.name] if new_role else []
+    )
+    repeated = sorted({name for name in names if names.count(name) > 1})
+    if repeated:
+        errors.append("Puesto repetido: %s." % ", ".join(repeated))
+    return new_role
+
+
 def _annual_hours(request, errors):
     """
     Hours worked in a year typed in Costes de trabajadores, or None.
@@ -2300,7 +2377,8 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
     template_name = "budgets/services/cost_settings.html"
 
     def _context(self, request, settings, vehicles, errors=None,
-                 active_tab=None, task_times=None, payslip=None):
+                 active_tab=None, task_times=None, payslip=None,
+                 roles=None, payslip_role=None, new_role=None):
         """
         Context of the page: the three tabs.
 
@@ -2356,7 +2434,23 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
             )
         from budgets.models import TASK_TARIFF_CONCEPTS
 
+        if roles is None:
+            roles = _operator_roles(company_user.company)
+        role_rows = [
+            {
+                "role": role,
+                "classes": [
+                    vehicle.name for vehicle in vehicles
+                    if vehicle.operator_role_id == role.pk
+                ],
+                "payslip": payslip if payslip_role == role.pk else None,
+            }
+            for role in roles
+        ]
         return _build_base_context(request, {
+            "role_rows": role_rows,
+            "new_role": new_role,
+            "operator_roles": roles,
             "task_times": task_times,
             "task_concepts": TASK_TARIFF_CONCEPTS,
             "active_nav": "services_hub",
@@ -2438,8 +2532,10 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
         action = request.POST.get("action")
         if action == "use_real":
             return self._use_real(request, company)
-        if action == "read_payslip":
-            return self._read_payslip(request, company)
+        if (action or "").startswith("read_payslip:"):
+            return self._read_payslip(
+                request, company, action.split(":", 1)[1],
+            )
         tab = {
             "save_workers": "trabajadores", "save_tasks": "tareas",
         }.get(action, "clases")
@@ -2465,27 +2561,34 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
                 return None
             return value
 
+        roles = _operator_roles(company)
+        new_role = None
         if tab == "trabajadores":
-            settings.operator_cost_per_hour = amount(
-                "operator_cost_per_hour", "Coste por operario",
-            )
             hours = _annual_hours(request, errors)
             if hours is not None:
                 settings.annual_worked_hours = hours
+            new_role = _posted_roles(request, company, roles, errors)
         else:
             settings.fuel_price_per_liter = amount(
                 "fuel_price_per_liter", "Precio del gasoil",
             )
+            by_pk = {role.pk: role for role in roles}
             for vehicle in vehicles:
-                self._read_vehicle(request, vehicle, amount, errors)
+                self._read_vehicle(request, vehicle, amount, errors, by_pk)
         if errors:
             return render(
                 request, self.template_name,
                 self._context(
                     request, settings, vehicles, errors, active_tab=tab,
+                    roles=roles, new_role=new_role,
                 ),
             )
         settings.save()
+        if tab == "trabajadores":
+            for role in roles:
+                role.save(update_fields=["name", "cost_per_hour"])
+            if new_role is not None:
+                new_role.save()
         if tab == "clases":
             for vehicle in vehicles:
                 vehicle.save()
@@ -2499,32 +2602,45 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
         _open_services_tab(request.user.company_user)
         return redirect("budgets:services_hub")
 
-    def _read_payslip(self, request, company):
+    def _read_payslip(self, request, company, role_pk):
         """
-        Read an uploaded payslip and propose its cost per hour.
+        Read an uploaded payslip and propose the cost of a job position.
 
         ---
 
-        Lee la nómina subida y propone su coste por hora (S143,
-        `budgets.payslip_cost`): la página vuelve en Costes de
-        trabajadores con el desglose y el coste por operario ya puesto,
+        Lee la nómina subida para un puesto y propone su coste por hora
+        (S143, `budgets.payslip_cost`): la página vuelve en Costes de
+        trabajadores con el desglose bajo el puesto y su coste ya puesto,
         sin guardar nada (ni la nómina ni el coste) hasta que se pulse
-        "Guardar y recalcular". Se conservan las horas al año tecleadas.
+        "Guardar y recalcular". Se conserva lo tecleado en la pestaña.
         """
         from budgets import payslip_cost
         from budgets.models import AssistanceCostSettings
         from budgets.service_evaluation import content_type_of
 
         settings = AssistanceCostSettings.for_company(company)
-        vehicles = company.assistance_vehicle_costs.all()
+        vehicles = list(company.assistance_vehicle_costs.all())
+        roles = _operator_roles(company)
         errors = []
         hours = _annual_hours(request, errors)
         if hours is not None:
             settings.annual_worked_hours = hours
-        upload = request.FILES.get("payslip")
+        # What was typed in the tab is kept on screen (not saved).
+        # Lo tecleado en la pestaña se conserva en pantalla (sin guardar).
+        new_role = _posted_roles(request, company, roles, [])
+        role = next(
+            (item for item in roles if str(item.pk) == str(role_pk)), None,
+        )
+        upload = request.FILES.get("payslip_%s" % role_pk)
         content_type = content_type_of(upload) if upload else None
-        if upload is None:
-            errors.append("Elige el archivo de la nómina (PDF o foto).")
+        if role is None:
+            errors.append("El puesto ya no existe; recarga la página.")
+        elif upload is None:
+            errors.append(
+                "Elige el archivo de la nómina de %s (PDF o foto)." % (
+                    role.name,
+                ),
+            )
         elif content_type not in payslip_cost.ACCEPTED_TYPES:
             errors.append("La nómina tiene que ser un PDF o una foto.")
         elif upload.size > payslip_cost.MAX_BYTES:
@@ -2539,12 +2655,14 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
                 result = payslip_cost.hourly_cost(
                     data, settings.annual_worked_hours,
                 )
-                settings.operator_cost_per_hour = result["cost_per_hour"]
+                role.cost_per_hour = result["cost_per_hour"]
         return render(
             request, self.template_name,
             self._context(
                 request, settings, vehicles, errors,
-                active_tab="trabajadores", payslip=result,
+                active_tab="trabajadores", payslip=result, roles=roles,
+                payslip_role=role.pk if role is not None else None,
+                new_role=new_role,
             ),
         )
 
@@ -2614,14 +2732,18 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
         return redirect("budgets:services_hub")
 
     @staticmethod
-    def _read_vehicle(request, vehicle, amount, errors):
+    def _read_vehicle(request, vehicle, amount, errors, roles):
         """
         Read the posted values of one vehicle class.
 
         ---
 
-        Lee del formulario los valores de una clase de vehículo.
+        Lee del formulario los valores de una clase de vehículo, también
+        el puesto de su operario (S143; `roles`: puestos por pk).
         """
+        role_pk = request.POST.get("role_%d" % vehicle.pk, "")
+        role = roles.get(int(role_pk)) if role_pk.isdigit() else None
+        vehicle.operator_role = role
         liters = amount(
             "liters_%d" % vehicle.pk, "Consumo de %s" % vehicle.name,
             required=True,

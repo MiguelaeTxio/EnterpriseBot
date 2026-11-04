@@ -5279,14 +5279,9 @@ class AssistanceCostSettings(models.Model):
         blank=True,
         verbose_name="Precio del gasoil (€/l)",
     )
-    operator_cost_per_hour = models.DecimalField(
-        max_digits=7,
-        decimal_places=2,
-        null=True,
-        blank=True,
-        verbose_name="Coste por operario (€/h)",
-        help_text="Coste medio de una hora de un operario en servicio.",
-    )
+    # S143: the cost per hour of the operators goes per job position
+    # (`AssistanceOperatorRole`), not one for all.
+    # El coste por hora de los operarios va por puesto, no uno para todos.
     # S143: hours really worked in a year, the divisor of the cost of a
     # payslip (1.800 in S142: holidays and bank holidays are paid but
     # not worked).
@@ -5317,10 +5312,8 @@ class AssistanceCostSettings(models.Model):
         Las medias de la empresa; si no existen, se crean, y también
         las clases de vehículo con los consumos dados por Miguel Ángel.
         """
-        settings, _created = cls.objects.get_or_create(
-            company=company,
-            defaults={"operator_cost_per_hour": DEFAULT_OPERATOR_COST_HOUR},
-        )
+        settings, _created = cls.objects.get_or_create(company=company)
+        roles = AssistanceOperatorRole.for_company(company)
         if not AssistanceVehicleCost.objects.filter(company=company).exists():
             for order, (name, liters, types) in enumerate(
                 DEFAULT_VEHICLE_COSTS, start=1,
@@ -5334,8 +5327,89 @@ class AssistanceCostSettings(models.Model):
                     dead_time_hours=(
                         Decimal("1") if name == "Grúa móvil" else None
                     ),
+                    operator_role=roles.get(
+                        DEFAULT_CLASS_ROLES.get(name, ROLE_OPERATOR),
+                    ),
                 )
         return settings
+
+
+# S143, Miguel Ángel: "deberíamos tener por puesto, es decir, un gruista
+# de grúa de gran tonelaje y el operario normal con carné de camión".
+# Starting job positions, both with the cost of the S142 payslip until a
+# payslip of each is uploaded; and the position of each vehicle class.
+# Puestos de partida, con el coste de la nómina de S142 hasta subir la
+# de cada uno, y el puesto de cada clase de vehículo.
+ROLE_CRANE = "Gruista (grúa de gran tonelaje)"
+ROLE_OPERATOR = "Operario con carné de camión"
+DEFAULT_OPERATOR_ROLES = (ROLE_CRANE, ROLE_OPERATOR)
+DEFAULT_CLASS_ROLES = {"Grúa móvil": ROLE_CRANE}
+
+
+class AssistanceOperatorRole(models.Model):
+    """
+    Job position of the operators of the assistance service.
+
+    ---
+
+    Puesto de los operarios de asistencia (S143) con su coste por hora
+    trabajada (coste empresa anual entre las horas trabajadas al año,
+    calculable subiendo una nómina). Cada clase de vehículo
+    (`AssistanceVehicleCost`) dice qué puesto lleva su operario.
+    """
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="assistance_operator_roles",
+        verbose_name="Empresa",
+    )
+    name = models.CharField(max_length=80, verbose_name="Puesto")
+    cost_per_hour = models.DecimalField(
+        max_digits=7,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Coste por hora (€/h)",
+    )
+    sort_order = models.PositiveSmallIntegerField(
+        default=0, verbose_name="Orden",
+    )
+
+    class Meta:
+        verbose_name = "Puesto de operario de asistencia"
+        verbose_name_plural = "Puestos de operario de asistencia"
+        ordering = ["sort_order", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("company", "name"),
+                name="unique_assistance_operator_role_name",
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
+
+    @classmethod
+    def for_company(cls, company):
+        """
+        The job positions of a company, by name; the defaults if none.
+
+        ---
+
+        Los puestos de la empresa, por nombre; si no tiene ninguno, se
+        crean los de partida con el coste por defecto.
+        """
+        roles = {
+            role.name: role for role in cls.objects.filter(company=company)
+        }
+        if not roles:
+            for order, name in enumerate(DEFAULT_OPERATOR_ROLES, start=1):
+                roles[name] = cls.objects.create(
+                    company=company, name=name, sort_order=order,
+                    cost_per_hour=DEFAULT_OPERATOR_COST_HOUR,
+                )
+        return roles
 
 
 class AssistanceVehicleCost(models.Model):
@@ -5397,6 +5471,14 @@ class AssistanceVehicleCost(models.Model):
         blank=True,
         verbose_name="Tiempos muertos (h)",
         help_text="Horas que se suman a cada servicio de esta clase.",
+    )
+    operator_role = models.ForeignKey(
+        "AssistanceOperatorRole",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="vehicle_classes",
+        verbose_name="Puesto del operario",
     )
     machine_types = models.TextField(
         blank=True,

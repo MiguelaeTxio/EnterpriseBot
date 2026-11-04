@@ -29,7 +29,8 @@ rendimiento."
   tiempo medio de la tarea (`AssistanceTaskTime`, S143).
 - Presupuesto: `services.calculate_budget` con la tarifa activa de la
   aseguradora, sin IVA y sin guardar nada.
-- Coste: operarios × horas × €/h, vehículos × km × €/km y gasoil
+- Coste: operarios × horas × €/h (el de su puesto, S143), vehículos ×
+  km × €/km y gasoil
   (km × l/100 km × €/l) según la clase de cada vehículo; desde S143 el
   consumo es el del vehículo de la clase que más gasta. Lo que falte
   de las medias se avisa en la fila y no suma.
@@ -777,7 +778,9 @@ def _vehicle_class_map(company):
     Clase de coste (`AssistanceVehicleCost`) de cada tipo de máquina.
     """
     classes = {}
-    for vehicle in AssistanceVehicleCost.objects.filter(company=company):
+    for vehicle in AssistanceVehicleCost.objects.filter(
+        company=company,
+    ).select_related("operator_role"):
         for type_name in vehicle.type_names():
             classes.setdefault(_norm(type_name), vehicle)
     return classes
@@ -951,9 +954,10 @@ def compute_costs(evaluation, settings=None, classes=None,
     km, hours = evaluation.km, evaluation.hours
     travel, work = _split_hours(evaluation)
     operator_hours = Decimal("0")
+    operators = Decimal("0")
     vehicles = Decimal("0")
     fuel = Decimal("0")
-    vehicles_known = fuel_known = True
+    operators_known = vehicles_known = fuel_known = True
     for type_name in crew_types:
         vehicle = classes.get(_norm(type_name))
         crew_hours = crew_hours_for(vehicle, km, travel, work, hours)
@@ -962,8 +966,21 @@ def compute_costs(evaluation, settings=None, classes=None,
             notes.append("«%s» no está en ninguna clase de vehículo." % (
                 type_name,
             ))
-            vehicles_known = fuel_known = False
+            operators_known = vehicles_known = fuel_known = False
             continue
+        # S143: each crew's operator at the cost of his job position.
+        # El operario de cada equipo, al coste de su puesto.
+        role = vehicle.operator_role
+        if role is None:
+            operators_known = False
+            notes.append("Falta el puesto del operario de %s." % (
+                vehicle.name,
+            ))
+        elif role.cost_per_hour is None:
+            operators_known = False
+            notes.append("Falta el coste por hora de %s." % role.name)
+        else:
+            operators += crew_hours * role.cost_per_hour
         if vehicle.cost_per_km is None:
             vehicles_known = False
             notes.append("Falta el coste por km de %s." % vehicle.name)
@@ -988,12 +1005,9 @@ def compute_costs(evaluation, settings=None, classes=None,
     _store_crew_hours(evaluation, operator_hours)
     if settings.fuel_price_per_liter is None:
         notes.append("Falta el precio del gasoil.")
-    operators = None
-    if settings.operator_cost_per_hour is None:
-        notes.append("Falta el coste por hora de operario.")
-    else:
-        operators = _money(operator_hours * settings.operator_cost_per_hour)
-    evaluation.operators_cost = operators
+    evaluation.operators_cost = (
+        _money(operators) if operators_known else None
+    )
     evaluation.vehicles_cost = _money(vehicles) if vehicles_known else None
     evaluation.fuel_cost = _money(fuel) if fuel_known else None
     parts = [
@@ -1008,7 +1022,9 @@ def compute_costs(evaluation, settings=None, classes=None,
         if evaluation.budget_amount is not None
         and evaluation.total_cost is not None else None
     )
-    return notes
+    # Two crews of the same class give the same note once.
+    # Dos equipos de la misma clase dan el mismo aviso una vez.
+    return list(dict.fromkeys(notes))
 
 
 def evaluate(evaluation_pk):

@@ -9,12 +9,14 @@
 .cost-input-cell { max-width: 8rem; min-width: 6rem; }
 #cvh-results-scroll table td, #cvh-results-scroll table th,
 #cls-results-scroll table th,
-#tsk-results-scroll table th { white-space: nowrap; }
+#tsk-results-scroll table th,
+#wrk-results-scroll table th { white-space: nowrap; }
 #cvh-list-box:fullscreen, #cls-list-box:fullscreen,
-#tsk-list-box:fullscreen { background: var(--bs-body-bg, #fff); padding: 1rem; }
+#tsk-list-box:fullscreen, #wrk-list-box:fullscreen { background: var(--bs-body-bg, #fff); padding: 1rem; }
 #cvh-list-box:fullscreen #cvh-results-scroll,
 #cls-list-box:fullscreen #cls-results-scroll,
-#tsk-list-box:fullscreen #tsk-results-scroll { height: calc(100vh - 4rem); }
+#tsk-list-box:fullscreen #tsk-results-scroll,
+#wrk-list-box:fullscreen #wrk-results-scroll { height: calc(100vh - 4rem); }
 </style>
 {% endblock %}
 
@@ -41,9 +43,11 @@ dividir la vista en pestañas"); abre en la que el usuario dejó activa
   S143: el gasoil de los servicios va con el consumo del vehículo de la
   clase que más gasta (columna "Consumo que cuenta"); el consumo de la
   clase lo aportan los vehículos sin bastantes repostajes.
-- Costes de trabajadores: coste por hora de operario y horas trabajadas
-  al año. S143: "Calcular desde una nómina" la lee con Gemini y propone
-  el coste por hora (budgets/payslip_cost.py); la nómina no se guarda.
+- Costes de trabajadores: coste por hora de cada puesto de operario y
+  horas trabajadas al año. S143: "Calcular desde una nómina" la lee con
+  Gemini y propone el coste por hora del puesto
+  (budgets/payslip_cost.py); la nómina no se guarda. La clase de
+  vehículo dice qué puesto lleva su operario.
 - Tiempos de tareas (S143): tiempo medio de trabajo de cada tipo de
   tarea, sin los viajes; lo meten los encargados de los servicios.
   Un servicio con varias tareas cuenta la más larga.
@@ -253,6 +257,7 @@ dividir la vista en pestañas"); abre en la que el usuario dejó activa
                                     <th title="Horas que se suman a cada servicio">Tiempos muertos (h)</th>
                                     <th>Real (GasoGes)</th>
                                     <th>Coste del vehículo (€/km)</th>
+                                    <th title="Puesto del operario que va con esta clase; su coste por hora se pone en Costes de trabajadores">Puesto del operario</th>
                                     <th>Tipos de máquina de asistencia</th>
                                 </tr>
                             </thead>
@@ -299,6 +304,14 @@ dividir la vista en pestañas"); abre en la que el usuario dejó activa
                                                title="Desgaste, mantenimiento... sin el gasoil">
                                     </td>
                                     <td>
+                                        <select class="form-select form-select-sm" name="role_{{ row.vehicle.pk }}" autocomplete="off">
+                                            <option value="">— Sin puesto —</option>
+                                            {% for role in operator_roles %}
+                                            <option value="{{ role.pk }}" {% if row.vehicle.operator_role_id == role.pk %}selected{% endif %}>{{ role.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </td>
+                                    <td>
                                         {% for type in row.types %}
                                         <div class="form-check form-check-inline mb-0">
                                             <input class="form-check-input" type="checkbox"
@@ -321,75 +334,126 @@ dividir la vista en pestañas"); abre en la que el usuario dejó activa
 
     {# ── Costes de trabajadores ────────────────────────────────── #}
     <div class="tab-pane fade {% if active_tab == 'trabajadores' %}show active{% endif %}" id="pane-trabajadores">
+        {% comment %}
+        S143: coste por hora de los operarios por puesto (gruista,
+        operario con carné de camión...); cada clase de vehículo dice en
+        Clases de vehículo qué puesto lleva su operario. Cada puesto puede
+        calcular su coste subiendo una nómina: el desglose sale bajo su
+        fila, con el coste ya puesto, y nada se guarda hasta "Guardar y
+        recalcular". La nómina no se guarda nunca.
+        {% endcomment %}
         <form method="post" enctype="multipart/form-data" action="{% url 'budgets:services_cost_settings' %}">
             {% csrf_token %}
-            <div class="border rounded p-2">
+            <div class="border rounded p-2 mb-2" id="wrk-top-panel">
                 <div class="row g-2">
                     <div class="col-lg-6">
                         <div class="border rounded p-2 h-100">
-                            <div class="fw-bold small mb-1">Operarios</div>
-                            <div class="row g-2">
-                                <div class="col-sm-6">
-                                    <label class="form-label small mb-1" for="operator-cost">Coste por operario (€/h)</label>
-                                    <input type="text" inputmode="decimal" class="form-control form-control-sm cost-input-cell" id="operator-cost"
-                                           name="operator_cost_per_hour"
-                                           value="{{ settings.operator_cost_per_hour|default_if_none:'' }}">
-                                    <div class="form-text small">Va un operario por vehículo.</div>
-                                </div>
-                                <div class="col-sm-6">
-                                    <label class="form-label small mb-1" for="annual-hours">Horas trabajadas al año</label>
-                                    <input type="text" inputmode="numeric" class="form-control form-control-sm cost-input-cell" id="annual-hours"
-                                           name="annual_worked_hours"
-                                           value="{{ settings.annual_worked_hours }}">
-                                    <div class="form-text small">Sin vacaciones ni festivos, que se pagan sin trabajar.</div>
-                                </div>
-                            </div>
+                            <div class="fw-bold small mb-1">Horas trabajadas al año</div>
+                            <input type="text" inputmode="numeric" class="form-control form-control-sm cost-input-cell" id="annual-hours"
+                                   name="annual_worked_hours"
+                                   value="{{ settings.annual_worked_hours }}">
+                            <div class="form-text small">Sin vacaciones ni festivos, que se pagan sin trabajar. Divide el coste anual de cada nómina.</div>
                         </div>
                     </div>
                     <div class="col-lg-6">
                         <div class="border rounded p-2 h-100">
-                            <div class="small text-muted fw-bold">Calcular desde una nómina</div>
-                            <div class="d-flex gap-1 flex-wrap align-items-center mb-2">
-                                <input type="file" class="form-control form-control-sm w-auto" name="payslip"
-                                       accept="application/pdf,image/jpeg,image/png,image/webp">
-                                <button type="submit" name="action" value="read_payslip" class="btn btn-sm btn-outline-primary"
-                                        title="Lee la nómina y calcula el coste por hora: (total devengado + prorrata de pagas extra + Seguridad Social de la empresa) × 12 ÷ horas trabajadas al año. No se guarda la nómina.">
-                                    <i class="bi bi-file-earmark-text me-1"></i>Calcular
-                                </button>
-                            </div>
                             <div class="small text-muted fw-bold">Guardar</div>
                             <button type="submit" name="action" value="save_workers" class="btn btn-sm btn-primary"
-                                    title="Guarda el coste de los operarios y las horas al año y recalcula coste y rendimiento de todos los servicios valorados">
+                                    title="Guarda los puestos, su coste por hora y las horas al año y recalcula coste y rendimiento de todos los servicios valorados">
                                 <i class="bi bi-check-lg me-1"></i>Guardar y recalcular
                             </button>
+                            <div class="form-text small">Va un operario por vehículo, con el coste del puesto de su clase.</div>
                         </div>
                     </div>
                 </div>
-                {% if payslip %}
-                {% comment %}
-                S143: desglose de la nómina recién leída. No se guarda nada de
-                ella; el coste por hora ya está puesto arriba y solo queda si
-                se pulsa "Guardar y recalcular". Al cambiar las horas se
-                vuelve a dividir el coste anual (data-annual-cost).
-                {% endcomment %}
-                <div class="border rounded p-2 mt-2" id="payslip-result" data-annual-cost="{{ payslip.annual_cost|stringformat:'s' }}">
-                    <div class="fw-bold small mb-1">Nómina leída{% if payslip.period %} ({{ payslip.period }}){% endif %} · no se ha guardado</div>
-                    <table class="table table-sm align-middle mb-1 small w-auto">
-                        <tbody>
-                            <tr><td>Total devengado</td><td class="text-end">{{ payslip.gross_pay }} €</td></tr>
-                            <tr>
-                                <td>Prorrata de pagas extra{% if payslip.prorata_in_gross %} <span class="text-muted">(ya va en el devengado)</span>{% endif %}</td>
-                                <td class="text-end">{% if payslip.prorata_in_gross %}<span class="text-muted">{{ payslip.extra_prorata }} €</span>{% else %}+ {{ payslip.added_prorata }} €{% endif %}</td>
-                            </tr>
-                            <tr><td>Seguridad Social a cargo de la empresa</td><td class="text-end">+ {{ payslip.employer_ss }} €</td></tr>
-                            <tr class="fw-semibold"><td>Coste empresa al mes</td><td class="text-end">{{ payslip.monthly_cost }} €</td></tr>
-                            <tr class="fw-semibold"><td>Coste empresa al año (× 12)</td><td class="text-end">{{ payslip.annual_cost }} €</td></tr>
-                            <tr class="fw-semibold"><td>Coste por hora (÷ <span id="payslip-hours">{{ payslip.annual_hours }}</span> h)</td><td class="text-end"><span id="payslip-cost">{{ payslip.cost_per_hour }}</span> €/h</td></tr>
-                        </tbody>
-                    </table>
-                    <div class="small text-muted">Comprueba los importes con la nómina. El coste por hora ya está puesto arriba: pulsa «Guardar y recalcular» para usarlo.</div>
+            </div>
+
+            <div class="border rounded p-2" id="wrk-bottom-panel">
+                <div class="border rounded p-2 h-100 d-flex flex-column" id="wrk-list-box">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <div class="fw-bold small">{{ role_rows|length }} puestos</div>
+                        <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" id="wrk-fullscreen" title="Pantalla completa">
+                            <i class="bi bi-fullscreen"></i>
+                        </button>
+                    </div>
+                    <div id="wrk-results-scroll" class="fixed-list-scroll flex-scroll-xy">
+                        <table class="table table-sm align-middle mb-0 small">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Puesto</th>
+                                    <th>Coste por hora (€/h)</th>
+                                    <th title="Clases de vehículo cuyo operario es de este puesto (se elige en Clases de vehículo)">Clases de vehículo</th>
+                                    <th title="Lee la nómina y calcula el coste por hora: (total devengado + prorrata de pagas extra + Seguridad Social de la empresa) × 12 ÷ horas trabajadas al año. No se guarda la nómina.">Calcular desde una nómina</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in role_rows %}
+                                <tr>
+                                    <td>
+                                        <input type="text" class="form-control form-control-sm" maxlength="80"
+                                               name="role_name_{{ row.role.pk }}" value="{{ row.role.name }}">
+                                    </td>
+                                    <td class="cost-input-cell">
+                                        <input type="text" inputmode="decimal" class="form-control form-control-sm"
+                                               id="role-cost-{{ row.role.pk }}" name="role_cost_{{ row.role.pk }}"
+                                               value="{{ row.role.cost_per_hour|default_if_none:'' }}">
+                                    </td>
+                                    <td>{{ row.classes|join:", "|default:"—" }}</td>
+                                    <td>
+                                        <div class="d-flex gap-1 align-items-center">
+                                            <input type="file" class="form-control form-control-sm w-auto" name="payslip_{{ row.role.pk }}"
+                                                   accept="application/pdf,image/jpeg,image/png,image/webp">
+                                            <button type="submit" name="action" value="read_payslip:{{ row.role.pk }}" class="btn btn-sm btn-outline-primary"
+                                                    title="Lee la nómina de este puesto y pone su coste por hora (sin guardar)">
+                                                <i class="bi bi-file-earmark-text me-1"></i>Calcular
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% if row.payslip %}
+                                {% with payslip=row.payslip %}
+                                <tr>
+                                    <td colspan="4">
+                                        <div class="border rounded p-2" id="payslip-result"
+                                             data-annual-cost="{{ payslip.annual_cost|stringformat:'s' }}"
+                                             data-target="role-cost-{{ row.role.pk }}">
+                                            <div class="fw-bold small mb-1">Nómina de {{ row.role.name }}{% if payslip.period %} ({{ payslip.period }}){% endif %} · no se ha guardado</div>
+                                            <table class="table table-sm align-middle mb-1 small w-auto">
+                                                <tbody>
+                                                    <tr><td>Total devengado</td><td class="text-end">{{ payslip.gross_pay }} €</td></tr>
+                                                    <tr>
+                                                        <td>Prorrata de pagas extra{% if payslip.prorata_in_gross %} <span class="text-muted">(ya va en el devengado)</span>{% endif %}</td>
+                                                        <td class="text-end">{% if payslip.prorata_in_gross %}<span class="text-muted">{{ payslip.extra_prorata }} €</span>{% else %}+ {{ payslip.added_prorata }} €{% endif %}</td>
+                                                    </tr>
+                                                    <tr><td>Seguridad Social a cargo de la empresa</td><td class="text-end">+ {{ payslip.employer_ss }} €</td></tr>
+                                                    <tr class="fw-semibold"><td>Coste empresa al mes</td><td class="text-end">{{ payslip.monthly_cost }} €</td></tr>
+                                                    <tr class="fw-semibold"><td>Coste empresa al año (× 12)</td><td class="text-end">{{ payslip.annual_cost }} €</td></tr>
+                                                    <tr class="fw-semibold"><td>Coste por hora (÷ <span id="payslip-hours">{{ payslip.annual_hours }}</span> h)</td><td class="text-end"><span id="payslip-cost">{{ payslip.cost_per_hour }}</span> €/h</td></tr>
+                                                </tbody>
+                                            </table>
+                                            <div class="small text-muted">Comprueba los importes con la nómina. El coste ya está puesto en el puesto: pulsa «Guardar y recalcular» para usarlo.</div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endwith %}
+                                {% endif %}
+                                {% endfor %}
+                                <tr>
+                                    <td>
+                                        <input type="text" class="form-control form-control-sm" maxlength="80"
+                                               name="role_name_new" value="{{ new_role.name|default:'' }}" placeholder="Puesto nuevo…">
+                                    </td>
+                                    <td class="cost-input-cell">
+                                        <input type="text" inputmode="decimal" class="form-control form-control-sm"
+                                               name="role_cost_new" value="{{ new_role.cost_per_hour|default_if_none:'' }}">
+                                    </td>
+                                    <td class="text-muted">Se asigna en Clases de vehículo</td>
+                                    <td class="text-muted">Guarda el puesto para subir su nómina</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-                {% endif %}
             </div>
         </form>
     </div>
@@ -466,6 +530,7 @@ dividir la vista en pestañas"); abre en la que el usuario dejó activa
 {{ screen_key|json_script:"cost-screen-key" }}
 {% include "panel/_fixed_list_layout.html" with top_id="cvh-top-panel" bottom_id="cvh-bottom-panel" %}
 {% include "panel/_fixed_list_layout.html" with top_id="cls-top-panel" bottom_id="cls-bottom-panel" %}
+{% include "panel/_fixed_list_layout.html" with top_id="wrk-top-panel" bottom_id="wrk-bottom-panel" %}
 {% include "panel/_fixed_list_layout.html" with top_id="tsk-top-panel" bottom_id="tsk-bottom-panel" %}
 {% endblock %}
 
@@ -577,7 +642,7 @@ dividir la vista en pestañas"); abre en la que el usuario dejó activa
 
     // Pantalla completa de cada lista (formato del laboratorio de
     // análisis, directriz 4.26).
-    [["cvh-fullscreen", "cvh-list-box"], ["cls-fullscreen", "cls-list-box"], ["tsk-fullscreen", "tsk-list-box"]].forEach(function ([buttonId, boxId]) {
+    [["cvh-fullscreen", "cvh-list-box"], ["cls-fullscreen", "cls-list-box"], ["wrk-fullscreen", "wrk-list-box"], ["tsk-fullscreen", "tsk-list-box"]].forEach(function ([buttonId, boxId]) {
         document.getElementById(buttonId).addEventListener("click", function () {
             if (document.fullscreenElement) {
                 document.exitFullscreen();
@@ -594,13 +659,14 @@ dividir la vista en pestañas"); abre en la que el usuario dejó activa
     const payslip = document.getElementById("payslip-result");
     if (payslip) {
         const annualCost = parseFloat(payslip.dataset.annualCost);
+        const target = document.getElementById(payslip.dataset.target);
         document.getElementById("annual-hours").addEventListener("input", function (ev) {
             const hours = parseInt(ev.target.value, 10);
             if (!(hours > 0) || !isFinite(annualCost)) return;
             const cost = (Math.round(annualCost / hours * 100) / 100).toFixed(2);
             document.getElementById("payslip-hours").textContent = hours;
             document.getElementById("payslip-cost").textContent = cost.replace(".", ",");
-            document.getElementById("operator-cost").value = cost;
+            target.value = cost;
         });
     }
 
