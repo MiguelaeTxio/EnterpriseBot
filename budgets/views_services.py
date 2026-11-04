@@ -2227,6 +2227,25 @@ def _cost_vehicles_context(request):
     }
 
 
+def _annual_hours(request, errors):
+    """
+    Hours worked in a year typed in Costes de trabajadores, or None.
+
+    ---
+
+    Horas trabajadas al año tecleadas en Costes de trabajadores (S143),
+    entre 100 y 4.000; si no, se anota el error y devuelve None.
+    """
+    raw = (request.POST.get("annual_worked_hours") or "").strip()
+    raw = raw.replace(".", "").replace(",", "")
+    if not raw.isdigit() or not (100 <= int(raw) <= 4000):
+        errors.append(
+            "Horas trabajadas al año: un número entero entre 100 y 4.000.",
+        )
+        return None
+    return int(raw)
+
+
 class ServicesCostVehiclesFragmentView(AdminRoleRequiredMixin, View):
     """
     Service vehicles list fragment (filters, order, selection).
@@ -2270,7 +2289,9 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
     - Clases de vehículo: precio del gasoil y, por clase, consumo por km
       o por hora, velocidad máxima, tiempos muertos, coste por km y
       tipos de máquina.
-    - Costes de trabajadores: coste por hora de operario.
+    - Costes de trabajadores: coste por hora de operario y horas
+      trabajadas al año; desde S143 se puede calcular subiendo una
+      nómina (no se guarda).
     - Tiempos de tareas (S143): tiempo medio de trabajo de cada tipo de
       tarea, que meten los encargados de los servicios.
     Al guardar se recalcula el coste de todos los servicios valorados.
@@ -2279,7 +2300,7 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
     template_name = "budgets/services/cost_settings.html"
 
     def _context(self, request, settings, vehicles, errors=None,
-                 active_tab=None, task_times=None):
+                 active_tab=None, task_times=None, payslip=None):
         """
         Context of the page: the three tabs.
 
@@ -2344,6 +2365,7 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
             "settings": settings,
             "vehicle_rows": rows,
             "errors": errors or [],
+            "payslip": payslip,
             "saved_selection": (
                 saved_selection if isinstance(saved_selection, list) else []
             ),
@@ -2416,6 +2438,8 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
         action = request.POST.get("action")
         if action == "use_real":
             return self._use_real(request, company)
+        if action == "read_payslip":
+            return self._read_payslip(request, company)
         tab = {
             "save_workers": "trabajadores", "save_tasks": "tareas",
         }.get(action, "clases")
@@ -2445,6 +2469,9 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
             settings.operator_cost_per_hour = amount(
                 "operator_cost_per_hour", "Coste por operario",
             )
+            hours = _annual_hours(request, errors)
+            if hours is not None:
+                settings.annual_worked_hours = hours
         else:
             settings.fuel_price_per_liter = amount(
                 "fuel_price_per_liter", "Precio del gasoil",
@@ -2471,6 +2498,55 @@ class ServicesCostSettingsView(AdminRoleRequiredMixin, View):
         )
         _open_services_tab(request.user.company_user)
         return redirect("budgets:services_hub")
+
+    def _read_payslip(self, request, company):
+        """
+        Read an uploaded payslip and propose its cost per hour.
+
+        ---
+
+        Lee la nómina subida y propone su coste por hora (S143,
+        `budgets.payslip_cost`): la página vuelve en Costes de
+        trabajadores con el desglose y el coste por operario ya puesto,
+        sin guardar nada (ni la nómina ni el coste) hasta que se pulse
+        "Guardar y recalcular". Se conservan las horas al año tecleadas.
+        """
+        from budgets import payslip_cost
+        from budgets.models import AssistanceCostSettings
+        from budgets.service_evaluation import content_type_of
+
+        settings = AssistanceCostSettings.for_company(company)
+        vehicles = company.assistance_vehicle_costs.all()
+        errors = []
+        hours = _annual_hours(request, errors)
+        if hours is not None:
+            settings.annual_worked_hours = hours
+        upload = request.FILES.get("payslip")
+        content_type = content_type_of(upload) if upload else None
+        if upload is None:
+            errors.append("Elige el archivo de la nómina (PDF o foto).")
+        elif content_type not in payslip_cost.ACCEPTED_TYPES:
+            errors.append("La nómina tiene que ser un PDF o una foto.")
+        elif upload.size > payslip_cost.MAX_BYTES:
+            errors.append("La nómina ocupa demasiado (máximo 15 MB).")
+        result = None
+        if not errors:
+            try:
+                data = payslip_cost.read_payslip(upload.read(), content_type)
+            except payslip_cost.PayslipError as exc:
+                errors.append(str(exc))
+            else:
+                result = payslip_cost.hourly_cost(
+                    data, settings.annual_worked_hours,
+                )
+                settings.operator_cost_per_hour = result["cost_per_hour"]
+        return render(
+            request, self.template_name,
+            self._context(
+                request, settings, vehicles, errors,
+                active_tab="trabajadores", payslip=result,
+            ),
+        )
 
     def _save_tasks(self, request, company):
         """

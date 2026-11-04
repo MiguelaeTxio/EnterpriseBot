@@ -5247,6 +5247,9 @@ DEFAULT_VEHICLE_COSTS = (
 # Coste por hora trabajada de un operario, sacado de una nómina real del
 # grupo: coste empresa anual entre 1.800 horas trabajadas al año.
 DEFAULT_OPERATOR_COST_HOUR = Decimal("15.34")
+# S143: the hours of that calculation, editable with the payslip upload.
+# Las horas de ese cálculo, editables al subir una nómina.
+DEFAULT_ANNUAL_WORKED_HOURS = 1800
 
 
 class AssistanceCostSettings(models.Model):
@@ -5283,6 +5286,15 @@ class AssistanceCostSettings(models.Model):
         blank=True,
         verbose_name="Coste por operario (€/h)",
         help_text="Coste medio de una hora de un operario en servicio.",
+    )
+    # S143: hours really worked in a year, the divisor of the cost of a
+    # payslip (1.800 in S142: holidays and bank holidays are paid but
+    # not worked).
+    # Horas trabajadas al año, el divisor del coste de una nómina.
+    annual_worked_hours = models.PositiveSmallIntegerField(
+        default=DEFAULT_ANNUAL_WORKED_HOURS,
+        verbose_name="Horas trabajadas al año",
+        help_text="Sin vacaciones ni festivos, que se pagan sin trabajar.",
     )
     updated_at = models.DateTimeField(
         auto_now=True, verbose_name="Fecha de modificación",
