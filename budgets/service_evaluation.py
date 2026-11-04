@@ -80,7 +80,7 @@ BUDGET_NOTE_PREFIXES = (
     "Aseguradora no reconocida", "Tipo de vehículo no reconocido",
     "Presupuesto no calculado", "La tarifa de ", "Sin fecha del servicio",
     "Calendario de festivos", "Nocturno", "Festivo",
-    "Incluye de la tarifa",
+    "Incluye de la tarifa", "Presupuesto con los km",
 )
 # Tariff concept of a task (AssistanceTaskTime) -> Budget field of hours.
 # Concepto de la tarifa de una tarea -> campo de horas del presupuesto.
@@ -252,26 +252,25 @@ def _is_night(insurer, company, when):
 
     ---
 
-    Si el momento cae en el horario nocturno: el de la aseguradora, el
-    de la empresa por defecto o el de la ficha de la empresa (mismo
-    orden que `service_sheet.is_night`).
+    Si el momento cae en el horario nocturno, igual que el presupuesto
+    manual (`views.BudgetWizardView`, S143): el horario de la
+    aseguradora o, si no tiene, el de la empresa por defecto
+    (`_resolve_night_schedule`), con los dos extremos incluidos (a las
+    08:00 de un horario de 20:00 a 08:00 aún es nocturno). Sin horario,
+    no es nocturno. `company` se conserva por compatibilidad.
     """
     from budgets.services import _resolve_night_schedule
 
-    source = (_resolve_night_schedule(insurer) if insurer else None) or (
-        company
-    )
-    start, end = source.night_start, source.night_end
+    schedule = _resolve_night_schedule(insurer) if insurer else None
+    if schedule is None:
+        return False
+    start, end = schedule.night_start, schedule.night_end
     if start is None or end is None:
         return False
-    if isinstance(start, str):
-        start = datetime.time.fromisoformat(start)
-    if isinstance(end, str):
-        end = datetime.time.fromisoformat(end)
-    moment = when.time()
+    moment = when.time().replace(microsecond=0)
     if start <= end:
-        return start <= moment < end
-    return moment >= start or moment < end
+        return start <= moment <= end
+    return moment >= start or moment <= end
 
 
 def _route_bases(company, insurer, notes):
@@ -691,6 +690,73 @@ def _apply_task_concepts(budget, data, task_times, notes):
         ))
 
 
+def tariff_route(base, data, kinds, when, notes):
+    """
+    The route of the manual budget: km, tolls and polyline, or None.
+
+    ---
+
+    La ruta con la que el presupuesto manual cobra el servicio (S143,
+    "que coincida por tarifa"): recogida y entrega geocodificadas y el
+    circuito base -> recogida -> entrega -> base con
+    `calculate_route_multileg`, como el planificador del asistente, con
+    sus peajes. Devuelve un diccionario para guardar en `data`
+    (`_route_km`, `_route_tolls`, `_route_polyline`, como texto) o
+    None con aviso.
+    """
+    import os
+
+    from budgets.dispatch_vehicle import ON_SITE_KINDS
+    from budgets.service_geocode import geocode
+    from budgets.services import calculate_route_multileg
+
+    if base is None or base.latitude is None or base.longitude is None:
+        notes.append(
+            "Base sin coordenadas: el presupuesto va con los km de la "
+            "matriz de rutas y sin peajes.",
+        )
+        return None
+    pickup, delivery = service_addresses(data)
+    on_site = bool(kinds) and all(k in ON_SITE_KINDS for k in kinds)
+    stops = [pickup] + ([delivery] if delivery and not on_site else [])
+    waypoints = []
+    for address in stops:
+        point = geocode(address)
+        if point is None:
+            notes.append(
+                "No se sitúa «%s» en el mapa: el presupuesto va con los km "
+                "de la matriz de rutas y sin peajes." % address,
+            )
+            return None
+        waypoints.append({
+            "lat": float(point[0]), "lng": float(point[1]),
+            "label": address, "address": address,
+            "is_base_return": False,
+        })
+    route = calculate_route_multileg(
+        base=base,
+        waypoints=waypoints,
+        # The wizard joins date and time without zone.
+        # El asistente une fecha y hora sin zona horaria.
+        service_datetime=datetime.datetime.combine(
+            when.date(), when.time().replace(microsecond=0),
+        ),
+        api_key=os.environ.get("GOOGLE_MAPS_API_KEY", ""),
+        company=base.company,
+    )
+    if route.get("error"):
+        notes.append(
+            "Ruta del presupuesto no calculada (%s): va con los km de la "
+            "matriz de rutas y sin peajes." % route["error"],
+        )
+        return None
+    return {
+        "_route_km": str(route["distance_km"]),
+        "_route_tolls": str(route.get("route_toll_budget_cost") or "0"),
+        "_route_polyline": route.get("encoded_polyline") or "",
+    }
+
+
 def estimate_budget(evaluation, when, notes, data=None, task_times=None):
     """
     The unsaved Budget of the estimate, ready for the engine.
@@ -717,6 +783,27 @@ def estimate_budget(evaluation, when, notes, data=None, task_times=None):
         route_calculation_mode=Budget.ROUTE_MODE_MANUAL,
         apply_iva=False,
     )
+    stored = evaluation.data or {}
+    if stored.get("_route_km"):
+        # S143: as the manual budget saves it with the route planner:
+        # km of the route rounded to the unit and its tolls.
+        # Como lo guarda el presupuesto manual con el planificador de
+        # ruta: km de la ruta redondeados a la unidad y sus peajes.
+        route_km = Decimal(stored["_route_km"])
+        budget.km_phase1 = int(route_km.quantize(
+            Decimal("1"), rounding=ROUND_HALF_UP,
+        ))
+        budget.route_calculation_mode = Budget.ROUTE_MODE_API
+        budget.route_distance_km = route_km
+        budget.route_toll_budget_cost = Decimal(
+            stored.get("_route_tolls") or "0",
+        )
+        budget.encoded_polyline = stored.get("_route_polyline") or None
+    else:
+        notes.append(
+            "Presupuesto con los km de la matriz de rutas y sin peajes: "
+            "vuelve a valorar para usar la ruta del presupuesto manual.",
+        )
     _apply_task_concepts(
         budget, data if data is not None else evaluation.data,
         task_times if task_times is not None
@@ -1128,19 +1215,30 @@ def evaluate(evaluation_pk):
             company, data, kinds, notes, insurer=evaluation.insurer,
         )
         work_hours, _task_notes = task_work_hours(company, data)
+        when = _service_moment(data, evaluation.created_at)
+        route = (
+            tariff_route(base, data, kinds, when, notes)
+            if km is not None else None
+        )
+        if route is not None:
+            # S143: the km of the route of the manual budget, for the
+            # budget and for the cost (one figure for both).
+            # Los km de la ruta del presupuesto manual, para el
+            # presupuesto y para el coste.
+            km = Decimal(route["_route_km"]).quantize(Decimal("0.1"))
         evaluation.base = base
         evaluation.km = km
         evaluation.hours = (
             travel + work_hours if travel is not None else None
         )
-        when = _service_moment(data, evaluation.created_at)
-        evaluation.budget_amount = _budget_amount(
-            evaluation, when, notes, data=data,
-            dated=_has_service_date(data),
-        )
         evaluation.data = dict(
             data, _crew_types=crew_types,
             _travel_hours=travel, _work_hours=work_hours,
+            **(route or {}),
+        )
+        evaluation.budget_amount = _budget_amount(
+            evaluation, when, notes, data=data,
+            dated=_has_service_date(data),
         )
         notes += compute_costs(evaluation)
         evaluation.notes = "\n".join(notes)
