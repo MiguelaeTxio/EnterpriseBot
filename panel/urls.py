@@ -123,6 +123,10 @@ from panel.views_clock_events import (
     ClockEventsResultsView,
     ClockEventsTabView,
 )
+from panel.views_clock_extras import (
+    ClockWorkerOvertimeView,
+    ClockWorkerTripView,
+)
 from panel.views_clock_worker import (
     ClockWorkerActionView,
     ClockWorkerPageView,
@@ -1855,6 +1859,17 @@ urlpatterns = [
         "documentacion/fichajes/<int:pk>/jornadas/accion/",
         ClockWorkerActionView.as_view(),
         name="clock_worker_action",
+    ),
+    # H24 (S144): bolsa de horas extras y kilómetros con vehículo propio.
+    path(
+        "documentacion/fichajes/<int:pk>/jornadas/bolsa/",
+        ClockWorkerOvertimeView.as_view(),
+        name="clock_worker_overtime",
+    ),
+    path(
+        "documentacion/fichajes/<int:pk>/jornadas/km/",
+        ClockWorkerTripView.as_view(),
+        name="clock_worker_trip",
     ),
     # H24 (S141): corrección de un fichaje (nunca se modifica el
     # original; queda en el historial con quién y por qué).

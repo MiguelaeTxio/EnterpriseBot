@@ -363,12 +363,19 @@ jornada abierta y ficha la salida con su propio botón.
         grid.innerHTML = "";
         info.clock_types.forEach(function (t) {
             if (open && t.id === current) return;
-            const b = document.createElement("button");
-            b.type = "button";
-            b.textContent = t.name;
-            b.className = open ? "chg" : "";
-            b.addEventListener("click", function () { press(t); });
-            grid.appendChild(b);
+            // S144: el desplazamiento sale dos veces; con "con mi
+            // vehículo" se cuentan los kilómetros al cerrar el tramo.
+            const variants = t.role === "travel"
+                ? [t, Object.assign({}, t, {own_vehicle: true, name: t.name + " con mi vehículo"})]
+                : [t];
+            variants.forEach(function (v) {
+                const b = document.createElement("button");
+                b.type = "button";
+                b.textContent = v.name;
+                b.className = open ? "chg" : "";
+                b.addEventListener("click", function () { press(v); });
+                grid.appendChild(b);
+            });
         });
         const select = document.getElementById("manual-type");
         const chosen = select.value;
@@ -576,6 +583,7 @@ jornada abierta y ficha la salida con su propio botón.
                     kind: decided,
                     clock_type: chosen ? chosen.id : null,
                     clock_type_name: chosen ? chosen.name : "",
+                    own_vehicle: !!(chosen && chosen.own_vehicle),
                     // Con cobertura y nada pendiente decide el servidor.
                     auto: navigator.onLine && nothingPending,
                     pressed_at: pressedAt.toISOString(),

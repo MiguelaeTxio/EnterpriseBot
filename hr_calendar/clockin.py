@@ -240,6 +240,12 @@ def record_press(company_user, payload, user_agent=""):
                 latitude, longitude, accuracy, sent_by, user_agent,
             )
             event.clock_type = clock_type
+            # S144: desplazamiento con su vehículo (kilómetros al cerrar
+            # el tramo, hr_calendar/clock_extras.py).
+            event.own_vehicle = bool(
+                payload.get("own_vehicle") and clock_type is not None
+                and clock_type.role == ClockType.ROLE_TRAVEL
+            )
             event.save()
     except IntegrityError:
         # Two sends of the same press at once (page and background).
@@ -358,6 +364,15 @@ def _after_save(event, company_user):
             logger.exception(
                 "# [FICHAJE-MUNICIPIO] Error con el fichaje %s.", client_id,
             )
+    # S144: si la pulsación cierra un tramo con vehículo propio, sus
+    # kilómetros (nunca impide guardar el fichaje).
+    try:
+        from hr_calendar.clock_extras import on_press
+        on_press(event)
+    except Exception:
+        logger.exception(
+            "# [FICHAJE-KM] Error con el fichaje %s.", client_id,
+        )
     outcome = None
     if (event.kind == ClockEvent.Kind.OUT
             or event.sent_by == ClockEvent.SentBy.MANUAL):
@@ -391,6 +406,8 @@ def _event_json(event):
         # S141: tipo de fichaje del tramo que abre (o None).
         "clock_type": event.clock_type_id,
         "clock_type_name": (event.clock_type.name
+                            + (" con mi vehículo" if event.own_vehicle
+                               else "")
                             if event.clock_type_id else ""),
     }
 
@@ -401,6 +418,7 @@ def _type_json(clock_type):
         "name": clock_type.name,
         "icon": clock_type.icon,
         "is_default": clock_type.is_default,
+        "role": clock_type.role,
     }
 
 

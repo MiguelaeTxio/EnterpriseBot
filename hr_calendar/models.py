@@ -1007,6 +1007,13 @@ class ClockEvent(models.Model):
         max_length=200, blank=True,
         verbose_name="Navegador",
     )
+    # S144 (Miguel Ángel): desplazamiento con su propio vehículo; los
+    # kilómetros se calculan al cerrar el tramo (OwnVehicleTrip).
+    own_vehicle = models.BooleanField(
+        default=False,
+        verbose_name="Con su vehículo",
+        help_text="Solo en un tramo de desplazamiento.",
+    )
     clock_type = models.ForeignKey(
         "hr_calendar.ClockType",
         null=True,
@@ -1555,6 +1562,20 @@ class ClockType(models.Model):
         default=False,
         verbose_name="Tipo por defecto",
     )
+    # S144: qué tipo es el desplazamiento (puede ser con vehículo propio
+    # y cuenta kilómetros) y cuál la pausa para comer (comida o cena,
+    # dietas).
+    ROLE_TRAVEL = "travel"
+    ROLE_MEAL = "meal"
+    ROLE_CHOICES = [
+        ("", "Normal"),
+        (ROLE_TRAVEL, "Desplazamiento"),
+        (ROLE_MEAL, "Pausa para comer"),
+    ]
+    role = models.CharField(
+        max_length=10, blank=True, default="", choices=ROLE_CHOICES,
+        verbose_name="Función",
+    )
     is_active = models.BooleanField(default=True, verbose_name="Activo")
     order = models.PositiveSmallIntegerField(default=0, verbose_name="Orden")
     updated_by = models.ForeignKey(
@@ -1583,3 +1604,100 @@ class ClockType(models.Model):
 
     def __str__(self) -> str:
         return self.name
+
+
+class OwnVehicleTrip(models.Model):
+    """
+    Kilometres of one travel stretch in the worker's own vehicle (S144).
+
+    ---
+
+    Kilómetros de un tramo de desplazamiento con el vehículo propio
+    (H24, S144, Miguel Ángel: "que puedan indicar cuando el
+    desplazamiento es propio, que cuente los kilómetros de forma
+    automática"). Se calculan por carretera (Google Routes) entre el GPS
+    de la pulsación que abre el tramo y el de la que lo cierra; si falta
+    un GPS o falla la consulta, queda sin kilómetros y con el motivo. El
+    supervisor los puede corregir (`source=manual`). Las pulsaciones no
+    se tocan: son inmutables.
+    """
+
+    SOURCE_ROUTES = "routes"
+    SOURCE_MANUAL = "manual"
+    SOURCE_CHOICES = [
+        (SOURCE_ROUTES, "Por carretera"),
+        (SOURCE_MANUAL, "Corregido a mano"),
+    ]
+
+    start_event = models.OneToOneField(
+        ClockEvent, on_delete=models.CASCADE,
+        related_name="own_vehicle_trip", verbose_name="Inicio del tramo",
+    )
+    end_event = models.ForeignKey(
+        ClockEvent, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+", verbose_name="Fin del tramo",
+    )
+    km = models.DecimalField(
+        max_digits=7, decimal_places=1, null=True, blank=True,
+        verbose_name="Kilómetros",
+    )
+    source = models.CharField(
+        max_length=10, choices=SOURCE_CHOICES, default=SOURCE_ROUTES,
+        verbose_name="Origen",
+    )
+    error = models.CharField(
+        max_length=200, blank=True, default="",
+        verbose_name="Por qué no hay kilómetros",
+    )
+    corrected_by = models.ForeignKey(
+        CompanyUser, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+", verbose_name="Corregido por",
+    )
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Cambio")
+
+    class Meta:
+        verbose_name = "Desplazamiento con vehículo propio"
+        verbose_name_plural = "Desplazamientos con vehículo propio"
+
+    def __str__(self) -> str:
+        return "%s km (%s)" % (self.km, self.start_event_id)
+
+
+class OvertimeAdjustment(models.Model):
+    """
+    A manual movement of a worker's overtime bag (S144).
+
+    ---
+
+    Movimiento a mano de la bolsa de horas extras de un trabajador (H24,
+    S144): horas pagadas o compensadas con descanso (en negativo) o
+    añadidas, con su motivo. La bolsa suma cada día lo trabajado por
+    encima del horario (los días de menos no restan, Miguel Ángel) más
+    estos movimientos.
+    """
+
+    company_user = models.ForeignKey(
+        CompanyUser, on_delete=models.CASCADE,
+        related_name="overtime_adjustments", verbose_name="Trabajador",
+    )
+    date = models.DateField(verbose_name="Fecha")
+    minutes = models.IntegerField(
+        verbose_name="Minutos",
+        help_text="Negativo: horas pagadas o compensadas.",
+    )
+    reason = models.CharField(max_length=200, verbose_name="Motivo")
+    created_by = models.ForeignKey(
+        CompanyUser, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+", verbose_name="Apuntado por",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Apuntado",
+    )
+
+    class Meta:
+        verbose_name = "Movimiento de la bolsa de horas"
+        verbose_name_plural = "Movimientos de la bolsa de horas"
+        ordering = ["-date", "-pk"]
+
+    def __str__(self) -> str:
+        return "%+d min %s" % (self.minutes, self.date)

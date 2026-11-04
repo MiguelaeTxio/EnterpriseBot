@@ -287,6 +287,8 @@ def _context(request, person):
         "issues_count": report.incident_count,
         "punctuality_label": report.punctuality_label,
         "early_label": report.early_label,
+        # S144: horas extras, kilómetros y dietas del intervalo.
+        "extras": data["extras"],
         **_sort_controls(raw_sort),
     }
 
@@ -312,8 +314,12 @@ class ClockWorkerPageView(SupervisorAccessMixin, View):
             request.user.company_user, SCREEN_KEY,
             "selection_%d" % person.pk, [],
         )
+        from panel.views_clock_extras import bag_context
+
         return render(request, "panel/clock_worker/page.html", {
             **_context(request, person),
+            # S144: bolsa de horas extras (total en el panel fijo).
+            "bag": bag_context(person),
             "screen_key": SCREEN_KEY,
             "saved_selection": selection if isinstance(
                 selection, list) else [],

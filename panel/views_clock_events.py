@@ -136,6 +136,9 @@ class _EmptyReport:
     early_label = ""
     habitually_early = False
     last_day = None
+    day_excess = {}
+    excess_seconds = 0
+    excess_label = "0:00"
     last_event = None
     total_seconds = 0
     total_label = "0:00"
@@ -779,6 +782,10 @@ def worker_detail_data(company, person, date_from, date_to):
     by_replacement = {
         c.replacement_id: c for c in corrections if c.replacement_id
     }
+    from hr_calendar import clock_extras
+
+    bases = clock_extras.company_bases(company)
+    budget = clock_extras.new_budget()
     shifts = [{
         "day": s.day,
         "presses": [_press_view(s.clock_in, by_replacement),
@@ -803,7 +810,28 @@ def worker_detail_data(company, person, date_from, date_to):
             str(e.pk) for e in [s.clock_in] + list(s.changes)
             + [s.clock_out] if e is not None),
         "cancelled": [],
+        # S144: pausas para comer (dietas) y tramos con vehículo propio.
+        "meals": clock_extras.shift_meals(s, bases),
+        "trips": clock_extras.shift_trips(s, budget),
     } for s in report.shifts]
+    # S144: lo trabajado de más ese día, en la última jornada del día.
+    excess = getattr(report, "day_excess", {}) or {}
+    last_of_day = {}
+    for shift in shifts:
+        last_of_day[shift["day"]] = shift
+    for day, seconds in excess.items():
+        if day in last_of_day:
+            last_of_day[day]["excess"] = format_duration(seconds)
+    extras = {
+        "excess_label": format_duration(sum(excess.values())),
+        "km": clock_extras.km_total(
+            [t for shift in shifts for t in shift["trips"]]),
+        "meals": {
+            kind: sum(1 for shift in shifts for m in shift["meals"]
+                      if m["allowance"] and m["kind"] == kind)
+            for kind in (clock_extras.LUNCH, clock_extras.DINNER)
+        },
+    }
     _attach_cancelled(shifts, corrections, date_from, date_to)
     history = [{
         "correction": c,
@@ -815,7 +843,8 @@ def worker_detail_data(company, person, date_from, date_to):
                      if c.new_pressed_at else None),
         "is_cancel": c.action == ClockCorrection.Action.CANCEL,
     } for c in corrections]
-    return {"report": report, "shifts": shifts, "history": history}
+    return {"report": report, "shifts": shifts, "history": history,
+            "extras": extras}
 
 
 def _render_detail(request, person, date_from, date_to, error="",

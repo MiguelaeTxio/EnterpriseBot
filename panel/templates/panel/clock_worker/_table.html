@@ -18,7 +18,11 @@ historial: quién, cuándo, antes, después y motivo).
      data-total="{{ total_label }}"
      data-issues="{{ issues_count }}"
      data-late="{{ punctuality_label }}"
-     data-early="{{ early_label }}"></div>
+     data-early="{{ early_label }}"
+     data-excess="{{ extras.excess_label }}"
+     data-km="{% if extras.km %}{{ extras.km|floatformat:1 }}{% endif %}"
+     data-lunches="{{ extras.meals.Comida }}"
+     data-dinners="{{ extras.meals.Cena }}"></div>
 <span id="cw-sort-inputs" class="d-none">
     <input type="hidden" name="sort" value="{{ current_sort }}">
 </span>
@@ -98,10 +102,13 @@ historial: quién, cuándo, antes, después y motivo).
                 {% endif %}
             </td>
             {% endfor %}
-            <td class="text-end" data-label="Horas">{{ row.duration|default:"—" }}</td>
+            <td class="text-end" data-label="Horas">{{ row.duration|default:"—" }}{% if row.excess %}<div class="text-success text-nowrap" title="Por encima de su horario (bolsa de horas)">+{{ row.excess }} extra</div>{% endif %}</td>
             <td data-label="Tipos">
                 {% for press in row.changes %}<div class="text-nowrap">{{ press.time|date:"H:i" }} → <strong>{{ press.event.clock_type.name|default:"—" }}</strong>{% if press.is_added %} <span class="text-primary">(añadido)</span>{% elif press.correction %} <span class="text-primary">(corregido)</span>{% endif %}</div>{% endfor %}
                 {% for item in row.type_hours %}<span class="text-muted text-nowrap me-2">{{ item.name }} {{ item.label }} h{% if not item.counts %} (no cuenta){% endif %}</span>{% endfor %}
+                {# S144: vehículo propio y pausas para comer (dietas). #}
+                {% for item in row.trips %}<div class="text-nowrap"><i class="bi bi-car-front"></i> {{ item.start|time:"H:i" }}–{{ item.end|time:"H:i" }}: {% if item.km is not None %}<strong>{{ item.km|floatformat:1 }} km</strong>{% if item.trip.source == "manual" %} <span class="text-primary" title="Corregido por {{ item.trip.corrected_by }}">(corregido)</span>{% endif %}{% else %}<span class="text-warning-emphasis" title="{{ item.error }}">sin km</span>{% endif %}{% if item.trip and has_account %} <a href="#" class="cw-trip-edit" data-trip="{{ item.trip.pk }}" data-km="{% if item.km is not None %}{{ item.km|stringformat:'s' }}{% endif %}" title="Corregir los kilómetros"><i class="bi bi-pencil"></i></a>{% endif %}</div>{% endfor %}
+                {% for meal in row.meals %}<div class="text-nowrap{% if not meal.allowance %} text-muted{% endif %}" title="{{ meal.note }}"><i class="bi bi-cup-hot"></i> {{ meal.kind|default:"Pausa" }} {{ meal.start|time:"H:i" }} ({{ meal.minutes }} min){% if meal.allowance %} · <span class="text-success">dieta</span>{% else %} · sin dieta{% endif %} <span class="small">({{ meal.note }})</span></div>{% endfor %}
             </td>
             {% endif %}
             <td data-label="Incidencias">

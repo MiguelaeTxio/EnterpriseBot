@@ -135,6 +135,19 @@ screen_key "clock_worker"); la selección, por trabajador.
                             <i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel
                         </button>
                     </div>
+                    {# S144: bolsa de horas extras (lo de más de cada día y los movimientos a mano). #}
+                    <div class="col-6 border-top pt-1 mt-1">
+                        <div class="small text-muted fw-bold">Bolsa de horas extras</div>
+                        {% if bag %}
+                        <div class="small">Total: <strong id="cw-bag-total">{{ bag.total_label }} h</strong></div>
+                        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#cwBagModal"
+                                hx-get="{% url 'panel:clock_worker_overtime' person.pk %}" hx-target="#cw-bag-body">
+                            <i class="bi bi-hourglass-split me-1"></i>Movimientos…
+                        </button>
+                        {% else %}
+                        <div class="small text-muted">Sin cuenta en el panel.</div>
+                        {% endif %}
+                    </div>
                 </div>
             </div>
         </div>
@@ -245,6 +258,40 @@ screen_key "clock_worker"); la selección, por trabajador.
     </div>
 </div>
 
+{# S144: bolsa de horas extras. #}
+<div class="modal fade" id="cwBagModal" tabindex="-1" aria-labelledby="cwBagModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="cwBagModalLabel">Bolsa de horas extras de {{ person_label }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="cw-bag-body"><div class="text-muted small">Cargando…</div></div>
+        </div>
+    </div>
+</div>
+
+{# S144: corregir los kilómetros de un tramo con vehículo propio. #}
+<div class="modal fade" id="cwTripModal" tabindex="-1" aria-labelledby="cwTripModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-sm">
+        <form class="modal-content" id="cw-trip-form" autocomplete="off" onsubmit="return false;">
+            <div class="modal-header">
+                <h5 class="modal-title" id="cwTripModalLabel">Kilómetros</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body small">
+                <input type="hidden" name="trip" id="cw-trip-id">
+                <label class="form-label mb-0" for="cwTripKm">Kilómetros del tramo con su vehículo</label>
+                <input class="form-control form-control-sm" type="text" inputmode="decimal" name="km" id="cwTripKm" required>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-sm btn-primary" id="cw-trip-save">Guardar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <div class="toast-container position-fixed bottom-0 end-0 p-3">
     <div id="cw-toast" class="toast align-items-center text-bg-dark border-0" role="status" aria-live="polite">
         <div class="d-flex">
@@ -333,6 +380,12 @@ screen_key "clock_worker"); la selección, por trabajador.
                            "Incidencias: <strong>" + state.dataset.issues + "</strong>"];
             if (state.dataset.late) parts.push("Entradas tarde: " + state.dataset.late);
             if (state.dataset.early) parts.push("Salidas antes de hora: " + state.dataset.early);
+            // S144: horas extras, kilómetros con vehículo propio y dietas.
+            parts.push("Horas extra: <strong>" + state.dataset.excess + "</strong>");
+            if (state.dataset.km) parts.push("Vehículo propio: <strong>" + state.dataset.km + " km</strong>");
+            if (state.dataset.lunches !== "0" || state.dataset.dinners !== "0") {
+                parts.push("Dietas: <strong>" + state.dataset.lunches + "</strong> comidas, <strong>" + state.dataset.dinners + "</strong> cenas");
+            }
             document.getElementById("cw-totals").innerHTML = parts.join(" · ");
         }
         results.querySelectorAll(".cw-row-check").forEach(function (cb) {
@@ -472,6 +525,42 @@ screen_key "clock_worker"); la selección, por trabajador.
                 if (body.get("event_ids")) selection.clear();
                 refreshFromFragment();
                 fixModal().hide();
+            });
+        }).catch(function () {
+            showToast("Sin conexión con el servidor: no se ha guardado nada.", true);
+        }).finally(function () { btn.disabled = false; });
+    });
+
+    // S144: corregir los kilómetros de un tramo con vehículo propio.
+    const TRIP_URL = "{% url 'panel:clock_worker_trip' person.pk %}";
+    results.addEventListener("click", function (evt) {
+        const link = evt.target.closest(".cw-trip-edit");
+        if (!link) return;
+        evt.preventDefault();
+        document.getElementById("cw-trip-id").value = link.dataset.trip;
+        document.getElementById("cwTripKm").value = (link.dataset.km || "").replace(".", ",");
+        bootstrap.Modal.getOrCreateInstance(document.getElementById("cwTripModal")).show();
+    });
+    document.getElementById("cw-trip-save").addEventListener("click", function () {
+        const btn = this;
+        const body = new FormData(document.getElementById("cw-trip-form"));
+        new FormData(filters).forEach(function (value, key) { body.append("_f_" + key, value); });
+        const sortInput = results.querySelector('#cw-sort-inputs input[name="sort"]');
+        body.append("_f_sort", sortInput ? sortInput.value : "");
+        btn.disabled = true;
+        fetch(TRIP_URL, {
+            method: "POST", headers: {"X-CSRFToken": csrfMeta ? csrfMeta.content : ""}, body: body,
+        }).then(function (r) {
+            if (!r.ok) { showToast("No se ha podido guardar (" + r.status + ").", true); return; }
+            const message = r.headers.get("X-Clock-Message");
+            const isError = r.headers.get("X-Clock-Error") === "1";
+            return r.text().then(function (html) {
+                if (message) showToast(decodeURIComponent(message), isError);
+                if (isError) return;
+                results.innerHTML = html;
+                htmx.process(results);
+                refreshFromFragment();
+                bootstrap.Modal.getOrCreateInstance(document.getElementById("cwTripModal")).hide();
             });
         }).catch(function () {
             showToast("Sin conexión con el servidor: no se ha guardado nada.", true);

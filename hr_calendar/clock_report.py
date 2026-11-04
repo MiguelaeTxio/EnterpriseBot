@@ -250,6 +250,36 @@ class Shift:
         ]
 
     @property
+    def segment_marks(self):
+        """
+        [(opening press, end)] of a closed shift (S144).
+        ---
+        Cada tramo con la pulsación que lo abre (su tipo, su GPS, si es
+        con vehículo propio) y su fin.
+        """
+        if self.clock_in is None or self.clock_out is None:
+            return []
+        marks = [self.clock_in] + list(self.changes)
+        ends = [m.pressed_at for m in marks[1:]] + [
+            self.clock_out.pressed_at]
+        return list(zip(marks, ends))
+
+    @property
+    def meal_segments(self):
+        """
+        Stretches of the meal-break type (S144).
+        ---
+        Tramos de "Pausa para comer".
+        """
+        from hr_calendar.models import ClockType
+
+        return [
+            (mark, end) for mark, end in self.segment_marks
+            if mark.clock_type is not None
+            and mark.clock_type.role == ClockType.ROLE_MEAL
+        ]
+
+    @property
     def type_seconds(self):
         """
         {type name: seconds} of a closed shift with types (S141).
@@ -362,6 +392,16 @@ class PersonReport:
 
     shifts: list = field(default_factory=list)
     events: list = field(default_factory=list)
+    # S144: {día: segundos trabajados por encima del horario}.
+    day_excess: dict = field(default_factory=dict)
+
+    @property
+    def excess_seconds(self):
+        return sum(self.day_excess.values())
+
+    @property
+    def excess_label(self):
+        return format_duration(self.excess_seconds)
 
     @property
     def total_seconds(self):
@@ -639,6 +679,9 @@ def _schedule_times_by_user(company, company_user_ids):
         result[company_user.pk] = (
             _times_of(schedule, company_user.base),
             _day_rule(company_user, schedule),
+            # S144: con horario y no abierto, los días tienen horas
+            # previstas (bolsa de horas extras).
+            schedule is not None and not schedule.is_open,
         )
     return result
 
@@ -743,7 +786,10 @@ def _deduct_parte_lunch(company, user_id, shifts):
     """
     from work_order_processor.models import WorkOrderEntry
 
-    days = {shift.day for shift in shifts if shift.seconds}
+    # S144: la jornada que ficha su pausa para comer ya la descuenta
+    # (tipo que no cuenta como jornada); el parte no la descuenta otra vez.
+    days = {shift.day for shift in shifts
+            if shift.seconds and not shift.meal_segments}
     if not days:
         return
     lunches = {}
@@ -829,8 +875,8 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
         report.shifts = [
             s for s in all_shifts if date_from <= s.day <= date_to
         ]
-        times_of, is_day_compared = times_by_user.get(
-            user_id, (lambda day: ([], []), lambda day: True),
+        times_of, is_day_compared, has_hours = times_by_user.get(
+            user_id, (lambda day: ([], []), lambda day: True, False),
         )
         for shift in report.shifts:
             if not is_day_compared(shift.day):
@@ -860,6 +906,13 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
                 )
         _deduct_parte_lunch(company, user_id, report.shifts)
         _review_flexible_days(report.shifts)
+        # S144: horas extras de cada día (bolsa de horas, comidas y
+        # vehículo propio: hr_calendar/clock_extras.py).
+        from hr_calendar.clock_extras import day_excess
+
+        report.day_excess = day_excess(
+            report.shifts, times_of, is_day_compared, has_hours,
+        )
         report.events = [
             e for e in user_events if start <= e.pressed_at < end
         ]
