@@ -24,6 +24,11 @@ screen_key "clock_worker"); la selección, por trabajador.
 {% block page_title %}Fichajes de {{ person_label }}{% endblock %}
 
 {% block content %}
+{# S144 (directriz 4.25): "Volver" a donde se abrió (la pestaña Fichajes o la ficha de Personal); sin historial, la Documentación. #}
+{% url 'panel:documentation_hub' as back_fallback %}
+<div class="d-flex align-items-center gap-2 mb-2">
+    <a href="{{ panel_back_url|default:back_fallback }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Volver</a>
+</div>
 <div class="border rounded p-2 mb-2" id="cw-top-panel">
     <div class="row g-2">
         <div class="col-lg-7">
