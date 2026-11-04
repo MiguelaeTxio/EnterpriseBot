@@ -83,8 +83,13 @@ class PersonalMedicalLeaveView(SupervisorAccessMixin, View):
         date_end = _parse_date(request.POST.get("date_end"))
 
         def reply(message, error=False):
-            return render(request, TEMPLATE, medical_leave_block_context(
-                request, person, message, error))
+            # S144: con la cabecera del acordeón fuera de banda (el
+            # contador y "Abierta" se quedaban sin cambiar).
+            return render(request, TEMPLATE, {
+                **medical_leave_block_context(request, person, message,
+                                              error),
+                "medical_leave_oob": True,
+            })
 
         if action == "add":
             date_start = _parse_date(request.POST.get("date_start"))

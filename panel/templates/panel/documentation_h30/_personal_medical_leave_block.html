@@ -68,3 +68,5 @@ fichaje. Vista: panel/views_personal_medical_leave.py. Se repinta solo
     </form>
     {% endif %}
 </div>
+{# Al repintar tras una acción, también los contadores de la cabecera del acordeón (fuera de banda). #}
+{% if medical_leave_oob %}<span id="medical-leave-header-badges"{% if medical_leave_oob %} hx-swap-oob="true"{% endif %}><span class="badge bg-primary ms-2">{{ medical_leaves|length }}</span>{% if medical_leave_open %}<span class="badge text-bg-warning ms-2">Abierta</span>{% endif %}</span>{% endif %}

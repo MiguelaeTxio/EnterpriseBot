@@ -437,7 +437,7 @@ H30 (S128), punto 6: tablas `stack-mobile` -- en el móvil cada fila es una tarj
     <div class="accordion-item">
         <h2 class="accordion-header">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseLaboralBajas">
-                Bajas médicas <span class="badge bg-primary ms-2">{{ medical_leaves|length }}</span>{% if medical_leave_open %}<span class="badge text-bg-warning ms-2">Abierta</span>{% endif %}
+                Bajas médicas <span id="medical-leave-header-badges"{% if medical_leave_oob %} hx-swap-oob="true"{% endif %}><span class="badge bg-primary ms-2">{{ medical_leaves|length }}</span>{% if medical_leave_open %}<span class="badge text-bg-warning ms-2">Abierta</span>{% endif %}</span>
             </button>
         </h2>
         <div id="collapseLaboralBajas" class="accordion-collapse collapse" data-bs-parent="#personalLaboralAccordion">
