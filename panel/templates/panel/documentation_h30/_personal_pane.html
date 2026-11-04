@@ -518,6 +518,44 @@ las filas de debajo se desplacen de verdad.
         window.__personMassSelectionNames = new Map();
     }
     const selectionNames = window.__personMassSelectionNames;
+    // S144 (Miguel Ángel: con un filtro cambiado quedaban marcados que no
+    // se veían): toda acción sobre los marcados pasa por una
+    // confirmación con 3 s, la lista de marcados y los que no se ven.
+    function personMassConfirm(action) {
+        const names = new Map(Array.from(selection).map(function (pk) {
+            return [String(pk), selectionNames.get(pk) || ('Trabajador ' + pk)];
+        }));
+        const visible = Array.from(document.querySelectorAll('#personal-results .person-select-checkbox')).map(function (cb) { return cb.value; });
+        return window.EbMassConfirm({
+            action: action, names: Array.from(names.values()),
+            hidden: window.EbHiddenSelected(names, visible),
+        });
+    }
+    // Las acciones que ya abren su propio modal pasan antes por esta
+    // confirmación (escucha en captura, antes que la suya).
+    function guardMassButton(id, action) {
+        const btn = document.getElementById(id);
+        if (!btn) return;
+        btn.addEventListener('click', async function (ev) {
+            if (btn.dataset.massOk === '1') { btn.dataset.massOk = ''; return; }
+            if (selection.size === 0) return;
+            ev.preventDefault();
+            ev.stopImmediatePropagation();
+            if (await personMassConfirm(typeof action === 'function' ? action() : action)) {
+                btn.dataset.massOk = '1';
+                btn.click();
+            }
+        }, true);
+    }
+    guardMassButton('person-mass-job-position-submit', function () {
+        const sel = document.getElementById('person-mass-job-position');
+        return 'Asignar el requisito de documentación: ' + sel.options[sel.selectedIndex].textContent.trim();
+    });
+    guardMassButton('person-mass-epi-submit', 'Entregar EPIs');
+    guardMassButton('person-mass-photo-queue', 'Volver a sacar la foto de carné');
+    guardMassButton('person-mass-terminate', 'Dar de baja en la empresa');
+    guardMassButton('person-mass-reactivate', 'Reactivar en la empresa');
+    guardMassButton('person-mass-access', 'Crear el acceso al fichaje');
     savedPersonSelection.forEach((item) => {
         if (item && item.pk && item.name && !selectionNames.has(String(item.pk))) {
             selectionNames.set(String(item.pk), item.name);
@@ -1186,9 +1224,9 @@ las filas de debajo se desplacen de verdad.
     // H24 (S144): "Reenviar el alta" a los marcados.
     const resendBtn = document.getElementById('person-mass-access-resend');
     if (resendBtn) {
-        resendBtn.addEventListener('click', function () {
+        resendBtn.addEventListener('click', async function () {
             if (selection.size === 0) return;
-            if (!confirm('¿Reenviar el alta en el fichaje a ' + selection.size + ' persona(s)? Se les vuelve a poner la contraseña de las 4 últimas cifras del DNI y se les quitan los dispositivos de confianza.')) return;
+            if (!(await personMassConfirm('Reenviar el alta en el fichaje: se les vuelve a poner la contraseña de las 4 últimas cifras del DNI y se les quitan los dispositivos de confianza.'))) return;
             const formData = new FormData();
             selection.forEach((pk) => formData.append('person_ids', pk));
             resendBtn.disabled = true;
@@ -1240,9 +1278,9 @@ las filas de debajo se desplacen de verdad.
     // H24 (S144): horario y sección de los marcados, lo mismo que la
     // pestaña Horarios; después se repinta el listado (columnas Sección
     // y Horario).
-    function postScheduleAction(url, fields, question) {
+    async function postScheduleAction(url, fields, question) {
         if (selection.size === 0) return;
-        if (!confirm(question + ' (' + selection.size + ' trabajador(es)). ¿Seguro?')) return;
+        if (!(await personMassConfirm(question))) return;
         const formData = new FormData();
         selection.forEach((pk) => formData.append('selected', pk));
         Object.keys(fields).forEach((key) => formData.append(key, fields[key]));
@@ -1341,7 +1379,7 @@ las filas de debajo se desplacen de verdad.
     window.addEventListener('focus', refreshPersonSchedules);
 
     // H24 (S141): circular por WhatsApp a los marcados.
-    document.getElementById('person-mass-notify-whatsapp').addEventListener('click', function () {
+    document.getElementById('person-mass-notify-whatsapp').addEventListener('click', async function () {
         const select = document.getElementById('person-mass-notify');
         if (selection.size === 0) {
             resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">No hay personas seleccionadas.</div>';
@@ -1352,7 +1390,7 @@ las filas de debajo se desplacen de verdad.
             return;
         }
         const label = select.options[select.selectedIndex].textContent.trim();
-        if (!confirm('¿Enviar "' + label + '" por WhatsApp a ' + selection.size + ' persona(s)?')) return;
+        if (!(await personMassConfirm('Enviar "' + label + '" por WhatsApp'))) return;
         const formData = new FormData();
         selection.forEach((pk) => formData.append('person_ids', pk));
         formData.append('tipo', select.value);

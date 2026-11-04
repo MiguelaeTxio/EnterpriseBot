@@ -423,10 +423,19 @@ recordatorios, secciones que fichan y permiso de envío).
             showToast("Sin conexión con el servidor: no se ha guardado nada.", true);
         });
     }
+    // S144 (Miguel Ángel: iba a quitar a uno y quitó la sección entera):
+    // confirmación con 3 s, la lista de marcados y los que no se ven.
+    function massConfirm(action) {
+        const visible = Array.from(results.querySelectorAll(".clk-row-check")).map(function (cb) { return cb.dataset.pk; });
+        return window.EbMassConfirm({
+            action: action, names: Array.from(selection.values()),
+            hidden: window.EbHiddenSelected(selection, visible),
+        });
+    }
     document.querySelectorAll(".clk-worker-btn").forEach(function (btn) {
-        btn.addEventListener("click", function () {
+        btn.addEventListener("click", async function () {
             if (!selection.size) { showToast("Marca algún trabajador.", true); return; }
-            if (!confirm(btn.textContent.trim() + ": " + selection.size + " trabajador(es). ¿Seguro?")) return;
+            if (!(await massConfirm(btn.title || btn.textContent.trim()))) return;
             postSetting("{% url 'panel:clock_settings_workers' %}", {action: btn.dataset.action}, true);
         });
     });
@@ -472,10 +481,10 @@ recordatorios, secciones que fichan y permiso de envío).
     });
 
     // S144: "Reenviar el alta" a los marcados; después se repinta la tabla.
-    document.getElementById("clk-access-resend").addEventListener("click", function () {
+    document.getElementById("clk-access-resend").addEventListener("click", async function () {
         const btn = this;
         if (!selection.size) { showToast("Marca algún trabajador.", true); return; }
-        if (!confirm("¿Reenviar el alta en el fichaje a " + selection.size + " trabajador(es)? Se les vuelve a poner la contraseña de las 4 últimas cifras del DNI y se les quitan los dispositivos de confianza.")) return;
+        if (!(await massConfirm("Reenviar el alta en el fichaje: se les vuelve a poner la contraseña de las 4 últimas cifras del DNI y se les quitan los dispositivos de confianza."))) return;
         const body = new FormData();
         selection.forEach(function (_label, pk) { body.append("person_ids", pk); });
         btn.disabled = true;

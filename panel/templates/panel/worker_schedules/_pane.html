@@ -319,9 +319,14 @@ filtrar la sección, marcar todos y poner el horario.
     }
     // Cada acción devuelve la tabla con los filtros que se veían (_f_);
     // el mensaje llega en X-Schedule-Message.
-    function assign(scheduleId, question, url, extra) {
+    async function assign(scheduleId, question, url, extra) {
         if (!selection.size) { showToast("Marca algún trabajador.", true); return; }
-        if (!confirm(question + " (" + selection.size + " trabajador(es)). ¿Seguro?")) return;
+        // S144: confirmación con 3 s y los marcados que no se ven.
+        const visible = Array.from(results.querySelectorAll(".hor-row-check")).map(function (cb) { return cb.dataset.pk; });
+        if (!(await window.EbMassConfirm({
+            action: question, names: Array.from(selection.values()),
+            hidden: window.EbHiddenSelected(selection, visible),
+        }))) return;
         const body = new FormData();
         new FormData(filters).forEach(function (value, key) { body.append("_f_" + key, value); });
         const sortInput = results.querySelector('#hor-sort-inputs input[name="sort"]');

@@ -367,14 +367,19 @@ supervisores: el visor de cada trabajador irá fuera de aquí.
     // viajan con _f_ para que la tabla devuelta respete lo que se veía).
     const assignBtn = document.getElementById("vbal-assign-confirm");
     if (assignBtn) {
-        assignBtn.addEventListener("click", function () {
+        assignBtn.addEventListener("click", async function () {
             const sectionSelect = document.getElementById("vbal-assign-section");
             const validFrom = document.getElementById("vbal-assign-date").value;
             if (!selection.size) return;
             if (!sectionSelect.value || !validFrom) { showToast("Elige la sección y la fecha.", true); return; }
             const label = sectionSelect.options[sectionSelect.selectedIndex].textContent;
-            if (!confirm("¿Asignar la sección " + label + " desde " + validFrom.split("-").reverse().join("/") +
-                         " a " + selection.size + " trabajador(es)?")) return;
+            // S144: confirmación con 3 s y los marcados que no se ven.
+            const visible = Array.from(results.querySelectorAll(".vbal-row-check")).map(function (cb) { return cb.dataset.pk; });
+            if (!(await window.EbMassConfirm({
+                action: "Asignar la sección " + label + " desde " + validFrom.split("-").reverse().join("/"),
+                names: Array.from(selection.values()),
+                hidden: window.EbHiddenSelected(selection, visible),
+            }))) return;
             const body = new FormData();
             new FormData(filters).forEach(function (value, key) { body.append("_f_" + key, value); });
             const sortInput = results.querySelector('#vbal-sort-inputs input[name="sort"]');
