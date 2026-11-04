@@ -1132,6 +1132,7 @@ def _person_list_page(request):
                 | Q(second_surname__icontains=word)
                 | Q(given_name__icontains=word) | Q(dni__icontains=word)
                 | Q(job_position__name__icontains=word)
+                | Q(nickname__icontains=word)
             )
             digits = "".join(ch for ch in word if ch.isdigit())
             if digits:
@@ -5547,7 +5548,7 @@ class PersonalUpdateView(DocsUploadAccessMixin, View):
         "given_name", "first_surname", "second_surname", "phone",
         "phone_secondary", "email", "address_street", "postal_code",
         "city", "province", "ss_affiliation_number",
-        "professional_category",
+        "professional_category", "nickname",
     )
     DATE_EDITABLE_FIELDS = ("hire_date", "termination_date")
     # H31 (S109): `job_position` -- FK a JobPosition, editable igual

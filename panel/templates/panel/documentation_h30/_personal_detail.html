@@ -3,7 +3,7 @@
 {% load static document_explorer_extras %}
 
 {% block title %}{{ person.first_surname }} {{ person.second_surname }} — Documentación{% endblock %}
-{% block page_title %}{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }} ({{ person.dni }})<br><small class="text-muted">{{ person.employer_legal_name|default:"Sin empresa asignada" }}</small>{% endblock %}
+{% block page_title %}{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }}{% if person.nickname %} «{{ person.nickname }}»{% endif %} ({{ person.dni }})<br><small class="text-muted">{{ person.employer_legal_name|default:"Sin empresa asignada" }}</small>{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -153,6 +153,10 @@ y se habilita "Guardar".
                 quitársele el `readonly`, ni siquiera en modo edición
                 (a diferencia del resto de campos de este formulario).
                 {% endcomment %}
+                <div class="col-12 col-md-4">
+                    <label class="form-label small mb-0">Mote</label>
+                    <input type="text" name="nickname" class="form-control form-control-sm personal-edit-field" value="{{ person.nickname }}" readonly>
+                </div>
                 <div class="col-12 col-md-4">
                     <label class="form-label small mb-0">DNI/NIE</label>
                     <input type="text" class="form-control form-control-sm bg-secondary-subtle" value="{{ person.dni }}" readonly title="Identificador, no editable">

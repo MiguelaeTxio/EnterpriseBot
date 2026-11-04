@@ -310,7 +310,8 @@ def _filtered_people(request):
         qs = qs.filter(
             Q(first_surname__icontains=word)
             | Q(second_surname__icontains=word)
-            | Q(given_name__icontains=word) | Q(dni__icontains=word),
+            | Q(given_name__icontains=word) | Q(dni__icontains=word)
+            | Q(nickname__icontains=word),
         )
     return list(qs), active, companies, search
 

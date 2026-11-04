@@ -1503,6 +1503,11 @@ class PersonIdentity(models.Model):
         max_length=100, blank=True, verbose_name="Segundo apellido",
     )
     given_name = models.CharField(max_length=100, verbose_name="Nombre")
+    # H24 (S144), Miguel Ángel: el mote con el que se le conoce (Excel de
+    # trabajadores, "NOMBRE (MOTE)"); entra en la búsqueda.
+    nickname = models.CharField(
+        max_length=100, blank=True, default="", verbose_name="Mote",
+    )
     # ------------------------------------------------------------------
     # H30 (S82). Fecha de nacimiento -- Miguel Angel, verbatim, al dar
     # de alta a un trabajador nuevo (Estevao Veloso Sampaio): "habra
