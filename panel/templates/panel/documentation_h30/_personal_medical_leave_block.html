@@ -1,0 +1,70 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_personal_medical_leave_block.html #}
+{% comment %}
+H24 (S144). Bajas médicas del trabajador en su ficha (acordeón Laboral):
+cada baja con su inicio, alta y tipo; para quien puede editar, dar el
+alta a una abierta, borrar una registrada por error y añadir otra.
+Mientras una baja está abierta no le llegan los recordatorios de
+fichaje. Vista: panel/views_personal_medical_leave.py. Se repinta solo
+(htmx outerHTML).
+{% endcomment %}
+<div id="personal-medical-leave-block">
+    {% if medical_leave_open %}
+    <div class="alert alert-warning py-1 px-2 small mb-2">Tiene una baja abierta: no le llegan los recordatorios de fichaje.</div>
+    {% endif %}
+    {% if medical_leave_message %}<div class="small mb-2 {% if medical_leave_error %}text-danger{% else %}text-success{% endif %}">{{ medical_leave_message }}</div>{% endif %}
+    <table class="table stack-mobile table-sm table-hover mb-2">
+        <thead><tr><th>Inicio</th><th>Alta</th><th>Tipo</th><th>Parte</th>{% if can_edit_medical_leave %}<th></th>{% endif %}</tr></thead>
+        <tbody>
+            {% for leave in medical_leaves %}
+            <tr>
+                <td class="stack-mobile-title">{{ leave.date_start|date:"d/m/Y" }}</td>
+                <td data-label="Alta">{% if leave.date_end %}{{ leave.date_end|date:"d/m/Y" }}{% else %}<span class="badge text-bg-warning fw-normal">Abierta</span>{% endif %}</td>
+                <td data-label="Tipo">{{ leave.get_contingency_type_display }}</td>
+                <td data-label="Parte">{% if leave.source_document_id %}<a href="{% url 'panel:documentation_document_view' leave.source_document_id %}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf"></i> Ver</a>{% else %}—{% endif %}</td>
+                {% if can_edit_medical_leave %}
+                <td class="text-end">
+                    <div class="d-flex flex-wrap gap-1 justify-content-end">
+                        {% if not leave.date_end %}
+                        <form class="d-flex gap-1" hx-post="{% url 'panel:documentation_personal_medical_leave' person.pk %}"
+                              hx-target="#personal-medical-leave-block" hx-swap="outerHTML">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="close">
+                            <input type="hidden" name="leave_id" value="{{ leave.pk }}">
+                            <input type="date" name="date_end" class="form-control form-control-sm w-auto" value="{{ medical_leave_today|date:'Y-m-d' }}" aria-label="Fecha de alta" required>
+                            <button type="submit" class="btn btn-sm btn-outline-success" title="Pone la fecha de alta: la baja queda cerrada.">Dar el alta</button>
+                        </form>
+                        {% endif %}
+                        <form hx-post="{% url 'panel:documentation_personal_medical_leave' person.pk %}"
+                              hx-target="#personal-medical-leave-block" hx-swap="outerHTML"
+                              hx-confirm="¿Borrar la baja del {{ leave.date_start|date:'d/m/Y' }}? Úsalo solo si se registró por error.">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="delete">
+                            <input type="hidden" name="leave_id" value="{{ leave.pk }}">
+                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Borra una baja registrada por error (el parte de baja, si lo hay, no se toca)."><i class="bi bi-trash"></i></button>
+                        </form>
+                    </div>
+                </td>
+                {% endif %}
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" class="text-muted small">Sin bajas médicas registradas.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% if can_edit_medical_leave %}
+    <form class="d-flex flex-wrap align-items-center gap-1 small" hx-post="{% url 'panel:documentation_personal_medical_leave' person.pk %}"
+          hx-target="#personal-medical-leave-block" hx-swap="outerHTML">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="add">
+        <strong class="me-1">Añadir baja:</strong>
+        <label class="text-muted" for="medLeaveStart">desde</label>
+        <input type="date" name="date_start" id="medLeaveStart" class="form-control form-control-sm w-auto" required>
+        <label class="text-muted" for="medLeaveEnd">alta</label>
+        <input type="date" name="date_end" id="medLeaveEnd" class="form-control form-control-sm w-auto" title="Vacía si sigue de baja">
+        <select name="contingency_type" class="form-select form-select-sm w-auto" aria-label="Tipo" required>
+            {% for value, label in contingency_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+        </select>
+        <button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-plus-lg me-1"></i>Añadir</button>
+    </form>
+    {% endif %}
+</div>

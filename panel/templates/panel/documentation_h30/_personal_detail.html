@@ -433,6 +433,20 @@ H30 (S128), punto 6: tablas `stack-mobile` -- en el móvil cada fila es una tarj
         </div>
     </div>
 
+    {# H24 (S144): bajas médicas (no había pantalla; una baja abierta corta los recordatorios de fichaje). #}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseLaboralBajas">
+                Bajas médicas <span class="badge bg-primary ms-2">{{ medical_leaves|length }}</span>{% if medical_leave_open %}<span class="badge text-bg-warning ms-2">Abierta</span>{% endif %}
+            </button>
+        </h2>
+        <div id="collapseLaboralBajas" class="accordion-collapse collapse" data-bs-parent="#personalLaboralAccordion">
+            <div class="accordion-body">
+                {% include "panel/documentation_h30/_personal_medical_leave_block.html" %}
+            </div>
+        </div>
+    </div>
+
     {% comment %}
     H24 (S130). Ausencias que no son vacaciones ni baja (asuntos propios,
     cita médica...), registradas desde el desglose de la pestaña

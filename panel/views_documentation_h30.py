@@ -2245,6 +2245,9 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             CompanyUser.ROLE_SUPERVISOR, CompanyUser.ROLE_WORKSHOPBOSS,
         )
         # H24 (S144): bloque Sección de la ficha.
+        from panel.views_personal_medical_leave import (
+            medical_leave_block_context,
+        )
         from panel.views_personal_section import section_block_context
 
         return render(
@@ -2252,6 +2255,8 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "panel/documentation_h30/_personal_detail.html",
             {
                 **section_block_context(request, person),
+                # H24 (S144): bajas médicas (acordeón Laboral).
+                **medical_leave_block_context(request, person),
                 "can_view_clock_events": can_view_clock,
                 "clock_date_from": _today_clk.replace(day=1),
                 "clock_date_to": _today_clk,
