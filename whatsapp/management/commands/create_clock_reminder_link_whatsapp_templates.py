@@ -48,6 +48,21 @@ _BODIES = {
         "ahora con el botón de este mensaje; si se le olvidó, haga un "
         "fichaje manual con la hora real."
     ),
+    # S144 (Miguel Ángel, con Pablo Cañamero): el aviso que sale ANTES
+    # de la hora no puede decir "no consta que haya fichado": todavía
+    # no le tocaba. Texto de recordatorio.
+    "clock_in_prereminder_link": (
+        notice_templates._PREAMBLE
+        + "Hoy {{2}} su hora de entrada es a las {{3}}. Recuerde fichar "
+        "la entrada al empezar; puede hacerlo con el botón de este "
+        "mensaje."
+    ),
+    "clock_out_prereminder_link": (
+        notice_templates._PREAMBLE
+        + "Hoy {{2}} su hora de salida es a las {{3}}. Recuerde fichar "
+        "la salida al terminar; puede hacerlo con el botón de este "
+        "mensaje."
+    ),
 }
 
 
@@ -64,7 +79,7 @@ def _definitions():
     result = []
     for name, body in _BODIES.items():
         sample = dict(_SAMPLE)
-        if name == "clock_out_reminder_link":
+        if name.startswith("clock_out_"):
             sample["3"] = "18:00"
         result.append({
             "name": name,
@@ -94,8 +109,10 @@ class Command(notice_templates.Command):
 
     help = (
         "Crea y somete a aprobacion de Meta las plantillas WhatsApp "
-        "clock_in_reminder_link y clock_out_reminder_link (H24, S141); "
-        "las que ya están en BD no se tocan."
+        "clock_in_reminder_link y clock_out_reminder_link (H24, S141) y "
+        "las de antes de la hora, clock_in_prereminder_link y "
+        "clock_out_prereminder_link (S144); las que ya están en BD no se "
+        "tocan."
     )
     start_message = (
         "Inicio: alta de las plantillas de recordatorio de fichaje con "

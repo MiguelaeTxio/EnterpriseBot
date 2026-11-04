@@ -80,6 +80,11 @@ OUT_TEMPLATE = "clock_out_reminder"
 # en cuanto Meta las aprueba; hasta entonces, las de texto plano.
 IN_LINK_TEMPLATE = "clock_in_reminder_link"
 OUT_LINK_TEMPLATE = "clock_out_reminder_link"
+# S144: el aviso que sale antes de la hora del horario ("Recuerde
+# fichar"), no el de "no consta que haya fichado". Hasta que Meta la
+# apruebe se usa la de siempre.
+IN_EARLY_TEMPLATE = "clock_in_prereminder_link"
+OUT_EARLY_TEMPLATE = "clock_out_prereminder_link"
 
 
 def _away(company_user, person, day):
@@ -304,13 +309,15 @@ def exceptional_day(company_user, company, day, starts, events, now):
     return _off_schedule(last.clock_in, schedule_starts(schedule))
 
 
-def _templates(company):
+def _templates(company, early=False):
     """
     {kind: (WhatsAppTemplate or None, approved by Meta)}.
 
     ---
 
-    {tipo: (plantilla o None, aprobada por Meta)}.
+    {tipo: (plantilla o None, aprobada por Meta)}. Con `early` (el aviso
+    sale antes de la hora del horario, S144), primero la de "Recuerde
+    fichar"; sin ella aprobada, las de siempre.
     """
     from fleet.refuel_questions import template_approved
     from whatsapp.models import WhatsAppTemplate
@@ -319,6 +326,9 @@ def _templates(company):
     for kind, names in (
             (ClockReminder.Kind.IN, (IN_LINK_TEMPLATE, IN_TEMPLATE)),
             (ClockReminder.Kind.OUT, (OUT_LINK_TEMPLATE, OUT_TEMPLATE))):
+        if early:
+            names = ((IN_EARLY_TEMPLATE if kind == ClockReminder.Kind.IN
+                      else OUT_EARLY_TEMPLATE),) + names
         # La del botón si ya está aprobada; si no, la de texto plano.
         result[kind] = (None, False)
         for name in names:
@@ -375,8 +385,10 @@ def send_clock_reminders(company, now=None, log=logger.info):
     if not sender:
         log("Recordatorios de fichaje: sin TWILIO_WHATSAPP_SENDER.")
         return counters
-    # Se pregunta a Twilio por la aprobación solo cuando toca enviar.
-    templates = None
+    # Se pregunta a Twilio por la aprobación solo cuando toca enviar
+    # (S144: un juego para los avisos de antes de la hora y otro para
+    # los de a la hora o después).
+    templates = {}
     # S144: también los de ayer (el de salida del turno de noche se
     # apunta en el día de la entrada).
     already = set(ClockReminder.objects.filter(
@@ -468,9 +480,12 @@ def send_clock_reminders(company, now=None, log=logger.info):
             counters["sin_movil"] += 1
             log("Sin móvil: %s." % company_user.user.username)
             continue
-        if templates is None:
-            templates = _templates(company)
-        template, approved = templates[kind]
+        # S144: antes de la hora del horario, "Recuerde fichar".
+        early = now < timezone.make_aware(
+            datetime.datetime.combine(day, scheduled_time), tz)
+        if early not in templates:
+            templates[early] = _templates(company, early)
+        template, approved = templates[early][kind]
         # Sin plantilla aprobada solo se puede escribir dentro de la
         # ventana de 24 horas (texto libre con el texto de la
         # plantilla).
