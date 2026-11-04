@@ -3127,6 +3127,66 @@ class AgentHeartbeatView(View):
         })
 
 
+def _agent_token_ok(request):
+    token = request.headers.get("Authorization", "")
+    token = token.removeprefix("Bearer ").strip()
+    expected = getattr(settings, "H28_AGENT_API_TOKEN", "") or ""
+    return bool(expected) and constant_time_compare(token, expected)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class AgentLocalDownloadsView(View):
+    """
+    Webhook: `POST /panel/explorador/agente/descargas/`. The H28 agent
+    asks for the unfinished local downloads of just-onboarded workers.
+
+    ---
+
+    H24 (S144). Webhook: `POST /panel/explorador/agente/descargas/`.
+    El agente H28 pide, en cada barrido, las descargas a la carpeta
+    local sin terminar (altas nuevas, o a medias por un error). Mismo
+    token que el latido. Payload: `host` (opcional).
+    """
+
+    def post(self, request):
+        from .local_download_service import claim_pending
+
+        if not _agent_token_ok(request):
+            return HttpResponseForbidden("Token inválido.")
+        jobs = claim_pending((request.POST.get("host") or "").strip())
+        return JsonResponse({"ok": True, "jobs": jobs})
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class AgentLocalDownloadReportView(View):
+    """
+    Webhook: `POST /panel/explorador/agente/descargas/<pk>/`. Progress
+    of one local download.
+
+    ---
+
+    H24 (S144). Webhook: `POST /panel/explorador/agente/descargas/
+    <pk>/`. Avance de una descarga: `downloaded` (archivos ya en
+    local), `error` (vacío si va bien) y `done=1` al terminar.
+    """
+
+    def post(self, request, pk):
+        from .local_download_service import report
+        from .models import LocalDownloadJob
+
+        if not _agent_token_ok(request):
+            return HttpResponseForbidden("Token inválido.")
+        job = get_object_or_404(LocalDownloadJob, pk=pk)
+        raw = (request.POST.get("downloaded") or "").strip()
+        downloaded = int(raw) if raw.isdigit() else None
+        error = request.POST.get("error")
+        report(
+            job, downloaded=downloaded, error=error,
+            done=request.POST.get("done") == "1",
+        )
+        return JsonResponse({"ok": True, "status": job.status})
+
+
 @method_decorator(csrf_exempt, name="dispatch")
 class RegisterUploadedObjectView(View):
     """

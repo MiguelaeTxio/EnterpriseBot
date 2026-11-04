@@ -5408,6 +5408,14 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
         stored_count, doc_warnings = self._store_documents(
             request, person, folder_path,
         )
+        # H24 (S144): el alta termina cuando sus documentos están en la
+        # carpeta local de OneDrive (los descarga el agente H28).
+        from document_explorer.local_download_service import (
+            create_for_person,
+        )
+        download_job = create_for_person(
+            person, getattr(request.user, "company_user", None),
+        ) if stored_count else None
 
         return JsonResponse(
             {
@@ -5415,6 +5423,13 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
                 "person_id": person.pk,
                 "documents_stored": stored_count,
                 "warnings": doc_warnings,
+                "download": {
+                    "total": len(download_job.files),
+                    "status_url": reverse(
+                        "panel:documentation_personal_local_download",
+                        kwargs={"pk": download_job.pk},
+                    ),
+                } if download_job else None,
                 "redirect_url": reverse(
                     "panel:documentation_personal_detail",
                     kwargs={"pk": person.pk},

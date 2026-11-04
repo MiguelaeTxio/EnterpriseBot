@@ -4312,3 +4312,76 @@ class PersonIdPhoto(models.Model):
 
     def __str__(self):
         return "Foto de carné de %s" % self.person_id
+
+
+class LocalDownloadJob(models.Model):
+    """
+    H24 (S144). Download of a just-onboarded worker's classified files
+    to the local OneDrive tree, done by the H28 agent.
+
+    ---
+
+    H24 (S144). Descarga a la carpeta local de OneDrive de los
+    documentos ya clasificados de un trabajador recién dado de alta,
+    hecha por el agente H28. Miguel Ángel: "se da de alta, se clasifica
+    en el cubo y descargamos a su carpeta de personal [...] solamente
+    el que se dé de alta en ese momento [...] si hay un error en la
+    descarga, se termine esa descarga y cuando esté finalizada,
+    termina el pipeline." El alta crea el trabajo; el agente lo recoge
+    en su barrido, lo reintenta hasta completarlo y avisa de cada
+    archivo; la pantalla de alta espera a que quede terminado.
+    `files`: lista de {"blob": objeto real en GCS, "path": ruta
+    virtual de la carpeta de la persona}.
+    """
+
+    STATUS_PENDING = "pending"
+    STATUS_IN_PROGRESS = "in_progress"
+    STATUS_DONE = "done"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pendiente"),
+        (STATUS_IN_PROGRESS, "Descargando"),
+        (STATUS_DONE, "Terminada"),
+    ]
+
+    person = models.ForeignKey(
+        PersonIdentity, on_delete=models.CASCADE,
+        related_name="local_download_jobs", verbose_name="Trabajador",
+    )
+    requested_by = models.ForeignKey(
+        "ivr_config.CompanyUser", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="local_download_jobs",
+        verbose_name="Pedida por",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Creada",
+    )
+    files = models.JSONField(default=list, verbose_name="Archivos")
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING,
+        verbose_name="Estado",
+    )
+    downloaded_count = models.PositiveIntegerField(
+        default=0, verbose_name="Descargados",
+    )
+    last_error = models.TextField(
+        blank=True, default="", verbose_name="Último error",
+    )
+    last_attempt_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Último intento",
+    )
+    host = models.CharField(
+        max_length=255, blank=True, default="", verbose_name="Equipo",
+    )
+    finished_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Terminada",
+    )
+
+    class Meta:
+        verbose_name = "Descarga a la carpeta local"
+        verbose_name_plural = "Descargas a la carpeta local"
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return "Descarga %s de %s (%s)" % (
+            self.pk, self.person_id, self.status,
+        )

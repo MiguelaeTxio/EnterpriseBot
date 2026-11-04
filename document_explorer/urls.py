@@ -111,6 +111,17 @@ urlpatterns = [
         views.AgentHeartbeatView.as_view(),
         name="agent_heartbeat",
     ),
+    # H24 (S144): descargas a la carpeta local tras un alta.
+    path(
+        "agente/descargas/",
+        views.AgentLocalDownloadsView.as_view(),
+        name="agent_local_downloads",
+    ),
+    path(
+        "agente/descargas/<int:pk>/",
+        views.AgentLocalDownloadReportView.as_view(),
+        name="agent_local_download_report",
+    ),
     path(
         "catalogo/",
         views.DocumentTypeCatalogListView.as_view(),

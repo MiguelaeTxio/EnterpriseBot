@@ -39,6 +39,7 @@ from panel.views_refuels import (
 )
 from panel.views_person_menu import PersonGoView, PersonMenuView
 from panel.views_personal_medical_leave import PersonalMedicalLeaveView
+from panel.views_personal_local_download import PersonalLocalDownloadStatusView
 from panel.views_personal_section import (
     PersonalMassEmployerView,
     PersonalMassScheduleView,
@@ -1020,6 +1021,12 @@ urlpatterns = [
     ),
     # H31 (S100) Bloque 1, paso 1: extracción de datos de los documentos
     # subidos para el alta.
+    # H24 (S144): descarga a la carpeta local que cierra el alta.
+    path(
+        "documentacion/personal/alta/descarga/<int:pk>/",
+        PersonalLocalDownloadStatusView.as_view(),
+        name="documentation_personal_local_download",
+    ),
     path(
         "documentacion/personal/alta/extraer/",
         PersonalIntakeExtractView.as_view(),
