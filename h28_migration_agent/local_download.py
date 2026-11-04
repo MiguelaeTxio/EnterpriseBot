@@ -118,24 +118,55 @@ def _watched_root(watched_folders, virtual_path):
     return None, relative
 
 
-def _download_file(bucket, blob_name, target):
-    """Download one object to target, MD5-checked. Returns its size.
+def _md5_matches(path, md5):
+    return (
+        bool(md5) and os.path.isfile(to_long_path(path))
+        and _md5_base64(path) == md5
+    )
+
+
+def _place_file(bucket, item, watched_folders):
+    """Leave one file at its target: already there, moved, or downloaded.
     ---
-    Baja un objeto a su sitio, comprobando el MD5. Devuelve el tamano.
+    Deja un archivo en su sitio. Si ya esta con el mismo contenido, no
+    hace nada. Si esta en local en otra ruta (su carpeta anterior a la
+    baja/reactivacion, o el arbol espejo del que se subio) con el
+    mismo MD5, lo mueve. Si no, lo descarga a un `.partial`, comprueba
+    el MD5 y lo renombra. Devuelve (carpeta, relativa, destino,
+    tamano, carpeta_origen | None).
     """
-    blob = bucket.get_blob(blob_name)
+    folder, relative = _watched_root(watched_folders, item["path"])
+    if folder is None:
+        raise RuntimeError(
+            "La carpeta «%s» no esta vigilada por el agente."
+            % item["path"].split("/", 1)[0]
+        )
+    target = os.path.join(folder, *relative.split("/"))
+    blob = bucket.get_blob(item["blob"])
     if blob is None:
-        raise RuntimeError("el objeto %s no existe en el cubo" % blob_name)
-    if os.path.isfile(to_long_path(target)) and blob.md5_hash:
-        if _md5_base64(target) == blob.md5_hash:
-            return os.path.getsize(to_long_path(target))
+        raise RuntimeError("el objeto %s no existe en el cubo" % item["blob"])
+    if _md5_matches(target, blob.md5_hash):
+        return folder, relative, target, os.path.getsize(
+            to_long_path(target)), None
     os.makedirs(to_long_path(os.path.dirname(target)), exist_ok=True)
+    for source_path in item.get("sources") or []:
+        source_folder, source_relative = _watched_root(
+            watched_folders, source_path,
+        )
+        if source_folder is None:
+            continue
+        source = os.path.join(source_folder, *source_relative.split("/"))
+        if _md5_matches(source, blob.md5_hash):
+            os.replace(to_long_path(source), to_long_path(target))
+            _forget_local(source_folder, source_relative)
+            return folder, relative, target, os.path.getsize(
+                to_long_path(target)), os.path.dirname(source)
     partial = target + PARTIAL_SUFFIX
     try:
         blob.download_to_filename(to_long_path(partial))
         if blob.md5_hash and _md5_base64(partial) != blob.md5_hash:
             raise RuntimeError(
-                "el MD5 de %s no coincide con el del cubo" % blob_name
+                "el MD5 de %s no coincide con el del cubo" % item["blob"]
             )
         os.replace(to_long_path(partial), to_long_path(target))
     finally:
@@ -144,7 +175,15 @@ def _download_file(bucket, blob_name, target):
                 os.remove(to_long_path(partial))
             except OSError:
                 pass
-    return os.path.getsize(to_long_path(target))
+    return folder, relative, target, os.path.getsize(
+        to_long_path(target)), None
+
+
+def _forget_local(folder, relative):
+    entries = load_index(folder)
+    if entries is not None and relative in entries:
+        entries.pop(relative, None)
+        save_index(folder, entries)
 
 
 def _remember_local(folder, relative, target, size):
@@ -160,6 +199,71 @@ def _remember_local(folder, relative, target, size):
         entries[relative] = [stat_result.st_size, int(stat_result.st_mtime)]
         save_index(folder, entries)
     remember_upload(target, size)
+
+
+def _remove_empty_dirs(path, stop_at):
+    """Remove path and its parents while empty, never stop_at itself.
+    ---
+    Borra la carpeta y sus padres mientras esten vacios, sin llegar
+    nunca a la carpeta vigilada.
+    """
+    stop = os.path.normcase(os.path.normpath(stop_at))
+    current = os.path.normpath(path)
+    while (os.path.normcase(current) != stop
+           and os.path.normcase(current).startswith(stop + os.sep)):
+        try:
+            os.rmdir(to_long_path(current))
+        except OSError:
+            return
+        current = os.path.dirname(current)
+
+
+def _clear_previous_folder(client, watched_folders, previous_folder):
+    """Empty and delete the person's previous local folder.
+    ---
+    Vacia y borra la carpeta local anterior de la persona (Miguel
+    Angel: "borrariamos la carpeta de inactivos"). Solo borra archivos
+    cuyo contenido ya esta en el cubo; si queda alguno que no, se
+    queda la carpeta con el y se avisa. Devuelve cuantos se quedan.
+    """
+    from known_contents import find_known_md5
+
+    folder, relative = _watched_root(watched_folders, previous_folder)
+    # Solo una carpeta de persona: PERSONAL/INACTIVOS/<NOMBRE> o
+    # PERSONAL/ACTIVOS/<EMPRESA>/<NOMBRE>. Cualquier otra ruta (un dato
+    # mal formado) nunca se vacia.
+    parts = relative.split("/") if relative else []
+    is_person_folder = (
+        (len(parts) == 3 and parts[1] == "INACTIVOS")
+        or (len(parts) == 4 and parts[1] == "ACTIVOS")
+    )
+    if folder is None or not is_person_folder:
+        logger.warning(
+            "Descarga a local: %s no es una carpeta de persona; no se "
+            "vacia.", previous_folder,
+        )
+        return 0
+    root = os.path.join(folder, *relative.split("/"))
+    if not os.path.isdir(to_long_path(root)):
+        return 0
+    kept = 0
+    for current, dirs, names in os.walk(to_long_path(root), topdown=False):
+        for name in names:
+            path = os.path.join(current, name)
+            size = os.path.getsize(path)
+            if find_known_md5(client, DIRTY_BUCKET_NAME, path, size):
+                os.remove(path)
+                rel = os.path.relpath(path, to_long_path(folder))
+                _forget_local(folder, rel.replace(os.sep, "/"))
+            else:
+                kept += 1
+        for name in dirs:
+            try:
+                os.rmdir(os.path.join(current, name))
+            except OSError:
+                pass
+    _remove_empty_dirs(root, folder)
+    return kept
 
 
 def process_jobs(client, watched_folders):
@@ -183,26 +287,44 @@ def process_jobs(client, watched_folders):
         files = job.get("files") or []
         done = 0
         error_text = ""
+        source_dirs = set()
         for item in files:
-            folder, relative = _watched_root(watched_folders, item["path"])
-            if folder is None:
-                error_text = (
-                    "La carpeta «%s» no esta vigilada por el agente."
-                    % item["path"].split("/", 1)[0]
-                )
-                break
-            target = os.path.join(folder, *relative.split("/"))
             try:
-                size = _download_file(bucket, item["blob"], target)
+                folder, relative, target, size, source_dir = _place_file(
+                    bucket, item, watched_folders,
+                )
                 _remember_local(folder, relative, target, size)
             except Exception as error:  # noqa: BLE001
                 logger.exception(
                     "Descarga a local: fallo con %s: %s", item["blob"], error,
                 )
-                error_text = "%s: %s" % (os.path.basename(target), error)
+                error_text = "%s: %s" % (
+                    item["path"].rsplit("/", 1)[-1], error)
                 break
+            if source_dir:
+                source_dirs.add((source_dir, folder))
             done += 1
             _report(job_id, downloaded=done, error="")
+        if not error_text:
+            for source_dir, folder in source_dirs:
+                _remove_empty_dirs(source_dir, folder)
+            if job.get("previous_folder"):
+                try:
+                    kept = _clear_previous_folder(
+                        client, watched_folders, job["previous_folder"],
+                    )
+                except Exception as error:  # noqa: BLE001
+                    logger.exception(
+                        "Descarga a local: fallo vaciando %s: %s",
+                        job["previous_folder"], error,
+                    )
+                    error_text = "vaciando la carpeta anterior: %s" % error
+                else:
+                    if kept:
+                        events.append(
+                            "Trabajo %s: %d archivo(s) que no estan en el "
+                            "cubo se quedan en %s" % (
+                                job_id, kept, job["previous_folder"]))
         if error_text:
             _report(job_id, downloaded=done, error=error_text)
             events.append("Trabajo %s: %d/%d, se reintenta (%s)" % (
