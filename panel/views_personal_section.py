@@ -19,7 +19,7 @@ from django.views import View
 
 from document_explorer.models import PersonIdentity
 from ivr_config.models import CompanyUser, Section
-from panel.mixins import SupervisorAccessMixin
+from panel.mixins import DocsUploadAccessMixin, SupervisorAccessMixin
 
 TEMPLATE = "panel/documentation_h30/_personal_section_block.html"
 _ASSIGN_ROLES = (
@@ -176,3 +176,55 @@ class PersonalMassSectionView(SupervisorAccessMixin, View):
                                  section.name,
                                  valid_from.strftime("%d/%m/%Y"),
                                  len(people))})
+
+
+class PersonalMassEmployerView(DocsUploadAccessMixin, View):
+    """
+    POST selected, employer: employer company of the marked workers.
+    ---
+    POST selected (pks), employer (slug de COMPANY_FILTER_CHOICES):
+    pone a los marcados esa empresa (H24, S144; Miguel Ángel: "poder
+    asignar a empresas desde ahí", pestaña Alta y baja de Personal). El
+    texto es el canónico de esa empresa (el mismo del alta y de los
+    contratos) y, si está activo, su documentación pasa a
+    ACTIVOS/{EMPRESA}/ como cuando la empresa cambia por contrato
+    (person_folder_service.relocate_if_needed, solo índice). Mismos
+    roles que dar de alta y de baja (DocsUploadAccessMixin). JSON
+    {message, error}.
+    """
+
+    def post(self, request):
+        from django.http import JsonResponse
+
+        from document_explorer.person_folder_service import (
+            relocate_if_needed,
+        )
+        from panel.views_documentation_h30 import COMPANY_FILTER_CHOICES
+
+        choices = {slug: (label, raws[0])
+                   for slug, label, raws in COMPANY_FILTER_CHOICES}
+        slug = request.POST.get("employer", "")
+        if slug not in choices:
+            return JsonResponse({"error": "Elige la empresa."})
+        label, text = choices[slug]
+        wanted = [int(pk) for pk in request.POST.getlist("selected")
+                  if pk.isdigit()]
+        people = list(PersonIdentity.objects.filter(pk__in=wanted))
+        if not people:
+            return JsonResponse({"error": "Marca algún trabajador."})
+        changed = moved = 0
+        for person in people:
+            if (person.employer_company or "") == text:
+                continue
+            person.employer_company = text
+            person.save(update_fields=["employer_company", "updated_at"])
+            changed += 1
+            if person.is_active_employee:
+                relocated, _folder, _count = relocate_if_needed(person)
+                moved += int(relocated)
+        message = "%s para %d trabajador(es)" % (label, changed)
+        if changed < len(people):
+            message += " (%d ya la tenían)" % (len(people) - changed)
+        if moved:
+            message += "; documentación de %d trasladada a su carpeta" % moved
+        return JsonResponse({"message": message + "."})

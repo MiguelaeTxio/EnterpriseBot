@@ -40,6 +40,7 @@ from panel.views_refuels import (
 from panel.views_person_menu import PersonGoView, PersonMenuView
 from panel.views_personal_medical_leave import PersonalMedicalLeaveView
 from panel.views_personal_section import (
+    PersonalMassEmployerView,
     PersonalMassScheduleView,
     PersonalMassSectionView,
     PersonalSectionAssignView,
@@ -1498,6 +1499,12 @@ urlpatterns = [
     ),
     # H24 (S144): horario y sección de los marcados desde Personal (lo
     # mismo que la pestaña Horarios).
+    # H24 (S144): empresa de los marcados (pestaña Alta y baja).
+    path(
+        "documentacion/personal/empresa/",
+        PersonalMassEmployerView.as_view(),
+        name="documentation_personal_mass_employer",
+    ),
     path(
         "documentacion/personal/horario/",
         PersonalMassScheduleView.as_view(),
