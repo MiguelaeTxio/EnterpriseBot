@@ -22,11 +22,21 @@ migas de pan del recorrido real del usuario:
   HTML 200) se apila. Si la página ya estaba en la pila (mismo path,
   con cualquier querystring), la pila se corta ahí: el usuario ha
   vuelto a ella, y lo que había después ya no es su camino.
+- S144 (Miguel Ángel: desde Fichajes, a la ficha, al Calendario por el
+  menú del botón derecho y "Volver" acababa en Vacaciones): las
+  pestañas del hub de Documentación comparten dirección
+  (/panel/documentacion/), así que cada pestaña cuenta como una página
+  distinta (`?tab=`). La entrada del hub se guarda con la pestaña en la
+  que estaba el usuario al salir (la que el hub tiene recordada), para
+  que "Volver" lo deje en esa misma pestaña; y una página se reconoce
+  por su path y su parámetro `tab`.
 - `request.panel_back_url` es la página anterior a la actual en esa
   pila, y el procesador de contexto `back_url_context` la pone en
   todas las plantillas como `panel_back_url`. El botón "Volver" enlaza
   ahí; si no hay página anterior, no se pinta.
 """
+from urllib.parse import parse_qs, urlsplit
+
 from panel.models import PanelNavigationState
 
 SCREEN_KEY = "back_stack"
@@ -35,6 +45,9 @@ PANEL_PREFIX = "/panel/"
 # Endpoints that are never pages of their own.
 # Endpoints que nunca son páginas por sí mismos.
 EXCLUDED_PREFIXES = ("/panel/navegacion/",)
+# S144: el hub de Documentación, una dirección para todas sus pestañas.
+HUB_PATH = "/panel/documentacion/"
+HUB_SCREEN_KEY = "documentation_hub"
 
 
 def _path_of(url):
@@ -46,6 +59,60 @@ def _path_of(url):
     Path de una URL guardada, sin la querystring.
     """
     return url.split("?", 1)[0]
+
+
+def _tab_of(url):
+    values = parse_qs(urlsplit(url).query).get("tab")
+    return values[0] if values else ""
+
+
+def _key(url):
+    """
+    What identifies a page in the stack: its path and its `tab`.
+    ---
+    Lo que identifica una página en la pila (S144): su path y su
+    parámetro `tab` (las pestañas del hub comparten path).
+    """
+    return _path_of(url), _tab_of(url)
+
+
+def _with_hub_tab(url, tab):
+    """
+    The hub URL with an explicit tab (the remembered one if missing).
+    ---
+    La URL del hub con la pestaña explícita: la suya si la trae; si no,
+    `tab` (la que el hub tiene recordada).
+    """
+    if _path_of(url) != HUB_PATH or _tab_of(url) or not tab:
+        return url
+    return "%s%stab=%s" % (url, "&" if "?" in url else "?", tab)
+
+
+def _hub_at_tab(url, tab):
+    """
+    The hub URL pointing at `tab` (the tab it was left on).
+    ---
+    La URL del hub apuntando a `tab`: dentro del hub se cambia de
+    pestaña sin cargar página, así que al salir se apunta la pestaña en
+    la que estaba de verdad.
+    """
+    if _path_of(url) != HUB_PATH or not tab:
+        return url
+    return "%s?tab=%s" % (HUB_PATH, tab)
+
+
+def _hub_tab(company_user):
+    """
+    The tab the documentation hub has remembered for this user.
+    ---
+    La pestaña que el hub de Documentación tiene recordada (la última
+    en la que estuvo el usuario).
+    """
+    state = PanelNavigationState.objects.filter(
+        company_user=company_user, screen_key=HUB_SCREEN_KEY,
+    ).values_list("state", flat=True).first()
+    tab = state.get("active_tab") if isinstance(state, dict) else ""
+    return tab if isinstance(tab, str) else ""
 
 
 def _is_page_request(request):
@@ -84,9 +151,9 @@ def _next_stack(stack, current):
 
     Pila nueva y URL de "Volver" tras abrir `current`.
     """
-    current_path = _path_of(current)
+    current_key = _key(current)
     for index in range(len(stack) - 1, -1, -1):
-        if _path_of(stack[index]) == current_path:
+        if _key(stack[index]) == current_key:
             back = stack[index - 1] if index > 0 else ""
             return stack[:index] + [current], back
     back = stack[-1] if stack else ""
@@ -121,7 +188,16 @@ class NavigationHistoryMiddleware:
         stack = state.get("stack") if isinstance(state, dict) else None
         if not isinstance(stack, list):
             stack = []
-        new_stack, back_url = _next_stack(stack, request.get_full_path())
+        current = request.get_full_path()
+        # S144: el hub, con su pestaña. La que tiene recordada ahora es
+        # en la que estaba al salir (la entrada de arriba de la pila) y
+        # en la que se abre si se entra sin ?tab=.
+        if HUB_PATH in [_path_of(current)] + [_path_of(u) for u in stack]:
+            hub_tab = _hub_tab(company_user)
+            if stack:
+                stack = stack[:-1] + [_hub_at_tab(stack[-1], hub_tab)]
+            current = _with_hub_tab(current, hub_tab)
+        new_stack, back_url = _next_stack(stack, current)
         request.panel_back_url = back_url
 
         response = self.get_response(request)
