@@ -4356,6 +4356,11 @@ class LocalDownloadJob(models.Model):
         auto_now_add=True, verbose_name="Creada",
     )
     files = models.JSONField(default=list, verbose_name="Archivos")
+    previous_folder = models.TextField(
+        blank=True, default="", verbose_name="Carpeta anterior",
+        help_text="Carpeta virtual de la persona antes de moverla; el "
+                  "agente la vacía y la borra en local.",
+    )
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING,
         verbose_name="Estado",

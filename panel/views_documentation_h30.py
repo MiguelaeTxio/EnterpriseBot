@@ -49,6 +49,7 @@ from document_explorer import (
     personal_intake_service,
     postal_code_service,
 )
+from document_explorer import local_download_service
 from document_explorer.index_writer import ensure_folder_chain
 from document_explorer.models import (
     DocumentAcknowledgment, DocumentIndexEntry,
@@ -4923,6 +4924,26 @@ class PersonalIntakeExtractView(DocsUploadAccessMixin, View):
                          "nuevas.",
             }, status=400)
 
+        # H24 (S144), Miguel Ángel: si ya existe pero está de baja, el
+        # alta lo reactiva, guarda su documentación y lleva su carpeta a
+        # ACTIVOS (también en local). Solo un activo sigue bloqueado.
+        if existing_person and not existing_person.is_active_employee:
+            return JsonResponse({
+                "ok": True,
+                "duplicate": False,
+                "draft": draft,
+                "warnings": merged["warnings"],
+                "per_file": per_file,
+                "reactivate": {
+                    "id": existing_person.pk,
+                    "label": "%s %s, %s" % (
+                        existing_person.first_surname,
+                        existing_person.second_surname,
+                        existing_person.given_name,
+                    ),
+                },
+            })
+
         if existing_person:
             return JsonResponse({
                 "ok": True,
@@ -5302,6 +5323,59 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
             )
         return stored, warnings
 
+    def _reactivate(self, request, person, data, date_values):
+        """
+        H24 (S144). Onboarding of a worker who already exists but is
+        terminated: reactivate, store the new documents, local sync.
+
+        ---
+
+        Alta de un trabajador que ya existe pero está de baja (Miguel
+        Ángel: "debería de reactivar ese trabajador y clasificar su
+        documentación y descargarla a su local"). Toma la empresa del
+        alta si viene, lo reactiva con la fecha de alta como
+        recontratación (su documentación pasa a ACTIVOS/<EMPRESA>),
+        guarda los documentos nuevos en su carpeta y crea la descarga
+        a local, que además mueve su carpeta de INACTIVOS y la borra.
+        """
+        company_user = request.user.company_user
+        previous_paths = local_download_service.snapshot_paths(person)
+        previous_folder = person.folder_path
+        if data["employer_company"]:
+            person.employer_company = data["employer_company"]
+            person.save(update_fields=["employer_company", "updated_at"])
+        person_ct = ContentType.objects.get_for_model(PersonIdentity)
+        _reactivate_person(
+            person, date_values["hire_date"], person_ct, company_user,
+            local_sync=False,
+        )
+        person.refresh_from_db()
+        ensure_folder_chain(BUCKET, person.folder_path)
+        stored_count, doc_warnings = self._store_documents(
+            request, person, person.folder_path,
+        )
+        download_job = local_download_service.create_for_person(
+            person, company_user, previous_paths, previous_folder,
+        )
+        return JsonResponse({
+            "ok": True,
+            "reactivated": True,
+            "person_id": person.pk,
+            "documents_stored": stored_count,
+            "warnings": doc_warnings,
+            "download": {
+                "total": len(download_job.files),
+                "status_url": reverse(
+                    "panel:documentation_personal_local_download",
+                    kwargs={"pk": download_job.pk},
+                ),
+            } if download_job else None,
+            "redirect_url": reverse(
+                "panel:documentation_personal_detail",
+                kwargs={"pk": person.pk},
+            ),
+        })
+
     def post(self, request):
         data = {
             field: request.POST.get(field, "").strip()
@@ -5320,7 +5394,12 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
                 status=400,
             )
 
-        if PersonIdentity.objects.filter(dni=data["dni"]).exists():
+        existing = PersonIdentity.objects.filter(dni=data["dni"]).first()
+        reactivate = (
+            existing is not None and not existing.is_active_employee
+            and request.POST.get("reactivate_person_id") == str(existing.pk)
+        )
+        if existing is not None and not reactivate:
             return JsonResponse(
                 {
                     "ok": False,
@@ -5352,6 +5431,9 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
         # fecha real de entrada, nunca queda en blanco por omisión.
         if date_values["hire_date"] is None:
             date_values["hire_date"] = timezone.now().date()
+
+        if reactivate:
+            return self._reactivate(request, existing, data, date_values)
 
         # H31 (S100), Miguel Ángel: "lo que sí sabemos es la población
         # donde vive [...] debe de haber una tabla [...] donde
@@ -6391,6 +6473,9 @@ def _terminate_person(person, termination_date, person_ct, company_user):
     new_folder_path = free_folder_for(
         person, expected_base_folder(person, is_active=False),
     )
+    previous_paths, previous_folder = (
+        local_download_service.snapshot_paths(person), person.folder_path,
+    )
 
     with transaction.atomic():
         moved = move_person_documents(person, new_folder_path)
@@ -6404,6 +6489,11 @@ def _terminate_person(person, termination_date, person_ct, company_user):
         # CompanyUser.is_active (acceso al panel) y User.is_active de
         # Django (bloquea el inicio de sesión).
         account_disabled = _set_person_account_active(person, False)
+    # H24 (S144): "poner inactivo a una persona en el panel y que [...]
+    # en el local también la ponga en inactivos" (agente H28).
+    local_download_service.create_for_person(
+        person, company_user, previous_paths, previous_folder,
+    )
     logger.info(
         "# [H31-BAJA] PersonIdentity pk=%s dado de baja (rescisión) con "
         "fecha %s por CU pk=%s -- %d documento(s) movidos a %s; cuenta "
@@ -6439,7 +6529,8 @@ def _set_person_account_active(person, active):
     return True
 
 
-def _reactivate_person(person, rehire_date, person_ct, company_user):
+def _reactivate_person(person, rehire_date, person_ct, company_user,
+                       local_sync=True):
     """
     S117. Undoes a termination or re-hires a worker: back to active,
     termination date cleared, documentation moved back (virtually) to
@@ -6464,6 +6555,9 @@ def _reactivate_person(person, rehire_date, person_ct, company_user):
     new_folder_path = free_folder_for(
         person, expected_base_folder(person, is_active=True),
     )
+    previous_paths, previous_folder = (
+        local_download_service.snapshot_paths(person), person.folder_path,
+    )
 
     with transaction.atomic():
         moved = move_person_documents(person, new_folder_path)
@@ -6477,6 +6571,13 @@ def _reactivate_person(person, rehire_date, person_ct, company_user):
             update_fields.append("hire_date")
         person.save(update_fields=update_fields)
         account_enabled = _set_person_account_active(person, True)
+    # H24 (S144): su carpeta local vuelve también a ACTIVOS (agente H28).
+    # El alta de un trabajador de baja lo pide ella misma, después de
+    # guardar los documentos nuevos (`local_sync=False`).
+    if local_sync:
+        local_download_service.create_for_person(
+            person, company_user, previous_paths, previous_folder,
+        )
     logger.info(
         "# [H31-REACTIVAR] PersonIdentity pk=%s reactivado (%s) por CU "
         "pk=%s -- %d documento(s) movidos a %s; cuenta reactivada: %s.",

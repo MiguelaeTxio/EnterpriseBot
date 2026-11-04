@@ -32,31 +32,72 @@ AGENT_NAME = "h28_migration_agent"
 BUCKET = "cgs_grupo_alvarez"
 
 
-def create_for_person(person, requested_by=None):
-    """
-    Create the download job for the person's files; None if none.
-
-    ---
-
-    Crea el trabajo de descarga con los archivos de la persona (los
-    recién subidos en el alta); None si no tiene ninguno.
-    """
+def _person_entries(person):
     person_ct = ContentType.objects.get_for_model(PersonIdentity)
-    entries = DocumentIndexEntry.objects.filter(
+    return DocumentIndexEntry.objects.filter(
         bucket=BUCKET, domain_content_type=person_ct,
         domain_object_id=person.pk,
         entry_kind=DocumentIndexEntry.KIND_FILE,
         deleted_at__isnull=True, purged_at__isnull=True,
     ).order_by("pk")
-    files = [
-        {"blob": entry.blob_name,
-         "path": "%s/%s" % (entry.parent_path, entry.name)}
-        for entry in entries
-    ]
+
+
+def snapshot_paths(person):
+    """
+    {entry pk: virtual path} of the person's files, before a move.
+
+    ---
+
+    Rutas virtuales actuales de los archivos de la persona, tomadas
+    ANTES de moverla (baja, reactivación, cambio de empresa): son las
+    que tiene en local, para que el agente las mueva a su sitio nuevo.
+    """
+    return {
+        entry.pk: "%s/%s" % (entry.parent_path, entry.name)
+        for entry in _person_entries(person)
+    }
+
+
+def create_for_person(person, requested_by=None, previous_paths=None,
+                      previous_folder=""):
+    """
+    Create the job that leaves the person's folder in place locally.
+
+    ---
+
+    Crea el trabajo que deja en local la carpeta de la persona tal
+    como está en el cubo; None si no tiene archivos. Cada archivo lleva
+    su ruta virtual (`path`, destino), el objeto real (`blob`) y dónde
+    puede estar ya en local (`sources`): su ruta virtual anterior a la
+    baja/reactivación (`previous_paths`) y la del objeto (el árbol
+    espejo del que se subió). El agente mueve el que encuentre con el
+    mismo contenido y descarga el resto; `previous_folder` es la
+    carpeta anterior de la persona, que el agente vacía y borra al
+    terminar (Miguel Ángel: "cambiamos su documentación a la carpeta
+    local que tiene que estar y borraríamos la carpeta de inactivos").
+    """
+    previous_paths = previous_paths or {}
+    files = []
+    for entry in _person_entries(person):
+        path = "%s/%s" % (entry.parent_path, entry.name)
+        sources = []
+        old = previous_paths.get(entry.pk)
+        if old and old != path:
+            sources.append(old)
+        if entry.blob_name != path:
+            sources.append(entry.blob_name)
+        files.append({
+            "blob": entry.blob_name, "path": path, "sources": sources,
+        })
     if not files:
         return None
     return LocalDownloadJob.objects.create(
         person=person, requested_by=requested_by, files=files,
+        previous_folder=(
+            previous_folder
+            if previous_folder and previous_folder != person.folder_path
+            else ""
+        ),
     )
 
 
@@ -78,7 +119,11 @@ def claim_pending(host=""):
         job.last_attempt_at = now
         job.host = (host or "")[:255]
         job.save(update_fields=["status", "last_attempt_at", "host"])
-    return [{"id": job.pk, "files": job.files} for job in jobs]
+    return [
+        {"id": job.pk, "files": job.files,
+         "previous_folder": job.previous_folder}
+        for job in jobs
+    ]
 
 
 def report(job, downloaded=None, error=None, done=False):

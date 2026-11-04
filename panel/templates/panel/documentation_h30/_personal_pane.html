@@ -2074,6 +2074,8 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
     let perFileTypes = [];
     let perFileExpiryHints = [];
     let perFileIssueHints = [];
+    // H24 (S144): trabajador que ya existe pero está de baja -- el alta lo reactiva.
+    let reactivatePersonId = '';
 
     const FIELD_LABELS = {
         dni: 'DNI/NIE', first_surname: 'Primer apellido',
@@ -2097,6 +2099,7 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
         perFileTypes = [];
         perFileExpiryHints = [];
         perFileIssueHints = [];
+        reactivatePersonId = '';
     });
 
     extractBtn.onclick = function() {
@@ -2179,6 +2182,12 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
             } else {
                 warningsEl.innerHTML = '<div class="alert alert-success py-1 px-2 small mb-0">Datos leídos correctamente. Revisa y confirma.</div>';
             }
+            reactivatePersonId = data.reactivate ? String(data.reactivate.id) : '';
+            if (data.reactivate) {
+                warningsEl.insertAdjacentHTML('afterbegin', '<div class="alert alert-info py-1 px-2 small mb-1">' +
+                    '<strong>' + escapeHtml(data.reactivate.label) + '</strong> ya tiene ficha y está de baja. ' +
+                    'Al confirmar se reactiva con la fecha de alta, se guarda esta documentación y su carpeta pasa de INACTIVOS a ACTIVOS, también en local.</div>');
+            }
             personalIntakeNotify('Documentos leídos -- revisa y confirma.');
             step1.classList.add('d-none');
             form.classList.remove('d-none');
@@ -2247,6 +2256,7 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
         for (const code of perFileTypes) { formData.append('document_type_codes', code); }
         for (const hint of perFileExpiryHints) { formData.append('document_expiry_hints', hint); }
         for (const hint of perFileIssueHints) { formData.append('document_issue_hints', hint); }
+        if (reactivatePersonId) { formData.append('reactivate_person_id', reactivatePersonId); }
         const submitBtn = form.querySelector('button[type="submit"]');
         const createSpinner = document.getElementById('personalCreateSpinner');
         const createBtnLabel = document.getElementById('personalCreateBtnLabel');

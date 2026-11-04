@@ -196,6 +196,7 @@ class PersonalMassEmployerView(DocsUploadAccessMixin, View):
     def post(self, request):
         from django.http import JsonResponse
 
+        from document_explorer import local_download_service
         from document_explorer.person_folder_service import (
             relocate_if_needed,
         )
@@ -220,8 +221,16 @@ class PersonalMassEmployerView(DocsUploadAccessMixin, View):
             person.save(update_fields=["employer_company", "updated_at"])
             changed += 1
             if person.is_active_employee:
+                previous_paths = local_download_service.snapshot_paths(person)
+                previous_folder = person.folder_path
                 relocated, _folder, _count = relocate_if_needed(person)
                 moved += int(relocated)
+                if relocated:
+                    # H24 (S144): también en local (agente H28).
+                    local_download_service.create_for_person(
+                        person, request.user.company_user,
+                        previous_paths, previous_folder,
+                    )
         message = "%s para %d trabajador(es)" % (label, changed)
         if changed < len(people):
             message += " (%d ya la tenían)" % (len(people) - changed)
