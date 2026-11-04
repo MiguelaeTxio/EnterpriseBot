@@ -481,6 +481,8 @@ def status(request):
     # S130: lo que registrará el botón único ahora mismo, y el límite
     # de turno abierto para que el móvil decida igual sin cobertura.
     return JsonResponse({
+        # S144: cuándo recibe él los recordatorios (lo elige aquí).
+        **_reminder_json(company_user),
         "name": _worker_name(company_user),
         "company": company_user.company.name,
         "last": _event_json(last) if last is not None else None,
@@ -489,6 +491,61 @@ def status(request):
         "uses_types": by_types,
         "clock_types": [_type_json(t) for t in types],
     })
+
+
+def _reminder_json(company_user):
+    """
+    Whether the worker gets reminders and when, with the choices.
+    ---
+    S144: si recibe recordatorios, cuándo (lo suyo o, si no ha elegido,
+    lo de la empresa) y las opciones, para el selector de la página.
+    """
+    from hr_calendar.clock_settings import reminder_offset
+    from hr_calendar.models import ClockSettings
+    from hr_calendar.models import WorkerClockSetting
+
+    person = _person_of(company_user)
+    setting = (WorkerClockSetting.objects.filter(person=person).first()
+               if person is not None else None)
+    own = setting.reminder_offset_minutes if setting else None
+    return {
+        "reminders": bool(setting and setting.reminders),
+        "reminder_offset": (reminder_offset(company_user.company)
+                            if own is None else own),
+        "reminder_choices": [
+            {"value": value, "label": label}
+            for value, label in ClockSettings.OFFSET_CHOICES
+        ],
+    }
+
+
+@csrf_exempt
+@require_POST
+def reminder_offset_view(request):
+    """
+    POST (JSON {"offset": minutes}): when this worker gets reminders.
+    ---
+    POST (JSON {"offset": minutos}): cuándo quiere recibir este
+    trabajador los recordatorios (S144, Miguel Ángel: "que cada cual
+    [...] decida cuándo quiere recibir los avisos"), de 15 minutos
+    antes a 15 después, de 5 en 5. 401 sin dispositivo de confianza.
+    """
+    from hr_calendar.clock_settings import set_worker_reminder_offset
+
+    company_user = trusted_device_user(request)
+    if company_user is None:
+        return _untrusted_response(request)
+    person = _person_of(company_user)
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+        minutes = int(payload.get("offset"))
+        if person is None:
+            raise ValueError("sin ficha")
+        set_worker_reminder_offset(person, minutes)
+    except (ValueError, TypeError, AttributeError, UnicodeDecodeError):
+        return JsonResponse({"error": "No se ha podido guardar."},
+                            status=400)
+    return JsonResponse(_reminder_json(company_user))
 
 
 @never_cache

@@ -21,4 +21,6 @@ urlpatterns = [
     path("manifest.json", clockin.manifest, name="manifest"),
     path("enviar/", clockin.receive, name="receive"),
     path("estado/", clockin.status, name="status"),
+    # S144: cuándo recibe el trabajador los recordatorios.
+    path("avisos/", clockin.reminder_offset_view, name="reminder_offset"),
 ]

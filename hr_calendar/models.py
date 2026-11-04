@@ -1450,6 +1450,11 @@ class WorkerClockSetting(models.Model):
     puede no estar obligado). `reminders`: recibe los recordatorios de
     fichaje olvidado; el permiso se da a cada trabajador desde la
     pestaña Fichajes. Sin fila: ficha y no recibe recordatorios.
+    `reminder_offset_minutes` (S144): cuándo quiere él recibir el
+    recordatorio, de 15 minutos antes a 15 después de la hora del
+    horario, de 5 en 5; lo elige cada trabajador en su página de fichaje
+    (Miguel Ángel: "que no sea que lo decide el supervisor, sino que
+    cada cual [...] decida"). Vacío: el de la empresa (5 minutos antes).
     """
 
     person = models.OneToOneField(
@@ -1465,6 +1470,15 @@ class WorkerClockSetting(models.Model):
     reminders = models.BooleanField(
         default=False,
         verbose_name="Recibe recordatorios",
+    )
+    reminder_offset_minutes = models.SmallIntegerField(
+        choices=ClockSettings.OFFSET_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name="Cuándo recibe el recordatorio",
+        help_text="Minutos respecto de la hora de entrada o de salida "
+                  "del horario (negativo, antes). Vacío: el de la "
+                  "empresa.",
     )
     # S141 (Miguel Ángel): el horario va en el trabajador, no en su
     # usuario del panel: chóferes, gruistas y administrativos no tienen

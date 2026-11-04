@@ -110,7 +110,6 @@ from panel.views_vacation_balance import (
 )
 from panel.views_clock_events import (
     ClockEventCorrectView,
-    ClockReminderOffsetView,
     ClockRemindersSwitchView,
     ClockSectionSettingView,
     ClockTypeSaveView,
@@ -1842,13 +1841,6 @@ urlpatterns = [
         "documentacion/fichajes/ajustes/recordatorios/",
         ClockRemindersSwitchView.as_view(),
         name="clock_settings_reminders",
-    ),
-    # H24 (S144): cuándo salen los recordatorios (de 15 min antes a 15
-    # después de la hora del horario).
-    path(
-        "documentacion/fichajes/ajustes/recordatorios/momento/",
-        ClockReminderOffsetView.as_view(),
-        name="clock_settings_reminder_offset",
     ),
     path(
         "documentacion/fichajes/ajustes/seccion/",

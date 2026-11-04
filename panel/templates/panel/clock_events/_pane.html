@@ -445,12 +445,6 @@ recordatorios, secciones que fichan y permiso de envío).
         if (!confirm(text)) { sw.checked = !sw.checked; return; }
         postSetting(sw.dataset.url, {section_id: sw.dataset.section, clocks: sw.checked ? "1" : "0"}, false);
     });
-    // S144: cuándo salen los recordatorios.
-    document.getElementById("clk-top-panel").addEventListener("change", function (evt) {
-        const sel = evt.target.closest(".clk-offset-select");
-        if (!sel) return;
-        postSetting(sel.dataset.url, {offset: sel.value}, false);
-    });
     // S141: secciones que fichan por tipos y lista de tipos de fichaje.
     document.getElementById("clk-top-panel").addEventListener("change", function (evt) {
         const sw = evt.target.closest(".clk-section-types-switch");

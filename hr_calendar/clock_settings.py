@@ -50,6 +50,9 @@ class WorkerClockState:
     reminders: bool = False
     # S141: su sección ficha por tipos (Grúas, Asistencia).
     uses_types: bool = False
+    # S144: cuándo quiere recibir el recordatorio (None: el de la
+    # empresa).
+    reminder_offset: int = None
 
     @property
     def must_clock(self):
@@ -100,6 +103,24 @@ def reminder_offset(company):
     value = ClockSettings.objects.filter(company=company).values_list(
         "reminder_offset_minutes", flat=True).first()
     return DEFAULT_REMINDER_OFFSET if value is None else value
+
+
+def set_worker_reminder_offset(person, minutes):
+    """
+    The worker's own choice of when to get the reminder.
+    ---
+    Lo que elige el propio trabajador en su página de fichaje (S144):
+    cuándo recibe el recordatorio. ValueError si no es uno de los
+    valores permitidos (de -15 a 15, de 5 en 5).
+    """
+    if minutes not in dict(ClockSettings.OFFSET_CHOICES):
+        raise ValueError("Valor no permitido: %s." % minutes)
+    setting, _created = WorkerClockSetting.objects.get_or_create(
+        person=person,
+    )
+    setting.reminder_offset_minutes = minutes
+    setting.save(update_fields=["reminder_offset_minutes", "updated_at"])
+    return setting
 
 
 def set_reminder_offset(company, minutes, by):
@@ -280,6 +301,8 @@ def worker_states(people, day=None):
             reminders=setting.reminders if setting else False,
             uses_types=(by_types.get(section.pk, False)
                         if section is not None else False),
+            reminder_offset=(setting.reminder_offset_minutes
+                             if setting else None),
         )
     return states
 

@@ -2,8 +2,9 @@
 """
 WhatsApp reminders of forgotten clock presses (H24, S141).
 
-S144: the moment is configurable in the Fichajes tab, from 15 minutes
-before to 15 after the scheduled time (5 minutes before by default).
+S144: each worker chooses on their clock-in page when to get it, from
+15 minutes before to 15 after the scheduled time (5 minutes before by
+default).
 
 Miguel Ángel's rule (S141): a quarter of an hour after the start of
 the worker's schedule (the season one, already defined in the panel),
@@ -17,10 +18,10 @@ IN and forgotten OUT.
 
 Recordatorios por WhatsApp de fichajes olvidados (H24, S141).
 
-S144 (Miguel Ángel): el momento se configura en la pestaña Fichajes, de
-15 minutos antes a 15 después de la hora del horario, de 5 en 5 (por
-defecto, 5 minutos antes: "nos envíe el mensaje de WhatsApp con el
-fichar ahora").
+S144 (Miguel Ángel): el momento lo elige cada trabajador en su página
+de fichaje ("que no sea que lo decide el supervisor"), de 15 minutos
+antes a 15 después de la hora del horario, de 5 en 5; quien no elige,
+5 minutos antes (ClockSettings.reminder_offset_minutes).
 
 Regla de Miguel Ángel (S141): un cuarto de hora después de la hora de
 entrada del horario del trabajador (el de la temporada, ya definido en
@@ -70,8 +71,8 @@ from hr_calendar.models import VacationPeriod
 
 logger = logging.getLogger(__name__)
 
-# S141: un cuarto de hora después; S144: configurable en Fichajes
-# (ClockSettings.reminder_offset_minutes), este es solo el de reserva.
+# S141: un cuarto de hora después; S144: lo elige cada trabajador
+# (WorkerClockSetting.reminder_offset_minutes), este es solo el de reserva.
 REMINDER_DELAY = datetime.timedelta(minutes=15)
 IN_TEMPLATE = "clock_in_reminder"
 OUT_TEMPLATE = "clock_out_reminder"
@@ -367,8 +368,9 @@ def send_clock_reminders(company, now=None, log=logger.info):
     if not reminders_enabled(company):
         log("Recordatorios de fichaje: desactivados en Fichajes.")
         return counters
-    # S144: cuándo sale, configurable en la pestaña Fichajes.
-    offset = datetime.timedelta(minutes=reminder_offset(company))
+    # S144 (Miguel Ángel): cuándo sale lo elige cada trabajador en su
+    # página de fichaje; sin elección, el de la empresa (5 min antes).
+    default_offset = reminder_offset(company)
     sender = os.environ.get("TWILIO_WHATSAPP_SENDER", "")
     if not sender:
         log("Recordatorios de fichaje: sin TWILIO_WHATSAPP_SENDER.")
@@ -407,7 +409,12 @@ def send_clock_reminders(company, now=None, log=logger.info):
     users = [
         p.company_user for p in people if states[p.pk].must_clock
     ]
+    chosen = {p.company_user_id: states[p.pk].reminder_offset
+              for p in people}
     for company_user in users:
+        own = chosen.get(company_user.pk)
+        offset = datetime.timedelta(
+            minutes=default_offset if own is None else own)
         # S144: el festivo depende del horario ("Se trabaja en festivos").
         if not _day_rule(
                 company_user,

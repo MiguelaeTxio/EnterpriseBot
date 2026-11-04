@@ -66,6 +66,7 @@ jornada abierta y ficha la salida con su propio botón.
         .mt { margin-top: 8px; }
         .fw { font-weight: 600; }
         #back { display: none; margin-bottom: 10px; font-weight: 600; color: #0d6efd; text-decoration: none; }
+        #reminders select { width: 100%; font-size: 1rem; padding: 8px; border: 1px solid #ced4da; border-radius: 8px; background: #fff; margin-top: 6px; }
         a.action { display: block; margin-top: 8px; padding: 12px; border-radius: 8px; background: #0d6efd; color: #fff; text-align: center; font-weight: 700; text-decoration: none; }
     </style>
 </head>
@@ -122,6 +123,14 @@ jornada abierta y ficha la salida con su propio botón.
         <input type="time" id="manual-time">
         <button type="button" id="btn-manual">Guardar fichaje manual</button>
     </details>
+
+    <!-- S144: cada trabajador elige cuándo recibe el recordatorio por WhatsApp (solo si los recibe). -->
+    <div class="card hidden" id="reminders">
+        <strong>Mis avisos por WhatsApp</strong>
+        <div class="muted">Cuándo quieres recibir el aviso de fichar, respecto de tu hora de entrada y de salida.</div>
+        <select id="reminder-offset" aria-label="Cuándo recibir el aviso"></select>
+        <div class="muted mt" id="reminder-state"></div>
+    </div>
 
     <div class="card">
         <strong>Mis últimos fichajes en este móvil</strong>
@@ -255,7 +264,49 @@ jornada abierta y ficha la salida con su propio botón.
         document.getElementById("who").textContent = info && info.name
             ? info.name + (info.company ? " · " + info.company : "")
             : (untrusted ? "Móvil sin identificar" : "…");
+        showReminders(info);
     }
+    // S144: cuándo recibe el aviso por WhatsApp (lo elige cada uno).
+    const REMINDER_URL = "/fichaje/avisos/";
+    function showReminders(info) {
+        const box = document.getElementById("reminders");
+        const select = document.getElementById("reminder-offset");
+        if (!info || !info.reminders || !info.reminder_choices) { box.classList.add("hidden"); return; }
+        box.classList.remove("hidden");
+        if (document.activeElement === select) return;
+        select.innerHTML = "";
+        info.reminder_choices.forEach(function (choice) {
+            const o = document.createElement("option");
+            o.value = choice.value;
+            o.textContent = choice.label;
+            if (choice.value === info.reminder_offset) o.selected = true;
+            select.appendChild(o);
+        });
+    }
+    document.getElementById("reminder-offset").addEventListener("change", function () {
+        const select = this;
+        const state = document.getElementById("reminder-state");
+        state.textContent = "Guardando…";
+        state.className = "muted mt";
+        fetch(REMINDER_URL, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({offset: parseInt(select.value, 10)}),
+        }).then(function (response) {
+            return response.json().then(function (data) {
+                if (!response.ok) throw new Error(data.error || "Error");
+                const info = load("fichaje-estado") || {};
+                info.reminder_offset = data.reminder_offset;
+                store("fichaje-estado", info);
+                state.textContent = "Guardado: " + select.options[select.selectedIndex].textContent.toLowerCase() + ".";
+                state.className = "ok mt";
+            });
+        }).catch(function () {
+            state.textContent = "No se ha podido guardar. Inténtalo con cobertura.";
+            state.className = "err mt";
+        });
+    });
     // S130: botón único. Mismo criterio que el servidor
     // (clock_report.next_kind): SALIDA si la última pulsación conocida
     // es una ENTRADA de hace MAX_SHIFT_HOURS o menos; si no, ENTRADA.
