@@ -1335,8 +1335,21 @@ class ClockSettings(models.Model):
     Ajustes de fichaje de la empresa, desde el panel (H24, S141).
     `reminders_enabled` es el permiso general para enviar los
     recordatorios de fichaje olvidado: apagado hasta que un supervisor
-    lo enciende en la pestaña Fichajes.
+    lo enciende en la pestaña Fichajes. `reminder_offset_minutes`
+    (S144): cuándo sale el recordatorio respecto de la hora de entrada o
+    de salida del horario, de 15 minutos antes a 15 después, de 5 en 5
+    (Miguel Ángel: "5 minutos antes [...] que sea configurable").
     """
+
+    OFFSET_CHOICES = [
+        (-15, "15 minutos antes"),
+        (-10, "10 minutos antes"),
+        (-5, "5 minutos antes"),
+        (0, "A la hora en punto"),
+        (5, "5 minutos después"),
+        (10, "10 minutos después"),
+        (15, "15 minutos después"),
+    ]
 
     company = models.OneToOneField(
         Company,
@@ -1347,6 +1360,13 @@ class ClockSettings(models.Model):
     reminders_enabled = models.BooleanField(
         default=False,
         verbose_name="Enviar recordatorios de fichaje",
+    )
+    reminder_offset_minutes = models.SmallIntegerField(
+        choices=OFFSET_CHOICES,
+        default=-5,
+        verbose_name="Cuándo se envía el recordatorio",
+        help_text="Minutos respecto de la hora de entrada o de salida "
+                  "del horario (negativo, antes).",
     )
     updated_by = models.ForeignKey(
         CompanyUser,

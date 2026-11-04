@@ -2,6 +2,9 @@
 """
 WhatsApp reminders of forgotten clock presses (H24, S141).
 
+S144: the moment is configurable in the Fichajes tab, from 15 minutes
+before to 15 after the scheduled time (5 minutes before by default).
+
 Miguel Ángel's rule (S141): a quarter of an hour after the start of
 the worker's schedule (the season one, already defined in the panel),
 if they have not clocked in, a reminder; the same for the clock-out a
@@ -13,6 +16,11 @@ IN and forgotten OUT.
 ---
 
 Recordatorios por WhatsApp de fichajes olvidados (H24, S141).
+
+S144 (Miguel Ángel): el momento se configura en la pestaña Fichajes, de
+15 minutos antes a 15 después de la hora del horario, de 5 en 5 (por
+defecto, 5 minutos antes: "nos envíe el mensaje de WhatsApp con el
+fichar ahora").
 
 Regla de Miguel Ángel (S141): un cuarto de hora después de la hora de
 entrada del horario del trabajador (el de la temporada, ya definido en
@@ -62,6 +70,8 @@ from hr_calendar.models import VacationPeriod
 
 logger = logging.getLogger(__name__)
 
+# S141: un cuarto de hora después; S144: configurable en Fichajes
+# (ClockSettings.reminder_offset_minutes), este es solo el de reserva.
 REMINDER_DELAY = datetime.timedelta(minutes=15)
 IN_TEMPLATE = "clock_in_reminder"
 OUT_TEMPLATE = "clock_out_reminder"
@@ -134,7 +144,8 @@ def _person(company_user):
         return None
 
 
-def due_reminder(schedule_starts, schedule_ends, events, now):
+def due_reminder(schedule_starts, schedule_ends, events, now,
+                 offset=REMINDER_DELAY):
     """
     The reminder due now for one user, as (kind, scheduled time), or
     None. `events` are the user's presses of the day, in order.
@@ -143,9 +154,11 @@ def due_reminder(schedule_starts, schedule_ends, events, now):
 
     El recordatorio que toca ahora a un usuario, como (tipo, hora del
     horario), o None. `events` son sus pulsaciones del día, en orden.
-    - Entrada: pasado un cuarto de hora de la primera hora de entrada,
-      sin ninguna entrada ese día, y antes de la hora de salida.
-    - Salida: pasado un cuarto de hora de la última hora de salida,
+    `offset` (S144): cuándo, respecto de la hora del horario (negativo,
+    antes; un cuarto de hora después hasta S144).
+    - Entrada: desde la primera hora de entrada + offset, sin ninguna
+      entrada ese día, y antes de la hora de salida.
+    - Salida: desde la última hora de salida + offset,
       con la jornada abierta (la última pulsación del día es una
       entrada). Un horario que cruza la medianoche no lleva aviso de
       salida: ese día no sabe cuál es su salida.
@@ -162,26 +175,27 @@ def due_reminder(schedule_starts, schedule_ends, events, now):
         end_at += datetime.timedelta(days=1)
     kinds = [event.kind for event in events]
     if not set(kinds) & {ClockEvent.Kind.IN, ClockEvent.Kind.CHANGE}:
-        if start_at + REMINDER_DELAY <= now < end_at:
+        if start_at + offset <= now < end_at:
             return ClockReminder.Kind.IN, start
         return None
     # S141: un cambio de tipo deja la jornada abierta, como la entrada.
     if (end > start
             and kinds[-1] in (ClockEvent.Kind.IN, ClockEvent.Kind.CHANGE)
-            and now >= end_at + REMINDER_DELAY
+            and now >= end_at + offset
             and not _off_schedule(_opening(events), schedule_starts)):
         return ClockReminder.Kind.OUT, end
     return None
 
 
-def overnight_out_due(company_user, company, day, events, now):
+def overnight_out_due(company_user, company, day, events, now,
+                      offset=REMINDER_DELAY):
     """
     The OUT reminder of last night's shift, as (kind, time), or None.
     ---
     S144 (guardas): el recordatorio de salida de la jornada de noche de
     ayer, como (tipo, hora del horario), o None. Toca si el horario de
     ayer acaba hoy (salida del último tramo menor que su entrada), ya
-    ha pasado un cuarto de hora de esa salida y sigue abierta una
+    ha llegado su hora (salida + offset) y sigue abierta una
     jornada que entró ayer dentro de horario. `events` son las
     pulsaciones desde 24 h antes del día hasta ahora, en orden.
     """
@@ -200,7 +214,7 @@ def overnight_out_due(company_user, company, day, events, now):
     end_at = timezone.make_aware(
         datetime.datetime.combine(day, ends[-1]),
         timezone.get_current_timezone())
-    if now < end_at + REMINDER_DELAY:
+    if now < end_at + offset:
         return None
     opening = _opening(events)
     if opening is None or opening.kind == ClockEvent.Kind.OUT:
@@ -334,6 +348,7 @@ def send_clock_reminders(company, now=None, log=logger.info):
     from hr_calendar.clock_report import _day_rule
     from hr_calendar.clock_report import schedule_ends
     from hr_calendar.clock_report import schedule_starts
+    from hr_calendar.clock_settings import reminder_offset
     from hr_calendar.clock_settings import reminders_enabled
     from hr_calendar.clock_settings import worker_states
     from panel.views_operator import _resolve_base_schedule
@@ -352,6 +367,8 @@ def send_clock_reminders(company, now=None, log=logger.info):
     if not reminders_enabled(company):
         log("Recordatorios de fichaje: desactivados en Fichajes.")
         return counters
+    # S144: cuándo sale, configurable en la pestaña Fichajes.
+    offset = datetime.timedelta(minutes=reminder_offset(company))
     sender = os.environ.get("TWILIO_WHATSAPP_SENDER", "")
     if not sender:
         log("Recordatorios de fichaje: sin TWILIO_WHATSAPP_SENDER.")
@@ -420,12 +437,13 @@ def send_clock_reminders(company, now=None, log=logger.info):
                 continue
             due = due_reminder(
                 schedule_starts(schedule), schedule_ends(schedule),
-                events_by_user.get(company_user.pk, []), now,
+                events_by_user.get(company_user.pk, []), now, offset,
             )
         if due is None:
             # S144: la salida del turno de noche de ayer (también si hoy
             # no trabaja).
-            due = overnight_out_due(company_user, company, day, window, now)
+            due = overnight_out_due(company_user, company, day, window, now,
+                                    offset)
             reminder_day = day - datetime.timedelta(days=1)
         if due is None:
             if schedule is None:

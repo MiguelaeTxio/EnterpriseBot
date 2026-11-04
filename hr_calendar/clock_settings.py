@@ -86,6 +86,40 @@ def set_reminders_enabled(company, enabled, by):
     return settings
 
 
+DEFAULT_REMINDER_OFFSET = -5
+
+
+def reminder_offset(company):
+    """
+    Minutes from the scheduled time to send the reminder (-15..15).
+    ---
+    Minutos respecto de la hora del horario a los que sale el
+    recordatorio (S144; negativo, antes). Sin ajustes guardados, 5
+    minutos antes.
+    """
+    value = ClockSettings.objects.filter(company=company).values_list(
+        "reminder_offset_minutes", flat=True).first()
+    return DEFAULT_REMINDER_OFFSET if value is None else value
+
+
+def set_reminder_offset(company, minutes, by):
+    """
+    Set when the reminders go out; ValueError outside the choices.
+    ---
+    Fija cuándo salen los recordatorios (S144); ValueError si no es uno
+    de los valores permitidos (de -15 a 15, de 5 en 5).
+    """
+    if minutes not in dict(ClockSettings.OFFSET_CHOICES):
+        raise ValueError("Valor no permitido: %s." % minutes)
+    settings, _created = ClockSettings.objects.get_or_create(
+        company=company,
+    )
+    settings.reminder_offset_minutes = minutes
+    settings.updated_by = by
+    settings.save()
+    return settings
+
+
 def current_sections(person_ids, day=None):
     """
     {person id: Section in force on `day` (today by default) or None}.

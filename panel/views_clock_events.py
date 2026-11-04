@@ -42,6 +42,7 @@ from hr_calendar.clock_report import REST_NOTE
 from hr_calendar.clock_report import format_duration, reports_by_user
 from hr_calendar.models import ClockCorrection
 from hr_calendar.models import ClockEvent
+from hr_calendar.models import ClockSettings
 from hr_calendar.models import ClockType
 from panel.mixins import SupervisorAccessMixin
 from panel.navigation_persistence import (
@@ -309,6 +310,7 @@ def _settings_context(company):
     El bloque de ajustes de fichaje: el permiso general de envío y las
     secciones con si fichan con la plataforma.
     """
+    from hr_calendar.clock_settings import reminder_offset
     from hr_calendar.clock_settings import reminders_enabled
     from hr_calendar.clock_settings import section_clocks_map
     from hr_calendar.clock_settings import section_types_map
@@ -318,6 +320,9 @@ def _settings_context(company):
     by_types = section_types_map([s.pk for s in sections])
     return {
         "reminders_on": reminders_enabled(company),
+        # S144: cuándo sale el recordatorio.
+        "reminder_offset": reminder_offset(company),
+        "reminder_offset_choices": ClockSettings.OFFSET_CHOICES,
         "section_settings": [
             {"section": s, "clocks": clocks[s.pk],
              "uses_types": by_types[s.pk]} for s in sections
@@ -561,6 +566,35 @@ class ClockRemindersSwitchView(SupervisorAccessMixin, View):
             request,
             "Envío de recordatorios %s." % (
                 "activado" if enabled else "desactivado"),
+        )
+
+
+class ClockReminderOffsetView(SupervisorAccessMixin, View):
+    """
+    POST offset: when the reminders go out (-15..15 minutes).
+    ---
+    POST offset: cuándo salen los recordatorios respecto de la hora del
+    horario (H24, S144; de 15 minutos antes a 15 después, de 5 en 5).
+    """
+
+    def post(self, request):
+        from hr_calendar.clock_settings import set_reminder_offset
+
+        raw = request.POST.get("offset", "")
+        try:
+            minutes = int(raw)
+            set_reminder_offset(request.user.company_user.company, minutes,
+                                request.user.company_user)
+        except ValueError:
+            return _settings_response(
+                request, "Elige cuándo se envía el recordatorio.",
+                error=True)
+        label = dict(ClockSettings.OFFSET_CHOICES)[minutes].lower()
+        return _settings_response(
+            request, "Los recordatorios salen %s de la hora de entrada o "
+                     "de salida." % label
+            if minutes else "Los recordatorios salen a la hora en punto "
+                            "de la entrada o de la salida.",
         )
 
 

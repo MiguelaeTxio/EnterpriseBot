@@ -2,7 +2,8 @@
 {% comment %}
 H24 (S141). Ajustes de fichaje de la empresa en el panel de acciones de
 Fichajes: el permiso general para enviar los recordatorios de fichaje
-olvidado y qué secciones fichan con la plataforma (Plataformas ficha
+olvidado (S144: y cuándo sale, de 15 minutos antes a 15 después de la
+hora del horario) y qué secciones fichan con la plataforma (Plataformas ficha
 con Prologic: se quita o se pone según digan los jefes). Se vuelve a
 pintar fuera de banda (oob) tras cada acción de ajustes.
 S141: qué secciones fichan por tipos (Grúas, Asistencia: entrada con
@@ -27,10 +28,17 @@ aparte en el detalle y no suman horas.
         <button type="button" class="btn btn-sm btn-outline-success clk-setting-btn"
                 data-url="{% url 'panel:clock_settings_reminders' %}" data-enabled="1"
                 data-confirm="¿Activar el envío de recordatorios de fichaje? Solo lo reciben los trabajadores con recordatorios activados, que fichan y cuya sección ficha con la plataforma."
-                title="Envía el recordatorio a quien no ha fichado la entrada o la salida un cuarto de hora después de su horario (salvo vacaciones, ausencias, bajas y festivos de su base). Solo a los trabajadores con recordatorios activados, que fichan y cuya sección ficha con la plataforma.">
+                title="Envía el recordatorio a quien no ha fichado la entrada o la salida, en el momento elegido al lado (salvo vacaciones, ausencias, bajas y festivos de su base). Solo a los trabajadores con recordatorios activados, que fichan y cuya sección ficha con la plataforma.">
             <i class="bi bi-bell me-1"></i>Activar
         </button>
         {% endif %}
+        {# S144: cuándo sale, respecto de la hora de entrada o de salida del horario. #}
+        <select class="form-select form-select-sm w-auto clk-offset-select" data-url="{% url 'panel:clock_settings_reminder_offset' %}"
+                aria-label="Cuándo se envía" title="Cuándo se envía el recordatorio, respecto de la hora de entrada o de salida del horario de cada trabajador.">
+            {% for value, label in reminder_offset_choices %}
+            <option value="{{ value }}"{% if value == reminder_offset %} selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
         <div class="dropdown">
             <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
                     data-bs-auto-close="outside" title="Qué secciones fichan con la plataforma. Una sección que ficha por otro sistema (por ejemplo, Plataformas con Prologic) se quita aquí y nadie de ella recibe recordatorios.">
