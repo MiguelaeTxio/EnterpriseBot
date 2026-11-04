@@ -37,6 +37,7 @@ from panel.views_refuels import (
     RefuelsVehicleMeterView,
     RefuelsVehicleUnitView,
 )
+from panel.views_person_menu import PersonGoView, PersonMenuView
 from panel.views_personal_medical_leave import PersonalMedicalLeaveView
 from panel.views_personal_section import (
     PersonalMassScheduleView,
@@ -1478,6 +1479,17 @@ urlpatterns = [
         name="documentation_personal_access_create",
     ),
     # H24 (S144): sección del trabajador desde su ficha.
+    # H24 (S144): menú del botón derecho sobre un trabajador.
+    path(
+        "documentacion/personal/<int:pk>/menu/",
+        PersonMenuView.as_view(),
+        name="person_menu",
+    ),
+    path(
+        "documentacion/personal/<int:pk>/ir/<slug:code>/",
+        PersonGoView.as_view(),
+        name="person_go",
+    ),
     # H24 (S144): bajas médicas desde la ficha de Personal.
     path(
         "documentacion/personal/<int:pk>/bajas/",

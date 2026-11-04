@@ -19,7 +19,7 @@ fila recalculada.
     <td class="sticky-col sticky-col-3 sticky-col-last">
         <a href="#" class="vbal-open-detail" data-bs-toggle="modal" data-bs-target="#vbalDetailModal"
            hx-get="{% url 'panel:vacation_balance_detail' row.person.pk %}?year={{ filter_year }}"
-           hx-target="#vbal-detail-container">{{ row.label }}</a>
+           hx-target="#vbal-detail-container" data-person-pk="{{ row.person.pk }}">{{ row.label }}</a>
     </td>
     <td data-label="DNI">{{ row.person.dni }}</td>
     <td data-label="Sección">{{ row.balance.current_section_name|default:"—" }}</td>
