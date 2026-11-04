@@ -40,6 +40,8 @@ from email.message import EmailMessage as StdEmailMessage
 from email.utils import make_msgid
 from html import escape as html_escape
 from datetime import date, datetime
+import base64
+import hashlib
 import logging
 import unicodedata
 
@@ -5073,6 +5075,7 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
         warnings = []
         stored = 0
         skipped = []
+        already = []
         # H31 (S100), incidente real reportado por Miguel Ángel: al
         # subir 2 DNI + 2 reconocimientos médicos en la misma alta,
         # `build_filename_personal` sin ordinal generaba el MISMO
@@ -5108,6 +5111,19 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
             ).first()
             if document_type is None:
                 skipped.append(f.name)
+                continue
+            # H24 (S144), prueba con Cruces Gómez: el alta subía otra vez
+            # documentos que ya estaban en el cubo. Mismo criterio que el
+            # agente (S128): si el contenido ya está en el cubo, no se
+            # sube ni se clasifica.
+            content_md5 = base64.b64encode(
+                hashlib.md5(f.read()).digest()).decode("ascii")
+            f.seek(0)
+            if DocumentIndexEntry.objects.filter(
+                bucket=BUCKET, entry_kind=DocumentIndexEntry.KIND_FILE,
+                md5_hash=content_md5, purged_at__isnull=True,
+            ).exists():
+                already.append(f.name)
                 continue
             type_code_for_name = document_type.code
             extension = (
@@ -5236,6 +5252,7 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
                     parent_path_hash=path_digest(folder_path),
                     name=filename,
                     size_bytes=len(data),
+                    md5_hash=content_md5,
                     content_type=f.content_type or "application/octet-stream",
                     document_type=document_type,
                     domain_content_type=ct,
@@ -5316,6 +5333,11 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
                     "ficha ya creada." % f.name,
                 )
 
+        if already:
+            warnings.append(
+                "Ya estaban en el cubo (no se suben otra vez): %s."
+                % ", ".join(already),
+            )
         if skipped:
             warnings.append(
                 "%d documento(s) no reconocido(s) (%s) no se han subido -- "
@@ -5340,8 +5362,7 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
         a local, que además mueve su carpeta de INACTIVOS y la borra.
         """
         company_user = request.user.company_user
-        previous_paths = local_download_service.snapshot_paths(person)
-        previous_folder = person.folder_path
+        previous_local = local_download_service.snapshot_paths(person)
         if data["employer_company"]:
             person.employer_company = data["employer_company"]
             person.save(update_fields=["employer_company", "updated_at"])
@@ -5356,7 +5377,7 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
             request, person, person.folder_path,
         )
         download_job = local_download_service.create_for_person(
-            person, company_user, previous_paths, previous_folder,
+            person, company_user, previous_local,
         )
         return JsonResponse({
             "ok": True,
@@ -6474,9 +6495,7 @@ def _terminate_person(person, termination_date, person_ct, company_user):
     new_folder_path = free_folder_for(
         person, expected_base_folder(person, is_active=False),
     )
-    previous_paths, previous_folder = (
-        local_download_service.snapshot_paths(person), person.folder_path,
-    )
+    previous_local = local_download_service.snapshot_paths(person)
 
     with transaction.atomic():
         moved = move_person_documents(person, new_folder_path)
@@ -6493,7 +6512,7 @@ def _terminate_person(person, termination_date, person_ct, company_user):
     # H24 (S144): "poner inactivo a una persona en el panel y que [...]
     # en el local también la ponga en inactivos" (agente H28).
     local_download_service.create_for_person(
-        person, company_user, previous_paths, previous_folder,
+        person, company_user, previous_local,
     )
     logger.info(
         "# [H31-BAJA] PersonIdentity pk=%s dado de baja (rescisión) con "
@@ -6556,9 +6575,7 @@ def _reactivate_person(person, rehire_date, person_ct, company_user,
     new_folder_path = free_folder_for(
         person, expected_base_folder(person, is_active=True),
     )
-    previous_paths, previous_folder = (
-        local_download_service.snapshot_paths(person), person.folder_path,
-    )
+    previous_local = local_download_service.snapshot_paths(person)
 
     with transaction.atomic():
         moved = move_person_documents(person, new_folder_path)
@@ -6577,7 +6594,7 @@ def _reactivate_person(person, rehire_date, person_ct, company_user,
     # guardar los documentos nuevos (`local_sync=False`).
     if local_sync:
         local_download_service.create_for_person(
-            person, company_user, previous_paths, previous_folder,
+            person, company_user, previous_local,
         )
     logger.info(
         "# [H31-REACTIVAR] PersonIdentity pk=%s reactivado (%s) por CU "

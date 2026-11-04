@@ -4361,6 +4361,11 @@ class LocalDownloadJob(models.Model):
         auto_now_add=True, verbose_name="Creada",
     )
     files = models.JSONField(default=list, verbose_name="Archivos")
+    folder = models.TextField(
+        blank=True, default="", verbose_name="Carpeta en local",
+        help_text="Carpeta de la persona en el árbol local (OneDrive), "
+                  "con vuestra organización: OPERARIOS, TALLER...",
+    )
     previous_folder = models.TextField(
         blank=True, default="", verbose_name="Carpeta anterior",
         help_text="Carpeta virtual de la persona antes de moverla; el "

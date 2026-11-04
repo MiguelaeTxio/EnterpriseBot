@@ -1,25 +1,36 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/local_download_service.py
 """
-H24 (S144). Download of a just-onboarded worker's files to the local
-OneDrive tree, through the H28 agent.
+H24 (S144). A worker's folder in the local OneDrive tree, kept by the
+H28 agent.
 
 ---
 
-H24 (S144). Descarga a la carpeta local de OneDrive de los documentos
-de un trabajador recién dado de alta, a través del agente H28 (Miguel
-Ángel: "descargamos a su carpeta de personal [...] solamente el que se
-dé de alta en ese momento").
+H24 (S144). La carpeta de un trabajador en el árbol local de OneDrive,
+que mantiene el agente H28 (Miguel Ángel: "se da de alta, se clasifica
+en el cubo y descargamos a su carpeta de personal"; "poner inactivo a
+una persona en el panel y que [...] en el local también la ponga en
+inactivos").
 
-- `create_for_person()`: lo llama el alta (`PersonalCreateView`) tras
-  subir y clasificar los documentos; apunta los archivos de esa
-  persona, nada más.
-- `claim_pending()` / `report()`: los usan los webhooks del agente
-  (mismo token que el latido). El agente pide los trabajos sin
-  terminar en cada barrido, descarga, avisa de cada archivo y, al
-  terminar, cierra el trabajo. Un fallo se apunta y se reintenta en el
-  barrido siguiente hasta completarla.
-- `status_payload()`: lo que ve la pantalla de alta mientras espera.
+El local NO sigue la organización del cubo (PERSONAL/ACTIVOS/<EMPRESA>):
+sigue la vuestra, por categorías y con su carpeta de inactivos
+(LOCAL_CONTAINERS). Reglas:
+
+- La carpeta actual de la persona es la de su última descarga o, si no
+  tiene ninguna, la carpeta local de la que se subieron sus documentos
+  (el nombre del objeto en el cubo es su ruta en local). Si tiene, se
+  conserva su nombre tal cual.
+- La categoría sale de su sección (Administración, Guardas, Taller,
+  Asistencia; el resto, OPERARIOS) y de si está activo o de baja.
+- Una persona nueva: "APELLIDOS, NOMBRE (CÓDIGO)" con el código de su
+  empresa (GR, TR, GL, AGG); en Asistencia, "NOMBRE APELLIDOS".
+- Si cambia de sitio, el agente mueve la carpeta ENTERA, tal cual, con
+  todo lo que tenga. Después descarga solo lo que se subió desde el
+  panel (alta, ficha) y no está en local. Nunca toca nada fuera de la
+  carpeta de la persona.
 """
+import collections
+import unicodedata
+
 from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
 
@@ -30,6 +41,46 @@ from .models import (
 
 AGENT_NAME = "h28_migration_agent"
 BUCKET = "cgs_grupo_alvarez"
+LOCAL_ROOT = "DOC. PERSONAL/PERSONAL"
+# Lo subido desde el panel vive solo en el cubo (estructura virtual).
+PANEL_PREFIXES = (LOCAL_ROOT + "/ACTIVOS/", LOCAL_ROOT + "/INACTIVOS/")
+
+OPERARIOS = "OPERARIOS"
+TALLER = "TALLER"
+ADMINISTRACION = "ADMINISTRACION"
+GUARDA = "GUARDA"
+ASISTENCIA = "PERSONAL ASISTENCIA GRANADA"
+# Categoría -> (carpeta de activos, carpeta de inactivos).
+LOCAL_CONTAINERS = {
+    OPERARIOS: ("OPERARIOS", "OPERARIOS/TRABAJADORES INACTIVOS"),
+    TALLER: ("TALLER", "TALLER/BAJAS"),
+    ADMINISTRACION: ("ADMINISTRACION", "ADMINISTRACION/BAJAS"),
+    GUARDA: ("GUARDA", "GUARDA/OBSOLETOS"),
+    ASISTENCIA: (
+        "PERSONAL ASISTENCIA GRANADA/TRABAJADORES TRANSGRUAL",
+        "PERSONAL ASISTENCIA GRANADA/EX TRABAJADORES",
+    ),
+}
+# Carpetas donde ya hay trabajadores, para reconocer la carpeta de una
+# persona a partir de dónde se subieron sus documentos (las de bajas
+# antiguas incluidas).
+KNOWN_CONTAINERS = sorted(
+    {c for pair in LOCAL_CONTAINERS.values() for c in pair}
+    | {"BAJAS/OPERARIOS BAJAS", "BAJAS/BAJA PERSONAL"},
+    key=len, reverse=True,
+)
+COMPANY_CODES = (
+    ("TRANSGRUAL", "TR"),
+    ("GRUALDI", "GL"),
+    ("ASISTENCIA", "AGG"),
+    ("ADOLFO", "GR"),
+    ("GRUAS ALVAREZ", "GR"),
+)
+
+
+def _plain(text):
+    text = unicodedata.normalize("NFKD", text or "")
+    return "".join(c for c in text if not unicodedata.combining(c)).upper()
 
 
 def _person_entries(person):
@@ -42,62 +93,129 @@ def _person_entries(person):
     ).order_by("pk")
 
 
+def person_folder_of(path):
+    """
+    The person folder a local path is in, or None.
+    ---
+    La carpeta de persona (categoría conocida + su carpeta) en la que
+    está una ruta local, o None si no está en ninguna.
+    """
+    prefix = LOCAL_ROOT + "/"
+    if not path.startswith(prefix):
+        return None
+    rest = path[len(prefix):]
+    for container in KNOWN_CONTAINERS:
+        if rest.startswith(container + "/"):
+            name = rest[len(container) + 1:].split("/", 1)[0]
+            if name and "/" in rest[len(container) + 1:]:
+                return "%s/%s/%s" % (LOCAL_ROOT, container, name)
+    return None
+
+
+def current_local_folder(person):
+    """
+    Where the person's folder is now in the local tree, or "".
+    ---
+    Dónde está ahora la carpeta de la persona en local: la de su última
+    descarga o, si no tiene, la carpeta de la que se subieron más
+    documentos suyos; "" si no tiene ninguna.
+    """
+    last = LocalDownloadJob.objects.filter(person=person).exclude(
+        folder="").order_by("-created_at", "-pk").first()
+    if last is not None:
+        return last.folder
+    counts = collections.Counter(
+        folder for folder in (
+            person_folder_of(blob) for blob in _person_entries(
+                person).values_list("blob_name", flat=True)
+        ) if folder
+    )
+    return counts.most_common(1)[0][0] if counts else ""
+
+
+def _category(person):
+    from hr_calendar.clock_settings import current_sections
+
+    section = current_sections([person.pk]).get(person.pk)
+    name = _plain(section.name if section else "")
+    if name.startswith("ADMINISTRACION"):
+        return ADMINISTRACION
+    if name.startswith("GUARDA"):
+        return GUARDA
+    if name.startswith("TALLER"):
+        return TALLER
+    if name == "ASISTENCIA":
+        return ASISTENCIA
+    return OPERARIOS
+
+
+def new_folder_name(person, category):
+    """
+    Folder name for someone without a local folder yet.
+    ---
+    Nombre de la carpeta de quien todavía no tiene: "APELLIDOS, NOMBRE
+    (CÓDIGO)"; en Asistencia, "NOMBRE APELLIDOS" (como las que hay).
+    """
+    surnames = " ".join(
+        p for p in (person.first_surname, person.second_surname) if p)
+    if category == ASISTENCIA:
+        return _plain("%s %s" % (person.given_name, surnames)).strip()
+    name = "%s, %s" % (surnames, person.given_name)
+    company = _plain(person.employer_company)
+    code = next((c for key, c in COMPANY_CODES if key in company), "")
+    return _plain(name + (" (%s)" % code if code else "")).strip()
+
+
+def target_local_folder(person, current=""):
+    """
+    Where the person's folder must be (section and active or not).
+    ---
+    Dónde tiene que estar la carpeta: la categoría de su sección, la de
+    activos o la de inactivos, con el nombre que ya tenga.
+    """
+    category = _category(person)
+    active, inactive = LOCAL_CONTAINERS[category]
+    container = active if person.is_active_employee else inactive
+    name = current.rsplit("/", 1)[-1] if current else new_folder_name(
+        person, category)
+    return "%s/%s/%s" % (LOCAL_ROOT, container, name)
+
+
 def snapshot_paths(person):
     """
-    {entry pk: virtual path} of the person's files, before a move.
-
+    Kept for the callers: the local folder before a move.
     ---
-
-    Rutas virtuales actuales de los archivos de la persona, tomadas
-    ANTES de moverla (baja, reactivación, cambio de empresa): son las
-    que tiene en local, para que el agente las mueva a su sitio nuevo.
+    La carpeta local de la persona ANTES de moverla (baja,
+    reactivación): de dónde la tiene que mover el agente.
     """
-    return {
-        entry.pk: "%s/%s" % (entry.parent_path, entry.name)
-        for entry in _person_entries(person)
-    }
+    return current_local_folder(person)
 
 
-def create_for_person(person, requested_by=None, previous_paths=None,
-                      previous_folder=""):
+def create_for_person(person, requested_by=None, previous=None):
     """
-    Create the job that leaves the person's folder in place locally.
-
+    Create the job that leaves the person's local folder in place.
     ---
-
-    Crea el trabajo que deja en local la carpeta de la persona tal
-    como está en el cubo; None si no tiene archivos. Cada archivo lleva
-    su ruta virtual (`path`, destino), el objeto real (`blob`) y dónde
-    puede estar ya en local (`sources`): su ruta virtual anterior a la
-    baja/reactivación (`previous_paths`) y la del objeto (el árbol
-    espejo del que se subió). El agente mueve el que encuentre con el
-    mismo contenido y descarga el resto; `previous_folder` es la
-    carpeta anterior de la persona, que el agente vacía y borra al
-    terminar (Miguel Ángel: "cambiamos su documentación a la carpeta
-    local que tiene que estar y borraríamos la carpeta de inactivos").
+    Crea el trabajo que deja la carpeta local de la persona donde le
+    toca. `previous` es su carpeta local antes del cambio
+    (snapshot_paths); sin él, la de ahora. Archivos: solo lo subido
+    desde el panel, que no está en local, a la raíz de su carpeta.
+    None si no hay nada que hacer (ni mover ni descargar).
     """
-    previous_paths = previous_paths or {}
-    files = []
-    for entry in _person_entries(person):
-        path = "%s/%s" % (entry.parent_path, entry.name)
-        sources = []
-        old = previous_paths.get(entry.pk)
-        if old and old != path:
-            sources.append(old)
-        if entry.blob_name != path:
-            sources.append(entry.blob_name)
-        files.append({
-            "blob": entry.blob_name, "path": path, "sources": sources,
-        })
-    if not files:
+    current = previous if previous is not None else current_local_folder(
+        person)
+    target = target_local_folder(person, current)
+    files = [
+        {"blob": blob, "path": "%s/%s" % (target, name)}
+        for blob, name in _person_entries(person).values_list(
+            "blob_name", "name")
+        if blob.startswith(PANEL_PREFIXES)
+    ]
+    moves = bool(current) and current != target
+    if not files and not moves:
         return None
     return LocalDownloadJob.objects.create(
         person=person, requested_by=requested_by, files=files,
-        previous_folder=(
-            previous_folder
-            if previous_folder and previous_folder != person.folder_path
-            else ""
-        ),
+        folder=target, previous_folder=current if moves else "",
     )
 
 
@@ -120,7 +238,7 @@ def claim_pending(host=""):
         job.host = (host or "")[:255]
         job.save(update_fields=["status", "last_attempt_at", "host"])
     return [
-        {"id": job.pk, "files": job.files,
+        {"id": job.pk, "files": job.files, "folder": job.folder,
          "previous_folder": job.previous_folder}
         for job in jobs
     ]
@@ -180,5 +298,6 @@ def status_payload(job):
         "total": len(job.files),
         "error": job.last_error,
         "host": job.host,
+        "folder": job.folder,
         "agent_minutes_since_beat": minutes,
     }

@@ -221,15 +221,14 @@ class PersonalMassEmployerView(DocsUploadAccessMixin, View):
             person.save(update_fields=["employer_company", "updated_at"])
             changed += 1
             if person.is_active_employee:
-                previous_paths = local_download_service.snapshot_paths(person)
-                previous_folder = person.folder_path
+                previous_local = local_download_service.snapshot_paths(person)
                 relocated, _folder, _count = relocate_if_needed(person)
                 moved += int(relocated)
                 if relocated:
                     # H24 (S144): también en local (agente H28).
                     local_download_service.create_for_person(
                         person, request.user.company_user,
-                        previous_paths, previous_folder,
+                        previous_local,
                     )
         message = "%s para %d trabajador(es)" % (label, changed)
         if changed < len(people):
