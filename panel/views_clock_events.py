@@ -38,6 +38,7 @@ from django.utils.dateparse import parse_datetime
 from django.views import View
 
 from document_explorer.models import PersonIdentity
+from hr_calendar.clock_extras import overtime_bags, signed_duration
 from hr_calendar.clock_report import REST_NOTE
 from hr_calendar.clock_report import format_duration, reports_by_user
 from hr_calendar.models import ClockCorrection
@@ -92,6 +93,8 @@ _SORT_VALUES = {
     "last": lambda r: (r.report.last_event.pressed_at
                        if r.report.last_event else None),
     "issues": lambda r: r.report.incident_count,
+    # S145: bolsa de horas extras acumulada (sin cuenta, al final).
+    "bag": lambda r: r.bag_seconds,
     # S136 (Miguel Ángel: "ordenar por columnas"): todas ordenables.
     "entry": lambda r: _last_day_time(r, "clock_in"),
     "exit": lambda r: _last_day_time(r, "clock_out"),
@@ -113,6 +116,7 @@ _COLUMNS = (
     ("onboarding", "Alta en el fichaje"),
     ("events", "Fichajes"),
     ("issues", "Incidencias"),
+    ("bag", "Bolsa de horas"),
     ("last", "Último día"),
     ("entry", "Entrada"),
     ("exit", "Salida"),
@@ -231,6 +235,9 @@ class _Row:
         self.label = _person_label(person)
         self.sort_name = self.label.upper()
         self.has_account = person.company_user_id is not None
+        # S145: total de la bolsa de horas extras (None sin cuenta).
+        self.bag_seconds = None
+        self.bag_label = ""
 
 
 def _sort_rows(rows, sort_keys):
@@ -255,11 +262,22 @@ def _rows(request, people, date_from, date_to):
     )
     states = worker_states(people)
     onboarding = onboarding_states(people)
-    return [
+    rows = [
         _Row(p, reports.get(p.company_user_id) or _EmptyReport(),
              states.get(p.pk), onboarding[p.pk])
         for p in people
     ]
+    # S145 (Miguel Ángel): las horas extras acumuladas también en el
+    # listado, no solo en la página de cada trabajador. Es la bolsa
+    # entera (desde BAG_START), no la del intervalo filtrado.
+    bags = overtime_bags(
+        company, [p.company_user_id for p in people if p.company_user_id],
+    )
+    for row in rows:
+        if row.has_account:
+            row.bag_seconds = bags.get(row.person.company_user_id, 0)
+            row.bag_label = signed_duration(row.bag_seconds)
+    return rows
 
 
 def _with_section_filter(request, rows):

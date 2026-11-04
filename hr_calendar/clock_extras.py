@@ -129,6 +129,42 @@ def overtime_bag(company, company_user, until=None):
     }
 
 
+def overtime_bags(company, company_user_ids, until=None):
+    """
+    {company_user_id: bag total in seconds} of several workers at once.
+    ---
+    El total de la bolsa de varios trabajadores de una vez (S145, columna
+    "Bolsa de horas" del listado de Fichajes): mismo cálculo que
+    overtime_bag (lo de más de cada día desde BAG_START hasta `until` y
+    los movimientos a mano), con una sola lectura de fichajes y de
+    movimientos.
+    """
+    from django.db.models import Sum
+
+    from hr_calendar.clock_report import reports_by_user
+    from hr_calendar.models import OvertimeAdjustment
+
+    ids = [pk for pk in company_user_ids if pk]
+    if not ids:
+        return {}
+    until = until or timezone.localdate()
+    reports = reports_by_user(company, ids, BAG_START, until)
+    moved = dict(
+        OvertimeAdjustment.objects.filter(
+            company_user_id__in=ids, date__gte=BAG_START,
+        ).values("company_user_id").annotate(
+            total=Sum("minutes"),
+        ).values_list("company_user_id", "total")
+    )
+    return {
+        pk: (
+            (reports[pk].excess_seconds if pk in reports else 0)
+            + (moved.get(pk) or 0) * 60
+        )
+        for pk in ids
+    }
+
+
 def signed_duration(seconds):
     """
     "-3:15" / "12:40" (h:mm with sign).
