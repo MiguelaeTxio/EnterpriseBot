@@ -47,6 +47,7 @@ from config import (
 )
 from gcs_client import MissingCredentialsError, build_client
 from heartbeat import start_heartbeat_thread
+from local_download import process_jobs as process_local_downloads
 from history import append_event, load_events
 from reconciler import reconcile_folder
 from state import load_watched_folders, save_watched_folders
@@ -1046,6 +1047,13 @@ def _catchup_loop(icon):
                 error,
             )
             continue
+
+        # H24 (S144): antes de barrer, las descargas a la carpeta local
+        # de las altas nuevas (`local_download.py`). En el mismo hilo,
+        # para que descarga y barrido nunca coincidan.
+        for texto in process_local_downloads(client, list(_watched_folders)):
+            append_event("Descarga de alta", "DOC. PERSONAL", texto)
+            icon.notify(texto, title="Agente H28")
 
         started_at = time.monotonic()
         had_news = _run_catchup_pass(icon, client)
