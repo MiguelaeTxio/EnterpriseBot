@@ -12,6 +12,8 @@
 {#   show_edit, show_detail, show_mark_reviewed_row, show_unmark_reviewed_row                       #}
 {#   show_totals + totals (horas_totales/horas_extra/horas_festivas/dietas) — Pendientes y Revisados #}
 {#   empty_icon, empty_text, back_url                                                               #}
+{# S145: columnas Entrada/Salida = primera entrada y última salida del fichaje de ese día          #}
+{# (wo.clock_in / wo.clock_out, resueltas en la vista; "—" si no fichó).                         #}
 {# Toda decisión de negocio llega resuelta desde la vista; este parcial solo renderiza.             #}
 
 {% if wo_list %}
@@ -30,6 +32,8 @@
                 {% endif %}
                 {% include "panel/work_orders/_wo_sort_th.html" with col="operator_name" label="Operario" mark=sort_headers.operator_name %}
                 {% include "panel/work_orders/_wo_sort_th.html" with col="fecha" label="Fecha" mark=sort_headers.fecha %}
+                {% include "panel/work_orders/_wo_sort_th.html" with col="clock_in" label="Entrada" mark=sort_headers.clock_in title="Primera entrada del fichaje de ese día" %}
+                {% include "panel/work_orders/_wo_sort_th.html" with col="clock_out" label="Salida" mark=sort_headers.clock_out title="Última salida del fichaje de ese día" %}
                 <th class="text-sm fw-semibold">Bloques</th>
                 {% include "panel/work_orders/_wo_sort_th.html" with col="horas_totales" label="Horas" mark=sort_headers.horas_totales %}
                 {% include "panel/work_orders/_wo_sort_th.html" with col="horas_extra" label="H. Extra" mark=sort_headers.horas_extra %}
@@ -60,6 +64,8 @@
                 <td class="text-sm">
                     {% if wo.fecha %}{{ wo.fecha|date:"d/m/Y" }}{% else %}<span class="text-muted">Sin fecha</span>{% endif %}
                 </td>
+                <td class="text-sm">{% if wo.clock_in %}{{ wo.clock_in|time:"H:i" }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                <td class="text-sm">{% if wo.clock_out %}{{ wo.clock_out|time:"H:i" }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
                 <td class="text-sm">{{ wo.num_bloques }}</td>
                 <td class="text-sm">{{ wo.horas_totales }}</td>
                 <td class="text-sm">
@@ -144,7 +150,7 @@
         <tfoot>
             <tr class="table-primary fw-semibold small wo-totals-row">
                 {% if is_elevated %}<td class="px-2"></td>{% endif %}
-                <td colspan="3" class="text-end pe-3">TOTAL <span class="fw-normal">({{ wo_list|length }} parte{{ wo_list|length|pluralize }})</span></td>
+                <td colspan="5" class="text-end pe-3">TOTAL <span class="fw-normal">({{ wo_list|length }} parte{{ wo_list|length|pluralize }})</span></td>
                 <td class="text-sm">{{ totals.horas_totales }}</td>
                 <td class="text-sm">
                     {% if totals.horas_extra > 0 %}<span class="badge bg-success">+{{ totals.horas_extra }}h</span>{% else %}<span class="text-muted">—</span>{% endif %}

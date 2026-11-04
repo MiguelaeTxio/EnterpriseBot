@@ -375,7 +375,7 @@
      * Devuelve [] para cadena vacía o inválida.
      */
     function parseStack(stackStr) {
-        var valid = ["fecha", "operator_name", "horas_totales", "horas_extra", "horas_festivas", "reviewed", "fault_category"];
+        var valid = ["fecha", "operator_name", "clock_in", "clock_out", "horas_totales", "horas_extra", "horas_festivas", "reviewed", "fault_category"];
         var result = [];
         stackStr.split(",").forEach(function (token) {
             var parts = token.trim().split(":");

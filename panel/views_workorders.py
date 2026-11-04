@@ -4367,6 +4367,90 @@ def _hours_totals(work_orders):
     }
 
 
+def _attach_clock_times(company, *work_order_lists):
+    """
+    Adds the day's first clock-in and last clock-out to each work order.
+
+    Each enriched dict gets "clock_in" and "clock_out" (local time, or
+    None when the worker did not clock in/out that day). Shifts are
+    built exactly as in "Fichajes del trabajador" (current presses,
+    build_shifts, a shift belongs to the day of its first press), so
+    both pages show the same times.
+
+    ---
+
+    Añade a cada parte la primera entrada y la última salida del
+    fichaje de su trabajador ese día (H24, S145). Miguel Ángel: "en el
+    listado es preferente incluir un par de columnas con el fichaje de
+    entrada y de salida". Cada dict recibe "clock_in" y "clock_out"
+    (hora local, o None si ese día no fichó). Las jornadas se arman
+    igual que en "Fichajes del trabajador" (pulsaciones vigentes,
+    build_shifts y la jornada es del día de su primera pulsación), así
+    las dos páginas muestran las mismas horas.
+    """
+    import datetime
+
+    from django.utils import timezone
+
+    from hr_calendar.clock_report import MAX_SHIFT_HOURS
+    from hr_calendar.clock_report import build_shifts
+    from hr_calendar.models import ClockEvent
+
+    rows = [
+        wo for wo_list in work_order_lists for wo in wo_list
+    ]
+    for wo in rows:
+        wo["clock_in"] = None
+        wo["clock_out"] = None
+    dated = [
+        wo for wo in rows
+        if wo["operator_pk"] is not None and wo["fecha"] is not None
+    ]
+    if not dated:
+        return
+    tz = timezone.get_current_timezone()
+    margin = datetime.timedelta(hours=MAX_SHIFT_HOURS)
+    first_day = min(wo["fecha"] for wo in dated)
+    last_day = max(wo["fecha"] for wo in dated)
+    start = timezone.make_aware(
+        datetime.datetime.combine(first_day, datetime.time.min), tz)
+    end = timezone.make_aware(
+        datetime.datetime.combine(
+            last_day + datetime.timedelta(days=1), datetime.time.min),
+        tz)
+    events = (
+        ClockEvent.objects.current()
+        .filter(
+            company=company,
+            company_user_id__in={wo["operator_pk"] for wo in dated},
+            pressed_at__gte=start - margin,
+            pressed_at__lt=end + margin,
+        )
+        .order_by("company_user_id", "pressed_at", "pk")
+    )
+    events_by_user = {}
+    for event in events:
+        events_by_user.setdefault(event.company_user_id, []).append(event)
+    times = {}
+    for user_id, user_events in events_by_user.items():
+        for shift in build_shifts(user_events):
+            day_in, day_out = times.get((user_id, shift.day), (None, None))
+            if shift.clock_in is not None:
+                pressed = timezone.localtime(shift.clock_in.pressed_at)
+                if day_in is None or pressed < day_in:
+                    day_in = pressed
+            if shift.clock_out is not None:
+                pressed = timezone.localtime(shift.clock_out.pressed_at)
+                if day_out is None or pressed > day_out:
+                    day_out = pressed
+            times[(user_id, shift.day)] = (day_in, day_out)
+    for wo in dated:
+        day_in, day_out = times.get(
+            (wo["operator_pk"], wo["fecha"]), (None, None))
+        wo["clock_in"] = day_in.time() if day_in else None
+        wo["clock_out"] = day_out.time() if day_out else None
+
+
 class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
     """
     SINGLE unified work-order history view for ALL roles with access to
@@ -4949,6 +5033,8 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
             (
                 "fecha",
                 "operator_name",
+                "clock_in",
+                "clock_out",
                 "horas_totales",
                 "horas_extra",
                 "horas_festivas",
@@ -5148,6 +5234,10 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
                 )
             return result
 
+        # S145: entrada y salida del fichaje de ese día en cada fila.
+        _attach_clock_times(
+            company, pending_list, reviewed_list, history_list,
+        )
         pending_list = _apply_sort_stack(pending_list, sort_stack)
         reviewed_list = _apply_sort_stack(reviewed_list, sort_stack)
         history_list = _apply_sort_stack(history_list, sort_stack)
