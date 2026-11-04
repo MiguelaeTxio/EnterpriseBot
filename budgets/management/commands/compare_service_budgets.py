@@ -35,6 +35,19 @@ from django.core.management.base import BaseCommand
 ZERO = Decimal("0.00")
 
 
+def _code(line):
+    """
+    Concept code of a line as text (some lines carry the concept).
+
+    ---
+
+    Código del concepto de una línea como texto (las de km llevan el
+    propio concepto de la tarifa).
+    """
+    code = line.concept_code
+    return str(getattr(code, "code", code) or "")
+
+
 class Command(BaseCommand):
     """
     Side by side: estimated budget and manual budget of each service.
@@ -212,6 +225,23 @@ class Command(BaseCommand):
                 _yes(manual.is_night_or_holiday),
             ),
         )
+        from budgets.service_evaluation import _calendar_year
+        from budgets.services import _is_holiday, _resolve_night_schedule
+
+        schedule = _resolve_night_schedule(evaluation.insurer)
+        company = evaluation.company
+        self._log(
+            "Horario nocturno de la aseguradora: %s · de la empresa: %s-%s "
+            "· festivo en %s: %s (calendario de %s)" % (
+                "%s %s-%s" % (
+                    schedule.name, schedule.night_start, schedule.night_end,
+                ) if schedule else "ninguno",
+                company.night_start, company.night_end,
+                evaluation.base.name,
+                _yes(_is_holiday(when.date(), evaluation.base)),
+                _calendar_year(evaluation.base) or "—",
+            ),
+        )
         self._log("Peajes de la ruta manual: %s €" % (
             route.get("route_toll_budget_cost") or ZERO,
         ))
@@ -332,7 +362,7 @@ class Command(BaseCommand):
             if line.is_informational:
                 continue
             self._plain("    %-14s %-34s %9s x %9s = %9s" % (
-                line.concept_code, line.concept_label[:34], line.units,
+                _code(line), line.concept_label[:34], line.units,
                 line.unit_price, line.subtotal,
             ))
         self._plain("    %-14s %-34s %33s" % ("TOTAL", "sin IVA", total))
@@ -376,14 +406,14 @@ def _reasons(estimated, manual, estimated_lines, manual_lines):
         reasons.append("nocturno o festivo")
     tolls = sum(
         (line.subtotal for line in manual_lines
-         if line.concept_code.startswith("TOLL")
+         if _code(line).startswith("TOLL")
          and not line.is_informational),
         ZERO,
     )
     if tolls:
         reasons.append("peajes %s" % tolls)
-    codes_estimated = {line.concept_code for line in estimated_lines}
-    codes_manual = {line.concept_code for line in manual_lines}
+    codes_estimated = {_code(line) for line in estimated_lines}
+    codes_manual = {_code(line) for line in manual_lines}
     only = sorted(
         code for code in codes_manual ^ codes_estimated
         if not code.startswith("TOLL")
