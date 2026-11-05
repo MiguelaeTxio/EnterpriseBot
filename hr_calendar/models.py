@@ -1149,6 +1149,19 @@ class ClockReminder(models.Model):
         auto_now_add=True,
         verbose_name="Enviado",
     )
+    # S143: which of the worker's reminders it is, as minutes from the
+    # scheduled time ("-5", "0", "3", "30", "60", "120"... for every
+    # hour). Empty: one of before S143 (one per day and kind).
+    # Cuál de los avisos del trabajador es, en minutos respecto de la
+    # hora del horario. Vacío: uno de antes de S143.
+    slot = models.CharField(
+        max_length=8,
+        blank=True,
+        default="",
+        verbose_name="Aviso",
+        help_text="Minutos respecto de la hora del horario (negativo, "
+                  "antes).",
+    )
 
     class Meta:
         verbose_name = "Recordatorio de fichaje"
@@ -1156,8 +1169,8 @@ class ClockReminder(models.Model):
         ordering = ["-sent_at"]
         constraints = [
             models.UniqueConstraint(
-                fields=["company_user", "day", "kind"],
-                name="clockreminder_unique_user_day_kind",
+                fields=["company_user", "day", "kind", "slot"],
+                name="clockreminder_unique_user_day_kind_slot",
             ),
         ]
 
@@ -1342,21 +1355,10 @@ class ClockSettings(models.Model):
     Ajustes de fichaje de la empresa, desde el panel (H24, S141).
     `reminders_enabled` es el permiso general para enviar los
     recordatorios de fichaje olvidado: apagado hasta que un supervisor
-    lo enciende en la pestaña Fichajes. `reminder_offset_minutes`
-    (S144): cuándo sale el recordatorio respecto de la hora de entrada o
-    de salida del horario, de 15 minutos antes a 15 después, de 5 en 5
-    (Miguel Ángel: "5 minutos antes [...] que sea configurable").
+    lo enciende en la pestaña Fichajes. Cuándo salen los avisos lo
+    elige cada trabajador (S143, `WorkerClockSetting.in_reminders` y
+    `out_reminders`).
     """
-
-    OFFSET_CHOICES = [
-        (-15, "15 minutos antes"),
-        (-10, "10 minutos antes"),
-        (-5, "5 minutos antes"),
-        (0, "A la hora en punto"),
-        (5, "5 minutos después"),
-        (10, "10 minutos después"),
-        (15, "15 minutos después"),
-    ]
 
     company = models.OneToOneField(
         Company,
@@ -1367,13 +1369,6 @@ class ClockSettings(models.Model):
     reminders_enabled = models.BooleanField(
         default=False,
         verbose_name="Enviar recordatorios de fichaje",
-    )
-    reminder_offset_minutes = models.SmallIntegerField(
-        choices=OFFSET_CHOICES,
-        default=-5,
-        verbose_name="Cuándo se envía el recordatorio",
-        help_text="Minutos respecto de la hora de entrada o de salida "
-                  "del horario (negativo, antes).",
     )
     updated_by = models.ForeignKey(
         CompanyUser,
@@ -1457,12 +1452,32 @@ class WorkerClockSetting(models.Model):
     puede no estar obligado). `reminders`: recibe los recordatorios de
     fichaje olvidado; el permiso se da a cada trabajador desde la
     pestaña Fichajes. Sin fila: ficha y no recibe recordatorios.
-    `reminder_offset_minutes` (S144): cuándo quiere él recibir el
-    recordatorio, de 15 minutos antes a 15 después de la hora del
-    horario, de 5 en 5; lo elige cada trabajador en su página de fichaje
-    (Miguel Ángel: "que no sea que lo decide el supervisor, sino que
-    cada cual [...] decida"). Vacío: el de la empresa (5 minutos antes).
+    `in_reminders` y `out_reminders` (S143): qué avisos quiere él, con
+    casillas en su página de fichaje (Miguel Ángel: "que puedan
+    configurar sus avisos a la entrada y a la salida"), como claves de
+    IN_REMINDER_CHOICES y OUT_REMINDER_CHOICES separadas por comas.
+    Vacío (None): los de por defecto; "" (cadena vacía): ninguno. Cada
+    aviso sale solo si todavía no ha fichado.
     """
+
+    # S143: entrada 5 minutos antes, a la hora y 3 minutos después;
+    # salida a la hora, 3 minutos, media hora, una hora y cada hora
+    # ("muchas veces tienen que echar horas extras").
+    HOURLY = "h"
+    IN_REMINDER_CHOICES = [
+        ("-5", "5 minutos antes"),
+        ("0", "A la hora en punto"),
+        ("3", "3 minutos después"),
+    ]
+    OUT_REMINDER_CHOICES = [
+        ("0", "A la hora en punto"),
+        ("3", "3 minutos después"),
+        ("30", "Media hora después"),
+        ("60", "Una hora después"),
+        (HOURLY, "Cada hora"),
+    ]
+    DEFAULT_IN_REMINDERS = ("-5",)
+    DEFAULT_OUT_REMINDERS = ("0",)
 
     person = models.OneToOneField(
         PersonIdentity,
@@ -1478,14 +1493,21 @@ class WorkerClockSetting(models.Model):
         default=False,
         verbose_name="Recibe recordatorios",
     )
-    reminder_offset_minutes = models.SmallIntegerField(
-        choices=ClockSettings.OFFSET_CHOICES,
+    in_reminders = models.CharField(
+        max_length=40,
         null=True,
         blank=True,
-        verbose_name="Cuándo recibe el recordatorio",
-        help_text="Minutos respecto de la hora de entrada o de salida "
-                  "del horario (negativo, antes). Vacío: el de la "
-                  "empresa.",
+        verbose_name="Avisos de entrada",
+        help_text="Claves separadas por comas (-5, 0, 3). Vacío: los de "
+                  "por defecto.",
+    )
+    out_reminders = models.CharField(
+        max_length=40,
+        null=True,
+        blank=True,
+        verbose_name="Avisos de salida",
+        help_text="Claves separadas por comas (0, 3, 30, 60, h). Vacío: "
+                  "los de por defecto.",
     )
     # S141 (Miguel Ángel): el horario va en el trabajador, no en su
     # usuario del panel: chóferes, gruistas y administrativos no tienen
@@ -1518,6 +1540,28 @@ class WorkerClockSetting(models.Model):
 
     def __str__(self) -> str:
         return f"{self.person} — {'ficha' if self.clocks else 'no ficha'}"
+
+    @staticmethod
+    def _keys(value, default):
+        if value is None:
+            return list(default)
+        return [key for key in value.split(",") if key]
+
+    def in_reminder_keys(self):
+        """
+        The IN reminders chosen (or the default ones).
+        ---
+        Los avisos de entrada elegidos (o los de por defecto).
+        """
+        return self._keys(self.in_reminders, self.DEFAULT_IN_REMINDERS)
+
+    def out_reminder_keys(self):
+        """
+        The OUT reminders chosen (or the default ones).
+        ---
+        Los avisos de salida elegidos (o los de por defecto).
+        """
+        return self._keys(self.out_reminders, self.DEFAULT_OUT_REMINDERS)
 
 
 class ClockType(models.Model):

@@ -2,9 +2,10 @@
 """
 WhatsApp reminders of forgotten clock presses (H24, S141).
 
-S144: each worker chooses on their clock-in page when to get it, from
-15 minutes before to 15 after the scheduled time (5 minutes before by
-default).
+S143: each worker ticks on their clock-in page which reminders they
+want: IN 5 minutes before, on time and 3 minutes after; OUT on time, 3
+minutes, half an hour, one hour and every hour after. Each one only
+goes while the press is still missing.
 
 Miguel Ángel's rule (S141): a quarter of an hour after the start of
 the worker's schedule (the season one, already defined in the panel),
@@ -18,10 +19,23 @@ IN and forgotten OUT.
 
 Recordatorios por WhatsApp de fichajes olvidados (H24, S141).
 
-S144 (Miguel Ángel): el momento lo elige cada trabajador en su página
-de fichaje ("que no sea que lo decide el supervisor"), de 15 minutos
-antes a 15 después de la hora del horario, de 5 en 5; quien no elige,
-5 minutos antes (ClockSettings.reminder_offset_minutes).
+S143 (Miguel Ángel, sustituye al momento único de S144): cada
+trabajador marca en su página de fichaje qué avisos quiere
+(WorkerClockSetting.in_reminders y out_reminders):
+- Entrada: 5 minutos antes, a la hora en punto y 3 minutos después.
+- Salida: a la hora en punto, 3 minutos, media hora y una hora después,
+  y cada hora ("muchas veces tienen que echar horas extras [...] y así
+  pueden recibir mensajes recordatorios cada hora para marcar").
+- "Cada aviso se enviará si no ha fichado ya": en cuanto ficha, dejan de
+  salir. Cada aviso es una fila de ClockReminder (`slot`, minutos
+  respecto de la hora del horario); si la tarea va con retraso y tocan
+  varios a la vez, sale solo el último.
+- "Cada hora" sigue mientras la jornada esté abierta, hasta medianoche
+  (el día siguiente ya no cuenta las pulsaciones del anterior) y nunca
+  más allá de MAX_SHIFT_HOURS desde la entrada.
+- Quien no ha elegido: entrada 5 minutos antes y salida a la hora.
+- La tarea corre cada minuto (enterprise_core/settings.py), para que los
+  avisos de 3 minutos salgan a su hora.
 
 Regla de Miguel Ángel (S141): un cuarto de hora después de la hora de
 entrada del horario del trabajador (el de la temporada, ya definido en
@@ -71,9 +85,9 @@ from hr_calendar.models import VacationPeriod
 
 logger = logging.getLogger(__name__)
 
-# S141: un cuarto de hora después; S144: lo elige cada trabajador
-# (WorkerClockSetting.reminder_offset_minutes), este es solo el de reserva.
-REMINDER_DELAY = datetime.timedelta(minutes=15)
+# S143: "cada hora" son los avisos a 60, 120, 180... minutos de la hora
+# de salida, como mucho los de un turno (clock_report.MAX_SHIFT_HOURS).
+HOURLY_LIMIT_HOURS = 24
 IN_TEMPLATE = "clock_in_reminder"
 OUT_TEMPLATE = "clock_out_reminder"
 # S141 (Miguel Ángel): las mismas con un botón «Fichar ahora». Se usan
@@ -150,25 +164,63 @@ def _person(company_user):
         return None
 
 
-def due_reminder(schedule_starts, schedule_ends, events, now,
-                 offset=REMINDER_DELAY):
+def reminder_minutes(keys):
     """
-    The reminder due now for one user, as (kind, scheduled time), or
-    None. `events` are the user's presses of the day, in order.
+    Minutes from the scheduled time of the chosen reminders, sorted.
+    ---
+    Minutos respecto de la hora del horario de los avisos elegidos
+    (claves de WorkerClockSetting), ordenados. "Cada hora" son 60, 120,
+    180... hasta HOURLY_LIMIT_HOURS.
+    """
+    from hr_calendar.models import WorkerClockSetting
+
+    minutes = set()
+    for key in keys or ():
+        if key == WorkerClockSetting.HOURLY:
+            minutes.update(range(60, HOURLY_LIMIT_HOURS * 60 + 1, 60))
+        else:
+            try:
+                minutes.add(int(key))
+            except ValueError:
+                continue
+    return sorted(minutes)
+
+
+def _latest(anchor, minutes, now):
+    """
+    The last of `minutes` already reached at `now`, or None.
+    ---
+    El último de los avisos (`minutes` desde `anchor`) al que ya ha
+    llegado `now`, o None: si la tarea va con retraso y tocan varios a
+    la vez, sale solo el último.
+    """
+    reached = [m for m in minutes
+               if anchor + datetime.timedelta(minutes=m) <= now]
+    return max(reached) if reached else None
+
+
+def due_reminder(schedule_starts, schedule_ends, events, now,
+                 in_minutes, out_minutes):
+    """
+    The reminder due now for one user, as (kind, scheduled time, slot
+    minutes), or None. `events` are the user's presses of the day.
 
     ---
 
-    El recordatorio que toca ahora a un usuario, como (tipo, hora del
-    horario), o None. `events` son sus pulsaciones del día, en orden.
-    `offset` (S144): cuándo, respecto de la hora del horario (negativo,
-    antes; un cuarto de hora después hasta S144).
-    - Entrada: desde la primera hora de entrada + offset, sin ninguna
+    El aviso que toca ahora a un usuario, como (tipo, hora del horario,
+    minutos del aviso), o None. `events` son sus pulsaciones del día, en
+    orden. `in_minutes` y `out_minutes` (S143): los avisos que ha
+    elegido, en minutos respecto de la hora (negativo, antes).
+    - Entrada: el último aviso de entrada ya alcanzado, sin ninguna
       entrada ese día, y antes de la hora de salida.
-    - Salida: desde la última hora de salida + offset,
-      con la jornada abierta (la última pulsación del día es una
-      entrada). Un horario que cruza la medianoche no lleva aviso de
-      salida: ese día no sabe cuál es su salida.
+    - Salida: el último aviso de salida ya alcanzado, con la jornada
+      abierta (la última pulsación del día es una entrada o un cambio
+      de tipo) desde hace menos de MAX_SHIFT_HOURS. Un horario que
+      cruza la medianoche no lleva aviso de salida ese día
+      (overnight_out_due).
     """
+    from hr_calendar.clock_report import MAX_SHIFT_HOURS
+
     if not schedule_starts or not schedule_ends:
         return None
     start, end = min(schedule_starts), max(schedule_ends)
@@ -181,29 +233,36 @@ def due_reminder(schedule_starts, schedule_ends, events, now,
         end_at += datetime.timedelta(days=1)
     kinds = [event.kind for event in events]
     if not set(kinds) & {ClockEvent.Kind.IN, ClockEvent.Kind.CHANGE}:
-        if start_at + offset <= now < end_at:
-            return ClockReminder.Kind.IN, start
-        return None
+        if now >= end_at:
+            return None
+        slot = _latest(start_at, in_minutes, now)
+        return None if slot is None else (ClockReminder.Kind.IN, start, slot)
     # S141: un cambio de tipo deja la jornada abierta, como la entrada.
-    if (end > start
-            and kinds[-1] in (ClockEvent.Kind.IN, ClockEvent.Kind.CHANGE)
-            and now >= end_at + offset
-            and not _off_schedule(_opening(events), schedule_starts)):
-        return ClockReminder.Kind.OUT, end
-    return None
+    if end <= start or kinds[-1] not in (ClockEvent.Kind.IN,
+                                         ClockEvent.Kind.CHANGE):
+        return None
+    opening = _opening(events)
+    if _off_schedule(opening, schedule_starts) or (
+            opening is not None and now - opening.pressed_at
+            > datetime.timedelta(hours=MAX_SHIFT_HOURS)):
+        return None
+    slot = _latest(end_at, out_minutes, now)
+    return None if slot is None else (ClockReminder.Kind.OUT, end, slot)
 
 
 def overnight_out_due(company_user, company, day, events, now,
-                      offset=REMINDER_DELAY):
+                      out_minutes):
     """
-    The OUT reminder of last night's shift, as (kind, time), or None.
+    The OUT reminder of last night's shift, as (kind, time, slot), or
+    None.
     ---
-    S144 (guardas): el recordatorio de salida de la jornada de noche de
-    ayer, como (tipo, hora del horario), o None. Toca si el horario de
-    ayer acaba hoy (salida del último tramo menor que su entrada), ya
-    ha llegado su hora (salida + offset) y sigue abierta una
-    jornada que entró ayer dentro de horario. `events` son las
-    pulsaciones desde 24 h antes del día hasta ahora, en orden.
+    S144 (guardas): el aviso de salida de la jornada de noche de ayer,
+    como (tipo, hora del horario, minutos del aviso), o None. Toca si el
+    horario de ayer acaba hoy (salida del último tramo menor que su
+    entrada), ya ha llegado alguno de sus avisos de salida (S143) y
+    sigue abierta una jornada que entró ayer dentro de horario.
+    `events` son las pulsaciones desde 24 h antes del día hasta ahora,
+    en orden.
     """
     from hr_calendar.clock_report import MAX_SHIFT_HOURS
     from hr_calendar.clock_report import schedule_ends
@@ -220,7 +279,8 @@ def overnight_out_due(company_user, company, day, events, now,
     end_at = timezone.make_aware(
         datetime.datetime.combine(day, ends[-1]),
         timezone.get_current_timezone())
-    if now < end_at + offset:
+    slot = _latest(end_at, out_minutes, now)
+    if slot is None:
         return None
     opening = _opening(events)
     if opening is None or opening.kind == ClockEvent.Kind.OUT:
@@ -230,7 +290,7 @@ def overnight_out_due(company_user, company, day, events, now,
             or now - opened > datetime.timedelta(hours=MAX_SHIFT_HOURS)
             or _off_schedule(opening, starts)):
         return None
-    return ClockReminder.Kind.OUT, ends[-1]
+    return ClockReminder.Kind.OUT, ends[-1], slot
 
 
 def _opening(events):
@@ -359,8 +419,8 @@ def send_clock_reminders(company, now=None, log=logger.info):
     from hr_calendar.clock_report import _day_rule
     from hr_calendar.clock_report import schedule_ends
     from hr_calendar.clock_report import schedule_starts
-    from hr_calendar.clock_settings import reminder_offset
     from hr_calendar.clock_settings import reminders_enabled
+    from hr_calendar.models import WorkerClockSetting
     from hr_calendar.clock_settings import worker_states
     from panel.views_operator import _resolve_base_schedule
     from panel.views_operator import _resolve_operator_schedule
@@ -378,9 +438,6 @@ def send_clock_reminders(company, now=None, log=logger.info):
     if not reminders_enabled(company):
         log("Recordatorios de fichaje: desactivados en Fichajes.")
         return counters
-    # S144 (Miguel Ángel): cuándo sale lo elige cada trabajador en su
-    # página de fichaje; sin elección, el de la empresa (5 min antes).
-    default_offset = reminder_offset(company)
     sender = os.environ.get("TWILIO_WHATSAPP_SENDER", "")
     if not sender:
         log("Recordatorios de fichaje: sin TWILIO_WHATSAPP_SENDER.")
@@ -391,10 +448,11 @@ def send_clock_reminders(company, now=None, log=logger.info):
     templates = {}
     # S144: también los de ayer (el de salida del turno de noche se
     # apunta en el día de la entrada).
+    # S143: uno por usuario, día, tipo y aviso.
     already = set(ClockReminder.objects.filter(
         company=company,
         day__in=[day, day - datetime.timedelta(days=1)],
-    ).values_list("company_user_id", "day", "kind"))
+    ).values_list("company_user_id", "day", "kind", "slot"))
     tz = timezone.get_current_timezone()
     day_start = timezone.make_aware(
         datetime.datetime.combine(day, datetime.time.min), tz)
@@ -421,12 +479,20 @@ def send_clock_reminders(company, now=None, log=logger.info):
     users = [
         p.company_user for p in people if states[p.pk].must_clock
     ]
-    chosen = {p.company_user_id: states[p.pk].reminder_offset
-              for p in people}
+    # S143: los avisos que ha marcado cada uno (o los de por defecto).
+    chosen = {}
+    for p in people:
+        state = states[p.pk]
+        chosen[p.company_user_id] = (
+            reminder_minutes(
+                WorkerClockSetting.DEFAULT_IN_REMINDERS
+                if state.in_reminders is None else state.in_reminders),
+            reminder_minutes(
+                WorkerClockSetting.DEFAULT_OUT_REMINDERS
+                if state.out_reminders is None else state.out_reminders),
+        )
     for company_user in users:
-        own = chosen.get(company_user.pk)
-        offset = datetime.timedelta(
-            minutes=default_offset if own is None else own)
+        in_minutes, out_minutes = chosen[company_user.pk]
         # S144: el festivo depende del horario ("Se trabaja en festivos").
         if not _day_rule(
                 company_user,
@@ -456,21 +522,22 @@ def send_clock_reminders(company, now=None, log=logger.info):
                 continue
             due = due_reminder(
                 schedule_starts(schedule), schedule_ends(schedule),
-                events_by_user.get(company_user.pk, []), now, offset,
+                events_by_user.get(company_user.pk, []), now,
+                in_minutes, out_minutes,
             )
         if due is None:
             # S144: la salida del turno de noche de ayer (también si hoy
             # no trabaja).
             due = overnight_out_due(company_user, company, day, window, now,
-                                    offset)
+                                    out_minutes)
             reminder_day = day - datetime.timedelta(days=1)
         if due is None:
             if schedule is None:
                 counters["sin_horario"] += 1
             continue
-        if (company_user.pk, reminder_day, due[0]) in already:
+        kind, scheduled_time, slot = due
+        if (company_user.pk, reminder_day, kind, str(slot)) in already:
             continue
-        kind, scheduled_time = due
         person = _person(company_user)
         if _away(company_user, person, reminder_day):
             counters["fuera"] += 1
@@ -518,15 +585,14 @@ def send_clock_reminders(company, now=None, log=logger.info):
         ClockReminder.objects.create(
             company=company, company_user=company_user, day=reminder_day,
             kind=kind,
-            scheduled_time=scheduled_time, phone=phone,
+            scheduled_time=scheduled_time, phone=phone, slot=str(slot),
             message_sid=getattr(message, "sid", "") or "",
             sent_as_text=getattr(message, "sent_as_text", False),
         )
         counters["enviados"] += 1
-        log("Recordatorio de %s enviado a %s (horario %s)." % (
-            ClockReminder.Kind(kind).label.lower(),
-            company_user.user.username, variables["3"],
-        ))
+        log("Recordatorio de %s enviado a %s (horario %s, aviso %+d min)."
+            % (ClockReminder.Kind(kind).label.lower(),
+               company_user.user.username, variables["3"], slot))
     log("Recordatorios de fichaje: %(enviados)d enviados, %(festivo)d "
         "con el día festivo, %(sin_horario)d sin horario, %(abierto)d con "
         "horario abierto, %(excepcional)d tras una jornada excepcional, "

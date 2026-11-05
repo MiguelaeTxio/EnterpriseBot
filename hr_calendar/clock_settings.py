@@ -50,9 +50,10 @@ class WorkerClockState:
     reminders: bool = False
     # S141: su sección ficha por tipos (Grúas, Asistencia).
     uses_types: bool = False
-    # S144: cuándo quiere recibir el recordatorio (None: el de la
-    # empresa).
-    reminder_offset: int = None
+    # S143: los avisos que ha elegido (claves de WorkerClockSetting;
+    # None: los de por defecto).
+    in_reminders: list = None
+    out_reminders: list = None
 
     @property
     def must_clock(self):
@@ -89,56 +90,35 @@ def set_reminders_enabled(company, enabled, by):
     return settings
 
 
-DEFAULT_REMINDER_OFFSET = -5
-
-
-def reminder_offset(company):
+def set_worker_reminders(person, in_keys, out_keys):
     """
-    Minutes from the scheduled time to send the reminder (-15..15).
+    The worker's own choice of reminders, with checkboxes.
     ---
-    Minutos respecto de la hora del horario a los que sale el
-    recordatorio (S144; negativo, antes). Sin ajustes guardados, 5
-    minutos antes.
+    Los avisos que elige el propio trabajador en su página de fichaje
+    (S143): los de entrada y los de salida, cada uno solo si todavía no
+    ha fichado. Una lista vacía es "ninguno". ValueError si alguna clave
+    no es de las permitidas.
     """
-    value = ClockSettings.objects.filter(company=company).values_list(
-        "reminder_offset_minutes", flat=True).first()
-    return DEFAULT_REMINDER_OFFSET if value is None else value
-
-
-def set_worker_reminder_offset(person, minutes):
-    """
-    The worker's own choice of when to get the reminder.
-    ---
-    Lo que elige el propio trabajador en su página de fichaje (S144):
-    cuándo recibe el recordatorio. ValueError si no es uno de los
-    valores permitidos (de -15 a 15, de 5 en 5).
-    """
-    if minutes not in dict(ClockSettings.OFFSET_CHOICES):
-        raise ValueError("Valor no permitido: %s." % minutes)
+    allowed_in = dict(WorkerClockSetting.IN_REMINDER_CHOICES)
+    allowed_out = dict(WorkerClockSetting.OUT_REMINDER_CHOICES)
+    in_keys = [str(key) for key in in_keys]
+    out_keys = [str(key) for key in out_keys]
+    bad = [k for k in in_keys if k not in allowed_in] + [
+        k for k in out_keys if k not in allowed_out]
+    if bad:
+        raise ValueError("Valor no permitido: %s." % ", ".join(bad))
     setting, _created = WorkerClockSetting.objects.get_or_create(
         person=person,
     )
-    setting.reminder_offset_minutes = minutes
-    setting.save(update_fields=["reminder_offset_minutes", "updated_at"])
+    # In the order of the choices, without repeats.
+    # En el orden de las opciones, sin repetir.
+    setting.in_reminders = ",".join(
+        k for k in allowed_in if k in in_keys)
+    setting.out_reminders = ",".join(
+        k for k in allowed_out if k in out_keys)
+    setting.save(update_fields=["in_reminders", "out_reminders",
+                                "updated_at"])
     return setting
-
-
-def set_reminder_offset(company, minutes, by):
-    """
-    Set when the reminders go out; ValueError outside the choices.
-    ---
-    Fija cuándo salen los recordatorios (S144); ValueError si no es uno
-    de los valores permitidos (de -15 a 15, de 5 en 5).
-    """
-    if minutes not in dict(ClockSettings.OFFSET_CHOICES):
-        raise ValueError("Valor no permitido: %s." % minutes)
-    settings, _created = ClockSettings.objects.get_or_create(
-        company=company,
-    )
-    settings.reminder_offset_minutes = minutes
-    settings.updated_by = by
-    settings.save()
-    return settings
 
 
 def current_sections(person_ids, day=None):
@@ -301,8 +281,9 @@ def worker_states(people, day=None):
             reminders=setting.reminders if setting else False,
             uses_types=(by_types.get(section.pk, False)
                         if section is not None else False),
-            reminder_offset=(setting.reminder_offset_minutes
-                             if setting else None),
+            in_reminders=setting.in_reminder_keys() if setting else None,
+            out_reminders=(setting.out_reminder_keys()
+                           if setting else None),
         )
     return states
 

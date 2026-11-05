@@ -21,7 +21,9 @@
  * Mismo almacén y mismas reglas de envío que la página (clockin.html).
  */
 // S130: v2 = página con botón único y fichaje manual.
-const CACHE_NAME = "fichaje-v3";
+// S143: v4 = sin fichaje manual, avisos con casillas y aviso de versión
+// nueva (la página compara su versión con la de /fichaje/estado/).
+const CACHE_NAME = "fichaje-v4";
 const PAGE_URL = "/fichaje/";
 const CACHED = [PAGE_URL, PAGE_URL + "manifest.json"];
 const DB_NAME = "fichaje";

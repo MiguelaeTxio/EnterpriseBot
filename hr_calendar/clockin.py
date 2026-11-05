@@ -36,7 +36,7 @@ POST desde otra web nunca la lleva -- por eso el endpoint de recepción
 puede ir sin CSRF: una pulsación guardada sin cobertura se envía más
 tarde, quizá sin un token CSRF válido.
 """
-import datetime
+import hashlib
 import json
 import logging
 from dataclasses import dataclass
@@ -62,10 +62,23 @@ from hr_calendar.models import ClockType
 logger = logging.getLogger(__name__)
 
 MAX_BODY = 4096
-# S130: margen del reloj del móvil para no rechazar un fichaje manual
-# de "ahora mismo" por unos segundos de diferencia con el servidor.
-MANUAL_FUTURE_MARGIN = datetime.timedelta(minutes=2)
 _SW_PATH = Path(__file__).resolve().parent / "static_src" / "clockin_sw.js"
+_PAGE_PATH = (Path(__file__).resolve().parent / "templates" / "hr_calendar"
+              / "clockin.html")
+# S143 (Miguel Ángel): "que la propia aplicación les diga cuándo
+# recargarla, porque haya un cambio en la misma". Versión de la app =
+# huella de la página y del service worker: cambia sola con cada cambio
+# desplegado. La página guardada en el móvil lleva la suya y la compara
+# con la que da /fichaje/estado/; si no coinciden, avisa de recargar.
+APP_VERSION = hashlib.md5(
+    _PAGE_PATH.read_bytes() + _SW_PATH.read_bytes(),
+).hexdigest()[:12]
+# S143 (Miguel Ángel): "Vamos a eliminar el fichaje manual". Un olvido
+# lo corrige el supervisor (ClockCorrection).
+NO_MANUAL = (
+    "El fichaje manual ya no existe. Si se te olvidó fichar, díselo a tu "
+    "responsable para que lo corrija."
+)
 
 NO_TRUSTED_DEVICE = (
     "Este móvil no es tu dispositivo de confianza. Entra en el panel "
@@ -168,16 +181,16 @@ def record_press(company_user, payload, user_agent=""):
     Stores one press from the payload sent by the phone. The same
     `id` sent again returns the stored press (created=False) instead
     of a second record. Raises ClockInError when the press is invalid.
-    S130: with `auto` the server decides IN/OUT (single button); a
-    manual press for a forgotten one comes with sent_by=MANUAL, its
-    own kind and time, and no GPS.
+    S130: with `auto` the server decides IN/OUT (single button). S143:
+    no more manual presses from the phone (sent_by=MANUAL is refused).
     ---
     Guarda una pulsación con los datos que envía el móvil. Si llega
     otra vez el mismo `id`, devuelve la ya guardada (created=False) en
     vez de crear un segundo registro. Lanza ClockInError si la
     pulsación no es válida. S130: con `auto` decide el servidor si es
-    entrada o salida (botón único); un fichaje manual por olvido llega
-    con sent_by=MANUAL, su tipo y su hora, y sin GPS.
+    entrada o salida (botón único). S143: el móvil ya no puede enviar
+    fichajes manuales (sent_by=MANUAL se rechaza; uno guardado sin
+    cobertura antes del cambio sale en el móvil como no válido).
     """
     client_id = str(payload.get("id") or "").strip()
     if not client_id or len(client_id) > 40:
@@ -197,13 +210,13 @@ def record_press(company_user, payload, user_agent=""):
     if (sent_by not in ClockEvent.SentBy.values
             or sent_by == ClockEvent.SentBy.CORRECTION):
         sent_by = ClockEvent.SentBy.ONLINE
-    manual = sent_by == ClockEvent.SentBy.MANUAL
+    if sent_by == ClockEvent.SentBy.MANUAL:
+        raise ClockInError(NO_MANUAL)
     kind = str(payload.get("kind") or "").upper()
     # S130: botón único. Con `auto` (pulsado con cobertura y nada
     # pendiente en el móvil) el tipo lo decide aquí el servidor; sin
-    # cobertura lo decidió el móvil y se respeta tal cual llega. El
-    # fichaje manual trae siempre su tipo.
-    auto = bool(payload.get("auto")) and not manual
+    # cobertura lo decidió el móvil y se respeta tal cual llega.
+    auto = bool(payload.get("auto"))
     if not auto and kind not in ClockEvent.Kind.values:
         raise ClockInError("Falta indicar si es entrada o salida.")
     # S141: tipos de fichaje (secciones que fichan por tipos, como en
@@ -212,16 +225,10 @@ def record_press(company_user, payload, user_agent=""):
     clock_type = _clock_type_of(company_user, payload) if by_types else None
     if not auto and kind == ClockEvent.Kind.CHANGE and clock_type is None:
         raise ClockInError("Un cambio de tipo tiene que indicar el tipo.")
-    if manual and pressed_at > timezone.now() + MANUAL_FUTURE_MARGIN:
-        raise ClockInError(
-            "Un fichaje manual no puede ser de una hora que todavía no "
-            "ha llegado."
-        )
-
     latitude = _coordinate(payload.get("lat"), 90)
     longitude = _coordinate(payload.get("lon"), 180)
     accuracy = _accuracy(payload.get("accuracy"))
-    if manual or latitude is None or longitude is None:
+    if latitude is None or longitude is None:
         latitude = longitude = accuracy = None
     try:
         with transaction.atomic():
@@ -499,8 +506,10 @@ def status(request):
     # S130: lo que registrará el botón único ahora mismo, y el límite
     # de turno abierto para que el móvil decida igual sin cobertura.
     return JsonResponse({
-        # S144: cuándo recibe él los recordatorios (lo elige aquí).
+        # S143: qué avisos recibe (los marca aquí) y la versión de la
+        # app, para avisar de recargar si la del móvil es vieja.
         **_reminder_json(company_user),
+        "app_version": APP_VERSION,
         "name": _worker_name(company_user),
         "company": company_user.company.name,
         "last": _event_json(last) if last is not None else None,
@@ -513,42 +522,44 @@ def status(request):
 
 def _reminder_json(company_user):
     """
-    Whether the worker gets reminders and when, with the choices.
+    Whether the worker gets reminders and which ones, with the choices.
     ---
-    S144: si recibe recordatorios, cuándo (lo suyo o, si no ha elegido,
-    lo de la empresa) y las opciones, para el selector de la página.
+    S143: si recibe avisos, cuáles ha marcado (o los de por defecto) y
+    las opciones, para las casillas de la página.
     """
-    from hr_calendar.clock_settings import reminder_offset
-    from hr_calendar.models import ClockSettings
     from hr_calendar.models import WorkerClockSetting
 
     person = _person_of(company_user)
     setting = (WorkerClockSetting.objects.filter(person=person).first()
                if person is not None else None)
-    own = setting.reminder_offset_minutes if setting else None
+    choices = WorkerClockSetting
+
+    def options(pairs):
+        return [{"value": value, "label": label} for value, label in pairs]
+
     return {
         "reminders": bool(setting and setting.reminders),
-        "reminder_offset": (reminder_offset(company_user.company)
-                            if own is None else own),
-        "reminder_choices": [
-            {"value": value, "label": label}
-            for value, label in ClockSettings.OFFSET_CHOICES
-        ],
+        "in_reminders": (setting.in_reminder_keys() if setting
+                         else list(choices.DEFAULT_IN_REMINDERS)),
+        "out_reminders": (setting.out_reminder_keys() if setting
+                          else list(choices.DEFAULT_OUT_REMINDERS)),
+        "in_choices": options(choices.IN_REMINDER_CHOICES),
+        "out_choices": options(choices.OUT_REMINDER_CHOICES),
     }
 
 
 @csrf_exempt
 @require_POST
-def reminder_offset_view(request):
+def reminder_choices_view(request):
     """
-    POST (JSON {"offset": minutes}): when this worker gets reminders.
+    POST (JSON {"in": [...], "out": [...]}): this worker's reminders.
     ---
-    POST (JSON {"offset": minutos}): cuándo quiere recibir este
-    trabajador los recordatorios (S144, Miguel Ángel: "que cada cual
-    [...] decida cuándo quiere recibir los avisos"), de 15 minutos
-    antes a 15 después, de 5 en 5. 401 sin dispositivo de confianza.
+    POST (JSON {"in": [...], "out": [...]}): los avisos que marca este
+    trabajador (S143, Miguel Ángel: "que puedan configurar sus avisos a
+    la entrada y a la salida [...] con un casillero"). 401 sin
+    dispositivo de confianza.
     """
-    from hr_calendar.clock_settings import set_worker_reminder_offset
+    from hr_calendar.clock_settings import set_worker_reminders
 
     company_user = trusted_device_user(request)
     if company_user is None:
@@ -556,10 +567,11 @@ def reminder_offset_view(request):
     person = _person_of(company_user)
     try:
         payload = json.loads(request.body.decode("utf-8") or "{}")
-        minutes = int(payload.get("offset"))
-        if person is None:
-            raise ValueError("sin ficha")
-        set_worker_reminder_offset(person, minutes)
+        in_keys, out_keys = payload.get("in"), payload.get("out")
+        if (person is None or not isinstance(in_keys, list)
+                or not isinstance(out_keys, list)):
+            raise ValueError("datos")
+        set_worker_reminders(person, in_keys, out_keys)
     except (ValueError, TypeError, AttributeError, UnicodeDecodeError):
         return JsonResponse({"error": "No se ha podido guardar."},
                             status=400)
@@ -577,7 +589,8 @@ def page(request):
     guarda para usarla sin cobertura); pregunta a /fichaje/estado/ quién
     ficha.
     """
-    return render(request, "hr_calendar/clockin.html")
+    return render(request, "hr_calendar/clockin.html",
+                  {"app_version": APP_VERSION})
 
 
 @never_cache

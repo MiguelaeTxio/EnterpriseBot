@@ -524,11 +524,12 @@ CELERY_BEAT_SCHEDULE = {
     },
 
     # H24 (S141): recordatorio por WhatsApp a quien no ha fichado la
-    # entrada o la salida; S144: cuándo (de 15 min antes a 15 después
-    # de la hora del horario) lo elige cada trabajador en su fichaje.
+    # entrada o la salida. S143: cada trabajador marca sus avisos (3
+    # minutos después, media hora, cada hora...), así que la tarea corre
+    # cada minuto para que salgan a su hora.
     'send-clock-reminders': {
         'task':     'hr_calendar.tasks.send_clock_reminders_task',
-        'schedule': crontab(minute='*/5'),
+        'schedule': crontab(minute='*'),
     },
 }
 

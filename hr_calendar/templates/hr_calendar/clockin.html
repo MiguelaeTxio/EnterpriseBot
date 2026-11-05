@@ -12,6 +12,13 @@ GPS, queda como incidencia en la pestaña Fichajes).
 S141: quien ficha por tipos (su sección lo tiene activado en Fichajes,
 como en Sesame) elige el tipo al entrar, puede cambiar de tipo con la
 jornada abierta y ficha la salida con su propio botón.
+S143 (Miguel Ángel): sin fichaje manual ("Vamos a eliminar el fichaje
+manual"; un olvido lo corrige el responsable). "Mis avisos por WhatsApp"
+con casillas: entrada 5 minutos antes, a la hora y 3 minutos después;
+salida a la hora, 3 minutos, media hora, una hora y cada hora, cada uno
+solo si todavía no ha fichado. Y aviso de versión nueva: la página lleva
+su versión (app_version) y, si /fichaje/estado/ da otra, ofrece
+recargar (borra la copia guardada y vuelve a abrir).
 {% endcomment %}
 <!doctype html>
 <html lang="es">
@@ -49,10 +56,6 @@ jornada abierta y ficha la salida con su propio botón.
         #types-grid button:disabled { opacity: .6; }
         #current-type { font-weight: 700; color: #0f5132; text-align: center; margin-bottom: 8px; }
         .hidden { display: none !important; }
-        #manual summary { font-weight: 600; cursor: pointer; }
-        #manual label { display: block; font-size: .85rem; font-weight: 600; margin-top: 8px; }
-        #manual select, #manual input { width: 100%; font-size: 1rem; padding: 8px; border: 1px solid #ced4da; border-radius: 8px; background: #fff; }
-        #btn-manual { background: #6c757d; color: #fff; border: 0; border-radius: 8px; font-size: .95rem; padding: 10px; width: 100%; margin-top: 10px; font-weight: 600; }
         .tag-manual { color: #842029; font-weight: 600; }
         #btn-send { background: #0d6efd; color: #fff; border: 0; border-radius: 8px; font-size: .95rem; padding: 10px; width: 100%; margin-top: 8px; font-weight: 600; }
         .rec { border-top: 1px solid #e9ecef; padding: 8px 0; font-size: .9rem; }
@@ -66,7 +69,11 @@ jornada abierta y ficha la salida con su propio botón.
         .mt { margin-top: 8px; }
         .fw { font-weight: 600; }
         #back { display: none; margin-bottom: 10px; font-weight: 600; color: #0d6efd; text-decoration: none; }
-        #reminders select { width: 100%; font-size: 1rem; padding: 8px; border: 1px solid #ced4da; border-radius: 8px; background: #fff; margin-top: 6px; }
+        #reminders .group { font-weight: 700; margin-top: 10px; }
+        #reminders label { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 1rem; }
+        #reminders input[type=checkbox] { width: 22px; height: 22px; }
+        #update { background: #cfe2ff; border-color: #9ec5fe; }
+        #btn-update { background: #0d6efd; color: #fff; border: 0; border-radius: 8px; font-size: 1rem; padding: 12px; width: 100%; margin-top: 8px; font-weight: 700; }
         a.action { display: block; margin-top: 8px; padding: 12px; border-radius: 8px; background: #0d6efd; color: #fff; text-align: center; font-weight: 700; text-decoration: none; }
     </style>
 </head>
@@ -77,6 +84,13 @@ jornada abierta y ficha la salida con su propio botón.
         <span id="net" class="net">…</span>
     </div>
     <div class="muted">Grupo Álvarez · registro de jornada</div>
+
+    <!-- S143: hay una versión nueva de la app (la de esta copia es otra). -->
+    <div class="card hidden" id="update">
+        <div class="fw">Hay una versión nueva de la aplicación de fichaje.</div>
+        <div class="muted">Recárgala para usarla. Tus fichajes pendientes de enviar no se pierden.</div>
+        <button type="button" id="btn-update">Recargar la aplicación</button>
+    </div>
 
     <div class="card">
         <div id="who">…</div>
@@ -104,31 +118,14 @@ jornada abierta y ficha la salida con su propio botón.
     <button type="button" id="btn-fichar">Fichar entrada</button>
     <div id="status"></div>
 
-    <details class="card" id="manual">
-        <summary>¿Se te olvidó fichar? Fichaje manual</summary>
-        <div class="muted mt">Indica qué se te olvidó y a qué hora. Quedará registrado como fichaje manual (incidencia), con la hora a la que lo apuntas.</div>
-        <label for="manual-kind">Tipo</label>
-        <select id="manual-kind">
-            <option value="IN">Entrada</option>
-            <option value="OUT">Salida</option>
-            <option value="CHG" id="manual-kind-chg" class="hidden">Cambio de tipo</option>
-        </select>
-        <div id="manual-type-box" class="hidden">
-            <label for="manual-type">Tipo de fichaje</label>
-            <select id="manual-type"></select>
-        </div>
-        <label for="manual-date">Día</label>
-        <input type="date" id="manual-date">
-        <label for="manual-time">Hora</label>
-        <input type="time" id="manual-time">
-        <button type="button" id="btn-manual">Guardar fichaje manual</button>
-    </details>
-
-    <!-- S144: cada trabajador elige cuándo recibe el recordatorio por WhatsApp (solo si los recibe). -->
+    <!-- S143: cada trabajador marca qué avisos por WhatsApp quiere (solo si los recibe). -->
     <div class="card hidden" id="reminders">
         <strong>Mis avisos por WhatsApp</strong>
-        <div class="muted">Cuándo quieres recibir el aviso de fichar, respecto de tu hora de entrada y de salida.</div>
-        <select id="reminder-offset" aria-label="Cuándo recibir el aviso"></select>
+        <div class="muted">Marca cuándo quieres que te avisemos. Cada aviso solo llega si todavía no has fichado; en cuanto fichas, dejan de llegar.</div>
+        <div class="group">Entrada</div>
+        <div id="reminders-in"></div>
+        <div class="group">Salida</div>
+        <div id="reminders-out"></div>
         <div class="muted mt" id="reminder-state"></div>
     </div>
 
@@ -265,26 +262,40 @@ jornada abierta y ficha la salida con su propio botón.
             ? info.name + (info.company ? " · " + info.company : "")
             : (untrusted ? "Móvil sin identificar" : "…");
         showReminders(info);
+        showUpdate(info);
     }
-    // S144: cuándo recibe el aviso por WhatsApp (lo elige cada uno).
+    // S143: qué avisos por WhatsApp quiere (casillas, los marca cada uno).
     const REMINDER_URL = "/fichaje/avisos/";
-    function showReminders(info) {
-        const box = document.getElementById("reminders");
-        const select = document.getElementById("reminder-offset");
-        if (!info || !info.reminders || !info.reminder_choices) { box.classList.add("hidden"); return; }
-        box.classList.remove("hidden");
-        if (document.activeElement === select) return;
-        select.innerHTML = "";
-        info.reminder_choices.forEach(function (choice) {
-            const o = document.createElement("option");
-            o.value = choice.value;
-            o.textContent = choice.label;
-            if (choice.value === info.reminder_offset) o.selected = true;
-            select.appendChild(o);
+    function fillChecks(boxId, choices, chosen, group) {
+        const box = document.getElementById(boxId);
+        if (box.contains(document.activeElement)) return;
+        box.innerHTML = "";
+        choices.forEach(function (choice) {
+            const label = document.createElement("label");
+            const check = document.createElement("input");
+            check.type = "checkbox";
+            check.value = choice.value;
+            check.dataset.group = group;
+            check.checked = chosen.indexOf(choice.value) !== -1;
+            check.addEventListener("change", saveReminders);
+            label.appendChild(check);
+            label.appendChild(document.createTextNode(choice.label));
+            box.appendChild(label);
         });
     }
-    document.getElementById("reminder-offset").addEventListener("change", function () {
-        const select = this;
+    function showReminders(info) {
+        const box = document.getElementById("reminders");
+        if (!info || !info.reminders || !info.in_choices || !info.out_choices) { box.classList.add("hidden"); return; }
+        box.classList.remove("hidden");
+        fillChecks("reminders-in", info.in_choices, info.in_reminders || [], "in");
+        fillChecks("reminders-out", info.out_choices, info.out_reminders || [], "out");
+    }
+    function checked(group) {
+        return Array.prototype.map.call(
+            document.querySelectorAll('#reminders input[data-group="' + group + '"]:checked'),
+            function (c) { return c.value; });
+    }
+    function saveReminders() {
         const state = document.getElementById("reminder-state");
         state.textContent = "Guardando…";
         state.className = "muted mt";
@@ -292,20 +303,44 @@ jornada abierta y ficha la salida con su propio botón.
             method: "POST",
             credentials: "same-origin",
             headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({offset: parseInt(select.value, 10)}),
+            body: JSON.stringify({in: checked("in"), out: checked("out")}),
         }).then(function (response) {
             return response.json().then(function (data) {
                 if (!response.ok) throw new Error(data.error || "Error");
                 const info = load("fichaje-estado") || {};
-                info.reminder_offset = data.reminder_offset;
+                info.in_reminders = data.in_reminders;
+                info.out_reminders = data.out_reminders;
                 store("fichaje-estado", info);
-                state.textContent = "Guardado: " + select.options[select.selectedIndex].textContent.toLowerCase() + ".";
+                state.textContent = "Guardado.";
                 state.className = "ok mt";
             });
         }).catch(function () {
             state.textContent = "No se ha podido guardar. Inténtalo con cobertura.";
             state.className = "err mt";
         });
+    }
+    // S143: versión nueva de la app. Esta copia lleva su versión; si el
+    // servidor da otra, se ofrece recargar: se borra la copia guardada,
+    // se actualiza el service worker y se vuelve a abrir (los fichajes
+    // pendientes están en IndexedDB y no se tocan).
+    const PAGE_VERSION = "{{ app_version }}";
+    function showUpdate(info) {
+        const outdated = !!(info && info.app_version && info.app_version !== PAGE_VERSION);
+        document.getElementById("update").classList.toggle("hidden", !outdated);
+    }
+    document.getElementById("btn-update").addEventListener("click", function () {
+        const btn = this;
+        btn.disabled = true;
+        btn.textContent = "Recargando…";
+        const clear = window.caches ? caches.keys().then(function (keys) {
+            return Promise.all(keys.filter(function (k) { return k.indexOf("fichaje-") === 0; })
+                .map(function (k) { return caches.delete(k); }));
+        }) : Promise.resolve();
+        const update = ("serviceWorker" in navigator)
+            ? navigator.serviceWorker.getRegistration("/fichaje/").then(function (reg) { return reg ? reg.update() : null; })
+            : Promise.resolve();
+        Promise.all([clear, update]).catch(function () { /* se recarga igual */ })
+            .then(function () { location.reload(); });
     });
     // S130: botón único. Mismo criterio que el servidor
     // (clock_report.next_kind): SALIDA si la última pulsación conocida
@@ -348,8 +383,6 @@ jornada abierta y ficha la salida con su propio botón.
         const btn = document.getElementById("btn-fichar");
         const on = byTypes();
         box.style.display = on ? "block" : "none";
-        document.getElementById("manual-kind-chg").classList.toggle("hidden", !on);
-        document.getElementById("manual-type-box").classList.toggle("hidden", !on);
         if (!on) { btn.classList.remove("hidden"); return; }
         const kind = decideKind(records);
         const open = kind === "OUT";
@@ -376,16 +409,6 @@ jornada abierta y ficha la salida con su propio botón.
                 b.addEventListener("click", function () { press(v); });
                 grid.appendChild(b);
             });
-        });
-        const select = document.getElementById("manual-type");
-        const chosen = select.value;
-        select.innerHTML = "";
-        info.clock_types.forEach(function (t) {
-            const o = document.createElement("option");
-            o.value = t.id;
-            o.textContent = t.name;
-            if (String(t.id) === chosen || (!chosen && t.is_default)) o.selected = true;
-            select.appendChild(o);
         });
     }
     function refreshStatus() {
@@ -605,67 +628,7 @@ jornada abierta y ficha la salida con su propio botón.
         });
     }
 
-    // ---- Fichaje manual por olvido (S130) -------------------------------
-    function pad(n) { return (n < 10 ? "0" : "") + n; }
-    function resetManualForm() {
-        const now = new Date();
-        document.getElementById("manual-date").value =
-            now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate());
-        document.getElementById("manual-time").value = "";
-    }
-    function saveManual() {
-        const kind = document.getElementById("manual-kind").value;
-        const day = document.getElementById("manual-date").value;
-        const time = document.getElementById("manual-time").value;
-        if (!day || !time) { setStatus("Indica el día y la hora del fichaje manual.", "err"); return; }
-        // Fecha y hora locales del móvil, como cualquier pulsación.
-        const parts = day.split("-").map(Number);
-        const hm = time.split(":").map(Number);
-        const pressedAt = new Date(parts[0], parts[1] - 1, parts[2], hm[0], hm[1], 0, 0);
-        const registeredAt = new Date();
-        if (isNaN(pressedAt.getTime())) { setStatus("El día o la hora no son válidos.", "err"); return; }
-        if (pressedAt.getTime() > registeredAt.getTime() + 120000) {
-            setStatus("Un fichaje manual no puede ser de una hora que todavía no ha llegado.", "err");
-            return;
-        }
-        // S141: quien ficha por tipos indica el tipo de la entrada o del
-        // cambio; la salida no lleva tipo.
-        let typeId = null;
-        let typeName = "";
-        if (byTypes() && kind !== "OUT") {
-            const select = document.getElementById("manual-type");
-            typeId = select.value ? Number(select.value) : null;
-            typeName = select.selectedIndex >= 0 ? select.options[select.selectedIndex].textContent : "";
-        }
-        const btn = document.getElementById("btn-manual");
-        btn.disabled = true;
-        const record = {
-            id: newId(registeredAt),
-            kind: kind,
-            clock_type: typeId,
-            clock_type_name: typeName,
-            manual: true,
-            pressed_at: pressedAt.toISOString(),
-            registered_at: registeredAt.toISOString(),
-            lat: null, lon: null, accuracy: null,
-            gps_error: "Fichaje manual",
-        };
-        setStatus("Fichaje manual guardado: " + LABELS[kind].toLowerCase() + " del " +
-                  pressedAt.toLocaleDateString("es-ES") + " a las " + hhmm(pressedAt) +
-                  (navigator.onLine ? "." : ". Se enviará al volver la cobertura."), "ok", record.id);
-        queueAndSend(record, "MANUAL").catch(function (err) {
-            setStatus("No se ha podido guardar: " + err, "err");
-        }).finally(function () {
-            btn.disabled = false;
-            document.getElementById("manual").open = false;
-            resetManualForm();
-            render();
-        });
-    }
-    resetManualForm();
-
     document.getElementById("btn-fichar").addEventListener("click", function () { press(null); });
-    document.getElementById("btn-manual").addEventListener("click", saveManual);
     document.getElementById("btn-send").addEventListener("click", function () {
         if (!navigator.onLine) { setStatus("Sin conexión: se enviarán al volver.", "wait"); return; }
         sendPending("PAGE");
