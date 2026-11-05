@@ -1794,6 +1794,45 @@ class OwnVehicleTrip(models.Model):
         return "%s km (%s)" % (self.km, self.start_event_id)
 
 
+class ClockDayReview(models.Model):
+    """
+    A supervisor has seen a worker's clock-in day (S143).
+
+    ---
+
+    Día de fichajes de un trabajador visado por un supervisor (H24,
+    S143, Miguel Ángel: "que tenga una casilla que marque visado y
+    cuando estén visadas pasen a color amarillo"). Un día con alguna
+    corrección cuenta como visado aunque no tenga fila.
+    """
+
+    company_user = models.ForeignKey(
+        CompanyUser, on_delete=models.CASCADE,
+        related_name="clock_day_reviews", verbose_name="Trabajador",
+    )
+    day = models.DateField(verbose_name="Día")
+    reviewed_by = models.ForeignKey(
+        CompanyUser, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+", verbose_name="Visado por",
+    )
+    reviewed_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Visado",
+    )
+
+    class Meta:
+        verbose_name = "Día de fichajes visado"
+        verbose_name_plural = "Días de fichajes visados"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("company_user", "day"),
+                name="clockdayreview_unique_user_day",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return "%s %s" % (self.company_user_id, self.day)
+
+
 class OvertimeAdjustment(models.Model):
     """
     A manual movement of a worker's overtime bag (S144).

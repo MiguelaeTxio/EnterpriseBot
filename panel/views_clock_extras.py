@@ -153,6 +153,67 @@ class ClockWorkerOvertimeView(SupervisorAccessMixin, View):
         })
 
 
+def _table_response(request, person, message, error=False):
+    """
+    The worker's list repainted with the filters that were shown (_f_).
+    ---
+    La lista del trabajador repintada con los filtros que se veían.
+    """
+    from urllib.parse import quote
+
+    from django.http import QueryDict
+
+    from panel.views_clock_worker import FILTER_KEYS, _context
+
+    filters = QueryDict(mutable=True)
+    for key in FILTER_KEYS + ("only_selected", "selected_ids"):
+        value = request.POST.get("_f_" + key)
+        if value:
+            filters[key] = value
+    request.GET = filters
+    response = HttpResponse(render(
+        request, "panel/clock_worker/_table.html",
+        _context(request, person),
+    ).content)
+    response["X-Clock-Message"] = quote(message)
+    if error:
+        response["X-Clock-Error"] = "1"
+    return response
+
+
+class ClockWorkerReviewView(SupervisorAccessMixin, View):
+    """
+    POST: mark or unmark a worker's day as seen ("Visado").
+    ---
+    POST: marca o quita el visado de un día de fichajes del trabajador
+    (S143): con incidencias y visado, en amarillo.
+    """
+
+    def post(self, request, pk):
+        from hr_calendar.models import ClockDayReview
+
+        person = _person(pk)
+        try:
+            day = datetime.date.fromisoformat(request.POST.get("day") or "")
+        except ValueError:
+            day = None
+        if person.company_user_id is None or day is None:
+            return _table_response(request, person, "No se ha podido "
+                                   "visar ese día.", error=True)
+        if request.POST.get("reviewed") == "1":
+            ClockDayReview.objects.get_or_create(
+                company_user_id=person.company_user_id, day=day,
+                defaults={"reviewed_by": request.user.company_user},
+            )
+            message = "Día %s visado." % day.strftime("%d/%m/%Y")
+        else:
+            ClockDayReview.objects.filter(
+                company_user_id=person.company_user_id, day=day,
+            ).delete()
+            message = "Quitado el visado del %s." % day.strftime("%d/%m/%Y")
+        return _table_response(request, person, message)
+
+
 class ClockWorkerTripView(SupervisorAccessMixin, View):
     """
     POST: correct the kilometres of an own-vehicle stretch.

@@ -31,6 +31,10 @@ DAY_OK = "ok"
 DAY_ISSUES = "issues"
 DAY_CANCELLED = "cancelled"
 DAY_EMPTY = "empty"
+# S143: incidencias visadas (amarillo) y hoy con la entrada fichada y sin
+# salida (verde).
+DAY_REVIEWED = "reviewed"
+DAY_OPEN = "open"
 
 
 def calendar_range(today=None):
@@ -61,8 +65,13 @@ def _day_cell(day, shifts, today):
     de cada jornada, en el texto al pasar por encima.
     """
     worked = [s for s in shifts if not s.get("only_cancelled")]
-    if any(s.get("incidents") for s in worked):
-        status = DAY_ISSUES
+    with_incidents = [s for s in worked if s.get("incidents")]
+    if with_incidents:
+        status = (DAY_REVIEWED if all(s.get("reviewed")
+                                      for s in with_incidents)
+                  else DAY_ISSUES)
+    elif any(s.get("in_progress") for s in worked):
+        status = DAY_OPEN
     elif worked:
         status = DAY_OK
     elif shifts:

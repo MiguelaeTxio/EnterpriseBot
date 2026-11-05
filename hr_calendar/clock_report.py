@@ -209,6 +209,20 @@ def _manual_label(event):
     )
 
 
+def _rounded(event):
+    """
+    The rounded time of a press (rounded_at; computed if missing).
+    ---
+    La hora redondeada de una pulsación (rounded_at; si una antigua no
+    la tiene, se calcula).
+    """
+    if event.rounded_at is not None:
+        return event.rounded_at
+    from hr_calendar.clock_rounding import round_pressed_at
+
+    return round_pressed_at(event.pressed_at, event.kind)
+
+
 @dataclass
 class Shift:
     """
@@ -397,13 +411,31 @@ class Shift:
     def seconds(self):
         if self.clock_in is None or self.clock_out is None:
             return 0
-        gross = int((self.clock_out.pressed_at
-                     - self.clock_in.pressed_at).total_seconds())
+        # S143 (Miguel Ángel): "la hora de fichar es la hora redonda a la
+        # que fichamos": lo trabajado va de la entrada a la salida
+        # redondeadas (rounded_at, hr_calendar/clock_rounding.py), no de
+        # la hora exacta; fichar a las 7:58 no da 2 minutos de más.
+        gross = int((_rounded(self.clock_out)
+                     - _rounded(self.clock_in)).total_seconds())
         return max(gross - self.lunch_seconds - self.auto_meal_seconds
                    - self.uncounted_seconds, 0)
 
     @property
+    def in_progress(self):
+        """
+        Today's shift with its IN and no OUT yet (S143).
+        ---
+        La jornada de hoy con la entrada fichada y aún sin salida (S143,
+        Miguel Ángel: "El día corriente [...] no lo marcamos como
+        incidencia hasta que no termine y se marca en verde").
+        """
+        return (self.clock_in is not None and self.clock_out is None
+                and self.day == timezone.localdate())
+
+    @property
     def issue(self):
+        if self.in_progress:
+            return ""
         if self.clock_in is None:
             return NO_IN
         if self.clock_out is None:
@@ -427,6 +459,9 @@ class Shift:
         def hhmm(event):
             return timezone.localtime(event.pressed_at).strftime("%H:%M")
 
+        # S143: la jornada en curso no tiene incidencias hasta que acaba.
+        if self.in_progress:
+            return []
         found = []
         if self.clock_in is None:
             found.append(NO_IN)

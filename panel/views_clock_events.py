@@ -868,6 +868,8 @@ def worker_detail_data(company, person, date_from, date_to):
         "issue": s.issue,
         "incidents": s.incidents,
         "expected_start": s.expected_start,
+        # S143: jornada de hoy con entrada y sin salida (en verde).
+        "in_progress": s.in_progress,
         "late_minutes": s.late_minutes,
         "expected_end": s.expected_end,
         "suggested_end": s.suggested_end,
@@ -913,6 +915,7 @@ def worker_detail_data(company, person, date_from, date_to):
         },
     }
     _attach_cancelled(shifts, corrections, date_from, date_to)
+    _attach_reviewed(person, shifts)
     history = [{
         "correction": c,
         "corrected_by": _user_label(c.corrected_by),
@@ -925,6 +928,32 @@ def worker_detail_data(company, person, date_from, date_to):
     } for c in corrections]
     return {"report": report, "shifts": shifts, "history": history,
             "extras": extras}
+
+
+def _attach_reviewed(person, shifts):
+    """
+    Mark each shift as seen by a supervisor ("reviewed") or not.
+    ---
+    S143 (Miguel Ángel): una jornada está visada si su día tiene la
+    casilla de visado (ClockDayReview) o si se ha corregido algo de ella
+    ("al corregir automáticamente se marca como visada"). También marca
+    la jornada en curso de hoy ("in_progress").
+    """
+    from hr_calendar.models import ClockDayReview
+
+    days = set()
+    if person.company_user_id is not None and shifts:
+        days = set(ClockDayReview.objects.filter(
+            company_user_id=person.company_user_id,
+            day__in={s["day"] for s in shifts},
+        ).values_list("day", flat=True))
+    for shift in shifts:
+        presses = [p for p in (shift.get("presses") or [])
+                   + (shift.get("changes") or []) if p]
+        shift["corrected_any"] = bool(shift.get("cancelled")) or any(
+            p.get("correction") for p in presses)
+        shift["reviewed"] = shift["day"] in days or shift["corrected_any"]
+        shift["review_manual"] = shift["day"] in days
 
 
 def _render_detail(request, person, date_from, date_to, error="",

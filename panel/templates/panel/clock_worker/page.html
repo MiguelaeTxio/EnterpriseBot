@@ -557,6 +557,35 @@ screen_key "clock_worker"); la selección, por trabajador.
         }).finally(function () { btn.disabled = false; });
     });
 
+    // S143: casilla de visado de las incidencias (amarillo).
+    const REVIEW_URL = "{% url 'panel:clock_worker_review' person.pk %}";
+    results.addEventListener("change", function (evt) {
+        const box = evt.target.closest(".cw-review");
+        if (!box) return;
+        const body = new FormData();
+        body.append("day", box.dataset.day);
+        body.append("reviewed", box.checked ? "1" : "0");
+        new FormData(filters).forEach(function (value, key) { body.append("_f_" + key, value); });
+        const sortInput = results.querySelector('#cw-sort-inputs input[name="sort"]');
+        body.append("_f_sort", sortInput ? sortInput.value : "");
+        box.disabled = true;
+        fetch(REVIEW_URL, {
+            method: "POST", headers: {"X-CSRFToken": csrfMeta ? csrfMeta.content : ""}, body: body,
+        }).then(function (r) {
+            if (!r.ok) { showToast("No se ha podido guardar (" + r.status + ").", true); box.checked = !box.checked; box.disabled = false; return; }
+            const message = r.headers.get("X-Clock-Message");
+            return r.text().then(function (html) {
+                if (message) showToast(decodeURIComponent(message), false);
+                results.innerHTML = html;
+                htmx.process(results);
+                refreshFromFragment();
+            });
+        }).catch(function () {
+            showToast("Sin conexión con el servidor: no se ha guardado nada.", true);
+            box.checked = !box.checked;
+            box.disabled = false;
+        });
+    });
     // S144: corregir los kilómetros de un tramo con vehículo propio.
     const TRIP_URL = "{% url 'panel:clock_worker_trip' person.pk %}";
     results.addEventListener("click", function (evt) {

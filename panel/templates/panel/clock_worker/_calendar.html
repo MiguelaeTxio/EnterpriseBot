@@ -20,6 +20,8 @@ trabajador, el clic en un día lleva a su jornada en la lista
 <div class="cw-cal-legend d-flex flex-wrap align-items-center gap-3 small mb-2">
     <span><span class="cw-cal-swatch cw-cal-ok"></span>Correcta</span>
     <span><span class="cw-cal-swatch cw-cal-issues"></span>Con incidencias</span>
+    <span><span class="cw-cal-swatch cw-cal-reviewed"></span>Incidencias visadas</span>
+    <span><span class="cw-cal-swatch cw-cal-open"></span>Hoy, en curso</span>
     <span><span class="cw-cal-swatch cw-cal-cancelled"></span>Anulada</span>
     <span><span class="cw-cal-swatch cw-cal-empty"></span>Sin fichajes</span>
     <span><span class="cw-cal-swatch cw-cal-today"></span>Hoy</span>
@@ -49,7 +51,7 @@ trabajador, el clic en un día lleva a su jornada en la lista
                         title="{{ cell.title }}" data-day="{{ cell.day|date:'Y-m-d' }}">
                         <div class="d-flex justify-content-between">
                             <span class="fw-semibold">{{ cell.day.day }}</span>
-                            {% if cell.incident_count %}<span class="badge text-bg-danger fw-normal">{{ cell.incident_count }}</span>{% elif cell.shift_count > 1 %}<span class="badge text-bg-primary fw-normal" title="{{ cell.shift_count }} jornadas">{{ cell.shift_count }}</span>{% endif %}
+                            {% if cell.incident_count %}<span class="badge {% if cell.status == 'reviewed' %}text-bg-warning{% else %}text-bg-danger{% endif %} fw-normal">{{ cell.incident_count }}</span>{% elif cell.shift_count > 1 %}<span class="badge text-bg-primary fw-normal" title="{{ cell.shift_count }} jornadas">{{ cell.shift_count }}</span>{% endif %}
                         </div>
                         {% if cell.span %}<div class="cw-cal-line">{{ cell.span }}</div>{% endif %}
                         {% if cell.hours %}<div class="cw-cal-line fw-semibold">{{ cell.hours }} h</div>{% elif cell.status == "cancelled" %}<div class="cw-cal-line">anulado</div>{% endif %}
@@ -88,6 +90,8 @@ trabajador, el clic en un día lleva a su jornada en la lista
 .cw-cal-day { cursor: default; }
 .cw-cal-ok { --bs-table-bg: #cfe2ff; background-color: #cfe2ff; }
 .cw-cal-issues { --bs-table-bg: #f8d7da; background-color: #f8d7da; }
+.cw-cal-reviewed { --bs-table-bg: #fff3cd; background-color: #fff3cd; }
+.cw-cal-open { --bs-table-bg: #d1e7dd; background-color: #d1e7dd; }
 .cw-cal-cancelled { --bs-table-bg: #dee2e6; background-color: #dee2e6; color: #6c757d; }
 .cw-cal-empty { --bs-table-bg: #fff; background-color: #fff; }
 .cw-cal-empty.cw-cal-weekend { --bs-table-bg: #f8f9fa; background-color: #f8f9fa; }

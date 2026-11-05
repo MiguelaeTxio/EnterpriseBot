@@ -71,7 +71,7 @@ historial: quién, cuándo, antes, después y motivo).
     </thead>
     <tbody>
         {% for row in rows %}
-        <tr class="{% if row.status == 'cancelled' %}table-secondary{% elif row.status == 'issues' %}table-danger{% endif %}" data-day="{{ row.day|date:'Y-m-d' }}">
+        <tr class="{% if row.status == 'cancelled' %}table-secondary{% elif row.status == 'issues' %}table-danger{% elif row.status == 'reviewed' %}table-warning{% elif row.status == 'open' %}table-success{% endif %}" data-day="{{ row.day|date:'Y-m-d' }}">
             <td class="sticky-col sticky-col-1">
                 <input type="checkbox" class="form-check-input cw-row-check" data-pk="{{ row.key }}" data-label="{{ row.label }}" data-ids="{{ row.event_ids|default:'' }}">
             </td>
@@ -116,6 +116,14 @@ historial: quién, cuándo, antes, después y motivo).
             {% endif %}
             <td data-label="Incidencias">
                 {% for incident in row.incidents %}<div class="text-danger">{{ incident }}</div>{% endfor %}
+                {# S143: casilla de visado; al corregir, queda visada sola. #}
+                {% if row.incidents and has_account %}
+                <label class="form-check text-nowrap mb-0 mt-1"{% if row.corrected_any %} title="Corregida: queda visada"{% else %} title="Marcar que el supervisor la ha visto"{% endif %}>
+                    <input type="checkbox" class="form-check-input cw-review" data-day="{{ row.day|date:'Y-m-d' }}"{% if row.reviewed %} checked{% endif %}{% if row.corrected_any %} disabled{% endif %}>
+                    <span class="form-check-label">Visado</span>
+                </label>
+                {% endif %}
+                {% if row.status == 'open' %}<div class="text-success">En curso: falta la salida</div>{% endif %}
                 {% if row.rest_note %}<div class="text-muted">{{ row.rest_note }}</div>{% endif %}
                 {% if row.cancelled and not row.only_cancelled %}<div class="text-muted">Anulado ese día: {% for item in row.cancelled %}<s>{{ item.kind|lower }} {{ item.time|date:"H:i" }}</s>{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
             </td>

@@ -127,6 +127,7 @@ from panel.views_clock_events import (
 )
 from panel.views_clock_extras import (
     ClockWorkerOvertimeView,
+    ClockWorkerReviewView,
     ClockWorkerTripView,
 )
 from panel.views_clock_worker import (
@@ -1878,6 +1879,11 @@ urlpatterns = [
         "documentacion/fichajes/<int:pk>/jornadas/km/",
         ClockWorkerTripView.as_view(),
         name="clock_worker_trip",
+    ),
+    path(
+        "documentacion/fichajes/<int:pk>/jornadas/visado/",
+        ClockWorkerReviewView.as_view(),
+        name="clock_worker_review",
     ),
     # H24 (S141): corrección de un fichaje (nunca se modifica el
     # original; queda en el historial con quién y por qué).

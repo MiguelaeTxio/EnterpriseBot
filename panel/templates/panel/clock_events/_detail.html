@@ -77,7 +77,7 @@ mismas fechas: Jornadas, Calendario y Correcciones.
     <tbody>
         {% for shift in shifts %}
         {% if not shift.only_cancelled %}
-        <tr{% if shift.incidents %} class="table-danger"{% else %} data-ok{% endif %}>
+        <tr{% if shift.incidents %} class="{% if shift.reviewed %}table-warning{% else %}table-danger{% endif %}"{% elif shift.in_progress %} class="table-success" data-ok{% else %} data-ok{% endif %}>
             <td>{{ shift.day|date:"D d/m" }}</td>
             {% for press in shift.presses %}
             <td>

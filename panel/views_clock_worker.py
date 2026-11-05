@@ -56,15 +56,21 @@ VIEW_CHOICES = (
 STATUS_OK = "ok"
 STATUS_ISSUES = "issues"
 STATUS_CANCELLED = "cancelled"
+# S143: incidencias visadas (amarillo) y jornada en curso de hoy (verde).
+STATUS_REVIEWED = "reviewed"
+STATUS_OPEN = "open"
 STATUS_CHOICES = (
+    (STATUS_OPEN, "En curso"),
     (STATUS_OK, "Correctas"),
+    (STATUS_REVIEWED, "Incidencias visadas"),
     (STATUS_ISSUES, "Con incidencias"),
     (STATUS_CANCELLED, "Anuladas"),
 )
 _STATUS_LABELS = dict(STATUS_CHOICES)
 _STATUS_BADGES = {
     STATUS_OK: "success", STATUS_ISSUES: "danger",
-    STATUS_CANCELLED: "secondary",
+    STATUS_CANCELLED: "secondary", STATUS_REVIEWED: "warning",
+    STATUS_OPEN: "success",
 }
 _COLUMNS = (
     ("day", "Día"),
@@ -112,6 +118,13 @@ def _statuses(request):
     if raw == "none":
         return []
     chosen = [c for c in raw.split(",") if c in _STATUS_LABELS]
+    # S143: un filtro guardado de antes no conoce los estados nuevos:
+    # "Con incidencias" trae las visadas y "Correctas" la de hoy en curso.
+    if STATUS_REVIEWED not in chosen and STATUS_OPEN not in chosen:
+        if STATUS_ISSUES in chosen:
+            chosen.append(STATUS_REVIEWED)
+        if STATUS_OK in chosen:
+            chosen.append(STATUS_OPEN)
     return chosen if raw else list(_STATUS_LABELS)
 
 
@@ -189,7 +202,10 @@ def _row(shift):
     if shift.get("only_cancelled"):
         status = STATUS_CANCELLED
     elif shift.get("incidents"):
-        status = STATUS_ISSUES
+        status = (STATUS_REVIEWED if shift.get("reviewed")
+                  else STATUS_ISSUES)
+    elif shift.get("in_progress"):
+        status = STATUS_OPEN
     else:
         status = STATUS_OK
     presses = [p for p in [entry] + changes + [exit_] if p]
