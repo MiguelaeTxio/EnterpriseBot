@@ -13,15 +13,23 @@ Vista: panel/views_document_split.py.
         <strong>{{ entry.name }}</strong> ({{ page_count }} página{{ page_count|pluralize }}). Elige el tipo de cada página:
         las que tengan el mismo tipo salen juntas como un documento nuevo en la ficha de {{ person.given_name }}.
         {% if entry.document_type %}Si sacas un <strong>{{ entry.document_type.label }}</strong>, en su sitio queda solo lo sacado.{% endif %}
-        La fecha es opcional: sin ella se lee del propio documento.
+        La fecha es opcional: sin ella se lee del propio documento. Pulsa una miniatura para verla en grande.
     </p>
+    <div id="splitZoom" class="d-none border rounded p-2 mb-2 bg-light">
+        <div class="d-flex align-items-center mb-1">
+            <strong id="splitZoomTitle" class="small"></strong>
+            <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" onclick="closeSplitZoom()">Cerrar</button>
+        </div>
+        <img id="splitZoomImg" class="img-fluid border" alt="Página en grande">
+    </div>
     {% if too_many %}<div class="alert alert-warning py-1 small">Solo se muestran las primeras 30 páginas.</div>{% endif %}
     <div class="row g-2">
         {% for page in pages %}
         <div class="col-6 col-md-4 col-lg-3">
             <div class="border rounded p-1 h-100 small">
                 <div class="fw-semibold">Página {{ page.number }}</div>
-                <img src="data:image/png;base64,{{ page.image }}" class="img-fluid border mb-1" alt="Página {{ page.number }}">
+                <img src="data:image/png;base64,{{ page.image }}" class="img-fluid border mb-1" alt="Página {{ page.number }}"
+                     role="button" title="Ver en grande" onclick="splitZoom('{% url 'panel:documentation_document_split' pk=entry.pk %}?page={{ page.number }}', {{ page.number }})">
                 <select name="page_type_{{ page.number }}" class="form-select form-select-sm mb-1">
                     <option value="">No sacar</option>
                     {% regroup all_document_types by get_person_family_display as type_families %}

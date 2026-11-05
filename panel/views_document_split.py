@@ -11,6 +11,9 @@ DNI: "deberíamos de dotar al sistema de una herramienta para poder
 extraer únicamente el DNI. Y si alguno de los documentos que te he
 dicho no los tiene, también extraerlos y colocarlos en su sitio."
 
+- GET ?page=N: esa página en grande (PNG), para verla bien antes de
+  elegir su tipo (S145, Miguel Ángel: "había un documento que en la
+  miniatura yo no llegaba a ver bien lo que era").
 - GET: el contenido del modal: cada página en miniatura con el tipo
   que su texto ya leído sugiere (`resolve_type_from_content`, sin
   Gemini), un selector de tipo y una fecha opcional.
@@ -27,7 +30,7 @@ import unicodedata
 
 import fitz
 from django.contrib.contenttypes.models import ContentType
-from django.http import JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.views import View
 
@@ -59,6 +62,20 @@ def _page_texts(ocr_text):
     }
 
 
+def _page_image(data, number):
+    """One page in large size (PNG), for the zoom of the modal."""
+    try:
+        pdf = fitz.open(stream=data, filetype="pdf")
+    except Exception:
+        raise Http404("No es un PDF.")
+    if not 1 <= number <= pdf.page_count:
+        pdf.close()
+        raise Http404("No existe esa página.")
+    png = pdf[number - 1].get_pixmap(dpi=130).tobytes("png")
+    pdf.close()
+    return HttpResponse(png, content_type="image/png")
+
+
 def _person_entry(pk):
     person_ct = ContentType.objects.get_for_model(PersonIdentity)
     entry = get_object_or_404(
@@ -76,6 +93,9 @@ class DocumentSplitView(DocsUploadAccessMixin, View):
     def get(self, request, pk):
         entry, person = _person_entry(pk)
         data = download_bytes(entry.bucket, entry.blob_name)
+        page_number = request.GET.get("page", "")
+        if page_number.isdigit():
+            return _page_image(data, int(page_number))
         try:
             pdf = fitz.open(stream=data, filetype="pdf")
         except Exception:

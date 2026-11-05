@@ -398,7 +398,7 @@ H30 (S128), punto 6: tablas `stack-mobile` -- en el móvil cada fila es una tarj
                 {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}
             </td>
             <td class="stack-mobile-full">
-                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>{% if entry.source_dossier_pk %}<button type="button" class="btn btn-sm btn-outline-secondary" title="Abrir el dossier del que se sacó este documento" onclick="openSplitModal({{ entry.source_dossier_pk }})">Original</button>{% endif %}
                 {% if entry.name|is_image_document %}
                 <button type="button" class="btn btn-sm btn-outline-success" onclick="usarComoFotoPerfil({{ entry.pk }}, this)" title="Usar esta imagen como foto de perfil"><i class="bi bi-person-badge"></i></button>
                 {% endif %}
@@ -711,7 +711,7 @@ vacaciones).
                 {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}
             </td>
             <td class="stack-mobile-full">
-                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>{% if entry.source_dossier_pk %}<button type="button" class="btn btn-sm btn-outline-secondary" title="Abrir el dossier del que se sacó este documento" onclick="openSplitModal({{ entry.source_dossier_pk }})">Original</button>{% endif %}
                 {% if entry.name|is_image_document %}
                 <button type="button" class="btn btn-sm btn-outline-success" onclick="usarComoFotoPerfil({{ entry.pk }}, this)" title="Usar esta imagen como foto de perfil"><i class="bi bi-person-badge"></i></button>
                 {% endif %}
@@ -825,7 +825,7 @@ vez de una lista única sin estructura.
                                 {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}
                             </td>
                             <td class="stack-mobile-full">
-                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>{% if entry.source_dossier_pk %}<button type="button" class="btn btn-sm btn-outline-secondary" title="Abrir el dossier del que se sacó este documento" onclick="openSplitModal({{ entry.source_dossier_pk }})">Original</button>{% endif %}
                                 {% if entry.name|is_image_document %}
                                 <button type="button" class="btn btn-sm btn-outline-success" onclick="usarComoFotoPerfil({{ entry.pk }}, this)" title="Usar esta imagen como foto de perfil"><i class="bi bi-person-badge"></i></button>
                                 {% endif %}
@@ -1579,6 +1579,21 @@ function openSplitModal(entryPk) {
     }).catch(() => {
         body.innerHTML = '<div class="alert alert-danger py-1 small">Error de red al cargar las páginas.</div>';
     });
+}
+
+// S145: la página en grande dentro de "Separar" (clic en la miniatura).
+function splitZoom(url, pageNumber) {
+    const box = document.getElementById('splitZoom');
+    if (!box) return;
+    document.getElementById('splitZoomTitle').textContent = 'Página ' + pageNumber;
+    document.getElementById('splitZoomImg').src = url;
+    box.classList.remove('d-none');
+    box.scrollIntoView({block: 'start'});
+}
+
+function closeSplitZoom() {
+    const box = document.getElementById('splitZoom');
+    if (box) box.classList.add('d-none');
 }
 
 function submitSplit() {

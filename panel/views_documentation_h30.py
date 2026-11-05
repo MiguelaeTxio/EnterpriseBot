@@ -43,6 +43,7 @@ from datetime import date, datetime
 import base64
 import hashlib
 import logging
+import re
 import unicodedata
 
 from analytics.views import _resolve_work_period
@@ -100,6 +101,10 @@ from work_order_processor.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+# S145: "Sacado del dossier <nombre> (#<id>)" -- nota que deja
+# dossier_service.extract_document en lo sacado de un dossier.
+_SOURCE_DOSSIER_RE = re.compile(r"Sacado del dossier .*?\(#(\d+)\)")
 
 BUCKET = "cgs_grupo_alvarez"
 
@@ -2003,6 +2008,12 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
         current, obsolete = attach_subtype_documents(
             entries, current, obsolete,
         )
+        # S145 (Miguel Ángel: "cuando ya he partido, ese documento no
+        # sé dónde he ido a parar"): lo sacado de un dossier lleva el
+        # botón "Original", que abre el dossier del que salió.
+        for entry in current:
+            match = _SOURCE_DOSSIER_RE.search(entry.curator_note or "")
+            entry.source_dossier_pk = int(match.group(1)) if match else None
         # H31 (S119): "Falta"/"Caducado" del puesto ya NO se calculan
         # aqui a partir de `current` (cualquier documento vigente con
         # `needs_attention`) -- ver `resolve_required_document_status`
