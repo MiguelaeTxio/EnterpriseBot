@@ -422,7 +422,9 @@ def change_document_type(entry, new_type):
 
     old_code = entry.document_type.code if entry.document_type_id else ""
     entry.document_type = new_type
-    if not new_type.tracks_expiry and entry.expiry_date:
+    # S145: un tipo que no caduca (`expires`) tampoco guarda caducidad.
+    if entry.expiry_date and not (
+            new_type.tracks_expiry and new_type.expires):
         entry.issue_date = entry.issue_date or entry.expiry_date
         entry.expiry_date = None
     entry.save(update_fields=["document_type", "expiry_date", "issue_date"])
@@ -522,6 +524,12 @@ def upload_subject_document(
         original_filename.rsplit(".", 1)[-1]
         if "." in original_filename else "pdf"
     )
+    # S145: en un tipo con fecha pero que no caduca (un alta, una
+    # baja: `DocumentTypeCatalog.expires`), la fecha que llega como
+    # caducidad es la del documento.
+    if document_type.tracks_expiry and not document_type.expires:
+        typed_issue_date = typed_issue_date or typed_date
+        typed_date = None
     target_folder = _resolve_target_folder(
         domain_content_type, subject.pk, subject,
     )
@@ -590,6 +598,8 @@ def upload_subject_document(
         entry.ocr_text = ocr_text
         update_fields.append("ocr_text")
     if engine_date is not None:
+        if engine_field == "expiry" and not document_type.expires:
+            engine_field = "issue"
         if (
             engine_field == "expiry" and document_type.tracks_expiry
             and not entry.expiry_date

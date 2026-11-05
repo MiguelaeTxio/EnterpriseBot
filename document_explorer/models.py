@@ -767,6 +767,20 @@ class DocumentTypeCatalog(models.Model):
             "documentos sin fecha real se quedan siempre en False."
         ),
     )
+    expires = models.BooleanField(
+        default=True,
+        verbose_name="Caduca",
+        help_text=(
+            "H24 (S145). Solo cuenta con 'Participa en fechas' "
+            "activado. Desmarcado: su fecha es la del propio documento "
+            "(un alta, una baja, un certificado), nunca una caducidad "
+            "-- la fecha tecleada o leída va a la emisión y no sale "
+            "en rojo como caducado. Miguel Ángel, con el alta de "
+            "Berenguer Gómez en rojo sin poder quitarlo: \"no sé "
+            "tampoco concretamente a qué se refiere, porque las "
+            "fechas están bien\"."
+        ),
+    )
     ocr_unreliable = models.BooleanField(
         default=False,
         verbose_name="OCR poco fiable",

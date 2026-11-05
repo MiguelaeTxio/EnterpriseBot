@@ -287,6 +287,7 @@ def _split_current_obsolete(entries, required_type_ids=frozenset()):
             for entry in group:
                 entry.needs_attention = bool(
                     entry.document_type.tracks_expiry
+                    and entry.document_type.expires
                     and entry.expiry_date
                     and entry.expiry_date < today
                 )
@@ -312,6 +313,7 @@ def _split_current_obsolete(entries, required_type_ids=frozenset()):
                 entry.needs_attention = bool(
                     entry.document_type_id
                     and entry.document_type.tracks_expiry
+                    and entry.document_type.expires
                     and entry.expiry_date
                     and entry.expiry_date < today
                 )
@@ -485,7 +487,10 @@ def _attach_required_document_alerts(
                     and required_categories
                 ):
                     continue
-                if tracks_expiry and expiry_date and expiry_date < today:
+                if (
+                    tracks_expiry and document_type.expires
+                    and expiry_date and expiry_date < today
+                ):
                     labels.append(
                         "Caducado: %s — caducó el %s" % (
                             label, expiry_date.strftime("%d/%m/%Y"),
