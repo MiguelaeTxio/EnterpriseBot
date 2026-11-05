@@ -12,9 +12,9 @@ bien"). La fecha que tenían como caducidad es la del documento.
 
 - Con fecha del documento ya puesta: se quita la caducidad sin más.
 - Sin ella: pasa a fecha del documento la del nombre de archivo
-  (_AAAAMMDD, la que se ve en la ficha); si el nombre no trae fecha, la
-  caducidad si no es futura. Una caducidad futura sin fecha en el
-  nombre se queda sin fecha y se dice.
+  (_AAAAMMDD, la que se ve en la ficha) o, si no, la caducidad; nunca
+  una fecha futura (#35338, autorización con 2089 en el nombre). Sin
+  ninguna válida se queda sin fecha y se dice.
 
 DRY-RUN POR DEFECTO; `--apply` escribe. Log propio en `--log-file`.
 """
@@ -75,9 +75,10 @@ class Command(BaseCommand):
                 number, total, entry.pk, entry.document_type.code)
             new_issue = entry.issue_date
             if new_issue is None:
-                new_issue = _name_date(entry.name) or (
-                    entry.expiry_date if entry.expiry_date <= today
-                    else None)
+                by_name = _name_date(entry.name)
+                new_issue = next((
+                    value for value in (by_name, entry.expiry_date)
+                    if value is not None and value <= today), None)
             if entry.issue_date is not None:
                 cleared += 1
                 what = "fecha del documento %s se queda" % (
@@ -87,7 +88,7 @@ class Command(BaseCommand):
                 what = "fecha del documento -> %s" % new_issue
             else:
                 undated += 1
-                what = "SIN FECHA (caducidad futura y nombre sin fecha)"
+                what = "SIN FECHA (ni el nombre ni la caducidad sirven)"
             _log("%s %s | caducidad %s quitada | %s" % (
                 prefix, entry.name, entry.expiry_date, what))
             if apply:
