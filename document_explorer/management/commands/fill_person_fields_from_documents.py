@@ -263,6 +263,10 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--apply", action="store_true")
         parser.add_argument("--log-file", required=True)
+        parser.add_argument(
+            "--skip", nargs="*", default=[],
+            help="id:campo que no se escriben (revisados a mano y "
+                 "descartados), p. ej. 190:address_street")
 
     def handle(self, *args, **options):
         log_file = open(options["log_file"], "a", encoding="utf-8")
@@ -279,6 +283,7 @@ class Command(BaseCommand):
             log_file.write(text + "\n")
 
         apply = options["apply"]
+        skip = set(options["skip"])
         _log("Ficha del personal activo desde sus documentos (S145) -- %s"
              % ("APLICANDO" if apply
                 else "SIMULACIÓN (sin --apply no se escribe)"))
@@ -310,18 +315,21 @@ class Command(BaseCommand):
             _log("%d/%d %s (id=%d)" % (number, len(people), name, person.pk))
             to_write = []
             for field, current, value, source, action in props:
+                if "%d:%s" % (person.pk, field) in skip:
+                    action = "DESCARTADO"
                 totals[action] += 1
                 _plain("    %-10s %s: %s -> %s  [%s]" % (
                     action, LABELS[field], current or "(vacío)", value,
                     source))
-                if action != "REVISAR":
+                if action not in ("REVISAR", "DESCARTADO"):
                     setattr(person, field, value)
                     to_write.append(field)
             if apply and to_write:
                 person.save(update_fields=to_write)
         log_file.write("\n")
         _plain("RESUMEN")
-        for action in ("rellenar", "corregir", "actualizar", "REVISAR"):
+        for action in ("rellenar", "corregir", "actualizar", "REVISAR",
+                       "DESCARTADO"):
             _plain("%s: %d" % (action, totals[action]))
         _plain("Escrito en la BD: %s" % ("sí" if apply else "no"))
         log_file.close()
