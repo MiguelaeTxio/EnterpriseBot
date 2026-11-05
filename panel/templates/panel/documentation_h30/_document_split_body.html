@@ -12,7 +12,7 @@ Vista: panel/views_document_split.py.
     <p class="small text-muted mb-2">
         <strong>{{ entry.name }}</strong> ({{ page_count }} página{{ page_count|pluralize }}). Elige el tipo de cada página:
         las que tengan el mismo tipo salen juntas como un documento nuevo en la ficha de {{ person.given_name }}.
-        {% if entry.document_type %}Si sacas un <strong>{{ entry.document_type.label }}</strong>, en su sitio queda solo lo sacado.{% endif %}
+        Al terminar, este archivo pasa a ser un <strong>Dossier</strong> y sigue en la ficha para volver a entrar; si era el {{ entry.document_type.label|default:"documento" }} de la persona, saca también esas páginas.
         La fecha es opcional: sin ella se lee del propio documento. Pulsa una miniatura para verla en grande.
     </p>
     <div id="splitZoom" class="d-none border rounded p-2 mb-2 bg-light">

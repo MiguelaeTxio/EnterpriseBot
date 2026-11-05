@@ -19,10 +19,9 @@ dicho no los tiene, también extraerlos y colocarlos en su sitio."
   Gemini), un selector de tipo y una fecha opcional.
 - POST: las páginas con el mismo tipo forman un documento nuevo en la
   ficha de la persona (`dossier_service.extract_document`, el mismo
-  flujo que una subida: nombre, fecha, sustitución). Si uno de esos
-  tipos es el del propio archivo, el original deja de ser el vigente
-  (`is_obsolete`): en su sitio queda solo lo sacado. El archivo
-  original no se toca ni se borra.
+  flujo que una subida: nombre, fecha, sustitución). El original pasa
+  a ser un "Dossier" (tipo propio, S145) y sigue en la ficha para
+  volver a entrar y separar; nunca se borra.
 """
 import base64
 import re
@@ -45,6 +44,7 @@ from panel.mixins import DocsUploadAccessMixin
 from spare_parts.gcs_service import download_bytes
 
 MAX_PAGES = 30
+DOSSIER_CODE = "DOSSIER"
 _PAGE_SPLIT = re.compile(r"=== P[áa]gina (\d+) ===")
 
 
@@ -123,7 +123,7 @@ class DocumentSplitView(DocsUploadAccessMixin, View):
             "too_many": pdf.page_count > MAX_PAGES,
             "all_document_types": DocumentTypeCatalog.objects.filter(
                 is_active=True, domain__in=["PERSONAL", "BOTH"],
-            ).order_by("family", "label"),
+            ).exclude(code=DOSSIER_CODE).order_by("family", "label"),
         }
         pdf.close()
         return render(
@@ -150,15 +150,14 @@ class DocumentSplitView(DocsUploadAccessMixin, View):
                 status=400)
         data = download_bytes(entry.bucket, entry.blob_name)
         created = []
-        replacement = None
         for code, numbers in groups.items():
             document_type = dossier_service.person_type(code)
-            if document_type is None:
+            if document_type is None or code == DOSSIER_CODE:
                 return JsonResponse(
                     {"ok": False, "error": "Tipo desconocido: %s" % code},
                     status=400)
             typed = dates.get(code)
-            new_entry = dossier_service.extract_document(
+            dossier_service.extract_document(
                 entry, person, document_type, pages=sorted(numbers),
                 issue_date=None if document_type.tracks_expiry else typed,
                 expiry_date=typed if document_type.tracks_expiry else None,
@@ -166,19 +165,32 @@ class DocumentSplitView(DocsUploadAccessMixin, View):
             )
             created.append("%s (páginas %s)" % (
                 document_type.label, ", ".join(map(str, sorted(numbers)))))
-            if entry.document_type_id and code == entry.document_type.code:
-                replacement = new_entry
-        if replacement is not None:
-            # Lo sacado es el vigente aunque la sustitución lo empatara
-            # con el dossier (misma caducidad).
-            if replacement.is_obsolete:
-                replacement.is_obsolete = False
-                replacement.save(update_fields=["is_obsolete"])
-            note = "Separado: en su sitio queda lo sacado (%s)." % (
-                "; ".join(created))
-            entry.is_obsolete = True
-            entry.curator_note = (
-                "%s\n%s" % (entry.curator_note, note)
-                if entry.curator_note else note)
-            entry.save(update_fields=["is_obsolete", "curator_note"])
+        _mark_as_dossier(entry, created)
         return JsonResponse({"ok": True, "created": created})
+
+
+def _mark_as_dossier(entry, created):
+    """
+    The split file becomes a "Dossier", visible in the file.
+    ---
+    El archivo separado pasa a ser un "Dossier" y sigue a la vista en
+    la ficha, con su botón Separar (S145, Miguel Ángel: "un tipo para
+    dossier que aparezca y que se pueda entrar y separar"). Con el
+    cambio de tipo completo del panel: deja de ocupar el sitio del
+    tipo que tenía (el DNI de Berenguer) y lo que había sustituido
+    vuelve a contar.
+    """
+    from document_explorer.subject_upload_service import (
+        change_document_type,
+    )
+
+    if not entry.document_type_id or entry.document_type.code != (
+            DOSSIER_CODE):
+        dossier = DocumentTypeCatalog.objects.get(code=DOSSIER_CODE)
+        change_document_type(entry, dossier)
+    note = "Separado: %s." % "; ".join(created)
+    entry.is_obsolete = False
+    entry.curator_note = (
+        "%s\n%s" % (entry.curator_note, note)
+        if entry.curator_note else note)
+    entry.save(update_fields=["is_obsolete", "curator_note"])
