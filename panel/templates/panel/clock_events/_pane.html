@@ -175,6 +175,12 @@ recordatorios, secciones que fichan y permiso de envío).
                                     title="Los marcados están obligados a fichar.">Ficha</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary clk-worker-btn" data-action="clocks_off"
                                     title="Los marcados no están obligados a fichar (por ejemplo, un jefe de sección): no reciben recordatorios.">No ficha</button>
+                            {# S143: el alta se envía hoy y fichan desde el día elegido (mañana por defecto). #}
+                            <div class="input-group input-group-sm" style="width:auto">
+                                <button type="button" class="btn btn-outline-primary" id="clk-clocks-from"
+                                        title="Los marcados fichan desde ese día: antes ni reciben avisos ni pueden fichar desde el móvil.">Ficha desde</button>
+                                <input type="date" class="form-control" id="clk-clocks-from-day" value="{{ tomorrow|date:'Y-m-d' }}" style="max-width:9.5em">
+                            </div>
                             <button type="button" class="btn btn-sm btn-outline-primary clk-worker-btn" data-action="reminders_on"
                                     title="Los marcados reciben el recordatorio si no fichan la entrada o la salida (cuando el envío está activado).">Con recordatorios</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary clk-worker-btn" data-action="reminders_off"
@@ -481,6 +487,14 @@ recordatorios, secciones que fichan y permiso de envío).
             if (!(await massConfirm(btn.title || btn.textContent.trim()))) return;
             postSetting("{% url 'panel:clock_settings_workers' %}", {action: btn.dataset.action}, true);
         });
+    });
+    // S143: "Ficha desde" un día.
+    document.getElementById("clk-clocks-from").addEventListener("click", async function () {
+        const day = document.getElementById("clk-clocks-from-day").value;
+        if (!selection.size) { showToast("Marca algún trabajador.", true); return; }
+        if (!day) { showToast("Elige el día.", true); return; }
+        if (!(await massConfirm("Fichan desde el " + day.split("-").reverse().join("/") + ": antes de ese día ni reciben avisos ni pueden fichar."))) return;
+        postSetting("{% url 'panel:clock_settings_workers' %}", {action: "clocks_from", day: day}, true);
     });
     document.getElementById("clk-top-panel").addEventListener("click", function (evt) {
         const btn = evt.target.closest(".clk-setting-btn");

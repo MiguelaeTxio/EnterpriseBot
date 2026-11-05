@@ -58,7 +58,7 @@ y Albaranes de Servicios.
             </td>
             {# S141: sección vigente hoy, si ficha (él y su sección) y si recibe recordatorios. #}
             <td data-label="Sección">{{ row.state.section_name|default:"—" }}</td>
-            <td data-label="Ficha">{% if not row.state.section_clocks %}<span class="text-muted" title="Su sección no ficha con la plataforma">No (sección)</span>{% elif row.state.worker_clocks %}Sí{% else %}<span class="text-muted">No</span>{% endif %}</td>
+            <td data-label="Ficha">{% if not row.state.section_clocks %}<span class="text-muted" title="Su sección no ficha con la plataforma">No (sección)</span>{% elif row.state.worker_clocks and row.state.starts_later %}<span class="text-primary" title="Antes de ese día ni recibe avisos ni puede fichar">Desde {{ row.state.clocks_from|date:"d/m" }}</span>{% elif row.state.worker_clocks %}Sí{% else %}<span class="text-muted">No</span>{% endif %}</td>
             <td data-label="Recordatorios">{% if row.state.reminders %}<i class="bi bi-bell-fill text-success" title="Recibe recordatorios"></i> Sí{% else %}<span class="text-muted">No</span>{% endif %}</td>
             {# S144: en qué punto está su alta en el fichaje. #}
             <td data-label="Alta en el fichaje"><span class="badge text-bg-{{ row.onboarding.badge }} fw-normal">{{ row.onboarding.label }}</span></td>

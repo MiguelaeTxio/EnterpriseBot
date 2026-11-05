@@ -205,6 +205,10 @@ def record_press(company_user, payload, user_agent=""):
     pressed_at = parse_datetime(str(payload.get("pressed_at") or ""))
     if pressed_at is None or not timezone.is_aware(pressed_at):
         raise ClockInError("La pulsación no trae una hora válida.")
+    # S143: antes de su primer día de fichaje no se ficha.
+    starts = _clocks_from(company_user)
+    if starts is not None and timezone.localtime(pressed_at).date() < starts:
+        raise ClockInError(starts_text(starts))
     sent_by = str(payload.get("sent_by") or "").upper()
     # S141: CORRECTION es solo de las correcciones del supervisor;
     # nunca la envía el móvil.
@@ -274,6 +278,33 @@ def record_press(company_user, payload, user_agent=""):
             forgotten_text(forgotten), result.parte_notice)))
         result.parte_ok = False
     return result
+
+
+def _clocks_from(company_user):
+    """
+    The first day the worker clocks (None: from now).
+    ---
+    El primer día en que ficha el trabajador (S143; None: desde ya).
+    """
+    from hr_calendar.models import WorkerClockSetting
+
+    person = _person_of(company_user)
+    if person is None:
+        return None
+    return WorkerClockSetting.objects.filter(person=person).values_list(
+        "clocks_from", flat=True).first()
+
+
+def starts_text(day):
+    """
+    "Empiezas a fichar el viernes 06/11." for the worker.
+    ---
+    El aviso al trabajador de cuándo empieza a fichar (S143).
+    """
+    days = ("lunes", "martes", "miércoles", "jueves", "viernes",
+            "sábado", "domingo")
+    return "Empiezas a fichar el %s %s. Hasta entonces no hace falta " \
+        "fichar." % (days[day.weekday()], day.strftime("%d/%m"))
 
 
 def forgotten_text(opening):
@@ -550,6 +581,9 @@ def status(request):
         limit = last.pressed_at + datetime.timedelta(hours=MAX_SHIFT_HOURS)
         since = min(since, limit) if since is not None else limit
     kind_now = next_kind(last, now, company_user)
+    starts = _clocks_from(company_user)
+    if starts is not None and timezone.localdate() >= starts:
+        starts = None
     forgotten = forgotten_text(opening) if since is not None else ""
     # S141: quien ficha por tipos ve la lista de tipos activos.
     by_types = uses_types(company_user)
@@ -568,6 +602,9 @@ def status(request):
         "forgotten_after": since.isoformat() if since else None,
         "forgotten": forgotten,
         "max_shift_hours": MAX_SHIFT_HOURS,
+        # S143: antes de su primer día de fichaje, el aviso y sin botón.
+        "starts_on": starts.isoformat() if starts else None,
+        "starts_text": starts_text(starts) if starts else "",
         "uses_types": by_types,
         "clock_types": [_type_json(t) for t in types],
     })

@@ -513,6 +513,7 @@ class ClockEventsTabView(SupervisorAccessMixin, View):
         return render(request, "panel/clock_events/_pane.html", {
             **_list_context(request),
             **_settings_context(company),
+            "tomorrow": timezone.localdate() + datetime.timedelta(days=1),
             "sections": _sections(company),
             "no_section": NO_SECTION,
             "screen_key": SCREEN_KEY,
@@ -580,6 +581,8 @@ class ClockWorkerSettingsView(SupervisorAccessMixin, View):
         "clocks_off": ("clocks", False, "sin obligación de fichar"),
         "reminders_on": ("reminders", True, "con recordatorios"),
         "reminders_off": ("reminders", False, "sin recordatorios"),
+        # S143: fichan desde un día (el alta se envía antes).
+        "clocks_from": ("clocks_from", None, ""),
     }
 
     def post(self, request):
@@ -600,8 +603,28 @@ class ClockWorkerSettingsView(SupervisorAccessMixin, View):
                 error=True,
             )
         field, value, label = action
+        from hr_calendar.clock_settings import set_worker_clocks_from
+
+        if field == "clocks_from":
+            try:
+                day = datetime.date.fromisoformat(
+                    request.POST.get("day") or "")
+            except ValueError:
+                return _settings_response(
+                    request, "Elige el día desde el que fichan.",
+                    error=True,
+                )
+            count = set_worker_clocks_from(ids, day,
+                                           request.user.company_user)
+            return _settings_response(
+                request, "%d trabajador(es) fichan desde el %s: antes, "
+                "ni avisos ni fichajes." % (count, day.strftime("%d/%m/%Y")),
+            )
         count = set_worker_flag(ids, field, value,
                                 request.user.company_user)
+        # S143: "Ficha" es desde ya (quita un día de inicio que hubiera).
+        if field == "clocks" and value:
+            set_worker_clocks_from(ids, None, request.user.company_user)
         return _settings_response(
             request, "%d trabajador(es) %s." % (count, label),
         )

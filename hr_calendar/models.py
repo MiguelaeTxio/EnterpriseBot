@@ -1513,6 +1513,16 @@ class WorkerClockSetting(models.Model):
         default=True,
         verbose_name="Obligado a fichar",
     )
+    # S143 (Miguel Ángel): "no quiero que el alta de los fichajes les
+    # cuente desde hoy, sino desde mañana": desde qué día ficha. Antes,
+    # ni avisos, ni fichajes desde el móvil. Vacío: desde ya.
+    clocks_from = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Ficha desde",
+        help_text="Primer día en que ficha y recibe avisos. Vacío: desde "
+                  "ya.",
+    )
     reminders = models.BooleanField(
         default=False,
         verbose_name="Recibe recordatorios",

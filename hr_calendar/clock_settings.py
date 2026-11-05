@@ -54,10 +54,24 @@ class WorkerClockState:
     # None: los de por defecto).
     in_reminders: list = None
     out_reminders: list = None
+    # S143: desde qué día ficha (None: desde ya) y el día que se mira.
+    clocks_from: object = None
+    day: object = None
+
+    @property
+    def starts_later(self):
+        """
+        True if the worker only starts clocking after `day`.
+        ---
+        True si todavía no ha llegado su primer día de fichaje.
+        """
+        day = self.day or timezone.localdate()
+        return self.clocks_from is not None and day < self.clocks_from
 
     @property
     def must_clock(self):
-        return self.section_clocks and self.worker_clocks
+        return (self.section_clocks and self.worker_clocks
+                and not self.starts_later)
 
     @property
     def section_name(self):
@@ -340,6 +354,8 @@ def worker_states(people, day=None):
             in_reminders=setting.in_reminder_keys() if setting else None,
             out_reminders=(setting.out_reminder_keys()
                            if setting else None),
+            clocks_from=setting.clocks_from if setting else None,
+            day=day,
         )
     return states
 
@@ -358,6 +374,27 @@ def set_worker_flag(person_ids, field, value, by):
             person_id=pk,
         )
         setattr(setting, field, bool(value))
+        setting.updated_by = by
+        setting.save()
+        count += 1
+    return count
+
+
+def set_worker_clocks_from(person_ids, day, by):
+    """
+    The marked workers clock from `day` (None: from now). Returns how
+    many.
+    ---
+    Los marcados fichan desde `day` (S143; None: desde ya) y quedan
+    obligados a fichar. Devuelve cuántos.
+    """
+    count = 0
+    for pk in person_ids:
+        setting, _created = WorkerClockSetting.objects.get_or_create(
+            person_id=pk,
+        )
+        setting.clocks = True
+        setting.clocks_from = day
         setting.updated_by = by
         setting.save()
         count += 1

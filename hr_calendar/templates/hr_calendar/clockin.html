@@ -123,6 +123,8 @@ responsable corregirá la salida (clock_report.forgotten_after).
     </div>
 
     <!-- S143: no fichó la salida de la jornada anterior. -->
+    <!-- S143: antes de su primer día de fichaje, este aviso y sin botones. -->
+    <div class="card hidden" id="not-yet" style="background:#cfe2ff;border-color:#9ec5fe"><strong id="not-yet-text"></strong></div>
     <div class="card hidden" id="forgotten" style="background:#fff3cd;border-color:#ffe69c">
         <div class="fw" id="forgotten-text"></div>
         <div class="muted">Ahora fichas la entrada de hoy.</div>
@@ -534,6 +536,20 @@ responsable corregirá la salida (clock_report.forgotten_after).
             });
         });
     }
+    // S143: todavía no ha llegado su primer día de fichaje.
+    function showNotYet(info) {
+        const now = new Date();
+        const today = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0") + "-" + String(now.getDate()).padStart(2, "0");
+        const waiting = !!(info && info.starts_on && today < info.starts_on);
+        document.getElementById("not-yet").classList.toggle("hidden", !waiting);
+        document.getElementById("not-yet-text").textContent = waiting ? info.starts_text : "";
+        if (waiting) {
+            document.getElementById("btn-fichar").classList.add("hidden");
+            document.getElementById("types").style.display = "none";
+        } else if (!byTypes()) {
+            document.getElementById("btn-fichar").classList.remove("hidden");
+        }
+    }
     function refreshStatus() {
         if (!navigator.onLine) return Promise.resolve();
         return fetch(STATUS_URL, {credentials: "same-origin", cache: "no-store"}).then(function (response) {
@@ -560,6 +576,7 @@ responsable corregirá la salida (clock_report.forgotten_after).
             const serverLast = info && info.last ? info.last : null;
             showNext(decideKind(records));
             showTypes(records);
+            showNotYet(info);
             const forgotten = forgottenNow(records) && info && info.forgotten;
             document.getElementById("forgotten").classList.toggle("hidden", !forgotten);
             document.getElementById("forgotten-text").textContent = forgotten ? info.forgotten : "";
