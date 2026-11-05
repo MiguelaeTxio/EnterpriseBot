@@ -1893,6 +1893,16 @@ es la página anterior a la actual, y el procesador de contexto
 `back_url_context` la expone en todas las plantillas como
 `panel_back_url`.
 
+**Corregido en S145 -- el atrás del navegador:** Miguel Ángel, de la
+ficha de una persona salía a Fichajes con el atrás del móvil, entraba
+en un trabajador y "Volver" lo devolvía a la ficha. El navegador
+enseñaba la página desde su caché sin pedírsela al servidor, y la pila
+no se enteraba. Las páginas que entran en la pila se sirven con
+`no-store` (`add_never_cache_headers` en el propio middleware), para
+que el atrás del navegador las pida siempre y la pila siga el recorrido
+real. No afecta a la página de fichar (`/fichaje/`, fuera de
+`/panel/`).
+
 **Extendido en S132 a todo el panel:** los 36 botones "Volver" con URL
 fija que ya existían usan `{{ panel_back_url|default:<su URL de
 siempre> }}`: vuelven a la página de la que se vino y, si no hay

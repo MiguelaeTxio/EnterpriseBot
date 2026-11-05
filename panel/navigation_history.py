@@ -30,12 +30,21 @@ migas de pan del recorrido real del usuario:
   que estaba el usuario al salir (la que el hub tiene recordada), para
   que "Volver" lo deje en esa misma pestaña; y una página se reconoce
   por su path y su parámetro `tab`.
+- S145 (Miguel Ángel: de la ficha de Gutiérrez sale a Fichajes, entra
+  en un trabajador y "Volver" lo devuelve a la ficha): el atrás del
+  navegador o del móvil enseñaba la página desde su caché sin
+  pedírsela al servidor, y la pila no se enteraba de que el usuario
+  había vuelto. Las páginas que entran en la pila se sirven con
+  `no-store` para que el navegador las pida siempre de nuevo, también
+  al ir atrás, y la pila siga el recorrido real.
 - `request.panel_back_url` es la página anterior a la actual en esa
   pila, y el procesador de contexto `back_url_context` la pone en
   todas las plantillas como `panel_back_url`. El botón "Volver" enlaza
   ahí; si no hay página anterior, no se pinta.
 """
 from urllib.parse import parse_qs, urlsplit
+
+from django.utils.cache import add_never_cache_headers
 
 from panel.models import PanelNavigationState
 
@@ -224,6 +233,9 @@ class NavigationHistoryMiddleware:
                 screen_key=SCREEN_KEY,
                 defaults={"state": {"stack": new_stack}},
             )
+            # S145: sin caché, para que el atrás del navegador vuelva a
+            # pedir la página y la pila sepa dónde está el usuario.
+            add_never_cache_headers(response)
         return response
 
 
