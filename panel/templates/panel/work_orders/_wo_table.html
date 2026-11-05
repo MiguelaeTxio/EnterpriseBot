@@ -12,7 +12,8 @@
 {#   show_edit, show_detail, show_mark_reviewed_row, show_unmark_reviewed_row                       #}
 {#   show_totals + totals (horas_totales/horas_extra/horas_festivas/dietas) — Pendientes y Revisados #}
 {#   empty_icon, empty_text, back_url                                                               #}
-{# S145: columnas Entrada/Salida = primera entrada y última salida del fichaje de ese día          #}
+{# S145: columnas Entrada/Salida = primera entrada y última salida del fichaje de ese día,        #}
+{# con la hora redondeada (rounded_at). Sustituyen a la antigua columna Familia.                 #}
 {# (wo.clock_in / wo.clock_out, resueltas en la vista; "—" si no fichó).                         #}
 {# Toda decisión de negocio llega resuelta desde la vista; este parcial solo renderiza.             #}
 
@@ -32,8 +33,8 @@
                 {% endif %}
                 {% include "panel/work_orders/_wo_sort_th.html" with col="operator_name" label="Operario" mark=sort_headers.operator_name %}
                 {% include "panel/work_orders/_wo_sort_th.html" with col="fecha" label="Fecha" mark=sort_headers.fecha %}
-                {% include "panel/work_orders/_wo_sort_th.html" with col="clock_in" label="Entrada" mark=sort_headers.clock_in title="Primera entrada del fichaje de ese día" %}
-                {% include "panel/work_orders/_wo_sort_th.html" with col="clock_out" label="Salida" mark=sort_headers.clock_out title="Última salida del fichaje de ese día" %}
+                {% include "panel/work_orders/_wo_sort_th.html" with col="clock_in" label="Entrada" mark=sort_headers.clock_in title="Primera entrada del fichaje de ese día, redondeada" %}
+                {% include "panel/work_orders/_wo_sort_th.html" with col="clock_out" label="Salida" mark=sort_headers.clock_out title="Última salida del fichaje de ese día, redondeada" %}
                 <th class="text-sm fw-semibold">Bloques</th>
                 {% include "panel/work_orders/_wo_sort_th.html" with col="horas_totales" label="Horas" mark=sort_headers.horas_totales %}
                 {% include "panel/work_orders/_wo_sort_th.html" with col="horas_extra" label="H. Extra" mark=sort_headers.horas_extra %}
@@ -43,7 +44,6 @@
                 {% if show_reviewed_badge %}
                 {% include "panel/work_orders/_wo_sort_th.html" with col="reviewed" label="Estado" mark=sort_headers.reviewed %}
                 {% endif %}
-                {% include "panel/work_orders/_wo_sort_th.html" with col="fault_category" label="Familia" mark=sort_headers.fault_category %}
                 {% if show_reviewed_by %}<th class="text-sm fw-semibold">Revisado por</th>{% endif %}
                 {% if show_excel %}<th class="text-sm fw-semibold">Excel</th>{% endif %}
                 {% if show_origen %}<th class="text-sm fw-semibold">Origen</th>{% endif %}
@@ -87,9 +87,6 @@
                     {% if wo.reviewed %}<span class="badge bg-success">Revisado</span>{% else %}<span class="badge bg-warning text-dark">Pendiente</span>{% endif %}
                 </td>
                 {% endif %}
-                <td class="text-sm">
-                    {% if wo.fault_category %}<span class="badge bg-light text-dark border badge-sm">{{ wo.fault_category }}</span>{% else %}<span class="text-muted">—</span>{% endif %}
-                </td>
                 {% if show_reviewed_by %}
                 <td class="text-sm text-muted">
                     {% if wo.reviewed_by %}{{ wo.reviewed_by }}{% if wo.reviewed_at %} <small>{{ wo.reviewed_at|date:"d/m/Y H:i" }}</small>{% endif %}{% else %}—{% endif %}
@@ -161,7 +158,7 @@
                 <td class="text-sm">
                     {% if totals.dietas > 0 %}<span class="badge bg-info text-dark">{{ totals.dietas }}</span>{% else %}<span class="text-muted">—</span>{% endif %}
                 </td>
-                <td colspan="{% if tab_key == 'pending' %}3{% else %}4{% endif %}"></td>
+                <td colspan="{% if tab_key == 'pending' %}2{% else %}3{% endif %}"></td>
             </tr>
         </tfoot>
         {% endif %}

@@ -4369,7 +4369,8 @@ def _hours_totals(work_orders):
 
 def _attach_clock_times(company, *work_order_lists):
     """
-    Adds the day's first clock-in and last clock-out to each work order.
+    Adds the day's first clock-in and last clock-out to each work order,
+    rounded (rounded_at; pressed_at when an old press has none).
 
     Each enriched dict gets "clock_in" and "clock_out" (local time, or
     None when the worker did not clock in/out that day). Shifts are
@@ -4383,7 +4384,11 @@ def _attach_clock_times(company, *work_order_lists):
     fichaje de su trabajador ese día (H24, S145). Miguel Ángel: "en el
     listado es preferente incluir un par de columnas con el fichaje de
     entrada y de salida". Cada dict recibe "clock_in" y "clock_out"
-    (hora local, o None si ese día no fichó). Las jornadas se arman
+    (hora local, o None si ese día no fichó), con la hora redondeada
+    (rounded_at; pressed_at si una pulsación antigua no la tiene).
+    Miguel Ángel: "la hora real [...] para quien lo lee es más
+    complicado. Entonces poner la hora de entrada redondeada". Las
+    jornadas se arman
     igual que en "Fichajes del trabajador" (pulsaciones vigentes,
     build_shifts y la jornada es del día de su primera pulsación), así
     las dos páginas muestran las mismas horas.
@@ -4436,11 +4441,14 @@ def _attach_clock_times(company, *work_order_lists):
         for shift in build_shifts(user_events):
             day_in, day_out = times.get((user_id, shift.day), (None, None))
             if shift.clock_in is not None:
-                pressed = timezone.localtime(shift.clock_in.pressed_at)
+                pressed = timezone.localtime(
+                    shift.clock_in.rounded_at or shift.clock_in.pressed_at)
                 if day_in is None or pressed < day_in:
                     day_in = pressed
             if shift.clock_out is not None:
-                pressed = timezone.localtime(shift.clock_out.pressed_at)
+                pressed = timezone.localtime(
+                    shift.clock_out.rounded_at
+                    or shift.clock_out.pressed_at)
                 if day_out is None or pressed > day_out:
                     day_out = pressed
             times[(user_id, shift.day)] = (day_in, day_out)
@@ -5039,7 +5047,6 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
                 "horas_extra",
                 "horas_festivas",
                 "reviewed",
-                "fault_category",
             )
         )
         _VALID_SORT_DIRS = frozenset(("asc", "desc"))
