@@ -587,7 +587,19 @@ def _reminder_json(company_user):
     def options(pairs):
         return [{"value": value, "label": label} for value, label in pairs]
 
+    # S143: horario propio para los avisos, solo con horario abierto.
+    from panel.views_operator import _resolve_base_schedule
+
+    schedule = _resolve_base_schedule(company_user, company_user.company)
+    shifts = setting.own_shifts() if setting else []
     return {
+        "own_allowed": bool(schedule is not None and schedule.is_open),
+        "own_shifts": [[a.strftime("%H:%M"), b.strftime("%H:%M")]
+                       for a, b in shifts],
+        "own_days": setting.own_days() if setting else [0, 1, 2, 3, 4],
+        "own_until": (setting.own_schedule_until.isoformat()
+                      if setting and setting.own_schedule_until else ""),
+        "own_max": choices.MAX_OWN_SHIFTS,
         "reminders": bool(setting and setting.reminders),
         "in_reminders": (setting.in_reminder_keys() if setting
                          else list(choices.DEFAULT_IN_REMINDERS)),
@@ -625,6 +637,41 @@ def reminder_choices_view(request):
     except (ValueError, TypeError, AttributeError, UnicodeDecodeError):
         return JsonResponse({"error": "No se ha podido guardar."},
                             status=400)
+    return JsonResponse(_reminder_json(company_user))
+
+
+@csrf_exempt
+@require_POST
+def own_schedule_view(request):
+    """
+    POST (JSON {"shifts": [[in, out]...], "days": [...], "until": ""}).
+    ---
+    POST: el horario propio para los avisos (S143, Miguel Ángel: con
+    horario abierto "que puedan configurarse el horario temporal que
+    vayan a tener"). Solo con horario abierto; 401 sin dispositivo de
+    confianza.
+    """
+    from hr_calendar.clock_settings import set_worker_own_schedule
+
+    company_user = trusted_device_user(request)
+    if company_user is None:
+        return _untrusted_response(request)
+    person = _person_of(company_user)
+    if person is None or not _reminder_json(company_user)["own_allowed"]:
+        return JsonResponse(
+            {"error": "Tu horario no es abierto: los avisos van con él."},
+            status=400)
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+        shifts, days = payload.get("shifts"), payload.get("days")
+        if not isinstance(shifts, list) or not isinstance(days, list):
+            raise ValueError("No se ha podido guardar.")
+        set_worker_own_schedule(person, shifts, days,
+                                payload.get("until") or "")
+    except (ValueError, TypeError, AttributeError,
+            UnicodeDecodeError) as exc:
+        return JsonResponse({"error": str(exc) or "No se ha podido "
+                             "guardar."}, status=400)
     return JsonResponse(_reminder_json(company_user))
 
 

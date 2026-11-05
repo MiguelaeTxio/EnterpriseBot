@@ -23,4 +23,6 @@ urlpatterns = [
     path("estado/", clockin.status, name="status"),
     # S143: qué avisos recibe el trabajador (casillas).
     path("avisos/", clockin.reminder_choices_view, name="reminders"),
+    # S143: horario propio para los avisos (horario abierto).
+    path("avisos/horario/", clockin.own_schedule_view, name="own_schedule"),
 ]

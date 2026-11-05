@@ -250,6 +250,69 @@ def due_reminder(schedule_starts, schedule_ends, events, now,
     return None if slot is None else (ClockReminder.Kind.OUT, end, slot)
 
 
+def own_shifts_due(shifts, events, now, in_minutes, out_minutes):
+    """
+    The reminder due now for an own schedule with several shifts, as
+    (kind, scheduled time, slot minutes, slot key), or None.
+
+    ---
+
+    S143 (Miguel Ángel): el aviso que toca ahora con el horario propio
+    de quien tiene horario abierto, que puede tener varios tramos
+    (entrada y salida, pausa de comida o cena, entrada y salida). Como
+    (tipo, hora, minutos del aviso, clave del aviso) o None. Cada tramo
+    manda desde la mitad de la pausa anterior hasta la mitad de la
+    siguiente:
+    - Entrada: sin entrada ni cambio de tipo en ese tiempo, con la
+      jornada cerrada (sin pulsaciones o la última es una salida) y
+      antes de la salida del tramo.
+    - Salida: con la jornada abierta (la última pulsación es una entrada
+      o un cambio de tipo) desde hace menos de MAX_SHIFT_HOURS.
+    La clave del aviso es la de siempre en el primer tramo y "2:0",
+    "3:-5"... en los siguientes (uno por tramo y aviso).
+    """
+    from hr_calendar.clock_report import MAX_SHIFT_HOURS
+
+    if not shifts:
+        return None
+    tz = timezone.get_current_timezone()
+    day = now.date()
+
+    def at(t):
+        return timezone.make_aware(datetime.datetime.combine(day, t), tz)
+
+    bounds = [at(datetime.time.min)]
+    for (_s, prev_end), (next_start, _e) in zip(shifts, shifts[1:]):
+        bounds.append(at(prev_end) + (at(next_start) - at(prev_end)) / 2)
+    bounds.append(at(datetime.time.min) + datetime.timedelta(days=1))
+    open_kinds = (ClockEvent.Kind.IN, ClockEvent.Kind.CHANGE)
+    last = events[-1] if events else None
+    for index, (start, end) in enumerate(shifts):
+        if not bounds[index] <= now < bounds[index + 1]:
+            continue
+        inside = [e for e in events
+                  if bounds[index] <= e.pressed_at <= now]
+        due = None
+        if last is None or last.kind == ClockEvent.Kind.OUT:
+            if (not any(e.kind in open_kinds for e in inside)
+                    and now < at(end)):
+                slot = _latest(at(start), in_minutes, now)
+                if slot is not None:
+                    due = (ClockReminder.Kind.IN, start, slot)
+        else:
+            opening = _opening(events)
+            if opening is None or now - opening.pressed_at <= (
+                    datetime.timedelta(hours=MAX_SHIFT_HOURS)):
+                slot = _latest(at(end), out_minutes, now)
+                if slot is not None:
+                    due = (ClockReminder.Kind.OUT, end, slot)
+        if due is None:
+            return None
+        key = str(due[2]) if index == 0 else "%d:%d" % (index + 1, due[2])
+        return due + (key,)
+    return None
+
+
 def overnight_out_due(company_user, company, day, events, now,
                       out_minutes):
     """
@@ -479,8 +542,14 @@ def send_clock_reminders(company, now=None, log=logger.info):
     users = [
         p.company_user for p in people if states[p.pk].must_clock
     ]
-    # S143: los avisos que ha marcado cada uno (o los de por defecto).
-    chosen = {}
+    # S143: los avisos que ha marcado cada uno (o los de por defecto) y
+    # el horario propio de hoy de quien tiene horario abierto.
+    chosen, own_shifts = {}, {}
+    for setting in WorkerClockSetting.objects.filter(
+        person__in=people,
+    ).exclude(own_schedule="").select_related("person"):
+        own_shifts[setting.person.company_user_id] = (
+            setting.own_shifts_on(day))
     for p in people:
         state = states[p.pk]
         chosen[p.company_user_id] = (
@@ -506,15 +575,24 @@ def send_clock_reminders(company, now=None, log=logger.info):
             counters["sin_horario"] += 1
             continue
         schedule = _resolve_operator_schedule(company_user, company, day)
-        # S144 (Miguel Ángel): "en los horarios abiertos no tenemos
-        # ningún recordatorio".
-        if schedule is not None and schedule.is_open:
-            counters["abierto"] += 1
-            continue
         window = [e for e in window_by_user.get(company_user.pk, [])
                   if e.pressed_at <= now]
         due, reminder_day = None, day
-        if schedule is not None:
+        # S144 (Miguel Ángel): "en los horarios abiertos no tenemos
+        # ningún recordatorio". S143: salvo con el horario propio que se
+        # haya puesto el trabajador para los avisos.
+        if schedule is not None and schedule.is_open:
+            shifts = own_shifts.get(company_user.pk, [])
+            if not shifts:
+                counters["abierto"] += 1
+                continue
+            due = own_shifts_due(
+                shifts, events_by_user.get(company_user.pk, []), now,
+                in_minutes, out_minutes,
+            )
+            if due is None:
+                continue
+        elif schedule is not None:
             if exceptional_day(
                     company_user, company, day, schedule_starts(schedule),
                     window, now):
@@ -525,18 +603,22 @@ def send_clock_reminders(company, now=None, log=logger.info):
                 events_by_user.get(company_user.pk, []), now,
                 in_minutes, out_minutes,
             )
+            if due is not None:
+                due = due + (str(due[2]),)
         if due is None:
             # S144: la salida del turno de noche de ayer (también si hoy
             # no trabaja).
             due = overnight_out_due(company_user, company, day, window, now,
                                     out_minutes)
+            if due is not None:
+                due = due + (str(due[2]),)
             reminder_day = day - datetime.timedelta(days=1)
         if due is None:
             if schedule is None:
                 counters["sin_horario"] += 1
             continue
-        kind, scheduled_time, slot = due
-        if (company_user.pk, reminder_day, kind, str(slot)) in already:
+        kind, scheduled_time, slot, slot_key = due
+        if (company_user.pk, reminder_day, kind, slot_key) in already:
             continue
         person = _person(company_user)
         if _away(company_user, person, reminder_day):
@@ -585,7 +667,7 @@ def send_clock_reminders(company, now=None, log=logger.info):
         ClockReminder.objects.create(
             company=company, company_user=company_user, day=reminder_day,
             kind=kind,
-            scheduled_time=scheduled_time, phone=phone, slot=str(slot),
+            scheduled_time=scheduled_time, phone=phone, slot=slot_key,
             message_sid=getattr(message, "sid", "") or "",
             sent_as_text=getattr(message, "sent_as_text", False),
         )

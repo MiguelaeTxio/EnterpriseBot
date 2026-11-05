@@ -90,6 +90,8 @@ del anexo H24), mantenido para trazabilidad y para que un reintento del
 paso de generación nunca cree una tarea duplicada para el mismo
 periodo.
 """
+import datetime
+
 from django.db import models
 
 from document_explorer.models import DocumentIndexEntry, PersonIdentity
@@ -1509,6 +1511,33 @@ class WorkerClockSetting(models.Model):
         help_text="Claves separadas por comas (0, 3, 30, 60, h). Vacío: "
                   "los de por defecto.",
     )
+    # S143 (Miguel Ángel): quien tiene horario abierto (fichaje por
+    # tipos, en una obra durante una temporada) se pone su propio horario
+    # para los avisos: tramos de entrada y salida (las pausas de comida o
+    # cena quedan entre tramos), los días de la semana y hasta cuándo.
+    # Solo sirve para los avisos; no se compara con la jornada.
+    MAX_OWN_SHIFTS = 4
+    own_schedule = models.CharField(
+        max_length=60,
+        blank=True,
+        default="",
+        verbose_name="Horario propio para los avisos",
+        help_text="Tramos HH:MM-HH:MM separados por comas. Vacío: ninguno.",
+    )
+    own_schedule_days = models.CharField(
+        max_length=20,
+        blank=True,
+        default="0,1,2,3,4",
+        verbose_name="Días del horario propio",
+        help_text="Días de la semana (0 lunes ... 6 domingo) separados por "
+                  "comas.",
+    )
+    own_schedule_until = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Horario propio hasta",
+        help_text="Último día en que vale. Vacío: sin fecha de fin.",
+    )
     # S141 (Miguel Ángel): el horario va en el trabajador, no en su
     # usuario del panel: chóferes, gruistas y administrativos no tienen
     # (ni tendrán de momento) acceso al panel, solo al fichaje. Se pone
@@ -1562,6 +1591,42 @@ class WorkerClockSetting(models.Model):
         Los avisos de salida elegidos (o los de por defecto).
         """
         return self._keys(self.out_reminders, self.DEFAULT_OUT_REMINDERS)
+
+    def own_shifts(self):
+        """
+        The worker's own shifts as [(start time, end time)], in order.
+        ---
+        Los tramos del horario propio (S143) como [(entrada, salida)],
+        en orden; los que no se entienden se saltan.
+        """
+        shifts = []
+        for item in (self.own_schedule or "").split(","):
+            try:
+                start, end = item.split("-")
+                shifts.append((
+                    datetime.datetime.strptime(start.strip(), "%H:%M").time(),
+                    datetime.datetime.strptime(end.strip(), "%H:%M").time(),
+                ))
+            except ValueError:
+                continue
+        return shifts
+
+    def own_days(self):
+        return [int(d) for d in (self.own_schedule_days or "").split(",")
+                if d.strip().isdigit()]
+
+    def own_shifts_on(self, day):
+        """
+        The own shifts that apply on `day` ([] if none).
+        ---
+        Los tramos del horario propio que valen el día `day`: si ese día
+        de la semana está marcado y no ha pasado la fecha de fin.
+        """
+        if self.own_schedule_until and day > self.own_schedule_until:
+            return []
+        if day.weekday() not in self.own_days():
+            return []
+        return self.own_shifts()
 
 
 class ClockType(models.Model):

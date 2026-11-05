@@ -121,6 +121,62 @@ def set_worker_reminders(person, in_keys, out_keys):
     return setting
 
 
+def set_worker_own_schedule(person, shifts, days, until):
+    """
+    The worker's own schedule for the reminders (open schedules).
+    ---
+    El horario propio para los avisos que se pone el trabajador con
+    horario abierto (S143): `shifts` como [["07:00", "13:00"], ...] (las
+    pausas de comida o cena quedan entre tramos), `days` los días de la
+    semana (0 lunes ... 6 domingo) y `until` "AAAA-MM-DD" o vacío. Sin
+    tramos se quita. ValueError si algo no vale: cada salida después de
+    su entrada y cada tramo después del anterior, en el mismo día.
+    """
+    import datetime
+
+    if len(shifts) > WorkerClockSetting.MAX_OWN_SHIFTS:
+        raise ValueError("Como mucho %d tramos."
+                         % WorkerClockSetting.MAX_OWN_SHIFTS)
+    parsed, previous_end = [], None
+    for shift in shifts:
+        try:
+            start, end = shift
+            start_t = datetime.datetime.strptime(str(start), "%H:%M").time()
+            end_t = datetime.datetime.strptime(str(end), "%H:%M").time()
+        except (TypeError, ValueError):
+            raise ValueError("Pon la hora de entrada y la de salida de "
+                             "cada tramo.") from None
+        if end_t <= start_t:
+            raise ValueError("La salida va después de la entrada.")
+        if previous_end is not None and start_t < previous_end:
+            raise ValueError("Cada tramo va después del anterior.")
+        previous_end = end_t
+        parsed.append("%s-%s" % (start_t.strftime("%H:%M"),
+                                 end_t.strftime("%H:%M")))
+    try:
+        day_numbers = sorted({int(d) for d in days})
+    except (TypeError, ValueError):
+        day_numbers = [-1]
+    if any(d < 0 or d > 6 for d in day_numbers):
+        raise ValueError("Día de la semana no válido.")
+    if parsed and not day_numbers:
+        raise ValueError("Marca algún día.")
+    try:
+        until_date = (datetime.date.fromisoformat(str(until)) if until
+                      else None)
+    except ValueError:
+        raise ValueError("La fecha de fin no es válida.") from None
+    setting, _created = WorkerClockSetting.objects.get_or_create(
+        person=person,
+    )
+    setting.own_schedule = ",".join(parsed)
+    setting.own_schedule_days = ",".join(str(d) for d in day_numbers)
+    setting.own_schedule_until = until_date
+    setting.save(update_fields=["own_schedule", "own_schedule_days",
+                                "own_schedule_until", "updated_at"])
+    return setting
+
+
 def current_sections(person_ids, day=None):
     """
     {person id: Section in force on `day` (today by default) or None}.

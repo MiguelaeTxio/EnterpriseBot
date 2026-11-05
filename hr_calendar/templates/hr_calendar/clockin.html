@@ -76,6 +76,13 @@ responsable corregirá la salida (clock_report.forgotten_after).
         #reminders .group { font-weight: 700; margin-top: 10px; }
         #reminders label { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 1rem; }
         #reminders input[type=checkbox] { width: 22px; height: 22px; }
+        #own .shift { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+        #own input[type=time], #own input[type=date] { font-size: 1rem; padding: 6px; border: 1px solid #ced4da; border-radius: 6px; }
+        #own .days { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+        #own .days label { padding: 2px 0; }
+        #own .small-btn { background: none; border: 0; color: #0d6efd; font-weight: 600; padding: 8px 0; font-size: .95rem; }
+        #own .del { background: none; border: 0; color: #842029; font-size: 1.3rem; }
+        #own-save { background: #198754; color: #fff; border: 0; border-radius: 8px; font-size: 1rem; padding: 10px; width: 100%; margin-top: 10px; font-weight: 700; }
         #update { background: #cfe2ff; border-color: #9ec5fe; }
         #btn-update { background: #0d6efd; color: #fff; border: 0; border-radius: 8px; font-size: 1rem; padding: 12px; width: 100%; margin-top: 8px; font-weight: 700; }
         a.action { display: block; margin-top: 8px; padding: 12px; border-radius: 8px; background: #0d6efd; color: #fff; text-align: center; font-weight: 700; text-decoration: none; }
@@ -137,6 +144,19 @@ responsable corregirá la salida (clock_report.forgotten_after).
         <div class="group">Salida</div>
         <div id="reminders-out"></div>
         <div class="muted mt" id="reminder-state"></div>
+        <!-- S143: con horario abierto, cada uno se pone su horario para los avisos. -->
+        <div class="hidden" id="own">
+            <div class="group">Mi horario para los avisos</div>
+            <div class="muted">Tu horario es abierto. Si vas a estar una temporada con el mismo horario (por ejemplo en una obra), ponlo aquí y te avisaremos a esas horas. Cada tramo es una entrada y una salida; la comida o la cena quedan entre tramos. Solo sirve para los avisos.</div>
+            <div id="own-shifts"></div>
+            <button type="button" class="small-btn" id="own-add">+ Añadir tramo</button>
+            <div class="group">Días</div>
+            <div id="own-days" class="days"></div>
+            <label class="mt" for="own-until">Hasta (vacío: sin fecha de fin)</label>
+            <input type="date" id="own-until">
+            <button type="button" id="own-save">Guardar mi horario</button>
+            <div class="muted mt" id="own-state"></div>
+        </div>
     </div>
 
     <div class="card">
@@ -299,7 +319,78 @@ responsable corregirá la salida (clock_report.forgotten_after).
         box.classList.remove("hidden");
         fillChecks("reminders-in", info.in_choices, info.in_reminders || [], "in");
         fillChecks("reminders-out", info.out_choices, info.out_reminders || [], "out");
+        showOwn(info);
     }
+    // S143: horario propio para los avisos (solo con horario abierto).
+    const OWN_URL = "/fichaje/avisos/horario/";
+    const DAY_NAMES = ["L", "M", "X", "J", "V", "S", "D"];
+    let ownMax = 4;
+    function addShiftRow(start, end) {
+        const box = document.getElementById("own-shifts");
+        if (box.children.length >= ownMax) return;
+        const row = document.createElement("div");
+        row.className = "shift";
+        row.innerHTML = '<span>Entrada</span><input type="time" class="own-in"><span>Salida</span><input type="time" class="own-out"><button type="button" class="del" title="Quitar">×</button>';
+        row.querySelector(".own-in").value = start || "";
+        row.querySelector(".own-out").value = end || "";
+        row.querySelector(".del").addEventListener("click", function () { row.remove(); });
+        box.appendChild(row);
+    }
+    function showOwn(info) {
+        const own = document.getElementById("own");
+        if (!info.own_allowed) { own.classList.add("hidden"); return; }
+        own.classList.remove("hidden");
+        if (own.contains(document.activeElement)) return;
+        ownMax = info.own_max || 4;
+        document.getElementById("own-shifts").innerHTML = "";
+        (info.own_shifts || []).forEach(function (s) { addShiftRow(s[0], s[1]); });
+        if (!(info.own_shifts || []).length) addShiftRow("", "");
+        const days = document.getElementById("own-days");
+        days.innerHTML = "";
+        DAY_NAMES.forEach(function (name, i) {
+            const label = document.createElement("label");
+            const check = document.createElement("input");
+            check.type = "checkbox";
+            check.value = i;
+            check.checked = (info.own_days || []).indexOf(i) !== -1;
+            label.appendChild(check);
+            label.appendChild(document.createTextNode(name));
+            days.appendChild(label);
+        });
+        document.getElementById("own-until").value = info.own_until || "";
+    }
+    document.getElementById("own-add").addEventListener("click", function () { addShiftRow("", ""); });
+    document.getElementById("own-save").addEventListener("click", function () {
+        const state = document.getElementById("own-state");
+        const shifts = Array.prototype.map.call(
+            document.querySelectorAll("#own-shifts .shift"),
+            function (row) { return [row.querySelector(".own-in").value, row.querySelector(".own-out").value]; }
+        ).filter(function (s) { return s[0] || s[1]; });
+        const days = Array.prototype.map.call(
+            document.querySelectorAll("#own-days input:checked"), function (c) { return parseInt(c.value, 10); });
+        state.textContent = "Guardando…";
+        state.className = "muted mt";
+        fetch(OWN_URL, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({shifts: shifts, days: days, until: document.getElementById("own-until").value}),
+        }).then(function (response) {
+            return response.json().then(function (data) {
+                if (!response.ok) throw new Error(data.error || "No se ha podido guardar.");
+                const info = load("fichaje-estado") || {};
+                ["own_shifts", "own_days", "own_until"].forEach(function (k) { info[k] = data[k]; });
+                store("fichaje-estado", info);
+                document.activeElement.blur();
+                showOwn(Object.assign({}, info, {own_allowed: true, own_max: data.own_max}));
+                state.textContent = shifts.length ? "Guardado." : "Horario quitado: sin avisos.";
+                state.className = "ok mt";
+            });
+        }).catch(function (err) {
+            state.textContent = err && err.message && err.message !== "Failed to fetch" ? err.message : "No se ha podido guardar. Inténtalo con cobertura.";
+            state.className = "err mt";
+        });
+    });
     function checked(group) {
         return Array.prototype.map.call(
             document.querySelectorAll('#reminders input[data-group="' + group + '"]:checked'),
