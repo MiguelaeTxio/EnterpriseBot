@@ -19,6 +19,10 @@ salida a la hora, 3 minutos, media hora, una hora y cada hora, cada uno
 solo si todavía no ha fichado. Y aviso de versión nueva: la página lleva
 su versión (app_version) y, si /fichaje/estado/ da otra, ofrece
 recargar (borra la copia guardada y vuelve a abrir).
+S143: salida olvidada. Una jornada abierta a su hora se da por olvidada
+desde 3 horas antes de la entrada del día siguiente (forgotten_after de
+/fichaje/estado/): el botón ficha la entrada de hoy y se avisa de que el
+responsable corregirá la salida (clock_report.forgotten_after).
 {% endcomment %}
 <!doctype html>
 <html lang="es">
@@ -107,6 +111,12 @@ recargar (borra la copia guardada y vuelve a abrir).
             <div class="muted">Entra en el panel con tu usuario y contraseña; cuando te pregunte, marca este móvil como de confianza y volverás aquí.</div>
             <a class="action" href="/panel/login/?force_form=1&amp;next=/fichaje/">Entrar en el panel</a>
         </div>
+    </div>
+
+    <!-- S143: no fichó la salida de la jornada anterior. -->
+    <div class="card hidden" id="forgotten" style="background:#fff3cd;border-color:#ffe69c">
+        <div class="fw" id="forgotten-text"></div>
+        <div class="muted">Ahora fichas la entrada de hoy.</div>
     </div>
 
     <div id="clock">--:--:--</div>
@@ -357,12 +367,22 @@ recargar (borra la copia guardada y vuelve a abrir).
         });
         return last;
     }
+    // S143: la jornada abierta que conoce el servidor ya se da por
+    // olvidada (no fichó la salida): lo que toca es la entrada de hoy.
+    function forgottenNow(records) {
+        const info = load("fichaje-estado");
+        const last = lastKnown(records);
+        return !!(info && info.forgotten_after && info.last && last && last.id === info.last.id
+                  && (last.kind === "IN" || last.kind === "CHG")
+                  && Date.now() >= Date.parse(info.forgotten_after));
+    }
     function decideKind(records) {
         const info = load("fichaje-estado");
         const hours = info && info.max_shift_hours ? info.max_shift_hours : 24;
         const last = lastKnown(records);
         // S141: un cambio de tipo deja la jornada abierta, como la entrada.
         if (!last || (last.kind !== "IN" && last.kind !== "CHG")) return "IN";
+        if (forgottenNow(records)) return "IN";
         return (Date.now() - Date.parse(last.pressed_at)) > hours * 3600000 ? "IN" : "OUT";
     }
     function showNext(kind) {
@@ -437,6 +457,9 @@ recargar (borra la copia guardada y vuelve a abrir).
             const serverLast = info && info.last ? info.last : null;
             showNext(decideKind(records));
             showTypes(records);
+            const forgotten = forgottenNow(records) && info && info.forgotten;
+            document.getElementById("forgotten").classList.toggle("hidden", !forgotten);
+            document.getElementById("forgotten-text").textContent = forgotten ? info.forgotten : "";
             document.getElementById("last").textContent = serverLast
                 ? "Último fichaje recibido: " + label(serverLast) + " · " + fmt(serverLast.pressed_at)
                 : "";

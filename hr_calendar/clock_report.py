@@ -93,7 +93,75 @@ OFF_SCHEDULE = "Fuera de horario"
 MANUAL_PRESS = "Fichaje manual"
 
 
-def next_kind(last_event, at):
+# S143: how long before the first start time of the next day an open
+# shift begun at its scheduled time counts as forgotten (its next press
+# is that day's IN). The same 3 hours as MAX_COMPARE_MINUTES.
+# Cuánto antes de la primera hora de entrada del día siguiente una
+# jornada abierta a su hora se da por olvidada.
+FORGOTTEN_OUT_MARGIN = datetime.timedelta(minutes=180)
+
+
+def forgotten_after(company_user, opening):
+    """
+    From when an open shift counts as forgotten, or None.
+    ---
+    Desde cuándo una jornada abierta se da por olvidada (S143, Miguel
+    Ángel: "ficho por la mañana y ya no vuelvo a fichar, y al día
+    siguiente cuando voy a fichar por la mañana, ¿qué ocurre?"): 3 horas
+    antes de la primera hora de entrada del horario del día siguiente al
+    de la entrada. Solo si la entrada fue a su hora (a MAX_COMPARE_MINUTES
+    o menos de una hora de entrada de ese día): una entrada fuera de
+    horario (un servicio de noche) sigue con el límite de
+    MAX_SHIFT_HOURS para poder fichar su salida de madrugada. Sin
+    horario (o abierto) esos días, None. Un horario de noche (guardas)
+    empieza tarde, así que su salida de la mañana siguiente no cuenta
+    como olvido.
+    """
+    from panel.views_operator import _resolve_operator_schedule
+
+    if company_user is None or opening is None:
+        return None
+    opened = timezone.localtime(opening.pressed_at)
+    company = company_user.company
+    starts = schedule_starts(
+        _resolve_operator_schedule(company_user, company, opened.date()))
+    minutes = opened.hour * 60 + opened.minute
+    if not starts or min(
+            abs(t.hour * 60 + t.minute - minutes) for t in starts
+    ) > MAX_COMPARE_MINUTES:
+        return None
+    next_day = opened.date() + datetime.timedelta(days=1)
+    next_starts = schedule_starts(
+        _resolve_operator_schedule(company_user, company, next_day))
+    if not next_starts:
+        return None
+    return timezone.make_aware(
+        datetime.datetime.combine(next_day, min(next_starts)),
+        timezone.get_current_timezone(),
+    ) - FORGOTTEN_OUT_MARGIN
+
+
+def open_shift_opening(company_user, last_event):
+    """
+    The IN that opened the shift `last_event` belongs to, or None.
+    ---
+    La ENTRADA que abrió la jornada de `last_event` (él mismo si es una
+    entrada; la última entrada anterior si es un cambio de tipo), o None
+    si la jornada no está abierta.
+    """
+    if last_event is None:
+        return None
+    if last_event.kind == ClockEvent.Kind.IN:
+        return last_event
+    if last_event.kind != ClockEvent.Kind.CHANGE:
+        return None
+    return ClockEvent.objects.current().filter(
+        company_user=company_user, kind=ClockEvent.Kind.IN,
+        pressed_at__lte=last_event.pressed_at,
+    ).order_by("-pressed_at", "-pk").first()
+
+
+def next_kind(last_event, at, company_user=None):
     """
     The kind of the next press of the single "Fichar" button (S130):
     OUT when the last press before `at` is an IN still open, i.e. no
@@ -104,7 +172,10 @@ def next_kind(last_event, at):
     SALIDA si la última pulsación antes de `at` es una ENTRADA todavía
     abierta (de hace MAX_SHIFT_HOURS o menos, el mismo límite que
     build_shifts, para que un turno de noche que cruza la medianoche
-    cierre bien); ENTRADA en cualquier otro caso.
+    cierre bien); ENTRADA en cualquier otro caso. S143: con
+    `company_user`, también ENTRADA si la jornada abierta se da por
+    olvidada (forgotten_after): queda "sin salida" para que la corrija su
+    responsable.
     """
     # S141: un cambio de tipo deja la jornada abierta, como la entrada.
     if last_event is None or last_event.kind not in (
@@ -113,6 +184,11 @@ def next_kind(last_event, at):
     limit = datetime.timedelta(hours=MAX_SHIFT_HOURS)
     if at - last_event.pressed_at > limit:
         return ClockEvent.Kind.IN
+    if company_user is not None:
+        since = forgotten_after(
+            company_user, open_shift_opening(company_user, last_event))
+        if since is not None and at >= since:
+            return ClockEvent.Kind.IN
     return ClockEvent.Kind.OUT
 
 

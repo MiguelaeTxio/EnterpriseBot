@@ -36,6 +36,7 @@ POST desde otra web nunca la lleva -- por eso el endpoint de recepción
 puede ir sin CSRF: una pulsación guardada sin cobertura se envía más
 tarde, quizá sin un token CSRF válido.
 """
+import datetime
 import hashlib
 import json
 import logging
@@ -230,10 +231,11 @@ def record_press(company_user, payload, user_agent=""):
     accuracy = _accuracy(payload.get("accuracy"))
     if latitude is None or longitude is None:
         latitude = longitude = accuracy = None
+    forgotten = None
     try:
         with transaction.atomic():
             if auto:
-                kind = _decide_kind(company_user, pressed_at)
+                kind, forgotten = _decide_kind(company_user, pressed_at)
                 # S141: con la jornada abierta, elegir un tipo es cambiar
                 # de tipo; la salida llega sin tipo.
                 if kind == ClockEvent.Kind.OUT and clock_type is not None:
@@ -262,7 +264,31 @@ def record_press(company_user, payload, user_agent=""):
         if existing is None:
             raise
         return PressResult(existing, False)
-    return _after_save(event, company_user)
+    result = _after_save(event, company_user)
+    if forgotten is not None:
+        # S143: la entrada de hoy deja la jornada olvidada "sin salida".
+        result.parte_notice = " ".join(filter(None, (
+            forgotten_text(forgotten), result.parte_notice)))
+        result.parte_ok = False
+    return result
+
+
+def forgotten_text(opening):
+    """
+    The notice of a forgotten clock-out, for the worker.
+    ---
+    El aviso al trabajador de una salida que no fichó (S143): "No
+    fichaste la salida del miércoles 04/11 (entrada 07:55). Tu
+    responsable la corregirá."
+    """
+    days = ("lunes", "martes", "miércoles", "jueves", "viernes",
+            "sábado", "domingo")
+    opened = timezone.localtime(opening.pressed_at)
+    return (
+        "No fichaste la salida del %s %s (entrada %s). Tu responsable la "
+        "corregirá." % (days[opened.weekday()], opened.strftime("%d/%m"),
+                        opened.strftime("%H:%M"))
+    )
 
 
 def _clock_type_of(company_user, payload):
@@ -295,17 +321,20 @@ def _clock_type_of(company_user, payload):
 
 def _decide_kind(company_user, pressed_at):
     """
-    IN or OUT for an `auto` press (clock_report.next_kind against the
-    user's last press before it). The user's row is locked so two
-    presses at once do not both read the same last press.
+    (IN or OUT, forgotten opening) for an `auto` press
+    (clock_report.next_kind against the user's last press before it).
+    The user's row is locked so two presses at once do not both read
+    the same last press.
     ---
-    ENTRADA o SALIDA para una pulsación `auto` (clock_report.next_kind
-    con la última pulsación del usuario anterior a ella). Se bloquea la
-    fila del usuario para que dos pulsaciones a la vez no lean la misma
-    última pulsación.
+    (ENTRADA o SALIDA, entrada olvidada) para una pulsación `auto`
+    (clock_report.next_kind con la última pulsación del usuario anterior
+    a ella). Se bloquea la fila del usuario para que dos pulsaciones a
+    la vez no lean la misma última pulsación. S143: si es ENTRADA porque
+    la jornada abierta se da por olvidada, su entrada; si no, None.
     """
     from ivr_config.models import CompanyUser
     from hr_calendar.clock_report import next_kind
+    from hr_calendar.clock_report import open_shift_opening
 
     CompanyUser.objects.select_for_update().filter(
         pk=company_user.pk,
@@ -315,7 +344,13 @@ def _decide_kind(company_user, pressed_at):
             company_user=company_user, pressed_at__lte=pressed_at,
         ).order_by("-pressed_at", "-pk").first()
     )
-    return next_kind(last, pressed_at)
+    kind = next_kind(last, pressed_at, company_user)
+    if kind == ClockEvent.Kind.IN and last is not None and last.kind in (
+            ClockEvent.Kind.IN, ClockEvent.Kind.CHANGE):
+        # Una entrada con la jornada abierta: la anterior queda sin
+        # salida (por el olvido de S143 o por las 24 horas).
+        return kind, open_shift_opening(company_user, last)
+    return kind, None
 
 
 def _build_event(company_user, payload, client_id, kind, pressed_at,
@@ -493,6 +528,8 @@ def status(request):
     if company_user is None:
         return _untrusted_response(request)
     from hr_calendar.clock_report import MAX_SHIFT_HOURS, next_kind
+    from hr_calendar.clock_report import forgotten_after
+    from hr_calendar.clock_report import open_shift_opening
 
     now = timezone.now()
     last = (
@@ -500,6 +537,17 @@ def status(request):
             company_user=company_user, pressed_at__lte=now,
         ).select_related("clock_type").order_by("-pressed_at", "-pk").first()
     )
+    # S143: desde cuándo la jornada abierta se da por olvidada (para que
+    # el móvil decida igual sin cobertura) y, si ya lo está, el aviso.
+    # La página lo enseña en cuanto llega `forgotten_after`.
+    opening = open_shift_opening(company_user, last)
+    since = forgotten_after(company_user, opening)
+    if opening is not None:
+        # Sin horario, la regla de siempre: pasadas MAX_SHIFT_HOURS.
+        limit = last.pressed_at + datetime.timedelta(hours=MAX_SHIFT_HOURS)
+        since = min(since, limit) if since is not None else limit
+    kind_now = next_kind(last, now, company_user)
+    forgotten = forgotten_text(opening) if since is not None else ""
     # S141: quien ficha por tipos ve la lista de tipos activos.
     by_types = uses_types(company_user)
     types = active_types(company_user.company) if by_types else []
@@ -513,7 +561,9 @@ def status(request):
         "name": _worker_name(company_user),
         "company": company_user.company.name,
         "last": _event_json(last) if last is not None else None,
-        "next_kind": next_kind(last, now),
+        "next_kind": kind_now,
+        "forgotten_after": since.isoformat() if since else None,
+        "forgotten": forgotten,
         "max_shift_hours": MAX_SHIFT_HOURS,
         "uses_types": by_types,
         "clock_types": [_type_json(t) for t in types],
