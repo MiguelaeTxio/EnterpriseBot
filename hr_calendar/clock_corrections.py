@@ -100,6 +100,8 @@ def correct_event(event_id, corrected_by, action, reason, new_kind="",
                 sent_by=ClockEvent.SentBy.CORRECTION,
                 user_agent=(user_agent or "")[:200],
                 clock_type=new_clock_type,
+                # S143: la corrección conserva "No he parado para comer".
+                no_meal_break=event.no_meal_break,
             )
         else:
             new_kind, new_pressed_at, new_clock_type = "", None, None

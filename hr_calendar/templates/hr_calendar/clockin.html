@@ -83,6 +83,8 @@ responsable corregirá la salida (clock_report.forgotten_after).
         #own .small-btn { background: none; border: 0; color: #0d6efd; font-weight: 600; padding: 8px 0; font-size: .95rem; }
         #own .del { background: none; border: 0; color: #842029; font-size: 1.3rem; }
         #own-save { background: #198754; color: #fff; border: 0; border-radius: 8px; font-size: 1rem; padding: 10px; width: 100%; margin-top: 10px; font-weight: 700; }
+        #no-meal { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 1.05rem; font-weight: 600; }
+        #no-meal input { width: 24px; height: 24px; }
         #update { background: #cfe2ff; border-color: #9ec5fe; }
         #btn-update { background: #0d6efd; color: #fff; border: 0; border-radius: 8px; font-size: 1rem; padding: 12px; width: 100%; margin-top: 8px; font-weight: 700; }
         a.action { display: block; margin-top: 8px; padding: 12px; border-radius: 8px; background: #0d6efd; color: #fff; text-align: center; font-weight: 700; text-decoration: none; }
@@ -131,6 +133,9 @@ responsable corregirá la salida (clock_report.forgotten_after).
         <div id="current-type"></div>
         <div id="types-title">Fichar entrada como:</div>
         <div id="types-grid"></div>
+        <!-- S143: sin esta casilla y sin pausa fichada se descuenta una hora de comida (y otra de cena si toca). -->
+        <label id="no-meal" class="hidden"><input type="checkbox" id="no-meal-check"> No he parado para comer</label>
+        <div id="no-meal-help" class="muted hidden">Si no fichas la pausa para comer ni marcas esta casilla, se descuenta una hora de comida (y otra de cena si trabajas a la hora de cenar). Márcala antes de fichar la salida.</div>
     </div>
     <button type="button" id="btn-fichar">Fichar entrada</button>
     <div id="status"></div>
@@ -500,6 +505,13 @@ responsable corregirá la salida (clock_report.forgotten_after).
         const last = lastKnown(records);
         const current = open && last ? last.clock_type : null;
         btn.classList.toggle("hidden", !open);
+        // S143: "No he parado para comer", solo con la jornada abierta;
+        // se recuerda hasta la salida.
+        const noMeal = document.getElementById("no-meal-check");
+        document.getElementById("no-meal").classList.toggle("hidden", !open);
+        document.getElementById("no-meal-help").classList.toggle("hidden", !open);
+        if (!open) store("fichaje-sin-comida", null);
+        noMeal.checked = open && !!load("fichaje-sin-comida");
         document.getElementById("current-type").textContent = open && last && last.clock_type_name
             ? "En curso: " + last.clock_type_name : "";
         document.getElementById("types-title").textContent = open ? "Cambiar a:" : "Fichar entrada como:";
@@ -704,6 +716,9 @@ responsable corregirá la salida (clock_report.forgotten_after).
         document.getElementById("btn-fichar").disabled = disabled;
         document.querySelectorAll("#types-grid button").forEach(function (b) { b.disabled = disabled; });
     }
+    document.getElementById("no-meal-check").addEventListener("change", function () {
+        store("fichaje-sin-comida", this.checked ? true : null);
+    });
     function press(type) {
         const pressedAt = new Date();   // la hora se toma AL PULSAR
         const chosen = type && type.id ? type : null;
@@ -721,6 +736,8 @@ responsable corregirá la salida (clock_report.forgotten_after).
                     clock_type: chosen ? chosen.id : null,
                     clock_type_name: chosen ? chosen.name : "",
                     own_vehicle: !!(chosen && chosen.own_vehicle),
+                    // S143: "No he parado para comer" (fichaje por tipos).
+                    no_meal_break: byTypes() && !!load("fichaje-sin-comida"),
                     // Con cobertura y nada pendiente decide el servidor.
                     auto: navigator.onLine && nothingPending,
                     pressed_at: pressedAt.toISOString(),

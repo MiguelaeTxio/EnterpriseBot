@@ -255,6 +255,9 @@ def record_press(company_user, payload, user_agent=""):
                 payload.get("own_vehicle") and clock_type is not None
                 and clock_type.role == ClockType.ROLE_TRAVEL
             )
+            # S143: "No he parado para comer" (fichaje por tipos).
+            event.no_meal_break = bool(
+                by_types and payload.get("no_meal_break"))
             event.save()
     except IntegrityError:
         # Two sends of the same press at once (page and background).

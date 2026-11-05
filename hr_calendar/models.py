@@ -1020,6 +1020,14 @@ class ClockEvent(models.Model):
         verbose_name="Con su vehículo",
         help_text="Solo en un tramo de desplazamiento.",
     )
+    # S143 (Miguel Ángel): en el fichaje por tipos, "No he parado para
+    # comer". Sin esa casilla y sin pausa fichada, se descuenta una hora
+    # de comida (y otra de cena si la jornada toca la hora de cenar).
+    no_meal_break = models.BooleanField(
+        default=False,
+        verbose_name="No he parado para comer",
+        help_text="Marcada por el trabajador en la jornada.",
+    )
     clock_type = models.ForeignKey(
         "hr_calendar.ClockType",
         null=True,

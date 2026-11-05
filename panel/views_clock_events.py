@@ -886,6 +886,12 @@ def worker_detail_data(company, person, date_from, date_to):
         "cancelled": [],
         # S144: pausas para comer (dietas) y tramos con vehículo propio.
         "meals": clock_extras.shift_meals(s, bases),
+        # S143: comida o cena sin fichar que se descuenta (1 h cada una).
+        "auto_meals": s.auto_meals,
+        "no_meal_break": any(
+            getattr(e, "no_meal_break", False)
+            for e in [s.clock_in] + list(s.changes) + [s.clock_out]
+            if e is not None),
         "trips": clock_extras.shift_trips(s, budget),
     } for s in report.shifts]
     # S144: lo trabajado de más ese día, en la última jornada del día.

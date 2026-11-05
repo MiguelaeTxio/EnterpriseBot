@@ -230,6 +230,10 @@ class Shift:
     # Pausa de comida del parte de ese día dentro de la jornada (ya no
     # se ficha): no es tiempo trabajado.
     lunch_seconds: int = 0
+    # S143: comida o cena que no se fichó (fichaje por tipos sin "No he
+    # parado para comer"): una hora cada una, no es tiempo trabajado.
+    auto_meal_seconds: int = 0
+    auto_meals: list = field(default_factory=list)
     # S141: cambios de tipo dentro de la jornada, en orden.
     changes: list = field(default_factory=list)
     # S144: día flexible tras una jornada con poco descanso (REST_HOURS):
@@ -395,7 +399,8 @@ class Shift:
             return 0
         gross = int((self.clock_out.pressed_at
                      - self.clock_in.pressed_at).total_seconds())
-        return max(gross - self.lunch_seconds - self.uncounted_seconds, 0)
+        return max(gross - self.lunch_seconds - self.auto_meal_seconds
+                   - self.uncounted_seconds, 0)
 
     @property
     def issue(self):
@@ -914,6 +919,106 @@ def _deduct_parte_lunch(company, user_id, shifts):
         shift.lunch_seconds = max(int(overlap), 0)
 
 
+AUTO_MEAL_SECONDS = 3600
+# Lo que tiene que tocar la jornada de la franja de comida o de cena
+# (clock_extras.MEAL_LUNCH / MEAL_DINNER) para que se descuente.
+AUTO_MEAL_MIN_OVERLAP = 3600
+# Un hueco entre dos jornadas del mismo día dentro de la franja de al
+# menos esto es la comida (o la cena) sin fichar como pausa.
+AUTO_MEAL_GAP = 30 * 60
+
+
+def _parte_no_lunch_days(company, user_id, shifts):
+    """
+    Days whose parte says "No he parado a comer".
+    ---
+    Los días de esas jornadas con un parte que dice "No he parado a
+    comer" (S143: tampoco se descuenta la comida sin fichar).
+    """
+    from work_order_processor.models import WorkOrderEntry
+
+    days = {
+        shift.day for shift in shifts
+        if shift.clock_out is not None and shift.clock_in is not None
+        and any(e.clock_type_id for e in [shift.clock_in]
+                + list(shift.changes))
+    }
+    if not days:
+        return set()
+    return set(WorkOrderEntry.objects.filter(
+        work_order__company=company,
+        work_order__uploaded_by_id=user_id,
+        work_date__in=days,
+        no_lunch_break=True,
+    ).values_list("work_date", flat=True))
+
+
+def _deduct_missing_meals(shifts, no_lunch_days=()):
+    """
+    One hour for lunch (and one for dinner) not clocked in typed shifts.
+
+    ---
+
+    S143 (Miguel Ángel): en el fichaje por tipos, si no se marca "No he
+    parado para comer" y no se ha fichado la pausa, "vamos a descontar
+    una hora de comida y una hora de cena si ha pillado en la zona de
+    noche". Por día, con todas sus jornadas cerradas y alguna con tipo:
+    - Nada si alguna pulsación del día lleva "No he parado para comer"
+      (ni la comida si el parte del día dice "No he parado a comer").
+    - Por cada franja (comida 12-17, cena 19-24, las de las pausas): nada
+      si hay una pausa para comer fichada que empieza en esa franja, una
+      pausa del parte (solo comida), o un hueco de al menos AUTO_MEAL_GAP
+      entre dos jornadas dentro de la franja; si no, y la jornada toca
+      la franja al menos AUTO_MEAL_MIN_OVERLAP, una hora menos en la
+      jornada que más la toca.
+    """
+    from hr_calendar.clock_extras import (
+        DINNER, LUNCH, MEAL_DINNER, MEAL_LUNCH, meal_kind,
+    )
+
+    tz = timezone.get_current_timezone()
+    by_day = {}
+    for shift in shifts:
+        by_day.setdefault(shift.day, []).append(shift)
+    for day, same in by_day.items():
+        if any(s.clock_in is None or s.clock_out is None for s in same):
+            continue
+        marks = [e for s in same
+                 for e in [s.clock_in] + list(s.changes) + [s.clock_out]]
+        if not any(e.clock_type_id for e in marks):
+            continue
+        if any(getattr(e, "no_meal_break", False) for e in marks):
+            continue
+        same = sorted(same, key=lambda s: s.clock_in.pressed_at)
+        for kind, (zone_from, zone_to) in ((LUNCH, MEAL_LUNCH),
+                                           (DINNER, MEAL_DINNER)):
+            zone_start = timezone.make_aware(
+                datetime.datetime.combine(day, zone_from), tz)
+            zone_end = timezone.make_aware(
+                datetime.datetime.combine(day, zone_to), tz)
+
+            def overlap(a, b):
+                return max(int((min(b, zone_end) - max(a, zone_start))
+                               .total_seconds()), 0)
+
+            if any(meal_kind(mark.pressed_at) == kind
+                   for s in same for mark, _end in s.meal_segments):
+                continue
+            if kind == LUNCH and (any(s.lunch_seconds for s in same)
+                                  or day in no_lunch_days):
+                continue
+            if any(overlap(a.clock_out.pressed_at, b.clock_in.pressed_at)
+                   >= AUTO_MEAL_GAP for a, b in zip(same, same[1:])):
+                continue
+            best = max(same, key=lambda s: overlap(
+                s.clock_in.pressed_at, s.clock_out.pressed_at))
+            if overlap(best.clock_in.pressed_at,
+                       best.clock_out.pressed_at) < AUTO_MEAL_MIN_OVERLAP:
+                continue
+            best.auto_meal_seconds += AUTO_MEAL_SECONDS
+            best.auto_meals.append(kind)
+
+
 def _review_flexible_days(shifts):
     """
     Flag a finished flexible day with less than FLEX_MIN_HOURS worked.
@@ -1004,6 +1109,10 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
                     ends, shift.clock_out.pressed_at,
                 )
         _deduct_parte_lunch(company, user_id, report.shifts)
+        _deduct_missing_meals(
+            report.shifts,
+            _parte_no_lunch_days(company, user_id, report.shifts),
+        )
         _review_flexible_days(report.shifts)
         # S144: horas extras de cada día (bolsa de horas, comidas y
         # vehículo propio: hr_calendar/clock_extras.py).
