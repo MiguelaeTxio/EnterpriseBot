@@ -64,7 +64,8 @@ FILTER_KEYS = (
 )
 NO_SECTION = "none"
 _MAX_SORT_KEYS = 4
-_MAX_RANGE_DAYS = 366
+# S145: cuatro años, como Fichajes del trabajador (atajo "Cuatro años").
+_MAX_RANGE_DAYS = 4 * 366
 
 
 def _last_day_time(row, field):

@@ -65,6 +65,21 @@ recordatorios, secciones que fichan y permiso de envío).
                             <div class="fw-semibold mb-1">Hasta</div>
                             <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to|date:'Y-m-d' }}">
                         </div>
+                        {# S145: los mismos atajos de fechas que en Fichajes del trabajador. #}
+                        <div>
+                            <div class="fw-semibold mb-1">Rápido</div>
+                            <div class="d-flex flex-column gap-1">
+                                <button type="button" class="btn btn-sm btn-outline-secondary clk-range" data-range="month">Este mes</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary clk-range" data-range="prev">Mes anterior</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary clk-range" data-range="period"
+                                        title="Del día 21 del mes anterior al 20 de este (o del 21 de este al 20 del siguiente, a partir del día 21).">Periodo actual</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary clk-range" data-range="prev_period"
+                                        title="El periodo de 21 a 20 anterior al actual.">Periodo anterior</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary clk-range" data-range="year">Este año</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary clk-range" data-range="all"
+                                        title="Los cuatro últimos años: lo que se conservan los fichajes (art. 34.9 ET).">Cuatro años</button>
+                            </div>
+                        </div>
                         <div>
                             <div class="fw-semibold mb-1">Selección</div>
                             <div class="form-check">
@@ -246,6 +261,35 @@ recordatorios, secciones que fichan y permiso de envío).
 
     const results = document.getElementById("clk-results");
     const filters = document.getElementById("clk-filters");
+    // S145: atajos de fechas, iguales que en Fichajes del trabajador.
+    function isoDateRange(d) {
+        return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    }
+    document.querySelectorAll(".clk-range").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+            const today = new Date();
+            let from = new Date(today.getFullYear(), today.getMonth(), 1);
+            let to = today;
+            // S145: periodos de nómina, del día 21 al 20 del mes siguiente.
+            const periodStartMonth = today.getDate() >= 21 ? today.getMonth() : today.getMonth() - 1;
+            if (btn.dataset.range === "prev") {
+                from = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                to = new Date(today.getFullYear(), today.getMonth(), 0);
+            } else if (btn.dataset.range === "period") {
+                from = new Date(today.getFullYear(), periodStartMonth, 21);
+            } else if (btn.dataset.range === "prev_period") {
+                from = new Date(today.getFullYear(), periodStartMonth - 1, 21);
+                to = new Date(today.getFullYear(), periodStartMonth, 20);
+            } else if (btn.dataset.range === "year") {
+                from = new Date(today.getFullYear(), 0, 1);
+            } else if (btn.dataset.range === "all") {
+                from = new Date(today.getFullYear() - 4, today.getMonth(), today.getDate() + 1);
+            }
+            filters.querySelector('[name="date_from"]').value = isoDateRange(from);
+            filters.querySelector('[name="date_to"]').value = isoDateRange(to);
+            htmx.trigger(filters, "change");
+        });
+    });
     const SCREEN_KEY = "{{ screen_key|escapejs }}";
     const EXPORT_URL = "{% url 'panel:clock_events_export' %}";
 
