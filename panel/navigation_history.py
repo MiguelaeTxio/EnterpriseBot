@@ -37,6 +37,15 @@ migas de pan del recorrido real del usuario:
   había vuelto. Las páginas que entran en la pila se sirven con
   `no-store` para que el navegador las pida siempre de nuevo, también
   al ir atrás, y la pila siga el recorrido real.
+- S145 (Miguel Ángel: de la ficha de Berenguer a Documentación, a
+  Fichajes, a un trabajador, y "Volver" lo llevaba a la ficha de
+  Berenguer): dos páginas pedidas casi a la vez se pisaban la pila. La
+  ficha se pidió, tardó casi 2 s y, mientras, el usuario ya había ido a
+  Documentación; Documentación guardó la pila buena y la ficha, al
+  terminar después, la sobrescribió con la suya. Ahora una página solo
+  guarda la pila si nadie la ha guardado después de que ella empezara
+  (la fila se bloquea y se mira `updated_at`): la última página pedida
+  es la que manda, aunque termine antes.
 - `request.panel_back_url` es la página anterior a la actual en esa
   pila, y el procesador de contexto `back_url_context` la pone en
   todas las plantillas como `panel_back_url`. El botón "Volver" enlaza
@@ -44,6 +53,8 @@ migas de pan del recorrido real del usuario:
 """
 from urllib.parse import parse_qs, urlsplit
 
+from django.db import transaction
+from django.utils import timezone
 from django.utils.cache import add_never_cache_headers
 
 from panel.models import PanelNavigationState
@@ -195,6 +206,7 @@ class NavigationHistoryMiddleware:
             return self.get_response(request)
 
         company_user = request.user.company_user
+        started_at = timezone.now()
         nav_state = PanelNavigationState.objects.filter(
             company_user=company_user, screen_key=SCREEN_KEY,
         ).first()
@@ -228,15 +240,35 @@ class NavigationHistoryMiddleware:
         if response.status_code == 200 and content_type.startswith(
             "text/html",
         ):
-            PanelNavigationState.objects.update_or_create(
-                company_user=company_user,
-                screen_key=SCREEN_KEY,
-                defaults={"state": {"stack": new_stack}},
-            )
+            _save_stack(company_user, new_stack, started_at)
             # S145: sin caché, para que el atrás del navegador vuelva a
             # pedir la página y la pila sepa dónde está el usuario.
             add_never_cache_headers(response)
         return response
+
+
+def _save_stack(company_user, new_stack, started_at):
+    """
+    Save the stack unless a later page already saved it.
+    ---
+    Guarda la pila salvo que otra página la haya guardado después de
+    que empezara esta (S145): la petición más reciente manda, aunque
+    una anterior y más lenta termine después.
+    """
+    with transaction.atomic():
+        row = PanelNavigationState.objects.select_for_update().filter(
+            company_user=company_user, screen_key=SCREEN_KEY,
+        ).first()
+        if row is None:
+            PanelNavigationState.objects.get_or_create(
+                company_user=company_user, screen_key=SCREEN_KEY,
+                defaults={"state": {"stack": new_stack}},
+            )
+            return
+        if row.updated_at and row.updated_at > started_at:
+            return
+        row.state = {"stack": new_stack}
+        row.save(update_fields=["state", "updated_at"])
 
 
 def back_url_context(request):

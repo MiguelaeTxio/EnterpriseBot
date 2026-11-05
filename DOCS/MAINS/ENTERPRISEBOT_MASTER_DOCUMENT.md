@@ -1903,6 +1903,16 @@ que el atrás del navegador las pida siempre y la pila siga el recorrido
 real. No afecta a la página de fichar (`/fichaje/`, fuera de
 `/panel/`).
 
+**Corregido en S145 -- dos páginas a la vez:** de la ficha de
+Berenguer a Documentación, a Fichajes y a un trabajador, "Volver"
+llevaba a la ficha de Berenguer, todo por enlaces internos. El log de
+accesos lo mostró: la ficha se había pedido otra vez y tardó casi 2 s;
+mientras, Documentación guardó la pila buena y la ficha, al terminar
+después, la sobrescribió. Ahora la pila solo la guarda una página si
+nadie la ha guardado después de que ella empezara (fila bloqueada con
+`select_for_update` y comparación con `updated_at`): manda la última
+página pedida.
+
 **Extendido en S132 a todo el panel:** los 36 botones "Volver" con URL
 fija que ya existían usan `{{ panel_back_url|default:<su URL de
 siempre> }}`: vuelven a la página de la que se vino y, si no hay
