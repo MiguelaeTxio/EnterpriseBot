@@ -614,17 +614,18 @@ class ClockWorkerSettingsView(SupervisorAccessMixin, View):
                     request, "Elige el día desde el que fichan.",
                     error=True,
                 )
-            count = set_worker_clocks_from(ids, day,
-                                           request.user.company_user)
+            # Con hoy o un día pasado no hace falta guardar el día.
+            count = set_worker_clocks_from(
+                ids, day if day > timezone.localdate() else None,
+                request.user.company_user)
             return _settings_response(
                 request, "%d trabajador(es) fichan desde el %s: antes, "
                 "ni avisos ni fichajes." % (count, day.strftime("%d/%m/%Y")),
             )
         count = set_worker_flag(ids, field, value,
                                 request.user.company_user)
-        # S143: "Ficha" es desde ya (quita un día de inicio que hubiera).
-        if field == "clocks" and value:
-            set_worker_clocks_from(ids, None, request.user.company_user)
+        # S143: "Ficha" no toca el día de inicio ("Ficha desde"): solo se
+        # cambia con "Ficha desde" (con la fecha de hoy, desde ya).
         return _settings_response(
             request, "%d trabajador(es) %s." % (count, label),
         )
