@@ -133,6 +133,19 @@ historial: quién, cuándo, antes, después y motivo).
                         <li><a class="dropdown-item cw-fix" href="#" data-action="CHANGE" data-event="{{ press.event.pk }}" data-kind="{{ press.event.kind }}" data-type="{{ press.event.clock_type_id|default:'' }}" data-time="{{ press.input_value }}"
                                data-label="Cambio de tipo ({{ press.event.clock_type.name|default:'—' }}) del {{ press.time|date:'d/m/Y H:i' }}"><i class="bi bi-pencil me-1"></i>Corregir el cambio de las {{ press.time|date:"H:i" }}</a></li>
                         {% endfor %}
+                        {# S143 (Miguel Ángel): al trabajador se le olvidó; se añade lo que falta sin tocar lo que sí fichó. #}
+                        {% if row.entry and not row.exit %}
+                        <li><a class="dropdown-item cw-fix" href="#" data-action="ADD" data-kind="OUT" data-type="{{ row.entry.event.clock_type_id|default:'' }}"
+                               data-time="{% if row.suggested_end %}{{ row.entry.time|date:'Y-m-d' }}T{{ row.suggested_end|time:'H:i' }}{% else %}{{ row.entry.input_value }}{% endif %}"
+                               data-label="Salida que falta en la jornada del {{ row.day|date:'d/m/Y' }} (entrada {{ row.entry.time|date:'H:i' }})"
+                               title="Añadir la salida que no fichó. La entrada no se toca; queda quién la añadió, cuándo y por qué."><i class="bi bi-box-arrow-right me-1"></i>Añadir la salida</a></li>
+                        {% endif %}
+                        {% if row.exit and not row.entry %}
+                        <li><a class="dropdown-item cw-fix" href="#" data-action="ADD" data-kind="IN" data-type="{{ row.exit.event.clock_type_id|default:'' }}"
+                               data-time="{% if row.expected_start %}{{ row.exit.time|date:'Y-m-d' }}T{{ row.expected_start|time:'H:i' }}{% else %}{{ row.exit.input_value }}{% endif %}"
+                               data-label="Entrada que falta en la jornada del {{ row.day|date:'d/m/Y' }} (salida {{ row.exit.time|date:'H:i' }})"
+                               title="Añadir la entrada que no fichó. La salida no se toca; queda quién la añadió, cuándo y por qué."><i class="bi bi-box-arrow-in-right me-1"></i>Añadir la entrada</a></li>
+                        {% endif %}
                         {% if row.entry and row.exit %}
                         <li><a class="dropdown-item cw-fix" href="#" data-action="ADD" data-kind="CHG" data-time="{{ row.entry.input_value }}"
                                data-label="Cambio de tipo en la jornada del {{ row.day|date:'d/m/Y' }}"

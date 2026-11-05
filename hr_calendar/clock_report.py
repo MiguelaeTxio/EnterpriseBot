@@ -222,6 +222,9 @@ class Shift:
     clock_out: ClockEvent = None
     expected_start: datetime.time = None
     expected_end: datetime.time = None
+    # S143: hora de salida del horario que se propone al supervisor
+    # cuando falta la salida (la primera después de la entrada).
+    suggested_end: datetime.time = None
     # S133: lunch break of that day's parte inside the shift (it is not
     # clocked any more): not worked time.
     # Pausa de comida del parte de ese día dentro de la jornada (ya no
@@ -709,6 +712,22 @@ def expected_start(starts, pressed_at):
     )
 
 
+def suggested_end(ends, pressed_at):
+    """
+    Of the schedule's end times, the first after the IN press (the last
+    one if none is later).
+    ---
+    De las horas de salida del horario, la primera posterior a la
+    entrada (S143: la que se propone al añadir la salida olvidada); si
+    ninguna es posterior, la última. Sin horas de salida, None.
+    """
+    if not ends:
+        return None
+    real = timezone.localtime(pressed_at).time()
+    later = sorted(t for t in ends if t > real)
+    return later[0] if later else max(ends)
+
+
 def short_rest(day, starts, last_out):
     """
     True if `last_out` (an aware datetime, or None) is less than
@@ -960,6 +979,10 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
                 # guardas): sin horario con el que comparar.
                 continue
             starts, ends = times_of(shift.day)
+            if shift.clock_in is not None and shift.clock_out is None:
+                shift.suggested_end = suggested_end(
+                    ends, shift.clock_in.pressed_at,
+                )
             # S144: tras una jornada que acabó con menos de REST_HOURS de
             # descanso, el día es flexible: no se compara.
             previous = [

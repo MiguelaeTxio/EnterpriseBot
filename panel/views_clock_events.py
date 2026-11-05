@@ -816,6 +816,7 @@ def worker_detail_data(company, person, date_from, date_to):
         "expected_start": s.expected_start,
         "late_minutes": s.late_minutes,
         "expected_end": s.expected_end,
+        "suggested_end": s.suggested_end,
         "early_minutes": s.early_minutes,
         "start_off": s.start_off_schedule,
         "end_off": s.end_off_schedule,

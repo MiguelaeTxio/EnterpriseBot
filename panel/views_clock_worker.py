@@ -161,9 +161,15 @@ def _sort_controls(raw):
 
 
 def _sort_rows(rows, sort_keys):
-    # Sin orden elegido, el día más reciente arriba.
-    rows = sorted(rows, key=lambda r: (r["day"], r["entry_time"] or 0),
-                  reverse=not sort_keys)
+    # Sin orden elegido, el día más reciente arriba. S143: una jornada
+    # sin entrada (solo la salida) va con la hora 00:00; antes era un 0
+    # y comparar una hora con un número daba error 500 en cuanto el
+    # mismo día tenía otra jornada con entrada.
+    rows = sorted(
+        rows,
+        key=lambda r: (r["day"], r["entry_time"] or datetime.time.min),
+        reverse=not sort_keys,
+    )
     for key, desc in reversed(sort_keys):
         getter = _SORT_VALUES[key]
         present = [r for r in rows if getter(r) is not None]
