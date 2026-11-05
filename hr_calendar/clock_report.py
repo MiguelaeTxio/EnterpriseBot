@@ -963,12 +963,13 @@ AUTO_MEAL_MIN_OVERLAP = 3600
 AUTO_MEAL_GAP = 30 * 60
 
 
-def _parte_no_lunch_days(company, user_id, shifts):
+def _parte_days(company, user_id, shifts):
     """
-    Days whose parte says "No he parado a comer".
+    (days with a parte, days whose parte says "No he parado a comer").
     ---
-    Los días de esas jornadas con un parte que dice "No he parado a
-    comer" (S143: tampoco se descuenta la comida sin fichar).
+    Los días de esas jornadas con parte y, de ellos, los que dicen "No
+    he parado a comer" (S143: el parte es fiable; ahí no se descuenta
+    la comida sin fichar).
     """
     from work_order_processor.models import WorkOrderEntry
 
@@ -977,16 +978,21 @@ def _parte_no_lunch_days(company, user_id, shifts):
         if shift.clock_out is not None and shift.clock_in is not None
     }
     if not days:
-        return set()
-    return set(WorkOrderEntry.objects.filter(
+        return set(), set()
+    with_parte, no_lunch = set(), set()
+    for work_date, flag in WorkOrderEntry.objects.filter(
         work_order__company=company,
         work_order__uploaded_by_id=user_id,
         work_date__in=days,
-        no_lunch_break=True,
-    ).values_list("work_date", flat=True))
+    ).values_list("work_date", "no_lunch_break"):
+        with_parte.add(work_date)
+        if flag:
+            no_lunch.add(work_date)
+    return with_parte, no_lunch
 
 
-def _deduct_missing_meals(shifts, no_lunch_days=()):
+def _deduct_missing_meals(shifts, no_lunch_days=(), parte_days=(),
+                          split_day=None):
     """
     One hour for lunch (and one for dinner) not clocked in typed shifts.
 
@@ -995,9 +1001,12 @@ def _deduct_missing_meals(shifts, no_lunch_days=()):
     S143 (Miguel Ángel): en el fichaje por tipos, si no se marca "No he
     parado para comer" y no se ha fichado la pausa, "vamos a descontar
     una hora de comida y una hora de cena si ha pillado en la zona de
-    noche"; y "en los que no fichan por tipo hay que descontar la hora
-    de comida" (solo la comida). Por día, con todas sus jornadas
-    cerradas:
+    noche". Quien no ficha por tipos (S143): "depende del horario que
+    tenga la persona": solo la comida, solo con jornada partida ese día
+    (`split_day`: el horario del día tiene mañana y tarde; intensiva o
+    sin horario, nada) y solo si ese día no tiene parte (el parte manda:
+    su pausa ya se descuenta, o dice que no paró, o es intensiva). Por
+    día, con todas sus jornadas cerradas:
     - Nada si alguna pulsación del día lleva "No he parado para comer"
       (ni la comida si el parte del día dice "No he parado a comer").
     - Por cada franja (comida 12-17, cena 19-24, las de las pausas): nada
@@ -1026,6 +1035,9 @@ def _deduct_missing_meals(shifts, no_lunch_days=()):
         # descontar la hora de comida"; la cena, en los que fichan por
         # tipo.
         typed = any(e.clock_type_id for e in marks)
+        if not typed and (day in parte_days or split_day is None
+                          or not split_day(day)):
+            continue
         zones = ((LUNCH, MEAL_LUNCH), (DINNER, MEAL_DINNER)) if typed \
             else ((LUNCH, MEAL_LUNCH),)
         same = sorted(same, key=lambda s: s.clock_in.pressed_at)
@@ -1147,9 +1159,10 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
                     ends, shift.clock_out.pressed_at,
                 )
         _deduct_parte_lunch(company, user_id, report.shifts)
+        with_parte, no_lunch = _parte_days(company, user_id, report.shifts)
         _deduct_missing_meals(
-            report.shifts,
-            _parte_no_lunch_days(company, user_id, report.shifts),
+            report.shifts, no_lunch, with_parte,
+            lambda day: len(times_of(day)[0]) >= 2,
         )
         _review_flexible_days(report.shifts)
         # S144: horas extras de cada día (bolsa de horas, comidas y
