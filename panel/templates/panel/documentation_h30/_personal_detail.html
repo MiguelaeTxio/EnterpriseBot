@@ -408,6 +408,8 @@ H30 (S128), punto 6: tablas `stack-mobile` -- en el móvil cada fila es una tarj
                         onclick="openDocumentHistory('{{ entry.document_type.code }}')">Historial</button>
                 <button type="button" class="btn btn-sm btn-outline-warning"
                         onclick="openChangeTypeModal({{ entry.pk }}, '{{ entry.document_type.label|escapejs }}')">Tipo</button>
+                {% if entry.name|lower|slice:"-4:" == ".pdf" %}<button type="button" class="btn btn-sm btn-outline-secondary" title="Sacar de este archivo los documentos que lleva dentro (un DNI en un dossier, p. ej.)"
+                        onclick="openSplitModal({{ entry.pk }})">Separar</button>{% endif %}
                 <button type="button" class="btn btn-sm btn-outline-danger"
                         onclick="deleteDocument({{ entry.pk }}, this)">Eliminar</button>
             </td>
@@ -719,6 +721,8 @@ vacaciones).
                         onclick="openDocumentHistory('{{ entry.document_type.code }}')">Historial</button>
                 <button type="button" class="btn btn-sm btn-outline-warning"
                         onclick="openChangeTypeModal({{ entry.pk }}, '{{ entry.document_type.label|escapejs }}')">Tipo</button>
+                {% if entry.name|lower|slice:"-4:" == ".pdf" %}<button type="button" class="btn btn-sm btn-outline-secondary" title="Sacar de este archivo los documentos que lleva dentro (un DNI en un dossier, p. ej.)"
+                        onclick="openSplitModal({{ entry.pk }})">Separar</button>{% endif %}
                 <button type="button" class="btn btn-sm btn-outline-danger"
                         onclick="deleteDocument({{ entry.pk }}, this)">Eliminar</button>
             </td>
@@ -831,6 +835,8 @@ vez de una lista única sin estructura.
                                         onclick="openDocumentHistory('{{ entry.document_type.code }}')">Historial</button>
                                 <button type="button" class="btn btn-sm btn-outline-warning"
                                         onclick="openChangeTypeModal({{ entry.pk }}, '{{ entry.document_type.label|escapejs }}')">Tipo</button>
+                                {% if entry.name|lower|slice:"-4:" == ".pdf" %}<button type="button" class="btn btn-sm btn-outline-secondary" title="Sacar de este archivo los documentos que lleva dentro (un DNI en un dossier, p. ej.)"
+                                        onclick="openSplitModal({{ entry.pk }})">Separar</button>{% endif %}
                                 <button type="button" class="btn btn-sm btn-outline-danger"
                                         onclick="deleteDocument({{ entry.pk }}, this)">Eliminar</button>
                             </td>
@@ -890,6 +896,8 @@ vez de una lista única sin estructura.
                                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=sub.pk %}')">Ver</button>
                                     <button type="button" class="btn btn-sm btn-outline-warning"
                                             onclick="openChangeTypeModal({{ sub.pk }}, '{{ sub.document_type.label|escapejs }}')">Tipo</button>
+                                    {% if sub.name|lower|slice:"-4:" == ".pdf" %}<button type="button" class="btn btn-sm btn-outline-secondary" title="Sacar de este archivo los documentos que lleva dentro (un DNI en un dossier, p. ej.)"
+                                            onclick="openSplitModal({{ sub.pk }})">Separar</button>{% endif %}
                                     <button type="button" class="btn btn-sm btn-outline-danger"
                                             onclick="deleteDocument({{ sub.pk }}, this)">Eliminar</button>
                                 </div>
@@ -1294,6 +1302,24 @@ Salud, acordeón genérico) -- mismo patrón que documentHistoryModal.
     </div>
 </div>
 
+{# H24 (S145): separar los documentos que lleva dentro un archivo. #}
+<div class="modal fade" id="documentSplitModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Separar documentos</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="splitBody"><div class="text-muted small">Cargando páginas…</div></div>
+            <div class="modal-footer">
+                <div id="splitResult" class="small me-auto"></div>
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-sm btn-primary" id="splitSubmit" onclick="submitSplit()">Sacar documentos</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="documentViewerModal" tabindex="-1">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
@@ -1541,6 +1567,44 @@ function deleteDocument(pk, btn) {
 // Recarga la página al guardar -- el documento cambia de familia/
 // sección real, recomponerlo a mano en el DOM sería más frágil que
 // una recarga simple.
+// H24 (S145): "Separar" -- páginas del archivo con su tipo sugerido.
+function openSplitModal(entryPk) {
+    const body = document.getElementById('splitBody');
+    body.innerHTML = '<div class="text-muted small">Cargando páginas…</div>';
+    document.getElementById('splitResult').innerHTML = '';
+    document.getElementById('splitSubmit').disabled = false;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('documentSplitModal')).show();
+    fetch(`/panel/documentacion/documento/${entryPk}/separar/`).then(r => r.text()).then(html => {
+        body.innerHTML = html;
+    }).catch(() => {
+        body.innerHTML = '<div class="alert alert-danger py-1 small">Error de red al cargar las páginas.</div>';
+    });
+}
+
+function submitSplit() {
+    const form = document.getElementById('splitForm');
+    const resultDiv = document.getElementById('splitResult');
+    if (!form) return;
+    const btn = document.getElementById('splitSubmit');
+    btn.disabled = true;
+    resultDiv.innerHTML = '<span class="text-muted">Sacando documentos…</span>';
+    fetch(form.dataset.url, {
+        method: 'POST',
+        headers: {'X-CSRFToken': getCookie('csrftoken')},
+        body: new FormData(form),
+    }).then(r => r.json()).then(data => {
+        if (data.ok) {
+            location.reload();
+        } else {
+            btn.disabled = false;
+            resultDiv.innerHTML = `<span class="text-danger">${data.error || 'Error al separar.'}</span>`;
+        }
+    }).catch(() => {
+        btn.disabled = false;
+        resultDiv.innerHTML = '<span class="text-danger">Error de red al separar.</span>';
+    });
+}
+
 function openChangeTypeModal(entryPk, currentLabel) {
     document.getElementById('changeTypeEntryPk').value = entryPk;
     document.getElementById('changeTypeCurrentLabel').textContent = currentLabel;

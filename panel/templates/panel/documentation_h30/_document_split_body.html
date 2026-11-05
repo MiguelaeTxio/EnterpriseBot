@@ -1,0 +1,43 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_document_split_body.html #}
+{% comment %}
+H24 (S145). Contenido del modal "Separar": cada página con el tipo que
+sugiere su texto ya leído. Las páginas con el mismo tipo forman un
+documento nuevo; las que se dejan en "No sacar" no se tocan.
+Vista: panel/views_document_split.py.
+{% endcomment %}
+{% if error %}
+<div class="alert alert-warning small mb-0">{{ error }}</div>
+{% else %}
+<form id="splitForm" data-url="{% url 'panel:documentation_document_split' pk=entry.pk %}">
+    <p class="small text-muted mb-2">
+        <strong>{{ entry.name }}</strong> ({{ page_count }} página{{ page_count|pluralize }}). Elige el tipo de cada página:
+        las que tengan el mismo tipo salen juntas como un documento nuevo en la ficha de {{ person.given_name }}.
+        {% if entry.document_type %}Si sacas un <strong>{{ entry.document_type.label }}</strong>, en su sitio queda solo lo sacado.{% endif %}
+        La fecha es opcional: sin ella se lee del propio documento.
+    </p>
+    {% if too_many %}<div class="alert alert-warning py-1 small">Solo se muestran las primeras 30 páginas.</div>{% endif %}
+    <div class="row g-2">
+        {% for page in pages %}
+        <div class="col-6 col-md-4 col-lg-3">
+            <div class="border rounded p-1 h-100 small">
+                <div class="fw-semibold">Página {{ page.number }}</div>
+                <img src="data:image/png;base64,{{ page.image }}" class="img-fluid border mb-1" alt="Página {{ page.number }}">
+                <select name="page_type_{{ page.number }}" class="form-select form-select-sm mb-1">
+                    <option value="">No sacar</option>
+                    {% regroup all_document_types by get_person_family_display as type_families %}
+                    {% for group in type_families %}
+                    <optgroup label="{{ group.grouper }}">
+                        {% for dt in group.list %}
+                        <option value="{{ dt.code }}" {% if dt.code == page.suggested %}selected{% endif %}>{{ dt.label }}</option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endfor %}
+                </select>
+                {% if page.hint %}<div class="text-muted" title="Señales encontradas en el texto">Parece: {{ page.hint }}</div>{% endif %}
+                <input type="date" name="page_date_{{ page.number }}" class="form-control form-control-sm" title="Caducidad (o fecha del documento si no caduca)">
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</form>
+{% endif %}

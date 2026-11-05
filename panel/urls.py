@@ -170,6 +170,7 @@ from panel.views_personal_export import (
     PersonalExportTemplateSaveView,
     PersonalExportView,
 )
+from panel.views_document_split import DocumentSplitView
 from panel.views_documentation_h30 import (
     CalendarResultsFragmentView,
     CalendarTabFragmentView,
@@ -1971,6 +1972,12 @@ urlpatterns = [
         "documentacion/documento/<int:pk>/cambiar-tipo/",
         DocumentChangeTypeView.as_view(),
         name="documentation_document_change_type",
+    ),
+    # H24 (S145): separar los documentos que lleva dentro un archivo.
+    path(
+        "documentacion/documento/<int:pk>/separar/",
+        DocumentSplitView.as_view(),
+        name="documentation_document_split",
     ),
     # Section default role — Endpoint AJAX para pre-rellenar rol al crear
     # usuario (H13).
