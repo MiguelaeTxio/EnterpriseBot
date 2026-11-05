@@ -4372,6 +4372,8 @@ def _attach_clock_times(company, *work_order_lists):
     Adds the day's first clock-in and last clock-out to each work order,
     rounded (rounded_at; pressed_at when an old press has none).
 
+    Each enriched dict also gets "clock_in_real" / "clock_out_real",
+    the exact press, shown on hover.
     Each enriched dict gets "clock_in" and "clock_out" (local time, or
     None when the worker did not clock in/out that day). Shifts are
     built exactly as in "Fichajes del trabajador" (current presses,
@@ -4387,7 +4389,10 @@ def _attach_clock_times(company, *work_order_lists):
     (hora local, o None si ese día no fichó), con la hora redondeada
     (rounded_at; pressed_at si una pulsación antigua no la tiene).
     Miguel Ángel: "la hora real [...] para quien lo lee es más
-    complicado. Entonces poner la hora de entrada redondeada". Las
+    complicado. Entonces poner la hora de entrada redondeada"; la
+    pulsación real va en "clock_in_real" / "clock_out_real" y se ve al
+    pasar el ratón ("al pasar el ratón por encima, que nos ponga la
+    hora real"). Las
     jornadas se arman
     igual que en "Fichajes del trabajador" (pulsaciones vigentes,
     build_shifts y la jornada es del día de su primera pulsación), así
@@ -4407,6 +4412,8 @@ def _attach_clock_times(company, *work_order_lists):
     for wo in rows:
         wo["clock_in"] = None
         wo["clock_out"] = None
+        wo["clock_in_real"] = None
+        wo["clock_out_real"] = None
     dated = [
         wo for wo in rows
         if wo["operator_pk"] is not None and wo["fecha"] is not None
@@ -4436,27 +4443,36 @@ def _attach_clock_times(company, *work_order_lists):
     events_by_user = {}
     for event in events:
         events_by_user.setdefault(event.company_user_id, []).append(event)
+    # (user_id, día) -> (entrada, salida); cada una es la pulsación
+    # elegida (la primera entrada y la última salida del día).
     times = {}
     for user_id, user_events in events_by_user.items():
         for shift in build_shifts(user_events):
             day_in, day_out = times.get((user_id, shift.day), (None, None))
-            if shift.clock_in is not None:
-                pressed = timezone.localtime(
-                    shift.clock_in.rounded_at or shift.clock_in.pressed_at)
-                if day_in is None or pressed < day_in:
-                    day_in = pressed
-            if shift.clock_out is not None:
-                pressed = timezone.localtime(
-                    shift.clock_out.rounded_at
-                    or shift.clock_out.pressed_at)
-                if day_out is None or pressed > day_out:
-                    day_out = pressed
+            if shift.clock_in is not None and (
+                    day_in is None
+                    or shift.clock_in.pressed_at < day_in.pressed_at):
+                day_in = shift.clock_in
+            if shift.clock_out is not None and (
+                    day_out is None
+                    or shift.clock_out.pressed_at > day_out.pressed_at):
+                day_out = shift.clock_out
             times[(user_id, shift.day)] = (day_in, day_out)
+
+    def _shown(event):
+        return timezone.localtime(
+            event.rounded_at or event.pressed_at).time()
+
+    def _real(event):
+        return timezone.localtime(event.pressed_at).time()
+
     for wo in dated:
         day_in, day_out = times.get(
             (wo["operator_pk"], wo["fecha"]), (None, None))
-        wo["clock_in"] = day_in.time() if day_in else None
-        wo["clock_out"] = day_out.time() if day_out else None
+        wo["clock_in"] = _shown(day_in) if day_in else None
+        wo["clock_out"] = _shown(day_out) if day_out else None
+        wo["clock_in_real"] = _real(day_in) if day_in else None
+        wo["clock_out_real"] = _real(day_out) if day_out else None
 
 
 class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):

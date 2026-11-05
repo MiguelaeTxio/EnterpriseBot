@@ -13,7 +13,8 @@
 {#   show_totals + totals (horas_totales/horas_extra/horas_festivas/dietas) — Pendientes y Revisados #}
 {#   empty_icon, empty_text, back_url                                                               #}
 {# S145: columnas Entrada/Salida = primera entrada y última salida del fichaje de ese día,        #}
-{# con la hora redondeada (rounded_at). Sustituyen a la antigua columna Familia.                 #}
+{# con la hora redondeada (rounded_at); la pulsación real, al pasar el ratón.                     #}
+{# Sustituyen a la antigua columna Familia.                                                       #}
 {# (wo.clock_in / wo.clock_out, resueltas en la vista; "—" si no fichó).                         #}
 {# Toda decisión de negocio llega resuelta desde la vista; este parcial solo renderiza.             #}
 
@@ -64,8 +65,8 @@
                 <td class="text-sm">
                     {% if wo.fecha %}{{ wo.fecha|date:"d/m/Y" }}{% else %}<span class="text-muted">Sin fecha</span>{% endif %}
                 </td>
-                <td class="text-sm">{% if wo.clock_in %}{{ wo.clock_in|time:"H:i" }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
-                <td class="text-sm">{% if wo.clock_out %}{{ wo.clock_out|time:"H:i" }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                <td class="text-sm">{% if wo.clock_in %}<span title="Fichó a las {{ wo.clock_in_real|time:'H:i' }}">{{ wo.clock_in|time:"H:i" }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                <td class="text-sm">{% if wo.clock_out %}<span title="Fichó a las {{ wo.clock_out_real|time:'H:i' }}">{{ wo.clock_out|time:"H:i" }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
                 <td class="text-sm">{{ wo.num_bloques }}</td>
                 <td class="text-sm">{{ wo.horas_totales }}</td>
                 <td class="text-sm">
