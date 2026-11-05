@@ -59,6 +59,19 @@ on:
         description: "Consulta SQL de solo lectura (SELECT/SHOW/DESCRIBE unicamente)"
         required: true
         type: string
+      delivery:
+        # S145: "release" para resultados grandes (miles de filas): el
+        # resultado va comprimido a la release privada relevo-imagenes,
+        # que el modelo baja con gh y vacía al cierre de sesión (igual
+        # que las páginas de file_fetch.yml, com-actions-relay §6). En
+        # Drive queda solo la consulta y el aviso.
+        description: "Entrega del resultado: drive (por defecto) o release (comprimido, para resultados grandes)"
+        required: false
+        default: "drive"
+        type: choice
+        options:
+          - drive
+          - release
 
 env:
   DRIVE_FOLDER_ID: "1SSHSY2FHt-7eN17Wgza2Qcybs-ij6to0"
@@ -68,7 +81,9 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  # write solo para subir el resultado a la release privada en el modo
+  # delivery=release (S145); nunca se comitea nada.
+  contents: write
 
 jobs:
   query:
@@ -134,6 +149,19 @@ jobs:
             exit "$QUERY_EXIT"
           fi
 
+      - name: Resultado grande a la release privada (delivery=release, S145)
+        if: inputs.delivery == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          gzip -9 -c /tmp/query_output.txt > /tmp/sql_${{ github.run_id }}.tsv.gz
+          gh release view relevo-imagenes >/dev/null 2>&1 || \
+            gh release create relevo-imagenes --prerelease \
+              --title "Relevo de imágenes (solo lectura, temporal)" \
+              --notes "Material temporal del relevo para el modelo. Se vacía al cierre de sesión."
+          gh release upload relevo-imagenes /tmp/sql_${{ github.run_id }}.tsv.gz --clobber
+
       - name: Subir el resultado a Drive (nunca a git -- com-actions-relay)
         if: always()
         run: |
@@ -151,9 +179,13 @@ jobs:
             echo '```'
             echo ""
             echo "### Resultado"
-            echo '```'
-            cat /tmp/query_output.txt 2>/dev/null || echo "(sin salida capturada)"
-            echo '```'
+            if [ "${{ inputs.delivery }}" = "release" ]; then
+              echo "En la release privada relevo-imagenes: sql_${{ github.run_id }}.tsv.gz ($(wc -l < /tmp/query_output.txt 2>/dev/null || echo 0) líneas con la cabecera)."
+            else
+              echo '```'
+              cat /tmp/query_output.txt 2>/dev/null || echo "(sin salida capturada)"
+              echo '```'
+            fi
             if grep -vE "Using a password on the command line|PythonAnywhere SSH" /tmp/query_err.txt 2>/dev/null | grep -q .; then
               echo ""
               echo "### Error"
