@@ -95,7 +95,6 @@ from panel.views_ivr import (
 # --- Re-exports Fase F: views_auth ---
 from panel.views_auth import (
     CompanyUserCreateView,
-    CompanyUserListView,
     CompanyUserUpdateView,
     CompanyUserBulkDeleteView,
     CompanyUserSectionUnlinkView,

@@ -1,251 +1,458 @@
 <!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/users/list.html -->
 {% extends "panel/base.html" %}
+{% comment %}
+H24 (S145). Administración > Usuarios con el formato único de listados
+(directriz 4.24), como Personal y Horarios. Miguel Ángel: "ya urge la
+necesidad de meter filtros por horario, por esto, por lo otro, casi
+como lo que tenemos en personal". Panel fijo: a la izquierda buscar y
+filtrar (texto, Estado, Rol, Sección, Horario, Base, Selección); a la
+derecha la selección y las acciones (activar, desactivar, rol, base,
+eliminar, nuevo usuario). Debajo, la lista (3/4, pantalla completa) y
+la selección actual (1/4). Lo de cada usuario se sigue editando en su
+formulario (menú de tres puntos). Filtros, orden y selección
+persistidos por usuario (screen_key "users_list"). Vista:
+panel/views_users_list.py.
+{% endcomment %}
 
 {% block title %}Usuarios{% endblock %}
 {% block page_title %}Usuarios{% endblock %}
 
 {% block content %}
+<div class="border rounded p-2 mb-2" id="usr-top-panel">
+    <div class="row g-2">
+        <div class="col-lg-7">
+            <div class="border rounded p-2 h-100">
+                <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                <form id="usr-filters" autocomplete="off" onsubmit="return false;"
+                      hx-get="{% url 'panel:user_list_results' %}" hx-target="#usr-results"
+                      hx-include="#usr-sort-inputs"
+                      hx-trigger="input changed delay:300ms from:#usr-filter-search, change, usr-selection-refresh">
+                    <div class="d-flex gap-2 mb-2">
+                        <input type="text" name="search" id="usr-filter-search" class="form-control doc-h30-search"
+                               placeholder="Buscar por usuario, nombre, apellidos, DNI, teléfono…" value="{{ filter_search }}">
+                    </div>
+                    <div class="d-flex flex-wrap gap-3 align-items-start small">
+                        <div>
+                            <div class="fw-semibold mb-1">Estado</div>
+                            <div class="form-check">
+                                <input class="form-check-input usr-active-check" type="checkbox" value="true" id="usrActiveTrue"
+                                       {% if "true" in filter_active %}checked{% endif %}>
+                                <label class="form-check-label" for="usrActiveTrue">Activos</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input usr-active-check" type="checkbox" value="false" id="usrActiveFalse"
+                                       {% if "false" in filter_active %}checked{% endif %}>
+                                <label class="form-check-label" for="usrActiveFalse">Inactivos</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input usr-active-check" type="checkbox" value="pending" id="usrActivePending"
+                                       {% if "pending" in filter_active %}checked{% endif %}>
+                                <label class="form-check-label" for="usrActivePending" title="Pre-registros: se activan cuando el trabajador se da de alta por WhatsApp">Pendientes de alta</label>
+                            </div>
+                            <input type="hidden" name="active" id="usr-active-input" value="{{ filter_active|join:',' }}">
+                        </div>
+                        {# Rol: casillas con semántica literal ("" = todos, "none" = ninguno). #}
+                        <div>
+                            <div class="fw-semibold mb-1">Rol</div>
+                            <div class="dropdown">
+                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" id="usr-role-button"
+                                        data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">Todos</button>
+                                <div class="dropdown-menu p-2 small">
+                                    <a href="#" class="small d-block mb-1" id="usr-role-all">(todos / ninguno)</a>
+                                    {% for code, label in role_choices %}
+                                    <div class="form-check">
+                                        <input class="form-check-input usr-role-check" type="checkbox" value="{{ code }}" id="usrRole{{ forloop.counter }}">
+                                        <label class="form-check-label text-nowrap" for="usrRole{{ forloop.counter }}">{{ label }}</label>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <input type="hidden" name="role" id="usr-role-input" value="{{ filter_role }}">
+                        </div>
+                        <div>
+                            <div class="fw-semibold mb-1">Sección</div>
+                            <select name="section" class="form-select form-select-sm usr-filter-select" title="La vigente hoy en su ficha de Personal">
+                                <option value="">Todas</option>
+                                <option value="{{ none_value }}"{% if filter_section == none_value %} selected{% endif %}>Sin sección</option>
+                                {% for section in sections %}
+                                <option value="{{ section.pk }}"{% if filter_section == section.pk|stringformat:"d" %} selected{% endif %}>{{ section.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <div class="fw-semibold mb-1">Horario</div>
+                            <select name="schedule" class="form-select form-select-sm usr-filter-select" title="El que le toca: propio, de la sección o por defecto">
+                                <option value="">Todos</option>
+                                <option value="{{ none_value }}"{% if filter_schedule == none_value %} selected{% endif %}>Sin horario</option>
+                                {% for schedule in schedules %}
+                                <option value="{{ schedule.pk }}"{% if filter_schedule == schedule.pk|stringformat:"d" %} selected{% endif %}>{{ schedule.label }} ({{ schedule.get_season_display|lower }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <div class="fw-semibold mb-1">Base</div>
+                            <select name="base" class="form-select form-select-sm usr-filter-select">
+                                <option value="">Todas</option>
+                                <option value="{{ none_value }}"{% if filter_base == none_value %} selected{% endif %}>Sin base</option>
+                                {% for base in bases %}
+                                <option value="{{ base.pk }}"{% if filter_base == base.pk|stringformat:"d" %} selected{% endif %}>{{ base.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <div class="fw-semibold mb-1">Selección</div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="only_selected" value="1" id="usrOnlySelected">
+                                <label class="form-check-label" for="usrOnlySelected">Mostrar solo la selección actual</label>
+                            </div>
+                            <input type="hidden" name="selected_ids" id="usr-selected-ids" value="">
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
 
-<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
-    <p class="text-muted mb-0">
-        Usuarios con acceso al panel de <strong>{{ company.name }}</strong>.
-    </p>
-    <a href="{% url 'panel:user_create' %}" class="btn btn-dark btn-sm">
-        <i class="bi bi-person-plus me-1"></i>Nuevo usuario
-    </a>
-</div>
-
-{# Section filter — Filtro por sección #}
-{% if sections %}
-<form method="get" class="mb-4 d-flex align-items-center gap-2 flex-wrap">
-    <label for="id-section-filter" class="form-label mb-0 fw-medium text-sm">
-        <i class="bi bi-diagram-3 me-1 text-primary"></i>Filtrar por sección:
-    </label>
-    <select id="id-section-filter"
-            name="section"
-            class="form-select form-select-sm w-auto"
-            onchange="this.form.submit()">
-        <option value="">Todas las secciones</option>
-        {% for sec in sections %}
-        <option value="{{ sec.pk }}"
-                {% if selected_section == sec.pk|stringformat:"s" %}selected{% endif %}>
-            {{ sec.name }}
-        </option>
-        {% endfor %}
-    </select>
-    {% if selected_section %}
-    <a href="{% url 'panel:user_list' %}" class="btn btn-outline-secondary btn-sm">
-        <i class="bi bi-x me-1"></i>Limpiar filtro
-    </a>
-    {% endif %}
-</form>
-{% endif %}
-
-<div class="card border-0 shadow-sm">
-    <div class="card-header bg-white border-bottom py-3">
-        <h6 class="mb-0 fw-semibold">
-            <i class="bi bi-people me-2 text-primary"></i>Listado de usuarios
-        </h6>
-    </div>
-    <div class="card-body p-0">
-        {% if company_users %}
-        {# Bulk-delete form — Formulario de eliminación múltiple #}
-        <form method="post" action="{% url 'panel:user_bulk_delete' %}" id="form-bulk-delete">
-            {% csrf_token %}
-        <div class="table-responsive">
-            <table class="table table-hover mb-0">
-                <thead class="table-light">
-                    {# Server-side sort headers. Build URL preserving current filters. #}
-                    {# Cabeceras con sort server-side. La URL preserva filtros activos. #}
-                    <tr>
-                        <th class="ps-3 user-list-checkbox-col">
-                            <input type="checkbox" id="cb-select-all"
-                                   class="form-check-input"
-                                   title="Seleccionar todos">
-                        </th>
-                        {% for col_key, col_label in sort_columns %}
-                        {% if col_key == sort_key %}
-                            {# Active sort column: toggle direction on click. #}
-                            {# Columna activa: al clicar invierte la dirección. #}
-                            {% if sort_dir == "asc" %}
-                            <th>
-                                <a href="{{ request.path }}?sort={{ col_key }}&dir=desc{% if selected_section %}&section={{ selected_section }}{% endif %}"
-                                   class="text-decoration-none text-dark fw-semibold d-inline-flex align-items-center gap-1">
-                                    {{ col_label }}
-                                    <i class="bi bi-caret-up-fill text-primary small"></i>
-                                </a>
-                            </th>
-                            {% else %}
-                            <th>
-                                <a href="{{ request.path }}?sort={{ col_key }}&dir=asc{% if selected_section %}&section={{ selected_section }}{% endif %}"
-                                   class="text-decoration-none text-dark fw-semibold d-inline-flex align-items-center gap-1">
-                                    {{ col_label }}
-                                    <i class="bi bi-caret-down-fill text-primary small"></i>
-                                </a>
-                            </th>
-                            {% endif %}
-                        {% else %}
-                            {# Inactive column: always sort asc on first click. #}
-                            {# Columna inactiva: primer click ordena asc. #}
-                            <th>
-                                <a href="{{ request.path }}?sort={{ col_key }}&dir=asc{% if selected_section %}&section={{ selected_section }}{% endif %}"
-                                   class="text-decoration-none text-secondary d-inline-flex align-items-center gap-1">
-                                    {{ col_label }}
-                                    <i class="bi bi-arrow-down-up text-muted small opacity-50"></i>
-                                </a>
-                            </th>
-                        {% endif %}
-                        {% endfor %}
-                        <th class="text-center">Acciones</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for cu in company_users %}
-                    <tr>
-                        <td class="ps-3" data-w="40">
-                            {# Per-row checkbox — disabled for own account #}
-                            {% if cu != company_user %}
-                            <input type="checkbox" name="selected_users"
-                                   value="{{ cu.pk }}"
-                                   class="form-check-input cb-user">
-                            {% endif %}
-                        </td>
-                        <td class="ps-2 fw-medium">
-                            <i class="bi bi-person-circle me-2 text-muted"></i>
-                            {{ cu.user.username }}
-                        </td>
-                        <td class="text-muted">
-                            {{ cu.user.get_full_name|default:"—" }}
-                        </td>
-                        <td>
-                            {% if cu.role == 'ADMIN' %}
-                                <span class="badge badge-admin">
-                                    <i class="bi bi-shield-check me-1"></i>Administrador
-                                </span>
-                            {% elif cu.role == 'SUPERVISOR' %}
-                                <span class="badge badge-supervisor">
-                                    <i class="bi bi-eye me-1"></i>Supervisor
-                                </span>
-                            {% elif cu.role == 'WORKSHOP' %}
-                                <span class="badge badge-workshop">
-                                    <i class="bi bi-wrench me-1"></i>Operario de taller
-                                </span>
-                            {% elif cu.role == 'WORKSHOPBOSS' %}
-                                <span class="badge badge-workshop">
-                                    <i class="bi bi-wrench-adjustable me-1"></i>Jefe de taller
-                                </span>
-                            {% elif cu.role == 'ASSISTANCE' %}
-                                <span class="badge badge-supervisor">
-                                    <i class="bi bi-calculator me-1"></i>Operario de Asistencia
-                                </span>
-                            {% elif cu.role == 'ASSIST_SUPERVISOR' %}
-                                <span class="badge badge-supervisor">
-                                    <i class="bi bi-truck-flatbed me-1"></i>Supervisor de Asistencia
-                                </span>
-                            {% elif cu.role == 'DOCS_SUPERVISOR' %}
-                                <span class="badge badge-supervisor">
-                                    <i class="bi bi-folder2-open me-1"></i>Supervisor de Documentación
-                                </span>
-                            {% elif cu.role == 'DRIVER' %}
-                                <span class="badge badge-external">
-                                    <i class="bi bi-truck me-1"></i>Chófer
-                                </span>
-                            {% elif cu.role == 'CRANE_OPERATOR' %}
-                                <span class="badge badge-external">
-                                    <i class="bi bi-cone-striped me-1"></i>Gruista
-                                </span>
-                            {% else %}
-                                <span class="badge badge-external">
-                                    <i class="bi bi-person me-1"></i>{{ cu.get_role_display }}
-                                </span>
-                            {% endif %}
-                        </td>
-                        <td class="text-center">
-                            {% if cu.is_active %}
-                                <span class="badge badge-active">
-                                    Activo
-                                </span>
-                            {% else %}
-                                <span class="badge badge-inactive">
-                                    Inactivo
-                                </span>
-                            {% endif %}
-                        </td>
-                        <td class="text-center">
-                            {# S130: también la propia cuenta (rol y activo bloqueados en la edición). #}
-                            <a href="{% url 'panel:user_edit' cu.pk %}"
-                               class="btn btn-sm btn-outline-secondary">
-                                <i class="bi bi-pencil me-1"></i>Editar
+        <div class="col-lg-5">
+            <div class="border rounded p-2 h-100">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <strong class="small"><span id="usr-mass-count">0</span> seleccionados</strong>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="usr-mass-clear">Limpiar</button>
+                </div>
+                {# Acciones en cuadrícula por categoría (4.24, reglas 6 y 12); la explicación, en el título del botón. #}
+                <div class="row g-1">
+                    <div class="col-12">
+                        <div class="small text-muted fw-bold">Usuarios</div>
+                        <div class="d-flex flex-wrap gap-1">
+                            <a href="{% url 'panel:user_create' %}" class="btn btn-sm btn-outline-primary" title="Dar de alta un usuario nuevo del panel.">
+                                <i class="bi bi-person-plus me-1"></i>Nuevo usuario
                             </a>
-                            {% if cu == company_user %}<div class="small text-muted">Tu cuenta</div>{% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+                            <button type="button" class="btn btn-sm btn-outline-success" data-usr-action="activate"
+                                    title="Da acceso al panel a los marcados. Tu cuenta y los pendientes de alta no se tocan.">
+                                <i class="bi bi-check-circle me-1"></i>Activar
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" data-usr-action="deactivate"
+                                    title="Quita el acceso al panel a los marcados, sin borrarlos. Tu cuenta no se toca.">
+                                <i class="bi bi-slash-circle me-1"></i>Desactivar
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" id="usr-delete"
+                                    title="Elimina los marcados (pide confirmación si alguno atiende llamadas). Tu cuenta no se borra.">
+                                <i class="bi bi-trash me-1"></i>Eliminar
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <div class="small text-muted fw-bold mt-1">Rol de los marcados</div>
+                        <div class="d-flex flex-wrap gap-1 align-items-center">
+                            <select class="form-select form-select-sm w-auto" id="usr-role-select" aria-label="Rol">
+                                {% for code, label in role_choices %}<option value="{{ code }}">{{ label }}</option>{% endfor %}
+                            </select>
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-usr-action="role"
+                                    title="Pone el rol elegido a los marcados. Tu cuenta no se toca.">
+                                <i class="bi bi-person-badge me-1"></i>Poner rol
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <div class="small text-muted fw-bold mt-1">Base de los marcados</div>
+                        <div class="d-flex flex-wrap gap-1 align-items-center">
+                            <select class="form-select form-select-sm w-auto" id="usr-base-select" aria-label="Base">
+                                {% for base in bases %}<option value="{{ base.pk }}">{{ base.name }}</option>{% endfor %}
+                                <option value="">Sin base</option>
+                            </select>
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-usr-action="base"
+                                    title="Pone la base elegida a los marcados (festivos de su calendario laboral).">
+                                <i class="bi bi-geo-alt me-1"></i>Poner base
+                            </button>
+                            <a target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary" href="{% url 'panel:workday_schedule' %}"
+                               title="Crear, cambiar o borrar horarios. El horario de cada trabajador se pone en Documentación > Horarios.">
+                                <i class="bi bi-clock me-1"></i>Gestionar los horarios
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
-        {# Bulk-action bar — Barra de acciones en lote #}
-        <div class="px-3 py-2 border-top bg-light d-flex align-items-center gap-2"
-             id="bulk-action-bar">
-            <span class="text-muted small" id="bulk-count-label">0 seleccionados</span>
-            <button type="submit"
-                    form="form-bulk-delete"
-                    class="btn btn-sm btn-outline-danger"
-                    id="btn-bulk-delete"
-                    disabled>
-                <i class="bi bi-trash me-1"></i>Eliminar seleccionados
-            </button>
-        </div>
-        </form>
-        {% else %}
-        <div class="p-4 text-muted">
-            <i class="bi bi-info-circle me-2"></i>
-            No hay usuarios registrados para esta empresa.
-        </div>
-        {% endif %}
     </div>
 </div>
 
-{# Select-all JS + bulk-action bar toggle #}
+<div class="border rounded p-2" id="usr-bottom-panel">
+    <div class="row g-2 h-100">
+        <div class="col-lg-9 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1">Usuarios (<span id="usr-row-count">{{ rows|length }}</span>)
+                    <button type="button" class="btn btn-sm btn-link py-0{% if not sort_active %} d-none{% endif %}" id="usr-clear-sort"
+                            hx-get="{% url 'panel:user_list_results' %}" hx-target="#usr-results"
+                            hx-include="#usr-filters" hx-vals='{"sort": ""}'>Quitar orden</button>
+                    {# Pantalla completa (directriz 4.26). #}
+                    <button type="button" class="btn btn-sm btn-outline-secondary float-end" id="usr-fullscreen" title="Pantalla completa">
+                        <i class="bi bi-fullscreen"></i>
+                    </button>
+                </div>
+                <div id="usr-results-scroll" class="usr-fill usr-scroll-both">
+                    <div id="usr-results">
+                        {% include "panel/users/_table.html" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1">Selección actual (<span id="usr-selection-count">0</span>)</div>
+                <div class="usr-fill usr-scroll-y">
+                    <ul class="mb-0 small ps-0 list-unstyled" id="usr-selection-list">
+                        <li class="text-muted">Nadie seleccionado todavía.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Borrado: el flujo de siempre (con su confirmación si alguno atiende llamadas). #}
+<form method="post" action="{% url 'panel:user_bulk_delete' %}" id="usr-delete-form" class="d-none">
+    {% csrf_token %}
+</form>
+
+<style>
+#usr-results-scroll thead th { position: sticky; top: 0; background-color: #f8f9fa; z-index: 2; }
+#usr-results-scroll thead th.sticky-col { z-index: 3; }
+#usr-results-scroll table td,
+#usr-results-scroll table th { white-space: nowrap; }
+.usr-fill { flex: 1 1 auto; min-height: 0; }
+.usr-scroll-y { overflow-y: auto; }
+.usr-scroll-both { overflow: auto; }
+.usr-filter-select { width: auto; max-width: 12rem; }
+#usr-bottom-panel:fullscreen { background-color: var(--bs-body-bg); padding: 1rem; }
+#usr-bottom-panel:fullscreen #usr-results-scroll { height: calc(100vh - 5rem); }
+</style>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="usr-toast" class="toast align-items-center text-bg-dark border-0" role="status" aria-live="polite">
+        <div class="d-flex">
+            <div class="toast-body" id="usr-toast-msg"></div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+{{ saved_selection|json_script:"usr-saved-selection" }}
+{% include "panel/_fixed_list_layout.html" with top_id="usr-top-panel" bottom_id="usr-bottom-panel" %}
 <script>
 (function () {
-    'use strict';
-    const cbAll    = document.getElementById('cb-select-all');
-    const btnDel   = document.getElementById('btn-bulk-delete');
-    const bar      = document.getElementById('bulk-action-bar');
-    const label    = document.getElementById('bulk-count-label');
+    "use strict";
 
-    function getCbs() {
-        return Array.from(document.querySelectorAll('.cb-user'));
+    const results = document.getElementById("usr-results");
+    const filters = document.getElementById("usr-filters");
+    const SCREEN_KEY = "{{ screen_key|escapejs }}";
+    const ACTION_URL = "{% url 'panel:user_list_action' %}";
+    const OWN_PK = "{{ own_pk }}";
+    // Selección (pk -> "Apellidos, Nombre (usuario)"), recordada por usuario.
+    const selection = new Map();
+    try {
+        JSON.parse(document.getElementById("usr-saved-selection").textContent).forEach(function (item) {
+            if (item && item.pk) selection.set(String(item.pk), item.label || "");
+        });
+    } catch (e) { /* estado ilegible: se empieza sin selección */ }
+    let lastSaved = null;
+    function saveSelection() {
+        const payload = Array.from(selection.entries()).map(function ([pk, label]) {
+            return {pk: pk, label: label};
+        });
+        const serialized = JSON.stringify(payload);
+        if (serialized === lastSaved) return;
+        lastSaved = serialized;
+        window.EbNavState.save(SCREEN_KEY, {selection: payload});
     }
 
-    function updateBar() {
-        const checked = getCbs().filter(cb => cb.checked);
-        const count   = checked.length;
-        if (count > 0) {
-            bar.style.removeProperty('display');
-            btnDel.disabled = false;
-        } else {
-            bar.style.display = 'none';
-            btnDel.disabled = true;
+    function updateSelectionUi() {
+        saveSelection();
+        document.getElementById("usr-mass-count").textContent = selection.size;
+        document.getElementById("usr-selection-count").textContent = selection.size;
+        const list = document.getElementById("usr-selection-list");
+        list.innerHTML = "";
+        const names = Array.from(selection.values()).sort(function (a, b) { return a.localeCompare(b); });
+        if (!names.length) {
+            const li = document.createElement("li");
+            li.className = "text-muted";
+            li.textContent = "Nadie seleccionado todavía.";
+            list.appendChild(li);
         }
-        label.textContent = count + ' seleccionado' + (count === 1 ? '' : 's');
-        // Sync select-all indeterminate state.
-        // Sincronizar estado indeterminado del select-all.
-        const total = getCbs().length;
-        cbAll.indeterminate = count > 0 && count < total;
-        cbAll.checked       = total > 0 && count === total;
+        names.forEach(function (name) {
+            const li = document.createElement("li");
+            li.textContent = name;
+            list.appendChild(li);
+        });
+        const idsInput = document.getElementById("usr-selected-ids");
+        const newIds = Array.from(selection.keys()).join(",");
+        if (idsInput.value !== newIds) {
+            idsInput.value = newIds;
+            if (document.getElementById("usrOnlySelected").checked) htmx.trigger(filters, "usr-selection-refresh");
+        }
+        const all = document.getElementById("usr-check-all");
+        if (!all) return;
+        const rows = results.querySelectorAll(".usr-row-check");
+        const checked = results.querySelectorAll(".usr-row-check:checked");
+        all.checked = rows.length > 0 && checked.length === rows.length;
+        all.indeterminate = checked.length > 0 && checked.length < rows.length;
     }
 
-    cbAll.addEventListener('change', function () {
-        getCbs().forEach(cb => { cb.checked = cbAll.checked; });
-        updateBar();
+    function refreshFromFragment() {
+        const state = document.getElementById("usr-fragment-state");
+        if (state) {
+            document.getElementById("usr-row-count").textContent = state.dataset.count;
+            document.getElementById("usr-clear-sort").classList.toggle("d-none", !state.dataset.sortActive);
+        }
+        results.querySelectorAll(".usr-row-check").forEach(function (cb) {
+            cb.checked = selection.has(cb.dataset.pk);
+        });
+        updateSelectionUi();
+    }
+
+    // Estado: casillas con semántica literal (ninguna marcada = ninguno).
+    function syncActive() {
+        const marked = Array.from(document.querySelectorAll(".usr-active-check:checked")).map(function (cb) { return cb.value; });
+        document.getElementById("usr-active-input").value = marked.length ? marked.join(",") : "none";
+    }
+    document.querySelectorAll(".usr-active-check").forEach(function (cb) {
+        cb.addEventListener("change", syncActive);
     });
 
-    document.querySelectorAll('.cb-user').forEach(cb => {
-        cb.addEventListener('change', updateBar);
+    // Rol: "" = todos, "none" = ninguno, si no, los marcados separados por comas.
+    const roleBoxes = Array.from(document.querySelectorAll(".usr-role-check"));
+    const roleInput = document.getElementById("usr-role-input");
+    const roleButton = document.getElementById("usr-role-button");
+    (function initRoles() {
+        const value = roleInput.value;
+        const wanted = value === "none" ? [] : (value ? value.split(",") : null);
+        roleBoxes.forEach(function (b) { b.checked = wanted === null || wanted.indexOf(b.value) !== -1; });
+    }());
+    function syncRoles(fire) {
+        const marked = roleBoxes.filter(function (b) { return b.checked; }).map(function (b) { return b.value; });
+        roleInput.value = marked.length === roleBoxes.length ? "" : (marked.length ? marked.join(",") : "none");
+        roleButton.textContent = marked.length === roleBoxes.length ? "Todos"
+            : (marked.length === 0 ? "Ninguno" : (marked.length === 1
+                ? roleBoxes.find(function (b) { return b.checked; }).nextElementSibling.textContent
+                : marked.length + " de " + roleBoxes.length));
+        if (fire) roleInput.dispatchEvent(new Event("change", {bubbles: true}));
+    }
+    roleBoxes.forEach(function (b) { b.addEventListener("change", function () { syncRoles(true); }); });
+    document.getElementById("usr-role-all").addEventListener("click", function (ev) {
+        ev.preventDefault();
+        const allChecked = roleBoxes.every(function (b) { return b.checked; });
+        roleBoxes.forEach(function (b) { b.checked = !allChecked; });
+        syncRoles(true);
     });
-})();
+    syncRoles(false);
+
+    results.addEventListener("change", function (evt) {
+        const target = evt.target;
+        if (target.classList.contains("usr-row-check")) {
+            if (target.checked) selection.set(target.dataset.pk, target.dataset.label);
+            else selection.delete(target.dataset.pk);
+            updateSelectionUi();
+        } else if (target.id === "usr-check-all") {
+            results.querySelectorAll(".usr-row-check").forEach(function (cb) {
+                cb.checked = target.checked;
+                if (target.checked) selection.set(cb.dataset.pk, cb.dataset.label);
+                else selection.delete(cb.dataset.pk);
+            });
+            updateSelectionUi();
+        }
+    });
+
+    document.getElementById("usr-mass-clear").addEventListener("click", function () {
+        selection.clear();
+        refreshFromFragment();
+    });
+
+    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    function showToast(text, danger) {
+        const toast = document.getElementById("usr-toast");
+        toast.classList.toggle("text-bg-danger", !!danger);
+        toast.classList.toggle("text-bg-dark", !danger);
+        document.getElementById("usr-toast-msg").textContent = text;
+        new bootstrap.Toast(toast).show();
+    }
+    function visibleIds() {
+        return Array.from(results.querySelectorAll(".usr-row-check")).map(function (cb) { return cb.dataset.pk; });
+    }
+    // Cada acción devuelve la tabla con los filtros que se veían (_f_);
+    // el mensaje llega en X-Users-Message.
+    async function runAction(action, question, extra) {
+        if (!selection.size) { showToast("Marca algún usuario.", true); return; }
+        if (!(await window.EbMassConfirm({
+            action: question, names: Array.from(selection.values()),
+            hidden: window.EbHiddenSelected(selection, visibleIds()),
+        }))) return;
+        const body = new FormData();
+        new FormData(filters).forEach(function (value, key) { body.append("_f_" + key, value); });
+        const sortInput = results.querySelector('#usr-sort-inputs input[name="sort"]');
+        body.append("_f_sort", sortInput ? sortInput.value : "");
+        body.append("action", action);
+        Object.keys(extra || {}).forEach(function (key) { body.append(key, extra[key]); });
+        selection.forEach(function (_label, pk) { body.append("selected", pk); });
+        fetch(ACTION_URL, {
+            method: "POST", headers: {"X-CSRFToken": csrfMeta ? csrfMeta.content : ""}, body: body,
+        }).then(function (r) {
+            if (!r.ok) { showToast("No se ha podido guardar (" + r.status + ").", true); return; }
+            const message = r.headers.get("X-Users-Message");
+            const isError = r.headers.get("X-Users-Error") === "1";
+            return r.text().then(function (html) {
+                results.innerHTML = html;
+                htmx.process(results);
+                refreshFromFragment();
+                if (message) showToast(decodeURIComponent(message), isError);
+            });
+        }).catch(function () {
+            showToast("Sin conexión con el servidor: no se ha guardado nada.", true);
+        });
+    }
+    document.querySelectorAll("[data-usr-action]").forEach(function (button) {
+        button.addEventListener("click", function () {
+            const action = button.dataset.usrAction;
+            if (action === "activate") runAction(action, "Activar");
+            else if (action === "deactivate") runAction(action, "Desactivar");
+            else if (action === "role") {
+                const select = document.getElementById("usr-role-select");
+                runAction(action, "Poner el rol " + select.options[select.selectedIndex].textContent.trim(), {role: select.value});
+            } else if (action === "base") {
+                const select = document.getElementById("usr-base-select");
+                runAction(action, select.value ? "Poner la base " + select.options[select.selectedIndex].textContent.trim()
+                                               : "Quitar la base", {base_id: select.value});
+            }
+        });
+    });
+    // Eliminar: el flujo de siempre (users/bulk-delete), sin la propia cuenta.
+    document.getElementById("usr-delete").addEventListener("click", async function () {
+        const ids = Array.from(selection.keys()).filter(function (pk) { return pk !== OWN_PK; });
+        if (!ids.length) { showToast("Marca algún usuario (tu cuenta no se borra).", true); return; }
+        const names = ids.map(function (pk) { return selection.get(pk); });
+        if (!(await window.EbMassConfirm({
+            action: "Eliminar", names: names,
+            hidden: window.EbHiddenSelected(new Map(ids.map(function (pk) { return [pk, selection.get(pk)]; })), visibleIds()),
+        }))) return;
+        const form = document.getElementById("usr-delete-form");
+        ids.forEach(function (pk) {
+            const input = document.createElement("input");
+            input.type = "hidden"; input.name = "selected_users"; input.value = pk;
+            form.appendChild(input);
+            selection.delete(pk);
+        });
+        saveSelection();
+        form.submit();
+    });
+
+    // Pantalla completa (directriz 4.26).
+    const bottom = document.getElementById("usr-bottom-panel");
+    document.getElementById("usr-fullscreen").addEventListener("click", function () {
+        if (document.fullscreenElement) document.exitFullscreen();
+        else bottom.requestFullscreen();
+    });
+
+    document.body.addEventListener("htmx:afterSwap", function (evt) {
+        if (evt.detail.target && evt.detail.target.id === "usr-results") refreshFromFragment();
+    });
+
+    refreshFromFragment();
+}());
 </script>
-
 {% endblock %}

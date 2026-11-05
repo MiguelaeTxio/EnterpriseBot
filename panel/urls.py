@@ -140,6 +140,11 @@ from panel.views_personal_access import (
     PersonalAccessPreviewView,
     PersonalAccessResendView,
 )
+from panel.views_users_list import (
+    UserListMassActionView,
+    UserListPageView,
+    UserListResultsView,
+)
 from panel.views_worker_schedules import (
     WorkerSchedulesAssignView,
     WorkerSchedulesListView,
@@ -250,7 +255,6 @@ from panel.views import (
     GDriveAuthorizeView,
     GDriveOAuthCallbackView,
     PresenceStatusUpdateView,
-    CompanyUserListView,
     CompanyUserCreateView,
     CompanyUserUpdateView,
     CompanyUserSectionUnlinkView,
@@ -402,7 +406,18 @@ urlpatterns = [
         "presence/", PresenceStatusUpdateView.as_view(), name="presence_status"
     ),
     # User management — Gestión de usuarios de empresa.
-    path("users/", CompanyUserListView.as_view(), name="user_list"),
+    # H24 (S145): formato único de listados (panel/views_users_list.py).
+    path("users/", UserListPageView.as_view(), name="user_list"),
+    path(
+        "users/results/",
+        UserListResultsView.as_view(),
+        name="user_list_results",
+    ),
+    path(
+        "users/action/",
+        UserListMassActionView.as_view(),
+        name="user_list_action",
+    ),
     path("users/create/", CompanyUserCreateView.as_view(), name="user_create"),
     path(
         "users/bulk-delete/",
