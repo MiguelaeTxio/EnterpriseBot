@@ -975,8 +975,6 @@ def _parte_no_lunch_days(company, user_id, shifts):
     days = {
         shift.day for shift in shifts
         if shift.clock_out is not None and shift.clock_in is not None
-        and any(e.clock_type_id for e in [shift.clock_in]
-                + list(shift.changes))
     }
     if not days:
         return set()
@@ -997,7 +995,9 @@ def _deduct_missing_meals(shifts, no_lunch_days=()):
     S143 (Miguel Ángel): en el fichaje por tipos, si no se marca "No he
     parado para comer" y no se ha fichado la pausa, "vamos a descontar
     una hora de comida y una hora de cena si ha pillado en la zona de
-    noche". Por día, con todas sus jornadas cerradas y alguna con tipo:
+    noche"; y "en los que no fichan por tipo hay que descontar la hora
+    de comida" (solo la comida). Por día, con todas sus jornadas
+    cerradas:
     - Nada si alguna pulsación del día lleva "No he parado para comer"
       (ni la comida si el parte del día dice "No he parado a comer").
     - Por cada franja (comida 12-17, cena 19-24, las de las pausas): nada
@@ -1020,13 +1020,16 @@ def _deduct_missing_meals(shifts, no_lunch_days=()):
             continue
         marks = [e for s in same
                  for e in [s.clock_in] + list(s.changes) + [s.clock_out]]
-        if not any(e.clock_type_id for e in marks):
-            continue
         if any(getattr(e, "no_meal_break", False) for e in marks):
             continue
+        # S143 (Miguel Ángel): "en los que no fichan por tipo hay que
+        # descontar la hora de comida"; la cena, en los que fichan por
+        # tipo.
+        typed = any(e.clock_type_id for e in marks)
+        zones = ((LUNCH, MEAL_LUNCH), (DINNER, MEAL_DINNER)) if typed \
+            else ((LUNCH, MEAL_LUNCH),)
         same = sorted(same, key=lambda s: s.clock_in.pressed_at)
-        for kind, (zone_from, zone_to) in ((LUNCH, MEAL_LUNCH),
-                                           (DINNER, MEAL_DINNER)):
+        for kind, (zone_from, zone_to) in zones:
             zone_start = timezone.make_aware(
                 datetime.datetime.combine(day, zone_from), tz)
             zone_end = timezone.make_aware(
