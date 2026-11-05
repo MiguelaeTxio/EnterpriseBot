@@ -50,7 +50,7 @@ y Albaranes de Servicios.
                 <input type="checkbox" class="form-check-input clk-row-check" data-pk="{{ row.person.pk }}" data-label="{{ row.label }}">
             </td>
             <td class="sticky-col sticky-col-2">
-                {% if not row.has_account %}<i class="bi bi-person-x text-muted" title="Sin usuario del panel: todavía no puede fichar"></i>{% elif row.report.incident_count %}<i class="bi bi-exclamation-triangle-fill text-danger" title="Tiene incidencias: ábrelo para verlas"></i>{% endif %}
+                {% if not row.has_account %}<i class="bi bi-person-x text-muted" title="Sin usuario del panel: todavía no puede fichar"></i>{% elif row.incident_count %}<i class="bi bi-exclamation-triangle-fill text-danger" title="Tiene incidencias: ábrelo para verlas"></i>{% endif %}
             </td>
             <td class="sticky-col sticky-col-3 sticky-col-last">
                 {# S144: sus fichajes en página propia (formato 4.24), con las fechas de la pestaña. #}
@@ -63,7 +63,7 @@ y Albaranes de Servicios.
             {# S144: en qué punto está su alta en el fichaje. #}
             <td data-label="Alta en el fichaje"><span class="badge text-bg-{{ row.onboarding.badge }} fw-normal">{{ row.onboarding.label }}</span></td>
             <td class="text-end" data-label="Fichajes">{{ row.report.events|length }}</td>
-            <td class="text-end{% if row.report.incident_count %} text-danger fw-bold{% endif %}" data-label="Incidencias">{{ row.report.incident_count }}</td>
+            <td class="text-end{% if row.incident_count %} text-danger fw-bold{% endif %}" data-label="Incidencias" title="Incidencias sin visar (las visadas o corregidas no cuentan)">{{ row.incident_count }}</td>
             {# S143: total de horas de más del intervalo, cupo (hasta el tope de cada mes) y bolsa (el resto). #}
             <td class="text-end text-nowrap" data-label="Total de horas" title="Lo trabajado por encima del horario en las fechas filtradas">{% if row.has_account %}{{ row.overtime_label }} h{% else %}<span class="text-muted">—</span>{% endif %}</td>
             <td class="text-end text-nowrap" data-label="Cupo de horas" title="Horas extra del cupo: hasta el tope de cada mes ({{ overtime_cap }} h)">{% if row.has_account %}{{ row.quota_label }} h{% else %}<span class="text-muted">—</span>{% endif %}</td>

@@ -306,7 +306,10 @@ def _context(request, person):
         "clock_types": list(ClockType.objects.filter(company=company)),
         "kind_choices": ClockEvent.Kind.choices,
         "total_label": report.total_label,
-        "issues_count": report.incident_count,
+        # S143: solo las incidencias sin visar ni corregir.
+        "issues_count": sum(
+            len(s.get("incidents") or []) for s in data["shifts"]
+            if not s.get("reviewed")),
         "punctuality_label": report.punctuality_label,
         "early_label": report.early_label,
         # S144: horas extras, kilómetros y dietas del intervalo.

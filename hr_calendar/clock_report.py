@@ -285,9 +285,20 @@ class Shift:
         """
         return _comparable(self._raw_early)
 
+    @staticmethod
+    def _rounded_minute(event):
+        rounded = timezone.localtime(_rounded(event))
+        return rounded.hour * 60 + rounded.minute
+
     @property
     def is_early(self):
-        return (self.early_minutes or 0) > 0
+        # S143 (Miguel Ángel): dentro de los 5 minutos de tolerancia la
+        # hora es la redondeada; solo es salida antes de hora si la
+        # redondeada queda antes de la del horario.
+        if (self.early_minutes or 0) <= 0:
+            return False
+        expected = self.expected_end.hour * 60 + self.expected_end.minute
+        return self._rounded_minute(self.clock_out) < expected
 
     @property
     def late_minutes(self):
@@ -303,7 +314,13 @@ class Shift:
 
     @property
     def is_late(self):
-        return (self.late_minutes or 0) > 0
+        # S143 (Miguel Ángel): "cuando ticas dentro de los 5 minutos
+        # siguientes [...] lo marca como un fichaje bueno a las 8": solo
+        # es llegada tarde si la hora redondeada pasa de la del horario.
+        if (self.late_minutes or 0) <= 0:
+            return False
+        expected = self.expected_start.hour * 60 + self.expected_start.minute
+        return self._rounded_minute(self.clock_in) > expected
 
     @property
     def start_off_schedule(self):

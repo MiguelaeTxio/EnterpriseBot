@@ -97,7 +97,7 @@ _SORT_VALUES = {
     "events": lambda r: len(r.report.events),
     "last": lambda r: (r.report.last_event.pressed_at
                        if r.report.last_event else None),
-    "issues": lambda r: r.report.incident_count,
+    "issues": lambda r: r.incident_count,
     # S143: horas de más del intervalo, su cupo y la bolsa (sin cuenta,
     # al final).
     "overtime": lambda r: r.overtime_seconds,
@@ -247,6 +247,8 @@ class _Row:
         self.has_account = person.company_user_id is not None
         # S143: horas de más del intervalo, cupo (hasta el tope de cada
         # mes) y bolsa (el resto); None sin cuenta.
+        # S143: incidencias sin visar (las visadas o corregidas no cuentan).
+        self.incident_count = 0
         self.overtime_seconds = self.quota_seconds = None
         self.bag_seconds = None
         self.overtime_label = self.quota_label = self.bag_label = ""
@@ -284,6 +286,24 @@ def _rows(request, people, date_from, date_to):
     # menos 7". Del intervalo filtrado: lo trabajado de más; de eso, cada
     # mes hasta el tope es cupo y lo demás va a la bolsa.
     cap = monthly_cap_seconds(company)
+    # S143 (Miguel Ángel): visada (o corregida) "que no salga ya
+    # incidencia para que solamente marque cuando hay una incidencia
+    # real": el listado cuenta solo las de días sin visar.
+    from hr_calendar.models import ClockDayReview
+
+    reviewed = set(ClockDayReview.objects.filter(
+        company_user_id__in=[p.company_user_id for p in people
+                             if p.company_user_id],
+        day__gte=date_from, day__lte=date_to,
+    ).values_list("company_user_id", "day"))
+    for row in rows:
+        row.incident_count = sum(
+            len(s.incidents) for s in row.report.shifts
+            if (row.person.company_user_id, s.day) not in reviewed
+            and not any(
+                e is not None and e.sent_by == ClockEvent.SentBy.CORRECTION
+                for e in [s.clock_in, s.clock_out] + list(s.changes))
+        )
     for row in rows:
         if row.has_account:
             months = split_by_month(
@@ -396,7 +416,7 @@ def _with_issues_filter(request, rows):
     """
     if _param(request, "issues_only") != "1":
         return rows
-    return [r for r in rows if r.report.issues]
+    return [r for r in rows if r.incident_count]
 
 
 def _with_events_filter(request, rows):
