@@ -52,6 +52,7 @@ panel/views_users_list.py.
             <td>{{ row.section_name|default:"—" }}</td>
             <td>{% if row.schedule %}{{ row.schedule.label }} <span class="text-muted">({{ row.schedule.get_season_display|lower }})</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
             <td>{{ row.base_name|default:"—" }}</td>
+            <td>{% if row.onboarding %}<span class="badge bg-{{ row.onboarding.badge }}{% if row.onboarding.badge == 'warning' or row.onboarding.badge == 'info' %} text-dark{% endif %}">{{ row.onboarding.label }}</span>{% else %}<span class="text-muted">Sin ficha</span>{% endif %}</td>
             <td>{{ row.phone|default:"—" }}</td>
             <td>{% if row.last_login %}{{ row.last_login|date:"d/m/Y H:i" }}{% else %}<span class="text-muted">Nunca</span>{% endif %}</td>
             {# Acciones de la fila en el menú de tres puntos (directriz 4.24, regla 9). #}
@@ -71,7 +72,7 @@ panel/views_users_list.py.
             </td>
         </tr>
         {% empty %}
-        <tr><td colspan="11" class="text-muted small py-3">No hay usuarios con estos filtros.</td></tr>
+        <tr><td colspan="12" class="text-muted small py-3">No hay usuarios con estos filtros.</td></tr>
         {% endfor %}
     </tbody>
 </table>

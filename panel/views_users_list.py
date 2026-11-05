@@ -13,7 +13,8 @@ que se está gestionando ahora mismo en usuarios, solo que con filtros y
 con el tipo de interfaz que [...] estamos usando últimamente."
 
 Panel fijo (buscar y filtrar: texto, Estado, Rol, Sección, Horario,
-Base, Selección; acciones masivas: activar, desactivar, rol, base,
+Base, Alta en el fichaje -- la de Personal, S145 --, Selección;
+acciones masivas: activar, desactivar, rol, base,
 eliminar, nuevo usuario), lista con orden múltiple, selección
 persistida y visor "Selección actual". Lo de cada usuario se sigue
 editando en su formulario de siempre (menú de tres puntos). La sección
@@ -38,8 +39,12 @@ from panel.navigation_persistence import (
 
 SCREEN_KEY = "users_list"
 FILTER_KEYS = (
-    "search", "active", "role", "section", "schedule", "base", "sort",
+    "search", "active", "role", "section", "schedule", "base",
+    "onboarding", "sort",
 )
+# S145: "Alta en el fichaje" como en Personal, más los usuarios sin
+# ficha de Personal (administradores, cuentas de prueba).
+NO_CARD = "no_card"
 NONE_VALUE = "none"
 _MAX_SORT_KEYS = 4
 
@@ -51,6 +56,7 @@ _SORT_VALUES = {
     "section": lambda r: r.section_name.upper() or None,
     "schedule": lambda r: r.schedule.label.upper() if r.schedule else None,
     "base": lambda r: r.base_name.upper() or None,
+    "onboarding": lambda r: r.onboarding_rank,
     "phone": lambda r: r.phone or None,
     "last_login": lambda r: r.last_login,
 }
@@ -62,6 +68,7 @@ _COLUMNS = (
     ("section", "Sección"),
     ("schedule", "Horario"),
     ("base", "Base"),
+    ("onboarding", "Alta en el fichaje"),
     ("phone", "Teléfono"),
     ("last_login", "Último acceso"),
 )
@@ -87,7 +94,7 @@ class _Row:
     Un usuario del panel con lo que enseña la lista.
     """
 
-    def __init__(self, cu, person, section, schedule):
+    def __init__(self, cu, person, section, schedule, onboarding):
         user = cu.user
         self.cu = cu
         self.person = person
@@ -106,6 +113,10 @@ class _Row:
         self.section_name = section.name if section is not None else ""
         self.schedule = schedule
         self.base_name = cu.base.name if cu.base_id else ""
+        # Estado del alta en el fichaje (el de Personal) o "Sin ficha".
+        self.onboarding = onboarding
+        self.onboarding_code = onboarding.code if onboarding else NO_CARD
+        self.onboarding_rank = onboarding.rank if onboarding else 99
         self.phone = cu.phone
         self.last_login = user.last_login
 
@@ -119,6 +130,7 @@ def _rows(company, users):
     """
     from document_explorer.models import PersonIdentity
     from hr_calendar.clock_settings import worker_states
+    from panel.personal_access import onboarding_states
     from panel.views_operator import (
         _resolve_base_schedule_with_origin,
         resolve_person_schedule,
@@ -130,17 +142,20 @@ def _rows(company, users):
         ).select_related("company_user__workday_schedule")
     }
     states = worker_states(list(people.values()))
+    onboarding = onboarding_states(list(people.values()))
     rows = []
     for cu in users:
         person = people.get(cu.pk)
         if person is not None:
             schedule, _origin = resolve_person_schedule(person, company)
             section = states[person.pk].section
+            state = onboarding[person.pk]
         else:
             schedule, _origin = _resolve_base_schedule_with_origin(
                 cu, company)
             section = None
-        rows.append(_Row(cu, person, section, schedule))
+            state = None
+        rows.append(_Row(cu, person, section, schedule, state))
     return rows
 
 
@@ -157,11 +172,9 @@ def _filtered_users(request, company):
     active = _csv(request, "active")
     status = Q(pk__in=[])
     if "true" in active:
-        status |= Q(is_active=True, pending_onboarding=False)
+        status |= Q(is_active=True)
     if "false" in active:
-        status |= Q(is_active=False, pending_onboarding=False)
-    if "pending" in active:
-        status |= Q(pending_onboarding=True)
+        status |= Q(is_active=False)
     qs = qs.filter(status)
     roles = _param(request, "role")
     if roles == NONE_VALUE:
@@ -203,6 +216,11 @@ def _with_filters(request, rows):
     elif schedule.isdigit():
         rows = [r for r in rows
                 if r.schedule is not None and r.schedule.pk == int(schedule)]
+    # "" = todos, "none" = ninguno, si no, los estados marcados.
+    onboarding = _param(request, "onboarding")
+    if onboarding:
+        wanted = set(onboarding.split(","))
+        rows = [r for r in rows if r.onboarding_code in wanted]
     return rows
 
 
@@ -304,12 +322,14 @@ def _list_context(request):
         "filter_section": _param(request, "section"),
         "filter_schedule": _param(request, "schedule"),
         "filter_base": _param(request, "base"),
+        "filter_onboarding": _param(request, "onboarding"),
         **_sort_controls(_param(request, "sort")),
     }
 
 
 def _choices(company):
     from budgets.models import Base
+    from panel.personal_access import ONBOARDING_CHOICES
     from panel.views_worker_schedules import _schedules, _sections
 
     return {
@@ -318,6 +338,8 @@ def _choices(company):
         "schedules": _schedules(company),
         "bases": list(Base.objects.filter(company=company).order_by("name")),
         "none_value": NONE_VALUE,
+        "onboarding_choices": ONBOARDING_CHOICES + (
+            (NO_CARD, "Sin ficha de Personal"),),
     }
 
 

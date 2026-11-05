@@ -5,7 +5,8 @@ H24 (S145). Administración > Usuarios con el formato único de listados
 (directriz 4.24), como Personal y Horarios. Miguel Ángel: "ya urge la
 necesidad de meter filtros por horario, por esto, por lo otro, casi
 como lo que tenemos en personal". Panel fijo: a la izquierda buscar y
-filtrar (texto, Estado, Rol, Sección, Horario, Base, Selección); a la
+filtrar (texto, Estado, Rol, Sección, Horario, Base, Alta en el
+fichaje -- la misma de Personal, S145 --, Selección); a la
 derecha la selección y las acciones (activar, desactivar, rol, base,
 eliminar, nuevo usuario). Debajo, la lista (3/4, pantalla completa) y
 la selección actual (1/4). Lo de cada usuario se sigue editando en su
@@ -43,11 +44,6 @@ panel/views_users_list.py.
                                 <input class="form-check-input usr-active-check" type="checkbox" value="false" id="usrActiveFalse"
                                        {% if "false" in filter_active %}checked{% endif %}>
                                 <label class="form-check-label" for="usrActiveFalse">Inactivos</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input usr-active-check" type="checkbox" value="pending" id="usrActivePending"
-                                       {% if "pending" in filter_active %}checked{% endif %}>
-                                <label class="form-check-label" for="usrActivePending" title="Pre-registros: se activan cuando el trabajador se da de alta por WhatsApp">Pendientes de alta</label>
                             </div>
                             <input type="hidden" name="active" id="usr-active-input" value="{{ filter_active|join:',' }}">
                         </div>
@@ -98,6 +94,23 @@ panel/views_users_list.py.
                                 <option value="{{ base.pk }}"{% if filter_base == base.pk|stringformat:"d" %} selected{% endif %}>{{ base.name }}</option>
                                 {% endfor %}
                             </select>
+                        </div>
+                        {# S145: "Alta en el fichaje" como en Personal; "" = todos, "none" = ninguno. #}
+                        <div>
+                            <div class="fw-semibold mb-1">Alta en el fichaje</div>
+                            <div class="dropdown">
+                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" id="usr-onb-button"
+                                        data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">Todos</button>
+                                <div class="dropdown-menu p-2 small">
+                                    {% for code, label in onboarding_choices %}
+                                    <div class="form-check">
+                                        <input class="form-check-input usr-onb-check" type="checkbox" value="{{ code }}" id="usrOnb{{ forloop.counter }}">
+                                        <label class="form-check-label text-nowrap" for="usrOnb{{ forloop.counter }}">{{ label }}</label>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <input type="hidden" name="onboarding" id="usr-onb-input" value="{{ filter_onboarding }}">
                         </div>
                         <div>
                             <div class="fw-semibold mb-1">Selección</div>
@@ -317,32 +330,37 @@ panel/views_users_list.py.
         cb.addEventListener("change", syncActive);
     });
 
-    // Rol: "" = todos, "none" = ninguno, si no, los marcados separados por comas.
-    const roleBoxes = Array.from(document.querySelectorAll(".usr-role-check"));
-    const roleInput = document.getElementById("usr-role-input");
-    const roleButton = document.getElementById("usr-role-button");
-    (function initRoles() {
-        const value = roleInput.value;
+    // Rol y Alta en el fichaje: casillas en un desplegable; en el campo
+    // oculto "" = todas, "none" = ninguna, si no, las marcadas con comas.
+    function boxFilter(boxSelector, inputId, buttonId, allLinkId) {
+        const boxes = Array.from(document.querySelectorAll(boxSelector));
+        const input = document.getElementById(inputId);
+        const button = document.getElementById(buttonId);
+        const value = input.value;
         const wanted = value === "none" ? [] : (value ? value.split(",") : null);
-        roleBoxes.forEach(function (b) { b.checked = wanted === null || wanted.indexOf(b.value) !== -1; });
-    }());
-    function syncRoles(fire) {
-        const marked = roleBoxes.filter(function (b) { return b.checked; }).map(function (b) { return b.value; });
-        roleInput.value = marked.length === roleBoxes.length ? "" : (marked.length ? marked.join(",") : "none");
-        roleButton.textContent = marked.length === roleBoxes.length ? "Todos"
-            : (marked.length === 0 ? "Ninguno" : (marked.length === 1
-                ? roleBoxes.find(function (b) { return b.checked; }).nextElementSibling.textContent
-                : marked.length + " de " + roleBoxes.length));
-        if (fire) roleInput.dispatchEvent(new Event("change", {bubbles: true}));
+        boxes.forEach(function (b) { b.checked = wanted === null || wanted.indexOf(b.value) !== -1; });
+        function sync(fire) {
+            const marked = boxes.filter(function (b) { return b.checked; }).map(function (b) { return b.value; });
+            input.value = marked.length === boxes.length ? "" : (marked.length ? marked.join(",") : "none");
+            button.textContent = marked.length === boxes.length ? "Todos"
+                : (marked.length === 0 ? "Ninguno" : (marked.length === 1
+                    ? boxes.find(function (b) { return b.checked; }).nextElementSibling.textContent
+                    : marked.length + " de " + boxes.length));
+            if (fire) input.dispatchEvent(new Event("change", {bubbles: true}));
+        }
+        boxes.forEach(function (b) { b.addEventListener("change", function () { sync(true); }); });
+        if (allLinkId) {
+            document.getElementById(allLinkId).addEventListener("click", function (ev) {
+                ev.preventDefault();
+                const allChecked = boxes.every(function (b) { return b.checked; });
+                boxes.forEach(function (b) { b.checked = !allChecked; });
+                sync(true);
+            });
+        }
+        sync(false);
     }
-    roleBoxes.forEach(function (b) { b.addEventListener("change", function () { syncRoles(true); }); });
-    document.getElementById("usr-role-all").addEventListener("click", function (ev) {
-        ev.preventDefault();
-        const allChecked = roleBoxes.every(function (b) { return b.checked; });
-        roleBoxes.forEach(function (b) { b.checked = !allChecked; });
-        syncRoles(true);
-    });
-    syncRoles(false);
+    boxFilter(".usr-role-check", "usr-role-input", "usr-role-button", "usr-role-all");
+    boxFilter(".usr-onb-check", "usr-onb-input", "usr-onb-button", null);
 
     results.addEventListener("change", function (evt) {
         const target = evt.target;
