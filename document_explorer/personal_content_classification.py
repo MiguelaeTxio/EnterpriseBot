@@ -619,6 +619,15 @@ CONTENT_SIGNALS = {
     # es TACOGRAFO; "TARJETA DE CUALIFICACION DEL CONDUCTOR"
     # (pk=32833) es TARJETA_CUALIF_CONDUCTOR -- frases sin solape
     # entre si (la de TACOGRAFO no es substring de la otra).
+    # H24 (S145). Tarjeta ADR (mercancías peligrosas), vista en el
+    # dossier de Berenguer Gómez: cabecera bilingüe "ADR - CERTIFICADO
+    # DE FORMACION DEL CONDUCTOR / ADR - CERTIFICAT DE FORMATION DE
+    # CONDUCTEUR". Con "ADR" delante, para no confundirla con otros
+    # certificados de formación.
+    "ADR": [
+        "ADR - CERTIFICADO DE FORMACION",
+        "CERTIFICAT DE FORMATION DE CONDUCTEUR",
+    ],
     "TACOGRAFO": ["TARJETA DE CONDUCTOR"],
     "TARJETA_CUALIF_CONDUCTOR": ["TARJETA DE CUALIFICACION"],
     # H35 (S105). Confirmado con pk=42128/41145 (dos personas
