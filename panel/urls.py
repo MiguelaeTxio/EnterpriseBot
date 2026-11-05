@@ -96,6 +96,7 @@ from panel.views_vacation_balance import (
     AbsencePeriodCreateView,
     AbsencePeriodRemoveView,
     VacationAdjustmentCreateView,
+    VacationFreeDaysCreateView,
     VacationAdjustmentDeleteView,
     VacationBalanceDetailView,
     VacationBalanceResultsView,
@@ -1793,6 +1794,11 @@ urlpatterns = [
         "documentacion/vacaciones/<int:pk>/ajuste/",
         VacationAdjustmentCreateView.as_view(),
         name="vacation_balance_adjustment_create",
+    ),
+    path(
+        "documentacion/vacaciones/<int:pk>/dias-libres/",
+        VacationFreeDaysCreateView.as_view(),
+        name="vacation_balance_free_days",
     ),
     path(
         "documentacion/vacaciones/ajuste/<int:pk>/borrar/",

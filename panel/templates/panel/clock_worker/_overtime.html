@@ -59,7 +59,7 @@ Vista: panel/views_clock_extras.py.
             <td>{{ row.item.reason }}</td>
             <td class="text-nowrap">{{ row.item.created_by|default:"—" }}</td>
             <td class="text-end">
-                <form hx-post="{% url 'panel:clock_worker_overtime' person.pk %}" hx-target="#cw-bag-body" hx-confirm="¿Borrar este movimiento?">
+                <form hx-post="{% url 'panel:clock_worker_overtime' person.pk %}" hx-target="#cw-bag-body" hx-confirm="{% if row.item.vacation_adjustment_id %}¿Borrar este movimiento? También se quitan los días libres que se dieron en Vacaciones.{% else %}¿Borrar este movimiento?{% endif %}">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="delete">
                     <input type="hidden" name="adjustment" value="{{ row.item.pk }}">

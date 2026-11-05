@@ -759,6 +759,10 @@ class VacationBalanceAdjustment(models.Model):
             "OPENING_CARRYOVER", "Del año anterior (saldo de partida)"
         )
         MANUAL = "MANUAL", "Ajuste manual"
+        # S143 (Miguel Ángel): días libres que da el supervisor a cambio
+        # de horas acumuladas; suman al saldo y restan de la bolsa
+        # (OvertimeAdjustment enlazado).
+        OVERTIME = "OVERTIME", "Días libres por horas acumuladas"
 
     person = models.ForeignKey(
         PersonIdentity,
@@ -1805,6 +1809,13 @@ class OvertimeAdjustment(models.Model):
         help_text="Negativo: horas pagadas o compensadas.",
     )
     reason = models.CharField(max_length=200, verbose_name="Motivo")
+    # S143: las horas que se descuentan por unos días libres dados en
+    # Vacaciones; se borra con el ajuste de vacaciones.
+    vacation_adjustment = models.OneToOneField(
+        "hr_calendar.VacationBalanceAdjustment", null=True, blank=True,
+        on_delete=models.CASCADE, related_name="overtime_adjustment",
+        verbose_name="Días libres en vacaciones",
+    )
     created_by = models.ForeignKey(
         CompanyUser, null=True, blank=True, on_delete=models.SET_NULL,
         related_name="+", verbose_name="Apuntado por",

@@ -52,6 +52,7 @@ from document_explorer.models import PersonIdentity
 from hr_calendar.balance import (
     NO_SECTION_LABEL,
     BalanceCalculator,
+    add_free_days,
     add_manual_adjustment,
     assign_section,
     validate_rule,
@@ -443,11 +444,20 @@ def _detail_context(request, person, year, message="", error=False):
         date_start__lte=datetime.date(year, 12, 31),
         date_end__gte=datetime.date(year, 1, 1),
     ).select_related("category", "created_by__user").order_by("date_start")
+    # S143: horas acumuladas, para dar días libres a cambio.
+    bag_label = ""
+    if can_manage(request) and person.company_user_id is not None:
+        from hr_calendar.clock_extras import overtime_bag, signed_duration
+
+        bag_label = signed_duration(overtime_bag(
+            person.company_user.company, person.company_user,
+        )["total_seconds"])
     return {
         "person": person,
         "person_label": _person_label(person),
         "year": year,
         "balance": balance,
+        "bag_label": bag_label,
         "assignments": assignments,
         "absences": absences,
         "absence_categories": absence_categories(company),
@@ -571,6 +581,43 @@ class VacationAdjustmentCreateView(SupervisorAccessMixin, View):
         )
 
 
+class VacationFreeDaysCreateView(SupervisorAccessMixin, View):
+    """
+    POST: free days for accumulated hours.
+    ---
+    POST: días libres a cambio de horas acumuladas (S143): suman al
+    saldo del año y las horas escritas se restan de la bolsa.
+    """
+
+    def post(self, request, pk):
+        from panel.views_clock_extras import _parse_minutes
+
+        person = _person_or_404(pk)
+        year = _year(request.POST.get("year"))
+        days = _parse_decimal(request.POST.get("days"))
+        if days is None or days != days.to_integral_value():
+            return _detail_response(
+                request, person, year,
+                "Los días libres deben ser un número entero (p. ej. 2).",
+                error=True,
+            )
+        try:
+            add_free_days(
+                person, request.user.company_user.company, year, days,
+                _parse_minutes(request.POST.get("hours")),
+                request.POST.get("reason"), request.user.company_user,
+            )
+        except ValueError as exc:
+            return _detail_response(request, person, year, str(exc),
+                                    error=True)
+        return _detail_response(
+            request, person, year,
+            f"{days} día(s) libre(s) por horas acumuladas sumados en "
+            f"{year}.",
+            refresh_table=True,
+        )
+
+
 class VacationAdjustmentDeleteView(SupervisorAccessMixin, View):
     """
     POST: delete an adjustment (manual or starting balance).
@@ -586,6 +633,10 @@ class VacationAdjustmentDeleteView(SupervisorAccessMixin, View):
             raise Http404
         person, year = row.person, row.year
         label = f"{row.get_kind_display()} ({row.days} días)"
+        # S143: con los días libres se borran también las horas que se
+        # descontaron de la bolsa (en cascada).
+        if row.kind == VacationBalanceAdjustment.Kind.OVERTIME:
+            label += "; las horas vuelven a la bolsa"
         row.delete()
         return _detail_response(
             request, person, year, f"Ajuste borrado: {label}.",

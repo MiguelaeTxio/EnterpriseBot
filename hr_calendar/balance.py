@@ -254,6 +254,8 @@ class VacationBalance:
     year: int
     entitled: Decimal = ZERO
     manual: Decimal = ZERO
+    # S143: días libres dados a cambio de horas acumuladas.
+    free_days: Decimal = ZERO
     carryover: Decimal = ZERO
     carryover_deadline: object = None
     carryover_lost: Decimal = ZERO
@@ -272,7 +274,7 @@ class VacationBalance:
 
     @property
     def available(self):
-        return self.entitled + self.manual + self.carryover
+        return self.entitled + self.manual + self.free_days + self.carryover
 
     @property
     def pending(self):
@@ -360,7 +362,8 @@ class BalanceCalculator:
     def _first_tracked_year(self, person_id):
         years = [
             a.year for a in self.adjustments.get(person_id, [])
-            if a.kind != VacationBalanceAdjustment.Kind.MANUAL
+            if a.kind not in (VacationBalanceAdjustment.Kind.MANUAL,
+                              VacationBalanceAdjustment.Kind.OVERTIME)
         ]
         if years:
             return min(years)
@@ -457,6 +460,8 @@ class BalanceCalculator:
             result.adjustments.append(adj)
             if adj.kind == VacationBalanceAdjustment.Kind.MANUAL:
                 result.manual += adj.days
+            elif adj.kind == VacationBalanceAdjustment.Kind.OVERTIME:
+                result.free_days += adj.days
             elif adj.kind == VacationBalanceAdjustment.Kind.OPENING_TAKEN:
                 result.taken_opening += adj.days
             else:
@@ -580,6 +585,50 @@ def add_manual_adjustment(person, company, year, days, reason, created_by):
         kind=VacationBalanceAdjustment.Kind.MANUAL,
         days=days, reason=reason, created_by=created_by,
     )
+
+
+def add_free_days(person, company, year, days, minutes, reason,
+                  created_by):
+    """
+    Free days given for accumulated hours.
+    ---
+    Días libres a cambio de horas acumuladas (S143, Miguel Ángel: "dar
+    esos días libres [...] y sumar esos días libres que el supervisor dé
+    en la parte de vacaciones para que los pueda disfrutar el
+    trabajador"). Suma `days` al saldo de vacaciones del año (ajuste
+    OVERTIME) y resta `minutes` de su bolsa de horas (OvertimeAdjustment
+    enlazado, que se borra con el ajuste). ValueError si falta el motivo,
+    los días no son positivos, no hay horas o no tiene cuenta del panel.
+    """
+    from django.utils import timezone
+
+    from hr_calendar.models import OvertimeAdjustment
+
+    reason = (reason or "").strip()
+    if not reason:
+        raise ValueError("El motivo es obligatorio.")
+    if days is None or days <= 0:
+        raise ValueError("Los días libres tienen que ser más de cero.")
+    if not minutes or minutes <= 0:
+        raise ValueError("Escribe las horas que se descuentan, por "
+                         "ejemplo 8:00.")
+    if person.company_user_id is None:
+        raise ValueError("Sin cuenta en el panel: no tiene horas "
+                         "acumuladas.")
+    with transaction.atomic():
+        adjustment = VacationBalanceAdjustment.objects.create(
+            person=person, company=company, year=year,
+            kind=VacationBalanceAdjustment.Kind.OVERTIME,
+            days=days, reason=reason, created_by=created_by,
+        )
+        OvertimeAdjustment.objects.create(
+            company_user_id=person.company_user_id,
+            date=timezone.localdate(), minutes=-minutes,
+            reason=("Días libres (%s) en vacaciones de %d: %s"
+                    % (days.normalize(), year, reason))[:200],
+            vacation_adjustment=adjustment, created_by=created_by,
+        )
+    return adjustment
 
 
 def set_opening_balance(person, company, year, kind, days, created_by,

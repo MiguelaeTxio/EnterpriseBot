@@ -105,10 +105,16 @@ class ClockWorkerOvertimeView(SupervisorAccessMixin, View):
         if person.company_user_id is None:
             error = "Sin cuenta en el panel: no tiene bolsa de horas."
         elif request.POST.get("action") == "delete":
-            deleted, _rest = OvertimeAdjustment.objects.filter(
+            row = OvertimeAdjustment.objects.filter(
                 pk=request.POST.get("adjustment") or 0,
                 company_user_id=person.company_user_id,
-            ).delete()
+            ).select_related("vacation_adjustment").first()
+            deleted = 0
+            if row is not None:
+                # S143: unos días libres se borran con sus horas (y al
+                # revés): el ajuste de vacaciones arrastra el movimiento.
+                target = row.vacation_adjustment or row
+                deleted, _rest = target.delete()
             message = "Movimiento borrado." if deleted else ""
             error = "" if deleted else "Ese movimiento ya no existe."
         else:
