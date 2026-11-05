@@ -1,7 +1,9 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/users/_table.html #}
 {% comment %}
 H24 (S145). Tabla de Usuarios (directriz 4.24): casilla y usuario fijos
-a la izquierda, todas las columnas ordenables (orden múltiple), y las
+a la izquierda (el usuario con su propia clase: sticky-col-2 mide 28 px
+para el icono de aviso y el nombre de usuario se salía encima de la
+columna siguiente, captura de Miguel Ángel), todas las columnas ordenables (orden múltiple), y las
 acciones de cada usuario en el menú de tres puntos. Vista:
 panel/views_users_list.py.
 {% endcomment %}
@@ -16,7 +18,7 @@ panel/views_users_list.py.
         <tr>
             <th class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input" id="usr-check-all" title="Seleccionar todos los que cumplen el filtro actual"></th>
             {% for column in sort_columns %}
-            <th class="{% if column.key == 'username' %}sticky-col sticky-col-2 sticky-col-last{% endif %}">
+            <th class="{% if column.key == 'username' %}sticky-col usr-sticky-user sticky-col-last{% endif %}">
                 <a href="#" class="text-decoration-none text-dark"
                    hx-get="{% url 'panel:user_list_results' %}"
                    hx-target="#usr-results"
@@ -36,7 +38,7 @@ panel/views_users_list.py.
             <td class="sticky-col sticky-col-1">
                 <input type="checkbox" class="form-check-input usr-row-check" data-pk="{{ row.cu.pk }}" data-label="{{ row.label }} ({{ row.username }})">
             </td>
-            <td class="sticky-col sticky-col-2 sticky-col-last fw-medium">
+            <td class="sticky-col usr-sticky-user sticky-col-last fw-medium">
                 <a href="{% url 'panel:user_edit' row.cu.pk %}" class="text-decoration-none text-dark">{{ row.username }}</a>
                 {% if row.cu.pk == own_pk %}<span class="badge bg-light text-dark border ms-1">Tú</span>{% endif %}
             </td>
