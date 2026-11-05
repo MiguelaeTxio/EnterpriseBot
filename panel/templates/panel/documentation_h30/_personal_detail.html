@@ -1600,25 +1600,65 @@ function submitSplit() {
     const form = document.getElementById('splitForm');
     const resultDiv = document.getElementById('splitResult');
     if (!form) return;
+    // S145 (Miguel Ángel sacó sin querer anversos que venían marcados):
+    // lista de lo que se va a crear y confirmación antes de empezar.
+    const groups = {};
+    form.querySelectorAll('select[name^="page_type_"]').forEach(function (sel) {
+        if (!sel.value) return;
+        const label = sel.options[sel.selectedIndex].text;
+        const page = sel.name.replace('page_type_', '');
+        (groups[label] = groups[label] || []).push(page);
+    });
+    const lines = Object.keys(groups).map(function (label) {
+        return '- ' + label + ': página' + (groups[label].length > 1 ? 's ' : ' ') + groups[label].join(', ');
+    });
+    if (!lines.length) {
+        resultDiv.innerHTML = '<span class="text-danger">No hay ninguna página marcada para sacar.</span>';
+        return;
+    }
+    if (!confirm('Se van a sacar estos documentos:\n\n' + lines.join('\n') + '\n\n¿Seguir?')) return;
     const btn = document.getElementById('splitSubmit');
-    btn.disabled = true;
-    resultDiv.innerHTML = '<span class="text-muted">Sacando documentos…</span>';
+    setSplitBusy(true);
+    resultDiv.innerHTML = '<span class="text-muted">Sacando documentos… no cierres esta ventana.</span>';
     fetch(form.dataset.url, {
         method: 'POST',
         headers: {'X-CSRFToken': getCookie('csrftoken')},
         body: new FormData(form),
     }).then(r => r.json()).then(data => {
+        setSplitBusy(false);
         if (data.ok) {
+            if (data.skipped && data.skipped.length) {
+                alert('Ya estaban sacados, no se han repetido:\n\n- ' + data.skipped.join('\n- '));
+            }
             location.reload();
         } else {
-            btn.disabled = false;
             resultDiv.innerHTML = `<span class="text-danger">${data.error || 'Error al separar.'}</span>`;
         }
     }).catch(() => {
-        btn.disabled = false;
+        setSplitBusy(false);
         resultDiv.innerHTML = '<span class="text-danger">Error de red al separar.</span>';
     });
 }
+
+// S145: mientras se sacan documentos no se puede cerrar el modal ni
+// salir de la página sin aviso (cancelar a medias dejaba copias).
+window._splitBusy = false;
+function setSplitBusy(busy) {
+    window._splitBusy = busy;
+    const modal = document.getElementById('documentSplitModal');
+    modal.querySelectorAll('[data-bs-dismiss="modal"]').forEach(function (b) { b.disabled = busy; });
+    document.getElementById('splitSubmit').disabled = busy;
+}
+(function () {
+    const modal = document.getElementById('documentSplitModal');
+    if (!modal) return;
+    modal.addEventListener('hide.bs.modal', function (ev) {
+        if (window._splitBusy) ev.preventDefault();
+    });
+})();
+window.addEventListener('beforeunload', function (ev) {
+    if (window._splitBusy) { ev.preventDefault(); ev.returnValue = ''; }
+});
 
 function openChangeTypeModal(entryPk, currentLabel) {
     document.getElementById('changeTypeEntryPk').value = entryPk;

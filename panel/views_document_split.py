@@ -150,12 +150,18 @@ class DocumentSplitView(DocsUploadAccessMixin, View):
                 status=400)
         data = download_bytes(entry.bucket, entry.blob_name)
         created = []
+        skipped = []
         for code, numbers in groups.items():
             document_type = dossier_service.person_type(code)
             if document_type is None or code == DOSSIER_CODE:
                 return JsonResponse(
                     {"ok": False, "error": "Tipo desconocido: %s" % code},
                     status=400)
+            if _already_extracted(entry, person, document_type, numbers):
+                skipped.append("%s (páginas %s)" % (
+                    document_type.label,
+                    ", ".join(map(str, sorted(numbers)))))
+                continue
             typed = dates.get(code)
             dossier_service.extract_document(
                 entry, person, document_type, pages=sorted(numbers),
@@ -165,8 +171,29 @@ class DocumentSplitView(DocsUploadAccessMixin, View):
             )
             created.append("%s (páginas %s)" % (
                 document_type.label, ", ".join(map(str, sorted(numbers)))))
-        _mark_as_dossier(entry, created)
-        return JsonResponse({"ok": True, "created": created})
+        if created:
+            _mark_as_dossier(entry, created)
+        return JsonResponse(
+            {"ok": True, "created": created, "skipped": skipped})
+
+
+def _already_extracted(source, person, document_type, numbers):
+    """
+    Same pages of this dossier already taken out with this type.
+    ---
+    Las mismas páginas de este dossier ya se sacaron con este tipo y
+    siguen vivas (S145: al repetir Separar no se duplican). Se reconoce
+    por la nota que deja `dossier_service.extract_document`.
+    """
+    note = "(#%d), página(s) %s." % (
+        source.pk, ", ".join(map(str, sorted(numbers))))
+    return DocumentIndexEntry.objects.filter(
+        domain_content_type=ContentType.objects.get_for_model(person),
+        domain_object_id=person.pk,
+        document_type=document_type,
+        deleted_at__isnull=True,
+        curator_note__contains=note,
+    ).exists()
 
 
 def _mark_as_dossier(entry, created):
