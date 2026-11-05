@@ -41,8 +41,19 @@ def bag_context(person):
     bag = clock_extras.overtime_bag(
         person.company_user.company, person.company_user,
     )
+    label = clock_extras.signed_duration
     return {
         **bag,
+        # S143: cada mes, horas extra hasta el tope y acumuladas el resto.
+        "cap_label": label(bag["cap_seconds"]),
+        "extra_label": label(bag["extra_seconds"]),
+        "accumulated_label": label(bag["accumulated_seconds"]),
+        "month_rows": [{
+            **m,
+            "excess_label": label(m["excess"]),
+            "extra_label": label(m["extra"]),
+            "accumulated_label": label(m["accumulated"]),
+        } for m in reversed(bag["months"])],
         "total_label": clock_extras.signed_duration(bag["total_seconds"]),
         "worked_label": clock_extras.signed_duration(bag["worked_seconds"]),
         "adjust_label": clock_extras.signed_duration(

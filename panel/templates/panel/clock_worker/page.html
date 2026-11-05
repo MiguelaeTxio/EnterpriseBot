@@ -139,9 +139,9 @@ screen_key "clock_worker"); la selección, por trabajador.
                             <i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel
                         </button>
                     </div>
-                    {# S144: bolsa de horas extras (lo de más de cada día y los movimientos a mano). #}
+                    {# S144: bolsa de horas extras. S143: lo que pasa del tope de cada mes son horas acumuladas. #}
                     <div class="col-6 border-top pt-1 mt-1">
-                        <div class="small text-muted fw-bold">Bolsa de horas extras</div>
+                        <div class="small text-muted fw-bold">Horas acumuladas</div>
                         {% if bag %}
                         <div class="small">Total: <strong id="cw-bag-total">{{ bag.total_label }} h</strong></div>
                         <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#cwBagModal"
@@ -274,7 +274,7 @@ screen_key "clock_worker"); la selección, por trabajador.
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="cwBagModalLabel">Bolsa de horas extras de {{ person_label }}</h5>
+                <h5 class="modal-title" id="cwBagModalLabel">Horas extra y acumuladas de {{ person_label }}</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body" id="cw-bag-body"><div class="text-muted small">Cargando…</div></div>

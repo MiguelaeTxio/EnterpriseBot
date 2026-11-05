@@ -9,6 +9,8 @@ Bolsa de horas extras, kilómetros con vehículo propio y pausas para
 comer del fichaje (H24, S144). Decisiones de Miguel Ángel:
 
 - Bolsa de horas: cada día suma lo trabajado POR ENCIMA de su horario;
+  S143: cada mes, hasta el tope de la empresa (7 h) son horas extra y
+  lo que pasa va a horas acumuladas;
   los días de menos no restan. En sábados, domingos y festivos que no
   trabaja, todo lo trabajado es extra. Sin horario, o con horario
   abierto, no hay horas previstas y no se calcula. Solo días cerrados
@@ -97,15 +99,57 @@ def day_excess(shifts, times_of, is_day_compared, has_hours):
     return result
 
 
+def monthly_cap_seconds(company):
+    """
+    The company's monthly overtime cap, in seconds.
+    ---
+    El tope de horas extra al mes de la empresa (S143, Miguel Ángel: 7
+    horas por defecto), en segundos.
+    """
+    from hr_calendar.models import ClockSettings
+
+    minutes = ClockSettings.objects.filter(company=company).values_list(
+        "overtime_monthly_cap_minutes", flat=True).first()
+    if minutes is None:
+        minutes = ClockSettings.DEFAULT_OVERTIME_CAP_MINUTES
+    return minutes * 60
+
+
+def split_by_month(day_excess, cap_seconds):
+    """
+    The daily excess grouped by month, split at the monthly cap.
+    ---
+    Lo de más de cada día agrupado por mes (S143): hasta el tope son
+    horas extra; lo que pasa del tope, horas acumuladas. Lista ordenada
+    de {"month", "excess", "extra", "accumulated"} (segundos).
+    """
+    by_month = {}
+    for day, seconds in day_excess.items():
+        month = day.replace(day=1)
+        by_month[month] = by_month.get(month, 0) + seconds
+    return [
+        {
+            "month": month,
+            "excess": total,
+            "extra": min(total, cap_seconds),
+            "accumulated": max(total - cap_seconds, 0),
+        }
+        for month, total in sorted(by_month.items())
+    ]
+
+
 def overtime_bag(company, company_user, until=None):
     """
-    The worker's overtime bag: daily excess since BAG_START plus manual
-    movements.
+    The worker's overtime: monthly extra hours up to the cap and the
+    accumulated hours above it, plus manual movements.
     ---
-    La bolsa de un trabajador: lo de más de cada día desde BAG_START
-    hasta `until` (hoy) y los movimientos a mano. Devuelve un dict con
-    los segundos de los días, los minutos de los movimientos, el total
-    en segundos y la lista de movimientos.
+    Las horas de más de un trabajador desde BAG_START hasta `until`
+    (hoy). S143 (Miguel Ángel): cada mes, hasta el tope son horas extra
+    y lo que pasa del tope va a horas acumuladas; los movimientos a mano
+    (horas compensadas o días libres, añadidas) mueven las acumuladas.
+    Devuelve un dict con los segundos de los días, los meses, el tope,
+    los minutos de los movimientos, el total acumulado en segundos y la
+    lista de movimientos.
     """
     from hr_calendar.clock_report import reports_by_user
     from hr_calendar.models import OvertimeAdjustment
@@ -114,16 +158,24 @@ def overtime_bag(company, company_user, until=None):
     report = reports_by_user(
         company, [company_user.pk], BAG_START, until,
     ).get(company_user.pk)
-    worked = report.excess_seconds if report is not None else 0
+    cap = monthly_cap_seconds(company)
+    months = split_by_month(
+        report.day_excess if report is not None else {}, cap,
+    )
+    worked = sum(m["excess"] for m in months)
+    accumulated = sum(m["accumulated"] for m in months)
     adjustments = list(OvertimeAdjustment.objects.filter(
         company_user=company_user, date__gte=BAG_START,
     ).select_related("created_by__user"))
     moved = sum(a.minutes for a in adjustments)
-    total = worked + moved * 60
     return {
         "worked_seconds": worked,
+        "extra_seconds": sum(m["extra"] for m in months),
+        "accumulated_seconds": accumulated,
+        "months": months,
+        "cap_seconds": cap,
         "adjust_minutes": moved,
-        "total_seconds": total,
+        "total_seconds": accumulated + moved * 60,
         "adjustments": adjustments,
         "since": BAG_START,
     }
@@ -131,12 +183,12 @@ def overtime_bag(company, company_user, until=None):
 
 def overtime_bags(company, company_user_ids, until=None):
     """
-    {company_user_id: bag total in seconds} of several workers at once.
+    {company_user_id: accumulated hours in seconds} of several workers.
     ---
-    El total de la bolsa de varios trabajadores de una vez (S145, columna
-    "Bolsa de horas" del listado de Fichajes): mismo cálculo que
-    overtime_bag (lo de más de cada día desde BAG_START hasta `until` y
-    los movimientos a mano), con una sola lectura de fichajes y de
+    Las horas acumuladas de varios trabajadores de una vez (S145,
+    columna del listado de Fichajes): mismo cálculo que overtime_bag (lo
+    que pasa del tope cada mes desde BAG_START hasta `until` y los
+    movimientos a mano), con una sola lectura de fichajes y de
     movimientos.
     """
     from django.db.models import Sum
@@ -149,6 +201,7 @@ def overtime_bags(company, company_user_ids, until=None):
         return {}
     until = until or timezone.localdate()
     reports = reports_by_user(company, ids, BAG_START, until)
+    cap = monthly_cap_seconds(company)
     moved = dict(
         OvertimeAdjustment.objects.filter(
             company_user_id__in=ids, date__gte=BAG_START,
@@ -156,13 +209,14 @@ def overtime_bags(company, company_user_ids, until=None):
             total=Sum("minutes"),
         ).values_list("company_user_id", "total")
     )
-    return {
-        pk: (
-            (reports[pk].excess_seconds if pk in reports else 0)
-            + (moved.get(pk) or 0) * 60
+    result = {}
+    for pk in ids:
+        months = split_by_month(
+            reports[pk].day_excess if pk in reports else {}, cap,
         )
-        for pk in ids
-    }
+        result[pk] = (sum(m["accumulated"] for m in months)
+                      + (moved.get(pk) or 0) * 60)
+    return result
 
 
 def signed_duration(seconds):

@@ -114,6 +114,7 @@ from panel.views_vacation_balance import (
 )
 from panel.views_clock_events import (
     ClockEventCorrectView,
+    ClockOvertimeCapView,
     ClockRemindersSwitchView,
     ClockSectionSettingView,
     ClockTypeSaveView,
@@ -1890,6 +1891,11 @@ urlpatterns = [
         "documentacion/fichajes/ajustes/recordatorios/",
         ClockRemindersSwitchView.as_view(),
         name="clock_settings_reminders",
+    ),
+    path(
+        "documentacion/fichajes/ajustes/tope-horas-extra/",
+        ClockOvertimeCapView.as_view(),
+        name="clock_settings_overtime_cap",
     ),
     path(
         "documentacion/fichajes/ajustes/seccion/",

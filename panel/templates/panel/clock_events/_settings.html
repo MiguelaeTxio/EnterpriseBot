@@ -82,5 +82,12 @@ aparte en el detalle y no suman horas.
                 {% include "panel/clock_events/_type_row.html" with clock_type=None %}
             </div>
         </div>
+        {# S143: tope de horas extra al mes; lo que pasa va a horas acumuladas. #}
+        <div class="input-group input-group-sm" style="width:auto" title="Lo trabajado de más en un mes hasta este tope son horas extra; lo que pasa del tope va a horas acumuladas (se pueden dar como días libres en Vacaciones).">
+            <span class="input-group-text">Tope de horas extra al mes</span>
+            <input type="text" class="form-control" id="clk-overtime-cap" value="{{ overtime_cap }}" style="max-width:5.5em" inputmode="decimal">
+            <span class="input-group-text">h</span>
+            <button type="button" class="btn btn-outline-primary clk-cap-save" data-url="{% url 'panel:clock_settings_overtime_cap' %}">Guardar</button>
+        </div>
     </div>
 </div>

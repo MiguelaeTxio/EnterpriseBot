@@ -489,6 +489,14 @@ recordatorios, secciones que fichan y permiso de envío).
         if (!confirm(btn.dataset.confirm)) return;
         postSetting(btn.dataset.url, {enabled: btn.dataset.enabled}, false);
     });
+    // S143: tope de horas extra al mes.
+    document.getElementById("clk-top-panel").addEventListener("click", function (evt) {
+        const btn = evt.target.closest(".clk-cap-save");
+        if (!btn) return;
+        const value = document.getElementById("clk-overtime-cap").value.trim();
+        if (!confirm("¿Tope de horas extra de " + value + " h al mes? Lo que pase del tope en cada mes (también en los meses ya pasados) se cuenta como horas acumuladas.")) return;
+        postSetting(btn.dataset.url, {hours: value}, false);
+    });
     document.getElementById("clk-top-panel").addEventListener("change", function (evt) {
         const sw = evt.target.closest(".clk-section-switch");
         if (!sw) return;

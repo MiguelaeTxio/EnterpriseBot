@@ -1372,6 +1372,16 @@ class ClockSettings(models.Model):
         default=False,
         verbose_name="Enviar recordatorios de fichaje",
     )
+    # S143 (Miguel Ángel): "un tope de horas configurable. Lo que pase
+    # de ese tope de horas lo vamos a pasar a horas acumuladas [...] 7
+    # horas por mes".
+    DEFAULT_OVERTIME_CAP_MINUTES = 7 * 60
+    overtime_monthly_cap_minutes = models.PositiveIntegerField(
+        default=DEFAULT_OVERTIME_CAP_MINUTES,
+        verbose_name="Tope de horas extra al mes (minutos)",
+        help_text="Lo trabajado de más en un mes por encima de este tope "
+                  "pasa a horas acumuladas.",
+    )
     updated_by = models.ForeignKey(
         CompanyUser,
         null=True,

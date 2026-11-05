@@ -29,7 +29,7 @@ y Albaranes de Servicios.
             <th class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input" id="clk-check-all" title="Seleccionar todos los que cumplen el filtro actual"></th>
             <th class="sticky-col sticky-col-2"></th>
             {% for column in sort_columns %}
-            <th class="{% if column.key == 'person' %}sticky-col sticky-col-3 sticky-col-last{% elif column.key == 'events' or column.key == 'issues' or column.key == 'bag' %}text-end{% endif %}"{% if column.key == 'issues' %} title="Incidencias: llegada tarde, salida antes de hora, fichaje sin su pareja (entrada sin salida o al revés) y fichaje a más de 3 horas de su horario. El detalle del trabajador las explica una a una."{% endif %}>
+            <th class="{% if column.key == 'person' %}sticky-col sticky-col-3 sticky-col-last{% elif column.key == 'events' or column.key == 'issues' or column.key == 'overtime' or column.key == 'quota' or column.key == 'bag' %}text-end{% endif %}"{% if column.key == 'issues' %} title="Incidencias: llegada tarde, salida antes de hora, fichaje sin su pareja (entrada sin salida o al revés) y fichaje a más de 3 horas de su horario. El detalle del trabajador las explica una a una."{% endif %}>
                 <a href="#" class="text-decoration-none text-dark"
                    hx-get="{% url 'panel:clock_events_results' %}"
                    hx-target="#clk-results"
@@ -64,7 +64,10 @@ y Albaranes de Servicios.
             <td data-label="Alta en el fichaje"><span class="badge text-bg-{{ row.onboarding.badge }} fw-normal">{{ row.onboarding.label }}</span></td>
             <td class="text-end" data-label="Fichajes">{{ row.report.events|length }}</td>
             <td class="text-end{% if row.report.incident_count %} text-danger fw-bold{% endif %}" data-label="Incidencias">{{ row.report.incident_count }}</td>
-            <td class="text-end text-nowrap" data-label="Bolsa de horas" title="Horas extras acumuladas desde el 01/01/2026, con los movimientos a mano">{% if row.has_account %}{{ row.bag_label }} h{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            {# S143: total de horas de más del intervalo, cupo (hasta el tope de cada mes) y bolsa (el resto). #}
+            <td class="text-end text-nowrap" data-label="Total de horas" title="Lo trabajado por encima del horario en las fechas filtradas">{% if row.has_account %}{{ row.overtime_label }} h{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td class="text-end text-nowrap" data-label="Cupo de horas" title="Horas extra del cupo: hasta el tope de cada mes ({{ overtime_cap }} h)">{% if row.has_account %}{{ row.quota_label }} h{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td class="text-end text-nowrap" data-label="Bolsa de horas" title="Lo que pasa del tope de cada mes: el total de horas menos el cupo">{% if row.has_account %}{{ row.bag_label }} h{% else %}<span class="text-muted">—</span>{% endif %}</td>
             {% with last=row.report.last_day %}
             {% if last %}
             <td data-label="Último día">{{ last.day|date:"d/m/Y" }}</td>
@@ -89,7 +92,7 @@ y Albaranes de Servicios.
             </td>
         </tr>
         {% empty %}
-        <tr><td colspan="15" class="text-muted small py-3">No se encontró personal.</td></tr>
+        <tr><td colspan="17" class="text-muted small py-3">No se encontró personal.</td></tr>
         {% endfor %}
     </tbody>
 </table>

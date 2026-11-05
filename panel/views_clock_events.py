@@ -38,7 +38,11 @@ from django.utils.dateparse import parse_datetime
 from django.views import View
 
 from document_explorer.models import PersonIdentity
-from hr_calendar.clock_extras import overtime_bags, signed_duration
+from hr_calendar.clock_extras import (
+    monthly_cap_seconds,
+    signed_duration,
+    split_by_month,
+)
 from hr_calendar.clock_report import REST_NOTE
 from hr_calendar.clock_report import format_duration, reports_by_user
 from hr_calendar.models import ClockCorrection
@@ -94,7 +98,10 @@ _SORT_VALUES = {
     "last": lambda r: (r.report.last_event.pressed_at
                        if r.report.last_event else None),
     "issues": lambda r: r.report.incident_count,
-    # S145: bolsa de horas extras acumulada (sin cuenta, al final).
+    # S143: horas de más del intervalo, su cupo y la bolsa (sin cuenta,
+    # al final).
+    "overtime": lambda r: r.overtime_seconds,
+    "quota": lambda r: r.quota_seconds,
     "bag": lambda r: r.bag_seconds,
     # S136 (Miguel Ángel: "ordenar por columnas"): todas ordenables.
     "entry": lambda r: _last_day_time(r, "clock_in"),
@@ -117,6 +124,8 @@ _COLUMNS = (
     ("onboarding", "Alta en el fichaje"),
     ("events", "Fichajes"),
     ("issues", "Incidencias"),
+    ("overtime", "Total de horas"),
+    ("quota", "Cupo de horas"),
     ("bag", "Bolsa de horas"),
     ("last", "Último día"),
     ("entry", "Entrada"),
@@ -236,9 +245,11 @@ class _Row:
         self.label = _person_label(person)
         self.sort_name = self.label.upper()
         self.has_account = person.company_user_id is not None
-        # S145: total de la bolsa de horas extras (None sin cuenta).
+        # S143: horas de más del intervalo, cupo (hasta el tope de cada
+        # mes) y bolsa (el resto); None sin cuenta.
+        self.overtime_seconds = self.quota_seconds = None
         self.bag_seconds = None
-        self.bag_label = ""
+        self.overtime_label = self.quota_label = self.bag_label = ""
 
 
 def _sort_rows(rows, sort_keys):
@@ -268,15 +279,20 @@ def _rows(request, people, date_from, date_to):
              states.get(p.pk), onboarding[p.pk])
         for p in people
     ]
-    # S145 (Miguel Ángel): las horas extras acumuladas también en el
-    # listado, no solo en la página de cada trabajador. Es la bolsa
-    # entera (desde BAG_START), no la del intervalo filtrado.
-    bags = overtime_bags(
-        company, [p.company_user_id for p in people if p.company_user_id],
-    )
+    # S143 (Miguel Ángel): "tres columnas. Total de horas. [...] cupo de
+    # horas con un máximo de 7 y bolsa de horas con el total de horas
+    # menos 7". Del intervalo filtrado: lo trabajado de más; de eso, cada
+    # mes hasta el tope es cupo y lo demás va a la bolsa.
+    cap = monthly_cap_seconds(company)
     for row in rows:
         if row.has_account:
-            row.bag_seconds = bags.get(row.person.company_user_id, 0)
+            months = split_by_month(
+                getattr(row.report, "day_excess", None) or {}, cap)
+            row.overtime_seconds = sum(m["excess"] for m in months)
+            row.quota_seconds = sum(m["extra"] for m in months)
+            row.bag_seconds = row.overtime_seconds - row.quota_seconds
+            row.overtime_label = signed_duration(row.overtime_seconds)
+            row.quota_label = signed_duration(row.quota_seconds)
             row.bag_label = signed_duration(row.bag_seconds)
     return rows
 
@@ -338,8 +354,12 @@ def _settings_context(company):
     sections = _sections(company)
     clocks = section_clocks_map([s.pk for s in sections])
     by_types = section_types_map([s.pk for s in sections])
+    from hr_calendar.clock_extras import monthly_cap_seconds
+
+    cap = monthly_cap_seconds(company) // 60
     return {
         "reminders_on": reminders_enabled(company),
+        "overtime_cap": "%d:%02d" % (cap // 60, cap % 60),
         "section_settings": [
             {"section": s, "clocks": clocks[s.pk],
              "uses_types": by_types[s.pk]} for s in sections
@@ -445,6 +465,8 @@ def _list_context(request):
         "total_label": format_duration(
             sum(r.report.total_seconds for r in rows),
         ),
+        "overtime_cap": signed_duration(
+            monthly_cap_seconds(request.user.company_user.company)),
         **_sort_controls(_param(request, "sort")),
     }
 
@@ -583,6 +605,38 @@ class ClockRemindersSwitchView(SupervisorAccessMixin, View):
             request,
             "Envío de recordatorios %s." % (
                 "activado" if enabled else "desactivado"),
+        )
+
+
+class ClockOvertimeCapView(SupervisorAccessMixin, View):
+    """
+    POST: the company's monthly overtime cap.
+    ---
+    POST: el tope de horas extra al mes de la empresa (S143, Miguel
+    Ángel: 7 horas); lo que pasa del tope va a horas acumuladas. Acepta
+    "7", "7,5" o "7:30".
+    """
+
+    def post(self, request):
+        from hr_calendar.models import ClockSettings
+        from panel.views_clock_extras import _parse_minutes
+
+        raw = (request.POST.get("hours") or "").strip()
+        minutes = 0 if raw in ("0", "0:00") else _parse_minutes(raw)
+        if minutes is None or minutes > 200 * 60:
+            return _settings_response(
+                request, "Escribe el tope en horas, por ejemplo 7 o 7:30.",
+                error=True,
+            )
+        settings, _created = ClockSettings.objects.get_or_create(
+            company=request.user.company_user.company,
+        )
+        settings.overtime_monthly_cap_minutes = minutes
+        settings.updated_by = request.user.company_user
+        settings.save()
+        return _settings_response(
+            request, "Tope de horas extra: %d:%02d h al mes." % (
+                minutes // 60, minutes % 60),
         )
 
 

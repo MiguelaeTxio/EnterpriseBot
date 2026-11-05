@@ -9,15 +9,29 @@ Vista: panel/views_clock_extras.py.
 {% if oob and bag %}<strong id="cw-bag-total" hx-swap-oob="true">{{ bag.total_label }} h</strong>{% endif %}
 {% if error %}<div class="alert alert-danger py-1 small">{{ error }}</div>{% elif message %}<div class="alert alert-success py-1 small">{{ message }}</div>{% endif %}
 {% if not bag %}
-<div class="alert alert-warning small py-1 mb-0">Sin cuenta en el panel: no tiene bolsa de horas.</div>
+<div class="alert alert-warning small py-1 mb-0">Sin cuenta en el panel: no tiene horas acumuladas.</div>
 {% else %}
+{# S143: cada mes, hasta el tope son horas extra; lo que pasa, horas acumuladas. #}
 <table class="table table-sm small mb-2">
     <tbody>
         <tr><td>Trabajado por encima del horario desde el {{ bag.since|date:"d/m/Y" }}</td><td class="text-end text-nowrap">{{ bag.worked_label }} h</td></tr>
-        <tr><td>Movimientos a mano</td><td class="text-end text-nowrap">{{ bag.adjust_label }} h</td></tr>
-        <tr class="fw-bold"><td>Bolsa</td><td class="text-end text-nowrap">{{ bag.total_label }} h</td></tr>
+        <tr><td>Horas extra (hasta {{ bag.cap_label }} h cada mes)</td><td class="text-end text-nowrap">{{ bag.extra_label }} h</td></tr>
+        <tr><td>Lo que pasa del tope cada mes</td><td class="text-end text-nowrap">{{ bag.accumulated_label }} h</td></tr>
+        <tr><td>Movimientos a mano (horas compensadas, días libres, añadidas)</td><td class="text-end text-nowrap">{{ bag.adjust_label }} h</td></tr>
+        <tr class="fw-bold"><td>Horas acumuladas</td><td class="text-end text-nowrap">{{ bag.total_label }} h</td></tr>
     </tbody>
 </table>
+{% if bag.month_rows %}
+<div class="fw-semibold small mb-1">Por meses</div>
+<table class="table table-sm small mb-2">
+    <thead><tr><th>Mes</th><th class="text-end">De más</th><th class="text-end">Horas extra</th><th class="text-end">Acumuladas</th></tr></thead>
+    <tbody>
+        {% for m in bag.month_rows %}
+        <tr><td class="text-nowrap">{{ m.month|date:"F Y"|capfirst }}</td><td class="text-end">{{ m.excess_label }}</td><td class="text-end">{{ m.extra_label }}</td><td class="text-end">{{ m.accumulated_label }}</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
 <form class="border rounded p-2 mb-2" hx-post="{% url 'panel:clock_worker_overtime' person.pk %}" hx-target="#cw-bag-body">
     {% csrf_token %}
     <div class="fw-semibold small mb-1">Apuntar un movimiento</div>
@@ -25,7 +39,7 @@ Vista: panel/views_clock_extras.py.
         <div class="col-5">
             <select name="sign" class="form-select form-select-sm">
                 <option value="pay">Pagadas o compensadas (restan)</option>
-                <option value="add">Añadir a la bolsa (suman)</option>
+                <option value="add">Añadir a las acumuladas (suman)</option>
             </select>
         </div>
         <div class="col-3"><input type="text" name="hours" class="form-control form-control-sm" placeholder="h:mm" required></div>
