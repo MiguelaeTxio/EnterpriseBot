@@ -3523,6 +3523,20 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
         )
 
         _clock_required = _cp_clock_required(_parte_owner, work_date)
+        # S147 (Miguel Ángel: "se guarda todo el parte completo"): cada
+        # vez que se guarda, en curso o cerrado, el parte guarda si su
+        # jornada era intensiva o partida (el interruptor "Jornada
+        # intensiva (verano)" del trabajador en ese momento) -- con ello
+        # se sabe cuál de las dos casillas de la comida se marcó -- y la
+        # casilla de dieta.
+        _parte_schedule = _resolve_operator_schedule(
+            _parte_owner, company, work_date,
+        )
+        _parte_is_intensive = (
+            None if _parte_schedule is None
+            else bool(_parte_schedule.is_intensive)
+        )
+        _post_has_diet = POST.get("has_diet", "") == "1"
 
         logger.info(
             "# [I2-DIAG-WORKDATE] work_date=%r form_action=%r",
@@ -4486,6 +4500,8 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                                 None if _no_lunch_break else _lb_end
                             ),
                             no_lunch_break=_no_lunch_break,
+                            is_intensive_shift=_parte_is_intensive,
+                            has_diet=_post_has_diet,
                         )
                         # S116-H07: parte recién creado, todavía sin ninguna
                         # línea -- diccionario vacío para que el bucle de
@@ -4511,6 +4527,8 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                                     None if _no_lunch_break else _lb_end
                                 ),
                                 no_lunch_break=_no_lunch_break,
+                                is_intensive_shift=_parte_is_intensive,
+                                has_diet=_post_has_diet,
                             )
                             # S116-H07: mismo caso que arriba -- entrada
                             # recién creada, sin líneas todavía.
@@ -4524,11 +4542,17 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                                 None if _no_lunch_break else _lb_end
                             )
                             _ip_entry.no_lunch_break = _no_lunch_break
+                            _ip_entry.is_intensive_shift = (
+                                _parte_is_intensive
+                            )
+                            _ip_entry.has_diet = _post_has_diet
                             _ip_entry.save(
                                 update_fields=[
                                     "lunch_break_start",
                                     "lunch_break_end",
                                     "no_lunch_break",
+                                    "is_intensive_shift",
+                                    "has_diet",
                                 ]
                             )
 
@@ -4702,6 +4726,9 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                                 "fault_description", ""
                             ),
                             repair_notes=_ip_ld.get("repair_notes", ""),
+                            # S147: "Trabajo in situ" se perdía al guardar
+                            # un parte en curso.
+                            is_on_site=_ip_ld.get("is_on_site", False),
                             hc=_ip_ld.get("hc"),
                             hf=_ip_ld.get("hf"),
                             or_val=_ip_ld.get("or_val", ""),
@@ -5325,8 +5352,10 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                     )
                     entry.no_lunch_break = _no_lunch_break
                     entry.has_diet = _has_diet
+                    entry.is_intensive_shift = _parte_is_intensive
                     entry.save(
                         update_fields=[
+                            "is_intensive_shift",
                             "worker_name",
                             "work_date",
                             "uncertain_date",
@@ -5352,6 +5381,7 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                         lunch_break_end=None if _no_lunch_break else _lb_end,
                         no_lunch_break=_no_lunch_break,
                         has_diet=_has_diet,
+                        is_intensive_shift=_parte_is_intensive,
                     )
 
                 # S116-H07: mismo arreglo que en "Guardar tareas" -- capturar
