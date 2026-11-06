@@ -130,7 +130,7 @@ entregados. Todo llega resuelto desde panel/views_worker_requests.py.
                             <th class="text-end">Días</th>
                             <th>Estado</th>
                             <th>Respuesta</th>
-                            <th>Justificante / documentos</th>
+                            <th style="min-width: 12rem;">Justificante / documentos</th>
                             <th></th>
                         </tr>
                     </thead>
@@ -152,10 +152,19 @@ entregados. Todo llega resuelto desde panel/views_worker_requests.py.
                                 {% if item.kind == 'MEDICAL' %}
                                 <div class="text-muted">{{ item.get_proof_status_display }}</div>
                                 {% if item.status != 'DENIED' and item.status != 'CANCELLED' %}
-                                <form method="post" action="{% url 'panel:my_request_proof' item.pk %}" enctype="multipart/form-data" class="d-flex gap-1 mt-1">
+                                {% comment %}
+                                S147: el selector nativo se cortaba en el móvil ("Sele…").
+                                Botón propio que abre el selector, nombre del archivo
+                                debajo y "Subiendo…" con spinner al enviar.
+                                {% endcomment %}
+                                <form method="post" action="{% url 'panel:my_request_proof' item.pk %}" enctype="multipart/form-data" class="mt-1 wr-proof-form">
                                     {% csrf_token %}
-                                    <input type="file" name="file" class="form-control form-control-sm" accept="image/*,application/pdf" required>
-                                    <button type="submit" class="btn btn-sm btn-outline-primary text-nowrap">Subir</button>
+                                    <input type="file" name="file" id="wrProofFile{{ item.pk }}" class="d-none wr-proof-input" accept="image/*,application/pdf" required>
+                                    <label for="wrProofFile{{ item.pk }}" class="btn btn-sm btn-outline-secondary text-nowrap mb-1"><i class="bi bi-camera"></i> Elegir foto o archivo</label>
+                                    <div class="small text-muted text-break wr-proof-name">Ningún archivo elegido</div>
+                                    <button type="submit" class="btn btn-sm btn-primary text-nowrap mt-1 wr-proof-submit" disabled>
+                                        <span class="spinner-border spinner-border-sm me-1 d-none"></span><span class="wr-proof-label">Subir justificante</span>
+                                    </button>
                                 </form>
                                 {% endif %}
                                 {% endif %}
@@ -203,6 +212,28 @@ entregados. Todo llega resuelto desde panel/views_worker_requests.py.
     }
     form.querySelectorAll(".wr-kind").forEach(function (radio) { radio.addEventListener("change", refresh); });
     refresh();
+
+    // S147: justificante -- nombre del archivo elegido y "Subiendo…".
+    document.querySelectorAll(".wr-proof-form").forEach(function (proof) {
+        const input = proof.querySelector(".wr-proof-input");
+        const submit = proof.querySelector(".wr-proof-submit");
+        input.addEventListener("change", function () {
+            const file = input.files && input.files[0];
+            proof.querySelector(".wr-proof-name").textContent = file ? file.name : "Ningún archivo elegido";
+            submit.disabled = !file;
+        });
+        proof.addEventListener("submit", function () {
+            submit.disabled = true;
+            submit.querySelector(".spinner-border").classList.remove("d-none");
+            submit.querySelector(".wr-proof-label").textContent = "Subiendo…";
+        });
+    });
+    // El envío de la petición también avisa de que está trabajando.
+    form.addEventListener("submit", function () {
+        const send = form.querySelector('button[type="submit"]');
+        send.disabled = true;
+        send.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Enviando…';
+    });
 }());
 </script>
 {% endblock %}

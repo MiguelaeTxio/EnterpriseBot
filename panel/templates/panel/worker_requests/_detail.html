@@ -30,7 +30,7 @@ sola (HX-Trigger worker-requests-refresh).
 {% endif %}
 
 {% if item.is_pending and item.is_dated %}
-<form class="border rounded p-2 mb-2" hx-post="{% url 'panel:worker_request_action' item.pk %}" hx-target="#wreq-detail-container">
+<form class="border rounded p-2 mb-2" hx-post="{% url 'panel:worker_request_action' item.pk %}" hx-target="#wreq-detail-container" hx-disabled-elt="find button">
     <label class="form-label small mb-0">Respuesta al trabajador (obligatoria para denegar)</label>
     <textarea name="response" class="form-control form-control-sm mb-2" rows="2"></textarea>
     <button type="submit" name="action" value="approve" class="btn btn-sm btn-success">Aprobar</button>
@@ -41,21 +41,21 @@ sola (HX-Trigger worker-requests-refresh).
 {% if item.kind == 'MEDICAL' and item.status != 'DENIED' and item.status != 'CANCELLED' %}
 <div class="border rounded p-2 mb-2">
     {% if item.proof_status != 'NONE' %}
-    <form class="d-inline" hx-post="{% url 'panel:worker_request_action' item.pk %}" hx-target="#wreq-detail-container">
+    <form class="d-inline" hx-post="{% url 'panel:worker_request_action' item.pk %}" hx-target="#wreq-detail-container" hx-disabled-elt="find button">
         <button type="submit" name="action" value="proof_valid" class="btn btn-sm btn-outline-success">Justificante válido</button>
         <button type="submit" name="action" value="proof_invalid" class="btn btn-sm btn-outline-danger">No válido</button>
     </form>
     {% endif %}
-    <form class="d-flex gap-1 mt-2" hx-post="{% url 'panel:worker_request_action' item.pk %}" hx-target="#wreq-detail-container" hx-encoding="multipart/form-data">
+    <form class="d-flex gap-1 mt-2" hx-post="{% url 'panel:worker_request_action' item.pk %}" hx-target="#wreq-detail-container" hx-disabled-elt="find button" hx-encoding="multipart/form-data">
         <input type="hidden" name="action" value="proof">
         <input type="file" name="file" class="form-control form-control-sm" accept="image/*,application/pdf" required>
-        <button type="submit" class="btn btn-sm btn-outline-primary text-nowrap" title="Si te lo ha dado en mano, súbelo aquí en su nombre.">Subir justificante</button>
+        <button type="submit" class="btn btn-sm btn-outline-primary text-nowrap" title="Si te lo ha dado en mano, súbelo aquí en su nombre."><span class="htmx-indicator spinner-border spinner-border-sm me-1"></span>Subir justificante</button>
     </form>
 </div>
 {% endif %}
 
 {% if item.kind == 'DOCUMENT' and item.status != 'DENIED' and item.status != 'CANCELLED' %}
-<form class="border rounded p-2 mb-2" hx-post="{% url 'panel:worker_request_action' item.pk %}" hx-target="#wreq-detail-container" hx-encoding="multipart/form-data">
+<form class="border rounded p-2 mb-2" hx-post="{% url 'panel:worker_request_action' item.pk %}" hx-target="#wreq-detail-container" hx-disabled-elt="find button" hx-encoding="multipart/form-data">
     <input type="hidden" name="action" value="deliver">
     <div class="small fw-bold mb-1">Entregar {{ document_label|lower }}</div>
     <div class="row g-2">
@@ -86,11 +86,11 @@ sola (HX-Trigger worker-requests-refresh).
         </div>
     </div>
     <div class="d-flex gap-2 mt-2">
-        <button type="submit" class="btn btn-sm btn-success">Entregar</button>
+        <button type="submit" class="btn btn-sm btn-success"><span class="htmx-indicator spinner-border spinner-border-sm me-1"></span>Entregar</button>
     </div>
 </form>
 {% if item.is_pending %}
-<form class="border rounded p-2 mb-2" hx-post="{% url 'panel:worker_request_action' item.pk %}" hx-target="#wreq-detail-container">
+<form class="border rounded p-2 mb-2" hx-post="{% url 'panel:worker_request_action' item.pk %}" hx-target="#wreq-detail-container" hx-disabled-elt="find button">
     <label class="form-label small mb-0">Motivo para no entregarlo</label>
     <textarea name="response" class="form-control form-control-sm mb-2" rows="2"></textarea>
     <button type="submit" name="action" value="deny" class="btn btn-sm btn-outline-danger">Denegar</button>
@@ -99,7 +99,7 @@ sola (HX-Trigger worker-requests-refresh).
 {% endif %}
 
 {% if item.kind == 'CLAIM' and item.status != 'CANCELLED' %}
-<form class="border rounded p-2 mb-2" hx-post="{% url 'panel:worker_request_action' item.pk %}" hx-target="#wreq-detail-container">
+<form class="border rounded p-2 mb-2" hx-post="{% url 'panel:worker_request_action' item.pk %}" hx-target="#wreq-detail-container" hx-disabled-elt="find button">
     <label class="form-label small mb-0">Respuesta</label>
     <textarea name="response" class="form-control form-control-sm mb-2" rows="3">{{ item.response }}</textarea>
     <button type="submit" name="action" value="answer" class="btn btn-sm btn-success">Responder</button>
@@ -107,7 +107,7 @@ sola (HX-Trigger worker-requests-refresh).
 {% endif %}
 
 {% if not item.is_pending and item.status != 'CANCELLED' %}
-<form hx-post="{% url 'panel:worker_request_action' item.pk %}" hx-target="#wreq-detail-container"
+<form hx-post="{% url 'panel:worker_request_action' item.pk %}" hx-target="#wreq-detail-container" hx-disabled-elt="find button"
       hx-confirm="¿Volver a dejarla pendiente?{% if item.vacation_period_id or item.absence_period_id %} Se borrará el periodo que creó la aprobación.{% endif %}">
     <button type="submit" name="action" value="undo" class="btn btn-sm btn-outline-secondary" title="Vuelve a pendiente; si se aprobó, borra el periodo creado.">Deshacer la resolución</button>
 </form>
