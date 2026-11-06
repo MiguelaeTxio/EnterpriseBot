@@ -1540,3 +1540,32 @@ el valor antes de que siga el resto del script.
 - **Cliente:** `fleet/gasoges_client.py` (`GasoGesClient`).
 - **Comprobado en S135:** `/v1/vehiculos` responde 200 con 262
   vehículos (`EnterpriseBot_001.txt`).
+
+---
+
+## COPIAS DE SEGURIDAD DE LA BASE DE DATOS (H24, S146)
+
+- **Volcado:** `backup_database_task` (Celery Beat, cada día a las 3:00)
+  o, en el momento, `python -m dotenv run python manage.py
+  backup_database --log-file ...`. `mysqldump` (contraseña desde
+  `~/.my.cnf`, que mantiene PythonAnywhere) por tubería a gzip y directo
+  al cubo; **nunca pasa por el disco del servidor** (cuota de 5 GB).
+- **Cubo:** `enterprisebot-alvarez-db-backups` (propio, privado, lo crea
+  el servidor con su cuenta de servicio). Solo de paso: guarda las 3
+  últimas copias ya bajadas a OneDrive.
+- **OneDrive:** `C:\Users\Usuario\OneDrive - GRUALDI SL\COPIAS DE
+  SEGURIDAD BD\` (raíz de `%OneDriveCommercial%`, fuera de las carpetas
+  vigiladas). El agente H28 pregunta cada 10 minutos, baja cada copia
+  comprobando el SHA-256 y deja `<archivo>.sha256` al lado. Otra
+  carpeta: su ruta en `db_backup_folder.txt` dentro de
+  `%LOCALAPPDATA%\EnterpriseBot\H28MigrationAgent\`. Tras recompilar,
+  el agente no baja nada hasta terminar la reconciliación de arranque
+  (~25 minutos medidos en S146).
+- **Retención:** 14 diarias, 8 semanales (domingo) y 12 mensuales
+  (día 1); la decide el servidor (`db_backup_service.keep_names`).
+- **Restaurar:** `gunzip -c EnterpriseBot_BD_AAAAMMDD_HHMM.sql.gz |
+  mysql <base>`. Prueba sin tocar producción: workflow
+  `db_backup_restore_test.yml` (MySQL 8.0 del runner, compara las filas
+  de control guardadas en `DatabaseBackup.row_counts`).
+- **Tamaño medido (S146):** 114 MB sin comprimir, 30 MB comprimida,
+  ~13 s de volcado.
