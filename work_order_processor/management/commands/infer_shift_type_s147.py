@@ -11,17 +11,11 @@ deducida de sus tareas (Miguel Ángel: "rellenarlo según se infiera de
 las tareas"). Desde S141 no se guardaba por un fallo (shift.py pedía
 work_order.work_date).
 
-Regla:
-- Partida: el parte tiene comida (sin "no paró a comer") y cae dentro
-  de la jornada (de la primera tarea a la última; las tareas pueden
-  cruzarla, se descuenta), o hay un hueco de al menos 30 minutos entre
-  dos tareas seguidas.
-- Intensiva: tareas seguidas, sin comida, de 8 horas o menos.
-- Partida sin parar a comer: tareas seguidas de más de 8 horas, sin
-  comida y con "no he parado a comer" marcado.
-- Sin dato (se deja vacío y se lista aparte para revisarlo): tareas
-  seguidas de más de 8 horas, sin comida y sin esa marca; o sin tareas
-  con horas.
+Regla de Miguel Ángel (S147), solo en el periodo abierto (los
+anteriores ya están pagados y no se tocan): con comida apuntada,
+partida; sin comida (o 00:00 a 00:00), intensiva (en el periodo del
+21/10 al 20/11 ninguna baja de 8 horas). Los que ya tienen la marca no
+se tocan. Los que quedan sin dato (sin tareas con horas) se listan.
 
 DRY-RUN POR DEFECTO; `--apply` escribe. Log propio en `--log-file`,
 pantalla y archivo a la vez.
@@ -36,54 +30,30 @@ from work_order_processor.models import (
     WorkOrderEntryLine,
 )
 
-MIN_SPLIT_GAP_MINUTES = 30
-MAX_INTENSIVE_MINUTES = 8 * 60
 HEARTBEAT = 50
-
-
-def _minutes(value):
-    return value.hour * 60 + value.minute
 
 
 def infer_is_intensive(entry, lines):
     """
-    True (intensive), False (split) or None (no timed task), from the
-    parte's tasks.
+    True (intensive), False (split) or None (no timed task).
     ---
-    True (intensiva), False (partida) o None (sin tareas con horas),
-    según las tareas y la comida del parte.
+    Regla de Miguel Ángel (S147) para el periodo abierto: con comida
+    apuntada (de inicio a fin, no 00:00 a 00:00), partida; sin comida,
+    intensiva (en el periodo ninguna baja de 8 horas).
     """
-    timed = sorted(
-        (line for line in lines if line.hc and line.hf),
-        key=lambda line: line.hc,
-    )
+    timed = [line for line in lines if line.hc and line.hf]
     if not timed:
         return None, "sin tareas con horas"
     if (
-        not entry.no_lunch_break and entry.lunch_break_start
-        and entry.lunch_break_end
+        entry.lunch_break_start and entry.lunch_break_end
         and entry.lunch_break_end > entry.lunch_break_start
-        and timed[0].hc <= entry.lunch_break_start
-        and max(line.hf for line in timed) >= entry.lunch_break_end
     ):
-        return False, "comida %s-%s dentro de la jornada" % (
+        return False, "comida %s-%s" % (
             entry.lunch_break_start.strftime("%H:%M"),
             entry.lunch_break_end.strftime("%H:%M"))
-    end = timed[0].hf
-    for line in timed[1:]:
-        gap = _minutes(line.hc) - _minutes(end)
-        if gap >= MIN_SPLIT_GAP_MINUTES:
-            return False, "hueco de %d min entre tareas (%s-%s)" % (
-                gap, end.strftime("%H:%M"), line.hc.strftime("%H:%M"))
-        if line.hf > end:
-            end = line.hf
-    span = "%s a %s" % (timed[0].hc.strftime("%H:%M"), end.strftime("%H:%M"))
-    if _minutes(end) - _minutes(timed[0].hc) <= MAX_INTENSIVE_MINUTES:
-        return True, "tareas seguidas de %s, sin comida" % span
-    if entry.no_lunch_break:
-        return False, "tareas seguidas de %s y no paró a comer" % span
-    return None, ("RARO: tareas seguidas de %s, sin comida y sin marcar "
-                  "que no paró a comer" % span)
+    return True, "sin comida, de %s a %s" % (
+        min(line.hc for line in timed).strftime("%H:%M"),
+        max(line.hf for line in timed).strftime("%H:%M"))
 
 
 class Command(BaseCommand):
@@ -92,6 +62,10 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--apply", action="store_true")
         parser.add_argument("--log-file", required=True)
+        parser.add_argument("--date-from", required=True,
+                            help="Primer día del periodo (AAAA-MM-DD).")
+        parser.add_argument("--date-to", required=True,
+                            help="Último día del periodo (AAAA-MM-DD).")
 
     def handle(self, *args, **options):
         log_file = open(options["log_file"], "a", encoding="utf-8")
@@ -117,6 +91,8 @@ class Command(BaseCommand):
             .filter(
                 work_order__source=WorkOrder.Source.DIGITAL,
                 is_intensive_shift__isnull=True,
+                work_date__gte=options["date_from"],
+                work_date__lte=options["date_to"],
             )
             .order_by("work_date", "pk")
         )
@@ -126,7 +102,8 @@ class Command(BaseCommand):
         ).only("entry_id", "hc", "hf"):
             lines_by_entry.setdefault(line.entry_id, []).append(line)
         total = len(entries)
-        _log("Partes digitales sin jornada: %d" % total)
+        _log("Partes digitales sin jornada del %s al %s: %d" % (
+            options["date_from"], options["date_to"], total))
         counts = {True: 0, False: 0, None: 0}
         odd = []
         start_time = datetime.datetime.now()
