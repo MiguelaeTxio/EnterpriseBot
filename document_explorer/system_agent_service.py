@@ -40,7 +40,14 @@ STALE_AFTER = timedelta(minutes=15)
 DOWN_TEMPLATE = "system_agent_down_alert"
 RECOVERED_TEMPLATE = "system_agent_recovered_alert"
 FALLBACK_COMPANY_SLUG = "grupo-alvarez"
-AGENT_LABELS = {"h28_migration_agent": "de migracion H28"}
+AGENT_LABELS = {
+    "h28_migration_agent": "de migracion H28",
+    # S146: el agente H28 late por OneDrive solo mientras sincroniza.
+    "onedrive_sync": "de sincronizacion de OneDrive",
+}
+# El latido de OneDrive lo manda el agente H28: si el agente está caído
+# en el mismo equipo, basta con su aviso (S146).
+DEPENDS_ON = {"onedrive_sync": "h28_migration_agent"}
 
 
 def record_heartbeat(agent_name, host=""):
@@ -136,8 +143,14 @@ def check_agents():
     Avisa una vez por caída y una vez por recuperación.
     """
     now = timezone.now()
-    for heartbeat in SystemAgentHeartbeat.objects.all():
+    beats = list(SystemAgentHeartbeat.objects.all())
+    by_name = {beat.agent_name: beat for beat in beats}
+    for heartbeat in beats:
         stale = now - heartbeat.last_beat_at > STALE_AFTER
+        parent = by_name.get(DEPENDS_ON.get(heartbeat.agent_name))
+        if (stale and parent is not None
+                and now - parent.last_beat_at > STALE_AFTER):
+            continue
         if stale and heartbeat.down_alerted_at is None:
             sid = _send_to_recipients(
                 DOWN_TEMPLATE, heartbeat, heartbeat.last_beat_at,

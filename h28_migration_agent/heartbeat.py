@@ -31,20 +31,22 @@ HEARTBEAT_PATH = "/panel/explorador/agente/latido/"
 HEARTBEAT_INTERVAL_SECONDS = 5 * 60
 
 
-def send_heartbeat():
+def send_heartbeat(agent_name=AGENT_NAME):
     """
     Send one heartbeat; True on a confirmed 200.
 
     ---
 
-    Envia un latido; True ante un 200 confirmado del servidor.
+    Envia un latido; True ante un 200 confirmado del servidor. S146:
+    `agent_name` tambien sirve al vigilante de OneDrive
+    ("onedrive_sync").
     """
     token = get_server_api_token()
     if not token:
         logger.warning("Latido omitido: sin token de API configurado.")
         return False
     body = urllib.parse.urlencode({
-        "agent_name": AGENT_NAME, "host": socket.gethostname(),
+        "agent_name": agent_name, "host": socket.gethostname(),
     }).encode("utf-8")
     request = urllib.request.Request(
         SERVER_BASE_URL + HEARTBEAT_PATH,
@@ -63,7 +65,7 @@ def send_heartbeat():
     except Exception as exc:  # noqa: BLE001 -- nunca fatal
         logger.warning("Latido fallido: %s", exc)
         return False
-    if ok:
+    if ok and agent_name == AGENT_NAME:
         logger.info("Latido enviado.")
     return ok
 

@@ -47,7 +47,8 @@ from config import (
 )
 from gcs_client import MissingCredentialsError, build_client
 from heartbeat import start_heartbeat_thread
-from db_backup_download import process_backups
+from onedrive_watchdog import start_watchdog_thread
+from db_backup_download import process_backups, resolve_folder
 from local_download import process_jobs as process_local_downloads
 from history import append_event, load_events
 from reconciler import reconcile_folder
@@ -1163,6 +1164,12 @@ def main():
     # H30 (S123): latido al servidor cada 5 minutos -- si deja de
     # llegar mas de 15, el servidor avisa a Miguel Angel por WhatsApp.
     start_heartbeat_thread()
+    # H24 (S146): vigilante de OneDrive -- si se queda en pausa, lo
+    # reinicia; si sigue parado, el servidor avisa por WhatsApp.
+    start_watchdog_thread(
+        lambda: resolve_folder(load_watched_folders(), None),
+        lambda texto: append_event("OneDrive", "OneDrive", texto),
+    )
 
     menu = pystray.Menu(
         pystray.MenuItem(
