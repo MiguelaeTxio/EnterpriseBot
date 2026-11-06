@@ -240,6 +240,117 @@ def _row(shift):
     }
 
 
+_STATUS_WEIGHT = {STATUS_ISSUES: 4, STATUS_REVIEWED: 3, STATUS_OPEN: 2,
+                  STATUS_OK: 1, STATUS_CANCELLED: 0}
+GAP_COLOR = "repeating-linear-gradient(45deg,#f8d7da,#f8d7da 3px,#fff 3px,#fff 6px)"
+# Una salida y vuelta a entrar en menos de esto es casi seguro un error.
+QUICK_GAP_SECONDS = 5 * 60
+
+
+def _group_by_day(rows):
+    """
+    One row per day: its shifts ("parts") together.
+    ---
+    S143 (Miguel Ángel): "habría que agruparlos por jornada [...] que no
+    aparezcan las dos fechas y que esté englobado en el mismo". Una fila
+    por día con sus jornadas dentro (parts, por hora de entrada), las
+    horas sumadas, las incidencias de todas, el estado más grave, la
+    barra de todo el día con los ratos fuera (salida y vuelta a entrar)
+    rayados y avisados, sobre todo si es en pocos minutos (casi siempre
+    una salida pulsada por error).
+    """
+    from hr_calendar.clock_report import format_duration
+
+    order, by_day = [], {}
+    for row in rows:
+        if row["day"] not in by_day:
+            order.append(row["day"])
+            by_day[row["day"]] = []
+        by_day[row["day"]].append(row)
+    groups = []
+    for day in order:
+        parts = sorted(by_day[day], key=lambda r: (
+            r["entry_time"] or datetime.time.min))
+        if len(parts) == 1:
+            row = dict(parts[0])
+            row["parts"] = parts
+            row["gaps"] = []
+            groups.append(row)
+            continue
+        live = [p for p in parts if not p.get("only_cancelled")] or parts
+        row = dict(live[0])
+        row["parts"] = live
+        row["key"] = ",".join(p["key"] for p in live)
+        row["event_ids"] = ",".join(
+            p["event_ids"] for p in live if p.get("event_ids"))
+        row["seconds"] = sum(p["seconds"] for p in live)
+        row["duration"] = format_duration(row["seconds"])
+        row["only_cancelled"] = all(p.get("only_cancelled") for p in parts)
+        status = max((p["status"] for p in live),
+                     key=lambda s: _STATUS_WEIGHT[s])
+        row["status"] = status
+        row["status_label"] = _STATUS_LABELS[status]
+        row["status_badge"] = _STATUS_BADGES[status]
+        # Horas por tipo del día, sumadas.
+        types = {}
+        for part in live:
+            for item in part.get("type_hours") or []:
+                slot = types.setdefault(item["name"], {
+                    "name": item["name"], "seconds": 0,
+                    "counts": item["counts"]})
+                slot["seconds"] += item.get("seconds", 0)
+        row["type_hours"] = [{**t, "label": format_duration(t["seconds"])}
+                             for t in types.values()]
+        for key in ("incidents", "changes", "trips", "meals",
+                    "auto_meals", "cancelled"):
+            seen = []
+            for part in parts:
+                for item in part.get(key) or []:
+                    if item not in seen:
+                        seen.append(item)
+            row[key] = seen
+        row["corrected"] = any(p.get("corrected") for p in live)
+        row["corrected_any"] = any(p.get("corrected_any") for p in live)
+        row["reviewed"] = any(p.get("reviewed") for p in live)
+        row["no_meal_break"] = any(p.get("no_meal_break") for p in live)
+        row["travel"] = next((p["travel"] for p in live
+                              if p.get("travel")), None)
+        row["exit"] = live[-1].get("exit")
+        # Los ratos fuera entre jornadas.
+        gaps = []
+        for before, after in zip(live, live[1:]):
+            out, back = before.get("exit"), after.get("entry")
+            if out and back:
+                seconds = int((back["time"] - out["time"]).total_seconds())
+                gaps.append({"out": out["time"], "back": back["time"],
+                             "seconds": seconds,
+                             "quick": seconds < QUICK_GAP_SECONDS})
+        row["gaps"] = gaps
+        # La barra de todo el día.
+        segments = [seg for p in live for seg in (p.get("bar") or [])]
+        if segments:
+            start, end = segments[0]["from"], segments[-1]["to"]
+            span = max((end - start).total_seconds(), 1)
+            bar, cursor = [], start
+            for seg in segments:
+                if seg["from"] > cursor:
+                    bar.append({
+                        "name": "Fuera", "from": cursor, "to": seg["from"],
+                        "pct": round((seg["from"] - cursor).total_seconds()
+                                     * 100 / span, 2),
+                        "color": GAP_COLOR, "gap": True,
+                        "duration": format_duration(int(
+                            (seg["from"] - cursor).total_seconds())),
+                    })
+                bar.append({**seg, "pct": round(
+                    (seg["to"] - seg["from"]).total_seconds() * 100 / span,
+                    2)})
+                cursor = max(cursor, seg["to"])
+            row["bar"] = bar
+        groups.append(row)
+    return groups
+
+
 def _context(request, person):
     """
     Context of the list: filtered and sorted rows plus the totals.
@@ -278,12 +389,15 @@ def _context(request, person):
         rows = [r for r in rows if r["key"] in wanted]
     raw_sort = _param(request, "sort")
     rows = _sort_rows(rows, _parse_sort(raw_sort))
+    # S143: una fila por día con sus jornadas dentro.
+    rows = _group_by_day(rows)
     report = data["report"]
     calendar = {}
     if view == VIEW_CALENDAR:
         from panel.clock_calendar import calendar_years
 
-        calendar = calendar_years(rows)
+        calendar = calendar_years(
+            [part for row in rows for part in row["parts"]])
     return {
         "view": view,
         "view_choices": VIEW_CHOICES,

@@ -1167,6 +1167,7 @@ def _type_hours(shift):
     }
     return [{
         "name": name,
+        "seconds": seconds,
         "label": format_duration(seconds),
         "counts": counts.get(name, True),
     } for name, seconds in shift.type_seconds.items()]

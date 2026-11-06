@@ -88,27 +88,21 @@ historial: quién, cuándo, antes, después y motivo).
             </td>
             <td class="text-end">—</td>
             {% else %}
-            {% for press in row.presses %}
-            <td data-label="{% if forloop.first %}Entrada{% else %}Salida{% endif %}">
-                {% if press %}
-                <div class="text-nowrap">{{ press.time|date:"H:i" }}{% if press.rounded %} <span class="text-muted">→ {{ press.rounded|date:"H:i" }}</span>{% endif %}{% if press.time|date:"Ymd" != row.day|date:"Ymd" %} <span class="text-muted">({{ press.time|date:"d/m" }})</span>{% endif %}
-                    {% if press.maps_url %}<a href="{{ press.maps_url }}" target="_blank" rel="noopener" title="Ver en el mapa{% if press.accuracy %} (±{{ press.accuracy }} m){% endif %}"><i class="bi bi-geo-alt"></i></a>{% else %}<i class="bi bi-geo-alt text-muted" title="Sin posición GPS{% if press.event.gps_error %}: {{ press.event.gps_error }}{% endif %}"></i>{% endif %}
-                    {% if press.municipality %}<span class="text-muted">{{ press.municipality }}</span>{% endif %}
-                </div>
-                {% if press.event.clock_type_id %}<div class="fw-semibold">{{ press.event.clock_type.name }}</div>{% endif %}
-                {% if forloop.first and row.late_minutes is not None %}<div class="text-muted">horario {{ row.expected_start|time:"H:i" }} · {% if row.late_minutes > 0 %}{{ row.late_minutes }} min tarde{% elif row.late_minutes < 0 %}{{ row.late_minutes|stringformat:"d"|slice:"1:" }} min antes{% else %}en punto{% endif %}</div>{% endif %}
-                {% if forloop.last and row.early_minutes is not None %}<div class="text-muted">horario {{ row.expected_end|time:"H:i" }} · {% if row.early_minutes > 0 %}{{ row.early_minutes }} min antes{% elif row.early_minutes < 0 %}{{ row.early_minutes|stringformat:"d"|slice:"1:" }} min después{% else %}en punto{% endif %}</div>{% endif %}
-                {% if press.is_manual %}<div class="text-danger">fichaje manual, apuntado {{ press.received|date:"d/m H:i" }}</div>{% endif %}
-                {% if press.is_added %}<div class="text-primary">añadido por {{ press.corrected_by }} · {{ press.correction.reason }}</div>{% elif press.correction %}<div class="text-primary">corregido por {{ press.corrected_by }}: antes {{ press.correction.get_old_kind_display|lower }} {{ press.old_time|date:"d/m H:i" }} · {{ press.correction.reason }}</div>{% endif %}
-                {% else %}
-                <span class="text-warning-emphasis">—</span>
-                {% endif %}
+            {# S143: una fila por día; cada jornada del día (parts) con su entrada y su salida. #}
+            {% for side in "01" %}
+            <td data-label="{% if side == '0' %}Entrada{% else %}Salida{% endif %}">
+                {% for part in row.parts %}
+                {% if not forloop.first %}<div class="border-top my-1"></div>{% endif %}
+                {% if side == '0' %}{% include "panel/clock_worker/_press_cell.html" with press=part.entry part=part is_entry=True %}{% else %}{% include "panel/clock_worker/_press_cell.html" with press=part.exit part=part is_entry=False %}{% endif %}
+                {% endfor %}
             </td>
             {% endfor %}
             <td class="text-end" data-label="Horas">{{ row.duration|default:"—" }}</td>
             <td data-label="Tipos">
                 {# S143: barra de tramos fichados, con color por tipo. #}
-                {% if row.bar %}<div class="cw-bar d-flex rounded overflow-hidden mb-1" style="height:12px;min-width:140px;background:#e9ecef">{% for seg in row.bar %}<div style="width:{{ seg.pct|stringformat:'s' }}%;background:{{ seg.color }}" title="{{ seg.name }}: {{ seg.from|time:'H:i' }}–{{ seg.to|time:'H:i' }} ({{ seg.duration }})"></div>{% endfor %}</div>{% endif %}
+                {% if row.bar %}<div class="cw-bar d-flex rounded overflow-hidden mb-1" style="height:12px;min-width:140px;background:#e9ecef">{% for seg in row.bar %}<div style="width:{{ seg.pct|stringformat:'s' }}%;background:{{ seg.color }}{% if seg.gap %};min-width:4px;border-left:2px solid #dc3545;border-right:2px solid #dc3545{% endif %}" title="{{ seg.name }}: {{ seg.from|time:'H:i' }}–{{ seg.to|time:'H:i' }} ({{ seg.duration }})"></div>{% endfor %}</div>{% endif %}
+                {# S143: salida y vuelta a entrar el mismo día; en pocos minutos, casi seguro un error. #}
+                {% for gap in row.gaps %}<div class="text-nowrap {% if gap.quick %}text-danger fw-semibold{% else %}text-muted{% endif %}"><i class="bi bi-arrow-left-right"></i> Salió {{ gap.out|date:"H:i" }} y volvió {{ gap.back|date:"H:i" }}{% if gap.quick %} (en {% widthratio gap.seconds 60 1 %} min: ¿salida por error?){% endif %}</div>{% endfor %}
                 {% for press in row.changes %}<div class="text-nowrap">{{ press.time|date:"H:i" }} → <strong>{{ press.event.clock_type.name|default:"—" }}</strong>{% if press.is_added %} <span class="text-primary">(añadido)</span>{% elif press.correction %} <span class="text-primary">(corregido)</span>{% endif %}</div>{% endfor %}
                 {% for item in row.type_hours %}<span class="text-muted text-nowrap me-2">{{ item.name }} {{ item.label }} h{% if not item.counts %} (no cuenta){% endif %}</span>{% endfor %}
                 {# S144: vehículo propio y pausas para comer (dietas). #}
@@ -143,6 +137,9 @@ historial: quién, cuándo, antes, después y motivo).
                         <i class="bi bi-three-dots-vertical"></i>
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end">
+                        {% for part in row.parts %}{% with row=part %}
+                        {% if not forloop.first %}<li><hr class="dropdown-divider"></li>{% endif %}
+                        {% if forloop.revcounter0 or not forloop.first %}<li><h6 class="dropdown-header">Jornada de las {{ row.entry.time|date:"H:i"|default:"—" }}</h6></li>{% endif %}
                         {% for press in row.presses %}{% if press %}
                         <li><a class="dropdown-item cw-fix" href="#" data-action="CHANGE" data-event="{{ press.event.pk }}" data-kind="{{ press.event.kind }}" data-type="{{ press.event.clock_type_id|default:'' }}" data-time="{{ press.input_value }}"
                                data-label="{{ press.event.get_kind_display }}{% if press.event.clock_type_id %} ({{ press.event.clock_type.name }}){% endif %} del {{ press.time|date:'d/m/Y H:i' }}"><i class="bi bi-pencil me-1"></i>Corregir la {% if forloop.first %}entrada{% else %}salida{% endif %}</a></li>
@@ -169,9 +166,10 @@ historial: quién, cuándo, antes, después y motivo).
                                data-label="Cambio de tipo en la jornada del {{ row.day|date:'d/m/Y' }}"
                                title="Añadir un cambio de tipo dentro de la jornada (p. ej. de presencia a trabajo efectivo a una hora): el tramo queda partido en dos."><i class="bi bi-scissors me-1"></i>Partir el tramo</a></li>
                         {% endif %}
+                        {% endwith %}{% endfor %}
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item text-danger cw-fix" href="#" data-action="CANCEL" data-ids="{{ row.event_ids }}"
-                               data-label="Jornada del {{ row.day|date:'d/m/Y' }} entera"><i class="bi bi-x-circle me-1"></i>Anular la jornada</a></li>
+                               data-label="{% if row.parts|length > 1 %}Día {{ row.day|date:'d/m/Y' }} entero ({{ row.parts|length }} jornadas){% else %}Jornada del {{ row.day|date:'d/m/Y' }} entera{% endif %}"><i class="bi bi-x-circle me-1"></i>Anular {% if row.parts|length > 1 %}el día{% else %}la jornada{% endif %}</a></li>
                     </ul>
                 </div>
                 {% endif %}

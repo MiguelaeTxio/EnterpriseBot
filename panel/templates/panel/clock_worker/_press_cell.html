@@ -1,0 +1,19 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/clock_worker/_press_cell.html #}
+{% comment %}
+H24 (S143). La entrada (is_entry) o la salida de una jornada (part)
+dentro de la fila del día: hora y redondeo, mapa, municipio, tipo,
+horario, fichaje manual y correcciones.
+{% endcomment %}
+{% if press %}
+<div class="text-nowrap">{{ press.time|date:"H:i" }}{% if press.rounded %} <span class="text-muted">→ {{ press.rounded|date:"H:i" }}</span>{% endif %}{% if press.time|date:"Ymd" != part.day|date:"Ymd" %} <span class="text-muted">({{ press.time|date:"d/m" }})</span>{% endif %}
+    {% if press.maps_url %}<a href="{{ press.maps_url }}" target="_blank" rel="noopener" title="Ver en el mapa{% if press.accuracy %} (±{{ press.accuracy }} m){% endif %}"><i class="bi bi-geo-alt"></i></a>{% else %}<i class="bi bi-geo-alt text-muted" title="Sin posición GPS{% if press.event.gps_error %}: {{ press.event.gps_error }}{% endif %}"></i>{% endif %}
+    {% if press.municipality %}<span class="text-muted">{{ press.municipality }}</span>{% endif %}
+</div>
+{% if press.event.clock_type_id %}<div class="fw-semibold">{{ press.event.clock_type.name }}</div>{% endif %}
+{% if is_entry and part.late_minutes is not None %}<div class="text-muted">horario {{ part.expected_start|time:"H:i" }} · {% if part.late_minutes > 0 %}{{ part.late_minutes }} min después{% elif part.late_minutes < 0 %}{{ part.late_minutes|stringformat:"d"|slice:"1:" }} min antes{% else %}en punto{% endif %}</div>{% endif %}
+{% if not is_entry and part.early_minutes is not None %}<div class="text-muted">horario {{ part.expected_end|time:"H:i" }} · {% if part.early_minutes > 0 %}{{ part.early_minutes }} min antes{% elif part.early_minutes < 0 %}{{ part.early_minutes|stringformat:"d"|slice:"1:" }} min después{% else %}en punto{% endif %}</div>{% endif %}
+{% if press.is_manual %}<div class="text-danger">fichaje manual, apuntado {{ press.received|date:"d/m H:i" }}</div>{% endif %}
+{% if press.is_added %}<div class="text-primary">añadido por {{ press.corrected_by }} · {{ press.correction.reason }}</div>{% elif press.correction %}<div class="text-primary">corregido por {{ press.corrected_by }}: antes {{ press.correction.get_old_kind_display|lower }} {{ press.old_time|date:"d/m H:i" }} · {{ press.correction.reason }}</div>{% endif %}
+{% else %}
+<span class="text-warning-emphasis">—</span>
+{% endif %}
