@@ -1091,6 +1091,7 @@ def _person_list_page(request, ids_only=False):
     # le toca), los mismos que la pestaña Horarios (Miguel Ángel:
     # "copiamos el pipeline de horarios [...] en la pestaña de
     # personal"). Se calculan en Python, como en Horarios.
+    from budgets.models import Base
     from panel.views_worker_schedules import (
         NO_SCHEDULE,
         NO_SECTION,
@@ -1259,6 +1260,8 @@ def _person_list_page(request, ids_only=False):
         "no_schedule": NO_SCHEDULE,
         "ws_sections": _sections(company),
         "ws_schedules": _schedules(company),
+        # S147: base de los marcados (Administración > Usuarios).
+        "ws_bases": Base.objects.filter(company=company).order_by("name"),
     }
 
 

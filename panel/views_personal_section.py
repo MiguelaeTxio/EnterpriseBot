@@ -182,6 +182,51 @@ class PersonalMassSectionView(SupervisorAccessMixin, View):
                                  len(people))})
 
 
+class PersonalMassBaseView(SupervisorAccessMixin, View):
+    """
+    POST selected, base_id: base of the marked workers' panel accounts.
+    ---
+    POST selected, base_id (vacío = sin base): pone la base a la cuenta
+    del panel de los marcados del listado de Personal (S147, Miguel
+    Ángel: "hacerlo también desde personal"), la misma acción que
+    Administración > Usuarios ("Poner base"). La base vive en el usuario
+    del panel: quien aún no tiene usuario se salta y se dice. JSON
+    {message, error}.
+    """
+
+    def post(self, request):
+        from django.http import JsonResponse
+
+        from budgets.models import Base
+        from panel.views_worker_schedules import _marked_people
+
+        company = request.user.company_user.company
+        people = _marked_people(request, company)
+        if not people:
+            return JsonResponse({"error": "Marca algún trabajador."})
+        raw = request.POST.get("base_id", "")
+        base = None
+        if raw:
+            base = Base.objects.filter(
+                pk=raw if raw.isdigit() else 0, company=company,
+            ).first()
+            if base is None:
+                return JsonResponse({"error": "No existe esa base."})
+        accounts = [p.company_user_id for p in people if p.company_user_id]
+        without = ["%s %s" % (p.given_name, p.first_surname)
+                   for p in people if not p.company_user_id]
+        count = CompanyUser.objects.filter(
+            pk__in=accounts, company=company).update(base=base)
+        message = ("Base %s puesta a %d trabajador(es)." % (base.name, count)
+                   if base else "Base quitada a %d trabajador(es)." % count)
+        if without:
+            message += " Sin usuario del panel (no se les pone): %s." % (
+                ", ".join(without[:10])
+                + (" y %d más" % (len(without) - 10)
+                   if len(without) > 10 else ""))
+        return JsonResponse({"message": message})
+
+
 class PersonalMassEmployerView(DocsUploadAccessMixin, View):
     """
     POST selected, employer: employer company of the marked workers.

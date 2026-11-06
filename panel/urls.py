@@ -43,6 +43,7 @@ from panel.views_personal_local_download import PersonalLocalDownloadStatusView
 from panel.views_personal_section import (
     PersonalMassEmployerView,
     PersonalMassScheduleView,
+    PersonalMassBaseView,
     PersonalMassSectionView,
     PersonalSectionAssignView,
 )
@@ -1584,6 +1585,12 @@ urlpatterns = [
         "documentacion/personal/seccion/",
         PersonalMassSectionView.as_view(),
         name="documentation_personal_mass_section",
+    ),
+    # S147: base de los marcados (la de su usuario del panel).
+    path(
+        "documentacion/personal/base/",
+        PersonalMassBaseView.as_view(),
+        name="documentation_personal_mass_base",
     ),
     path(
         "documentacion/personal/<int:pk>/seccion/",

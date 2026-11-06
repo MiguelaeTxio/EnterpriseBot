@@ -334,6 +334,18 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                             <i class="bi bi-diagram-3 me-1"></i>Poner sección
                         </button>
                     </div>
+                    {# S147: base de los marcados (la de su usuario del panel, como Administración > Usuarios). #}
+                    <div class="small text-muted fw-bold mt-1">Base de los marcados</div>
+                    <div class="d-flex flex-wrap gap-1 align-items-center">
+                        <select class="form-select form-select-sm ppane-select-auto" id="person-mass-base" aria-label="Base">
+                            {% for base in ws_bases %}<option value="{{ base.pk }}">{{ base.name }}</option>{% endfor %}
+                            <option value="">Sin base</option>
+                        </select>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="person-mass-base-assign" disabled
+                                title="Pone la base elegida al usuario del panel de los marcados (festivos de su calendario laboral). Quien aún no tiene usuario se salta.">
+                            <i class="bi bi-geo-alt me-1"></i>Poner base
+                        </button>
+                    </div>
                     </div>
                 </div>
                 {% endif %}
@@ -588,7 +600,7 @@ las filas de debajo se desplacen de verdad.
         const resendBtn = document.getElementById('person-mass-access-resend');
         if (resendBtn) resendBtn.disabled = selection.size === 0;
         // H24 (S144): horario y sección de los marcados.
-        ['person-mass-schedule-assign', 'person-mass-schedule-clear', 'person-mass-section-assign', 'person-mass-employer-assign'].forEach((id) => {
+        ['person-mass-schedule-assign', 'person-mass-schedule-clear', 'person-mass-section-assign', 'person-mass-base-assign', 'person-mass-employer-assign'].forEach((id) => {
             const btn = document.getElementById(id);
             if (btn) btn.disabled = selection.size === 0;
         });
@@ -1326,6 +1338,17 @@ las filas de debajo se desplacen de verdad.
             postScheduleAction("{% url 'panel:documentation_personal_mass_section' %}",
                 {section_id: select.value, valid_from: from},
                 'Poner la sección ' + select.options[select.selectedIndex].textContent.trim() + ' desde ' + from);
+        });
+    }
+    // S147: base de los marcados (su usuario del panel).
+    const baseBtn = document.getElementById('person-mass-base-assign');
+    if (baseBtn) {
+        baseBtn.addEventListener('click', function () {
+            const select = document.getElementById('person-mass-base');
+            postScheduleAction("{% url 'panel:documentation_personal_mass_base' %}",
+                {base_id: select.value},
+                select.value ? 'Poner la base ' + select.options[select.selectedIndex].textContent.trim()
+                             : 'Quitar la base');
         });
     }
     // S144: empresa de los marcados (pestaña Alta y baja).
