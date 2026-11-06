@@ -3238,6 +3238,14 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                 _end_time_afternoon_create = (
                     _schedule_create.end_time_morning.strftime("%H:%M")
                 )
+        # S147: con la comida fichada (salida y vuelta), esa es la del
+        # parte, no la del horario.
+        from hr_calendar.clock_parts import clocked_lunch as _clocked_lunch
+
+        _clocked = _clocked_lunch(cu, timezone.localdate())
+        if _clocked is not None:
+            _lunch_start = _clocked[0].strftime("%H:%M")
+            _lunch_end = _clocked[1].strftime("%H:%M")
 
         import json as _json_fix
         from ivr_config.models import AbsenceCategory as _AbsCat
@@ -6472,11 +6480,11 @@ class WorkshopIntensiveToggleView(WorkshopRequiredMixin, View):
         # -- Resolver horario actualizado y construir payload de respuesta. --
         # S141: el horario del día del parte que hay en el formulario
         # (hoy si no viene).
-        schedule = _resolve_operator_schedule(
-            cu, company,
+        _parte_day = (
             _parse_parte_date(request.POST.get("fecha", ""))
-            or timezone.localdate(),
+            or timezone.localdate()
         )
+        schedule = _resolve_operator_schedule(cu, company, _parte_day)
 
         def _fmt(t):
             """
@@ -6505,6 +6513,13 @@ class WorkshopIntensiveToggleView(WorkshopRequiredMixin, View):
                 end_time_afternoon = _fmt(schedule.end_time_afternoon)
             elif schedule.is_intensive and schedule.end_time_morning:
                 end_time_afternoon = _fmt(schedule.end_time_morning)
+        # S147: con la comida fichada ese día, esa es la del parte.
+        from hr_calendar.clock_parts import clocked_lunch as _clocked_lunch
+
+        _clocked = _clocked_lunch(cu, _parte_day)
+        if _clocked is not None:
+            lunch_break_start = _fmt(_clocked[0])
+            lunch_break_end = _fmt(_clocked[1])
 
         # -- Build schedule context for the HTMX partial. --
         # -- Construir contexto de horario para el partial HTMX. --

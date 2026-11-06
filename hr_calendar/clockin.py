@@ -450,8 +450,8 @@ def _after_save(event, company_user):
             "# [FICHAJE-KM] Error con el fichaje %s.", client_id,
         )
     outcome = None
-    if (event.kind == ClockEvent.Kind.OUT
-            or event.sent_by == ClockEvent.SentBy.MANUAL):
+    # S147: también la entrada normal (la vuelta de la comida fichada).
+    if event.kind in (ClockEvent.Kind.OUT, ClockEvent.Kind.IN):
         # H24 (S129): la salida ajusta el parte de ese día si ya estaba
         # hecho y lo cierra si cuadra (hr_calendar/clock_parts.py). S130:
         # una entrada manual apuntada después de la salida vuelve a
