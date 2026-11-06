@@ -13,6 +13,10 @@ jornada y si está activo, con su botón de guardar.
     </select>
     <input type="number" class="form-control form-control-sm w-auto clk-type-order" min="0" max="999" title="Orden en la lista"
            value="{{ clock_type.order|default:'0' }}" aria-label="Orden">
+    {# S143: función del tipo (presencia y fuerza mayor van a la bolsa, convenio art. 20). #}
+    <select class="form-select form-select-sm w-auto clk-type-role" aria-label="Función" title="Función: desplazamiento (km y art. 22), pausa para comer, presencia o fuerza mayor (no son jornada y van a la bolsa)">
+        {% for value, label in type_roles %}<option value="{{ value }}"{% if clock_type.role == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
     <div class="form-check mb-0 text-nowrap">
         <input class="form-check-input clk-type-counts" type="checkbox" id="clkTypeCounts{{ clock_type.pk|default:'new' }}"{% if not clock_type or clock_type.counts_as_work %} checked{% endif %}>
         <label class="form-check-label" for="clkTypeCounts{{ clock_type.pk|default:'new' }}">Cuenta como jornada</label>

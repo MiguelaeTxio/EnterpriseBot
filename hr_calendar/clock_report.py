@@ -72,7 +72,7 @@ from dataclasses import dataclass, field
 
 from django.utils import timezone
 
-from hr_calendar.models import ClockEvent
+from hr_calendar.models import ClockEvent, ClockType
 
 MAX_SHIFT_HOURS = 24
 LATE_SEND_SECONDS = 300
@@ -421,8 +421,26 @@ class Shift:
         return sum(
             max(int((end - start).total_seconds()), 0)
             for clock_type, start, end in self.segments
-            if clock_type is not None and not clock_type.counts_as_work
+            if clock_type is not None and (
+                not clock_type.counts_as_work
+                or clock_type.role in ClockType.BAG_ROLES)
         )
+
+    @property
+    def bag_role_seconds(self):
+        """
+        {role: seconds} of presence and force majeure (S143).
+        ---
+        Segundos de presencia y de fuerza mayor de la jornada (convenio,
+        art. 20 b y d): no son jornada y van a la bolsa, hora por hora.
+        """
+        result = {}
+        for clock_type, start, end in self.segments:
+            if clock_type is not None and clock_type.role in \
+                    ClockType.BAG_ROLES:
+                result[clock_type.role] = result.get(clock_type.role, 0) \
+                    + max(int((end - start).total_seconds()), 0)
+        return result
 
     @property
     def seconds(self):
@@ -534,6 +552,9 @@ class PersonReport:
     month_excess: dict = field(default_factory=dict)
     # S143 (convenio, art. 22): {día: {"km", "hours", "allowance"}}.
     travel: dict = field(default_factory=dict)
+    # S143 (convenio, art. 20 b y d): {día: {función: segundos}} de
+    # presencia y fuerza mayor de los días cerrados.
+    bag_time: dict = field(default_factory=dict)
 
     @property
     def excess_seconds(self):
@@ -1275,6 +1296,17 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
 
         report.travel = travel_by_day(report.shifts,
                                       base_points.get(user_id))
+        closed = {}
+        for shift in report.shifts:
+            closed.setdefault(shift.day, []).append(shift)
+        for day, same in closed.items():
+            if any(s.clock_in is None or s.clock_out is None for s in same):
+                continue
+            for shift in same:
+                for role, seconds in shift.bag_role_seconds.items():
+                    if seconds:
+                        slot = report.bag_time.setdefault(day, {})
+                        slot[role] = slot.get(role, 0) + seconds
         report.events = [
             e for e in user_events if start <= e.pressed_at < end
         ]

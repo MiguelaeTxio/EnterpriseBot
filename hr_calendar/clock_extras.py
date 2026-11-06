@@ -162,7 +162,11 @@ def _add_months(day, months):
     return datetime.date(day.year + year, month + 1, 1)
 
 
-def bag_deadlines(months, travel_months, adjustments, today=None):
+BAG_ROLE_LABELS = {"presence": "Presencia", "force": "Fuerza mayor"}
+
+
+def bag_deadlines(months, travel_months, adjustments, today=None,
+                  role_months=None):
     """
     The accumulated hours still to compensate, oldest first, with their
     deadline.
@@ -184,6 +188,13 @@ def bag_deadlines(months, travel_months, adjustments, today=None):
         if seconds:
             ledger.append([month, 1, "Desplazamiento", seconds,
                            TRAVEL_DEADLINE_MONTHS])
+    # S143 (art. 20 b y d): presencia y fuerza mayor, con el plazo de 6
+    # meses de los excesos de jornada (art. 19).
+    for role, by_month in (role_months or {}).items():
+        for month, seconds in sorted(by_month.items()):
+            if seconds:
+                ledger.append([month, 1, BAG_ROLE_LABELS.get(role, role),
+                               seconds, OVERTIME_DEADLINE_MONTHS])
     for a in adjustments:
         if a.minutes > 0:
             ledger.append([a.date.replace(day=1), 2, "Añadidas a mano",
@@ -291,8 +302,19 @@ def overtime_bag(company, company_user, until=None):
         travel_months[month] = (travel_months.get(month, 0)
                                 + item["hours"] * 3600)
     travel = sum(travel_months.values())
-    deadlines = bag_deadlines(months, travel_months, adjustments)
+    # S143 (convenio, art. 20 b y d): presencia y fuerza mayor por mes.
+    role_months = {}
+    for day, roles in (report.bag_time if report is not None
+                       else {}).items():
+        month = day.replace(day=1)
+        for role, seconds in roles.items():
+            slot = role_months.setdefault(role, {})
+            slot[month] = slot.get(month, 0) + seconds
+    role_totals = {role: sum(v.values()) for role, v in role_months.items()}
+    deadlines = bag_deadlines(months, travel_months, adjustments,
+                              role_months=role_months)
     return {
+        "role_totals": role_totals,
         "travel_seconds": travel,
         "travel_months": travel_months,
         "deadlines": deadlines,
@@ -302,7 +324,8 @@ def overtime_bag(company, company_user, until=None):
         "months": months,
         "cap_seconds": cap,
         "adjust_minutes": moved,
-        "total_seconds": accumulated + travel + moved * 60,
+        "total_seconds": (accumulated + travel + sum(role_totals.values())
+                          + moved * 60),
         "adjustments": adjustments,
         "since": BAG_START,
     }

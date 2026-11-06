@@ -1708,10 +1708,19 @@ class ClockType(models.Model):
     # dietas).
     ROLE_TRAVEL = "travel"
     ROLE_MEAL = "meal"
+    # S143 (convenio, art. 20 b y d): presencia (esperas, averías...) y
+    # fuerza mayor no son trabajo efectivo para la jornada ni para las
+    # horas extra, y se compensan con descanso, una hora por hora: su
+    # tiempo va a la bolsa.
+    ROLE_PRESENCE = "presence"
+    ROLE_FORCE = "force"
+    BAG_ROLES = (ROLE_PRESENCE, ROLE_FORCE)
     ROLE_CHOICES = [
         ("", "Normal"),
         (ROLE_TRAVEL, "Desplazamiento"),
         (ROLE_MEAL, "Pausa para comer"),
+        (ROLE_PRESENCE, "Presencia (a la bolsa)"),
+        (ROLE_FORCE, "Fuerza mayor (a la bolsa)"),
     ]
     role = models.CharField(
         max_length=10, blank=True, default="", choices=ROLE_CHOICES,

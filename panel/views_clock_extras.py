@@ -58,6 +58,8 @@ def bag_context(person):
         } for m in reversed(bag["months"])],
         # S143 (convenio): desplazamiento (art. 22) y plazos.
         "travel_label": label(bag["travel_seconds"]),
+        "presence_label": label(bag["role_totals"].get("presence", 0)),
+        "force_label": label(bag["role_totals"].get("force", 0)),
         "deadline_rows": [{
             **d,
             "label": label(d["seconds"]),

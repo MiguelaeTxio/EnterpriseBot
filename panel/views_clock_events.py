@@ -387,6 +387,7 @@ def _settings_context(company):
         ],
         # S141: tipos de fichaje (como en Sesame), gestionables.
         "clock_types": list(ClockType.objects.filter(company=company)),
+        "type_roles": ClockType.ROLE_CHOICES,
         "type_icons": TYPE_ICONS,
     }
 
@@ -776,6 +777,13 @@ class ClockTypeSaveView(SupervisorAccessMixin, View):
         clock_type.name = name
         clock_type.icon = icon
         clock_type.counts_as_work = request.POST.get("counts_as_work") == "1"
+        # S143: función del tipo; presencia y fuerza mayor no son jornada
+        # (convenio, art. 20 b y d) y van a la bolsa.
+        role = request.POST.get("role")
+        if role is not None and role in dict(ClockType.ROLE_CHOICES):
+            clock_type.role = role
+        if clock_type.role in ClockType.BAG_ROLES:
+            clock_type.counts_as_work = False
         clock_type.is_active = active
         clock_type.order = order
         clock_type.updated_by = request.user.company_user

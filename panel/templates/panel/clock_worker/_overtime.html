@@ -18,6 +18,8 @@ Vista: panel/views_clock_extras.py.
         <tr><td>Horas extra (hasta {{ bag.cap_label }} h cada mes)</td><td class="text-end text-nowrap">{{ bag.extra_label }} h</td></tr>
         <tr><td>Lo que pasa del tope cada mes</td><td class="text-end text-nowrap">{{ bag.accumulated_label }} h</td></tr>
         <tr><td>Desplazamiento (convenio, art. 22: 1 h de 30 a 60 km, 2 h de 60 a 130 km)</td><td class="text-end text-nowrap">{{ bag.travel_label }} h</td></tr>
+        <tr><td>Presencia (art. 20 b: esperas, averías...; 1 h de descanso por hora)</td><td class="text-end text-nowrap">{{ bag.presence_label }} h</td></tr>
+        <tr><td>Fuerza mayor (art. 20 d; 1 h de descanso por hora)</td><td class="text-end text-nowrap">{{ bag.force_label }} h</td></tr>
         <tr><td>Movimientos a mano (horas compensadas, días libres, añadidas)</td><td class="text-end text-nowrap">{{ bag.adjust_label }} h</td></tr>
         <tr class="fw-bold"><td>Horas acumuladas</td><td class="text-end text-nowrap">{{ bag.total_label }} h</td></tr>
     </tbody>
@@ -37,7 +39,7 @@ Vista: panel/views_clock_extras.py.
         {% endfor %}
     </tbody>
 </table>
-<div class="form-text mb-2">Las horas compensadas (movimientos que restan y días libres) se descuentan de lo más antiguo. Horas extra: 6 meses (art. 19); desplazamiento: un trimestre y después se pagan a 6 €/h (art. 22).</div>
+<div class="form-text mb-2">Las horas compensadas (movimientos que restan y días libres) se descuentan de lo más antiguo. Horas extra, presencia y fuerza mayor: 6 meses (art. 19); desplazamiento: un trimestre y después se pagan a 6 €/h (art. 22).</div>
 {% endif %}
 {% if bag.month_rows %}
 <div class="fw-semibold small mb-1">Por meses</div>
