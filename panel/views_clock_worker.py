@@ -324,6 +324,71 @@ def _person(pk):
     return _person_or_404(pk)
 
 
+DAY_LETTERS = ("L", "M", "X", "J", "V", "S", "D")
+
+
+def _tracts(schedule):
+    return " · ".join(
+        "%s–%s" % (start.strftime("%H:%M"), end.strftime("%H:%M"))
+        for start, end in (
+            (schedule.start_time_morning, schedule.end_time_morning),
+            (schedule.start_time_afternoon, schedule.end_time_afternoon),
+        ) if start is not None and end is not None)
+
+
+def schedule_info(person):
+    """
+    The worker's schedule and how they clock, for the page header.
+    ---
+    S143 (Miguel Ángel): en la página de fichajes "no sabemos el horario
+    que tiene cada uno [...] el tipo de fichaje que hace, si es con tipo
+    o si no es con tipo [...] los horarios abiertos, el horario que se
+    han fijado ellos". Horario de hoy (nombre, temporada, tramos o los
+    de cada día), cómo ficha (por tipos o con un botón), desde cuándo,
+    sus avisos y, con horario abierto, el horario propio de sus avisos.
+    """
+    from hr_calendar.clock_settings import worker_states
+    from hr_calendar.models import WorkerClockSetting
+    from panel.views_operator import _resolve_operator_schedule
+
+    cu = person.company_user
+    info = {"has_account": cu is not None}
+    state = worker_states([person]).get(person.pk)
+    info["state"] = state
+    if cu is None:
+        return info
+    schedule = _resolve_operator_schedule(cu, cu.company)
+    info["schedule"] = schedule
+    if schedule is not None:
+        info["season"] = schedule.get_season_display()
+        if schedule.varies_by_day:
+            rows = {d.weekday: d for d in schedule.days.all()}
+            info["days"] = []
+            for weekday, letter in enumerate(DAY_LETTERS):
+                row = rows.get(weekday)
+                info["days"].append((letter, _tracts(row) if row is not None
+                                     and row.works else ""))
+        elif not schedule.is_open:
+            info["tracts"] = _tracts(schedule)
+    setting = WorkerClockSetting.objects.filter(person=person).first()
+    labels_in = dict(WorkerClockSetting.IN_REMINDER_CHOICES)
+    labels_out = dict(WorkerClockSetting.OUT_REMINDER_CHOICES)
+    probe = setting or WorkerClockSetting()
+    info["in_reminders"] = ", ".join(
+        labels_in.get(k, k) for k in probe.in_reminder_keys()) or "ninguno"
+    info["out_reminders"] = ", ".join(
+        labels_out.get(k, k) for k in probe.out_reminder_keys()) or "ninguno"
+    if setting is not None and setting.own_shifts():
+        info["own"] = {
+            "tracts": " · ".join(
+                "%s–%s" % (a.strftime("%H:%M"), b.strftime("%H:%M"))
+                for a, b in setting.own_shifts()),
+            "days": " ".join(DAY_LETTERS[d] for d in setting.own_days()),
+            "until": setting.own_schedule_until,
+        }
+    return info
+
+
 class ClockWorkerPageView(SupervisorAccessMixin, View):
     """
     GET: the clock-in page of one worker.
@@ -345,6 +410,8 @@ class ClockWorkerPageView(SupervisorAccessMixin, View):
             **_context(request, person),
             # S144: bolsa de horas extras (total en el panel fijo).
             "bag": bag_context(person),
+            # S143: su horario y cómo ficha.
+            "sched": schedule_info(person),
             "screen_key": SCREEN_KEY,
             "saved_selection": selection if isinstance(
                 selection, list) else [],

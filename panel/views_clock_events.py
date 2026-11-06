@@ -932,6 +932,8 @@ def worker_detail_data(company, person, date_from, date_to):
         # S141: cambios de tipo y horas por tipo (fichaje por tipos).
         "changes": [_press_view(c, by_replacement) for c in s.changes],
         "type_hours": _type_hours(s),
+        # S143: barra de tramos de la jornada, con su color por tipo.
+        "bar": _shift_bar(s),
         # S144: día flexible tras una jornada con poco descanso.
         "rest_note": REST_NOTE if s.after_short_rest else "",
         # S144: las pulsaciones de la jornada, para anularla entera.
@@ -989,6 +991,56 @@ def worker_detail_data(company, person, date_from, date_to):
     } for c in corrections]
     return {"report": report, "shifts": shifts, "history": history,
             "extras": extras}
+
+
+BAR_COLORS = {
+    "travel": "#0d6efd", "meal": "#adb5bd", "presence": "#fd7e14",
+    "force": "#dc3545",
+}
+BAR_WORK = "#198754"
+BAR_OTHER_WORK = "#20c997"
+
+
+def _shift_bar(shift):
+    """
+    The shift's segments as a coloured bar: [{name, from, to, pct,
+    color}].
+    ---
+    S143 (Miguel Ángel): "por los tramos que ha fichado, y que se vea con
+    color los tramos, como una barra de progreso". Un tramo por tipo
+    fichado (el de la entrada y uno por cada cambio de tipo), hasta la
+    salida o, si la jornada de hoy sigue abierta, hasta ahora. Sin tipos,
+    un solo tramo de trabajo.
+    """
+    if shift.clock_in is None:
+        return []
+    marks = [shift.clock_in] + list(shift.changes)
+    end = shift.clock_out.pressed_at if shift.clock_out is not None else (
+        timezone.now() if shift.in_progress else None)
+    if end is None:
+        return []
+    ends = [m.pressed_at for m in marks[1:]] + [end]
+    total = max((end - shift.clock_in.pressed_at).total_seconds(), 1)
+    bar = []
+    for mark, stop in zip(marks, ends):
+        clock_type = mark.clock_type
+        seconds = max((stop - mark.pressed_at).total_seconds(), 0)
+        if clock_type is None:
+            name, color = "Trabajo", BAR_WORK
+        else:
+            name = clock_type.name
+            color = BAR_COLORS.get(clock_type.role) or (
+                (BAR_WORK if clock_type.is_default else BAR_OTHER_WORK)
+                if clock_type.counts_as_work else "#6c757d")
+        bar.append({
+            "name": name,
+            "from": timezone.localtime(mark.pressed_at),
+            "to": timezone.localtime(stop),
+            "pct": round(seconds * 100 / total, 2),
+            "color": color,
+            "duration": format_duration(int(seconds)),
+        })
+    return bar
 
 
 def _attach_reviewed(person, shifts):

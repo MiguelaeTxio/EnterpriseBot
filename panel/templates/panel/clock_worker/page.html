@@ -29,6 +29,30 @@ screen_key "clock_worker"); la selección, por trabajador.
 <div class="d-flex align-items-center gap-2 mb-2">
     <a href="{{ panel_back_url|default:back_fallback }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Volver</a>
 </div>
+{# S143: su horario y cómo ficha (Miguel Ángel: "no sabemos el horario que tiene cada uno"). #}
+<div class="border rounded px-2 py-1 mb-2 small d-flex flex-wrap column-gap-3 row-gap-1 align-items-center" id="cw-sched">
+    <span><i class="bi bi-clock me-1"></i><strong>Horario:</strong>
+        {% if not sched.has_account %}<span class="text-muted">sin cuenta en el panel</span>
+        {% elif not sched.schedule %}<span class="text-danger">sin horario</span>
+        {% else %}{{ sched.schedule.label }}{% if sched.season %} <span class="text-muted">({{ sched.season }})</span>{% endif %}
+            {% if sched.schedule.is_open %} · <span class="badge text-bg-info">abierto</span>
+            {% elif sched.days %} · {% for letter, tracts in sched.days %}<span class="text-nowrap me-1"><strong>{{ letter }}</strong> {{ tracts|default:"—" }}</span>{% endfor %}
+            {% else %} · {{ sched.tracts }}{% if sched.schedule.is_intensive %} <span class="text-muted">(intensiva)</span>{% endif %}{% endif %}
+            {% if sched.schedule.works_holidays %} · <span class="text-muted">trabaja festivos</span>{% endif %}
+        {% endif %}</span>
+    {% if sched.state %}
+    <span><i class="bi bi-phone me-1"></i><strong>Ficha:</strong>
+        {% if not sched.state.section_clocks %}su sección no ficha
+        {% elif not sched.state.worker_clocks %}no ficha
+        {% else %}{% if sched.state.uses_types %}por tipos{% else %}con un botón{% endif %}{% if sched.state.starts_later %} · desde el {{ sched.state.clocks_from|date:"d/m/Y" }}{% endif %}{% endif %}</span>
+    <span><i class="bi bi-bell me-1"></i><strong>Avisos:</strong>
+        {% if sched.state.reminders %}entrada {{ sched.in_reminders|lower }}; salida {{ sched.out_reminders|lower }}{% else %}no{% endif %}</span>
+    {% endif %}
+    {% if sched.schedule.is_open %}
+    <span><i class="bi bi-person-gear me-1"></i><strong>Su horario para los avisos:</strong>
+        {% if sched.own %}{{ sched.own.tracts }} · {{ sched.own.days }}{% if sched.own.until %} · hasta el {{ sched.own.until|date:"d/m/Y" }}{% endif %}{% else %}<span class="text-muted">no se ha puesto ninguno</span>{% endif %}</span>
+    {% endif %}
+</div>
 <div class="border rounded p-2 mb-2" id="cw-top-panel">
     <div class="row g-2">
         <div class="col-lg-7">

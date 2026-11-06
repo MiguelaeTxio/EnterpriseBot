@@ -107,6 +107,8 @@ historial: quién, cuándo, antes, después y motivo).
             {% endfor %}
             <td class="text-end" data-label="Horas">{{ row.duration|default:"—" }}</td>
             <td data-label="Tipos">
+                {# S143: barra de tramos fichados, con color por tipo. #}
+                {% if row.bar %}<div class="cw-bar d-flex rounded overflow-hidden mb-1" style="height:12px;min-width:140px;background:#e9ecef">{% for seg in row.bar %}<div style="width:{{ seg.pct|stringformat:'s' }}%;background:{{ seg.color }}" title="{{ seg.name }}: {{ seg.from|time:'H:i' }}–{{ seg.to|time:'H:i' }} ({{ seg.duration }})"></div>{% endfor %}</div>{% endif %}
                 {% for press in row.changes %}<div class="text-nowrap">{{ press.time|date:"H:i" }} → <strong>{{ press.event.clock_type.name|default:"—" }}</strong>{% if press.is_added %} <span class="text-primary">(añadido)</span>{% elif press.correction %} <span class="text-primary">(corregido)</span>{% endif %}</div>{% endfor %}
                 {% for item in row.type_hours %}<span class="text-muted text-nowrap me-2">{{ item.name }} {{ item.label }} h{% if not item.counts %} (no cuenta){% endif %}</span>{% endfor %}
                 {# S144: vehículo propio y pausas para comer (dietas). #}
