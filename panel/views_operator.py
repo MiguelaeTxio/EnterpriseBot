@@ -4191,6 +4191,19 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                     closing=_form_action != "save_blocks",
                     lunch=_clk_lunch,
                 )
+                # S147: la comida del parte tiene que coincidir con la
+                # fichada (horas redondas) para cerrarlo.
+                if (
+                    not _clk_errors and _form_action != "save_blocks"
+                    and not _no_lunch_break and _lb_start and _lb_end
+                ):
+                    from hr_calendar.clock_parts import (
+                        lunch_problems as _cp_lunch_problems,
+                    )
+
+                    _clk_errors = _cp_lunch_problems(
+                        _parte_owner, work_date, (_lb_start, _lb_end),
+                    )
                 if _clk_errors:
                     _intra.errors.extend(
                         _VE_CLK(rule="FICHAJE", message=m) for m in _clk_errors

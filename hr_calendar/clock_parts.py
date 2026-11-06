@@ -372,18 +372,30 @@ def clocked_pauses(company_user, work_date):
     """
     The clocked pauses of a day: [(OUT event, IN event, start, end)],
     rounded local times, in order. A pause is an OUT followed by an IN
-    the same day (Miguel Ángel, S147: "el fichaje [de salida] que cuente
-    como pausa para la comida y que cuente el de cuando vuelvan como
-    inicio de la tarde").
+    the same day, or a stretch of the meal-break type (Miguel Ángel,
+    S147: "el fichaje [de salida] que cuente como pausa para la comida
+    y que cuente el de cuando vuelvan como inicio de la tarde").
     ---
     Las pausas fichadas de un día: [(SALIDA, ENTRADA, inicio, fin)], con
     las horas redondeadas, en orden. Una pausa es una SALIDA seguida de
-    una ENTRADA el mismo día.
+    una ENTRADA el mismo día, o un tramo de "Pausa para comer".
     """
     if company_user is None or work_date is None:
         return []
     shifts = build_shifts(_day_events(company_user, work_date))
     pauses = []
+    # Quien ficha con tipos marca la comida con el tipo "Pausa para
+    # comer" (S144): ese tramo es su pausa.
+    for shift in shifts:
+        marks = shift.segment_marks
+        presses = [mark for mark, _end in marks] + [shift.clock_out]
+        for index, (mark, _end) in enumerate(marks):
+            if (mark, _end) not in shift.meal_segments:
+                continue
+            start = _rounded_time(mark)
+            end = _rounded_time(presses[index + 1])
+            if start and end and start < end:
+                pauses.append((mark, presses[index + 1], start, end))
     for before, after in zip(shifts, shifts[1:]):
         if before.clock_out is None or after.clock_in is None:
             continue
@@ -393,7 +405,7 @@ def clocked_pauses(company_user, work_date):
         end = _rounded_time(after.clock_in)
         if start and end and start < end:
             pauses.append((before.clock_out, after.clock_in, start, end))
-    return pauses
+    return sorted(pauses, key=lambda pause: pause[2])
 
 
 def clocked_lunch(company_user, work_date):
@@ -410,35 +422,95 @@ def clocked_lunch(company_user, work_date):
     return pauses[0][2], pauses[0][3]
 
 
-def is_lunch_out(event):
+def is_lunch_out(entry, out_time):
     """
-    True when an OUT is the lunch one, not the end of the day: the
-    worker's schedule that day has an afternoon and the OUT (rounded)
-    comes before the afternoon starts. The parte then waits for the
-    end-of-day OUT (S147). Leaving for good at that time leaves the
-    parte open, to be closed by hand.
+    True when an OUT is a pause (the lunch one), not the end of the
+    day: the parte of that day has its lunch break or a task after the
+    OUT (rounded). The parte then waits for the end-of-day OUT. S147:
+    not by the schedule, because a mechanic working away may eat at
+    another time (Miguel Ángel: "las salidas a comer puede que no
+    coincidan con los horarios").
     ---
-    True si una SALIDA es la de la comida y no la del final de la
-    jornada: el horario de ese día tiene tarde y la salida (redondeada)
-    es antes de que empiece la tarde. El parte espera entonces a la
-    salida del final de la jornada (S147). Quien se va del todo a esa
-    hora deja el parte abierto y lo cierra a mano.
+    True si una SALIDA es una pausa (la de la comida) y no la del final
+    de la jornada: el parte de ese día tiene su comida o alguna tarea
+    después de la salida (redondeada). El parte espera entonces a la
+    salida del final. S147: por el parte, no por el horario.
     """
-    from panel.views_operator import _resolve_operator_schedule
+    from work_order_processor.models import WorkOrderEntryLine
 
-    worker = event.company_user
-    work_date = timezone.localtime(event.pressed_at).date()
-    schedule = _resolve_operator_schedule(
-        worker, worker.company, work_date,
-    )
     if (
-        schedule is None or schedule.is_intensive
-        or not schedule.start_time_afternoon
-        or not schedule.end_time_afternoon
+        not entry.no_lunch_break and entry.lunch_break_end
+        and entry.lunch_break_end > out_time
     ):
+        return True
+    return WorkOrderEntryLine.objects.filter(
+        entry=entry, hc__isnull=False, hc__gte=out_time,
+    ).exists()
+
+
+def lunch_problems(company_user, work_date, lunch):
+    """
+    What fails between the parte's lunch break and the clocked one
+    ([] = nothing). S147 (Miguel Ángel): "si tiene la tarea con una
+    partida de comida en el parte, la ticada debe coincidir (en hora
+    redonda)".
+    ---
+    Qué falla entre la comida del parte y la fichada ([] = nada).
+    """
+    if not lunch:
+        return []
+    pauses = clocked_pauses(company_user, work_date)
+    if any((p[2], p[3]) == tuple(lunch) for p in pauses):
+        return []
+    if pauses:
+        return [
+            "La comida del parte (%s a %s) no coincide con la fichada "
+            "(%s a %s)." % (_fmt(lunch[0]), _fmt(lunch[1]),
+                            _fmt(pauses[0][2]), _fmt(pauses[0][3]))
+        ]
+    return [
+        "La comida del parte (%s a %s) no está fichada: hay que fichar "
+        "la salida a comer y la vuelta." % (_fmt(lunch[0]), _fmt(lunch[1]))
+    ]
+
+
+# A pause clocked farther than this from the worker's base is a meal
+# away from it: the parte gets its diet (S147).
+DIET_AWAY_M = 5000
+
+
+def _away_from_base(event, base):
+    from budgets.service_route import distance_m
+
+    if event.latitude is None or event.longitude is None:
         return False
-    out_time = _rounded_time(event)
-    return out_time < schedule.start_time_afternoon
+    if base is None or base.latitude is None or base.longitude is None:
+        return False
+    return distance_m(
+        (float(event.latitude), float(event.longitude)),
+        (float(base.latitude), float(base.longitude)),
+    ) > DIET_AWAY_M
+
+
+def meal_away_from_base(company_user, work_date, lunch):
+    """
+    True when the clocked lunch pause (the parte's one or, without it,
+    the first) was clocked away from the worker's base: its OUT or its
+    IN more than DIET_AWAY_M from it. S147 (Miguel Ángel): "si se le
+    olvida poner dieta y los fichajes indican que ha comido fuera de la
+    base, marca la dieta de forma automática".
+    ---
+    True si la pausa de la comida fichada (la del parte o, sin ella, la
+    primera) se fichó fuera de su base: la salida o la vuelta a más de
+    DIET_AWAY_M de ella.
+    """
+    pauses = clocked_pauses(company_user, work_date)
+    if lunch:
+        pauses = [p for p in pauses if (p[2], p[3]) == tuple(lunch)]
+    if not pauses:
+        return False
+    base = getattr(company_user, "base", None)
+    return any(_away_from_base(e, base) for e in pauses[0][:2])
 
 
 def _day_entry(worker, work_date):
@@ -465,17 +537,16 @@ def _day_entry(worker, work_date):
 
 def on_clock_in_after_pause(event):
     """
-    An IN back from a clocked pause (S147): that day's parte, if
-    already made, takes the pause as its lunch break and, if the lunch
-    OUT had closed it, goes back to "in progress": it closes with the
-    end-of-day OUT, checked against what was clocked.
+    An IN back from a clocked pause (S147): if the OUT had closed that
+    day's parte, it goes back to "in progress"; it closes with the
+    end-of-day OUT, checked against what was clocked (lunch included).
     ---
-    Una ENTRADA de vuelta de una pausa fichada (S147): el parte de ese
-    día, si ya está hecho, toma la pausa como su comida y, si la salida
-    de la comida lo había cerrado, vuelve a "en curso": se cierra con
-    la salida del final de la jornada, cotejado con lo fichado.
+    Una ENTRADA de vuelta de una pausa fichada (S147): si la salida
+    había cerrado el parte de ese día, vuelve a "en curso"; se cierra
+    con la salida del final de la jornada, cotejado con lo fichado
+    (comida incluida).
     """
-    from work_order_processor.models import WorkOrder, WorkOrderEntryLine
+    from work_order_processor.models import WorkOrder
 
     worker = event.company_user
     work_date = timezone.localtime(event.pressed_at).date()
@@ -485,45 +556,26 @@ def on_clock_in_after_pause(event):
     )
     if pause is None:
         return ClockOutOutcome()
-    start, end = pause[2], pause[3]
     notice = (
-        "Vuelta de la comida registrada (comida de %s a %s). El parte se "
-        "cerrará con la salida del final de la jornada."
-        % (_fmt(start), _fmt(end))
+        "Vuelta de la comida registrada (de %s a %s). El parte se cerrará "
+        "con la salida del final de la jornada si su comida coincide."
+        % (_fmt(pause[2]), _fmt(pause[3]))
     )
     entry = _day_entry(worker, work_date)
     if entry is None:
         return ClockOutOutcome(text="pausa fichada sin parte", notice=notice)
     work_order = entry.work_order
-    lines = list(
-        WorkOrderEntryLine.objects.filter(entry=entry)
-        .order_by("hc", "line_number")
-    )
-    _backup_log(work_order, entry, lines, "pausa fichada %s-%s"
-                % (_fmt(start), _fmt(end)))
-    reopened = False
-    with transaction.atomic():
-        entry.lunch_break_start = start
-        entry.lunch_break_end = end
-        entry.no_lunch_break = False
-        entry.save(update_fields=[
-            "lunch_break_start", "lunch_break_end", "no_lunch_break",
-        ])
-        for line in lines:
-            if line.hc and line.hf:
-                line.delta_hours = _net_hours(line.hc, line.hf, (start, end))
-                line.save(update_fields=["delta_hours"])
-        if work_order.status == WorkOrder.Status.DONE:
-            work_order.status = WorkOrder.Status.IN_PROGRESS
-            work_order.save(update_fields=["status"])
-            reopened = True
-    text = "comida del parte %s-%s (fichada)%s" % (
-        _fmt(start), _fmt(end), "; parte reabierto" if reopened else "")
+    if work_order.status != WorkOrder.Status.DONE:
+        return ClockOutOutcome(text="pausa fichada", notice=notice)
+    work_order.status = WorkOrder.Status.IN_PROGRESS
+    work_order.save(update_fields=["status"])
     logger.info(
-        "# [FICHAJE-PARTE] WorkOrder #%d (usuario #%d, %s) entrada %s: %s",
-        work_order.pk, worker.pk, work_date, _fmt(end), text,
+        "# [FICHAJE-PARTE] WorkOrder #%d (usuario #%d, %s) entrada %s: "
+        "parte reabierto (vuelta de la pausa %s-%s)",
+        work_order.pk, worker.pk, work_date, _fmt(pause[3]),
+        _fmt(pause[2]), _fmt(pause[3]),
     )
-    return ClockOutOutcome(text=text, notice=notice)
+    return ClockOutOutcome(text="parte reabierto", notice=notice)
 
 
 # ------------------------------------------------------------------
@@ -708,6 +760,9 @@ def on_clock_out(event):
     worker = event.company_user
     work_date = timezone.localtime(event.pressed_at).date()
     out_time = _rounded_time(event)
+    entry = _day_entry(worker, work_date)
+    if entry is None:
+        return ClockOutOutcome()
     # S147: la salida de la comida no toca el parte; se espera a la
     # salida del final de la jornada (salvo que ya haya una entrada
     # posterior: entonces no es la última salida que se espera).
@@ -716,11 +771,11 @@ def on_clock_out(event):
         pressed_at__gt=event.pressed_at,
         pressed_at__lt=event.pressed_at + datetime.timedelta(hours=12),
     ).exists()
-    if not later_in and is_lunch_out(event):
+    if not later_in and is_lunch_out(entry, out_time):
         logger.info(
-            "# [FICHAJE-PARTE] usuario #%d, %s salida %s: salida para "
-            "comer, el parte espera a la del final de la jornada",
-            worker.pk, work_date, _fmt(out_time),
+            "# [FICHAJE-PARTE] WorkOrder #%d (usuario #%d, %s) salida %s: "
+            "pausa, el parte espera a la salida del final de la jornada",
+            entry.work_order_id, worker.pk, work_date, _fmt(out_time),
         )
         return ClockOutOutcome(
             text="salida para comer",
@@ -728,9 +783,6 @@ def on_clock_out(event):
                    "entrada; el parte se cerrará con la salida del final "
                    "de la jornada.",
         )
-    entry = _day_entry(worker, work_date)
-    if entry is None:
-        return ClockOutOutcome()
     work_order = entry.work_order
     stretches = day_stretches(worker, work_date)
     stretch_start = None
@@ -803,7 +855,14 @@ def on_clock_out(event):
         problems = check_tasks(
             stretches, [(b.idx, b.hc, b.hf) for b in blocks], closing=True,
             lunch=lunch,
-        ) + close_blockers(stretches)
+        ) + close_blockers(stretches) + lunch_problems(
+            worker, work_date, lunch,
+        )
+    # S147: dieta automática si comió fuera de la base y no la puso.
+    if not entry.has_diet and meal_away_from_base(worker, work_date, lunch):
+        entry.has_diet = True
+        entry.save(update_fields=["has_diet"])
+        done.append("dieta marcada: comida fichada fuera de la base")
     result = ""
     notice = ""
     if work_order.status == WorkOrder.Status.DONE:
