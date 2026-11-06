@@ -256,6 +256,10 @@ class Shift:
     # S144: incidencia de revisión del día flexible (menos de
     # FLEX_MIN_HOURS en todo el día), en la última jornada de ese día.
     review: str = ""
+    # S143 (Miguel Ángel): "la incidencia está cuando no cumplan las 8
+    # horas [...] mientras que cumplas tu horario o las 8 horas, no hay
+    # problema": aviso del día que no llega a ninguna de las dos.
+    short_day: str = ""
 
     @property
     def _raw_early(self):
@@ -475,8 +479,6 @@ class Shift:
             return NO_IN
         if self.clock_out is None:
             return NO_OUT
-        if self.start_off_schedule or self.end_off_schedule:
-            return OFF_SCHEDULE
         return ""
 
     @property
@@ -507,24 +509,11 @@ class Shift:
             if (event is not None
                     and event.sent_by == ClockEvent.SentBy.MANUAL):
                 found.append(_manual_label(event))
-        if self.start_off_schedule:
-            found.append("Entrada fuera de horario (%s; horario %s)" % (
-                hhmm(self.clock_in), self.expected_start.strftime("%H:%M"),
-            ))
-        if self.end_off_schedule:
-            found.append("Salida fuera de horario (%s; horario %s)" % (
-                hhmm(self.clock_out), self.expected_end.strftime("%H:%M"),
-            ))
-        if self.is_late:
-            found.append("Llegada tarde: %d min (%s; horario %s)" % (
-                self.late_minutes, hhmm(self.clock_in),
-                self.expected_start.strftime("%H:%M"),
-            ))
-        if self.is_early:
-            found.append("Salida antes de hora: %d min (%s; horario %s)" % (
-                self.early_minutes, hhmm(self.clock_out),
-                self.expected_end.strftime("%H:%M"),
-            ))
+        # S143 (Miguel Ángel): "la flexibilidad es total": entrar o salir
+        # fuera de horario, antes o después, no es incidencia; solo el
+        # día que no cumple ni su horario ni las 8 horas (short_day).
+        if self.short_day:
+            found.append(self.short_day)
         if self.review:
             found.append(self.review)
         return found
@@ -1197,6 +1186,58 @@ def _review_flexible_days(shifts):
                 % (format_duration(worked), FLEX_MIN_HOURS))
 
 
+SHORT_DAY_SECONDS = 8 * 3600
+
+
+def _scheduled_seconds(starts, ends):
+    """
+    Planned seconds of a day from its start and end times.
+    ---
+    Segundos previstos de un día: cada entrada con su salida; una salida
+    antes de su entrada es del día siguiente (turno de noche).
+    """
+    total = 0
+    for start, end in zip(sorted(starts), sorted(ends)):
+        minutes = (end.hour * 60 + end.minute) - (
+            start.hour * 60 + start.minute)
+        if minutes <= 0:
+            minutes += 24 * 60
+        total += minutes * 60
+    return total
+
+
+def _review_short_days(shifts, times_of, is_day_compared, has_hours):
+    """
+    Mark the days that meet neither the schedule's hours nor 8 hours.
+    ---
+    S143 (Miguel Ángel): "Si tu horario de un día son 7 y lo cumples, ya
+    has cumplido [...] Si un día echas 8 horas, aunque tu horario sean
+    7, ya estás cumpliendo". Con horario (no abierto) y en un día que se
+    compara, con todas sus jornadas cerradas: incidencia si lo trabajado
+    no llega ni a las horas de su horario ese día ni a 8 horas.
+    """
+    if not has_hours:
+        return
+    today = timezone.localdate()
+    by_day = {}
+    for shift in shifts:
+        by_day.setdefault(shift.day, []).append(shift)
+    for day, same in by_day.items():
+        if day > today or not is_day_compared(day):
+            continue
+        if any(s.clock_in is None or s.clock_out is None for s in same):
+            continue
+        scheduled = _scheduled_seconds(*times_of(day))
+        if not scheduled:
+            continue
+        worked = sum(s.seconds for s in same)
+        if worked < min(scheduled, SHORT_DAY_SECONDS):
+            same[-1].short_day = (
+                "No cumple ni su horario ni las 8 h: %s trabajadas "
+                "(horario %s h)" % (format_duration(worked),
+                                    format_duration(scheduled)))
+
+
 def reports_by_user(company, company_user_ids, date_from, date_to):
     """
     {company_user_id: PersonReport} for the shifts whose day falls in
@@ -1282,6 +1323,8 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
             lambda day: len(times_of(day)[0]) >= 2,
         )
         _review_flexible_days(report.shifts)
+        _review_short_days(report.shifts, times_of, is_day_compared,
+                           has_hours)
         # S143 (convenio, art. 23): horas extra por mes, trabajo
         # efectivo menos días laborables por 8 horas.
         from hr_calendar.clock_extras import month_overtime
