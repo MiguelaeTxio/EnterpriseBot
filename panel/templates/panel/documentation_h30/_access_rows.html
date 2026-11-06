@@ -6,6 +6,10 @@ dos apellidos si ya existe) que el supervisor puede cambiar viendo los
 usuarios parecidos que ya hay, y su sección, base y puesto. La
 contraseña es siempre las cuatro últimas cifras de su DNI.
 {% endcomment %}
+<div class="small text-muted mb-2">
+    La base se puede dejar vacía y ponerla después a varios a la vez en
+    Administración › Usuarios (marcarlos y «Poner base»).
+</div>
 <table class="table table-sm align-middle small mb-0" id="personalAccessTable">
     <thead class="table-light">
         <tr><th>Trabajador</th><th>Usuario</th><th>Sección</th><th>Base</th><th>Puesto</th></tr>
@@ -31,17 +35,35 @@ contraseña es siempre las cuatro últimas cifras de su DNI.
                 </div>
                 {% endif %}
             </td>
+            {% comment %}
+            S147 (Miguel Ángel): si ya tiene sección o base, se indica la que
+            tiene y se conserva; si no, se elige aquí. La base también se
+            puede poner después a varios a la vez (Administración > Usuarios).
+            {% endcomment %}
             <td>
+                {% if row.section %}
+                <input type="hidden" class="pa-section" value="{{ row.section.pk }}">
+                <div class="fw-semibold">{{ row.section.name }}</div>
+                <div class="text-muted">La que ya tiene</div>
+                {% else %}
                 <select class="form-select form-select-sm pa-section" aria-label="Sección">
                     <option value="">—</option>
-                    {% for section in sections %}<option value="{{ section.pk }}"{% if row.section and row.section.pk == section.pk %} selected{% endif %}>{{ section.name }}</option>{% endfor %}
+                    {% for section in sections %}<option value="{{ section.pk }}">{{ section.name }}</option>{% endfor %}
                 </select>
+                {% endif %}
             </td>
             <td>
+                {% if row.base %}
+                <input type="hidden" class="pa-base" value="{{ row.base.pk }}">
+                <div class="fw-semibold">{{ row.base.name }}</div>
+                <div class="text-muted">La que ya tiene</div>
+                {% else %}
                 <select class="form-select form-select-sm pa-base" aria-label="Base">
                     <option value="">—</option>
-                    {% for base in bases %}<option value="{{ base.pk }}"{% if row.base_id == base.pk %} selected{% endif %}>{{ base.name }}</option>{% endfor %}
+                    {% for base in bases %}<option value="{{ base.pk }}">{{ base.name }}</option>{% endfor %}
                 </select>
+                <div class="text-muted">Opcional: se puede poner luego</div>
+                {% endif %}
             </td>
             <td>
                 <select class="form-select form-select-sm pa-role" aria-label="Puesto">

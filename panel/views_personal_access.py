@@ -18,7 +18,9 @@ from django.views import View
 from document_explorer.models import PersonIdentity
 from ivr_config.models import CompanyUser, Section
 from panel.mixins import SupervisorAccessMixin
-from panel.personal_access import AccessError, create_access, propose
+from panel.personal_access import (
+    AccessError, create_access, pending_account, propose,
+)
 
 
 def _people(company, ids):
@@ -56,8 +58,11 @@ class PersonalAccessPreviewView(SupervisorAccessMixin, View):
         for row in rows:
             section = sections.get(row["person"].pk)
             row["section"] = section
-            account = row["person"].company_user
-            row["base_id"] = account.base_id if account else None
+            # S147: la base que ya tiene (su cuenta o su pre-registro por
+            # DNI, que create_access completa).
+            account = (row["person"].company_user
+                       or pending_account(row["person"]))
+            row["base"] = account.base if account else None
             default_role = section.default_role if section else ""
             row["role"] = (
                 account.role if account and account.role
@@ -67,8 +72,11 @@ class PersonalAccessPreviewView(SupervisorAccessMixin, View):
             )
         return render(request, "panel/documentation_h30/_access_rows.html", {
             "rows": rows,
+            # S147: todas las secciones, como en la ficha (S144:
+            # is_active es la operativa de la centralita y dejaba fuera
+            # Administración, Asistencia y Plataformas).
             "sections": Section.objects.filter(
-                company=company, is_active=True,
+                company=company,
             ).order_by("name"),
             "bases": Base.objects.filter(company=company).order_by("name"),
             "worker_roles": worker_roles,
