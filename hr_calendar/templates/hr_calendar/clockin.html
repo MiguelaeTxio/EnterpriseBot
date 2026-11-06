@@ -51,6 +51,8 @@ responsable corregirá la salida (clock_report.forgotten_after).
         #clock { font-size: 2.4rem; font-weight: 700; text-align: center; letter-spacing: 1px; margin: 4px 0; }
         #btn-fichar { display: block; width: 100%; font-size: 1.5rem; font-weight: 700; padding: 26px 8px; border: 0; border-radius: 12px; color: #fff; background: #198754; }
         #btn-fichar.out { background: #dc3545; }
+        /* S143: por tipos, la salida va separada de los tipos para que no se pulse por confirmar. */
+        #btn-fichar.end-day { margin-top: 34px; font-size: 1.2rem; padding: 18px 8px; }
         #btn-fichar:disabled { opacity: .6; }
         #types { display: none; margin-bottom: 10px; }
         #types-title { font-weight: 700; margin-bottom: 6px; }
@@ -485,8 +487,22 @@ responsable corregirá la salida (clock_report.forgotten_after).
     }
     function showNext(kind) {
         const btn = document.getElementById("btn-fichar");
-        btn.textContent = "Fichar " + LABELS[kind].toLowerCase();
+        // S143 (Miguel Ángel): con tipos, al elegir el tipo pulsaban
+        // después "Fichar salida" creyendo que confirmaba.
+        const endDay = kind === "OUT" && byTypes();
+        btn.textContent = endDay ? "Terminar la jornada (salida)" : "Fichar " + LABELS[kind].toLowerCase();
         btn.classList.toggle("out", kind === "OUT");
+        btn.classList.toggle("end-day", endDay);
+    }
+    // S143: una salida a menos de 10 minutos de la entrada o del último
+    // cambio de tipo casi siempre es un error: se pregunta antes.
+    const QUICK_OUT_MS = 10 * 60 * 1000;
+    function confirmQuickOut(records) {
+        if (decideKind(records) !== "OUT") return true;
+        const last = lastKnown(records);
+        if (!last || !last.pressed_at || last.kind === "OUT") return true;
+        if (Date.now() - new Date(last.pressed_at).getTime() > QUICK_OUT_MS) return true;
+        return window.confirm("¿Terminar la jornada? Se ficha la SALIDA.\n\nPara cambiar de tarea pulsa el tipo, no este botón. Si acabas de fichar la entrada, no hace falta pulsar nada más.");
     }
     // S141: fichaje por tipos. Con la jornada cerrada, un botón por tipo
     // para entrar; con ella abierta, el tipo en curso, un botón por cada
@@ -766,7 +782,10 @@ responsable corregirá la salida (clock_report.forgotten_after).
             });
         }).then(function (record) {
             setStatus(label(record) + " de las " + hhmm(pressedAt) +
-                      " guardada" + (navigator.onLine ? "." : " en el móvil: se enviará al volver la cobertura."), "ok", record.id);
+                      " guardada" + (navigator.onLine ? "." : " en el móvil: se enviará al volver la cobertura.") +
+                      // S143: que no pulsen la salida para "confirmar".
+                      (record.kind !== "OUT" && byTypes() ? " No hace falta pulsar nada más hasta que cambies de tarea o termines la jornada." : ""),
+                      "ok", record.id);
             return queueAndSend(record, "ONLINE");
         }).catch(function (err) {
             setStatus("No se ha podido guardar: " + err, "err");
@@ -776,7 +795,11 @@ responsable corregirá la salida (clock_report.forgotten_after).
         });
     }
 
-    document.getElementById("btn-fichar").addEventListener("click", function () { press(null); });
+    document.getElementById("btn-fichar").addEventListener("click", function () {
+        allRecords().then(function (records) {
+            if (confirmQuickOut(records)) press(null);
+        });
+    });
     document.getElementById("btn-send").addEventListener("click", function () {
         if (!navigator.onLine) { setStatus("Sin conexión: se enviarán al volver.", "wait"); return; }
         sendPending("PAGE");
