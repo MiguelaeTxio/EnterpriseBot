@@ -61,7 +61,8 @@ pantalla completa aparte, no un fragmento htmx de este pane.
         natural.
         {% endcomment %}
         <div class="border rounded p-2 h-100 d-flex flex-column">
-            <div class="fw-bold small mb-1">Grupos de reparto</div>
+            {# S147: antes "Grupos de reparto" (Miguel Ángel: "grupos de selección, que es más acorde con lo que hace"). #}
+            <div class="fw-bold small mb-1">Grupos de selección</div>
             <div class="mb-1 ppane-scroll-fill">
                 <ul class="list-group list-group-flush small" id="personGroupSavedList">
                     {% for group in person_groups %}
@@ -86,8 +87,14 @@ pantalla completa aparte, no un fragmento htmx de este pane.
             <div id="personGroupManagementForm" class="d-none">
                 <div class="input-group input-group-sm mb-1">
                     <input type="text" id="personGroupName" class="form-control form-control-sm" placeholder="Nombre del grupo">
-                    <button type="button" class="btn btn-sm btn-primary" onclick="savePersonGroup()">Guardar</button>
+                    <button type="button" class="btn btn-sm btn-primary" id="personGroupSaveBtn" onclick="savePersonGroup()">Guardar</button>
                 </div>
+                {% comment %}
+                S147 (Miguel Ángel): con un grupo cargado, desmarcar a alguien
+                lo quita y marcar a alguien (con cualquier filtro) lo añade;
+                aquí se ve qué cambia antes de guardar.
+                {% endcomment %}
+                <div id="personGroupDiff" class="small mb-1 d-none"></div>
                 <div id="personGroupFormResult" class="small mb-1"></div>
                 <div class="d-flex gap-1 flex-wrap">
                     <button type="button" class="btn btn-sm btn-outline-danger d-none" id="personGroupDeleteBtn" onclick="deletePersonGroup()">Eliminar</button>
@@ -620,6 +627,7 @@ las filas de debajo se desplacen de verdad.
         list.innerHTML = names.length
             ? names.map((n) => `<li style="list-style:none;">${n}</li>`).join('')
             : '<li class="text-muted">Nadie seleccionado todavía.</li>';
+        if (window.refreshPersonGroupDiff) window.refreshPersonGroupDiff();
 
         // H31 (S113), Miguel Ángel: "una casilla que dijese mostrar
         // [...] que mostrase en el listado de trabajadores justamente
@@ -726,6 +734,43 @@ las filas de debajo se desplacen de verdad.
     // visible en ese momento -- ahora el visor de la derecha lo deja
     // siempre claro). Mismo patrón que EpiBatchTemplateSaveView.
     let personGroupEditingPk = '';
+    // S147: miembros guardados del grupo cargado, para ver qué cambia.
+    let personGroupSavedIds = new Set();
+    let personGroupSavedNames = new Map();
+
+    function refreshPersonGroupDiff() {
+        const box = document.getElementById('personGroupDiff');
+        const saveBtn = document.getElementById('personGroupSaveBtn');
+        if (!box || !saveBtn) return;
+        if (!personGroupEditingPk) {
+            box.classList.add('d-none');
+            box.innerHTML = '';
+            saveBtn.textContent = 'Guardar';
+            saveBtn.classList.add('btn-primary');
+            saveBtn.classList.remove('btn-warning');
+            return;
+        }
+        const added = Array.from(selection).filter((pk) => !personGroupSavedIds.has(pk));
+        const removed = Array.from(personGroupSavedIds).filter((pk) => !selection.has(pk));
+        const label = (pk) => selectionNames.get(pk) || personGroupSavedNames.get(pk) || ('Trabajador #' + pk);
+        if (!added.length && !removed.length) {
+            box.classList.remove('d-none');
+            box.innerHTML = '<span class="text-muted">Sin cambios: desmarca a alguien para quitarlo o marca a otro (con cualquier filtro) para añadirlo.</span>';
+            saveBtn.textContent = 'Guardar';
+            saveBtn.classList.add('btn-primary');
+            saveBtn.classList.remove('btn-warning');
+            return;
+        }
+        let html = '<div class="fw-semibold">Cambios sin guardar</div>';
+        if (added.length) html += '<div class="text-success">+ Se añaden (' + added.length + '): ' + added.map(label).sort().join('; ') + '</div>';
+        if (removed.length) html += '<div class="text-danger">− Se quitan (' + removed.length + '): ' + removed.map(label).sort().join('; ') + '</div>';
+        box.innerHTML = html;
+        box.classList.remove('d-none');
+        saveBtn.textContent = 'Actualizar el grupo';
+        saveBtn.classList.remove('btn-primary');
+        saveBtn.classList.add('btn-warning');
+    }
+    window.refreshPersonGroupDiff = refreshPersonGroupDiff;
 
     function activatePersonGroupManagement() {
         document.getElementById('personGroupManagementEmpty').classList.add('d-none');
@@ -752,6 +797,8 @@ las filas de debajo se desplacen de verdad.
         const names = (row.dataset.memberNames || '').split('||').filter(Boolean);
 
         personGroupEditingPk = String(pk);
+        personGroupSavedIds = new Set(ids);
+        personGroupSavedNames = new Map(ids.map((id, i) => [id, names[i] || '']));
         activatePersonGroupManagement();
         document.getElementById('personGroupName').value = name;
         document.getElementById('personGroupDeleteBtn').classList.remove('d-none');
@@ -772,6 +819,9 @@ las filas de debajo se desplacen de verdad.
 
     function resetPersonGroupForm() {
         personGroupEditingPk = '';
+        personGroupSavedIds = new Set();
+        personGroupSavedNames = new Map();
+        refreshPersonGroupDiff();
         document.getElementById('personGroupName').value = '';
         document.getElementById('personGroupDeleteBtn').classList.add('d-none');
         document.querySelectorAll('.person-group-select-checkbox').forEach((el) => { el.checked = false; });
@@ -842,6 +892,9 @@ las filas de debajo se desplacen de verdad.
                 resultDiv.innerHTML = '';
                 upsertPersonGroupRow(data.id, data.name, data.members.map(String), data.member_names);
                 personGroupEditingPk = String(data.id);
+                personGroupSavedIds = new Set(data.members.map(String));
+                personGroupSavedNames = new Map(data.members.map((id, i) => [String(id), data.member_names[i] || '']));
+                refreshPersonGroupDiff();
                 document.getElementById('personGroupDeleteBtn').classList.remove('d-none');
                 showPersonGroupToast('Grupo guardado.');
             } else {

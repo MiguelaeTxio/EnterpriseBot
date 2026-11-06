@@ -2815,8 +2815,10 @@ class PersonGroupTemplate(models.Model):
     )
 
     class Meta:
-        verbose_name = "Grupo de reparto"
-        verbose_name_plural = "Grupos de reparto"
+        # S147 (Miguel Ángel): "grupos de selección", más acorde con lo
+        # que hacen (grupos a los que se les hacen acciones).
+        verbose_name = "Grupo de selección"
+        verbose_name_plural = "Grupos de selección"
         ordering = ["name"]
 
     def __str__(self):
@@ -3109,7 +3111,7 @@ class NoticeRecipientScope(models.Model):
         PersonGroupTemplate,
         blank=True,
         related_name="notice_scopes",
-        verbose_name="Grupos de reparto",
+        verbose_name="Grupos de selección",
     )
     personal_persons = models.ManyToManyField(
         PersonIdentity,
