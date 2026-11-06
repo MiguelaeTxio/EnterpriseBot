@@ -27,6 +27,7 @@ y WORKSHOPBOSS (SupervisorAccessMixin), a diferencia de las pestañas de
 solo lectura.
 """
 import datetime
+from decimal import Decimal
 import io
 import os
 
@@ -942,10 +943,24 @@ def worker_detail_data(company, person, date_from, date_to):
     } for s in report.shifts]
     # S143 (convenio, art. 23): las horas extra son por mes, no por día.
     excess = getattr(report, "month_excess", {}) or {}
+    # S143 (convenio, art. 22): desplazamiento del día, en su última
+    # jornada.
+    travel = getattr(report, "travel", {}) or {}
+    last_of_day = {}
+    for shift in shifts:
+        last_of_day[shift["day"]] = shift
+    for day, item in travel.items():
+        if day in last_of_day:
+            last_of_day[day]["travel"] = item
+    km = clock_extras.km_total(
+        [t for shift in shifts for t in shift["trips"]])
     extras = {
+        "travel_hours": sum(i["hours"] for i in travel.values()),
+        "allowances": sum(1 for i in travel.values() if i["allowance"]),
+        "km_euros": (clock_extras.OWN_VEHICLE_EUR_KM
+                     * Decimal(str(km)) if km else None),
         "excess_label": format_duration(sum(excess.values())),
-        "km": clock_extras.km_total(
-            [t for shift in shifts for t in shift["trips"]]),
+        "km": km,
         "meals": {
             kind: sum(1 for shift in shifts for m in shift["meals"]
                       if m["allowance"] and m["kind"] == kind)

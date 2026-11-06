@@ -17,10 +17,28 @@ Vista: panel/views_clock_extras.py.
         <tr><td>Horas extra desde el {{ bag.since|date:"d/m/Y" }} (cada mes, trabajo efectivo menos días laborables × 8 h)</td><td class="text-end text-nowrap">{{ bag.worked_label }} h</td></tr>
         <tr><td>Horas extra (hasta {{ bag.cap_label }} h cada mes)</td><td class="text-end text-nowrap">{{ bag.extra_label }} h</td></tr>
         <tr><td>Lo que pasa del tope cada mes</td><td class="text-end text-nowrap">{{ bag.accumulated_label }} h</td></tr>
+        <tr><td>Desplazamiento (convenio, art. 22: 1 h de 30 a 60 km, 2 h de 60 a 130 km)</td><td class="text-end text-nowrap">{{ bag.travel_label }} h</td></tr>
         <tr><td>Movimientos a mano (horas compensadas, días libres, añadidas)</td><td class="text-end text-nowrap">{{ bag.adjust_label }} h</td></tr>
         <tr class="fw-bold"><td>Horas acumuladas</td><td class="text-end text-nowrap">{{ bag.total_label }} h</td></tr>
     </tbody>
 </table>
+{% if bag.deadline_rows %}
+{# S143: lo que queda por compensar, de lo más antiguo a lo más nuevo, con su plazo. #}
+<div class="fw-semibold small mb-1">Por compensar y plazos</div>
+<table class="table table-sm small mb-2">
+    <thead><tr><th>Mes</th><th>Tipo</th><th class="text-end">Quedan</th><th>Límite</th><th></th></tr></thead>
+    <tbody>
+        {% for d in bag.deadline_rows %}
+        <tr class="{% if d.state == 'vencida' %}table-danger{% elif d.state %}table-warning{% endif %}">
+            <td class="text-nowrap">{{ d.month|date:"F Y"|capfirst }}</td><td>{{ d.kind }}</td>
+            <td class="text-end">{{ d.label }} h</td><td class="text-nowrap">{{ d.deadline|date:"d/m/Y" }}</td>
+            <td class="text-nowrap">{% if d.state == 'vencida' %}{% if d.travel %}A pagar: {{ d.euros|floatformat:2 }} € (6 €/h){% else %}Fuera de plazo{% endif %}{% elif d.state %}Vence pronto{% endif %}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+<div class="form-text mb-2">Las horas compensadas (movimientos que restan y días libres) se descuentan de lo más antiguo. Horas extra: 6 meses (art. 19); desplazamiento: un trimestre y después se pagan a 6 €/h (art. 22).</div>
+{% endif %}
 {% if bag.month_rows %}
 <div class="fw-semibold small mb-1">Por meses</div>
 <table class="table table-sm small mb-2">

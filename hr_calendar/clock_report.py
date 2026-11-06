@@ -532,6 +532,8 @@ class PersonReport:
     # "required", "excess"}} y {primer día del mes: horas extra}.
     months: dict = field(default_factory=dict)
     month_excess: dict = field(default_factory=dict)
+    # S143 (convenio, art. 22): {día: {"km", "hours", "allowance"}}.
+    travel: dict = field(default_factory=dict)
 
     @property
     def excess_seconds(self):
@@ -1202,6 +1204,16 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
     times_by_user = _schedule_times_by_user(company, list(grouped))
     required_by_user = _required_days_by_user(
         company, list(grouped), date_from, date_to)
+    # S143 (art. 22): coordenadas de la base de cada uno.
+    from ivr_config.models import CompanyUser
+
+    base_points = {
+        pk: (float(lat), float(lon))
+        for pk, lat, lon in CompanyUser.objects.filter(
+            pk__in=list(grouped), base__latitude__isnull=False,
+            base__longitude__isnull=False,
+        ).values_list("pk", "base__latitude", "base__longitude")
+    }
     reports = {}
     for user_id, user_events in grouped.items():
         report = PersonReport()
@@ -1259,6 +1271,10 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
         )
         report.month_excess = {m: v["excess"]
                                for m, v in report.months.items()}
+        from hr_calendar.clock_extras import travel_by_day
+
+        report.travel = travel_by_day(report.shifts,
+                                      base_points.get(user_id))
         report.events = [
             e for e in user_events if start <= e.pressed_at < end
         ]

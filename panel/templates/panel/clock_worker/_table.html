@@ -21,6 +21,9 @@ historial: quién, cuándo, antes, después y motivo).
      data-early="{{ early_label }}"
      data-excess="{{ extras.excess_label }}"
      data-km="{% if extras.km %}{{ extras.km|floatformat:1 }}{% endif %}"
+     data-km-euros="{% if extras.km_euros %}{{ extras.km_euros|floatformat:2 }}{% endif %}"
+     data-travel="{{ extras.travel_hours }}"
+     data-allowances="{{ extras.allowances }}"
      data-lunches="{{ extras.meals.Comida }}"
      data-dinners="{{ extras.meals.Cena }}"></div>
 <span id="cw-sort-inputs" class="d-none">
@@ -108,6 +111,8 @@ historial: quién, cuándo, antes, después y motivo).
                 {% for item in row.type_hours %}<span class="text-muted text-nowrap me-2">{{ item.name }} {{ item.label }} h{% if not item.counts %} (no cuenta){% endif %}</span>{% endfor %}
                 {# S144: vehículo propio y pausas para comer (dietas). #}
                 {% for item in row.trips %}<div class="text-nowrap"><i class="bi bi-car-front"></i> {{ item.start|time:"H:i" }}–{{ item.end|time:"H:i" }}: {% if item.km is not None %}<strong>{{ item.km|floatformat:1 }} km</strong>{% if item.trip.source == "manual" %} <span class="text-primary" title="Corregido por {{ item.trip.corrected_by }}">(corregido)</span>{% endif %}{% else %}<span class="text-warning-emphasis" title="{{ item.error }}">sin km</span>{% endif %}{% if item.trip and has_account %} <a href="#" class="cw-trip-edit" data-trip="{{ item.trip.pk }}" data-km="{% if item.km is not None %}{{ item.km|stringformat:'s' }}{% endif %}" title="Corregir los kilómetros"><i class="bi bi-pencil"></i></a>{% endif %}</div>{% endfor %}
+                {# S143 (convenio, art. 22): desplazamiento por el radio desde su base. #}
+                {% if row.travel %}<div class="text-nowrap text-primary" title="Radio desde su base hasta donde fichó (convenio, art. 22)"><i class="bi bi-signpost-split"></i> {{ row.travel.km|floatformat:0 }} km: {% if row.travel.allowance %}dieta{% else %}{{ row.travel.hours }} h de desplazamiento{% endif %}</div>{% endif %}
                 {# S143: comida o cena sin fichar ni "No he parado para comer": 1 h menos. #}
                 {% for kind in row.auto_meals %}<div class="text-nowrap text-warning-emphasis" title="Sin pausa fichada, sin pausa en el parte y sin «No he parado para comer»: se descuenta una hora"><i class="bi bi-cup-hot"></i> {{ kind }} descontada: −1:00 h</div>{% endfor %}
                 {% if row.no_meal_break %}<div class="text-nowrap text-muted"><i class="bi bi-check2-square"></i> No ha parado para comer</div>{% endif %}

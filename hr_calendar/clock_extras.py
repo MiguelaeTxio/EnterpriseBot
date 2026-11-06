@@ -101,6 +101,115 @@ def month_overtime(shifts, required_day, date_from, date_to, today=None):
     return result
 
 
+# S143 (convenio, art. 22): compensación del tiempo de desplazamiento
+# por el radio entre el centro de trabajo (su base) y el puesto: más de
+# 30 y hasta 60 km, 1 hora; más de 60 y hasta 130, 2 horas; más de 130,
+# dieta. Se compensan con descanso (1 por 1); si pasa un trimestre sin
+# compensar, se pagan a 6 €/hora. Con vehículo propio, 0,19 €/km.
+TRAVEL_BANDS = ((30, 60, 1), (60, 130, 2))
+TRAVEL_ALLOWANCE_KM = 130
+TRAVEL_EUR_HOUR = Decimal("6")
+OWN_VEHICLE_EUR_KM = Decimal("0.19")
+# Art. 19: los excesos de jornada se compensan "cada seis meses como
+# máximo"; art. 22: las de desplazamiento, en un trimestre.
+OVERTIME_DEADLINE_MONTHS = 6
+TRAVEL_DEADLINE_MONTHS = 3
+
+
+def travel_by_day(shifts, base, today=None):
+    """
+    {day: {"km", "hours", "allowance"}} of the closed days away from base.
+    ---
+    S143 (convenio, art. 22): por cada día con sus jornadas cerradas, el
+    radio (en línea recta) entre su base y el punto más lejano en que
+    fichó ese día (pulsaciones con GPS), y lo que le corresponde: 1 o 2
+    horas de desplazamiento, o dieta a partir de 130 km. Sin base con
+    coordenadas o sin GPS, nada.
+    """
+    if base is None:
+        return {}
+    today = today or timezone.localdate()
+    by_day = {}
+    for shift in shifts:
+        by_day.setdefault(shift.day, []).append(shift)
+    result = {}
+    for day, same in by_day.items():
+        if day > today or any(s.clock_in is None or s.clock_out is None
+                              for s in same):
+            continue
+        points = [
+            (float(e.latitude), float(e.longitude))
+            for s in same
+            for e in [s.clock_in] + list(s.changes) + [s.clock_out]
+            if e is not None and getattr(e, "latitude", None) is not None
+            and getattr(e, "longitude", None) is not None
+        ]
+        if not points:
+            continue
+        km = max(_meters(lat, lon, base[0], base[1])
+                 for lat, lon in points) / 1000
+        hours = next((h for low, high, h in TRAVEL_BANDS
+                      if low < km <= high), 0)
+        allowance = km > TRAVEL_ALLOWANCE_KM
+        if hours or allowance:
+            result[day] = {"km": km, "hours": hours,
+                           "allowance": allowance}
+    return result
+
+
+def _add_months(day, months):
+    year, month = divmod(day.month - 1 + months, 12)
+    return datetime.date(day.year + year, month + 1, 1)
+
+
+def bag_deadlines(months, travel_months, adjustments, today=None):
+    """
+    The accumulated hours still to compensate, oldest first, with their
+    deadline.
+    ---
+    S143 (convenio): lo que queda por compensar de la bolsa, por mes y
+    tipo, gastando las horas compensadas (movimientos que restan, días
+    libres) de lo más antiguo a lo más nuevo. Cada fila: mes, tipo
+    ("Horas extra" o "Desplazamiento"), horas que quedan, fecha límite
+    (6 meses las extra, art. 19; un trimestre las de desplazamiento,
+    art. 22) y estado: "vencida", "vence pronto" (este mes) o "".
+    """
+    today = today or timezone.localdate()
+    ledger = []
+    for m in months:
+        if m["accumulated"]:
+            ledger.append([m["month"], 0, "Horas extra", m["accumulated"],
+                           OVERTIME_DEADLINE_MONTHS])
+    for month, seconds in sorted(travel_months.items()):
+        if seconds:
+            ledger.append([month, 1, "Desplazamiento", seconds,
+                           TRAVEL_DEADLINE_MONTHS])
+    for a in adjustments:
+        if a.minutes > 0:
+            ledger.append([a.date.replace(day=1), 2, "Añadidas a mano",
+                           a.minutes * 60, OVERTIME_DEADLINE_MONTHS])
+    ledger.sort(key=lambda row: (row[0], row[1]))
+    spend = -sum(a.minutes for a in adjustments if a.minutes < 0) * 60
+    rows = []
+    for month, _order, kind, seconds, limit in ledger:
+        used = min(seconds, spend)
+        spend -= used
+        left = seconds - used
+        if not left:
+            continue
+        deadline = _add_months(month, limit + 1) - datetime.timedelta(days=1)
+        if deadline < today:
+            state = "vencida"
+        elif deadline < _add_months(today, 1):
+            state = "vence pronto"
+        else:
+            state = ""
+        rows.append({"month": month, "kind": kind, "seconds": left,
+                     "deadline": deadline, "state": state,
+                     "travel": kind == "Desplazamiento"})
+    return rows
+
+
 def monthly_cap_seconds(company):
     """
     The company's monthly overtime cap, in seconds.
@@ -175,14 +284,25 @@ def overtime_bag(company, company_user, until=None):
         company_user=company_user, date__gte=BAG_START,
     ).select_related("created_by__user"))
     moved = sum(a.minutes for a in adjustments)
+    # S143 (convenio, art. 22): horas de desplazamiento por mes.
+    travel_months = {}
+    for day, item in (report.travel if report is not None else {}).items():
+        month = day.replace(day=1)
+        travel_months[month] = (travel_months.get(month, 0)
+                                + item["hours"] * 3600)
+    travel = sum(travel_months.values())
+    deadlines = bag_deadlines(months, travel_months, adjustments)
     return {
+        "travel_seconds": travel,
+        "travel_months": travel_months,
+        "deadlines": deadlines,
         "worked_seconds": worked,
         "extra_seconds": sum(m["extra"] for m in months),
         "accumulated_seconds": accumulated,
         "months": months,
         "cap_seconds": cap,
         "adjust_minutes": moved,
-        "total_seconds": accumulated + moved * 60,
+        "total_seconds": accumulated + travel + moved * 60,
         "adjustments": adjustments,
         "since": BAG_START,
     }

@@ -56,6 +56,15 @@ def bag_context(person):
             "worked_label": label(m["worked"]),
             "required_label": label(m["required"]),
         } for m in reversed(bag["months"])],
+        # S143 (convenio): desplazamiento (art. 22) y plazos.
+        "travel_label": label(bag["travel_seconds"]),
+        "deadline_rows": [{
+            **d,
+            "label": label(d["seconds"]),
+            "euros": (clock_extras.TRAVEL_EUR_HOUR * d["seconds"] / 3600
+                      if d["travel"] and d["state"] == "vencida" else None),
+        } for d in bag["deadlines"]],
+        "overdue": [d for d in bag["deadlines"] if d["state"]],
         "total_label": clock_extras.signed_duration(bag["total_seconds"]),
         "worked_label": clock_extras.signed_duration(bag["worked_seconds"]),
         "adjust_label": clock_extras.signed_duration(

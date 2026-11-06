@@ -144,6 +144,7 @@ screen_key "clock_worker"); la selección, por trabajador.
                         <div class="small text-muted fw-bold">Horas acumuladas</div>
                         {% if bag %}
                         <div class="small">Total: <strong id="cw-bag-total">{{ bag.total_label }} h</strong></div>
+                        {% if bag.overdue %}<div class="small text-danger"><i class="bi bi-exclamation-triangle-fill"></i> {{ bag.overdue|length }} plazo(s) vencido(s) o a punto de vencer</div>{% endif %}
                         <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#cwBagModal"
                                 hx-get="{% url 'panel:clock_worker_overtime' person.pk %}" hx-target="#cw-bag-body">
                             <i class="bi bi-hourglass-split me-1"></i>Movimientos…
@@ -393,7 +394,10 @@ screen_key "clock_worker"); la selección, por trabajador.
             if (state.dataset.early) parts.push("Salidas antes de hora: " + state.dataset.early);
             // S144: horas extras, kilómetros con vehículo propio y dietas.
             parts.push("Horas extra: <strong>" + state.dataset.excess + "</strong>");
-            if (state.dataset.km) parts.push("Vehículo propio: <strong>" + state.dataset.km + " km</strong>");
+            if (state.dataset.km) parts.push("Vehículo propio: <strong>" + state.dataset.km + " km</strong>" + (state.dataset.kmEuros ? " (" + state.dataset.kmEuros + " € a 0,19 €/km)" : ""));
+            // S143 (convenio, art. 22): horas de desplazamiento y dietas por distancia.
+            if (state.dataset.travel && state.dataset.travel !== "0") parts.push("Desplazamiento: <strong>" + state.dataset.travel + " h</strong>");
+            if (state.dataset.allowances && state.dataset.allowances !== "0") parts.push("Más de 130 km: <strong>" + state.dataset.allowances + "</strong> día(s) con dieta");
             if (state.dataset.lunches !== "0" || state.dataset.dinners !== "0") {
                 parts.push("Dietas: <strong>" + state.dataset.lunches + "</strong> comidas, <strong>" + state.dataset.dinners + "</strong> cenas");
             }
