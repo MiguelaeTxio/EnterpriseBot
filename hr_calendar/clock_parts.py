@@ -372,30 +372,18 @@ def clocked_pauses(company_user, work_date):
     """
     The clocked pauses of a day: [(OUT event, IN event, start, end)],
     rounded local times, in order. A pause is an OUT followed by an IN
-    the same day, or a stretch of the meal-break type (Miguel Ángel,
+    the same day (Miguel Ángel,
     S147: "el fichaje [de salida] que cuente como pausa para la comida
     y que cuente el de cuando vuelvan como inicio de la tarde").
     ---
     Las pausas fichadas de un día: [(SALIDA, ENTRADA, inicio, fin)], con
     las horas redondeadas, en orden. Una pausa es una SALIDA seguida de
-    una ENTRADA el mismo día, o un tramo de "Pausa para comer".
+    una ENTRADA el mismo día (quien ficha con tipos no hace partes).
     """
     if company_user is None or work_date is None:
         return []
     shifts = build_shifts(_day_events(company_user, work_date))
     pauses = []
-    # Quien ficha con tipos marca la comida con el tipo "Pausa para
-    # comer" (S144): ese tramo es su pausa.
-    for shift in shifts:
-        marks = shift.segment_marks
-        presses = [mark for mark, _end in marks] + [shift.clock_out]
-        for index, (mark, _end) in enumerate(marks):
-            if (mark, _end) not in shift.meal_segments:
-                continue
-            start = _rounded_time(mark)
-            end = _rounded_time(presses[index + 1])
-            if start and end and start < end:
-                pauses.append((mark, presses[index + 1], start, end))
     for before, after in zip(shifts, shifts[1:]):
         if before.clock_out is None or after.clock_in is None:
             continue
@@ -535,6 +523,247 @@ def _day_entry(worker, work_date):
     )
 
 
+# ------------------------------------------------------------------
+# S147: what was not clocked is clocked with the parte's times
+# ------------------------------------------------------------------
+# Miguel Ángel (S147): "El parte nunca corrige a lo fichado. El parte
+# corrige cuando no se ha fichado". Las pulsaciones que se añaden van a
+# nombre de su usuario del panel, con el motivo (ClockCorrection ADD).
+FILL_BY_USERNAME = "alvarez_admin"
+
+
+def _fill_author(company):
+    from ivr_config.models import CompanyUser
+
+    return CompanyUser.objects.filter(
+        company=company, user__username=FILL_BY_USERNAME,
+    ).first()
+
+
+def _add_press(worker, kind, work_date, at_time, reason):
+    """
+    Add a press with the parte's time (ClockCorrection ADD by
+    FILL_BY_USERNAME). Returns the new ClockEvent or None.
+    ---
+    Añade una pulsación con la hora del parte, como corrección.
+    """
+    from hr_calendar.clock_corrections import ClockCorrectionError
+    from hr_calendar.clock_corrections import add_event
+
+    author = _fill_author(worker.company)
+    if author is None:
+        logger.warning(
+            "# [FICHAJE-PARTE] Sin usuario %s: no se añade la %s del "
+            "usuario #%d (%s).", FILL_BY_USERNAME, kind, worker.pk,
+            work_date,
+        )
+        return None
+    try:
+        person = worker.person_identity
+    except Exception:
+        person = None
+    pressed_at = timezone.make_aware(
+        datetime.datetime.combine(work_date, at_time),
+        timezone.get_current_timezone(),
+    )
+    try:
+        correction = add_event(worker, person, author, kind, pressed_at,
+                               reason)
+    except ClockCorrectionError as exc:
+        logger.warning(
+            "# [FICHAJE-PARTE] No se añade la %s del usuario #%d (%s): %s",
+            kind, worker.pk, work_date, exc,
+        )
+        return None
+    logger.info(
+        "# [FICHAJE-PARTE] usuario #%d, %s: %s añadida a las %s (%s)",
+        worker.pk, work_date, kind, _fmt(at_time), reason,
+    )
+    return correction.replacement
+
+
+def fill_missing_presses(entry, upto=None, day_over=False):
+    """
+    Clock, with the parte's times, what the worker did not clock that
+    day (S147). Returns the list of what was added (texts).
+    - No IN that day (or the day starts with an OUT): an IN at the
+      start of the first task.
+    - The parte has a lunch break, no clocked pause and the lunch is
+      over (before `upto` or `day_over`): the missing OUT (lunch start)
+      and/or IN (lunch end). A clocked pause that differs is not
+      touched: the clock rules and the parte must be fixed.
+    - `day_over` and the day is still open: an OUT at the end of the
+      last task.
+    ---
+    Ficha con las horas del parte lo que el trabajador no fichó ese día
+    (S147). Devuelve lo añadido (textos). Una pausa fichada distinta de
+    la del parte no se toca: manda lo fichado y se arregla el parte.
+    """
+    from work_order_processor.models import WorkOrderEntryLine
+
+    worker = entry.work_order.uploaded_by
+    work_date = entry.work_date
+    if worker is None or work_date is None:
+        return []
+    if not clock_required(worker, work_date):
+        return []
+    timed = [
+        line for line in WorkOrderEntryLine.objects.filter(entry=entry)
+        if line.hc and line.hf
+    ]
+    if not timed:
+        return []
+    first_hc = min(line.hc for line in timed)
+    last_hf = max(line.hf for line in timed)
+    lunch = None
+    if not entry.no_lunch_break and (
+        entry.lunch_break_start and entry.lunch_break_end
+        and entry.lunch_break_start < entry.lunch_break_end
+    ):
+        lunch = (entry.lunch_break_start, entry.lunch_break_end)
+    events = _day_events(worker, work_date)
+    ins = [_rounded_time(e) for e in events if e.kind == ClockEvent.Kind.IN]
+    outs = [_rounded_time(e) for e in events
+            if e.kind == ClockEvent.Kind.OUT]
+    added = []
+    # Sin entrada ese día, o el día empieza con una salida (se le olvidó
+    # la de la mañana y fichó la vuelta de comer).
+    missing_in = not ins or (
+        events[0].kind == ClockEvent.Kind.OUT
+        and first_hc < _rounded_time(events[0]))
+    if missing_in and _add_press(
+            worker, ClockEvent.Kind.IN, work_date, first_hc,
+            "Se le ha olvidado fichar la entrada: se ficha a la hora de "
+            "la primera tarea del parte (%s)." % _fmt(first_hc)):
+        added.append("entrada %s" % _fmt(first_hc))
+        ins.append(first_hc)
+    lunch_over = lunch is not None and (
+        day_over or (upto is not None and lunch[1] <= upto))
+    if lunch_over and not clocked_pauses(worker, work_date):
+        start, end = lunch
+        first_in = min(ins)
+        last_out = max(outs) if outs else None
+        reason = (
+            "Se le ha olvidado fichar la pausa de la comida: se ficha con "
+            "la comida de su parte (%s a %s)." % (_fmt(start), _fmt(end)))
+        if not any(first_in < o <= end for o in outs) and _add_press(
+                worker, ClockEvent.Kind.OUT, work_date, start, reason):
+            added.append("salida a comer %s" % _fmt(start))
+        if not any(start <= i and (last_out is None or i < last_out)
+                   for i in ins) and _add_press(
+                worker, ClockEvent.Kind.IN, work_date, end, reason):
+            added.append("vuelta de la comida %s" % _fmt(end))
+    if day_over:
+        events = _day_events(worker, work_date)
+        if events and events[-1].kind != ClockEvent.Kind.OUT and _add_press(
+                worker, ClockEvent.Kind.OUT, work_date, last_hf,
+                "Se le ha olvidado fichar la salida: se ficha a la hora "
+                "en que acaba la última tarea del parte (%s)."
+                % _fmt(last_hf)):
+            added.append("salida %s" % _fmt(last_hf))
+    return added
+
+
+def clocked_start(company_user, work_date):
+    """
+    Rounded time of the day's first clocked IN, or None. S147: the
+    parte's first task starts at it and cannot be changed ("la primera
+    tarea ya va con esa hora inviolable").
+    ---
+    Hora redondeada de la primera entrada fichada del día, o None.
+    """
+    if company_user is None or work_date is None:
+        return None
+    for event in _day_events(company_user, work_date):
+        if event.kind == ClockEvent.Kind.IN:
+            return _rounded_time(event)
+    return None
+
+
+def _filled_notice(added):
+    return ("No fichaste: %s. Se ha fichado con las horas de tu parte y "
+            "queda anotado." % ", ".join(added))
+
+
+def _last_out(worker, work_date):
+    events = _day_events(worker, work_date)
+    outs = [e for e in events if e.kind == ClockEvent.Kind.OUT]
+    return outs[-1] if outs else None
+
+
+def sync_parte_with_clock(work_order):
+    """
+    After a parte is saved held by the clock (S147): clock what was not
+    clocked with its times and, if the day already has its OUT, check
+    it again against the clock (on_clock_out), which closes it if it
+    matches. Returns a ClockOutOutcome.
+    ---
+    Tras guardar un parte que queda "en curso" por el fichaje: ficha lo
+    que no se fichó con sus horas y, si el día ya tiene su salida, lo
+    vuelve a cotejar (on_clock_out), que lo cierra si cuadra.
+    """
+    entry = work_order.entries.order_by("page_number").first()
+    if entry is None or entry.work_date is None:
+        return ClockOutOutcome()
+    worker = work_order.uploaded_by
+    day_over = entry.work_date < timezone.localdate()
+    now_time = timezone.localtime().time()
+    added = fill_missing_presses(
+        entry, upto=None if day_over else now_time, day_over=day_over)
+    clock_out = _last_out(worker, entry.work_date)
+    if clock_out is None:
+        if added:
+            return ClockOutOutcome(text="; ".join(added),
+                                   notice=_filled_notice(added))
+        return ClockOutOutcome()
+    outcome = on_clock_out(clock_out)
+    if added:
+        outcome.notice = " ".join(filter(
+            None, (_filled_notice(added), outcome.notice)))
+    return outcome
+
+
+def fill_forgotten_out(event):
+    """
+    An IN that finds the previous day still open (the OUT was not
+    clocked): if that day has its parte, the OUT is clocked at the end
+    of its last task and the parte is checked again (S147, Miguel
+    Ángel: "si no ficha a la hora de salida, pero ha hecho el parte
+    [...] habrá que cerrarle el parte y cerrar el fichaje y anotarlo").
+    ---
+    Una ENTRADA que encuentra abierto el día anterior: con parte, se
+    ficha su salida a la hora en que acaba su última tarea y se vuelve
+    a cotejar el parte.
+    """
+    worker = event.company_user
+    previous = (
+        ClockEvent.objects.current().filter(
+            company_user=worker, pressed_at__lt=event.pressed_at,
+        ).order_by("-pressed_at", "-pk").first()
+    )
+    if previous is None or previous.kind == ClockEvent.Kind.OUT:
+        return ClockOutOutcome()
+    day = timezone.localtime(previous.pressed_at).date()
+    if day >= timezone.localtime(event.pressed_at).date():
+        return ClockOutOutcome()
+    entry = _day_entry(worker, day)
+    if entry is None:
+        return ClockOutOutcome()
+    added = fill_missing_presses(entry, day_over=True)
+    clock_out = _last_out(worker, day)
+    if not added or clock_out is None:
+        return ClockOutOutcome()
+    outcome = on_clock_out(clock_out)
+    days = ("lunes", "martes", "miércoles", "jueves", "viernes",
+            "sábado", "domingo")
+    outcome.notice = " ".join(filter(None, (
+        "No fichaste la salida del %s %s: se ha fichado con las horas de "
+        "tu parte (%s) y queda anotado." % (
+            days[day.weekday()], day.strftime("%d/%m"), ", ".join(added)),
+        outcome.notice)))
+    return outcome
+
+
 def on_clock_in_after_pause(event):
     """
     An IN back from a clocked pause (S147): if the OUT had closed that
@@ -604,7 +833,12 @@ def on_clock_press(event):
         return on_clock_out(event)
     if event.kind != ClockEvent.Kind.IN:
         return ClockOutOutcome()
-    # S147: la entrada de vuelta de la comida fija la pausa del parte.
+    # S147: la entrada que encuentra abierto el día anterior ficha su
+    # salida con las horas de su parte.
+    forgotten = fill_forgotten_out(event)
+    if forgotten.notice:
+        return forgotten
+    # S147: la vuelta de la comida reabre el parte si se había cerrado.
     pause = on_clock_in_after_pause(event)
     if event.sent_by != ClockEvent.SentBy.MANUAL:
         return pause
@@ -723,10 +957,11 @@ def on_clock_out(event):
     ficha el inicio y el fin de la jornada, así que la salida del día
     cierra el parte):
 
-    1. The worker's parte of that day, if already made and not reviewed,
-       gets the last task of the stretch closed by this OUT ending at
-       the OUT time (a task ending later is cut). A copy of the parte
-       goes to the log first ([PARTE-BACKUP]).
+    1. S147: what was not clocked that day (IN, lunch break) is
+       clocked with the parte's times (fill_missing_presses); the
+       tasks are no longer stretched or cut: the clock rules and the
+       worker adapts the parte. A copy of the parte goes to the log
+       first ([PARTE-BACKUP]).
     2. If the parte is still open, it is closed when it matches what was
        clocked (same rules and safeguards as closing it by hand), with
        the parte's lunch break as the only gap. If it does not match
@@ -738,9 +973,10 @@ def on_clock_out(event):
     Returns a ClockOutOutcome (what was done, and the notice for the
     worker).
     ---
-    Tras una SALIDA (regla de Miguel Ángel arriba): 1) en el parte de
-    ese día ya hecho y no revisado, la última tarea del tramo que cierra
-    esta salida pasa a terminar a esa hora (antes, copia al log); 2) si
+    Tras una SALIDA (regla de Miguel Ángel arriba): 1) S147: lo que no
+    se fichó ese día (entrada, comida) se ficha con las horas del parte;
+    las tareas ya no se alargan ni se recortan (manda lo fichado y el
+    parte se adapta; antes, copia al log); 2) si
     el parte sigue abierto, se cierra si cuadra con lo fichado (mismas
     reglas que al cerrarlo a mano), con la pausa de comida del parte
     como único hueco; si no cuadra, sigue abierto y lo arregla
@@ -784,14 +1020,10 @@ def on_clock_out(event):
                    "de la jornada.",
         )
     work_order = entry.work_order
+    # S147: lo que no fichó (la entrada, la comida) se ficha con las
+    # horas del parte, a nombre de la oficina y con el motivo.
+    filled = fill_missing_presses(entry, upto=out_time)
     stretches = day_stretches(worker, work_date)
-    stretch_start = None
-    later = []
-    for stretch in stretches:
-        if stretch.end == out_time:
-            stretch_start = stretch.start
-        elif stretch.start and stretch.start >= out_time:
-            later.append(stretch)
     lines = list(
         WorkOrderEntryLine.objects.filter(entry=entry)
         .order_by("hc", "line_number")
@@ -809,32 +1041,11 @@ def on_clock_out(event):
     ):
         lunch = (entry.lunch_break_start, entry.lunch_break_end)
 
-    # 1. Ajuste a la hora de salida (solo las tareas de este tramo).
-    # La tarea pasa a terminar a la hora de salida redondeada (fichar
-    # 13:55 con el parte a las 14:00 no cambia nada: 13:55 -> 14:00).
-    in_stretch = [
-        line for line in timed
-        if (stretch_start is None or line.hc >= stretch_start)
-        and line.hc < out_time
-    ]
+    # 1. S147 (Miguel Ángel): lo fichado manda y el parte se adapta a
+    # ello; el programa ya no alarga ni recorta tareas. Si falta tarea
+    # hasta la salida (o sobra), el parte no se cierra y lo arregla el
+    # trabajador.
     done = []
-    if in_stretch:
-        last = max(in_stretch, key=lambda line: line.hf)
-        for line in in_stretch:
-            # A morning task is not stretched over the lunch break: the
-            # afternoon tasks are missing and the worker adds them.
-            # Una tarea de la mañana no se alarga por encima de la
-            # comida: faltan las de la tarde y las pone el trabajador.
-            if (
-                line is last and line.hf < out_time and lunch
-                and line.hf <= lunch[0]
-            ):
-                continue
-            if line is last or line.hf > out_time:
-                if line.hf != out_time:
-                    done.append("tarea %d: fin %s -> %s" % (
-                        line.line_number, _fmt(line.hf), _fmt(out_time)))
-                    line.hf = out_time
 
     # Horas netas, sin la pausa de comida del parte.
     with transaction.atomic():
@@ -889,6 +1100,9 @@ def on_clock_out(event):
         result = "parte abierto: no cuadra con lo fichado (%s)" % (
             problems[0])
         notice = _mismatch_notice(problems[0])
+    if filled:
+        notice = " ".join(filter(None, (_filled_notice(filled), notice)))
+        done = filled + done
     logger.info(
         "# [FICHAJE-PARTE] WorkOrder #%d (usuario #%d, %s) salida %s: %s%s",
         work_order.pk, worker.pk, work_date, _fmt(out_time), result,

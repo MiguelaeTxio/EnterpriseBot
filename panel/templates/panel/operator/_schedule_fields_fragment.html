@@ -124,7 +124,9 @@
                        step="1800"
                        name="entrada_1_hc"
                        class="form-control eb-field"
-                       value="{{ first_block_hc }}">
+                       value="{{ first_block_hc }}"{% if first_block_hc_locked %}
+                       readonly
+                       title="Hora de tu entrada fichada"{% endif %}>
             </div>
             <div class="col-6 col-md-2">
                 <label class="form-label fw-medium">

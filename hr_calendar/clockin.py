@@ -274,8 +274,10 @@ def record_press(company_user, payload, user_agent=""):
     result = _after_save(event, company_user)
     if forgotten is not None:
         # S143: la entrada de hoy deja la jornada olvidada "sin salida".
-        result.parte_notice = " ".join(filter(None, (
-            forgotten_text(forgotten), result.parte_notice)))
+        # S147: si su parte ya fichó esa salida, el aviso es el suyo.
+        if not result.parte_notice.startswith("No fichaste la salida"):
+            result.parte_notice = " ".join(filter(None, (
+                forgotten_text(forgotten), result.parte_notice)))
         result.parte_ok = False
     return result
 

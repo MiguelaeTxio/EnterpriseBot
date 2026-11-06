@@ -3246,6 +3246,12 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
         if _clocked is not None:
             _lunch_start = _clocked[0].strftime("%H:%M")
             _lunch_end = _clocked[1].strftime("%H:%M")
+        # S147: la primera tarea empieza a la entrada fichada, sin cambio.
+        from hr_calendar.clock_parts import clocked_start as _clocked_start
+
+        _clocked_in = _clocked_start(cu, timezone.localdate())
+        if _clocked_in is not None:
+            _first_hc = _clocked_in.strftime("%H:%M")
 
         import json as _json_fix
         from ivr_config.models import AbsenceCategory as _AbsCat
@@ -3291,6 +3297,7 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                 "lunch_break_start": _lunch_start,
                 "lunch_break_end": _lunch_end,
                 "first_block_hc": _first_hc,
+                "first_block_hc_locked": _clocked_in is not None,
                 "first_block_hf": (
                     _end_time_morning_create
                     if _end_time_morning_create
@@ -6029,6 +6036,29 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
             )
 
         if _clock_hold:
+            # S147: lo que no fichó se ficha con las horas del parte y, si
+            # el día ya tiene su salida, se vuelve a cotejar (lo cierra si
+            # cuadra).
+            from hr_calendar.clock_parts import (
+                sync_parte_with_clock as _cp_sync,
+            )
+
+            try:
+                _sync = _cp_sync(work_order)
+            except Exception:
+                logger.exception(
+                    "# [FICHAJE-PARTE] Error cotejando el parte #%d.",
+                    work_order.pk,
+                )
+                _sync = None
+            work_order.refresh_from_db(fields=["status"])
+            if work_order.status == WorkOrder.Status.DONE:
+                _clock_hold = []
+                if _sync is not None and _sync.notice:
+                    django_messages.info(request, _sync.notice)
+            elif _sync is not None and _sync.notice:
+                _clock_hold = [_sync.notice]
+        if _clock_hold:
             django_messages.warning(
                 request,
                 f"Parte #{work_order.pk} guardado, sin cerrar. "
@@ -6546,6 +6576,12 @@ class WorkshopIntensiveToggleView(WorkshopRequiredMixin, View):
         )
 
         _first_hc = first_hc
+        # S147: la primera tarea empieza a la entrada fichada, sin cambio.
+        from hr_calendar.clock_parts import clocked_start as _clocked_start
+
+        _clocked_in = _clocked_start(cu, _parte_day)
+        if _clocked_in is not None:
+            _first_hc = _fmt(_clocked_in)
         if activate:
             # Intensive shift: HF is end_time_morning (morning block ends at
             # noon).
@@ -6569,6 +6605,7 @@ class WorkshopIntensiveToggleView(WorkshopRequiredMixin, View):
             "end_time_afternoon": end_time_afternoon,
             "start_time_afternoon": start_time_afternoon,
             "first_block_hc": _first_hc,
+            "first_block_hc_locked": _clocked_in is not None,
             "first_block_hf": _first_hf,
             "absence_categories": _json.dumps(_absence_cats),
             "absence_categories_list": _absence_cats,
