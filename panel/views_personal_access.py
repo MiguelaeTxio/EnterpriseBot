@@ -19,7 +19,8 @@ from document_explorer.models import PersonIdentity
 from ivr_config.models import CompanyUser, Section
 from panel.mixins import SupervisorAccessMixin
 from panel.personal_access import (
-    AccessError, create_access, pending_account, propose,
+    AccessError, create_access, link_account, pending_account, propose,
+    unlinked_account,
 )
 
 
@@ -63,6 +64,12 @@ class PersonalAccessPreviewView(SupervisorAccessMixin, View):
             account = (row["person"].company_user
                        or pending_account(row["person"]))
             row["base"] = account.base if account else None
+            # S147: un rol que no es de trabajador (supervisor,
+            # administración...) se conserva, no se machaca.
+            row["keep_role"] = (
+                account.get_role_display() if account and account.role
+                and account.role not in CompanyUser.WORKER_ROLES else ""
+            )
             default_role = section.default_role if section else ""
             row["role"] = (
                 account.role if account and account.role
@@ -113,6 +120,19 @@ class PersonalAccessCreateView(SupervisorAccessMixin, View):
                 continue
             label = ("%s %s" % (person.given_name,
                                 person.first_surname)).strip()
+            if row.get("link"):
+                # S147: ya tiene usuario sin enlazar: se enlaza, sin
+                # tocar su rol, su base ni su contraseña.
+                account = unlinked_account(person)
+                if account is None or str(account.pk) != str(row["link"]):
+                    errors.append("%s: ya no se encuentra su usuario"
+                                  % label)
+                    continue
+                link_account(person, account)
+                created.append({"name": label,
+                                "username": account.user.username,
+                                "linked": True})
+                continue
             section = Section.objects.filter(
                 company=company, pk=row.get("section") or 0,
             ).first()

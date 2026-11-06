@@ -94,6 +94,56 @@ def has_account(person):
     return account is not None and not account.pending_onboarding
 
 
+def unlinked_account(person):
+    """
+    An existing panel account of the worker not linked to the file.
+    ---
+    S147 (Miguel Ángel, caso de Rocío Macías: usuario
+    Rocio_administracion, Supervisor, sin enlazar con su ficha): una
+    cuenta del panel que ya existe y es de este trabajador pero no está
+    unida a su ficha -- por DNI o, si la cuenta no lo tiene, por nombre
+    y primer apellido (sin tildes). Así no se le crea un usuario
+    duplicado ni se le cambia el rol: se enlaza. None si no hay una
+    sola clara.
+    """
+    if person.company_user_id:
+        return None
+    free = CompanyUser.objects.filter(
+        person_identity__isnull=True, pending_onboarding=False,
+    ).select_related("user")
+    if person.dni:
+        by_dni = [cu for cu in free.filter(dni__iexact=person.dni)]
+        if len(by_dni) == 1:
+            return by_dni[0]
+    given = _plain(person.given_name)
+    first = _plain(person.first_surname)
+    if not given or not first:
+        return None
+    by_name = [
+        cu for cu in free.filter(dni="") | free.filter(dni__isnull=True)
+        if _plain(cu.user.first_name) == given
+        and _plain(cu.user.last_name).startswith(first)
+    ]
+    return by_name[0] if len(by_name) == 1 else None
+
+
+def link_account(person, account):
+    """
+    Links an existing account to the worker file, role untouched.
+    ---
+    Enlaza una cuenta que ya existe con la ficha del trabajador (S147):
+    no toca su rol, su base ni su contraseña; si la cuenta no tenía DNI,
+    se le pone el de la ficha.
+    """
+    with transaction.atomic():
+        person.company_user = account
+        person.save(update_fields=["company_user"])
+        if not account.dni and person.dni:
+            account.dni = person.dni
+            account.save(update_fields=["dni"])
+    return account
+
+
 def propose(people):
     """
     [{person, username, conflicts, ...}] for the access modal.
@@ -127,6 +177,7 @@ def propose(people):
                 for u in similar
             ],
             "has_account": has_account(person),
+            "unlinked": unlinked_account(person),
             "pending": pending is not None,
             "password_ok": bool(password_of(person)),
         })
@@ -155,10 +206,14 @@ def create_access(person, username, section, base, role, by):
     password = password_of(person)
     if not password:
         raise AccessError("no tiene DNI con cifras para la contraseña")
-    if role not in CompanyUser.WORKER_ROLES:
-        raise AccessError("puesto no válido")
     company = by.company
     pending = pending_account(person)
+    # S147: un pre-registro con un rol que no es de trabajador
+    # (supervisor, administración...) lo conserva: role vacío = el suyo.
+    if not role and pending is not None and pending.role:
+        role = pending.role
+    elif role not in CompanyUser.WORKER_ROLES:
+        raise AccessError("rol en el panel no válido")
     clash = User.objects.filter(username__iexact=username)
     if pending is not None:
         clash = clash.exclude(pk=pending.user_id)

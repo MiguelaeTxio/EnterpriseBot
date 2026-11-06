@@ -1202,7 +1202,10 @@ las filas de debajo se desplacen de verdad.
                 .catch(() => { accessBody.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0">Error de red.</div>'; });
         });
         document.getElementById('personalAccessConfirm').addEventListener('click', function () {
-            const rows = Array.from(accessBody.querySelectorAll('tr[data-person]:not([data-skip])')).map((tr) => ({
+            // S147: data-link = ya tiene usuario sin enlazar (se enlaza).
+            const rows = Array.from(accessBody.querySelectorAll('tr[data-person]:not([data-skip])')).map((tr) => (tr.dataset.link ? {
+                person: tr.dataset.person, link: tr.dataset.link,
+            } : {
                 person: tr.dataset.person,
                 username: tr.querySelector('.pa-username').value.trim(),
                 section: tr.querySelector('.pa-section').value,
@@ -1220,8 +1223,8 @@ las filas de debajo se desplacen de verdad.
             }).then((r) => r.json()).then((data) => {
                 let html = '';
                 if (data.created && data.created.length) {
-                    html += '<div class="alert alert-success py-1 px-2 mb-1">' + data.created.length + ' usuario(s) creado(s): ' +
-                        data.created.map((c) => c.name + ' → <strong>' + c.username + '</strong>').join(', ') + '</div>';
+                    html += '<div class="alert alert-success py-1 px-2 mb-1">' + data.created.length + ' usuario(s) creado(s) o enlazado(s): ' +
+                        data.created.map((c) => c.name + ' → <strong>' + c.username + '</strong>' + (c.linked ? ' (enlazado, su rol no cambia)' : '')).join(', ') + '</div>';
                 }
                 if (data.errors && data.errors.length) {
                     html += '<div class="alert alert-warning py-1 px-2 mb-0">No creados: ' + data.errors.join('; ') + '</div>';
