@@ -1551,8 +1551,10 @@ el valor antes de que siga el resto del script.
   `~/.my.cnf`, que mantiene PythonAnywhere) por tubería a gzip y directo
   al cubo; **nunca pasa por el disco del servidor** (cuota de 5 GB).
 - **Cubo:** `enterprisebot-alvarez-db-backups` (propio, privado, lo crea
-  el servidor con su cuenta de servicio). Solo de paso: guarda las 3
-  últimas copias ya bajadas a OneDrive.
+  el servidor con su cuenta de servicio). Guarda las mismas copias que
+  OneDrive (misma retención): desde el panel (Administración > Copias
+  de seguridad, solo rol Administrador) se descargan y restauran las
+  que están en el cubo.
 - **OneDrive:** `C:\Users\Usuario\OneDrive - GRUALDI SL\COPIAS DE
   SEGURIDAD BD\` (raíz de `%OneDriveCommercial%`, fuera de las carpetas
   vigiladas). El agente H28 pregunta cada 10 minutos, baja cada copia

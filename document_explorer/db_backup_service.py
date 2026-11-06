@@ -7,8 +7,8 @@ straight into a GCS object: nothing is written to the PythonAnywhere
 disk (5 GB quota). The H28 agent downloads each copy to a dedicated
 OneDrive folder, checks the SHA-256 and reports back. Retention: the
 latest 14 daily copies, one per week for 8 weeks (the Sunday one) and
-one per month for 12 months (the day-1 one). The bucket is only a
-transit: it keeps the 3 latest copies already in OneDrive.
+one per month for 12 months (the day-1 one), the same in the bucket
+and in OneDrive.
 
 ---
 
@@ -17,7 +17,8 @@ Copias de seguridad de la base de datos (H24, S146).
 Miguel Ángel: "copiar todo lo que tenemos en base de datos [...] el
 formato más conveniente para que quede todo comprimido y que podamos
 recuperarlo en cualquier momento"; frecuencia elegida: "Diaria y
-escalonada" (14 diarias, 8 semanales, 12 mensuales). Antes de
+escalonada" (14 diarias, 8 semanales, 12 mensuales), la misma en el
+cubo y en OneDrive ("Copiamos automáticamente a cubo y onedrive"). Antes de
 construir preguntó dónde se hacía el volcado, por la cuota de disco del
 servidor: por eso el volcado va por tubería de `mysqldump` a la
 compresión y de ahí al cubo, sin archivo intermedio. Restaurar:
@@ -57,7 +58,6 @@ DUMP_END_MARKER = b"-- Dump completed"
 KEEP_DAILY = 14
 KEEP_WEEKLY = 8
 KEEP_MONTHLY = 12
-KEEP_IN_BUCKET = 3
 
 # Tablas de control de la restauración de prueba (hoja de ruta S146).
 # ---
@@ -196,20 +196,16 @@ def run_backup():
     return backup
 
 
-def keep_names():
-    """File names that must stay in OneDrive (daily, weekly, monthly).
+def _retained(copies):
+    """Names kept by the daily-and-staggered rule among `copies`.
     ---
-    Nombres que se quedan en OneDrive: la última copia de cada uno de
-    los 14 días más recientes, la última de cada una de las 8 semanas
-    más recientes (la del domingo) y la primera de cada uno de los 12
-    meses más recientes (la del día 1). Además, toda copia que todavía
-    no se haya bajado.
+    Nombres que se quedan según la retención diaria y escalonada: la
+    última copia de cada uno de los 14 días más recientes, la última de
+    cada una de las 8 semanas más recientes (la del domingo) y la
+    primera de cada uno de los 12 meses más recientes (la del día 1).
+    `copies` en orden descendente de fecha.
     """
-    copies = list(DatabaseBackup.objects.filter(status__in=(
-        DatabaseBackup.STATUS_READY, DatabaseBackup.STATUS_DOWNLOADED,
-    ), removed_from_local_at__isnull=True).order_by("-started_at"))
-    keep = {c.file_name for c in copies
-            if c.status == DatabaseBackup.STATUS_READY}
+    keep = set()
     days, weeks, months = {}, {}, {}
     for copy in copies:
         local = timezone.localtime(copy.started_at)
@@ -222,21 +218,42 @@ def keep_names():
                          (months, KEEP_MONTHLY)):
         for key in sorted(group, reverse=True)[:limit]:
             keep.add(group[key].file_name)
+    return keep
+
+
+def _good_copies():
+    return DatabaseBackup.objects.filter(status__in=(
+        DatabaseBackup.STATUS_READY, DatabaseBackup.STATUS_DOWNLOADED,
+    )).order_by("-started_at")
+
+
+def keep_names():
+    """File names that must stay in OneDrive.
+    ---
+    Nombres que se quedan en OneDrive: los de la retención diaria y
+    escalonada y, además, toda copia que todavía no se haya bajado.
+    """
+    copies = list(_good_copies().filter(removed_from_local_at__isnull=True))
+    keep = _retained(copies) | {
+        c.file_name for c in copies
+        if c.status == DatabaseBackup.STATUS_READY}
     return sorted(keep)
 
 
 def prune_bucket():
-    """Keep in the bucket only the 3 latest copies already in OneDrive.
+    """Same retention in the bucket as in OneDrive.
     ---
-    El cubo es solo de paso: se quedan las 3 últimas copias ya bajadas
-    a OneDrive. Una copia que todavía no se ha bajado nunca se borra
-    del cubo.
+    El cubo guarda las mismas copias que OneDrive (Miguel Ángel, S146:
+    "Copias en el cubo, sí. Copiamos automáticamente a cubo y
+    onedrive"): se quitan solo las que ya están en OneDrive y se salen
+    de la retención diaria y escalonada. Una copia que todavía no se ha
+    bajado nunca se borra del cubo.
     """
-    downloaded = DatabaseBackup.objects.filter(
-        status=DatabaseBackup.STATUS_DOWNLOADED,
-        removed_from_bucket_at__isnull=True,
-    ).order_by("-started_at")
-    stale = list(downloaded[KEEP_IN_BUCKET:])
+    copies = list(_good_copies().filter(removed_from_bucket_at__isnull=True))
+    keep = _retained(copies)
+    stale = [c for c in copies
+             if c.status == DatabaseBackup.STATUS_DOWNLOADED
+             and c.file_name not in keep]
     if not stale:
         return
     bucket = get_storage_client().bucket(BACKUP_BUCKET)
