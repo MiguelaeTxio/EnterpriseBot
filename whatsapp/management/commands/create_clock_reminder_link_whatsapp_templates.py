@@ -63,6 +63,42 @@ _BODIES = {
         "la salida al terminar; puede hacerlo con el botón de este "
         "mensaje."
     ),
+    # S147 (Miguel Ángel): quien hace partes ficha también la salida a
+    # comer y la vuelta, con los mismos avisos que la entrada y la
+    # salida ("el mismo baremo").
+    "clock_lunch_out_reminder_link": (
+        notice_templates._PREAMBLE
+        + "Hoy {{2}} su pausa para comer empieza a las {{3}} y no consta "
+        "que haya fichado la salida a comer. Si ya ha parado, fiche la "
+        "salida ahora con el botón de este mensaje; si se le olvidó, haga "
+        "un fichaje manual con la hora real."
+    ),
+    "clock_lunch_in_reminder_link": (
+        notice_templates._PREAMBLE
+        + "Hoy {{2}} su vuelta de la comida es a las {{3}} y no consta que "
+        "haya fichado la entrada. Si ya ha vuelto, fiche la entrada ahora "
+        "con el botón de este mensaje; si se le olvidó, haga un fichaje "
+        "manual con la hora real."
+    ),
+    "clock_lunch_out_prereminder_link": (
+        notice_templates._PREAMBLE
+        + "Hoy {{2}} su pausa para comer empieza a las {{3}}. Recuerde "
+        "fichar la salida a comer al parar; puede hacerlo con el botón "
+        "de este mensaje."
+    ),
+    "clock_lunch_in_prereminder_link": (
+        notice_templates._PREAMBLE
+        + "Hoy {{2}} su vuelta de la comida es a las {{3}}. Recuerde "
+        "fichar la entrada al volver de comer; puede hacerlo con el "
+        "botón de este mensaje."
+    ),
+}
+
+# Hora de ejemplo de cada plantilla (la de entrada, la de siempre).
+_SAMPLE_TIME = {
+    "clock_out_": "18:00",
+    "clock_lunch_out_": "13:30",
+    "clock_lunch_in_": "15:00",
 }
 
 
@@ -79,8 +115,9 @@ def _definitions():
     result = []
     for name, body in _BODIES.items():
         sample = dict(_SAMPLE)
-        if name.startswith("clock_out_"):
-            sample["3"] = "18:00"
+        for prefix, time_text in _SAMPLE_TIME.items():
+            if name.startswith(prefix):
+                sample["3"] = time_text
         result.append({
             "name": name,
             "variables": sample,
@@ -111,8 +148,8 @@ class Command(notice_templates.Command):
         "Crea y somete a aprobacion de Meta las plantillas WhatsApp "
         "clock_in_reminder_link y clock_out_reminder_link (H24, S141) y "
         "las de antes de la hora, clock_in_prereminder_link y "
-        "clock_out_prereminder_link (S144); las que ya están en BD no se "
-        "tocan."
+        "clock_out_prereminder_link (S144), y las de la pausa para comer "
+        "(clock_lunch_*, S147); las que ya están en BD no se tocan."
     )
     start_message = (
         "Inicio: alta de las plantillas de recordatorio de fichaje con "
