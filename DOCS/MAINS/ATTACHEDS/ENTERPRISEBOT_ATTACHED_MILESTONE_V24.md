@@ -1745,3 +1745,159 @@ el fichaje de entrada y de salida."*
    recordatorio enviado antes de la hora lleva su `content_sid`.
 
 Al terminar, el hito siguiente lo decide Miguel Ángel con un PCH.
+
+---
+
+### 7.13. COMPLETADAS EN S145 (04/11/2026 → 06/11/2026)
+
+En paralelo, otro chat de Miguel Ángel llevó todo lo de **fichajes**
+(app de fichaje, cómputo de horas extra según el convenio del grupo,
+«Ficha desde», presencia, fuerza mayor, desplazamiento por radio,
+cancel_clock_events, clocks_from_alta...). Esos commits son suyos y
+los documenta ese chat; aquí solo lo hecho en este.
+
+#### Partes digitales y Fichajes (hoja de ruta S145, punto 1: hecho)
+
+- **Entrada y Salida del fichaje en Partes Digitales** (285f5c0,
+  4032284, 72b50cb): sustituyen a la columna Familia; la hora
+  redondeada en la celda y la real al pasar el ratón ("Fichó a las
+  HH:MM"), siempre del fichaje, nunca del parte. Ordenables.
+- Cálculo de la comida: **no se toca**. Miguel Ángel: "si ellos han
+  marcado que no han parado a comer, es por que es cierto".
+- **Fichajes:** columna Bolsa de horas (20a114a, `overtime_bags`);
+  atajos de fechas y periodos 21–20 en el listado y en la página del
+  trabajador (eeb6faf); rango máximo 4 años.
+- **Volver:** no-store en las páginas (0a65339, se queda: "Yo no te he
+  dicho que lo quites") y el recorrido ya no lo pisa una página lenta
+  (82b33d3, bloqueo de la fila y comparación de `updated_at`). Con los
+  botones del navegador puede seguir fallando: a Miguel Ángel le da
+  igual mientras los recorridos internos funcionen.
+
+#### Personal activo: documentos y fichas
+
+- **Comparación local ↔ BD** (puente con su PC, carpeta DOC.
+  PERSONAL): de 21.968 archivos locales, 11.172 casan con la BD; 9.972
+  borrados en la nube por la deduplicación, 435 en cuarentena, 316
+  descartados, 64 sin rastro. Auditoría por persona (79 activos) en
+  dos Excel enviados a Miguel Ángel.
+- **9 partes de alta guardados como baja** → ALTA_MEDICA con su fecha
+  (efad19c, `fix_altas_medicas_s145`, aplicado: 9).
+- **Relleno de fichas desde sus documentos** (3ea8145, 5329bf4,
+  `fill_person_fields_from_documents`, se ejecuta en el servidor: los
+  datos de personas no van a git). EnterpriseBot_007 aplicado: 186
+  rellenados, 3 NSS corregidos (tenían el CCC de la empresa), 27
+  caducidades actualizadas, 8 descartados por lectura mala.
+- **Revisión a mano de los 63 dudosos y los 8 descartados**
+  (ecac550, `apply_person_corrections`, JSON escrito en SWAP desde el
+  propio Comando S). EnterpriseBot_008 aplicado: 80 cambios.
+  - Fecha de alta = la del alta tras la última baja documentada (la del
+    IDC): 22 corregidas + 5 incorporaciones nuevas. **Se quedan como
+    están, decidido por Miguel Ángel:** Adolfo Álvarez Díaz y
+    Domínguez Sánchez (su ficha es posterior a sus documentos).
+  - Direcciones de DNI antiguos limpiadas (14), las mal leídas
+    resueltas mirando la imagen; NSS: dígito de control comprobado en
+    los 71 (solo fallaba Zavala, corregido); López Montilla y Becerra
+    tenían en el "DNI" (foto con varios carnés) la caducidad del
+    permiso: corregidas ficha y documento.
+- **Separar dossieres desde la ficha** (c766174, f67dbc6, bde62cf):
+  miniaturas con el tipo que sugiere el texto, visor en grande, fecha
+  opcional; lo sacado lleva "Original". Protecciones tras un error real
+  de Miguel Ángel: confirmación con la lista, el modal no se cierra ni
+  se cancela mientras trabaja y no se duplican las mismas páginas (la
+  tarjeta CAP duplicada #53178, a la papelera).
+- **Tipos nuevos:** ADR (529a2e1, migración 0198) y **Dossier**
+  (f2b537f, 0199): al separar, el original pasa a Dossier y sigue a la
+  vista. `fix_split_dossiers_s145` aplicado (el de Berenguer, y su
+  tarjeta CAP de 1927 → 2027).
+- **Altas, bajas y certificados ya no salen caducados en rojo**
+  (3338935, e1bb596): campo **"Caduca"** en el catálogo (migración
+  0200; 45 tipos de PERSONAL con fecha del documento lo tienen
+  desmarcado; 0201 vuelve a marcar EXCEDENCIA). La subida, el cambio de
+  tipo y Separar guardan esa fecha como emisión. `fix_issue_dated_
+  expiry_s145` aplicado: 186 documentos (167 sin caducidad, 18 con fecha
+  del documento nueva, 1 sin fecha: autorización de García Fernández
+  con 2089 en el nombre).
+
+#### Administración > Usuarios con el formato único (4.24)
+
+- 3a7375f, 28f82d1, c84ebf1 (`panel/views_users_list.py`): buscar
+  (usuario, nombre, apellidos, DNI, teléfono); filtros Estado, Rol,
+  Sección vigente, Horario que le toca, Base, **Alta en el fichaje**
+  (la de Personal + "Sin ficha de Personal") y Selección; orden
+  múltiple, selección persistida, pantalla completa; acciones: nuevo,
+  activar, desactivar, poner rol, poner base, eliminar (el borrado de
+  siempre). La propia cuenta nunca se desactiva, cambia de rol ni se
+  borra. Sale `CompanyUserListView`.
+- Hallazgo: la circular ALTA_FICHAJE tenía **0 envíos registrados**;
+  "Acceso al fichaje" solo crea el usuario. Por eso nadie salía como
+  "Alta enviada". Miguel Ángel indicó después que el alta ya se ha
+  enviado (lo lleva el chat de fichajes).
+
+#### Relevo
+
+- `db_query.yml` con entrada `delivery=release` (55f1422): resultados
+  grandes como `sql_{run_id}.tsv.gz` en la release privada; se bajan
+  con `gh api` de assets (no `gh release download`, bloqueado).
+- `gh workflow run` falla (GraphQL): se disparan los workflows con
+  `POST .../dispatches`.
+
+#### Consulta legal
+
+- Horas extra según el Estatuto (art. 35): 80 al año, sin tope
+  mensual; las compensadas con descanso en 4 meses no cuentan.
+
+#### Migraciones de la sesión (aplicadas y comprobadas en BD)
+
+document_explorer 0198 (ADR), 0199 (Dossier), 0200 (campo "Caduca"),
+0201 (EXCEDENCIA caduca).
+
+---
+
+### 7.14. Hoja de Ruta S146 (escrita al cierre de S145)
+
+Miguel Ángel al cierre: *"la siguiente sesión la vamos a comenzar con
+un tema que es muy importante, que son las copias de seguridad [...]
+con el agente H28 [...] copiar todo lo que tenemos en base de datos
+[...] el formato más conveniente para que quede todo comprimido y que
+podamos recuperarlo en cualquier momento, restaurar una copia [...] la
+carpeta [...] la propia nube de Microsoft 365, en una carpeta dedicada
+que esté fuera de las que está vigilando el H28."*
+
+**Depende de Miguel Ángel (sin tarea hasta que lo traiga):**
+- Prueba en iPhone (3 sesiones sin avanzar): Pablo fichando en el
+  taller. Cierre: el de 7.12.
+- Saldos de vacaciones (2 sesiones sin avanzar): datos de Juan
+  Francisco Arrabalí. Cierre: el de 7.10, punto 4.
+- Secciones de los que no tienen (1 sesión sin avanzar): los listados
+  de Plataformas. Cierre: el de 7.12, punto 2.
+- Ofrecido en S145 y no pedido (no se hace sin que lo pida): la
+  cuarentena de 435 documentos, la carpeta de Gutiérrez Santiago
+  Nicolás sin subir, los 231 documentos quitados de fichas (41
+  contratos) y la posible ficha duplicada de Gutiérrez.
+- Todo lo de fichajes lo lleva otro chat: aquí no se toca.
+
+1. **Copias de seguridad de la base de datos con el agente H28.**
+   - Antes de construir: leer el agente H28 (`h28_migration_agent/`)
+     y cómo baja hoy archivos al PC (`LocalDownloadJob`), qué carpetas
+     de OneDrive vigila, y si `mysqldump` está disponible en
+     PythonAnywhere para la BD del proyecto (Comando S).
+   - Formato: volcado completo con `mysqldump --single-transaction
+     --routines --triggers --events` comprimido en `.sql.gz`, con
+     nombre `EnterpriseBot_BD_AAAAMMDD_HHMM.sql.gz` y su suma SHA-256
+     al lado. Se restaura con `gunzip -c ... | mysql`.
+   - El servidor genera el volcado; el agente lo baja y lo deja en una
+     carpeta dedicada de OneDrive (Microsoft 365) **fuera de todas las
+     carpetas que vigila el H28**; nunca pasa por git.
+   - Presentar a Miguel Ángel en la sesión, antes de construir, la
+     frecuencia y cuántas copias se guardan.
+   - **Cierre:** una copia real en esa carpeta de OneDrive, con su
+     SHA-256 coincidente, y una restauración de prueba de esa copia en
+     una BD aparte que da el mismo número de filas en
+     `document_explorer_personidentity`,
+     `document_explorer_documentindexentry` y `hr_calendar_clockevent`
+     que producción en el momento del volcado.
+2. **Reenviar el alta, alta y baja en la carpeta local y pre-aviso de
+   fichaje:** siguen con los cierres de 7.12, puntos 3 a 5, cuando
+   ocurran de verdad.
+
+Al terminar, el hito siguiente lo decide Miguel Ángel con un PCH.
