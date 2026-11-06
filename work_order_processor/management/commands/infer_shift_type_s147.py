@@ -16,8 +16,12 @@ Regla:
   de la jornada (de la primera tarea a la última; las tareas pueden
   cruzarla, se descuenta), o hay un hueco de al menos 30 minutos entre
   dos tareas seguidas.
-- Intensiva: tareas seguidas, sin ese hueco.
-- Sin tareas con horas: se deja vacío.
+- Intensiva: tareas seguidas, sin comida, de 8 horas o menos.
+- Partida sin parar a comer: tareas seguidas de más de 8 horas, sin
+  comida y con "no he parado a comer" marcado.
+- Sin dato (se deja vacío y se lista aparte para revisarlo): tareas
+  seguidas de más de 8 horas, sin comida y sin esa marca; o sin tareas
+  con horas.
 
 DRY-RUN POR DEFECTO; `--apply` escribe. Log propio en `--log-file`,
 pantalla y archivo a la vez.
@@ -33,6 +37,7 @@ from work_order_processor.models import (
 )
 
 MIN_SPLIT_GAP_MINUTES = 30
+MAX_INTENSIVE_MINUTES = 8 * 60
 HEARTBEAT = 50
 
 
@@ -72,8 +77,13 @@ def infer_is_intensive(entry, lines):
                 gap, end.strftime("%H:%M"), line.hc.strftime("%H:%M"))
         if line.hf > end:
             end = line.hf
-    return True, "tareas seguidas de %s a %s" % (
-        timed[0].hc.strftime("%H:%M"), end.strftime("%H:%M"))
+    span = "%s a %s" % (timed[0].hc.strftime("%H:%M"), end.strftime("%H:%M"))
+    if _minutes(end) - _minutes(timed[0].hc) <= MAX_INTENSIVE_MINUTES:
+        return True, "tareas seguidas de %s, sin comida" % span
+    if entry.no_lunch_break:
+        return False, "tareas seguidas de %s y no paró a comer" % span
+    return None, ("RARO: tareas seguidas de %s, sin comida y sin marcar "
+                  "que no paró a comer" % span)
 
 
 class Command(BaseCommand):
@@ -118,6 +128,7 @@ class Command(BaseCommand):
         total = len(entries)
         _log("Partes digitales sin jornada: %d" % total)
         counts = {True: 0, False: 0, None: 0}
+        odd = []
         start_time = datetime.datetime.now()
         for done, entry in enumerate(entries, start=1):
             value, why = infer_is_intensive(
@@ -132,6 +143,13 @@ class Command(BaseCommand):
                 if entry.work_date else "sin fecha",
                 operator.user.username if operator else "sin operario",
                 label, why))
+            if value is None:
+                odd.append("Parte %d (entrada %d, %s, %s): %s" % (
+                    entry.work_order_id, entry.pk,
+                    entry.work_date.strftime("%d/%m/%Y")
+                    if entry.work_date else "sin fecha",
+                    operator.user.username if operator else "sin operario",
+                    why))
             if apply and value is not None:
                 WorkOrderEntry.objects.filter(pk=entry.pk).update(
                     is_intensive_shift=value)
@@ -150,8 +168,13 @@ class Command(BaseCommand):
         _log_plain("  Partes revisados: %d" % total)
         _log_plain("  Intensiva: %d" % counts[True])
         _log_plain("  Partida: %d" % counts[False])
-        _log_plain("  Sin tareas con horas (se dejan vacíos): %d"
+        _log_plain("  Sin dato (se dejan vacíos, para revisar): %d"
                    % counts[None])
+        if odd:
+            _log_plain("")
+            _log_plain("PARA REVISAR (%d)" % len(odd))
+            for number, line in enumerate(odd, start=1):
+                _log_plain("  %d. %s" % (number, line))
         _log_plain("  %s" % ("Escritos." if apply
                              else "Nada escrito (simulación)."))
         log_file.close()
