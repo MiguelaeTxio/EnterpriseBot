@@ -367,8 +367,13 @@ def _recipients_context(editor):
         "options": {
             "personal_companies": company_options,
             "personal_groups": [
-                {"id": g.pk, "label": g.name}
-                for g in PersonGroupTemplate.objects.order_by("name")
+                # S147: con su ruta ("Plataformas › Comercial").
+                {"id": g.pk, "label": g.path_label()}
+                for g in sorted(
+                    PersonGroupTemplate.objects.select_related(
+                        "parent__parent"),
+                    key=lambda g: g.path_label().upper(),
+                )
             ],
             "personal_persons": [
                 {

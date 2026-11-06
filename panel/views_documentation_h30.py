@@ -1440,9 +1440,19 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
         # Company a propósito (PersonGroupTemplate cruza empresas por
         # diseño), cargado una única vez igual que el resto de esta
         # barra de acción masiva.
-        ctx["person_groups"] = PersonGroupTemplate.objects.prefetch_related(
-            "members",
-        ).order_by("name")
+        # S147: en árbol (panel/person_groups.py), con los padres que
+        # se pliegan recordados por usuario (screen_key "person_groups").
+        from panel.person_groups import group_tree, parent_choices
+
+        ctx["person_group_nodes"] = group_tree()
+        ctx["person_group_parents"] = parent_choices()
+        collapsed = get_saved_state_key(
+            request.user.company_user, "person_groups", "collapsed", [],
+        )
+        ctx["person_groups_collapsed"] = (
+            [str(pk) for pk in collapsed] if isinstance(collapsed, list)
+            else []
+        )
         # H31 (S109): catálogo de puestos para la acción masiva nueva
         # "Asignar puesto" -- mismo criterio que person_groups, cargado
         # una única vez en la carga inicial de la pestaña.
@@ -6771,64 +6781,76 @@ class PersonGroupTemplateSaveView(DocsUploadAccessMixin, View):
     el propio caso de uso (chalecos a choferes de varias empresas)
     exige poder mezclarlas en un mismo grupo.
 
-    Sustituye a `PersonGroupTemplateCreateView` (S109, solo creaba) --
-    unificado con el mismo patrón guardar/eliminar que
-    `EpiBatchTemplateSaveView`, ahora que la gestión de grupos vive
-    centralizada en esta misma pestaña (visor de grupos guardados +
-    panel de gestión + visor de la selección actual).
-
-    Devuelve `member_names` (ya formateados "Apellidos, Nombre") junto
-    a los `members` (pks), para que el visor de la derecha pueda
-    pintarse sin tener que resolver nombres por separado.
+    S147: grupos en árbol -- `parent_id` dice dentro de qué grupo va;
+    las reglas (un grupo con subgrupos no tiene personas sueltas...)
+    están en panel/person_groups.save_group. Devuelve el árbol pintado
+    de nuevo (`tree_html`) además de los miembros del grupo guardado.
     """
 
     def post(self, request, group_pk=None):
+        from django.template.loader import render_to_string
+
+        from panel.person_groups import (
+            GroupError, group_tree, parent_choices, save_group,
+        )
+
         if group_pk:
             group = get_object_or_404(PersonGroupTemplate, pk=group_pk)
         else:
             group = PersonGroupTemplate(created_by=request.user.company_user)
-
-        name = request.POST.get("name", "").strip()
-        person_ids = request.POST.getlist("person_ids")
-
-        if not name:
-            return JsonResponse(
-                {"ok": False, "error": "Falta el nombre del grupo."},
-                status=400,
+        try:
+            group, people = save_group(
+                group, request.POST.get("name", ""),
+                request.POST.get("parent_id", ""),
+                request.POST.getlist("person_ids"),
             )
-        if not person_ids:
-            return JsonResponse(
-                {"ok": False, "error": "No hay ninguna persona seleccionada."},
-                status=400,
-            )
-
-        group.name = name
-        group.save()
-        people = PersonIdentity.objects.filter(pk__in=person_ids)
-        group.members.set(people)
-
+        except GroupError as exc:
+            return JsonResponse({"ok": False, "error": str(exc)}, status=400)
         return JsonResponse({
             "ok": True,
             "id": group.pk,
             "name": group.name,
-            "members": [p.pk for p in people],
+            "members": [p.pk for p in people] if not
+            group.children.exists() else [],
             "member_names": [
                 "%s %s, %s" % (p.first_surname, p.second_surname, p.given_name)
                 for p in people
-            ],
+            ] if not group.children.exists() else [],
+            "tree_html": render_to_string(
+                "panel/documentation_h30/_person_groups_tree.html",
+                {"person_group_nodes": group_tree()}, request=request,
+            ),
+            "parents": parent_choices(),
         })
 
 
 class PersonGroupTemplateDeleteView(DocsUploadAccessMixin, View):
     """
-    H31 (S113). POST: borra un grupo de reparto -- nunca toca a las
-    personas en sí, solo el conjunto guardado con nombre.
+    H31 (S113). POST: borra un grupo de selección -- nunca toca a las
+    personas en sí, solo el conjunto guardado con nombre. S147: uno con
+    subgrupos no se borra (primero sus subgrupos).
     """
 
     def post(self, request, group_pk):
+        from django.template.loader import render_to_string
+
+        from panel.person_groups import (
+            GroupError, delete_group, group_tree, parent_choices,
+        )
+
         group = get_object_or_404(PersonGroupTemplate, pk=group_pk)
-        group.delete()
-        return JsonResponse({"ok": True})
+        try:
+            delete_group(group)
+        except GroupError as exc:
+            return JsonResponse({"ok": False, "error": str(exc)}, status=400)
+        return JsonResponse({
+            "ok": True,
+            "tree_html": render_to_string(
+                "panel/documentation_h30/_person_groups_tree.html",
+                {"person_group_nodes": group_tree()}, request=request,
+            ),
+            "parents": parent_choices(),
+        })
 
 
 class PersonalNotificationMassSendView(DocsUploadAccessMixin, View):

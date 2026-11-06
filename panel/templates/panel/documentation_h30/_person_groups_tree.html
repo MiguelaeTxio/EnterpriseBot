@@ -1,0 +1,34 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_person_groups_tree.html #}
+{% comment %}
+S147. Grupos de selección en árbol (panel/person_groups.group_tree):
+cada grupo con su casilla; los que tienen subgrupos se pliegan y su
+casilla marca todos sus subgrupos. Las personas viajan en data-* (las
+suyas; un grupo con subgrupos no tiene sueltas). El JS de
+_personal_pane.html junta las personas de los grupos marcados.
+{% endcomment %}
+{% for node in person_group_nodes %}
+<li class="list-group-item px-1 py-0 person-group-node" id="personGroupRow{{ node.group.pk }}"
+    data-pk="{{ node.group.pk }}"
+    data-parent="{{ node.group.parent_id|default:'' }}"
+    data-children="{{ node.children|join:',' }}"
+    data-name="{{ node.group.name }}"
+    data-member-ids="{{ node.member_ids|join:',' }}"
+    data-member-names="{{ node.member_names|join:'||' }}"
+    style="padding-left: {{ node.indent }}rem !important;">
+    <div class="d-flex align-items-center gap-1">
+        {% if node.children %}
+        <button type="button" class="btn btn-link btn-sm p-0 text-dark person-group-toggle" data-pk="{{ node.group.pk }}" title="Desplegar o plegar">
+            <i class="bi bi-chevron-down"></i>
+        </button>
+        {% else %}
+        <span class="d-inline-block" style="width: 1rem;"></span>
+        {% endif %}
+        <div class="form-check mb-0">
+            <input class="form-check-input person-group-select-checkbox" type="checkbox" id="personGroupSelect{{ node.group.pk }}" data-pk="{{ node.group.pk }}">
+            <label class="form-check-label{% if node.children %} fw-semibold{% endif %}" for="personGroupSelect{{ node.group.pk }}">{{ node.group.name }} ({{ node.total }})</label>
+        </div>
+    </div>
+</li>
+{% empty %}
+<li class="list-group-item px-1 py-0 text-muted" id="personGroupEmptyRow">Sin grupos guardados todavía.</li>
+{% endfor %}

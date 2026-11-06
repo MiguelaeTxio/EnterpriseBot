@@ -2792,6 +2792,18 @@ class PersonGroupTemplate(models.Model):
         max_length=150,
         verbose_name="Nombre del grupo",
     )
+    # S147 (Miguel Ángel): grupos en árbol ("Grúas" > Administración,
+    # Operarios; "Plataformas" > Administración, Comercial...). Un grupo
+    # con subgrupos no tiene miembros sueltos: sus miembros son los de
+    # sus subgrupos.
+    parent = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="children",
+        verbose_name="Dentro de",
+    )
     members = models.ManyToManyField(
         "document_explorer.PersonIdentity",
         related_name="group_templates",
@@ -2822,7 +2834,45 @@ class PersonGroupTemplate(models.Model):
         ordering = ["name"]
 
     def __str__(self):
-        return self.name
+        return self.path_label()
+
+    def path_label(self):
+        """
+        "Parent › Child" label of the group.
+        ---
+        Nombre con su ruta ("Plataformas › Comercial").
+        """
+        names, node, seen = [], self, set()
+        while node is not None and node.pk not in seen:
+            seen.add(node.pk)
+            names.append(node.name)
+            node = node.parent
+        return " › ".join(reversed(names))
+
+    def descendant_ids(self):
+        """
+        Pks of this group and all its subgroups.
+        ---
+        Pks de este grupo y de todos sus subgrupos (a cualquier nivel).
+        """
+        found, pending = {self.pk}, [self.pk]
+        while pending:
+            children = list(PersonGroupTemplate.objects.filter(
+                parent_id__in=pending).values_list("pk", flat=True))
+            pending = [pk for pk in children if pk not in found]
+            found.update(pending)
+        return found
+
+    def all_member_ids(self):
+        """
+        People of the group: its own or, with subgroups, theirs.
+        ---
+        Personas del grupo: las suyas o, si tiene subgrupos, las de
+        todos ellos.
+        """
+        return set(PersonIdentity.objects.filter(
+            group_templates__in=self.descendant_ids(),
+        ).values_list("pk", flat=True))
 
 
 class JobPosition(models.Model):

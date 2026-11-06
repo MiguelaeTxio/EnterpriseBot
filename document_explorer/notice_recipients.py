@@ -205,8 +205,9 @@ def load_scopes(company=None):
         )
         if scope is not None:
             person_ids = {p.pk for p in scope.personal_persons.all()}
+            # S147: un grupo con subgrupos vale por todos ellos.
             for group in scope.personal_groups.all():
-                person_ids |= {p.pk for p in group.members.all()}
+                person_ids |= group.all_member_ids()
             snapshot.whatsapp_enabled = scope.whatsapp_enabled
             snapshot.personal_all = scope.personal_all
             snapshot.personal_companies = {

@@ -64,31 +64,24 @@ pantalla completa aparte, no un fragmento htmx de este pane.
             {# S147: antes "Grupos de reparto" (Miguel Ángel: "grupos de selección, que es más acorde con lo que hace"). #}
             <div class="fw-bold small mb-1">Grupos de selección</div>
             <div class="mb-1 ppane-scroll-fill">
-                <ul class="list-group list-group-flush small" id="personGroupSavedList">
-                    {% for group in person_groups %}
-                    <li class="list-group-item px-1 py-0" id="personGroupRow{{ group.pk }}"
-                        data-name="{{ group.name }}"
-                        data-member-ids="{% for m in group.members.all %}{{ m.pk }}{% if not forloop.last %},{% endif %}{% endfor %}"
-                        data-member-names="{% for m in group.members.all %}{{ m.first_surname }} {{ m.second_surname }}, {{ m.given_name }}{% if not forloop.last %}||{% endif %}{% endfor %}">
-                        <div class="form-check">
-                            <input class="form-check-input person-group-select-checkbox" type="checkbox" id="personGroupSelect{{ group.pk }}" data-pk="{{ group.pk }}" onchange="onPersonGroupSelectChange(this)">
-                            <label class="form-check-label" for="personGroupSelect{{ group.pk }}">{{ group.name }} ({{ group.members.count }})</label>
-                        </div>
-                    </li>
-                    {% empty %}
-                    <li class="list-group-item px-1 py-0 text-muted" id="personGroupEmptyRow">Sin grupos guardados todavía.</li>
-                    {% endfor %}
+                <ul class="list-group list-group-flush small" id="personGroupSavedList" data-collapsed="{{ person_groups_collapsed|join:',' }}">
+                    {% include "panel/documentation_h30/_person_groups_tree.html" %}
                 </ul>
             </div>
             <hr class="my-1">
             <p class="text-muted small mb-0" id="personGroupManagementEmpty">
-                Selecciona un grupo, o marca personas en el listado para empezar uno nuevo.
+                Marca uno o varios grupos (la selección es la suma), o marca personas en el listado para empezar uno nuevo.
             </p>
             <div id="personGroupManagementForm" class="d-none">
                 <div class="input-group input-group-sm mb-1">
                     <input type="text" id="personGroupName" class="form-control form-control-sm" placeholder="Nombre del grupo">
                     <button type="button" class="btn btn-sm btn-primary" id="personGroupSaveBtn" onclick="savePersonGroup()">Guardar</button>
                 </div>
+                {# S147: dónde va el grupo (solo grupos sin personas sueltas pueden tener subgrupos). #}
+                <select id="personGroupParent" class="form-select form-select-sm mb-1" aria-label="Dentro de" title="Dentro de qué grupo va. Un grupo con subgrupos no tiene personas sueltas.">
+                    <option value="">Dentro de: ninguno (grupo principal)</option>
+                    {% for parent in person_group_parents %}<option value="{{ parent.pk }}">Dentro de: {{ parent.label }}</option>{% endfor %}
+                </select>
                 {% comment %}
                 S147 (Miguel Ángel): con un grupo cargado, desmarcar a alguien
                 lo quita y marcar a alguien (con cualquier filtro) lo añade;
@@ -727,45 +720,68 @@ las filas de debajo se desplacen de verdad.
         resultEl.innerHTML = '';
     });
 
-    // H31 (S113): CRUD de grupos de reparto, centralizado en esta
-    // pestaña (antes un simple <select> + "Cargar"/"Guardar", con un
-    // fallo real: no había forma de VER quién quedaba seleccionado al
-    // cargar un grupo cuyos miembros no estuvieran en la página/filtro
-    // visible en ese momento -- ahora el visor de la derecha lo deja
-    // siempre claro). Mismo patrón que EpiBatchTemplateSaveView.
+    // H31 (S113): CRUD de grupos de selección, centralizado en esta
+    // pestaña. S147 (Miguel Ángel): en árbol -- "puedes seleccionar
+    // varios grupos hijos, como con casillero": la selección es la suma
+    // de las personas de los grupos marcados; la casilla de un grupo con
+    // subgrupos marca todos sus subgrupos. Se edita el grupo cuando está
+    // marcado él solo (con sus subgrupos, si los tiene).
     let personGroupEditingPk = '';
-    // S147: miembros guardados del grupo cargado, para ver qué cambia.
     let personGroupSavedIds = new Set();
     let personGroupSavedNames = new Map();
+    const groupList = document.getElementById('personGroupSavedList');
+
+    function groupRow(pk) { return document.getElementById('personGroupRow' + pk); }
+    function groupChildren(pk) {
+        const row = groupRow(pk);
+        return row && row.dataset.children ? row.dataset.children.split(',').filter(Boolean) : [];
+    }
+    function groupDescendants(pk) {
+        const out = [];
+        const stack = groupChildren(pk);
+        while (stack.length) {
+            const child = stack.pop();
+            out.push(child);
+            groupChildren(child).forEach((c) => stack.push(c));
+        }
+        return out;
+    }
+    function groupCheckbox(pk) { return document.getElementById('personGroupSelect' + pk); }
+    function checkedGroups() {
+        return Array.from(document.querySelectorAll('.person-group-select-checkbox:checked')).map((el) => el.dataset.pk);
+    }
 
     function refreshPersonGroupDiff() {
         const box = document.getElementById('personGroupDiff');
         const saveBtn = document.getElementById('personGroupSaveBtn');
         if (!box || !saveBtn) return;
+        const editingParent = personGroupEditingPk && groupChildren(personGroupEditingPk).length > 0;
+        saveBtn.classList.add('btn-primary');
+        saveBtn.classList.remove('btn-warning');
+        saveBtn.textContent = 'Guardar';
         if (!personGroupEditingPk) {
-            box.classList.add('d-none');
-            box.innerHTML = '';
-            saveBtn.textContent = 'Guardar';
-            saveBtn.classList.add('btn-primary');
-            saveBtn.classList.remove('btn-warning');
+            const many = checkedGroups().length > 1;
+            box.classList.toggle('d-none', !many);
+            box.innerHTML = many ? '<span class="text-muted">Varios grupos marcados: la selección es la suma de sus personas. Para cambiar uno, márcalo solo; Guardar crea un grupo nuevo con esta selección.</span>' : '';
+            return;
+        }
+        if (editingParent) {
+            box.classList.remove('d-none');
+            box.innerHTML = '<span class="text-muted">Grupo con subgrupos: no tiene personas sueltas. Aquí se cambia su nombre o dónde va; las personas, en cada subgrupo.</span>';
             return;
         }
         const added = Array.from(selection).filter((pk) => !personGroupSavedIds.has(pk));
         const removed = Array.from(personGroupSavedIds).filter((pk) => !selection.has(pk));
         const label = (pk) => selectionNames.get(pk) || personGroupSavedNames.get(pk) || ('Trabajador #' + pk);
+        box.classList.remove('d-none');
         if (!added.length && !removed.length) {
-            box.classList.remove('d-none');
             box.innerHTML = '<span class="text-muted">Sin cambios: desmarca a alguien para quitarlo o marca a otro (con cualquier filtro) para añadirlo.</span>';
-            saveBtn.textContent = 'Guardar';
-            saveBtn.classList.add('btn-primary');
-            saveBtn.classList.remove('btn-warning');
             return;
         }
         let html = '<div class="fw-semibold">Cambios sin guardar</div>';
         if (added.length) html += '<div class="text-success">+ Se añaden (' + added.length + '): ' + added.map(label).sort().join('; ') + '</div>';
         if (removed.length) html += '<div class="text-danger">− Se quitan (' + removed.length + '): ' + removed.map(label).sort().join('; ') + '</div>';
         box.innerHTML = html;
-        box.classList.remove('d-none');
         saveBtn.textContent = 'Actualizar el grupo';
         saveBtn.classList.remove('btn-primary');
         saveBtn.classList.add('btn-warning');
@@ -777,55 +793,118 @@ las filas de debajo se desplacen de verdad.
         document.getElementById('personGroupManagementForm').classList.remove('d-none');
     }
 
-    function onPersonGroupSelectChange(checkbox) {
-        if (checkbox.checked) {
-            document.querySelectorAll('.person-group-select-checkbox').forEach((el) => {
-                if (el !== checkbox) el.checked = false;
+    // Personas de los grupos marcados (solo los que tienen personas).
+    function applyCheckedGroupsToSelection() {
+        selection.clear();
+        checkedGroups().forEach((pk) => {
+            const row = groupRow(pk);
+            if (!row) return;
+            const ids = (row.dataset.memberIds || '').split(',').filter(Boolean);
+            const names = (row.dataset.memberNames || '').split('||').filter(Boolean);
+            ids.forEach((id, i) => {
+                selection.add(id);
+                if (names[i]) selectionNames.set(id, names[i]);
             });
-            loadPersonGroupIntoForm(checkbox.dataset.pk);
+        });
+    }
+
+    function setEditingTarget(pk) {
+        // Se edita `pk` solo si lo marcado es él y sus subgrupos.
+        const checked = new Set(checkedGroups());
+        const expected = new Set([pk].concat(groupDescendants(pk)));
+        const isTarget = pk && checked.size === expected.size && Array.from(checked).every((g) => expected.has(g));
+        const parentSelect = document.getElementById('personGroupParent');
+        if (isTarget) {
+            const row = groupRow(pk);
+            personGroupEditingPk = String(pk);
+            const ids = (row.dataset.memberIds || '').split(',').filter(Boolean);
+            const names = (row.dataset.memberNames || '').split('||').filter(Boolean);
+            personGroupSavedIds = new Set(ids);
+            personGroupSavedNames = new Map(ids.map((id, i) => [id, names[i] || '']));
+            document.getElementById('personGroupName').value = row.dataset.name || '';
+            parentSelect.value = row.dataset.parent || '';
+            // No se puede meter en sí mismo ni en un subgrupo suyo.
+            const banned = new Set([String(pk)].concat(groupDescendants(pk)));
+            Array.from(parentSelect.options).forEach((opt) => { opt.disabled = banned.has(opt.value); });
+            document.getElementById('personGroupDeleteBtn').classList.remove('d-none');
         } else {
-            resetPersonGroupForm();
+            personGroupEditingPk = '';
+            personGroupSavedIds = new Set();
+            personGroupSavedNames = new Map();
+            Array.from(parentSelect.options).forEach((opt) => { opt.disabled = false; });
+            document.getElementById('personGroupDeleteBtn').classList.add('d-none');
         }
     }
-    window.onPersonGroupSelectChange = onPersonGroupSelectChange;
 
-    function loadPersonGroupIntoForm(pk) {
-        const row = document.getElementById('personGroupRow' + pk);
-        if (!row) return;
-        const name = row.dataset.name || '';
-        const ids = (row.dataset.memberIds || '').split(',').filter(Boolean);
-        const names = (row.dataset.memberNames || '').split('||').filter(Boolean);
-
-        personGroupEditingPk = String(pk);
-        personGroupSavedIds = new Set(ids);
-        personGroupSavedNames = new Map(ids.map((id, i) => [id, names[i] || '']));
-        activatePersonGroupManagement();
-        document.getElementById('personGroupName').value = name;
-        document.getElementById('personGroupDeleteBtn').classList.remove('d-none');
-
-        // "Cargar grupo" sustituye la selección actual por EXACTAMENTE
-        // los miembros del grupo -- nunca se acumula sobre lo que
-        // hubiera marcado antes.
-        selection.clear();
-        ids.forEach((id, i) => {
-            selection.add(id);
-            if (names[i]) selectionNames.set(id, names[i]);
+    function onPersonGroupSelectChange(checkbox) {
+        const pk = checkbox.dataset.pk;
+        // La casilla de un grupo con subgrupos los marca o desmarca todos.
+        groupDescendants(pk).forEach((child) => {
+            const cb = groupCheckbox(child);
+            if (cb) cb.checked = checkbox.checked;
         });
+        // Un padre queda marcado si lo están todos sus hijos.
+        let parent = groupRow(pk) && groupRow(pk).dataset.parent;
+        while (parent) {
+            const kids = groupChildren(parent);
+            const cb = groupCheckbox(parent);
+            if (cb) cb.checked = kids.every((k) => groupCheckbox(k) && groupCheckbox(k).checked);
+            parent = groupRow(parent) && groupRow(parent).dataset.parent;
+        }
+        activatePersonGroupManagement();
+        applyCheckedGroupsToSelection();
+        // Grupo a editar: el único marcado sin su padre marcado.
+        const checkedSet = new Set(checkedGroups());
+        const roots = Array.from(checkedSet).filter((g) => {
+            const row = groupRow(g);
+            return !(row && row.dataset.parent && checkedSet.has(row.dataset.parent));
+        });
+        setEditingTarget(roots.length === 1 ? roots[0] : '');
+        if (!checkedGroups().length) {
+            document.getElementById('personGroupName').value = '';
+        }
+        document.getElementById('personGroupFormResult').innerHTML = '';
         syncCheckboxesToSelection();
         refreshBar();
         refreshPersonSelectionPreview();
     }
-    window.loadPersonGroupIntoForm = loadPersonGroupIntoForm;
+    window.onPersonGroupSelectChange = onPersonGroupSelectChange;
+
+    // Plegar/desplegar, recordado por usuario (screen_key "person_groups").
+    let collapsedGroups = new Set((groupList.dataset.collapsed || '').split(',').filter(Boolean));
+    function applyCollapsed() {
+        groupList.querySelectorAll('.person-group-node').forEach((row) => {
+            let hidden = false;
+            let parent = row.dataset.parent;
+            while (parent) {
+                if (collapsedGroups.has(parent)) { hidden = true; break; }
+                parent = groupRow(parent) && groupRow(parent).dataset.parent;
+            }
+            row.classList.toggle('d-none', hidden);
+            const icon = row.querySelector('.person-group-toggle i');
+            if (icon) icon.className = collapsedGroups.has(row.dataset.pk) ? 'bi bi-chevron-right' : 'bi bi-chevron-down';
+        });
+    }
+    groupList.addEventListener('click', function (ev) {
+        const toggle = ev.target.closest('.person-group-toggle');
+        if (!toggle) return;
+        const pk = toggle.dataset.pk;
+        if (collapsedGroups.has(pk)) collapsedGroups.delete(pk); else collapsedGroups.add(pk);
+        applyCollapsed();
+        window.EbNavState.save('person_groups', {collapsed: Array.from(collapsedGroups)});
+    });
+    groupList.addEventListener('change', function (ev) {
+        if (ev.target.classList.contains('person-group-select-checkbox')) onPersonGroupSelectChange(ev.target);
+    });
+    applyCollapsed();
 
     function resetPersonGroupForm() {
-        personGroupEditingPk = '';
-        personGroupSavedIds = new Set();
-        personGroupSavedNames = new Map();
-        refreshPersonGroupDiff();
-        document.getElementById('personGroupName').value = '';
-        document.getElementById('personGroupDeleteBtn').classList.add('d-none');
         document.querySelectorAll('.person-group-select-checkbox').forEach((el) => { el.checked = false; });
+        setEditingTarget('');
+        document.getElementById('personGroupName').value = '';
+        document.getElementById('personGroupParent').value = '';
         document.getElementById('personGroupFormResult').innerHTML = '';
+        refreshPersonGroupDiff();
     }
     window.resetPersonGroupForm = resetPersonGroupForm;
 
@@ -841,44 +920,41 @@ las filas de debajo se desplacen de verdad.
         new bootstrap.Toast(toastEl).show();
     }
 
-    function upsertPersonGroupRow(pk, name, memberIds, memberNames) {
-        let row = document.getElementById('personGroupRow' + pk);
-        if (!row) {
-            const emptyRow = document.getElementById('personGroupEmptyRow');
-            if (emptyRow) emptyRow.remove();
-            row = document.createElement('li');
-            row.className = 'list-group-item px-1 py-1';
-            row.id = 'personGroupRow' + pk;
-            row.innerHTML = `
-                <div class="form-check">
-                    <input class="form-check-input person-group-select-checkbox" type="checkbox" id="personGroupSelect${pk}" data-pk="${pk}" onchange="onPersonGroupSelectChange(this)">
-                    <label class="form-check-label" for="personGroupSelect${pk}"></label>
-                </div>`;
-            document.getElementById('personGroupSavedList').appendChild(row);
-        }
-        row.dataset.name = name;
-        row.dataset.memberIds = memberIds.join(',');
-        row.dataset.memberNames = memberNames.join('||');
-        row.querySelector('label').textContent = `${name} (${memberIds.length})`;
-        document.querySelectorAll('.person-group-select-checkbox').forEach((el) => {
-            el.checked = (el.dataset.pk === String(pk));
+    // Repinta el árbol y el desplegable "Dentro de" tras guardar o borrar.
+    function redrawGroups(data, checkPk) {
+        groupList.innerHTML = data.tree_html;
+        const parentSelect = document.getElementById('personGroupParent');
+        parentSelect.innerHTML = '<option value="">Dentro de: ninguno (grupo principal)</option>' +
+            (data.parents || []).map((p) => '<option value="' + p.pk + '"></option>').join('');
+        Array.from(parentSelect.options).forEach((opt, i) => {
+            if (i > 0) opt.textContent = 'Dentro de: ' + data.parents[i - 1].label;
         });
+        applyCollapsed();
+        if (checkPk) {
+            const cb = groupCheckbox(checkPk);
+            if (cb) { cb.checked = true; groupDescendants(checkPk).forEach((c) => { const k = groupCheckbox(c); if (k) k.checked = true; }); }
+            setEditingTarget(String(checkPk));
+        } else {
+            setEditingTarget('');
+        }
+        refreshPersonGroupDiff();
     }
 
     function savePersonGroup() {
         const name = document.getElementById('personGroupName').value.trim();
+        const parentId = document.getElementById('personGroupParent').value;
         const resultDiv = document.getElementById('personGroupFormResult');
         if (!name) {
             resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Falta el nombre del grupo.</div>';
             return;
         }
-        if (selection.size === 0) {
-            resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">No hay ninguna persona seleccionada.</div>';
-            return;
-        }
+        const editingParent = personGroupEditingPk && groupChildren(personGroupEditingPk).length > 0;
         const formData = new FormData();
         formData.append('name', name);
-        selection.forEach((pk) => formData.append('person_ids', pk));
+        formData.append('parent_id', parentId);
+        // Un grupo con subgrupos no tiene personas sueltas; uno sin
+        // personas marcadas queda como carpeta para colgarle otros.
+        if (!editingParent) selection.forEach((pk) => formData.append('person_ids', pk));
 
         const url = personGroupEditingPk
             ? `/panel/documentacion/personal/grupos/${personGroupEditingPk}/guardar/`
@@ -890,12 +966,8 @@ las filas de debajo se desplacen de verdad.
         }).then((r) => r.json()).then((data) => {
             if (data.ok) {
                 resultDiv.innerHTML = '';
-                upsertPersonGroupRow(data.id, data.name, data.members.map(String), data.member_names);
-                personGroupEditingPk = String(data.id);
-                personGroupSavedIds = new Set(data.members.map(String));
-                personGroupSavedNames = new Map(data.members.map((id, i) => [String(id), data.member_names[i] || '']));
-                refreshPersonGroupDiff();
-                document.getElementById('personGroupDeleteBtn').classList.remove('d-none');
+                document.querySelectorAll('.person-group-select-checkbox').forEach((el) => { el.checked = false; });
+                redrawGroups(data, data.id);
                 showPersonGroupToast('Grupo guardado.');
             } else {
                 resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al guardar.'}</div>`;
@@ -910,23 +982,17 @@ las filas de debajo se desplacen de verdad.
         if (!personGroupEditingPk) return;
         if (!confirm('¿Eliminar este grupo? No afecta a las personas en sí.')) return;
         const pk = personGroupEditingPk;
+        const resultDiv = document.getElementById('personGroupFormResult');
         fetch(`/panel/documentacion/personal/grupos/${pk}/eliminar/`, {
             method: 'POST',
             headers: {'X-CSRFToken': getCookie('csrftoken')},
         }).then((r) => r.json()).then((data) => {
             if (data.ok) {
-                const row = document.getElementById('personGroupRow' + pk);
-                if (row) row.remove();
-                const list = document.getElementById('personGroupSavedList');
-                if (!list.children.length) {
-                    const li = document.createElement('li');
-                    li.className = 'list-group-item px-1 py-1 text-muted';
-                    li.id = 'personGroupEmptyRow';
-                    li.textContent = 'Sin grupos guardados todavía.';
-                    list.appendChild(li);
-                }
-                resetPersonGroupForm();
+                redrawGroups(data, '');
+                document.getElementById('personGroupName').value = '';
                 showPersonGroupToast('Grupo eliminado.');
+            } else {
+                resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'No se ha podido eliminar.'}</div>`;
             }
         });
     }
