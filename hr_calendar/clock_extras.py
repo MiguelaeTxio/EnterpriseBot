@@ -54,48 +54,50 @@ MAX_TRIPS_PER_RENDER = 20
 # Bolsa de horas extras
 # ---------------------------------------------------------------------------
 
-def _scheduled_seconds(starts, ends):
-    """
-    Planned seconds of a day from its start and end times.
-    ---
-    Segundos previstos de un día: cada entrada con su salida (mañana y,
-    en jornada partida, tarde); una salida antes de su entrada es del
-    día siguiente (turno de noche).
-    """
-    total = 0
-    for start, end in zip(sorted(starts), sorted(ends)):
-        minutes = (end.hour * 60 + end.minute) - (
-            start.hour * 60 + start.minute)
-        if minutes <= 0:
-            minutes += 24 * 60
-        total += minutes * 60
-    return total
+# S143 (convenio, art. 23): "horas extraordinarias las horas de trabajo
+# efectivo que excedan de la jornada en su cómputo mensual, es decir,
+# días laborales del mes por ocho horas diarias".
+DAILY_SECONDS = 8 * 3600
 
 
-def day_excess(shifts, times_of, is_day_compared, has_hours):
+def month_overtime(shifts, required_day, date_from, date_to, today=None):
     """
-    {day: seconds worked above the schedule} of one worker's shifts.
+    {first day of month: {"worked", "required", "excess"}} (seconds).
     ---
-    {día: segundos trabajados por encima del horario}. Solo días con
-    todas las jornadas cerradas y con algo de más; {} sin horario o con
-    horario abierto.
+    Cómputo mensual del convenio (art. 23, S143): por cada mes del
+    intervalo, el trabajo efectivo de las jornadas cerradas (lo que
+    cuenta como jornada: ni presencia, ni desplazamiento, ni pausas) y
+    la jornada del mes, días laborables (`required_day`) por 8 horas;
+    lo que pasa son horas extra. Solo hasta hoy: el día de hoy cuenta
+    cuando sus jornadas están cerradas, y uno con alguna abierta no
+    cuenta ni lo trabajado ni la jornada.
     """
-    if not has_hours:
-        return {}
+    today = today or timezone.localdate()
     by_day = {}
     for shift in shifts:
-        by_day.setdefault(shift.day, []).append(shift)
+        if date_from <= shift.day <= date_to:
+            by_day.setdefault(shift.day, []).append(shift)
+    open_days = {day for day, same in by_day.items()
+                 if any(s.clock_in is None or s.clock_out is None
+                        for s in same)}
     result = {}
+
+    def month(day):
+        return result.setdefault(day.replace(day=1), {
+            "worked": 0, "required": 0, "excess": 0})
+
     for day, same in by_day.items():
-        if any(s.clock_in is None or s.clock_out is None for s in same):
-            continue
-        worked = sum(s.seconds for s in same)
-        planned = 0
-        if is_day_compared(day):
-            starts, ends = times_of(day)
-            planned = _scheduled_seconds(starts, ends)
-        if worked > planned:
-            result[day] = worked - planned
+        if day not in open_days and day <= today:
+            month(day)["worked"] += sum(s.seconds for s in same)
+    day = date_from
+    last = min(date_to, today)
+    while day <= last:
+        if day not in open_days and required_day(day) and (
+                day < today or day in by_day):
+            month(day)["required"] += DAILY_SECONDS
+        day += datetime.timedelta(days=1)
+    for values in result.values():
+        values["excess"] = max(values["worked"] - values["required"], 0)
     return result
 
 
@@ -115,16 +117,18 @@ def monthly_cap_seconds(company):
     return minutes * 60
 
 
-def split_by_month(day_excess, cap_seconds):
+def split_by_month(month_excess, cap_seconds, months=None):
     """
-    The daily excess grouped by month, split at the monthly cap.
+    The monthly overtime split at the monthly cap.
     ---
-    Lo de más de cada día agrupado por mes (S143): hasta el tope son
-    horas extra; lo que pasa del tope, horas acumuladas. Lista ordenada
-    de {"month", "excess", "extra", "accumulated"} (segundos).
+    Las horas extra de cada mes (S143, cómputo mensual del convenio)
+    partidas por el tope: hasta el tope, cupo; lo que pasa, bolsa. Lista
+    ordenada de {"month", "excess", "extra", "accumulated", "worked",
+    "required"} (segundos; trabajado y jornada si se pasan `months`).
     """
+    months = months or {}
     by_month = {}
-    for day, seconds in day_excess.items():
+    for day, seconds in month_excess.items():
         month = day.replace(day=1)
         by_month[month] = by_month.get(month, 0) + seconds
     return [
@@ -133,6 +137,8 @@ def split_by_month(day_excess, cap_seconds):
             "excess": total,
             "extra": min(total, cap_seconds),
             "accumulated": max(total - cap_seconds, 0),
+            "worked": months.get(month, {}).get("worked", 0),
+            "required": months.get(month, {}).get("required", 0),
         }
         for month, total in sorted(by_month.items())
     ]
@@ -160,7 +166,8 @@ def overtime_bag(company, company_user, until=None):
     ).get(company_user.pk)
     cap = monthly_cap_seconds(company)
     months = split_by_month(
-        report.day_excess if report is not None else {}, cap,
+        report.month_excess if report is not None else {}, cap,
+        report.months if report is not None else None,
     )
     worked = sum(m["excess"] for m in months)
     accumulated = sum(m["accumulated"] for m in months)
@@ -212,7 +219,7 @@ def overtime_bags(company, company_user_ids, until=None):
     result = {}
     for pk in ids:
         months = split_by_month(
-            reports[pk].day_excess if pk in reports else {}, cap,
+            reports[pk].month_excess if pk in reports else {}, cap,
         )
         result[pk] = (sum(m["accumulated"] for m in months)
                       + (moved.get(pk) or 0) * 60)

@@ -14,7 +14,7 @@ Vista: panel/views_clock_extras.py.
 {# S143: cada mes, hasta el tope son horas extra; lo que pasa, horas acumuladas. #}
 <table class="table table-sm small mb-2">
     <tbody>
-        <tr><td>Trabajado por encima del horario desde el {{ bag.since|date:"d/m/Y" }}</td><td class="text-end text-nowrap">{{ bag.worked_label }} h</td></tr>
+        <tr><td>Horas extra desde el {{ bag.since|date:"d/m/Y" }} (cada mes, trabajo efectivo menos días laborables × 8 h)</td><td class="text-end text-nowrap">{{ bag.worked_label }} h</td></tr>
         <tr><td>Horas extra (hasta {{ bag.cap_label }} h cada mes)</td><td class="text-end text-nowrap">{{ bag.extra_label }} h</td></tr>
         <tr><td>Lo que pasa del tope cada mes</td><td class="text-end text-nowrap">{{ bag.accumulated_label }} h</td></tr>
         <tr><td>Movimientos a mano (horas compensadas, días libres, añadidas)</td><td class="text-end text-nowrap">{{ bag.adjust_label }} h</td></tr>
@@ -24,10 +24,10 @@ Vista: panel/views_clock_extras.py.
 {% if bag.month_rows %}
 <div class="fw-semibold small mb-1">Por meses</div>
 <table class="table table-sm small mb-2">
-    <thead><tr><th>Mes</th><th class="text-end">De más</th><th class="text-end">Horas extra</th><th class="text-end">Acumuladas</th></tr></thead>
+    <thead><tr><th>Mes</th><th class="text-end" title="Trabajo efectivo de las jornadas cerradas">Trabajado</th><th class="text-end" title="Días laborables del mes por 8 horas (convenio, art. 23)">Jornada</th><th class="text-end">De más</th><th class="text-end">Cupo</th><th class="text-end">Bolsa</th></tr></thead>
     <tbody>
         {% for m in bag.month_rows %}
-        <tr><td class="text-nowrap">{{ m.month|date:"F Y"|capfirst }}</td><td class="text-end">{{ m.excess_label }}</td><td class="text-end">{{ m.extra_label }}</td><td class="text-end">{{ m.accumulated_label }}</td></tr>
+        <tr><td class="text-nowrap">{{ m.month|date:"F Y"|capfirst }}</td><td class="text-end">{{ m.worked_label }}</td><td class="text-end">{{ m.required_label }}</td><td class="text-end">{{ m.excess_label }}</td><td class="text-end">{{ m.extra_label }}</td><td class="text-end">{{ m.accumulated_label }}</td></tr>
         {% endfor %}
     </tbody>
 </table>

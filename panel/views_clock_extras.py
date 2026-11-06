@@ -53,6 +53,8 @@ def bag_context(person):
             "excess_label": label(m["excess"]),
             "extra_label": label(m["extra"]),
             "accumulated_label": label(m["accumulated"]),
+            "worked_label": label(m["worked"]),
+            "required_label": label(m["required"]),
         } for m in reversed(bag["months"])],
         "total_label": clock_extras.signed_duration(bag["total_seconds"]),
         "worked_label": clock_extras.signed_duration(bag["worked_seconds"]),

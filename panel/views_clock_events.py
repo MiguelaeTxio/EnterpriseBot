@@ -150,7 +150,7 @@ class _EmptyReport:
     early_label = ""
     habitually_early = False
     last_day = None
-    day_excess = {}
+    month_excess = {}
     excess_seconds = 0
     excess_label = "0:00"
     last_event = None
@@ -307,7 +307,7 @@ def _rows(request, people, date_from, date_to):
     for row in rows:
         if row.has_account:
             months = split_by_month(
-                getattr(row.report, "day_excess", None) or {}, cap)
+                getattr(row.report, "month_excess", None) or {}, cap)
             row.overtime_seconds = sum(m["excess"] for m in months)
             row.quota_seconds = sum(m["extra"] for m in months)
             row.bag_seconds = row.overtime_seconds - row.quota_seconds
@@ -940,14 +940,8 @@ def worker_detail_data(company, person, date_from, date_to):
             if e is not None),
         "trips": clock_extras.shift_trips(s, budget),
     } for s in report.shifts]
-    # S144: lo trabajado de más ese día, en la última jornada del día.
-    excess = getattr(report, "day_excess", {}) or {}
-    last_of_day = {}
-    for shift in shifts:
-        last_of_day[shift["day"]] = shift
-    for day, seconds in excess.items():
-        if day in last_of_day:
-            last_of_day[day]["excess"] = format_duration(seconds)
+    # S143 (convenio, art. 23): las horas extra son por mes, no por día.
+    excess = getattr(report, "month_excess", {}) or {}
     extras = {
         "excess_label": format_duration(sum(excess.values())),
         "km": clock_extras.km_total(

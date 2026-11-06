@@ -65,7 +65,7 @@ y Albaranes de Servicios.
             <td class="text-end" data-label="Fichajes">{{ row.report.events|length }}</td>
             <td class="text-end{% if row.incident_count %} text-danger fw-bold{% endif %}" data-label="Incidencias" title="Incidencias sin visar (las visadas o corregidas no cuentan)">{{ row.incident_count }}</td>
             {# S143: total de horas de más del intervalo, cupo (hasta el tope de cada mes) y bolsa (el resto). #}
-            <td class="text-end text-nowrap" data-label="Total de horas" title="Lo trabajado por encima del horario en las fechas filtradas">{% if row.has_account %}{{ row.overtime_label }} h{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td class="text-end text-nowrap" data-label="Total de horas" title="Horas extra de las fechas filtradas: cada mes, trabajo efectivo menos días laborables × 8 h (convenio, art. 23)">{% if row.has_account %}{{ row.overtime_label }} h{% else %}<span class="text-muted">—</span>{% endif %}</td>
             <td class="text-end text-nowrap" data-label="Cupo de horas" title="Horas extra del cupo: hasta el tope de cada mes ({{ overtime_cap }} h)">{% if row.has_account %}{{ row.quota_label }} h{% else %}<span class="text-muted">—</span>{% endif %}</td>
             <td class="text-end text-nowrap" data-label="Bolsa de horas" title="Lo que pasa del tope de cada mes: el total de horas menos el cupo">{% if row.has_account %}{{ row.bag_label }} h{% else %}<span class="text-muted">—</span>{% endif %}</td>
             {% with last=row.report.last_day %}

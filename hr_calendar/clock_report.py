@@ -528,12 +528,14 @@ class PersonReport:
 
     shifts: list = field(default_factory=list)
     events: list = field(default_factory=list)
-    # S144: {día: segundos trabajados por encima del horario}.
-    day_excess: dict = field(default_factory=dict)
+    # S143 (convenio, art. 23): {primer día del mes: {"worked",
+    # "required", "excess"}} y {primer día del mes: horas extra}.
+    months: dict = field(default_factory=dict)
+    month_excess: dict = field(default_factory=dict)
 
     @property
     def excess_seconds(self):
-        return sum(self.day_excess.values())
+        return sum(self.month_excess.values())
 
     @property
     def excess_label(self):
@@ -909,6 +911,69 @@ def _day_rule(company_user, schedule=None):
     return rule
 
 
+def _required_days_by_user(company, company_user_ids, date_from, date_to):
+    """
+    {user id: day -> True if it is a working day of the monthly count}.
+    ---
+    S143 (convenio, art. 23: "días laborales del mes por ocho horas
+    diarias"): de lunes a viernes, sin los festivos del calendario de su
+    base, sin sus días de vacaciones, bajas y ausencias, y desde que
+    ficha (su "Ficha desde" o, sin él, su primera pulsación).
+    """
+    from django.db.models import Min, Q
+
+    from document_explorer.models import PersonIdentity
+    from hr_calendar.models import (
+        AbsencePeriod, MedicalLeavePeriod, VacationPeriod,
+        WorkerClockSetting,
+    )
+    from ivr_config.models import CompanyUser
+
+    ids = list(company_user_ids)
+    if not ids:
+        return {}
+    people = dict(PersonIdentity.objects.filter(
+        company_user_id__in=ids,
+    ).values_list("company_user_id", "pk"))
+    bases = {u.pk: u.base for u in CompanyUser.objects.filter(
+        pk__in=ids).select_related("base")}
+    starts = dict(ClockEvent.objects.current().filter(
+        company_user_id__in=ids,
+    ).values("company_user_id").annotate(
+        first=Min("pressed_at"),
+    ).values_list("company_user_id", "first"))
+    clocks_from = dict(WorkerClockSetting.objects.filter(
+        person_id__in=people.values(), clocks_from__isnull=False,
+    ).values_list("person_id", "clocks_from"))
+    off = {}
+    overlap = Q(date_start__lte=date_to) & (
+        Q(date_end__gte=date_from) | Q(date_end__isnull=True))
+    for model in (VacationPeriod, MedicalLeavePeriod, AbsencePeriod):
+        for person_id, start, end in model.objects.filter(
+            overlap, person_id__in=people.values(),
+        ).values_list("person_id", "date_start", "date_end"):
+            day = max(start, date_from)
+            last = min(end or date_to, date_to)
+            while day <= last:
+                off.setdefault(person_id, set()).add(day)
+                day += datetime.timedelta(days=1)
+    result = {}
+    for uid in ids:
+        person_id = people.get(uid)
+        first = starts.get(uid)
+        start = clocks_from.get(person_id) or (
+            timezone.localtime(first).date() if first else None)
+        days_off = off.get(person_id, set())
+        base = bases.get(uid)
+
+        def rule(day, start=start, days_off=days_off, base=base):
+            if start is None or day < start or day.weekday() >= 5:
+                return False
+            return day not in days_off and not public_holiday(day, base)
+        result[uid] = rule
+    return result
+
+
 def _range_bounds(date_from, date_to):
     tz = timezone.get_current_timezone()
     start = timezone.make_aware(
@@ -1135,6 +1200,8 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
     for event in events:
         grouped.setdefault(event.company_user_id, []).append(event)
     times_by_user = _schedule_times_by_user(company, list(grouped))
+    required_by_user = _required_days_by_user(
+        company, list(grouped), date_from, date_to)
     reports = {}
     for user_id, user_events in grouped.items():
         report = PersonReport()
@@ -1182,13 +1249,16 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
             lambda day: len(times_of(day)[0]) >= 2,
         )
         _review_flexible_days(report.shifts)
-        # S144: horas extras de cada día (bolsa de horas, comidas y
-        # vehículo propio: hr_calendar/clock_extras.py).
-        from hr_calendar.clock_extras import day_excess
+        # S143 (convenio, art. 23): horas extra por mes, trabajo
+        # efectivo menos días laborables por 8 horas.
+        from hr_calendar.clock_extras import month_overtime
 
-        report.day_excess = day_excess(
-            report.shifts, times_of, is_day_compared, has_hours,
+        report.months = month_overtime(
+            report.shifts, required_by_user.get(user_id, lambda d: False),
+            date_from, date_to,
         )
+        report.month_excess = {m: v["excess"]
+                               for m, v in report.months.items()}
         report.events = [
             e for e in user_events if start <= e.pressed_at < end
         ]

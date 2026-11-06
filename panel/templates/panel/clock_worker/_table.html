@@ -102,7 +102,7 @@ historial: quién, cuándo, antes, después y motivo).
                 {% endif %}
             </td>
             {% endfor %}
-            <td class="text-end" data-label="Horas">{{ row.duration|default:"—" }}{% if row.excess %}<div class="text-success text-nowrap" title="Por encima de su horario (bolsa de horas)">+{{ row.excess }} extra</div>{% endif %}</td>
+            <td class="text-end" data-label="Horas">{{ row.duration|default:"—" }}</td>
             <td data-label="Tipos">
                 {% for press in row.changes %}<div class="text-nowrap">{{ press.time|date:"H:i" }} → <strong>{{ press.event.clock_type.name|default:"—" }}</strong>{% if press.is_added %} <span class="text-primary">(añadido)</span>{% elif press.correction %} <span class="text-primary">(corregido)</span>{% endif %}</div>{% endfor %}
                 {% for item in row.type_hours %}<span class="text-muted text-nowrap me-2">{{ item.name }} {{ item.label }} h{% if not item.counts %} (no cuenta){% endif %}</span>{% endfor %}
