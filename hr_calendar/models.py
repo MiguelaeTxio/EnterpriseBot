@@ -1897,3 +1897,185 @@ class OvertimeAdjustment(models.Model):
 
     def __str__(self) -> str:
         return "%+d min %s" % (self.minutes, self.date)
+
+
+class WorkerRequest(models.Model):
+    """
+    A request a worker makes from "Mis solicitudes" (H24, S147).
+
+    Vacation, personal-matters days and medical appointments become a
+    real VacationPeriod or AbsencePeriod only when a supervisor approves
+    them; document requests are answered by delivering a file; claims by
+    a written answer. The worker sees every status and answer.
+    ---
+    Una petición que hace el trabajador desde "Mis solicitudes" (H24,
+    S147, Miguel Ángel: "solicitan sus vacaciones, sus días de asuntos
+    propios y los días que quieren ir al médico [...] también pueden
+    solicitar los documentos que la empresa esté obligada a
+    facilitarles"). Vacaciones, asuntos propios y médico solo se
+    convierten en un VacationPeriod o AbsencePeriod de verdad cuando un
+    supervisor los aprueba; un documento se contesta entregando el
+    archivo; una reclamación, con una respuesta escrita. El trabajador ve
+    el estado y la respuesta de todas.
+    """
+
+    class Kind(models.TextChoices):
+        VACATION = "VACATION", "Vacaciones"
+        PERSONAL = "PERSONAL", "Asuntos propios"
+        MEDICAL = "MEDICAL", "Médico"
+        DOCUMENT = "DOCUMENT", "Documento"
+        CLAIM = "CLAIM", "Reclamación o consulta"
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Pendiente"
+        APPROVED = "APPROVED", "Aprobada"
+        DENIED = "DENIED", "Denegada"
+        DELIVERED = "DELIVERED", "Entregada"
+        ANSWERED = "ANSWERED", "Respondida"
+        CANCELLED = "CANCELLED", "Anulada"
+
+    class ProofStatus(models.TextChoices):
+        NONE = "NONE", "Sin justificante"
+        RECEIVED = "RECEIVED", "Recibido"
+        VALID = "VALID", "Validado"
+        REJECTED = "REJECTED", "No válido"
+
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE,
+        related_name="worker_requests", verbose_name="Empresa",
+    )
+    person = models.ForeignKey(
+        PersonIdentity, on_delete=models.CASCADE,
+        related_name="worker_requests", verbose_name="Trabajador",
+    )
+    kind = models.CharField(
+        max_length=10, choices=Kind.choices, verbose_name="Tipo",
+    )
+    status = models.CharField(
+        max_length=10, choices=Status.choices, default=Status.PENDING,
+        verbose_name="Estado",
+    )
+    date_start = models.DateField(
+        null=True, blank=True, verbose_name="Desde",
+    )
+    date_end = models.DateField(
+        null=True, blank=True, verbose_name="Hasta",
+    )
+    time_from = models.TimeField(
+        null=True, blank=True, verbose_name="Hora desde",
+        help_text="Solo médico, si no es el día entero.",
+    )
+    time_to = models.TimeField(
+        null=True, blank=True, verbose_name="Hora hasta",
+    )
+    document_code = models.CharField(
+        max_length=20, blank=True, verbose_name="Documento pedido",
+        help_text="Clave de hr_calendar.worker_requests.DOCUMENTS.",
+    )
+    period = models.CharField(
+        max_length=120, blank=True, verbose_name="Periodo o detalle",
+        help_text="Mes, año o lo que identifique el documento pedido.",
+    )
+    note = models.TextField(
+        blank=True, verbose_name="Nota del trabajador",
+    )
+    response = models.TextField(
+        blank=True, verbose_name="Respuesta de la empresa",
+    )
+    created_by = models.ForeignKey(
+        CompanyUser, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+", verbose_name="Pedida por",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Pedida",
+    )
+    resolved_by = models.ForeignKey(
+        CompanyUser, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+", verbose_name="Resuelta por",
+    )
+    resolved_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Resuelta",
+    )
+    vacation_period = models.ForeignKey(
+        VacationPeriod, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+", verbose_name="Vacaciones creadas",
+    )
+    absence_period = models.ForeignKey(
+        AbsencePeriod, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+", verbose_name="Ausencia creada",
+    )
+    proof_status = models.CharField(
+        max_length=10, choices=ProofStatus.choices,
+        default=ProofStatus.NONE, verbose_name="Justificante",
+    )
+    proof_reviewed_by = models.ForeignKey(
+        CompanyUser, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+", verbose_name="Justificante revisado por",
+    )
+    proof_reviewed_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Justificante revisado",
+    )
+
+    class Meta:
+        verbose_name = "Solicitud de un trabajador"
+        verbose_name_plural = "Solicitudes de los trabajadores"
+        ordering = ["-created_at", "-pk"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(date_start__isnull=True)
+                    | models.Q(date_end__isnull=True)
+                    | models.Q(date_end__gte=models.F("date_start"))
+                ),
+                name="workerrequest_date_end_gte_date_start",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return "%s — %s (%s)" % (
+            self.person, self.get_kind_display(), self.get_status_display(),
+        )
+
+
+class WorkerRequestFile(models.Model):
+    """
+    A file of a WorkerRequest: the worker's proof or the delivery.
+    ---
+    Un archivo de una solicitud (S147): el justificante que sube el
+    trabajador o el documento que le entrega la empresa. El archivo vive
+    en la carpeta del trabajador como cualquier otro documento suyo
+    (DocumentIndexEntry); aquí solo se enlaza.
+    """
+
+    class Role(models.TextChoices):
+        PROOF = "PROOF", "Justificante"
+        DELIVERY = "DELIVERY", "Entrega"
+
+    request = models.ForeignKey(
+        WorkerRequest, on_delete=models.CASCADE, related_name="files",
+        verbose_name="Solicitud",
+    )
+    role = models.CharField(
+        max_length=10, choices=Role.choices, verbose_name="Papel",
+    )
+    entry = models.ForeignKey(
+        DocumentIndexEntry, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+        verbose_name="Documento",
+    )
+    name = models.CharField(max_length=255, verbose_name="Nombre")
+    uploaded_by = models.ForeignKey(
+        CompanyUser, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+", verbose_name="Subido por",
+    )
+    uploaded_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Subido",
+    )
+
+    class Meta:
+        verbose_name = "Archivo de una solicitud"
+        verbose_name_plural = "Archivos de las solicitudes"
+        ordering = ["uploaded_at", "pk"]
+
+    def __str__(self) -> str:
+        return "%s (%s)" % (self.name, self.get_role_display())
