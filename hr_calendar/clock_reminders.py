@@ -49,7 +49,8 @@ la entrada y olvido de la salida.
   y el informe de fichajes), y solo si tiene un horario asignado, suyo
   o de su sección (S141: el de por defecto de la empresa no cuenta);
   entrada = la primera hora de entrada, salida = la última hora de
-  salida (la comida ya no se ficha, S133).
+  salida (la comida ya no se ficha, S133; S147: sí la fichan quienes
+  hacen partes, ver abajo).
 - Festivos: `_day_rule` del informe de fichajes (S144: festivos de la
   base solo con "Se trabaja en festivos" en el horario; sábados y
   domingos, los guardas y los horarios según el día).
@@ -65,6 +66,12 @@ la entrada y olvido de la salida.
   primera entrada del horario, ni mientras sigue abierta una jornada
   empezada el día anterior fuera de horario (trabajo nocturno), ni el
   de salida de una jornada que entró fuera de horario.
+- S147 (Miguel Ángel): quien hace partes (mecánicos del taller, que
+  fichan sin tipos) ficha la salida a comer y la vuelta. Con jornada
+  partida, sus avisos van por tramos (own_shifts_due con los dos tramos
+  del horario): la salida de la mañana y la entrada de la tarde llevan
+  las plantillas de la comida (LUNCH_TEMPLATES), con los mismos minutos
+  que la salida y la entrada.
 - S144 (guardas): horario de noche (la salida del último tramo es menor
   que su entrada: sale al día siguiente). El de entrada sale esa noche;
   el de salida, a la mañana siguiente si la jornada sigue abierta, y se
@@ -99,6 +106,16 @@ OUT_LINK_TEMPLATE = "clock_out_reminder_link"
 # apruebe se usa la de siempre.
 IN_EARLY_TEMPLATE = "clock_in_prereminder_link"
 OUT_EARLY_TEMPLATE = "clock_out_prereminder_link"
+# S147 (Miguel Ángel): quien hace partes (los mecánicos del taller)
+# ficha también la salida a comer y la vuelta, con los mismos avisos que
+# la entrada y la salida. Plantillas propias; hasta que Meta las
+# apruebe, su texto como mensaje libre dentro de la ventana de 24 h.
+LUNCH_TEMPLATES = {
+    (ClockReminder.Kind.OUT, False): "clock_lunch_out_reminder_link",
+    (ClockReminder.Kind.OUT, True): "clock_lunch_out_prereminder_link",
+    (ClockReminder.Kind.IN, False): "clock_lunch_in_reminder_link",
+    (ClockReminder.Kind.IN, True): "clock_lunch_in_prereminder_link",
+}
 
 
 def _away(company_user, person, day):
@@ -432,6 +449,81 @@ def exceptional_day(company_user, company, day, starts, events, now):
     return _off_schedule(last.clock_in, schedule_starts(schedule))
 
 
+def makes_partes(company_user, state):
+    """
+    True for the workers who make work partes and clock the lunch
+    break: the workshop mechanics, clocking without types (S147).
+    ---
+    True para quien hace partes de trabajo y ficha la pausa de la
+    comida: los mecánicos del taller, que fichan sin tipos (S147). Los
+    que fichan con tipos tienen su "Pausa para comer" y no hacen partes.
+    """
+    from ivr_config.models import CompanyUser
+
+    return (company_user.role == CompanyUser.ROLE_WORKSHOP
+            and not state.uses_types)
+
+
+def lunch_shifts(schedule):
+    """
+    [(morning start, morning end), (afternoon start, afternoon end)] of
+    a split schedule, or [] (S147: the lunch break is clocked).
+    ---
+    Los dos tramos de un horario partido, o [] (intensivo, abierto o
+    sin las cuatro horas).
+    """
+    if schedule is None or schedule.is_open or schedule.is_intensive:
+        return []
+    times = (schedule.start_time_morning, schedule.end_time_morning,
+             schedule.start_time_afternoon, schedule.end_time_afternoon)
+    if any(t is None for t in times) or not (
+            times[0] < times[1] <= times[2] < times[3]):
+        return []
+    return [(times[0], times[1]), (times[2], times[3])]
+
+
+def is_lunch_reminder(kind, slot_key):
+    """
+    True when a reminder of the two-shift day is the lunch one: the OUT
+    of the first shift or the IN of the second (key "2:...").
+    ---
+    True si el aviso es el de la comida: la salida del primer tramo o la
+    entrada del segundo.
+    """
+    second = str(slot_key).startswith("2:")
+    return ((kind == ClockReminder.Kind.OUT and not second)
+            or (kind == ClockReminder.Kind.IN and second))
+
+
+def _lunch_template(company, kind, early):
+    """
+    (WhatsAppTemplate or None, approved by Meta) for a lunch reminder:
+    the "recuerde" one before the time if approved, else the "no
+    consta" one; without any approved, the first that exists (its text
+    goes as a free message inside the 24-hour window).
+    ---
+    (plantilla o None, aprobada) para un aviso de la comida.
+    """
+    from fleet.refuel_questions import template_approved
+    from whatsapp.models import WhatsAppTemplate
+
+    names = [LUNCH_TEMPLATES[(kind, False)]]
+    if early:
+        names.insert(0, LUNCH_TEMPLATES[(kind, True)])
+    found = None
+    for name in names:
+        template = WhatsAppTemplate.objects.filter(
+            company=company, name=name,
+        ).first()
+        if template is None:
+            continue
+        if template_approved(template.content_sid):
+            return template, True
+        if found is None:
+            found = template
+    return found, False
+
+
 def _templates(company, early=False):
     """
     {kind: (WhatsAppTemplate or None, approved by Meta)}.
@@ -508,7 +600,7 @@ def send_clock_reminders(company, now=None, log=logger.info):
     # Se pregunta a Twilio por la aprobación solo cuando toca enviar
     # (S144: un juego para los avisos de antes de la hora y otro para
     # los de a la hora o después).
-    templates = {}
+    templates, lunch_templates = {}, {}
     # S144: también los de ayer (el de salida del turno de noche se
     # apunta en el día de la entrada).
     # S143: uno por usuario, día, tipo y aviso.
@@ -542,6 +634,8 @@ def send_clock_reminders(company, now=None, log=logger.info):
     users = [
         p.company_user for p in people if states[p.pk].must_clock
     ]
+    person_states = {p.company_user_id: states[p.pk] for p in people}
+    lunch_users = set()
     # S143: los avisos que ha marcado cada uno (o los de por defecto) y
     # el horario propio de hoy de quien tiene horario abierto.
     chosen, own_shifts = {}, {}
@@ -598,13 +692,26 @@ def send_clock_reminders(company, now=None, log=logger.info):
                     window, now):
                 counters["excepcional"] += 1
                 continue
-            due = due_reminder(
-                schedule_starts(schedule), schedule_ends(schedule),
-                events_by_user.get(company_user.pk, []), now,
-                in_minutes, out_minutes,
-            )
-            if due is not None:
-                due = due + (str(due[2]),)
+            # S147: quien hace partes, con jornada partida, recibe
+            # también los avisos de la salida a comer y de la vuelta.
+            shifts = (lunch_shifts(schedule)
+                      if makes_partes(company_user,
+                                      person_states[company_user.pk])
+                      else [])
+            if shifts:
+                due = own_shifts_due(
+                    shifts, events_by_user.get(company_user.pk, []), now,
+                    in_minutes, out_minutes,
+                )
+                lunch_users.add(company_user.pk)
+            else:
+                due = due_reminder(
+                    schedule_starts(schedule), schedule_ends(schedule),
+                    events_by_user.get(company_user.pk, []), now,
+                    in_minutes, out_minutes,
+                )
+                if due is not None:
+                    due = due + (str(due[2]),)
         if due is None:
             # S144: la salida del turno de noche de ayer (también si hoy
             # no trabaja).
@@ -632,9 +739,18 @@ def send_clock_reminders(company, now=None, log=logger.info):
         # S144: antes de la hora del horario, "Recuerde fichar".
         early = now < timezone.make_aware(
             datetime.datetime.combine(day, scheduled_time), tz)
-        if early not in templates:
-            templates[early] = _templates(company, early)
-        template, approved = templates[early][kind]
+        lunch = (company_user.pk in lunch_users
+                 and reminder_day == day
+                 and is_lunch_reminder(kind, slot_key))
+        if lunch:
+            if (kind, early) not in lunch_templates:
+                lunch_templates[(kind, early)] = _lunch_template(
+                    company, kind, early)
+            template, approved = lunch_templates[(kind, early)]
+        else:
+            if early not in templates:
+                templates[early] = _templates(company, early)
+            template, approved = templates[early][kind]
         # Sin plantilla aprobada solo se puede escribir dentro de la
         # ventana de 24 horas (texto libre con el texto de la
         # plantilla).
@@ -673,7 +789,8 @@ def send_clock_reminders(company, now=None, log=logger.info):
         )
         counters["enviados"] += 1
         log("Recordatorio de %s enviado a %s (horario %s, aviso %+d min)."
-            % (ClockReminder.Kind(kind).label.lower(),
+            % ("la comida (%s)" % ClockReminder.Kind(kind).label.lower()
+               if lunch else ClockReminder.Kind(kind).label.lower(),
                company_user.user.username, variables["3"], slot))
     log("Recordatorios de fichaje: %(enviados)d enviados, %(festivo)d "
         "con el día festivo, %(sin_horario)d sin horario, %(abierto)d con "
