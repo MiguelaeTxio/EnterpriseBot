@@ -10,10 +10,10 @@ Como funciona, cada 5 minutos:
 - Testigo: `_testigo_onedrive.txt` en la carpeta de las copias de la BD
   (fuera de las carpetas vigiladas). Se reescribe cada hora, solo si la
   version anterior ya subio.
-- Estado: lo da Windows (Cloud Files API,
-  `CfGetPlaceholderStateFromAttributeTag` de CldApi.dll). Subido = el
-  archivo es un "placeholder" de OneDrive con la marca IN_SYNC; un
-  archivo nuevo que OneDrive aun no ha procesado no lo es.
+- Estado: lo da Windows (Cloud Files API, `CfGetPlaceholderInfo` de
+  CldApi.dll). Subido = el archivo es un "placeholder" de OneDrive con
+  InSyncState IN_SYNC; un archivo nuevo que OneDrive aun no ha
+  procesado no lo es.
 - Si el testigo sigue sin subir 10 minutos despues de escribirlo,
   OneDrive esta parado: se reinicia (`OneDrive.exe /shutdown` y
   `/background`), una vez por testigo.
@@ -45,56 +45,80 @@ CHECK_EVERY_SECONDS = 5 * 60
 REWRITE_EVERY_SECONDS = 60 * 60
 GRACE_SECONDS = 10 * 60
 RESTART_WAIT_SECONDS = 15
-CF_PLACEHOLDER_STATE_PLACEHOLDER = 0x1
-CF_PLACEHOLDER_STATE_IN_SYNC = 0x8
-FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
 
 
-class _FindData(ctypes.Structure):
+CF_PLACEHOLDER_INFO_BASIC = 0
+CF_IN_SYNC_STATE_IN_SYNC = 1
+FILE_READ_ATTRIBUTES = 0x80
+FILE_SHARE_ALL = 0x1 | 0x2 | 0x4
+OPEN_EXISTING = 3
+# HRESULT_FROM_WIN32(ERROR_NOT_A_CLOUD_FILE): archivo normal, que
+# OneDrive todavia no ha convertido en placeholder (no ha subido).
+HRESULT_NOT_A_CLOUD_FILE = 0x80070178
+# HRESULT_FROM_WIN32(ERROR_MORE_DATA): la parte fija ya esta escrita.
+HRESULT_MORE_DATA = 0x800700EA
+
+
+class _PlaceholderBasicInfo(ctypes.Structure):
+    """CF_PLACEHOLDER_BASIC_INFO (cfapi.h), fixed part.
+    ---
+    Parte fija de CF_PLACEHOLDER_BASIC_INFO.
+    """
+
     _fields_ = [
-        ("dwFileAttributes", wintypes.DWORD),
-        ("ftCreationTime", wintypes.FILETIME),
-        ("ftLastAccessTime", wintypes.FILETIME),
-        ("ftLastWriteTime", wintypes.FILETIME),
-        ("nFileSizeHigh", wintypes.DWORD),
-        ("nFileSizeLow", wintypes.DWORD),
-        ("dwReserved0", wintypes.DWORD),
-        ("dwReserved1", wintypes.DWORD),
-        ("cFileName", wintypes.WCHAR * 260),
-        ("cAlternateFileName", wintypes.WCHAR * 14),
+        ("PinState", ctypes.c_int),
+        ("InSyncState", ctypes.c_int),
+        ("FileId", ctypes.c_longlong),
+        ("SyncRootFileId", ctypes.c_longlong),
+        ("FileIdentityLength", wintypes.ULONG),
     ]
 
 
-def is_in_sync(path):
-    """True when OneDrive has the file uploaded and in sync.
+def sync_state(path):
+    """OneDrive state of one file: "al dia", "pendiente" or "sin subir".
     ---
-    True si el archivo es un placeholder de OneDrive al dia (IN_SYNC).
-    Un archivo normal, todavia sin procesar por OneDrive, da False. El
-    reparse tag sale de FindFirstFileW (dwReserved0).
+    Estado de un archivo en OneDrive con CfGetPlaceholderInfo (Cloud
+    Files API): placeholder con InSyncState = IN_SYNC -> "al dia";
+    placeholder sin sincronizar -> "pendiente"; archivo normal que
+    OneDrive aun no ha convertido -> "sin subir". Corregido en S146:
+    la primera version usaba CfGetPlaceholderStateFromAttributeTag, que
+    con solo atributos y reparse tag nunca puede saber IN_SYNC (en la
+    prueba real daba siempre "sin subir" con OneDrive al dia).
     """
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     cldapi = ctypes.WinDLL("CldApi.dll")
-    kernel32.FindFirstFileW.restype = wintypes.HANDLE
-    kernel32.FindFirstFileW.argtypes = [
-        wintypes.LPCWSTR, ctypes.POINTER(_FindData)]
-    kernel32.FindClose.argtypes = [wintypes.HANDLE]
-    cldapi.CfGetPlaceholderStateFromAttributeTag.restype = wintypes.DWORD
-    cldapi.CfGetPlaceholderStateFromAttributeTag.argtypes = [
-        wintypes.DWORD, wintypes.DWORD]
-    data = _FindData()
-    handle = kernel32.FindFirstFileW(path, ctypes.byref(data))
+    kernel32.CreateFileW.restype = wintypes.HANDLE
+    kernel32.CreateFileW.argtypes = [
+        wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
+        wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    cldapi.CfGetPlaceholderInfo.restype = ctypes.c_long
+    cldapi.CfGetPlaceholderInfo.argtypes = [
+        wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD)]
+    handle = kernel32.CreateFileW(
+        path, FILE_READ_ATTRIBUTES, FILE_SHARE_ALL, None, OPEN_EXISTING,
+        0, None)
     if handle in (None, INVALID_HANDLE_VALUE):
-        raise OSError(ctypes.get_last_error(), "FindFirstFileW: %s" % path)
-    kernel32.FindClose(handle)
-    tag = (data.dwReserved0
-           if data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT else 0)
-    state = cldapi.CfGetPlaceholderStateFromAttributeTag(
-        data.dwFileAttributes, tag)
-    if state == 0xFFFFFFFF:
-        return False
-    return bool(state & CF_PLACEHOLDER_STATE_PLACEHOLDER
-                and state & CF_PLACEHOLDER_STATE_IN_SYNC)
+        raise OSError(ctypes.get_last_error(), "CreateFileW: %s" % path)
+    try:
+        buffer = ctypes.create_string_buffer(4096)
+        returned = wintypes.DWORD(0)
+        result = cldapi.CfGetPlaceholderInfo(
+            handle, CF_PLACEHOLDER_INFO_BASIC, buffer, len(buffer),
+            ctypes.byref(returned)) & 0xFFFFFFFF
+    finally:
+        kernel32.CloseHandle(handle)
+    if result == HRESULT_NOT_A_CLOUD_FILE:
+        return "sin subir"
+    if result not in (0, HRESULT_MORE_DATA):
+        raise OSError(result, "CfGetPlaceholderInfo: 0x%08X" % result)
+    info = _PlaceholderBasicInfo.from_buffer_copy(
+        buffer.raw[:ctypes.sizeof(_PlaceholderBasicInfo)])
+    if info.InSyncState == CF_IN_SYNC_STATE_IN_SYNC:
+        return "al dia"
+    return "pendiente"
 
 
 def _onedrive_exe():
@@ -151,23 +175,25 @@ class OneDriveWatchdog:
             return "testigo creado"
         written = os.path.getmtime(witness)
         age = now - written
-        if is_in_sync(witness):
+        state = sync_state(witness)
+        if state == "al dia":
             send_heartbeat(AGENT_NAME)
             if age >= REWRITE_EVERY_SECONDS:
                 self._write(witness)
             return "al dia"
         if age < GRACE_SECONDS:
             send_heartbeat(AGENT_NAME)
-            return "testigo subiendo"
+            return "testigo subiendo (%s)" % state
         if self._restarted_for != written:
             self._restarted_for = written
             text = restart_onedrive()
-            logger.warning("OneDrive: testigo sin subir hace %d min; %s",
-                           age // 60, text)
+            logger.warning("OneDrive: testigo %s hace %d min; %s",
+                           state, age // 60, text)
             if self._notify:
                 self._notify("OneDrive parado: %s" % text)
             return text
-        return "sigue parado tras reiniciarlo (aviso por WhatsApp)"
+        return "sigue parado tras reiniciarlo (%s; aviso por WhatsApp)" % (
+            state)
 
     @staticmethod
     def _write(witness):
