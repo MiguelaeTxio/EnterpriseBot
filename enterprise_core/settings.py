@@ -531,6 +531,13 @@ CELERY_BEAT_SCHEDULE = {
         'task':     'hr_calendar.tasks.send_clock_reminders_task',
         'schedule': crontab(minute='*'),
     },
+
+    # H24 (S146): copia de seguridad diaria de la base de datos a las
+    # 3:00, volcada al cubo y bajada a OneDrive por el agente H28.
+    'backup-database': {
+        'task':     'document_explorer.tasks.backup_database_task',
+        'schedule': crontab(hour=3, minute=0),
+    },
 }
 
 # H30 (S123): destinatarios (PersonIdentity.pk) de la alerta de caída

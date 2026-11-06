@@ -47,6 +47,7 @@ from config import (
 )
 from gcs_client import MissingCredentialsError, build_client
 from heartbeat import start_heartbeat_thread
+from db_backup_download import process_backups
 from local_download import process_jobs as process_local_downloads
 from history import append_event, load_events
 from reconciler import reconcile_folder
@@ -1053,6 +1054,12 @@ def _catchup_loop(icon):
         # para que descarga y barrido nunca coincidan.
         for texto in process_local_downloads(client, list(_watched_folders)):
             append_event("Descarga de alta", "DOC. PERSONAL", texto)
+            icon.notify(texto, title="Agente H28")
+
+        # H24 (S146): copias de seguridad de la BD a su carpeta de
+        # OneDrive (`db_backup_download.py`), cada 10 minutos.
+        for texto in process_backups(list(_watched_folders)):
+            append_event("Copia de la BD", "OneDrive", texto)
             icon.notify(texto, title="Agente H28")
 
         started_at = time.monotonic()

@@ -1,0 +1,107 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/.github/workflows/db_backup_restore_test.yml
+name: Restauración de prueba de una copia de la BD (EnterpriseBot)
+
+# H24 (S146). Restaura una copia de seguridad de la BD en un MySQL 8.0
+# propio del runner (nunca en PythonAnywhere: ni disco ni base de datos
+# de producción) y compara las filas de las tablas de control con las
+# que tenía producción al hacer el volcado (DatabaseBackup.row_counts).
+# La copia se lee del cubo por SSH (db_backup_fetch.py stream), se
+# comprueba su SHA-256 y se restaura con `gunzip -c ... | mysql`.
+# Nada de la copia se guarda ni se publica: solo las cifras (sin datos
+# de personas) van a las anotaciones y al resumen del Action.
+
+on:
+  workflow_dispatch:
+    inputs:
+      file_name:
+        description: "Copia a restaurar (EnterpriseBot_BD_AAAAMMDD_HHMM.sql.gz). Vacío = la última."
+        required: false
+        default: ""
+        type: string
+
+concurrency:
+  group: enterprisebot-db-backup-restore-test
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: prueba
+          MYSQL_DATABASE: restore_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pprueba"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preparar clave SSH dedicada (solo lectura, misma que db_query.yml)
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PA_DB_READONLY_SSH_PRIVATE_KEY }}" > ~/.ssh/pa_readonly_key
+          chmod 600 ~/.ssh/pa_readonly_key
+          ssh-keyscan -H ssh.pythonanywhere.com >> ~/.ssh/known_hosts
+
+      - name: Traer la copia del cubo y comprobar su SHA-256
+        env:
+          FILE_NAME: ${{ inputs.file_name }}
+        run: |
+          set -eo pipefail
+          SCRIPT="/home/MiguelAeTxio/SWAP/db_backup_fetch_${{ github.run_id }}.py"
+          scp -i ~/.ssh/pa_readonly_key .github/scripts/db_backup_fetch.py \
+            MiguelAeTxio@ssh.pythonanywhere.com:"$SCRIPT"
+          RUN="cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; export PYTHONPATH=/home/MiguelAeTxio/PROJECTS/EnterpriseBot; python -m dotenv run python3 '$SCRIPT'"
+          ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
+            "$RUN meta '$FILE_NAME'" | tail -1 > /tmp/meta.json
+          NAME=$(jq -r .file_name /tmp/meta.json)
+          ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
+            "$RUN stream '$NAME'; rm -f '$SCRIPT'" > /tmp/copia.sql.gz
+          GOT=$(sha256sum /tmp/copia.sql.gz | cut -d' ' -f1)
+          WANT=$(jq -r .sha256 /tmp/meta.json)
+          echo "::notice title=Copia::$NAME -- $(stat -c %s /tmp/copia.sql.gz) bytes -- SHA-256 $GOT"
+          if [ "$GOT" != "$WANT" ]; then
+            echo "::error title=SHA-256 distinto::bajado $GOT, esperado $WANT"
+            exit 1
+          fi
+
+      - name: Restaurar en el MySQL del runner
+        run: |
+          set -eo pipefail
+          START=$(date +%s)
+          gunzip -c /tmp/copia.sql.gz | mysql -h 127.0.0.1 -uroot -pprueba restore_test
+          echo "::notice title=Restauración::terminada en $(( $(date +%s) - START )) s"
+
+      - name: Comparar filas de las tablas de control
+        run: |
+          set -eo pipefail
+          FAIL=0
+          for TABLE in $(jq -r '.row_counts.despues | keys[]' /tmp/meta.json); do
+            BEFORE=$(jq -r ".row_counts.antes[\"$TABLE\"]" /tmp/meta.json)
+            AFTER=$(jq -r ".row_counts.despues[\"$TABLE\"]" /tmp/meta.json)
+            GOT=$(mysql -h 127.0.0.1 -uroot -pprueba -N -B restore_test \
+              -e "SELECT COUNT(*) FROM \`$TABLE\`")
+            LINE="$TABLE: restaurada $GOT, producción $BEFORE (antes) / $AFTER (después)"
+            echo "$LINE" >> "$GITHUB_STEP_SUMMARY"
+            if [ "$GOT" -lt "$BEFORE" ] || [ "$GOT" -gt "$AFTER" ]; then
+              echo "::error title=Filas distintas::$LINE"
+              FAIL=1
+            else
+              echo "::notice title=Filas::$LINE"
+            fi
+          done
+          TABLES=$(mysql -h 127.0.0.1 -uroot -pprueba -N -B restore_test \
+            -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='restore_test'")
+          echo "::notice title=Tablas restauradas::$TABLES"
+          exit $FAIL
+
+      - name: Limpiar
+        if: always()
+        run: rm -f ~/.ssh/pa_readonly_key /tmp/copia.sql.gz

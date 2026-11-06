@@ -128,6 +128,22 @@ urlpatterns = [
         views.AgentLocalDownloadReportView.as_view(),
         name="agent_local_download_report",
     ),
+    # H24 (S146): copias de seguridad de la BD, bajadas a OneDrive.
+    path(
+        "agente/copias-bd/",
+        views.AgentDbBackupsView.as_view(),
+        name="agent_db_backups",
+    ),
+    path(
+        "agente/copias-bd/<int:pk>/archivo/",
+        views.AgentDbBackupFileView.as_view(),
+        name="agent_db_backup_file",
+    ),
+    path(
+        "agente/copias-bd/<int:pk>/",
+        views.AgentDbBackupReportView.as_view(),
+        name="agent_db_backup_report",
+    ),
     path(
         "catalogo/",
         views.DocumentTypeCatalogListView.as_view(),

@@ -4414,3 +4414,86 @@ class LocalDownloadJob(models.Model):
         return "Descarga %s de %s (%s)" % (
             self.pk, self.person_id, self.status,
         )
+
+
+class DatabaseBackup(models.Model):
+    """
+    H24 (S146). One full copy of the MySQL database, taken by the
+    server and brought to OneDrive by the H28 agent.
+
+    ---
+
+    H24 (S146). Una copia completa de la base de datos MySQL. Miguel
+    Ángel: "copiar todo lo que tenemos en base de datos [...] el
+    formato más conveniente para que quede todo comprimido y que
+    podamos recuperarlo en cualquier momento [...] en la propia nube de
+    Microsoft 365, en una carpeta dedicada que esté fuera de las que
+    está vigilando el H28." El servidor vuelca la BD (`mysqldump`) por
+    tubería, comprimida, directamente a un cubo propio de GCS (nunca al
+    disco de PythonAnywhere: cuota de 5 GB); el agente H28 la baja a la
+    carpeta de OneDrive comprobando el SHA-256. `row_counts` guarda el
+    número de filas de las tablas de control justo antes y justo
+    después del volcado, para la restauración de prueba.
+    """
+
+    STATUS_RUNNING = "running"
+    STATUS_READY = "ready"
+    STATUS_DOWNLOADED = "downloaded"
+    STATUS_FAILED = "failed"
+    STATUS_CHOICES = [
+        (STATUS_RUNNING, "Volcando"),
+        (STATUS_READY, "Lista para bajar"),
+        (STATUS_DOWNLOADED, "En OneDrive"),
+        (STATUS_FAILED, "Fallida"),
+    ]
+
+    file_name = models.CharField(
+        max_length=100, unique=True, verbose_name="Archivo",
+    )
+    blob_name = models.CharField(
+        max_length=255, blank=True, default="", verbose_name="Objeto en GCS",
+    )
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default=STATUS_RUNNING,
+        verbose_name="Estado",
+    )
+    started_at = models.DateTimeField(verbose_name="Empezada")
+    finished_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Terminada",
+    )
+    size_bytes = models.BigIntegerField(
+        default=0, verbose_name="Tamaño comprimido",
+    )
+    uncompressed_bytes = models.BigIntegerField(
+        default=0, verbose_name="Tamaño sin comprimir",
+    )
+    sha256 = models.CharField(
+        max_length=64, blank=True, default="", verbose_name="SHA-256",
+    )
+    row_counts = models.JSONField(
+        default=dict, blank=True, verbose_name="Filas de control",
+    )
+    error = models.TextField(blank=True, default="", verbose_name="Error")
+    downloaded_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Bajada a OneDrive",
+    )
+    host = models.CharField(
+        max_length=255, blank=True, default="", verbose_name="Equipo",
+    )
+    local_path = models.TextField(
+        blank=True, default="", verbose_name="Ruta en OneDrive",
+    )
+    removed_from_bucket_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Quitada del cubo",
+    )
+    removed_from_local_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Quitada de OneDrive",
+    )
+
+    class Meta:
+        verbose_name = "Copia de seguridad de la base de datos"
+        verbose_name_plural = "Copias de seguridad de la base de datos"
+        ordering = ["-started_at"]
+
+    def __str__(self):
+        return "%s (%s)" % (self.file_name, self.status)

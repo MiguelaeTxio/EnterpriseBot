@@ -1138,3 +1138,20 @@ def extract_id_photos_task(self) -> str:
         "# [ID-PHOTO] Pasada: %d fotos sacadas, %d sin foto.", done, failed,
     )
     return "%d sacadas, %d sin foto" % (done, failed)
+
+
+@app.task(base=DjangoTask, bind=True, max_retries=0)
+def backup_database_task(self) -> str:
+    """
+    Daily full database copy, streamed to its own GCS bucket.
+
+    ---
+
+    H24 (S146). Copia completa diaria de la base de datos, volcada por
+    tubería a su cubo de GCS (nunca al disco del servidor); el agente
+    H28 la baja a OneDrive. Ver `db_backup_service`.
+    """
+    from .db_backup_service import run_backup
+
+    backup = run_backup()
+    return "%s: %s" % (backup.file_name, backup.status)

@@ -141,6 +141,7 @@ from django.db.models.functions import Cast, Coalesce
 from django.http import (
     Http404, HttpResponse, HttpResponseBadRequest, HttpResponseForbidden,
     HttpResponseNotFound, HttpResponseRedirect, JsonResponse,
+    StreamingHttpResponse,
 )
 from django.utils.crypto import constant_time_compare
 from django.utils.decorators import method_decorator
@@ -3264,6 +3265,119 @@ class AgentLocalDownloadReportView(View):
             done=request.POST.get("done") == "1",
         )
         return JsonResponse({"ok": True, "status": job.status})
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class AgentDbBackupsView(View):
+    """
+    Webhook: `POST /panel/explorador/agente/copias-bd/`. Database
+    copies the H28 agent must download, and the ones to keep.
+
+    ---
+
+    H24 (S146). El agente H28 pide las copias de la BD pendientes de
+    bajar a OneDrive y los nombres que se quedan (retención diaria y
+    escalonada). Mismo token que el latido. `removed`: nombres que el
+    agente ha quitado de OneDrive en el ciclo anterior, separados por
+    comas.
+    """
+
+    def post(self, request):
+        from .db_backup_service import agent_payload, report_removed
+
+        if not _agent_token_ok(request):
+            return HttpResponseForbidden("Token inválido.")
+        removed = [
+            name.strip()
+            for name in (request.POST.get("removed") or "").split(",")
+            if name.strip()
+        ]
+        if removed:
+            report_removed(removed)
+        return JsonResponse(dict(agent_payload(), ok=True))
+
+
+class AgentDbBackupFileView(View):
+    """
+    Webhook: `GET /panel/explorador/agente/copias-bd/<pk>/archivo/`.
+    Streams one database copy from its bucket to the H28 agent.
+
+    ---
+
+    H24 (S146). Sirve al agente H28 el archivo de una copia, leído del
+    cubo por trozos (el agente no tiene acceso a ese cubo; nada pasa
+    por el disco del servidor).
+    """
+
+    def get(self, request, pk):
+        from .db_backup_service import CHUNK_BYTES, open_blob
+        from .models import DatabaseBackup
+
+        if not _agent_token_ok(request):
+            return HttpResponseForbidden("Token inválido.")
+        backup = get_object_or_404(
+            DatabaseBackup, pk=pk, removed_from_bucket_at__isnull=True,
+            status__in=(
+                DatabaseBackup.STATUS_READY,
+                DatabaseBackup.STATUS_DOWNLOADED,
+            ),
+        )
+        handle = open_blob(backup)
+
+        def _chunks():
+            try:
+                while True:
+                    chunk = handle.read(CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                handle.close()
+
+        response = StreamingHttpResponse(
+            _chunks(), content_type="application/gzip",
+        )
+        response["Content-Length"] = str(backup.size_bytes)
+        response["Content-Disposition"] = (
+            'attachment; filename="%s"' % backup.file_name
+        )
+        return response
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class AgentDbBackupReportView(View):
+    """
+    Webhook: `POST /panel/explorador/agente/copias-bd/<pk>/`. The agent
+    reports a copy saved in OneDrive (or an error).
+
+    ---
+
+    H24 (S146). El agente avisa de una copia ya en OneDrive: `sha256`
+    (el calculado sobre el archivo local), `local_path`, `host`; o
+    `error` si no pudo. Solo se da por bajada si el SHA-256 coincide.
+    """
+
+    def post(self, request, pk):
+        from .db_backup_service import report_download
+        from .models import DatabaseBackup
+
+        if not _agent_token_ok(request):
+            return HttpResponseForbidden("Token inválido.")
+        backup = get_object_or_404(DatabaseBackup, pk=pk)
+        error = (request.POST.get("error") or "").strip()
+        if error:
+            backup.error = error[:2000]
+            backup.save(update_fields=["error"])
+            return JsonResponse({"ok": True, "status": backup.status})
+        problem = report_download(
+            backup,
+            (request.POST.get("sha256") or "").strip().lower(),
+            (request.POST.get("local_path") or "").strip(),
+            (request.POST.get("host") or "").strip(),
+        )
+        return JsonResponse({
+            "ok": not problem, "status": backup.status, "error": problem,
+        })
 
 
 @method_decorator(csrf_exempt, name="dispatch")
