@@ -67,9 +67,9 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                 <ul class="list-group list-group-flush small" id="personGroupSavedList">
                     {% for group in person_groups %}
                     <li class="list-group-item px-1 py-0" id="personGroupRow{{ group.pk }}"
-                        data-name="{{ group.name|escapejs }}"
+                        data-name="{{ group.name }}"
                         data-member-ids="{% for m in group.members.all %}{{ m.pk }}{% if not forloop.last %},{% endif %}{% endfor %}"
-                        data-member-names="{% for m in group.members.all %}{{ m.first_surname }} {{ m.second_surname }}, {{ m.given_name|escapejs }}{% if not forloop.last %}||{% endif %}{% endfor %}">
+                        data-member-names="{% for m in group.members.all %}{{ m.first_surname }} {{ m.second_surname }}, {{ m.given_name }}{% if not forloop.last %}||{% endif %}{% endfor %}">
                         <div class="form-check">
                             <input class="form-check-input person-group-select-checkbox" type="checkbox" id="personGroupSelect{{ group.pk }}" data-pk="{{ group.pk }}" onchange="onPersonGroupSelectChange(this)">
                             <label class="form-check-label" for="personGroupSelect{{ group.pk }}">{{ group.name }} ({{ group.members.count }})</label>

@@ -52,7 +52,7 @@ misma fila:
                     <ul class="list-group list-group-flush small" id="epiBatchSavedList">
                         {% for template in batch_templates %}
                         <li class="list-group-item px-1 py-1" id="epiBatchTemplateRow{{ template.pk }}"
-                            data-name="{{ template.name|escapejs }}"
+                            data-name="{{ template.name }}"
                             data-item-ids="{% for item in template.items.all %}{{ item.pk }}{% if not forloop.last %},{% endif %}{% endfor %}">
                             <div class="form-check">
                                 <input class="form-check-input epi-batch-select-checkbox" type="checkbox" id="epiBatchSelect{{ template.pk }}" data-pk="{{ template.pk }}" onchange="onEpiBatchSelectChange(this)">
