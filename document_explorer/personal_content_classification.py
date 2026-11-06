@@ -62,9 +62,13 @@ CONTENT_SIGNALS = {
         "SISTEMA NACIONAL DE SALUD DE ESPANA",
     ],
     "DNI": ["DOCUMENTO NACIONAL DE IDENTIDAD"],
-    "NIE": ["NUMERO DE IDENTIDAD DE EXTRANJERO", "CERTIFICADO DE REGISTRO DE CIUDADANO"],
+    "NIE": [
+        "NUMERO DE IDENTIDAD DE EXTRANJERO",
+        "CERTIFICADO DE REGISTRO DE CIUDADANO",
+    ],
     "RECONOCIMIENTO_MEDICO": [
-        "EXAMEN MEDICO ESPECIFICO", "APTO PARA EL PUESTO", "VIGILANCIA DE LA SALUD",
+        "EXAMEN MEDICO ESPECIFICO", "APTO PARA EL PUESTO",
+        "VIGILANCIA DE LA SALUD",
         # H35 (S107), confirmado con 12+ muestras reales (formato MPE,
         # Medios de Prevencion Externos Sur S.L., el proveedor de PRL
         # mas usado de toda la plataforma): "CERTIFICA: Que el
@@ -79,10 +83,12 @@ CONTENT_SIGNALS = {
         # MEDICO listados en la hoja de ruta de S107. Confirmado contra
         # el texto OCR real de cada muestra, nunca de memoria.
         # Formato CRC (pk=24883/24884, aptitud grua movil):
-        "RECONOCIMIENTO FACULTATIVO DE COMPROBACION DE APTITUDES FISICAS Y PSICOLOGICAS",
+        "RECONOCIMIENTO FACULTATIVO DE COMPROBACION DE APTITUDES "
+        "FISICAS Y PSICOLOGICAS",
         # Formato "Las Carmelitas" (pk=40914/42791/42793/42794,
         # renovacion carnet operador grua torre):
-        "RECONOCIMIENTO FACULTATIVO PERTINENTE DE COMPROBACION DE LA CAPACIDAD FISICA Y LA APTITUD PSICOLOGICA",
+        "RECONOCIMIENTO FACULTATIVO PERTINENTE DE COMPROBACION DE LA "
+        "CAPACIDAD FISICA Y LA APTITUD PSICOLOGICA",
         # Notificacion Fraternidad Muprespa (12 muestras reales:
         # pk=28937/35686/42752/42756/42765/42774/42779/42780/42782/
         # 42783/42787/42789) -- notificacion de que el reconocimiento
@@ -106,7 +112,9 @@ CONTENT_SIGNALS = {
         # lectura visual -- ver Comando S de la sesion.
         "SIENDO APTO PARA ACTUAR COMO OPERADOR DE GRUA",
     ],
-    "NOMINA": ["RECIBO DE SALARIOS", "LIQUIDO A PERCIBIR", "PERIODO DE LIQUIDACION"],
+    "NOMINA": [
+        "RECIBO DE SALARIOS", "LIQUIDO A PERCIBIR", "PERIODO DE LIQUIDACION",
+    ],
     "CONTRATO": ["CONTRATO DE TRABAJO", "DECLARAN QUE REUNEN LOS REQUISITOS"],
     "ALTA": ["RESOLUCION SOBRE RECONOCIMIENTO DE ALTA", "ALTA NORMAL PREVIA"],
     "BAJA_PERSONAL": ["RESOLUCION SOBRE RECONOCIMIENTO DE BAJA"],
@@ -644,6 +652,13 @@ CONTENT_SIGNALS = {
     # COMUNICACION_JORNADA).
     "COMUNICACION_INSPECCION_TRABAJO": [
         "ORGANISMO ESTATAL INSPECCION DE TRABAJO Y SEGURIDAD SOCIAL",
+    ],
+    # H24 (S147), confirmado con muestra real (pk=36621, justificante
+    # del Servicio Andaluz de Salud): el propio trabajador fue al
+    # medico. Frase completa del impreso del SAS, nunca "JUSTIFICANTE
+    # DE CITA" suelto (tambien lo usan otros organismos).
+    "JUSTIFICANTE_ASISTENCIA_MEDICA": [
+        "HA ACUDIDO A LA CONSULTA, TRATAMIENTO O EXPLORACION",
     ],
 }
 
