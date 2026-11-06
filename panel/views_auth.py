@@ -366,6 +366,15 @@ class CompanyUserUpdateView (SupervisorAccessMixin, UpdateView):
         # se corregía con un comando (caso real: "Jose Luís Álvaréz").
         from django import forms as _forms
         _user = form.instance.user
+        # S147 (Miguel Ángel): el usuario también se cambia aquí; con el
+        # nombre canónico (nombre.apellido) se enlaza con su ficha.
+        form.fields["username"] = _forms.CharField(
+            max_length=150,
+            required=True,
+            label="Usuario",
+            initial=_user.username,
+            widget=_forms.TextInput(attrs={"class": "form-control"}),
+        )
         for _name, _label, _value in (
             ("first_name", "Nombre", _user.first_name),
             ("last_name", "Apellidos", _user.last_name),
@@ -518,6 +527,32 @@ class CompanyUserUpdateView (SupervisorAccessMixin, UpdateView):
         (H37, S133), sin espacios sobrantes.
         """
         _user = self.object.user
+        # S147: cambio de usuario (minúsculas, números, punto o guion;
+        # único) y, si la cuenta no tiene ficha, enlace con la del
+        # trabajador cuyo usuario canónico es ese.
+        from panel.personal_access import USERNAME_RE
+        _new_username = form.cleaned_data.get("username", "").strip()
+        if _new_username and _new_username != _user.username:
+            if not USERNAME_RE.match(_new_username):
+                form.add_error("username", (
+                    "Solo minúsculas, números, punto o guion (mínimo 3)."))
+                return self.form_invalid(form)
+            from django.contrib.auth.models import User as AuthUser
+            if AuthUser.objects.filter(
+                    username__iexact=_new_username).exclude(
+                    pk=_user.pk).exists():
+                form.add_error("username", "Ese usuario ya existe.")
+                return self.form_invalid(form)
+            logger.info("# [USER UPDATE] Usuario '%s' -> '%s'.",
+                        _user.username, _new_username)
+            _user.username = _new_username
+            _user.save(update_fields=["username"])
+            _linked = self._link_by_canonical_username(_new_username)
+            if _linked is not None:
+                django_messages.info(self.request, (
+                    "Enlazado con la ficha de %s %s %s." % (
+                        _linked.given_name, _linked.first_surname,
+                        _linked.second_surname)).strip())
         _first = form.cleaned_data.get("first_name", "").strip()
         _last = form.cleaned_data.get("last_name", "").strip()
         if (_first, _last) != (_user.first_name, _user.last_name):
@@ -533,6 +568,34 @@ class CompanyUserUpdateView (SupervisorAccessMixin, UpdateView):
             _user.last_name = _last
             _user.save(update_fields=["first_name", "last_name"])
         return super().form_valid(form)
+
+    def _link_by_canonical_username(self, username):
+        """
+        Link the account to the worker whose canonical username it is.
+        ---
+        S147: si la cuenta no tiene ficha y hay un solo trabajador sin
+        usuario cuyo usuario canónico (nombre.apellido o
+        nombre.apellido.apellido2) es este, se enlazan (link_account: no
+        toca rol, base ni contraseña). Devuelve la ficha o None.
+        """
+        from document_explorer.models import PersonIdentity
+        from panel.personal_access import link_account, username_options
+
+        account = self.object
+        if PersonIdentity.objects.filter(company_user=account).exists():
+            return None
+        wanted = username.lower()
+        matches = [
+            person for person in PersonIdentity.objects.filter(
+                company_user__isnull=True,
+            ).only("pk", "given_name", "first_surname", "second_surname",
+                   "dni", "company_user")
+            if wanted in username_options(person)
+        ]
+        if len(matches) != 1:
+            return None
+        link_account(matches[0], account)
+        return matches[0]
 
     def get_success_url(self):
         """
@@ -598,6 +661,10 @@ class CompanyUserUpdateView (SupervisorAccessMixin, UpdateView):
             or self.request.META.get("HTTP_REFERER", "")
             or "/panel/users/"
         )
+        # S147: ficha de personal enlazada (o ninguna).
+        from document_explorer.models import PersonIdentity
+        context["linked_person"] = PersonIdentity.objects.filter(
+            company_user=self.object).first()
         return context
 
     def _get_own_presence(self):

@@ -71,6 +71,23 @@
                     {# next: preservar la página de origen entre POSTs — resuelto en contexto #}
                     <input type="hidden" name="next" value="{{ next_url }}">
 
+                    {# S147: usuario editable; con el canónico (nombre.apellido) se enlaza con su ficha. #}
+                    <div class="mb-3">
+                        <label for="{{ form.username.id_for_label }}" class="form-label fw-medium">Usuario</label>
+                        {{ form.username }}
+                        {% if form.username.errors %}
+                        <div class="text-danger mt-1">{% for error in form.username.errors %}{{ error }}{% endfor %}</div>
+                        {% endif %}
+                        <div class="form-text">
+                            {% if linked_person %}
+                            Enlazado con la ficha de {{ linked_person.first_surname }} {{ linked_person.second_surname }}, {{ linked_person.given_name }}.
+                            {% else %}
+                            Sin ficha de personal enlazada. Si pones su usuario canónico (nombre.apellido, sin tildes, como el alta en el fichaje), se enlaza con su ficha sin cambiarle el rol ni la contraseña.
+                            {% endif %}
+                            Con el usuario nuevo entra en el panel; la contraseña no cambia.
+                        </div>
+                    </div>
+
                     <!-- H37 (S133): account first and last name — Nombre y apellidos de la cuenta -->
                     <div class="row g-3 mb-4">
                         <div class="col-md-5">
