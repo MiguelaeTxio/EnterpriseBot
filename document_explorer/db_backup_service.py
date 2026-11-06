@@ -27,11 +27,13 @@ import hashlib
 import logging
 import re
 import subprocess
+import time
 import zlib
 
 from django.apps import apps
 from django.conf import settings
-from django.db import connection
+from django.core.management import call_command
+from django.db import close_old_connections, connection
 from django.utils import timezone
 
 from spare_parts.gcs_service import ensure_bucket, get_storage_client
@@ -148,6 +150,13 @@ def run_backup():
     con su error y el objeto a medias se borra del cubo.
     """
     started = timezone.localtime()
+    # El nombre lleva el minuto: si ya hay una copia en este minuto
+    # (copia en el momento justo antes de restaurar), se espera al
+    # siguiente.
+    while DatabaseBackup.objects.filter(
+            file_name=started.strftime(FILE_NAME_FORMAT)).exists():
+        time.sleep(61 - started.second)
+        started = timezone.localtime()
     backup = DatabaseBackup.objects.create(
         file_name=started.strftime(FILE_NAME_FORMAT),
         started_at=started,
@@ -303,3 +312,99 @@ def report_removed(names):
     return DatabaseBackup.objects.filter(
         file_name__in=valid, removed_from_local_at__isnull=True,
     ).update(removed_from_local_at=timezone.now())
+
+
+def _restore_command():
+    db = settings.DATABASES["default"]
+    return ["mysql", "-u", db["USER"], "-h", db["HOST"], db["NAME"]]
+
+
+def _stream_blob_to_mysql(backup):
+    """Feed the copy, decompressed on the fly, into mysql.
+    ---
+    Lee la copia del cubo, la descomprime por trozos y se la pasa a
+    `mysql`; nada pasa por el disco del servidor. Lanza RuntimeError si
+    mysql falla.
+    """
+    decompressor = zlib.decompressobj(31)
+    process = subprocess.Popen(
+        _restore_command(), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        with open_blob(backup) as handle:
+            while True:
+                chunk = handle.read(CHUNK_BYTES)
+                if not chunk:
+                    break
+                process.stdin.write(decompressor.decompress(chunk))
+            process.stdin.write(decompressor.flush())
+    except BrokenPipeError:
+        pass
+    finally:
+        process.stdin.close()
+    stderr = process.stderr.read().decode("utf-8", "replace")
+    code = process.wait()
+    if code != 0:
+        raise RuntimeError(
+            "mysql salió con %s: %s" % (code, stderr.strip()[:900]))
+
+
+def restore_backup(backup_pk, username):
+    """Restore one copy over the production database.
+    ---
+    Restaura una copia sobre la base de datos de producción (solo
+    administradores, desde el panel). Pasos:
+
+    1. Copia de seguridad del estado actual (si falla, no se restaura).
+    2. Se guarda el registro de copias (esta tabla también va en el
+       volcado: restaurar una copia antigua borraría las posteriores).
+    3. La copia elegida se vuelca en MySQL por tubería desde el cubo.
+    4. Se repone el registro de copias y se aplican las migraciones que
+       falten (si la copia es anterior a alguna).
+    Devuelve el texto de error, o "" si ha ido bien.
+    """
+    backup = DatabaseBackup.objects.get(pk=backup_pk)
+    backup.restore_status = DatabaseBackup.RESTORE_RUNNING
+    backup.restore_requested_by = username[:150]
+    backup.restore_started_at = timezone.now()
+    backup.restore_finished_at = None
+    backup.restore_error = ""
+    backup.restore_safety_copy = ""
+    backup.save()
+    safety = run_backup()
+    if safety.status != DatabaseBackup.STATUS_READY:
+        error = "No se restaura: falló la copia previa (%s)" % safety.error
+        DatabaseBackup.objects.filter(pk=backup_pk).update(
+            restore_status=DatabaseBackup.RESTORE_FAILED,
+            restore_finished_at=timezone.now(), restore_error=error[:2000],
+            restore_safety_copy=safety.file_name,
+        )
+        return error
+    DatabaseBackup.objects.filter(pk=backup_pk).update(
+        restore_safety_copy=safety.file_name)
+    registry = list(DatabaseBackup.objects.values())
+    error = ""
+    try:
+        _stream_blob_to_mysql(backup)
+    except Exception as exc:  # noqa: BLE001 -- se guarda y se avisa
+        logger.exception("# [db_backup] Fallo restaurando %s",
+                         backup.file_name)
+        error = str(exc)[:2000]
+    close_old_connections()
+    try:
+        call_command("migrate", interactive=False, verbosity=0)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("# [db_backup] Fallo en migrate tras restaurar")
+        error = (error + " | migrate: %s" % exc)[:2000]
+    DatabaseBackup.objects.all().delete()
+    DatabaseBackup.objects.bulk_create(
+        [DatabaseBackup(**row) for row in registry])
+    DatabaseBackup.objects.filter(pk=backup_pk).update(
+        restore_status=(DatabaseBackup.RESTORE_FAILED if error
+                        else DatabaseBackup.RESTORE_DONE),
+        restore_finished_at=timezone.now(), restore_error=error,
+    )
+    logger.info("# [db_backup] Restauración de %s: %s", backup.file_name,
+                error or "correcta")
+    return error

@@ -153,6 +153,12 @@ from panel.views_personal_access import (
     PersonalAccessPreviewView,
     PersonalAccessResendView,
 )
+from panel.views_db_backups import (
+    DbBackupActionView,
+    DbBackupDownloadView,
+    DbBackupListPageView,
+    DbBackupListResultsView,
+)
 from panel.views_users_list import (
     UserListMassActionView,
     UserListPageView,
@@ -421,6 +427,27 @@ urlpatterns = [
     # User management — Gestión de usuarios de empresa.
     # H24 (S145): formato único de listados (panel/views_users_list.py).
     path("users/", UserListPageView.as_view(), name="user_list"),
+    # H24 (S146): copias de seguridad de la BD (solo administradores).
+    path(
+        "copias-seguridad/",
+        DbBackupListPageView.as_view(),
+        name="db_backup_list",
+    ),
+    path(
+        "copias-seguridad/resultados/",
+        DbBackupListResultsView.as_view(),
+        name="db_backup_list_results",
+    ),
+    path(
+        "copias-seguridad/accion/",
+        DbBackupActionView.as_view(),
+        name="db_backup_list_action",
+    ),
+    path(
+        "copias-seguridad/<int:pk>/descargar/",
+        DbBackupDownloadView.as_view(),
+        name="db_backup_download",
+    ),
     path(
         "users/results/",
         UserListResultsView.as_view(),

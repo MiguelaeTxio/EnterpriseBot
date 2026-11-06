@@ -392,6 +392,15 @@
                             <i class="bi bi-people"></i>Usuarios
                         </a>
                     </li>
+                    {# H24 (S146): copias de seguridad de la BD, solo el rol Administrador. #}
+                    {% if company_user.role == 'ADMIN' %}
+                    <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'db_backups' %}active{% endif %}"
+                           href="{% url 'panel:db_backup_list' %}">
+                            <i class="bi bi-database-lock"></i>Copias de seguridad
+                        </a>
+                    </li>
+                    {% endif %}
                     {# Vacaciones -- H24, retirado H31/S94. El CRUD de pagina  #}
                     {# completa (hr_calendar:vacation_period_list) sigue        #}
                     {# existiendo por compatibilidad, pero ya no se enlaza      #}

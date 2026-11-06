@@ -1155,3 +1155,19 @@ def backup_database_task(self) -> str:
 
     backup = run_backup()
     return "%s: %s" % (backup.file_name, backup.status)
+
+
+@app.task(base=DjangoTask, bind=True, max_retries=0)
+def restore_database_task(self, backup_pk: int, username: str) -> str:
+    """
+    Restore one database copy over production (admins only).
+
+    ---
+
+    H24 (S146). Restaura una copia de la base de datos sobre producción,
+    pedida por un administrador desde el panel. Antes hace una copia
+    del estado actual. Ver `db_backup_service.restore_backup`.
+    """
+    from .db_backup_service import restore_backup
+
+    return restore_backup(backup_pk, username) or "correcta"

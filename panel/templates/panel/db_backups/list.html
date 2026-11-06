@@ -1,0 +1,396 @@
+<!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/db_backups/list.html -->
+{% extends "panel/base.html" %}
+{% comment %}
+H24 (S146). Administración > Copias de seguridad, solo para el rol
+Administrador. Miguel Ángel: "una parte que solamente sea accesible
+para los administradores para poder restaurar en caso de pérdida de
+información." Formato único de listados (directriz 4.24): a la
+izquierda buscar y filtrar (texto, Estado, En el cubo, Selección); a la
+derecha las acciones (hacer una copia ahora, descargar y restaurar la
+marcada). Debajo, la lista (3/4, pantalla completa) y la selección
+actual (1/4). Restaurar pide escribir RESTAURAR y antes hace una copia
+del estado actual. Vista: panel/views_db_backups.py.
+{% endcomment %}
+
+{% block title %}Copias de seguridad{% endblock %}
+{% block page_title %}Copias de seguridad de la base de datos{% endblock %}
+
+{% block content %}
+<div class="border rounded p-2 mb-2" id="bk-top-panel">
+    <div class="row g-2">
+        <div class="col-lg-7">
+            <div class="border rounded p-2 h-100">
+                <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                <form id="bk-filters" autocomplete="off" onsubmit="return false;"
+                      hx-get="{% url 'panel:db_backup_list_results' %}" hx-target="#bk-results"
+                      hx-include="#bk-sort-inputs"
+                      hx-trigger="input changed delay:300ms from:#bk-filter-search, change, bk-selection-refresh">
+                    <div class="d-flex gap-2 mb-2">
+                        <input type="text" name="search" id="bk-filter-search" class="form-control"
+                               placeholder="Buscar por nombre de archivo (p. ej. 20261106)…" value="{{ filter_search }}">
+                    </div>
+                    <div class="d-flex flex-wrap gap-3 align-items-start small">
+                        {# Estado: casillas con semántica literal ("" = todos, "none" = ninguno). #}
+                        <div>
+                            <div class="fw-semibold mb-1">Estado</div>
+                            <div class="dropdown">
+                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" id="bk-status-button"
+                                        data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">Todos</button>
+                                <div class="dropdown-menu p-2 small">
+                                    {% for code, label in status_choices %}
+                                    <div class="form-check">
+                                        <input class="form-check-input bk-status-check" type="checkbox" value="{{ code }}" id="bkStatus{{ forloop.counter }}">
+                                        <label class="form-check-label text-nowrap" for="bkStatus{{ forloop.counter }}">{{ label }}</label>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <input type="hidden" name="status" id="bk-status-input" value="{{ filter_status }}">
+                        </div>
+                        <div>
+                            <div class="fw-semibold mb-1">En el cubo</div>
+                            <select name="bucket" class="form-select form-select-sm w-auto" title="Solo se pueden restaurar y descargar desde aquí las que siguen en el cubo">
+                                <option value="">Todas</option>
+                                <option value="yes"{% if filter_bucket == "yes" %} selected{% endif %}>Sí</option>
+                                <option value="no"{% if filter_bucket == "no" %} selected{% endif %}>No</option>
+                            </select>
+                        </div>
+                        <div>
+                            <div class="fw-semibold mb-1">Selección</div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="only_selected" value="1" id="bkOnlySelected">
+                                <label class="form-check-label" for="bkOnlySelected">Mostrar solo la selección actual</label>
+                            </div>
+                            <input type="hidden" name="selected_ids" id="bk-selected-ids" value="">
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="border rounded p-2 h-100">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <strong class="small"><span id="bk-mass-count">0</span> seleccionadas</strong>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="bk-mass-clear">Limpiar</button>
+                </div>
+                {# Acciones en cuadrícula por categoría (4.24, reglas 6 y 12); la explicación, en el título del botón. #}
+                <div class="row g-1">
+                    <div class="col-12">
+                        <div class="small text-muted fw-bold">Copias</div>
+                        <div class="d-flex flex-wrap gap-1">
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="bk-backup-now"
+                                    title="Hace ya una copia completa, igual que la diaria de las 3:00. El agente H28 la baja a OneDrive.">
+                                <i class="bi bi-database-add me-1"></i>Hacer una copia ahora
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <div class="small text-muted fw-bold mt-1">Copia marcada (una)</div>
+                        <div class="d-flex flex-wrap gap-1">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="bk-download"
+                                    title="Descarga la copia marcada (.sql.gz), si sigue en el cubo.">
+                                <i class="bi bi-download me-1"></i>Descargar
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" id="bk-restore"
+                                    title="Sustituye la base de datos de producción por la copia marcada. Antes se hace una copia del estado actual.">
+                                <i class="bi bi-arrow-counterclockwise me-1"></i>Restaurar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="border rounded p-2" id="bk-bottom-panel">
+    <div class="row g-2 h-100">
+        <div class="col-lg-9 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1">Copias (<span id="bk-row-count">{{ rows|length }}</span>)
+                    <button type="button" class="btn btn-sm btn-link py-0{% if not sort_active %} d-none{% endif %}" id="bk-clear-sort"
+                            hx-get="{% url 'panel:db_backup_list_results' %}" hx-target="#bk-results"
+                            hx-include="#bk-filters" hx-vals='{"sort": ""}'>Quitar orden</button>
+                    {# Pantalla completa (directriz 4.26). #}
+                    <button type="button" class="btn btn-sm btn-outline-secondary float-end" id="bk-fullscreen" title="Pantalla completa">
+                        <i class="bi bi-fullscreen"></i>
+                    </button>
+                </div>
+                <div id="bk-results-scroll" class="bk-fill bk-scroll-both fixed-list-scroll">
+                    <div id="bk-results">
+                        {% include "panel/db_backups/_table.html" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1">Selección actual (<span id="bk-selection-count">0</span>)</div>
+                <div class="bk-fill bk-scroll-y">
+                    <ul class="mb-0 small ps-0 list-unstyled" id="bk-selection-list">
+                        <li class="text-muted">Ninguna seleccionada todavía.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Restaurar: hay que escribir la palabra; el botón se activa a los 3 segundos. #}
+<div class="modal fade" id="bk-restore-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-exclamation-triangle text-danger me-2"></i>Restaurar la base de datos</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body small">
+                <p class="mb-2">Se sustituye <strong>toda</strong> la base de datos de producción por la copia
+                    <span class="font-monospace" id="bk-restore-name"></span>.</p>
+                <ul class="mb-2 ps-3">
+                    <li>Antes se hace una copia del estado actual, para poder volver atrás.</li>
+                    <li>Lo que se grabe en el panel mientras se restaura se pierde.</li>
+                    <li>Puede que haya que volver a iniciar sesión.</li>
+                </ul>
+                <label class="form-label mb-1" for="bk-restore-word">Escriba <strong>{{ restore_word }}</strong> para confirmar:</label>
+                <input type="text" class="form-control form-control-sm" id="bk-restore-word" autocomplete="off">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-danger" id="bk-restore-ok" disabled>Restaurar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+#bk-results-scroll table td,
+#bk-results-scroll table th { white-space: nowrap; }
+.bk-fill { flex: 1 1 auto; min-height: 0; }
+.bk-scroll-y { overflow-y: auto; }
+.bk-scroll-both { overflow: auto; }
+#bk-bottom-panel:fullscreen { background-color: var(--bs-body-bg); padding: 1rem; }
+#bk-bottom-panel:fullscreen #bk-results-scroll { height: calc(100vh - 5rem); }
+</style>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="bk-toast" class="toast align-items-center text-bg-dark border-0" role="status" aria-live="polite">
+        <div class="d-flex">
+            <div class="toast-body" id="bk-toast-msg"></div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+{{ saved_selection|json_script:"bk-saved-selection" }}
+{% include "panel/_fixed_list_layout.html" with top_id="bk-top-panel" bottom_id="bk-bottom-panel" %}
+<script>
+(function () {
+    "use strict";
+
+    const results = document.getElementById("bk-results");
+    const filters = document.getElementById("bk-filters");
+    const SCREEN_KEY = "{{ screen_key|escapejs }}";
+    const ACTION_URL = "{% url 'panel:db_backup_list_action' %}";
+    const DOWNLOAD_URL = "{% url 'panel:db_backup_download' 0 %}";
+    const RESTORE_WORD = "{{ restore_word|escapejs }}";
+    // Selección (pk -> nombre de archivo), recordada por usuario.
+    const selection = new Map();
+    try {
+        JSON.parse(document.getElementById("bk-saved-selection").textContent).forEach(function (item) {
+            if (item && item.pk) selection.set(String(item.pk), item.label || "");
+        });
+    } catch (e) { /* estado ilegible: se empieza sin selección */ }
+    let lastSaved = null;
+    function saveSelection() {
+        const payload = Array.from(selection.entries()).map(function ([pk, label]) {
+            return {pk: pk, label: label};
+        });
+        const serialized = JSON.stringify(payload);
+        if (serialized === lastSaved) return;
+        lastSaved = serialized;
+        window.EbNavState.save(SCREEN_KEY, {selection: payload});
+    }
+
+    function updateSelectionUi() {
+        saveSelection();
+        document.getElementById("bk-mass-count").textContent = selection.size;
+        document.getElementById("bk-selection-count").textContent = selection.size;
+        const list = document.getElementById("bk-selection-list");
+        list.innerHTML = "";
+        const names = Array.from(selection.values()).sort().reverse();
+        if (!names.length) {
+            const li = document.createElement("li");
+            li.className = "text-muted";
+            li.textContent = "Ninguna seleccionada todavía.";
+            list.appendChild(li);
+        }
+        names.forEach(function (name) {
+            const li = document.createElement("li");
+            li.className = "font-monospace";
+            li.textContent = name;
+            list.appendChild(li);
+        });
+        const idsInput = document.getElementById("bk-selected-ids");
+        const newIds = Array.from(selection.keys()).join(",");
+        if (idsInput.value !== newIds) {
+            idsInput.value = newIds;
+            if (document.getElementById("bkOnlySelected").checked) htmx.trigger(filters, "bk-selection-refresh");
+        }
+        const all = document.getElementById("bk-check-all");
+        if (!all) return;
+        const rows = results.querySelectorAll(".bk-row-check");
+        const checked = results.querySelectorAll(".bk-row-check:checked");
+        all.checked = rows.length > 0 && checked.length === rows.length;
+        all.indeterminate = checked.length > 0 && checked.length < rows.length;
+    }
+
+    function refreshFromFragment() {
+        const state = document.getElementById("bk-fragment-state");
+        if (state) {
+            document.getElementById("bk-row-count").textContent = state.dataset.count;
+            document.getElementById("bk-clear-sort").classList.toggle("d-none", !state.dataset.sortActive);
+        }
+        results.querySelectorAll(".bk-row-check").forEach(function (cb) {
+            cb.checked = selection.has(cb.dataset.pk);
+        });
+        updateSelectionUi();
+    }
+
+    // Estado: casillas en un desplegable; en el campo oculto "" = todos,
+    // "none" = ninguno, si no, los marcados con comas.
+    (function () {
+        const boxes = Array.from(document.querySelectorAll(".bk-status-check"));
+        const input = document.getElementById("bk-status-input");
+        const button = document.getElementById("bk-status-button");
+        const value = input.value;
+        const wanted = value === "none" ? [] : (value ? value.split(",") : null);
+        boxes.forEach(function (b) { b.checked = wanted === null || wanted.indexOf(b.value) !== -1; });
+        function sync(fire) {
+            const marked = boxes.filter(function (b) { return b.checked; }).map(function (b) { return b.value; });
+            input.value = marked.length === boxes.length ? "" : (marked.length ? marked.join(",") : "none");
+            button.textContent = marked.length === boxes.length ? "Todos"
+                : (marked.length === 0 ? "Ninguno" : (marked.length === 1
+                    ? boxes.find(function (b) { return b.checked; }).nextElementSibling.textContent
+                    : marked.length + " de " + boxes.length));
+            if (fire) input.dispatchEvent(new Event("change", {bubbles: true}));
+        }
+        boxes.forEach(function (b) { b.addEventListener("change", function () { sync(true); }); });
+        sync(false);
+    }());
+
+    results.addEventListener("change", function (evt) {
+        const target = evt.target;
+        if (target.classList.contains("bk-row-check")) {
+            if (target.checked) selection.set(target.dataset.pk, target.dataset.label);
+            else selection.delete(target.dataset.pk);
+            updateSelectionUi();
+        } else if (target.id === "bk-check-all") {
+            results.querySelectorAll(".bk-row-check").forEach(function (cb) {
+                cb.checked = target.checked;
+                if (target.checked) selection.set(cb.dataset.pk, cb.dataset.label);
+                else selection.delete(cb.dataset.pk);
+            });
+            updateSelectionUi();
+        }
+    });
+
+    document.getElementById("bk-mass-clear").addEventListener("click", function () {
+        selection.clear();
+        refreshFromFragment();
+    });
+
+    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    function showToast(text, danger) {
+        const toast = document.getElementById("bk-toast");
+        toast.classList.toggle("text-bg-danger", !!danger);
+        toast.classList.toggle("text-bg-dark", !danger);
+        document.getElementById("bk-toast-msg").textContent = text;
+        new bootstrap.Toast(toast).show();
+    }
+    // Cada acción devuelve la tabla con los filtros que se veían (_f_);
+    // el mensaje llega en X-Backups-Message.
+    function runAction(action, button, extra) {
+        const body = new FormData();
+        new FormData(filters).forEach(function (value, key) { body.append("_f_" + key, value); });
+        const sortInput = results.querySelector('#bk-sort-inputs input[name="sort"]');
+        body.append("_f_sort", sortInput ? sortInput.value : "");
+        body.append("action", action);
+        Object.keys(extra || {}).forEach(function (key) { body.append(key, extra[key]); });
+        selection.forEach(function (_label, pk) { body.append("selected", pk); });
+        const original = button.innerHTML;
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Trabajando…';
+        fetch(ACTION_URL, {
+            method: "POST", headers: {"X-CSRFToken": csrfMeta ? csrfMeta.content : ""}, body: body,
+        }).then(function (r) {
+            if (!r.ok) { showToast("No se ha podido hacer (" + r.status + ").", true); return; }
+            const message = r.headers.get("X-Backups-Message");
+            const isError = r.headers.get("X-Backups-Error") === "1";
+            return r.text().then(function (html) {
+                results.innerHTML = html;
+                htmx.process(results);
+                refreshFromFragment();
+                if (message) showToast(decodeURIComponent(message), isError);
+            });
+        }).catch(function () {
+            showToast("Sin conexión con el servidor: no se ha hecho nada.", true);
+        }).finally(function () {
+            button.disabled = false;
+            button.innerHTML = original;
+        });
+    }
+
+    document.getElementById("bk-backup-now").addEventListener("click", function () {
+        runAction("backup_now", this);
+    });
+
+    function onlyOne() {
+        if (selection.size !== 1) {
+            showToast("Marca una sola copia.", true);
+            return null;
+        }
+        return Array.from(selection.entries())[0];
+    }
+
+    document.getElementById("bk-download").addEventListener("click", function () {
+        const one = onlyOne();
+        if (one) window.location.href = DOWNLOAD_URL.replace("/0/", "/" + one[0] + "/");
+    });
+
+    const modalEl = document.getElementById("bk-restore-modal");
+    const wordInput = document.getElementById("bk-restore-word");
+    const okButton = document.getElementById("bk-restore-ok");
+    let ready = false;
+    function syncOk() { okButton.disabled = !(ready && wordInput.value.trim() === RESTORE_WORD); }
+    wordInput.addEventListener("input", syncOk);
+    document.getElementById("bk-restore").addEventListener("click", function () {
+        const one = onlyOne();
+        if (!one) return;
+        document.getElementById("bk-restore-name").textContent = one[1];
+        wordInput.value = "";
+        ready = false;
+        syncOk();
+        setTimeout(function () { ready = true; syncOk(); }, 3000);
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    });
+    okButton.addEventListener("click", function () {
+        bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+        runAction("restore", document.getElementById("bk-restore"), {confirm_word: wordInput.value.trim()});
+    });
+
+    // Pantalla completa (directriz 4.26).
+    const bottom = document.getElementById("bk-bottom-panel");
+    document.getElementById("bk-fullscreen").addEventListener("click", function () {
+        if (document.fullscreenElement) document.exitFullscreen();
+        else bottom.requestFullscreen();
+    });
+
+    document.body.addEventListener("htmx:afterSwap", function (evt) {
+        if (evt.detail.target && evt.detail.target.id === "bk-results") refreshFromFragment();
+    });
+
+    refreshFromFragment();
+}());
+</script>
+{% endblock %}

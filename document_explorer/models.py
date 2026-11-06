@@ -4489,6 +4489,36 @@ class DatabaseBackup(models.Model):
     removed_from_local_at = models.DateTimeField(
         null=True, blank=True, verbose_name="Quitada de OneDrive",
     )
+    # Restauración desde el panel (solo administradores, S146).
+    RESTORE_RUNNING = "running"
+    RESTORE_DONE = "done"
+    RESTORE_FAILED = "failed"
+    RESTORE_CHOICES = [
+        (RESTORE_RUNNING, "Restaurando"),
+        (RESTORE_DONE, "Restaurada"),
+        (RESTORE_FAILED, "Restauración fallida"),
+    ]
+    restore_status = models.CharField(
+        max_length=20, choices=RESTORE_CHOICES, blank=True, default="",
+        verbose_name="Restauración",
+    )
+    restore_requested_by = models.CharField(
+        max_length=150, blank=True, default="",
+        verbose_name="Restauración pedida por",
+    )
+    restore_started_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Restauración empezada",
+    )
+    restore_finished_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Restauración terminada",
+    )
+    restore_safety_copy = models.CharField(
+        max_length=100, blank=True, default="",
+        verbose_name="Copia previa a la restauración",
+    )
+    restore_error = models.TextField(
+        blank=True, default="", verbose_name="Error de la restauración",
+    )
 
     class Meta:
         verbose_name = "Copia de seguridad de la base de datos"
