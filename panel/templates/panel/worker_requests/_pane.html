@@ -1,0 +1,330 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/worker_requests/_pane.html #}
+{% comment %}
+H24 (S147). Pestaña Solicitudes del hub (y página propia para
+Supervisor y Jefe de taller), formato de la directriz 4.24:
+- #wreq-top-panel (fijo): "Buscar y filtrar" (búsqueda, Estado y Tipo
+  con casillas -- ninguna marcada = ninguna --, Selección) y, a la
+  derecha, las acciones sobre las marcadas (aprobar, denegar con
+  motivo, validar justificantes) con su contador.
+- #wreq-bottom-panel: la lista (3/4) y "Selección actual" (1/4).
+Pulsar el trabajador o "Gestionar" abre la petición con todas sus
+acciones. Filtros, orden y selección persistidos por usuario
+(screen_key "worker_requests").
+{% endcomment %}
+<div class="border rounded p-2 mb-2" id="wreq-top-panel">
+    <div class="row g-2">
+        <div class="col-lg-7">
+            <div class="border rounded p-2 h-100">
+                <div class="fw-bold small mb-1">Buscar y filtrar <span class="text-muted fw-normal">· {{ pending_count }} pendiente{{ pending_count|pluralize }}</span></div>
+                <form id="wreq-filters" autocomplete="off" onsubmit="return false;"
+                      hx-get="{% url 'panel:worker_requests_results' %}" hx-target="#wreq-results"
+                      hx-include="#wreq-sort-inputs"
+                      hx-trigger="input changed delay:300ms from:#wreq-filter-search, change, wreq-selection-refresh">
+                    <input type="text" name="search" id="wreq-filter-search" class="form-control doc-h30-search mb-2"
+                           placeholder="Buscar por trabajador, DNI, nota…" value="{{ filter_search }}">
+                    <div class="d-flex flex-wrap gap-3 align-items-start small">
+                        <div>
+                            <div class="fw-semibold mb-1">Estado</div>
+                            {% for value, label in status_choices %}
+                            <div class="form-check">
+                                <input class="form-check-input wreq-status-check" type="checkbox" value="{{ value }}" id="wreqStatus{{ value }}"
+                                       {% if value in filter_status %}checked{% endif %}>
+                                <label class="form-check-label" for="wreqStatus{{ value }}">{{ label }}</label>
+                            </div>
+                            {% endfor %}
+                            <input type="hidden" name="status" id="wreq-status-input" value="{{ filter_status|join:',' }}">
+                        </div>
+                        <div>
+                            <div class="fw-semibold mb-1">Tipo</div>
+                            {% for value, label in kind_choices %}
+                            <div class="form-check">
+                                <input class="form-check-input wreq-kind-check" type="checkbox" value="{{ value }}" id="wreqKind{{ value }}"
+                                       {% if value in filter_kind %}checked{% endif %}>
+                                <label class="form-check-label" for="wreqKind{{ value }}">{{ label }}</label>
+                            </div>
+                            {% endfor %}
+                            <input type="hidden" name="kind" id="wreq-kind-input" value="{{ filter_kind|join:',' }}">
+                        </div>
+                        <div>
+                            <div class="fw-semibold mb-1">Selección</div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="only_selected" value="1" id="wreqOnlySelected">
+                                <label class="form-check-label" for="wreqOnlySelected">Mostrar solo la selección actual</label>
+                            </div>
+                            <input type="hidden" name="selected_ids" id="wreq-selected-ids" value="">
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="border rounded p-2 h-100">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <strong class="small"><span id="wreq-mass-count">0</span> seleccionadas</strong>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="wreq-mass-clear">Limpiar</button>
+                </div>
+                <div class="small text-muted fw-bold">Resolver las marcadas</div>
+                <div class="d-flex gap-1 flex-wrap mb-1">
+                    <button type="button" class="btn btn-sm btn-success wreq-needs-selection wreq-mass" data-action="approve" disabled
+                            title="Aprueba las vacaciones, asuntos propios y médico marcados y crea sus periodos.">Aprobar</button>
+                    <button type="button" class="btn btn-sm btn-outline-danger wreq-needs-selection wreq-mass" data-action="deny" disabled
+                            title="Deniega las marcadas con el motivo de la casilla.">Denegar</button>
+                    <button type="button" class="btn btn-sm btn-outline-primary wreq-needs-selection wreq-mass" data-action="proof_valid" disabled
+                            title="Da por buenos los justificantes recibidos de las marcadas.">Justificantes válidos</button>
+                </div>
+                <input type="text" id="wreq-mass-reason" class="form-control form-control-sm" maxlength="500"
+                       placeholder="Motivo (para denegar)">
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="border rounded p-2" id="wreq-bottom-panel">
+    <div class="row g-2 h-100">
+        <div class="col-lg-9 h-100" id="wreq-list-col">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1 d-flex align-items-center">
+                    <span>Solicitudes (<span id="wreq-row-count">{{ rows|length }}</span>)</span>
+                    <button type="button" class="btn btn-sm btn-link py-0{% if not sort_active %} d-none{% endif %}" id="wreq-clear-sort"
+                            hx-get="{% url 'panel:worker_requests_results' %}" hx-target="#wreq-results"
+                            hx-include="#wreq-filters" hx-vals='{"sort": ""}'>Quitar orden</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" id="wreq-fullscreen" title="Pantalla completa"><i class="bi bi-fullscreen"></i></button>
+                </div>
+                <div id="wreq-results-scroll" class="wreq-fill fixed-list-scroll" style="overflow: auto;">
+                    <div id="wreq-results"
+                         hx-get="{% url 'panel:worker_requests_results' %}"
+                         hx-include="#wreq-filters, #wreq-sort-inputs"
+                         hx-trigger="worker-requests-refresh from:body">
+                        {% include "panel/worker_requests/_table.html" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1">Selección actual (<span id="wreq-selection-count">0</span>)</div>
+                <div class="wreq-fill" style="overflow-y: auto;">
+                    <ul class="mb-0 small ps-0 list-unstyled" id="wreq-selection-list">
+                        <li class="text-muted">Nada seleccionado todavía.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+#wreq-results-scroll table td, #wreq-results-scroll table th { white-space: nowrap; }
+.wreq-fill { flex: 1 1 auto; min-height: 0; }
+#wreq-list-col > div:fullscreen { background-color: var(--bs-body-bg); padding: 1rem; }
+#wreq-list-col > div:fullscreen .wreq-fill { height: calc(100vh - 4rem); }
+</style>
+
+<div class="modal fade" id="wreqDetailModal" tabindex="-1" aria-labelledby="wreqDetailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="wreqDetailModalLabel">Solicitud</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="wreq-detail-container">
+                <div class="text-muted small">Cargando…</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="wreq-toast" class="toast align-items-center text-bg-dark border-0"
+         role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="4000">
+        <div class="d-flex">
+            <div class="toast-body" id="wreq-toast-msg"></div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+{{ saved_selection|json_script:"wreq-saved-selection" }}
+{% include "panel/_fixed_list_layout.html" with top_id="wreq-top-panel" bottom_id="wreq-bottom-panel" %}
+<script>
+(function () {
+    "use strict";
+
+    const results = document.getElementById("wreq-results");
+    const filters = document.getElementById("wreq-filters");
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute("content");
+    const SCREEN_KEY = "{{ screen_key|escapejs }}";
+
+    const selection = new Map();
+    try {
+        JSON.parse(document.getElementById("wreq-saved-selection").textContent).forEach(function (item) {
+            if (item && item.pk) selection.set(String(item.pk), item.label || "");
+        });
+    } catch (e) { /* estado ilegible: se empieza sin selección */ }
+    let lastSaved = null;
+    function saveSelection() {
+        const payload = Array.from(selection.entries()).map(function ([pk, label]) {
+            return {pk: pk, label: label};
+        });
+        const serialized = JSON.stringify(payload);
+        if (serialized === lastSaved) return;
+        lastSaved = serialized;
+        window.EbNavState.save(SCREEN_KEY, {selection: payload});
+    }
+
+    function showToast(text, danger) {
+        const toast = document.getElementById("wreq-toast");
+        toast.classList.toggle("text-bg-danger", !!danger);
+        toast.classList.toggle("text-bg-dark", !danger);
+        document.getElementById("wreq-toast-msg").textContent = text;
+        new bootstrap.Toast(toast).show();
+    }
+
+    function updateSelectionUi() {
+        saveSelection();
+        document.getElementById("wreq-mass-count").textContent = selection.size;
+        document.getElementById("wreq-selection-count").textContent = selection.size;
+        const list = document.getElementById("wreq-selection-list");
+        list.innerHTML = "";
+        const names = Array.from(selection.values()).sort(function (a, b) { return a.localeCompare(b); });
+        if (!names.length) {
+            const li = document.createElement("li");
+            li.className = "text-muted";
+            li.textContent = "Nada seleccionado todavía.";
+            list.appendChild(li);
+        }
+        names.forEach(function (name) {
+            const li = document.createElement("li");
+            li.textContent = name;
+            list.appendChild(li);
+        });
+        const idsInput = document.getElementById("wreq-selected-ids");
+        const newIds = Array.from(selection.keys()).join(",");
+        if (idsInput.value !== newIds) {
+            idsInput.value = newIds;
+            if (document.getElementById("wreqOnlySelected").checked) htmx.trigger(filters, "wreq-selection-refresh");
+        }
+        document.querySelectorAll(".wreq-needs-selection").forEach(function (btn) {
+            btn.disabled = selection.size === 0;
+        });
+        const all = document.getElementById("wreq-check-all");
+        if (!all) return;
+        const rows = results.querySelectorAll(".wreq-row-check");
+        const checked = results.querySelectorAll(".wreq-row-check:checked");
+        all.checked = rows.length > 0 && checked.length === rows.length;
+        all.indeterminate = checked.length > 0 && checked.length < rows.length;
+    }
+
+    function refreshFromFragment() {
+        const state = document.getElementById("wreq-fragment-state");
+        if (state) {
+            document.getElementById("wreq-row-count").textContent = state.dataset.count;
+            document.getElementById("wreq-clear-sort").classList.toggle("d-none", !state.dataset.sortActive);
+        }
+        results.querySelectorAll(".wreq-row-check").forEach(function (cb) {
+            cb.checked = selection.has(cb.dataset.pk);
+        });
+        updateSelectionUi();
+    }
+
+    function syncCsv(selector, inputId) {
+        document.getElementById(inputId).value = Array.from(document.querySelectorAll(selector + ":checked"))
+            .map(function (cb) { return cb.value; }).join(",");
+    }
+    document.querySelectorAll(".wreq-status-check").forEach(function (cb) {
+        cb.addEventListener("change", function () { syncCsv(".wreq-status-check", "wreq-status-input"); });
+    });
+    document.querySelectorAll(".wreq-kind-check").forEach(function (cb) {
+        cb.addEventListener("change", function () { syncCsv(".wreq-kind-check", "wreq-kind-input"); });
+    });
+
+    results.addEventListener("change", function (evt) {
+        const target = evt.target;
+        if (target.classList.contains("wreq-row-check")) {
+            if (target.checked) selection.set(target.dataset.pk, target.dataset.label);
+            else selection.delete(target.dataset.pk);
+            updateSelectionUi();
+        } else if (target.id === "wreq-check-all") {
+            results.querySelectorAll(".wreq-row-check").forEach(function (cb) {
+                cb.checked = target.checked;
+                if (target.checked) selection.set(cb.dataset.pk, cb.dataset.label);
+                else selection.delete(cb.dataset.pk);
+            });
+            updateSelectionUi();
+        }
+    });
+
+    document.getElementById("wreq-mass-clear").addEventListener("click", function () {
+        selection.clear();
+        refreshFromFragment();
+    });
+
+    const ACTION_TEXT = {
+        approve: "Aprobar las solicitudes",
+        deny: "Denegar las solicitudes",
+        proof_valid: "Dar por buenos los justificantes de",
+    };
+    document.querySelectorAll(".wreq-mass").forEach(function (btn) {
+        btn.addEventListener("click", async function () {
+            const action = btn.dataset.action;
+            const reason = document.getElementById("wreq-mass-reason").value.trim();
+            if (!selection.size) return;
+            if (action === "deny" && !reason) { showToast("Escribe el motivo para denegar.", true); return; }
+            const visible = Array.from(results.querySelectorAll(".wreq-row-check")).map(function (cb) { return cb.dataset.pk; });
+            if (!(await window.EbMassConfirm({
+                action: ACTION_TEXT[action],
+                names: Array.from(selection.values()),
+                hidden: window.EbHiddenSelected(selection, visible),
+            }))) return;
+            const body = new FormData();
+            new FormData(filters).forEach(function (value, key) { body.append("_f_" + key, value); });
+            const sortInput = results.querySelector('#wreq-sort-inputs input[name="sort"]');
+            body.append("_f_sort", sortInput ? sortInput.value : "");
+            body.append("action", action);
+            body.append("response", reason);
+            selection.forEach(function (_label, pk) { body.append("selected", pk); });
+            const original = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>' + original;
+            fetch("{% url 'panel:worker_requests_mass' %}", {
+                method: "POST", headers: {"X-CSRFToken": csrfToken}, body: body,
+            }).then(function (r) {
+                if (!r.ok) { showToast("No se ha podido completar (" + r.status + ").", true); return; }
+                const message = r.headers.get("X-Requests-Message");
+                const isError = r.headers.get("X-Requests-Error") === "1";
+                return r.text().then(function (html) {
+                    results.innerHTML = html;
+                    htmx.process(results);
+                    if (action !== "proof_valid") selection.clear();
+                    refreshFromFragment();
+                    if (message) showToast(decodeURIComponent(message), isError);
+                });
+            }).catch(function () {
+                showToast("Sin conexión con el servidor: no se ha guardado nada.", true);
+            }).finally(function () {
+                btn.innerHTML = original;
+                updateSelectionUi();
+            });
+        });
+    });
+
+    // Directriz 4.26: pantalla completa del panel de la lista (contenedor
+    // estable, la tabla se repinta dentro sin salir de pantalla completa).
+    document.getElementById("wreq-fullscreen").addEventListener("click", function () {
+        const box = document.getElementById("wreq-list-col").firstElementChild;
+        if (document.fullscreenElement) document.exitFullscreen();
+        else if (box.requestFullscreen) box.requestFullscreen();
+    });
+
+    document.body.addEventListener("htmx:afterRequest", function (evt) {
+        const xhr = evt.detail.xhr;
+        if (!xhr || !document.body.contains(results)) return;
+        const message = xhr.getResponseHeader("X-Requests-Message");
+        if (message) showToast(decodeURIComponent(message), xhr.getResponseHeader("X-Requests-Error") === "1");
+    });
+    document.body.addEventListener("htmx:afterSwap", function (evt) {
+        if (evt.detail.target && evt.detail.target.id === "wreq-results") refreshFromFragment();
+    });
+
+    refreshFromFragment();
+}());
+</script>

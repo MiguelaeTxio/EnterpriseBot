@@ -1,0 +1,12 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/worker_requests/page.html #}
+{% extends "panel/base.html" %}
+{% comment %}
+H24 (S147). Solicitudes de los trabajadores como página propia, para
+Supervisor y Jefe de taller (no tienen el hub de Documentación): la
+misma pestaña que el hub, incluida tal cual.
+{% endcomment %}
+{% block title %}Solicitudes del personal{% endblock %}
+{% block page_title %}Solicitudes del personal{% endblock %}
+{% block content %}
+{% include "panel/worker_requests/_pane.html" %}
+{% endblock %}

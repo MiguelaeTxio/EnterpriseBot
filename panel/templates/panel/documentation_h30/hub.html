@@ -138,6 +138,15 @@ EbTypePicker.init() (ver panel/_doc_type_picker.html).
         </a>
     </li>
     <li class="nav-item">
+        {# H24 (S147). Solicitudes de los trabajadores (mismos roles que Fichajes). #}
+        <a class="nav-link {% if persisted_active_tab == 'solicitudes' %}active{% endif %}" id="tab-solicitudes" data-bs-toggle="tab" href="#pane-solicitudes"
+           hx-get="{% url 'panel:worker_requests_tab' %}"
+           hx-target="#pane-solicitudes"
+           hx-trigger="{% if persisted_active_tab == 'solicitudes' %}load once{% else %}click once{% endif %}">
+            <i class="bi bi-inboxes me-1"></i>Solicitudes
+        </a>
+    </li>
+    <li class="nav-item">
         {# H24 (S141). Horarios: el horario de cada trabajador, por secciones (mismos roles que Fichajes). #}
         <a class="nav-link {% if persisted_active_tab == 'horarios' %}active{% endif %}" id="tab-horarios" data-bs-toggle="tab" href="#pane-horarios"
            hx-get="{% url 'panel:worker_schedules_tab' %}"
@@ -243,6 +252,9 @@ EbTypePicker.init() (ver panel/_doc_type_picker.html).
     </div>
     {% if can_view_clock_events %}
     <div class="tab-pane fade {% if persisted_active_tab == 'fichajes' %}show active{% endif %}" id="pane-fichajes">
+        <div class="text-muted small py-3">Cargando…</div>
+    </div>
+    <div class="tab-pane fade {% if persisted_active_tab == 'solicitudes' %}show active{% endif %}" id="pane-solicitudes">
         <div class="text-muted small py-3">Cargando…</div>
     </div>
     <div class="tab-pane fade {% if persisted_active_tab == 'horarios' %}show active{% endif %}" id="pane-horarios">

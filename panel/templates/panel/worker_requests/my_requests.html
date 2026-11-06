@@ -1,0 +1,208 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/worker_requests/my_requests.html #}
+{% extends "panel/base.html" %}
+{% comment %}
+H24 (S147). "Mis solicitudes" del trabajador, pensada para el móvil:
+su saldo de vacaciones del año, el formulario para pedir (vacaciones,
+asuntos propios, médico, un documento o una reclamación) y la lista de
+sus peticiones con estado, respuesta, justificante y archivos
+entregados. Todo llega resuelto desde panel/views_worker_requests.py.
+{% endcomment %}
+
+{% block title %}Mis solicitudes{% endblock %}
+{% block page_title %}Mis solicitudes{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3" style="max-width: 1100px;">
+    {% if person is None %}
+    <p class="text-muted">
+        Tu usuario no tiene ninguna ficha de personal vinculada, así que no
+        puedes hacer peticiones desde aquí. Díselo a tu responsable.
+    </p>
+    {% else %}
+
+    {% if message %}
+    <div class="alert {% if error %}alert-danger{% else %}alert-success{% endif %} py-2">{{ message }}</div>
+    {% endif %}
+
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <div class="fw-bold small mb-2">Mis vacaciones {{ year }}</div>
+            <div class="row g-2 text-center">
+                <div class="col-6 col-md-3">
+                    <div class="border rounded p-2">
+                        <div class="small text-muted">Me corresponden</div>
+                        <div class="fs-5 fw-semibold">{{ entitled_total|floatformat:"-1" }}</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="border rounded p-2">
+                        <div class="small text-muted">Del año anterior</div>
+                        <div class="fs-5 fw-semibold">{{ balance.carryover|floatformat:"-1" }}</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="border rounded p-2">
+                        <div class="small text-muted">Disfrutados</div>
+                        <div class="fs-5 fw-semibold">{{ balance.taken|floatformat:"-1" }}</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="border rounded p-2">
+                        <div class="small text-muted">Me quedan</div>
+                        <div class="fs-5 fw-semibold{% if balance.is_negative %} text-danger{% endif %}">{{ balance.pending|floatformat:"-1" }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="fw-bold mb-2">Pedir</div>
+            <form method="post" action="{% url 'panel:my_requests' %}" id="wr-form" autocomplete="off">
+                {% csrf_token %}
+                <div class="d-flex flex-wrap gap-2 mb-3" role="group">
+                    {% for value, label in kinds %}
+                    <input type="radio" class="btn-check wr-kind" name="kind" id="wrKind{{ value }}" value="{{ value }}"
+                           {% if form.kind == value %}checked{% endif %} required>
+                    <label class="btn btn-outline-primary" for="wrKind{{ value }}">{{ label }}</label>
+                    {% endfor %}
+                </div>
+                <div class="row g-2 wr-dated d-none">
+                    <div class="col-6 col-md-3">
+                        <label class="form-label small mb-0" for="wrStart">Desde (o el día)</label>
+                        <input type="date" class="form-control" name="date_start" id="wrStart" value="{{ form.date_start }}">
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <label class="form-label small mb-0" for="wrEnd">Hasta (si son varios días)</label>
+                        <input type="date" class="form-control" name="date_end" id="wrEnd" value="{{ form.date_end }}">
+                    </div>
+                    <div class="col-6 col-md-3 wr-medical d-none">
+                        <label class="form-label small mb-0" for="wrFrom">Salgo a las (opcional)</label>
+                        <input type="time" class="form-control" name="time_from" id="wrFrom" value="{{ form.time_from }}">
+                    </div>
+                    <div class="col-6 col-md-3 wr-medical d-none">
+                        <label class="form-label small mb-0" for="wrTo">Vuelvo a las (opcional)</label>
+                        <input type="time" class="form-control" name="time_to" id="wrTo" value="{{ form.time_to }}">
+                    </div>
+                    <div class="col-12 wr-medical d-none small text-muted">
+                        Si ya fuiste, pon el día igualmente; después sube el justificante en la lista de abajo.
+                    </div>
+                </div>
+                <div class="row g-2 wr-document d-none">
+                    <div class="col-md-6">
+                        <label class="form-label small mb-0" for="wrDoc">Documento</label>
+                        <select class="form-select" name="document_code" id="wrDoc">
+                            <option value="">Elige…</option>
+                            {% for code, label, legal, _type in documents %}
+                            <option value="{{ code }}" {% if form.document_code == code %}selected{% endif %}>{{ label }}{% if legal %} ({{ legal }}){% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small mb-0" for="wrPeriod">Periodo (mes, año…)</label>
+                        <input type="text" class="form-control" name="period" id="wrPeriod" maxlength="120"
+                               placeholder="Por ejemplo: octubre de 2026" value="{{ form.period }}">
+                    </div>
+                </div>
+                <div class="mt-2">
+                    <label class="form-label small mb-0" for="wrNote">Nota <span class="wr-note-required d-none">(obligatoria)</span></label>
+                    <textarea class="form-control" name="note" id="wrNote" rows="2">{{ form.note }}</textarea>
+                </div>
+                <button type="submit" class="btn btn-primary mt-3">Enviar la petición</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <div class="fw-bold mb-2">Mis peticiones ({{ items|length }})</div>
+            {% if not items %}
+            <p class="text-muted small mb-0">Todavía no has hecho ninguna petición.</p>
+            {% else %}
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Pedida</th>
+                            <th>Tipo</th>
+                            <th>Qué pido</th>
+                            <th class="text-end">Días</th>
+                            <th>Estado</th>
+                            <th>Respuesta</th>
+                            <th>Justificante / documentos</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in items %}
+                        <tr>
+                            <td class="text-nowrap">{{ item.created_at|date:"d/m/Y H:i" }}</td>
+                            <td class="text-nowrap">{{ item.get_kind_display }}</td>
+                            <td>{{ item.detail }}{% if item.note %}<div class="small text-muted">{{ item.note }}</div>{% endif %}</td>
+                            <td class="text-end">{{ item.days|default_if_none:"" }}</td>
+                            <td class="text-nowrap">
+                                <span class="badge {% if item.status == 'PENDING' %}text-bg-warning{% elif item.status == 'DENIED' %}text-bg-danger{% elif item.status == 'CANCELLED' %}text-bg-secondary{% else %}text-bg-success{% endif %}">{{ item.get_status_display }}</span>
+                            </td>
+                            <td class="small">{{ item.response|linebreaksbr }}</td>
+                            <td class="small">
+                                {% for stored in item.files.all %}
+                                <div><a href="{% url 'panel:worker_request_file' stored.pk %}" target="_blank" rel="noopener"><i class="bi bi-file-earmark"></i> {{ stored.get_role_display }}: {{ stored.name }}</a></div>
+                                {% endfor %}
+                                {% if item.kind == 'MEDICAL' %}
+                                <div class="text-muted">{{ item.get_proof_status_display }}</div>
+                                {% if item.status != 'DENIED' and item.status != 'CANCELLED' %}
+                                <form method="post" action="{% url 'panel:my_request_proof' item.pk %}" enctype="multipart/form-data" class="d-flex gap-1 mt-1">
+                                    {% csrf_token %}
+                                    <input type="file" name="file" class="form-control form-control-sm" accept="image/*,application/pdf" required>
+                                    <button type="submit" class="btn btn-sm btn-outline-primary text-nowrap">Subir</button>
+                                </form>
+                                {% endif %}
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if item.is_pending %}
+                                <form method="post" action="{% url 'panel:my_request_cancel' item.pk %}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">Anular</button>
+                                </form>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+    "use strict";
+    const form = document.getElementById("wr-form");
+    if (!form) return;
+    const DATED = ["VACATION", "PERSONAL", "MEDICAL"];
+    function show(selector, visible) {
+        form.querySelectorAll(selector).forEach(function (el) { el.classList.toggle("d-none", !visible); });
+    }
+    function refresh() {
+        const checked = form.querySelector(".wr-kind:checked");
+        const kind = checked ? checked.value : "";
+        show(".wr-dated", DATED.indexOf(kind) !== -1);
+        show(".wr-medical", kind === "MEDICAL");
+        show(".wr-document", kind === "DOCUMENT");
+        show(".wr-note-required", kind === "CLAIM");
+        document.getElementById("wrStart").required = DATED.indexOf(kind) !== -1;
+        document.getElementById("wrDoc").required = kind === "DOCUMENT";
+        document.getElementById("wrNote").required = kind === "CLAIM";
+    }
+    form.querySelectorAll(".wr-kind").forEach(function (radio) { radio.addEventListener("change", refresh); });
+    refresh();
+}());
+</script>
+{% endblock %}

@@ -547,6 +547,7 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
             "fichajes", "horarios", "calendario", "requisitos", "avisos",
             "circulares",
             "plantillas", "bandeja", "revisiones", "repostajes",
+            "solicitudes",
         )
         # H30 (S126): "Bandeja de entrada" solo para quien puede subir
         # documentación (mismos roles que DocsUploadAccessMixin).
@@ -564,7 +565,8 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
         )
         if not can_view_clock_events:
             valid_tabs = tuple(
-                t for t in valid_tabs if t not in ("fichajes", "horarios")
+                t for t in valid_tabs
+                if t not in ("fichajes", "horarios", "solicitudes")
             )
         # H30 (S119): "Circulares", "Plantillas" y "Requisitos" pasan
         # de botones "Gestionar..." en la barra de acción de Personal a

@@ -92,6 +92,19 @@ from panel.views_inbox import (
 )
 from panel.views_navigation_state import NavigationStateSaveView
 from panel.views_dossier_bundle import DossierBundleEmailView
+# H24 (S147): solicitudes de los trabajadores.
+from panel.views_worker_requests import (
+    MyRequestCancelView,
+    MyRequestProofView,
+    MyRequestsView,
+    RequestFileDownloadView,
+    WorkerRequestActionView,
+    WorkerRequestDetailView,
+    WorkerRequestMassView,
+    WorkerRequestsPageView,
+    WorkerRequestsResultsView,
+    WorkerRequestsTabView,
+)
 from panel.views_vacation_balance import (
     AbsencePeriodCreateView,
     AbsencePeriodRemoveView,
@@ -2043,6 +2056,55 @@ urlpatterns = [
     # 14 Paso 6).
     path("profile/", OwnProfileView.as_view(), name="own_profile"),
     path("mi-buzon/", MiBuzonListView.as_view(), name="mi_buzon_list"),
+    # H24 (S147). "Mis solicitudes" del trabajador y la gestión de los
+    # supervisores (pestaña del hub y página propia) -- ver
+    # panel/views_worker_requests.py.
+    path("mis-solicitudes/", MyRequestsView.as_view(), name="my_requests"),
+    path(
+        "mis-solicitudes/<int:pk>/anular/",
+        MyRequestCancelView.as_view(),
+        name="my_request_cancel",
+    ),
+    path(
+        "mis-solicitudes/<int:pk>/justificante/",
+        MyRequestProofView.as_view(),
+        name="my_request_proof",
+    ),
+    path(
+        "solicitudes/archivo/<int:pk>/",
+        RequestFileDownloadView.as_view(),
+        name="worker_request_file",
+    ),
+    path(
+        "solicitudes/",
+        WorkerRequestsPageView.as_view(),
+        name="worker_requests_page",
+    ),
+    path(
+        "documentacion/solicitudes/",
+        WorkerRequestsTabView.as_view(),
+        name="worker_requests_tab",
+    ),
+    path(
+        "documentacion/solicitudes/resultados/",
+        WorkerRequestsResultsView.as_view(),
+        name="worker_requests_results",
+    ),
+    path(
+        "documentacion/solicitudes/masivo/",
+        WorkerRequestMassView.as_view(),
+        name="worker_requests_mass",
+    ),
+    path(
+        "documentacion/solicitudes/<int:pk>/",
+        WorkerRequestDetailView.as_view(),
+        name="worker_request_detail",
+    ),
+    path(
+        "documentacion/solicitudes/<int:pk>/accion/",
+        WorkerRequestActionView.as_view(),
+        name="worker_request_action",
+    ),
     path(
         "mi-buzon/<int:pk>/",
         MiBuzonDetailView.as_view(),

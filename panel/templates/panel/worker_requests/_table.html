@@ -1,0 +1,66 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/worker_requests/_table.html #}
+{% comment %}
+H24 (S147). Tabla de Solicitudes: casilla, una fila por petición y el
+menú de tres puntos al final (gestionar). Todo llega calculado desde
+la vista; la selección vive en el JS de _pane.html.
+{% endcomment %}
+<div id="wreq-fragment-state" class="d-none"
+     data-count="{{ rows|length }}"
+     data-sort-active="{% if sort_active %}1{% endif %}"></div>
+<span id="wreq-sort-inputs" class="d-none">
+    <input type="hidden" name="sort" value="{{ current_sort }}">
+</span>
+<table class="table table-hover table-light align-middle" id="wreq-table">
+    <thead class="table-light">
+        <tr>
+            <th><input type="checkbox" class="form-check-input" id="wreq-check-all" title="Seleccionar todas las que cumplen el filtro actual"></th>
+            {% for column in sort_columns %}
+            <th class="{% if column.key == 'days' %}text-end{% endif %}">
+                <a href="#" class="text-decoration-none text-dark"
+                   hx-get="{% url 'panel:worker_requests_results' %}"
+                   hx-target="#wreq-results"
+                   hx-include="#wreq-filters"
+                   hx-vals='{"sort": "{{ column.next }}"}'>
+                    {{ column.label }}
+                    {% if column.arrow %}<i class="bi bi-chevron-{% if column.arrow == 'up' %}up{% else %}down{% endif %}"></i>{% if column.priority %}<sup>{{ column.priority }}</sup>{% endif %}{% endif %}
+                </a>
+            </th>
+            {% endfor %}
+            <th>Nota</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            <td><input type="checkbox" class="form-check-input wreq-row-check" data-pk="{{ row.pk }}" data-label="{{ row.person_label }} — {{ row.get_kind_display }} {{ row.detail }}"></td>
+            <td>{{ row.created_at|date:"d/m/Y H:i" }}</td>
+            <td>
+                <a href="#" data-bs-toggle="modal" data-bs-target="#wreqDetailModal"
+                   hx-get="{% url 'panel:worker_request_detail' row.pk %}" hx-target="#wreq-detail-container">{{ row.person_label }}</a>
+            </td>
+            <td>{{ row.get_kind_display }}</td>
+            <td>{{ row.detail }}</td>
+            <td class="text-end">{{ row.days|default_if_none:"" }}</td>
+            <td><span class="badge {% if row.status == 'PENDING' %}text-bg-warning{% elif row.status == 'DENIED' %}text-bg-danger{% elif row.status == 'CANCELLED' %}text-bg-secondary{% else %}text-bg-success{% endif %}">{{ row.get_status_display }}</span></td>
+            <td>{% if row.kind == 'MEDICAL' %}<span class="{% if row.proof_status == 'RECEIVED' %}fw-semibold text-primary{% elif row.proof_status == 'REJECTED' %}text-danger{% elif row.proof_status == 'NONE' %}text-muted{% endif %}">{{ row.get_proof_status_display }}</span>{% endif %}</td>
+            <td>{% if row.resolved_at %}{{ row.resolved_at|date:"d/m/Y H:i" }}{% if row.resolved_by %} · {{ row.resolved_by.user.get_full_name|default:row.resolved_by.user.username }}{% endif %}{% endif %}</td>
+            <td class="small text-truncate" style="max-width: 18rem;" title="{{ row.note }}">{{ row.note }}</td>
+            <td>
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-link text-dark" type="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-three-dots-vertical"></i></button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#wreqDetailModal"
+                               hx-get="{% url 'panel:worker_request_detail' row.pk %}" hx-target="#wreq-detail-container">Gestionar</a></li>
+                        {% for stored in row.files.all %}
+                        <li><a class="dropdown-item" href="{% url 'panel:worker_request_file' stored.pk %}" target="_blank" rel="noopener">Ver {{ stored.get_role_display|lower }}: {{ stored.name|truncatechars:40 }}</a></li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="11" class="text-muted small py-3">No hay solicitudes con estos filtros.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>

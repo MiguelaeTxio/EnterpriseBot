@@ -1,0 +1,114 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/worker_requests/_detail.html #}
+{% comment %}
+H24 (S147). Una solicitud con sus acciones (cuerpo del modal): aprobar
+o denegar las que llevan fechas, entregar un documento (subido o de la
+ficha), responder una reclamación, revisar el justificante y deshacer.
+Cada formulario vuelve a pintar este mismo cuerpo; la tabla se refresca
+sola (HX-Trigger worker-requests-refresh).
+{% endcomment %}
+{% if message %}
+<div class="alert {% if error %}alert-danger{% else %}alert-success{% endif %} py-2 small">{{ message }}</div>
+{% endif %}
+<dl class="row small mb-2">
+    <dt class="col-sm-3">Trabajador</dt><dd class="col-sm-9">{{ item.person_label }} ({{ item.person.dni }})</dd>
+    <dt class="col-sm-3">Tipo</dt><dd class="col-sm-9">{{ item.get_kind_display }}</dd>
+    <dt class="col-sm-3">Qué pide</dt><dd class="col-sm-9">{{ item.detail|default:"—" }}{% if item.days %} · {{ item.days }} día{{ item.days|pluralize }}{% endif %}</dd>
+    <dt class="col-sm-3">Nota</dt><dd class="col-sm-9">{{ item.note|default:"—"|linebreaksbr }}</dd>
+    <dt class="col-sm-3">Pedida</dt><dd class="col-sm-9">{{ item.created_at|date:"d/m/Y H:i" }}</dd>
+    <dt class="col-sm-3">Estado</dt><dd class="col-sm-9">{{ item.get_status_display }}{% if item.resolved_at %} el {{ item.resolved_at|date:"d/m/Y H:i" }}{% if item.resolved_by %} por {{ item.resolved_by.user.get_full_name|default:item.resolved_by.user.username }}{% endif %}{% endif %}</dd>
+    {% if item.response %}<dt class="col-sm-3">Respuesta</dt><dd class="col-sm-9">{{ item.response|linebreaksbr }}</dd>{% endif %}
+    {% if item.kind == 'MEDICAL' %}<dt class="col-sm-3">Justificante</dt><dd class="col-sm-9">{{ item.get_proof_status_display }}{% if item.proof_reviewed_at %} el {{ item.proof_reviewed_at|date:"d/m/Y H:i" }}{% endif %}</dd>{% endif %}
+</dl>
+
+{% if files %}
+<div class="small fw-bold">Archivos</div>
+<ul class="small">
+    {% for stored in files %}
+    <li><a href="{% url 'panel:worker_request_file' stored.pk %}" target="_blank" rel="noopener">{{ stored.get_role_display }}: {{ stored.name }}</a> <span class="text-muted">({{ stored.uploaded_at|date:"d/m/Y H:i" }})</span></li>
+    {% endfor %}
+</ul>
+{% endif %}
+
+{% if item.is_pending and item.is_dated %}
+<form class="border rounded p-2 mb-2" hx-post="{% url 'panel:worker_request_action' item.pk %}" hx-target="#wreq-detail-container">
+    <label class="form-label small mb-0">Respuesta al trabajador (obligatoria para denegar)</label>
+    <textarea name="response" class="form-control form-control-sm mb-2" rows="2"></textarea>
+    <button type="submit" name="action" value="approve" class="btn btn-sm btn-success">Aprobar</button>
+    <button type="submit" name="action" value="deny" class="btn btn-sm btn-outline-danger">Denegar</button>
+</form>
+{% endif %}
+
+{% if item.kind == 'MEDICAL' and item.status != 'DENIED' and item.status != 'CANCELLED' %}
+<div class="border rounded p-2 mb-2">
+    {% if item.proof_status != 'NONE' %}
+    <form class="d-inline" hx-post="{% url 'panel:worker_request_action' item.pk %}" hx-target="#wreq-detail-container">
+        <button type="submit" name="action" value="proof_valid" class="btn btn-sm btn-outline-success">Justificante válido</button>
+        <button type="submit" name="action" value="proof_invalid" class="btn btn-sm btn-outline-danger">No válido</button>
+    </form>
+    {% endif %}
+    <form class="d-flex gap-1 mt-2" hx-post="{% url 'panel:worker_request_action' item.pk %}" hx-target="#wreq-detail-container" hx-encoding="multipart/form-data">
+        <input type="hidden" name="action" value="proof">
+        <input type="file" name="file" class="form-control form-control-sm" accept="image/*,application/pdf" required>
+        <button type="submit" class="btn btn-sm btn-outline-primary text-nowrap" title="Si te lo ha dado en mano, súbelo aquí en su nombre.">Subir justificante</button>
+    </form>
+</div>
+{% endif %}
+
+{% if item.kind == 'DOCUMENT' and item.status != 'DENIED' and item.status != 'CANCELLED' %}
+<form class="border rounded p-2 mb-2" hx-post="{% url 'panel:worker_request_action' item.pk %}" hx-target="#wreq-detail-container" hx-encoding="multipart/form-data">
+    <input type="hidden" name="action" value="deliver">
+    <div class="small fw-bold mb-1">Entregar {{ document_label|lower }}</div>
+    <div class="row g-2">
+        <div class="col-md-6">
+            <label class="form-label small mb-0">Subir el archivo</label>
+            <input type="file" name="file" class="form-control form-control-sm">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label small mb-0">Tipo con el que se archiva en su ficha</label>
+            <select name="type_code" class="form-select form-select-sm">
+                {% for doc_type in delivery_types %}
+                <option value="{{ doc_type.code }}" {% if doc_type.code == default_type %}selected{% endif %}>{{ doc_type.label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-12">
+            <label class="form-label small mb-0">O elegir uno de su ficha</label>
+            <select name="entry_id" class="form-select form-select-sm">
+                <option value="">—</option>
+                {% for entry in person_documents %}
+                <option value="{{ entry.pk }}">{{ entry.document_type.label|default:"Sin tipo" }} · {{ entry.name }}{% if entry.issue_date %} · {{ entry.issue_date|date:"d/m/Y" }}{% endif %}{% if entry.is_obsolete %} (obsoleto){% endif %}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-12">
+            <label class="form-label small mb-0">Mensaje al trabajador (opcional)</label>
+            <textarea name="response" class="form-control form-control-sm" rows="2"></textarea>
+        </div>
+    </div>
+    <div class="d-flex gap-2 mt-2">
+        <button type="submit" class="btn btn-sm btn-success">Entregar</button>
+    </div>
+</form>
+{% if item.is_pending %}
+<form class="border rounded p-2 mb-2" hx-post="{% url 'panel:worker_request_action' item.pk %}" hx-target="#wreq-detail-container">
+    <label class="form-label small mb-0">Motivo para no entregarlo</label>
+    <textarea name="response" class="form-control form-control-sm mb-2" rows="2"></textarea>
+    <button type="submit" name="action" value="deny" class="btn btn-sm btn-outline-danger">Denegar</button>
+</form>
+{% endif %}
+{% endif %}
+
+{% if item.kind == 'CLAIM' and item.status != 'CANCELLED' %}
+<form class="border rounded p-2 mb-2" hx-post="{% url 'panel:worker_request_action' item.pk %}" hx-target="#wreq-detail-container">
+    <label class="form-label small mb-0">Respuesta</label>
+    <textarea name="response" class="form-control form-control-sm mb-2" rows="3">{{ item.response }}</textarea>
+    <button type="submit" name="action" value="answer" class="btn btn-sm btn-success">Responder</button>
+</form>
+{% endif %}
+
+{% if not item.is_pending and item.status != 'CANCELLED' %}
+<form hx-post="{% url 'panel:worker_request_action' item.pk %}" hx-target="#wreq-detail-container"
+      hx-confirm="¿Volver a dejarla pendiente?{% if item.vacation_period_id or item.absence_period_id %} Se borrará el periodo que creó la aprobación.{% endif %}">
+    <button type="submit" name="action" value="undo" class="btn btn-sm btn-outline-secondary" title="Vuelve a pendiente; si se aprobó, borra el periodo creado.">Deshacer la resolución</button>
+</form>
+{% endif %}
