@@ -607,6 +607,7 @@ explícitamente no abordada por decisión de Miguel Ángel.
 | S130 | 2026-10-19 → 2026-10-20 | Puntos 1 (fichaje con un solo botón y fichaje manual por olvido) y 4 (ausencias) cerrados con datos reales; punto 2 (iPhone) postergado por Miguel Ángel a producción con Pablo; punto 3 a la espera de los datos de Carolina. Base del trabajador editable y festivos por base en Fichajes. Desvíos a H30/H31: dosieres por correo en un solo borrador (trabajadores y máquinas juntos, desde Personal y Centros de gasto), comprobación de tipo y datos al subir desde la ficha, 26 matrículas de centros de gasto rellenadas, secciones del alta por WhatsApp. Ver "COMPLETADAS EN S130" (7.7). |
 | S141 | 2026-10-29 → 2026-11-03 | Fichajes completos para arrancar con la plantilla: recordatorios por WhatsApp (activados y comprobados con un aviso real leído), fichajes inmodificables con corrección e historial, tipos de fichaje, horarios por día y "Todo el año", pestaña Horarios por trabajador y sección, acceso al fichaje creado por el supervisor y circular "Alta en el fichaje" por WhatsApp, teléfono 1 de empresa, Excel de fichajes con coordenadas, membrete y detalle por trabajador. Desvío a H30: marca de horas sin anotar en Repostajes. Ver "COMPLETADAS EN S141" (7.9) y la hoja de ruta S144 (7.10). |
 | S144 | 2026-11-03 → 2026-11-04 | Estado del alta en el fichaje y "Reenviar el alta"; motes y secciones del Excel de motes; recordatorios con botón y pre-aviso "Recuerde fichar". Añadido en la sesión: horarios abiertos, de noche y con festivos; correcciones de fichajes; página "Fichajes del trabajador"; bolsa de horas, vehículo propio con km y pausa para comer; confirmación de 3 s en acciones masivas; altas y bajas en la carpeta local de OneDrive por el agente H28; anterior/siguiente y todas las secciones en la ficha. Ver "COMPLETADAS EN S144" (7.11) y la hoja de ruta S145 (7.12). |
+| S143 (invasora) | 2026-11-04 → 2026-11-06 | Fichajes en paralelo con S144/S145/S146 (sin mover EN PROGRESO): avisos con casillas, horario propio para los avisos, salida olvidada y correcciones sin error 500, «Ficha desde», visado de incidencias, hora redondeada, comida y cena sin fichar, convenio (horas extra mensuales con cupo y bolsa, días libres en Vacaciones, desplazamiento por km, presencia y fuerza mayor, plazos), flexibilidad total, página del trabajador con horario y barra por día. Ver "COMPLETADAS EN S143 (sesión invasora)" (7.15). |
 
 ---
 
@@ -1901,3 +1902,90 @@ que esté fuera de las que está vigilando el H28."*
    ocurran de verdad.
 
 Al terminar, el hito siguiente lo decide Miguel Ángel con un PCH.
+
+---
+
+### 7.15. COMPLETADAS EN S143 (sesión invasora, 04/11 → 06/11/2026, PEE PC)
+
+Invasora empezada en H37 (ver anexo V37, sección 14) que pasó a H24 por
+decisión de Miguel Ángel: *"En la sesión principal estamos trabajando en
+una tarea de larga duración y necesito trabajar en el hito del tema de
+fichajes"*. En paralelo con S144, S145 y S146; el marcador EN PROGRESO
+no se movió y las hojas de ruta 7.12 y 7.14 no se tocaron. SWAP 100-106.
+Migraciones `hr_calendar` 0024-0032, todas aplicadas en producción.
+
+**Avisos y app de fichaje**
+- Sin fichaje manual. Avisos con casillas que marca cada trabajador:
+  entrada 5 min antes, a la hora y 3 min después; salida a la hora,
+  3 min, media hora, una hora y cada hora. Cada aviso sale solo si no ha
+  fichado. Aviso de versión nueva para recargar la app (`e485fa8`,
+  0024).
+- Salida olvidada: pasadas 3 h del fin de su horario (o 24 h), la
+  pulsación siguiente es la entrada y el trabajador ve el aviso
+  (`b8eca82`).
+- Horario propio para los avisos con horario abierto: hasta 4 tramos,
+  días y fecha de fin; un aviso por tramo (`36f1b98`, 0025).
+- «No he parado para comer» en el fichaje por tipos (`a8b2f81`, 0028).
+- «Ficha desde» un día: hasta entonces ni avisos ni fichajes (el
+  servidor los rechaza) y la app dice «Empiezas a fichar el...»; «Ficha»
+  no toca ese día (`1ede3c2`, `bcb1c8d`, 0030).
+- Por tipos, «Terminar la jornada (salida)» separado de los tipos y
+  confirmación de una salida a menos de 10 min de la entrada o del
+  cambio (`b0ecea0`).
+
+**Correcciones**
+- Error 500 al corregir: orden de jornadas sin entrada; «Añadir la
+  salida / la entrada» con la hora del horario propuesta y motivos
+  habituales (`3e53eb0`).
+- Casilla «Visado» por día (amarillo); corregida = visada; las visadas
+  no cuentan en el listado. Jornada de hoy en curso en verde, sin
+  incidencias hasta que acaba (`fc2ee4d`, `ba564fa`, 0029).
+- Comandos `clocks_from_alta` y `cancel_clock_events` (anulaciones
+  firmadas y con motivo).
+- Producción: el 05/11 nadie tenía «Ficha desde» al enviar el alta (se
+  había pulsado «Ficha»); con `clocks_from_alta` 24 personas fichan desde
+  el 06/11 y se anularon 3 pulsaciones (Carlos Núñez y José García). El
+  06/11 se anularon 5 salidas y entradas pulsadas por error de José
+  García y Manuel Barbero (una jornada abierta cada uno desde las 06:51).
+- El 04/11 Miguel Ángel cambió como prueba la entrada de las 15:09 de la
+  ficha 10 en una salida a las 17:10 («prueba cambios»); sigue así.
+
+**Cómputo de horas (convenio de Málaga, BOP 18/03/2022, y Miguel Ángel)**
+- Lo trabajado va de la entrada a la salida redondeadas (`fc2ee4d`).
+- Comida: por tipos, 1 h de comida y otra de cena (franjas 12-17 y
+  19-24) si no se ficha la pausa ni se marca la casilla; sin tipos,
+  manda el parte del día (su pausa, «No he parado a comer» o
+  intensiva) y, sin parte, 1 h solo con jornada partida ese día
+  (`a8b2f81`, `fa9b3c6`, `00242a3`).
+- Horas extra por cómputo mensual (art. 23): trabajo efectivo menos
+  días laborables (lunes a viernes, sin festivos de su base, vacaciones,
+  bajas, ausencias, y desde que ficha) × 8 h. Hasta el tope configurable
+  (7 h al mes) es cupo; el resto, bolsa. Listado: Total de horas, Cupo y
+  Bolsa (`dd50d97`, `675ca64`, 0026).
+- Días libres por horas acumuladas en Vacaciones: suman al saldo y
+  restan de la bolsa (8 h por día propuestas) (`fa16859`, 0027).
+- Desplazamiento (art. 22): radio de su base al punto más lejano
+  fichado; de 30 a 60 km, 1 h; de 60 a 130 km, 2 h; más de 130, dieta.
+  Vehículo propio a 0,19 €/km (`7003e83`).
+- Presencia y fuerza mayor (art. 20 b y d): no son jornada y van a la
+  bolsa; «Fuerza mayor» creado desactivado; desplegable «Función» en los
+  tipos (`2e36e3b`, 0031). Tipo «Varios» eliminado (no lo usaba nadie)
+  (`eb4711e`, 0032).
+- Plazos de la bolsa: lo compensado se descuenta de lo más antiguo;
+  horas extra, presencia y fuerza mayor 6 meses (art. 19);
+  desplazamiento un trimestre y después a 6 €/h (`7003e83`).
+- Flexibilidad total (Miguel Ángel; el art. 19 de 6-8 y 17-20 no se
+  aplica): entrar o salir fuera de horario no es incidencia; solo el
+  día que no cumple ni su horario ni las 8 h; dentro de la tolerancia
+  del redondeo no hay llegada tarde (`ce43e43`, `ba564fa`).
+- Sin hacer: descontar los km de casa a la base (art. 22), no hay
+  direcciones en el panel.
+
+**Panel**
+- Fichajes más compacto, sin scroll arriba en el PC (`d8a91f7`).
+- Página del trabajador: franja con su horario, cómo ficha, sus avisos y
+  el horario propio; una fila por día con sus jornadas dentro, barra de
+  colores por tipo con los ratos fuera rayados y «¿salida por error?» si
+  vuelve en menos de 5 min (`0cb8468`, `27cd5ac`).
+- Modales y avisos encima de una lista en pantalla completa, en todas
+  las listas (`da717ac`).

@@ -1263,3 +1263,51 @@ Se trabaja en la vista **Medias de coste**
 (`budgets:services_cost_settings`). Ningún dato real de producción se
 modificó salvo las medias de coste, la regla de unidad de las grúas de
 asistencia (H30) y los 6 servicios de prueba.
+
+---
+
+## 14. COMPLETADAS EN S143 (sesión invasora, 03/11 → 04/11/2026, PEE PC)
+
+Invasora sobre H37 en paralelo con S141/S144 (H24 EN PROGRESO, sin
+mover). PAH `EnterpriseBot-S143H37`. Después siguió en H24 (fichajes):
+ver "COMPLETADAS EN S143 (sesión invasora)" en el anexo V24.
+
+### 14.1. Medias de coste en pestañas (`budgets:services_cost_settings`)
+
+- Cuatro pestañas con el formato de todas las vistas (directriz 4.24):
+  **Vehículos** (lista de vehículos de servicio con las medias reales de
+  GasoGes, ordenable, también los que no tienen repostajes, con aviso de
+  pocos tramos y el que más gasta de su clase), **Clases**,
+  **Trabajadores** y **Tiempos de tareas** (`fcbb5e1`).
+- Gasoil de los servicios: el consumo de la clase es el del vehículo que
+  más gasta de esa clase (decisión de Miguel Ángel: «el coste máximo, el
+  del vehículo que más gasta»); el desgaste por km sigue general
+  (`2e9443e`).
+- Tiempos medios por tipo de tarea, configurables, con un desplegable
+  del concepto de la tarifa que le corresponde (p. ej. desbloqueo); las
+  bases de la aseguradora, sus calendarios, el nocturno y el festivo se
+  tienen en cuenta (`6e6a0fa`, `1ef6ad4`).
+
+### 14.2. Coste de los operarios
+
+- Coste por puesto: «Gruista (grúa de gran tonelaje)» y «Operario con
+  carné de camión», cada clase de vehículo con su puesto; horas al año
+  configurables (1.800 por defecto) (`464bdbb`, migraciones 0059-0064 de
+  `budgets`, aplicadas).
+- Coste por hora desde una nómina subida en Trabajadores: Gemini lee la
+  nómina y se calcula (devengado + prorrata de pagas si no va incluida +
+  Seguridad Social de la empresa) × 12 ÷ horas al año. La nómina no se
+  guarda ni se comitea (`e614ca1`). En producción: 2 puestos a 15,34 €/h.
+
+### 14.3. Presupuesto estimado igual que el manual
+
+- Comando `compare_service_budgets` (solo lectura, `--ids`,
+  `--log-file`): presupuesto estimado frente al manual del asistente,
+  línea a línea (`13fdcf2`, `b0e183f`).
+- La valoración usa ya la regla del asistente: nocturno por el horario
+  de la aseguradora (o el general), límites incluidos; km de la ruta
+  real con peajes, redondeados; notas de nocturno, festivo, calendario,
+  sin fecha e «Incluye de la tarifa»; coste, rendimiento y rendimiento
+  por hora recalculados (`be33404`).
+- Comprobado con datos reales: tras «Volver a valorar», los 6 servicios
+  de prueba cuadran con su presupuesto manual.
