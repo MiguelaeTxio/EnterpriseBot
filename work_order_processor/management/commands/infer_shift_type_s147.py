@@ -12,8 +12,9 @@ las tareas"). Desde S141 no se guardaba por un fallo (shift.py pedía
 work_order.work_date).
 
 Regla:
-- Partida: el parte tiene comida (sin "no paró a comer") con tareas
-  antes y después de ella, o hay un hueco de al menos 30 minutos entre
+- Partida: el parte tiene comida (sin "no paró a comer") y cae dentro
+  de la jornada (de la primera tarea a la última; las tareas pueden
+  cruzarla, se descuenta), o hay un hueco de al menos 30 minutos entre
   dos tareas seguidas.
 - Intensiva: tareas seguidas, sin ese hueco.
 - Sin tareas con horas: se deja vacío.
@@ -45,7 +46,7 @@ def infer_is_intensive(entry, lines):
     parte's tasks.
     ---
     True (intensiva), False (partida) o None (sin tareas con horas),
-    según las tareas del parte.
+    según las tareas y la comida del parte.
     """
     timed = sorted(
         (line for line in lines if line.hc and line.hf),
@@ -57,10 +58,10 @@ def infer_is_intensive(entry, lines):
         not entry.no_lunch_break and entry.lunch_break_start
         and entry.lunch_break_end
         and entry.lunch_break_end > entry.lunch_break_start
-        and any(line.hf <= entry.lunch_break_start for line in timed)
-        and any(line.hc >= entry.lunch_break_end for line in timed)
+        and timed[0].hc <= entry.lunch_break_start
+        and max(line.hf for line in timed) >= entry.lunch_break_end
     ):
-        return False, "comida %s-%s con tareas antes y después" % (
+        return False, "comida %s-%s dentro de la jornada" % (
             entry.lunch_break_start.strftime("%H:%M"),
             entry.lunch_break_end.strftime("%H:%M"))
     end = timed[0].hf
