@@ -127,10 +127,13 @@ responsable corregirá la salida (clock_report.forgotten_after).
     <!-- S143: no fichó la salida de la jornada anterior. -->
     <!-- S143: antes de su primer día de fichaje, este aviso y sin botones. -->
     <div class="card hidden" id="not-yet" style="background:#cfe2ff;border-color:#9ec5fe"><strong id="not-yet-text"></strong></div>
-    <!-- S147: sin permiso de ubicación se ficha solo un día (incidencia). -->
+    <!-- S147 (Miguel Ángel): "como ADIDAS": sin ubicación no se ficha. -->
     <div class="card hidden" id="gps-help" style="background:#f8d7da;border-color:#f1aeb5">
-        <div class="fw">Este móvil tiene quitado el permiso de ubicación para esta página.</div>
-        <div class="muted">Para fichar hace falta la ubicación (GPS). Actívalo así: toca el candado (o los ajustes) junto a la dirección de la página › Permisos › Ubicación › Permitir, y vuelve a cargar la página. Sin permiso solo se admite un día como incidencia; al siguiente no podrás fichar. Después de fichar puedes quitarlo si no quieres tenerlo siempre activo.</div>
+        <div class="fw">Para fichar hace falta la ubicación (GPS) del móvil, y ahora está bloqueada para esta página.</div>
+        <div class="muted">La ubicación solo se guarda en el momento de pulsar Fichar; nunca se sigue al trabajador.</div>
+        <div><strong>Para darla:</strong> toca el icono que hay a la izquierda de la dirección de la página (candado o ajustes) › Permisos › Ubicación › Permitir. Vuelve a cargar la página y ficha.</div>
+        <div><strong>Para quitarla después de fichar</strong>, si no quieres tenerla siempre activa: en el mismo icono › Permisos › Restablecer permisos. La próxima vez que fiches, el móvil te la volverá a pedir. Si al pedirla te ofrece «Solo esta vez», elígelo: se quita sola al cerrar la página.</div>
+        <div class="muted">Si no lo consigues, contacta con los administradores del sistema.</div>
     </div>
     <div class="card hidden" id="forgotten" style="background:#fff3cd;border-color:#ffe69c">
         <div class="fw" id="forgotten-text"></div>
@@ -807,6 +810,13 @@ responsable corregirá la salida (clock_report.forgotten_after).
                 };
             });
         }).then(function (record) {
+            // S147: "como ADIDAS": sin permiso de ubicación no se ficha.
+            if (record.lat == null && (record.gps_error === "permiso denegado" || record.gps_error === "este navegador no da ubicación")) {
+                showGpsHelp(true);
+                setStatus("No se ha fichado: hace falta la ubicación (GPS). En el recuadro rojo tienes cómo darla.", "err");
+                return;
+            }
+            showGpsHelp(false);
             setStatus(label(record) + " de las " + hhmm(pressedAt) +
                       " guardada" + (navigator.onLine ? "." : " en el móvil: se enviará al volver la cobertura.") +
                       // S143: que no pulsen la salida para "confirmar".

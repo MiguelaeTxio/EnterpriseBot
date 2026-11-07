@@ -82,23 +82,15 @@ APP_VERSION = hashlib.md5(
 # ordenador no tiene GPS: salía "Sevilla" a 50 km de precisión).
 MOBILE_AGENT = re.compile(r"Android|iPhone|iPad|iPod|Mobile", re.I)
 NO_PC = "Solo se permite fichar desde dispositivos móviles."
-# S147 (Miguel Ángel): sin permiso de ubicación se ficha solo ese día,
-# como incidencia; al día siguiente, sin GPS, no se ficha. Cuenta desde
-# que existe la regla (lo de antes no se le tiene en cuenta a nadie).
-GPS_DENIED = "permiso denegado"
-GPS_RULE_FROM = datetime.date(2026, 11, 7)
-GPS_GRACE = (
-    "Fichaje admitido hoy como incidencia: el móvil no ha dado la "
-    "ubicación porque tiene el permiso quitado. Si mañana sigue sin "
-    "permiso, no podrás fichar. Si no quieres tenerlo siempre activo, "
-    "puedes quitarlo después de fichar y volver a darlo antes del "
-    "siguiente fichaje."
-)
+# S147 (Miguel Ángel): "como ADIDAS": sin permiso de ubicación (o en un
+# navegador sin ubicación) no se ficha. La página lo explica y ni lo
+# envía; aquí se rechaza por si llega igual. Tiempo agotado o posición
+# no disponible sí se admiten (el móvil tiene GPS y lo ha intentado).
+GPS_REQUIRED = ("permiso denegado", "este navegador no da ubicación")
 GPS_BLOCKED = (
-    "No se puede fichar sin dar permiso de ubicación (ya se admitió un "
-    "día como incidencia). Dale permiso de ubicación a esta página y "
-    "vuelve a fichar. Después de fichar puedes quitarlo si no quieres "
-    "tenerlo siempre activo."
+    "No se puede fichar sin dar permiso de ubicación a esta página. "
+    "Dale permiso y vuelve a fichar; después de fichar puedes quitarlo. "
+    "Si no lo consigues, contacta con los administradores del sistema."
 )
 
 NO_MANUAL = (
@@ -232,9 +224,8 @@ def record_press(company_user, payload, user_agent=""):
     pressed_at = parse_datetime(str(payload.get("pressed_at") or ""))
     if pressed_at is None or not timezone.is_aware(pressed_at):
         raise ClockInError("La pulsación no trae una hora válida.")
-    gps_denied = (_coordinate(payload.get("lat"), 90) is None
-                  and str(payload.get("gps_error") or "") == GPS_DENIED)
-    if gps_denied and _gps_grace_used(company_user, pressed_at):
+    if (_coordinate(payload.get("lat"), 90) is None
+            and str(payload.get("gps_error") or "") in GPS_REQUIRED):
         raise ClockInError(GPS_BLOCKED)
     # S143: antes de su primer día de fichaje no se ficha.
     starts = _clocks_from(company_user)
@@ -310,38 +301,7 @@ def record_press(company_user, payload, user_agent=""):
             result.parte_notice = " ".join(filter(None, (
                 forgotten_text(forgotten), result.parte_notice)))
         result.parte_ok = False
-    if gps_denied:
-        result.parte_notice = " ".join(filter(None, (
-            GPS_GRACE, result.parte_notice)))
-        result.parte_ok = False
     return result
-
-
-def _gps_grace_used(company_user, pressed_at):
-    """
-    True when an earlier day was already clocked without GPS permission.
-    ---
-    True si ya fichó otro día anterior sin permiso de ubicación desde
-    su último fichaje con ubicación (S147): ese día fue la incidencia
-    admitida; desde el siguiente, sin GPS no ficha.
-    """
-    day = timezone.localtime(pressed_at).date()
-    day_start = timezone.make_aware(
-        datetime.datetime.combine(day, datetime.time.min))
-    rule_start = timezone.make_aware(
-        datetime.datetime.combine(GPS_RULE_FROM, datetime.time.min))
-    earlier = ClockEvent.objects.filter(
-        company_user=company_user, gps_error=GPS_DENIED,
-        latitude__isnull=True, pressed_at__gte=rule_start,
-        pressed_at__lt=day_start,
-    )
-    located = ClockEvent.objects.filter(
-        company_user=company_user, latitude__isnull=False,
-        pressed_at__lt=pressed_at,
-    ).order_by("-pressed_at").values_list("pressed_at", flat=True).first()
-    if located is not None:
-        earlier = earlier.filter(pressed_at__gt=located)
-    return earlier.exists()
 
 
 def _clocks_from(company_user):
