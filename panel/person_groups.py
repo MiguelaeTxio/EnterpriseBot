@@ -171,6 +171,15 @@ def save_group(group, name, parent_id, person_ids, editor=None):
                 "«%s» es de %s: solo puedes meterlo dentro de un grupo "
                 "tuyo." % (parent.path_label(),
                            owner_label(parent) or "otro usuario"))
+    # S147 (Miguel Ángel): marcar Taller, elegir a los cuatro mecánicos y
+    # llamarlo «Mecánicos» rehace el «Mecánicos» que ya cuelga de Taller
+    # (no crea otro ni choca con él).
+    if group.pk is None and parent is not None:
+        same = parent.children.filter(name__iexact=name).first()
+        if same is not None:
+            if not can_edit(same, editor):
+                raise GroupError(_not_yours(same))
+            group = same
     people = list(PersonIdentity.objects.filter(pk__in=person_ids))
     # S147 (Miguel Ángel): "si un grupo tiene x subgrupos con y elementos,
     # x tiene que ser igual a la sumatoria": una persona solo está en un

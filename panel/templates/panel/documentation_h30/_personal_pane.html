@@ -771,6 +771,31 @@ las filas de debajo se desplacen de verdad.
         return Boolean(personGroupEditingPk) && name !== personGroupEditingName;
     }
 
+    function esc(text) { return String(text || '').replace(/[<>&"]/g, ''); }
+    // Subgrupo del mismo padre con ese nombre (sin contar el que se edita).
+    function sameNameSibling(parentPk, name) {
+        if (!parentPk || !name) return null;
+        const wanted = name.toLocaleLowerCase('es');
+        return Array.from(groupList.querySelectorAll('.person-group-node')).find((row) =>
+            row.dataset.parent === String(parentPk) && row.dataset.pk !== personGroupEditingPk &&
+            (row.dataset.name || '').toLocaleLowerCase('es') === wanted) || null;
+    }
+    // S147 (Miguel Ángel): "marco mecánicos y me marca solo los 3, pero
+    // tengo que buscar a mano a Antonio": las personas del grupo de
+    // encima que no están en la selección, para añadirlas con un clic.
+    function parentMissingHtml(parentPk) {
+        const row = parentPk ? groupRow(parentPk) : null;
+        if (!row) return '';
+        const ids = (row.dataset.memberIds || '').split(',').filter(Boolean);
+        const names = (row.dataset.memberNames || '').split('||');
+        const missing = ids.map((pk, i) => [pk, names[i] || ('Trabajador #' + pk)])
+            .filter(([pk]) => !selection.has(pk))
+            .sort((a, b) => a[1].localeCompare(b[1], 'es'));
+        if (!missing.length) return '';
+        return '<div class="mt-1"><span class="text-muted">De «' + esc(row.dataset.name) + '» no están (pulsa para añadir):</span> ' +
+            missing.map(([pk, name]) => '<button type="button" class="btn btn-outline-success btn-sm py-0 px-1 me-1 mb-1 person-group-add-missing" data-pk="' +
+                esc(pk) + '" data-name="' + esc(name) + '">+ ' + esc(name) + '</button>').join('') + '</div>';
+    }
     function refreshPersonGroupDiff() {
         const box = document.getElementById('personGroupDiff');
         const saveBtn = document.getElementById('personGroupSaveBtn');
@@ -794,7 +819,21 @@ las filas de debajo se desplacen de verdad.
         }
         if (isNewCopy()) {
             const parentText = parentSelect.selectedOptions.length ? parentSelect.selectedOptions[0].textContent : '';
+            const typed = document.getElementById('personGroupName').value.trim();
+            const twin = sameNameSibling(parentSelect.value, typed);
             box.classList.remove('d-none');
+            if (twin) {
+                // S147 (Miguel Ángel): marcar Taller, elegir a los cuatro y
+                // llamarlo «Mecánicos» rehace el «Mecánicos» de Taller.
+                box.innerHTML = '<div class="fw-semibold">«' + esc(twin.dataset.name) + '» ya existe ' +
+                    'dentro de «' + esc(groupRow(parentSelect.value).dataset.name) + '»</div><div class="text-muted">' +
+                    'Se actualiza con esta selección (' + selection.size + ' persona' + (selection.size === 1 ? '' : 's') +
+                    '). «' + esc(personGroupEditingName) + '» no se toca.</div>';
+                saveBtn.textContent = 'Actualizar «' + twin.dataset.name + '»';
+                saveBtn.classList.remove('btn-primary');
+                saveBtn.classList.add('btn-warning');
+                return;
+            }
             box.innerHTML = '<div class="fw-semibold">Grupo nuevo</div><div class="text-muted">«' +
                 document.getElementById('personGroupName').value.trim().replace(/[<>&]/g, '') + '» con ' + selection.size +
                 ' persona' + (selection.size === 1 ? '' : 's') + ' (' + parentText.replace(/[<>&]/g, '') +
@@ -807,19 +846,29 @@ las filas de debajo se desplacen de verdad.
         const label = (pk) => selectionNames.get(pk) || personGroupSavedNames.get(pk) || ('Trabajador #' + pk);
         box.classList.remove('d-none');
         if (!added.length && !removed.length) {
-            box.innerHTML = '<span class="text-muted">Sin cambios: desmarca a alguien para quitarlo o marca a otro (con cualquier filtro) para añadirlo. Con otro nombre, se crea un grupo nuevo.</span>';
+            box.innerHTML = '<span class="text-muted">Sin cambios: desmarca a alguien para quitarlo o marca a otro (con cualquier filtro) para añadirlo. Con otro nombre, se crea un grupo nuevo.</span>' + parentMissingHtml(parentSelect.value);
             return;
         }
         let html = '<div class="fw-semibold">Cambios sin guardar</div>';
         if (added.length) html += '<div class="text-success">+ Se añaden (' + added.length + '): ' + added.map(label).sort().join('; ') + '</div>';
         if (removed.length) html += '<div class="text-danger">− Se quitan (' + removed.length + '): ' + removed.map(label).sort().join('; ') + '</div>';
         html += '<div class="text-muted">Con otro nombre, se crea un grupo nuevo y este no se toca.</div>';
-        box.innerHTML = html;
+        box.innerHTML = html + parentMissingHtml(parentSelect.value);
         saveBtn.textContent = 'Actualizar el grupo';
         saveBtn.classList.remove('btn-primary');
         saveBtn.classList.add('btn-warning');
     }
     window.refreshPersonGroupDiff = refreshPersonGroupDiff;
+    document.getElementById('personGroupDiff').addEventListener('click', function (ev) {
+        const btn = ev.target.closest('.person-group-add-missing');
+        if (!btn) return;
+        selection.add(btn.dataset.pk);
+        selectionNames.set(btn.dataset.pk, btn.dataset.name);
+        syncCheckboxesToSelection();
+        refreshBar();
+        refreshPersonSelectionPreview();
+        refreshPersonGroupDiff();
+    });
     // S147 (Miguel Ángel): "Dentro de" por niveles -- primero los grupos
     // principales; al elegir uno, debajo "¿Dentro de algún subgrupo de
     // «Taller»?" (No: directamente en Taller / Sí: dentro de uno), y así
@@ -1082,6 +1131,7 @@ las filas de debajo se desplacen de verdad.
 
         // Con otro nombre se crea un grupo nuevo (el marcado no se toca).
         const wasEditing = Boolean(personGroupEditingPk) && !isNewCopy();
+        const twin = wasEditing ? null : sameNameSibling(parentId, document.getElementById('personGroupName').value.trim());
         const url = wasEditing
             ? `/panel/documentacion/personal/grupos/${personGroupEditingPk}/guardar/`
             : '/panel/documentacion/personal/grupos/guardar/';
@@ -1103,7 +1153,7 @@ las filas de debajo se desplacen de verdad.
                     // en edición (en edición, él mismo sale desactivado).
                     redrawGroups(data, '');
                     document.getElementById('personGroupName').value = '';
-                    showPersonGroupToast('Grupo creado.');
+                    showPersonGroupToast(twin ? '«' + data.name + '» actualizado.' : 'Grupo creado.');
                 }
             } else {
                 resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al guardar.'}</div>`;
