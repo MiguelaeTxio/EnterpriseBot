@@ -171,10 +171,29 @@ def save_group(group, name, parent_id, person_ids, editor=None):
                 "«%s» es de %s: solo puedes meterlo dentro de un grupo "
                 "tuyo." % (parent.path_label(),
                            owner_label(parent) or "otro usuario"))
+    people = list(PersonIdentity.objects.filter(pk__in=person_ids))
+    # S147 (Miguel Ángel): "si un grupo tiene x subgrupos con y elementos,
+    # x tiene que ser igual a la sumatoria": una persona solo está en un
+    # subgrupo de cada grupo (los grupos principales sí mezclan).
+    if parent is not None and people:
+        siblings = parent.children.exclude(pk=group.pk) if group.pk \
+            else parent.children.all()
+        wanted = {p.pk for p in people}
+        clashes = []
+        for sibling in siblings.prefetch_related("members"):
+            inside = [p for p in sibling.members.all() if p.pk in wanted]
+            if inside:
+                clashes.append("%s (ya en «%s»)" % (
+                    "; ".join(sorted(_label(p) for p in inside)),
+                    sibling.name))
+        if clashes:
+            raise GroupError(
+                "Una persona solo puede estar en un subgrupo de «%s»: %s. "
+                "Quítalas de la selección o de ese subgrupo."
+                % (parent.path_label(), " · ".join(clashes)))
     group.name = name
     group.parent = parent
     group.save()
-    people = list(PersonIdentity.objects.filter(pk__in=person_ids))
     group.members.set(people)
     # S147 (Miguel Ángel): "si una persona entra nueva y lo asignamos a
     # un subgrupo, automáticamente se asigna al grupo padre" -- y a
