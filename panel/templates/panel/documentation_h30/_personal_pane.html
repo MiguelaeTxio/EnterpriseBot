@@ -77,8 +77,8 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                     <input type="text" id="personGroupName" class="form-control form-control-sm" placeholder="Nombre del grupo">
                     <button type="button" class="btn btn-sm btn-primary" id="personGroupSaveBtn" onclick="savePersonGroup()">Guardar</button>
                 </div>
-                {# S147: dónde va el grupo (solo grupos sin personas sueltas pueden tener subgrupos). #}
-                <select id="personGroupParent" class="form-select form-select-sm mb-1" aria-label="Dentro de" title="Dentro de qué grupo va. Un grupo con subgrupos no tiene personas sueltas.">
+                {# S147: dónde va el grupo (cualquier grupo propio, tenga personas o no). #}
+                <select id="personGroupParent" class="form-select form-select-sm mb-1" aria-label="Dentro de" title="Dentro de qué grupo va (cualquier grupo tuyo, tenga personas o no).">
                     <option value="">Dentro de: ninguno (grupo principal)</option>
                     {% for parent in person_group_parents %}<option value="{{ parent.pk }}">Dentro de: {{ parent.label }}</option>{% endfor %}
                 </select>
@@ -727,6 +727,7 @@ las filas de debajo se desplacen de verdad.
     // subgrupos marca todos sus subgrupos. Se edita el grupo cuando está
     // marcado él solo (con sus subgrupos, si los tiene).
     let personGroupEditingPk = '';
+    let personGroupEditingName = '';
     let personGroupSavedIds = new Set();
     let personGroupSavedNames = new Map();
     const groupList = document.getElementById('personGroupSavedList');
@@ -751,23 +752,44 @@ las filas de debajo se desplacen de verdad.
         return Array.from(groupList.querySelectorAll('.person-group-select-checkbox:checked')).map((el) => el.dataset.pk);
     }
 
+    // S147 (Miguel Ángel): con un grupo marcado, cambiarle el nombre es
+    // crear OTRO grupo (el original no se toca) con la selección de ese
+    // momento y dentro del grupo elegido en "Dentro de" -- p. ej. marco
+    // Taller, quito a dos, lo llamo "Mecánicos" dentro de Taller.
+    // Con el mismo nombre se actualiza el grupo marcado.
+    function isNewCopy() {
+        const name = document.getElementById('personGroupName').value.trim();
+        return Boolean(personGroupEditingPk) && name !== personGroupEditingName;
+    }
+
     function refreshPersonGroupDiff() {
         const box = document.getElementById('personGroupDiff');
         const saveBtn = document.getElementById('personGroupSaveBtn');
         if (!box || !saveBtn) return;
-        const editingParent = personGroupEditingPk && groupChildren(personGroupEditingPk).length > 0;
+        const parentSelect = document.getElementById('personGroupParent');
         saveBtn.classList.add('btn-primary');
         saveBtn.classList.remove('btn-warning');
         saveBtn.textContent = 'Guardar';
+        // En edición, el grupo no puede ir dentro de sí mismo ni de un
+        // subgrupo suyo; un grupo nuevo puede ir dentro de cualquiera.
+        const banned = (personGroupEditingPk && !isNewCopy())
+            ? new Set([personGroupEditingPk].concat(groupDescendants(personGroupEditingPk)))
+            : new Set();
+        Array.from(parentSelect.options).forEach((opt) => { opt.disabled = banned.has(opt.value); });
         if (!personGroupEditingPk) {
             const many = checkedGroups().length > 1;
             box.classList.toggle('d-none', !many);
             box.innerHTML = many ? '<span class="text-muted">Varios grupos marcados: la selección es la suma de sus personas. Para cambiar uno, márcalo solo; Guardar crea un grupo nuevo con esta selección.</span>' : '';
             return;
         }
-        if (editingParent) {
+        if (isNewCopy()) {
+            const parentText = parentSelect.selectedOptions.length ? parentSelect.selectedOptions[0].textContent : '';
             box.classList.remove('d-none');
-            box.innerHTML = '<span class="text-muted">Grupo con subgrupos: no tiene personas sueltas. Aquí se cambia su nombre o dónde va; las personas, en cada subgrupo.</span>';
+            box.innerHTML = '<div class="fw-semibold">Grupo nuevo</div><div class="text-muted">«' +
+                document.getElementById('personGroupName').value.trim().replace(/[<>&]/g, '') + '» con ' + selection.size +
+                ' persona' + (selection.size === 1 ? '' : 's') + ' (' + parentText.replace(/[<>&]/g, '') +
+                '). «' + personGroupEditingName.replace(/[<>&]/g, '') + '» no se toca.</div>';
+            saveBtn.textContent = 'Crear grupo nuevo';
             return;
         }
         const added = Array.from(selection).filter((pk) => !personGroupSavedIds.has(pk));
@@ -775,18 +797,21 @@ las filas de debajo se desplacen de verdad.
         const label = (pk) => selectionNames.get(pk) || personGroupSavedNames.get(pk) || ('Trabajador #' + pk);
         box.classList.remove('d-none');
         if (!added.length && !removed.length) {
-            box.innerHTML = '<span class="text-muted">Sin cambios: desmarca a alguien para quitarlo o marca a otro (con cualquier filtro) para añadirlo.</span>';
+            box.innerHTML = '<span class="text-muted">Sin cambios: desmarca a alguien para quitarlo o marca a otro (con cualquier filtro) para añadirlo. Con otro nombre, se crea un grupo nuevo.</span>';
             return;
         }
         let html = '<div class="fw-semibold">Cambios sin guardar</div>';
         if (added.length) html += '<div class="text-success">+ Se añaden (' + added.length + '): ' + added.map(label).sort().join('; ') + '</div>';
         if (removed.length) html += '<div class="text-danger">− Se quitan (' + removed.length + '): ' + removed.map(label).sort().join('; ') + '</div>';
+        html += '<div class="text-muted">Con otro nombre, se crea un grupo nuevo y este no se toca.</div>';
         box.innerHTML = html;
         saveBtn.textContent = 'Actualizar el grupo';
         saveBtn.classList.remove('btn-primary');
         saveBtn.classList.add('btn-warning');
     }
     window.refreshPersonGroupDiff = refreshPersonGroupDiff;
+    document.getElementById('personGroupName').addEventListener('input', refreshPersonGroupDiff);
+    document.getElementById('personGroupParent').addEventListener('change', refreshPersonGroupDiff);
 
     function activatePersonGroupManagement() {
         document.getElementById('personGroupManagementEmpty').classList.add('d-none');
@@ -824,14 +849,13 @@ las filas de debajo se desplacen de verdad.
             const names = (row.dataset.memberNames || '').split('||').filter(Boolean);
             personGroupSavedIds = new Set(ids);
             personGroupSavedNames = new Map(ids.map((id, i) => [id, names[i] || '']));
-            document.getElementById('personGroupName').value = row.dataset.name || '';
+            personGroupEditingName = row.dataset.name || '';
+            document.getElementById('personGroupName').value = personGroupEditingName;
             parentSelect.value = row.dataset.parent || '';
-            // No se puede meter en sí mismo ni en un subgrupo suyo.
-            const banned = new Set([String(pk)].concat(groupDescendants(pk)));
-            Array.from(parentSelect.options).forEach((opt) => { opt.disabled = banned.has(opt.value); });
             document.getElementById('personGroupDeleteBtn').classList.remove('d-none');
         } else {
             personGroupEditingPk = '';
+            personGroupEditingName = '';
             personGroupSavedIds = new Set();
             personGroupSavedNames = new Map();
             Array.from(parentSelect.options).forEach((opt) => { opt.disabled = false; });
@@ -957,16 +981,15 @@ las filas de debajo se desplacen de verdad.
             resultDiv.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Falta el nombre del grupo.</div>';
             return;
         }
-        const editingParent = personGroupEditingPk && groupChildren(personGroupEditingPk).length > 0;
         const formData = new FormData();
         formData.append('name', name);
         formData.append('parent_id', parentId);
-        // Un grupo con subgrupos no tiene personas sueltas; uno sin
-        // personas marcadas queda como carpeta para colgarle otros.
-        if (!editingParent) selection.forEach((pk) => formData.append('person_ids', pk));
+        // Uno sin personas marcadas queda como carpeta para colgarle otros.
+        selection.forEach((pk) => formData.append('person_ids', pk));
 
-        const wasEditing = Boolean(personGroupEditingPk);
-        const url = personGroupEditingPk
+        // Con otro nombre se crea un grupo nuevo (el marcado no se toca).
+        const wasEditing = Boolean(personGroupEditingPk) && !isNewCopy();
+        const url = wasEditing
             ? `/panel/documentacion/personal/grupos/${personGroupEditingPk}/guardar/`
             : '/panel/documentacion/personal/grupos/guardar/';
 

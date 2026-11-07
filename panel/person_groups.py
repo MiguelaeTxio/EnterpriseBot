@@ -7,8 +7,10 @@ Selection groups of the Personal tab as a tree (S147).
 Grupos de selección de la pestaña Personal en árbol (S147, Miguel
 Ángel): "grupos y subfamilias de grupos [...] desplegar Plataformas y
 tener Administración, Comercial, Taller, Transportistas" y "puedes
-seleccionar varios grupos hijos, como con casillero". Un grupo con
-subgrupos no tiene miembros sueltos. Aquí se arma el árbol que pinta
+seleccionar varios grupos hijos, como con casillero". Un grupo puede
+tener sus personas y subgrupos dentro ("Mecánicos" dentro de
+"Taller"); con otro nombre, guardar crea un grupo nuevo (el marcado no
+se toca). Aquí se arma el árbol que pinta
 _personal_pane.html y se validan los cambios que guarda
 PersonGroupTemplateSaveView.
 
@@ -112,16 +114,17 @@ def parent_choices(exclude_pk=None, editor=None):
     """
     Groups that can hold subgroups: those without loose members.
     ---
-    Grupos que pueden tener subgrupos (los que no tienen miembros
-    sueltos), con su ruta; sin el propio grupo ni sus subgrupos. Con
-    `editor`, solo los suyos (en uno ajeno no se cuelgan subgrupos).
+    Grupos donde se puede meter otro, con su ruta; sin el propio grupo
+    ni sus subgrupos. S147 (Miguel Ángel, "creo Mecánicos dentro de
+    Taller"): cualquiera, tenga personas o no. Con `editor`, solo los
+    suyos (en uno ajeno no se cuelgan subgrupos).
     """
     excluded = set()
     if exclude_pk:
         group = PersonGroupTemplate.objects.filter(pk=exclude_pk).first()
         if group is not None:
             excluded = group.descendant_ids()
-    groups = PersonGroupTemplate.objects.filter(members__isnull=True)
+    groups = PersonGroupTemplate.objects.all()
     if editor is not None:
         groups = groups.filter(created_by=editor)
     return [
@@ -138,10 +141,12 @@ def save_group(group, name, parent_id, person_ids, editor=None):
     Validates and saves a group (name, parent and people).
     ---
     Valida y guarda un grupo: nombre, dónde va (parent) y sus personas.
-    Reglas (S147): un grupo con subgrupos no tiene miembros sueltos; un
-    grupo no se mete dentro de sí mismo ni de un subgrupo suyo; ni
-    dentro de un grupo que tiene personas sueltas. Sin personas y sin
-    subgrupos, el grupo queda como carpeta vacía para colgarle otros.
+    Reglas (S147): un grupo no se mete dentro de sí mismo ni de un
+    subgrupo suyo, y solo dentro de un grupo de quien lo guarda. Un
+    grupo puede tener sus personas y además subgrupos (p. ej. Taller con
+    los suyos y, dentro, Mecánicos y Limpiadores, que son parte de
+    ellos): marcarlo selecciona las suyas y las de sus subgrupos. Sin
+    personas, queda como carpeta para colgarle otros.
     """
     from document_explorer.models import PersonIdentity
 
@@ -164,21 +169,11 @@ def save_group(group, name, parent_id, person_ids, editor=None):
                 "«%s» es de %s: solo puedes meterlo dentro de un grupo "
                 "tuyo." % (parent.path_label(),
                            owner_label(parent) or "otro usuario"))
-        if parent.members.exists():
-            raise GroupError(
-                "«%s» tiene personas sueltas: no puede tener subgrupos."
-                % parent.path_label())
-    has_children = bool(group.pk) and group.children.exists()
-    if has_children and person_ids:
-        raise GroupError(
-            "Este grupo tiene subgrupos: no puede tener personas sueltas. "
-            "Guarda las personas en uno de sus subgrupos.")
     group.name = name
     group.parent = parent
     group.save()
     people = list(PersonIdentity.objects.filter(pk__in=person_ids))
-    if not has_children:
-        group.members.set(people)
+    group.members.set(people)
     return group, people
 
 

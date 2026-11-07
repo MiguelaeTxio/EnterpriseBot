@@ -2794,8 +2794,8 @@ class PersonGroupTemplate(models.Model):
     )
     # S147 (Miguel Ángel): grupos en árbol ("Grúas" > Administración,
     # Operarios; "Plataformas" > Administración, Comercial...). Un grupo
-    # con subgrupos no tiene miembros sueltos: sus miembros son los de
-    # sus subgrupos.
+    # puede tener sus personas y además subgrupos ("Mecánicos" dentro de
+    # "Taller"): sus personas son las suyas más las de sus subgrupos.
     parent = models.ForeignKey(
         "self",
         null=True,
@@ -2865,10 +2865,9 @@ class PersonGroupTemplate(models.Model):
 
     def all_member_ids(self):
         """
-        People of the group: its own or, with subgroups, theirs.
+        People of the group: its own plus those of its subgroups.
         ---
-        Personas del grupo: las suyas o, si tiene subgrupos, las de
-        todos ellos.
+        Personas del grupo: las suyas más las de todos sus subgrupos.
         """
         return set(PersonIdentity.objects.filter(
             group_templates__in=self.descendant_ids(),
