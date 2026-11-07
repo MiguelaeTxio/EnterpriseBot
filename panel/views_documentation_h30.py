@@ -1444,8 +1444,10 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
         # se pliegan recordados por usuario (screen_key "person_groups").
         from panel.person_groups import group_tree, parent_choices
 
-        ctx["person_group_nodes"] = group_tree()
-        ctx["person_group_parents"] = parent_choices()
+        ctx["person_group_nodes"] = group_tree(
+            request.user.company_user)
+        ctx["person_group_parents"] = parent_choices(
+            editor=request.user.company_user)
         collapsed = get_saved_state_key(
             request.user.company_user, "person_groups", "collapsed", [],
         )
@@ -6803,6 +6805,7 @@ class PersonGroupTemplateSaveView(DocsUploadAccessMixin, View):
                 group, request.POST.get("name", ""),
                 request.POST.get("parent_id", ""),
                 request.POST.getlist("person_ids"),
+                editor=request.user.company_user,
             )
         except GroupError as exc:
             return JsonResponse({"ok": False, "error": str(exc)}, status=400)
@@ -6818,9 +6821,10 @@ class PersonGroupTemplateSaveView(DocsUploadAccessMixin, View):
             ] if not group.children.exists() else [],
             "tree_html": render_to_string(
                 "panel/documentation_h30/_person_groups_tree.html",
-                {"person_group_nodes": group_tree()}, request=request,
+                {"person_group_nodes": group_tree(
+                    request.user.company_user)}, request=request,
             ),
-            "parents": parent_choices(),
+            "parents": parent_choices(editor=request.user.company_user),
         })
 
 
@@ -6840,16 +6844,17 @@ class PersonGroupTemplateDeleteView(DocsUploadAccessMixin, View):
 
         group = get_object_or_404(PersonGroupTemplate, pk=group_pk)
         try:
-            delete_group(group)
+            delete_group(group, editor=request.user.company_user)
         except GroupError as exc:
             return JsonResponse({"ok": False, "error": str(exc)}, status=400)
         return JsonResponse({
             "ok": True,
             "tree_html": render_to_string(
                 "panel/documentation_h30/_person_groups_tree.html",
-                {"person_group_nodes": group_tree()}, request=request,
+                {"person_group_nodes": group_tree(
+                    request.user.company_user)}, request=request,
             ),
-            "parents": parent_choices(),
+            "parents": parent_choices(editor=request.user.company_user),
         })
 
 

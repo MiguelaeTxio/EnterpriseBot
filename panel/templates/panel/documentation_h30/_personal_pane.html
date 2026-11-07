@@ -812,7 +812,10 @@ las filas de debajo se desplacen de verdad.
         // Se edita `pk` solo si lo marcado es él y sus subgrupos.
         const checked = new Set(checkedGroups());
         const expected = new Set([pk].concat(groupDescendants(pk)));
-        const isTarget = pk && checked.size === expected.size && Array.from(checked).every((g) => expected.has(g));
+        const isRoot = pk && checked.size === expected.size && Array.from(checked).every((g) => expected.has(g));
+        // S147: solo quien creó el grupo lo cambia; los demás lo usan
+        // (Guardar crea un grupo nuevo suyo con la selección).
+        const isTarget = isRoot && groupRow(pk).dataset.canEdit === '1';
         const parentSelect = document.getElementById('personGroupParent');
         if (isTarget) {
             const row = groupRow(pk);
@@ -833,6 +836,12 @@ las filas de debajo se desplacen de verdad.
             personGroupSavedNames = new Map();
             Array.from(parentSelect.options).forEach((opt) => { opt.disabled = false; });
             document.getElementById('personGroupDeleteBtn').classList.add('d-none');
+            if (isRoot) {
+                document.getElementById('personGroupFormResult').innerHTML =
+                    '<div class="alert alert-info py-1 px-2 small mb-0">Grupo de ' +
+                    (groupRow(pk).dataset.owner || 'otro usuario') +
+                    ': lo puedes usar, pero solo quien lo creó lo cambia. Guardar crea un grupo nuevo tuyo con esta selección.</div>';
+            }
         }
     }
 
@@ -859,11 +868,11 @@ las filas de debajo se desplacen de verdad.
             const row = groupRow(g);
             return !(row && row.dataset.parent && checkedSet.has(row.dataset.parent));
         });
+        document.getElementById('personGroupFormResult').innerHTML = '';
         setEditingTarget(roots.length === 1 ? roots[0] : '');
         if (!checkedGroups().length) {
             document.getElementById('personGroupName').value = '';
         }
-        document.getElementById('personGroupFormResult').innerHTML = '';
         syncCheckboxesToSelection();
         refreshBar();
         refreshPersonSelectionPreview();

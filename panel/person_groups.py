@@ -11,6 +11,12 @@ seleccionar varios grupos hijos, como con casillero". Un grupo con
 subgrupos no tiene miembros sueltos. Aquí se arma el árbol que pinta
 _personal_pane.html y se validan los cambios que guarda
 PersonGroupTemplateSaveView.
+
+S147 (Miguel Ángel): "Los grupos [...] son globales a todas las vistas.
+También pueden ser usados, pero nunca modificados, por otros usuarios":
+solo quien creó un grupo lo cambia o lo borra, y solo dentro de un
+grupo suyo se cuelgan subgrupos. Los demás lo usan (Personal, Avisos y
+el filtro "Grupos" de Fichajes, Vacaciones, Solicitudes y Horarios).
 """
 from document_explorer.models import PersonGroupTemplate
 
@@ -29,17 +35,65 @@ def _label(person):
                           person.given_name)
 
 
-def group_tree():
+def can_edit(group, editor):
+    """
+    True when `editor` (CompanyUser) created the group (S147).
+    ---
+    True si `editor` creó el grupo: solo él lo cambia o lo borra.
+    """
+    return editor is not None and group.created_by_id == editor.pk
+
+
+def owner_label(group):
+    """
+    Name of who created the group ("" if nobody).
+    ---
+    Nombre de quien creó el grupo.
+    """
+    user = group.created_by.user if group.created_by_id else None
+    if user is None:
+        return ""
+    return user.get_full_name() or user.username
+
+
+def selected_group_ids(raw):
+    """
+    Group pks of a "groups" filter value ("5,11").
+    ---
+    Pks de los grupos marcados en el filtro "Grupos".
+    """
+    return [int(pk) for pk in (raw or "").split(",") if pk.strip().isdigit()]
+
+
+def person_ids_for_groups(raw):
+    """
+    PersonIdentity pks of the groups marked in a "groups" filter (a
+    group with subgroups counts theirs), or None when none is marked.
+    ---
+    Personas de los grupos marcados en el filtro "Grupos" (uno con
+    subgrupos cuenta las de todos ellos), o None si no hay ninguno.
+    """
+    pks = selected_group_ids(raw)
+    if not pks:
+        return None
+    ids = set()
+    for group in PersonGroupTemplate.objects.filter(pk__in=pks):
+        ids |= group.all_member_ids()
+    return ids
+
+
+def group_tree(editor=None):
     """
     Flat list of the groups in tree order, with depth and members.
     ---
     Lista plana en orden de árbol (padre y debajo sus subgrupos, por
     nombre). Cada nodo: group, depth, children (pks de los hijos
     directos), member_ids y member_names (los suyos; vacío si tiene
-    subgrupos) y total (personas distintas, contando sus subgrupos).
+    subgrupos), total (personas distintas, contando sus subgrupos),
+    can_edit (si `editor` lo creó) y owner (quién lo creó).
     """
-    groups = list(PersonGroupTemplate.objects.prefetch_related(
-        "members").order_by("name"))
+    groups = list(PersonGroupTemplate.objects.select_related(
+        "created_by__user").prefetch_related("members").order_by("name"))
     by_parent = {}
     for group in groups:
         by_parent.setdefault(group.parent_id, []).append(group)
@@ -68,6 +122,8 @@ def group_tree():
                 "member_ids": [p.pk for p in people],
                 "member_names": [_label(p) for p in people],
                 "total": len(members_of(group)),
+                "can_edit": can_edit(group, editor),
+                "owner": owner_label(group),
             })
             walk(group.pk, depth + 1, seen)
 
@@ -75,29 +131,32 @@ def group_tree():
     return nodes
 
 
-def parent_choices(exclude_pk=None):
+def parent_choices(exclude_pk=None, editor=None):
     """
     Groups that can hold subgroups: those without loose members.
     ---
     Grupos que pueden tener subgrupos (los que no tienen miembros
-    sueltos), con su ruta; sin el propio grupo ni sus subgrupos.
+    sueltos), con su ruta; sin el propio grupo ni sus subgrupos. Con
+    `editor`, solo los suyos (en uno ajeno no se cuelgan subgrupos).
     """
     excluded = set()
     if exclude_pk:
         group = PersonGroupTemplate.objects.filter(pk=exclude_pk).first()
         if group is not None:
             excluded = group.descendant_ids()
+    groups = PersonGroupTemplate.objects.filter(members__isnull=True)
+    if editor is not None:
+        groups = groups.filter(created_by=editor)
     return [
         {"pk": g.pk, "label": g.path_label()}
         for g in sorted(
-            PersonGroupTemplate.objects.filter(members__isnull=True)
-            .exclude(pk__in=excluded).select_related("parent__parent"),
+            groups.exclude(pk__in=excluded).select_related("parent__parent"),
             key=lambda g: g.path_label().upper(),
         )
     ]
 
 
-def save_group(group, name, parent_id, person_ids):
+def save_group(group, name, parent_id, person_ids, editor=None):
     """
     Validates and saves a group (name, parent and people).
     ---
@@ -109,6 +168,8 @@ def save_group(group, name, parent_id, person_ids):
     """
     from document_explorer.models import PersonIdentity
 
+    if group.pk and not can_edit(group, editor):
+        raise GroupError(_not_yours(group))
     name = (name or "").strip()
     if not name:
         raise GroupError("Falta el nombre del grupo.")
@@ -121,6 +182,11 @@ def save_group(group, name, parent_id, person_ids):
             raise GroupError(
                 "Un grupo no puede ir dentro de sí mismo ni de un "
                 "subgrupo suyo.")
+        if not can_edit(parent, editor):
+            raise GroupError(
+                "«%s» es de %s: solo puedes meterlo dentro de un grupo "
+                "tuyo." % (parent.path_label(),
+                           owner_label(parent) or "otro usuario"))
         if parent.members.exists():
             raise GroupError(
                 "«%s» tiene personas sueltas: no puede tener subgrupos."
@@ -139,14 +205,36 @@ def save_group(group, name, parent_id, person_ids):
     return group, people
 
 
-def delete_group(group):
+def _not_yours(group):
+    return ("«%s» es de %s: puedes usarlo, pero solo quien lo creó lo "
+            "cambia o lo borra." % (group.path_label(),
+                                    owner_label(group) or "otro usuario"))
+
+
+def delete_group(group, editor=None):
     """
     Deletes a group without subgroups.
     ---
     Borra un grupo que no tenga subgrupos (primero hay que borrar o
     sacar sus subgrupos). Nunca toca a las personas.
     """
+    if not can_edit(group, editor):
+        raise GroupError(_not_yours(group))
     if group.children.exists():
         raise GroupError(
             "Tiene subgrupos: bórralos o sácalos antes de borrar el grupo.")
     group.delete()
+
+
+def group_filter_context(request):
+    """
+    Context of the "Grupos" filter (panel/_person_group_filter.html).
+    ---
+    Contexto del filtro "Grupos": el árbol y los marcados.
+    """
+    return {
+        "person_group_nodes": group_tree(),
+        "filter_groups": [
+            str(pk) for pk in selected_group_ids(request.GET.get("groups"))
+        ],
+    }

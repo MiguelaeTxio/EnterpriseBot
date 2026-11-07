@@ -4,7 +4,9 @@ S147. Grupos de selección en árbol (panel/person_groups.group_tree):
 cada grupo con su casilla; los que tienen subgrupos se pliegan y su
 casilla marca todos sus subgrupos. Las personas viajan en data-* (las
 suyas; un grupo con subgrupos no tiene sueltas). El JS de
-_personal_pane.html junta las personas de los grupos marcados.
+_personal_pane.html junta las personas de los grupos marcados. Solo
+quien creó un grupo lo cambia (data-can-edit); los ajenos dicen de
+quién son.
 {% endcomment %}
 {% for node in person_group_nodes %}
 <li class="list-group-item px-1 py-0 person-group-node" id="personGroupRow{{ node.group.pk }}"
@@ -12,6 +14,8 @@ _personal_pane.html junta las personas de los grupos marcados.
     data-parent="{{ node.group.parent_id|default:'' }}"
     data-children="{{ node.children|join:',' }}"
     data-name="{{ node.group.name }}"
+    data-can-edit="{{ node.can_edit|yesno:'1,0' }}"
+    data-owner="{{ node.owner }}"
     data-member-ids="{{ node.member_ids|join:',' }}"
     data-member-names="{{ node.member_names|join:'||' }}"
     style="padding-left: {{ node.indent }}rem !important;">
@@ -25,7 +29,7 @@ _personal_pane.html junta las personas de los grupos marcados.
         {% endif %}
         <div class="form-check mb-0">
             <input class="form-check-input person-group-select-checkbox" type="checkbox" id="personGroupSelect{{ node.group.pk }}" data-pk="{{ node.group.pk }}">
-            <label class="form-check-label{% if node.children %} fw-semibold{% endif %}" for="personGroupSelect{{ node.group.pk }}">{{ node.group.name }} ({{ node.total }})</label>
+            <label class="form-check-label{% if node.children %} fw-semibold{% endif %}" for="personGroupSelect{{ node.group.pk }}">{{ node.group.name }} ({{ node.total }}){% if not node.can_edit and node.owner %} <span class="text-muted fw-normal small">· de {{ node.owner }}</span>{% endif %}</label>
         </div>
     </div>
 </li>
