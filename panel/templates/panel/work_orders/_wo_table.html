@@ -58,6 +58,7 @@
                 <td class="px-2">
                     <input type="checkbox" class="form-check-input wo-row-check" autocomplete="off"
                            data-key="{{ wo.pk }}"
+                           data-operator="{{ wo.operator_pk|default:'' }}"
                            data-label="{{ wo.operator_name }} · {% if wo.fecha %}{{ wo.fecha|date:'d/m/Y' }}{% else %}sin fecha{% endif %}">
                 </td>
                 {% endif %}

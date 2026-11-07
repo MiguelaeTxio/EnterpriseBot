@@ -4,15 +4,16 @@ S147 (Miguel Ángel): los grupos de selección son globales a todas las
 vistas de personal, y la interfaz es UNA para toda la aplicación: este
 recuadro es el mismo "Grupos de selección" de Personal (misma columna,
 mismo árbol _person_groups_tree.html, mismo plegado recordado por
-usuario en "person_groups"), solo para usarlos: se cambian en Personal,
-y solo quien los creó. Se marcan uno, varios o todos los subgrupos (la
-casilla de un grupo marca sus subgrupos) y el listado se queda con sus
-personas (panel/person_groups.person_ids_for_groups).
+usuario en "person_groups") y hace lo mismo que allí: marcar grupos
+SELECCIONA a sus personas (la selección es la suma de los marcados; la
+casilla de un grupo marca sus subgrupos). Los grupos se crean y se
+cambian en Personal, y solo quien los creó.
+Cada vista recibe a las personas en window.EbGroupSelect[pg_prefix]
+({persons: [[pk, nombre]...], users: Map pk de CompanyUser -> nombre}) y las
+pone en su selección (por persona, por cuenta o por sus filas).
 Uso: es una columna de la fila de arriba (col-lg-3, como en Personal):
-  {% include "panel/_person_group_filter.html" with pg_prefix="clk" pg_form="clk-filters" %}
-y dentro del formulario de filtros va el campo oculto:
-  <input type="hidden" name="groups" id="clk-groups-input" value="{{ filter_groups|join:',' }}">
-Contexto: person_group_nodes, person_groups_collapsed y filter_groups
+  {% include "panel/_person_group_filter.html" with pg_prefix="clk" %}
+Contexto: person_group_nodes y person_groups_collapsed
 (panel/person_groups.group_filter_context).
 {% endcomment %}
 <div class="col-lg-3">
@@ -26,7 +27,7 @@ Contexto: person_group_nodes, person_groups_collapsed y filter_groups
         </div>
         <hr class="my-1">
         <p class="text-muted small mb-0">
-            Marca uno o varios grupos: el listado se queda con sus personas. Los grupos se crean y se cambian en Personal.
+            Marca uno o varios grupos (la selección es la suma). Los grupos se crean y se cambian en Personal.
         </p>
     </div>
 </div>
@@ -38,8 +39,6 @@ Contexto: person_group_nodes, person_groups_collapsed y filter_groups
     const list = document.getElementById('{{ pg_prefix }}-group-list');
     if (!list || list.dataset.bound) { return; }
     list.dataset.bound = '1';
-    const form = document.getElementById('{{ pg_form }}');
-    const input = document.getElementById('{{ pg_prefix }}-groups-input');
     const row = (pk) => list.querySelector('.person-group-node[data-pk="' + pk + '"]');
     const box = (pk) => row(pk) && row(pk).querySelector('.person-group-select-checkbox');
     const children = (pk) => (row(pk) && row(pk).dataset.children ? row(pk).dataset.children.split(',').filter(Boolean) : []);
@@ -53,9 +52,25 @@ Contexto: person_group_nodes, person_groups_collapsed y filter_groups
         }
         return out;
     }
-    // Lo marcado (campo oculto del formulario de filtros).
-    const marked = new Set((input && input.value ? input.value.split(',') : []).filter(Boolean));
-    marked.forEach((pk) => { if (box(pk)) { box(pk).checked = true; } });
+    // Personas de los grupos marcados (las tienen los que no tienen
+    // subgrupos), como applyCheckedGroupsToSelection de Personal.
+    function checkedPeople() {
+        const persons = new Map();
+        const users = new Map();
+        list.querySelectorAll('.person-group-select-checkbox:checked').forEach((cb) => {
+            const node = row(cb.dataset.pk);
+            if (!node) { return; }
+            const ids = (node.dataset.memberIds || '').split(',');
+            const names = (node.dataset.memberNames || '').split('||');
+            const accounts = (node.dataset.memberUsers || '').split(',');
+            ids.forEach((id, i) => {
+                if (!id) { return; }
+                persons.set(id, names[i] || '');
+                if (accounts[i]) { users.set(accounts[i], names[i] || ''); }
+            });
+        });
+        return {persons: Array.from(persons.entries()), users: users};
+    }
     list.addEventListener('change', function (ev) {
         if (!ev.target.classList.contains('person-group-select-checkbox')) { return; }
         const pk = ev.target.dataset.pk;
@@ -65,13 +80,8 @@ Contexto: person_group_nodes, person_groups_collapsed y filter_groups
             if (box(parent)) { box(parent).checked = children(parent).every((k) => box(k) && box(k).checked); }
             parent = row(parent) && row(parent).dataset.parent;
         }
-        if (input) {
-            input.value = Array.from(list.querySelectorAll('.person-group-select-checkbox:checked'))
-                .map((el) => el.dataset.pk).join(',');
-        }
-        // Las vistas con htmx recargan el listado al momento; las de
-        // formulario normal (Partes digitales), al pulsar Filtrar.
-        if (form && form.hasAttribute('hx-get') && window.htmx) { window.htmx.trigger(form, 'change'); }
+        const select = window.EbGroupSelect && window.EbGroupSelect['{{ pg_prefix }}'];
+        if (select) { select(checkedPeople()); }
     });
     // Plegar/desplegar, recordado por usuario como en Personal.
     const collapsed = new Set((list.dataset.collapsed || '').split(',').filter(Boolean));

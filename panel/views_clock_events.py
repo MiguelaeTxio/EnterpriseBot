@@ -65,7 +65,7 @@ from panel.views_vacation_balance import (
 SCREEN_KEY = "clock_events"
 FILTER_KEYS = (
     "search", "active", "company", "date_from", "date_to", "sort",
-    "issues_only", "events", "section", "onboarding", "groups",
+    "issues_only", "events", "section", "onboarding",
 )
 NO_SECTION = "none"
 _MAX_SORT_KEYS = 4

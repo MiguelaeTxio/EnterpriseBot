@@ -21,6 +21,7 @@ vista sus propios ids (por defecto, los de Personal).
     data-owner="{{ node.owner }}"
     data-member-ids="{{ node.member_ids|join:',' }}"
     data-member-names="{{ node.member_names|join:'||' }}"
+    data-member-users="{{ node.member_user_ids|join:',' }}"
     style="padding-left: {{ node.indent }}rem !important;">
     <div class="d-flex align-items-center gap-1">
         {% if node.children %}

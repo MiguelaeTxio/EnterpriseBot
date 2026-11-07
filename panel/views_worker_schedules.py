@@ -44,9 +44,7 @@ from panel.views_vacation_balance import (
 )
 
 SCREEN_KEY = "worker_schedules"
-FILTER_KEYS = (
-    "search", "active", "company", "sort", "section", "schedule", "groups",
-)
+FILTER_KEYS = ("search", "active", "company", "sort", "section", "schedule")
 NO_SECTION = "none"
 NO_SCHEDULE = "none"
 _MAX_SORT_KEYS = 4

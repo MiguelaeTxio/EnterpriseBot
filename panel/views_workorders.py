@@ -44,7 +44,6 @@ HISTORY_SCREEN_KEY = "work_orders_history"
 HISTORY_FILTER_KEYS = (
     "tab", "operator_pk", "date_from", "date_to", "machine",
     "fault_category", "q", "status", "dieta", "origen", "sort_stack",
-    "groups",
 )
 MAX_SORT_LEVELS = 4
 
@@ -4724,7 +4723,6 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
         is_elevated=True,
         dieta="",
         origen="",
-        groups="",
     ):
         """
         Applies the optional GET filters to a WorkOrder queryset.
@@ -4767,15 +4765,6 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
                 )
             except (ValueError, TypeError):
                 pass
-        # S147: filtro "Grupos" (grupos de selección, globales a las
-        # vistas): partes de las personas de los grupos marcados.
-        if groups and is_elevated:
-            from panel.person_groups import person_ids_for_groups
-
-            group_people = person_ids_for_groups(groups)
-            if group_people is not None:
-                qs = qs.filter(
-                    uploaded_by__person_identity__pk__in=group_people)
         if date_from:
             qs = qs.filter(entries__work_date__gte=date_from)
         if date_to:
@@ -5063,7 +5052,6 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
         status = request.GET.get("status", "").strip()
         dieta = request.GET.get("dieta", "").strip()
         origen = request.GET.get("origen", "").strip()
-        groups = request.GET.get("groups", "").strip()
         from panel.person_groups import group_filter_context
 
         _VALID_SORT_COLS = frozenset(
@@ -5148,7 +5136,6 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
             is_elevated=is_elevated,
             dieta=dieta,
             origen=origen,
-            groups=groups,
         )
         pending_list = self._enrich_work_orders(
             qs_pending, active_fault_category=fault_category
@@ -5170,7 +5157,6 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
             is_elevated=is_elevated,
             dieta=dieta,
             origen=origen,
-            groups=groups,
         )
         reviewed_list = self._enrich_work_orders(
             qs_reviewed, active_fault_category=fault_category
@@ -5228,7 +5214,6 @@ class WorkOrderAdminHistoryView(WorkOrderFormAccessMixin, View):
             is_elevated=is_elevated,
             dieta=dieta,
             origen=origen,
-            groups=groups,
         )
         history_list = self._enrich_work_orders(
             qs_history, active_fault_category=fault_category

@@ -120,8 +120,6 @@ panel/views_users_list.py.
                             </div>
                             <input type="hidden" name="selected_ids" id="usr-selected-ids" value="">
                         </div>
-                        {# S147: lo marcado en "Grupos de selección" (recuadro de al lado). #}
-                        <input type="hidden" name="groups" id="usr-groups-input" value="{{ filter_groups|join:',' }}">
                     </div>
                 </form>
             </div>
@@ -265,6 +263,17 @@ panel/views_users_list.py.
     const OWN_PK = "{{ own_pk }}";
     // Selección (pk -> "Apellidos, Nombre (usuario)"), recordada por usuario.
     const selection = new Map();
+
+    // S147: "Grupos de selección" (como en Personal): la selección es la
+    // suma de las personas de los grupos marcados.
+    window.EbGroupSelect = window.EbGroupSelect || {};
+    window.EbGroupSelect["usr"] = function (people) {
+        selection.clear();
+        people.users.forEach(function (name, pk) { selection.set(String(pk), name); });
+        saveSelection();
+        updateSelectionUi();
+        refreshFromFragment();
+    };
     try {
         JSON.parse(document.getElementById("usr-saved-selection").textContent).forEach(function (item) {
             if (item && item.pk) selection.set(String(item.pk), item.label || "");

@@ -87,8 +87,6 @@ supervisores: el visor de cada trabajador irá fuera de aquí.
                             </div>
                             <input type="hidden" name="selected_ids" id="vbal-selected-ids" value="">
                         </div>
-                        {# S147: lo marcado en "Grupos de selección" (recuadro de al lado). #}
-                        <input type="hidden" name="groups" id="vbal-groups-input" value="{{ filter_groups|join:',' }}">
                     </div>
                 </form>
             </div>
@@ -253,6 +251,17 @@ supervisores: el visor de cada trabajador irá fuera de aquí.
     // Selección (pk -> "Apellidos, Nombre"), recordada por usuario en
     // PanelNavigationState (clave "selection").
     const selection = new Map();
+
+    // S147: "Grupos de selección" (como en Personal): la selección es la
+    // suma de las personas de los grupos marcados.
+    window.EbGroupSelect = window.EbGroupSelect || {};
+    window.EbGroupSelect["vbal"] = function (people) {
+        selection.clear();
+        people.persons.forEach(function (p) { selection.set(String(p[0]), p[1]); });
+        saveSelection();
+        updateSelectionUi();
+        refreshFromFragment();
+    };
     try {
         JSON.parse(document.getElementById("vbal-saved-selection").textContent).forEach(function (item) {
             if (item && item.pk) selection.set(String(item.pk), item.label || "");

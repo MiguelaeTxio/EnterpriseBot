@@ -89,8 +89,6 @@ recordatorios, secciones que fichan y permiso de envío).
                             </div>
                             <input type="hidden" name="selected_ids" id="clk-selected-ids" value="">
                         </div>
-                        {# S147: lo marcado en "Grupos de selección" (recuadro de al lado). #}
-                        <input type="hidden" name="groups" id="clk-groups-input" value="{{ filter_groups|join:',' }}">
                         {% comment %}
                         S136 (Miguel Ángel): "filtro de trabajadores con/sin
                         fichajes" en las fechas elegidas, también al exportar.
@@ -304,6 +302,17 @@ recordatorios, secciones que fichan y permiso de envío).
 
     // Selección (pk -> "Apellidos, Nombre"), recordada por usuario.
     const selection = new Map();
+
+    // S147: "Grupos de selección" (como en Personal): la selección es la
+    // suma de las personas de los grupos marcados.
+    window.EbGroupSelect = window.EbGroupSelect || {};
+    window.EbGroupSelect["clk"] = function (people) {
+        selection.clear();
+        people.persons.forEach(function (p) { selection.set(String(p[0]), p[1]); });
+        saveSelection();
+        updateSelectionUi();
+        refreshFromFragment();
+    };
     try {
         JSON.parse(document.getElementById("clk-saved-selection").textContent).forEach(function (item) {
             if (item && item.pk) selection.set(String(item.pk), item.label || "");

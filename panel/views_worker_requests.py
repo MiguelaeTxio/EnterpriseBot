@@ -38,7 +38,7 @@ from panel.views_vacation_balance import MANAGE_ROLES
 logger = logging.getLogger(__name__)
 
 SCREEN_KEY = "worker_requests"
-FILTER_KEYS = ("search", "status", "kind", "sort", "groups")
+FILTER_KEYS = ("search", "status", "kind", "sort")
 DEFAULT_STATUS = ["PENDING"]
 DEFAULT_SORT = "-created"
 _MAX_SORT_KEYS = 4
@@ -320,12 +320,6 @@ def _list_context(request):
         qs = qs.filter(pk__in=wanted)
     else:
         qs = qs.filter(status__in=statuses, kind__in=kinds)
-        # S147: filtro "Grupos" (grupos de selección, globales).
-        from panel.person_groups import person_ids_for_groups
-
-        group_people = person_ids_for_groups(_param(request, "groups"))
-        if group_people is not None:
-            qs = qs.filter(person_id__in=group_people)
         for word in search.split():
             qs = qs.filter(
                 Q(person__first_surname__icontains=word)

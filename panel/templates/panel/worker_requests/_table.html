@@ -33,7 +33,7 @@ la vista; la selección vive en el JS de _pane.html.
     <tbody>
         {% for row in rows %}
         <tr>
-            <td><input type="checkbox" class="form-check-input wreq-row-check" data-pk="{{ row.pk }}" data-label="{{ row.person_label }} — {{ row.get_kind_display }} {{ row.detail }}"></td>
+            <td><input type="checkbox" class="form-check-input wreq-row-check" data-pk="{{ row.pk }}" data-person="{{ row.person_id }}" data-label="{{ row.person_label }} — {{ row.get_kind_display }} {{ row.detail }}"></td>
             <td>{{ row.created_at|date:"d/m/Y H:i" }}</td>
             <td>
                 <a href="#" data-bs-toggle="modal" data-bs-target="#wreqDetailModal"

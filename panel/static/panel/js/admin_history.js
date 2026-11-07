@@ -14,6 +14,21 @@
     // masivas siempre visibles en el panel fijo y pantalla completa.
     // ------------------------------------------------------------------
     var selection = new Map();
+
+    // S147: "Grupos de selección" (como en Personal): la selección son
+    // los partes del listado de las personas de los grupos marcados.
+    window.EbGroupSelect = window.EbGroupSelect || {};
+    window.EbGroupSelect.wo = function (people) {
+        selection.clear();
+        rowChecks().forEach(function (cb) {
+            if (people.users.has(cb.dataset.operator)) {
+                selection.set(cb.dataset.key, cb.dataset.label || "");
+            }
+        });
+        saveSelection();
+        refreshSelectionUi();
+        applyOnlySelected();
+    };
     var screenKey = null;
 
     function readJson(id, fallback) {

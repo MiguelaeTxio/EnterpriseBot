@@ -53,8 +53,6 @@ acciones. Filtros, orden y selección persistidos por usuario
                             </div>
                             <input type="hidden" name="selected_ids" id="wreq-selected-ids" value="">
                         </div>
-                        {# S147: lo marcado en "Grupos de selección" (recuadro de al lado). #}
-                        <input type="hidden" name="groups" id="wreq-groups-input" value="{{ filter_groups|join:',' }}">
                     </div>
                 </form>
             </div>
@@ -159,6 +157,20 @@ acciones. Filtros, orden y selección persistidos por usuario
     const SCREEN_KEY = "{{ screen_key|escapejs }}";
 
     const selection = new Map();
+
+    // S147: "Grupos de selección" (como en Personal): la selección es la
+    // suma de las personas de los grupos marcados.
+    window.EbGroupSelect = window.EbGroupSelect || {};
+    window.EbGroupSelect["wreq"] = function (people) {
+        selection.clear();
+        const wanted = new Set(people.persons.map(function (p) { return String(p[0]); }));
+        document.querySelectorAll(".wreq-row-check").forEach(function (cb) {
+            if (wanted.has(cb.dataset.person)) selection.set(cb.dataset.pk, cb.dataset.label);
+        });
+        saveSelection();
+        updateSelectionUi();
+        refreshFromFragment();
+    };
     try {
         JSON.parse(document.getElementById("wreq-saved-selection").textContent).forEach(function (item) {
             if (item && item.pk) selection.set(String(item.pk), item.label || "");

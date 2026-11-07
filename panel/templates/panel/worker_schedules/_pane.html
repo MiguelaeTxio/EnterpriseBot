@@ -61,8 +61,6 @@ filtrar la sección, marcar todos y poner el horario.
                             </div>
                             <input type="hidden" name="selected_ids" id="hor-selected-ids" value="">
                         </div>
-                        {# S147: lo marcado en "Grupos de selección" (recuadro de al lado). #}
-                        <input type="hidden" name="groups" id="hor-groups-input" value="{{ filter_groups|join:',' }}">
                         {# Sección vigente hoy (PersonSectionAssignment), como en Fichajes. #}
                         <div>
                             <div class="fw-semibold mb-1">Sección</div>
@@ -213,6 +211,17 @@ filtrar la sección, marcar todos y poner el horario.
     const ASSIGN_URL = "{% url 'panel:worker_schedules_assign' %}";
     // Selección (pk -> "Apellidos, Nombre"), recordada por usuario.
     const selection = new Map();
+
+    // S147: "Grupos de selección" (como en Personal): la selección es la
+    // suma de las personas de los grupos marcados.
+    window.EbGroupSelect = window.EbGroupSelect || {};
+    window.EbGroupSelect["hor"] = function (people) {
+        selection.clear();
+        people.persons.forEach(function (p) { selection.set(String(p[0]), p[1]); });
+        saveSelection();
+        updateSelectionUi();
+        refreshFromFragment();
+    };
     try {
         JSON.parse(document.getElementById("hor-saved-selection").textContent).forEach(function (item) {
             if (item && item.pk) selection.set(String(item.pk), item.label || "");

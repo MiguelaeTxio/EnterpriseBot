@@ -16,7 +16,9 @@ S147 (Miguel Ángel): "Los grupos [...] son globales a todas las vistas.
 También pueden ser usados, pero nunca modificados, por otros usuarios":
 solo quien creó un grupo lo cambia o lo borra, y solo dentro de un
 grupo suyo se cuelgan subgrupos. Los demás lo usan (Personal, Avisos y
-el filtro "Grupos" de Fichajes, Vacaciones, Solicitudes y Horarios).
+el recuadro "Grupos de selección" de Fichajes, Vacaciones,
+Solicitudes, Horarios, Usuarios y Partes digitales, que selecciona a
+sus personas como en Personal).
 """
 from document_explorer.models import PersonGroupTemplate
 
@@ -54,32 +56,6 @@ def owner_label(group):
     if user is None:
         return ""
     return user.get_full_name() or user.username
-
-
-def selected_group_ids(raw):
-    """
-    Group pks of a "groups" filter value ("5,11").
-    ---
-    Pks de los grupos marcados en el filtro "Grupos".
-    """
-    return [int(pk) for pk in (raw or "").split(",") if pk.strip().isdigit()]
-
-
-def person_ids_for_groups(raw):
-    """
-    PersonIdentity pks of the groups marked in a "groups" filter (a
-    group with subgroups counts theirs), or None when none is marked.
-    ---
-    Personas de los grupos marcados en el filtro "Grupos" (uno con
-    subgrupos cuenta las de todos ellos), o None si no hay ninguno.
-    """
-    pks = selected_group_ids(raw)
-    if not pks:
-        return None
-    ids = set()
-    for group in PersonGroupTemplate.objects.filter(pk__in=pks):
-        ids |= group.all_member_ids()
-    return ids
 
 
 def group_tree(editor=None):
@@ -121,6 +97,7 @@ def group_tree(editor=None):
                 "children": [c.pk for c in by_parent.get(group.pk, [])],
                 "member_ids": [p.pk for p in people],
                 "member_names": [_label(p) for p in people],
+                "member_user_ids": [p.company_user_id or "" for p in people],
                 "total": len(members_of(group)),
                 "can_edit": can_edit(group, editor),
                 "owner": owner_label(group),
@@ -228,9 +205,10 @@ def delete_group(group, editor=None):
 
 def group_filter_context(request):
     """
-    Context of the "Grupos" filter (panel/_person_group_filter.html).
+    Context of the "Grupos de selección" box (_person_group_filter.html).
     ---
-    Contexto del filtro "Grupos": el árbol y los marcados.
+    Contexto del recuadro "Grupos de selección" de las vistas de
+    personal: el árbol (con quién lo creó) y lo plegado por el usuario.
     """
     from panel.navigation_persistence import get_saved_state_key
 
@@ -242,7 +220,4 @@ def group_filter_context(request):
             [str(pk) for pk in collapsed] if isinstance(collapsed, list)
             else []
         ),
-        "filter_groups": [
-            str(pk) for pk in selected_group_ids(request.GET.get("groups"))
-        ],
     }

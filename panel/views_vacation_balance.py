@@ -78,9 +78,7 @@ logger = logging.getLogger(__name__)
 SCREEN_KEY = "vacation_balance"
 # Mismos filtros que la pestaña Personal (Estado y Empresa, aquí como
 # listas separadas por comas para poder persistirlas) + sección y año.
-FILTER_KEYS = (
-    "search", "active", "company", "section", "year", "sort", "groups",
-)
+FILTER_KEYS = ("search", "active", "company", "section", "year", "sort")
 MANAGE_ROLES = {
     CompanyUser.ROLE_ADMIN,
     CompanyUser.ROLE_ADMIN_SUPERVISOR,
@@ -316,12 +314,6 @@ def _filtered_people(request):
             | Q(given_name__icontains=word) | Q(dni__icontains=word)
             | Q(nickname__icontains=word),
         )
-    # S147: filtro "Grupos" (grupos de selección, globales a las vistas).
-    from panel.person_groups import person_ids_for_groups
-
-    group_people = person_ids_for_groups(_param(request, "groups"))
-    if group_people is not None:
-        qs = qs.filter(pk__in=group_people)
     return list(qs), active, companies, search
 
 
