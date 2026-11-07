@@ -21,7 +21,7 @@ panel/views_users_list.py.
 {% block content %}
 <div class="border rounded p-2 mb-2" id="usr-top-panel">
     <div class="row g-2">
-        <div class="col-lg-7">
+        <div class="col-lg-4">
             <div class="border rounded p-2 h-100">
                 <div class="fw-bold small mb-1">Buscar y filtrar</div>
                 <form id="usr-filters" autocomplete="off" onsubmit="return false;"
@@ -120,13 +120,15 @@ panel/views_users_list.py.
                             </div>
                             <input type="hidden" name="selected_ids" id="usr-selected-ids" value="">
                         </div>
-                        {# S147: grupos de selección (globales a las vistas). #}
-                        {% include "panel/_person_group_filter.html" with pg_prefix="usr" %}
+                        {# S147: lo marcado en "Grupos de selección" (recuadro de al lado). #}
+                        <input type="hidden" name="groups" id="usr-groups-input" value="{{ filter_groups|join:',' }}">
                     </div>
                 </form>
             </div>
         </div>
 
+        {# S147: "Grupos de selección", la misma columna que en Personal. #}
+        {% include "panel/_person_group_filter.html" with pg_prefix="usr" pg_form="usr-filters" %}
         <div class="col-lg-5">
             <div class="border rounded p-2 h-100">
                 <div class="d-flex align-items-center gap-2 mb-1">

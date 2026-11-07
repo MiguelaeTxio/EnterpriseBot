@@ -17,7 +17,7 @@ supervisores: el visor de cada trabajador irá fuera de aquí.
 {% endcomment %}
 <div class="border rounded p-2 mb-2" id="vbal-top-panel">
     <div class="row g-2">
-        <div class="col-lg-6">
+        <div class="col-lg-4">
             <div class="border rounded p-2 h-100">
                 <div class="fw-bold small mb-1">Buscar y filtrar</div>
                 <form id="vbal-filters" autocomplete="off" onsubmit="return false;"
@@ -87,14 +87,16 @@ supervisores: el visor de cada trabajador irá fuera de aquí.
                             </div>
                             <input type="hidden" name="selected_ids" id="vbal-selected-ids" value="">
                         </div>
-                        {# S147: grupos de selección (globales a las vistas). #}
-                        {% include "panel/_person_group_filter.html" with pg_prefix="vbal" %}
+                        {# S147: lo marcado en "Grupos de selección" (recuadro de al lado). #}
+                        <input type="hidden" name="groups" id="vbal-groups-input" value="{{ filter_groups|join:',' }}">
                     </div>
                 </form>
             </div>
         </div>
 
-        <div class="col-lg-6">
+        {# S147: "Grupos de selección", la misma columna que en Personal. #}
+        {% include "panel/_person_group_filter.html" with pg_prefix="vbal" pg_form="vbal-filters" %}
+        <div class="col-lg-5">
             <div class="border rounded p-2 h-100">
                 <div class="d-flex align-items-center gap-2 mb-1">
                     <strong class="small"><span id="vbal-mass-count">0</span> seleccionados</strong>

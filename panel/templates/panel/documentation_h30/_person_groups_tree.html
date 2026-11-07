@@ -6,10 +6,13 @@ casilla marca todos sus subgrupos. Las personas viajan en data-* (las
 suyas; un grupo con subgrupos no tiene sueltas). El JS de
 _personal_pane.html junta las personas de los grupos marcados. Solo
 quien creó un grupo lo cambia (data-can-edit); los ajenos dicen de
-quién son.
+quién son. El mismo árbol sale en el recuadro "Grupos de selección" de
+las demás vistas (panel/_person_group_filter.html): pg_id da a cada
+vista sus propios ids (por defecto, los de Personal).
 {% endcomment %}
+{% with gid=pg_id|default:"personGroup" %}
 {% for node in person_group_nodes %}
-<li class="list-group-item px-1 py-0 person-group-node" id="personGroupRow{{ node.group.pk }}"
+<li class="list-group-item px-1 py-0 person-group-node" id="{{ gid }}Row{{ node.group.pk }}"
     data-pk="{{ node.group.pk }}"
     data-parent="{{ node.group.parent_id|default:'' }}"
     data-children="{{ node.children|join:',' }}"
@@ -28,11 +31,12 @@ quién son.
         <span class="d-inline-block" style="width: 1rem;"></span>
         {% endif %}
         <div class="form-check mb-0">
-            <input class="form-check-input person-group-select-checkbox" type="checkbox" id="personGroupSelect{{ node.group.pk }}" data-pk="{{ node.group.pk }}">
-            <label class="form-check-label{% if node.children %} fw-semibold{% endif %}" for="personGroupSelect{{ node.group.pk }}">{{ node.group.name }} ({{ node.total }}){% if not node.can_edit and node.owner %} <span class="text-muted fw-normal small">· de {{ node.owner }}</span>{% endif %}</label>
+            <input class="form-check-input person-group-select-checkbox" type="checkbox" id="{{ gid }}Select{{ node.group.pk }}" data-pk="{{ node.group.pk }}">
+            <label class="form-check-label{% if node.children %} fw-semibold{% endif %}" for="{{ gid }}Select{{ node.group.pk }}">{{ node.group.name }} ({{ node.total }}){% if not node.can_edit and node.owner %} <span class="text-muted fw-normal small">· de {{ node.owner }}</span>{% endif %}</label>
         </div>
     </div>
 </li>
 {% empty %}
-<li class="list-group-item px-1 py-0 text-muted" id="personGroupEmptyRow">Sin grupos guardados todavía.</li>
+<li class="list-group-item px-1 py-0 text-muted" id="{{ gid }}EmptyRow">Sin grupos guardados todavía.</li>
 {% endfor %}
+{% endwith %}

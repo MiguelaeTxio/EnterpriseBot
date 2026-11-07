@@ -518,7 +518,7 @@ screen_key work_orders_history).
 
     <div class="border rounded p-2 mb-2 bg-white" id="wo-top-panel">
         <div class="row g-2">
-            <div class="{% if is_elevated %}col-lg-7{% else %}col-12{% endif %}">
+            <div class="{% if is_elevated %}col-lg-4{% else %}col-12{% endif %}">
                 <div class="border rounded p-2 h-100">
                     <div class="fw-bold small mb-1">Buscar y filtrar</div>
                     <form method="get" class="row g-2 align-items-end" id="wo-filter-form">
@@ -538,10 +538,8 @@ screen_key work_orders_history).
                                 {% endfor %}
                             </select>
                         </div>
-                        {# S147: grupos de selección (globales a las vistas). #}
-                        <div class="col-6 col-md-4 col-xl-3 small">
-                            {% include "panel/_person_group_filter.html" with pg_prefix="wo" %}
-                        </div>
+                        {# S147: lo marcado en "Grupos de selección" (recuadro de al lado). #}
+                        <input type="hidden" name="groups" id="wo-groups-input" value="{{ filter_groups|join:',' }}">
                         {% if period_groups %}
                         <div class="col-6 col-md-4 col-xl-3">
                             <label class="form-label small fw-bold mb-0">Periodo</label>
@@ -627,6 +625,8 @@ screen_key work_orders_history).
             </div>
 
             {% if is_elevated %}
+            {# S147: "Grupos de selección", la misma columna que en Personal. #}
+            {% include "panel/_person_group_filter.html" with pg_prefix="wo" pg_form="wo-filter-form" %}
             <div class="col-lg-5">
                 <div class="border rounded p-2 h-100">
                     {% if active_tab == "pending" or active_tab == "reviewed" or active_tab == "history" %}

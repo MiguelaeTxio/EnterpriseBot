@@ -232,8 +232,16 @@ def group_filter_context(request):
     ---
     Contexto del filtro "Grupos": el árbol y los marcados.
     """
+    from panel.navigation_persistence import get_saved_state_key
+
+    editor = request.user.company_user
+    collapsed = get_saved_state_key(editor, "person_groups", "collapsed", [])
     return {
-        "person_group_nodes": group_tree(),
+        "person_group_nodes": group_tree(editor),
+        "person_groups_collapsed": (
+            [str(pk) for pk in collapsed] if isinstance(collapsed, list)
+            else []
+        ),
         "filter_groups": [
             str(pk) for pk in selected_group_ids(request.GET.get("groups"))
         ],

@@ -13,7 +13,7 @@ filtrar la sección, marcar todos y poner el horario.
 {% endcomment %}
 <div class="border rounded p-2 mb-2" id="hor-top-panel">
     <div class="row g-2">
-        <div class="col-lg-7">
+        <div class="col-lg-4">
             <div class="border rounded p-2 h-100">
                 <div class="fw-bold small mb-1">Buscar y filtrar</div>
                 <form id="hor-filters" autocomplete="off" onsubmit="return false;"
@@ -61,8 +61,8 @@ filtrar la sección, marcar todos y poner el horario.
                             </div>
                             <input type="hidden" name="selected_ids" id="hor-selected-ids" value="">
                         </div>
-                        {# S147: grupos de selección (globales a las vistas). #}
-                        {% include "panel/_person_group_filter.html" with pg_prefix="hor" %}
+                        {# S147: lo marcado en "Grupos de selección" (recuadro de al lado). #}
+                        <input type="hidden" name="groups" id="hor-groups-input" value="{{ filter_groups|join:',' }}">
                         {# Sección vigente hoy (PersonSectionAssignment), como en Fichajes. #}
                         <div>
                             <div class="fw-semibold mb-1">Sección</div>
@@ -90,6 +90,8 @@ filtrar la sección, marcar todos y poner el horario.
             </div>
         </div>
 
+        {# S147: "Grupos de selección", la misma columna que en Personal. #}
+        {% include "panel/_person_group_filter.html" with pg_prefix="hor" pg_form="hor-filters" %}
         <div class="col-lg-5">
             <div class="border rounded p-2 h-100">
                 <div class="d-flex align-items-center gap-2 mb-1">

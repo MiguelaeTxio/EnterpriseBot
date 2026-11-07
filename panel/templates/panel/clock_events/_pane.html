@@ -19,7 +19,7 @@ recordatorios, secciones que fichan y permiso de envío).
 {% endcomment %}
 <div class="border rounded p-2 mb-2" id="clk-top-panel">
     <div class="row g-2">
-        <div class="col-lg-7">
+        <div class="col-lg-4">
             <div class="border rounded p-2 h-100">
                 <div class="fw-bold small mb-1">Buscar y filtrar</div>
                 <form id="clk-filters" autocomplete="off" onsubmit="return false;"
@@ -89,8 +89,8 @@ recordatorios, secciones que fichan y permiso de envío).
                             </div>
                             <input type="hidden" name="selected_ids" id="clk-selected-ids" value="">
                         </div>
-                        {# S147: grupos de selección (globales a las vistas). #}
-                        {% include "panel/_person_group_filter.html" with pg_prefix="clk" %}
+                        {# S147: lo marcado en "Grupos de selección" (recuadro de al lado). #}
+                        <input type="hidden" name="groups" id="clk-groups-input" value="{{ filter_groups|join:',' }}">
                         {% comment %}
                         S136 (Miguel Ángel): "filtro de trabajadores con/sin
                         fichajes" en las fechas elegidas, también al exportar.
@@ -154,6 +154,8 @@ recordatorios, secciones que fichan y permiso de envío).
             </div>
         </div>
 
+        {# S147: "Grupos de selección", la misma columna que en Personal. #}
+        {% include "panel/_person_group_filter.html" with pg_prefix="clk" pg_form="clk-filters" %}
         <div class="col-lg-5">
             <div class="border rounded p-2 h-100">
                 <div class="d-flex align-items-center gap-2 mb-1">
