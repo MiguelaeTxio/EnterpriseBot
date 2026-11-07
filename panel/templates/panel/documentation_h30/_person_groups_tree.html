@@ -35,7 +35,7 @@ vista sus propios ids (por defecto, los de Personal).
         {% endif %}
         <div class="form-check mb-0">
             <input class="form-check-input person-group-select-checkbox" type="checkbox" id="{{ gid }}Select{{ node.group.pk }}" data-pk="{{ node.group.pk }}">
-            <label class="form-check-label{% if node.children %} fw-semibold{% endif %}" for="{{ gid }}Select{{ node.group.pk }}">{{ node.group.name }} ({{ node.total }}){% if not node.can_edit and node.owner %} <span class="text-muted fw-normal small">· de {{ node.owner }}</span>{% endif %}</label>
+            <label class="form-check-label{% if not node.group.parent_id %} fw-bold{% endif %}" for="{{ gid }}Select{{ node.group.pk }}">{{ node.group.name }} ({{ node.total }}){% if not node.can_edit and node.owner %} <span class="text-muted fw-normal small">· de {{ node.owner }}</span>{% endif %}</label>
         </div>
     </div>
 </li>
