@@ -40,7 +40,7 @@ from panel.navigation_persistence import (
 SCREEN_KEY = "users_list"
 FILTER_KEYS = (
     "search", "active", "role", "section", "schedule", "base",
-    "onboarding", "sort",
+    "onboarding", "sort", "groups",
 )
 # S145: "Alta en el fichaje" como en Personal, más los usuarios sin
 # ficha de Personal (administradores, cuentas de prueba).
@@ -194,6 +194,12 @@ def _filtered_users(request, company):
             | Q(dni__icontains=word) | Q(phone__icontains=word)
         )
         qs = qs.filter(match)
+    # S147: filtro "Grupos" (grupos de selección, globales a las vistas).
+    from panel.person_groups import person_ids_for_groups
+
+    group_people = person_ids_for_groups(_param(request, "groups"))
+    if group_people is not None:
+        qs = qs.filter(person_identity__pk__in=group_people)
     return list(qs)
 
 
@@ -357,9 +363,12 @@ class UserListPageView(SupervisorAccessMixin, View):
         )
         if not isinstance(saved_selection, list):
             saved_selection = []
+        from panel.person_groups import group_filter_context
+
         company = request.user.company_user.company
         return render(request, "panel/users/list.html", {
             **_list_context(request),
+            **group_filter_context(request),
             **_choices(company),
             "company": company,
             "active_nav": "users",

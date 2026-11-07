@@ -120,6 +120,8 @@ panel/views_users_list.py.
                             </div>
                             <input type="hidden" name="selected_ids" id="usr-selected-ids" value="">
                         </div>
+                        {# S147: grupos de selección (globales a las vistas). #}
+                        {% include "panel/_person_group_filter.html" with pg_prefix="usr" %}
                     </div>
                 </form>
             </div>

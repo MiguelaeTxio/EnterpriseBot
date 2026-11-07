@@ -486,7 +486,7 @@
                 params.set("tab", "{{ active_tab }}");
                 params.set("sort_stack", "");
                 ["operator_pk", "date_from", "date_to", "machine", "fault_category",
-                 "q", "status", "dieta", "origen"].forEach(function (key) {
+                 "q", "status", "dieta", "origen", "groups"].forEach(function (key) {
                     var input = document.querySelector("#wo-filter-form [name='" + key + "']");
                     if (input) { params.set(key, input.value); }
                 });
@@ -537,6 +537,10 @@ screen_key work_orders_history).
                                 <option value="{{ op.pk }}" {% if operator_pk|stringformat:"s" == op.pk|stringformat:"s" %}selected{% endif %}>{{ op.user.get_full_name|default:op.user.username }}</option>
                                 {% endfor %}
                             </select>
+                        </div>
+                        {# S147: grupos de selección (globales a las vistas). #}
+                        <div class="col-6 col-md-4 col-xl-3 small">
+                            {% include "panel/_person_group_filter.html" with pg_prefix="wo" %}
                         </div>
                         {% if period_groups %}
                         <div class="col-6 col-md-4 col-xl-3">
