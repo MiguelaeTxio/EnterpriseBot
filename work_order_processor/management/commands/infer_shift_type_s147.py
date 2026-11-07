@@ -12,10 +12,11 @@ las tareas"). Desde S141 no se guardaba por un fallo (shift.py pedía
 work_order.work_date).
 
 Regla de Miguel Ángel (S147), solo en el periodo abierto (los
-anteriores ya están pagados y no se tocan): con comida apuntada,
-partida; sin comida (o 00:00 a 00:00), intensiva (en el periodo del
-21/10 al 20/11 ninguna baja de 8 horas). Los que ya tienen la marca no
-se tocan. Los que quedan sin dato (sin tareas con horas) se listan.
+anteriores ya están pagados y no se tocan; los que ya tienen la marca
+tampoco): con comida apuntada, partida; sin comida, la jornada de los
+días de alrededor del mismo trabajador (si coinciden o solo hay uno).
+"No he parado a comer" en una partida queda partida (no paró a comer).
+Lo que no queda claro se deja vacío y se lista para revisarlo.
 
 DRY-RUN POR DEFECTO; `--apply` escribe. Log propio en `--log-file`,
 pantalla y archivo a la vez.
@@ -31,29 +32,66 @@ from work_order_processor.models import (
 )
 
 HEARTBEAT = 50
+# Días de alrededor: como mucho una semana antes y una después.
+NEIGHBOUR_DAYS = 7
 
 
-def infer_is_intensive(entry, lines):
+def _has_lunch(entry):
+    return bool(
+        entry.lunch_break_start and entry.lunch_break_end
+        and entry.lunch_break_end > entry.lunch_break_start
+    )
+
+
+def _known(entry):
     """
-    True (intensive), False (split) or None (no timed task).
+    The shift of an entry when it is sure: its stored mark or, with a
+    lunch break, split. None otherwise.
     ---
-    Regla de Miguel Ángel (S147) para el periodo abierto: con comida
-    apuntada (de inicio a fin, no 00:00 a 00:00), partida; sin comida,
-    intensiva (en el periodo ninguna baja de 8 horas).
+    La jornada de un parte cuando es segura: la marca guardada o, con
+    comida apuntada, partida.
+    """
+    if entry.is_intensive_shift is not None:
+        return entry.is_intensive_shift
+    if _has_lunch(entry):
+        return False
+    return None
+
+
+def infer_is_intensive(entry, lines, neighbours):
+    """
+    True (intensive), False (split) or None (not sure), and why.
+    ---
+    Regla de Miguel Ángel (S147): con comida apuntada, partida. Sin
+    comida, la jornada de los días de alrededor del mismo trabajador
+    (el parte anterior y el siguiente con jornada segura, como mucho a
+    una semana): si coinciden,
+    o solo hay uno, esa; si no, sin dato. Así, "no he parado a comer"
+    en una partida es partida (no paró a comer), y la marca sin comida
+    de quien estaba en intensiva es intensiva.
+    `neighbours`: (anterior, siguiente) de _known, o None.
     """
     timed = [line for line in lines if line.hc and line.hf]
     if not timed:
         return None, "sin tareas con horas"
-    if (
-        entry.lunch_break_start and entry.lunch_break_end
-        and entry.lunch_break_end > entry.lunch_break_start
-    ):
+    if _has_lunch(entry):
         return False, "comida %s-%s" % (
             entry.lunch_break_start.strftime("%H:%M"),
             entry.lunch_break_end.strftime("%H:%M"))
-    return True, "sin comida, de %s a %s" % (
+    span = "de %s a %s" % (
         min(line.hc for line in timed).strftime("%H:%M"),
         max(line.hf for line in timed).strftime("%H:%M"))
+    before, after = neighbours
+    sides = [v for v in (before, after) if v is not None]
+    label = {True: "intensiva", False: "partida"}
+    if not sides or len(set(sides)) > 1:
+        return None, "sin comida, %s; días de alrededor: %s / %s" % (
+            span, label.get(before, "?"), label.get(after, "?"))
+    value = sides[0]
+    why = "sin comida, %s; días de alrededor en %s" % (span, label[value])
+    if not value and entry.no_lunch_break:
+        why += " (no paró a comer)"
+    return value, why
 
 
 class Command(BaseCommand):
@@ -96,6 +134,31 @@ class Command(BaseCommand):
             )
             .order_by("work_date", "pk")
         )
+        # Jornada segura de todos los partes digitales de cada
+        # trabajador (cualquier fecha), para mirar los días de alrededor.
+        known_by_worker = {}
+        for other in WorkOrderEntry.objects.select_related(
+            "work_order",
+        ).filter(
+            work_order__source=WorkOrder.Source.DIGITAL,
+            work_date__isnull=False,
+        ).order_by("work_date", "pk"):
+            value = _known(other)
+            if value is not None:
+                known_by_worker.setdefault(
+                    other.work_order.uploaded_by_id, []).append(
+                        (other.work_date, value))
+
+        def _neighbours(entry):
+            days = known_by_worker.get(entry.work_order.uploaded_by_id, [])
+            window = datetime.timedelta(days=NEIGHBOUR_DAYS)
+            before = [v for d, v in days
+                      if entry.work_date - window <= d < entry.work_date]
+            after = [v for d, v in days
+                     if entry.work_date < d <= entry.work_date + window]
+            return (before[-1] if before else None,
+                    after[0] if after else None)
+
         lines_by_entry = {}
         for line in WorkOrderEntryLine.objects.filter(
             entry__in=entries,
@@ -109,7 +172,7 @@ class Command(BaseCommand):
         start_time = datetime.datetime.now()
         for done, entry in enumerate(entries, start=1):
             value, why = infer_is_intensive(
-                entry, lines_by_entry.get(entry.pk, []))
+                entry, lines_by_entry.get(entry.pk, []), _neighbours(entry))
             counts[value] += 1
             label = {True: "INTENSIVA", False: "PARTIDA",
                      None: "SIN DATO"}[value]
