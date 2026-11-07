@@ -127,6 +127,11 @@ responsable corregirá la salida (clock_report.forgotten_after).
     <!-- S143: no fichó la salida de la jornada anterior. -->
     <!-- S143: antes de su primer día de fichaje, este aviso y sin botones. -->
     <div class="card hidden" id="not-yet" style="background:#cfe2ff;border-color:#9ec5fe"><strong id="not-yet-text"></strong></div>
+    <!-- S147: sin permiso de ubicación se ficha solo un día (incidencia). -->
+    <div class="card hidden" id="gps-help" style="background:#f8d7da;border-color:#f1aeb5">
+        <div class="fw">Este móvil tiene quitado el permiso de ubicación para esta página.</div>
+        <div class="muted">Para fichar hace falta la ubicación (GPS). Actívalo así: toca el candado (o los ajustes) junto a la dirección de la página › Permisos › Ubicación › Permitir, y vuelve a cargar la página. Sin permiso solo se admite un día como incidencia; al siguiente no podrás fichar. Después de fichar puedes quitarlo si no quieres tenerlo siempre activo.</div>
+    </div>
     <div class="card hidden" id="forgotten" style="background:#fff3cd;border-color:#ffe69c">
         <div class="fw" id="forgotten-text"></div>
         <div class="muted">Ahora fichas la entrada de hoy.</div>
@@ -616,6 +621,8 @@ responsable corregirá la salida (clock_report.forgotten_after).
                           (waiting.parte_notice ? " " + waiting.parte_notice : ""),
                           waiting.parte_ok === false ? "err" : "ok");
             }
+            // S147: rechazada (desde un ordenador, o sin GPS otro día).
+            if (waiting && waiting.rejected) setStatus("No se ha admitido: " + waiting.error, "err");
             if (!records.length) {
                 list.innerHTML = '<div class="muted">Ninguno todavía en este móvil.</div>';
                 return;
@@ -716,6 +723,17 @@ responsable corregirá la salida (clock_report.forgotten_after).
         }).catch(function () { /* sin red */ }).then(function () { showWho(); return render(); });
     }
 
+    // S147: aviso de cómo dar el permiso de ubicación si está quitado.
+    function showGpsHelp(denied) {
+        document.getElementById("gps-help").classList.toggle("hidden", !denied);
+    }
+    if (navigator.permissions && navigator.permissions.query) {
+        navigator.permissions.query({name: "geolocation"}).then(function (perm) {
+            showGpsHelp(perm.state === "denied");
+            perm.onchange = function () { showGpsHelp(perm.state === "denied"); };
+        }).catch(function () { /* sin API de permisos */ });
+    }
+
     // ---- Pulsar ------------------------------------------------------------
     function getPosition() {
         return new Promise(function (resolve) {
@@ -727,6 +745,7 @@ responsable corregirá la salida (clock_report.forgotten_after).
                 resolve({lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy});
             }, function (err) {
                 const reasons = {1: "permiso denegado", 2: "posición no disponible", 3: "tiempo agotado"};
+                if (err.code === 1) showGpsHelp(true);
                 resolve({error: reasons[err.code] || err.message});
             }, {enableHighAccuracy: true, timeout: 30000, maximumAge: 0});
         });
