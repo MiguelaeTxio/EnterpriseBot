@@ -77,7 +77,13 @@ Contexto: person_group_nodes y person_groups_collapsed
         descendants(pk).forEach((c) => { if (box(c)) { box(c).checked = ev.target.checked; } });
         let parent = row(pk) && row(pk).dataset.parent;
         while (parent) {
-            if (box(parent)) { box(parent).checked = children(parent).every((k) => box(k) && box(k).checked); }
+            // Marcar un subgrupo NUNCA marca el padre (el padre tiene
+            // más personas: Mecánicos no es todo Taller); desmarcarlo sí
+            // desmarca el padre. El padre queda a medias (indeterminado).
+            if (box(parent)) {
+                if (!ev.target.checked) { box(parent).checked = false; }
+                box(parent).indeterminate = !box(parent).checked && descendants(parent).some((k) => box(k) && box(k).checked);
+            }
             parent = row(parent) && row(parent).dataset.parent;
         }
         const select = window.EbGroupSelect && window.EbGroupSelect['{{ pg_prefix }}'];

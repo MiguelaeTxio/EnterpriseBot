@@ -962,12 +962,16 @@ las filas de debajo se desplacen de verdad.
             const cb = groupCheckbox(child);
             if (cb) cb.checked = checkbox.checked;
         });
-        // Un padre queda marcado si lo están todos sus hijos.
+        // Marcar un subgrupo NUNCA marca el padre (el padre tiene más
+        // personas: Mecánicos no es todo Taller); desmarcarlo sí desmarca
+        // el padre. El padre queda a medias (indeterminado).
         let parent = groupRow(pk) && groupRow(pk).dataset.parent;
         while (parent) {
-            const kids = groupChildren(parent);
             const cb = groupCheckbox(parent);
-            if (cb) cb.checked = kids.every((k) => groupCheckbox(k) && groupCheckbox(k).checked);
+            if (cb) {
+                if (!checkbox.checked) cb.checked = false;
+                cb.indeterminate = !cb.checked && groupDescendants(parent).some((k) => groupCheckbox(k) && groupCheckbox(k).checked);
+            }
             parent = groupRow(parent) && groupRow(parent).dataset.parent;
         }
         activatePersonGroupManagement();
