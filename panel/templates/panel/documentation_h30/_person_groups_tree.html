@@ -11,11 +11,26 @@ quién son. El sangrado va con stringformat: con el idioma en español,
 veían a la altura de los grupos principales). El mismo árbol sale en el recuadro "Grupos de selección" de
 las demás vistas (panel/_person_group_filter.html): pg_id da a cada
 vista sus propios ids (por defecto, los de Personal).
+S147: los grupos van en carpetas por quién los creó (Generales,
+Usuarios con una por usuario, Propios): filas person-group-folder, sin
+casilla, que solo se pliegan; cada grupo lleva data-folder.
 {% endcomment %}
 {% with gid=pg_id|default:"personGroup" %}
 {% for node in person_group_nodes %}
+{% if node.kind == "folder" %}
+<li class="list-group-item px-1 py-0 person-group-folder bg-light" id="{{ gid }}Folder{{ node.key }}"
+    data-pk="{{ node.key }}" data-folder="{{ node.folder }}"
+    style="padding-left: {{ node.indent|stringformat:".2f" }}rem !important;">
+    <button type="button" class="btn btn-link btn-sm p-0 text-dark text-decoration-none person-group-toggle" data-pk="{{ node.key }}" title="Desplegar o plegar">
+        <i class="bi bi-chevron-down"></i> <i class="bi bi-folder2"></i>
+        <span class="{% if node.depth == 0 %}fw-bold text-uppercase{% else %}fw-semibold{% endif %} small">{{ node.label }}</span>
+        <span class="text-muted small">({{ node.count }})</span>
+    </button>
+</li>
+{% else %}
 <li class="list-group-item px-1 py-0 person-group-node" id="{{ gid }}Row{{ node.group.pk }}"
     data-pk="{{ node.group.pk }}"
+    data-folder="{{ node.folder }}"
     data-parent="{{ node.group.parent_id|default:'' }}"
     data-children="{{ node.children|join:',' }}"
     data-name="{{ node.group.name }}"
@@ -35,10 +50,11 @@ vista sus propios ids (por defecto, los de Personal).
         {% endif %}
         <div class="form-check mb-0">
             <input class="form-check-input person-group-select-checkbox" type="checkbox" id="{{ gid }}Select{{ node.group.pk }}" data-pk="{{ node.group.pk }}">
-            <label class="form-check-label{% if not node.group.parent_id %} fw-bold{% endif %}" for="{{ gid }}Select{{ node.group.pk }}">{{ node.group.name }} ({{ node.total }}){% if not node.can_edit and node.owner %} <span class="text-muted fw-normal small">· de {{ node.owner }}</span>{% endif %}</label>
+            <label class="form-check-label{% if not node.group.parent_id %} fw-bold{% endif %}" for="{{ gid }}Select{{ node.group.pk }}">{{ node.group.name }} ({{ node.total }})</label>
         </div>
     </div>
 </li>
+{% endif %}
 {% empty %}
 <li class="list-group-item px-1 py-0 text-muted" id="{{ gid }}EmptyRow">Sin grupos guardados todavía.</li>
 {% endfor %}

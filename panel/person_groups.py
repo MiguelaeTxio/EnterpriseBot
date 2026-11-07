@@ -60,15 +60,33 @@ def owner_label(group):
     return user.get_full_name() or user.username
 
 
+# S147 (Miguel Ángel): los grupos que crea él son los "Generales".
+GENERAL_USERNAME = "alvarez_admin"
+# Plegados la primera vez (luego manda lo que pliegue cada uno).
+FOLDERS_COLLAPSED_BY_DEFAULT = ("f-usr",)
+FOLDERS_INIT_MARK = "f-init"
+
+
+def _is_general(group):
+    user = group.created_by.user if group.created_by_id else None
+    return user is None or user.username == GENERAL_USERNAME
+
+
 def group_tree(editor=None):
     """
-    Flat list of the groups in tree order, with depth and members.
+    Flat list of the groups in tree order, under the creator folders.
     ---
-    Lista plana en orden de árbol (padre y debajo sus subgrupos, por
-    nombre). Cada nodo: group, depth, children (pks de los hijos
-    directos), member_ids y member_names (los suyos; vacío si tiene
-    subgrupos), total (personas distintas, contando sus subgrupos),
-    can_edit (si `editor` lo creó) y owner (quién lo creó).
+    Lista plana en orden de árbol, repartida en carpetas por quién creó
+    cada grupo (S147, Miguel Ángel): "Generales" (los de alvarez_admin),
+    "Usuarios" (los de los demás, una carpeta por usuario) y "Propios"
+    (los de quien mira; alvarez_admin no la tiene: los suyos son los
+    Generales). Las carpetas sin grupos no salen.
+    Nodo de carpeta: kind "folder", key, label, depth, indent, folder
+    (la carpeta de encima) y count (grupos principales dentro).
+    Nodo de grupo: kind "group", group, depth, indent, folder (su
+    carpeta), children (pks de los hijos directos), member_ids y
+    member_names (los suyos), total (personas distintas, contando sus
+    subgrupos), can_edit (si `editor` lo creó) y owner (quién lo creó).
     """
     groups = list(PersonGroupTemplate.objects.select_related(
         "created_by__user").prefetch_related("members").order_by("name"))
@@ -86,16 +104,18 @@ def group_tree(editor=None):
         totals[group.pk] = ids
         return ids
 
-    def walk(parent_id, depth, seen):
-        for group in by_parent.get(parent_id, []):
+    def walk(siblings, depth, folder, seen):
+        for group in siblings:
             if group.pk in seen:
                 continue
             seen.add(group.pk)
             people = sorted(group.members.all(), key=_label)
             nodes.append({
+                "kind": "group",
                 "group": group,
                 "depth": depth,
                 "indent": depth * 1.1,
+                "folder": folder,
                 "children": [c.pk for c in by_parent.get(group.pk, [])],
                 "member_ids": [p.pk for p in people],
                 "member_names": [_label(p) for p in people],
@@ -104,10 +124,56 @@ def group_tree(editor=None):
                 "can_edit": can_edit(group, editor),
                 "owner": owner_label(group),
             })
-            walk(group.pk, depth + 1, seen)
+            walk(by_parent.get(group.pk, []), depth + 1, folder, seen)
 
-    walk(None, 0, set())
+    def folder_node(key, label, depth, parent, count):
+        nodes.append({
+            "kind": "folder", "key": key, "label": label, "depth": depth,
+            "indent": depth * 1.1, "folder": parent, "count": count,
+        })
+
+    general, own, others = [], [], {}
+    for group in by_parent.get(None, []):
+        if _is_general(group):
+            general.append(group)
+        elif editor is not None and group.created_by_id == editor.pk:
+            own.append(group)
+        else:
+            others.setdefault(group.created_by_id, []).append(group)
+    seen = set()
+    if general:
+        folder_node("f-gen", "Generales", 0, "", len(general))
+        walk(general, 1, "f-gen", seen)
+    if others:
+        folder_node("f-usr", "Usuarios", 0, "",
+                    sum(len(v) for v in others.values()))
+        for roots in sorted(others.values(),
+                            key=lambda g: owner_label(g[0]).upper()):
+            key = "f-u%s" % roots[0].created_by_id
+            folder_node(key, owner_label(roots[0]) or "Sin usuario", 1,
+                        "f-usr", len(roots))
+            walk(roots, 2, key, seen)
+    if own:
+        folder_node("f-own", "Propios", 0, "", len(own))
+        walk(own, 1, "f-own", seen)
     return nodes
+
+
+def collapsed_state(editor):
+    """
+    Folded tree rows of `editor` ("person_groups" screen state).
+    ---
+    Lo que `editor` tiene plegado en el árbol; la primera vez, la
+    carpeta "Usuarios" plegada (los Generales y los Propios abiertos).
+    """
+    from panel.navigation_persistence import get_saved_state_key
+
+    collapsed = get_saved_state_key(editor, "person_groups", "collapsed", [])
+    collapsed = ([str(pk) for pk in collapsed]
+                 if isinstance(collapsed, list) else [])
+    if FOLDERS_INIT_MARK not in collapsed:
+        collapsed += list(FOLDERS_COLLAPSED_BY_DEFAULT) + [FOLDERS_INIT_MARK]
+    return collapsed
 
 
 def parent_choices(exclude_pk=None, editor=None):
@@ -235,14 +301,8 @@ def group_filter_context(request):
     Contexto del recuadro "Grupos de selección" de las vistas de
     personal: el árbol (con quién lo creó) y lo plegado por el usuario.
     """
-    from panel.navigation_persistence import get_saved_state_key
-
     editor = request.user.company_user
-    collapsed = get_saved_state_key(editor, "person_groups", "collapsed", [])
     return {
         "person_group_nodes": group_tree(editor),
-        "person_groups_collapsed": (
-            [str(pk) for pk in collapsed] if isinstance(collapsed, list)
-            else []
-        ),
+        "person_groups_collapsed": collapsed_state(editor),
     }

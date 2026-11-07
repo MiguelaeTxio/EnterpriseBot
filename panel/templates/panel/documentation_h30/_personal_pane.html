@@ -995,13 +995,21 @@ las filas de debajo se desplacen de verdad.
 
     // Plegar/desplegar, recordado por usuario (screen_key "person_groups").
     let collapsedGroups = new Set((groupList.dataset.collapsed || '').split(',').filter(Boolean));
+    // S147: carpetas por creador (Generales, Usuarios, Propios); una
+    // carpeta plegada oculta lo que tiene dentro.
+    function folderRow(key) { return groupList.querySelector('.person-group-folder[data-pk="' + key + '"]'); }
     function applyCollapsed() {
-        groupList.querySelectorAll('.person-group-node').forEach((row) => {
+        groupList.querySelectorAll('.person-group-node, .person-group-folder').forEach((row) => {
             let hidden = false;
             let parent = row.dataset.parent;
             while (parent) {
                 if (collapsedGroups.has(parent)) { hidden = true; break; }
                 parent = groupRow(parent) && groupRow(parent).dataset.parent;
+            }
+            let folder = row.dataset.folder;
+            while (!hidden && folder) {
+                if (collapsedGroups.has(folder)) { hidden = true; break; }
+                folder = folderRow(folder) && folderRow(folder).dataset.folder;
             }
             row.classList.toggle('d-none', hidden);
             const icon = row.querySelector('.person-group-toggle i');

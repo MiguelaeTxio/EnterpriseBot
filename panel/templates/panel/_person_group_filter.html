@@ -91,13 +91,20 @@ Contexto: person_group_nodes y person_groups_collapsed
     });
     // Plegar/desplegar, recordado por usuario como en Personal.
     const collapsed = new Set((list.dataset.collapsed || '').split(',').filter(Boolean));
+    // S147: carpetas por creador (Generales, Usuarios, Propios).
+    const folderRow = (key) => list.querySelector('.person-group-folder[data-pk="' + key + '"]');
     function applyCollapsed() {
-        list.querySelectorAll('.person-group-node').forEach((node) => {
+        list.querySelectorAll('.person-group-node, .person-group-folder').forEach((node) => {
             let hidden = false;
             let parent = node.dataset.parent;
             while (parent) {
                 if (collapsed.has(parent)) { hidden = true; break; }
                 parent = row(parent) && row(parent).dataset.parent;
+            }
+            let folder = node.dataset.folder;
+            while (!hidden && folder) {
+                if (collapsed.has(folder)) { hidden = true; break; }
+                folder = folderRow(folder) && folderRow(folder).dataset.folder;
             }
             node.classList.toggle('d-none', hidden);
             const icon = node.querySelector('.person-group-toggle i');

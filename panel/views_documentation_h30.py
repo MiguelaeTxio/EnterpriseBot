@@ -1442,19 +1442,17 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
         # barra de acción masiva.
         # S147: en árbol (panel/person_groups.py), con los padres que
         # se pliegan recordados por usuario (screen_key "person_groups").
-        from panel.person_groups import group_tree, parent_choices
+        from panel.person_groups import (
+            collapsed_state, group_tree, parent_choices,
+        )
 
         ctx["person_group_nodes"] = group_tree(
             request.user.company_user)
         ctx["person_group_parents"] = parent_choices(
             editor=request.user.company_user)
-        collapsed = get_saved_state_key(
-            request.user.company_user, "person_groups", "collapsed", [],
-        )
-        ctx["person_groups_collapsed"] = (
-            [str(pk) for pk in collapsed] if isinstance(collapsed, list)
-            else []
-        )
+        # S147: por carpetas de creador (Generales/Usuarios/Propios).
+        ctx["person_groups_collapsed"] = collapsed_state(
+            request.user.company_user)
         # H31 (S109): catálogo de puestos para la acción masiva nueva
         # "Asignar puesto" -- mismo criterio que person_groups, cargado
         # una única vez en la carga inicial de la pestaña.
