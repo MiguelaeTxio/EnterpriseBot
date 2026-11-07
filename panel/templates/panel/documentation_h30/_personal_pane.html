@@ -748,7 +748,7 @@ las filas de debajo se desplacen de verdad.
     }
     function groupCheckbox(pk) { return document.getElementById('personGroupSelect' + pk); }
     function checkedGroups() {
-        return Array.from(document.querySelectorAll('.person-group-select-checkbox:checked')).map((el) => el.dataset.pk);
+        return Array.from(groupList.querySelectorAll('.person-group-select-checkbox:checked')).map((el) => el.dataset.pk);
     }
 
     function refreshPersonGroupDiff() {
@@ -908,7 +908,7 @@ las filas de debajo se desplacen de verdad.
     applyCollapsed();
 
     function resetPersonGroupForm() {
-        document.querySelectorAll('.person-group-select-checkbox').forEach((el) => { el.checked = false; });
+        groupList.querySelectorAll('.person-group-select-checkbox').forEach((el) => { el.checked = false; });
         setEditingTarget('');
         document.getElementById('personGroupName').value = '';
         document.getElementById('personGroupParent').value = '';
@@ -965,6 +965,7 @@ las filas de debajo se desplacen de verdad.
         // personas marcadas queda como carpeta para colgarle otros.
         if (!editingParent) selection.forEach((pk) => formData.append('person_ids', pk));
 
+        const wasEditing = Boolean(personGroupEditingPk);
         const url = personGroupEditingPk
             ? `/panel/documentacion/personal/grupos/${personGroupEditingPk}/guardar/`
             : '/panel/documentacion/personal/grupos/guardar/';
@@ -975,9 +976,19 @@ las filas de debajo se desplacen de verdad.
         }).then((r) => r.json()).then((data) => {
             if (data.ok) {
                 resultDiv.innerHTML = '';
-                document.querySelectorAll('.person-group-select-checkbox').forEach((el) => { el.checked = false; });
-                redrawGroups(data, data.id);
-                showPersonGroupToast('Grupo guardado.');
+                groupList.querySelectorAll('.person-group-select-checkbox').forEach((el) => { el.checked = false; });
+                if (wasEditing) {
+                    redrawGroups(data, data.id);
+                    showPersonGroupToast('Grupo guardado.');
+                } else {
+                    // S147 (Miguel Ángel): el grupo recién creado se puede
+                    // elegir al momento en "Dentro de" para colgarle
+                    // subgrupos: el formulario queda limpio, sin dejarlo
+                    // en edición (en edición, él mismo sale desactivado).
+                    redrawGroups(data, '');
+                    document.getElementById('personGroupName').value = '';
+                    showPersonGroupToast('Grupo creado.');
+                }
             } else {
                 resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al guardar.'}</div>`;
             }
