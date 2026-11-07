@@ -6,7 +6,9 @@ casilla marca todos sus subgrupos. Las personas viajan en data-* (las
 suyas; un grupo con subgrupos no tiene sueltas). El JS de
 _personal_pane.html junta las personas de los grupos marcados. Solo
 quien creó un grupo lo cambia (data-can-edit); los ajenos dicen de
-quién son. El mismo árbol sale en el recuadro "Grupos de selección" de
+quién son. El sangrado va con stringformat: con el idioma en español,
+{{ node.indent }} sale "1,1" y el navegador lo descarta (los subgrupos se
+veían a la altura de los grupos principales). El mismo árbol sale en el recuadro "Grupos de selección" de
 las demás vistas (panel/_person_group_filter.html): pg_id da a cada
 vista sus propios ids (por defecto, los de Personal).
 {% endcomment %}
@@ -22,7 +24,7 @@ vista sus propios ids (por defecto, los de Personal).
     data-member-ids="{{ node.member_ids|join:',' }}"
     data-member-names="{{ node.member_names|join:'||' }}"
     data-member-users="{{ node.member_user_ids|join:',' }}"
-    style="padding-left: {{ node.indent }}rem !important;">
+    style="padding-left: {{ node.indent|stringformat:".2f" }}rem !important;">
     <div class="d-flex align-items-center gap-1">
         {% if node.children %}
         <button type="button" class="btn btn-link btn-sm p-0 text-dark person-group-toggle" data-pk="{{ node.group.pk }}" title="Desplegar o plegar">
