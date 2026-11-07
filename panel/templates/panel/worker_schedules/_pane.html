@@ -61,6 +61,8 @@ filtrar la sección, marcar todos y poner el horario.
                             </div>
                             <input type="hidden" name="selected_ids" id="hor-selected-ids" value="">
                         </div>
+                        {# S147: grupos de selección (globales a las vistas). #}
+                        {% include "panel/_person_group_filter.html" with pg_prefix="hor" %}
                         {# Sección vigente hoy (PersonSectionAssignment), como en Fichajes. #}
                         <div>
                             <div class="fw-semibold mb-1">Sección</div>

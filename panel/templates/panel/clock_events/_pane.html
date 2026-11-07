@@ -89,6 +89,8 @@ recordatorios, secciones que fichan y permiso de envío).
                             </div>
                             <input type="hidden" name="selected_ids" id="clk-selected-ids" value="">
                         </div>
+                        {# S147: grupos de selección (globales a las vistas). #}
+                        {% include "panel/_person_group_filter.html" with pg_prefix="clk" %}
                         {% comment %}
                         S136 (Miguel Ángel): "filtro de trabajadores con/sin
                         fichajes" en las fechas elegidas, también al exportar.

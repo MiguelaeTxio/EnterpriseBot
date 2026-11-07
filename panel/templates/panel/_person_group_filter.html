@@ -1,0 +1,93 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/_person_group_filter.html #}
+{% comment %}
+S147 (Miguel Ángel): los grupos de selección son globales a todas las
+vistas. Filtro "Grupos" de Fichajes, Vacaciones, Solicitudes y
+Horarios: el mismo árbol que en Personal, solo para elegir (se
+cambian en Personal, y solo quien los creó). Se marcan uno, varios o
+todos los subgrupos (la casilla de un grupo marca sus subgrupos); el
+campo oculto "groups" lleva los marcados y la lista se queda con sus
+personas (panel/person_groups.person_ids_for_groups). Va dentro del
+formulario de filtros: su "change" lo recarga.
+Uso: {% include "panel/_person_group_filter.html" with pg_prefix="clk" %}
+Contexto: person_group_nodes (group_tree) y filter_groups (pks).
+{% endcomment %}
+<div class="eb-group-filter" id="{{ pg_prefix }}-group-filter">
+    <div class="fw-semibold mb-1">Grupos</div>
+    <div class="dropdown">
+        <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle"
+                id="{{ pg_prefix }}-groups-button" data-bs-toggle="dropdown" data-bs-auto-close="outside"
+                aria-expanded="false">{% if filter_groups %}{{ filter_groups|length }} marcado{{ filter_groups|length|pluralize }}{% else %}Todos{% endif %}</button>
+        <div class="dropdown-menu p-2" style="min-width: 16rem; max-height: 60vh; overflow-y: auto;">
+            {% for node in person_group_nodes %}
+            <div class="form-check eb-group-filter-node" style="margin-left: {{ node.indent }}rem;"
+                 data-pk="{{ node.group.pk }}" data-parent="{{ node.group.parent_id|default:'' }}"
+                 data-children="{{ node.children|join:',' }}">
+                <input class="form-check-input eb-group-filter-check" type="checkbox"
+                       id="{{ pg_prefix }}Group{{ node.group.pk }}" value="{{ node.group.pk }}"
+                       {% if node.group.pk|stringformat:"d" in filter_groups %}checked{% endif %}>
+                <label class="form-check-label{% if node.children %} fw-semibold{% endif %}"
+                       for="{{ pg_prefix }}Group{{ node.group.pk }}">{{ node.group.name }} ({{ node.total }})</label>
+            </div>
+            {% empty %}
+            <div class="text-muted small">Sin grupos: se crean en Documentación &gt; Personal.</div>
+            {% endfor %}
+            {% if person_group_nodes %}
+            <div class="border-top mt-1 pt-1">
+                <a href="#" class="small eb-group-filter-clear">Quitar el filtro</a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    <input type="hidden" name="groups" id="{{ pg_prefix }}-groups-input" value="{{ filter_groups|join:',' }}">
+</div>
+<script>
+(function () {
+    const box = document.getElementById('{{ pg_prefix }}-group-filter');
+    if (!box || box.dataset.bound) { return; }
+    box.dataset.bound = '1';
+    const input = document.getElementById('{{ pg_prefix }}-groups-input');
+    const button = document.getElementById('{{ pg_prefix }}-groups-button');
+    const node = (pk) => box.querySelector('.eb-group-filter-node[data-pk="' + pk + '"]');
+    const check = (pk) => node(pk) && node(pk).querySelector('.eb-group-filter-check');
+    const children = (pk) => (node(pk) && node(pk).dataset.children ? node(pk).dataset.children.split(',').filter(Boolean) : []);
+    function descendants(pk) {
+        const out = [];
+        const stack = children(pk);
+        while (stack.length) {
+            const child = stack.pop();
+            out.push(child);
+            children(child).forEach((c) => stack.push(c));
+        }
+        return out;
+    }
+    function sync() {
+        const marked = Array.from(box.querySelectorAll('.eb-group-filter-check:checked')).map((el) => el.value);
+        input.value = marked.join(',');
+        button.textContent = marked.length ? marked.length + (marked.length === 1 ? ' marcado' : ' marcados') : 'Todos';
+    }
+    // Va antes que el "change" del formulario (está dentro): cuando
+    // htmx recarga la lista, el campo oculto ya lleva lo marcado.
+    box.addEventListener('change', function (ev) {
+        if (!ev.target.classList.contains('eb-group-filter-check')) { return; }
+        const pk = ev.target.value;
+        descendants(pk).forEach((c) => { if (check(c)) { check(c).checked = ev.target.checked; } });
+        let parent = node(pk) && node(pk).dataset.parent;
+        while (parent) {
+            if (check(parent)) {
+                check(parent).checked = children(parent).every((k) => check(k) && check(k).checked);
+            }
+            parent = node(parent) && node(parent).dataset.parent;
+        }
+        sync();
+    });
+    const clear = box.querySelector('.eb-group-filter-clear');
+    if (clear) {
+        clear.addEventListener('click', function (ev) {
+            ev.preventDefault();
+            box.querySelectorAll('.eb-group-filter-check').forEach((el) => { el.checked = false; });
+            sync();
+            input.dispatchEvent(new Event('change', {bubbles: true}));
+        });
+    }
+})();
+</script>

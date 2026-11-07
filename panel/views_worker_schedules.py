@@ -44,7 +44,9 @@ from panel.views_vacation_balance import (
 )
 
 SCREEN_KEY = "worker_schedules"
-FILTER_KEYS = ("search", "active", "company", "sort", "section", "schedule")
+FILTER_KEYS = (
+    "search", "active", "company", "sort", "section", "schedule", "groups",
+)
 NO_SECTION = "none"
 NO_SCHEDULE = "none"
 _MAX_SORT_KEYS = 4
@@ -315,9 +317,12 @@ class WorkerSchedulesTabView(SupervisorAccessMixin, View):
         )
         if not isinstance(saved_selection, list):
             saved_selection = []
+        from panel.person_groups import group_filter_context
+
         company = request.user.company_user.company
         return render(request, "panel/worker_schedules/_pane.html", {
             **_list_context(request),
+            **group_filter_context(request),
             "sections": _sections(company),
             "schedules": _schedules(company),
             "no_section": NO_SECTION,

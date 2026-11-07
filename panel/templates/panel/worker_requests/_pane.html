@@ -53,6 +53,8 @@ acciones. Filtros, orden y selección persistidos por usuario
                             </div>
                             <input type="hidden" name="selected_ids" id="wreq-selected-ids" value="">
                         </div>
+                        {# S147: grupos de selección (globales a las vistas). #}
+                        {% include "panel/_person_group_filter.html" with pg_prefix="wreq" %}
                     </div>
                 </form>
             </div>

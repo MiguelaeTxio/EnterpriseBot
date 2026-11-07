@@ -65,7 +65,7 @@ from panel.views_vacation_balance import (
 SCREEN_KEY = "clock_events"
 FILTER_KEYS = (
     "search", "active", "company", "date_from", "date_to", "sort",
-    "issues_only", "events", "section", "onboarding",
+    "issues_only", "events", "section", "onboarding", "groups",
 )
 NO_SECTION = "none"
 _MAX_SORT_KEYS = 4
@@ -511,9 +511,12 @@ class ClockEventsTabView(SupervisorAccessMixin, View):
         )
         if not isinstance(saved_selection, list):
             saved_selection = []
+        from panel.person_groups import group_filter_context
+
         company = request.user.company_user.company
         return render(request, "panel/clock_events/_pane.html", {
             **_list_context(request),
+            **group_filter_context(request),
             **_settings_context(company),
             "tomorrow": timezone.localdate() + datetime.timedelta(days=1),
             "sections": _sections(company),
