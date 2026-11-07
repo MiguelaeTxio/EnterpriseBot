@@ -128,7 +128,8 @@ def parent_choices(exclude_pk=None, editor=None):
     if editor is not None:
         groups = groups.filter(created_by=editor)
     return [
-        {"pk": g.pk, "label": g.path_label()}
+        {"pk": g.pk, "label": g.path_label(), "name": g.name,
+         "parent": g.parent_id or ""}
         for g in sorted(
             groups.exclude(pk__in=excluded).select_related("parent__parent"),
             key=lambda g: g.path_label().upper(),

@@ -77,11 +77,19 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                     <input type="text" id="personGroupName" class="form-control form-control-sm" placeholder="Nombre del grupo">
                     <button type="button" class="btn btn-sm btn-primary" id="personGroupSaveBtn" onclick="savePersonGroup()">Guardar</button>
                 </div>
-                {# S147: dónde va el grupo (cualquier grupo propio, tenga personas o no). #}
-                <select id="personGroupParent" class="form-select form-select-sm mb-1" aria-label="Dentro de" title="Dentro de qué grupo va (cualquier grupo tuyo, tenga personas o no).">
+                {% comment %}
+                S147: dónde va el grupo (cualquier grupo propio, tenga personas
+                o no). El desplegable con todos los grupos queda oculto (es el
+                valor que se guarda); se elige por niveles (Miguel Ángel: "que
+                aparezcan primero los grupos padre. Una vez que eliges un grupo
+                padre, que elija alguno de los grupos hijos"):
+                #personGroupParentPicker, armado por buildParentPicker().
+                {% endcomment %}
+                <select id="personGroupParent" class="d-none" aria-hidden="true" tabindex="-1">
                     <option value="">Dentro de: ninguno (grupo principal)</option>
-                    {% for parent in person_group_parents %}<option value="{{ parent.pk }}">Dentro de: {{ parent.label }}</option>{% endfor %}
+                    {% for parent in person_group_parents %}<option value="{{ parent.pk }}" data-parent="{{ parent.parent }}" data-name="{{ parent.name }}">Dentro de: {{ parent.label }}</option>{% endfor %}
                 </select>
+                <div id="personGroupParentPicker" title="Dentro de qué grupo va"></div>
                 {% comment %}
                 S147 (Miguel Ángel): con un grupo cargado, desmarcar a alguien
                 lo quita y marcar a alguien (con cualquier filtro) lo añade;
@@ -728,6 +736,7 @@ las filas de debajo se desplacen de verdad.
     // marcado él solo (con sus subgrupos, si los tiene).
     let personGroupEditingPk = '';
     let personGroupEditingName = '';
+    let personGroupParentTouched = false;
     let personGroupSavedIds = new Set();
     let personGroupSavedNames = new Map();
     const groupList = document.getElementById('personGroupSavedList');
@@ -776,6 +785,7 @@ las filas de debajo se desplacen de verdad.
             ? new Set([personGroupEditingPk].concat(groupDescendants(personGroupEditingPk)))
             : new Set();
         Array.from(parentSelect.options).forEach((opt) => { opt.disabled = banned.has(opt.value); });
+        buildParentPicker();
         if (!personGroupEditingPk) {
             const many = checkedGroups().length > 1;
             box.classList.toggle('d-none', !many);
@@ -810,8 +820,65 @@ las filas de debajo se desplacen de verdad.
         saveBtn.classList.add('btn-warning');
     }
     window.refreshPersonGroupDiff = refreshPersonGroupDiff;
-    document.getElementById('personGroupName').addEventListener('input', refreshPersonGroupDiff);
-    document.getElementById('personGroupParent').addEventListener('change', refreshPersonGroupDiff);
+    // S147 (Miguel Ángel): "Dentro de" por niveles -- primero los grupos
+    // principales; al elegir uno, debajo sus subgrupos ("Justo dentro de
+    // «Taller»" o uno de ellos), y así hacia abajo. El valor que se
+    // guarda es el del desplegable oculto #personGroupParent.
+    function buildParentPicker() {
+        const sel = document.getElementById('personGroupParent');
+        const box = document.getElementById('personGroupParentPicker');
+        if (!sel || !box) return;
+        const opts = Array.from(sel.options)
+            .filter((o) => o.value && !o.disabled)
+            .map((o) => ({pk: o.value, parent: o.dataset.parent || '', name: o.dataset.name || o.textContent}));
+        const avail = new Set(opts.map((o) => o.pk));
+        const byPk = new Map(opts.map((o) => [o.pk, o]));
+        const kids = (pk) => opts.filter((o) => (pk ? o.parent === pk : (!o.parent || !avail.has(o.parent))));
+        const path = [];
+        let cur = avail.has(sel.value) ? sel.value : '';
+        while (cur) {
+            path.unshift(cur);
+            const o = byPk.get(cur);
+            cur = o && avail.has(o.parent) ? o.parent : '';
+        }
+        if (!avail.has(sel.value)) sel.value = '';
+        box.innerHTML = '';
+        function addLevel(items, chosen, parentPk) {
+            const s = document.createElement('select');
+            s.className = 'form-select form-select-sm mb-1';
+            s.setAttribute('aria-label', 'Dentro de');
+            const top = parentPk
+                ? new Option('Justo dentro de «' + byPk.get(parentPk).name + '»', parentPk)
+                : new Option('Dentro de: ninguno (grupo principal)', '');
+            s.add(top);
+            items.forEach((o) => s.add(new Option((parentPk ? '› ' : 'Dentro de: ') + o.name, o.pk)));
+            s.value = chosen || (parentPk || '');
+            s.addEventListener('change', () => {
+                sel.value = s.value;
+                personGroupParentTouched = true;
+                refreshPersonGroupDiff();
+            });
+            box.appendChild(s);
+        }
+        addLevel(kids(''), path[0], '');
+        path.forEach((pk, i) => {
+            const children = kids(pk);
+            if (children.length) addLevel(children, path[i + 1], pk);
+        });
+    }
+
+    // Con un grupo marcado y otro nombre (grupo nuevo), el padre que se
+    // propone es el propio grupo marcado ("estoy eligiendo de Taller,
+    // pues lo lógico es que vaya a formar un grupo dentro del Taller");
+    // con su nombre de nuevo, vuelve a donde estaba.
+    document.getElementById('personGroupName').addEventListener('input', function () {
+        if (personGroupEditingPk && !personGroupParentTouched) {
+            const row = groupRow(personGroupEditingPk);
+            document.getElementById('personGroupParent').value = isNewCopy()
+                ? personGroupEditingPk : ((row && row.dataset.parent) || '');
+        }
+        refreshPersonGroupDiff();
+    });
 
     function activatePersonGroupManagement() {
         document.getElementById('personGroupManagementEmpty').classList.add('d-none');
@@ -849,6 +916,7 @@ las filas de debajo se desplacen de verdad.
             const names = (row.dataset.memberNames || '').split('||').filter(Boolean);
             personGroupSavedIds = new Set(ids);
             personGroupSavedNames = new Map(ids.map((id, i) => [id, names[i] || '']));
+            personGroupParentTouched = false;
             personGroupEditingName = row.dataset.name || '';
             document.getElementById('personGroupName').value = personGroupEditingName;
             parentSelect.value = row.dataset.parent || '';
@@ -856,6 +924,7 @@ las filas de debajo se desplacen de verdad.
         } else {
             personGroupEditingPk = '';
             personGroupEditingName = '';
+            personGroupParentTouched = false;
             personGroupSavedIds = new Set();
             personGroupSavedNames = new Map();
             Array.from(parentSelect.options).forEach((opt) => { opt.disabled = false; });
@@ -867,6 +936,7 @@ las filas de debajo se desplacen de verdad.
                     ': lo puedes usar, pero solo quien lo creó lo cambia. Guardar crea un grupo nuevo tuyo con esta selección.</div>';
             }
         }
+        buildParentPicker();
     }
 
     function onPersonGroupSelectChange(checkbox) {
@@ -940,6 +1010,7 @@ las filas de debajo se desplacen de verdad.
         refreshPersonGroupDiff();
     }
     window.resetPersonGroupForm = resetPersonGroupForm;
+    buildParentPicker();
 
     // H31 (S119): reutilizado tambien por la asignacion masiva de
     // requisito de documentacion (mas abajo) -- Miguel Angel: "deberia
@@ -957,10 +1028,12 @@ las filas de debajo se desplacen de verdad.
     function redrawGroups(data, checkPk) {
         groupList.innerHTML = data.tree_html;
         const parentSelect = document.getElementById('personGroupParent');
-        parentSelect.innerHTML = '<option value="">Dentro de: ninguno (grupo principal)</option>' +
-            (data.parents || []).map((p) => '<option value="' + p.pk + '"></option>').join('');
-        Array.from(parentSelect.options).forEach((opt, i) => {
-            if (i > 0) opt.textContent = 'Dentro de: ' + data.parents[i - 1].label;
+        parentSelect.innerHTML = '<option value="">Dentro de: ninguno (grupo principal)</option>';
+        (data.parents || []).forEach((p) => {
+            const opt = new Option('Dentro de: ' + p.label, String(p.pk));
+            opt.dataset.parent = String(p.parent || '');
+            opt.dataset.name = p.name || p.label;
+            parentSelect.add(opt);
         });
         applyCollapsed();
         if (checkPk) {
