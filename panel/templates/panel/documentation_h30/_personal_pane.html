@@ -821,8 +821,9 @@ las filas de debajo se desplacen de verdad.
     }
     window.refreshPersonGroupDiff = refreshPersonGroupDiff;
     // S147 (Miguel Ángel): "Dentro de" por niveles -- primero los grupos
-    // principales; al elegir uno, debajo sus subgrupos ("Justo dentro de
-    // «Taller»" o uno de ellos), y así hacia abajo. El valor que se
+    // principales; al elegir uno, debajo "¿Dentro de algún subgrupo de
+    // «Taller»?" (No: directamente en Taller / Sí: dentro de uno), y así
+    // hacia abajo. El valor que se
     // guarda es el del desplegable oculto #personGroupParent.
     function buildParentPicker() {
         const sel = document.getElementById('personGroupParent');
@@ -842,20 +843,35 @@ las filas de debajo se desplacen de verdad.
             cur = o && avail.has(o.parent) ? o.parent : '';
         }
         if (!avail.has(sel.value)) sel.value = '';
+        // S147: no se redibuja si no ha cambiado nada ni mientras se toca
+        // uno de sus desplegables (en el móvil, al cerrarse el teclado se
+        // recoloca la pantalla y el desplegable abierto se destruía: "se
+        // ve un parpadeo y no llega a fijarse").
+        const signature = sel.value + '|' + opts.map((o) => o.pk + ':' + o.parent + ':' + o.name).join(',');
+        if (box.dataset.signature === signature) return;
+        if (box.contains(document.activeElement)) return;
+        box.dataset.signature = signature;
         box.innerHTML = '';
         function addLevel(items, chosen, parentPk) {
+            if (parentPk) {
+                const label = document.createElement('div');
+                label.className = 'small text-muted mb-1';
+                label.textContent = '¿Dentro de algún subgrupo de «' + byPk.get(parentPk).name + '»?';
+                box.appendChild(label);
+            }
             const s = document.createElement('select');
             s.className = 'form-select form-select-sm mb-1';
             s.setAttribute('aria-label', 'Dentro de');
             const top = parentPk
-                ? new Option('Justo dentro de «' + byPk.get(parentPk).name + '»', parentPk)
+                ? new Option('No: directamente en «' + byPk.get(parentPk).name + '»', parentPk)
                 : new Option('Dentro de: ninguno (grupo principal)', '');
             s.add(top);
-            items.forEach((o) => s.add(new Option((parentPk ? '› ' : 'Dentro de: ') + o.name, o.pk)));
+            items.forEach((o) => s.add(new Option((parentPk ? 'Sí: dentro de «' + o.name + '»' : 'Dentro de: ' + o.name), o.pk)));
             s.value = chosen || (parentPk || '');
             s.addEventListener('change', () => {
                 sel.value = s.value;
                 personGroupParentTouched = true;
+                s.blur();
                 refreshPersonGroupDiff();
             });
             box.appendChild(s);
