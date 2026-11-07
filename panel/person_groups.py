@@ -145,8 +145,9 @@ def save_group(group, name, parent_id, person_ids, editor=None):
     subgrupo suyo, y solo dentro de un grupo de quien lo guarda. Un
     grupo puede tener sus personas y además subgrupos (p. ej. Taller con
     los suyos y, dentro, Mecánicos y Limpiadores, que son parte de
-    ellos): marcarlo selecciona las suyas y las de sus subgrupos. Sin
-    personas, queda como carpeta para colgarle otros.
+    ellos): marcarlo selecciona las suyas y las de sus subgrupos. Quien
+    entra en un subgrupo entra también en todos los grupos de encima.
+    Sin personas, queda como carpeta para colgarle otros.
     """
     from document_explorer.models import PersonIdentity
 
@@ -174,6 +175,15 @@ def save_group(group, name, parent_id, person_ids, editor=None):
     group.save()
     people = list(PersonIdentity.objects.filter(pk__in=person_ids))
     group.members.set(people)
+    # S147 (Miguel Ángel): "si una persona entra nueva y lo asignamos a
+    # un subgrupo, automáticamente se asigna al grupo padre" -- y a
+    # todos los de encima (Mecánicos -> Taller -> ...).
+    ancestor = parent
+    seen = {group.pk}
+    while ancestor is not None and ancestor.pk not in seen:
+        seen.add(ancestor.pk)
+        ancestor.members.add(*people)
+        ancestor = ancestor.parent
     return group, people
 
 
