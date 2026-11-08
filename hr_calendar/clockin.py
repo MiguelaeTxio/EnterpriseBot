@@ -86,6 +86,15 @@ NO_PC = "Solo se permite fichar desde dispositivos móviles."
 # navegador sin ubicación) no se ficha. La página lo explica y ni lo
 # envía; aquí se rechaza por si llega igual. Tiempo agotado o posición
 # no disponible sí se admiten (el móvil tiene GPS y lo ha intentado).
+# S147 (Miguel Ángel): "vigilar las dobles pulsaciones y los fichajes
+# en tiempos breves para no duplicar fichajes" (hubo entrada, salida y
+# entrada en 7 segundos). Entre dos fichajes del mismo trabajador tiene
+# que haber al menos este margen; si no, el segundo no se admite.
+MIN_GAP = datetime.timedelta(minutes=2)
+TOO_SOON = (
+    "Ya fichaste {kind} a las {time}. Para no duplicar fichajes tiene "
+    "que pasar al menos 2 minutos entre un fichaje y el siguiente."
+)
 GPS_REQUIRED = ("permiso denegado", "este navegador no da ubicación")
 GPS_BLOCKED = (
     "No se puede fichar sin dar permiso de ubicación a esta página. "
@@ -260,6 +269,11 @@ def record_press(company_user, payload, user_agent=""):
     forgotten = None
     try:
         with transaction.atomic():
+            # S147: una pulsación a la vez por trabajador (dos envíos
+            # casi simultáneos no pasan los dos el control de abajo).
+            type(company_user).objects.select_for_update().filter(
+                pk=company_user.pk).first()
+            _reject_too_soon(company_user, pressed_at)
             if auto:
                 kind, forgotten = _decide_kind(company_user, pressed_at)
                 # S141: con la jornada abierta, elegir un tipo es cambiar
@@ -302,6 +316,29 @@ def record_press(company_user, payload, user_agent=""):
                 forgotten_text(forgotten), result.parte_notice)))
         result.parte_ok = False
     return result
+
+
+def _reject_too_soon(company_user, pressed_at):
+    """
+    Refuse a press too close to another one of the same worker.
+    ---
+    Rechaza la pulsación si el trabajador tiene otra vigente a menos de
+    MIN_GAP (antes o después: con pulsaciones guardadas sin cobertura
+    pueden llegar desordenadas). Las correcciones del supervisor no
+    cuentan.
+    """
+    near = ClockEvent.objects.current().filter(
+        company_user=company_user,
+        pressed_at__gt=pressed_at - MIN_GAP,
+        pressed_at__lt=pressed_at + MIN_GAP,
+    ).exclude(sent_by=ClockEvent.SentBy.CORRECTION).order_by(
+        "-pressed_at").first()
+    if near is not None:
+        raise ClockInError(TOO_SOON.format(
+            kind={"IN": "la entrada", "OUT": "la salida"}.get(
+                near.kind, "un cambio de tipo"),
+            time=timezone.localtime(near.pressed_at).strftime("%H:%M:%S"),
+        ))
 
 
 def _clocks_from(company_user):

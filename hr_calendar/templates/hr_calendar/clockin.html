@@ -792,6 +792,17 @@ responsable corregirá la salida (clock_report.forgotten_after).
         let decided = null;
         setStatus("Fichaje a las " + pressedAt.toLocaleTimeString("es-ES") + ". Buscando la ubicación…", "wait");
         allRecords().then(function (records) {
+            // S147: dobles pulsaciones y fichajes seguidos: entre uno y
+            // otro, al menos 2 minutos (el servidor lo rechaza igual).
+            const recent = records.filter(function (r) { return !r.rejected; })
+                .sort(function (a, b) { return b.pressed_at.localeCompare(a.pressed_at); })[0];
+            if (recent && pressedAt - new Date(recent.pressed_at) < 2 * 60 * 1000) {
+                const err = new Error("ya fichaste " + label(recent).toLowerCase() + " a las " +
+                    new Date(recent.pressed_at).toLocaleTimeString("es-ES") +
+                    ". Para no duplicar fichajes tiene que pasar al menos 2 minutos entre un fichaje y el siguiente.");
+                err.tooSoon = true;
+                throw err;
+            }
             decided = decideKind(records);
             if (chosen && decided === "OUT") decided = "CHG";
             const nothingPending = !records.some(function (r) { return !r.received_at && !r.rejected; });
@@ -828,6 +839,10 @@ responsable corregirá la salida (clock_report.forgotten_after).
                       "ok", record.id);
             return queueAndSend(record, "ONLINE");
         }).catch(function (err) {
+            if (err && err.tooSoon) {
+                setStatus("No se ha fichado: " + err.message, "err");
+                return;
+            }
             setStatus("No se ha podido guardar: " + err, "err");
         }).finally(function () {
             setPressing(false);
