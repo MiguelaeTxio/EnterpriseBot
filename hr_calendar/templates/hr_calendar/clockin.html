@@ -54,6 +54,14 @@ responsable corregirá la salida (clock_report.forgotten_after).
         /* S143: por tipos, la salida va separada de los tipos para que no se pulse por confirmar. */
         #btn-fichar.end-day { margin-top: 34px; font-size: 1.2rem; padding: 18px 8px; }
         #btn-fichar:disabled { opacity: .6; }
+        /* S147: confirmación de la salida (nunca con una doble pulsación). */
+        #out-confirm { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; }
+        #out-confirm .box { background: #fff; border-radius: 12px; padding: 18px; max-width: 420px; width: 100%; }
+        #out-confirm .q { font-size: 1.25rem; font-weight: 700; margin-bottom: 8px; }
+        #out-confirm button { display: block; width: 100%; font-size: 1.1rem; font-weight: 700; padding: 16px 8px; border: 0; border-radius: 10px; margin-top: 12px; }
+        #out-confirm .no { background: #e9ecef; color: #212529; }
+        #out-confirm .yes { background: #dc3545; color: #fff; margin-top: 28px; }
+        #out-confirm .yes:disabled { opacity: .5; }
         #types { display: none; margin-bottom: 10px; }
         #types-title { font-weight: 700; margin-bottom: 6px; }
         #types-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -154,6 +162,14 @@ responsable corregirá la salida (clock_report.forgotten_after).
         <div id="no-meal-help" class="muted hidden">Si no fichas la pausa para comer ni marcas esta casilla, se descuenta una hora de comida (y otra de cena si trabajas a la hora de cenar). Márcala antes de fichar la salida.</div>
     </div>
     <button type="button" id="btn-fichar">Fichar entrada</button>
+    <div id="out-confirm" class="hidden" role="dialog" aria-modal="true">
+        <div class="box">
+            <div class="q" id="out-confirm-q">¿Fichar la SALIDA?</div>
+            <div class="muted" id="out-confirm-help"></div>
+            <button type="button" class="no" id="out-confirm-no">No, no fichar</button>
+            <button type="button" class="yes" id="out-confirm-yes">Sí, fichar la salida</button>
+        </div>
+    </div>
     <div id="status"></div>
 
     <!-- S147: Mis solicitudes (vacaciones, asuntos propios, médico, documentos) desde el fichaje. -->
@@ -513,15 +529,43 @@ responsable corregirá la salida (clock_report.forgotten_after).
         btn.classList.toggle("out", kind === "OUT");
         btn.classList.toggle("end-day", endDay);
     }
+    // S147 (Miguel Ángel): "salvaguarda para fichar la salida para
+    // evitar los errores": toda salida se confirma en un recuadro aparte.
+    // El botón de confirmar no está donde el de fichar y no responde el
+    // primer momento, así que una doble pulsación nunca la confirma.
     // S143: una salida a menos de 10 minutos de la entrada o del último
-    // cambio de tipo casi siempre es un error: se pregunta antes.
+    // cambio de tipo casi siempre es un error: se avisa más claro.
     const QUICK_OUT_MS = 10 * 60 * 1000;
-    function confirmQuickOut(records) {
-        if (decideKind(records) !== "OUT") return true;
-        const last = lastKnown(records);
-        if (!last || !last.pressed_at || last.kind === "OUT") return true;
-        if (Date.now() - new Date(last.pressed_at).getTime() > QUICK_OUT_MS) return true;
-        return window.confirm("¿Terminar la jornada? Se ficha la SALIDA.\n\nPara cambiar de tarea pulsa el tipo, no este botón. Si acabas de fichar la entrada, no hace falta pulsar nada más.");
+    function confirmOut(records) {
+        return new Promise(function (resolve) {
+            if (decideKind(records) !== "OUT") { resolve(true); return; }
+            const last = lastKnown(records);
+            const quick = last && last.pressed_at && last.kind !== "OUT" &&
+                Date.now() - new Date(last.pressed_at).getTime() <= QUICK_OUT_MS;
+            const now = new Date().toLocaleTimeString("es-ES", {hour: "2-digit", minute: "2-digit"});
+            document.getElementById("out-confirm-q").textContent = byTypes()
+                ? "¿Terminar la jornada? Se ficha la SALIDA a las " + now + "."
+                : "¿Fichar la SALIDA a las " + now + "?";
+            document.getElementById("out-confirm-help").textContent = (quick
+                ? "Fichaste " + label(last).toLowerCase() + " hace menos de 10 minutos. " : "") +
+                (byTypes()
+                    ? "Para cambiar de tarea pulsa el tipo, no la salida. "
+                    : "Confírmalo solo si sales a comer o terminas la jornada. ") +
+                "Si no querías fichar, pulsa «No, no fichar».";
+            const box = document.getElementById("out-confirm");
+            const yes = document.getElementById("out-confirm-yes");
+            const no = document.getElementById("out-confirm-no");
+            function done(answer) {
+                box.classList.add("hidden");
+                yes.onclick = no.onclick = null;
+                resolve(answer);
+            }
+            yes.disabled = true;
+            setTimeout(function () { yes.disabled = false; }, 800);
+            yes.onclick = function () { done(true); };
+            no.onclick = function () { done(false); };
+            box.classList.remove("hidden");
+        });
     }
     // S141: fichaje por tipos. Con la jornada cerrada, un botón por tipo
     // para entrar; con ella abierta, el tipo en curso, un botón por cada
@@ -854,7 +898,7 @@ responsable corregirá la salida (clock_report.forgotten_after).
 
     document.getElementById("btn-fichar").addEventListener("click", function () {
         allRecords().then(function (records) {
-            if (confirmQuickOut(records)) press(null);
+            return confirmOut(records).then(function (ok) { if (ok) press(null); });
         });
     });
     document.getElementById("btn-send").addEventListener("click", function () {
