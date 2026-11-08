@@ -796,7 +796,9 @@ responsable corregirá la salida (clock_report.forgotten_after).
             // otro, al menos 2 minutos (el servidor lo rechaza igual).
             const recent = records.filter(function (r) { return !r.rejected; })
                 .sort(function (a, b) { return b.pressed_at.localeCompare(a.pressed_at); })[0];
-            if (recent && pressedAt - new Date(recent.pressed_at) < 2 * 60 * 1000) {
+            // Elegir otro tipo justo después sí vale (es cambiar de tipo).
+            const otherType = chosen && (!recent || recent.clock_type !== chosen.id);
+            if (recent && !otherType && pressedAt - new Date(recent.pressed_at) < 2 * 60 * 1000) {
                 const err = new Error("ya fichaste " + label(recent).toLowerCase() + " a las " +
                     new Date(recent.pressed_at).toLocaleTimeString("es-ES") +
                     ". Para no duplicar fichajes tiene que pasar al menos 2 minutos entre un fichaje y el siguiente.");

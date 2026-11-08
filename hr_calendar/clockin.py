@@ -273,7 +273,7 @@ def record_press(company_user, payload, user_agent=""):
             # casi simultáneos no pasan los dos el control de abajo).
             type(company_user).objects.select_for_update().filter(
                 pk=company_user.pk).first()
-            _reject_too_soon(company_user, pressed_at)
+            _reject_too_soon(company_user, pressed_at, clock_type)
             if auto:
                 kind, forgotten = _decide_kind(company_user, pressed_at)
                 # S141: con la jornada abierta, elegir un tipo es cambiar
@@ -318,14 +318,16 @@ def record_press(company_user, payload, user_agent=""):
     return result
 
 
-def _reject_too_soon(company_user, pressed_at):
+def _reject_too_soon(company_user, pressed_at, clock_type=None):
     """
     Refuse a press too close to another one of the same worker.
     ---
     Rechaza la pulsación si el trabajador tiene otra vigente a menos de
     MIN_GAP (antes o después: con pulsaciones guardadas sin cobertura
     pueden llegar desordenadas). Las correcciones del supervisor no
-    cuentan.
+    cuentan. Elegir otro tipo justo después (entra con el de siempre y
+    al momento elige el suyo) sí se admite: es cambiar de tipo, no
+    repetir el fichaje.
     """
     near = ClockEvent.objects.current().filter(
         company_user=company_user,
@@ -333,7 +335,8 @@ def _reject_too_soon(company_user, pressed_at):
         pressed_at__lt=pressed_at + MIN_GAP,
     ).exclude(sent_by=ClockEvent.SentBy.CORRECTION).order_by(
         "-pressed_at").first()
-    if near is not None:
+    if near is not None and not (
+            clock_type is not None and near.clock_type_id != clock_type.pk):
         raise ClockInError(TOO_SOON.format(
             kind={"IN": "la entrada", "OUT": "la salida"}.get(
                 near.kind, "un cambio de tipo"),
