@@ -991,6 +991,11 @@ def worker_detail_data(company, person, date_from, date_to):
         "new_time": (timezone.localtime(c.new_pressed_at)
                      if c.new_pressed_at else None),
         "is_cancel": c.action == ClockCorrection.Action.CANCEL,
+        # S147: ubicación rectificada en el mapa (antes / después).
+        "old_place": _place_of(c.event),
+        "new_place": _place_of(c.replacement),
+        "relocated": bool(c.replacement_id and c.replacement.gps_error
+                          .startswith("Ubicación rectificada")),
     } for c in corrections]
     return {"report": report, "shifts": shifts, "history": history,
             "extras": extras}
@@ -1093,6 +1098,9 @@ def _render_detail(request, person, date_from, date_to, error="",
         request.user.company_user.company, person, cal_from, cal_to,
     )["shifts"]
     return render(request, "panel/clock_events/_detail.html", {
+        # S147: mapa para rectificar la ubicación en una corrección.
+        "google_maps_api_key": os.environ.get("GOOGLE_MAPS_API_KEY", ""),
+        "google_maps_map_id": os.environ.get("GOOGLE_MAPS_MAP_ID", ""),
         "calendar": calendar_years(cal_shifts),
         "person": person,
         "person_label": _person_label(person),
@@ -1198,6 +1206,19 @@ class ClockEventsDetailView(SupervisorAccessMixin, View):
                               date_to)
 
 
+def _place_of(event):
+    """
+    Short place text of a press for the corrections history.
+    ---
+    Dónde se fichó, para el historial de correcciones (S147): municipio
+    o coordenadas; vacío si no tiene posición.
+    """
+    if event is None or event.latitude is None:
+        return ""
+    return event.municipality or "%.5f, %.5f" % (
+        event.latitude, event.longitude)
+
+
 def apply_correction(request, person):
     """
     Apply the posted correction to a worker's presses.
@@ -1224,8 +1245,20 @@ def apply_correction(request, person):
         "new_clock_type": request.POST.get("new_clock_type", ""),
         "reason": request.POST.get("reason", ""),
         "label": request.POST.get("label", ""),
+        "new_lat": request.POST.get("new_lat", ""),
+        "new_lon": request.POST.get("new_lon", ""),
     }
     agent = request.META.get("HTTP_USER_AGENT", "")
+    # S147: ubicación rectificada en el mapa (vacío = sin rectificar).
+    new_location = None
+    if form["new_lat"] or form["new_lon"]:
+        try:
+            lat, lon = float(form["new_lat"]), float(form["new_lon"])
+        except ValueError:
+            return "", "La ubicación marcada en el mapa no es válida.", form
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            return "", "La ubicación marcada en el mapa no es válida.", form
+        new_location = (lat, lon)
     by = request.user.company_user
     new_pressed_at = parse_datetime(form["new_pressed_at"])
     if new_pressed_at is not None and timezone.is_naive(new_pressed_at):
@@ -1256,7 +1289,8 @@ def apply_correction(request, person):
         try:
             add_event(person.company_user, person, by, form["new_kind"],
                       new_pressed_at, form["reason"], user_agent=agent,
-                      new_clock_type_id=form["new_clock_type"] or None)
+                      new_clock_type_id=form["new_clock_type"] or None,
+                      new_location=new_location)
         except ClockCorrectionError as exc:
             return "", str(exc), form
         return ("Fichaje añadido. Queda en el historial con quién lo "
@@ -1274,6 +1308,7 @@ def apply_correction(request, person):
             new_kind=form["new_kind"], new_pressed_at=new_pressed_at,
             user_agent=agent,
             new_clock_type_id=form["new_clock_type"] or None,
+            new_location=new_location,
         )
     except ClockCorrectionError as exc:
         return "", str(exc), form

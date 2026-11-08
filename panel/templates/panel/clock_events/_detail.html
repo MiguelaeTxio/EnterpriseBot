@@ -190,6 +190,16 @@ mismas fechas: Jornadas, Calendario y Correcciones.
             <input class="form-control form-control-sm" type="datetime-local" name="new_pressed_at" id="clkFixTime{{ person.pk }}" value="{{ form.new_pressed_at }}">
         </div>
     </div>
+    {# S147 (Miguel Ángel): "rectificar la ubicación con el mapa, quedando registrada". #}
+    <input type="hidden" name="new_lat" value="{{ form.new_lat }}">
+    <input type="hidden" name="new_lon" value="{{ form.new_lon }}">
+    <div class="mb-2">
+        <button type="button" class="btn btn-sm btn-outline-secondary py-0" onclick="clkOpenPlace(this.closest('form'));"><i class="bi bi-geo-alt me-1"></i>Rectificar la ubicación en el mapa</button>
+        <span class="clk-place-text ms-2">{% if form.new_lat %}Nueva ubicación: {{ form.new_lat }}, {{ form.new_lon }}{% endif %}</span>
+        <button type="button" class="btn btn-link btn-sm p-0 ms-2 clk-place-clear{% if not form.new_lat %} d-none{% endif %}" onclick="clkClearPlace(this.closest('form'));">No rectificar</button>
+        <div class="clk-place-help text-muted d-none">Pulsa en el mapa donde se fichó de verdad (o arrastra la marca). Queda en el historial con la ubicación de antes y la nueva.</div>
+        <div class="clk-place-map rounded border mt-1 d-none" style="height: 300px;" data-lat="" data-lon=""></div>
+    </div>
     <label class="form-label mb-0" for="clkFixReason{{ person.pk }}">Motivo (obligatorio)</label>
     <textarea class="form-control form-control-sm mb-2" name="reason" id="clkFixReason{{ person.pk }}" rows="2" maxlength="1000" required>{{ form.reason }}</textarea>
     <div class="d-flex gap-2">
@@ -197,6 +207,7 @@ mismas fechas: Jornadas, Calendario y Correcciones.
         <button type="button" class="btn btn-sm btn-outline-secondary" onclick="this.closest('form').classList.add('d-none');">Cancelar</button>
     </div>
 </form>
+{% include "panel/clock_events/_maps_loader.html" %}
 <script>
 // S144: abre el formulario en "Añadir fichaje" con el tipo y la hora
 // propuestos (el supervisor los cambia y escribe el motivo).
@@ -211,7 +222,63 @@ function clkOpenAdd(btn) {
     f.elements.new_kind.value = btn.dataset.kind;
     f.elements.new_clock_type.value = '';
     f.elements.new_pressed_at.value = btn.dataset.time;
+    clkResetPlace(f, '', '');
     f.scrollIntoView({block: 'nearest'});
+}
+// S147: rectificar la ubicación con el mapa. El mapa empieza en la
+// ubicación fichada (si la hay); un clic o arrastrar la marca la fija.
+function clkResetPlace(f, lat, lon) {
+    var box = f.querySelector('.clk-place-map');
+    box.dataset.lat = lat || '';
+    box.dataset.lon = lon || '';
+    clkClearPlace(f);
+    box.classList.add('d-none');
+    f.querySelector('.clk-place-help').classList.add('d-none');
+}
+function clkClearPlace(f) {
+    f.elements.new_lat.value = '';
+    f.elements.new_lon.value = '';
+    f.querySelector('.clk-place-text').textContent = '';
+    f.querySelector('.clk-place-clear').classList.add('d-none');
+    if (f.__clkPlace) f.__clkPlace.marker.map = null;
+}
+function clkSetPlace(f, lat, lng) {
+    f.elements.new_lat.value = lat.toFixed(6);
+    f.elements.new_lon.value = lng.toFixed(6);
+    f.querySelector('.clk-place-text').textContent = 'Nueva ubicación: ' + lat.toFixed(5) + ', ' + lng.toFixed(5);
+    f.querySelector('.clk-place-clear').classList.remove('d-none');
+}
+async function clkOpenPlace(f) {
+    var g = window.google;
+    if (!g || !g.maps || !g.maps.importLibrary) { alert('No se ha podido cargar el mapa.'); return; }
+    var box = f.querySelector('.clk-place-map');
+    box.classList.remove('d-none');
+    f.querySelector('.clk-place-help').classList.remove('d-none');
+    var has = box.dataset.lat !== '';
+    var start = has ? {lat: parseFloat(box.dataset.lat), lng: parseFloat(box.dataset.lon)} : {lat: 37.39, lng: -5.98};
+    var mapsLib = await g.maps.importLibrary('maps');
+    var markerLib = await g.maps.importLibrary('marker');
+    var st = f.__clkPlace;
+    if (!st) {
+        var map = new mapsLib.Map(box, {center: start, zoom: has ? 16 : 9, mapId: '{{ google_maps_map_id|default:"DEMO_MAP_ID"|escapejs }}', streetViewControl: false});
+        var marker = new markerLib.AdvancedMarkerElement({position: start, gmpDraggable: true});
+        st = f.__clkPlace = {map: map, marker: marker};
+        map.addListener('click', function (ev) {
+            marker.position = ev.latLng; marker.map = map;
+            clkSetPlace(f, ev.latLng.lat(), ev.latLng.lng());
+        });
+        marker.addListener('dragend', function () {
+            var p = marker.position;
+            clkSetPlace(f, typeof p.lat === 'function' ? p.lat() : p.lat, typeof p.lng === 'function' ? p.lng() : p.lng);
+        });
+    } else {
+        st.map.setCenter(start);
+        st.map.setZoom(has ? 16 : 9);
+    }
+    // La marca empieza donde se fichó; solo cuenta cuando se mueve.
+    st.marker.position = start;
+    st.marker.map = has ? st.map : null;
+    box.scrollIntoView({block: 'nearest'});
 }
 // S144: anular la jornada entera (todas sus pulsaciones, un solo motivo).
 function clkOpenCancelShift(btn) {
@@ -240,8 +307,8 @@ function clkOpenCancelShift(btn) {
             <td>{{ item.corrected_at|date:"d/m/Y H:i" }}</td>
             <td>{{ item.corrected_by }}</td>
             <td>{{ item.correction.get_action_display }}</td>
-            <td>{% if item.old_time %}{{ item.correction.get_old_kind_display }}{% if item.correction.old_clock_type %} ({{ item.correction.old_clock_type.name }}){% endif %} {{ item.old_time|date:"d/m H:i" }}{% else %}—{% endif %}</td>
-            <td>{% if item.is_cancel %}<span class="text-danger">anulado</span>{% else %}{{ item.correction.get_new_kind_display }}{% if item.correction.new_clock_type %} ({{ item.correction.new_clock_type.name }}){% endif %} {{ item.new_time|date:"d/m H:i" }}{% endif %}</td>
+            <td>{% if item.old_time %}{{ item.correction.get_old_kind_display }}{% if item.correction.old_clock_type %} ({{ item.correction.old_clock_type.name }}){% endif %} {{ item.old_time|date:"d/m H:i" }}{% if item.relocated %}<div class="text-muted"><i class="bi bi-geo-alt"></i> {{ item.old_place|default:"sin ubicación" }}</div>{% endif %}{% else %}—{% endif %}</td>
+            <td>{% if item.is_cancel %}<span class="text-danger">anulado</span>{% else %}{{ item.correction.get_new_kind_display }}{% if item.correction.new_clock_type %} ({{ item.correction.new_clock_type.name }}){% endif %} {{ item.new_time|date:"d/m H:i" }}{% if item.relocated %}<div class="text-primary"><i class="bi bi-geo-alt-fill"></i> {{ item.new_place }} (rectificada en el mapa)</div>{% endif %}{% endif %}</td>
             <td>{{ item.correction.reason }}</td>
         </tr>
         {% endfor %}

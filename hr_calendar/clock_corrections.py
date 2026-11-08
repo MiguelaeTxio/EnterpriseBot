@@ -22,6 +22,7 @@ ClockCorrection guarda quién, cuándo, el valor anterior, el nuevo y el
 motivo.
 """
 import uuid
+from decimal import Decimal
 
 from django.db import transaction
 
@@ -41,7 +42,8 @@ class ClockCorrectionError(Exception):
 
 
 def correct_event(event_id, corrected_by, action, reason, new_kind="",
-                  new_pressed_at=None, user_agent="", new_clock_type_id=None):
+                  new_pressed_at=None, user_agent="", new_clock_type_id=None,
+                  new_location=None):
     """
     Correct one current press. Returns the ClockCorrection.
 
@@ -55,6 +57,9 @@ def correct_event(event_id, corrected_by, action, reason, new_kind="",
     corregir otra vez se corrige la pulsación nueva).
     S141: `new_clock_type_id` es el tipo de fichaje de la pulsación nueva
     (entrada o cambio de tipo); la salida nunca lleva tipo.
+    S147 (Miguel Ángel): `new_location` = (lat, lon) rectifica la
+    ubicación con el mapa; queda en la pulsación nueva (la original
+    conserva la suya) y en el historial, como el resto.
     """
     reason = (reason or "").strip()[:MAX_REASON]
     if not reason:
@@ -86,6 +91,7 @@ def correct_event(event_id, corrected_by, action, reason, new_kind="",
             new_clock_type = _clock_type(event, new_kind, new_clock_type_id)
             if (new_kind == event.kind
                     and new_clock_type == event.clock_type
+                    and new_location is None
                     and new_pressed_at
                     == event.pressed_at.replace(second=0, microsecond=0)):
                 raise ClockCorrectionError("La corrección no cambia nada.")
@@ -96,10 +102,11 @@ def correct_event(event_id, corrected_by, action, reason, new_kind="",
                 kind=new_kind,
                 client_id="corr-%s" % uuid.uuid4().hex,
                 pressed_at=new_pressed_at,
-                gps_error="Corrección del supervisor",
                 sent_by=ClockEvent.SentBy.CORRECTION,
                 user_agent=(user_agent or "")[:200],
                 clock_type=new_clock_type,
+                **_location_fields(new_location,
+                                   "Corrección del supervisor"),
                 # S143: la corrección conserva "No he parado para comer".
                 no_meal_break=event.no_meal_break,
             )
@@ -122,7 +129,8 @@ def correct_event(event_id, corrected_by, action, reason, new_kind="",
 
 
 def add_event(company_user, person, corrected_by, new_kind, new_pressed_at,
-              reason, user_agent="", new_clock_type_id=None):
+              reason, user_agent="", new_clock_type_id=None,
+              new_location=None):
     """
     Add a press the worker did not make. Returns the ClockCorrection.
 
@@ -160,10 +168,10 @@ def add_event(company_user, person, corrected_by, new_kind, new_pressed_at,
             kind=new_kind,
             client_id="add-%s" % uuid.uuid4().hex,
             pressed_at=new_pressed_at,
-            gps_error="Añadido por el supervisor",
             sent_by=ClockEvent.SentBy.CORRECTION,
             user_agent=(user_agent or "")[:200],
             clock_type=new_clock_type,
+            **_location_fields(new_location, "Añadido por el supervisor"),
         )
         return ClockCorrection.objects.create(
             event=None,
@@ -179,6 +187,23 @@ def add_event(company_user, person, corrected_by, new_kind, new_pressed_at,
             corrected_by=corrected_by,
             user_agent=(user_agent or "")[:200],
         )
+
+
+def _location_fields(location, no_location_note):
+    """
+    Press fields for a location set on the map (or nothing).
+    ---
+    Campos de la pulsación para la ubicación marcada en el mapa (S147);
+    sin ubicación, sin posición y con `no_location_note`, como antes.
+    """
+    if location is None:
+        return {"gps_error": no_location_note}
+    return {
+        "latitude": Decimal("%.6f" % location[0]),
+        "longitude": Decimal("%.6f" % location[1]),
+        "accuracy_m": None,
+        "gps_error": "Ubicación rectificada en el mapa por el supervisor",
+    }
 
 
 def _clock_type(event, new_kind, clock_type_id):
