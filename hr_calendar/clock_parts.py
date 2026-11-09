@@ -1122,3 +1122,102 @@ def on_clock_out(event):
                 "WorkOrder #%d.", work_order.pk,
             )
     return ClockOutOutcome(text=result, notice=notice, ok=not problems)
+
+
+# ------------------------------------------------------------------
+# S146: a supervisor's correction carries the parte with it
+# ------------------------------------------------------------------
+def day_bounds(company_user, work_date):
+    """
+    (start, end) of the day's clocked stretch, rounded local times, or
+    (None, None). Taken before a correction to compare afterwards.
+    ---
+    (inicio, fin) del tramo fichado del día, horas locales redondeadas,
+    o (None, None). Se toma antes de una corrección para comparar.
+    """
+    stretches = day_stretches(company_user, work_date)
+    if not stretches:
+        return (None, None)
+    return (stretches[0].start, stretches[0].end)
+
+
+def resync_parte_after_correction(company_user, work_date, before):
+    """
+    After a supervisor corrects the presses of a day (S146, Miguel
+    Ángel: he forgot to clock in at 8 and clocked at 10, "en el parte
+    las tareas habría que alargarlas porque estuvo haciendo lo mismo"):
+    the task that began at the old clocked start now begins at the new
+    one, and the task that ended at the old clocked end now ends at the
+    new one. The worker's other tasks are not touched. Then the parte is
+    checked again against the clock (on_clock_out: closes it if it
+    matches, reopens it if it no longer does). `before` is day_bounds()
+    taken before the correction. Returns a ClockOutOutcome.
+    ---
+    Tras corregir el supervisor las pulsaciones de un día: la tarea que
+    empezaba en la entrada fichada antigua empieza en la nueva, y la que
+    acababa en la salida antigua acaba en la nueva; el resto no se toca.
+    Después se vuelve a cotejar el parte con lo fichado (on_clock_out).
+    """
+    from work_order_processor.models import WorkOrderEntryLine
+
+    entry = _day_entry(company_user, work_date)
+    if entry is None:
+        return ClockOutOutcome()
+    old_start, old_end = before or (None, None)
+    new_start, new_end = day_bounds(company_user, work_date)
+    lines = list(
+        WorkOrderEntryLine.objects.filter(entry=entry)
+        .order_by("hc", "line_number")
+    )
+    timed = [line for line in lines if line.hc and line.hf]
+    lunch = None
+    if not entry.no_lunch_break and (
+        entry.lunch_break_start and entry.lunch_break_end
+    ):
+        lunch = (entry.lunch_break_start, entry.lunch_break_end)
+    changed = []
+    if timed:
+        first, last = timed[0], timed[-1]
+        if (old_start and new_start and new_start != old_start
+                and first.hc == old_start and new_start < first.hf):
+            changed.append((first, "hc", new_start))
+        if (old_end and new_end and new_end != old_end
+                and last.hf == old_end and new_end > last.hc):
+            changed.append((last, "hf", new_end))
+    done = []
+    if changed:
+        _backup_log(entry.work_order, entry, lines,
+                    "corrección de fichajes del supervisor")
+        with transaction.atomic():
+            for line, field, value in changed:
+                old = getattr(line, field)
+                setattr(line, field, value)
+                line.delta_hours = _net_hours(line.hc, line.hf, lunch)
+                line.save(update_fields=[field, "delta_hours"])
+                done.append("tarea %d: %s %s → %s" % (
+                    line.line_number,
+                    "inicio" if field == "hc" else "fin",
+                    _fmt(old), _fmt(value)))
+        logger.info(
+            "# [FICHAJE-PARTE] WorkOrder #%d (usuario #%d, %s) tras "
+            "corrección: %s", entry.work_order_id, company_user.pk,
+            work_date, "; ".join(done),
+        )
+    clock_out = _last_out(company_user, work_date)
+    outcome = on_clock_out(clock_out) if clock_out else ClockOutOutcome()
+    if done:
+        outcome.text = "; ".join(filter(None, ["; ".join(done),
+                                               outcome.text]))
+        entry.work_order.refresh_from_db(fields=["status"])
+        if entry.work_order.status == "DONE":
+            try:
+                from work_order_processor.services import (
+                    generate_work_order_excel,
+                )
+                generate_work_order_excel(entry.work_order_id)
+            except Exception:
+                logger.exception(
+                    "# [FICHAJE-PARTE] No se pudo generar el Excel del "
+                    "WorkOrder #%d.", entry.work_order_id,
+                )
+    return outcome

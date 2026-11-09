@@ -29,6 +29,7 @@ solo lectura.
 import datetime
 from decimal import Decimal
 import io
+import logging
 import os
 
 from django.db.models import Q
@@ -71,6 +72,8 @@ NO_SECTION = "none"
 _MAX_SORT_KEYS = 4
 # S145: cuatro años, como Fichajes del trabajador (atajo "Cuatro años").
 _MAX_RANGE_DAYS = 4 * 366
+
+logger = logging.getLogger(__name__)
 
 
 def _last_day_time(row, field):
@@ -1219,6 +1222,48 @@ def _place_of(event):
         event.latitude, event.longitude)
 
 
+def _resync_partes(person, before):
+    """
+    After a correction, carry each touched day's parte with it
+    (hr_calendar.clock_parts.resync_parte_after_correction, S146).
+    Returns a text for the supervisor ("" = nothing changed).
+    ---
+    Tras una corrección, lleva el parte de cada día tocado con ella
+    (S146). Devuelve un texto para el supervisor ("" = nada cambió).
+    """
+    from hr_calendar.clock_parts import resync_parte_after_correction
+
+    texts = []
+    for day, bounds in sorted(before.items()):
+        try:
+            outcome = resync_parte_after_correction(
+                person.company_user, day, bounds)
+        except Exception:
+            logger.exception(
+                "# [FICHAJE-PARTE] Fallo al ajustar el parte del %s del "
+                "usuario #%s tras la corrección.", day,
+                person.company_user_id,
+            )
+            continue
+        if outcome.text:
+            texts.append("Parte del %s: %s." % (
+                day.strftime("%d/%m"), outcome.text))
+    return " ".join(texts)
+
+
+def _bounds_before(person, moments):
+    """
+    {day: day_bounds} of the local days of `moments`, before correcting.
+    ---
+    {día: day_bounds} de los días locales de `moments`, antes de
+    corregir.
+    """
+    from hr_calendar.clock_parts import day_bounds
+
+    days = {timezone.localtime(m).date() for m in moments if m}
+    return {day: day_bounds(person.company_user, day) for day in days}
+
+
 def apply_correction(request, person):
     """
     Apply the posted correction to a worker's presses.
@@ -1275,6 +1320,8 @@ def apply_correction(request, person):
         ).values_list("pk", flat=True))
         if not own:
             return "", "Esas jornadas no son de este trabajador.", form
+        before = _bounds_before(person, ClockEvent.objects.filter(
+            pk__in=own).values_list("pressed_at", flat=True))
         try:
             with transaction.atomic():
                 for pk in own:
@@ -1282,10 +1329,13 @@ def apply_correction(request, person):
                                   form["reason"], user_agent=agent)
         except ClockCorrectionError as exc:
             return "", str(exc), form
-        return ("Anulados %d fichajes. Se ven tachados en su día y quedan "
-                "en el historial." % len(own)), "", {}
+        return " ".join(filter(None, (
+            "Anulados %d fichajes. Se ven tachados en su día y quedan "
+            "en el historial." % len(own),
+            _resync_partes(person, before)))), "", {}
     # S144: añadir una pulsación (partir un tramo, o la que falta).
     if form["action"] == ClockCorrection.Action.ADD:
+        before = _bounds_before(person, [new_pressed_at])
         try:
             add_event(person.company_user, person, by, form["new_kind"],
                       new_pressed_at, form["reason"], user_agent=agent,
@@ -1293,8 +1343,10 @@ def apply_correction(request, person):
                       new_location=new_location)
         except ClockCorrectionError as exc:
             return "", str(exc), form
-        return ("Fichaje añadido. Queda en el historial con quién lo "
-                "añadió, cuándo y por qué."), "", {}
+        return " ".join(filter(None, (
+            "Fichaje añadido. Queda en el historial con quién lo "
+            "añadió, cuándo y por qué.",
+            _resync_partes(person, before)))), "", {}
     event_id = form["event_id"]
     if (not event_id.isdigit() or person.company_user_id is None
             or not ClockEvent.objects.filter(
@@ -1302,6 +1354,10 @@ def apply_correction(request, person):
                 company_user_id=person.company_user_id,
             ).exists()):
         return "", "Ese fichaje no es de este trabajador.", form
+    before = _bounds_before(person, [
+        ClockEvent.objects.get(pk=int(event_id)).pressed_at,
+        new_pressed_at,
+    ])
     try:
         correction = correct_event(
             int(event_id), by, form["action"], form["reason"],
@@ -1312,8 +1368,10 @@ def apply_correction(request, person):
         )
     except ClockCorrectionError as exc:
         return "", str(exc), form
-    return ("%s guardada. El fichaje original se conserva en el "
-            "historial." % correction.get_action_display()), "", {}
+    return " ".join(filter(None, (
+        "%s guardada. El fichaje original se conserva en el "
+        "historial." % correction.get_action_display(),
+        _resync_partes(person, before)))), "", {}
 
 
 class ClockEventCorrectView(SupervisorAccessMixin, View):
