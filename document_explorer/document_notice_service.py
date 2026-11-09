@@ -354,20 +354,35 @@ def _compute_document_notices(domain):
         requirement_of = {s.pk: s.job_position for s in subjects}
         subject_model = PersonIdentity
     else:
+        from django.db.models import Q
+
+        from document_explorer.models import MachineAlertRule
+
+        # S148: también las máquinas con avisos propios
+        # (MachineAlertRule), aunque no tengan requisito.
+        own_ids = set(MachineAlertRule.objects.values_list(
+            "machine_id", flat=True))
         subjects = list(
-            MachineAsset.objects.filter(
-                is_active=True, document_requirement__isnull=False,
-                document_requirement__is_active=True,
+            MachineAsset.objects.filter(is_active=True).filter(
+                Q(document_requirement__isnull=False,
+                  document_requirement__is_active=True)
+                | Q(pk__in=own_ids),
             ).select_related("document_requirement"),
         )
-        requirement_of = {s.pk: s.document_requirement for s in subjects}
+        requirement_of = {
+            s.pk: s.document_requirement
+            if s.document_requirement_id
+            and s.document_requirement.is_active else None
+            for s in subjects
+        }
         subject_model = MachineAsset
 
     pending, scheduled, calendar_items = [], [], []
     if not subjects:
         return pending, scheduled, calendar_items
 
-    requirement_ids = {req.pk for req in requirement_of.values()}
+    requirement_ids = {
+        req.pk for req in requirement_of.values() if req is not None}
     rules = {}
     for rule in RequirementAlertRule.objects.filter(
         job_position_id__in=requirement_ids,
@@ -375,7 +390,19 @@ def _compute_document_notices(domain):
         rules.setdefault(rule.job_position_id, {})[
             rule.document_type_id
         ] = rule
-    if not rules:
+    # S148: avisos propios de cada máquina; sustituyen a los del
+    # requisito para ese tipo.
+    own_rules = {}
+    if domain != DOMAIN_PERSONAL:
+        from document_explorer.models import MachineAlertRule
+
+        for rule in MachineAlertRule.objects.filter(
+            machine_id__in=[s.pk for s in subjects],
+        ).select_related("document_type"):
+            own_rules.setdefault(rule.machine_id, {})[
+                rule.document_type_id
+            ] = rule
+    if not rules and not own_rules:
         return pending, scheduled, calendar_items
 
     categories_of = {}
@@ -387,7 +414,8 @@ def _compute_document_notices(domain):
         )
 
     type_ids = {
-        type_id for by_type in rules.values() for type_id in by_type
+        type_id for by_type in list(rules.values())
+        + list(own_rules.values()) for type_id in by_type
     }
     # S127: subrogaciones y conversiones también cubren el alta.
     cover_ids = set(DocumentTypeCatalog.objects.filter(
@@ -438,7 +466,9 @@ def _compute_document_notices(domain):
 
     for subject in subjects:
         requirement = requirement_of[subject.pk]
-        subject_rules = rules.get(requirement.pk)
+        subject_rules = dict(
+            rules.get(requirement.pk, {}) if requirement else {})
+        subject_rules.update(own_rules.get(subject.pk, {}))
         if not subject_rules:
             continue
         entries = entries_by_subject.get(subject.pk, [])
@@ -448,7 +478,8 @@ def _compute_document_notices(domain):
         present_codes = {entry.document_type.code for entry in entries}
         has_identity = bool(set(IDENTITY_CODES) & present_codes)
         identity_notified = False
-        categories = categories_of.get(requirement.pk, [])
+        categories = (
+            categories_of.get(requirement.pk, []) if requirement else [])
         label = _subject_label(subject, domain)
         # H30 (S122): datos del sujeto que usan los ámbitos de avisos
         # de cada supervisor (notice_recipients).
@@ -465,8 +496,10 @@ def _compute_document_notices(domain):
                 "domain": domain,
                 "subject_id": subject.pk,
                 "subject_label": label,
-                "requirement_name": requirement.name,
-                "requirement_id": requirement.pk,
+                "requirement_name": (
+                    requirement.name if requirement
+                    else "Avisos de la máquina"),
+                "requirement_id": requirement.pk if requirement else None,
                 "subject_company": subject_company,
                 "subject_family": subject_family,
                 "document_label": doc_type.label,

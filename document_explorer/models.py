@@ -3147,6 +3147,87 @@ class RequirementAlertRule(models.Model):
         return f"{self.job_position} -- {self.document_type}"
 
 
+class MachineAlertRule(models.Model):
+    """
+    S148. Document notices of ONE cost centre.
+
+    ---
+
+    S148. Avisos de documentación de UN centro de gasto. Miguel Ángel:
+    "podemos dar avisos desde la propia pantalla de avisos para
+    hacerlo de forma masiva, pero sería conveniente también poder
+    colocar avisos a cada centro de gasto para los determinados
+    documentos que tienen caducidad". Mismos campos que
+    `RequirementAlertRule`; para ese tipo y esa máquina sustituye a la
+    del requisito (y vale aunque la máquina no tenga requisito).
+    """
+
+    machine = models.ForeignKey(
+        "fleet.MachineAsset",
+        on_delete=models.CASCADE,
+        related_name="alert_rules",
+        verbose_name="Centro de gasto",
+    )
+    document_type = models.ForeignKey(
+        DocumentTypeCatalog,
+        on_delete=models.CASCADE,
+        related_name="machine_alert_rules",
+        verbose_name="Tipo documental",
+    )
+    notify_missing = models.BooleanField(
+        default=False, verbose_name="Avisar si falta",
+    )
+    notify_30_days = models.BooleanField(
+        default=False, verbose_name="Avisar 30 días antes",
+    )
+    notify_15_days = models.BooleanField(
+        default=False, verbose_name="Avisar 15 días antes",
+    )
+    notify_7_days = models.BooleanField(
+        default=False, verbose_name="Avisar 7 días antes",
+    )
+    notify_day_before = models.BooleanField(
+        default=False, verbose_name="Avisar el día anterior",
+    )
+    custom_1_value = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        verbose_name="Aviso personalizado 1 -- antelación",
+    )
+    custom_1_unit = models.CharField(
+        max_length=6, choices=RequirementAlertRule.UNIT_CHOICES,
+        blank=True, verbose_name="Aviso personalizado 1 -- unidad",
+    )
+    custom_2_value = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        verbose_name="Aviso personalizado 2 -- antelación",
+    )
+    custom_2_unit = models.CharField(
+        max_length=6, choices=RequirementAlertRule.UNIT_CHOICES,
+        blank=True, verbose_name="Aviso personalizado 2 -- unidad",
+    )
+    updated_by = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+", verbose_name="Última edición por",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True, verbose_name="Última edición",
+    )
+
+    class Meta:
+        verbose_name = "Aviso de un centro de gasto"
+        verbose_name_plural = "Avisos de centros de gasto"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("machine", "document_type"),
+                name="unique_alert_rule_per_machine_type",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.machine_id} -- {self.document_type}"
+
+
 class NoticeRecipientScope(models.Model):
     """
     H30 (S122). Which document notices one documentation supervisor

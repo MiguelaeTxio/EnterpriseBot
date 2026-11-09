@@ -310,6 +310,118 @@ puede ser es que la interfaz no informe de lo que pasa."
             </div>
         </div>
     </div>
+    {# S148: avisos propios de este centro de gasto (sustituyen a los de su requisito para ese tipo). #}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseMachineAlerts">
+                <i class="bi bi-bell me-2"></i>Avisos de este centro de gasto
+                <span class="badge bg-secondary ms-2" id="machineAlertsOwnBadge">{{ machine_alerts_own_count }}</span>
+            </button>
+        </h2>
+        <div id="collapseMachineAlerts" class="accordion-collapse collapse">
+            <div class="accordion-body">
+                <p class="small text-muted mb-2">Avisos de caducidad (y de falta) solo para esta máquina. Para cada documento sustituyen a los de su requisito; con todo desmarcado vuelve a los del requisito. Los avisos para muchas máquinas a la vez siguen en la pestaña Avisos.</p>
+                <div id="machineAlertsBody"></div>
+                <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
+                    <select id="machineAlertsAdd" class="form-select form-select-sm w-auto" {% if not can_edit_machine %}disabled{% endif %}>
+                        <option value="">+ Añadir aviso de otro documento con caducidad…</option>
+                    </select>
+                    {% if can_edit_machine %}
+                    <button type="button" id="machineAlertsSaveBtn" class="btn btn-sm btn-primary ms-auto">Guardar avisos</button>
+                    {% endif %}
+                </div>
+                <div id="machineAlertsResult" class="small mt-2"></div>
+            </div>
+        </div>
+    </div>
+    {{ machine_alerts_data|json_script:"machineAlertsData" }}
+    <script>
+    (function () {
+        const data = JSON.parse(document.getElementById('machineAlertsData').textContent);
+        const body = document.getElementById('machineAlertsBody');
+        const addSelect = document.getElementById('machineAlertsAdd');
+        const canEdit = {{ can_edit_machine|yesno:"true,false" }};
+        const LABELS = {missing: 'Si falta', d30: '30 días', d15: '15 días', d7: '7 días', d1: 'Día anterior'};
+        let rows = data.shown.slice();
+        let others = data.others.slice();
+        const draft = {};
+        function esc(text) { const d = document.createElement('div'); d.textContent = text; return d.innerHTML; }
+        function empty() { return {missing: false, d30: false, d15: false, d7: false, d1: false, c1v: null, c1u: '', c2v: null, c2u: ''}; }
+        function summary(cfg) {
+            if (!cfg) return '';
+            const parts = Object.keys(LABELS).filter(function (k) { return cfg[k]; }).map(function (k) { return LABELS[k]; });
+            [1, 2].forEach(function (n) { if (cfg['c' + n + 'v']) parts.push(cfg['c' + n + 'v'] + ' ' + (cfg['c' + n + 'u'] === 'MONTHS' ? 'meses' : 'días')); });
+            return parts.join(', ') || 'ninguno';
+        }
+        function check(t, field, cfg) {
+            const id = 'mAlert_' + t.id + '_' + field;
+            return '<div class="form-check form-check-inline mb-0"><input class="form-check-input" type="checkbox" id="' + id + '" data-type-id="' + t.id + '" data-field="' + field + '"' + (cfg[field] ? ' checked' : '') + (canEdit ? '' : ' disabled') + '><label class="form-check-label small" for="' + id + '">' + LABELS[field] + '</label></div>';
+        }
+        function custom(t, n, cfg) {
+            const v = cfg['c' + n + 'v'] ?? '';
+            const u = cfg['c' + n + 'u'] || '';
+            const dis = canEdit ? '' : ' disabled';
+            return '<div class="input-group input-group-sm w-auto"><span class="input-group-text">Personalizado ' + n + '</span><input type="number" min="1" max="999" class="form-control" style="max-width:5rem" value="' + v + '" data-type-id="' + t.id + '" data-field="c' + n + 'v"' + dis + '><select class="form-select" data-type-id="' + t.id + '" data-field="c' + n + 'u"' + dis + '><option value=""' + (u === '' ? ' selected' : '') + '>--</option><option value="DAYS"' + (u === 'DAYS' ? ' selected' : '') + '>días</option><option value="MONTHS"' + (u === 'MONTHS' ? ' selected' : '') + '>meses</option></select></div>';
+        }
+        function render() {
+            if (!rows.length) {
+                body.innerHTML = '<p class="small text-muted mb-0">Esta máquina no tiene documentos con caducidad ni avisos de su requisito.</p>';
+            } else {
+                body.innerHTML = rows.map(function (t) {
+                    const cfg = draft[t.id] || (draft[t.id] = Object.assign(empty(), t.own || {}));
+                    let controls = check(t, 'missing', cfg);
+                    if (t.tracks_expiry) { controls += check(t, 'd30', cfg) + check(t, 'd15', cfg) + check(t, 'd7', cfg) + check(t, 'd1', cfg); }
+                    const hint = t.own ? '<span class="badge bg-primary ms-1">Propio</span>' : (t.requirement ? '<span class="text-muted small ms-1">Ahora, los del requisito ' + esc(data.requirement) + ': ' + esc(summary(t.requirement)) + '</span>' : '<span class="text-muted small ms-1">Sin avisos</span>');
+                    const customs = t.tracks_expiry ? '<div class="d-flex flex-wrap gap-2 mt-1">' + custom(t, 1, cfg) + custom(t, 2, cfg) + '</div>' : '';
+                    return '<div class="border rounded p-2 mb-2"><div class="fw-semibold small mb-1">' + esc(t.label) + hint + '</div><div class="d-flex flex-wrap gap-1">' + controls + '</div>' + customs + '</div>';
+                }).join('');
+            }
+            addSelect.innerHTML = '<option value="">+ Añadir aviso de otro documento con caducidad…</option>' + others.map(function (t) { return '<option value="' + t.id + '">' + esc(t.label) + '</option>'; }).join('');
+        }
+        body.addEventListener('change', function (ev) {
+            const el = ev.target;
+            const id = el.dataset.typeId;
+            const field = el.dataset.field;
+            if (!id || !field) return;
+            const cfg = draft[id];
+            if (el.type === 'checkbox') { cfg[field] = el.checked; }
+            else if (field.endsWith('v')) { cfg[field] = el.value === '' ? null : Number(el.value); }
+            else { cfg[field] = el.value; }
+        });
+        addSelect.addEventListener('change', function () {
+            const id = Number(addSelect.value);
+            const t = others.find(function (o) { return o.id === id; });
+            if (!t) return;
+            others = others.filter(function (o) { return o.id !== id; });
+            rows.push(t);
+            render();
+        });
+        const saveBtn = document.getElementById('machineAlertsSaveBtn');
+        if (saveBtn) {
+            saveBtn.addEventListener('click', function () {
+                const result = document.getElementById('machineAlertsResult');
+                const form = new FormData();
+                form.append('alert_rules', JSON.stringify(draft));
+                saveBtn.disabled = true;
+                fetch("{% url 'panel:fleet_machine_alerts_save' pk=machine.pk %}", {
+                    method: 'POST', body: form,
+                    headers: {'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value},
+                }).then(function (r) { return r.json(); }).then(function (res) {
+                    saveBtn.disabled = false;
+                    if (!res.ok) { result.innerHTML = '<span class="text-danger">No se ha guardado: ' + esc(res.error || 'error') + '</span>'; return; }
+                    rows.forEach(function (t) { t.own = res.rules[String(t.id)] || null; });
+                    document.getElementById('machineAlertsOwnBadge').textContent = Object.keys(res.rules).length;
+                    result.innerHTML = '<span class="text-success">Avisos guardados.</span>';
+                    render();
+                }).catch(function () {
+                    saveBtn.disabled = false;
+                    result.innerHTML = '<span class="text-danger">No se ha guardado: sin conexión con el servidor.</span>';
+                });
+            });
+        }
+        render();
+    }());
+    </script>
     {% comment %}
     H30 (S121) -- accesorios de elevación entregados ahora a esta
     máquina, solo consulta: el CRUD vive en la pestaña "Accesorios de

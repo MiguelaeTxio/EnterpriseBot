@@ -199,6 +199,7 @@ from panel.views_personal_export import (
     PersonalExportView,
 )
 from panel.views_document_split import DocumentSplitView
+from panel.views_machine_alerts import MachineAlertRulesSaveView
 from panel.views_machine_intake import MachineIntakeExtractView
 from panel.views_machine_groups import (
     MachineGroupDeleteView,
@@ -921,6 +922,11 @@ urlpatterns = [
     ),
     path(
         "fleet/create/", MachineAssetCreateView.as_view(), name="fleet_create"
+    ),
+    path(
+        "fleet/<int:pk>/avisos/guardar/",
+        MachineAlertRulesSaveView.as_view(),
+        name="fleet_machine_alerts_save",
     ),
     path(
         "fleet/alta/leer-documentos/",

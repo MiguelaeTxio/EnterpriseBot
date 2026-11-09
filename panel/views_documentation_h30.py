@@ -909,6 +909,7 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
         lifting_accessories = _annotate(accessories_for_machine(machine))
         # H30 (S131): revisiones por horas y km (plan, revisiones hechas
         # y lecturas), apartado propio de la ficha.
+        from panel.views_machine_alerts import machine_alerts_context
         from panel.views_machine_service import machine_service_context
 
         return render(
@@ -952,6 +953,11 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
                 "back_label": back_label,
                 "form": form,
                 "can_edit_machine": self._can_edit(request),
+                # S148: avisos propios de este centro de gasto.
+                **machine_alerts_context(machine, {
+                    entry.document_type_id for entry in entries_list
+                    if entry.document_type_id
+                }),
                 "machine_saved": saved,
                 "machine_form_open": saved or form.errors,
                 # S119, punto 5: con errores de validación se reabre ya en
