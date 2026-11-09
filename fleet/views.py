@@ -28,6 +28,7 @@ from django.shortcuts import get_object_or_404, render
 from django.utils.timezone import now
 from django.views import View
 
+from document_explorer import machine_local_folder_service
 from document_explorer.machine_folder_service import sync_machine_documents
 from fleet.forms import MachineAssetForm
 from fleet.models import MachineAsset
@@ -662,6 +663,10 @@ class MachineAssetCreateView(FleetManageAccessMixin, View):
             asset.company = company
             asset.code = asset.code.strip().upper()
             asset.save()
+            # H31 (S148): su carpeta en local (OneDrive), como en el
+            # alta de Personal: el agente la crea en su familia.
+            machine_local_folder_service.create_for_machine(
+                asset, requested_by=company_user, always=True)
             fragment_ctx = _build_fragment_context(
                 company, company_user, request
             )
@@ -721,6 +726,8 @@ class MachineAssetDeactivateView(FleetManageAccessMixin, View):
         except MachineAsset.DoesNotExist:
             raise Http404
 
+        previous_local = machine_local_folder_service.current_local_folder(
+            asset)
         asset.is_active = False
         asset.save(update_fields=["is_active"])
         # H30 (S119), punto 3: la carpeta de documentos sigue al estado
@@ -728,6 +735,10 @@ class MachineAssetDeactivateView(FleetManageAccessMixin, View):
         # INACTIVAS/{CÓDIGO}), solo virtual; al reactivarla, sus
         # documentos recuperan también el nombre canónico.
         sync_machine_documents(asset)
+        # H31 (S148): y su carpeta en local (OneDrive) a la de bajas de
+        # su familia, o de vuelta.
+        machine_local_folder_service.follow_change(
+            asset, previous_local, requested_by=company_user)
 
         fragment_ctx = _build_fragment_context(company, company_user, request)
         return render(
@@ -773,6 +784,8 @@ class MachineAssetReactivateView(FleetManageAccessMixin, View):
         except MachineAsset.DoesNotExist:
             raise Http404
 
+        previous_local = machine_local_folder_service.current_local_folder(
+            asset)
         asset.is_active = True
         asset.save(update_fields=["is_active"])
         # H30 (S119), punto 3: la carpeta de documentos sigue al estado
@@ -780,6 +793,10 @@ class MachineAssetReactivateView(FleetManageAccessMixin, View):
         # INACTIVAS/{CÓDIGO}), solo virtual; al reactivarla, sus
         # documentos recuperan también el nombre canónico.
         sync_machine_documents(asset)
+        # H31 (S148): y su carpeta en local (OneDrive) a la de bajas de
+        # su familia, o de vuelta.
+        machine_local_folder_service.follow_change(
+            asset, previous_local, requested_by=company_user)
 
         fragment_ctx = _build_fragment_context(company, company_user, request)
         return render(
@@ -910,11 +927,21 @@ class MachineAssetBulkStatusView(FleetManageAccessMixin, View):
         if action not in ("deactivate", "reactivate"):
             return HttpResponse("Acción no válida.", status=400)
         target_active = action == "reactivate"
-        updated = (
-            _selected_assets(company, request)
-            .exclude(is_active=target_active)
-            .update(is_active=target_active)
-        )
+        # H31 (S148): una a una, como el botón de cada fila: hasta ahora
+        # el cambio masivo no movía sus documentos a ACTIVAS/INACTIVAS
+        # (sync_machine_documents, S119) y ahora además mueve su
+        # carpeta local (OneDrive).
+        updated = 0
+        for asset in _selected_assets(company, request).exclude(
+                is_active=target_active):
+            previous_local = (
+                machine_local_folder_service.current_local_folder(asset))
+            asset.is_active = target_active
+            asset.save(update_fields=["is_active"])
+            sync_machine_documents(asset)
+            machine_local_folder_service.follow_change(
+                asset, previous_local, requested_by=company_user)
+            updated += 1
         verb = "reactivado" if target_active else "dado de baja"
         message = (
             f"{updated} centro{'s' if updated != 1 else ''} de gasto "

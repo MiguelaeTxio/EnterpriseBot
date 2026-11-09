@@ -281,8 +281,14 @@ def _queue_entry_hooks(subject, document_type, entry):
     recalculaba la empresa.
     """
     from document_explorer.driving_licence_service import queue_harvest
+    from document_explorer.machine_local_folder_service import (
+        queue_for_entry,
+    )
 
     queue_harvest(entry)
+    # H31 (S148): lo que entra por el panel baja también a la carpeta
+    # local (OneDrive) de su persona o máquina, como en el alta.
+    queue_for_entry(entry)
     if isinstance(subject, PersonIdentity):
         from document_explorer.employer_service import (
             queue_contract_refresh,
@@ -393,9 +399,9 @@ def apply_substitution(
     return superseded_count
 
 
-
 def _subject_of(entry):
-    model = entry.domain_content_type.model_class() if entry.domain_content_type_id else None
+    model = (entry.domain_content_type.model_class()
+             if entry.domain_content_type_id else None)
     if model not in (MachineAsset, PersonIdentity):
         return None
     return model.objects.filter(pk=entry.domain_object_id).first()
@@ -436,7 +442,8 @@ def change_document_type(entry, new_type):
             superseding_content_type=entry_ct, superseding_object_id=entry.pk,
             superseded_content_type=entry_ct, document_type=old_code,
         )
-        restored_ids = list(logs.values_list("superseded_object_id", flat=True))
+        restored_ids = list(
+            logs.values_list("superseded_object_id", flat=True))
         restored_count = DocumentIndexEntry.objects.filter(
             pk__in=restored_ids, is_obsolete=True,
         ).update(is_obsolete=False)

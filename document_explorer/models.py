@@ -4436,9 +4436,16 @@ class LocalDownloadJob(models.Model):
         (STATUS_DONE, "Terminada"),
     ]
 
+    # H31 (S148): también máquinas (su carpeta en DOC. MAQUINAS); un
+    # trabajo es de una persona o de una máquina, nunca de las dos.
     person = models.ForeignKey(
-        PersonIdentity, on_delete=models.CASCADE,
+        PersonIdentity, on_delete=models.CASCADE, null=True, blank=True,
         related_name="local_download_jobs", verbose_name="Trabajador",
+    )
+    machine = models.ForeignKey(
+        "fleet.MachineAsset", on_delete=models.CASCADE, null=True,
+        blank=True, related_name="local_download_jobs",
+        verbose_name="Máquina",
     )
     requested_by = models.ForeignKey(
         "ivr_config.CompanyUser", null=True, blank=True,
@@ -4449,6 +4456,13 @@ class LocalDownloadJob(models.Model):
         auto_now_add=True, verbose_name="Creada",
     )
     files = models.JSONField(default=list, verbose_name="Archivos")
+    # H31 (S148): documentos sustituidos que pasan, dentro de la carpeta
+    # local, a su subcarpeta OBSOLETOS: [{"path": ruta local actual,
+    # "dest": ruta en OBSOLETOS}]. Miguel Ángel: "nuevo DNI lo subes y
+    # te olvidas".
+    obsolete_files = models.JSONField(
+        default=list, blank=True, verbose_name="Pasan a obsoletos",
+    )
     folder = models.TextField(
         blank=True, default="", verbose_name="Carpeta en local",
         help_text="Carpeta de la persona en el árbol local (OneDrive), "
@@ -4486,7 +4500,8 @@ class LocalDownloadJob(models.Model):
 
     def __str__(self):
         return "Descarga %s de %s (%s)" % (
-            self.pk, self.person_id, self.status,
+            self.pk, self.person_id or "máquina %s" % self.machine_id,
+            self.status,
         )
 
 

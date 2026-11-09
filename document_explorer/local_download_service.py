@@ -214,7 +214,39 @@ def snapshot_paths(person):
     return current_local_folder(person)
 
 
-def create_for_person(person, requested_by=None, previous=None):
+OBSOLETE_FOLDER = "OBSOLETOS"
+
+
+def obsolete_moves(entries, current, target, panel_prefixes):
+    """
+    Local moves of superseded documents into OBSOLETOS (H31, S148).
+
+    ---
+
+    Movimientos en local de documentos sustituidos a la subcarpeta
+    OBSOLETOS de la carpeta de su persona o máquina. Ruta local de cada
+    uno: si se subió desde el panel, la que tiene en su carpeta (donde
+    lo bajó el agente); si vino de local, su ruta original, solo si está
+    dentro de la carpeta conocida (`current`, trasladada a `target` si
+    la carpeta se mueve). Nunca fuera de la carpeta.
+    """
+    moves = []
+    for blob, name in entries:
+        if blob.startswith(panel_prefixes):
+            path = "%s/%s" % (target, name)
+        elif current and blob.startswith(current + "/"):
+            path = target + blob[len(current):]
+        else:
+            continue
+        dest = "%s/%s/%s" % (target, OBSOLETE_FOLDER,
+                             path.rsplit("/", 1)[-1])
+        if "/%s/" % OBSOLETE_FOLDER not in path[len(target):] + "/":
+            moves.append({"path": path, "dest": dest})
+    return moves
+
+
+def create_for_person(person, requested_by=None, previous=None,
+                      obsolete=()):
     """
     Create the job that leaves the person's local folder in place.
     ---
@@ -222,7 +254,9 @@ def create_for_person(person, requested_by=None, previous=None):
     toca. `previous` es su carpeta local antes del cambio
     (snapshot_paths); sin él, la de ahora. Archivos: solo lo subido
     desde el panel, que no está en local, a la raíz de su carpeta.
-    None si no hay nada que hacer (ni carpeta conocida ni descargas).
+    `obsolete` (S148): pares (blob_name, name) de documentos sustituidos,
+    que pasan a OBSOLETOS en local. None si no hay nada que hacer (ni
+    carpeta conocida ni descargas).
     """
     current = previous if previous is not None else current_local_folder(
         person)
@@ -243,6 +277,8 @@ def create_for_person(person, requested_by=None, previous=None):
     return LocalDownloadJob.objects.create(
         person=person, requested_by=requested_by, files=files,
         folder=target, previous_folder=current,
+        obsolete_files=obsolete_moves(
+            obsolete, current, target, PANEL_PREFIXES),
     )
 
 
@@ -266,7 +302,8 @@ def claim_pending(host=""):
         job.save(update_fields=["status", "last_attempt_at", "host"])
     return [
         {"id": job.pk, "files": job.files, "folder": job.folder,
-         "previous_folder": job.previous_folder}
+         "previous_folder": job.previous_folder,
+         "obsolete": job.obsolete_files}
         for job in jobs
     ]
 

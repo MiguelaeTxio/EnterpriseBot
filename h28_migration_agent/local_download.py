@@ -84,6 +84,23 @@ PERSON_CONTAINERS = (
     "BAJAS/OPERARIOS BAJAS",
     "BAJAS/BAJA PERSONAL",
 )
+# H31 (S148): carpetas de maquinas, mismo listado que
+# document_explorer/machine_local_folder_service.LOCAL_CONTAINERS
+# (activas y bajas de cada familia), las mas largas primero.
+MACHINE_ROOT = "DOC. MAQUINAS"
+_RG = "REMOLQUES Y GONDOLAS (R y G)"
+MACHINE_CONTAINERS = tuple(sorted((
+    "GRUAS MOVILES (A)", "GRUAS MOVILES (A)/VEHICULOS BAJA",
+    "CAMIONES BRAZO (B)", "CAMIONES BRAZO (B)/VEHICULOS DE BAJA",
+    "PLATAFORMAS (Z)", "PLATAFORMAS (Z)/BAJAS",
+    "CABEZAS TRACTORAS (P)", "CABEZAS TRACTORAS (P)/BAJA",
+    _RG + "/REMOLQUES", _RG + "/REMOLQUES/BAJAS",
+    _RG + "/GONDOLAS", _RG + "/GONDOLAS/BAJAS",
+    "CARRETILLAS (T)", "CARRETILLAS (T)/BAJAS",
+    "VEHICULOS DE EMPRESA", "VEHICULOS DE EMPRESA/BAJA DEFINITIVA",
+    "VARIOS", "VARIOS/BAJAS",
+), key=len, reverse=True))
+OBSOLETE_FOLDER = "OBSOLETOS"
 
 
 def _post(path, fields):
@@ -138,6 +155,50 @@ def is_person_folder(path):
             return bool(name) and "/" not in name and name not in (
                 ".", "..")
     return False
+
+
+def is_machine_folder(path):
+    """True only for DOC. MAQUINAS/<container>/<name> (S148).
+    ---
+    Solo una carpeta de maquina donde el servidor la quiere: una de las
+    carpetas de familia (activas o bajas) y el nombre de la maquina.
+    """
+    prefix = MACHINE_ROOT + "/"
+    if not path or not path.startswith(prefix):
+        return False
+    rest = path[len(prefix):]
+    for container in MACHINE_CONTAINERS:
+        if rest.startswith(container + "/"):
+            name = rest[len(container) + 1:]
+            return bool(name) and "/" not in name and name not in (
+                ".", "..")
+    return False
+
+
+def is_machine_previous(path):
+    """True for a machine folder where it is now (S148).
+    ---
+    La carpeta de una maquina donde esta ahora: puede estar en una
+    carpeta antigua (OBSOLETO, VENTA...), asi que basta con que este
+    dentro de DOC. MAQUINAS, por debajo de una familia, y que no sea
+    ninguna de las carpetas de familia. El servidor solo manda carpetas
+    que llevan el codigo o la matricula de la maquina.
+    """
+    parts = (path or "").split("/")
+    if len(parts) < 3 or parts[0] != MACHINE_ROOT:
+        return False
+    if any(not part or part in (".", "..") for part in parts):
+        return False
+    rest = "/".join(parts[1:])
+    return rest not in MACHINE_CONTAINERS
+
+
+def is_subject_folder(path):
+    """Person or machine folder (S148).
+    ---
+    Carpeta de persona o de maquina.
+    """
+    return is_person_folder(path) or is_machine_folder(path)
 
 
 def _watched_root(watched_folders, virtual_path):
@@ -199,8 +260,12 @@ def find_person_folder(watched_folders, previous):
     """
     wanted = _plain(previous.rsplit("/", 1)[-1])
     found = []
-    for container in PERSON_CONTAINERS:
-        virtual = "%s/%s" % (PERSON_ROOT, container)
+    if previous.startswith(MACHINE_ROOT + "/"):
+        root, containers = MACHINE_ROOT, MACHINE_CONTAINERS
+    else:
+        root, containers = PERSON_ROOT, PERSON_CONTAINERS
+    for container in containers:
+        virtual = "%s/%s" % (root, container)
         try:
             _folder, _rel, local = _local(watched_folders, virtual + "/x")
         except RuntimeError:
@@ -230,9 +295,11 @@ def move_person_folder(watched_folders, previous, target):
     este y la de antes se borra solo si queda vacia. Devuelve un texto
     para el historial, o "" si no habia nada que mover.
     """
-    if not (is_person_folder(previous) and is_person_folder(target)):
+    person = is_person_folder(previous) and is_person_folder(target)
+    machine = is_machine_previous(previous) and is_machine_folder(target)
+    if not (person or machine):
         raise RuntimeError(
-            "Ruta que no es una carpeta de persona: %s -> %s"
+            "Ruta que no es una carpeta de persona ni de maquina: %s -> %s"
             % (previous, target))
     folder, old_rel, source = _local(watched_folders, previous)
     _folder2, new_rel, dest = _local(watched_folders, target)
@@ -324,9 +391,9 @@ def _run_job(bucket, job, watched_folders, events):
     target = job.get("folder") or ""
     previous = job.get("previous_folder") or ""
     files = job.get("files") or []
-    if target and not is_person_folder(target):
-        return 0, "la carpeta destino no es una carpeta de persona: %s" % (
-            target)
+    if target and not is_subject_folder(target):
+        return 0, ("la carpeta destino no es una carpeta de persona ni de "
+                   "maquina: %s" % target)
     if previous:
         try:
             text = move_person_folder(watched_folders, previous, target)
@@ -336,6 +403,14 @@ def _run_job(bucket, job, watched_folders, events):
             return 0, "moviendo la carpeta: %s" % error
         if text:
             events.append("Trabajo %s: %s" % (job_id, text))
+    if target:
+        # S148: en el alta de una maquina (o de una persona sin
+        # documentos) la carpeta se crea aunque no haya nada que bajar.
+        try:
+            _folder, _rel, local_target = _local(watched_folders, target)
+            os.makedirs(to_long_path(local_target), exist_ok=True)
+        except Exception as error:  # noqa: BLE001
+            return 0, "creando la carpeta: %s" % error
     done = 0
     for item in files:
         path = item["path"]
@@ -353,7 +428,60 @@ def _run_job(bucket, job, watched_folders, events):
             return done, "%s: %s" % (path.rsplit("/", 1)[-1], error)
         done += 1
         _report(job_id, downloaded=done, error="")
-    return done, ""
+    error_text = _move_obsolete(watched_folders, target,
+                                job.get("obsolete") or [], events, job_id)
+    return done, error_text
+
+
+def _move_obsolete(watched_folders, target, moves, events, job_id):
+    """Move superseded documents into OBSOLETOS (S148).
+    ---
+    Pasa los documentos sustituidos a la subcarpeta OBSOLETOS de la
+    carpeta (Miguel Angel: "nuevo DNI lo subes y te olvidas"). Solo
+    dentro de la carpeta de la persona o maquina; si el archivo ya no
+    esta (lo movieron a mano) se salta; si en OBSOLETOS ya hay uno con
+    ese nombre, se deja donde esta. Devuelve un texto de error o "".
+    """
+    for item in moves:
+        path, dest = item.get("path", ""), item.get("dest", "")
+        inside = target and path.startswith(target + "/") and (
+            dest.startswith("%s/%s/" % (target, OBSOLETE_FOLDER)))
+        if not inside:
+            return "obsoleto fuera de la carpeta: %s" % path
+        try:
+            folder, old_rel, source = _local(watched_folders, path)
+            _folder2, new_rel, destination = _local(watched_folders, dest)
+            if not os.path.isfile(to_long_path(source)):
+                continue
+            if os.path.exists(to_long_path(destination)):
+                logger.warning("Descarga a local: %s ya esta en OBSOLETOS; "
+                               "no se mueve", dest)
+                continue
+            os.makedirs(to_long_path(os.path.dirname(destination)),
+                        exist_ok=True)
+            os.replace(to_long_path(source), to_long_path(destination))
+            _reindex_file(folder, old_rel, new_rel)
+        except Exception as error:  # noqa: BLE001
+            logger.exception("Descarga a local: fallo pasando %s a "
+                             "obsoletos: %s", path, error)
+            return "pasando a obsoletos %s: %s" % (
+                path.rsplit("/", 1)[-1], error)
+        events.append("Trabajo %s: %s pasa a OBSOLETOS" % (
+            job_id, path.rsplit("/", 1)[-1]))
+    return ""
+
+
+def _reindex_file(folder, old_relative, new_relative):
+    """Move one file entry of the sweep index (S148).
+    ---
+    Pasa la entrada de un archivo movido en el indice de la puesta al
+    dia, para que el barrido no lo tome por nuevo.
+    """
+    entries = load_index(folder)
+    if entries is None or old_relative not in entries:
+        return
+    entries[new_relative] = entries.pop(old_relative)
+    save_index(folder, entries)
 
 
 def process_jobs(client, watched_folders):

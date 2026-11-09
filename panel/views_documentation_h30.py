@@ -981,6 +981,14 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
                 "No tienes permiso para editar este centro de gasto.",
                 status=403,
             )
+        from document_explorer import machine_local_folder_service
+
+        # H31 (S148): carpeta local de antes del cambio, tomada antes de
+        # validar el formulario (is_valid ya vuelca los datos nuevos en
+        # la máquina y el código decide cuál es su carpeta); si cambia de
+        # familia, el agente la mueve.
+        previous_local = machine_local_folder_service.current_local_folder(
+            machine)
         form = MachineAssetForm(
             request.POST, instance=machine, company=machine.company,
         )
@@ -996,6 +1004,9 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
             )
 
             sync_machine_documents(updated)
+            machine_local_folder_service.follow_change(
+                updated, previous_local,
+                requested_by=request.user.company_user)
             params = {"saved": "1"}
             if request.GET.get("back_url"):
                 params["back_url"] = request.GET["back_url"]
