@@ -295,6 +295,11 @@ def _queue_entry_hooks(subject, document_type, entry):
         )
 
         queue_contract_refresh(subject, document_type.code, entry)
+        # S148: la ficha se pone al día con lo que dice el documento
+        # (DNI renovado -> caducidad; IDC -> nº afiliación, alta...).
+        from document_explorer.person_facts_service import queue_refresh
+
+        queue_refresh(subject, document_type.code)
 
 
 def _check_uploaded_document(subject, document_type, data, filename, text):
