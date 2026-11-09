@@ -348,3 +348,107 @@ def apply_machine_facts(machine, document_type_code, facts, save=True):
             machine.code, document_type_code, filled,
         )
     return {"filled": filled, "different": different}
+
+
+def _intake_prompt(candidates):
+    types_text = "\n".join(
+        "- %s: %s" % (doc_type.code, doc_type.label) for doc_type in candidates
+    )
+    return (
+        "Eres un asistente que revisa documentación de un grupo de "
+        "empresas de grúas y maquinaria en España. Un supervisor está "
+        "dando de alta una máquina o vehículo nuevo con este documento.\n"
+        "Estos son los únicos tipos de documento posibles:\n%s\n\n"
+        "Responde:\n"
+        "- detected_type_code: el código de la lista que corresponde a lo "
+        "que es el documento; si no es ninguno, '%s'.\n"
+        "- detected_description: qué es el documento, en pocas palabras y "
+        "en castellano.\n"
+        "- plate: matrícula del vehículo o máquina, sin espacios ni "
+        "guiones; vacío si no aparece o si el documento cita varias.\n"
+        "- chassis_number: número de bastidor (VIN) completo; vacío si no "
+        "aparece.\n"
+        "- brand_model: marca y modelo; vacío si no aparece.\n"
+        "- insurer: compañía aseguradora; vacío si no es de seguro.\n"
+        "- policy_number: número de póliza; vacío si no aparece.\n"
+        "No inventes nada: deja vacío lo que no esté escrito en el "
+        "documento."
+    ) % (types_text, NO_TYPE)
+
+
+def read_machine_document(data, filename):
+    """
+    Machine intake (S148): type and data of one document, no type chosen.
+
+    Returns {"code", "label", "facts"}; code "" when not recognised.
+    ---
+    Alta de máquina por documentos (S148, Miguel Ángel: lo mismo que
+    en Personal): qué es el documento y qué datos trae, sin tipo
+    elegido. Texto incrustado del PDF o Cloud Vision (nunca OCR del
+    servidor); si no basta, Gemini sobre las primeras páginas.
+    """
+    from document_explorer.cloud_vision_service import (
+        cloud_vision_text, pdf_embedded_text,
+    )
+
+    candidates = candidate_types(True)
+    text = ""
+    if filename.lower().endswith(".pdf"):
+        text = pdf_embedded_text(data)
+    if len(text.strip()) < MIN_TEXT_CHARS:
+        try:
+            text = cloud_vision_text(data, filename) or text
+        except Exception:  # noqa: BLE001 -- se cae a Gemini con el archivo
+            logger.exception("# [ALTA MAQUINA] Cloud Vision falló: %s",
+                             filename)
+    answer = _ask_gemini(_intake_prompt(candidates), text, data, filename)
+    answer = answer or {}
+    by_code = {doc_type.code: doc_type for doc_type in candidates}
+    code = (answer.get("detected_type_code") or "").strip().upper()
+    if code not in by_code:
+        code = ""
+    facts = {
+        "plate": normalize_plate(answer.get("plate")),
+        "chassis_number": re.sub(
+            r"\s", "", (answer.get("chassis_number") or "").upper(),
+        )[:64],
+        "brand_model": (answer.get("brand_model") or "").strip()[:200],
+        "insurer": (answer.get("insurer") or "").strip()[:100],
+        "policy_number": (answer.get("policy_number") or "").strip()[:60],
+    }
+    return {
+        "code": code,
+        "label": by_code[code].label if code else "",
+        "description": (answer.get("detected_description") or "").strip(),
+        "facts": facts,
+        "text": text,
+    }
+
+
+def merge_machine_facts(readings):
+    """
+    The machine data of several readings, each field only from the
+    types that state it (MACHINE_FACTS_BY_TYPE); the most repeated wins.
+    ---
+    Datos de máquina de varias lecturas: cada dato solo de los tipos que
+    lo acreditan; gana el que más se repite.
+    """
+    import collections
+
+    votes = collections.defaultdict(collections.Counter)
+    for reading in readings:
+        allowed = MACHINE_FACTS_BY_TYPE.get(reading.get("code"), ())
+        facts = reading.get("facts") or {}
+        for name in ("plate", "chassis_number", "brand_model"):
+            if name in allowed and facts.get(name):
+                votes[name][facts[name]] += 1
+        if "insurer" in allowed and facts.get("insurer"):
+            insurance = facts["insurer"]
+            if facts.get("policy_number"):
+                insurance = "%s -- póliza %s" % (
+                    insurance, facts["policy_number"])
+            votes["insurance_info"][insurance[:100]] += 1
+    return {
+        name: counter.most_common(1)[0][0]
+        for name, counter in votes.items()
+    }

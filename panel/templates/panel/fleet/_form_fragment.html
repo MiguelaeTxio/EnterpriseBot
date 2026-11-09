@@ -8,7 +8,7 @@
 {# Contexto requerido: form, form_action, company_user, company.                              #}
 {# S117: solo alta -- la edición vive en la ficha de la máquina (MachineDetailView). #}
 {% url 'panel:fleet_create' as action_url %}
-<form hx-post="{{ action_url }}"
+<form id="fleetCreateForm" hx-post="{{ action_url }}" hx-encoding="multipart/form-data"
       hx-target="#fleet-table-container"
       hx-include="#fleet-live-filters"
       hx-swap="innerHTML">

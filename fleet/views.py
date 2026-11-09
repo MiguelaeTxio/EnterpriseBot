@@ -20,6 +20,7 @@ se migre a fleet.urls.
 
 import csv
 import datetime as dt
+import json
 
 from django.db.models import Count, FloatField, Q, Sum
 from django.db.models.functions import Coalesce
@@ -33,6 +34,7 @@ from document_explorer.machine_folder_service import sync_machine_documents
 from fleet.forms import MachineAssetForm
 from fleet.models import MachineAsset
 from ivr_config.models import CompanyUser, PresenceStatus
+from panel.views_machine_intake import store_intake_documents
 from panel.mixins import (
     AdminRoleRequiredMixin,
     DocsUploadAccessMixin,
@@ -659,23 +661,27 @@ class MachineAssetCreateView(FleetManageAccessMixin, View):
         """
         company_user = request.user.company_user
         company = company_user.company
+        reactivate_pk = request.POST.get("reactivate_machine_id", "")
+        if reactivate_pk.isdigit():
+            return self._reactivate(request, int(reactivate_pk))
         form = MachineAssetForm(request.POST, company=company)
 
         if form.is_valid():
             asset = form.save(commit=False)
             asset.company = company
             asset.code = asset.code.strip().upper()
+            # S148: el seguro leído en el alta por documentos.
+            asset.insurance_info = request.POST.get(
+                "insurance_info", "").strip()[:100]
             asset.save()
             # H31 (S148): su carpeta en local (OneDrive), como en el
             # alta de Personal: el agente la crea en su familia.
             machine_local_folder_service.create_for_machine(
                 asset, requested_by=company_user, always=True)
-            fragment_ctx = _build_fragment_context(
-                company, company_user, request
-            )
-            return render(
-                request, "panel/fleet/_table_fragment.html", fragment_ctx
-            )
+            # S148: alta por documentos -- se guardan en su carpeta (y
+            # cada uno baja a la local con su enganche).
+            _stored, warnings = store_intake_documents(request, asset)
+            return self._done(request, warnings)
 
         # S117: con errores de validación el formulario vuelve a su
         # propio modal -- antes se pintaba dentro del contenedor de la
@@ -689,6 +695,50 @@ class MachineAssetCreateView(FleetManageAccessMixin, View):
         response["HX-Retarget"] = "#fleet-create-form-container"
         response["HX-Reswap"] = "innerHTML"
         return response
+
+    def _done(self, request, warnings):
+        company_user = request.user.company_user
+        fragment_ctx = _build_fragment_context(
+            company_user.company, company_user, request
+        )
+        response = render(
+            request, "panel/fleet/_table_fragment.html", fragment_ctx
+        )
+        # S148: avisos del alta por documentos (tipo sin reconocer...).
+        response["HX-Trigger"] = json.dumps(
+            {"fleetIntakeDone": {"warnings": warnings}})
+        return response
+
+    def _reactivate(self, request, pk):
+        """
+        S148: intake of a machine that already exists and is inactive.
+        ---
+        Alta de una máquina que ya existe de baja (misma matrícula o
+        bastidor): se reactiva como desde el listado, se completan sus
+        datos vacíos con los leídos y se guardan los documentos.
+        """
+        company_user = request.user.company_user
+        asset = get_object_or_404(
+            MachineAsset, pk=pk, company=company_user.company,
+            is_active=False,
+        )
+        previous_local = machine_local_folder_service.current_local_folder(
+            asset)
+        fields = ["is_active"]
+        asset.is_active = True
+        for name in ("plate", "chassis_number", "brand_model",
+                     "insurance_info"):
+            value = request.POST.get(name, "").strip()[:100 if (
+                name == "insurance_info") else 200]
+            if value and not (getattr(asset, name) or "").strip():
+                setattr(asset, name, value)
+                fields.append(name)
+        asset.save(update_fields=fields)
+        sync_machine_documents(asset)
+        machine_local_folder_service.follow_change(
+            asset, previous_local, requested_by=company_user)
+        _stored, warnings = store_intake_documents(request, asset)
+        return self._done(request, warnings)
 
 
 # ---------------------------------------------------------------------------

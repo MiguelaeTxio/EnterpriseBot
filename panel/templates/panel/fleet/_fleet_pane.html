@@ -410,7 +410,19 @@ la lista hace scroll. Dos paneles:
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body" id="fleet-create-form-container">
+            {# S148: alta por documentos, como en Personal -- se leen matrícula, bastidor, marca y seguro; o alta sin documentos. #}
+            <div class="modal-body" id="fleetIntakeStep1">
+                <p class="small text-muted mb-2">Sube el permiso de circulación, la ficha técnica, el seguro... -- el sistema leerá los datos por ti. Si no tienes documentos, rellena el formulario a mano.</p>
+                <input type="file" id="fleetIntakeFiles" class="form-control form-control-sm" multiple accept="application/pdf,image/*">
+                <div id="fleetIntakeResult" class="mt-2"></div>
+                <div class="mt-3 text-end">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" id="fleetIntakeManualBtn" class="btn btn-outline-primary btn-sm">Alta sin documentos</button>
+                    <button type="button" id="fleetIntakeExtractBtn" class="btn btn-primary btn-sm">Leer documentos</button>
+                </div>
+            </div>
+            <div id="fleetIntakeNotes" class="px-3 pt-3 d-none"></div>
+            <div class="modal-body d-none" id="fleet-create-form-container">
                 {% include "panel/fleet/_form_fragment.html" with form=form form_action="create" %}
             </div>
         </div>
@@ -769,6 +781,106 @@ la lista hace scroll. Dos paneles:
             refreshFromFragment();
         }
     });
+
+    // S148: alta por documentos (paso 1) -> formulario (paso 2). Los
+    // archivos viajan con el formulario HTMX (htmx:configRequest).
+    (function () {
+        const modalEl = document.getElementById("fleetCreateModal");
+        if (!modalEl) return;
+        const step1 = document.getElementById("fleetIntakeStep1");
+        const container = document.getElementById("fleet-create-form-container");
+        const notes = document.getElementById("fleetIntakeNotes");
+        const fileInput = document.getElementById("fleetIntakeFiles");
+        const result = document.getElementById("fleetIntakeResult");
+        const extractBtn = document.getElementById("fleetIntakeExtractBtn");
+        let typeCodes = [];
+        let insurance = "";
+        let reactivateId = "";
+
+        function form() { return document.getElementById("fleetCreateForm"); }
+        function esc(text) {
+            const div = document.createElement("div");
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        function toForm(html) {
+            notes.innerHTML = html;
+            notes.classList.toggle("d-none", !html);
+            step1.classList.add("d-none");
+            container.classList.remove("d-none");
+        }
+        modalEl.addEventListener("show.bs.modal", function () {
+            step1.classList.remove("d-none");
+            container.classList.add("d-none");
+            notes.classList.add("d-none");
+            fileInput.value = "";
+            result.innerHTML = "";
+            typeCodes = [];
+            insurance = "";
+            reactivateId = "";
+            if (form()) form().reset();
+        });
+        document.getElementById("fleetIntakeManualBtn").addEventListener("click", function () {
+            fileInput.value = "";
+            typeCodes = [];
+            toForm('<div class="alert alert-info py-1 px-2 small mb-0">Alta sin documentos: rellena los datos a mano. La documentación se sube después desde su ficha.</div>');
+        });
+        extractBtn.addEventListener("click", function () {
+            if (!fileInput.files.length) {
+                result.innerHTML = '<div class="alert alert-warning py-1 px-2 small mb-0">Selecciona al menos un documento.</div>';
+                return;
+            }
+            const data = new FormData();
+            for (const f of fileInput.files) { data.append("documents", f); }
+            extractBtn.disabled = true;
+            result.innerHTML = '<div class="text-primary small d-flex align-items-center gap-2"><span class="spinner-border spinner-border-sm" role="status"></span><span>Leyendo documentos…</span></div>';
+            fetch("{% url 'panel:fleet_intake_extract' %}", {
+                method: "POST", body: data,
+                headers: {"X-CSRFToken": form().querySelector("input[name=csrfmiddlewaretoken]").value},
+            }).then(function (r) { return r.json(); }).then(function (res) {
+                extractBtn.disabled = false;
+                if (!res.ok) {
+                    result.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">' + esc(res.error || "Error al leer los documentos.") + "</div>";
+                    return;
+                }
+                if (res.duplicate) {
+                    result.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Ya existe y está activo: <strong>' + esc(res.duplicate) + "</strong>. Sube los documentos desde su ficha.</div>";
+                    return;
+                }
+                typeCodes = res.per_file.map(function (pf) { return pf.document_type_code; });
+                const draft = res.draft || {};
+                ["plate", "chassis_number", "brand_model"].forEach(function (name) {
+                    if (draft[name] && form().elements[name]) { form().elements[name].value = draft[name]; }
+                });
+                insurance = draft.insurance_info || "";
+                const list = res.per_file.map(function (pf) { return "<li>" + esc(pf.name) + ": " + esc(pf.document_type_label) + "</li>"; }).join("");
+                let html = '<div class="alert alert-success py-1 px-2 small mb-1">Documentos leídos. Revisa y completa (código, familia, empresa).<ul class="mb-0">' + list + "</ul>" +
+                    (insurance ? "Seguro: " + esc(insurance) : "") + "</div>";
+                reactivateId = res.reactivate ? String(res.reactivate.id) : "";
+                if (res.reactivate) {
+                    form().elements.code.value = res.reactivate.code;
+                    html = '<div class="alert alert-info py-1 px-2 small mb-1"><strong>' + esc(res.reactivate.label) + "</strong> ya existe y está de baja. Al guardar se reactiva, se completan sus datos vacíos y se guardan estos documentos.</div>" + html;
+                }
+                toForm(html);
+            }).catch(function () {
+                extractBtn.disabled = false;
+                result.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Error de red al leer los documentos.</div>';
+            });
+        });
+        document.body.addEventListener("htmx:configRequest", function (evt) {
+            if (!evt.detail.elt || evt.detail.elt.id !== "fleetCreateForm") return;
+            if (fileInput.files.length && typeCodes.length) {
+                evt.detail.parameters.documents = Array.from(fileInput.files);
+                evt.detail.parameters.document_type_codes = typeCodes;
+            }
+            if (insurance) { evt.detail.parameters.insurance_info = insurance; }
+            if (reactivateId) { evt.detail.parameters.reactivate_machine_id = reactivateId; }
+        });
+        document.body.addEventListener("fleetIntakeDone", function (evt) {
+            const warnings = (evt.detail && evt.detail.warnings) || [];
+            showToast(warnings.length ? "Alta hecha. Aviso: " + warnings.join(" ") : "Alta hecha. Su carpeta local se crea en segundo plano.", false);
+        });
+    }());
 
     // H31 (S148): pestañas de acciones, como en Personal -- la elegida
     // se recuerda (screen_key "fleet_actions").
