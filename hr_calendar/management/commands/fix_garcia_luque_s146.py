@@ -16,14 +16,12 @@ misma tarea (el portón de Santa Águeda).
 - 05/11: se olvidó de fichar a las 8 y fichó a las 10. Se corrige la
   entrada (#179) a las 8:00 y el parte se ajusta con ella (la tarea
   empieza a las 8:00).
-- 06/11: fichó la entrada a las 8 y la comida, pero no la salida ni hizo
-  el parte. Se crea su parte con la misma tarea del 05/11 (8:00 a 17:30,
-  comida 13:30 a 15:00) y se añade la salida a las 17:30, que lo cierra.
+- 06/11: fichó la entrada a las 8 y la comida (13:30 a 15:00), pero no
+  la salida. Solo se añade la salida a las 17:30; el parte lo hará él.
 Las correcciones van firmadas por alvarez_admin y con el motivo. Sin
 --apply solo dice lo que haría.
 """
 import datetime
-from decimal import Decimal
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
@@ -36,18 +34,13 @@ from hr_calendar.clock_parts import (
 )
 from hr_calendar.models import ClockCorrection, ClockEvent
 from ivr_config.models import CompanyUser
-from work_order_processor.models import (
-    WorkOrder,
-    WorkOrderEntry,
-    WorkOrderEntryLine,
-)
+from work_order_processor.models import WorkOrderEntry, WorkOrderEntryLine
 
 WORKER_ID = 14
 AUTHOR_ID = 1
 DAY5 = datetime.date(2026, 11, 5)
 DAY6 = datetime.date(2026, 11, 6)
 IN_EVENT_DAY5 = 179
-SOURCE_WORK_ORDER = 769
 REASON_IN = ("Se olvidó de fichar la entrada a las 8:00 y fichó a las "
              "10:00; trabajó desde las 8:00 (lo indica Miguel Ángel).")
 REASON_OUT = ("Se olvidó de fichar la salida; salió a las 17:30 (lo "
@@ -148,14 +141,6 @@ class Command(BaseCommand):
     def _day6(self, worker, person, author, apply, say):
         say("## 06/11 antes:")
         self._show(worker, DAY6, say)
-        if WorkOrderEntry.objects.filter(
-                work_order__uploaded_by=worker, work_date=DAY6).exists():
-            say("   Ya tiene parte el 06/11: no se crea otro.")
-        else:
-            say("   Crear el parte del 06/11 copiando el WO #%d (8:00 a "
-                "17:30)." % SOURCE_WORK_ORDER)
-            if apply:
-                self._clone_parte(say)
         has_out = ClockEvent.objects.current().filter(
             company_user=worker, kind=ClockEvent.Kind.OUT,
             pressed_at__gte=_aware(DAY6, 16, 0),
@@ -173,37 +158,3 @@ class Command(BaseCommand):
         say("   Parte: %s" % (outcome.text or "sin cambios"))
         say("## 06/11 después:")
         self._show(worker, DAY6, say)
-
-    def _clone_parte(self, say):
-        source = WorkOrder.objects.get(pk=SOURCE_WORK_ORDER)
-        source_entry = source.entries.order_by("page_number").first()
-        source_lines = list(WorkOrderEntryLine.objects.filter(
-            entry=source_entry).order_by("line_number"))
-        with transaction.atomic():
-            work_order = WorkOrder.objects.get(pk=SOURCE_WORK_ORDER)
-            work_order.pk = None
-            work_order.id = None
-            work_order.status = WorkOrder.Status.IN_PROGRESS
-            work_order.reviewed = False
-            work_order.reviewed_by = None
-            work_order.reviewed_at = None
-            work_order.has_overlap_incident = False
-            work_order.save()
-            entry = WorkOrderEntry.objects.get(pk=source_entry.pk)
-            entry.pk = None
-            entry.id = None
-            entry.work_order = work_order
-            entry.work_date = DAY6
-            entry.save()
-            for source_line in source_lines:
-                line = WorkOrderEntryLine.objects.get(pk=source_line.pk)
-                line.pk = None
-                line.id = None
-                line.entry = entry
-                line.hc = datetime.time(8, 0)
-                line.hf = datetime.time(17, 30)
-                line.delta_hours = Decimal("8.00")
-                line.breakdown_ticket = None
-                line.save()
-        say("   Creado el parte WO #%d (entrada #%d) del 06/11."
-            % (work_order.pk, entry.pk))
