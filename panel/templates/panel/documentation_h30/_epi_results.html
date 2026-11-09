@@ -1,56 +1,68 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_epi_results.html #}
 {% comment %}
-S136: sin stack-mobile (decisión de Miguel Ángel): en el móvil, también
-columnas con su cabecera (orden, "Seleccionar todos") y la tabla se
-desliza entera, sin columnas fijas (S123). Mismo formato en PC y móvil.
+H31 (S148): listado de entregas con el formato único (4.24): orden por
+varias columnas con prioridad (sort=clave,-clave, resuelto en
+panel/views_epi_deliveries.py), menú de tres puntos por fila y
+paginación que conserva filtros y orden. #epi-results-state lleva el
+recuento y si hay orden para la cabecera fija de _epi_pane.html.
+S136: sin stack-mobile: en el móvil, las mismas columnas y la tabla se
+desliza entera.
 {% endcomment %}
-<table class="table table-hover table-light">
+<div id="epi-results-state" class="d-none" data-count="{{ page.paginator.count }}" data-sort-active="{% if sort_active %}1{% endif %}"></div>
+<div id="epi-sort-inputs" class="d-none"><input type="hidden" name="sort" value="{{ current_sort }}"></div>
+<table class="table table-hover table-light align-middle">
     <thead class="table-light">
         <tr>
-            {% for col_key, col_label in sort_columns_epi %}
+            {% for column in sort_columns %}
             <th>
-                <a href="#"
-                   hx-get="{% url 'panel:documentation_epi_results' %}?sort={{ col_key }}&dir={% if sort_key == col_key and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}"
-                   hx-target="#epi-results" class="text-decoration-none text-dark">
-                    {{ col_label }}
-                    {% if sort_key == col_key %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
+                <a href="#" class="text-decoration-none text-dark"
+                   hx-get="{% url 'panel:documentation_epi_results' %}" hx-target="#epi-results"
+                   hx-include="#epi-filters" hx-vals='{"sort": "{{ column.next }}"}'>
+                    {{ column.label }}
+                    {% if column.arrow %}<i class="bi bi-chevron-{{ column.arrow }}"></i>{% if column.priority %}<sup>{{ column.priority }}</sup>{% endif %}{% endif %}
                 </a>
             </th>
             {% endfor %}
-            <th>Documento</th>
+            <th></th>
         </tr>
     </thead>
     <tbody>
         {% for delivery in page %}
         <tr>
-            <td data-label="Fecha de entrega">{{ delivery.delivery_date }}</td>
+            <td data-label="Fecha de entrega">{{ delivery.delivery_date|date:"d/m/Y" }}</td>
             <td><a href="{% url 'panel:documentation_personal_detail' pk=delivery.person.pk %}">{{ delivery.person.first_surname }} {{ delivery.person.second_surname }}, {{ delivery.person.given_name }}</a></td>
+            <td data-label="Familia">{{ delivery.epi.family }}</td>
             <td data-label="EPI">{{ delivery.epi.label }}</td>
-            <td>
-                {% if delivery.source_entry_id %}
-                <button type="button" class="btn btn-sm btn-outline-secondary"
-                        onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=delivery.source_entry_id %}')">
-                    <i class="bi bi-eye"></i> Ver
-                </button>
-                {% else %}
-                <span class="text-muted small">Sin documento</span>
-                {% endif %}
+            <td class="text-end">
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-link text-dark py-0" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Acciones">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        {% if delivery.source_entry_id %}
+                        <li><a class="dropdown-item" href="#" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=delivery.source_entry_id %}'); return false;"><i class="bi bi-eye me-1"></i>Ver documento</a></li>
+                        {% else %}
+                        <li><span class="dropdown-item-text text-muted small">Sin documento</span></li>
+                        {% endif %}
+                        <li><a class="dropdown-item" href="{% url 'panel:documentation_personal_detail' pk=delivery.person.pk %}"><i class="bi bi-person me-1"></i>Abrir su ficha</a></li>
+                    </ul>
+                </div>
             </td>
         </tr>
         {% empty %}
-        <tr><td colspan="4" class="text-muted small py-3">Sin entregas de EPI todavía.</td></tr>
+        <tr><td colspan="5" class="text-muted small py-3">No hay entregas de EPI con estos filtros.</td></tr>
         {% endfor %}
     </tbody>
 </table>
 
 {% if page.has_other_pages %}
 <nav>
-    <ul class="pagination">
+    <ul class="pagination pagination-sm">
         {% for num in page.paginator.page_range %}
         <li class="page-item {% if num == page.number %}active{% endif %}">
-            <a class="page-link"
-               hx-get="{% url 'panel:documentation_epi_results' %}?page={{ num }}&sort={{ sort_key }}&dir={{ sort_dir }}&q={{ search }}"
-               hx-target="#epi-results">{{ num }}</a>
+            <a class="page-link" href="#"
+               hx-get="{% url 'panel:documentation_epi_results' %}" hx-target="#epi-results"
+               hx-include="#epi-filters, #epi-sort-inputs" hx-vals='{"page": "{{ num }}"}'>{{ num }}</a>
         </li>
         {% endfor %}
     </ul>

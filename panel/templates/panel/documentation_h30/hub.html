@@ -36,7 +36,7 @@ EbTypePicker.init() (ver panel/_doc_type_picker.html).
 {% endblock %}
 
 {% block content %}
-{% with pf_personal=persisted_filters.personal pf_epis=persisted_filters.epis %}
+{% with pf_personal=persisted_filters.personal %}
 <ul class="nav nav-tabs mb-3" id="docH30Tabs">
     <li class="nav-item">
         {% comment %}
@@ -90,7 +90,7 @@ EbTypePicker.init() (ver panel/_doc_type_picker.html).
     </li>
     <li class="nav-item">
         <a class="nav-link {% if persisted_active_tab == 'epis' %}active{% endif %}" id="tab-epis" data-bs-toggle="tab" href="#pane-epis"
-           hx-get="{% url 'panel:documentation_epi_tab' %}?q={{ pf_epis.q|default:'' }}&sort={{ pf_epis.sort|default:'' }}&dir={{ pf_epis.dir|default:'asc' }}"
+           hx-get="{% url 'panel:documentation_epi_tab' %}"
            hx-target="#pane-epis"
            hx-trigger="{% if persisted_active_tab == 'epis' %}load once{% else %}click once{% endif %}">
             <i class="bi bi-shield-check me-1"></i>EPIs
@@ -591,8 +591,8 @@ la plantilla de algún grupo marcado se abre este modal para elegirla.
     const FILTER_ENDPOINTS = [
         {match: /\/documentacion\/personal\/?(\?|$)/, tab: 'personal'},
         {match: /\/documentacion\/personal\/resultados\/?(\?|$)/, tab: 'personal'},
-        {match: /\/documentacion\/epis\/?(\?|$)/, tab: 'epis'},
-        {match: /\/documentacion\/epis\/resultados\/?(\?|$)/, tab: 'epis'},
+        // S148: EPIs guarda sus filtros y orden en el servidor
+        // (screen_key "epi_deliveries", apply_list_navigation).
         {match: /\/documentacion\/calendario\/?(\?|$)/, tab: 'calendario'},
         {match: /\/documentacion\/calendario\/resultados\/?(\?|$)/, tab: 'calendario'},
     ];

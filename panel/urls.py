@@ -199,6 +199,10 @@ from panel.views_personal_export import (
     PersonalExportView,
 )
 from panel.views_document_split import DocumentSplitView
+from panel.views_epi_deliveries import (
+    EpiResultsFragmentView,
+    EpiTabFragmentView,
+)
 from panel.views_documentation_h30 import (
     CalendarResultsFragmentView,
     CalendarTabFragmentView,
@@ -213,8 +217,6 @@ from panel.views_documentation_h30 import (
     PersonGroupTemplateDeleteView,
     PersonGroupTemplateSaveView,
     PersonMassSetJobPositionView,
-    EpiResultsFragmentView,
-    EpiTabFragmentView,
     EpiTechnicalSheetUploadView,
     MachineDetailView,
     MachineDocumentSelectionPdfView,
