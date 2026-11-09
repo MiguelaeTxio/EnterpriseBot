@@ -63,9 +63,12 @@ def bag_context(person):
         "deadline_rows": [{
             **d,
             "label": label(d["seconds"]),
-            "euros": (clock_extras.TRAVEL_EUR_HOUR * d["seconds"] / 3600
-                      if d["travel"] and d["state"] == "vencida" else None),
         } for d in bag["deadlines"]],
+        # S149: el desplazamiento, aparte de la bolsa.
+        "travel_rows": [{
+            **d,
+            "label": label(d["seconds"]),
+        } for d in bag["travel_deadlines"]],
         "overdue": [d for d in bag["deadlines"] if d["state"]],
         "total_label": clock_extras.signed_duration(bag["total_seconds"]),
         "worked_label": clock_extras.signed_duration(bag["worked_seconds"]),

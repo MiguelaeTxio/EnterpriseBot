@@ -165,8 +165,18 @@ def _add_months(day, months):
 BAG_ROLE_LABELS = {"presence": "Presencia", "force": "Fuerza mayor"}
 
 
-def bag_deadlines(months, travel_months, adjustments, today=None,
-                  role_months=None):
+def _deadline_state(month, limit, today):
+    deadline = _add_months(month, limit + 1) - datetime.timedelta(days=1)
+    if deadline < today:
+        state = "vencida"
+    elif deadline < _add_months(today, 1):
+        state = "vence pronto"
+    else:
+        state = ""
+    return deadline, state
+
+
+def bag_deadlines(months, adjustments, today=None, role_months=None):
     """
     The accumulated hours still to compensate, oldest first, with their
     deadline.
@@ -174,9 +184,10 @@ def bag_deadlines(months, travel_months, adjustments, today=None,
     S143 (convenio): lo que queda por compensar de la bolsa, por mes y
     tipo, gastando las horas compensadas (movimientos que restan, días
     libres) de lo más antiguo a lo más nuevo. Cada fila: mes, tipo
-    ("Horas extra" o "Desplazamiento"), horas que quedan, fecha límite
-    (6 meses las extra, art. 19; un trimestre las de desplazamiento,
-    art. 22) y estado: "vencida", "vence pronto" (este mes) o "".
+    ("Horas extra", "Presencia", "Fuerza mayor" o "Añadidas a mano"),
+    horas que quedan, fecha límite (6 meses, art. 19) y estado:
+    "vencida", "vence pronto" (este mes) o "". S149 (Miguel Ángel): el
+    desplazamiento no está en la bolsa (travel_deadlines).
     """
     today = today or timezone.localdate()
     ledger = []
@@ -184,10 +195,6 @@ def bag_deadlines(months, travel_months, adjustments, today=None,
         if m["accumulated"]:
             ledger.append([m["month"], 0, "Horas extra", m["accumulated"],
                            OVERTIME_DEADLINE_MONTHS])
-    for month, seconds in sorted(travel_months.items()):
-        if seconds:
-            ledger.append([month, 1, "Desplazamiento", seconds,
-                           TRAVEL_DEADLINE_MONTHS])
     # S143 (art. 20 b y d): presencia y fuerza mayor, con el plazo de 6
     # meses de los excesos de jornada (art. 19).
     for role, by_month in (role_months or {}).items():
@@ -208,16 +215,35 @@ def bag_deadlines(months, travel_months, adjustments, today=None,
         left = seconds - used
         if not left:
             continue
-        deadline = _add_months(month, limit + 1) - datetime.timedelta(days=1)
-        if deadline < today:
-            state = "vencida"
-        elif deadline < _add_months(today, 1):
-            state = "vence pronto"
-        else:
-            state = ""
+        deadline, state = _deadline_state(month, limit, today)
         rows.append({"month": month, "kind": kind, "seconds": left,
-                     "deadline": deadline, "state": state,
-                     "travel": kind == "Desplazamiento"})
+                     "deadline": deadline, "state": state})
+    return rows
+
+
+def travel_deadlines(travel_months, today=None):
+    """
+    The travel hours of each month with their deadline (outside the bag).
+    ---
+    S149 (Miguel Ángel: "las horas de desplazamiento hay que sacarlas de
+    la bolsa de horas extras"): las horas de desplazamiento de cada mes
+    (convenio, art. 22), aparte de la bolsa, con su plazo de un
+    trimestre; pasado el plazo, a pagar a 6 €/h. Cada fila: mes, horas,
+    fecha límite, estado y euros si ha vencido.
+    """
+    today = today or timezone.localdate()
+    rows = []
+    for month, seconds in sorted(travel_months.items()):
+        if not seconds:
+            continue
+        deadline, state = _deadline_state(month, TRAVEL_DEADLINE_MONTHS,
+                                          today)
+        rows.append({
+            "month": month, "seconds": seconds, "deadline": deadline,
+            "state": state,
+            "euros": (TRAVEL_EUR_HOUR * seconds / 3600
+                      if state == "vencida" else None),
+        })
     return rows
 
 
@@ -311,12 +337,12 @@ def overtime_bag(company, company_user, until=None):
             slot = role_months.setdefault(role, {})
             slot[month] = slot.get(month, 0) + seconds
     role_totals = {role: sum(v.values()) for role, v in role_months.items()}
-    deadlines = bag_deadlines(months, travel_months, adjustments,
-                              role_months=role_months)
+    deadlines = bag_deadlines(months, adjustments, role_months=role_months)
     return {
         "role_totals": role_totals,
         "travel_seconds": travel,
         "travel_months": travel_months,
+        "travel_deadlines": travel_deadlines(travel_months),
         "deadlines": deadlines,
         "worked_seconds": worked,
         "extra_seconds": sum(m["extra"] for m in months),
@@ -324,7 +350,8 @@ def overtime_bag(company, company_user, until=None):
         "months": months,
         "cap_seconds": cap,
         "adjust_minutes": moved,
-        "total_seconds": (accumulated + travel + sum(role_totals.values())
+        # S149 (Miguel Ángel): el desplazamiento no suma en la bolsa.
+        "total_seconds": (accumulated + sum(role_totals.values())
                           + moved * 60),
         "adjustments": adjustments,
         "since": BAG_START,
@@ -338,8 +365,8 @@ def overtime_bags(company, company_user_ids, until=None):
     Las horas acumuladas de varios trabajadores de una vez (S145,
     columna del listado de Fichajes): mismo cálculo que overtime_bag (lo
     que pasa del tope cada mes desde BAG_START hasta `until` y los
-    movimientos a mano), con una sola lectura de fichajes y de
-    movimientos.
+    movimientos a mano, más presencia y fuerza mayor), con una sola
+    lectura de fichajes y de movimientos.
     """
     from django.db.models import Sum
 
@@ -361,10 +388,20 @@ def overtime_bags(company, company_user_ids, until=None):
     )
     result = {}
     for pk in ids:
+        report = reports.get(pk)
         months = split_by_month(
-            reports[pk].month_excess if pk in reports else {}, cap,
+            report.month_excess if report is not None else {}, cap,
         )
-        result[pk] = (sum(m["accumulated"] for m in months)
+        # S149: presencia y fuerza mayor, como en overtime_bag (el
+        # listado no las sumaba y no cuadraba con la página del
+        # trabajador); el desplazamiento no está en la bolsa.
+        roles = sum(
+            seconds
+            for day_roles in (report.bag_time if report is not None
+                              else {}).values()
+            for seconds in day_roles.values()
+        )
+        result[pk] = (sum(m["accumulated"] for m in months) + roles
                       + (moved.get(pk) or 0) * 60)
     return result
 
