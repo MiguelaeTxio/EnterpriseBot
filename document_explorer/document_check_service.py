@@ -326,6 +326,13 @@ def apply_machine_facts(machine, document_type_code, facts, save=True):
         read["insurance_info"] = insurance
 
     filled, different, update_fields = {}, {}, []
+    # S148: si el documento trae otra matrícula, es de otro vehículo
+    # (caso real: el recibo del seguro de G09 archivado en G15) -- no se
+    # toma ningún dato suyo; solo se avisa de la matrícula.
+    current_plate = normalize_plate(machine.plate)
+    if read.get("plate") and current_plate and current_plate != read["plate"]:
+        return {"filled": {}, "different": {
+            FACT_LABELS["plate"]: (machine.plate, read["plate"])}}
     for name, value in read.items():
         max_length = machine._meta.get_field(name).max_length
         value = value[:max_length] if max_length else value
