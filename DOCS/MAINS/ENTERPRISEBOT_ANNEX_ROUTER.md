@@ -47,14 +47,14 @@ Cumple dos funciones inseparables:
 | H21 | Refactorización Arquitectónica Split views.py | `ENTERPRISEBOT_ATTACHED_MILESTONE_V21.md` |
 | H22 | Visor de Historial de Máquinas (Operario) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V22.md` |
 | H23 | Documentación de Centros de Gasto | `ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md` |
-| H24 | Vacaciones, Ausencias y Control Horario (título anterior: "Vacaciones y Calendario"; ampliado y renombrado en S127) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md` ← EN PROGRESO |
+| H24 | Vacaciones, Ausencias y Control Horario (título anterior: "Vacaciones y Calendario"; ampliado y renombrado en S127) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md` |
 | H25 | Documentación de Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V25.md` |
 | H26 | Infraestructura Documental Compartida (Alertas, PDF, Email, Sustitución) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V26.md` |
 | H27 | Ingesta de Documentación vía Correo Electrónico | `ENTERPRISEBOT_ATTACHED_MILESTONE_V27.md` |
 | H28 | Migración y Reorganización de Documentación Histórica | `ENTERPRISEBOT_ATTACHED_MILESTONE_V28.md` |
 | H29 | Explorador de Archivos y Gobierno Documental del Panel sobre GCS | `ENTERPRISEBOT_ATTACHED_MILESTONE_V29.md` |
 | H30 | Vinculación Documental Real — Centros de Gasto y Personal | `ENTERPRISEBOT_ATTACHED_MILESTONE_V30.md` |
-| H31 | Interfaz de Gestión Documental de Personal — Altas, Bajas, Sustituciones, EPIs y Circulares (título anterior: "Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares"; ampliado en S99 al fusionar H33) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` |
+| H31 | Interfaz de Gestión Documental de Personal — Altas, Bajas, Sustituciones, EPIs y Circulares (título anterior: "Interfaz de Ficha de Personal — EPIs y Notificaciones/Circulares"; ampliado en S99 al fusionar H33) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md` ← EN PROGRESO |
 | H32 | Migraciones de Infraestructura (Modelo IA, Python, Registro Android) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V32.md` |
 | ~~H33~~ | ~~Subida de Documentación en Tiempo Real desde el Panel~~ — **FUSIONADO EN H31 el 2026-09-10 (S99)**, ver sección 6 | `ENTERPRISEBOT_ATTACHED_MILESTONE_V33.md` (conservado íntegro como archivo histórico) |
 | H34 | Modelo Propio de Clasificación de Documentos (entrenamiento) | `ENTERPRISEBOT_ATTACHED_MILESTONE_V34.md` |
@@ -68,7 +68,24 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 
 ## 3. Resultado Actual
 
-**Hito EN PROGRESO:** H24 — Vacaciones, Ausencias y Control Horario →
+**Hito EN PROGRESO:** H31 — Interfaz de Gestión Documental de
+Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`. Reactivado al
+cierre de S146 por Miguel Ángel (PCH desde H24): *"la siguiente sesión
+nos vamos a dedicar a la UX de personal"*. La sesión siguiente es la
+S148 (S147 es la invasora de fichajes) y empieza por la sección
+"REACTIVADO AL CIERRE DE S146 -- Hoja de Ruta S148" al final del anexo:
+empresas en desplegable con casillas sin scroll, alta por formulario
+sin documentos y Maquinaria igual que Personal con sus grupos.
+
+**Hito PAUSADO al cierre de S146:** H24 — Vacaciones, Ausencias y
+Control Horario → `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md`. En S146 se
+cerraron las copias de seguridad de la BD (cubo y OneDrive, con
+restauración desde el panel) y el vigilante de OneDrive (ver 7.16); lo
+pendiente queda en 7.17. Los fichajes de la invasora S147 siguen en su
+chat.
+
+**Histórico S141-S146:** H24 EN PROGRESO.
+H24 — Vacaciones, Ausencias y Control Horario →
 `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md`. Reactivado al cierre de S137
 por Miguel Ángel (PCH desde H30): *"la siguiente vamos a iniciarla con
 el tema de fichajes, el tema de vacaciones y otro par de cosas más. En

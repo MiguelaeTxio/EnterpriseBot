@@ -3974,3 +3974,77 @@ de la ficha fácilmente.
 - flake8 y djlint a 0 en todos los archivos tocados; los 11 estilos en
   línea de `_personal_pane.html` pasan a clases (4.9).
 - La release `relevo-imagenes` queda con 0 adjuntos.
+
+---
+
+## COMPLETADAS EN S146 (desvío desde H24, 06/11 → 09/11/2026, PEE PC; alta y baja de Personal)
+
+Hecho en la sesión principal de H24 (ver anexo V24, 7.16) mientras se
+probaba la carpeta local con ARANDA REYES, ANTONIO. Lo que toca a la
+pestaña Personal:
+
+1. **El alta no espera a la carpeta local** (`c0be9a4`). Miguel Ángel:
+   *"Esto es una operación que deberíamos hacer en segundo plano"*. El
+   alta dice "Ficha creada. La carpeta local se actualiza en segundo
+   plano…" y vuelve al listado; el agente H28 hace el trabajo después.
+2. **Empresa y Sección de desplegable en el alta** (`b242f2d`). Miguel
+   Ángel: *"dejar ese campo para que se escriba es un error. Hay que
+   preguntar a qué empresa va y sacar el desplegable"*. Las dos son
+   obligatorias; la empresa sale preseleccionada con lo que lee Gemini
+   del documento; la sección se asigna con la fecha de alta (también al
+   reactivar a un inactivo) antes de crear el trabajo local, porque
+   decide la categoría local (el taller de Málaga va aparte).
+3. **Código de empresa en la carpeta local** (`b242f2d`, `bfe88ab`):
+   TR, GR, GL, AGG; si cambia la empresa, cambia el código (las
+   variantes como "(PTE TR)" se respetan).
+4. **El alta de un inactivo mueve su carpeta local aunque la movieran a
+   mano** (`f469f59`): el agente la busca por nombre en todas las
+   categorías.
+5. **Grupos:** marcar un subgrupo no marca el padre; el padre queda a
+   medias (`8692e7d`).
+
+Prueba real: bajas y altas sucesivas de Aranda, todas bien; Aranda
+vuelve a su estado anterior con `restore_aranda_s146`.
+
+## REACTIVADO AL CIERRE DE S146 -- Hoja de Ruta S148 (va antes que la "Hoja de Ruta pendiente al reactivar H31", que sigue intacta)
+
+PCH desde H24 al cierre de S146 (09/11/2026; S147 es la invasora de
+fichajes). Miguel Ángel, verbatim: *"la siguiente sesión nos vamos a
+dedicar a la UX de personal [...] no quiero que salgan [...] scrolls
+verticales, como el volumen cada vez es más grande, están saliendo en
+la pestaña de personal"*.
+
+1. **Personal sin scroll vertical en el panel de filtros.**
+   - Empresa pasa a ser un **desplegable con casillas** (Miguel Ángel:
+     *"que sea un desplegable pero con casillero"*): al abrirlo se
+     marcan una, varias o todas; cerrado, ocupa una línea y dice qué
+     hay marcado. Hoy son cinco casillas sueltas (Grúas Adolfo Álvarez,
+     Transgrual, Grualdi, Asistencia y Grúas Granada, Sin empresa
+     asignada) más "(todas)", junto a Estado (Activos / Inactivos).
+   - Revisar el resto de bloques de filtros y acciones de Personal con
+     el mismo criterio: lo que crece con el volumen va a desplegable
+     con casillas.
+   - **Cierre:** con la ventana normal del PC de Miguel Ángel, la
+     pestaña Personal no tiene scroll vertical en filtros ni acciones,
+     y filtrar por una o varias empresas da el mismo listado que
+     antes.
+2. **Alta por formulario, sin documentación.** Hoy el alta se hace
+   solo a partir de documentos. Al pulsar "Dar de alta", poder elegir
+   el formulario y dar de alta a alguien aunque no tenga ningún
+   documento (*"aunque no tenga documentación"*): mismos campos y
+   reglas que el alta por documentos (empresa y sección de desplegable,
+   fecha de alta, reactivación si ya existe, carpeta local en segundo
+   plano).
+   - **Cierre:** una persona real dada de alta por formulario sin
+     documentos queda en BD activa, con empresa, sección y fecha de
+     alta, y el agente le crea su carpeta local.
+3. **Maquinaria igual que Personal.** Miguel Ángel: *"vamos a
+   dedicarnos a la maquinaria para que quede con usos y las vistas
+   queden también igual que las de personal, y creemos los grupos de
+   selección correspondientes de forma general, tal y como hemos hecho
+   con personal"*. Las vistas de Maquinaria con el mismo formato que
+   Personal y grupos de selección generales de máquinas.
+   - **Cierre:** Maquinaria con el mismo panel de filtros, acciones y
+     grupos de selección que Personal, usado en producción con grupos
+     reales creados.
+4. Cualquier otra cosa de UX que surja en la sesión.

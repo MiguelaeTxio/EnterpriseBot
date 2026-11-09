@@ -1989,3 +1989,101 @@ Migraciones `hr_calendar` 0024-0032, todas aplicadas en producción.
   vuelve en menos de 5 min (`0cb8468`, `27cd5ac`).
 - Modales y avisos encima de una lista en pantalla completa, en todas
   las listas (`da717ac`).
+
+---
+
+### 7.16. COMPLETADAS EN S146 (06/11 → 09/11/2026, PEE PC)
+
+Sesión principal de H24, en paralelo con la invasora S147 (fichajes y
+grupos, ver su propio cierre). SWAP 009-010.
+
+**1. Copias de seguridad de la base de datos (punto 1 de 7.14) — CERRADO**
+- Volcado diario a las 3:00 (`backup_database_task`, Celery Beat) y bajo
+  demanda (`backup_database`): `mysqldump` → gzip → cubo propio
+  `enterprisebot-alvarez-db-backups`, sin pasar por el disco del
+  servidor (cuota de 5 GB, Miguel Ángel: *"si lo intentamos hacer en el
+  servidor, probablemente nos dé error porque nos comemos la cuota"*).
+  Nombre `EnterpriseBot_BD_AAAAMMDD_HHMM.sql.gz` con SHA-256
+  (`00ded77`, migración `document_explorer` 0202).
+- El agente H28 las baja a `OneDrive - GRUALDI SL\COPIAS DE SEGURIDAD
+  BD\` (fuera de las carpetas vigiladas), comprueba el SHA-256 y deja el
+  `.sha256` al lado.
+- Retención "diaria y escalonada" (Miguel Ángel): 14 diarias, 8
+  semanales y 12 mensuales, igual en el cubo y en OneDrive (*"Copiamos
+  automáticamente a cubo y onedrive"*); nunca se borra del cubo una
+  copia que el agente no haya bajado (`6a11d40`).
+- Administración > Copias de seguridad, solo rol Administrador:
+  listado, descarga y restauración con copia de seguridad previa
+  automática (`8fd9ec6`, migración 0203).
+- **Cierre comprobado:** copias 20261106_0912 y 20261107_0300 en OneDrive
+  y en el cubo con su SHA-256; restauración de prueba en el MySQL del
+  runner (`db_backup_restore_test.yml`): 185 tablas y las filas de
+  control (`personidentity`, `documentindexentry`, `clockevent`)
+  coinciden con producción. El workflow admite además una consulta
+  SELECT sobre la copia restaurada (`6cd1c74`).
+- Miguel Ángel: el código está en GitHub y las claves en el `.env`, del
+  que él guarda copias en su Drive; la copia de la BD cubre el resto.
+
+**2. Vigilante de OneDrive en el agente H28** (`8ff1ec0`, `5aa457f`)
+- Miguel Ángel: *"OneDrive entra muchas veces en pausa"*; decidió que lo
+  haga *"con el agente"*. Testigo en la carpeta de copias, estado real
+  con `CfGetPlaceholderInfo`; si no sube en 10 minutos reinicia
+  OneDrive y avisa por WhatsApp. Comprobado: llegaron los dos avisos y
+  el log marca "OneDrive: al dia".
+- La pausa de S146 era la red marcada como de uso medido; Miguel Ángel
+  la desmarcó. Detalle en SESSION_VARIABLES.
+
+**3. Alta y baja con la carpeta local (punto 2 de 7.14, prueba real con
+ARANDA REYES, ANTONIO)**
+- El alta de un inactivo no movía su carpeta local porque la habían
+  movido a mano: ahora el agente la busca por su nombre (`f469f59`).
+- El alta ya no espera a la descarga local: *"esto debe ocurrir en
+  segundo plano"* (`c0be9a4`).
+- Empresa y sección de desplegable en el alta (*"dejar ese campo para
+  que se escriba es un error"*); la carpeta local lleva el código de la
+  empresa (TR, GR, GL, AGG) y el taller va aparte (`b242f2d`,
+  `bfe88ab`). Detalle de lo de Personal en el anexo V31.
+- Pruebas: bajas y altas sucesivas de Aranda, todas bien (*"ha
+  funcionado a la perfección"*). Al terminar se deja como estaba antes
+  de las pruebas con los valores de la copia del 08/11 a las 3:00:
+  comando `restore_aranda_s146` (`e017d5a`): empresa GRUAS ADOLFO
+  ALVAREZ SL, alta 10/07/2026, baja 23/09/2026, sin sección, carpeta
+  local `OPERARIOS/TRABAJADORES INACTIVOS/ARANDA REYES, ANTONIO` (sin
+  código). La documentación del cubo ya estaba en su carpeta original.
+
+**4. Fichajes de Alejandro García Luque (05/11 y 06/11)**
+- 05/11: se olvidó de fichar a las 8 y fichó a las 10. Entrada corregida
+  a las 8:00 y la tarea del parte empieza a las 8:00 (8 h).
+- 06/11: añadida la salida a las 17:30; el parte lo hace él (Miguel
+  Ángel: *"El parte del viernes lo hará él. Nosotros le hacemos el
+  fichaje"*). Correcciones firmadas por alvarez_admin con su motivo
+  (comando `fix_garcia_luque_s146`, SWAP 010, comprobado).
+- Código (`4e4afea`): al corregir el supervisor una entrada o salida en
+  el panel, la tarea del parte que empezaba (o acababa) en la hora
+  antigua pasa a la nueva y el parte se vuelve a cotejar con lo
+  fichado.
+
+**5. Otros**
+- Grupos: marcar un subgrupo (Mecánicos) ya no marca el grupo padre
+  (todo Taller) (`8692e7d`), pasado también a la invasora.
+- `actions/checkout@v5` en los workflows (`7c50ed8`).
+
+### 7.17. PAUSADO AL CIERRE DE S146 (PCH a H31)
+
+Miguel Ángel al cierre: *"la siguiente sesión nos vamos a dedicar a la
+UX de personal"* → H31 EN PROGRESO (ver su anexo, "REACTIVADO AL CIERRE
+DE S146").
+
+Queda en H24, intacto, para cuando se reactive:
+- Prueba en iPhone (4 sesiones sin avanzar): Pablo fichando en el
+  taller. Cierre: el de 7.12.
+- Saldos de vacaciones (3 sesiones sin avanzar): datos de Juan
+  Francisco Arrabalí. Cierre: el de 7.10, punto 4.
+- Secciones de los que no tienen (2 sesiones sin avanzar): los listados
+  de Plataformas. Cierre: el de 7.12, punto 2.
+- Reenviar el alta y pre-aviso de fichaje: cierres de 7.12, puntos 3 y
+  5, cuando ocurran de verdad.
+- Ofrecido en S145 y no pedido: cuarentena de 435 documentos, carpeta
+  de Gutiérrez Santiago Nicolás, 231 documentos quitados de fichas y la
+  posible ficha duplicada de Gutiérrez.
+- Lo de fichajes de la invasora S147 sigue en su chat.
