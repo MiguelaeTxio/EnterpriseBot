@@ -2496,41 +2496,6 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
         if (createModalInstance) { createModalInstance.hide(); }
     };
 
-    // H24 (S144): espera a que el agente H28 deje los documentos del
-    // alta en la carpeta local (Miguel Ángel: "si hay un error en la
-    // descarga, se termine esa descarga y cuando esté finalizada,
-    // termina el pipeline"). Consulta el estado cada 3 s.
-    function waitLocalDownload(data, submitBtn, spinner, label) {
-        const total = data.download.total;
-        label.textContent = 'Descargando a la carpeta local… 0/' + total;
-        resultEl.innerHTML = '<div class="alert alert-info py-1 px-2 small mb-0">Ficha creada. Esperando a que el agente del PC descargue los documentos a la carpeta de la persona…</div>';
-        function poll() {
-            fetch(data.download.status_url, {headers: {'Accept': 'application/json'}})
-                .then((r) => r.json()).then((st) => {
-                    label.textContent = 'Descargando a la carpeta local… ' + st.downloaded + '/' + st.total;
-                    if (st.done) {
-                        spinner.classList.add('d-none');
-                        label.textContent = 'Descarga terminada';
-                        resultEl.innerHTML = '<div class="alert alert-success py-1 px-2 small mb-0">Ficha creada y ' + st.total + ' documento(s) descargados en la carpeta local' + (st.host ? ' (' + st.host + ')' : '') + '.</div>';
-                        personalIntakeNotify('Alta terminada: documentos en la carpeta local.');
-                        setTimeout(function() { window.location.href = data.redirect_url; }, 1500);
-                        return;
-                    }
-                    const parts = [];
-                    if (st.error) {
-                        parts.push('<div class="alert alert-warning py-1 px-2 small mb-1">Error en la descarga, se reintenta: ' + escapeHtml(st.error) + '</div>');
-                    }
-                    if (st.agent_minutes_since_beat === null || st.agent_minutes_since_beat > 15) {
-                        parts.push('<div class="alert alert-danger py-1 px-2 small mb-0">El agente del PC no responde' + (st.agent_minutes_since_beat === null ? '' : ' (último latido hace ' + st.agent_minutes_since_beat + ' min)') + '. La descarga se hará en cuanto vuelva.</div>');
-                    } else if (st.status === 'pending') {
-                        parts.push('<div class="alert alert-info py-1 px-2 small mb-0">Ficha creada. Esperando a que el agente del PC recoja la descarga (lo hace cada 30 s)…</div>');
-                    }
-                    if (parts.length) { resultEl.innerHTML = parts.join(''); }
-                    setTimeout(poll, 3000);
-                }).catch(() => { setTimeout(poll, 3000); });
-        }
-        poll();
-    }
     function escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
@@ -2558,13 +2523,18 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
             headers: {'X-CSRFToken': getCookie('csrftoken')},
         }).then((r) => r.json()).then((data) => {
             if (data.ok && data.download) {
-                // H24 (S144): el alta termina cuando el agente H28 ha
-                // descargado sus documentos a la carpeta local de
-                // OneDrive; se reintenta solo hasta completarla.
+                // H24 (S146, Miguel Ángel: "esto debe ocurrir en segundo
+                // plano"): la carpeta local la mueve y la rellena el
+                // agente H28 cuando la recoge (puede tardar si acaba de
+                // arrancar); el alta no espera por ella.
+                createSpinner.classList.add('d-none');
+                createBtnLabel.textContent = 'Ficha creada';
+                resultEl.innerHTML = '<div class="alert alert-success py-1 px-2 small mb-0">Ficha creada. La carpeta local se actualiza en segundo plano: el agente del PC la mueve y descarga sus documentos en cuanto la recoja.</div>';
+                personalIntakeNotify('Ficha creada; la carpeta local se actualiza en segundo plano.');
                 if (data.warnings && data.warnings.length) {
                     alert('Ficha creada. Aviso:\n' + data.warnings.join('\n'));
                 }
-                waitLocalDownload(data, submitBtn, createSpinner, createBtnLabel);
+                setTimeout(function() { window.location.href = data.redirect_url; }, 1500);
                 return;
             }
             submitBtn.disabled = false;
