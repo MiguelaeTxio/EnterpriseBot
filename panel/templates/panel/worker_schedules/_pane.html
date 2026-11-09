@@ -39,20 +39,7 @@ filtrar la sección, marcar todos y poner el horario.
                             </div>
                             <input type="hidden" name="active" id="hor-active-input" value="{{ filter_active|join:',' }}">
                         </div>
-                        <div>
-                            <div class="fw-semibold mb-1">
-                                Empresa
-                                <a href="#" class="small ms-1" id="hor-company-all">(todas)</a>
-                            </div>
-                            {% for slug, label, raws in company_filter_choices %}
-                            <div class="form-check">
-                                <input class="form-check-input hor-company-check" type="checkbox" value="{{ slug }}"
-                                       id="horCompany{{ forloop.counter }}" {% if slug in filter_company %}checked{% endif %}>
-                                <label class="form-check-label" for="horCompany{{ forloop.counter }}">{{ label }}</label>
-                            </div>
-                            {% endfor %}
-                            <input type="hidden" name="company" id="hor-company-input" value="{{ filter_company|join:',' }}">
-                        </div>
+                        {% include "panel/_company_checkdrop.html" with prefix="hor" id_prefix="horCompany" %}
                         <div>
                             <div class="fw-semibold mb-1">Selección</div>
                             <div class="form-check">

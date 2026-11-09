@@ -46,20 +46,7 @@ recordatorios, secciones que fichan y permiso de envío).
                             </div>
                             <input type="hidden" name="active" id="clk-active-input" value="{{ filter_active|join:',' }}">
                         </div>
-                        <div>
-                            <div class="fw-semibold mb-1">
-                                Empresa
-                                <a href="#" class="small ms-1" id="clk-company-all">(todas)</a>
-                            </div>
-                            {% for slug, label, raws in company_filter_choices %}
-                            <div class="form-check">
-                                <input class="form-check-input clk-company-check" type="checkbox" value="{{ slug }}"
-                                       id="clkCompany{{ forloop.counter }}" {% if slug in filter_company %}checked{% endif %}>
-                                <label class="form-check-label" for="clkCompany{{ forloop.counter }}">{{ label }}</label>
-                            </div>
-                            {% endfor %}
-                            <input type="hidden" name="company" id="clk-company-input" value="{{ filter_company|join:',' }}">
-                        </div>
+                        {% include "panel/_company_checkdrop.html" with prefix="clk" id_prefix="clkCompany" %}
                         <div>
                             <div class="fw-semibold mb-1">Desde</div>
                             <input type="date" name="date_from" class="form-control form-control-sm mb-1" value="{{ date_from|date:'Y-m-d' }}">
@@ -69,7 +56,7 @@ recordatorios, secciones que fichan y permiso de envío).
                         {# S145: los mismos atajos de fechas que en Fichajes del trabajador. #}
                         <div>
                             <div class="fw-semibold mb-1">Rápido</div>
-                            <div class="d-grid gap-1" style="grid-template-columns: 1fr 1fr;">
+                            <div class="d-grid gap-1 clk-grid-2">
                                 <button type="button" class="btn btn-sm btn-outline-secondary clk-range" data-range="month">Este mes</button>
                                 <button type="button" class="btn btn-sm btn-outline-secondary clk-range" data-range="prev">Mes anterior</button>
                                 <button type="button" class="btn btn-sm btn-outline-secondary clk-range" data-range="period"
@@ -178,10 +165,10 @@ recordatorios, secciones que fichan y permiso de envío).
                             <button type="button" class="btn btn-sm btn-outline-secondary clk-worker-btn" data-action="clocks_off"
                                     title="Los marcados no están obligados a fichar (por ejemplo, un jefe de sección): no reciben recordatorios.">No ficha</button>
                             {# S143: el alta se envía hoy y fichan desde el día elegido (mañana por defecto). #}
-                            <div class="input-group input-group-sm" style="width:auto">
+                            <div class="input-group input-group-sm w-auto">
                                 <button type="button" class="btn btn-outline-primary" id="clk-clocks-from"
                                         title="Los marcados fichan desde ese día: antes ni reciben avisos ni pueden fichar desde el móvil. Con la fecha de hoy, desde ya. «Ficha» no cambia este día.">Ficha desde</button>
-                                <input type="date" class="form-control" id="clk-clocks-from-day" value="{{ tomorrow|date:'Y-m-d' }}" style="max-width:9.5em">
+                                <input type="date" class="form-control" id="clk-clocks-from-day" value="{{ tomorrow|date:'Y-m-d' }}">
                             </div>
                             <button type="button" class="btn btn-sm btn-outline-primary clk-worker-btn" data-action="reminders_on"
                                     title="Los marcados reciben el recordatorio si no fichan la entrada o la salida (cuando el envío está activado).">Con recordatorios</button>
@@ -238,6 +225,9 @@ recordatorios, secciones que fichan y permiso de envío).
 </div>
 
 <style>
+/* S148 (directriz 4.9): estilos que vivían en línea. */
+.clk-grid-2 { grid-template-columns: 1fr 1fr; }
+#clk-clocks-from-day { max-width: 9.5em; }
 #clk-results-scroll thead th { position: sticky; top: 0; background-color: #f8f9fa; z-index: 2; }
 #clk-results-scroll thead th.sticky-col { z-index: 3; }
 #clk-results-scroll table td,

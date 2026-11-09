@@ -49,20 +49,7 @@ supervisores: el visor de cada trabajador irá fuera de aquí.
                             </div>
                             <input type="hidden" name="active" id="vbal-active-input" value="{{ filter_active|join:',' }}">
                         </div>
-                        <div>
-                            <div class="fw-semibold mb-1">
-                                Empresa
-                                <a href="#" class="small ms-1" id="vbal-company-all">(todas)</a>
-                            </div>
-                            {% for slug, label, raws in company_filter_choices %}
-                            <div class="form-check">
-                                <input class="form-check-input vbal-company-check" type="checkbox" value="{{ slug }}"
-                                       id="vbalCompany{{ forloop.counter }}" {% if slug in filter_company %}checked{% endif %}>
-                                <label class="form-check-label" for="vbalCompany{{ forloop.counter }}">{{ label }}</label>
-                            </div>
-                            {% endfor %}
-                            <input type="hidden" name="company" id="vbal-company-input" value="{{ filter_company|join:',' }}">
-                        </div>
+                        {% include "panel/_company_checkdrop.html" with prefix="vbal" id_prefix="vbalCompany" %}
                         <div>
                             <div class="fw-semibold mb-1">Sección</div>
                             <select name="section" class="form-select form-select-sm mb-2">
