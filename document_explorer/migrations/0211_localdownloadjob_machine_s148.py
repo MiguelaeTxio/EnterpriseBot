@@ -1,4 +1,4 @@
-# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/migrations/0210_localdownloadjob_machine_s148.py
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/migrations/0211_localdownloadjob_machine_s148.py
 # H31 (S148): las descargas a la carpeta local de OneDrive también son
 # de máquinas (DOC. MAQUINAS): `machine` nuevo y `person` opcional. Los
 # trabajos que ya hay son todos de personas y no cambian. Además,
@@ -11,7 +11,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("document_explorer", "0209_grupos_sin_repetidos_s147"),
+        ("document_explorer", "0210_nominas_confidenciales_s147"),
         ("fleet", "0034_machinegrouptemplate_s148"),
     ]
 
