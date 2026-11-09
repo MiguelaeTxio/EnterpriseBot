@@ -1186,6 +1186,12 @@ class OpenDocumentView(ExplorerAccessMixin, View):
         )
         if mode != permissions.ALL:
             raise Http404("Sin acceso a ese documento.")
+        # S147: confidencial (nómina): solo el trabajador y quien la
+        # envió, descifrada aquí (nunca una URL firmada del cubo).
+        if entry.is_confidential:
+            from document_explorer.confidential import file_response
+
+            return file_response(entry, company_user)
 
         return HttpResponseRedirect(
             generate_signed_url(entry.bucket, entry.blob_name)
@@ -1240,10 +1246,27 @@ class BulkDownloadView(ExplorerAccessMixin, View):
                 request.META.get("HTTP_REFERER")
                 or reverse("document_explorer:explorer")
             )
+        # S147: los confidenciales solo para su trabajador y quien los
+        # envió (descifrados); al resto ni se le incluyen.
+        from document_explorer.confidential import can_open, open_bytes
+
+        readable = [
+            entry for entry in readable
+            if can_open(entry, request.user.company_user)
+        ]
+        if not readable:
+            messages.error(
+                request, "Los documentos elegidos son confidenciales: solo "
+                "los pueden abrir el trabajador y quien se los envió.",
+            )
+            return redirect(
+                request.META.get("HTTP_REFERER")
+                or reverse("document_explorer:explorer")
+            )
         if len(readable) == 1:
             entry = readable[0]
             return FileResponse(
-                io.BytesIO(download_bytes(entry.bucket, entry.blob_name)),
+                io.BytesIO(open_bytes(entry, request.user.company_user)),
                 as_attachment=True, filename=entry.name,
             )
         spool = tempfile.SpooledTemporaryFile(max_size=50 * 1024 * 1024)
@@ -1260,7 +1283,7 @@ class BulkDownloadView(ExplorerAccessMixin, View):
                         else "%s (%d)" % (name, count)
                     )
                 archive.writestr(
-                    name, download_bytes(entry.bucket, entry.blob_name),
+                    name, open_bytes(entry, request.user.company_user),
                 )
         spool.seek(0)
         stamp = timezone.localtime().strftime("%Y%m%d_%H%M")

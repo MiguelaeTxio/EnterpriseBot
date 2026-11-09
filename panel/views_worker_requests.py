@@ -223,6 +223,12 @@ class RequestFileDownloadView(CompanyUserRequiredMixin, View):
             "request", "entry").filter(pk=pk).first()
         if stored is None or stored.entry is None:
             raise Http404
+        # S147: nómina confidencial: solo el trabajador y quien la envió
+        # (ni el resto de supervisores), descifrada.
+        if stored.entry.is_confidential:
+            from document_explorer.confidential import file_response
+
+            return file_response(stored.entry, request.user.company_user)
         same_company = (stored.request.company_id
                         == request.user.company_user.company_id)
         own = stored.request.person == _person_of(request)

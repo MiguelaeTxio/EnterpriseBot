@@ -91,7 +91,7 @@
             {% else %}
                 <a href="{% url 'document_explorer:open' entry.pk %}"
                    target="_blank" rel="noopener"
-                   title="{% if show_original_names %}Nombre canónico: {{ entry.friendly_name|default:entry.name }}{% else %}Nombre original: {{ entry.blob_name|basename|default:entry.name }}{% endif %}">{% if show_original_names %}{{ entry.blob_name|basename|default:entry.name }}{% else %}{{ entry.friendly_name|default:entry.name }}{% endif %}</a>
+                   title="{% if show_original_names %}Nombre canónico: {{ entry.friendly_name|default:entry.name }}{% else %}Nombre original: {{ entry.blob_name|basename|default:entry.name }}{% endif %}">{% if show_original_names %}{{ entry.blob_name|basename|default:entry.name }}{% else %}{{ entry.friendly_name|default:entry.name }}{% endif %}</a>{% if entry.is_confidential %} <i class="bi bi-lock-fill text-danger" title="Confidencial: solo lo abren el trabajador y quien lo envió{% if entry.confidential_sender %} ({{ entry.confidential_sender.user.get_full_name|default:entry.confidential_sender.user.username }}){% endif %}"></i>{% endif %}
                 {% if entry.pk and entry.name|lower|slice:"-4:" == ".zip" or entry.pk and entry.name|lower|slice:"-4:" == ".rar" %}
                     <a href="{% url 'document_explorer:archive_preview' entry.pk %}"
                        class="badge bg-secondary text-decoration-none ms-1"

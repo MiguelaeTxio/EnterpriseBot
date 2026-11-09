@@ -541,7 +541,23 @@ def upload_subject_document(
     )
     blob_name = "%s/%s" % (target_folder, filename)
     content_type = content_type_of(data, filename)
-    upload_bytes(BUCKET, blob_name, data, content_type=content_type)
+    # S147: nómina (tipo confidencial): al cubo cifrada, sin lectura
+    # automática, y solo para el trabajador y quien la sube
+    # (document_explorer/confidential.py).
+    confidential = bool(document_type.is_confidential)
+    if confidential:
+        from document_explorer.confidential import ConfidentialError
+        from document_explorer.confidential import encrypt
+
+        try:
+            stored = encrypt(data)
+        except ConfidentialError as exc:
+            raise SubjectUploadError(str(exc)) from exc
+    else:
+        stored = data
+    upload_bytes(BUCKET, blob_name, stored,
+                 content_type=("application/octet-stream" if confidential
+                               else content_type))
 
     entry = DocumentIndexEntry.objects.create(
         bucket=BUCKET,
@@ -558,6 +574,8 @@ def upload_subject_document(
         domain_object_id=subject.pk,
         expiry_date=typed_date if document_type.tracks_expiry else None,
         issue_date=typed_issue_date,
+        is_confidential=confidential,
+        confidential_sender=uploaded_by if confidential else None,
     )
 
     # H31 (S102): antes se usaba `verify_typed_date()` (Tesseract
@@ -574,7 +592,7 @@ def upload_subject_document(
     # cuando el supervisor no escribió una a mano, que sigue mandando
     # si la hay.
     engine_field, engine_date, ocr_text, engine_source = (
-        _resolve_date_and_text(
+        (None, None, "", "") if confidential else _resolve_date_and_text(
             document_type, original_filename, data, content_type,
         )
     )
@@ -621,7 +639,7 @@ def upload_subject_document(
     check = (
         _check_uploaded_document(
             subject, document_type, data, original_filename, ocr_text,
-        ) if check_content else {}
+        ) if check_content and not confidential else {}
     )
 
     # H30 (S122): aquí se creaban las 3 alertas 30/15/7 de H30/S50. Ya

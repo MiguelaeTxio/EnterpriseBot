@@ -3092,6 +3092,10 @@ def _build_dossier_pdf_bytes(person, entries, epi_deliveries=None):
         label = (
             entry.document_type.label if entry.document_type_id else entry.name
         )
+        # S147: una nómina confidencial nunca va en el dossier.
+        if entry.is_confidential:
+            skipped_lines.append("%s -- confidencial" % label)
+            continue
         family = (
             entry.document_type.get_person_family_display()
             if entry.document_type_id else "—"
@@ -3208,6 +3212,9 @@ def _build_dossier_zip_bytes(person, entries, epi_deliveries=None):
     used_names = set()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         for entry in all_entries:
+            # S147: una nómina confidencial nunca va en el dossier.
+            if entry.is_confidential:
+                continue
             family_folder = (
                 slugify(entry.document_type.get_person_family_display())
                 if entry.document_type_id else "sin-familia"
@@ -7160,6 +7167,12 @@ class DocumentViewView(CompanyUserRequiredMixin, View):
         entry = get_object_or_404(
             DocumentIndexEntry, pk=pk, deleted_at__isnull=True,
         )
+        # S147: confidencial (nómina): solo el trabajador y quien la
+        # envió, descifrada aquí (nunca una URL firmada del cubo).
+        if entry.is_confidential:
+            from document_explorer.confidential import file_response
+
+            return file_response(entry, request.user.company_user)
         url = generate_signed_url(entry.bucket, entry.blob_name)
         return redirect(url)
 

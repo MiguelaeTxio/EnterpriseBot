@@ -2459,6 +2459,9 @@ def classify_entry(entry, domain: str | None = None) -> dict:
     documentos de Office siguen necesitando descarga real (LibreOffice
     no puede convertir una URI `gs://`), así que ese camino no cambia.
     """
+    # S147: una nómina confidencial (cifrada) no se lee nunca.
+    if getattr(entry, "is_confidential", False):
+        return {"error": "documento confidencial"}
     import json
 
     mime_type = entry.content_type or "application/pdf"

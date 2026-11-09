@@ -385,7 +385,7 @@ H30 (S128), punto 6: tablas `stack-mobile` -- en el móvil cada fila es una tarj
                        {% if entry.pk in selected_document_ids %}checked{% endif %}
                        onchange="toggleDocumentSelection(this)">
             </td>
-            <td class="stack-mobile-title">{{ entry.document_type.label }}{% if entry.contract_alert or entry.contract_review %}<div class="contract-alert-box" data-url="{% url 'panel:documentation_personal_contract_reviewed' pk=person.pk %}">
+            <td class="stack-mobile-title">{{ entry.document_type.label }}{% if entry.is_confidential %} <i class="bi bi-lock-fill text-danger" title="Confidencial: solo lo abren el trabajador y quien lo envió"></i>{% endif %}{% if entry.contract_alert or entry.contract_review %}<div class="contract-alert-box" data-url="{% url 'panel:documentation_personal_contract_reviewed' pk=person.pk %}">
                 {% if entry.contract_alert %}<span class="badge {{ entry.contract_alert.css }} text-wrap text-start">{{ entry.contract_alert.text }}</span>
                 <button type="button" class="btn btn-sm btn-outline-success py-0 ms-1 contract-review-button" data-action="review"
                         title="El contrato vigente es el correcto: el aviso vuelve a contar desde hoy">Correcto</button>{% endif %}
@@ -705,7 +705,7 @@ vacaciones).
                        {% if entry.pk in selected_document_ids %}checked{% endif %}
                        onchange="toggleDocumentSelection(this)">
             </td>
-            <td class="stack-mobile-title">{{ entry.document_type.label }}</td>
+            <td class="stack-mobile-title">{{ entry.document_type.label }}{% if entry.is_confidential %} <i class="bi bi-lock-fill text-danger" title="Confidencial: solo lo abren el trabajador y quien lo envió{% if entry.confidential_sender %} ({{ entry.confidential_sender.user.get_full_name|default:entry.confidential_sender.user.username }}){% endif %}"></i>{% endif %}</td>
             <td data-label="Caducidad">
                 {% if entry.needs_attention %}<i class="bi bi-exclamation-triangle-fill text-danger me-1" title="Sin fecha vigente -- necesita atención"></i>{% endif %}
                 {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}
@@ -819,7 +819,7 @@ vez de una lista única sin estructura.
                                        {% if entry.pk in selected_document_ids %}checked{% endif %}
                                        onchange="toggleDocumentSelection(this)">
                             </td>
-                            <td class="stack-mobile-title">{{ entry.document_type.label }}</td>
+                            <td class="stack-mobile-title">{{ entry.document_type.label }}{% if entry.is_confidential %} <i class="bi bi-lock-fill text-danger" title="Confidencial: solo lo abren el trabajador y quien lo envió{% if entry.confidential_sender %} ({{ entry.confidential_sender.user.get_full_name|default:entry.confidential_sender.user.username }}){% endif %}"></i>{% endif %}</td>
                             <td data-label="Caducidad">
                                 {% if entry.needs_attention %}<i class="bi bi-exclamation-triangle-fill text-danger me-1" title="Sin fecha vigente -- necesita atención"></i>{% endif %}
                                 {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}

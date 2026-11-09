@@ -227,6 +227,9 @@ def _parts_for(entry):
     documentos de oficina (convertidos o por texto), .html/.xml/.msg por
     texto. ([], "motivo") si no se puede leer.
     """
+    # S147: una nómina confidencial no se lee nunca.
+    if entry.is_confidential:
+        return [], "documento confidencial"
     extension = (
         entry.name.rsplit(".", 1)[-1].lower() if "." in entry.name else ""
     )

@@ -82,6 +82,8 @@ def _person_entry(pk):
         DocumentIndexEntry, pk=pk, deleted_at__isnull=True,
         entry_kind=DocumentIndexEntry.KIND_FILE,
         domain_content_type=person_ct,
+        # S147: una nómina confidencial no se abre ni se parte aquí.
+        is_confidential=False,
     )
     person = get_object_or_404(PersonIdentity, pk=entry.domain_object_id)
     return entry, person

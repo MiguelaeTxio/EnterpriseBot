@@ -430,6 +430,22 @@ class DocumentIndexEntry(models.Model):
         blank=True,
         verbose_name="Fecha de la anotación",
     )
+    # S147 (Miguel Ángel): "nadie puede ver ese documento exceptuando el
+    # administrador que le envía y el trabajador que la recibe" (sobre
+    # todo nóminas). Se guarda cifrado en el cubo y solo lo abren el
+    # trabajador y quien lo envió (document_explorer/confidential.py).
+    is_confidential = models.BooleanField(
+        default=False,
+        verbose_name="Confidencial (cifrado)",
+    )
+    confidential_sender = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="confidential_sent_entries",
+        verbose_name="Enviado por (confidencial)",
+    )
     indexed_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de alta en el índice",
@@ -849,6 +865,13 @@ class DocumentTypeCatalog(models.Model):
             "registro de sesión S96, para la clasificación completa "
             "tipo a tipo)."
         ),
+    )
+    # S147: los documentos de este tipo que se suban a partir de ahora
+    # (nóminas) son confidenciales: cifrados y solo para el trabajador y
+    # quien los envía.
+    is_confidential = models.BooleanField(
+        default=False,
+        verbose_name="Confidencial (solo trabajador y quien lo envía)",
     )
     is_cumulative = models.BooleanField(
         default=False,
@@ -4578,3 +4601,42 @@ class DatabaseBackup(models.Model):
 
     def __str__(self):
         return "%s (%s)" % (self.file_name, self.status)
+
+
+class ConfidentialAccessLog(models.Model):
+    """
+    Each attempt to open a confidential document (S147).
+    ---
+    Cada intento de abrir un documento confidencial (S147): quién,
+    cuándo y si se le dejó.
+    """
+
+    entry = models.ForeignKey(
+        DocumentIndexEntry,
+        on_delete=models.CASCADE,
+        related_name="confidential_accesses",
+        verbose_name="Documento",
+    )
+    company_user = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name="Usuario",
+    )
+    allowed = models.BooleanField(default=False, verbose_name="Permitido")
+    opened_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha",
+    )
+
+    class Meta:
+        verbose_name = "Acceso a documento confidencial"
+        verbose_name_plural = "Accesos a documentos confidenciales"
+        ordering = ["-opened_at"]
+
+    def __str__(self) -> str:
+        return "%s %s %s" % (self.entry_id, self.company_user_id,
+                             self.opened_at)
+
