@@ -199,6 +199,10 @@ from panel.views_personal_export import (
     PersonalExportView,
 )
 from panel.views_document_split import DocumentSplitView
+from panel.views_machine_groups import (
+    MachineGroupDeleteView,
+    MachineGroupSaveView,
+)
 from panel.views_epi_deliveries import (
     EpiResultsFragmentView,
     EpiTabFragmentView,
@@ -898,6 +902,22 @@ urlpatterns = [
     # Subtarea 9.6.1 — Hito 6 (2026-04-27)
     # Fleet / Centros de gasto — Hito 12 Paso 4
     path("fleet/", MachineAssetListView.as_view(), name="fleet_list"),
+    # H31 (S148): grupos de selección de máquinas (como los de Personal).
+    path(
+        "fleet/grupos/guardar/",
+        MachineGroupSaveView.as_view(),
+        name="fleet_group_save",
+    ),
+    path(
+        "fleet/grupos/<int:group_pk>/guardar/",
+        MachineGroupSaveView.as_view(),
+        name="fleet_group_update",
+    ),
+    path(
+        "fleet/grupos/<int:group_pk>/eliminar/",
+        MachineGroupDeleteView.as_view(),
+        name="fleet_group_delete",
+    ),
     path(
         "fleet/create/", MachineAssetCreateView.as_view(), name="fleet_create"
     ),

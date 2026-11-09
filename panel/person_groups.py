@@ -21,8 +21,12 @@ grupo suyo se cuelgan subgrupos. Los demás lo usan (Personal, Avisos y
 el recuadro "Grupos de selección" de Fichajes, Vacaciones,
 Solicitudes, Horarios, Usuarios y Partes digitales, que selecciona a
 sus personas como en Personal).
+
+H31 (S148): los grupos de máquinas de Centros de Gasto
+(fleet.MachineGroupTemplate) usan estas mismas funciones con
+`kind=MACHINE_KIND`; sin `kind`, todo sigue siendo de personas.
 """
-from document_explorer.models import PersonGroupTemplate
+from collections import namedtuple
 
 
 class GroupError(ValueError):
@@ -37,6 +41,37 @@ class GroupError(ValueError):
 def _label(person):
     return "%s %s, %s" % (person.first_surname, person.second_surname,
                           person.given_name)
+
+
+def _machine_label(machine):
+    return " ".join(part for part in (machine.code, machine.plate,
+                                      machine.brand_model) if part)
+
+
+# H31 (S148): los grupos de máquinas (fleet.MachineGroupTemplate) siguen
+# exactamente las mismas reglas que los de personas; lo que cambia es
+# el modelo, cómo se nombra a cada uno y dónde se recuerda el plegado.
+GroupKind = namedtuple("GroupKind", [
+    "model_path", "member_path", "label", "user_id", "collapsed_key",
+    "one", "many",
+])
+PERSON_KIND = GroupKind(
+    "document_explorer.PersonGroupTemplate",
+    "document_explorer.PersonIdentity", _label,
+    lambda person: person.company_user_id or "", "person_groups",
+    "Una persona", "Quítalas",
+)
+MACHINE_KIND = GroupKind(
+    "fleet.MachineGroupTemplate", "fleet.MachineAsset", _machine_label,
+    lambda machine: "", "machine_groups",
+    "Una máquina", "Quítalas",
+)
+
+
+def _model(path):
+    from django.apps import apps
+
+    return apps.get_model(path)
 
 
 def can_edit(group, editor):
@@ -72,7 +107,7 @@ def _is_general(group):
     return user is None or user.username == GENERAL_USERNAME
 
 
-def group_tree(editor=None):
+def group_tree(editor=None, kind=PERSON_KIND):
     """
     Flat list of the groups in tree order, under the creator folders.
     ---
@@ -88,7 +123,7 @@ def group_tree(editor=None):
     member_names (los suyos), total (personas distintas, contando sus
     subgrupos), can_edit (si `editor` lo creó) y owner (quién lo creó).
     """
-    groups = list(PersonGroupTemplate.objects.select_related(
+    groups = list(_model(kind.model_path).objects.select_related(
         "created_by__user").prefetch_related("members").order_by("name"))
     by_parent = {}
     for group in groups:
@@ -109,7 +144,7 @@ def group_tree(editor=None):
             if group.pk in seen:
                 continue
             seen.add(group.pk)
-            people = sorted(group.members.all(), key=_label)
+            people = sorted(group.members.all(), key=kind.label)
             nodes.append({
                 "kind": "group",
                 "group": group,
@@ -118,8 +153,8 @@ def group_tree(editor=None):
                 "folder": folder,
                 "children": [c.pk for c in by_parent.get(group.pk, [])],
                 "member_ids": [p.pk for p in people],
-                "member_names": [_label(p) for p in people],
-                "member_user_ids": [p.company_user_id or "" for p in people],
+                "member_names": [kind.label(p) for p in people],
+                "member_user_ids": [kind.user_id(p) for p in people],
                 "total": len(members_of(group)),
                 "can_edit": can_edit(group, editor),
                 "owner": owner_label(group),
@@ -159,7 +194,7 @@ def group_tree(editor=None):
     return nodes
 
 
-def collapsed_state(editor):
+def collapsed_state(editor, kind=PERSON_KIND):
     """
     Folded tree rows of `editor` ("person_groups" screen state).
     ---
@@ -168,7 +203,8 @@ def collapsed_state(editor):
     """
     from panel.navigation_persistence import get_saved_state_key
 
-    collapsed = get_saved_state_key(editor, "person_groups", "collapsed", [])
+    collapsed = get_saved_state_key(
+        editor, kind.collapsed_key, "collapsed", [])
     collapsed = ([str(pk) for pk in collapsed]
                  if isinstance(collapsed, list) else [])
     if FOLDERS_INIT_MARK not in collapsed:
@@ -176,7 +212,7 @@ def collapsed_state(editor):
     return collapsed
 
 
-def parent_choices(exclude_pk=None, editor=None):
+def parent_choices(exclude_pk=None, editor=None, kind=PERSON_KIND):
     """
     Groups that can hold subgroups: those without loose members.
     ---
@@ -185,12 +221,13 @@ def parent_choices(exclude_pk=None, editor=None):
     Taller"): cualquiera, tenga personas o no. Con `editor`, solo los
     suyos (en uno ajeno no se cuelgan subgrupos).
     """
+    model = _model(kind.model_path)
     excluded = set()
     if exclude_pk:
-        group = PersonGroupTemplate.objects.filter(pk=exclude_pk).first()
+        group = model.objects.filter(pk=exclude_pk).first()
         if group is not None:
             excluded = group.descendant_ids()
-    groups = PersonGroupTemplate.objects.all()
+    groups = model.objects.all()
     if editor is not None:
         groups = groups.filter(created_by=editor)
     return [
@@ -203,7 +240,8 @@ def parent_choices(exclude_pk=None, editor=None):
     ]
 
 
-def save_group(group, name, parent_id, person_ids, editor=None):
+def save_group(group, name, parent_id, person_ids, editor=None,
+               kind=PERSON_KIND):
     """
     Validates and saves a group (name, parent and people).
     ---
@@ -216,8 +254,6 @@ def save_group(group, name, parent_id, person_ids, editor=None):
     entra en un subgrupo entra también en todos los grupos de encima.
     Sin personas, queda como carpeta para colgarle otros.
     """
-    from document_explorer.models import PersonIdentity
-
     if group.pk and not can_edit(group, editor):
         raise GroupError(_not_yours(group))
     name = (name or "").strip()
@@ -225,7 +261,8 @@ def save_group(group, name, parent_id, person_ids, editor=None):
         raise GroupError("Falta el nombre del grupo.")
     parent = None
     if parent_id:
-        parent = PersonGroupTemplate.objects.filter(pk=parent_id).first()
+        parent = _model(kind.model_path).objects.filter(
+            pk=parent_id).first()
         if parent is None:
             raise GroupError("No existe el grupo donde meterlo.")
         if group.pk and parent.pk in group.descendant_ids():
@@ -237,7 +274,8 @@ def save_group(group, name, parent_id, person_ids, editor=None):
                 "«%s» es de %s: solo puedes meterlo dentro de un grupo "
                 "tuyo." % (parent.path_label(),
                            owner_label(parent) or "otro usuario"))
-    people = list(PersonIdentity.objects.filter(pk__in=person_ids))
+    people = list(_model(kind.member_path).objects.filter(
+        pk__in=person_ids))
     # S147 (Miguel Ángel): "si un grupo tiene x subgrupos con y elementos,
     # x tiene que ser igual a la sumatoria": una persona solo está en un
     # subgrupo de cada grupo (los grupos principales sí mezclan).
@@ -250,13 +288,14 @@ def save_group(group, name, parent_id, person_ids, editor=None):
             inside = [p for p in sibling.members.all() if p.pk in wanted]
             if inside:
                 clashes.append("%s (ya en «%s»)" % (
-                    "; ".join(sorted(_label(p) for p in inside)),
+                    "; ".join(sorted(kind.label(p) for p in inside)),
                     sibling.name))
         if clashes:
             raise GroupError(
-                "Una persona solo puede estar en un subgrupo de «%s»: %s. "
-                "Quítalas de la selección o de ese subgrupo."
-                % (parent.path_label(), " · ".join(clashes)))
+                "%s solo puede estar en un subgrupo de «%s»: %s. "
+                "%s de la selección o de ese subgrupo."
+                % (kind.one, parent.path_label(), " · ".join(clashes),
+                   kind.many))
     group.name = name
     group.parent = parent
     group.save()
@@ -294,7 +333,7 @@ def delete_group(group, editor=None):
     group.delete()
 
 
-def group_filter_context(request):
+def group_filter_context(request, kind=PERSON_KIND):
     """
     Context of the "Grupos de selección" box (_person_group_filter.html).
     ---
@@ -303,6 +342,6 @@ def group_filter_context(request):
     """
     editor = request.user.company_user
     return {
-        "person_group_nodes": group_tree(editor),
-        "person_groups_collapsed": collapsed_state(editor),
+        "person_group_nodes": group_tree(editor, kind),
+        "person_groups_collapsed": collapsed_state(editor, kind),
     }

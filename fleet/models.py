@@ -1369,3 +1369,95 @@ class MaintenanceItem(models.Model):
         if self.unit_cost is None:
             return None
         return float(self.quantity * self.unit_cost)
+
+
+# ---------------------------------------------------------------------------
+# MachineGroupTemplate — grupo de selección de máquinas (H31, S148)
+# ---------------------------------------------------------------------------
+
+class MachineGroupTemplate(models.Model):
+    """
+    Saved selection group of machines (cost centres), as a tree, for
+    the mass actions of the "Centros de Gasto" tab. Same rules as the
+    people groups (document_explorer.PersonGroupTemplate, S147).
+
+    ---
+
+    Grupo de selección de máquinas (H31, S148). Miguel Ángel: "Vamos a
+    hacer lo mismo que en personal, creando los grupos de selección
+    para facilitar las tareas tanto de documentación como de altas,
+    bajas". Mismas reglas que los grupos de Personal (S147, ver
+    panel/person_groups.py): árbol con "Dentro de", los de
+    alvarez_admin son los Generales, solo quien lo creó lo cambia o lo
+    borra, una máquina solo en un subgrupo de cada grupo y quien entra
+    en un subgrupo entra también en los de encima.
+    """
+
+    name = models.CharField(
+        max_length=150,
+        verbose_name="Nombre del grupo",
+    )
+    parent = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="children",
+        verbose_name="Dentro de",
+    )
+    members = models.ManyToManyField(
+        MachineAsset,
+        related_name="group_templates",
+        verbose_name="Máquinas incluidas",
+    )
+    created_by = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="created_machine_groups",
+        verbose_name="Creado por",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de creación",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Última edición",
+    )
+
+    class Meta:
+        verbose_name = "Grupo de selección de máquinas"
+        verbose_name_plural = "Grupos de selección de máquinas"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.path_label()
+
+    def path_label(self):
+        """
+        "Parent › Child" label of the group.
+        ---
+        Nombre con su ruta ("Grúas › Móviles").
+        """
+        names, node, seen = [], self, set()
+        while node is not None and node.pk not in seen:
+            seen.add(node.pk)
+            names.append(node.name)
+            node = node.parent
+        return " › ".join(reversed(names))
+
+    def descendant_ids(self):
+        """
+        Pks of this group and all its subgroups.
+        ---
+        Pks de este grupo y de todos sus subgrupos (a cualquier nivel).
+        """
+        found, pending = {self.pk}, [self.pk]
+        while pending:
+            children = list(MachineGroupTemplate.objects.filter(
+                parent_id__in=pending).values_list("pk", flat=True))
+            pending = [pk for pk in children if pk not in found]
+            found.update(pending)
+        return found

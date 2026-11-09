@@ -152,12 +152,54 @@ la lista hace scroll. Dos paneles:
             </div>
 
             {% comment %}
+            H31 (S148). Grupos de selección de máquinas, iguales que los
+            de Personal (Miguel Ángel: "Vamos a hacer lo mismo que en
+            personal, creando los grupos de selección para facilitar las
+            tareas tanto de documentación como de altas, bajas"). Marcar
+            grupos selecciona sus máquinas (la suma); con un grupo propio
+            marcado él solo, desmarcar o marcar máquinas lo cambia. La
+            lógica es panel/static/panel/js/selection_groups.js.
+            {% endcomment %}
+            <div class="col-lg-3">
+                <div class="border rounded p-2 h-100 d-flex flex-column">
+                    <div class="fw-bold small mb-1">Grupos de selección</div>
+                    <div class="mb-1 fleet-group-scroll">
+                        <ul class="list-group list-group-flush small" id="machineGroupSavedList"
+                            data-collapsed="{{ machine_groups_collapsed|join:',' }}">
+                            {% include "panel/documentation_h30/_person_groups_tree.html" with person_group_nodes=machine_group_nodes pg_id="machineGroup" %}
+                        </ul>
+                    </div>
+                    <hr class="my-1">
+                    <p class="text-muted small mb-0" id="machineGroupManagementEmpty">
+                        Marca uno o varios grupos (la selección es la suma), o marca máquinas en el listado para empezar uno nuevo.
+                    </p>
+                    <div id="machineGroupManagementForm" class="d-none">
+                        <div class="input-group input-group-sm mb-1">
+                            <input type="text" id="machineGroupName" class="form-control form-control-sm" placeholder="Nombre del grupo">
+                            <button type="button" class="btn btn-sm btn-primary" id="machineGroupSaveBtn">Guardar</button>
+                        </div>
+                        <select id="machineGroupParent" class="d-none" aria-hidden="true" tabindex="-1">
+                            <option value="">Dentro de: ninguno (grupo principal)</option>
+                            {% for parent in machine_group_parents %}<option value="{{ parent.pk }}" data-parent="{{ parent.parent }}" data-name="{{ parent.name }}">Dentro de: {{ parent.label }}</option>{% endfor %}
+                        </select>
+                        <div id="machineGroupParentPicker" title="Dentro de qué grupo va"></div>
+                        <div id="machineGroupDiff" class="small mb-1 d-none"></div>
+                        <div id="machineGroupFormResult" class="small mb-1"></div>
+                        <div class="d-flex gap-1 flex-wrap">
+                            <button type="button" class="btn btn-sm btn-outline-danger d-none" id="machineGroupDeleteBtn">Eliminar</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="machineGroupResetBtn">Vaciar / nuevo</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {% comment %}
             Acciones sobre la selección, por categoría (como Personal):
             "Varios centros" (1 o más) y "Exportar". "Limpiar" sirve para
             todo. S117: sin panel "Un solo centro" -- a la ficha (datos y
             documentación) se entra pulsando el código, como en Personal.
             {% endcomment %}
-            <div class="col-lg-8">
+            <div class="col-lg-5">
                 <div class="border rounded p-2 h-100" id="fleet-mass-bar">
                     <div class="d-flex align-items-center gap-2 mb-1">
                         <strong class="small"><span id="fleet-mass-count">0</span> seleccionados</strong>
@@ -224,13 +266,13 @@ la lista hace scroll. Dos paneles:
                         <div class="col-12">
                             <div class="small text-muted fw-bold">Dosieres</div>
                             <div class="d-flex gap-1 flex-wrap">
-                                <select data-dossier-bind="machineTemplate" class="form-select form-select-sm" style="width:auto; max-width:100%; min-width:0;">
+                                <select data-dossier-bind="machineTemplate" class="form-select form-select-sm fleet-select-auto">
                                     <option value="">Plantilla…</option>
                                     {% for template in dossier_machine_templates %}
                                     <option value="{{ template.pk }}">{{ template.name }}</option>
                                     {% endfor %}
                                 </select>
-                                <select data-dossier-bind="format" class="form-select form-select-sm" style="width:auto; max-width:100%; min-width:0;">
+                                <select data-dossier-bind="format" class="form-select form-select-sm fleet-select-auto">
                                     <option value="combined">Todo en un PDF</option>
                                     <option value="per_subject">Un PDF por cada uno</option>
                                     <option value="zip">ZIP (originales)</option>
@@ -320,8 +362,10 @@ la lista hace scroll. Dos paneles:
         <input type="hidden" name="_f_sort" value="{{ current_sort }}">
     </div>
 
-
 <style>
+/* S148: la lista de grupos hace scroll dentro de su recuadro. */
+.fleet-select-auto { width: auto; max-width: 100%; min-width: 0; }
+.fleet-group-scroll { flex: 1 1 auto; min-height: 4rem; max-height: 12rem; overflow-y: auto; }
 #fleet-results-scroll table td,
 #fleet-results-scroll table th {
     white-space: nowrap;
@@ -398,6 +442,7 @@ la lista hace scroll. Dos paneles:
     // dispositivo) -- se restaura de lo que el servidor ya guardó y se
     // vuelve a guardar, con un pequeño retardo, en cada cambio.
     const SELECTION_SCREEN_KEY = "{{ fleet_screen_key|escapejs }}";
+    let machineGroups = null;
     try {
         JSON.parse(document.getElementById("fleet-saved-selection").textContent).forEach(function (item) {
             if (item && item.pk) {
@@ -455,6 +500,7 @@ la lista hace scroll. Dos paneles:
 
     function updateSelectionUi() {
         saveSelection();
+        if (machineGroups) machineGroups.refresh();
         if (window.refreshDossierCounts) window.refreshDossierCounts();
         document.getElementById("fleet-mass-count").textContent = selection.size;
         document.getElementById("fleet-selection-count").textContent = selection.size;
@@ -695,6 +741,27 @@ la lista hace scroll. Dos paneles:
             });
             refreshFromFragment();
         }
+    });
+
+    // H31 (S148): grupos de selección de máquinas (como en Personal).
+    machineGroups = window.EbSelectionGroups.init({
+        prefix: "machineGroup",
+        collapsedKey: "machine_groups",
+        saveUrl: "{% url 'panel:fleet_group_save' %}",
+        updateUrl: function (pk) { return "/panel/fleet/grupos/" + pk + "/guardar/"; },
+        deleteUrl: function (pk) { return "/panel/fleet/grupos/" + pk + "/eliminar/"; },
+        memberField: "machine_ids",
+        noun: "máquina",
+        getIds: function () { return Array.from(selection.keys()); },
+        setIds: function (pairs) {
+            selection.clear();
+            pairs.forEach(function ([pk, name]) {
+                selection.set(String(pk), {code: (name || "").split(" ")[0], label: name || ""});
+            });
+            refreshFromFragment();
+        },
+        labelOf: function (pk) { const item = selection.get(String(pk)); return item ? (item.label || item.code) : ""; },
+        toast: function (text, isError) { showToast(text, !!isError); },
     });
 
     refreshFromFragment();

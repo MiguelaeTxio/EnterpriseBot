@@ -43,6 +43,12 @@ from panel.navigation_persistence import (
     apply_list_navigation,
     get_saved_state_key,
 )
+from panel.person_groups import (
+    MACHINE_KIND,
+    collapsed_state,
+    group_tree,
+    parent_choices,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -516,6 +522,12 @@ def _build_pane_context(request, door):
         "dossier_machine_templates": company.dossier_templates.filter(
             scope=PersonalDossierTemplate.SCOPE_MACHINE,
         ).order_by("name"),
+        # H31 (S148): grupos de selección de máquinas, como en Personal.
+        "machine_group_nodes": group_tree(company_user, MACHINE_KIND),
+        "machine_groups_collapsed": collapsed_state(
+            company_user, MACHINE_KIND),
+        "machine_group_parents": parent_choices(
+            editor=company_user, kind=MACHINE_KIND),
     }
 
 
