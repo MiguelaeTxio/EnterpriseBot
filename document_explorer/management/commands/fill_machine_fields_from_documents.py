@@ -134,6 +134,15 @@ class Command(BaseCommand):
                     _plain("    %s: sin lectura" % entry.name)
                     totals["error"] += 1
                     continue
+                if result.get("type_mismatch"):
+                    # Como en la subida: con el tipo en duda no se toman
+                    # datos del documento (S148: folletos del fabricante
+                    # archivados como ficha técnica).
+                    totals["tipo dudoso"] += 1
+                    _plain("    tipo dudoso: %s parece %s (no se toman "
+                           "datos)" % (entry.name,
+                                       result["type_mismatch"]["label"]))
+                    continue
                 # Gemini puede tardar más que el tiempo de inactividad de
                 # MySQL (S148: "Lost connection to MySQL server").
                 close_old_connections()
@@ -149,10 +158,6 @@ class Command(BaseCommand):
                     _plain("    DISTINTO  %s: ficha %s, documento %s  "
                            "[%s id=%s]" % (label, current, read, code,
                                            entry.pk))
-                if result.get("type_mismatch"):
-                    totals["tipo dudoso"] += 1
-                    _plain("    tipo dudoso: %s parece %s" % (
-                        entry.name, result["type_mismatch"]["label"]))
             elapsed = (datetime.datetime.now() - start).total_seconds()
             eta = elapsed / number * (len(machines) - number)
             end = datetime.datetime.now() + datetime.timedelta(seconds=eta)
