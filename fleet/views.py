@@ -516,6 +516,9 @@ def _build_pane_context(request, door):
         "own_presence": _get_own_presence(company_user),
         "form": MachineAssetForm(company=company),
         "fleet_screen_key": _FLEET_SCREEN_KEYS[door],
+        # H31 (S148): pestaña de acciones que dejó el usuario.
+        "fleet_actions_tab": get_saved_state_key(
+            company_user, "fleet_actions", "tab", "doc"),
         "saved_selection": saved_selection,
         "job_positions": JobPosition.objects.order_by("name"),
         # S130: plantillas de dosier de maquinaria, para descargar o
