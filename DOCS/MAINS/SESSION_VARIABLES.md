@@ -1571,3 +1571,36 @@ el valor antes de que siga el resto del script.
   de control guardadas en `DatabaseBackup.row_counts`).
 - **Tamaño medido (S146):** 114 MB sin comprimir, 30 MB comprimida,
   ~13 s de volcado.
+- **Recuperar valores antiguos de una copia (S146):** el mismo workflow
+  admite `sql_query` (un SELECT o varios separados por `;`) que se
+  ejecuta sobre la copia restaurada en el runner; el resultado va
+  comprimido a la release `relevo-imagenes` como `sql_<run_id>.tsv.gz`.
+  Usado en S146 para dejar a ARANDA REYES como estaba el 08/11.
+
+## VIGILANTE DE ONEDRIVE EN EL AGENTE H28 (H24, S146)
+
+- `h28_migration_agent/onedrive_watchdog.py`. Testigo:
+  `_testigo_onedrive.txt` en la carpeta de copias de seguridad (ver
+  arriba). Mira cada 5 minutos su estado con `CfGetPlaceholderInfo`
+  (cldapi, InSyncState): "al dia", "pendiente" o "sin subir". Lo
+  reescribe cada hora una vez subido; con 10 minutos de gracia sin
+  subir, cierra y abre OneDrive.exe (`/shutdown` y `/background`), una
+  vez por versión del testigo, y avisa por WhatsApp (heartbeat
+  `onedrive_sync`; no avisa mientras el propio agente H28 está caído).
+- Una pausa manual o por **red de uso medido** no se quita reiniciando:
+  en S146 la causa fue la red marcada como de uso medido en Windows
+  (Miguel Ángel la desmarcó). El vigilante cubre las caídas y avisa del
+  resto.
+
+## CARPETA LOCAL EN ALTAS Y BAJAS (H24, S146)
+
+- El alta y la baja ya no esperan a la carpeta local: el trabajo
+  (`LocalDownloadJob`) lo hace el agente H28 en segundo plano.
+- El alta pide **Empresa** y **Sección** de desplegable (nunca texto
+  libre); la sección decide la categoría local (el taller va aparte).
+- La carpeta local lleva el código de la empresa: GR (Grúas Adolfo
+  Álvarez), TR (Transgrual), GL (Grualdi), AGG (Asistencia y Grúas
+  Granada); si cambia la empresa, cambia el código. En Asistencia no se
+  añade código a un nombre que no lo tenga.
+- Si la carpeta local se movió a mano, el agente la busca por su nombre
+  en todas las categorías y usa la única que coincida.
