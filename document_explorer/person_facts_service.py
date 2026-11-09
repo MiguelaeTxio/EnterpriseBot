@@ -293,7 +293,12 @@ def refresh_person(person):
     Escribe lo seguro de una persona (rellenar, corregir, actualizar)
     y devuelve [(campo, antes, ahora)]; REVISAR nunca se escribe.
     """
-    found = found_facts(person_entries([person.pk]))[person.pk]
+    try:
+        found = found_facts(person_entries([person.pk]))[person.pk]
+    except Exception:  # noqa: BLE001 -- la ficha nunca para un alta
+        logger.exception("# [FICHA] No se pudo leer la persona %s",
+                         person.pk)
+        return []
     written, fields = [], []
     for field, current, value, _source, action in proposals(person, found):
         if action == "REVISAR":

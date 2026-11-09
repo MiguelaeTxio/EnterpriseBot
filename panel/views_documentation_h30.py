@@ -5545,6 +5545,14 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
         stored_count, doc_warnings = self._store_documents(
             request, person, person.folder_path,
         )
+        # S148: caducidades (DNI, permiso, reconocimiento) y C.P. a la
+        # ficha desde los documentos del alta.
+        if stored_count:
+            from document_explorer.person_facts_service import (
+                refresh_person,
+            )
+
+            refresh_person(person)
         download_job = local_download_service.create_for_person(
             person, company_user, previous_local,
         )
@@ -5718,6 +5726,12 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
         stored_count, doc_warnings = self._store_documents(
             request, person, folder_path,
         )
+        # S148: caducidades (DNI, permiso, reconocimiento) y C.P. a la
+        # ficha desde los documentos del alta (y C.P. por la dirección
+        # aunque no haya documentos).
+        from document_explorer.person_facts_service import refresh_person
+
+        refresh_person(person)
         # H24 (S144): el alta termina cuando sus documentos están en la
         # carpeta local de OneDrive (los descarga el agente H28).
         # S148 (alta por formulario): sin documentos, el agente crea
