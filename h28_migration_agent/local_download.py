@@ -51,6 +51,7 @@ import json
 import logging
 import os
 import socket
+import unicodedata
 import urllib.parse
 import urllib.request
 
@@ -182,6 +183,45 @@ def _reindex_moved(folder, old_relative, new_relative):
         save_index(folder, entries)
 
 
+def _plain(text):
+    text = unicodedata.normalize("NFKD", text or "")
+    return "".join(
+        c for c in text if not unicodedata.combining(c)).upper().strip()
+
+
+def find_person_folder(watched_folders, previous):
+    """Find a person folder by name in every known category.
+    ---
+    Busca la carpeta de la persona por su nombre (sin tildes ni
+    mayusculas) en todas las categorias conocidas. Devuelve su ruta
+    virtual si hay exactamente una; "" si no hay ninguna o hay varias
+    (con dos iguales no se adivina: se avisa en el log).
+    """
+    wanted = _plain(previous.rsplit("/", 1)[-1])
+    found = []
+    for container in PERSON_CONTAINERS:
+        virtual = "%s/%s" % (PERSON_ROOT, container)
+        try:
+            _folder, _rel, local = _local(watched_folders, virtual + "/x")
+        except RuntimeError:
+            return ""
+        base = os.path.dirname(local)
+        if not os.path.isdir(to_long_path(base)):
+            continue
+        for name in os.listdir(to_long_path(base)):
+            if _plain(name) == wanted and os.path.isdir(
+                    to_long_path(os.path.join(base, name))):
+                found.append("%s/%s" % (virtual, name))
+    if len(found) == 1:
+        logger.info("Descarga a local: %s no esta; encontrada en %s",
+                    previous, found[0])
+        return found[0]
+    if found:
+        logger.warning("Descarga a local: %s no esta y hay %d carpetas "
+                       "con su nombre: %s", previous, len(found), found)
+    return ""
+
+
 def move_person_folder(watched_folders, previous, target):
     """Move the whole person folder, as is.
     ---
@@ -197,6 +237,16 @@ def move_person_folder(watched_folders, previous, target):
     folder, old_rel, source = _local(watched_folders, previous)
     _folder2, new_rel, dest = _local(watched_folders, target)
     if not os.path.isdir(to_long_path(source)):
+        # S146: la carpeta que dice el servidor es la de cuando se
+        # subieron sus documentos; si en local la movieron a mano (p. ej.
+        # a TRABAJADORES INACTIVOS tras la baja), se busca por su nombre.
+        found = find_person_folder(watched_folders, previous)
+        if not found:
+            return ""
+        previous = found
+        folder, old_rel, source = _local(watched_folders, previous)
+    if os.path.normcase(os.path.abspath(source)) == os.path.normcase(
+            os.path.abspath(dest)):
         return ""
     if not os.path.exists(to_long_path(dest)):
         os.makedirs(to_long_path(os.path.dirname(dest)), exist_ok=True)

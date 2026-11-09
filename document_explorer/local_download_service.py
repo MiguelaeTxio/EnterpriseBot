@@ -199,7 +199,7 @@ def create_for_person(person, requested_by=None, previous=None):
     toca. `previous` es su carpeta local antes del cambio
     (snapshot_paths); sin él, la de ahora. Archivos: solo lo subido
     desde el panel, que no está en local, a la raíz de su carpeta.
-    None si no hay nada que hacer (ni mover ni descargar).
+    None si no hay nada que hacer (ni carpeta conocida ni descargas).
     """
     current = previous if previous is not None else current_local_folder(
         person)
@@ -210,12 +210,16 @@ def create_for_person(person, requested_by=None, previous=None):
             "blob_name", "name")
         if blob.startswith(PANEL_PREFIXES)
     ]
-    moves = bool(current) and current != target
-    if not files and not moves:
+    # S146 (Miguel Ángel, alta de ARANDA REYES): la carpeta de antes se
+    # manda SIEMPRE que se conozca, aunque coincida con el destino. La
+    # que dice el cubo es la de cuando se subió: si en local la movieron
+    # a mano (p. ej. a TRABAJADORES INACTIVOS tras la baja), el agente
+    # la busca por su nombre en las categorías conocidas.
+    if not files and not current:
         return None
     return LocalDownloadJob.objects.create(
         person=person, requested_by=requested_by, files=files,
-        folder=target, previous_folder=current if moves else "",
+        folder=target, previous_folder=current,
     )
 
 
