@@ -23,6 +23,7 @@ un temporal ya vencido no se podía avisar como caducado.
 """
 import json
 import logging
+import re
 
 import fitz
 from google.genai.types import GenerateContentConfig, HttpOptions, Part
@@ -39,6 +40,9 @@ from spare_parts.gcs_service import download_bytes
 logger = logging.getLogger(__name__)
 
 NONE_CODE = "NINGUNA"
+# Spanish postal code: province 01-52 and three digits.
+# C.P. español: provincia 01-52 y tres cifras.
+_POSTAL_RE = re.compile(r"^(?:0[1-9]|[1-4][0-9]|5[0-2])[0-9]{3}$")
 CONTRACT_PAGES = 3
 _GEMINI_TYPES = {"application/pdf", "image/jpeg", "image/png", "image/webp"}
 _CONTRACT_SCHEMA = {
@@ -48,6 +52,7 @@ _CONTRACT_SCHEMA = {
         "start_date": {"type": "string"},
         "end_date": {"type": "string"},
         "is_indefinite": {"type": "boolean"},
+        "worker_postal_code": {"type": "string"},
     },
     "required": [
         "employer_tax_id", "start_date", "end_date", "is_indefinite",
@@ -117,7 +122,10 @@ def read_contract(entry):
         "+ duración), AAAA-MM-DD; cadena vacía si es indefinido, de fin "
         "de obra sin fecha, o no se lee.\n"
         "- is_indefinite: true si es indefinido.\n"
-        "No inventes ninguna fecha."
+        "- worker_postal_code: código postal del DOMICILIO DEL "
+        "TRABAJADOR (nunca el de la empresa ni el del centro de "
+        "trabajo), 5 cifras, o cadena vacía si no figura o hay duda.\n"
+        "No inventes ninguna fecha ni ningún código."
     ) % (NONE_CODE, options)
     response = _generate_content_with_retry(
         get_gemini_client(),
@@ -143,7 +151,28 @@ def read_contract(entry):
         "start_date": start,
         "end_date": None if answer.get("is_indefinite") else end,
         "is_indefinite": bool(answer.get("is_indefinite")),
+        "worker_postal_code": (
+            answer.get("worker_postal_code") or ""
+        ).strip() if _POSTAL_RE.match(
+            (answer.get("worker_postal_code") or "").strip()) else "",
     }
+
+
+def apply_postal_code(person, reading):
+    """
+    S148: the worker's postal code from the contract, if empty.
+    ---
+    C.P. del domicilio del trabajador leído del contrato, solo si la
+    ficha no tiene. Devuelve el escrito o "".
+    """
+    postal_code = (reading or {}).get("worker_postal_code") or ""
+    if not postal_code or (person.postal_code or "").strip():
+        return ""
+    person.postal_code = postal_code
+    person.save(update_fields=["postal_code", "updated_at"])
+    logger.info("# [CONTRACT] Persona %s: C.P. %s del contrato",
+                person.pk, postal_code)
+    return postal_code
 
 
 def dates_to_write(entry, reading):

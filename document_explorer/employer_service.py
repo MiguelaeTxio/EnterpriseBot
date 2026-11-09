@@ -282,7 +282,7 @@ def refresh_after_contract(person, document_type_code, entry=None):
     ingesta. Se llama desde Celery (`queue_contract_refresh`).
     """
     from document_explorer.contract_service import (
-        apply_reading, read_contract,
+        apply_postal_code, apply_reading, read_contract,
     )
     from document_explorer.person_folder_service import relocate_if_needed
 
@@ -296,6 +296,8 @@ def refresh_after_contract(person, document_type_code, entry=None):
             reading = read_contract(entry)
             if reading is not None:
                 apply_reading(entry, reading)
+                # S148: el C.P. del trabajador sale del contrato.
+                apply_postal_code(person, reading)
         result = refresh_employer_company(person)
         relocated, folder, moved = relocate_if_needed(person)
         result["relocated_to"] = folder if relocated else ""

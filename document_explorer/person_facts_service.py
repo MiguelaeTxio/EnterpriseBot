@@ -19,8 +19,8 @@ Reglas (las de S145): los campos vacíos se rellenan, un nº de
 afiliación de 11 cifras (el de la empresa) se corrige, las caducidades
 solo avanzan; lo demás (alta o nacimiento distintos, domicilio dudoso)
 queda como REVISAR y nunca se pisa. S148: el código postal vacío se
-toma de la población (`postal_code_service`, dataset del INE), igual
-que en el alta.
+toma de la población (`postal_code_service`, dataset del INE) cuando
+el municipio tiene un único C.P.; si no, del contrato.
 """
 import collections
 import datetime
@@ -31,7 +31,7 @@ import unicodedata
 from django.contrib.contenttypes.models import ContentType
 
 from document_explorer.models import DocumentIndexEntry, PersonIdentity
-from document_explorer.postal_code_service import lookup_postal_code
+from document_explorer.postal_code_service import unique_postal_code
 
 logger = logging.getLogger(__name__)
 
@@ -246,11 +246,13 @@ def proposals(person, found):
             value, pk = sorted(found[field], reverse=True)[0]
             add(field, value, "documento id=%s" % pk)
     # S148: C.P. vacío desde la población (la de la ficha o la que se
-    # acaba de proponer), con el dataset del INE, como en el alta.
+    # acaba de proponer), con el dataset del INE, solo si el municipio
+    # tiene un único C.P.; si tiene varios, sale del contrato
+    # (contract_service.read_contract, worker_postal_code).
     city = person.city or next(
         (row[2] for row in out if row[0] == "city"), "")
     if not person.postal_code and city:
-        add("postal_code", lookup_postal_code(city), "población %s" % city)
+        add("postal_code", unique_postal_code(city), "población %s" % city)
     return out
 
 

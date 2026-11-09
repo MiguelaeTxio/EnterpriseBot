@@ -64,3 +64,18 @@ def lookup_postal_code(city: str) -> str:
     lookup = _load_lookup()
     codes = lookup.get(_normalize(city))
     return codes[0] if codes else ""
+
+
+def unique_postal_code(city: str) -> str:
+    """
+    S148: the postal code only when the municipality has just one.
+    ---
+    El código postal solo si el municipio tiene uno único: en un
+    municipio con varios (Málaga, Vélez-Málaga...) el más bajo sería
+    adivinar, y el de la persona sale de su contrato
+    (`contract_service`). Cadena vacía si no hay uno único.
+    """
+    if not city:
+        return ""
+    codes = _load_lookup().get(_normalize(city)) or []
+    return codes[0] if len(set(codes)) == 1 else ""

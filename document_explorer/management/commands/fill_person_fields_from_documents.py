@@ -51,6 +51,10 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--apply", action="store_true")
+        parser.add_argument(
+            "--contracts", action="store_true",
+            help="S148: C.P. vacío desde su contrato más reciente "
+                 "(Gemini, una lectura por persona)")
         parser.add_argument("--log-file", required=True)
         parser.add_argument(
             "--skip", nargs="*", default=[],
@@ -105,10 +109,61 @@ class Command(BaseCommand):
                     to_write.append(field)
             if apply and to_write:
                 person.save(update_fields=to_write)
+        if options["contracts"]:
+            self._postal_from_contracts(people, entries, apply, _log,
+                                        _plain, totals)
         log_file.write("\n")
         _plain("RESUMEN")
         for action in ("rellenar", "corregir", "actualizar", "REVISAR",
-                       "DESCARTADO"):
+                       "DESCARTADO", "C.P. del contrato"):
             _plain("%s: %d" % (action, totals[action]))
         _plain("Escrito en la BD: %s" % ("sí" if apply else "no"))
         log_file.close()
+
+    def _postal_from_contracts(self, people, entries, apply, _log, _plain,
+                               totals):
+        """
+        S148: empty postal codes from each person's latest contract.
+        ---
+        C.P. vacíos desde el contrato más reciente de cada persona (el
+        del domicilio del trabajador, nunca el de la empresa).
+        """
+        from document_explorer.contract_service import read_contract
+
+        latest = {}
+        for entry in entries:
+            if entry.document_type.code not in (
+                    "CONTRATO", "COMUNICACION_CONTRATO"):
+                continue
+            key = (entry.issue_date or datetime.date.min, entry.pk)
+            pid = entry.domain_object_id
+            if pid not in latest or key > latest[pid][0]:
+                latest[pid] = (key, entry)
+        pending = [p for p in people
+                   if not (p.postal_code or "").strip() and p.pk in latest]
+        _log("C.P. desde el contrato: %d personas sin C.P. con contrato"
+             % len(pending))
+        start = datetime.datetime.now()
+        for number, person in enumerate(pending, 1):
+            entry = latest[person.pk][1]
+            try:
+                reading = read_contract(entry) or {}
+            except Exception as error:  # noqa: BLE001
+                _plain("    %s: no se pudo leer el contrato id=%s (%s)" % (
+                    person.pk, entry.pk, error))
+                continue
+            postal_code = reading.get("worker_postal_code") or ""
+            _plain("    %d/%d id=%d %s: %s  [contrato id=%s]" % (
+                number, len(pending), person.pk, person.city or "",
+                postal_code or "(no figura)", entry.pk))
+            if postal_code:
+                totals["C.P. del contrato"] += 1
+                if apply:
+                    person.postal_code = postal_code
+                    person.save(update_fields=["postal_code", "updated_at"])
+            elapsed = (datetime.datetime.now() - start).total_seconds()
+            eta = elapsed / number * (len(pending) - number)
+            end = datetime.datetime.now() + datetime.timedelta(seconds=eta)
+            _log("Progreso: %d/%d (%d%%) -- ETA %dm%02ds (fin aprox. %s)"
+                 % (number, len(pending), 100 * number // len(pending),
+                    eta // 60, eta % 60, end.strftime("%H:%M:%S")))
