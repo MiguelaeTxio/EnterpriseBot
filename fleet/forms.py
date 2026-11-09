@@ -52,6 +52,8 @@ class MachineAssetForm(forms.ModelForm):
             "service_hours_interval",
             "service_crane_hours_interval",
             "service_every_km",
+            # S148: observaciones libres (campo Memo).
+            "notes",
         ]
         widgets = {
             "code": forms.TextInput(attrs={
@@ -110,6 +112,12 @@ class MachineAssetForm(forms.ModelForm):
             "service_crane_hours_interval": forms.Select(attrs={
                 "class": "form-select",
             }),
+            "notes": forms.Textarea(attrs={
+                "class": "form-control",
+                "rows": 3,
+                "placeholder": "Avisos y notas (p. ej. cambios de "
+                               "matrícula)",
+            }),
             "service_every_km": forms.NumberInput(attrs={
                 "class": "form-control",
                 "min": "1",
@@ -133,6 +141,7 @@ class MachineAssetForm(forms.ModelForm):
             "service_hours_interval": "Revisión por horas",
             "service_crane_hours_interval": "Revisión de la grúa por horas",
             "service_every_km":       "Revisión cada N km",
+            "notes":          "Observaciones",
         }
 
     # S117 -- petición de Miguel Ángel: "Familia" deja de ser texto libre

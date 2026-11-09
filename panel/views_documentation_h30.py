@@ -5763,6 +5763,8 @@ class PersonalUpdateView(DocsUploadAccessMixin, View):
         "phone_secondary", "email", "address_street", "postal_code",
         "city", "province", "ss_affiliation_number",
         "professional_category", "nickname",
+        # S148: observaciones libres (campo Memo).
+        "notes",
     )
     DATE_EDITABLE_FIELDS = ("hire_date", "termination_date")
     # H31 (S109): `job_position` -- FK a JobPosition, editable igual

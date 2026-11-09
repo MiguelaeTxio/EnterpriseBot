@@ -379,6 +379,15 @@ class MachineAsset(models.Model):
             "kilómetros."
         ),
     )
+    # S148, Miguel Ángel: "un campo de observaciones [...] para poner
+    # avisos, para poner notas [...] parecido a los antiguos campos
+    # Memo" (caso real: el cambio de matrícula de Z92).
+    notes = models.TextField(
+        _("Observaciones"),
+        blank=True,
+        default="",
+        help_text=_("Avisos y notas libres sobre el centro de gasto."),
+    )
 
     class Meta:
         verbose_name = _("Centro de gasto")

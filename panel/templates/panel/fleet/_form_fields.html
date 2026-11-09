@@ -124,6 +124,12 @@
         {% endif %}
     </div>
 
+    {# S148: observaciones libres (campo Memo) #}
+    <div class="col-12">
+        <label class="form-label form-label-sm" for="{{ form.notes.id_for_label }}">{{ form.notes.label }}</label>
+        {{ form.notes }}
+    </div>
+
     {# Estado #}
     <div class="col-12 mt-1">
         <div class="form-check">

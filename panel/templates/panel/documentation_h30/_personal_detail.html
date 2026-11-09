@@ -273,6 +273,11 @@ y se habilita "Guardar".
                         {% endfor %}
                     </select>
                 </div>
+                {# S148: observaciones libres (campo Memo): avisos y notas. #}
+                <div class="col-12">
+                    <label class="form-label small mb-0">Observaciones</label>
+                    <textarea name="notes" rows="3" class="form-control form-control-sm personal-edit-field" placeholder="Avisos y notas" readonly>{{ person.notes }}</textarea>
+                </div>
                 <div class="col-12 col-md-3 d-flex align-items-end gap-2">
                     <button type="button" id="personalEditModeBtn" class="btn btn-sm btn-outline-primary w-100" onclick="requestEditMode()">
                         <i class="bi bi-pencil me-1"></i>Modo edición

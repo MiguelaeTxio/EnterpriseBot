@@ -1830,6 +1830,14 @@ class PersonIdentity(models.Model):
         related_name="+",
         verbose_name="Contrato revisado por",
     )
+    # S148, Miguel Ángel: campo de observaciones "para poner avisos,
+    # para poner notas [...] parecido a los antiguos campos Memo".
+    notes = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Observaciones",
+        help_text="Avisos y notas libres sobre la persona.",
+    )
 
     class Meta:
         verbose_name = "Identidad de personal"
