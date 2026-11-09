@@ -18,13 +18,20 @@ on:
         required: false
         default: ""
         type: string
+      sql_query:
+        description: "S146: consulta SELECT opcional sobre la copia restaurada (para recuperar valores antiguos). El resultado va comprimido a la release privada relevo-imagenes como sql_<run_id>.tsv.gz."
+        required: false
+        default: ""
+        type: string
 
 concurrency:
   group: enterprisebot-db-backup-restore-test
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  # write solo para subir el resultado de sql_query a la release privada
+  # relevo-imagenes (S146), igual que db_query.yml; nunca se comitea nada.
+  contents: write
 
 jobs:
   restore:
@@ -102,6 +109,25 @@ jobs:
           echo "::notice title=Tablas restauradas::$TABLES"
           exit $FAIL
 
+      - name: Consulta sobre la copia restaurada (opcional, S146)
+        if: inputs.sql_query != ''
+        env:
+          SQL_QUERY: ${{ inputs.sql_query }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eo pipefail
+          Q=$(printf '%s' "$SQL_QUERY" | sed 's/^[[:space:]]*//')
+          case "$(printf '%s' "$Q" | cut -c1-6 | tr a-z A-Z)" in
+            SELECT) ;;
+            *) echo "::error title=Consulta::solo SELECT"; exit 1 ;;
+          esac
+          printf '%s' "$Q" | mysql -h 127.0.0.1 -uroot -pprueba -B \
+            restore_test > /tmp/query_output.txt
+          gzip -9 -c /tmp/query_output.txt > /tmp/sql_${{ github.run_id }}.tsv.gz
+          gh release upload relevo-imagenes \
+            /tmp/sql_${{ github.run_id }}.tsv.gz --clobber
+          echo "::notice title=Consulta::$(wc -l < /tmp/query_output.txt) líneas"
+
       - name: Limpiar
         if: always()
-        run: rm -f ~/.ssh/pa_readonly_key /tmp/copia.sql.gz
+        run: rm -f ~/.ssh/pa_readonly_key /tmp/copia.sql.gz /tmp/query_output.txt
