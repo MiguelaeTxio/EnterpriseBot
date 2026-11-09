@@ -40,15 +40,22 @@ para un momento distinto.
     <div class="d-flex flex-wrap column-gap-3 row-gap-1 align-items-start small personal-filters-compact">
         <div>
             <div class="fw-semibold mb-1">Estado</div>
-            <div class="form-check">
-                <input class="form-check-input personal-filter-checkbox" type="checkbox" name="active" value="true"
-                       id="filterActiveTrue" {% if "true" in active_filter %}checked{% endif %}>
-                <label class="form-check-label" for="filterActiveTrue">Activos</label>
-            </div>
-            <div class="form-check">
-                <input class="form-check-input personal-filter-checkbox" type="checkbox" name="active" value="false"
-                       id="filterActiveFalse" {% if "false" in active_filter %}checked{% endif %}>
-                <label class="form-check-label" for="filterActiveFalse">Inactivos</label>
+            {# S148: casillas dentro de un desplegable (panel/_checkdrop_js.html pinta el botón). #}
+            <div class="dropdown checkdrop" data-all="Todos" data-none="Ninguno">
+                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
+                        data-bs-auto-close="outside" aria-expanded="false"><span class="checkdrop-text">Todos</span></button>
+                <div class="dropdown-menu p-2 small">
+                    <div class="form-check">
+                        <input class="form-check-input personal-filter-checkbox" type="checkbox" name="active" value="true"
+                               id="filterActiveTrue" {% if "true" in active_filter %}checked{% endif %}>
+                        <label class="form-check-label" for="filterActiveTrue">Activos</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input personal-filter-checkbox" type="checkbox" name="active" value="false"
+                               id="filterActiveFalse" {% if "false" in active_filter %}checked{% endif %}>
+                        <label class="form-check-label" for="filterActiveFalse">Inactivos</label>
+                    </div>
+                </div>
             </div>
         </div>
         {% comment %}
@@ -56,14 +63,14 @@ para un momento distinto.
         casillero". Las mismas casillas `company` de siempre, ahora
         dentro de un desplegable que sigue dentro del <form>: htmx las
         envía igual y el listado no cambia. Cerrado ocupa una línea y
-        dice qué hay marcado (JS de abajo, personalCompanyLabel).
+        dice qué hay marcado (panel/_checkdrop_js.html).
         {% endcomment %}
         <div>
             <div class="fw-semibold mb-1">Empresa</div>
-            <div class="dropdown">
-                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle personal-company-button"
-                        id="personalCompanyButton" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
-                    <span class="personal-company-text" id="personalCompanyText">Todas</span>
+            <div class="dropdown checkdrop" data-all="Todas" data-none="Ninguna">
+                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle"
+                        data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+                    <span class="checkdrop-text">Todas</span>
                 </button>
                 <div class="dropdown-menu p-2 small">
                     <a href="#" class="d-block small mb-1" onclick="togglePersonalCompanyAll(event)">Marcar / desmarcar todas</a>
@@ -155,13 +162,12 @@ para un momento distinto.
             <input type="hidden" name="selected_ids" id="personalSelectedIdsInput" value="">
         </div>
     </div>
+    {% include "panel/_checkdrop_js.html" %}
 </form>
 <style>
 .personal-filters-compact .fw-semibold.mb-1 { margin-bottom: .1rem !important; }
 .personal-filters-compact .personal-filter-select { width: auto; max-width: 11rem; }
 .personal-filters-compact .form-check { margin-bottom: 0; min-height: 1.3rem; }
-.personal-company-button { display: inline-flex; align-items: center; max-width: 13rem; }
-.personal-company-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
 <script>
     // H31 (S76). Convenience toggle -- marca/desmarca todas las
@@ -189,25 +195,6 @@ para un momento distinto.
         }));
         label();
     }());
-
-    // H31 (S148): el botón del desplegable Empresa dice qué hay
-    // marcado ("Todas", "Ninguna" o los nombres; el nombre completo
-    // en el title si no cabe).
-    function personalCompanyLabel() {
-        const boxes = Array.from(document.querySelectorAll('.personal-company-checkbox'));
-        const text = document.getElementById('personalCompanyText');
-        const button = document.getElementById('personalCompanyButton');
-        if (!text || !boxes.length) return;
-        const marked = boxes.filter((b) => b.checked).map((b) => b.dataset.label);
-        const label = marked.length === boxes.length ? 'Todas'
-            : (marked.length === 0 ? 'Ninguna' : marked.join(', '));
-        text.textContent = label;
-        button.title = label;
-    }
-    document.querySelectorAll('.personal-company-checkbox').forEach((box) => {
-        box.addEventListener('change', personalCompanyLabel);
-    });
-    personalCompanyLabel();
 
     function togglePersonalCompanyAll(ev) {
         ev.preventDefault();

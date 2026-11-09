@@ -1,0 +1,49 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/_checkdrop_js.html #}
+{% comment %}
+H31 (S148). Desplegables con casillas de los filtros (Empresa, Estado,
+Fichajes...): Miguel Ángel, "que sea un desplegable pero con
+casillero" y sin scroll vertical en el panel fijo. Cerrado, el botón
+de cada `.checkdrop` dice qué hay marcado: `data-all` si están todas
+(si no lo lleva, los nombres), `data-none` si ninguna, o los nombres
+de las marcadas (`data-label` de la casilla o el texto de su
+etiqueta). El JS de cada pestaña sigue manejando las casillas; esto
+solo pinta el botón. Se puede incluir varias veces: cada desplegable
+se prepara una sola vez.
+{% endcomment %}
+<style>
+.checkdrop .dropdown-toggle { display: inline-flex; align-items: center; max-width: 13rem; }
+.checkdrop-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+<script>
+(function () {
+    document.querySelectorAll('.checkdrop:not([data-checkdrop-ready])').forEach(function (drop) {
+        drop.dataset.checkdropReady = '1';
+        const boxes = Array.from(drop.querySelectorAll('.dropdown-menu input[type=checkbox]'));
+        const text = drop.querySelector('.checkdrop-text');
+        const button = drop.querySelector('.dropdown-toggle');
+        function boxLabel(box) {
+            if (box.dataset.label) return box.dataset.label;
+            const tag = drop.querySelector('label[for="' + box.id + '"]');
+            return tag ? tag.textContent.trim() : box.value;
+        }
+        function paint() {
+            const marked = boxes.filter(function (b) { return b.checked; });
+            let value = marked.map(boxLabel).join(', ');
+            if (marked.length === 0) {
+                value = drop.dataset.none || 'Ninguno';
+            } else if (marked.length === boxes.length && drop.dataset.all) {
+                value = drop.dataset.all;
+            }
+            text.textContent = value;
+            button.title = value;
+        }
+        drop.addEventListener('change', paint);
+        // Los enlaces "marcar todas" de cada pestaña cambian las casillas
+        // sin lanzar change en ellas: se repinta justo después.
+        drop.querySelectorAll('a').forEach(function (link) {
+            link.addEventListener('click', function () { setTimeout(paint, 0); });
+        });
+        paint();
+    });
+}());
+</script>

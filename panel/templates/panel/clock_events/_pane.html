@@ -34,38 +34,53 @@ recordatorios, secciones que fichan y permiso de envío).
                     <div class="d-flex flex-wrap column-gap-3 row-gap-1 align-items-start small">
                         <div>
                             <div class="fw-semibold mb-1">Estado</div>
-                            <div class="form-check">
-                                <input class="form-check-input clk-active-check" type="checkbox" value="true" id="clkActiveTrue"
-                                       {% if "true" in filter_active %}checked{% endif %}>
-                                <label class="form-check-label" for="clkActiveTrue">Activos</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input clk-active-check" type="checkbox" value="false" id="clkActiveFalse"
-                                       {% if "false" in filter_active %}checked{% endif %}>
-                                <label class="form-check-label" for="clkActiveFalse">Inactivos</label>
+                            {# S148: casillas dentro de un desplegable (panel/_checkdrop_js.html pinta el botón). #}
+                            <div class="dropdown checkdrop" data-all="Todos" data-none="Ninguno">
+                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
+                                        data-bs-auto-close="outside" aria-expanded="false"><span class="checkdrop-text">Todos</span></button>
+                                <div class="dropdown-menu p-2 small">
+                                    <div class="form-check">
+                                        <input class="form-check-input clk-active-check" type="checkbox" value="true" id="clkActiveTrue"
+                                               {% if "true" in filter_active %}checked{% endif %}>
+                                        <label class="form-check-label" for="clkActiveTrue">Activos</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input clk-active-check" type="checkbox" value="false" id="clkActiveFalse"
+                                               {% if "false" in filter_active %}checked{% endif %}>
+                                        <label class="form-check-label" for="clkActiveFalse">Inactivos</label>
+                                    </div>
+                                </div>
                             </div>
                             <input type="hidden" name="active" id="clk-active-input" value="{{ filter_active|join:',' }}">
                         </div>
                         {% include "panel/_company_checkdrop.html" with prefix="clk" id_prefix="clkCompany" %}
+                        {# S148: Desde y Hasta uno al lado del otro (antes uno encima del otro). #}
                         <div>
                             <div class="fw-semibold mb-1">Desde</div>
-                            <input type="date" name="date_from" class="form-control form-control-sm mb-1" value="{{ date_from|date:'Y-m-d' }}">
+                            <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from|date:'Y-m-d' }}">
+                        </div>
+                        <div>
                             <div class="fw-semibold mb-1">Hasta</div>
                             <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to|date:'Y-m-d' }}">
                         </div>
                         {# S145: los mismos atajos de fechas que en Fichajes del trabajador. #}
                         <div>
                             <div class="fw-semibold mb-1">Rápido</div>
-                            <div class="d-grid gap-1 clk-grid-2">
-                                <button type="button" class="btn btn-sm btn-outline-secondary clk-range" data-range="month">Este mes</button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary clk-range" data-range="prev">Mes anterior</button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary clk-range" data-range="period"
-                                        title="Del día 21 del mes anterior al 20 de este (o del 21 de este al 20 del siguiente, a partir del día 21).">Periodo actual</button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary clk-range" data-range="prev_period"
-                                        title="El periodo de 21 a 20 anterior al actual.">Periodo anterior</button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary clk-range" data-range="year">Este año</button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary clk-range" data-range="all"
-                                        title="Los cuatro últimos años: lo que se conservan los fichajes (art. 34.9 ET).">Cuatro años</button>
+                            {# S148: los atajos en un desplegable (sin scroll vertical en el panel fijo). #}
+                            <div class="dropdown">
+                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
+                                        aria-expanded="false">Fechas</button>
+                                <div class="dropdown-menu small">
+                                    <button type="button" class="dropdown-item clk-range" data-range="month">Este mes</button>
+                                    <button type="button" class="dropdown-item clk-range" data-range="prev">Mes anterior</button>
+                                    <button type="button" class="dropdown-item clk-range" data-range="period"
+                                            title="Del día 21 del mes anterior al 20 de este (o del 21 de este al 20 del siguiente, a partir del día 21).">Periodo actual</button>
+                                    <button type="button" class="dropdown-item clk-range" data-range="prev_period"
+                                            title="El periodo de 21 a 20 anterior al actual.">Periodo anterior</button>
+                                    <button type="button" class="dropdown-item clk-range" data-range="year">Este año</button>
+                                    <button type="button" class="dropdown-item clk-range" data-range="all"
+                                            title="Los cuatro últimos años: lo que se conservan los fichajes (art. 34.9 ET).">Cuatro años</button>
+                                </div>
                             </div>
                         </div>
                         <div>
@@ -83,20 +98,27 @@ recordatorios, secciones que fichan y permiso de envío).
                         {% endcomment %}
                         <div>
                             <div class="fw-semibold mb-1">Fichajes</div>
-                            <div class="form-check">
-                                <input class="form-check-input clk-events-check" type="checkbox" value="with" id="clkEventsWith"
-                                       {% if "with" in filter_events %}checked{% endif %}>
-                                <label class="form-check-label" for="clkEventsWith">Con fichajes</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input clk-events-check" type="checkbox" value="without" id="clkEventsWithout"
-                                       {% if "without" in filter_events %}checked{% endif %}>
-                                <label class="form-check-label" for="clkEventsWithout">Sin fichajes</label>
-                            </div>
-                            {# H24 (S129): solo los trabajadores con alguna incidencia sin visar en las fechas elegidas (también al exportar). #}
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="issues_only" value="1" id="clkIssuesOnly"{% if filter_issues_only %} checked{% endif %}>
-                                <label class="form-check-label" for="clkIssuesOnly">Solo con incidencias</label>
+                            {# S148: casillas dentro de un desplegable; "Solo con incidencias" va dentro y cuenta en el botón. #}
+                            <div class="dropdown checkdrop" data-none="Ninguno">
+                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
+                                        data-bs-auto-close="outside" aria-expanded="false"><span class="checkdrop-text">Con fichajes</span></button>
+                                <div class="dropdown-menu p-2 small">
+                                    <div class="form-check">
+                                        <input class="form-check-input clk-events-check" type="checkbox" value="with" id="clkEventsWith"
+                                               {% if "with" in filter_events %}checked{% endif %}>
+                                        <label class="form-check-label" for="clkEventsWith">Con fichajes</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input clk-events-check" type="checkbox" value="without" id="clkEventsWithout"
+                                               {% if "without" in filter_events %}checked{% endif %}>
+                                        <label class="form-check-label" for="clkEventsWithout">Sin fichajes</label>
+                                    </div>
+                                    {# H24 (S129): solo los trabajadores con alguna incidencia sin visar en las fechas elegidas (también al exportar). #}
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="issues_only" value="1" id="clkIssuesOnly"{% if filter_issues_only %} checked{% endif %}>
+                                        <label class="form-check-label" for="clkIssuesOnly">Solo con incidencias</label>
+                                    </div>
+                                </div>
                             </div>
                             <input type="hidden" name="events" id="clk-events-input" value="{{ filter_events|join:',' }}">
                         </div>
@@ -135,6 +157,7 @@ recordatorios, secciones que fichan y permiso de envío).
                         </div>
 
                     </div>
+                    {% include "panel/_checkdrop_js.html" %}
                 </form>
             </div>
         </div>
@@ -226,7 +249,6 @@ recordatorios, secciones que fichan y permiso de envío).
 
 <style>
 /* S148 (directriz 4.9): estilos que vivían en línea. */
-.clk-grid-2 { grid-template-columns: 1fr 1fr; }
 #clk-clocks-from-day { max-width: 9.5em; }
 #clk-results-scroll thead th { position: sticky; top: 0; background-color: #f8f9fa; z-index: 2; }
 #clk-results-scroll thead th.sticky-col { z-index: 3; }

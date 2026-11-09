@@ -27,15 +27,22 @@ filtrar la sección, marcar todos y poner el horario.
                     <div class="d-flex flex-wrap gap-3 align-items-start small">
                         <div>
                             <div class="fw-semibold mb-1">Estado</div>
-                            <div class="form-check">
-                                <input class="form-check-input hor-active-check" type="checkbox" value="true" id="horActiveTrue"
-                                       {% if "true" in filter_active %}checked{% endif %}>
-                                <label class="form-check-label" for="horActiveTrue">Activos</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input hor-active-check" type="checkbox" value="false" id="horActiveFalse"
-                                       {% if "false" in filter_active %}checked{% endif %}>
-                                <label class="form-check-label" for="horActiveFalse">Inactivos</label>
+                            {# S148: casillas dentro de un desplegable (panel/_checkdrop_js.html pinta el botón). #}
+                            <div class="dropdown checkdrop" data-all="Todos" data-none="Ninguno">
+                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
+                                        data-bs-auto-close="outside" aria-expanded="false"><span class="checkdrop-text">Todos</span></button>
+                                <div class="dropdown-menu p-2 small">
+                                    <div class="form-check">
+                                        <input class="form-check-input hor-active-check" type="checkbox" value="true" id="horActiveTrue"
+                                               {% if "true" in filter_active %}checked{% endif %}>
+                                        <label class="form-check-label" for="horActiveTrue">Activos</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input hor-active-check" type="checkbox" value="false" id="horActiveFalse"
+                                               {% if "false" in filter_active %}checked{% endif %}>
+                                        <label class="form-check-label" for="horActiveFalse">Inactivos</label>
+                                    </div>
+                                </div>
                             </div>
                             <input type="hidden" name="active" id="hor-active-input" value="{{ filter_active|join:',' }}">
                         </div>
@@ -71,6 +78,7 @@ filtrar la sección, marcar todos y poner el horario.
                             </select>
                         </div>
                     </div>
+                    {% include "panel/_checkdrop_js.html" %}
                 </form>
             </div>
         </div>

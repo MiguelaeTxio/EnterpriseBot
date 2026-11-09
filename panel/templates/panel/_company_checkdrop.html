@@ -6,17 +6,17 @@ desplegable pero con casillero", "Personal y todo lo demás tb").
 Mismas casillas, mismo enlace "todas" y mismo campo oculto `company`
 que tenía cada pestaña (clases e ids con el prefijo de cada una), así
 que el JS propio de cada pestaña sigue igual y el listado no cambia.
-Cerrado, el botón dice qué hay marcado: Todas, Ninguna o los nombres.
+El botón lo pinta panel/_checkdrop_js.html.
 
 Parámetros: prefix (clk, hor, vbal), id_prefix (clkCompany...),
 company_filter_choices y filter_company.
 {% endcomment %}
 <div>
     <div class="fw-semibold mb-1">Empresa</div>
-    <div class="dropdown company-checkdrop" id="{{ prefix }}-company-drop">
-        <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle company-checkdrop-button"
+    <div class="dropdown checkdrop" data-all="Todas" data-none="Ninguna">
+        <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle"
                 data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
-            <span class="company-checkdrop-text">Todas</span>
+            <span class="checkdrop-text">Todas</span>
         </button>
         <div class="dropdown-menu p-2 small">
             <a href="#" class="d-block small mb-1" id="{{ prefix }}-company-all">Marcar / desmarcar todas</a>
@@ -31,29 +31,4 @@ company_filter_choices y filter_company.
     </div>
     <input type="hidden" name="company" id="{{ prefix }}-company-input" value="{{ filter_company|join:',' }}">
 </div>
-<style>
-.company-checkdrop-button { display: inline-flex; align-items: center; max-width: 13rem; }
-.company-checkdrop-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-</style>
-<script>
-(function () {
-    const drop = document.getElementById('{{ prefix }}-company-drop');
-    const boxes = Array.from(drop.querySelectorAll('input[type=checkbox]'));
-    const text = drop.querySelector('.company-checkdrop-text');
-    const button = drop.querySelector('.company-checkdrop-button');
-    function label() {
-        const marked = boxes.filter((b) => b.checked).map((b) => b.dataset.label);
-        const value = marked.length === boxes.length ? 'Todas'
-            : (marked.length === 0 ? 'Ninguna' : marked.join(', '));
-        text.textContent = value;
-        button.title = value;
-    }
-    drop.addEventListener('change', label);
-    // El enlace "todas" lo maneja el JS de cada pestaña (marca sin
-    // lanzar change en las casillas): se reetiqueta justo después.
-    drop.querySelector('a').addEventListener('click', function () {
-        setTimeout(label, 0);
-    });
-    label();
-}());
-</script>
+{% include "panel/_checkdrop_js.html" %}

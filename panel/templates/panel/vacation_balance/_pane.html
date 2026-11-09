@@ -37,15 +37,22 @@ supervisores: el visor de cada trabajador irá fuera de aquí.
                             filtro se pueda recordar por usuario. Misma lógica
                             que Personal: ninguna marcada = nadie.
                             {% endcomment %}
-                            <div class="form-check">
-                                <input class="form-check-input vbal-active-check" type="checkbox" value="true" id="vbalActiveTrue"
-                                       {% if "true" in filter_active %}checked{% endif %}>
-                                <label class="form-check-label" for="vbalActiveTrue">Activos</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input vbal-active-check" type="checkbox" value="false" id="vbalActiveFalse"
-                                       {% if "false" in filter_active %}checked{% endif %}>
-                                <label class="form-check-label" for="vbalActiveFalse">Inactivos</label>
+                            {# S148: casillas dentro de un desplegable (panel/_checkdrop_js.html pinta el botón). #}
+                            <div class="dropdown checkdrop" data-all="Todos" data-none="Ninguno">
+                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
+                                        data-bs-auto-close="outside" aria-expanded="false"><span class="checkdrop-text">Todos</span></button>
+                                <div class="dropdown-menu p-2 small">
+                                    <div class="form-check">
+                                        <input class="form-check-input vbal-active-check" type="checkbox" value="true" id="vbalActiveTrue"
+                                               {% if "true" in filter_active %}checked{% endif %}>
+                                        <label class="form-check-label" for="vbalActiveTrue">Activos</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input vbal-active-check" type="checkbox" value="false" id="vbalActiveFalse"
+                                               {% if "false" in filter_active %}checked{% endif %}>
+                                        <label class="form-check-label" for="vbalActiveFalse">Inactivos</label>
+                                    </div>
+                                </div>
                             </div>
                             <input type="hidden" name="active" id="vbal-active-input" value="{{ filter_active|join:',' }}">
                         </div>
@@ -75,6 +82,7 @@ supervisores: el visor de cada trabajador irá fuera de aquí.
                             <input type="hidden" name="selected_ids" id="vbal-selected-ids" value="">
                         </div>
                     </div>
+                    {% include "panel/_checkdrop_js.html" %}
                 </form>
             </div>
         </div>
