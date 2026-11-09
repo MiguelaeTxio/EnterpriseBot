@@ -51,18 +51,31 @@ para un momento distinto.
                 <label class="form-check-label" for="filterActiveFalse">Inactivos</label>
             </div>
         </div>
+        {% comment %}
+        H31 (S148), Miguel Ángel: "que sea un desplegable pero con
+        casillero". Las mismas casillas `company` de siempre, ahora
+        dentro de un desplegable que sigue dentro del <form>: htmx las
+        envía igual y el listado no cambia. Cerrado ocupa una línea y
+        dice qué hay marcado (JS de abajo, personalCompanyLabel).
+        {% endcomment %}
         <div>
-            <div class="fw-semibold mb-1">
-                Empresa
-                <a href="#" class="small ms-1" onclick="togglePersonalCompanyAll(event)">(todas)</a>
+            <div class="fw-semibold mb-1">Empresa</div>
+            <div class="dropdown">
+                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle personal-company-button"
+                        id="personalCompanyButton" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+                    <span class="personal-company-text" id="personalCompanyText">Todas</span>
+                </button>
+                <div class="dropdown-menu p-2 small">
+                    <a href="#" class="d-block small mb-1" onclick="togglePersonalCompanyAll(event)">Marcar / desmarcar todas</a>
+                    {% for slug, label, raws in company_filter_choices %}
+                    <div class="form-check">
+                        <input class="form-check-input personal-filter-checkbox personal-company-checkbox" type="checkbox" name="company" value="{{ slug }}"
+                               id="filterCompany{{ forloop.counter }}" data-label="{{ label }}" {% if slug in company_filter %}checked{% endif %}>
+                        <label class="form-check-label text-nowrap" for="filterCompany{{ forloop.counter }}">{{ label }}</label>
+                    </div>
+                    {% endfor %}
+                </div>
             </div>
-            {% for slug, label, raws in company_filter_choices %}
-            <div class="form-check">
-                <input class="form-check-input personal-filter-checkbox personal-company-checkbox" type="checkbox" name="company" value="{{ slug }}"
-                       id="filterCompany{{ forloop.counter }}" {% if slug in company_filter %}checked{% endif %}>
-                <label class="form-check-label" for="filterCompany{{ forloop.counter }}">{{ label }}</label>
-            </div>
-            {% endfor %}
         </div>
         {% comment %}H30 (S123): filtro por requisito de documentación.{% endcomment %}
         <div>
@@ -147,6 +160,8 @@ para un momento distinto.
 .personal-filters-compact .fw-semibold.mb-1 { margin-bottom: .1rem !important; }
 .personal-filters-compact .personal-filter-select { width: auto; max-width: 11rem; }
 .personal-filters-compact .form-check { margin-bottom: 0; min-height: 1.3rem; }
+.personal-company-button { display: inline-flex; align-items: center; max-width: 13rem; }
+.personal-company-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
 <script>
     // H31 (S76). Convenience toggle -- marca/desmarca todas las
@@ -174,6 +189,25 @@ para un momento distinto.
         }));
         label();
     }());
+
+    // H31 (S148): el botón del desplegable Empresa dice qué hay
+    // marcado ("Todas", "Ninguna" o los nombres; el nombre completo
+    // en el title si no cabe).
+    function personalCompanyLabel() {
+        const boxes = Array.from(document.querySelectorAll('.personal-company-checkbox'));
+        const text = document.getElementById('personalCompanyText');
+        const button = document.getElementById('personalCompanyButton');
+        if (!text || !boxes.length) return;
+        const marked = boxes.filter((b) => b.checked).map((b) => b.dataset.label);
+        const label = marked.length === boxes.length ? 'Todas'
+            : (marked.length === 0 ? 'Ninguna' : marked.join(', '));
+        text.textContent = label;
+        button.title = label;
+    }
+    document.querySelectorAll('.personal-company-checkbox').forEach((box) => {
+        box.addEventListener('change', personalCompanyLabel);
+    });
+    personalCompanyLabel();
 
     function togglePersonalCompanyAll(ev) {
         ev.preventDefault();

@@ -130,6 +130,7 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                     <li class="nav-item" role="presentation"><button type="button" class="nav-link py-1 px-2" data-pane="#ppaneActAlta" data-tab="alta" role="tab">Alta y baja</button></li>
                     {% if can_create_accounts %}
                     <li class="nav-item" role="presentation"><button type="button" class="nav-link py-1 px-2" data-pane="#ppaneActClock" data-tab="clock" role="tab">Fichaje</button></li>
+                    <li class="nav-item" role="presentation"><button type="button" class="nav-link py-1 px-2" data-pane="#ppaneActSchedule" data-tab="schedule" role="tab">Horario y sección</button></li>
                     {% endif %}
                 </ul>
                 <strong class="small text-nowrap mb-1"><span id="person-mass-count">0</span> seleccionados</strong>
@@ -306,8 +307,27 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                             <i class="bi bi-arrow-repeat me-1"></i>Reenviar el alta
                         </button>
                     </div>
-                    {# H24 (S144): horario y sección de los marcados, lo mismo que la pestaña Horarios. #}
-                    <div class="border-top pt-1 mt-1">
+                    {# S147: base de los marcados (la de su usuario del panel, como Administración > Usuarios). #}
+                    <div class="small text-muted fw-bold mt-1">Base de los marcados</div>
+                    <div class="d-flex flex-wrap gap-1 align-items-center">
+                        <select class="form-select form-select-sm ppane-select-auto" id="person-mass-base" aria-label="Base">
+                            {% for base in ws_bases %}<option value="{{ base.pk }}">{{ base.name }}</option>{% endfor %}
+                            <option value="">Sin base</option>
+                        </select>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="person-mass-base-assign" disabled
+                                title="Pone la base elegida al usuario del panel de los marcados (festivos de su calendario laboral). Quien aún no tiene usuario se salta.">
+                            <i class="bi bi-geo-alt me-1"></i>Poner base
+                        </button>
+                    </div>
+                </div>
+                {% comment %}
+                H24 (S144): horario y sección de los marcados, lo mismo que
+                la pestaña Horarios. H31 (S148): pestaña propia, separada
+                de Fichaje -- con las cuatro cosas juntas era la pestaña
+                más alta y fijaba el alto de todo el panel de acciones
+                (Miguel Ángel: sin scroll vertical en la pestaña Personal).
+                {% endcomment %}
+                <div class="tab-pane" id="ppaneActSchedule" role="tabpanel">
                     <div class="small text-muted fw-bold">Horario de los marcados</div>
                     <div class="d-flex flex-wrap gap-1 align-items-center">
                         <select class="form-select form-select-sm ppane-select-auto" id="person-mass-schedule" aria-label="Horario">
@@ -341,19 +361,6 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                                 title="Pone a los marcados en esa sección desde ese día (lo mismo que en Horarios y Vacaciones; lo anterior se conserva).">
                             <i class="bi bi-diagram-3 me-1"></i>Poner sección
                         </button>
-                    </div>
-                    {# S147: base de los marcados (la de su usuario del panel, como Administración > Usuarios). #}
-                    <div class="small text-muted fw-bold mt-1">Base de los marcados</div>
-                    <div class="d-flex flex-wrap gap-1 align-items-center">
-                        <select class="form-select form-select-sm ppane-select-auto" id="person-mass-base" aria-label="Base">
-                            {% for base in ws_bases %}<option value="{{ base.pk }}">{{ base.name }}</option>{% endfor %}
-                            <option value="">Sin base</option>
-                        </select>
-                        <button type="button" class="btn btn-sm btn-outline-primary" id="person-mass-base-assign" disabled
-                                title="Pone la base elegida al usuario del panel de los marcados (festivos de su calendario laboral). Quien aún no tiene usuario se salta.">
-                            <i class="bi bi-geo-alt me-1"></i>Poner base
-                        </button>
-                    </div>
                     </div>
                 </div>
                 {% endif %}
