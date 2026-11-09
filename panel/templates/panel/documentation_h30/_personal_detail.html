@@ -298,6 +298,27 @@ y se habilita "Guardar".
             {# H24 (S144): sección del trabajador, asignable desde su ficha (fuera del formulario de datos: un form no puede ir dentro de otro). #}
             <div class="row mt-2">
                 {% include "panel/documentation_h30/_personal_section_block.html" %}
+                {# S148: horario y fichaje (solo lectura; se cambian en las pestañas Horarios y Fichajes). #}
+                <div class="col-12 mt-2">
+                    <div class="border rounded p-2 small d-flex flex-wrap gap-3">
+                        <div>
+                            <strong><i class="bi bi-clock me-1"></i>Horario:</strong>
+                            {% if person_clock.schedule %}
+                            <span class="badge text-bg-secondary fw-normal">{{ person_clock.schedule.label }}</span>
+                            {% if person_clock.days_title %}<span title="{{ person_clock.days_title }}">según el día</span>{% else %}{{ person_clock.morning }}{% if person_clock.afternoon %} y {{ person_clock.afternoon }}{% endif %}{% endif %}
+                            <span class="text-muted">({{ person_clock.origin_label }})</span>
+                            {% if person_clock.days_title %}<div class="text-muted">{{ person_clock.days_title }}</div>{% endif %}
+                            {% else %}
+                            <span class="text-muted">Sin horario</span>
+                            {% endif %}
+                        </div>
+                        <div>
+                            <strong><i class="bi bi-fingerprint me-1"></i>Fichaje:</strong>
+                            {{ person_clock.clock_label }}{% if person_clock.must_clock %} · {% if person_clock.uses_types %}<span class="badge text-bg-info fw-normal" title="Trabajo efectivo, desplazamiento, presencia, varios">por tipos</span>{% else %}<span class="badge text-bg-light border fw-normal">normal (entrada y salida)</span>{% endif %} · recordatorios {{ person_clock.reminders|yesno:"sí,no" }}{% endif %}
+                        </div>
+                        <div class="text-muted ms-md-auto">Se cambian en las pestañas Horarios y Fichajes.</div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

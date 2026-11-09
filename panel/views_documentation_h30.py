@@ -2398,6 +2398,7 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             medical_leave_block_context,
         )
         from panel.views_personal_section import section_block_context
+        from panel.views_worker_schedules import person_schedule_context
 
         # S144: anterior/siguiente según los filtros de Personal.
         (nav_previous, nav_next, nav_position,
@@ -2407,6 +2408,9 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
             "panel/documentation_h30/_personal_detail.html",
             {
                 **section_block_context(request, person),
+                # S148: horario y modo de fichaje (solo lectura).
+                **person_schedule_context(
+                    person, request.user.company_user.company),
                 "nav_previous": nav_previous,
                 "nav_next": nav_next,
                 "nav_position": nav_position,

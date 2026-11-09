@@ -473,3 +473,37 @@ def _marked_people(request, company):
     return list(PersonIdentity.objects.filter(
         Q(company=company) | Q(company__isnull=True), pk__in=wanted,
     ).select_related("company_user"))
+
+
+def person_schedule_context(person, company):
+    """
+    S148: schedule and clock-in mode of one worker, for their file.
+    ---
+    S148: horario y modo de fichaje de un trabajador, para su ficha.
+    Miguel Ángel: "deberíamos de incluir en las fichas de personal los
+    horarios, porque estamos incluyendo los fichajes [...] el tipo de
+    fichaje, si es por tipos o es normal". Mismo cálculo que las
+    pestañas Horarios y Fichajes (solo lectura: se cambian allí).
+    """
+    row = _rows(company, [person])[0]
+    state = row.state
+    if state.must_clock:
+        clock_label = "Ficha con la plataforma"
+    elif state.starts_later:
+        clock_label = "Ficha desde el %s" % state.clocks_from.strftime(
+            "%d/%m/%Y")
+    elif not state.section_clocks:
+        clock_label = "No ficha (su sección ficha por otro sistema)"
+    else:
+        clock_label = "No ficha (no está obligado)"
+    return {"person_clock": {
+        "schedule": row.schedule,
+        "origin_label": row.origin_label,
+        "morning": row.morning_label,
+        "afternoon": row.afternoon_label,
+        "days_title": row.days_title,
+        "clock_label": clock_label,
+        "must_clock": state.must_clock,
+        "uses_types": state.uses_types,
+        "reminders": state.reminders,
+    }}
