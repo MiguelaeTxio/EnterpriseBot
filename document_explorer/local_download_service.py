@@ -29,6 +29,7 @@ sigue la vuestra, por categorías y con su carpeta de inactivos
   carpeta de la persona.
 """
 import collections
+import re
 import unicodedata
 
 from django.contrib.contenttypes.models import ContentType
@@ -167,6 +168,9 @@ def new_folder_name(person, category):
     return _plain(name + (" (%s)" % code if code else "")).strip()
 
 
+_CODE_SUFFIX = re.compile(r"\((TR|GR|GL|AGG)\)\s*$")
+
+
 def _company_code(person):
     company = _plain(person.employer_company)
     return next((c for key, c in COMPANY_CODES if key in company), "")
@@ -187,9 +191,16 @@ def target_local_folder(person, current=""):
     # S146 (Miguel Ángel): en local las carpetas llevan el código de su
     # empresa (TR, GR, GL, AGG). Una carpeta que ya existe sin código lo
     # recibe; si ya trae uno entre paréntesis, se respeta tal cual.
+    # Si trae exactamente uno de los códigos y la empresa ha cambiado
+    # (S146: ARANDA REYES pasó de GR a Transgrual), se cambia el código;
+    # variantes como "(PTE TR)" o "(TR AUX)" no se tocan.
     code = _company_code(person)
-    if current and code and category != ASISTENCIA and "(" not in name:
-        name = "%s (%s)" % (name.rstrip(), code)
+    if current and code:
+        match = _CODE_SUFFIX.search(name)
+        if match and match.group(1) != code:
+            name = "%s(%s)" % (name[:match.start(1) - 1], code)
+        elif category != ASISTENCIA and "(" not in name:
+            name = "%s (%s)" % (name.rstrip(), code)
     return "%s/%s/%s" % (LOCAL_ROOT, container, name)
 
 
