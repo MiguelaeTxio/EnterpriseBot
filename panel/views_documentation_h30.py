@@ -81,7 +81,7 @@ from document_management.vigencia_service import (
 )
 from fleet.models import MachineAsset
 from hr_calendar.models import AbsencePeriod, VacationPeriod
-from ivr_config.models import Company, CompanyUser, WorkPeriod
+from ivr_config.models import Company, CompanyUser, Section, WorkPeriod
 from panel.mixins import (
     CompanyUserRequiredMixin, DocsUploadAccessMixin, FleetAccessMixin,
 )
@@ -150,6 +150,18 @@ COMPANY_FILTER_CHOICES = [
         ["ASIST.GRUAS GRANADA"],
     ),
     ("sin_empresa", "Sin empresa asignada", [""]),
+]
+
+
+# S146 (Miguel Ángel): "hay que preguntar a qué empresa va y sacar el
+# desplegable de empresas posibles" -- nada de escribirla a mano
+# (Transgrual, TRANSGRUAL, Grualdi, GRUALDI S.L....). En el alta se
+# guarda siempre el texto canónico de cada empresa (el primero de su
+# lista en COMPANY_FILTER_CHOICES), que es el que reconoce también el
+# código de su carpeta local (TR, GR, GL, AGG).
+ALTA_COMPANY_CHOICES = [
+    (raws[0], label) for slug, label, raws in COMPANY_FILTER_CHOICES
+    if slug != "sin_empresa"
 ]
 
 
@@ -1457,6 +1469,12 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
         # "Asignar puesto" -- mismo criterio que person_groups, cargado
         # una única vez en la carga inicial de la pestaña.
         ctx["job_positions"] = JobPosition.objects.order_by("name")
+        # S146 (Miguel Ángel): en el alta la empresa y la sección se
+        # eligen de un desplegable, nunca se escriben a mano.
+        ctx["intake_company_choices"] = ALTA_COMPANY_CHOICES
+        ctx["intake_section_choices"] = Section.objects.filter(
+            company=company,
+        ).order_by("name")
         # H31 (S113): lotes de EPIs guardados para la nueva acción
         # masiva de entrega -- mismo criterio que job_positions/
         # person_groups de arriba, cargado una única vez.
@@ -5463,7 +5481,7 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
             )
         return stored, warnings
 
-    def _reactivate(self, request, person, data, date_values):
+    def _reactivate(self, request, person, data, date_values, section):
         """
         H24 (S144). Onboarding of a worker who already exists but is
         terminated: reactivate, store the new documents, local sync.
@@ -5489,6 +5507,12 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
             local_sync=False,
         )
         person.refresh_from_db()
+        # S146: su sección desde la fecha de alta, antes de mover su
+        # carpeta local (la categoría local sale de la sección).
+        from hr_calendar.balance import assign_section
+
+        assign_section([person], section, date_values["hire_date"],
+                       company_user)
         ensure_folder_chain(BUCKET, person.folder_path)
         stored_count, doc_warnings = self._store_documents(
             request, person, person.folder_path,
@@ -5533,6 +5557,20 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
                 status=400,
             )
 
+        if data["employer_company"] not in dict(ALTA_COMPANY_CHOICES):
+            return JsonResponse(
+                {"ok": False, "error": "Elige la empresa."}, status=400,
+            )
+        raw_section = request.POST.get("section_id", "")
+        section = Section.objects.filter(
+            pk=raw_section if raw_section.isdigit() else 0,
+            company=request.user.company_user.company,
+        ).first()
+        if section is None:
+            return JsonResponse(
+                {"ok": False, "error": "Elige la sección."}, status=400,
+            )
+
         existing = PersonIdentity.objects.filter(dni=data["dni"]).first()
         reactivate = (
             existing is not None and not existing.is_active_employee
@@ -5572,7 +5610,8 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
             date_values["hire_date"] = timezone.now().date()
 
         if reactivate:
-            return self._reactivate(request, existing, data, date_values)
+            return self._reactivate(
+                request, existing, data, date_values, section)
 
         # H31 (S100), Miguel Ángel: "lo que sí sabemos es la población
         # donde vive [...] debe de haber una tabla [...] donde
@@ -5625,6 +5664,12 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
             )
         person.save()
         ensure_folder_chain(BUCKET, folder_path)
+        # S146: su sección desde la fecha de alta; decide también su
+        # carpeta local (TALLER, ADMINISTRACION... o OPERARIOS).
+        from hr_calendar.balance import assign_section
+
+        assign_section([person], section, date_values["hire_date"],
+                       request.user.company_user)
 
         stored_count, doc_warnings = self._store_documents(
             request, person, folder_path,

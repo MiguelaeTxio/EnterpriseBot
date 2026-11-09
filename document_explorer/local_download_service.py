@@ -73,6 +73,8 @@ COMPANY_CODES = (
     ("TRANSGRUAL", "TR"),
     ("GRUALDI", "GL"),
     ("ASISTENCIA", "AGG"),
+    # S146: texto canónico del alta ("ASIST.GRUAS GRANADA").
+    ("GRANADA", "AGG"),
     ("ADOLFO", "GR"),
     ("GRUAS ALVAREZ", "GR"),
 )
@@ -161,9 +163,13 @@ def new_folder_name(person, category):
     if category == ASISTENCIA:
         return _plain("%s %s" % (person.given_name, surnames)).strip()
     name = "%s, %s" % (surnames, person.given_name)
-    company = _plain(person.employer_company)
-    code = next((c for key, c in COMPANY_CODES if key in company), "")
+    code = _company_code(person)
     return _plain(name + (" (%s)" % code if code else "")).strip()
+
+
+def _company_code(person):
+    company = _plain(person.employer_company)
+    return next((c for key, c in COMPANY_CODES if key in company), "")
 
 
 def target_local_folder(person, current=""):
@@ -178,6 +184,12 @@ def target_local_folder(person, current=""):
     container = active if person.is_active_employee else inactive
     name = current.rsplit("/", 1)[-1] if current else new_folder_name(
         person, category)
+    # S146 (Miguel Ángel): en local las carpetas llevan el código de su
+    # empresa (TR, GR, GL, AGG). Una carpeta que ya existe sin código lo
+    # recibe; si ya trae uno entre paréntesis, se respeta tal cual.
+    code = _company_code(person)
+    if current and code and category != ASISTENCIA and "(" not in name:
+        name = "%s (%s)" % (name.rstrip(), code)
     return "%s/%s/%s" % (LOCAL_ROOT, container, name)
 
 

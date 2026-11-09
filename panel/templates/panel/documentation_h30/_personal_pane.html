@@ -2188,9 +2188,20 @@ confirmar, PersonalAccessCreateView crea las cuentas.
                             <label class="form-label small mb-0">Nombre *</label>
                             <input type="text" name="given_name" class="form-control form-control-sm" required>
                         </div>
+                        {# S146 (Miguel Ángel): empresa y sección se eligen, nunca se escriben a mano; la sección decide además su carpeta local (TALLER, ADMINISTRACION... u OPERARIOS). #}
                         <div class="col-6">
-                            <label class="form-label small mb-0">Empresa</label>
-                            <input type="text" name="employer_company" class="form-control form-control-sm" placeholder="p.ej. GRUAS ADOLFO ALVAREZ SL">
+                            <label class="form-label small mb-0">Empresa *</label>
+                            <select name="employer_company" class="form-select form-select-sm" required>
+                                <option value="">— Elige la empresa —</option>
+                                {% for value, label in intake_company_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small mb-0">Sección *</label>
+                            <select name="section_id" class="form-select form-select-sm" required>
+                                <option value="">— Elige la sección —</option>
+                                {% for section in intake_section_choices %}<option value="{{ section.pk }}">{{ section.name }}</option>{% endfor %}
+                            </select>
                         </div>
                         <div class="col-6">
                             <label class="form-label small mb-0">Fecha de alta en la empresa</label>
@@ -2462,9 +2473,13 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
             perFileTypes = data.per_file.map((pf) => pf.document_type_code);
             perFileExpiryHints = data.per_file.map((pf) => pf.expiry_hint || '');
             perFileIssueHints = data.per_file.map((pf) => pf.issue_hint || '');
-            for (const field of ['dni', 'first_surname', 'second_surname', 'given_name', 'birth_date', 'address_street', 'city', 'province', 'employer_company', 'hire_date', 'ss_affiliation_number']) {
+            for (const field of ['dni', 'first_surname', 'second_surname', 'given_name', 'birth_date', 'address_street', 'city', 'province', 'hire_date', 'ss_affiliation_number']) {
                 if (draft[field]) { form.elements[field].value = draft[field]; }
             }
+            // S146: la empresa leída de los documentos solo preselecciona
+            // una de las del desplegable (si se reconoce); si no, queda
+            // sin elegir y el supervisor tiene que escogerla.
+            form.elements.employer_company.value = intakeCompanyOption(draft.employer_company || '');
             if (data.warnings && data.warnings.length) {
                 warningsEl.innerHTML = '<div class="alert alert-warning py-1 px-2 small mb-0">' +
                     'Revisa antes de confirmar: ' + data.warnings.join(' ') + '</div>';
@@ -2496,6 +2511,18 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
         if (createModalInstance) { createModalInstance.hide(); }
     };
 
+    function intakeCompanyOption(text) {
+        const plain = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, '');
+        if (!plain) { return ''; }
+        const rules = [['TRANSGRUAL', 'TRANSGRUAL'], ['GRUALDI', 'GRUALDI'], ['GRANADA', 'ASIST'], ['ADOLFO', 'ADOLFO'], ['GRUASALVAREZ', 'ADOLFO']];
+        const options = Array.from(form.elements.employer_company.options);
+        for (const [key, optionKey] of rules) {
+            if (plain.indexOf(key) === -1) { continue; }
+            const match = options.find((o) => o.value && o.value.toUpperCase().replace(/[\s.]+/g, '').indexOf(optionKey) !== -1);
+            if (match) { return match.value; }
+        }
+        return '';
+    }
     function escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
