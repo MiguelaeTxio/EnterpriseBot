@@ -72,8 +72,7 @@ def unique_postal_code(city: str) -> str:
     ---
     El código postal solo si el municipio tiene uno único: en un
     municipio con varios (Málaga, Vélez-Málaga...) el más bajo sería
-    adivinar, y el de la persona sale de su contrato
-    (`contract_service`). Cadena vacía si no hay uno único.
+    adivinar. Cadena vacía si no hay uno único.
     """
     if not city:
         return ""

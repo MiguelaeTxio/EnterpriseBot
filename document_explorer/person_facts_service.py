@@ -20,7 +20,7 @@ afiliación de 11 cifras (el de la empresa) se corrige, las caducidades
 solo avanzan; lo demás (alta o nacimiento distintos, domicilio dudoso)
 queda como REVISAR y nunca se pisa. S148: el código postal vacío se
 toma de la población (`postal_code_service`, dataset del INE) cuando
-el municipio tiene un único C.P.; si no, del contrato.
+el municipio tiene un único C.P.; si tiene varios, se deja vacío.
 """
 import collections
 import datetime
@@ -247,8 +247,8 @@ def proposals(person, found):
             add(field, value, "documento id=%s" % pk)
     # S148: C.P. vacío desde la población (la de la ficha o la que se
     # acaba de proponer), con el dataset del INE, solo si el municipio
-    # tiene un único C.P.; si tiene varios, sale del contrato
-    # (contract_service.read_contract, worker_postal_code).
+    # tiene un único C.P.; con varios no se adivina (S148: el del
+    # contrato resultó ser casi siempre el de la empresa, 29067).
     city = person.city or next(
         (row[2] for row in out if row[0] == "city"), "")
     if not person.postal_code and city:

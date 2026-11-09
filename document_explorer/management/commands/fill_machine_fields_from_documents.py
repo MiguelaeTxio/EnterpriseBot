@@ -27,6 +27,7 @@ import datetime
 
 from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import BaseCommand
+from django.db import close_old_connections
 
 from document_explorer.document_check_service import (
     MACHINE_FACTS_BY_TYPE,
@@ -133,6 +134,9 @@ class Command(BaseCommand):
                     _plain("    %s: sin lectura" % entry.name)
                     totals["error"] += 1
                     continue
+                # Gemini puede tardar más que el tiempo de inactividad de
+                # MySQL (S148: "Lost connection to MySQL server").
+                close_old_connections()
                 outcome = apply_machine_facts(
                     machine, code, result.get("facts") or {}, save=apply,
                 )
