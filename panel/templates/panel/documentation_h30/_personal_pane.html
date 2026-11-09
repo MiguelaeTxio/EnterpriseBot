@@ -2148,11 +2148,12 @@ confirmar, PersonalAccessCreateView crea las cuentas.
             </div>
 
             <div id="personalIntakeStep1" class="modal-body">
-                <p class="small text-muted mb-2">Sube el DNI y el contrato del trabajador (y el reconocimiento médico si lo tienes) -- el sistema leerá los datos por ti.</p>
+                <p class="small text-muted mb-2">Sube el DNI y el contrato del trabajador (y el reconocimiento médico si lo tienes) -- el sistema leerá los datos por ti. Si no tienes documentos, rellena el formulario a mano.</p>
                 <input type="file" id="personalIntakeFiles" class="form-control form-control-sm" multiple accept="application/pdf,image/*">
                 <div id="personalIntakeStep1Result" class="mt-2"></div>
                 <div class="mt-3 text-end">
                     <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" id="personalIntakeManualBtn" class="btn btn-outline-primary btn-sm">Alta sin documentos</button>
                     <button type="button" id="personalIntakeExtractBtn" class="btn btn-primary btn-sm">Leer documentos</button>
                 </div>
             </div>
@@ -2508,6 +2509,24 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
         });
     };
 
+    // S148: alta por formulario, sin documentos -- mismas reglas que
+    // el alta por documentos (empresa y sección del desplegable, fecha
+    // de alta hoy por defecto); el agente crea su carpeta local.
+    document.getElementById('personalIntakeManualBtn').onclick = function() {
+        personalIntakeArmNotifications();
+        fileInput.value = '';
+        perFileTypes = [];
+        perFileExpiryHints = [];
+        perFileIssueHints = [];
+        reactivatePersonId = '';
+        const today = new Date();
+        form.elements.hire_date.value = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, '0'), String(today.getDate()).padStart(2, '0')].join('-');
+        warningsEl.innerHTML = '<div class="alert alert-info py-1 px-2 small mb-0">Alta sin documentos: rellena los datos a mano. La documentación se sube después desde su ficha.</div>';
+        step1.classList.add('d-none');
+        form.classList.remove('d-none');
+        form.elements.dni.focus();
+    };
+
     // H31 (S100): al cerrar el aviso de duplicado, se vuelve a la
     // pantalla anterior -- verbatim Miguel Ángel, "cerrar. Y cuando
     // cierre pasa otra vez a la pantalla anterior" -- se cierra
@@ -2583,6 +2602,13 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
                 // se navega en el mismo instante, el sonido/toast de
                 // personalIntakeNotify no llega a reproducirse.
                 setTimeout(function() { window.location.href = data.redirect_url; }, 400);
+            } else if (data.reactivate && !reactivatePersonId) {
+                // S148: DNI de alguien de baja -- se ofrece reactivarlo.
+                reactivatePersonId = String(data.reactivate.id);
+                resultEl.innerHTML = '<div class="alert alert-info py-1 px-2 small mb-0">' +
+                    '<strong>' + escapeHtml(data.reactivate.label) + '</strong> ya tiene ficha y está de baja. ' +
+                    'Pulsa otra vez para reactivarlo con la fecha de alta; su carpeta pasa de INACTIVOS a ACTIVOS, también en local.</div>';
+                createBtnLabel.textContent = 'Reactivar trabajador';
             } else {
                 resultEl.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'Error al crear la ficha.'}</div>`;
             }

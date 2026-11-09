@@ -246,7 +246,7 @@ def obsolete_moves(entries, current, target, panel_prefixes):
 
 
 def create_for_person(person, requested_by=None, previous=None,
-                      obsolete=()):
+                      obsolete=(), always=False):
     """
     Create the job that leaves the person's local folder in place.
     ---
@@ -256,7 +256,8 @@ def create_for_person(person, requested_by=None, previous=None,
     desde el panel, que no está en local, a la raíz de su carpeta.
     `obsolete` (S148): pares (blob_name, name) de documentos sustituidos,
     que pasan a OBSOLETOS en local. None si no hay nada que hacer (ni
-    carpeta conocida ni descargas).
+    carpeta conocida ni descargas), salvo con `always` (S148: alta sin
+    documentos, el agente crea su carpeta vacía igualmente).
     """
     current = previous if previous is not None else current_local_folder(
         person)
@@ -272,7 +273,7 @@ def create_for_person(person, requested_by=None, previous=None,
     # que dice el cubo es la de cuando se subió: si en local la movieron
     # a mano (p. ej. a TRABAJADORES INACTIVOS tras la baja), el agente
     # la busca por su nombre en las categorías conocidas.
-    if not files and not current:
+    if not files and not current and not always:
         return None
     return LocalDownloadJob.objects.create(
         person=person, requested_by=requested_by, files=files,

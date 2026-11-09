@@ -5595,11 +5595,21 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
             and request.POST.get("reactivate_person_id") == str(existing.pk)
         )
         if existing is not None and not reactivate:
+            # S148 (alta por formulario): si está de baja, se ofrece
+            # reactivarla, igual que en el alta por documentos.
+            offer = None if existing.is_active_employee else {
+                "id": existing.pk,
+                "label": "%s %s, %s" % (
+                    existing.first_surname, existing.second_surname,
+                    existing.given_name,
+                ),
+            }
             return JsonResponse(
                 {
                     "ok": False,
                     "error": "Ya existe una persona con el DNI/NIE %s."
                     % data["dni"],
+                    "reactivate": offer,
                 },
                 status=400,
             )
@@ -5694,12 +5704,15 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
         )
         # H24 (S144): el alta termina cuando sus documentos están en la
         # carpeta local de OneDrive (los descarga el agente H28).
+        # S148 (alta por formulario): sin documentos, el agente crea
+        # igualmente su carpeta local vacía.
         from document_explorer.local_download_service import (
             create_for_person,
         )
         download_job = create_for_person(
             person, getattr(request.user, "company_user", None),
-        ) if stored_count else None
+            always=True,
+        )
 
         return JsonResponse(
             {
