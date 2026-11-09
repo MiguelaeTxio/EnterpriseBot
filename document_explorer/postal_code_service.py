@@ -78,3 +78,87 @@ def unique_postal_code(city: str) -> str:
         return ""
     codes = _load_lookup().get(_normalize(city)) or []
     return codes[0] if len(set(codes)) == 1 else ""
+
+
+# S148 (Miguel Ángel: "consultarlo on fly o tener un diccionario [...]
+# por lo menos con los códigos postales de aquí de Málaga"): geocoder
+# oficial de CartoCiudad (IGN/CNIG), gratuito y sin clave, que devuelve
+# el C.P. de una dirección concreta (calle y número).
+CARTOCIUDAD_FIND_URL = (
+    "https://www.cartociudad.es/geocoder/api/geocoder/find")
+_STREET_TYPES = (
+    (r"^(C/|C\.|CL\.?|CALLE)\s*", "CALLE "),
+    (r"^(AVDA\.?|AV\.?|AVENIDA)\s*", "AVENIDA "),
+    (r"^(PLZA\.?|PZA\.?|PL\.?|PLAZA)\s*", "PLAZA "),
+    (r"^(CM\.?|CMNO\.?|CAMINO)\s*", "CAMINO "),
+    (r"^(CRTA\.?|CTRA\.?|CARRETERA)\s*", "CARRETERA "),
+    (r"^(PSO\.?|PASEO)\s*", "PASEO "),
+    (r"^(ARYO\.?|ARROYO)\s*", "ARROYO "),
+    (r"^(URB\.?|URBANIZACION)\s*", "URBANIZACION "),
+)
+
+
+def _street_query(street):
+    """
+    "C. CASTILLA 17 P03 D" -> "CALLE CASTILLA 17" (type spelled out, up
+    to the number: floor and door confuse the geocoder).
+    ---
+    Tipo de vía completo y hasta el número (piso y puerta sobran).
+    """
+    import re
+
+    text = " ".join(_normalize(street).split())
+    for pattern, replacement in _STREET_TYPES:
+        text = re.sub(pattern, replacement, text)
+    # Catastro: "PINOS (LOS) 0008" -> "LOS PINOS 8".
+    text = re.sub(r"^(\w+ )(.+?) \((\w+)\)", r"\1\3 \2", text)
+    street_type = next(
+        (r for _p, r in _STREET_TYPES if text.startswith(r)), "")
+    words = text[len(street_type):].split()
+    # El número es el primer número que va detrás del nombre (no el de
+    # "28 DE FEBRERO").
+    for index, word in enumerate(words):
+        if index and word.isdigit() and not (
+                index + 1 < len(words) and words[index + 1] == "DE"):
+            return "%s%s %d" % (
+                street_type, " ".join(words[:index]), int(word))
+    return text.strip()
+
+
+def address_postal_code(street: str, city: str) -> str:
+    """
+    S148: postal code of a street address (CartoCiudad), or "".
+
+    Only accepted when the geocoder places it in the same municipality
+    and finds the street (portal or street, never just the town).
+    ---
+    C.P. de una dirección (calle y número) con CartoCiudad, o "". Solo
+    se acepta si la sitúa en el mismo municipio y encuentra la calle
+    (portal o vía, nunca solo la población). Nunca lanza: sin red o sin
+    respuesta, "".
+    """
+    import re
+
+    import requests
+
+    if not street or not city:
+        return ""
+    query = "%s, %s" % (_street_query(street), _normalize(city))
+    try:
+        response = requests.get(
+            CARTOCIUDAD_FIND_URL, params={"q": query}, timeout=6)
+        data = response.json() if response.ok and response.text else {}
+    except Exception:  # noqa: BLE001 -- sin C.P., nunca un error
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    postal_code = str(data.get("postalCode") or "").strip()
+    same_town = _normalize(city) in (
+        _normalize(data.get("muni") or ""),
+        _normalize(data.get("poblacion") or ""),
+    )
+    if (not re.fullmatch(r"(0[1-9]|[1-4][0-9]|5[0-2])[0-9]{3}", postal_code)
+            or not same_town
+            or data.get("type") not in ("portal", "callejero")):
+        return ""
+    return postal_code

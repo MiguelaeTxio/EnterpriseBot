@@ -5660,7 +5660,13 @@ class PersonalCreateView(DocsUploadAccessMixin, View):
         # ya indicado a mano.
         postal_code = data["postal_code"]
         if not postal_code and data["city"]:
-            postal_code = postal_code_service.lookup_postal_code(data["city"])
+            # S148: primero el C.P. de la dirección (CartoCiudad); si no,
+            # el del municipio (S100).
+            postal_code = (
+                postal_code_service.address_postal_code(
+                    data["address_street"], data["city"])
+                or postal_code_service.lookup_postal_code(data["city"])
+            )
 
         folder_root = naming_service.build_person_category_root(
             data["first_surname"], data["second_surname"],

@@ -31,7 +31,9 @@ import unicodedata
 from django.contrib.contenttypes.models import ContentType
 
 from document_explorer.models import DocumentIndexEntry, PersonIdentity
-from document_explorer.postal_code_service import unique_postal_code
+from document_explorer.postal_code_service import (
+    address_postal_code, unique_postal_code,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -251,8 +253,17 @@ def proposals(person, found):
     # contrato resultó ser casi siempre el de la empresa, 29067).
     city = person.city or next(
         (row[2] for row in out if row[0] == "city"), "")
+    street = person.address_street or next(
+        (row[2] for row in out if row[0] == "address_street"), "")
     if not person.postal_code and city:
-        add("postal_code", unique_postal_code(city), "población %s" % city)
+        # S148: primero el de la dirección (CartoCiudad); si no, el único
+        # del municipio.
+        by_address = address_postal_code(street, city)
+        if by_address:
+            add("postal_code", by_address, "CartoCiudad %s" % city)
+        else:
+            add("postal_code", unique_postal_code(city),
+                "población %s" % city)
     return out
 
 
