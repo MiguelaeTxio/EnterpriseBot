@@ -158,20 +158,12 @@ screen_key "clock_worker"); la selección, por trabajador.
                     </div>
                     <div class="col-6 pe-2 border-top pt-1 mt-1">
                         <div class="small text-muted fw-bold">Exportar</div>
-                        <div class="d-flex flex-wrap gap-1">
-                            <button type="button" class="btn btn-sm btn-outline-success cw-export" id="cw-export" data-format="xlsx"
-                                    title="Jornadas y pulsaciones del trabajador en las fechas elegidas.">
-                                <i class="bi bi-file-earmark-excel me-1"></i>Excel
-                            </button>
-                            <button type="button" class="btn btn-sm btn-outline-danger cw-export" data-format="pdf"
-                                    title="Lo mismo que el Excel, en PDF.">
-                                <i class="bi bi-file-earmark-pdf me-1"></i>PDF
-                            </button>
-                            <button type="button" class="btn btn-sm btn-outline-secondary cw-export" data-format="print"
-                                    title="Lo mismo que el Excel, para imprimir.">
-                                <i class="bi bi-printer me-1"></i>Imprimir
-                            </button>
-                        </div>
+                        {# S148: Excel, PDF o imprimir con plantilla de la hoja Jornadas. #}
+                        <button type="button" class="btn btn-sm btn-outline-success" id="cw-export"
+                                data-bs-toggle="modal" data-bs-target="#cwExportModal"
+                                title="Jornadas y pulsaciones del trabajador en las fechas elegidas: Excel, PDF o imprimir, con la plantilla que elijas.">
+                            <i class="bi bi-box-arrow-up me-1"></i>Exportar / imprimir
+                        </button>
                     </div>
                     {# S144: bolsa de horas extras. S143: lo que pasa del tope de cada mes son horas acumuladas. #}
                     <div class="col-6 border-top pt-1 mt-1">
@@ -689,19 +681,19 @@ screen_key "clock_worker"); la selección, por trabajador.
     });
 
     // Exportar: el trabajador, con las fechas que se ven.
-    // S148: Excel, PDF o impresión (pestaña nueva).
-    document.querySelectorAll(".cw-export").forEach(function (exportBtn) { exportBtn.addEventListener("click", function () {
-        const params = new URLSearchParams();
-        params.set("selected_ids", PERSON_PK);
-        params.set("date_from", filters.querySelector('[name="date_from"]').value);
-        params.set("date_to", filters.querySelector('[name="date_to"]').value);
-        params.set("export_format", exportBtn.dataset.format || "xlsx");
-        if (exportBtn.dataset.format === "print") {
-            window.open(EXPORT_URL + "?" + params.toString(), "_blank");
-        } else {
-            window.location.href = EXPORT_URL + "?" + params.toString();
-        }
-    }); });
+    // S148: el modal común de exportación con plantilla: el
+    // trabajador, con las fechas que se ven.
+    window.EbScreenExport = window.EbScreenExport || {};
+    window.EbScreenExport.cw = {
+        params: function () {
+            return [
+                ["selected_ids", String(PERSON_PK)],
+                ["date_from", filters.querySelector('[name="date_from"]').value],
+                ["date_to", filters.querySelector('[name="date_to"]').value],
+            ];
+        },
+        count: function () { return "Se exportarán las jornadas del trabajador en las fechas elegidas."; },
+    };
 
     // Pantalla completa (directriz 4.26).
     const bottom = document.getElementById("cw-bottom-panel");
@@ -763,4 +755,6 @@ screen_key "clock_worker"); la selección, por trabajador.
     window.addEventListener("load", function () { setTimeout(showTodayInCalendar, 50); });
 }());
 </script>
+{% url 'panel:clock_events_export' as cw_export_url %}
+{% include "panel/_screen_export_modal.html" with sx="cw" screen="clock_days" export_url=cw_export_url method="get" title="Exportar fichajes" %}
 {% endblock %}

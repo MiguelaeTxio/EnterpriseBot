@@ -175,3 +175,83 @@ WORKSHOP_TICKETS = register(Screen(
         "cerrada",
     ],
 ))
+
+
+def _clock_hour(attr, field_name):
+    def getter(item):
+        from panel.views_clock_events import _hour
+
+        return _hour(getattr(item.shift, attr), field_name, item.shift.day)
+    return getter
+
+
+def _clock_place(attr):
+    def getter(item):
+        event = getattr(item.shift, attr)
+        return (event.municipality or "") if event else ""
+    return getter
+
+
+def _clock_coordinates(attr):
+    def getter(item):
+        from panel.views_clock_events import _coordinates
+
+        return _coordinates(getattr(item.shift, attr))
+    return getter
+
+
+def _late(item):
+    shift = item.shift
+    return (max(shift.late_minutes, 0)
+            if shift.late_minutes is not None else None)
+
+
+def _early(item):
+    shift = item.shift
+    return (max(shift.early_minutes, 0)
+            if shift.early_minutes is not None else None)
+
+
+# Fichajes: hoja "Jornadas". Cada elemento es una jornada (item.row, la
+# fila del trabajador; item.shift, la jornada; item.day, la fecha que se
+# escribe: solo en la primera jornada de cada día). DNI y nombre van
+# siempre delante (o en el membrete si es un solo trabajador). "tipos"
+# se abre en una columna de horas por cada tipo de fichaje.
+CLOCK_DAYS = register(Screen(
+    key="clock_days",
+    label="Fichajes: jornadas",
+    columns=(
+        Column("fecha", "Fecha", 12, lambda i: i.day, DATE),
+        Column("entrada", "Entrada", 9,
+               _clock_hour("clock_in", "pressed_at"), "HH:MM"),
+        Column("salida", "Salida", 9,
+               _clock_hour("clock_out", "pressed_at"), "HH:MM"),
+        Column("entrada_parte", "Entrada (parte)", 9,
+               _clock_hour("clock_in", "rounded_at"), "HH:MM"),
+        Column("salida_parte", "Salida (parte)", 9,
+               _clock_hour("clock_out", "rounded_at"), "HH:MM"),
+        Column("municipio_entrada", "Municipio entrada", 26,
+               _clock_place("clock_in")),
+        Column("municipio_salida", "Municipio salida", 26,
+               _clock_place("clock_out")),
+        Column("coordenadas_entrada", "Coordenadas entrada", 22,
+               _clock_coordinates("clock_in")),
+        Column("coordenadas_salida", "Coordenadas salida", 22,
+               _clock_coordinates("clock_out")),
+        Column("entrada_horario", "Entrada según horario", 10,
+               lambda i: (i.shift.expected_start
+                          if i.shift.late_minutes is not None else None),
+               "HH:MM"),
+        Column("minutos_tarde", "Minutos tarde", 9, _late),
+        Column("salida_horario", "Salida según horario", 10,
+               lambda i: (i.shift.expected_end
+                          if i.shift.early_minutes is not None else None),
+               "HH:MM"),
+        Column("minutos_antes", "Minutos antes", 9, _early),
+        Column("horas", "Horas", 8, lambda i: i.shift.duration_label),
+        Column("incidencias", "Incidencias", 60,
+               lambda i: "; ".join(i.shift.incidents)),
+        Column("tipos", "Horas por tipo de fichaje", 14, lambda i: None),
+    ),
+    panel_columns=["fecha", "entrada", "salida", "horas", "incidencias"],
+))

@@ -174,20 +174,12 @@ recordatorios, secciones que fichan y permiso de envío).
                 <div class="row g-1">
                     <div class="col-6 pe-2">
                         <div class="small text-muted fw-bold">Exportar</div>
-                        <div class="d-flex flex-wrap gap-1">
-                            <button type="button" class="btn btn-sm btn-outline-success clk-export" id="clk-export" data-format="xlsx"
-                                    title="Jornadas y pulsaciones de las fechas elegidas: de los marcados o, si no hay nadie marcado, de todos los del filtro. Los fichajes no se corrigen ni se borran: se conservan cuatro años.">
-                                <i class="bi bi-file-earmark-excel me-1"></i>Excel
-                            </button>
-                            <button type="button" class="btn btn-sm btn-outline-danger clk-export" data-format="pdf"
-                                    title="Lo mismo que el Excel, en PDF.">
-                                <i class="bi bi-file-earmark-pdf me-1"></i>PDF
-                            </button>
-                            <button type="button" class="btn btn-sm btn-outline-secondary clk-export" data-format="print"
-                                    title="Lo mismo que el Excel, para imprimir.">
-                                <i class="bi bi-printer me-1"></i>Imprimir
-                            </button>
-                        </div>
+                        {# S148: Excel, PDF o imprimir con plantilla de la hoja Jornadas ("Vista del panel" por defecto). #}
+                        <button type="button" class="btn btn-sm btn-outline-success" id="clk-export"
+                                data-bs-toggle="modal" data-bs-target="#clkExportModal"
+                                title="Jornadas, pulsaciones y correcciones de las fechas elegidas: de los marcados o, si no hay nadie marcado, de todos los del filtro. Excel, PDF o imprimir, con la plantilla que elijas para la hoja de jornadas.">
+                            <i class="bi bi-box-arrow-up me-1"></i>Exportar / imprimir
+                        </button>
                     </div>
                     {# S141: ajustes de fichaje de los marcados. #}
                     <div class="col-6">
@@ -461,20 +453,25 @@ recordatorios, secciones que fichan y permiso de envío).
 
     // Exportar: mismos filtros y fechas que se ven; los marcados, o
     // todos los del filtro si no hay nadie marcado.
-    // S148: Excel, PDF o impresión (pestaña nueva).
-    document.querySelectorAll(".clk-export").forEach(function (exportBtn) { exportBtn.addEventListener("click", function () {
-        const params = new URLSearchParams();
-        new FormData(filters).forEach(function (value, key) {
-            if (key !== "only_selected" && key !== "selected_ids") params.append(key, value);
-        });
-        params.set("selected_ids", Array.from(selection.keys()).join(","));
-        params.set("export_format", exportBtn.dataset.format || "xlsx");
-        if (exportBtn.dataset.format === "print") {
-            window.open(EXPORT_URL + "?" + params.toString(), "_blank");
-        } else {
-            window.location.href = EXPORT_URL + "?" + params.toString();
-        }
-    }); });
+    // S148: el modal común de exportación con plantilla
+    // (panel/_screen_export_modal.html): mismos filtros y fechas que se
+    // ven; los marcados, o todos los del filtro si no hay nadie marcado.
+    window.EbScreenExport = window.EbScreenExport || {};
+    window.EbScreenExport.clk = {
+        params: function () {
+            const pairs = [];
+            new FormData(filters).forEach(function (value, key) {
+                if (key !== "only_selected" && key !== "selected_ids") pairs.push([key, value]);
+            });
+            pairs.push(["selected_ids", Array.from(selection.keys()).join(",")]);
+            return pairs;
+        },
+        count: function () {
+            return selection.size
+                ? (selection.size === 1 ? "Se exportará el trabajador marcado." : "Se exportarán los " + selection.size + " trabajadores marcados.")
+                : "Se exportarán todos los trabajadores del filtro.";
+        },
+    };
 
     // S141: ajustes de fichaje. Cada acción devuelve la tabla con los
     // filtros que se veían (_f_) y, fuera de banda, el bloque de
@@ -626,3 +623,5 @@ recordatorios, secciones que fichan y permiso de envío).
     refreshFromFragment();
 }());
 </script>
+{% url 'panel:clock_events_export' as clk_export_url %}
+{% include "panel/_screen_export_modal.html" with sx="clk" screen="clock_days" export_url=clk_export_url method="get" title="Exportar fichajes" %}

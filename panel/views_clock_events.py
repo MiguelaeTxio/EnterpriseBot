@@ -1583,30 +1583,32 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
         book = Workbook()
         days = book.active
         days.title = "Jornadas"
-        # S129 (Miguel Ángel): la fecha una sola vez; el resto, horas.
-        day_headers = [
-            ("DNI", 12), ("Apellidos y nombre", 34), ("Fecha", 12),
-            ("Entrada", 9), ("Salida", 9), ("Entrada (parte)", 9),
-            ("Salida (parte)", 9), ("Municipio entrada", 26),
-            ("Municipio salida", 26),
-            # S141 (Miguel Ángel): el municipio, si hay, y además las
-            # coordenadas.
-            ("Coordenadas entrada", 22), ("Coordenadas salida", 22),
-            ("Entrada según horario", 10),
-            ("Minutos tarde", 9), ("Salida según horario", 10),
-            ("Minutos antes", 9), ("Horas", 8), ("Incidencias", 60),
-        ]
-        # S141: horas de cada tipo de fichaje, al final (los que no
-        # cuentan como jornada se marcan en la cabecera).
+        # S148: las columnas de "Jornadas" salen de la plantilla de
+        # exportación ("Vista del panel" por defecto = las de la tabla de
+        # jornadas de la ficha); DNI y nombre van siempre delante.
+        # "tipos" se abre en una columna de horas por tipo de fichaje
+        # (S141; los que no cuentan como jornada, marcados).
+        from types import SimpleNamespace
+
+        from panel.screen_exports import columns_for, get_screen
+
+        day_columns = columns_for(request, get_screen("clock_days"))
+        if day_columns is None:
+            return HttpResponse("Plantilla no encontrada.", status=404)
         type_names = [
             (t.name, t.counts_as_work) for t in ClockType.objects.filter(
                 company=request.user.company_user.company,
             )
         ]
-        day_headers += [
-            ("%s%s" % (name, "" if counts else " (no cuenta)"), 14)
-            for name, counts in type_names
-        ]
+        day_headers = [("DNI", 12), ("Apellidos y nombre", 34)]
+        for column in day_columns:
+            if column.key == "tipos":
+                day_headers += [
+                    ("%s%s" % (name, "" if counts else " (no cuenta)"), 14)
+                    for name, counts in type_names
+                ]
+            else:
+                day_headers.append((column.label, column.width))
         days.append([h for h, _w in day_headers])
         presses = book.create_sheet("Pulsaciones")
         press_headers = [
@@ -1629,33 +1631,20 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
             # fecha solo en la primera.
             last_day = None
             for shift in row.report.shifts:
-                early = shift.early_minutes
                 shown_day = shift.day if shift.day != last_day else None
                 last_day = shift.day
-                days.append([
-                    row.person.dni, row.label, shown_day,
-                    _hour(shift.clock_in, "pressed_at", shift.day),
-                    _hour(shift.clock_out, "pressed_at", shift.day),
-                    _hour(shift.clock_in, "rounded_at", shift.day),
-                    _hour(shift.clock_out, "rounded_at", shift.day),
-                    (shift.clock_in.municipality or "")
-                    if shift.clock_in else "",
-                    (shift.clock_out.municipality or "")
-                    if shift.clock_out else "",
-                    _coordinates(shift.clock_in),
-                    _coordinates(shift.clock_out),
-                    shift.expected_start
-                    if shift.late_minutes is not None else None,
-                    max(shift.late_minutes, 0)
-                    if shift.late_minutes is not None else None,
-                    shift.expected_end if early is not None else None,
-                    max(early, 0) if early is not None else None,
-                    shift.duration_label, "; ".join(shift.incidents),
-                ] + [
-                    format_duration(shift.type_seconds[name])
-                    if name in shift.type_seconds else ""
-                    for name, _counts in type_names
-                ])
+                item = SimpleNamespace(row=row, shift=shift, day=shown_day)
+                values = [row.person.dni, row.label]
+                for column in day_columns:
+                    if column.key == "tipos":
+                        values += [
+                            format_duration(shift.type_seconds[name])
+                            if name in shift.type_seconds else ""
+                            for name, _counts in type_names
+                        ]
+                    else:
+                        values.append(column.getter(item))
+                days.append(values)
             last_day = None
             for event in row.report.events:
                 pressed = timezone.localtime(event.pressed_at)
@@ -1716,11 +1705,15 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
             for index, (_header, width) in enumerate(headers):
                 letter = get_column_letter(index + 1)
                 sheet.column_dimensions[letter].width = width
-        for cell in days["C"][1:]:
-            cell.number_format = "DD/MM/YYYY"
-        for column in ("D", "E", "F", "G", "L", "N"):
-            for cell in days[column][1:]:
-                cell.number_format = "HH:MM"
+        index = 3
+        for column in day_columns:
+            if column.key == "tipos":
+                index += len(type_names)
+                continue
+            if column.number_format:
+                for cell in days[get_column_letter(index)][1:]:
+                    cell.number_format = column.number_format
+            index += 1
         for cell in presses["D"][1:]:
             cell.number_format = "DD/MM/YYYY"
         for cell in presses["E"][1:]:
