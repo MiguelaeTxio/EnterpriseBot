@@ -250,6 +250,11 @@ supervisores: el visor de cada trabajador irá fuera de aquí.
     // S147: "Grupos de selección" (como en Personal): la selección es la
     // suma de las personas de los grupos marcados.
     window.EbGroupSelect = window.EbGroupSelect || {};
+    // S149: la selección, para crear un grupo con ella.
+    window.EbGroupGet = window.EbGroupGet || {};
+    window.EbGroupGet["vbal"] = function () {
+        return {persons: Array.from(selection.keys()), users: []};
+    };
     window.EbGroupSelect["vbal"] = function (people) {
         selection.clear();
         people.persons.forEach(function (p) { selection.set(String(p[0]), p[1]); });

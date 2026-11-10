@@ -220,6 +220,7 @@ from panel.views_documentation_h30 import (
     EpiBatchDeliveryExecuteView,
     EpiBatchTemplateDeleteView,
     EpiBatchTemplateSaveView,
+    PersonGroupFromSelectionView,
     PersonGroupTemplateDeleteView,
     PersonGroupTemplateSaveView,
     PersonMassSetJobPositionView,
@@ -1550,6 +1551,12 @@ urlpatterns = [
         "documentacion/personal/grupos/<int:group_pk>/guardar/",
         PersonGroupTemplateSaveView.as_view(),
         name="documentation_personal_group_update",
+    ),
+    # S149: grupo nuevo con la selección de cualquier vista de personal.
+    path(
+        "documentacion/personal/grupos/desde-seleccion/",
+        PersonGroupFromSelectionView.as_view(),
+        name="person_group_from_selection",
     ),
     path(
         "documentacion/personal/grupos/<int:group_pk>/eliminar/",

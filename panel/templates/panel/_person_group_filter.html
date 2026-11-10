@@ -15,6 +15,11 @@ Uso: es una columna de la fila de arriba (col-lg-3, como en Personal):
   {% include "panel/_person_group_filter.html" with pg_prefix="clk" %}
 Contexto: person_group_nodes y person_groups_collapsed
 (panel/person_groups.group_filter_context).
+S149 (Miguel Ángel): con la selección de la vista (p. ej. un grupo
+cruzado con el filtro con "Solo los filtrados") se crea aquí mismo un
+grupo nuevo, aparte ("los que faltan por fichar", "DNI caducado"), para
+volver a él. Cada vista da su selección en
+window.EbGroupGet[pg_prefix]() -> {persons: [pk...], users: [pk...]}.
 {% endcomment %}
 <div class="col-lg-3">
     <div class="border rounded p-2 h-100 d-flex flex-column">
@@ -26,9 +31,18 @@ Contexto: person_group_nodes y person_groups_collapsed
             </ul>
         </div>
         <hr class="my-1">
-        <p class="text-muted small mb-0">
-            Marca uno o varios grupos (la selección es la suma). Los grupos se crean y se cambian en Personal.
+        <p class="text-muted small mb-1">
+            Marca uno o varios grupos (la selección es la suma). Se cambian en Personal.
         </p>
+        <div class="input-group input-group-sm">
+            <input type="text" class="form-control" id="{{ pg_prefix }}-group-new-name" maxlength="120"
+                   placeholder="Nombre del grupo nuevo" aria-label="Nombre del grupo nuevo">
+            <button type="button" class="btn btn-outline-primary" id="{{ pg_prefix }}-group-new-save"
+                    title="Guarda la selección actual como un grupo nuevo tuyo, aparte de los demás">
+                <i class="bi bi-plus-lg"></i> Grupo con la selección
+            </button>
+        </div>
+        <div class="small mt-1 d-none" id="{{ pg_prefix }}-group-new-msg"></div>
     </div>
 </div>
 <style>
@@ -120,5 +134,42 @@ Contexto: person_group_nodes y person_groups_collapsed
         if (window.EbNavState) { window.EbNavState.save('person_groups', {collapsed: Array.from(collapsed)}); }
     });
     applyCollapsed();
+    // S149: grupo nuevo con la selección actual de la vista.
+    const saveBtn = document.getElementById('{{ pg_prefix }}-group-new-save');
+    const nameInput = document.getElementById('{{ pg_prefix }}-group-new-name');
+    const msg = document.getElementById('{{ pg_prefix }}-group-new-msg');
+    function say(text, isError) {
+        msg.textContent = text;
+        msg.className = 'small mt-1 ' + (isError ? 'text-danger' : 'text-success');
+    }
+    function csrf() {
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? meta.content : '';
+    }
+    saveBtn.addEventListener('click', function () {
+        const name = nameInput.value.trim();
+        if (!name) { say('Escribe el nombre del grupo nuevo.', true); nameInput.focus(); return; }
+        const get = window.EbGroupGet && window.EbGroupGet['{{ pg_prefix }}'];
+        const picked = get ? get() : {persons: [], users: []};
+        if (!picked.persons.length && !picked.users.length) { say('No hay nadie seleccionado.', true); return; }
+        const body = new FormData();
+        body.append('name', name);
+        body.append('pg_id', '{{ pg_prefix }}Group');
+        picked.persons.forEach((pk) => body.append('person_ids', pk));
+        picked.users.forEach((pk) => body.append('user_ids', pk));
+        saveBtn.disabled = true;
+        fetch('{% url "panel:person_group_from_selection" %}', {
+            method: 'POST', headers: {'X-CSRFToken': csrf()}, body: body,
+        }).then((r) => r.json().catch(() => ({ok: false, error: 'No se ha podido guardar (' + r.status + ').'})))
+            .then((data) => {
+                if (!data.ok) { say(data.error || 'No se ha podido guardar.', true); return; }
+                list.innerHTML = data.tree_html;
+                applyCollapsed();
+                nameInput.value = '';
+                say('Grupo «' + data.name + '» guardado con ' + data.count + ' persona(s).', false);
+            })
+            .catch(() => say('Sin conexión con el servidor: no se ha guardado nada.', true))
+            .finally(() => { saveBtn.disabled = false; });
+    });
 })();
 </script>

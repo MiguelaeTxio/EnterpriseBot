@@ -18,6 +18,18 @@
     // S147: "Grupos de selección" (como en Personal): la selección son
     // los partes del listado de las personas de los grupos marcados.
     window.EbGroupSelect = window.EbGroupSelect || {};
+    // S149: las cuentas de los partes marcados, para crear un grupo con
+    // ellas.
+    window.EbGroupGet = window.EbGroupGet || {};
+    window.EbGroupGet.wo = function () {
+        var users = new Set();
+        rowChecks().forEach(function (cb) {
+            if (selection.has(cb.dataset.key) && cb.dataset.operator) {
+                users.add(cb.dataset.operator);
+            }
+        });
+        return {persons: [], users: Array.from(users)};
+    };
     window.EbGroupSelect.wo = function (people) {
         selection.clear();
         rowChecks().forEach(function (cb) {

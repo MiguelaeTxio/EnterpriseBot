@@ -161,6 +161,16 @@ acciones. Filtros, orden y selección persistidos por usuario
     // S147: "Grupos de selección" (como en Personal): la selección es la
     // suma de las personas de los grupos marcados.
     window.EbGroupSelect = window.EbGroupSelect || {};
+    // S149: las personas de las solicitudes marcadas, para crear un
+    // grupo con ellas.
+    window.EbGroupGet = window.EbGroupGet || {};
+    window.EbGroupGet["wreq"] = function () {
+        const persons = new Set();
+        document.querySelectorAll(".wreq-row-check").forEach(function (cb) {
+            if (selection.has(cb.dataset.pk) && cb.dataset.person) persons.add(cb.dataset.person);
+        });
+        return {persons: Array.from(persons), users: []};
+    };
     window.EbGroupSelect["wreq"] = function (people) {
         selection.clear();
         const wanted = new Set(people.persons.map(function (p) { return String(p[0]); }));

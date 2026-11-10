@@ -6934,6 +6934,62 @@ class PersonGroupTemplateSaveView(DocsUploadAccessMixin, View):
         })
 
 
+class PersonGroupFromSelectionView(CompanyUserRequiredMixin, View):
+    """
+    S149. POST: crea un grupo nuevo con la selección de cualquier vista
+    de personal (Fichajes, Horarios, Vacaciones...). Miguel Ángel: con
+    un grupo marcado y la selección ya cruzada con el filtro ("Solo los
+    filtrados"), poder guardar aparte otro grupo, p. ej. los que faltan
+    por fichar o los que tienen el DNI caducado, para volver a él e ir
+    quitando a quien lo resuelva. Las vistas seleccionan por persona
+    (`person_ids`) o por cuenta del panel (`user_ids`, resuelta a su
+    persona por PersonIdentity.company_user). El grupo es de quien lo
+    crea y va en el primer nivel (sus "Propios"); se cambia luego en
+    Personal como cualquier otro. Devuelve el árbol pintado con los ids
+    de esa vista (`pg_id`).
+    """
+
+    def post(self, request):
+        from django.template.loader import render_to_string
+
+        from panel.person_groups import GroupError, group_tree, save_group
+
+        editor = request.user.company_user
+        person_ids = {pk for pk in request.POST.getlist("person_ids")
+                      if pk.isdigit()}
+        user_ids = [pk for pk in request.POST.getlist("user_ids")
+                    if pk.isdigit()]
+        if user_ids:
+            person_ids.update(str(pk) for pk in PersonIdentity.objects.filter(
+                company_user_id__in=user_ids).values_list("pk", flat=True))
+        if not person_ids:
+            return JsonResponse({
+                "ok": False,
+                "error": "No hay nadie seleccionado con ficha de personal.",
+            }, status=400)
+        try:
+            group, people = save_group(
+                PersonGroupTemplate(created_by=editor),
+                request.POST.get("name", ""), "", sorted(person_ids),
+                editor=editor,
+            )
+        except GroupError as exc:
+            return JsonResponse({"ok": False, "error": str(exc)}, status=400)
+        pg_id = re.sub(r"[^A-Za-z0-9_-]", "",
+                       request.POST.get("pg_id", ""))[:40]
+        return JsonResponse({
+            "ok": True,
+            "id": group.pk,
+            "name": group.name,
+            "count": len(people),
+            "tree_html": render_to_string(
+                "panel/documentation_h30/_person_groups_tree.html",
+                {"person_group_nodes": group_tree(editor),
+                 "pg_id": pg_id or None}, request=request,
+            ),
+        })
+
+
 class PersonGroupTemplateDeleteView(DocsUploadAccessMixin, View):
     """
     H31 (S113). POST: borra un grupo de selección -- nunca toca a las

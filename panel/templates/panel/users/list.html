@@ -267,6 +267,11 @@ panel/views_users_list.py.
     // S147: "Grupos de selección" (como en Personal): la selección es la
     // suma de las personas de los grupos marcados.
     window.EbGroupSelect = window.EbGroupSelect || {};
+    // S149: la selección, para crear un grupo con ella.
+    window.EbGroupGet = window.EbGroupGet || {};
+    window.EbGroupGet["usr"] = function () {
+        return {users: Array.from(selection.keys()), persons: []};
+    };
     window.EbGroupSelect["usr"] = function (people) {
         selection.clear();
         people.users.forEach(function (name, pk) { selection.set(String(pk), name); });
