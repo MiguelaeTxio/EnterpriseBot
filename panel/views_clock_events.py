@@ -887,6 +887,56 @@ def _corrections_in_range(company_user_id, date_from, date_to):
     ).order_by("-corrected_at"))
 
 
+def _meal_edits(shift, by_replacement):
+    """
+    The meal-break stretches of a shift with types, ready to correct.
+    ---
+    S149: las pausas "Pausa para comer" de una jornada por tipos que se
+    pueden corregir (las que acaban con un cambio de tipo, no con la
+    salida): la pulsación que empieza la pausa y la que la acaba.
+    """
+    ends = list(shift.changes) + (
+        [shift.clock_out] if shift.clock_out is not None else [])
+    edits = []
+    for mark, end in shift.meal_segments:
+        back = next((e for e in ends if e.pressed_at == end
+                     and e.kind == ClockEvent.Kind.CHANGE), None)
+        if back is not None:
+            edits.append({"out": _press_view(mark, by_replacement),
+                          "back": _press_view(back, by_replacement)})
+    return edits
+
+
+def _lunch_defaults(company, company_user):
+    """
+    day -> ("YYYY-MM-DDTHH:MM" start, end) of the schedule's lunch, or None.
+    ---
+    S149: la pausa de comida que se propone al añadirla: entre la salida
+    de la mañana y la entrada de la tarde de su horario ese día (jornada
+    partida); None si ese día no la tiene.
+    """
+    from panel.views_operator import _resolve_operator_schedule
+
+    cache = {}
+
+    def lunch(day):
+        if company_user is None:
+            return None
+        if day not in cache:
+            schedule = _resolve_operator_schedule(company_user, company, day)
+            cache[day] = None
+            if (schedule is not None and not schedule.is_open
+                    and not schedule.is_intensive
+                    and schedule.end_time_morning
+                    and schedule.start_time_afternoon):
+                cache[day] = tuple(
+                    "%sT%s" % (day.isoformat(), t.strftime("%H:%M"))
+                    for t in (schedule.end_time_morning,
+                              schedule.start_time_afternoon))
+        return cache[day]
+    return lunch
+
+
 def worker_detail_data(company, person, date_from, date_to):
     """
     Shifts, corrections history and report of one worker in a range.
@@ -918,6 +968,7 @@ def worker_detail_data(company, person, date_from, date_to):
 
     bases = clock_extras.company_bases(company)
     budget = clock_extras.new_budget()
+    lunch = _lunch_defaults(company, person.company_user)
     shifts = [{
         "day": s.day,
         "presses": [_press_view(s.clock_in, by_replacement),
@@ -949,6 +1000,10 @@ def worker_detail_data(company, person, date_from, date_to):
         "cancelled": [],
         # S144: pausas para comer (dietas) y tramos con vehículo propio.
         "meals": clock_extras.shift_meals(s, bases),
+        # S149: pausas por tipos para corregir y la comida del horario
+        # que se propone al añadirla.
+        "meal_edits": _meal_edits(s, by_replacement),
+        "lunch": lunch(s.day),
         # S143: comida o cena sin fichar que se descuenta (1 h cada una).
         "auto_meals": s.auto_meals,
         "no_meal_break": any(
@@ -1281,6 +1336,7 @@ def apply_correction(request, person):
     from hr_calendar.clock_corrections import ClockCorrectionError
     from hr_calendar.clock_corrections import add_event
     from hr_calendar.clock_corrections import correct_event
+    from hr_calendar.clock_corrections import meal_break
 
     form = {
         "event_id": request.POST.get("event_id", ""),
@@ -1332,6 +1388,31 @@ def apply_correction(request, person):
         return " ".join(filter(None, (
             "Anulados %d fichajes. Se ven tachados en su día y quedan "
             "en el historial." % len(own),
+            _resync_partes(person, before)))), "", {}
+    # S149 (Miguel Ángel): añadir o corregir la pausa de comida.
+    if form["action"] == "MEAL":
+        def moment(name):
+            value = parse_datetime(request.POST.get(name, ""))
+            if value is not None and timezone.is_naive(value):
+                value = timezone.make_aware(value)
+            return value
+
+        start, end = moment("meal_start"), moment("meal_end")
+        before = _bounds_before(person, [start, end])
+        try:
+            meal_break(
+                person.company_user, person, by, form["reason"], start,
+                end,
+                out_event_id=request.POST.get("meal_out") or None,
+                back_event_id=request.POST.get("meal_back") or None,
+                entry_event_id=request.POST.get("meal_entry") or None,
+                user_agent=agent,
+            )
+        except ClockCorrectionError as exc:
+            return "", str(exc), form
+        return " ".join(filter(None, (
+            "Pausa de comida guardada. Queda en el historial con quién, "
+            "cuándo y por qué.",
             _resync_partes(person, before)))), "", {}
     # S144: añadir una pulsación (partir un tramo, o la que falta).
     if form["action"] == ClockCorrection.Action.ADD:

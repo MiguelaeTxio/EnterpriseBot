@@ -230,3 +230,101 @@ def _clock_type(event, new_kind, clock_type_id):
                                   or clock_type.pk == event.clock_type_id):
         raise ClockCorrectionError("El tipo de fichaje no es válido.")
     return clock_type
+
+
+def meal_break(company_user, person, corrected_by, reason, start, end,
+               out_event_id=None, back_event_id=None, entry_event_id=None,
+               user_agent=""):
+    """
+    Add or change the meal break of a shift. Returns how many presses.
+
+    ---
+
+    Añade o corrige la pausa de comida de una jornada (S149, Miguel
+    Ángel: "poder modificar la pausa de comida, añadirla,
+    modificarla"). Como el resto de correcciones, ninguna pulsación se
+    toca: quedan quién, cuándo, antes, después y el motivo.
+    - Corregir (`out_event_id` y `back_event_id`): la pulsación que
+      empieza la pausa (salida a comer, o el cambio a "Pausa para
+      comer") pasa a `start` y la que la acaba (vuelta, o el cambio de
+      vuelta) a `end`, cada una con su tipo de siempre.
+    - Añadir (`entry_event_id`, la entrada de la jornada): sin tipos, una
+      salida a `start` y una entrada a `end`; con tipos, un cambio a
+      "Pausa para comer" a `start` y otro de vuelta, al tipo que llevaba,
+      a `end`. La pausa cae dentro de la jornada y sin otra pulsación
+      en medio.
+    """
+    if start is None or end is None:
+        raise ClockCorrectionError("Indique el principio y el final de la "
+                                   "pausa.")
+    start = start.replace(second=0, microsecond=0)
+    end = end.replace(second=0, microsecond=0)
+    if end <= start:
+        raise ClockCorrectionError("La pausa tiene que acabar después de "
+                                   "empezar.")
+    if company_user is None:
+        raise ClockCorrectionError("Ese trabajador no tiene usuario del "
+                                   "panel en esta empresa.")
+    events = ClockEvent.objects.current().filter(
+        company_user=company_user)
+    with transaction.atomic():
+        if out_event_id and back_event_id:
+            pair = [(events.filter(pk=out_event_id).first(), start),
+                    (events.filter(pk=back_event_id).first(), end)]
+            if any(event is None for event, _when in pair):
+                raise ClockCorrectionError("Esa pausa ya no está; vuelva a "
+                                           "cargar la página.")
+            changed = 0
+            for event, when in pair:
+                if event.pressed_at.replace(second=0, microsecond=0) \
+                        == when:
+                    continue
+                correct_event(
+                    event.pk, corrected_by, ClockCorrection.Action.CHANGE,
+                    reason, new_kind=event.kind, new_pressed_at=when,
+                    user_agent=user_agent,
+                    new_clock_type_id=event.clock_type_id,
+                )
+                changed += 1
+            if not changed:
+                raise ClockCorrectionError("La corrección no cambia nada.")
+            return changed
+        entry = events.filter(pk=entry_event_id,
+                              kind=ClockEvent.Kind.IN).first()
+        if entry is None:
+            raise ClockCorrectionError("Esa jornada ya no está; vuelva a "
+                                       "cargar la página.")
+        after = list(events.filter(
+            pressed_at__gt=entry.pressed_at).order_by("pressed_at"))
+        exit_ = next((e for e in after if e.kind == ClockEvent.Kind.OUT),
+                     None)
+        if exit_ is None:
+            raise ClockCorrectionError("La jornada no tiene salida: "
+                                       "añada antes la salida.")
+        if not entry.pressed_at < start or not end < exit_.pressed_at:
+            raise ClockCorrectionError("La pausa tiene que caer dentro de "
+                                       "la jornada.")
+        inside = [e for e in after if e.pressed_at < exit_.pressed_at]
+        if any(start <= e.pressed_at <= end for e in inside):
+            raise ClockCorrectionError("Hay otra pulsación en medio de "
+                                       "esa pausa: corrija esa.")
+        if entry.clock_type_id is None:
+            steps = [(ClockEvent.Kind.OUT, start, None),
+                     (ClockEvent.Kind.IN, end, None)]
+        else:
+            meal = ClockType.objects.filter(
+                company=company_user.company, role=ClockType.ROLE_MEAL,
+                is_active=True,
+            ).order_by("order", "name").first()
+            if meal is None:
+                raise ClockCorrectionError("No hay ningún tipo de fichaje "
+                                           "«Pausa para comer» activo.")
+            current = [entry] + [e for e in inside if e.pressed_at < start]
+            back_type = current[-1].clock_type_id
+            steps = [(ClockEvent.Kind.CHANGE, start, meal.pk),
+                     (ClockEvent.Kind.CHANGE, end, back_type)]
+        for kind, when, type_id in steps:
+            add_event(company_user, person, corrected_by, kind, when,
+                      reason, user_agent=user_agent,
+                      new_clock_type_id=type_id)
+        return len(steps)

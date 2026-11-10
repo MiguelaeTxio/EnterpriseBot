@@ -242,7 +242,8 @@ def _row(shift):
 
 _STATUS_WEIGHT = {STATUS_ISSUES: 4, STATUS_REVIEWED: 3, STATUS_OPEN: 2,
                   STATUS_OK: 1, STATUS_CANCELLED: 0}
-GAP_COLOR = "repeating-linear-gradient(45deg,#f8d7da,#f8d7da 3px,#fff 3px,#fff 6px)"
+GAP_COLOR = ("repeating-linear-gradient(45deg,#f8d7da,#f8d7da 3px,"
+             "#fff 3px,#fff 6px)")
 # Una salida y vuelta a entrar en menos de esto es casi seguro un error.
 QUICK_GAP_SECONDS = 5 * 60
 
@@ -323,6 +324,8 @@ def _group_by_day(rows):
             if out and back:
                 seconds = int((back["time"] - out["time"]).total_seconds())
                 gaps.append({"out": out["time"], "back": back["time"],
+                             # S149: para corregir la pausa de comida.
+                             "out_press": out, "back_press": back,
                              "seconds": seconds,
                              "quick": seconds < QUICK_GAP_SECONDS})
         row["gaps"] = gaps

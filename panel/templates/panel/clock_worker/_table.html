@@ -165,8 +165,21 @@ historial: quién, cuándo, antes, después y motivo).
                         <li><a class="dropdown-item cw-fix" href="#" data-action="ADD" data-kind="CHG" data-time="{{ row.entry.input_value }}"
                                data-label="Cambio de tipo en la jornada del {{ row.day|date:'d/m/Y' }}"
                                title="Añadir un cambio de tipo dentro de la jornada (p. ej. de presencia a trabajo efectivo a una hora): el tramo queda partido en dos."><i class="bi bi-scissors me-1"></i>Partir el tramo</a></li>
+                        {# S149 (Miguel Ángel): añadir o corregir la pausa de comida. #}
+                        {% for meal in row.meal_edits %}
+                        <li><a class="dropdown-item cw-fix" href="#" data-action="MEAL" data-out="{{ meal.out.event.pk }}" data-back="{{ meal.back.event.pk }}" data-start="{{ meal.out.input_value }}" data-end="{{ meal.back.input_value }}"
+                               data-label="Pausa de comida del {{ meal.out.time|date:'d/m/Y' }} ({{ meal.out.time|date:'H:i' }}–{{ meal.back.time|date:'H:i' }})"><i class="bi bi-cup-hot me-1"></i>Corregir la pausa de las {{ meal.out.time|date:"H:i" }}</a></li>
+                        {% endfor %}
+                        <li><a class="dropdown-item cw-fix" href="#" data-action="MEAL" data-entry="{{ row.entry.event.pk }}" data-start="{% if row.lunch %}{{ row.lunch.0 }}{% else %}{{ row.entry.input_value }}{% endif %}" data-end="{% if row.lunch %}{{ row.lunch.1 }}{% else %}{{ row.exit.input_value }}{% endif %}"
+                               data-label="Pausa de comida en la jornada del {{ row.day|date:'d/m/Y' }} ({{ row.entry.time|date:'H:i' }}–{{ row.exit.time|date:'H:i' }})"
+                               title="Añadir la pausa de comida que no fichó, dentro de la jornada. Queda quién la añadió, cuándo y por qué."><i class="bi bi-cup-hot me-1"></i>Añadir la pausa de comida</a></li>
                         {% endif %}
                         {% endwith %}{% endfor %}
+                        {% for gap in row.gaps %}
+                        <li><a class="dropdown-item cw-fix" href="#" data-action="MEAL" data-out="{{ gap.out_press.event.pk }}" data-back="{{ gap.back_press.event.pk }}" data-start="{{ gap.out_press.input_value }}" data-end="{{ gap.back_press.input_value }}"
+                               data-label="Pausa de comida del {{ row.day|date:'d/m/Y' }} (salió {{ gap.out|date:'H:i' }} y volvió {{ gap.back|date:'H:i' }})"
+                               title="Cambiar la hora de la salida a comer y de la vuelta."><i class="bi bi-cup-hot me-1"></i>Corregir la pausa de las {{ gap.out|date:"H:i" }}–{{ gap.back|date:"H:i" }}</a></li>
+                        {% endfor %}
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item text-danger cw-fix" href="#" data-action="CANCEL" data-ids="{{ row.event_ids }}"
                                data-label="{% if row.parts|length > 1 %}Día {{ row.day|date:'d/m/Y' }} entero ({{ row.parts|length }} jornadas){% else %}Jornada del {{ row.day|date:'d/m/Y' }} entera{% endif %}"><i class="bi bi-x-circle me-1"></i>Anular {% if row.parts|length > 1 %}el día{% else %}la jornada{% endif %}</a></li>

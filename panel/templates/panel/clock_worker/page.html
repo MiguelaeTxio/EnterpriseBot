@@ -273,6 +273,22 @@ screen_key "clock_worker"); la selección, por trabajador.
                         <label class="form-check-label text-danger" for="cwFixCancel">Anular esta pulsación (no cuenta en la jornada)</label>
                     </div>
                 </div>
+                {# S149: pausa de comida (añadir o corregir). #}
+                <div id="cw-fix-meal" class="d-none">
+                    <input type="hidden" name="meal_out" id="cw-fix-meal-out">
+                    <input type="hidden" name="meal_back" id="cw-fix-meal-back">
+                    <input type="hidden" name="meal_entry" id="cw-fix-meal-entry">
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="form-label mb-0" for="cwFixMealStart">Sale a comer</label>
+                            <input class="form-control form-control-sm" type="datetime-local" name="meal_start" id="cwFixMealStart">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label mb-0" for="cwFixMealEnd">Vuelve</label>
+                            <input class="form-control form-control-sm" type="datetime-local" name="meal_end" id="cwFixMealEnd">
+                        </div>
+                    </div>
+                </div>
                 <div class="alert alert-danger py-1 d-none" id="cw-fix-cancel-note">
                     No se borra nada: las pulsaciones quedan tachadas en su día y en el historial.
                 </div>
@@ -284,6 +300,7 @@ screen_key "clock_worker"); la selección, por trabajador.
                     <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Olvido del trabajador: no fichó la entrada.">Olvidó la entrada</button>
                     <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Se quedó trabajando con ">Se quedó trabajando con…</button>
                     <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Fichó a una hora que no era: ">Hora equivocada</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Olvido del trabajador: no fichó la pausa de comida.">Olvidó la comida</button>
                 </div>
             </div>
             <div class="modal-footer">
@@ -513,10 +530,19 @@ screen_key "clock_worker"); la selección, por trabajador.
         document.getElementById("cw-fix-events").value = opts.ids || "";
         document.getElementById("cw-fix-action").value = opts.action;
         document.getElementById("cw-fix-label").textContent = opts.label || "";
+        const isMeal = opts.action === "MEAL";
         document.getElementById("cwFixModalLabel").textContent = opts.action === "ADD" ? "Añadir un fichaje"
-            : (opts.action === "CANCEL" ? "Anular" : "Corregir un fichaje");
+            : (opts.action === "CANCEL" ? "Anular"
+                : (isMeal ? (opts.entry ? "Añadir la pausa de comida" : "Corregir la pausa de comida") : "Corregir un fichaje"));
         const isCancel = opts.action === "CANCEL";
-        document.getElementById("cw-fix-change").classList.toggle("d-none", isCancel);
+        document.getElementById("cw-fix-change").classList.toggle("d-none", isCancel || isMeal);
+        // S149: pausa de comida.
+        document.getElementById("cw-fix-meal").classList.toggle("d-none", !isMeal);
+        document.getElementById("cw-fix-meal-out").value = opts.out || "";
+        document.getElementById("cw-fix-meal-back").value = opts.back || "";
+        document.getElementById("cw-fix-meal-entry").value = opts.entry || "";
+        document.getElementById("cwFixMealStart").value = opts.start || "";
+        document.getElementById("cwFixMealEnd").value = opts.end || "";
         document.getElementById("cw-fix-cancel-note").classList.toggle("d-none", !isCancel);
         document.getElementById("cw-fix-cancel-wrap").classList.toggle("d-none", opts.action !== "CHANGE");
         if (opts.kind) document.getElementById("cwFixKind").value = opts.kind;
@@ -543,6 +569,8 @@ screen_key "clock_worker"); la selección, por trabajador.
         openFix({
             action: link.dataset.action, event: link.dataset.event, ids: link.dataset.ids,
             kind: link.dataset.kind, type: link.dataset.type, time: link.dataset.time, label: link.dataset.label,
+            out: link.dataset.out, back: link.dataset.back, entry: link.dataset.entry,
+            start: link.dataset.start, end: link.dataset.end,
         });
     });
     document.getElementById("cw-add").addEventListener("click", function () {
