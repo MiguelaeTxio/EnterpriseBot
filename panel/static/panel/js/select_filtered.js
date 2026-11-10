@@ -18,8 +18,12 @@
  * pantalla. Se vacía con el propio "Limpiar" del listado y se vuelven
  * a marcar esas filas con sus casillas, para que cada listado guarde
  * la selección como siempre (navegación persistida, visor "Selección
- * actual"). Queda marcada mientras todo lo seleccionado cumpla el
- * filtro; desmarcarla no cambia la selección.
+ * actual").
+ *
+ * Corregido otra vez (Miguel Ángel: "¿por qué no me deja quitar el
+ * solo filtrados?"): se marcaba sola mientras todo lo seleccionado
+ * cumpliera el filtro y al quitarla se volvía a marcar. Ahora hace el
+ * cruce al marcarla y se desmarca sola; nunca se queda marcada.
  *
  * Se engancha sola en cualquier listado que tenga el trío
  * `{prefijo}-mass-clear` (Limpiar), `{prefijo}-mass-count` (contador)
@@ -53,9 +57,6 @@
 
     function sync(box) {
         var p = parts(box.dataset.prefix);
-        var selected = p.count ? parseInt(p.count.textContent, 10) || 0 : -1;
-        var checked = p.rows.filter(function (cb) { return cb.checked; }).length;
-        box.checked = checked > 0 && selected === checked;
         box.disabled = !p.clear || p.rows.length === 0;
     }
 
@@ -82,6 +83,7 @@
                 cb.dispatchEvent(new Event("change", {bubbles: true}));
             });
         }
+        box.checked = false;
         syncSoon();
     }
 
