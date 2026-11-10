@@ -415,6 +415,7 @@ class PayslipBatchCreateView(PayslipAccessMixin, View):
         batch = PayslipBatch.objects.create(
             company=cu.company, created_by=cu,
             folder_name=request.POST.get("folder", "")[:255],
+            notify_whatsapp=request.POST.get("notify") != "0",
         )
         return JsonResponse({"ok": True, "id": batch.pk})
 

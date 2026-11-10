@@ -380,7 +380,8 @@ def read_batch(batch):
     batch.status = PayslipBatch.Status.READY
     batch.read_at = timezone.now()
     batch.save(update_fields=["status", "read_at"])
-    notify_ready(batch)
+    if batch.notify_whatsapp:
+        notify_ready(batch)
     return batch
 
 

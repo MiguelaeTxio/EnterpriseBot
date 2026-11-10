@@ -2122,6 +2122,10 @@ class PayslipBatch(models.Model):
     read_at = models.DateTimeField(
         null=True, blank=True, verbose_name="Leída",
     )
+    notify_whatsapp = models.BooleanField(
+        default=True, verbose_name="Avisar por WhatsApp al terminar la lectura",
+        help_text="S149: lo marca o no quien inicia la entrega.",
+    )
     notified_at = models.DateTimeField(
         null=True, blank=True, verbose_name="Aviso de lectura enviado",
     )
