@@ -20,7 +20,8 @@ from urllib.parse import quote
 
 from django.db.models import Q
 from django.http import Http404, HttpResponse, JsonResponse
-from django.shortcuts import render
+from django.contrib import messages
+from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views import View
 
@@ -28,7 +29,8 @@ from document_explorer.models import PersonIdentity
 from hr_calendar import payslip_delivery as pd
 from hr_calendar.models import PayslipBatch, PayslipItem
 from hr_calendar.worker_requests import person_label
-from panel.mixins import SupervisorAccessMixin
+from ivr_config.models import CompanyUser
+from panel.mixins import CompanyUserRequiredMixin
 from panel.navigation_persistence import (
     apply_list_navigation,
     get_saved_state_key,
@@ -63,19 +65,36 @@ _LIVE = (PayslipBatch.Status.UPLOADING, PayslipBatch.Status.READING,
          PayslipBatch.Status.SENDING)
 
 
-class PayslipAccessMixin(SupervisorAccessMixin):
+# Los roles que gestionan las solicitudes (los de Vacaciones y
+# Solicitudes) y, S149 (Miguel Ángel: "deben de tener tanto Yolanda como
+# Jerónimo"), Supervisor de documentación. Las nóminas son confidenciales:
+# cada una solo la abren su trabajador y quien la envió.
+PAYSLIP_ROLES = set(MANAGE_ROLES) | {CompanyUser.ROLE_DOCS_SUPERVISOR}
+
+
+def can_send_payslips(company_user):
     """
-    The roles that handle requests (those of Vacaciones and Solicitudes).
+    True if this user may use the payslip delivery.
     ---
-    Los roles que gestionan las solicitudes (los de Vacaciones y
-    Solicitudes): los mismos que entregan una nómina pedida.
+    True si este usuario puede usar la entrega de nóminas.
+    """
+    return company_user is not None and company_user.role in PAYSLIP_ROLES
+
+
+class PayslipAccessMixin(CompanyUserRequiredMixin):
+    """
+    Access for PAYSLIP_ROLES; the rest go back to the panel.
+    ---
+    Acceso para PAYSLIP_ROLES; el resto vuelve al panel con un aviso.
     """
 
     def dispatch(self, request, *args, **kwargs):
         company_user = getattr(request.user, "company_user", None)
         if (request.user.is_authenticated and company_user is not None
-                and company_user.role not in MANAGE_ROLES):
-            raise Http404
+                and not can_send_payslips(company_user)):
+            messages.error(request, "Acceso denegado: la entrega de "
+                                    "nóminas no es para tu rol.")
+            return redirect("/panel/")
         return super().dispatch(request, *args, **kwargs)
 
 
@@ -263,6 +282,8 @@ class PayslipPageView(PayslipAccessMixin, View):
             "screen_key": SCREEN_KEY,
             "saved_selection": saved if isinstance(saved, list) else [],
             "active_nav": "worker_requests",
+            # Vuelta: a Solicitudes quien la tiene; si no, a Documentación.
+            "back_to_requests": cu.role in MANAGE_ROLES,
         })
 
 

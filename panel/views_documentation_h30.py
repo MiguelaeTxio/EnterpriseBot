@@ -571,6 +571,8 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
             valid_tabs = tuple(t for t in valid_tabs if t != "bandeja")
         # H24 (S129): "Fichajes" lleva posiciones GPS -- solo los roles
         # de SupervisorAccessMixin.
+        from panel.views_payslips import can_send_payslips
+
         can_view_clock_events = request.user.company_user.role in (
             CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_ADMIN_SUPERVISOR,
             CompanyUser.ROLE_SUPERVISOR, CompanyUser.ROLE_WORKSHOPBOSS,
@@ -624,6 +626,8 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
             "personal_tab_qs": _build_personal_tab_querystring(filters),
             "can_use_inbox": can_use_inbox,
             "can_view_clock_events": can_view_clock_events,
+            # S149: enlace a la entrega de nóminas (Yolanda y Jerónimo).
+            "can_send_payslips": can_send_payslips(request.user.company_user),
         })
 
 

@@ -16,7 +16,7 @@ envío. La lógica vive en hr_calendar/payslip_delivery.py.
 {% block title %}Entrega de nóminas{% endblock %}
 {% block page_title %}Entrega de nóminas{% endblock %}
 {% block content %}
-<div class="mb-2"><a href="{% url 'panel:worker_requests_page' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Solicitudes</a></div>
+<div class="mb-2">{% if back_to_requests %}<a href="{% url 'panel:worker_requests_page' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Solicitudes</a>{% else %}<a href="{% url 'panel:documentation_hub' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Documentación</a>{% endif %}</div>
 <div class="border rounded p-2 mb-2" id="psl-top-panel">
     <div class="row g-2">
         <div class="col-lg-4">
