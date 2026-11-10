@@ -21,8 +21,8 @@ grupo nuevo, aparte ("los que faltan por fichar", "DNI caducado"), para
 volver a él. Cada vista da su selección en
 window.EbGroupGet[pg_prefix]() -> {persons: [pk...], users: [pk...]}.
 {% endcomment %}
-<div class="col-lg-3">
-    <div class="border rounded p-2 h-100 d-flex flex-column">
+<div class="col-lg-3 eb-fit-col">
+    <div class="border rounded p-2 h-100 d-flex flex-column eb-fit-card">
         <div class="fw-bold small mb-1">Grupos de selección</div>
         <div class="mb-1 eb-group-scroll-fill">
             <ul class="list-group list-group-flush small" id="{{ pg_prefix }}-group-list"
@@ -47,6 +47,12 @@ window.EbGroupGet[pg_prefix]() -> {persons: [pk...], users: [pk...]}.
 </div>
 <style>
 .eb-group-scroll-fill { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+/* S148 ("el scroll..."): la columna de grupos no estira el panel fijo:
+   toma el alto de las otras columnas y su árbol hace scroll dentro. */
+@media (min-width: 992px) {
+    .eb-fit-col { position: relative; min-height: 15rem; }
+    .eb-fit-col > .eb-fit-card { position: absolute; inset: 0 calc(var(--bs-gutter-x) * .5); }
+}
 </style>
 <script>
 (function () {

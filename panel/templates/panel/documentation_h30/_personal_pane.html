@@ -49,7 +49,7 @@ pantalla completa aparte, no un fragmento htmx de este pane.
         </div>
     </div>
 
-    <div class="col-lg-3">
+    <div class="col-lg-3 eb-fit-col">
         {% comment %}
         H31 (S113). Miguel Ángel: "bajamos esa parte [la gestión] en
         la gestión de grupos de reparto para que nos quede todo el
@@ -60,7 +60,7 @@ pantalla completa aparte, no un fragmento htmx de este pane.
         flex item) y la gestión queda anclada abajo, con su altura
         natural.
         {% endcomment %}
-        <div class="border rounded p-2 h-100 d-flex flex-column">
+        <div class="border rounded p-2 h-100 d-flex flex-column eb-fit-card">
             {# S147: antes "Grupos de reparto" (Miguel Ángel: "grupos de selección, que es más acorde con lo que hace"). #}
             <div class="fw-bold small mb-1">Grupos de selección</div>
             <div class="mb-1 ppane-scroll-fill">
@@ -174,7 +174,7 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                 <div class="tab-pane" id="ppaneActInfo" role="tabpanel">
                     <div class="small text-muted fw-bold">Circulares y exportación</div>
                     <div class="d-flex gap-1 flex-wrap">
-                        <select id="person-mass-notify" class="form-select form-select-sm ppane-select-auto">
+                        <select id="person-mass-notify" data-live-options="notification_types" class="form-select form-select-sm ppane-select-auto">
                             <option value="">Circular/notificación…</option>
                             {% for ntype in notification_types %}
                             <option value="{{ ntype.code }}">{{ ntype.label }}</option>
@@ -200,14 +200,14 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                         hoja de pasos. Desplegable propio: solo las
                         circulares que requieren firma certificada.
                         {% endcomment %}
-                        <select id="person-mass-docuten" class="form-select form-select-sm ppane-select-auto">
+                        <select id="person-mass-docuten" data-live-options="docuten_types" class="form-select form-select-sm ppane-select-auto">
                             <option value="">Circular con firma…</option>
                             {% for ntype in docuten_types %}
                             <option value="{{ ntype.code }}">{{ ntype.label }}</option>
                             {% endfor %}
                         </select>
                         {# Obra: solo la piden las circulares con datos de obra (nombramientos). #}
-                        <select id="person-mass-docuten-worksite" class="form-select form-select-sm ppane-select-auto">
+                        <select id="person-mass-docuten-worksite" data-live-options="worksites" class="form-select form-select-sm ppane-select-auto">
                             <option value="">Obra (si la pide)…</option>
                             {% for worksite in docuten_worksites %}
                             <option value="{{ worksite.pk }}">{{ worksite.name }}</option>
@@ -232,7 +232,7 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                     <div class="small text-muted fw-bold">Dosieres</div>
                     <div class="d-flex gap-1 flex-wrap">
                         {# S130: plantilla, formato, Descargar y Enviar son los mismos que en Centros de gasto (hub.html, data-dossier-*): las dos selecciones van juntas. #}
-                        <select id="person-mass-dossier-template" data-dossier-bind="personTemplate" class="form-select form-select-sm ppane-select-auto">
+                        <select id="person-mass-dossier-template" data-dossier-bind="personTemplate" data-live-options="person_dossier_templates" class="form-select form-select-sm ppane-select-auto">
                             <option value="">Plantilla…</option>
                             {% for template in dossier_templates %}
                             <option value="{{ template.pk }}">{{ template.name }}</option>
@@ -452,6 +452,12 @@ las filas de debajo se desplacen de verdad.
 <style>
 /* H31 (S136, directriz 4.9): estilos que vivían en línea. */
 .ppane-scroll-fill { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+/* S148 ("el scroll..."): la columna de grupos no estira el panel fijo:
+   toma el alto de las otras columnas y su árbol hace scroll dentro. */
+@media (min-width: 992px) {
+    .eb-fit-col { position: relative; min-height: 15rem; }
+    .eb-fit-col > .eb-fit-card { position: absolute; inset: 0 calc(var(--bs-gutter-x) * .5); }
+}
 .ppane-scroll-x { overflow-x: auto; }
 .ppane-select-auto { width: auto; max-width: 100%; min-width: 0; }
 .ppane-epi-box {

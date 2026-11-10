@@ -182,6 +182,7 @@ from panel.views_users_list import (
     UserListPageView,
     UserListResultsView,
 )
+from panel.views_live_options import LiveOptionsView
 from panel.views_doc_requests import (
     DocRequestsCancelView,
     DocRequestsResultsView,
@@ -2062,6 +2063,12 @@ urlpatterns = [
         "documentacion/fichajes/ajustes/tipos/",
         ClockTypeSaveView.as_view(),
         name="clock_settings_type",
+    ),
+    # S148: opciones vigentes de los desplegables del hub (al vuelo).
+    path(
+        "documentacion/opciones/",
+        LiveOptionsView.as_view(),
+        name="documentation_live_options",
     ),
     # S148: "Pedir documentos" -- cualquier documento a los marcados por
     # WhatsApp (panel/views_doc_requests.py).

@@ -774,6 +774,49 @@ la plantilla de algún grupo marcado se abre este modal para elegirla.
         });
     });
 
+    // S148 (Miguel Ángel: "cuando se crean dossieres, circulares, o
+    // cualquier otro item, tienen que crearse y estar disponibles al
+    // vuelo sin necesidad de recargar la página"): los desplegables con
+    // data-live-options se rehacen con las opciones vigentes al cambiar
+    // de pestaña, al volver a la ventana y con 'eb:options-changed'. Se
+    // conservan las opciones fijas (valor vacío o data-fixed) y lo
+    // elegido.
+    let liveOptionsBusy = false;
+    function refreshLiveOptions() {
+        const selects = document.querySelectorAll('select[data-live-options]');
+        if (!selects.length || liveOptionsBusy) { return; }
+        liveOptionsBusy = true;
+        fetch("{% url 'panel:documentation_live_options' %}", {credentials: 'same-origin'})
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (data) {
+                if (!data) { return; }
+                selects.forEach(function (select) {
+                    const items = data[select.dataset.liveOptions];
+                    if (!items) { return; }
+                    const keep = select.value;
+                    Array.from(select.options).forEach(function (opt) {
+                        if (opt.value !== '' && !opt.hasAttribute('data-fixed')) { opt.remove(); }
+                    });
+                    items.forEach(function (item) {
+                        const opt = document.createElement('option');
+                        opt.value = item[0];
+                        opt.textContent = item[1];
+                        select.appendChild(opt);
+                    });
+                    if (Array.from(select.options).some(function (o) { return o.value === keep; })) {
+                        select.value = keep;
+                    }
+                });
+            })
+            .catch(function () { /* sin conexión: se quedan las que había */ })
+            .finally(function () { liveOptionsBusy = false; });
+    }
+    document.querySelectorAll('#docH30Tabs a[data-bs-toggle="tab"]').forEach(function (tabLink) {
+        tabLink.addEventListener('click', function () { setTimeout(refreshLiveOptions, 300); });
+    });
+    window.addEventListener('focus', refreshLiveOptions);
+    document.addEventListener('eb:options-changed', refreshLiveOptions);
+
     document.addEventListener('eb:requirement-deleted', function (ev) {
         const id = String(ev.detail.id);
         requirementSelects().forEach(function (select) {
