@@ -12,7 +12,7 @@
 // - Excel de la selección (POST), pantalla completa de la lista
 //   (formato del laboratorio de análisis, directriz 4.26) y totales de lo
 //   listado, que llegan en #mw-fragment-state con cada repintado.
-// Configuración en #mw-root: data-export-url y data-screen-key.
+// Configuración en #mw-root: data-screen-key (data-export-url: el modal de exportación, S148).
 (function () {
     "use strict";
 
@@ -31,10 +31,7 @@
         var root = document.getElementById("mw-root");
         if (!root) { return; }
         var container = document.getElementById("mw-table-container");
-        var exportUrl = root.dataset.exportUrl;
         var screenKey = root.dataset.screenKey;
-        var csrfMeta = document.querySelector('meta[name="csrf-token"]');
-        var csrfToken = csrfMeta ? csrfMeta.getAttribute("content") : "";
 
         var selection = new Map();
         try {
@@ -239,39 +236,24 @@
             }
         );
 
-        // Excel, PDF o impresión (S148, pestaña nueva) de la selección:
-        // formulario POST temporal, para que el navegador gestione la
-        // descarga como cualquier otra.
-        document.querySelectorAll(".mw-mass-export").forEach(function (btn) {
-            btn.addEventListener("click", function () {
-                if (!selection.size) { return; }
-                var form = document.createElement("form");
-                form.method = "post";
-                form.action = exportUrl;
-                form.style.display = "none";
-                if (btn.dataset.format === "print") { form.target = "_blank"; }
-                var fmt = document.createElement("input");
-                fmt.type = "hidden";
-                fmt.name = "export_format";
-                fmt.value = btn.dataset.format || "xlsx";
-                form.appendChild(fmt);
-                var csrf = document.createElement("input");
-                csrf.type = "hidden";
-                csrf.name = "csrfmiddlewaretoken";
-                csrf.value = csrfToken;
-                form.appendChild(csrf);
+        // S148: el modal común de exportación con plantilla
+        // (panel/_screen_export_modal.html) exporta la selección.
+        window.EbScreenExport = window.EbScreenExport || {};
+        window.EbScreenExport.mw = {
+            params: function () {
+                if (!selection.size) { return null; }
+                var pairs = [];
                 selection.forEach(function (_item, key) {
-                    var input = document.createElement("input");
-                    input.type = "hidden";
-                    input.name = "selected";
-                    input.value = key;
-                    form.appendChild(input);
+                    pairs.push(["selected", key]);
                 });
-                document.body.appendChild(form);
-                form.submit();
-                form.remove();
-            });
-        });
+                return pairs;
+            },
+            count: function () {
+                return selection.size === 1
+                    ? "Se exportará la fila seleccionada."
+                    : "Se exportarán las " + selection.size + " filas seleccionadas.";
+            },
+        };
 
         document.getElementById("mw-fullscreen").addEventListener(
             "click", function () {

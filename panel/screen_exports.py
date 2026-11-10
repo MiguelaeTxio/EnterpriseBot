@@ -142,17 +142,26 @@ def _editable_template(company_user, pk):
     return template if template.company_user_id == company_user.pk else None
 
 
-def columns_for(request, screen):
+_FROM_REQUEST = object()
+
+
+def columns_for(request, screen, template_pk=_FROM_REQUEST):
     """
     The columns to export: those of `template_pk` or the default ones.
     ---
     Las columnas a exportar: las de la plantilla `template_pk` (GET o
     POST) o, sin ella (enlaces directos), la plantilla por defecto del
     usuario o la "Vista del panel". None si la plantilla no es suya.
+    Con `template_pk` ("" = la por defecto) no se mira la petición (una
+    segunda hoja de otra pantalla en la misma exportación).
     """
     company_user = request.user.company_user
     templates = visible_templates(company_user, screen)
-    raw = request.GET.get("template_pk") or request.POST.get("template_pk")
+    if template_pk is _FROM_REQUEST:
+        raw = (request.GET.get("template_pk")
+               or request.POST.get("template_pk"))
+    else:
+        raw = template_pk
     if raw in (None, ""):
         template = next(
             (t for t in templates

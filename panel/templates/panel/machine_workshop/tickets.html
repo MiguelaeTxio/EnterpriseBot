@@ -107,17 +107,10 @@ pierde de vista), filtrable con las casillas de estado.
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="mw-mass-clear">Limpiar</button>
                 </div>
                 <div class="small text-muted fw-bold">Descargar la selección</div>
-                <button type="button" class="btn btn-sm btn-outline-success mw-needs-selection mw-mass-export" id="mw-mass-export" data-format="xlsx" disabled
-                        title="Excel con las averías seleccionadas, sus tareas de parte y sus repuestos, con totales">
-                    <i class="bi bi-file-earmark-excel me-1"></i>Excel
-                </button>
-                <button type="button" class="btn btn-sm btn-outline-danger mw-needs-selection mw-mass-export" data-format="pdf" disabled
-                        title="Lo mismo que el Excel, en PDF">
-                    <i class="bi bi-file-earmark-pdf me-1"></i>PDF
-                </button>
-                <button type="button" class="btn btn-sm btn-outline-secondary mw-needs-selection mw-mass-export" data-format="print" disabled
-                        title="Lo mismo que el Excel, para imprimir">
-                    <i class="bi bi-printer me-1"></i>Imprimir
+                <button type="button" class="btn btn-sm btn-outline-success mw-needs-selection" id="mw-mass-export" disabled
+                        data-bs-toggle="modal" data-bs-target="#mwExportModal"
+                        title="Excel, PDF o imprimir las averías seleccionadas, con la plantilla que elijas (S148)">
+                    <i class="bi bi-box-arrow-up me-1"></i>Exportar / imprimir
                 </button>
             </div>
         </div>
@@ -172,4 +165,6 @@ pierde de vista), filtrable con las casillas de estado.
 {{ saved_selection|json_script:"mw-saved-selection" }}
 </div>
 {% include "panel/_fixed_list_layout.html" with top_id="mw-top-panel" bottom_id="mw-bottom-panel" %}
+{% url 'panel:machine_workshop_tickets_export' pk=machine.pk as mw_export_url %}
+{% include "panel/_screen_export_modal.html" with sx="mw" screen="workshop_tickets" export_url=mw_export_url method="post" title="Exportar averías" %}
 {% endblock %}

@@ -34,6 +34,7 @@ from fleet.models import MachineAsset
 from panel.export_formats import workbook_response
 from panel import machine_workshop as workshop
 from panel.mixins import FleetAccessMixin
+from panel.screen_exports import columns_for, get_screen, write_sheet
 from work_order_processor.models import WorkOrderEntry
 
 TASKS_TEMPLATE = "panel/machine_workshop/tasks.html"
@@ -232,13 +233,6 @@ def _append_total(sheet, values):
         cell.font = Font(bold=True)
 
 
-TASK_COLUMNS = (
-    "Fecha", "Mecánico", "Tipo", "Clasificación", "Avería / tarea",
-    "Reparación", "H.C.", "H.F.", "Jornada", "Horas ordinarias",
-    "Horas extra",
-    "Horas festivas", "Horas", "O.R.", "Ticket", "Repuestos",
-    "Importe repuestos (€)", "Repuestos sin precio", "Albaranes",
-)
 PART_COLUMNS = (
     "Fecha", "Mecánico", "Ticket", "Referencia", "Material", "Unidades",
     "Precio unitario (€)", "Importe (€)", "Procedencia", "Proveedor",
@@ -246,28 +240,21 @@ PART_COLUMNS = (
 )
 
 
-def _write_tasks(workbook, rows, first=True):
+def _write_tasks(workbook, rows, columns, first=True):
     """
     TAREAS and REPUESTOS sheets of a set of task rows.
 
     ---
 
-    Hojas TAREAS y REPUESTOS de un conjunto de tareas, con su fila de
-    total (mismo criterio de importe que la pantalla).
+    Hojas TAREAS y REPUESTOS de un conjunto de tareas. S148: TAREAS con
+    las columnas de la plantilla de exportación (Excel, PDF o imprimir)
+    y su fila de total; REPUESTOS, fija, con su total.
     """
-    tasks = _sheet(workbook, "TAREAS", TASK_COLUMNS, first=first)
+    tasks = workbook.active if first else workbook.create_sheet()
+    tasks.title = "TAREAS"
+    write_sheet(tasks, columns, rows, total_label="TOTAL")
     parts = _sheet(workbook, "REPUESTOS", PART_COLUMNS)
     for row in rows:
-        tasks.append([
-            row.work_date, row.worker, row.tipo_label, row.tipo_detail,
-            row.description, row.repair, workshop.time_text(row.hc),
-            workshop.time_text(row.hf), row.shift_label,
-            _number(row.ordinary_hours),
-            _number(row.extra_hours), _number(row.festive_hours),
-            _number(row.hours), row.or_val,
-            row.ticket_code, row.parts_count, _number(row.parts_cost),
-            row.parts_unpriced or None, row.delivery_notes_text,
-        ])
         for info in row.parts:
             if not info.counts_for_machine:
                 continue
@@ -278,19 +265,11 @@ def _write_tasks(workbook, rows, first=True):
                 info.delivery_notes_text,
             ])
     totals = workshop.task_totals(rows)
-    _append_total(tasks, [
-        "TOTAL", "", "", "", "%d tareas" % totals["count"], "", "", "", "",
-        _number(totals["ordinary"]), _number(totals["extra"]),
-        _number(totals["festive"]), _number(totals["hours"]), "", "",
-        totals["parts"],
-        _number(totals["cost"]), totals["unpriced"] or None,
-    ])
     _append_total(parts, [
         "TOTAL", "", "", "", "", "", "", _number(totals["cost"]),
     ])
-    for sheet in (tasks, parts):
-        for cell in sheet["A"][1:]:
-            cell.number_format = "DD/MM/YYYY"
+    for cell in parts["A"][1:]:
+        cell.number_format = "DD/MM/YYYY"
 
 
 # ---------------------------------------------------------------------------
@@ -427,8 +406,11 @@ class MachineWorkshopTasksExportView(FleetAccessMixin, View):
             return HttpResponse(
                 "No hay ninguna tarea seleccionada.", status=400,
             )
+        columns = columns_for(request, get_screen("workshop_tasks"))
+        if columns is None:
+            return HttpResponse("Plantilla no encontrada.", status=404)
         workbook = Workbook()
-        _write_tasks(workbook, rows)
+        _write_tasks(workbook, rows, columns)
         return _xlsx_response(request, workbook, "partes_%s" % machine.code)
 
 
@@ -532,14 +514,6 @@ class MachineWorkshopTicketsFragmentView(FleetAccessMixin, View):
         )
 
 
-TICKET_COLUMNS = (
-    "Ticket", "Fecha", "Estado", "Urgencia", "Tipo", "Avería",
-    "Asignado a", "Cerrado", "Tareas", "Horas ordinarias", "Horas extra",
-    "Horas festivas", "Horas", "Repuestos",
-    "Importe repuestos (€)", "Repuestos sin precio",
-)
-
-
 class MachineWorkshopTicketsExportView(FleetAccessMixin, View):
     """
     Excel of the selected breakdown tickets.
@@ -569,36 +543,19 @@ class MachineWorkshopTicketsExportView(FleetAccessMixin, View):
             return HttpResponse(
                 "No hay ninguna avería seleccionada.", status=400,
             )
+        columns = columns_for(request, get_screen("workshop_tickets"))
+        if columns is None:
+            return HttpResponse("Plantilla no encontrada.", status=404)
         workbook = Workbook()
-        sheet = _sheet(workbook, "AVERIAS", TICKET_COLUMNS, first=True)
-        tasks = []
-        for row in rows:
-            sheet.append([
-                row.code,
-                timezone.localtime(row.created_at).replace(tzinfo=None)
-                if row.created_at else None,
-                row.status_label, row.urgency_label, row.tipo_label,
-                row.summary, row.assigned,
-                timezone.localtime(row.resolved_at).replace(tzinfo=None)
-                if row.resolved_at else None,
-                row.task_count, _number(row.ordinary_hours),
-                _number(row.extra_hours), _number(row.festive_hours),
-                _number(row.hours), row.parts_count,
-                _number(row.parts_cost), row.parts_unpriced or None,
-            ])
-            tasks.extend(row.tasks)
-        totals = workshop.ticket_totals(rows)
-        _append_total(sheet, [
-            "TOTAL", "", "", "", "", "%d averías" % totals["count"], "", "",
-            totals["tasks"], _number(totals["ordinary"]),
-            _number(totals["extra"]), _number(totals["festive"]),
-            _number(totals["hours"]), totals["parts"],
-            _number(totals["cost"]), totals["unpriced"] or None,
-        ])
-        for column in ("B", "H"):
-            for cell in sheet[column][1:]:
-                cell.number_format = "DD/MM/YYYY HH:MM"
-        _write_tasks(workbook, tasks, first=False)
+        sheet = workbook.active
+        sheet.title = "AVERIAS"
+        write_sheet(sheet, columns, rows, total_label="TOTAL")
+        tasks = [task for row in rows for task in row.tasks]
+        # Las tareas de esas averías, con la plantilla por defecto de las
+        # tareas del usuario.
+        task_columns = columns_for(
+            request, get_screen("workshop_tasks"), template_pk="")
+        _write_tasks(workbook, tasks, task_columns, first=False)
         return _xlsx_response(request, workbook, "averias_%s" % machine.code)
 
 

@@ -73,3 +73,105 @@ FLEET = register(Screen(
         "documentos", "contadores", "requisito", "estado", "usos",
     ],
 ))
+
+
+def _num(value):
+    return float(value) if value is not None else None
+
+
+def _hhmm(value):
+    return value.strftime("%H:%M") if value else ""
+
+
+def _schedule(row):
+    if not (row.hc or row.hf):
+        return ""
+    return "%s–%s" % (_hhmm(row.hc) or "?", _hhmm(row.hf) or "?")
+
+
+def _local(value):
+    from django.utils import timezone
+
+    return timezone.localtime(value).replace(tzinfo=None) if value else None
+
+
+# Taller de una máquina: tareas de los partes (filas de
+# panel/machine_workshop.build_task_rows).
+WORKSHOP_TASKS = register(Screen(
+    key="workshop_tasks",
+    label="Taller: tareas de los partes",
+    columns=(
+        Column("fecha", "Fecha", 12, lambda r: r.work_date, DATE),
+        Column("mecanico", "Mecánico", 28, lambda r: r.worker),
+        Column("tipo", "Tipo", 16, lambda r: r.tipo_label),
+        Column("clasificacion", "Clasificación", 20,
+               lambda r: r.tipo_detail),
+        Column("descripcion", "Avería / tarea", 48,
+               lambda r: r.description),
+        Column("reparacion", "Reparación", 40, lambda r: r.repair),
+        Column("hc", "H.C.", 7, lambda r: _hhmm(r.hc)),
+        Column("hf", "H.F.", 7, lambda r: _hhmm(r.hf)),
+        Column("horario", "Horario", 13, _schedule),
+        Column("jornada", "Jornada", 14, lambda r: r.shift_label),
+        Column("h_ordinarias", "Horas ordinarias", 10,
+               lambda r: _num(r.ordinary_hours), summed=True),
+        Column("h_extra", "Horas extra", 9,
+               lambda r: _num(r.extra_hours), summed=True),
+        Column("h_festivas", "Horas festivas", 9,
+               lambda r: _num(r.festive_hours), summed=True),
+        Column("horas", "Horas", 8, lambda r: _num(r.hours), summed=True),
+        Column("or", "O.R.", 10, lambda r: r.or_val),
+        Column("ticket", "Ticket", 10, lambda r: r.ticket_code),
+        Column("repuestos", "Repuestos", 10, lambda r: r.parts_count,
+               summed=True),
+        Column("importe", "Importe repuestos (€)", 12,
+               lambda r: _num(r.parts_cost), summed=True),
+        Column("sin_precio", "Repuestos sin precio", 10,
+               lambda r: r.parts_unpriced or None, summed=True),
+        Column("albaranes", "Albaranes", 24,
+               lambda r: r.delivery_notes_text),
+    ),
+    panel_columns=[
+        "fecha", "mecanico", "tipo", "descripcion", "horario", "jornada",
+        "h_ordinarias", "h_extra", "h_festivas", "horas", "repuestos",
+        "importe", "albaranes", "ticket",
+    ],
+))
+
+# Taller de una máquina: averías (filas de
+# panel/machine_workshop.build_ticket_rows).
+WORKSHOP_TICKETS = register(Screen(
+    key="workshop_tickets",
+    label="Taller: averías",
+    columns=(
+        Column("ticket", "Ticket", 10, lambda r: r.code),
+        Column("fecha", "Fecha", 16, lambda r: _local(r.created_at),
+               "DD/MM/YYYY HH:MM"),
+        Column("estado", "Estado", 14, lambda r: r.status_label),
+        Column("urgencia", "Urgencia", 11, lambda r: r.urgency_label),
+        Column("tipo", "Tipo", 16, lambda r: r.tipo_label),
+        Column("averia", "Avería", 48, lambda r: r.summary),
+        Column("asignado", "Asignado a", 24, lambda r: r.assigned),
+        Column("cerrada", "Cerrada", 16, lambda r: _local(r.resolved_at),
+               "DD/MM/YYYY HH:MM"),
+        Column("tareas", "Tareas", 8, lambda r: r.task_count, summed=True),
+        Column("h_ordinarias", "Horas ordinarias", 10,
+               lambda r: _num(r.ordinary_hours), summed=True),
+        Column("h_extra", "Horas extra", 9,
+               lambda r: _num(r.extra_hours), summed=True),
+        Column("h_festivas", "Horas festivas", 9,
+               lambda r: _num(r.festive_hours), summed=True),
+        Column("horas", "Horas", 8, lambda r: _num(r.hours), summed=True),
+        Column("repuestos", "Repuestos", 10, lambda r: r.parts_count,
+               summed=True),
+        Column("importe", "Importe repuestos (€)", 12,
+               lambda r: _num(r.parts_cost), summed=True),
+        Column("sin_precio", "Repuestos sin precio", 10,
+               lambda r: r.parts_unpriced or None, summed=True),
+    ),
+    panel_columns=[
+        "ticket", "fecha", "estado", "urgencia", "tipo", "averia", "tareas",
+        "h_ordinarias", "h_extra", "h_festivas", "horas", "importe",
+        "cerrada",
+    ],
+))
