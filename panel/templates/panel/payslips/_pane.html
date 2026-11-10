@@ -58,13 +58,20 @@ refresca sola. Lógica: hr_calendar/payslip_delivery.py.
                     <div class="d-flex flex-wrap gap-3 align-items-start small">
                         <div>
                             <div class="fw-semibold mb-1">Estado</div>
-                            {% for value, label in status_choices %}
-                            <div class="form-check">
-                                <input class="form-check-input psl-status-check" type="checkbox" value="{{ value }}" id="pslStatus{{ value }}"
-                                       {% if value in filter_status %}checked{% endif %}>
-                                <label class="form-check-label" for="pslStatus{{ value }}">{{ label }}</label>
+                            {# Casillas dentro de un desplegable, como en las demás vistas (panel/_checkdrop_js.html pinta el botón). #}
+                            <div class="dropdown checkdrop" data-all="Todos" data-none="Ninguno">
+                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
+                                        data-bs-auto-close="outside" aria-expanded="false"><span class="checkdrop-text">Todos</span></button>
+                                <div class="dropdown-menu p-2 small">
+                                    {% for value, label in status_choices %}
+                                    <div class="form-check">
+                                        <input class="form-check-input psl-status-check" type="checkbox" value="{{ value }}" id="pslStatus{{ value }}"
+                                               {% if value in filter_status %}checked{% endif %}>
+                                        <label class="form-check-label text-nowrap" for="pslStatus{{ value }}">{{ label }}</label>
+                                    </div>
+                                    {% endfor %}
+                                </div>
                             </div>
-                            {% endfor %}
                             <input type="hidden" name="status" id="psl-status-input" value="{{ filter_status|join:',' }}">
                         </div>
                         <div>
@@ -184,6 +191,7 @@ refresca sola. Lógica: hr_calendar/payslip_delivery.py.
 </div>
 {{ saved_selection|json_script:"psl-saved-selection" }}
 {% include "panel/_fixed_list_layout.html" with top_id="psl-top-panel" bottom_id="psl-bottom-panel" %}
+{% include "panel/_checkdrop_js.html" %}
 {% url 'panel:payslip_export' as psl_export_url %}
 {% include "panel/_screen_export_modal.html" with sx="psl" screen="payslips" export_url=psl_export_url method="post" title="Exportar nóminas" %}
 <script>
