@@ -7,19 +7,24 @@
  * elementos filtrados: si hay 20 seleccionados pero el filtro muestra
  * 10, quiero poder seleccionar solo esos 10."
  *
- * Al marcarla, la selección pasa a ser exactamente lo que muestra el
- * filtro: se vacía con el propio "Limpiar" del listado y se marca su
- * propio "Seleccionar todos". Así cada listado guarda la selección
- * como siempre (navegación persistida, visor "Selección actual").
- * Queda marcada mientras la selección sea justo lo que se ve; al
- * desmarcarla se vacía la selección, como "Seleccionar todos".
+ * Corregido el mismo día, Miguel Ángel: "no es los que se ven, sino
+ * los filtrados [...] señalo a todos los de grúa con la selección de
+ * grupo, filtro quitando a los que ya fichan [...] quiero seleccionar
+ * de grúas los que siguen sin fichar". Al marcarla, la selección se
+ * queda en su cruce con el filtro: de lo seleccionado, solo lo que
+ * cumple el filtro actual. La lista de cada listado trae todas las
+ * filas del filtro (sin paginar; Personal, páginas de 2000), así que
+ * las filas marcadas de la lista son ese cruce, se vean o no en
+ * pantalla. Se vacía con el propio "Limpiar" del listado y se vuelven
+ * a marcar esas filas con sus casillas, para que cada listado guarde
+ * la selección como siempre (navegación persistida, visor "Selección
+ * actual"). Queda marcada mientras todo lo seleccionado cumpla el
+ * filtro; desmarcarla no cambia la selección.
  *
  * Se engancha sola en cualquier listado que tenga el trío
  * `{prefijo}-mass-clear` (Limpiar), `{prefijo}-mass-count` (contador)
  * y `{prefijo}-check-all` o `{prefijo}-select-all-page`, con las
  * casillas de fila `.{prefijo}-row-check` o `.{prefijo}-select-checkbox`.
- * En un listado paginado, lo que se ve es la página (igual que
- * "Seleccionar todos").
  */
 (function () {
     "use strict";
@@ -39,9 +44,8 @@
         var checkAll = pick(document.querySelectorAll(
             '[id="' + prefix + '-check-all"], [id="' + prefix + '-select-all-page"]'));
         var scope = (checkAll && checkAll.closest("table")) || document;
-        var rows = Array.prototype.filter.call(
-            scope.querySelectorAll("." + prefix + "-row-check, ." + prefix + "-select-checkbox"),
-            function (cb) { return !cb.disabled; });
+        var rows = Array.prototype.slice.call(scope.querySelectorAll(
+            "." + prefix + "-row-check, ." + prefix + "-select-checkbox"));
         var count = pick(document.querySelectorAll('[id="' + prefix + '-mass-count"]'));
         var clear = pick(document.querySelectorAll('[id="' + prefix + '-mass-clear"]'));
         return {checkAll: checkAll, rows: rows, count: count, clear: clear};
@@ -51,9 +55,8 @@
         var p = parts(box.dataset.prefix);
         var selected = p.count ? parseInt(p.count.textContent, 10) || 0 : -1;
         var checked = p.rows.filter(function (cb) { return cb.checked; }).length;
-        box.checked = p.rows.length > 0 && checked === p.rows.length
-            && selected === p.rows.length;
-        box.disabled = !p.checkAll || p.rows.length === 0;
+        box.checked = checked > 0 && selected === checked;
+        box.disabled = !p.clear || p.rows.length === 0;
     }
 
     function syncAll() {
@@ -71,11 +74,13 @@
 
     function apply(box) {
         var p = parts(box.dataset.prefix);
-        if (!p.clear) return;
-        p.clear.click();
-        if (box.checked && p.checkAll) {
-            p.checkAll.checked = true;
-            p.checkAll.dispatchEvent(new Event("change", {bubbles: true}));
+        if (box.checked && p.clear) {
+            var keep = p.rows.filter(function (cb) { return cb.checked; });
+            p.clear.click();
+            keep.forEach(function (cb) {
+                cb.checked = true;
+                cb.dispatchEvent(new Event("change", {bubbles: true}));
+            });
         }
         syncSoon();
     }
@@ -88,7 +93,7 @@
             clear.dataset.ebOnlyFiltered = "1";
             var label = document.createElement("label");
             label.className = "form-check-label small text-nowrap d-inline-flex align-items-center gap-1";
-            label.title = "Deja seleccionados solo los que muestra el filtro";
+            label.title = "De lo seleccionado, deja solo lo que cumple el filtro actual";
             var box = document.createElement("input");
             box.type = "checkbox";
             box.className = "form-check-input mt-0 " + BOX_CLASS;
