@@ -2079,3 +2079,174 @@ class WorkerRequestFile(models.Model):
 
     def __str__(self) -> str:
         return "%s (%s)" % (self.name, self.get_role_display())
+
+
+class PayslipBatch(models.Model):
+    """
+    A payslip delivery: the PDFs of a folder, read, reviewed and sent.
+    ---
+    Una entrega de nóminas (S149, Miguel Ángel): el supervisor elige una
+    carpeta, se suben todos sus PDF, el sistema los lee en segundo plano
+    (a quién es cada nómina y de qué mes), avisa por WhatsApp a quien la
+    inició, este da el visto bueno al listado y se envían: cada nómina
+    se archiva cifrada en la ficha de su trabajador (confidencial) y le
+    llega por WhatsApp.
+    """
+
+    class Status(models.TextChoices):
+        UPLOADING = "UPLOADING", "Subiendo"
+        READING = "READING", "Leyendo"
+        READY = "READY", "Para el visto bueno"
+        SENDING = "SENDING", "Enviando"
+        SENT = "SENT", "Enviada"
+        CANCELLED = "CANCELLED", "Anulada"
+
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name="+",
+        verbose_name="Empresa",
+    )
+    created_by = models.ForeignKey(
+        CompanyUser, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+", verbose_name="Iniciada por",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Iniciada",
+    )
+    status = models.CharField(
+        max_length=10, choices=Status.choices, default=Status.UPLOADING,
+        verbose_name="Estado",
+    )
+    folder_name = models.CharField(
+        max_length=255, blank=True, default="", verbose_name="Carpeta",
+    )
+    read_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Leída",
+    )
+    notified_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Aviso de lectura enviado",
+    )
+    notify_error = models.CharField(
+        max_length=255, blank=True, default="",
+        verbose_name="Error del aviso de lectura",
+    )
+    approved_by = models.ForeignKey(
+        CompanyUser, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+", verbose_name="Visto bueno de",
+    )
+    approved_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Visto bueno",
+    )
+    finished_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Envío terminado",
+    )
+
+    class Meta:
+        verbose_name = "Entrega de nóminas"
+        verbose_name_plural = "Entregas de nóminas"
+        ordering = ["-created_at", "-pk"]
+
+    def __str__(self) -> str:
+        return "Entrega de nóminas #%s (%s)" % (
+            self.pk, self.get_status_display())
+
+
+class PayslipItem(models.Model):
+    """
+    One payslip of a delivery: pages of an uploaded PDF and its worker.
+    ---
+    Una nómina de una entrega (S149): las páginas de uno de los PDF
+    subidos (un PDF puede traer las de varios trabajadores), el
+    trabajador al que es (leído del DNI/NIE o puesto a mano), el mes y
+    cómo ha ido el envío. El PDF subido se guarda cifrado hasta el
+    envío, fuera de la carpeta del trabajador.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Por leer"
+        READY = "READY", "Lista"
+        UNMATCHED = "UNMATCHED", "Sin trabajador"
+        EXCLUDED = "EXCLUDED", "Fuera de la entrega"
+        SENT = "SENT", "Enviada"
+        FILED = "FILED", "Archivada, sin WhatsApp"
+        ERROR = "ERROR", "Error"
+
+    class MatchSource(models.TextChoices):
+        NONE = "", "—"
+        DNI = "DNI", "DNI/NIE"
+        MANUAL = "MANUAL", "A mano"
+
+    batch = models.ForeignKey(
+        PayslipBatch, on_delete=models.CASCADE, related_name="items",
+        verbose_name="Entrega",
+    )
+    original_name = models.CharField(
+        max_length=255, verbose_name="Archivo",
+    )
+    staged_path = models.CharField(
+        max_length=255, blank=True, default="",
+        verbose_name="Copia cifrada hasta el envío",
+    )
+    page_from = models.PositiveSmallIntegerField(
+        default=1, verbose_name="Desde la página",
+    )
+    page_to = models.PositiveSmallIntegerField(
+        default=0, verbose_name="Hasta la página",
+    )
+    person = models.ForeignKey(
+        PersonIdentity, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+", verbose_name="Trabajador",
+    )
+    dni_found = models.CharField(
+        max_length=12, blank=True, default="",
+        verbose_name="DNI/NIE leído",
+    )
+    match_source = models.CharField(
+        max_length=6, blank=True, default="", choices=MatchSource.choices,
+        verbose_name="Asignada por",
+    )
+    period_start = models.DateField(
+        null=True, blank=True, verbose_name="Periodo desde",
+    )
+    period_end = models.DateField(
+        null=True, blank=True, verbose_name="Periodo hasta",
+    )
+    period_label = models.CharField(
+        max_length=60, blank=True, default="", verbose_name="Mes",
+    )
+    status = models.CharField(
+        max_length=10, choices=Status.choices, default=Status.PENDING,
+        verbose_name="Estado",
+    )
+    note = models.CharField(
+        max_length=255, blank=True, default="", verbose_name="Nota",
+    )
+    entry = models.ForeignKey(
+        DocumentIndexEntry, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+        verbose_name="Documento archivado",
+    )
+    phone = models.CharField(
+        max_length=32, blank=True, default="", verbose_name="Móvil",
+    )
+    message_sid = models.CharField(
+        max_length=64, blank=True, default="", verbose_name="Mensaje",
+    )
+    sent_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Enviada",
+    )
+    media_token = models.CharField(
+        max_length=64, blank=True, default="", db_index=True,
+        verbose_name="Enlace temporal para WhatsApp",
+    )
+    media_expires = models.DateTimeField(
+        null=True, blank=True, verbose_name="El enlace caduca",
+    )
+
+    class Meta:
+        verbose_name = "Nómina de una entrega"
+        verbose_name_plural = "Nóminas de las entregas"
+        ordering = ["pk"]
+
+    def __str__(self) -> str:
+        return "%s (págs. %s-%s)" % (self.original_name, self.page_from,
+                                     self.page_to)
