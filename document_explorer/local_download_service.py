@@ -88,11 +88,15 @@ def _plain(text):
 
 def _person_entries(person):
     person_ct = ContentType.objects.get_for_model(PersonIdentity)
+    # S149: sin los confidenciales (nóminas, S147): en el cubo están
+    # cifrados y solo los abren el trabajador y quien los envió; en
+    # local quedaría un archivo ilegible a la vista de todos.
     return DocumentIndexEntry.objects.filter(
         bucket=BUCKET, domain_content_type=person_ct,
         domain_object_id=person.pk,
         entry_kind=DocumentIndexEntry.KIND_FILE,
         deleted_at__isnull=True, purged_at__isnull=True,
+        is_confidential=False,
     ).order_by("pk")
 
 

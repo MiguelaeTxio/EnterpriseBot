@@ -277,6 +277,11 @@ def queue_for_entry(entry, requested_by=None):
 
     if not entry.blob_name.startswith(PANEL_PREFIXES + PERSON_PREFIXES):
         return
+    # S149: un documento confidencial (nómina, S147) no baja nunca a
+    # local: en el cubo está cifrado y solo lo abren el trabajador y
+    # quien lo envió.
+    if entry.is_confidential:
+        return
     model = entry.domain_content_type.model_class() if (
         entry.domain_content_type_id) else None
     object_id = entry.domain_object_id
