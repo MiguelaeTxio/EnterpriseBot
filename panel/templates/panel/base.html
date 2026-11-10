@@ -21,6 +21,9 @@
     <!-- H30 (S128): guardado común de la navegación (EbNavState), en la
          cabecera para que exista antes que cualquier script de página. -->
     <script src="{% static 'panel/js/nav_state.js' %}"></script>
+    <!-- H24 (S149): casilla "Solo los filtrados" junto a "Limpiar" en
+         todos los listados con el formato único (directriz 4.24). -->
+    <script src="{% static 'panel/js/select_filtered.js' %}"></script>
     {% block extra_head %}{% endblock %}
     {% if request.user.company_user.role == 'WORKSHOP' or request.user.company_user.is_admin_level %}
     {% include "panel/_tour_driver_cdn.html" %}
