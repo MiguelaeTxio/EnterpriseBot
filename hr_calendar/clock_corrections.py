@@ -25,6 +25,7 @@ import uuid
 from decimal import Decimal
 
 from django.db import transaction
+from django.utils import timezone
 
 from hr_calendar.models import ClockCorrection
 from hr_calendar.models import ClockEvent
@@ -252,7 +253,8 @@ def meal_break(company_user, person, corrected_by, reason, start, end,
       salida a `start` y una entrada a `end`; con tipos, un cambio a
       "Pausa para comer" a `start` y otro de vuelta, al tipo que llevaba,
       a `end`. La pausa cae dentro de la jornada y sin otra pulsación
-      en medio.
+      en medio. Con la jornada abierta (sin salida todavía), la vuelta
+      tiene que ser anterior a ahora (Miguel Ángel, mismo día).
     """
     if start is None or end is None:
         raise ClockCorrectionError("Indique el principio y el final de la "
@@ -298,13 +300,14 @@ def meal_break(company_user, person, corrected_by, reason, start, end,
             pressed_at__gt=entry.pressed_at).order_by("pressed_at"))
         exit_ = next((e for e in after if e.kind == ClockEvent.Kind.OUT),
                      None)
-        if exit_ is None:
-            raise ClockCorrectionError("La jornada no tiene salida: "
-                                       "añada antes la salida.")
-        if not entry.pressed_at < start or not end < exit_.pressed_at:
-            raise ClockCorrectionError("La pausa tiene que caer dentro de "
-                                       "la jornada.")
-        inside = [e for e in after if e.pressed_at < exit_.pressed_at]
+        limit = exit_.pressed_at if exit_ is not None else timezone.now()
+        if not entry.pressed_at < start or not end < limit:
+            raise ClockCorrectionError(
+                "La pausa tiene que caer dentro de la jornada."
+                if exit_ is not None else
+                "La pausa tiene que caer dentro de la jornada y acabar "
+                "antes de ahora.")
+        inside = [e for e in after if e.pressed_at < limit]
         if any(start <= e.pressed_at <= end for e in inside):
             raise ClockCorrectionError("Hay otra pulsación en medio de "
                                        "esa pausa: corrija esa.")

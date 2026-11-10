@@ -170,8 +170,11 @@ historial: quién, cuándo, antes, después y motivo).
                         <li><a class="dropdown-item cw-fix" href="#" data-action="MEAL" data-out="{{ meal.out.event.pk }}" data-back="{{ meal.back.event.pk }}" data-start="{{ meal.out.input_value }}" data-end="{{ meal.back.input_value }}"
                                data-label="Pausa de comida del {{ meal.out.time|date:'d/m/Y' }} ({{ meal.out.time|date:'H:i' }}–{{ meal.back.time|date:'H:i' }})"><i class="bi bi-cup-hot me-1"></i>Corregir la pausa de las {{ meal.out.time|date:"H:i" }}</a></li>
                         {% endfor %}
-                        <li><a class="dropdown-item cw-fix" href="#" data-action="MEAL" data-entry="{{ row.entry.event.pk }}" data-start="{% if row.lunch %}{{ row.lunch.0 }}{% else %}{{ row.entry.input_value }}{% endif %}" data-end="{% if row.lunch %}{{ row.lunch.1 }}{% else %}{{ row.exit.input_value }}{% endif %}"
-                               data-label="Pausa de comida en la jornada del {{ row.day|date:'d/m/Y' }} ({{ row.entry.time|date:'H:i' }}–{{ row.exit.time|date:'H:i' }})"
+                        {% endif %}
+                        {# S149: también con la jornada abierta (la vuelta, antes de ahora). #}
+                        {% if row.entry %}
+                        <li><a class="dropdown-item cw-fix" href="#" data-action="MEAL" data-entry="{{ row.entry.event.pk }}" data-start="{% if row.lunch %}{{ row.lunch.0 }}{% else %}{{ row.entry.input_value }}{% endif %}" data-end="{% if row.lunch %}{{ row.lunch.1 }}{% elif row.exit %}{{ row.exit.input_value }}{% else %}{{ row.entry.input_value }}{% endif %}"
+                               data-label="Pausa de comida en la jornada del {{ row.day|date:'d/m/Y' }} ({{ row.entry.time|date:'H:i' }}–{% if row.exit %}{{ row.exit.time|date:'H:i' }}{% else %}en curso{% endif %})"
                                title="Añadir la pausa de comida que no fichó, dentro de la jornada. Queda quién la añadió, cuándo y por qué."><i class="bi bi-cup-hot me-1"></i>Añadir la pausa de comida</a></li>
                         {% endif %}
                         {% endwith %}{% endfor %}
