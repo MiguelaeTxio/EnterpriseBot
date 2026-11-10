@@ -260,6 +260,10 @@ class Shift:
     # horas [...] mientras que cumplas tu horario o las 8 horas, no hay
     # problema": aviso del día que no llega a ninguna de las dos.
     short_day: str = ""
+    # S149 (Miguel Ángel): "unos 15 minutos de cortesía en los horarios
+    # [...] a los minutos de cortesía que disponga cada horario": la
+    # tolerancia del horario (WorkdaySchedule.tolerance_minutes).
+    tolerance_minutes: int = 0
 
     @property
     def _raw_early(self):
@@ -289,20 +293,12 @@ class Shift:
         """
         return _comparable(self._raw_early)
 
-    @staticmethod
-    def _rounded_minute(event):
-        rounded = timezone.localtime(_rounded(event))
-        return rounded.hour * 60 + rounded.minute
-
     @property
     def is_early(self):
-        # S143 (Miguel Ángel): dentro de los 5 minutos de tolerancia la
-        # hora es la redondeada; solo es salida antes de hora si la
-        # redondeada queda antes de la del horario.
-        if (self.early_minutes or 0) <= 0:
-            return False
-        expected = self.expected_end.hour * 60 + self.expected_end.minute
-        return self._rounded_minute(self.clock_out) < expected
+        # S149 (Miguel Ángel): dentro de los minutos de cortesía de su
+        # horario la salida está en hora (antes, S143: los 5 minutos del
+        # redondeo).
+        return (self.early_minutes or 0) > self.tolerance_minutes
 
     @property
     def late_minutes(self):
@@ -318,13 +314,10 @@ class Shift:
 
     @property
     def is_late(self):
-        # S143 (Miguel Ángel): "cuando ticas dentro de los 5 minutos
-        # siguientes [...] lo marca como un fichaje bueno a las 8": solo
-        # es llegada tarde si la hora redondeada pasa de la del horario.
-        if (self.late_minutes or 0) <= 0:
-            return False
-        expected = self.expected_start.hour * 60 + self.expected_start.minute
-        return self._rounded_minute(self.clock_in) > expected
+        # S149 (Miguel Ángel): dentro de los minutos de cortesía de su
+        # horario la entrada está en hora (antes, S143: los 5 minutos del
+        # redondeo).
+        return (self.late_minutes or 0) > self.tolerance_minutes
 
     @property
     def start_off_schedule(self):
@@ -820,18 +813,21 @@ def short_rest(day, starts, last_out):
 
 def _schedule_times_by_user(company, company_user_ids):
     """
-    {user id: (times_of, is_day_compared)} -- a function giving the
+    {user id: (times_of, is_day_compared, has_hours, tolerance)} -- a
+    function giving the
     (start times, end times) of the user's schedule on a day, and a
     function telling whether a day is compared with it (S130, Miguel
     Ángel: Saturdays, Sundays and the holidays of the worker's base are
     not, except for night guards).
     ---
-    {id de usuario: (horas_del_dia, se_compara)} -- una función que da
+    {id de usuario: (horas_del_dia, se_compara, tiene_horas,
+    cortesía)} -- una función que da
     (horas de entrada, horas de salida) de su horario un día dado (S141:
     el horario puede ser distinto según el día de la semana) y otra que
     dice si un día se compara con él (S130, Miguel Ángel: sábados,
     domingos y festivos de la base del trabajador no, salvo los guardas
-    nocturnos).
+    nocturnos), si tiene horas previstas y los minutos de cortesía del
+    horario (S149).
     """
     from ivr_config.models import CompanyUser
     from panel.views_operator import _resolve_operator_schedule
@@ -848,6 +844,8 @@ def _schedule_times_by_user(company, company_user_ids):
             # S144: con horario y no abierto, los días tienen horas
             # previstas (bolsa de horas extras).
             schedule is not None and not schedule.is_open,
+            # S149: minutos de cortesía del horario.
+            schedule.tolerance_minutes if schedule is not None else 0,
         )
     return result
 
@@ -1283,8 +1281,8 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
         report.shifts = [
             s for s in all_shifts if date_from <= s.day <= date_to
         ]
-        times_of, is_day_compared, has_hours = times_by_user.get(
-            user_id, (lambda day: ([], []), lambda day: True, False),
+        times_of, is_day_compared, has_hours, tolerance = times_by_user.get(
+            user_id, (lambda day: ([], []), lambda day: True, False, 0),
         )
         for shift in report.shifts:
             if not is_day_compared(shift.day):
@@ -1306,6 +1304,7 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
                           max(previous) if previous else None):
                 shift.after_short_rest = True
                 continue
+            shift.tolerance_minutes = tolerance or 0
             if shift.clock_in is not None:
                 shift.expected_start = expected_start(
                     starts, shift.clock_in.pressed_at,
