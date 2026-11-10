@@ -1584,8 +1584,9 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
         days = book.active
         days.title = "Jornadas"
         # S148: las columnas de "Jornadas" salen de la plantilla de
-        # exportación ("Vista del panel" por defecto = las de la tabla de
-        # jornadas de la ficha); DNI y nombre van siempre delante.
+        # exportación ("Vista del panel" por defecto = el Excel completo
+        # de antes, excepción de Fichajes); DNI y nombre van siempre
+        # delante.
         # "tipos" se abre en una columna de horas por tipo de fichaje
         # (S141; los que no cuentan como jornada, marcados).
         from types import SimpleNamespace

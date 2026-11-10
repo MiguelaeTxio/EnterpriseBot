@@ -217,6 +217,10 @@ def _early(item):
 # escribe: solo en la primera jornada de cada día). DNI y nombre van
 # siempre delante (o en el membrete si es un solo trabajador). "tipos"
 # se abre en una columna de horas por cada tipo de fichaje.
+# Excepción (Miguel Ángel, S148): aquí la "Vista del panel" es el Excel
+# completo de antes, no la tabla corta de jornadas de la ficha: "que sea
+# el Excel completo de antes, como una excepción [...] y a partir de ahí
+# que cada uno se genere su propia plantilla".
 CLOCK_DAYS = register(Screen(
     key="clock_days",
     label="Fichajes: jornadas",
@@ -253,5 +257,10 @@ CLOCK_DAYS = register(Screen(
                lambda i: "; ".join(i.shift.incidents)),
         Column("tipos", "Horas por tipo de fichaje", 14, lambda i: None),
     ),
-    panel_columns=["fecha", "entrada", "salida", "horas", "incidencias"],
+    panel_columns=[
+        "fecha", "entrada", "salida", "entrada_parte", "salida_parte",
+        "municipio_entrada", "municipio_salida", "coordenadas_entrada",
+        "coordenadas_salida", "entrada_horario", "minutos_tarde",
+        "salida_horario", "minutos_antes", "horas", "incidencias", "tipos",
+    ],
 ))
