@@ -292,6 +292,11 @@ class CompanyUser(models.Model):
     # laborales.
     ROLE_ADMIN_SUPERVISOR = "ADMIN_SUPERVISOR"
     ADMIN_ROLES = (ROLE_ADMIN, ROLE_ADMIN_SUPERVISOR)
+    # S148. SALES: comercial. Miguel Ángel: "habría que añadir otro rol
+    # más, que sería el de comerciales. Aunque de momento no tenga ningún
+    # efecto". Sin permisos propios todavía (como OFFICE: su perfil).
+    # SALES: sales staff; no specific permissions yet.
+    ROLE_SALES = "SALES"
     ROLE_CHOICES = [
         (ROLE_ADMIN,         "Administrador"),
         (ROLE_ADMIN_SUPERVISOR, "Supervisor de Administración"),
@@ -306,6 +311,7 @@ class CompanyUser(models.Model):
         (ROLE_DOCS_SUPERVISOR, "Supervisor de Documentación"),
         (ROLE_OFFICE,        "Administrativo"),
         (ROLE_NIGHTGUARD,    "Guarda nocturno"),
+        (ROLE_SALES,         "Comercial"),
     ]
     # Puestos de trabajador (alta por WhatsApp, fichaje). Worker roles.
     WORKER_ROLES = (
@@ -349,7 +355,8 @@ class CompanyUser(models.Model):
             "(el listado es de solo lectura para cualquier usuario). "
             "OFFICE: administrativo. NIGHTGUARD: guarda nocturno. "
             "ADMIN_SUPERVISOR: como ADMIN salvo Asistencia (de "
-            "Asistencia, solo Bases y Calendarios laborales)."
+            "Asistencia, solo Bases y Calendarios laborales). "
+            "SALES: comercial (de momento sin permisos propios)."
         ),
     )
     is_active = models.BooleanField(
