@@ -3410,6 +3410,61 @@ class PersonalDossierEmailSendView(DocsUploadAccessMixin, View):
         return response
 
 
+_NAME_DATE_RE = re.compile(r"_(\d{8})(?:_\d+)?\.[A-Za-z0-9]+$")
+
+
+def _dossier_entry_date(entry):
+    """
+    Date that orders a document of a cumulative type for a dossier.
+    ---
+    Fecha con la que se ordena un documento de un tipo acumulable en el
+    dosier (S148): la de emisión; sin ella, la del nombre normalizado
+    (..._AAAAMMDD.pdf, la que puso la clasificación al guardarlo); sin
+    ninguna, el día en que se subió.
+    """
+    from datetime import date, datetime
+
+    if entry.issue_date:
+        return entry.issue_date
+    match = _NAME_DATE_RE.search(entry.name or "")
+    if match:
+        try:
+            return datetime.strptime(match.group(1), "%Y%m%d").date()
+        except ValueError:
+            pass
+    if entry.indexed_at:
+        return timezone.localtime(entry.indexed_at).date()
+    return date.min
+
+
+def _latest_per_cumulative_type(entries):
+    """
+    Keep only the newest document of each cumulative type.
+    ---
+    S148. Miguel Ángel, con un dosier real (Paraschiv Caraion): "ha
+    incluido muchos documentos que son obsoletos, y lo que nos interesa
+    sobre todo son los documentos vigentes". En un tipo acumulable
+    (entregas de EPIs, entrega de información, formaciones,
+    autorizaciones...) todo lo no obsoleto cuenta como vigente en la
+    ficha, así que el dosier se llevaba también las entregas y cursos
+    anteriores. Aquí, de cada tipo acumulable solo quedan los de la
+    fecha más reciente (_dossier_entry_date); varios del mismo día (las
+    partes de un mismo documento) van todos. Los tipos no acumulables ya
+    llegan con su único vigente.
+    """
+    newest = {}
+    for entry in entries:
+        if entry.document_type_id and entry.document_type.is_cumulative:
+            day = _dossier_entry_date(entry)
+            newest[entry.document_type_id] = max(
+                day, newest.get(entry.document_type_id, day))
+    return [
+        entry for entry in entries
+        if not (entry.document_type_id and entry.document_type.is_cumulative)
+        or _dossier_entry_date(entry) == newest[entry.document_type_id]
+    ]
+
+
 def _resolve_template_entries(person, template):
     """
     H31 (S103). Resuelve, EN EL MOMENTO de aplicar una plantilla, el
@@ -3431,6 +3486,8 @@ def _resolve_template_entries(person, template):
     current, _obsolete = _split_current_obsolete(
         list(all_entries), get_required_type_ids(person),
     )
+    # S148: de los tipos acumulables, solo los más recientes.
+    current = _latest_per_cumulative_type(current)
     current.sort(key=lambda e: (e.document_type.family, e.document_type.label))
     return current
 
@@ -3969,6 +4026,8 @@ def _resolve_machine_template_entries(machine, template):
     current, _obsolete = _split_current_obsolete(
         list(all_entries), get_required_type_ids(machine),
     )
+    # S148: de los tipos acumulables, solo los más recientes.
+    current = _latest_per_cumulative_type(current)
     current.sort(key=lambda e: (e.document_type.family, e.document_type.label))
     return current
 
