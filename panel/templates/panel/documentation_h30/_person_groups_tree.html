@@ -18,6 +18,8 @@ S148 (Miguel Ángel): "no hay forma de eliminar un grupo de selección";
 "siempre y cuando que el usuario haya sido el que lo haya creado": papelera
 (.person-group-delete) en cada grupo propio sin subgrupos (uno con
 subgrupos se borra cuando ya no los tiene). La maneja el JS de cada árbol.
+S148: "los administradores sí puedan borrar cualquier grupo, excepto los
+grupos generales": node.can_delete (person_groups.can_delete).
 {% endcomment %}
 {% with gid=pg_id|default:"personGroup" %}
 {% for node in person_group_nodes %}
@@ -56,7 +58,7 @@ subgrupos se borra cuando ya no los tiene). La maneja el JS de cada árbol.
             <input class="form-check-input person-group-select-checkbox" type="checkbox" id="{{ gid }}Select{{ node.group.pk }}" data-pk="{{ node.group.pk }}">
             <label class="form-check-label{% if not node.group.parent_id %} fw-bold{% endif %}" for="{{ gid }}Select{{ node.group.pk }}">{{ node.group.name }} ({{ node.total }})</label>
         </div>
-        {% if node.can_edit and not node.children %}
+        {% if node.can_delete and not node.children %}
         <button type="button" class="btn btn-link btn-sm p-0 ms-auto text-danger person-group-delete" data-pk="{{ node.group.pk }}" data-name="{{ node.group.name }}" title="Eliminar el grupo «{{ node.group.name }}» (no afecta a las personas)">
             <i class="bi bi-trash"></i>
         </button>

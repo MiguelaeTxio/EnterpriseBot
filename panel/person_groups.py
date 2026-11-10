@@ -107,6 +107,23 @@ def _is_general(group):
     return user is None or user.username == GENERAL_USERNAME
 
 
+def can_delete(group, editor):
+    """
+    True when `editor` may delete the group (S148).
+    ---
+    True si `editor` puede borrar el grupo: quien lo creó y, además, los
+    administradores (rol ADMIN) cualquiera que no sea de los Generales
+    (Miguel Ángel, S148: "los administradores sí puedan borrar cualquier
+    grupo, excepto los grupos generales").
+    """
+    if can_edit(group, editor):
+        return True
+    from ivr_config.models import CompanyUser
+
+    return (editor is not None and editor.role == CompanyUser.ROLE_ADMIN
+            and not _is_general(group))
+
+
 def group_tree(editor=None, kind=PERSON_KIND):
     """
     Flat list of the groups in tree order, under the creator folders.
@@ -157,6 +174,7 @@ def group_tree(editor=None, kind=PERSON_KIND):
                 "member_user_ids": [kind.user_id(p) for p in people],
                 "total": len(members_of(group)),
                 "can_edit": can_edit(group, editor),
+                "can_delete": can_delete(group, editor),
                 "owner": owner_label(group),
             })
             walk(by_parent.get(group.pk, []), depth + 1, folder, seen)
@@ -323,9 +341,15 @@ def delete_group(group, editor=None):
     Deletes a group without subgroups.
     ---
     Borra un grupo que no tenga subgrupos (primero hay que borrar o
-    sacar sus subgrupos). Nunca toca a las personas.
+    sacar sus subgrupos). Nunca toca a las personas. S148: quien lo
+    creó o un administrador si no es de los Generales (can_delete).
     """
-    if not can_edit(group, editor):
+    if not can_delete(group, editor):
+        from ivr_config.models import CompanyUser
+
+        if editor is not None and editor.role == CompanyUser.ROLE_ADMIN:
+            raise GroupError("«%s» es de los Generales: solo lo borra "
+                             "quien lo creó." % group.path_label())
         raise GroupError(_not_yours(group))
     if group.children.exists():
         raise GroupError(
