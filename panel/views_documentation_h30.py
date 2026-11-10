@@ -559,7 +559,7 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
             "fichajes", "horarios", "calendario", "requisitos", "avisos",
             "circulares",
             "plantillas", "bandeja", "revisiones", "repostajes",
-            "solicitudes", "nominas",
+            "solicitudes", "nominas", "pedir",
         )
         # H30 (S126): "Bandeja de entrada" solo para quien puede subir
         # documentación (mismos roles que DocsUploadAccessMixin).
@@ -569,6 +569,13 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
         )
         if not can_use_inbox:
             valid_tabs = tuple(t for t in valid_tabs if t != "bandeja")
+        # S148: "Pedir documentos", mismos roles que pedir desde Avisos.
+        from panel.views_document_alerts import DOC_REQUEST_ROLES
+
+        can_request_docs = (
+            request.user.company_user.role in DOC_REQUEST_ROLES)
+        if not can_request_docs:
+            valid_tabs = tuple(t for t in valid_tabs if t != "pedir")
         # H24 (S129): "Fichajes" lleva posiciones GPS -- solo los roles
         # de SupervisorAccessMixin.
         from panel.views_payslips import can_send_payslips
@@ -629,6 +636,7 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
             "personal_tab_qs": _build_personal_tab_querystring(filters),
             "can_use_inbox": can_use_inbox,
             "can_view_clock_events": can_view_clock_events,
+            "can_request_docs": can_request_docs,
             # S149: enlace a la entrega de nóminas (Yolanda y Jerónimo).
             "can_send_payslips": can_send_payslips(request.user.company_user),
         })

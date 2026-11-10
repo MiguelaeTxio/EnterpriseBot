@@ -62,6 +62,8 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
         </button>
         <button type="button" class="btn btn-sm btn-link" id="docRequestClear">Vaciar selección</button>
         <span class="small text-muted">Solo tienen casilla los documentos que aporta el propio trabajador, con móvil válido.</span>
+        {# S148: cualquier documento, sin requisito ni aviso, en su propia pestaña. #}
+        <a href="#" class="small" onclick="var t = document.getElementById('tab-pedir'); if (t) { t.click(); } return false;">Pedir cualquier otro documento…</a>
     </div>
     <div class="alert alert-info small py-1 d-none doc-request-result" id="docRequestResult"></div>
     {% endif %}

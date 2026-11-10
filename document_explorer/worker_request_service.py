@@ -179,7 +179,7 @@ def _current_entry(person, document_type):
     ).order_by("-expiry_date", "-pk").first()
 
 
-def create_requests(pairs, approved_by):
+def create_requests(pairs, approved_by, any_type=False):
     """
     Queue one request per (person_id, document_type_id) pair.
 
@@ -195,6 +195,12 @@ def create_requests(pairs, approved_by):
     móvil válido y las parejas que ya tienen una solicitud abierta.
     Después envía la primera de cada cola tocada. Devuelve un resumen
     para el supervisor.
+
+    S148 (Miguel Ángel: "que podamos elegir incluso sin necesidad de
+    tener un determinado requisito documental hecho, que podamos
+    solicitarle un documento cualquiera"): con `any_type=True` (la
+    pestaña "Pedir documentos") se pide cualquier tipo, tenga o no la
+    marca "lo aporta el trabajador".
     """
     summary = {"queued": 0, "skipped": [], "sent": 0, "send_errors": []}
     touched = {}
@@ -204,7 +210,7 @@ def create_requests(pairs, approved_by):
         if person is None or doc_type is None:
             continue
         label = "%s -- %s" % (_person_label(person), doc_type.label)
-        if not doc_type.worker_provides:
+        if not any_type and not doc_type.worker_provides:
             summary["skipped"].append(
                 "%s: el tipo no está marcado «lo aporta el trabajador»"
                 % label

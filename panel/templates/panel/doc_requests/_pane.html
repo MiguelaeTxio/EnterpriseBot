@@ -1,0 +1,392 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/doc_requests/_pane.html #}
+{% comment %}
+S148. Pestaña "Pedir documentos" del hub, mismo formato que Horarios y
+Fichajes (directriz 4.24): panel fijo con los filtros de siempre
+(búsqueda, Estado, Empresa, Selección) más Móvil y Pedidos; grupos de
+selección; a la derecha, los documentos a pedir (cualquier tipo de
+Personal, no hace falta requisito) y las acciones sobre los marcados:
+pedirlos por WhatsApp (cola por trabajador: uno activo a la vez) o
+cancelar lo pedido. Debajo, la lista (3/4, pantalla completa, 4.26) y
+la selección actual (1/4). Filtros, orden y selección persistidos por
+usuario (screen_key "doc_requests"). Vistas: panel/views_doc_requests.py.
+{% endcomment %}
+<div class="border rounded p-2 mb-2" id="dreq-top-panel">
+    <div class="row g-2">
+        <div class="col-lg-4">
+            <div class="border rounded p-2 h-100">
+                <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                <form id="dreq-filters" autocomplete="off" onsubmit="return false;"
+                      hx-get="{% url 'panel:doc_requests_results' %}" hx-target="#dreq-results"
+                      hx-include="#dreq-sort-inputs"
+                      hx-trigger="input changed delay:300ms from:#dreq-filter-search, change, dreq-selection-refresh">
+                    <div class="d-flex gap-2 mb-2">
+                        <input type="text" name="search" id="dreq-filter-search" class="form-control doc-h30-search"
+                               placeholder="Buscar por nombre, apellidos, DNI…" value="{{ filter_search }}">
+                    </div>
+                    <div class="d-flex flex-wrap gap-3 align-items-start small">
+                        <div>
+                            <div class="fw-semibold mb-1">Estado</div>
+                            {# S148: casillas dentro de un desplegable (panel/_checkdrop_js.html pinta el botón). #}
+                            <div class="dropdown checkdrop" data-all="Todos" data-none="Ninguno">
+                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
+                                        data-bs-auto-close="outside" aria-expanded="false"><span class="checkdrop-text">Todos</span></button>
+                                <div class="dropdown-menu p-2 small">
+                                    <div class="form-check">
+                                        <input class="form-check-input dreq-active-check" type="checkbox" value="true" id="dreqActiveTrue"
+                                               {% if "true" in filter_active %}checked{% endif %}>
+                                        <label class="form-check-label" for="dreqActiveTrue">Activos</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input dreq-active-check" type="checkbox" value="false" id="dreqActiveFalse"
+                                               {% if "false" in filter_active %}checked{% endif %}>
+                                        <label class="form-check-label" for="dreqActiveFalse">Inactivos</label>
+                                    </div>
+                                </div>
+                            </div>
+                            <input type="hidden" name="active" id="dreq-active-input" value="{{ filter_active|join:',' }}">
+                        </div>
+                        {% include "panel/_company_checkdrop.html" with prefix="dreq" id_prefix="dreqCompany" %}
+                        <div>
+                            <div class="fw-semibold mb-1">Selección</div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="only_selected" value="1" id="dreqOnlySelected">
+                                <label class="form-check-label" for="dreqOnlySelected">Mostrar solo la selección actual</label>
+                            </div>
+                            <input type="hidden" name="selected_ids" id="dreq-selected-ids" value="">
+                        </div>
+                        <div>
+                            <div class="fw-semibold mb-1">Móvil</div>
+                            <select name="mobile" class="form-select form-select-sm">
+                                <option value="">Todos</option>
+                                <option value="yes"{% if filter_mobile == "yes" %} selected{% endif %}>Con móvil de empresa</option>
+                                <option value="no"{% if filter_mobile == "no" %} selected{% endif %}>Sin móvil de empresa</option>
+                            </select>
+                        </div>
+                        <div>
+                            <div class="fw-semibold mb-1">Pedidos</div>
+                            <select name="pending" class="form-select form-select-sm">
+                                <option value="">Todos</option>
+                                <option value="yes"{% if filter_pending == "yes" %} selected{% endif %}>Con algo pedido o en cola</option>
+                                <option value="no"{% if filter_pending == "no" %} selected{% endif %}>Sin nada pedido</option>
+                            </select>
+                        </div>
+                    </div>
+                    {% include "panel/_checkdrop_js.html" %}
+                </form>
+            </div>
+        </div>
+
+        {# S147: "Grupos de selección", la misma columna que en Personal. #}
+        {% include "panel/_person_group_filter.html" with pg_prefix="dreq" pg_form="dreq-filters" %}
+        <div class="col-lg-5">
+            <div class="border rounded p-2 h-100">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <strong class="small"><span id="dreq-mass-count">0</span> seleccionados</strong>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="dreq-mass-clear">Limpiar</button>
+                </div>
+                {# Acciones en cuadrícula por categoría (4.24, regla 6); la explicación, en el título del botón. #}
+                <div class="row g-1">
+                    <div class="col-12">
+                        <div class="small text-muted fw-bold">Documentos a pedir (<span id="dreq-type-count">0</span>)</div>
+                        <input type="text" class="form-control form-control-sm mb-1" id="dreq-type-search" placeholder="Buscar tipo de documento…" autocomplete="off">
+                        <div class="border rounded p-1 small" id="dreq-type-list" style="max-height: 9rem; overflow-y: auto;">
+                            {% for group in type_groups %}
+                            <div class="dreq-type-group">
+                                <div class="fw-semibold text-muted mt-1">{{ group.family }}</div>
+                                {% for doc_type in group.types %}
+                                <div class="form-check dreq-type-item" data-search="{{ doc_type.label|lower }} {{ group.family|lower }}">
+                                    <input class="form-check-input dreq-type-check" type="checkbox" value="{{ doc_type.pk }}" id="dreqType{{ doc_type.pk }}" data-label="{{ doc_type.label }}">
+                                    <label class="form-check-label" for="dreqType{{ doc_type.pk }}">{{ doc_type.label }}{% if doc_type.worker_provides %} <i class="bi bi-person-check text-success" title="Lo aporta el propio trabajador"></i>{% endif %}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <div class="d-flex flex-wrap gap-1 align-items-center mt-1">
+                            <button type="button" class="btn btn-sm btn-success" id="dreq-send"
+                                    title="Pide por WhatsApp a cada marcado los documentos elegidos. Se le envía uno y, cuando lo entrega y se acepta, el siguiente. Se descartan los que no tienen móvil de empresa y lo que ya está pedido.">
+                                <i class="bi bi-whatsapp me-1"></i>Pedir por WhatsApp
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" id="dreq-cancel"
+                                    title="Cancela lo pedido a los marcados: los documentos elegidos o, si no hay ninguno elegido, todo lo que tengan pedido o en cola.">
+                                <i class="bi bi-x-circle me-1"></i>Cancelar lo pedido
+                            </button>
+                            <button type="button" class="btn btn-sm btn-link" id="dreq-type-clear">Vaciar documentos</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="border rounded p-2" id="dreq-bottom-panel">
+    <div class="row g-2 h-100">
+        <div class="col-lg-9 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1">Trabajadores (<span id="dreq-row-count">{{ rows|length }}</span>)
+                    <button type="button" class="btn btn-sm btn-link py-0{% if not sort_active %} d-none{% endif %}" id="dreq-clear-sort"
+                            hx-get="{% url 'panel:doc_requests_results' %}" hx-target="#dreq-results"
+                            hx-include="#dreq-filters" hx-vals='{"sort": ""}'>Quitar orden</button>
+                    {# Pantalla completa, formato del laboratorio de análisis (directriz 4.26). #}
+                    <button type="button" class="btn btn-sm btn-outline-secondary float-end" id="dreq-fullscreen" title="Pantalla completa">
+                        <i class="bi bi-fullscreen"></i>
+                    </button>
+                </div>
+                <div id="dreq-results-scroll" class="dreq-fill dreq-scroll-both">
+                    <div id="dreq-results">
+                        {% include "panel/doc_requests/_table.html" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1">Selección actual (<span id="dreq-selection-count">0</span>)</div>
+                <div class="dreq-fill dreq-scroll-y">
+                    <ul class="mb-0 small ps-0 list-unstyled" id="dreq-selection-list">
+                        <li class="text-muted">Nadie seleccionado todavía.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+#dreq-results-scroll thead th { position: sticky; top: 0; background-color: #f8f9fa; z-index: 2; }
+#dreq-results-scroll thead th.sticky-col { z-index: 3; }
+#dreq-results-scroll table td,
+#dreq-results-scroll table th { white-space: nowrap; }
+.dreq-fill { flex: 1 1 auto; min-height: 0; }
+.dreq-scroll-y { overflow-y: auto; }
+.dreq-scroll-both { overflow: auto; }
+#dreq-bottom-panel:fullscreen { background-color: var(--bs-body-bg); padding: 1rem; }
+#dreq-bottom-panel:fullscreen #dreq-results-scroll { height: calc(100vh - 5rem); }
+</style>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="dreq-toast" class="toast align-items-center text-bg-dark border-0" role="status" aria-live="polite">
+        <div class="d-flex">
+            <div class="toast-body" id="dreq-toast-msg" style="white-space: pre-line;"></div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+{{ saved_selection|json_script:"dreq-saved-selection" }}
+{% include "panel/_fixed_list_layout.html" with top_id="dreq-top-panel" bottom_id="dreq-bottom-panel" %}
+<script>
+(function () {
+    "use strict";
+
+    const results = document.getElementById("dreq-results");
+    const filters = document.getElementById("dreq-filters");
+    const SCREEN_KEY = "{{ screen_key|escapejs }}";
+    // Selección (pk -> "Apellidos, Nombre"), recordada por usuario.
+    const selection = new Map();
+
+    // S147: "Grupos de selección" (como en Personal): la selección es la
+    // suma de las personas de los grupos marcados.
+    window.EbGroupSelect = window.EbGroupSelect || {};
+    // S149: la selección, para crear un grupo con ella.
+    window.EbGroupGet = window.EbGroupGet || {};
+    window.EbGroupGet["dreq"] = function () {
+        return {persons: Array.from(selection.keys()), users: []};
+    };
+    window.EbGroupSelect["dreq"] = function (people) {
+        selection.clear();
+        people.persons.forEach(function (p) { selection.set(String(p[0]), p[1]); });
+        saveSelection();
+        updateSelectionUi();
+        refreshFromFragment();
+    };
+    try {
+        JSON.parse(document.getElementById("dreq-saved-selection").textContent).forEach(function (item) {
+            if (item && item.pk) selection.set(String(item.pk), item.label || "");
+        });
+    } catch (e) { /* estado ilegible: se empieza sin selección */ }
+    let lastSaved = null;
+    function saveSelection() {
+        const payload = Array.from(selection.entries()).map(function ([pk, label]) {
+            return {pk: pk, label: label};
+        });
+        const serialized = JSON.stringify(payload);
+        if (serialized === lastSaved) return;
+        lastSaved = serialized;
+        window.EbNavState.save(SCREEN_KEY, {selection: payload});
+    }
+
+    function updateSelectionUi() {
+        saveSelection();
+        document.getElementById("dreq-mass-count").textContent = selection.size;
+        document.getElementById("dreq-selection-count").textContent = selection.size;
+        const list = document.getElementById("dreq-selection-list");
+        list.innerHTML = "";
+        const names = Array.from(selection.values()).sort(function (a, b) { return a.localeCompare(b); });
+        if (!names.length) {
+            const li = document.createElement("li");
+            li.className = "text-muted";
+            li.textContent = "Nadie seleccionado todavía.";
+            list.appendChild(li);
+        }
+        names.forEach(function (name) {
+            const li = document.createElement("li");
+            li.textContent = name;
+            list.appendChild(li);
+        });
+        const idsInput = document.getElementById("dreq-selected-ids");
+        const newIds = Array.from(selection.keys()).join(",");
+        if (idsInput.value !== newIds) {
+            idsInput.value = newIds;
+            if (document.getElementById("dreqOnlySelected").checked) htmx.trigger(filters, "dreq-selection-refresh");
+        }
+        const all = document.getElementById("dreq-check-all");
+        if (!all) return;
+        const rows = results.querySelectorAll(".dreq-row-check");
+        const checked = results.querySelectorAll(".dreq-row-check:checked");
+        all.checked = rows.length > 0 && checked.length === rows.length;
+        all.indeterminate = checked.length > 0 && checked.length < rows.length;
+    }
+
+    function refreshFromFragment() {
+        const state = document.getElementById("dreq-fragment-state");
+        if (state) {
+            document.getElementById("dreq-row-count").textContent = state.dataset.count;
+            document.getElementById("dreq-clear-sort").classList.toggle("d-none", !state.dataset.sortActive);
+        }
+        results.querySelectorAll(".dreq-row-check").forEach(function (cb) {
+            cb.checked = selection.has(cb.dataset.pk);
+        });
+        updateSelectionUi();
+    }
+
+    function syncCsv(selector, inputId) {
+        document.getElementById(inputId).value = Array.from(document.querySelectorAll(selector + ":checked"))
+            .map(function (cb) { return cb.value; }).join(",");
+    }
+    document.querySelectorAll(".dreq-active-check").forEach(function (cb) {
+        cb.addEventListener("change", function () { syncCsv(".dreq-active-check", "dreq-active-input"); });
+    });
+    document.querySelectorAll(".dreq-company-check").forEach(function (cb) {
+        cb.addEventListener("change", function () { syncCsv(".dreq-company-check", "dreq-company-input"); });
+    });
+    document.getElementById("dreq-company-all").addEventListener("click", function (ev) {
+        ev.preventDefault();
+        const boxes = document.querySelectorAll(".dreq-company-check");
+        const allChecked = Array.from(boxes).every(function (b) { return b.checked; });
+        boxes.forEach(function (b) { b.checked = !allChecked; });
+        syncCsv(".dreq-company-check", "dreq-company-input");
+        htmx.trigger(filters, "change");
+    });
+
+    results.addEventListener("change", function (evt) {
+        const target = evt.target;
+        if (target.classList.contains("dreq-row-check")) {
+            if (target.checked) selection.set(target.dataset.pk, target.dataset.label);
+            else selection.delete(target.dataset.pk);
+            updateSelectionUi();
+        } else if (target.id === "dreq-check-all") {
+            results.querySelectorAll(".dreq-row-check").forEach(function (cb) {
+                cb.checked = target.checked;
+                if (target.checked) selection.set(cb.dataset.pk, cb.dataset.label);
+                else selection.delete(cb.dataset.pk);
+            });
+            updateSelectionUi();
+        }
+    });
+
+    document.getElementById("dreq-mass-clear").addEventListener("click", function () {
+        selection.clear();
+        refreshFromFragment();
+    });
+
+    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    function showToast(text, danger) {
+        const toast = document.getElementById("dreq-toast");
+        toast.classList.toggle("text-bg-danger", !!danger);
+        toast.classList.toggle("text-bg-dark", !danger);
+        document.getElementById("dreq-toast-msg").textContent = text;
+        new bootstrap.Toast(toast).show();
+    }
+    // Documentos elegidos (pk -> nombre), con su buscador.
+    const typeChecks = Array.from(document.querySelectorAll(".dreq-type-check"));
+    function chosenTypes() { return typeChecks.filter(function (cb) { return cb.checked; }); }
+    function updateTypes() { document.getElementById("dreq-type-count").textContent = chosenTypes().length; }
+    typeChecks.forEach(function (cb) { cb.addEventListener("change", updateTypes); });
+    document.getElementById("dreq-type-clear").addEventListener("click", function () {
+        typeChecks.forEach(function (cb) { cb.checked = false; });
+        updateTypes();
+    });
+    document.getElementById("dreq-type-search").addEventListener("input", function () {
+        const words = this.value.toLowerCase().split(/\s+/).filter(Boolean);
+        document.querySelectorAll(".dreq-type-group").forEach(function (group) {
+            let shown = 0;
+            group.querySelectorAll(".dreq-type-item").forEach(function (item) {
+                const ok = words.every(function (w) { return item.dataset.search.indexOf(w) !== -1; });
+                item.classList.toggle("d-none", !ok);
+                if (ok) shown += 1;
+            });
+            group.classList.toggle("d-none", shown === 0);
+        });
+    });
+
+    // Cada acción devuelve la tabla con los filtros que se veían (_f_);
+    // el mensaje llega en X-DocRequest-Message.
+    async function act(url, question) {
+        if (!selection.size) { showToast("Marca algún trabajador.", true); return; }
+        // S144: confirmación con 3 s y los marcados que no se ven.
+        const visible = Array.from(results.querySelectorAll(".dreq-row-check")).map(function (cb) { return cb.dataset.pk; });
+        if (!(await window.EbMassConfirm({
+            action: question, names: Array.from(selection.values()),
+            hidden: window.EbHiddenSelected(selection, visible),
+        }))) return;
+        const body = new FormData();
+        new FormData(filters).forEach(function (value, key) { body.append("_f_" + key, value); });
+        const sortInput = results.querySelector('#dreq-sort-inputs input[name="sort"]');
+        body.append("_f_sort", sortInput ? sortInput.value : "");
+        chosenTypes().forEach(function (cb) { body.append("type_ids", cb.value); });
+        selection.forEach(function (_label, pk) { body.append("selected", pk); });
+        fetch(url, {
+            method: "POST", headers: {"X-CSRFToken": csrfMeta ? csrfMeta.content : ""}, body: body,
+        }).then(function (r) {
+            if (!r.ok) { showToast("No se ha podido hacer (" + r.status + ").", true); return; }
+            const message = r.headers.get("X-DocRequest-Message");
+            const isError = r.headers.get("X-DocRequest-Error") === "1";
+            return r.text().then(function (html) {
+                results.innerHTML = html;
+                htmx.process(results);
+                refreshFromFragment();
+                if (message) showToast(decodeURIComponent(message), isError);
+            });
+        }).catch(function () {
+            showToast("Sin conexión con el servidor: no se ha hecho nada.", true);
+        });
+    }
+    document.getElementById("dreq-send").addEventListener("click", function () {
+        const types = chosenTypes();
+        if (!types.length) { showToast("Elige algún documento a pedir.", true); return; }
+        act("{% url 'panel:doc_requests_send' %}", "Pedir por WhatsApp: " + types.map(function (cb) { return cb.dataset.label; }).join(", "));
+    });
+    document.getElementById("dreq-cancel").addEventListener("click", function () {
+        const types = chosenTypes();
+        act("{% url 'panel:doc_requests_cancel' %}", types.length
+            ? "Cancelar lo pedido de: " + types.map(function (cb) { return cb.dataset.label; }).join(", ")
+            : "Cancelar todo lo pedido");
+    });
+
+    // Pantalla completa con el formato del laboratorio de análisis (4.26).
+    const bottom = document.getElementById("dreq-bottom-panel");
+    document.getElementById("dreq-fullscreen").addEventListener("click", function () {
+        if (document.fullscreenElement) document.exitFullscreen();
+        else bottom.requestFullscreen();
+    });
+
+    document.body.addEventListener("htmx:afterSwap", function (evt) {
+        if (evt.detail.target && evt.detail.target.id === "dreq-results") refreshFromFragment();
+    });
+
+    refreshFromFragment();
+}());
+</script>

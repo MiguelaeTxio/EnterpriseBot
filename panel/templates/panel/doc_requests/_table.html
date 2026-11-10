@@ -1,0 +1,64 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/doc_requests/_table.html #}
+{% comment %}
+S148. Tabla de "Pedir documentos", hecha sobre la de Horarios: casilla,
+aviso (sin móvil de empresa: no se le puede pedir) y "Apellidos, Nombre"
+fijos a la izquierda; DNI, móvil, el pedido activo (enviado por
+WhatsApp) y la cola. Todas las columnas ordenables.
+{% endcomment %}
+<div id="dreq-fragment-state" class="d-none"
+     data-count="{{ rows|length }}"
+     data-sort-active="{% if sort_active %}1{% endif %}"></div>
+<span id="dreq-sort-inputs" class="d-none">
+    <input type="hidden" name="sort" value="{{ current_sort }}">
+</span>
+<table class="table table-hover table-light align-middle" id="dreq-table">
+    <thead class="table-light">
+        <tr>
+            <th class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input" id="dreq-check-all" title="Seleccionar todos los que cumplen el filtro actual"></th>
+            <th class="sticky-col sticky-col-2"></th>
+            {% for column in sort_columns %}
+            <th class="{% if column.key == 'person' %}sticky-col sticky-col-3 sticky-col-last{% endif %}">
+                <a href="#" class="text-decoration-none text-dark"
+                   hx-get="{% url 'panel:doc_requests_results' %}"
+                   hx-target="#dreq-results"
+                   hx-include="#dreq-filters"
+                   hx-vals='{"sort": "{{ column.next }}"}'>
+                    {{ column.label }}
+                    {% if column.arrow %}<i class="bi bi-chevron-{% if column.arrow == 'up' %}up{% else %}down{% endif %}"></i>{% if column.priority %}<sup>{{ column.priority }}</sup>{% endif %}{% endif %}
+                </a>
+            </th>
+            {% endfor %}
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            <td class="sticky-col sticky-col-1">
+                <input type="checkbox" class="form-check-input dreq-row-check" data-pk="{{ row.person.pk }}" data-label="{{ row.label }}">
+            </td>
+            <td class="sticky-col sticky-col-2">
+                {% if not row.mobile %}<i class="bi bi-exclamation-triangle-fill text-warning" title="Sin móvil de empresa válido: no se le puede pedir por WhatsApp"></i>{% endif %}
+            </td>
+            <td class="sticky-col sticky-col-3 sticky-col-last">{{ row.label }}</td>
+            <td data-label="DNI">{{ row.person.dni|default:"—" }}</td>
+            <td data-label="Móvil de empresa">{{ row.mobile|default:"—" }}</td>
+            <td data-label="Pedido ahora">{% if row.active %}<span class="badge bg-success text-wrap text-start">{{ row.active.document_type.label }}</span> <span class="small text-muted">{{ row.active.sent_at|date:"d/m H:i" }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td data-label="En cola"{% if row.queued %} title="{{ row.queued_labels }}"{% endif %}>{% if row.queued %}{{ row.queued|length }} · <span class="small text-muted">{{ row.queued_labels|truncatechars:60 }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            {# Acciones de la fila en el menú de tres puntos (directriz 4.24, regla 9). #}
+            <td class="text-end">
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-link text-dark py-0" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Acciones">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="{% url 'panel:documentation_personal_detail' pk=row.person.pk %}"><i class="bi bi-person-vcard me-1"></i>Abrir la ficha</a></li>
+                    </ul>
+                </div>
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="text-muted small py-3">No se encontró personal.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>

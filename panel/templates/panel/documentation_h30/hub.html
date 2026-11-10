@@ -222,6 +222,17 @@ EbTypePicker.init() (ver panel/_doc_type_picker.html).
             <i class="bi bi-bell me-1"></i>Avisos
         </a>
     </li>
+    {% if can_request_docs %}
+    <li class="nav-item">
+        {# S148: pedir cualquier documento por WhatsApp a los marcados (panel/views_doc_requests.py). #}
+        <a class="nav-link {% if persisted_active_tab == 'pedir' %}active{% endif %}" id="tab-pedir" data-bs-toggle="tab" href="#pane-pedir"
+           hx-get="{% url 'panel:doc_requests_tab' %}"
+           hx-target="#pane-pedir"
+           hx-trigger="{% if persisted_active_tab == 'pedir' %}load once{% else %}click once{% endif %}">
+            <i class="bi bi-whatsapp me-1"></i>Pedir documentos
+        </a>
+    </li>
+    {% endif %}
     {% if can_use_inbox %}
     <li class="nav-item">
         {% comment %}
@@ -281,6 +292,11 @@ EbTypePicker.init() (ver panel/_doc_type_picker.html).
     <div class="tab-pane fade {% if persisted_active_tab == 'avisos' %}show active{% endif %}" id="pane-avisos">
         <div class="text-muted small py-3">Cargando…</div>
     </div>
+    {% if can_request_docs %}
+    <div class="tab-pane fade {% if persisted_active_tab == 'pedir' %}show active{% endif %}" id="pane-pedir">
+        <div class="text-muted small py-3">Cargando…</div>
+    </div>
+    {% endif %}
     <div class="tab-pane fade {% if persisted_active_tab == 'circulares' %}show active{% endif %}" id="pane-circulares">
         <div class="text-muted small py-3">Cargando…</div>
     </div>

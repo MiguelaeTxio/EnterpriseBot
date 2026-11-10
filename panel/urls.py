@@ -182,6 +182,12 @@ from panel.views_users_list import (
     UserListPageView,
     UserListResultsView,
 )
+from panel.views_doc_requests import (
+    DocRequestsCancelView,
+    DocRequestsResultsView,
+    DocRequestsSendView,
+    DocRequestsTabView,
+)
 from panel.views_worker_schedules import (
     WorkerSchedulesAssignView,
     WorkerSchedulesListView,
@@ -2056,6 +2062,28 @@ urlpatterns = [
         "documentacion/fichajes/ajustes/tipos/",
         ClockTypeSaveView.as_view(),
         name="clock_settings_type",
+    ),
+    # S148: "Pedir documentos" -- cualquier documento a los marcados por
+    # WhatsApp (panel/views_doc_requests.py).
+    path(
+        "documentacion/pedir-documentos/",
+        DocRequestsTabView.as_view(),
+        name="doc_requests_tab",
+    ),
+    path(
+        "documentacion/pedir-documentos/resultados/",
+        DocRequestsResultsView.as_view(),
+        name="doc_requests_results",
+    ),
+    path(
+        "documentacion/pedir-documentos/pedir/",
+        DocRequestsSendView.as_view(),
+        name="doc_requests_send",
+    ),
+    path(
+        "documentacion/pedir-documentos/cancelar/",
+        DocRequestsCancelView.as_view(),
+        name="doc_requests_cancel",
     ),
     # H24 (S141): pestaña Horarios -- el horario de cada trabajador,
     # por secciones (panel/views_worker_schedules.py).
