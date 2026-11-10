@@ -172,3 +172,71 @@ class PanelNavigationState(models.Model):
 
     def __str__(self):
         return f"{self.company_user.user.username} — {self.screen_key}"
+
+
+class ScreenExportTemplate(models.Model):
+    """
+    S148. Named column set for the export (Excel, PDF or print) of a
+    panel screen without its own template model (Centros de gasto,
+    Taller, Fichajes...): same idea as the Personal and Refuels
+    templates. `screen` is the key of the screen in
+    panel/screen_exports.py; `columns` are keys of its catalogue.
+    ---
+    S148. Juego de columnas con nombre para exportar (Excel, PDF o
+    imprimir) una pantalla del panel que no tenía modelo de plantillas
+    propio, mismo planteamiento que Personal y Repostajes: plantillas
+    propias (una por defecto por pantalla) y globales de empresa que
+    solo crea o edita un administrador. Además de estas, cada pantalla
+    ofrece la fija "Vista del panel" (panel/export_templates.py).
+    """
+
+    company = models.ForeignKey(
+        "ivr_config.Company",
+        on_delete=models.CASCADE,
+        related_name="screen_export_templates",
+        verbose_name="Empresa",
+    )
+    company_user = models.ForeignKey(
+        CompanyUser,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="screen_export_templates",
+        verbose_name="Usuario",
+        help_text="Dueño de la plantilla propia; vacío en las globales.",
+    )
+    screen = models.CharField(max_length=60, verbose_name="Pantalla")
+    is_global = models.BooleanField(
+        default=False,
+        verbose_name="Plantilla global",
+        help_text="La ven todos; solo un administrador la crea o edita.",
+    )
+    name = models.CharField(max_length=100, verbose_name="Nombre")
+    is_default = models.BooleanField(
+        default=False,
+        verbose_name="Por defecto",
+        help_text="La que sale elegida (una por usuario y pantalla).",
+    )
+    columns = models.JSONField(
+        default=list,
+        verbose_name="Columnas",
+        help_text="Claves de columna, en el orden de la exportación.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Plantilla de exportación de pantalla"
+        verbose_name_plural = "Plantillas de exportación de pantalla"
+        ordering = ["screen", "-is_global", "-is_default", "name"]
+
+    def __str__(self):
+        return "%s — %s" % (self.screen, self.name)
+
+    def save(self, *args, **kwargs):
+        if self.is_default and not self.is_global and self.company_user_id:
+            ScreenExportTemplate.objects.filter(
+                company_user_id=self.company_user_id, screen=self.screen,
+                is_default=True,
+            ).exclude(pk=self.pk).update(is_default=False)
+        super().save(*args, **kwargs)

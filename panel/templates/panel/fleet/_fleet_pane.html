@@ -289,17 +289,12 @@ la lista hace scroll. Dos paneles:
                         </div>
                         <div class="tab-pane" id="fleetActInfo" role="tabpanel">
                             <div class="small text-muted fw-bold">Exportar</div>
-                            <div class="d-flex flex-wrap gap-1">
-                                <button type="button" class="btn btn-sm btn-outline-success fleet-needs-selection fleet-mass-export" id="fleet-mass-export" data-format="xlsx" disabled>
-                                    <i class="bi bi-file-earmark-excel me-1"></i>Excel
-                                </button>
-                                <button type="button" class="btn btn-sm btn-outline-danger fleet-needs-selection fleet-mass-export" data-format="pdf" disabled>
-                                    <i class="bi bi-file-earmark-pdf me-1"></i>PDF
-                                </button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary fleet-needs-selection fleet-mass-export" data-format="print" disabled>
-                                    <i class="bi bi-printer me-1"></i>Imprimir
-                                </button>
-                            </div>
+                            {# S148: Excel, PDF o imprimir con plantilla ("Vista del panel" por defecto). #}
+                            <button type="button" class="btn btn-sm btn-outline-success fleet-needs-selection" id="fleet-mass-export" disabled
+                                    data-bs-toggle="modal" data-bs-target="#fleetExportModal"
+                                    title="Excel, PDF o imprimir los centros de gasto marcados, con la plantilla que elijas">
+                                <i class="bi bi-box-arrow-up me-1"></i>Exportar / imprimir
+                            </button>
                         </div>
                         <div class="tab-pane" id="fleetActAlta" role="tabpanel">
                             <div class="small text-muted fw-bold">Alta y baja</div>
@@ -732,29 +727,19 @@ la lista hace scroll. Dos paneles:
     // Exportar la selección a Excel (mismas columnas que la hoja
     // MAQUINARIA del Excel de Yolanda): formulario POST temporal, para
     // que el navegador gestione la descarga como cualquier otra.
-    // S148: también PDF o impresión (pestaña nueva), mismo contenido.
-    document.querySelectorAll(".fleet-mass-export").forEach(function (exportBtn) { exportBtn.addEventListener("click", function () {
-        if (!selection.size) return;
-        const form = document.createElement("form");
-        form.method = "post";
-        form.action = "{% url 'panel:fleet_export' %}";
-        form.style.display = "none";
-        if (exportBtn.dataset.format === "print") form.target = "_blank";
-        const fmt = document.createElement("input");
-        fmt.type = "hidden"; fmt.name = "export_format"; fmt.value = exportBtn.dataset.format || "xlsx";
-        form.appendChild(fmt);
-        const csrf = document.createElement("input");
-        csrf.type = "hidden"; csrf.name = "csrfmiddlewaretoken"; csrf.value = csrfToken;
-        form.appendChild(csrf);
-        selectedPks().forEach(function (pk) {
-            const input = document.createElement("input");
-            input.type = "hidden"; input.name = "selected"; input.value = pk;
-            form.appendChild(input);
-        });
-        document.body.appendChild(form);
-        form.submit();
-        form.remove();
-    }); });
+    // S148: el modal común de exportación con plantilla
+    // (panel/_screen_export_modal.html) exporta los marcados.
+    window.EbScreenExport = window.EbScreenExport || {};
+    window.EbScreenExport.fleet = {
+        params: function () {
+            const pks = selectedPks();
+            return pks.length ? pks.map(function (pk) { return ["selected", pk]; }) : null;
+        },
+        count: function () {
+            const n = selectedPks().length;
+            return n === 1 ? "Se exportará el centro de gasto marcado." : "Se exportarán los " + n + " centros de gasto marcados.";
+        },
+    };
 
     // S117: "Nueva familia…" en el desplegable de Familia del
     // formulario (alta y edición) despliega el campo de texto. Delegado
@@ -948,3 +933,5 @@ la lista hace scroll. Dos paneles:
     refreshFromFragment();
 }());
 </script>
+{% url 'panel:fleet_export' as fleet_export_url %}
+{% include "panel/_screen_export_modal.html" with sx="fleet" screen="fleet" export_url=fleet_export_url method="post" title="Exportar centros de gasto" %}

@@ -47,6 +47,11 @@ from panel.views_personal_section import (
     PersonalMassSectionView,
     PersonalSectionAssignView,
 )
+from panel.screen_exports import (
+    ScreenExportTemplateDeleteView,
+    ScreenExportTemplateListView,
+    ScreenExportTemplateSaveView,
+)
 from panel.views_refuels_export import (
     RefuelsExportTemplateDeleteView,
     RefuelsExportTemplateListView,
@@ -1338,6 +1343,23 @@ urlpatterns = [
     ),
     # H30 (S144): plantillas de la exportación a Excel de Repostajes --
     # panel/views_refuels_export.py.
+    # S148: plantillas de exportación comunes (Excel, PDF, imprimir) de
+    # las pantallas sin modelo propio (panel/screen_exports.py).
+    path(
+        "exportar/plantillas/",
+        ScreenExportTemplateListView.as_view(),
+        name="screen_export_templates",
+    ),
+    path(
+        "exportar/plantillas/guardar/",
+        ScreenExportTemplateSaveView.as_view(),
+        name="screen_export_template_save",
+    ),
+    path(
+        "exportar/plantillas/<int:pk>/eliminar/",
+        ScreenExportTemplateDeleteView.as_view(),
+        name="screen_export_template_delete",
+    ),
     path(
         "documentacion/repostajes/exportar/plantillas/",
         RefuelsExportTemplateListView.as_view(),

@@ -1108,12 +1108,9 @@ class MachineAssetBulkDeleteView(AdminRoleRequiredMixin, View):
 # Excel export of the selection (S117) / Exportación a Excel (S117)
 # ---------------------------------------------------------------------------
 
-# Mismas columnas y mismo orden que la hoja MAQUINARIA del Excel real de
-# Yolanda (document_explorer/data_imports/EXCEL_TRABAJADORES.xlsx), y el
-# mismo mapeo columna<->campo que ya usa import_worker_machine_excel.
-_EXPORT_COLUMNS = (
-    "CODIGO", "MATRICULA", "ITV", "CITA ITV", "SEGURO", "OCA", "EMPRESA",
-)
+# S148: las columnas salen de la plantilla de exportación
+# (panel/screen_export_catalog.py); la hoja MAQUINARIA del Excel real de
+# Yolanda es la plantilla global "MAQUINARIA (Excel de Yolanda)".
 
 
 def _short_company_name(company_name):
@@ -1133,16 +1130,16 @@ def _short_company_name(company_name):
 
 class MachineAssetExportView(FleetAccessMixin, View):
     """
-    Downloads the selected cost centres as an .xlsx with the columns of
-    the MAQUINARIA sheet of Yolanda's real Excel (POST selected=<pk>...).
-    Read-only: available to every role that can see the list.
+    Downloads the selected cost centres (POST selected=<pk>...) with the
+    columns of an export template, as Excel, PDF or print.
 
     POST /panel/fleet/export/
     ---
-    Descarga los centros de gasto seleccionados en un .xlsx con las
-    columnas de la hoja MAQUINARIA del Excel real de Yolanda (POST
-    selected=<pk>...). Solo lectura: disponible para todo rol que vea
-    el listado.
+    Descarga los centros de gasto seleccionados (POST selected=<pk>...)
+    con las columnas de la plantilla elegida (S148: "Vista del panel"
+    por defecto; la hoja MAQUINARIA del Excel de Yolanda queda como
+    plantilla global), en Excel, PDF o para imprimir. Solo lectura:
+    disponible para todo rol que vea el listado.
 
     POST /panel/fleet/export/
     """
@@ -1151,44 +1148,48 @@ class MachineAssetExportView(FleetAccessMixin, View):
         """
         Builds and returns the workbook.
         ---
-        Construye y devuelve el libro Excel.
+        Construye y devuelve el libro.
         """
-
+        from django.contrib.contenttypes.models import ContentType
         from openpyxl import Workbook
-        from openpyxl.styles import Font
+
+        from document_explorer.models import DocumentIndexEntry
+        from panel.screen_exports import columns_for, get_screen, write_sheet
+        from panel.views_documentation_h30 import BUCKET
 
         company = request.user.company_user.company
-        assets = _selected_assets(company, request).order_by("code")
-        if not assets.exists():
+        columns = columns_for(request, get_screen("fleet"))
+        if columns is None:
+            return HttpResponse("Plantilla no encontrada.", status=404)
+        assets = list(
+            _selected_assets(company, request)
+            .select_related("document_requirement")
+            .annotate(use_count=Count("work_order_lines", distinct=True))
+            .order_by("code")
+        )
+        if not assets:
             return HttpResponse(
                 "No hay ningún centro de gasto seleccionado.", status=400,
             )
+        machine_ct = ContentType.objects.get_for_model(MachineAsset)
+        doc_counts = dict(
+            DocumentIndexEntry.objects.filter(
+                bucket=BUCKET, domain_content_type=machine_ct,
+                entry_kind=DocumentIndexEntry.KIND_FILE,
+                deleted_at__isnull=True, purged_at__isnull=True,
+                domain_object_id__in=[a.pk for a in assets],
+            )
+            .order_by()
+            .values_list("domain_object_id")
+            .annotate(n=Count("id"))
+        )
+        for asset in assets:
+            asset.doc_count = doc_counts.get(asset.pk, 0)
 
         workbook = Workbook()
         sheet = workbook.active
-        sheet.title = "MAQUINARIA"
-        sheet.append(list(_EXPORT_COLUMNS))
-        for cell in sheet[1]:
-            cell.font = Font(bold=True)
-        for asset in assets:
-            sheet.append([
-                asset.code,
-                asset.plate,
-                asset.itv_date,
-                asset.itv_next_appointment,
-                asset.insurance_info,
-                asset.oca_date,
-                _short_company_name(asset.company_name),
-            ])
-        for column in ("C", "D", "F"):
-            for cell in sheet[column][1:]:
-                cell.number_format = "DD/MM/YYYY"
-        widths = {"A": 12, "B": 16, "C": 12, "D": 12, "E": 24,
-                  "F": 12, "G": 28}
-        for column, width in widths.items():
-            sheet.column_dimensions[column].width = width
-        sheet.freeze_panes = "A2"
-
+        sheet.title = "Centros de gasto"
+        write_sheet(sheet, columns, assets)
         filename = (
             f"centros_de_gasto_{now().strftime('%Y%m%d_%H%M')}.xlsx"
         )

@@ -1,0 +1,349 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/_screen_export_modal.html #}
+{% comment %}
+S148. Modal común de exportación con plantilla (Excel, PDF o imprimir)
+para las pantallas sin modelo de plantillas propio, mismo planteamiento
+que Personal y Repostajes: plantilla fija "Vista del panel" (las
+columnas de la tabla del panel, por defecto), propias (una por defecto)
+y globales de empresa que solo edita un administrador; "Usar como base"
+copia cualquiera. Vistas: panel/screen_exports.py.
+Uso:
+  {% include "panel/_screen_export_modal.html" with sx="fleet" screen="fleet" export_url=URL method="post" title="Exportar centros de gasto" %}
+y un botón con data-bs-toggle="modal" data-bs-target="#{sx}ExportModal".
+La pantalla da en window.EbScreenExport[sx] = {params: () => [[clave,
+valor]...] o null (no hay nada que exportar), count: () => "texto"}.
+{% endcomment %}
+<div class="modal fade" id="{{ sx }}ExportModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-bottom py-3">
+                <h6 class="modal-title fw-semibold">
+                    <i class="bi bi-box-arrow-up me-2 text-success"></i><span id="{{ sx }}-sxp-title">{{ title }}</span>
+                </h6>
+                <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4" id="{{ sx }}-sxp-export-view">
+                <label class="form-label small fw-semibold" for="{{ sx }}-sxp-template">Plantilla de exportación</label>
+                <div class="d-flex gap-2 align-items-center mb-3">
+                    <select id="{{ sx }}-sxp-template" class="form-select form-select-sm">
+                        <option value="">Cargando plantillas…</option>
+                    </select>
+                    <button type="button" class="btn btn-outline-secondary btn-sm px-2 text-nowrap" id="{{ sx }}-sxp-manage" title="Gestionar plantillas">
+                        <i class="bi bi-gear"></i>
+                    </button>
+                </div>
+                <div id="{{ sx }}-sxp-summary" class="p-3 bg-light rounded border small d-none">
+                    <span class="text-muted">Columnas:</span> <span id="{{ sx }}-sxp-summary-columns"></span>
+                </div>
+                <div id="{{ sx }}-sxp-error" class="alert alert-danger small py-2 mt-3 mb-0 d-none"></div>
+            </div>
+            <div class="modal-body p-4 d-none" id="{{ sx }}-sxp-manage-view">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="fw-semibold small">Plantillas</div>
+                    <button type="button" class="btn btn-success btn-sm" id="{{ sx }}-sxp-new"><i class="bi bi-plus-lg me-1"></i>Nueva plantilla</button>
+                </div>
+                <ul class="list-group list-group-flush small mb-3" id="{{ sx }}-sxp-template-list"></ul>
+                <div class="border rounded p-3 d-none" id="{{ sx }}-sxp-editor">
+                    <div class="fw-semibold small mb-2" id="{{ sx }}-sxp-editor-title">Nueva plantilla</div>
+                    <input type="hidden" id="{{ sx }}-sxp-edit-id" value="">
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold" for="{{ sx }}-sxp-edit-name">Nombre</label>
+                        <input type="text" id="{{ sx }}-sxp-edit-name" class="form-control form-control-sm" maxlength="100">
+                    </div>
+                    <div class="mb-1 small fw-semibold">Columnas <span class="text-muted fw-normal">(salen en el orden en que las marques)</span></div>
+                    <div class="d-flex flex-wrap gap-2 mb-2" id="{{ sx }}-sxp-edit-columns"></div>
+                    <div class="small text-muted mb-2">Orden: <span id="{{ sx }}-sxp-edit-order">—</span></div>
+                    <div class="form-check" id="{{ sx }}-sxp-edit-default-wrap">
+                        <input class="form-check-input" type="checkbox" id="{{ sx }}-sxp-edit-default">
+                        <label class="form-check-label small" for="{{ sx }}-sxp-edit-default">Plantilla por defecto</label>
+                    </div>
+                    <div class="form-check d-none" id="{{ sx }}-sxp-edit-global-wrap">
+                        <input class="form-check-input" type="checkbox" id="{{ sx }}-sxp-edit-global">
+                        <label class="form-check-label small" for="{{ sx }}-sxp-edit-global">Global de empresa (la ven todos; solo un administrador la edita)</label>
+                    </div>
+                    <div id="{{ sx }}-sxp-edit-error" class="alert alert-danger small py-1 px-2 mt-2 mb-0 d-none"></div>
+                    <div class="d-flex gap-2 justify-content-end mt-2">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="{{ sx }}-sxp-edit-cancel">Cancelar</button>
+                        <button type="button" class="btn btn-success btn-sm" id="{{ sx }}-sxp-edit-save"><i class="bi bi-check2 me-1"></i>Guardar</button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer border-top py-3 d-flex justify-content-between align-items-center">
+                <small class="text-muted" id="{{ sx }}-sxp-count"></small>
+                <div class="d-flex gap-2" id="{{ sx }}-sxp-export-buttons">
+                    <button type="button" class="btn btn-outline-secondary btn-sm px-3" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm px-3 {{ sx }}-sxp-go" data-format="print"><i class="bi bi-printer me-1"></i>Imprimir</button>
+                    <button type="button" class="btn btn-outline-danger btn-sm px-3 {{ sx }}-sxp-go" data-format="pdf"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</button>
+                    <button type="button" class="btn btn-success btn-sm px-4 {{ sx }}-sxp-go" data-format="xlsx"><i class="bi bi-file-earmark-excel me-1"></i>Excel</button>
+                </div>
+                <div class="d-none" id="{{ sx }}-sxp-manage-buttons">
+                    <button type="button" class="btn btn-outline-secondary btn-sm px-3" id="{{ sx }}-sxp-back"><i class="bi bi-arrow-left me-1"></i>Volver a exportar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+(function () {
+    "use strict";
+    const SX = "{{ sx|escapejs }}";
+    const SCREEN = "{{ screen|escapejs }}";
+    const TITLE = "{{ title|escapejs }}";
+    const EXPORT_URL = "{{ export_url|escapejs }}";
+    const METHOD = "{{ method|default:'get'|escapejs }}";
+    const LIST_URL = "{% url 'panel:screen_export_templates' %}";
+    const SAVE_URL = "{% url 'panel:screen_export_template_save' %}";
+    const DELETE_URL = "{% url 'panel:screen_export_template_delete' 0 %}";
+    const modalEl = document.getElementById(SX + "ExportModal");
+    if (!modalEl || modalEl.dataset.bound) { return; }
+    modalEl.dataset.bound = "1";
+    const $ = function (id) { return document.getElementById(SX + "-sxp-" + id); };
+    let templates = [];
+    let columns = [];
+    let isAdmin = false;
+    let editOrder = [];
+
+    function host() { return (window.EbScreenExport || {})[SX] || {}; }
+    function csrf() {
+        const m = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/);
+        return m ? decodeURIComponent(m[1]) : "";
+    }
+    function labelOf(key) {
+        const c = columns.find(function (x) { return x.key === key; });
+        return c ? c.label : key;
+    }
+    function current() {
+        const id = parseInt($("template").value, 10);
+        return templates.find(function (t) { return t.id === id; }) || null;
+    }
+    function showExportView() {
+        $("export-view").classList.remove("d-none");
+        $("manage-view").classList.add("d-none");
+        $("export-buttons").classList.remove("d-none");
+        $("manage-buttons").classList.add("d-none");
+        $("title").textContent = TITLE;
+        $("count").textContent = host().count ? host().count() : "";
+    }
+    function updateSummary() {
+        const tpl = current();
+        $("summary").classList.toggle("d-none", !tpl);
+        if (tpl) { $("summary-columns").textContent = tpl.columns.map(labelOf).join(", "); }
+    }
+    function fillSelect(keepId) {
+        const sel = $("template");
+        sel.innerHTML = "";
+        templates.forEach(function (t) {
+            const opt = document.createElement("option");
+            opt.value = t.id;
+            opt.textContent = t.name + (t.is_global ? " (empresa)" : "") + (t.is_default ? " ★" : "");
+            sel.appendChild(opt);
+        });
+        const keep = templates.find(function (t) { return t.id === keepId; });
+        const def = templates.find(function (t) { return t.is_default; });
+        if (keep) { sel.value = keep.id; } else if (def) { sel.value = def.id; }
+        updateSummary();
+    }
+    function load(keepId) {
+        return fetch(LIST_URL + "?screen=" + encodeURIComponent(SCREEN), {credentials: "same-origin"})
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                templates = data.templates || [];
+                columns = data.columns || [];
+                isAdmin = !!data.is_admin;
+                fillSelect(keepId);
+                renderList();
+            })
+            .catch(function () {
+                $("template").innerHTML = "<option value=''>Error al cargar las plantillas</option>";
+            });
+    }
+    modalEl.addEventListener("show.bs.modal", function () {
+        $("error").classList.add("d-none");
+        showExportView();
+        load(current() ? current().id : null);
+    });
+    $("template").addEventListener("change", updateSummary);
+
+    // Excel, PDF o imprimir (pestaña nueva) con la plantilla elegida.
+    document.querySelectorAll("." + SX + "-sxp-go").forEach(function (goBtn) {
+        goBtn.addEventListener("click", function () {
+            const tpl = current();
+            if (!tpl) {
+                $("error").textContent = "Elige una plantilla.";
+                $("error").classList.remove("d-none");
+                return;
+            }
+            const pairs = host().params ? host().params() : [];
+            if (!pairs) {
+                $("error").textContent = "No hay nada seleccionado para exportar.";
+                $("error").classList.remove("d-none");
+                return;
+            }
+            const fmt = goBtn.dataset.format || "xlsx";
+            const all = pairs.concat([["template_pk", String(tpl.id)], ["export_format", fmt]]);
+            if (METHOD === "post") {
+                const form = document.createElement("form");
+                form.method = "post";
+                form.action = EXPORT_URL;
+                form.style.display = "none";
+                if (fmt === "print") { form.target = "_blank"; }
+                all.concat([["csrfmiddlewaretoken", csrf()]]).forEach(function (pair) {
+                    const input = document.createElement("input");
+                    input.type = "hidden";
+                    input.name = pair[0];
+                    input.value = pair[1];
+                    form.appendChild(input);
+                });
+                document.body.appendChild(form);
+                form.submit();
+                form.remove();
+            } else {
+                const params = new URLSearchParams();
+                all.forEach(function (pair) { params.append(pair[0], pair[1]); });
+                const url = EXPORT_URL + (EXPORT_URL.indexOf("?") === -1 ? "?" : "&") + params.toString();
+                if (fmt === "print") { window.open(url, "_blank"); } else { window.location.href = url; }
+            }
+            bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+        });
+    });
+
+    // ---- Gestionar plantillas ----
+    $("manage").addEventListener("click", function () {
+        $("export-view").classList.add("d-none");
+        $("manage-view").classList.remove("d-none");
+        $("export-buttons").classList.add("d-none");
+        $("manage-buttons").classList.remove("d-none");
+        $("title").textContent = "Plantillas de exportación";
+        $("count").textContent = "";
+        $("editor").classList.add("d-none");
+        renderList();
+    });
+    $("back").addEventListener("click", showExportView);
+
+    function button(cls, icon, text, title, onClick) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "btn btn-sm py-0 px-2 " + cls;
+        b.title = title;
+        b.innerHTML = '<i class="bi ' + icon + '"></i>' + (text ? " " + text : "");
+        b.addEventListener("click", onClick);
+        return b;
+    }
+    function renderList() {
+        const list = $("template-list");
+        list.innerHTML = "";
+        templates.forEach(function (t) {
+            const li = document.createElement("li");
+            li.className = "list-group-item px-1 d-flex justify-content-between align-items-start gap-2";
+            const info = document.createElement("div");
+            const name = document.createElement("div");
+            name.className = "fw-semibold";
+            name.textContent = t.name + (t.is_default ? " ★" : "");
+            if (t.is_global) {
+                const badge = document.createElement("span");
+                badge.className = "badge bg-primary ms-1";
+                badge.textContent = "Empresa";
+                name.appendChild(badge);
+            }
+            const cols = document.createElement("div");
+            cols.className = "text-muted";
+            cols.textContent = t.columns.map(labelOf).join(", ");
+            info.appendChild(name);
+            info.appendChild(cols);
+            const actions = document.createElement("div");
+            actions.className = "d-flex gap-1 flex-shrink-0";
+            if (t.editable) {
+                actions.appendChild(button("btn-outline-secondary", "bi-pencil", "", "Editar", function () { openEditor(t, false); }));
+                actions.appendChild(button("btn-outline-danger", "bi-trash", "", "Borrar", function () { remove(t); }));
+            } else {
+                actions.appendChild(button("btn-outline-primary", "bi-copy", "Usar como base", "Crear una copia propia que puedes cambiar", function () { openEditor(t, true); }));
+            }
+            li.appendChild(info);
+            li.appendChild(actions);
+            list.appendChild(li);
+        });
+    }
+    function renderOrder() {
+        $("edit-order").textContent = editOrder.length ? editOrder.map(labelOf).join(" · ") : "—";
+    }
+    function openEditor(tpl, asCopy) {
+        const editing = tpl && !asCopy;
+        $("editor-title").textContent = editing ? "Editar plantilla" : (tpl ? "Nueva plantilla a partir de «" + tpl.name + "»" : "Nueva plantilla");
+        $("edit-id").value = editing ? tpl.id : "";
+        $("edit-name").value = editing ? tpl.name : (tpl ? tpl.name + " (copia)" : "");
+        editOrder = tpl ? tpl.columns.slice() : [];
+        const box = $("edit-columns");
+        box.innerHTML = "";
+        columns.forEach(function (c) {
+            const wrap = document.createElement("div");
+            wrap.className = "form-check";
+            const input = document.createElement("input");
+            input.type = "checkbox";
+            input.className = "form-check-input";
+            input.id = SX + "-sxp-col-" + c.key;
+            input.checked = editOrder.indexOf(c.key) !== -1;
+            input.addEventListener("change", function () {
+                if (input.checked) { editOrder.push(c.key); }
+                else { editOrder = editOrder.filter(function (k) { return k !== c.key; }); }
+                renderOrder();
+            });
+            const label = document.createElement("label");
+            label.className = "form-check-label small";
+            label.htmlFor = input.id;
+            label.textContent = c.label;
+            wrap.appendChild(input);
+            wrap.appendChild(label);
+            box.appendChild(wrap);
+        });
+        renderOrder();
+        const isGlobal = editing && tpl.is_global;
+        $("edit-default").checked = editing ? tpl.is_default : false;
+        $("edit-default-wrap").classList.toggle("d-none", isGlobal);
+        $("edit-global").checked = false;
+        $("edit-global-wrap").classList.toggle("d-none", !(isAdmin && !editing));
+        $("edit-error").classList.add("d-none");
+        $("editor").classList.remove("d-none");
+        $("edit-name").focus();
+    }
+    $("new").addEventListener("click", function () { openEditor(null, false); });
+    $("edit-cancel").addEventListener("click", function () { $("editor").classList.add("d-none"); });
+    $("edit-global").addEventListener("change", function () {
+        $("edit-default-wrap").classList.toggle("d-none", this.checked);
+    });
+    function showEditError(text) {
+        $("edit-error").textContent = text;
+        $("edit-error").classList.remove("d-none");
+    }
+    $("edit-save").addEventListener("click", function () {
+        const id = $("edit-id").value;
+        const payload = {
+            id: id ? parseInt(id, 10) : null,
+            screen: SCREEN,
+            name: $("edit-name").value.trim(),
+            columns: editOrder,
+            is_default: $("edit-default").checked,
+            is_global: $("edit-global").checked,
+        };
+        if (!payload.name) { showEditError("Falta el nombre."); return; }
+        if (!payload.columns.length) { showEditError("Elige al menos una columna."); return; }
+        fetch(SAVE_URL, {
+            method: "POST", credentials: "same-origin",
+            headers: {"Content-Type": "application/json", "X-CSRFToken": csrf()},
+            body: JSON.stringify(payload),
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (!data.ok) { showEditError(data.error || "No se ha podido guardar."); return; }
+            $("editor").classList.add("d-none");
+            load(data.id);
+        }).catch(function () { showEditError("Error de red al guardar."); });
+    });
+    function remove(tpl) {
+        if (!window.confirm("¿Borrar la plantilla «" + tpl.name + "»?")) { return; }
+        fetch(DELETE_URL.replace("/0/", "/" + tpl.id + "/"), {
+            method: "POST", credentials: "same-origin",
+            headers: {"X-CSRFToken": csrf()},
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (!data.ok) { window.alert(data.error || "No se ha podido borrar."); return; }
+            load(null);
+        });
+    }
+}());
+</script>
