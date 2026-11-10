@@ -559,7 +559,7 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
             "fichajes", "horarios", "calendario", "requisitos", "avisos",
             "circulares",
             "plantillas", "bandeja", "revisiones", "repostajes",
-            "solicitudes",
+            "solicitudes", "nominas",
         )
         # H30 (S126): "Bandeja de entrada" solo para quien puede subir
         # documentación (mismos roles que DocsUploadAccessMixin).
@@ -582,6 +582,9 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
                 t for t in valid_tabs
                 if t not in ("fichajes", "horarios", "solicitudes")
             )
+        # S149: pestaña "Nóminas" (entrega de nóminas).
+        if not can_send_payslips(request.user.company_user):
+            valid_tabs = tuple(t for t in valid_tabs if t != "nominas")
         # H30 (S119): "Circulares", "Plantillas" y "Requisitos" pasan
         # de botones "Gestionar..." en la barra de acción de Personal a
         # pestañas propias del hub -- Miguel Ángel: "las gestiones

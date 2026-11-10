@@ -102,10 +102,12 @@ from panel.views_dossier_bundle import DossierBundleEmailView
 from panel.views_payslips import (
     PayslipActionView,
     PayslipBatchCreateView,
+    PayslipExportView,
     PayslipMediaView,
     PayslipPageView,
     PayslipResultsView,
     PayslipStartReadingView,
+    PayslipTabView,
     PayslipUploadView,
 )
 # H24 (S147): solicitudes de los trabajadores.
@@ -2235,9 +2237,19 @@ urlpatterns = [
         name="payslip_start_reading",
     ),
     path(
-        "nominas/<int:pk>/accion/",
+        "nominas/accion/",
         PayslipActionView.as_view(),
         name="payslip_action",
+    ),
+    path(
+        "nominas/exportar/",
+        PayslipExportView.as_view(),
+        name="payslip_export",
+    ),
+    path(
+        "documentacion/nominas/",
+        PayslipTabView.as_view(),
+        name="payslip_tab",
     ),
     # Sin sesión: Twilio recoge de aquí el PDF de cada nómina (enlace
     # temporal con token largo).

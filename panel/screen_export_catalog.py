@@ -264,3 +264,31 @@ CLOCK_DAYS = register(Screen(
         "salida_horario", "minutos_antes", "horas", "incidencias", "tipos",
     ],
 ))
+
+# S149 (sesión invasora): entrega de nóminas (PayslipItem decorados por
+# panel/views_payslips._decorate). Solo datos del listado: nunca el
+# contenido de la nómina, que es confidencial.
+PAYSLIPS = register(Screen(
+    key="payslips",
+    label="Entrega de nóminas",
+    columns=(
+        Column("entrega", "Entrega", 10, lambda i: "#%s" % i.batch_id),
+        Column("subida", "Subida", 16, lambda i: _local(i.batch.created_at),
+               "DD/MM/YYYY HH:MM"),
+        Column("carpeta", "Carpeta", 22, lambda i: i.batch.folder_name),
+        Column("archivo", "Archivo", 30, lambda i: i.original_name),
+        Column("paginas", "Páginas", 9, lambda i: i.pages_label),
+        Column("trabajador", "Trabajador", 32, lambda i: i.person_label),
+        Column("dni", "DNI/NIE leído", 13, lambda i: i.dni_found),
+        Column("mes", "Mes", 18, lambda i: i.period_label),
+        Column("movil", "Móvil", 15, lambda i: i.phone_label),
+        Column("estado", "Estado", 18, lambda i: i.get_status_display()),
+        Column("enviada", "Enviada", 16, lambda i: _local(i.sent_at),
+               "DD/MM/YYYY HH:MM"),
+        Column("nota", "Nota", 50, lambda i: i.note),
+    ),
+    panel_columns=[
+        "entrega", "subida", "archivo", "paginas", "trabajador", "dni",
+        "mes", "movil", "estado", "enviada", "nota",
+    ],
+))

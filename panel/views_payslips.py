@@ -15,6 +15,7 @@ solo. La lógica vive en hr_calendar.payslip_delivery; aquí se lee la
 petición, se llama y se pinta. El enlace temporal del que Twilio recoge
 cada PDF (PayslipMediaView) es la única vista sin sesión.
 """
+import datetime
 import logging
 from urllib.parse import quote
 
@@ -40,10 +41,12 @@ from panel.views_vacation_balance import MANAGE_ROLES
 logger = logging.getLogger(__name__)
 
 SCREEN_KEY = "payslips"
-FILTER_KEYS = ("batch", "search", "status", "sort")
-DEFAULT_SORT = "file"
+FILTER_KEYS = ("batch", "search", "status", "month_from", "month_to",
+               "date_from", "date_to", "sort")
+DEFAULT_SORT = "-batch,file"
 _MAX_SORT_KEYS = 4
 _COLUMNS = (
+    ("batch", "Entrega"),
     ("file", "Archivo"),
     ("pages", "Páginas"),
     ("person", "Trabajador"),
@@ -51,8 +54,10 @@ _COLUMNS = (
     ("month", "Mes"),
     ("phone", "Móvil"),
     ("status", "Estado"),
+    ("sent", "Enviada"),
 )
 _SORT_VALUES = {
+    "batch": lambda r: (r.batch.created_at, r.batch_id),
     "file": lambda r: (r.original_name.upper(), r.page_from),
     "pages": lambda r: r.page_to - r.page_from,
     "person": lambda r: r.person_label.upper(),
@@ -60,9 +65,12 @@ _SORT_VALUES = {
     "month": lambda r: r.period_end,
     "phone": lambda r: r.phone_label,
     "status": lambda r: r.get_status_display(),
+    "sent": lambda r: r.sent_at,
 }
 _LIVE = (PayslipBatch.Status.UPLOADING, PayslipBatch.Status.READING,
          PayslipBatch.Status.SENDING)
+_CANCELABLE = (PayslipBatch.Status.UPLOADING, PayslipBatch.Status.READING,
+               PayslipBatch.Status.READY)
 
 
 # Los roles que gestionan las solicitudes (los de Vacaciones y
@@ -157,7 +165,7 @@ def _sort_rows(rows, sort_keys):
 
 def _batches(company):
     return list(PayslipBatch.objects.filter(company=company).select_related(
-        "created_by__user", "approved_by__user")[:60])
+        "created_by__user", "approved_by__user"))
 
 
 def _current_batch(request, batches):
@@ -165,7 +173,27 @@ def _current_batch(request, batches):
     for batch in batches:
         if str(batch.pk) == raw:
             return batch
-    return batches[0] if batches else None
+    return None
+
+
+def _month(raw):
+    """
+    "YYYY-MM" -> first day of that month, or None.
+    ---
+    "AAAA-MM" -> primer día de ese mes, o None.
+    """
+    try:
+        year, month = (int(v) for v in (raw or "").split("-")[:2])
+        return datetime.date(year, month, 1)
+    except (TypeError, ValueError):
+        return None
+
+
+def _day(raw):
+    try:
+        return datetime.date.fromisoformat(raw or "")
+    except ValueError:
+        return None
 
 
 def _decorate(item):
@@ -174,8 +202,16 @@ def _decorate(item):
         item.phone_label = pd.worker_phone(item.person) or ""
     else:
         item.phone_label = item.phone
-    item.label = "%s — %s" % (item.person_label or "Sin trabajador",
-                              item.original_name)
+    if not item.page_to:
+        item.pages_label = ""
+    elif item.page_from == item.page_to:
+        item.pages_label = str(item.page_from)
+    else:
+        item.pages_label = "%s–%s" % (item.page_from, item.page_to)
+    item.label = "%s — %s (#%s)" % (
+        item.person_label or "Sin trabajador",
+        item.period_label or item.original_name, item.batch_id)
+    item.can_change = item.batch.status == PayslipBatch.Status.READY
     return item
 
 
@@ -197,35 +233,69 @@ def _batch_summary(batch):
     }
 
 
-def _list_context(request):
-    company = request.user.company_user.company
-    batches = _batches(company)
-    batch = _current_batch(request, batches)
+def _filtered_items(request, company):
+    """
+    The payslips that meet the filters (all deliveries by default).
+    ---
+    Las nóminas que cumplen los filtros: entrega (todas por defecto),
+    mes de la nómina, fechas de subida, estados y búsqueda; o solo las
+    seleccionadas.
+    """
     if "status" in request.GET or "_f_status" in request.POST:
         statuses = [v for v in _param(request, "status").split(",") if v]
     else:
         statuses = list(PayslipItem.Status.values)
-    search = _param(request, "search").strip()
-    rows = []
-    if batch is not None:
-        qs = batch.items.select_related("person__company_user")
-        if request.GET.get("only_selected") == "1":
-            wanted = [pk for pk in request.GET.get(
-                "selected_ids", "").split(",") if pk.isdigit()]
-            qs = qs.filter(pk__in=wanted)
-        else:
-            qs = qs.filter(status__in=statuses)
-            for word in search.split():
-                qs = qs.filter(
-                    Q(original_name__icontains=word)
-                    | Q(dni_found__icontains=word)
-                    | Q(period_label__icontains=word)
-                    | Q(person__first_surname__icontains=word)
-                    | Q(person__second_surname__icontains=word)
-                    | Q(person__given_name__icontains=word)
-                    | Q(person__dni__icontains=word),
-                )
-        rows = [_decorate(item) for item in qs]
+    qs = PayslipItem.objects.filter(batch__company=company).select_related(
+        "batch", "person__company_user")
+    filters = {
+        "search": _param(request, "search").strip(),
+        "status": statuses,
+        "month_from": _param(request, "month_from"),
+        "month_to": _param(request, "month_to"),
+        "date_from": _param(request, "date_from"),
+        "date_to": _param(request, "date_to"),
+    }
+    if request.GET.get("only_selected") == "1":
+        wanted = [pk for pk in request.GET.get(
+            "selected_ids", "").split(",") if pk.isdigit()]
+        return qs.filter(pk__in=wanted), filters
+    batch_raw = _param(request, "batch")
+    if batch_raw.isdigit():
+        qs = qs.filter(batch_id=int(batch_raw))
+    qs = qs.filter(status__in=statuses)
+    month_from, month_to = (_month(filters["month_from"]),
+                            _month(filters["month_to"]))
+    if month_from:
+        qs = qs.filter(period_end__gte=month_from)
+    if month_to:
+        qs = qs.filter(period_end__lt=pd._month_end(
+            month_to.year, month_to.month) + datetime.timedelta(days=1))
+    day_from, day_to = _day(filters["date_from"]), _day(filters["date_to"])
+    if day_from:
+        qs = qs.filter(batch__created_at__date__gte=day_from)
+    if day_to:
+        qs = qs.filter(batch__created_at__date__lte=day_to)
+    for word in filters["search"].split():
+        qs = qs.filter(
+            Q(original_name__icontains=word)
+            | Q(dni_found__icontains=word)
+            | Q(period_label__icontains=word)
+            | Q(batch__folder_name__icontains=word)
+            | Q(person__first_surname__icontains=word)
+            | Q(person__second_surname__icontains=word)
+            | Q(person__given_name__icontains=word)
+            | Q(person__nickname__icontains=word)
+            | Q(person__dni__icontains=word),
+        )
+    return qs, filters
+
+
+def _list_context(request):
+    company = request.user.company_user.company
+    batches = _batches(company)
+    batch = _current_batch(request, batches)
+    qs, filters = _filtered_items(request, company)
+    rows = [_decorate(item) for item in qs]
     raw_sort = _param(request, "sort", DEFAULT_SORT)
     rows = _sort_rows(rows, _parse_sort(raw_sort))
     return {
@@ -233,14 +303,18 @@ def _list_context(request):
         "batches": batches,
         "batch": batch,
         "batch_live": batch is not None and batch.status in _LIVE,
+        "any_live": any(b.status in _LIVE for b in batches),
         "batch_ready": (batch is not None
                         and batch.status == PayslipBatch.Status.READY),
-        "batch_cancelable": (batch is not None and batch.status in (
-            PayslipBatch.Status.UPLOADING, PayslipBatch.Status.READING,
-            PayslipBatch.Status.READY)),
+        "batch_cancelable": (batch is not None
+                             and batch.status in _CANCELABLE),
         **_batch_summary(batch),
-        "filter_search": search,
-        "filter_status": statuses,
+        "filter_search": filters["search"],
+        "filter_status": filters["status"],
+        "filter_month_from": filters["month_from"],
+        "filter_month_to": filters["month_to"],
+        "filter_date_from": filters["date_from"],
+        "filter_date_to": filters["date_to"],
         "status_choices": PayslipItem.Status.choices,
         **_sort_controls(raw_sort),
     }
@@ -264,27 +338,47 @@ def _table_response(request, message="", error=False):
     return response
 
 
-class PayslipPageView(PayslipAccessMixin, View):
+def _pane_context(request):
+    from panel.person_groups import group_filter_context
+
+    apply_list_navigation(request, SCREEN_KEY, FILTER_KEYS)
+    cu = request.user.company_user
+    saved = get_saved_state_key(cu, SCREEN_KEY, "selection", [])
+    return {
+        **_list_context(request),
+        **group_filter_context(request),
+        "people": _people(cu.company),
+        "screen_key": SCREEN_KEY,
+        "saved_selection": saved if isinstance(saved, list) else [],
+    }
+
+
+class PayslipTabView(PayslipAccessMixin, View):
     """
-    GET: the payslip delivery page.
+    GET: "Nóminas" tab of the Documentation hub (directive 4.24).
     ---
-    GET: la página de entrega de nóminas; filtros, orden, entrega y
-    selección persistidos por usuario (screen_key "payslips").
+    GET: pestaña "Nóminas" del hub de Documentación, formato de la
+    directriz 4.24; filtros, orden y selección persistidos por usuario
+    (screen_key "payslips").
     """
 
     def get(self, request):
-        apply_list_navigation(request, SCREEN_KEY, FILTER_KEYS)
-        cu = request.user.company_user
-        saved = get_saved_state_key(cu, SCREEN_KEY, "selection", [])
-        return render(request, "panel/payslips/page.html", {
-            **_list_context(request),
-            "people": _people(cu.company),
-            "screen_key": SCREEN_KEY,
-            "saved_selection": saved if isinstance(saved, list) else [],
-            "active_nav": "worker_requests",
-            # Vuelta: a Solicitudes quien la tiene; si no, a Documentación.
-            "back_to_requests": cu.role in MANAGE_ROLES,
-        })
+        return render(request, "panel/payslips/_pane.html",
+                      _pane_context(request))
+
+
+class PayslipPageView(PayslipAccessMixin, View):
+    """
+    GET: the same tab as a page (roles without the hub).
+    ---
+    GET: la misma pestaña como página propia, para quien no tiene el hub
+    de Documentación (Supervisor, Jefe de taller).
+    """
+
+    def get(self, request):
+        context = _pane_context(request)
+        context["active_nav"] = "worker_requests"
+        return render(request, "panel/payslips/page.html", context)
 
 
 class PayslipResultsView(PayslipAccessMixin, View):
@@ -376,7 +470,7 @@ class PayslipStartReadingView(PayslipAccessMixin, View):
 
 class PayslipActionView(PayslipAccessMixin, View):
     """
-    POST: an action on a batch or on the marked payslips.
+    POST: an action on a batch (batch_id) or on the marked payslips.
     ---
     POST: una acción sobre la entrega (visto bueno y enviar, reintentar
     el WhatsApp, anular, volver a avisar) o sobre las nóminas marcadas
@@ -384,17 +478,24 @@ class PayslipActionView(PayslipAccessMixin, View):
     tabla con el mensaje en una cabecera.
     """
 
-    def post(self, request, pk):
+    def post(self, request):
         from hr_calendar.tasks import (
             retry_payslip_whatsapp_task, send_payslip_batch_task,
         )
 
-        batch = _own_batch(request, pk)
         cu = request.user.company_user
+        raw = request.POST.get("batch_id", "")
+        batch = PayslipBatch.objects.filter(
+            pk=raw if raw.isdigit() else 0, company=cu.company).first()
         action = request.POST.get("action", "")
         ids = [v for v in request.POST.getlist("selected") if v.isdigit()]
-        items = list(batch.items.filter(pk__in=ids).select_related(
-            "batch"))
+        items = list(PayslipItem.objects.filter(
+            pk__in=ids, batch__company=cu.company).select_related("batch"))
+        if action in ("approve", "retry", "notify", "cancel") and (
+                batch is None):
+            return _table_response(
+                request, "Elige la entrega en el filtro «Entrega».",
+                error=True)
         try:
             if action in ("exclude", "include"):
                 if not items:
@@ -441,6 +542,41 @@ class PayslipActionView(PayslipAccessMixin, View):
         except pd.PayslipError as exc:
             return _table_response(request, str(exc), error=True)
         return _table_response(request, message)
+
+
+class PayslipExportView(PayslipAccessMixin, View):
+    """
+    POST: Excel, PDF or print of the marked payslips (template).
+    ---
+    POST: Excel, PDF o imprimir de las nóminas marcadas, con la
+    plantilla elegida (modal común de exportación, S148). Solo datos del
+    listado; nunca el contenido de las nóminas.
+    """
+
+    def post(self, request):
+        from openpyxl import Workbook
+
+        from panel.export_formats import workbook_response
+        from panel.screen_exports import columns_for, get_screen
+        from panel.screen_exports import write_sheet
+
+        cu = request.user.company_user
+        ids = [v for v in request.POST.getlist("selected") if v.isdigit()]
+        rows = [_decorate(item) for item in PayslipItem.objects.filter(
+            pk__in=ids, batch__company=cu.company).select_related(
+                "batch", "person__company_user").order_by(
+                    "-batch__created_at", "original_name", "page_from")]
+        if not rows:
+            return HttpResponse("No hay ninguna nómina seleccionada.",
+                                status=400)
+        columns = columns_for(request, get_screen("payslips"))
+        if columns is None:
+            return HttpResponse("Plantilla no encontrada.", status=404)
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "NOMINAS"
+        write_sheet(sheet, columns, rows)
+        return workbook_response(request, workbook, "entrega_nominas")
 
 
 class PayslipMediaView(View):

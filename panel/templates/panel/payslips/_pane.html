@@ -1,0 +1,510 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/payslips/_pane.html #}
+{% comment %}
+H24 (S149 invasora). Pestaña "Nóminas" del hub de Documentación (y página
+propia para quien no tiene el hub), formato de la directriz 4.24, el
+mismo que Solicitudes o Fichajes (Miguel Ángel: "todo lo que tienen las
+demás, que es común, más lo específico de la vista"):
+- #psl-top-panel (fijo): "Buscar y filtrar" (búsqueda; Entrega, todas o
+  una; mes de la nómina desde/hasta; subida desde/hasta; Estado con
+  casillas -- ninguna marcada = ninguna --; Selección), "Grupos de
+  selección" y las acciones: sobre las marcadas (exportar/imprimir con
+  plantilla, dejar fuera, volver a meter, poner el trabajador) y sobre
+  la entrega elegida en el filtro (elegir carpeta para una nueva, visto
+  bueno y enviar, reintentar WhatsApp, volver a avisar, anular).
+- #psl-bottom-panel: el listado de nóminas de todas las entregas (3/4) y
+  "Selección actual" (1/4).
+Filtros, orden y selección persistidos por usuario (screen_key
+"payslips"). Mientras alguna entrega se lee o se envía, la lista se
+refresca sola. Lógica: hr_calendar/payslip_delivery.py.
+{% endcomment %}
+<div class="border rounded p-2 mb-2" id="psl-top-panel">
+    <div class="row g-2">
+        <div class="col-lg-4">
+            <div class="border rounded p-2 h-100">
+                <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                <form id="psl-filters" autocomplete="off" onsubmit="return false;"
+                      hx-get="{% url 'panel:payslip_results' %}" hx-target="#psl-results"
+                      hx-include="#psl-sort-inputs"
+                      hx-trigger="input changed delay:300ms from:#psl-filter-search, change, psl-selection-refresh">
+                    <input type="text" name="search" id="psl-filter-search" class="form-control doc-h30-search mb-2"
+                           placeholder="Buscar por trabajador, DNI, archivo, carpeta, mes…" value="{{ filter_search }}">
+                    <div class="row g-1 small mb-2">
+                        <div class="col-12">
+                            <label class="form-label mb-0 fw-semibold" for="psl-batch-select">Entrega</label>
+                            <select class="form-select form-select-sm" name="batch" id="psl-batch-select">
+                                <option value="">Todas las entregas</option>
+                                {% for item in batches %}
+                                <option value="{{ item.pk }}"{% if batch and item.pk == batch.pk %} selected{% endif %}>#{{ item.pk }} · {{ item.created_at|date:"d/m/Y H:i" }} · {{ item.folder_name|default:"sin carpeta"|truncatechars:30 }} · {{ item.get_status_display }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label mb-0 fw-semibold" for="psl-month-from">Mes de la nómina desde</label>
+                            <input type="month" class="form-control form-control-sm" name="month_from" id="psl-month-from" value="{{ filter_month_from }}">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label mb-0 fw-semibold" for="psl-month-to">hasta</label>
+                            <input type="month" class="form-control form-control-sm" name="month_to" id="psl-month-to" value="{{ filter_month_to }}">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label mb-0 fw-semibold" for="psl-date-from">Subida desde</label>
+                            <input type="date" class="form-control form-control-sm" name="date_from" id="psl-date-from" value="{{ filter_date_from }}">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label mb-0 fw-semibold" for="psl-date-to">hasta</label>
+                            <input type="date" class="form-control form-control-sm" name="date_to" id="psl-date-to" value="{{ filter_date_to }}">
+                        </div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-3 align-items-start small">
+                        <div>
+                            <div class="fw-semibold mb-1">Estado</div>
+                            {% for value, label in status_choices %}
+                            <div class="form-check">
+                                <input class="form-check-input psl-status-check" type="checkbox" value="{{ value }}" id="pslStatus{{ value }}"
+                                       {% if value in filter_status %}checked{% endif %}>
+                                <label class="form-check-label" for="pslStatus{{ value }}">{{ label }}</label>
+                            </div>
+                            {% endfor %}
+                            <input type="hidden" name="status" id="psl-status-input" value="{{ filter_status|join:',' }}">
+                        </div>
+                        <div>
+                            <div class="fw-semibold mb-1">Selección</div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="only_selected" value="1" id="pslOnlySelected">
+                                <label class="form-check-label" for="pslOnlySelected">Mostrar solo la selección actual</label>
+                            </div>
+                            <input type="hidden" name="selected_ids" id="psl-selected-ids" value="">
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+        {% include "panel/_person_group_filter.html" with pg_prefix="psl" pg_form="psl-filters" %}
+        <div class="col-lg-5">
+            <div class="border rounded p-2 h-100">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <strong class="small"><span id="psl-mass-count">0</span> seleccionadas</strong>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="psl-mass-clear">Limpiar</button>
+                </div>
+                <div class="small text-muted fw-bold">Las marcadas</div>
+                <div class="d-flex gap-1 flex-wrap mb-1">
+                    <button type="button" class="btn btn-sm btn-outline-success psl-needs-selection" id="psl-mass-export" disabled
+                            data-bs-toggle="modal" data-bs-target="#pslExportModal"
+                            title="Excel, PDF o imprimir el listado de las nóminas marcadas, con la plantilla que elijas (nunca su contenido)">
+                        <i class="bi bi-box-arrow-up me-1"></i>Exportar / imprimir
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-danger psl-needs-selection psl-mass" data-action="exclude" disabled
+                            title="No se envían: quedan fuera de su entrega (solo en entregas para el visto bueno).">Dejar fuera</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary psl-needs-selection psl-mass" data-action="include" disabled
+                            title="Vuelven a su entrega.">Volver a meter</button>
+                </div>
+                <div class="input-group input-group-sm mb-2">
+                    <input class="form-control" list="psl-people" id="psl-person" placeholder="Trabajador (para una sola marcada)" autocomplete="off">
+                    <button type="button" class="btn btn-outline-primary psl-needs-selection" id="psl-assign" disabled>Poner</button>
+                </div>
+                <datalist id="psl-people">
+                    {% for person in people %}<option data-pk="{{ person.pk }}" value="{{ person.label }}"></option>{% endfor %}
+                </datalist>
+                <div class="small text-muted fw-bold">La entrega <span class="fw-normal">(la elegida en «Entrega»)</span></div>
+                <div id="psl-batch-box" class="small mb-1"></div>
+                <div class="d-flex gap-1 flex-wrap align-items-center">
+                    <label class="btn btn-sm btn-primary mb-0" for="psl-folder" title="Elige la carpeta con las nóminas en PDF: se suben todas y se leen en segundo plano. Al acabar te llega un WhatsApp con el enlace al listado.">
+                        <i class="bi bi-folder2-open"></i> Elegir carpeta
+                    </label>
+                    <input type="file" id="psl-folder" class="d-none" webkitdirectory directory multiple accept="application/pdf">
+                    <button type="button" class="btn btn-sm btn-success" id="psl-approve" disabled
+                            title="Archiva cada nómina en la ficha de su trabajador (confidencial) y se la manda por WhatsApp.">
+                        <i class="bi bi-send-check"></i> Visto bueno y enviar
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-warning" id="psl-retry" disabled
+                            title="Vuelve a mandar por WhatsApp las nóminas archivadas que no salieron.">Reintentar WhatsApp</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="psl-notify" disabled
+                            title="Vuelve a mandar el aviso por WhatsApp de que la lectura ha terminado.">Volver a avisar</button>
+                    <button type="button" class="btn btn-sm btn-outline-danger" id="psl-cancel" disabled
+                            title="Anula la entrega (aún no enviada) y borra las copias de sus PDF.">Anular</button>
+                </div>
+                <div id="psl-upload-progress" class="d-none mt-2 small">
+                    <div class="progress" style="height: 8px;"><div class="progress-bar" id="psl-upload-bar" style="width: 0%"></div></div>
+                    <div class="text-muted mt-1" id="psl-upload-text"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="border rounded p-2" id="psl-bottom-panel">
+    <div class="row g-2 h-100">
+        <div class="col-lg-9 h-100" id="psl-list-col">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1 d-flex align-items-center">
+                    <span>Nóminas (<span id="psl-row-count">{{ rows|length }}</span>)</span>
+                    <button type="button" class="btn btn-sm btn-link py-0{% if not sort_active %} d-none{% endif %}" id="psl-clear-sort"
+                            hx-get="{% url 'panel:payslip_results' %}" hx-target="#psl-results"
+                            hx-include="#psl-filters" hx-vals='{"sort": ""}'>Quitar orden</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" id="psl-fullscreen" title="Pantalla completa"><i class="bi bi-fullscreen"></i></button>
+                </div>
+                <div id="psl-results-scroll" class="psl-fill fixed-list-scroll" style="overflow: auto;">
+                    <div id="psl-results"
+                         hx-get="{% url 'panel:payslip_results' %}"
+                         hx-include="#psl-filters, #psl-sort-inputs"
+                         hx-trigger="payslips-refresh from:body">
+                        {% include "panel/payslips/_table.html" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1">Selección actual (<span id="psl-selection-count">0</span>)</div>
+                <div class="psl-fill" style="overflow-y: auto;">
+                    <ul class="mb-0 small ps-0 list-unstyled" id="psl-selection-list">
+                        <li class="text-muted">Nada seleccionado todavía.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+#psl-results-scroll table td, #psl-results-scroll table th { white-space: nowrap; }
+.psl-fill { flex: 1 1 auto; min-height: 0; }
+#psl-list-col > div:fullscreen { background-color: var(--bs-body-bg); padding: 1rem; }
+#psl-list-col > div:fullscreen .psl-fill { height: calc(100vh - 4rem); }
+</style>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="psl-toast" class="toast align-items-center text-bg-dark border-0"
+         role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="5000">
+        <div class="d-flex">
+            <div class="toast-body" id="psl-toast-msg"></div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+{{ saved_selection|json_script:"psl-saved-selection" }}
+{% include "panel/_fixed_list_layout.html" with top_id="psl-top-panel" bottom_id="psl-bottom-panel" %}
+{% url 'panel:payslip_export' as psl_export_url %}
+{% include "panel/_screen_export_modal.html" with sx="psl" screen="payslips" export_url=psl_export_url method="post" title="Exportar nóminas" %}
+<script>
+(function () {
+    "use strict";
+
+    const results = document.getElementById("psl-results");
+    const filters = document.getElementById("psl-filters");
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute("content");
+    const SCREEN_KEY = "{{ screen_key|escapejs }}";
+    const URLS = {
+        create: "{% url 'panel:payslip_batch_create' %}",
+        upload: "{% url 'panel:payslip_upload' 0 %}",
+        read: "{% url 'panel:payslip_start_reading' 0 %}",
+        action: "{% url 'panel:payslip_action' %}",
+    };
+    function url(name, pk) { return URLS[name].replace("/0/", "/" + pk + "/"); }
+
+    const selection = new Map();
+
+    // Grupos de selección (como en Solicitudes): la selección son las
+    // nóminas del listado de las personas de los grupos marcados.
+    window.EbGroupSelect = window.EbGroupSelect || {};
+    window.EbGroupSelect["psl"] = function (people) {
+        selection.clear();
+        const wanted = new Set(people.persons.map(function (p) { return String(p[0]); }));
+        results.querySelectorAll(".psl-row-check").forEach(function (cb) {
+            if (wanted.has(cb.dataset.person)) selection.set(cb.dataset.pk, cb.dataset.label);
+        });
+        refreshFromFragment();
+    };
+    // Grupo nuevo con las personas de las nóminas marcadas.
+    window.EbGroupGet = window.EbGroupGet || {};
+    window.EbGroupGet["psl"] = function () {
+        const persons = new Set();
+        results.querySelectorAll(".psl-row-check").forEach(function (cb) {
+            if (selection.has(cb.dataset.pk) && cb.dataset.person) persons.add(cb.dataset.person);
+        });
+        return {persons: Array.from(persons), users: []};
+    };
+    // Exportar / imprimir (modal común con plantillas).
+    window.EbScreenExport = window.EbScreenExport || {};
+    window.EbScreenExport.psl = {
+        params: function () {
+            if (!selection.size) return null;
+            return Array.from(selection.keys()).map(function (pk) { return ["selected", pk]; });
+        },
+        count: function () {
+            return selection.size === 1 ? "Se exportará la nómina seleccionada."
+                : "Se exportarán las " + selection.size + " nóminas seleccionadas.";
+        },
+    };
+
+    try {
+        JSON.parse(document.getElementById("psl-saved-selection").textContent).forEach(function (item) {
+            if (item && item.pk) selection.set(String(item.pk), item.label || "");
+        });
+    } catch (e) { /* estado ilegible: se empieza sin selección */ }
+    let lastSaved = null;
+    function saveSelection() {
+        const payload = Array.from(selection.entries()).map(function ([pk, label]) { return {pk: pk, label: label}; });
+        const serialized = JSON.stringify(payload);
+        if (serialized === lastSaved) return;
+        lastSaved = serialized;
+        window.EbNavState.save(SCREEN_KEY, {selection: payload});
+    }
+
+    function showToast(text, danger) {
+        const toast = document.getElementById("psl-toast");
+        toast.classList.toggle("text-bg-danger", !!danger);
+        toast.classList.toggle("text-bg-dark", !danger);
+        document.getElementById("psl-toast-msg").textContent = text;
+        new bootstrap.Toast(toast).show();
+    }
+
+    function state() { return document.getElementById("psl-fragment-state") || {dataset: {}}; }
+
+    function updateSelectionUi() {
+        saveSelection();
+        document.getElementById("psl-mass-count").textContent = selection.size;
+        document.getElementById("psl-selection-count").textContent = selection.size;
+        const list = document.getElementById("psl-selection-list");
+        list.innerHTML = "";
+        const names = Array.from(selection.values()).sort(function (a, b) { return a.localeCompare(b); });
+        if (!names.length) {
+            const li = document.createElement("li");
+            li.className = "text-muted";
+            li.textContent = "Nada seleccionado todavía.";
+            list.appendChild(li);
+        }
+        names.forEach(function (name) {
+            const li = document.createElement("li");
+            li.textContent = name;
+            list.appendChild(li);
+        });
+        const idsInput = document.getElementById("psl-selected-ids");
+        const newIds = Array.from(selection.keys()).join(",");
+        if (idsInput.value !== newIds) {
+            idsInput.value = newIds;
+            if (document.getElementById("pslOnlySelected").checked) htmx.trigger(filters, "psl-selection-refresh");
+        }
+        document.querySelectorAll(".psl-needs-selection").forEach(function (btn) {
+            btn.disabled = selection.size === 0;
+        });
+        const all = document.getElementById("psl-check-all");
+        if (!all) return;
+        const rows = results.querySelectorAll(".psl-row-check");
+        const checked = results.querySelectorAll(".psl-row-check:checked");
+        all.checked = rows.length > 0 && checked.length === rows.length;
+        all.indeterminate = checked.length > 0 && checked.length < rows.length;
+    }
+
+    let poll = null;
+    function refreshFromFragment() {
+        const data = state().dataset;
+        document.getElementById("psl-row-count").textContent = data.count || "0";
+        document.getElementById("psl-clear-sort").classList.toggle("d-none", !data.sortActive);
+        const box = document.getElementById("psl-batch-state");
+        document.getElementById("psl-batch-box").innerHTML = box ? box.innerHTML : "";
+        const ready = data.ready === "1";
+        const approve = document.getElementById("psl-approve");
+        approve.disabled = !ready || data.unmatched !== "0" || data.toSend === "0";
+        approve.title = !data.batch ? "Elige la entrega en el filtro «Entrega»."
+            : (!ready ? "La entrega no está para el visto bueno."
+                : (data.unmatched !== "0" ? "Hay nóminas sin trabajador: ponles el trabajador o déjalas fuera."
+                    : "Archiva cada nómina en la ficha de su trabajador (confidencial) y se la manda por WhatsApp."));
+        document.getElementById("psl-retry").disabled = !data.batch || data.retry === "0" || data.live === "1";
+        document.getElementById("psl-cancel").disabled = data.cancelable !== "1";
+        document.getElementById("psl-notify").disabled = !ready;
+        results.querySelectorAll(".psl-row-check").forEach(function (cb) { cb.checked = selection.has(cb.dataset.pk); });
+        updateSelectionUi();
+        // Mientras alguna entrega se lee o se envía, la lista se pide sola.
+        if (data.anyLive === "1" && !poll) {
+            poll = setInterval(function () {
+                if (!document.body.contains(results)) { clearInterval(poll); poll = null; return; }
+                htmx.trigger(document.body, "payslips-refresh");
+            }, 5000);
+        } else if (data.anyLive !== "1" && poll) {
+            clearInterval(poll);
+            poll = null;
+        }
+    }
+
+    function syncCsv(selector, inputId) {
+        document.getElementById(inputId).value = Array.from(document.querySelectorAll(selector + ":checked"))
+            .map(function (cb) { return cb.value; }).join(",");
+    }
+    document.querySelectorAll(".psl-status-check").forEach(function (cb) {
+        cb.addEventListener("change", function () { syncCsv(".psl-status-check", "psl-status-input"); });
+    });
+
+    results.addEventListener("change", function (evt) {
+        const target = evt.target;
+        if (target.classList.contains("psl-row-check")) {
+            if (target.checked) selection.set(target.dataset.pk, target.dataset.label);
+            else selection.delete(target.dataset.pk);
+            updateSelectionUi();
+        } else if (target.id === "psl-check-all") {
+            results.querySelectorAll(".psl-row-check").forEach(function (cb) {
+                cb.checked = target.checked;
+                if (target.checked) selection.set(cb.dataset.pk, cb.dataset.label);
+                else selection.delete(cb.dataset.pk);
+            });
+            updateSelectionUi();
+        }
+    });
+    document.getElementById("psl-mass-clear").addEventListener("click", function () {
+        selection.clear();
+        refreshFromFragment();
+    });
+
+    function post(action, extra, pks) {
+        const body = new FormData();
+        new FormData(filters).forEach(function (value, key) { body.append("_f_" + key, value); });
+        const sortInput = results.querySelector('#psl-sort-inputs input[name="sort"]');
+        body.append("_f_sort", sortInput ? sortInput.value : "");
+        body.append("action", action);
+        body.append("batch_id", state().dataset.batch || "");
+        Object.keys(extra || {}).forEach(function (key) { body.append(key, extra[key]); });
+        (pks || []).forEach(function (pk) { body.append("selected", pk); });
+        return fetch(URLS.action, {method: "POST", headers: {"X-CSRFToken": csrfToken}, body: body})
+            .then(function (r) {
+                if (!r.ok) { showToast("No se ha podido completar (" + r.status + ").", true); return false; }
+                const message = r.headers.get("X-Payslips-Message");
+                const isError = r.headers.get("X-Payslips-Error") === "1";
+                return r.text().then(function (html) {
+                    results.innerHTML = html;
+                    htmx.process(results);
+                    refreshFromFragment();
+                    if (message) showToast(decodeURIComponent(message), isError);
+                    return !isError;
+                });
+            })
+            .catch(function () { showToast("Sin conexión con el servidor: no se ha guardado nada.", true); return false; });
+    }
+
+    const MASS_TEXT = {exclude: "Dejar fuera de su entrega", include: "Volver a meter en su entrega"};
+    document.querySelectorAll(".psl-mass").forEach(function (btn) {
+        btn.addEventListener("click", async function () {
+            if (!selection.size) return;
+            const visible = Array.from(results.querySelectorAll(".psl-row-check")).map(function (cb) { return cb.dataset.pk; });
+            if (!(await window.EbMassConfirm({
+                action: MASS_TEXT[btn.dataset.action],
+                names: Array.from(selection.values()),
+                hidden: window.EbHiddenSelected(selection, visible),
+            }))) return;
+            post(btn.dataset.action, {}, Array.from(selection.keys()));
+        });
+    });
+
+    function personPk() {
+        const value = document.getElementById("psl-person").value.trim();
+        if (!value) return "";
+        const option = Array.from(document.querySelectorAll("#psl-people option")).find(function (o) { return o.value === value; });
+        return option ? option.dataset.pk : null;
+    }
+    document.getElementById("psl-assign").addEventListener("click", function () {
+        if (selection.size !== 1) { showToast("Marca una sola nómina para ponerle el trabajador.", true); return; }
+        const pk = personPk();
+        if (pk === null) { showToast("Elige el trabajador de la lista.", true); return; }
+        post("assign", {person: pk}, Array.from(selection.keys())).then(function (ok) {
+            if (ok) document.getElementById("psl-person").value = "";
+        });
+    });
+
+    results.addEventListener("click", function (evt) {
+        const link = evt.target.closest(".psl-row-action");
+        if (!link) return;
+        evt.preventDefault();
+        const action = link.dataset.action;
+        if (action === "assign-open") {
+            const check = results.querySelector('.psl-row-check[data-pk="' + link.dataset.pk + '"]');
+            selection.clear();
+            if (check) selection.set(check.dataset.pk, check.dataset.label);
+            refreshFromFragment();
+            document.getElementById("psl-person").focus();
+            showToast("Escribe el trabajador arriba y pulsa «Poner».", false);
+            return;
+        }
+        post(action, {}, [link.dataset.pk]);
+    });
+
+    document.getElementById("psl-approve").addEventListener("click", async function () {
+        const data = state().dataset;
+        const names = Array.from(results.querySelectorAll('.psl-row-check[data-status="READY"]')).map(function (cb) { return cb.dataset.label; });
+        if (!(await window.EbMassConfirm({
+            action: "Archivar y enviar por WhatsApp " + data.toSend + " nómina(s) de la entrega #" + data.batch
+                + (names.length < Number(data.toSend) ? " (el filtro oculta alguna: la lista de abajo no está completa)" : ""),
+            names: names,
+            hidden: [],
+        }))) return;
+        post("approve", {}, []);
+    });
+    document.getElementById("psl-retry").addEventListener("click", function () { post("retry", {}, []); });
+    document.getElementById("psl-notify").addEventListener("click", function () { post("notify", {}, []); });
+    document.getElementById("psl-cancel").addEventListener("click", function () {
+        if (!window.confirm("¿Anular la entrega #" + state().dataset.batch + " y borrar las copias de sus PDF? Lo ya enviado no se toca.")) return;
+        post("cancel", {}, []);
+    });
+
+    // Elegir carpeta: se crea la entrega, se suben sus PDF de uno en uno,
+    // empieza la lectura en segundo plano y el filtro pasa a esa entrega.
+    document.getElementById("psl-folder").addEventListener("change", async function () {
+        const input = this;
+        const files = Array.from(input.files || []).filter(function (f) { return /\.pdf$/i.test(f.name); });
+        input.value = "";
+        if (!files.length) { showToast("La carpeta no tiene ningún PDF.", true); return; }
+        const folder = (files[0].webkitRelativePath || "").split("/")[0] || "";
+        if (!window.confirm("¿Subir y leer los " + files.length + " PDF de la carpeta «" + folder + "»?")) return;
+        const progress = document.getElementById("psl-upload-progress");
+        const bar = document.getElementById("psl-upload-bar");
+        const text = document.getElementById("psl-upload-text");
+        progress.classList.remove("d-none");
+        const headers = {"X-CSRFToken": csrfToken};
+        try {
+            const created = await fetch(URLS.create, {method: "POST", headers: headers,
+                body: new URLSearchParams({folder: folder})}).then(function (r) { return r.json(); });
+            if (!created.ok) throw new Error(created.error || "No se ha podido crear la entrega.");
+            const errors = [];
+            for (let i = 0; i < files.length; i++) {
+                text.textContent = "Subiendo " + (i + 1) + " de " + files.length + ": " + files[i].name;
+                bar.style.width = Math.round(100 * i / files.length) + "%";
+                const body = new FormData();
+                body.append("file", files[i], files[i].name);
+                const res = await fetch(url("upload", created.id), {method: "POST", headers: headers, body: body})
+                    .then(function (r) { return r.json(); })
+                    .catch(function () { return {ok: false, error: files[i].name + ": sin conexión."}; });
+                if (!res.ok) errors.push(res.error);
+            }
+            bar.style.width = "100%";
+            const started = await fetch(url("read", created.id), {method: "POST", headers: headers})
+                .then(function (r) { return r.json(); });
+            if (!started.ok) throw new Error(started.error || "No se ha podido empezar la lectura.");
+            text.textContent = "Subidos " + (files.length - errors.length) + " de " + files.length
+                + ". Leyendo en segundo plano: te llegará un WhatsApp al acabar.";
+            if (errors.length) showToast("No se han subido: " + errors.join(" · "), true);
+            const select = document.getElementById("psl-batch-select");
+            const option = document.createElement("option");
+            option.value = created.id;
+            option.textContent = "#" + created.id + " · " + folder + " · Leyendo";
+            select.insertBefore(option, select.options[1] || null);
+            select.value = String(created.id);
+            selection.clear();
+            htmx.trigger(filters, "change");
+        } catch (err) {
+            text.textContent = "";
+            progress.classList.add("d-none");
+            showToast(err.message || "No se ha podido subir la carpeta.", true);
+        }
+    });
+
+    // Directriz 4.26: pantalla completa del panel de la lista.
+    document.getElementById("psl-fullscreen").addEventListener("click", function () {
+        const box = document.getElementById("psl-list-col").firstElementChild;
+        if (document.fullscreenElement) document.exitFullscreen();
+        else if (box.requestFullscreen) box.requestFullscreen();
+    });
+    document.body.addEventListener("htmx:afterSwap", function (evt) {
+        if (evt.detail.target && evt.detail.target.id === "psl-results") refreshFromFragment();
+    });
+
+    refreshFromFragment();
+}());
+</script>

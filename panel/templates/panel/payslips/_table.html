@@ -1,16 +1,17 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/payslips/_table.html #}
 {% comment %}
 H24 (S149). Tabla de la entrega de nóminas: casilla, una fila por nómina
-(las páginas de un PDF subido) y el menú de tres puntos. El estado de la
-entrega viaja en #psl-fragment-state para repintar el panel de arriba
-sin recargar; mientras se lee o se envía, la tabla se pide sola cada
-pocos segundos (#psl-results, hx-trigger).
+(las páginas de un PDF subido), de todas las entregas o de la elegida, y
+el menú de tres puntos. El estado de la entrega elegida viaja en
+#psl-fragment-state / #psl-batch-state para repintar el panel de arriba;
+mientras alguna entrega se lee o se envía, la tabla se pide sola.
 {% endcomment %}
 <div id="psl-fragment-state" class="d-none"
      data-count="{{ rows|length }}"
      data-sort-active="{% if sort_active %}1{% endif %}"
      data-batch="{{ batch.pk|default:'' }}"
      data-live="{% if batch_live %}1{% endif %}"
+     data-any-live="{% if any_live %}1{% endif %}"
      data-ready="{% if batch_ready %}1{% endif %}"
      data-cancelable="{% if batch_cancelable %}1{% endif %}"
      data-unmatched="{{ count_unmatched|default:0 }}"
@@ -18,13 +19,11 @@ pocos segundos (#psl-results, hx-trigger).
      data-retry="{{ count_retry|default:0 }}"></div>
 <div id="psl-batch-state" class="d-none">
     {% if batch %}
-    <div><strong>{{ batch.get_status_display }}</strong>{% if batch_live %} <span class="spinner-border spinner-border-sm text-secondary"></span>{% endif %}
+    <div><strong>#{{ batch.pk }} · {{ batch.get_status_display }}</strong>{% if batch_live %} <span class="spinner-border spinner-border-sm text-secondary"></span>{% endif %}
         · {{ count_total }} nómina{{ count_total|pluralize }}{% for label, n in count_by_status %} · {{ label|lower }}: {{ n }}{% endfor %}</div>
-    <div class="text-muted">Carpeta «{{ batch.folder_name|default:"—" }}» · iniciada por {{ batch.created_by.user.get_full_name|default:batch.created_by.user.username|default:"—" }} el {{ batch.created_at|date:"d/m/Y H:i" }}</div>
-    {% if batch.read_at %}<div class="text-muted">Leída el {{ batch.read_at|date:"d/m/Y H:i" }}{% if batch.notified_at %} · avisado por WhatsApp{% elif batch.notify_error %} · <span class="text-danger">sin aviso: {{ batch.notify_error }}</span>{% endif %}</div>{% endif %}
-    {% if batch.approved_at %}<div class="text-muted">Visto bueno de {{ batch.approved_by.user.get_full_name|default:batch.approved_by.user.username }} el {{ batch.approved_at|date:"d/m/Y H:i" }}{% if batch.finished_at %} · envío terminado el {{ batch.finished_at|date:"d/m/Y H:i" }}{% endif %}</div>{% endif %}
+    <div class="text-muted">Carpeta «{{ batch.folder_name|default:"—" }}» · iniciada por {{ batch.created_by.user.get_full_name|default:batch.created_by.user.username|default:"—" }} el {{ batch.created_at|date:"d/m/Y H:i" }}{% if batch.read_at %} · leída{% if batch.notified_at %}, avisado por WhatsApp{% elif batch.notify_error %}, <span class="text-danger">sin aviso: {{ batch.notify_error }}</span>{% endif %}{% endif %}{% if batch.approved_at %} · visto bueno de {{ batch.approved_by.user.get_full_name|default:batch.approved_by.user.username }} el {{ batch.approved_at|date:"d/m/Y H:i" }}{% endif %}</div>
     {% else %}
-    <div class="text-muted">Todavía no hay ninguna entrega. Empieza con «Elegir carpeta».</div>
+    <div class="text-muted">Todas las entregas. Para darle el visto bueno, reintentar o anular, elige una en «Entrega»; para una nueva, «Elegir carpeta».</div>
     {% endif %}
 </div>
 <span id="psl-sort-inputs" class="d-none">
@@ -54,34 +53,36 @@ pocos segundos (#psl-results, hx-trigger).
         {% for row in rows %}
         <tr>
             <td><input type="checkbox" class="form-check-input psl-row-check" data-pk="{{ row.pk }}" data-status="{{ row.status }}" data-person="{{ row.person_id|default:'' }}" data-label="{{ row.label }}"></td>
+            <td title="{{ row.batch.folder_name }}">#{{ row.batch_id }} · {{ row.batch.created_at|date:"d/m/Y" }}</td>
             <td class="text-truncate" style="max-width: 16rem;" title="{{ row.original_name }}">{{ row.original_name }}</td>
-            <td>{% if row.page_to %}{% if row.page_from == row.page_to %}{{ row.page_from }}{% else %}{{ row.page_from }}–{{ row.page_to }}{% endif %}{% else %}—{% endif %}</td>
+            <td>{{ row.pages_label|default:"—" }}</td>
             <td>{% if row.person %}{{ row.person_label }}{% if row.match_source == 'MANUAL' %} <span class="text-primary small">(a mano)</span>{% endif %}{% else %}<span class="text-danger">Sin trabajador</span>{% endif %}</td>
             <td>{{ row.dni_found|default:"—" }}</td>
             <td>{{ row.period_label|default:"—" }}</td>
             <td>{% if row.phone_label %}{{ row.phone_label }}{% elif row.person %}<span class="text-danger">sin móvil</span>{% endif %}</td>
             <td><span class="badge {% if row.status == 'SENT' %}text-bg-success{% elif row.status == 'READY' %}text-bg-primary{% elif row.status == 'UNMATCHED' or row.status == 'ERROR' %}text-bg-danger{% elif row.status == 'FILED' %}text-bg-warning{% else %}text-bg-secondary{% endif %}">{{ row.get_status_display }}</span></td>
+            <td>{{ row.sent_at|date:"d/m/Y H:i"|default:"" }}</td>
             <td class="small text-truncate" style="max-width: 20rem;" title="{{ row.note }}">{{ row.note }}</td>
             <td>
                 <div class="dropdown">
                     <button class="btn btn-sm btn-link text-dark" type="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-three-dots-vertical"></i></button>
                     <ul class="dropdown-menu dropdown-menu-end">
-                        {% if batch_ready %}
+                        {% if row.can_change %}
                         <li><a class="dropdown-item psl-row-action" href="#" data-pk="{{ row.pk }}" data-action="assign-open"><i class="bi bi-person-check me-1"></i>Poner el trabajador</a></li>
                         {% if row.status == 'EXCLUDED' %}
                         <li><a class="dropdown-item psl-row-action" href="#" data-pk="{{ row.pk }}" data-action="include"><i class="bi bi-arrow-counterclockwise me-1"></i>Volver a meter</a></li>
                         {% else %}
                         <li><a class="dropdown-item psl-row-action" href="#" data-pk="{{ row.pk }}" data-action="exclude"><i class="bi bi-slash-circle me-1"></i>Dejar fuera</a></li>
                         {% endif %}
+                        {% else %}
+                        <li><span class="dropdown-item-text small text-muted">{% if row.sent_at %}Enviada el {{ row.sent_at|date:"d/m/Y H:i" }}{% else %}Su entrega ya no admite cambios.{% endif %}</span></li>
                         {% endif %}
-                        {% if row.sent_at %}<li><span class="dropdown-item-text small text-muted">Enviada el {{ row.sent_at|date:"d/m/Y H:i" }}</span></li>{% endif %}
-                        {% if not batch_ready and not row.sent_at %}<li><span class="dropdown-item-text small text-muted">Sin acciones en este estado.</span></li>{% endif %}
                     </ul>
                 </div>
             </td>
         </tr>
         {% empty %}
-        <tr><td colspan="10" class="text-muted small py-3">{% if batch %}No hay nóminas con estos filtros.{% else %}Todavía no hay ninguna entrega.{% endif %}</td></tr>
+        <tr><td colspan="12" class="text-muted small py-3">{% if batches %}No hay nóminas con estos filtros.{% else %}Todavía no hay ninguna entrega. Empieza con «Elegir carpeta».{% endif %}</td></tr>
         {% endfor %}
     </tbody>
 </table>
