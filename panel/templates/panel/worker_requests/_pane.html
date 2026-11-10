@@ -76,6 +76,12 @@ acciones. Filtros, orden y selección persistidos por usuario
                 </div>
                 <input type="text" id="wreq-mass-reason" class="form-control form-control-sm" maxlength="500"
                        placeholder="Motivo (para denegar)">
+                {# S149: entrega de nóminas (carpeta de PDF, lectura, visto bueno y envío por WhatsApp). #}
+                {% if can_manage %}
+                <div class="small text-muted fw-bold mt-2">Nóminas</div>
+                <a href="{% url 'panel:payslip_page' %}" class="btn btn-sm btn-outline-primary"
+                   title="Elige la carpeta de las nóminas en PDF: se leen, das el visto bueno y le llega a cada uno la suya por WhatsApp."><i class="bi bi-envelope-paper"></i> Entrega de nóminas</a>
+                {% endif %}
             </div>
         </div>
     </div>

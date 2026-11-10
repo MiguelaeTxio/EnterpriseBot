@@ -98,6 +98,16 @@ from panel.views_inbox import (
 )
 from panel.views_navigation_state import NavigationStateSaveView
 from panel.views_dossier_bundle import DossierBundleEmailView
+# H24 (S149): entrega de nóminas.
+from panel.views_payslips import (
+    PayslipActionView,
+    PayslipBatchCreateView,
+    PayslipMediaView,
+    PayslipPageView,
+    PayslipResultsView,
+    PayslipStartReadingView,
+    PayslipUploadView,
+)
 # H24 (S147): solicitudes de los trabajadores.
 from panel.views_worker_requests import (
     MyRequestCancelView,
@@ -2201,6 +2211,40 @@ urlpatterns = [
         "documentacion/solicitudes/<int:pk>/accion/",
         WorkerRequestActionView.as_view(),
         name="worker_request_action",
+    ),
+    # H24 (S149): entrega de nóminas -- panel/views_payslips.py.
+    path("nominas/", PayslipPageView.as_view(), name="payslip_page"),
+    path(
+        "nominas/resultados/",
+        PayslipResultsView.as_view(),
+        name="payslip_results",
+    ),
+    path(
+        "nominas/nueva/",
+        PayslipBatchCreateView.as_view(),
+        name="payslip_batch_create",
+    ),
+    path(
+        "nominas/<int:pk>/subir/",
+        PayslipUploadView.as_view(),
+        name="payslip_upload",
+    ),
+    path(
+        "nominas/<int:pk>/leer/",
+        PayslipStartReadingView.as_view(),
+        name="payslip_start_reading",
+    ),
+    path(
+        "nominas/<int:pk>/accion/",
+        PayslipActionView.as_view(),
+        name="payslip_action",
+    ),
+    # Sin sesión: Twilio recoge de aquí el PDF de cada nómina (enlace
+    # temporal con token largo).
+    path(
+        "nominas/whatsapp/<str:token>",
+        PayslipMediaView.as_view(),
+        name="payslip_media",
     ),
     path(
         "mi-buzon/<int:pk>/",
