@@ -1570,6 +1570,27 @@ class WorkerClockSetting(models.Model):
         verbose_name="Horario propio hasta",
         help_text="Último día en que vale. Vacío: sin fecha de fin.",
     )
+    # S148 (Miguel Ángel): "poder cambiar el tipo que ficha [...] un solo
+    # trabajador, hacerle una exclusión de lo que es su sección o su
+    # grupo, para que él tenga un tipo de fichaje aparte". Vacío: como
+    # su sección; "normal": botón único aunque su sección fiche por
+    # tipos; "types": por tipos aunque su sección no.
+    CLOCK_MODE_SECTION = ""
+    CLOCK_MODE_NORMAL = "normal"
+    CLOCK_MODE_TYPES = "types"
+    CLOCK_MODE_CHOICES = [
+        (CLOCK_MODE_SECTION, "Como su sección"),
+        (CLOCK_MODE_NORMAL, "Fichaje normal"),
+        (CLOCK_MODE_TYPES, "Por tipos"),
+    ]
+    clock_mode = models.CharField(
+        max_length=10,
+        blank=True,
+        default=CLOCK_MODE_SECTION,
+        choices=CLOCK_MODE_CHOICES,
+        verbose_name="Tipo de fichaje",
+        help_text="Vacío: como su sección.",
+    )
     # S141 (Miguel Ángel): el horario va en el trabajador, no en su
     # usuario del panel: chóferes, gruistas y administrativos no tienen
     # (ni tendrán de momento) acceso al panel, solo al fichaje. Se pone

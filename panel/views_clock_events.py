@@ -514,6 +514,7 @@ class ClockEventsTabView(SupervisorAccessMixin, View):
         )
         if not isinstance(saved_selection, list):
             saved_selection = []
+        from ivr_config.models import WorkdaySchedule
         from panel.person_groups import group_filter_context
 
         company = request.user.company_user.company
@@ -523,6 +524,9 @@ class ClockEventsTabView(SupervisorAccessMixin, View):
             **_settings_context(company),
             "tomorrow": timezone.localdate() + datetime.timedelta(days=1),
             "sections": _sections(company),
+            # S148: horario propio de los marcados (abierto o fijo).
+            "workday_schedules": WorkdaySchedule.objects.filter(
+                company=company).order_by("label"),
             "no_section": NO_SECTION,
             "screen_key": SCREEN_KEY,
             "saved_selection": saved_selection,
@@ -591,6 +595,9 @@ class ClockWorkerSettingsView(SupervisorAccessMixin, View):
         "reminders_off": ("reminders", False, "sin recordatorios"),
         # S143: fichan desde un día (el alta se envía antes).
         "clocks_from": ("clocks_from", None, ""),
+        # S148: tipo de fichaje propio y horario propio de los marcados.
+        "clock_mode": ("clock_mode", None, ""),
+        "schedule": ("schedule", None, ""),
     }
 
     def post(self, request):
@@ -612,6 +619,46 @@ class ClockWorkerSettingsView(SupervisorAccessMixin, View):
             )
         field, value, label = action
         from hr_calendar.clock_settings import set_worker_clocks_from
+
+        if field == "clock_mode":
+            from hr_calendar.clock_settings import set_worker_clock_mode
+            from hr_calendar.models import WorkerClockSetting
+
+            mode = request.POST.get("mode", "")
+            labels = dict(WorkerClockSetting.CLOCK_MODE_CHOICES)
+            if mode not in labels:
+                return _settings_response(
+                    request, "Elige el tipo de fichaje.", error=True)
+            count = set_worker_clock_mode(ids, mode,
+                                          request.user.company_user)
+            return _settings_response(
+                request, "%d trabajador(es): %s." % (
+                    count, labels[mode].lower()),
+            )
+        if field == "schedule":
+            from hr_calendar.clock_settings import set_worker_schedule
+            from ivr_config.models import WorkdaySchedule
+
+            raw = request.POST.get("schedule_id", "")
+            schedule = None
+            if raw:
+                schedule = WorkdaySchedule.objects.filter(
+                    pk=raw if raw.isdigit() else 0, company=company,
+                ).first()
+                if schedule is None:
+                    return _settings_response(
+                        request, "No existe ese horario.", error=True)
+            people = list(PersonIdentity.objects.filter(pk__in=ids))
+            count = set_worker_schedule(people, schedule,
+                                        request.user.company_user)
+            if schedule is None:
+                message = ("%d trabajador(es) sin horario propio: les toca "
+                           "el de su sección o el de por defecto." % count)
+            else:
+                message = "%d trabajador(es) con el horario %s (%s)." % (
+                    count, schedule.label,
+                    "abierto" if schedule.is_open else "fijo")
+            return _settings_response(request, message)
 
         if field == "clocks_from":
             try:

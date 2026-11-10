@@ -48,8 +48,11 @@ class WorkerClockState:
     section_clocks: bool = True
     worker_clocks: bool = True
     reminders: bool = False
-    # S141: su sección ficha por tipos (Grúas, Asistencia).
+    # S141: su sección ficha por tipos (Grúas, Asistencia). S148: o él,
+    # con su tipo de fichaje propio (clock_mode).
     uses_types: bool = False
+    # S148: "" como su sección, "normal" o "types".
+    clock_mode: str = ""
     # S143: los avisos que ha elegido (claves de WorkerClockSetting;
     # None: los de por defecto).
     in_reminders: list = None
@@ -276,11 +279,18 @@ def uses_types(company_user, day=None):
     True if the user's section (today) clocks by types.
     ---
     True si la sección vigente del usuario ficha por tipos. Sin ficha de
-    Personal o sin sección, no.
+    Personal o sin sección, no. S148: el tipo de fichaje propio del
+    trabajador (WorkerClockSetting.clock_mode) manda sobre su sección.
     """
     try:
         person = company_user.person_identity
     except ObjectDoesNotExist:
+        return False
+    mode = WorkerClockSetting.objects.filter(
+        person=person).values_list("clock_mode", flat=True).first()
+    if mode == WorkerClockSetting.CLOCK_MODE_TYPES:
+        return True
+    if mode == WorkerClockSetting.CLOCK_MODE_NORMAL:
         return False
     section = current_sections([person.pk], day).get(person.pk)
     if section is None:
@@ -343,14 +353,20 @@ def worker_states(people, day=None):
     for pk in ids:
         section = sections.get(pk)
         setting = settings.get(pk)
+        mode = setting.clock_mode if setting else ""
+        section_types = (by_types.get(section.pk, False)
+                         if section is not None else False)
         states[pk] = WorkerClockState(
             section=section,
             section_clocks=(clocks.get(section.pk, True)
                             if section is not None else True),
             worker_clocks=setting.clocks if setting else True,
             reminders=setting.reminders if setting else False,
-            uses_types=(by_types.get(section.pk, False)
-                        if section is not None else False),
+            uses_types=(
+                True if mode == WorkerClockSetting.CLOCK_MODE_TYPES
+                else False if mode == WorkerClockSetting.CLOCK_MODE_NORMAL
+                else section_types),
+            clock_mode=mode,
             in_reminders=setting.in_reminder_keys() if setting else None,
             out_reminders=(setting.out_reminder_keys()
                            if setting else None),
@@ -374,6 +390,27 @@ def set_worker_flag(person_ids, field, value, by):
             person_id=pk,
         )
         setattr(setting, field, bool(value))
+        setting.updated_by = by
+        setting.save()
+        count += 1
+    return count
+
+
+def set_worker_clock_mode(person_ids, mode, by):
+    """
+    Own clock mode of several workers ("" back to their section's).
+    ---
+    Tipo de fichaje propio de varios trabajadores (S148): "normal",
+    "types" o "" (vuelven al de su sección). Devuelve cuántos.
+    """
+    if mode not in dict(WorkerClockSetting.CLOCK_MODE_CHOICES):
+        raise ValueError(mode)
+    count = 0
+    for pk in person_ids:
+        setting, _created = WorkerClockSetting.objects.get_or_create(
+            person_id=pk,
+        )
+        setting.clock_mode = mode
         setting.updated_by = by
         setting.save()
         count += 1

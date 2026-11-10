@@ -200,6 +200,30 @@ recordatorios, secciones que fichan y permiso de envío).
                             <button type="button" class="btn btn-sm btn-outline-secondary clk-worker-btn" data-action="reminders_off"
                                     title="Los marcados no reciben recordatorios.">Sin recordatorios</button>
                         </div>
+                        {# S148: tipo de fichaje y horario propios de los marcados, por encima de su sección o grupo. #}
+                        <div class="d-flex flex-wrap gap-1 mt-1">
+                            <div class="input-group input-group-sm w-auto">
+                                <select class="form-select form-select-sm" id="clk-clock-mode" aria-label="Tipo de fichaje"
+                                        title="Tipo de fichaje propio de los marcados, aunque su sección fiche de otra forma.">
+                                    <option value="normal">Fichaje normal</option>
+                                    <option value="types">Por tipos</option>
+                                    <option value="">Como su sección</option>
+                                </select>
+                                <button type="button" class="btn btn-outline-primary" id="clk-clock-mode-set"
+                                        title="Pone a los marcados ese tipo de fichaje. «Como su sección» les quita el propio.">Poner tipo</button>
+                            </div>
+                            <div class="input-group input-group-sm w-auto">
+                                <select class="form-select form-select-sm" id="clk-schedule" aria-label="Horario"
+                                        title="Horario propio de los marcados: abierto (no se compara la puntualidad) o fijo.">
+                                    {% for schedule in workday_schedules %}
+                                    <option value="{{ schedule.pk }}">{{ schedule.label }} ({% if schedule.is_open %}abierto{% else %}fijo{% endif %})</option>
+                                    {% endfor %}
+                                    <option value="">Quitar el horario propio</option>
+                                </select>
+                                <button type="button" class="btn btn-outline-primary" id="clk-schedule-set"
+                                        title="Pone a los marcados ese horario como horario propio (lo mismo que en Horarios). «Quitar» les devuelve el de su sección o el de por defecto.">Poner horario</button>
+                            </div>
+                        </div>
                     </div>
                     {# S144: reenvío del alta (la misma acción que en Personal). #}
                     <div class="col-6 pe-2 border-top pt-1 mt-1">
@@ -261,6 +285,8 @@ recordatorios, secciones que fichan y permiso de envío).
 .clk-scroll-both { overflow: auto; }
 #clk-bottom-panel:fullscreen { background-color: var(--bs-body-bg); padding: 1rem; }
 #clk-bottom-panel:fullscreen #clk-results-scroll { height: calc(100vh - 5rem); }
+/* S148: los desplegables del panel de arriba se abren por encima (strategy fixed) y con scroll propio. */
+#clk-top-panel .dropdown-menu { max-height: 70vh; overflow-y: auto; }
 .clk-types-menu { min-width: 34rem; max-height: 70vh; overflow-y: auto; }
 .clk-types-menu .clk-type-name { width: 11rem !important; }
 .clk-types-menu .clk-type-order { width: 4.5rem !important; }
@@ -530,6 +556,19 @@ recordatorios, secciones que fichan y permiso de envío).
             if (!(await massConfirm(btn.title || btn.textContent.trim()))) return;
             postSetting("{% url 'panel:clock_settings_workers' %}", {action: btn.dataset.action}, true);
         });
+    });
+    // S148: tipo de fichaje y horario propios de los marcados.
+    document.getElementById("clk-clock-mode-set").addEventListener("click", async function () {
+        const select = document.getElementById("clk-clock-mode");
+        if (!selection.size) { showToast("Marca algún trabajador.", true); return; }
+        if (!(await massConfirm("Tipo de fichaje: " + select.options[select.selectedIndex].textContent.trim()))) return;
+        postSetting("{% url 'panel:clock_settings_workers' %}", {action: "clock_mode", mode: select.value}, true);
+    });
+    document.getElementById("clk-schedule-set").addEventListener("click", async function () {
+        const select = document.getElementById("clk-schedule");
+        if (!selection.size) { showToast("Marca algún trabajador.", true); return; }
+        if (!(await massConfirm("Horario: " + select.options[select.selectedIndex].textContent.trim()))) return;
+        postSetting("{% url 'panel:clock_settings_workers' %}", {action: "schedule", schedule_id: select.value}, true);
     });
     // S143: "Ficha desde" un día.
     document.getElementById("clk-clocks-from").addEventListener("click", async function () {
