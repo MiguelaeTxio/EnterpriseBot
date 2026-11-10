@@ -6990,11 +6990,15 @@ class PersonGroupFromSelectionView(CompanyUserRequiredMixin, View):
         })
 
 
-class PersonGroupTemplateDeleteView(DocsUploadAccessMixin, View):
+class PersonGroupTemplateDeleteView(CompanyUserRequiredMixin, View):
     """
     H31 (S113). POST: borra un grupo de selección -- nunca toca a las
     personas en sí, solo el conjunto guardado con nombre. S147: uno con
     subgrupos no se borra (primero sus subgrupos).
+    S148: también desde la papelera del árbol en cualquier vista de
+    personal (como crearlo, S149): basta con ser usuario de la empresa,
+    porque solo quien creó el grupo lo borra (delete_group). `pg_id`:
+    los ids del árbol de esa vista.
     """
 
     def post(self, request, group_pk):
@@ -7009,12 +7013,17 @@ class PersonGroupTemplateDeleteView(DocsUploadAccessMixin, View):
             delete_group(group, editor=request.user.company_user)
         except GroupError as exc:
             return JsonResponse({"ok": False, "error": str(exc)}, status=400)
+        context = {"person_group_nodes": group_tree(
+            request.user.company_user)}
+        pg_id = re.sub(r"[^A-Za-z0-9_-]", "",
+                       request.POST.get("pg_id", ""))[:40]
+        if pg_id:
+            context["pg_id"] = pg_id
         return JsonResponse({
             "ok": True,
             "tree_html": render_to_string(
                 "panel/documentation_h30/_person_groups_tree.html",
-                {"person_group_nodes": group_tree(
-                    request.user.company_user)}, request=request,
+                context, request=request,
             ),
             "parents": parent_choices(editor=request.user.company_user),
         })

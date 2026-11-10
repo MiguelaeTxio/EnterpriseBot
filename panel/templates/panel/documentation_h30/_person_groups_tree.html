@@ -14,6 +14,10 @@ vista sus propios ids (por defecto, los de Personal).
 S147: los grupos van en carpetas por quién los creó (Generales,
 Usuarios con una por usuario, Propios): filas person-group-folder, sin
 casilla, que solo se pliegan; cada grupo lleva data-folder.
+S148 (Miguel Ángel): "no hay forma de eliminar un grupo de selección";
+"siempre y cuando que el usuario haya sido el que lo haya creado": papelera
+(.person-group-delete) en cada grupo propio sin subgrupos (uno con
+subgrupos se borra cuando ya no los tiene). La maneja el JS de cada árbol.
 {% endcomment %}
 {% with gid=pg_id|default:"personGroup" %}
 {% for node in person_group_nodes %}
@@ -52,6 +56,11 @@ casilla, que solo se pliegan; cada grupo lleva data-folder.
             <input class="form-check-input person-group-select-checkbox" type="checkbox" id="{{ gid }}Select{{ node.group.pk }}" data-pk="{{ node.group.pk }}">
             <label class="form-check-label{% if not node.group.parent_id %} fw-bold{% endif %}" for="{{ gid }}Select{{ node.group.pk }}">{{ node.group.name }} ({{ node.total }})</label>
         </div>
+        {% if node.can_edit and not node.children %}
+        <button type="button" class="btn btn-link btn-sm p-0 ms-auto text-danger person-group-delete" data-pk="{{ node.group.pk }}" data-name="{{ node.group.name }}" title="Eliminar el grupo «{{ node.group.name }}» (no afecta a las personas)">
+            <i class="bi bi-trash"></i>
+        </button>
+        {% endif %}
     </div>
 </li>
 {% endif %}

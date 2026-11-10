@@ -126,6 +126,10 @@ window.EbGroupGet[pg_prefix]() -> {persons: [pk...], users: [pk...]}.
         });
     }
     list.addEventListener('click', function (ev) {
+        // S148: papelera de cada grupo propio sin subgrupos; los demás
+        // grupos marcados siguen marcados y la selección se recalcula.
+        const trash = ev.target.closest('.person-group-delete');
+        if (trash) { deleteGroup(trash.dataset.pk, trash.dataset.name); return; }
         const toggle = ev.target.closest('.person-group-toggle');
         if (!toggle) { return; }
         const pk = toggle.dataset.pk;
@@ -134,6 +138,26 @@ window.EbGroupGet[pg_prefix]() -> {persons: [pk...], users: [pk...]}.
         if (window.EbNavState) { window.EbNavState.save('person_groups', {collapsed: Array.from(collapsed)}); }
     });
     applyCollapsed();
+    function deleteGroup(pk, name) {
+        if (!confirm('¿Eliminar el grupo «' + name + '»? No afecta a las personas en sí.')) { return; }
+        const kept = Array.from(list.querySelectorAll('.person-group-select-checkbox:checked'))
+            .map((cb) => cb.dataset.pk).filter((k) => k !== String(pk));
+        const body = new FormData();
+        body.append('pg_id', '{{ pg_prefix }}Group');
+        fetch('{% url "panel:documentation_personal_group_delete" 0 %}'.replace('/0/', '/' + pk + '/'), {
+            method: 'POST', headers: {'X-CSRFToken': csrf()}, body: body,
+        }).then((r) => r.json().catch(() => ({ok: false, error: 'No se ha podido eliminar (' + r.status + ').'})))
+            .then((data) => {
+                if (!data.ok) { say(data.error || 'No se ha podido eliminar.', true); return; }
+                list.innerHTML = data.tree_html;
+                kept.forEach((k) => { if (box(k)) { box(k).checked = true; } });
+                applyCollapsed();
+                const select = window.EbGroupSelect && window.EbGroupSelect['{{ pg_prefix }}'];
+                if (select) { select(checkedPeople()); }
+                say('Grupo «' + name + '» eliminado.', false);
+            })
+            .catch(() => say('Sin conexión con el servidor: no se ha eliminado nada.', true));
+    }
     // S149: grupo nuevo con la selección actual de la vista.
     const saveBtn = document.getElementById('{{ pg_prefix }}-group-new-save');
     const nameInput = document.getElementById('{{ pg_prefix }}-group-new-name');

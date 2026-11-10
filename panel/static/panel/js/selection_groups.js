@@ -282,6 +282,9 @@
             });
         }
         list.addEventListener("click", function (ev) {
+            // S148: papelera de cada grupo propio sin subgrupos.
+            const trash = ev.target.closest(".person-group-delete");
+            if (trash) { remove(trash.dataset.pk, trash.dataset.name); return; }
             const toggle = ev.target.closest(".person-group-toggle");
             if (!toggle) return;
             const pk = toggle.dataset.pk;
@@ -370,25 +373,31 @@
                 });
         }
 
-        function remove() {
-            if (!editingPk) return;
-            if (!confirm("¿Eliminar este grupo? No afecta a las " + nounPlural + " en sí.")) return;
+        function remove(trashPk, trashName) {
+            const pk = (typeof trashPk === "string" && trashPk) || editingPk;
+            if (!pk) return;
+            const label = trashName ? "«" + trashName + "»" : "este grupo";
+            if (!confirm("¿Eliminar " + label + "? No afecta a las " + nounPlural + " en sí.")) return;
             const result = $("FormResult");
-            fetch(cfg.deleteUrl(editingPk), {method: "POST", headers: {"X-CSRFToken": getCookie("csrftoken")}})
+            fetch(cfg.deleteUrl(pk), {method: "POST", headers: {"X-CSRFToken": getCookie("csrftoken")}})
                 .then((r) => r.json())
                 .then((data) => {
                     if (data.ok) {
-                        redraw(data, "");
-                        $("Name").value = "";
+                        const keep = String(editingPk) !== String(pk) ? editingPk : "";
+                        redraw(data, keep);
+                        if (!keep) $("Name").value = "";
                         cfg.toast("Grupo eliminado.");
                     } else {
                         result.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">' + esc(data.error || "No se ha podido eliminar.") + "</div>";
                     }
+                })
+                .catch(() => {
+                    result.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">No se ha podido eliminar el grupo.</div>';
                 });
         }
 
         $("SaveBtn").addEventListener("click", save);
-        $("DeleteBtn").addEventListener("click", remove);
+        $("DeleteBtn").addEventListener("click", function () { remove(); });
         $("ResetBtn").addEventListener("click", reset);
         applyCollapsed();
         buildParentPicker();

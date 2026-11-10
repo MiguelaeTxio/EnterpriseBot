@@ -1024,6 +1024,8 @@ las filas de debajo se desplacen de verdad.
         });
     }
     groupList.addEventListener('click', function (ev) {
+        const trash = ev.target.closest('.person-group-delete');
+        if (trash) { deletePersonGroup(trash.dataset.pk, trash.dataset.name); return; }
         const toggle = ev.target.closest('.person-group-toggle');
         if (!toggle) return;
         const pk = toggle.dataset.pk;
@@ -1129,23 +1131,28 @@ las filas de debajo se desplacen de verdad.
     }
     window.savePersonGroup = savePersonGroup;
 
-    function deletePersonGroup() {
-        if (!personGroupEditingPk) return;
-        if (!confirm('¿Eliminar este grupo? No afecta a las personas en sí.')) return;
-        const pk = personGroupEditingPk;
+    // S148: también desde la papelera de cada grupo propio del árbol.
+    function deletePersonGroup(trashPk, trashName) {
+        const pk = trashPk || personGroupEditingPk;
+        if (!pk) return;
+        const label = trashName ? '«' + trashName + '»' : 'este grupo';
+        if (!confirm('¿Eliminar ' + label + '? No afecta a las personas en sí.')) return;
         const resultDiv = document.getElementById('personGroupFormResult');
         fetch(`/panel/documentacion/personal/grupos/${pk}/eliminar/`, {
             method: 'POST',
             headers: {'X-CSRFToken': getCookie('csrftoken')},
         }).then((r) => r.json()).then((data) => {
             if (data.ok) {
-                redrawGroups(data, '');
-                document.getElementById('personGroupName').value = '';
+                const keep = String(personGroupEditingPk) !== String(pk) ? personGroupEditingPk : '';
+                redrawGroups(data, keep);
+                if (!keep) document.getElementById('personGroupName').value = '';
                 showPersonGroupToast('Grupo eliminado.');
+            } else if (trashPk) {
+                showPersonGroupToast(data.error || 'No se ha podido eliminar.', true);
             } else {
                 resultDiv.innerHTML = `<div class="alert alert-danger py-1 px-2 small mb-0">${data.error || 'No se ha podido eliminar.'}</div>`;
             }
-        });
+        }).catch(() => showPersonGroupToast('No se ha podido eliminar el grupo.', true));
     }
     window.deletePersonGroup = deletePersonGroup;
 
