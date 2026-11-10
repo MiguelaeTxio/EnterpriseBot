@@ -34,6 +34,7 @@ from document_explorer.document_check_service import (
     MIN_TEXT_CHARS,
     apply_machine_facts,
     check_document,
+    fill_purchase_date,
 )
 from document_explorer.models import DocumentIndexEntry
 from fleet.models import MachineAsset
@@ -67,6 +68,9 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--apply", action="store_true")
         parser.add_argument("--log-file", required=True)
+        parser.add_argument(
+            "--only-purchase", action="store_true",
+            help="S148: solo la fecha de compra (sin lecturas de Gemini)")
 
     def handle(self, *args, **options):
         log_file = open(options["log_file"], "a", encoding="utf-8")
@@ -88,6 +92,21 @@ class Command(BaseCommand):
         _log("Datos de máquinas desde sus documentos (S148) -- %s" % (
             "APLICANDO" if apply
             else "SIMULACIÓN (sin --apply no se escribe)"))
+        # S148: fecha de compra vacía desde facturas de compra,
+        # compraventas y leasing (sin Gemini: su fecha ya está leída).
+        bought = 0
+        for machine in MachineAsset.objects.filter(
+                is_active=True, purchase_date__isnull=True):
+            date = fill_purchase_date(machine, save=apply)
+            if date:
+                bought += 1
+                _plain("    %s: fecha de compra %s" % (
+                    machine.code, date.strftime("%d/%m/%Y")))
+        _log("Fecha de compra: %d máquinas" % bought)
+        if options["only_purchase"]:
+            _plain("Escrito en la BD: %s" % ("sí" if apply else "no"))
+            log_file.close()
+            return
         machine_ct = ContentType.objects.get_for_model(MachineAsset)
         machines = [
             m for m in MachineAsset.objects.filter(

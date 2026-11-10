@@ -459,3 +459,44 @@ def merge_machine_facts(readings):
         name: counter.most_common(1)[0][0]
         for name, counter in votes.items()
     }
+
+
+# S148, Miguel Ángel: "incluyamos la fecha de compra". La de la factura
+# de compra, el contrato de compraventa o el de leasing (la más antigua:
+# la adquisición; las facturas posteriores no la cambian). Nunca la de
+# primera matriculación del permiso, que en una máquina de segunda mano
+# no es la de compra.
+PURCHASE_TYPES = ("FACTURA_COMPRA", "CONTRATO_COMPRAVENTA", "LEASING")
+
+
+def fill_purchase_date(machine, save=True):
+    """
+    Fill the EMPTY purchase date from the machine's purchase documents.
+
+    Returns the date written, or None.
+    ---
+    Rellena la fecha de compra VACÍA con la fecha (de emisión) más
+    antigua de sus facturas de compra, compraventas o leasing. Nunca
+    sobrescribe. Devuelve la fecha escrita o None.
+    """
+    from django.contrib.contenttypes.models import ContentType
+
+    from document_explorer.models import DocumentIndexEntry
+    from fleet.models import MachineAsset
+
+    if machine.purchase_date:
+        return None
+    first = DocumentIndexEntry.objects.filter(
+        domain_content_type=ContentType.objects.get_for_model(MachineAsset),
+        domain_object_id=machine.pk,
+        deleted_at__isnull=True,
+        entry_kind=DocumentIndexEntry.KIND_FILE,
+        document_type__code__in=PURCHASE_TYPES,
+        issue_date__isnull=False,
+    ).order_by("issue_date").values_list("issue_date", flat=True).first()
+    if first is None:
+        return None
+    machine.purchase_date = first
+    if save:
+        machine.save(update_fields=["purchase_date"])
+    return first

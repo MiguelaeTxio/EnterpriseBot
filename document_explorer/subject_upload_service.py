@@ -289,6 +289,18 @@ def _queue_entry_hooks(subject, document_type, entry):
     # H31 (S148): lo que entra por el panel baja también a la carpeta
     # local (OneDrive) de su persona o máquina, como en el alta.
     queue_for_entry(entry)
+    from django.db import transaction
+
+    from document_explorer.document_check_service import (
+        PURCHASE_TYPES, fill_purchase_date,
+    )
+
+    if (not isinstance(subject, PersonIdentity)
+            and document_type.code in PURCHASE_TYPES):
+        # S148: la factura de compra / compraventa / leasing da la
+        # fecha de compra si la ficha no tiene.
+        transaction.on_commit(lambda: fill_purchase_date(
+            type(subject).objects.get(pk=subject.pk)))
     if isinstance(subject, PersonIdentity):
         from document_explorer.employer_service import (
             queue_contract_refresh,

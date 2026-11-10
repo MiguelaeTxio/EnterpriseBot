@@ -2481,7 +2481,7 @@ modal de alta por completo, nunca dando pie a seguir con esta persona).
             perFileTypes = data.per_file.map((pf) => pf.document_type_code);
             perFileExpiryHints = data.per_file.map((pf) => pf.expiry_hint || '');
             perFileIssueHints = data.per_file.map((pf) => pf.issue_hint || '');
-            for (const field of ['dni', 'first_surname', 'second_surname', 'given_name', 'birth_date', 'address_street', 'city', 'province', 'hire_date', 'ss_affiliation_number']) {
+            for (const field of ['dni', 'first_surname', 'second_surname', 'given_name', 'birth_date', 'address_street', 'city', 'province', 'hire_date', 'ss_affiliation_number', 'professional_category']) {
                 if (draft[field]) { form.elements[field].value = draft[field]; }
             }
             // S146: la empresa leída de los documentos solo preselecciona

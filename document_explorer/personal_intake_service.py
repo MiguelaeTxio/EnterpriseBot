@@ -90,6 +90,7 @@ def _build_response_schema():
             "province_hint": {"type": "string"},
             "employer_company_hint": {"type": "string"},
             "hire_date_hint": {"type": "string"},
+            "professional_category_hint": {"type": "string"},
         },
         "required": [
             "document_type_code", "confidence", "reasoning",
@@ -97,6 +98,7 @@ def _build_response_schema():
             "dni_hint", "ss_number_hint", "birth_date_hint", "expiry_hint", "issue_hint",
             "address_hint", "city_hint", "province_hint",
             "employer_company_hint", "hire_date_hint",
+            "professional_category_hint",
         ],
     }
 
@@ -166,8 +168,9 @@ la fecha de nacimiento, y -- si el reverso trae el domicilio -- la \
 dirección (calle y número), la población y la provincia, cada una \
 en su propio campo, tal cual aparecen.%s
    - Si es un CONTRATO laboral: el nombre de la empresa empleadora \
-real (tal cual aparece, sin normalizar), y la fecha de inicio/alta \
-en la empresa (formato AAAA-MM-DD).
+real (tal cual aparece, sin normalizar), la fecha de inicio/alta \
+en la empresa (formato AAAA-MM-DD), y la categoría o grupo \
+profesional del trabajador (la ocupación o puesto, tal cual aparece).
    - Cualquier campo que no aparezca o no se pueda leer con \
 confianza, déjalo como cadena vacía -- nunca inventes un valor.
 
@@ -564,6 +567,7 @@ def merge_person_draft(extractions: list, filenames: list = None) -> dict:
         "given_name": "", "birth_date": "",
         "address_street": "", "city": "", "province": "",
         "employer_company": "", "hire_date": "", "ss_affiliation_number": "",
+        "professional_category": "",
     }
     IDENTITY_TYPES = ("DNI", "NIE")
     warnings = []
@@ -700,6 +704,11 @@ def merge_person_draft(extractions: list, filenames: list = None) -> dict:
                 )
             if not draft["hire_date"] and result.get("hire_date_hint"):
                 draft["hire_date"] = result["hire_date_hint"]
+            # S148: categoría profesional del contrato.
+            if not draft["professional_category"] and result.get(
+                    "professional_category_hint"):
+                draft["professional_category"] = result[
+                    "professional_category_hint"].strip()[:150]
     # H31 (S101): aviso único y agregado, nunca uno por documento --
     # si se conoce el número de afiliación (de cualquier documento)
     # pero ninguno de los subidos es de verdad la Tarjeta, hace falta

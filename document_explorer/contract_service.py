@@ -48,6 +48,7 @@ _CONTRACT_SCHEMA = {
         "start_date": {"type": "string"},
         "end_date": {"type": "string"},
         "is_indefinite": {"type": "boolean"},
+        "professional_category": {"type": "string"},
     },
     "required": [
         "employer_tax_id", "start_date", "end_date", "is_indefinite",
@@ -117,7 +118,10 @@ def read_contract(entry):
         "+ duración), AAAA-MM-DD; cadena vacía si es indefinido, de fin "
         "de obra sin fecha, o no se lee.\n"
         "- is_indefinite: true si es indefinido.\n"
-        "No inventes ninguna fecha."
+        "- professional_category: categoría o grupo profesional del "
+        "TRABAJADOR (ocupación o puesto), tal cual aparece; cadena "
+        "vacía si no figura.\n"
+        "No inventes ninguna fecha ni ningún dato."
     ) % (NONE_CODE, options)
     response = _generate_content_with_retry(
         get_gemini_client(),
@@ -143,7 +147,28 @@ def read_contract(entry):
         "start_date": start,
         "end_date": None if answer.get("is_indefinite") else end,
         "is_indefinite": bool(answer.get("is_indefinite")),
+        "professional_category": (
+            answer.get("professional_category") or "").strip(),
     }
+
+
+def apply_professional_category(person, reading):
+    """
+    S148: the worker's professional category from the contract, if
+    the file has none. Returns what was written or "".
+    ---
+    Categoría profesional del contrato, solo si la ficha no tiene.
+    """
+    category = ((reading or {}).get("professional_category") or "")
+    max_length = person._meta.get_field("professional_category").max_length
+    category = category.strip()[:max_length]
+    if not category or (person.professional_category or "").strip():
+        return ""
+    person.professional_category = category
+    person.save(update_fields=["professional_category", "updated_at"])
+    logger.info("# [CONTRACT] Persona %s: categoría %s del contrato",
+                person.pk, category)
+    return category
 
 
 def dates_to_write(entry, reading):
