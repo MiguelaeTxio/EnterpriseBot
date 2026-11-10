@@ -34,7 +34,6 @@ from document_explorer.document_check_service import (
     MIN_TEXT_CHARS,
     apply_machine_facts,
     check_document,
-    fill_purchase_date,
 )
 from document_explorer.models import DocumentIndexEntry
 from fleet.models import MachineAsset
@@ -92,16 +91,10 @@ class Command(BaseCommand):
         _log("Datos de máquinas desde sus documentos (S148) -- %s" % (
             "APLICANDO" if apply
             else "SIMULACIÓN (sin --apply no se escribe)"))
-        # S148: fecha de compra vacía desde facturas de compra,
-        # compraventas y leasing (sin Gemini: su fecha ya está leída).
-        bought = 0
-        for machine in MachineAsset.objects.filter(
-                is_active=True, purchase_date__isnull=True):
-            date = fill_purchase_date(machine, save=apply)
-            if date:
-                bought += 1
-                _plain("    %s: fecha de compra %s" % (
-                    machine.code, date.strftime("%d/%m/%Y")))
+        # S148: fecha de compra vacía = la más antigua de sus facturas de
+        # compra, compraventas y leasing: la fecha ya registrada o, si no
+        # la tienen, la que lee Gemini (como mucho 4 por máquina).
+        bought = self._purchase_dates(apply, _log, _plain)
         _log("Fecha de compra: %d máquinas" % bought)
         if options["only_purchase"]:
             _plain("Escrito en la BD: %s" % ("sí" if apply else "no"))
@@ -191,3 +184,72 @@ class Command(BaseCommand):
             _plain("%s: %d" % (key, totals[key]))
         _plain("Escrito en la BD: %s" % ("sí" if apply else "no"))
         log_file.close()
+
+    def _purchase_dates(self, apply, _log, _plain):
+        """
+        S148: empty purchase dates from the purchase documents.
+        ---
+        Fechas de compra vacías desde facturas de compra, compraventas
+        y leasing (la más antigua). Devuelve cuántas máquinas.
+        """
+        from document_explorer.document_check_service import PURCHASE_TYPES
+
+        machine_ct = ContentType.objects.get_for_model(MachineAsset)
+        machines = {
+            m.pk: m for m in MachineAsset.objects.filter(
+                is_active=True, purchase_date__isnull=True)
+        }
+        by_machine = collections.defaultdict(list)
+        for entry in DocumentIndexEntry.objects.filter(
+            domain_content_type=machine_ct,
+            domain_object_id__in=list(machines),
+            deleted_at__isnull=True,
+            entry_kind=DocumentIndexEntry.KIND_FILE,
+            document_type__code__in=PURCHASE_TYPES,
+        ).select_related("document_type").order_by("pk"):
+            by_machine[entry.domain_object_id].append(entry)
+        _log("Fecha de compra: %d máquinas sin fecha con facturas de "
+             "compra, compraventas o leasing" % len(by_machine))
+        start = datetime.datetime.now()
+        bought = 0
+        for number, (pk, entries) in enumerate(by_machine.items(), 1):
+            machine = machines[pk]
+            dates = [(e.issue_date, e) for e in entries if e.issue_date]
+            for entry in [e for e in entries if not e.issue_date][:4]:
+                text = entry.ocr_text or ""
+                data = b""
+                if len(text.strip()) < MIN_TEXT_CHARS:
+                    try:
+                        data = download_bytes(entry.bucket, entry.blob_name)
+                    except Exception as error:  # noqa: BLE001
+                        _plain("    %s: no se pudo descargar (%s)" % (
+                            entry.name, error))
+                        continue
+                result = check_document(
+                    document_type=entry.document_type, is_machine=True,
+                    data=data, filename=entry.name, text=text,
+                ) or {}
+                if result.get("type_mismatch"):
+                    continue
+                read = (result.get("facts") or {}).get("document_date")
+                if read:
+                    dates.append((read, entry))
+            if dates:
+                date, entry = min(dates, key=lambda pair: pair[0])
+                bought += 1
+                _plain("    %s: fecha de compra %s  [%s id=%s]" % (
+                    machine.code, date.strftime("%d/%m/%Y"),
+                    entry.document_type.code, entry.pk))
+                if apply:
+                    close_old_connections()
+                    machine.purchase_date = date
+                    machine.save(update_fields=["purchase_date"])
+            elapsed = (datetime.datetime.now() - start).total_seconds()
+            eta = elapsed / number * (len(by_machine) - number)
+            end = datetime.datetime.now() + datetime.timedelta(seconds=eta)
+            _log("Progreso: %d/%d (%d%%) -- ETA %dm%02ds (fin aprox. %s) "
+                 "-- con fecha %d" % (
+                     number, len(by_machine),
+                     100 * number // len(by_machine), eta // 60, eta % 60,
+                     end.strftime("%H:%M:%S"), bought))
+        return bought

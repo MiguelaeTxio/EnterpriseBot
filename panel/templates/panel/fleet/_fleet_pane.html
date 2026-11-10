@@ -849,7 +849,7 @@ la lista hace scroll. Dos paneles:
                 }
                 typeCodes = res.per_file.map(function (pf) { return pf.document_type_code; });
                 const draft = res.draft || {};
-                ["plate", "chassis_number", "brand_model"].forEach(function (name) {
+                ["plate", "chassis_number", "brand_model", "purchase_date"].forEach(function (name) {
                     if (draft[name] && form().elements[name]) { form().elements[name].value = draft[name]; }
                 });
                 insurance = draft.insurance_info || "";

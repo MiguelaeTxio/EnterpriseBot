@@ -91,6 +91,7 @@ _SCHEMA = {
         "brand_model": {"type": "string"},
         "insurer": {"type": "string"},
         "policy_number": {"type": "string"},
+        "document_date": {"type": "string"},
     },
     "required": ["detected_type_code", "detected_description"],
 }
@@ -136,9 +137,12 @@ def _prompt(candidates, chosen_type, is_machine):
         "- insurer: compañía aseguradora; vacío si no es un documento de "
         "seguro.\n"
         "- policy_number: número de póliza; vacío si no aparece.\n"
+        "- document_date: si es una factura, un contrato de compraventa "
+        "o de leasing, su fecha de emisión o de firma, AAAA-MM-DD; vacío "
+        "en cualquier otro documento o si no se lee.\n"
         if is_machine else
-        "- plate, chassis_number, brand_model, insurer, policy_number: "
-        "vacíos.\n"
+        "- plate, chassis_number, brand_model, insurer, policy_number, "
+        "document_date: vacíos.\n"
     )
     return (
         "Eres un asistente que revisa documentación de un grupo de "
@@ -300,8 +304,26 @@ def check_document(*, document_type, is_machine, data, filename, text):
             "brand_model": (answer.get("brand_model") or "").strip()[:200],
             "insurer": (answer.get("insurer") or "").strip()[:100],
             "policy_number": (answer.get("policy_number") or "").strip()[:60],
+            "document_date": parse_document_date(answer.get("document_date")),
         }
     return result
+
+
+def parse_document_date(value):
+    """
+    S148: an ISO date read by Gemini, only if plausible (1970..today).
+    ---
+    Fecha AAAA-MM-DD leída, solo si es verosímil; si no, None.
+    """
+    import datetime
+
+    try:
+        date = datetime.date.fromisoformat((value or "").strip()[:10])
+    except ValueError:
+        return None
+    if not datetime.date(1970, 1, 1) <= date <= datetime.date.today():
+        return None
+    return date
 
 
 def apply_machine_facts(machine, document_type_code, facts, save=True):
@@ -326,6 +348,11 @@ def apply_machine_facts(machine, document_type_code, facts, save=True):
         read["insurance_info"] = insurance
 
     filled, different, update_fields = {}, {}, []
+    # S148: fecha de compra (factura de compra, compraventa, leasing),
+    # solo si la ficha no tiene; nunca se compara (las facturas
+    # posteriores no la cambian).
+    purchase = (facts.get("document_date")
+                if document_type_code in PURCHASE_TYPES else None)
     # S148: si el documento trae otra matrícula, es de otro vehículo
     # (caso real: el recibo del seguro de G09 archivado en G15) -- no se
     # toma ningún dato suyo; solo se avisa de la matrícula.
@@ -333,6 +360,10 @@ def apply_machine_facts(machine, document_type_code, facts, save=True):
     if read.get("plate") and current_plate and current_plate != read["plate"]:
         return {"filled": {}, "different": {
             FACT_LABELS["plate"]: (machine.plate, read["plate"])}}
+    if purchase and not machine.purchase_date:
+        machine.purchase_date = purchase
+        update_fields.append("purchase_date")
+        filled["fecha de compra"] = purchase.strftime("%d/%m/%Y")
     for name, value in read.items():
         max_length = machine._meta.get_field(name).max_length
         value = value[:max_length] if max_length else value
@@ -378,6 +409,9 @@ def _intake_prompt(candidates):
         "- brand_model: marca y modelo; vacío si no aparece.\n"
         "- insurer: compañía aseguradora; vacío si no es de seguro.\n"
         "- policy_number: número de póliza; vacío si no aparece.\n"
+        "- document_date: si es una factura, un contrato de compraventa "
+        "o de leasing, su fecha de emisión o de firma, AAAA-MM-DD; vacío "
+        "en cualquier otro documento.\n"
         "No inventes nada: deja vacío lo que no esté escrito en el "
         "documento."
     ) % (types_text, NO_TYPE)
@@ -422,6 +456,7 @@ def read_machine_document(data, filename):
         "brand_model": (answer.get("brand_model") or "").strip()[:200],
         "insurer": (answer.get("insurer") or "").strip()[:100],
         "policy_number": (answer.get("policy_number") or "").strip()[:60],
+        "document_date": parse_document_date(answer.get("document_date")),
     }
     return {
         "code": code,
@@ -455,10 +490,20 @@ def merge_machine_facts(readings):
                 insurance = "%s -- póliza %s" % (
                     insurance, facts["policy_number"])
             votes["insurance_info"][insurance[:100]] += 1
-    return {
+    merged = {
         name: counter.most_common(1)[0][0]
         for name, counter in votes.items()
     }
+    # S148: fecha de compra = la más antigua de facturas de compra,
+    # compraventas y leasing (ISO, para el formulario).
+    dates = [
+        reading["facts"]["document_date"] for reading in readings
+        if reading.get("code") in PURCHASE_TYPES
+        and (reading.get("facts") or {}).get("document_date")
+    ]
+    if dates:
+        merged["purchase_date"] = min(dates).isoformat()
+    return merged
 
 
 # S148, Miguel Ángel: "incluyamos la fecha de compra". La de la factura
