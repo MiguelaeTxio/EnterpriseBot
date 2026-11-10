@@ -54,9 +54,8 @@ Uso:
     python -m dotenv run python manage.py find_empty_folders --apply
 """
 from django.core.management.base import BaseCommand
-from django.db.models import Count
-
 from document_explorer.classification_service import trash_dossier_entry
+from document_explorer.empty_folder_service import find_empty_folders
 from document_explorer.models import DocumentIndexEntry
 
 
@@ -127,37 +126,9 @@ class Command(BaseCommand):
 
     def _process_bucket(self, bucket, apply_changes):
         totals = {"vacias": 0, "a_papelera": 0, "fallos": 0}
-
-        # Carpetas vivas del cubo, más profundas primero (hoja -> raíz),
-        # mismo criterio que recalculate_folder_counters.py.
-        folders = list(
-            DocumentIndexEntry.objects.filter(
-                bucket=bucket,
-                entry_kind=DocumentIndexEntry.KIND_FOLDER,
-                deleted_at__isnull=True,
-                purged_at__isnull=True,
-            ).only("id", "blob_name", "parent_path")
-        )
-        folders.sort(key=lambda f: f.blob_name.count("/"), reverse=True)
-
-        # Hijos vivos (archivo o carpeta) de cada carpeta, agrupados
-        # por parent_path exacto -- una sola consulta para todo el
-        # cubo, nunca un COUNT por carpeta.
-        live_children = dict(
-            DocumentIndexEntry.objects.filter(
-                bucket=bucket,
-                deleted_at__isnull=True,
-                purged_at__isnull=True,
-            )
-            .values("parent_path")
-            .annotate(n=Count("pk"))
-            .values_list("parent_path", "n")
-        )
-
-        for folder in folders:
-            if live_children.get(folder.blob_name, 0) > 0:
-                continue  # Sigue teniendo contenido vivo real.
-
+        # S149: la detección vive en empty_folder_service (la comparte
+        # el botón "Limpiar carpetas vacías" del explorador).
+        for folder in find_empty_folders(bucket):
             totals["vacias"] += 1
             self.stdout.write(
                 "  %s: %s" % (
@@ -165,27 +136,11 @@ class Command(BaseCommand):
                     folder.blob_name,
                 )
             )
-
-            if apply_changes:
-                ok = trash_dossier_entry(folder)
-                if ok:
-                    totals["a_papelera"] += 1
-                else:
-                    totals["fallos"] += 1
-                    self.stdout.write(
-                        "  FALLO: %s" % folder.blob_name
-                    )
-                    continue
-            else:
+            if not apply_changes:
                 totals["a_papelera"] += 1
-
-            # Bottom-up dentro de la misma pasada, tanto en dry-run
-            # como en --apply: esta carpeta ya no cuenta como hijo
-            # vivo de SU PROPIO padre, así que una cadena de carpetas
-            # que se ha ido vaciando de abajo a arriba se detecta
-            # entera de una sola vez.
-            live_children[folder.parent_path] = max(
-                0, live_children.get(folder.parent_path, 0) - 1,
-            )
-
+            elif trash_dossier_entry(folder):
+                totals["a_papelera"] += 1
+            else:
+                totals["fallos"] += 1
+                self.stdout.write("  FALLO: %s" % folder.blob_name)
         return totals

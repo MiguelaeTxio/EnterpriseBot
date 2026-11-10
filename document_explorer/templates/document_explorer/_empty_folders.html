@@ -1,0 +1,47 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/document_explorer/templates/document_explorer/_empty_folders.html #}
+{% comment %}
+H24 (S149 invasora). Resultado del botón "Limpiar carpetas vacías"
+(_panel.html): qué carpetas vacías hay bajo la carpeta actual y el
+botón que las manda a la papelera del usuario (restaurables desde
+allí). Solo administrador -- ver EmptyFoldersMixin.
+{% endcomment %}
+<div class="alert alert-light border py-2 mb-2 small">
+    {% if empty_total %}
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <span>
+                <i class="bi bi-folder-x"></i>
+                <strong>{{ empty_total }}</strong> carpeta{{ empty_total|pluralize }} vacía{{ empty_total|pluralize }}
+                {% if folder_path %}dentro de esta carpeta{% else %}en todo el cubo{% endif %}
+                (las que solo contienen otras carpetas vacías también cuentan).
+            </span>
+            <form method="post" action="{% url 'document_explorer:empty_folders_clean' %}" class="d-inline"
+                  onsubmit="return confirm('¿Mandar {{ empty_total }} carpeta{{ empty_total|pluralize }} vacía{{ empty_total|pluralize }} a tu papelera? Se pueden restaurar desde la papelera.');">
+                {% csrf_token %}
+                <input type="hidden" name="bucket" value="{{ bucket }}">
+                <input type="hidden" name="path" value="{{ folder_path }}">
+                <button type="submit" class="btn btn-sm btn-danger">
+                    <i class="bi bi-trash"></i> Mandar a la papelera
+                </button>
+            </form>
+            <button type="button" class="btn btn-sm btn-outline-secondary"
+                    onclick="document.getElementById('dx-empty-folders').innerHTML = '';">
+                Cerrar
+            </button>
+        </div>
+        <div style="max-height: 14rem; overflow-y: auto;">
+            <ul class="list-unstyled mb-0 font-monospace">
+                {% for folder in empty_shown %}
+                    <li>{{ folder.blob_name }}</li>
+                {% endfor %}
+            </ul>
+            {% if empty_total > empty_shown|length %}
+                <div class="text-muted mt-1">{{ empty_total }} en total; se muestran las primeras {{ empty_shown|length }}.</div>
+            {% endif %}
+        </div>
+    {% else %}
+        <i class="bi bi-check-circle text-success"></i>
+        No hay carpetas vacías {% if folder_path %}dentro de esta carpeta{% else %}en este cubo{% endif %}.
+        <button type="button" class="btn btn-sm btn-link p-0 ms-2"
+                onclick="document.getElementById('dx-empty-folders').innerHTML = '';">Cerrar</button>
+    {% endif %}
+</div>

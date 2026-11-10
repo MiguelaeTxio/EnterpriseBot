@@ -185,6 +185,16 @@ urlpatterns = [
         views.DataOperationLogDetailView.as_view(),
         name="operation_log_detail",
     ),
+    path(
+        "carpetas-vacias/",
+        views.EmptyFoldersPreviewView.as_view(),
+        name="empty_folders",
+    ),
+    path(
+        "carpetas-vacias/limpiar/",
+        views.EmptyFoldersCleanView.as_view(),
+        name="empty_folders_clean",
+    ),
     path("papelera/", views.TrashView.as_view(), name="trash"),
     path(
         "papelera/restaurar/<int:pk>/",

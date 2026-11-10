@@ -166,6 +166,7 @@ from spare_parts.gcs_service import (
 )
 
 from document_explorer import friendly_names, index_writer, move_service, permissions
+from document_explorer import empty_folder_service
 from document_explorer import (
     archive_service, classification_service, duplicates_service,
     naming_service, tasks,
@@ -1526,6 +1527,91 @@ class SendToTrashView(ExplorerAccessMixin, View):
                 entry.bucket,
                 entry.parent_path,
             )
+        )
+
+
+class EmptyFoldersMixin(ExplorerAccessMixin):
+    """
+    Empty-folder cleanup from the explorer (H24, S149 invasora):
+    admin-only, like merging folders -- it can send a whole subtree of
+    folders to the trash at once.
+
+    ---
+
+    Limpieza de carpetas vacías desde el explorador (H24, S149
+    invasora): solo administrador, como fusionar carpetas -- puede
+    mandar a la papelera un subárbol entero de carpetas de una vez.
+    """
+
+    def _scope(self, data):
+        company_user = self.request.user.company_user
+        if not permissions.is_unrestricted(company_user):
+            raise Http404("Solo el administrador puede limpiar carpetas vacías.")
+        bucket = data.get("bucket") or ""
+        if bucket not in INDEXED_BUCKETS:
+            raise Http404("Cubo desconocido.")
+        return company_user, bucket, (data.get("path") or "").strip("/")
+
+
+class EmptyFoldersPreviewView(EmptyFoldersMixin, TemplateView):
+    """
+    HTMX fragment: the empty folders under the current folder, with
+    the button that sends them to the trash.
+
+    ---
+
+    Fragmento HTMX: las carpetas vacías bajo la carpeta actual, con el
+    botón que las manda a la papelera.
+    """
+
+    template_name = "document_explorer/_empty_folders.html"
+    SHOWN = 200
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        _user, bucket, folder_path = self._scope(self.request.GET)
+        empty = empty_folder_service.find_empty_folders(bucket, folder_path)
+        context.update({
+            "bucket": bucket,
+            "folder_path": folder_path,
+            "empty_total": len(empty),
+            # De arriba abajo para leerlas, como en el árbol.
+            "empty_shown": sorted(
+                empty, key=lambda f: f.blob_name,
+            )[:self.SHOWN],
+        })
+        return context
+
+
+class EmptyFoldersCleanView(EmptyFoldersMixin, View):
+    """
+    Send the empty folders under the current folder to the acting
+    user's trash and show the operation log.
+
+    ---
+
+    Manda a la papelera del usuario las carpetas vacías bajo la carpeta
+    actual y muestra el registro de la operación.
+    """
+
+    def post(self, request):
+        company_user, bucket, folder_path = self._scope(request.POST)
+        log = empty_folder_service.trash_empty_folders(
+            bucket, folder_path, company_user,
+        )
+        if log is None:
+            messages.info(request, "No hay carpetas vacías que limpiar.")
+            return redirect(
+                "%s?bucket=%s&path=%s" % (
+                    reverse("document_explorer:explorer"), bucket, folder_path,
+                )
+            )
+        messages.success(
+            request,
+            "%d carpeta(s) vacía(s) movida(s) a tu papelera." % log.groups_count,
+        )
+        return redirect(
+            reverse("document_explorer:operation_log_detail", args=[log.pk])
         )
 
 

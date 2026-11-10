@@ -103,6 +103,20 @@ no perder el sitio donde se estaba navegando al alternar.
     </a>
 </div>
 
+{# H24 (S149 invasora): limpiar las carpetas vacías de aquí hacia abajo (solo administrador). #}
+{% if can_move and not is_search and not denied and bucket %}
+    <div class="mb-2">
+        <button type="button" class="btn btn-sm btn-outline-secondary"
+                hx-get="{% url 'document_explorer:empty_folders' %}?bucket={{ bucket|urlencode }}&path={{ folder_path|urlencode }}"
+                hx-target="#dx-empty-folders"
+                hx-swap="innerHTML"
+                title="Busca las carpetas vacías dentro de esta carpeta (o de todo el cubo, en la raíz) para mandarlas a tu papelera">
+            <i class="bi bi-folder-x"></i> Limpiar carpetas vacías
+        </button>
+        <div id="dx-empty-folders" class="mt-2"></div>
+    </div>
+{% endif %}
+
 {% if is_search %}
     <p class="text-muted small mb-2">
         <i class="bi bi-info-circle"></i>
