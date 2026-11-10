@@ -1386,6 +1386,8 @@ las filas de debajo se desplacen de verdad.
         }
         document.getElementById('personMassEpiBatchCount').textContent = selection.size;
         document.getElementById('personMassEpiBatchResult').innerHTML = '';
+        // S148: lotes de EPIs al vuelo (los creados en la pestaña EPIs).
+        document.dispatchEvent(new CustomEvent('eb:options-changed'));
         refreshPersonMassEpiBatchPreview();
         if (!personMassEpiBatchModalInstance) {
             personMassEpiBatchModalInstance = new bootstrap.Modal(document.getElementById('personMassEpiBatchModal'));
@@ -1891,7 +1893,7 @@ arriba, mismo motivo que el resto de modales de este archivo.
                 <div class="row g-2 mb-3">
                     <div class="col-6">
                         <label class="form-label small mb-0">Lote guardado</label>
-                        <select id="personMassEpiBatchTemplate" class="form-select form-select-sm">
+                        <select id="personMassEpiBatchTemplate" data-live-options="epi_batch_templates" class="form-select form-select-sm">
                             <option value="" data-item-ids="[]">Sin lote -- elegir EPIs sueltos</option>
                             {% for template in epi_batch_templates %}
                             <option value="{{ template.pk }}" data-item-ids="[{% for item in template.items.all %}{{ item.pk }}{% if not forloop.last %},{% endif %}{% endfor %}]">{{ template.name }}</option>

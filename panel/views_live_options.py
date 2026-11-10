@@ -12,7 +12,8 @@ estar disponibles al vuelo sin necesidad de recargar la página".
 Cada desplegable lleva data-live-options="<clave>"; el hub vuelve a
 pedir esta vista al cambiar de pestaña y al volver a la ventana, y
 rehace las opciones conservando las fijas (valor vacío o data-fixed) y
-lo elegido. Mismos criterios que las vistas que pintan cada desplegable
+lo elegido. Un tercer valor de la opción va a su data-item-ids (los EPIs
+de cada lote). Mismos criterios que las vistas que pintan cada desplegable
 (Personal y Centros de gasto). Los requisitos ya se refrescan solos
 (eb:requirement-saved, S123).
 """
@@ -33,6 +34,7 @@ class LiveOptionsView(CompanyUserRequiredMixin, View):
     def get(self, request):
         from document_explorer.models import (
             DocumentTypeCatalog,
+            EpiDeliveryBatchTemplate,
             PersonalDossierTemplate,
         )
         from worksites.models import Worksite
@@ -63,4 +65,9 @@ class LiveOptionsView(CompanyUserRequiredMixin, View):
             "machine_dossier_templates": [
                 [str(t.pk), t.name] for t in dossiers.filter(
                     scope=PersonalDossierTemplate.SCOPE_MACHINE)],
+            # Lotes de EPIs: el tercer valor son sus EPIs (data-item-ids).
+            "epi_batch_templates": [
+                [str(t.pk), t.name, [item.pk for item in t.items.all()]]
+                for t in EpiDeliveryBatchTemplate.objects.prefetch_related(
+                    "items").order_by("name")],
         })
