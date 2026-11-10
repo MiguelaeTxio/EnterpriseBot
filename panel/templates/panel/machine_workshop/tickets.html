@@ -107,9 +107,17 @@ pierde de vista), filtrable con las casillas de estado.
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="mw-mass-clear">Limpiar</button>
                 </div>
                 <div class="small text-muted fw-bold">Descargar la selección</div>
-                <button type="button" class="btn btn-sm btn-outline-success mw-needs-selection" id="mw-mass-export" disabled
+                <button type="button" class="btn btn-sm btn-outline-success mw-needs-selection mw-mass-export" id="mw-mass-export" data-format="xlsx" disabled
                         title="Excel con las averías seleccionadas, sus tareas de parte y sus repuestos, con totales">
                     <i class="bi bi-file-earmark-excel me-1"></i>Excel
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-danger mw-needs-selection mw-mass-export" data-format="pdf" disabled
+                        title="Lo mismo que el Excel, en PDF">
+                    <i class="bi bi-file-earmark-pdf me-1"></i>PDF
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary mw-needs-selection mw-mass-export" data-format="print" disabled
+                        title="Lo mismo que el Excel, para imprimir">
+                    <i class="bi bi-printer me-1"></i>Imprimir
                 </button>
             </div>
         </div>

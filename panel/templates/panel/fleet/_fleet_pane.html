@@ -289,9 +289,17 @@ la lista hace scroll. Dos paneles:
                         </div>
                         <div class="tab-pane" id="fleetActInfo" role="tabpanel">
                             <div class="small text-muted fw-bold">Exportar</div>
-                            <button type="button" class="btn btn-sm btn-outline-success fleet-needs-selection" id="fleet-mass-export" disabled>
-                                <i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel
-                            </button>
+                            <div class="d-flex flex-wrap gap-1">
+                                <button type="button" class="btn btn-sm btn-outline-success fleet-needs-selection fleet-mass-export" id="fleet-mass-export" data-format="xlsx" disabled>
+                                    <i class="bi bi-file-earmark-excel me-1"></i>Excel
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-danger fleet-needs-selection fleet-mass-export" data-format="pdf" disabled>
+                                    <i class="bi bi-file-earmark-pdf me-1"></i>PDF
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary fleet-needs-selection fleet-mass-export" data-format="print" disabled>
+                                    <i class="bi bi-printer me-1"></i>Imprimir
+                                </button>
+                            </div>
                         </div>
                         <div class="tab-pane" id="fleetActAlta" role="tabpanel">
                             <div class="small text-muted fw-bold">Alta y baja</div>
@@ -724,12 +732,17 @@ la lista hace scroll. Dos paneles:
     // Exportar la selección a Excel (mismas columnas que la hoja
     // MAQUINARIA del Excel de Yolanda): formulario POST temporal, para
     // que el navegador gestione la descarga como cualquier otra.
-    document.getElementById("fleet-mass-export").addEventListener("click", function () {
+    // S148: también PDF o impresión (pestaña nueva), mismo contenido.
+    document.querySelectorAll(".fleet-mass-export").forEach(function (exportBtn) { exportBtn.addEventListener("click", function () {
         if (!selection.size) return;
         const form = document.createElement("form");
         form.method = "post";
         form.action = "{% url 'panel:fleet_export' %}";
         form.style.display = "none";
+        if (exportBtn.dataset.format === "print") form.target = "_blank";
+        const fmt = document.createElement("input");
+        fmt.type = "hidden"; fmt.name = "export_format"; fmt.value = exportBtn.dataset.format || "xlsx";
+        form.appendChild(fmt);
         const csrf = document.createElement("input");
         csrf.type = "hidden"; csrf.name = "csrfmiddlewaretoken"; csrf.value = csrfToken;
         form.appendChild(csrf);
@@ -741,7 +754,7 @@ la lista hace scroll. Dos paneles:
         document.body.appendChild(form);
         form.submit();
         form.remove();
-    });
+    }); });
 
     // S117: "Nueva familia…" en el desplegable de Familia del
     // formulario (alta y edición) despliega el campo de texto. Delegado

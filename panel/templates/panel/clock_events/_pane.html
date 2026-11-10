@@ -174,10 +174,20 @@ recordatorios, secciones que fichan y permiso de envío).
                 <div class="row g-1">
                     <div class="col-6 pe-2">
                         <div class="small text-muted fw-bold">Exportar</div>
-                        <button type="button" class="btn btn-sm btn-outline-success" id="clk-export"
-                                title="Jornadas y pulsaciones de las fechas elegidas: de los marcados o, si no hay nadie marcado, de todos los del filtro. Los fichajes no se corrigen ni se borran: se conservan cuatro años.">
-                            <i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel
-                        </button>
+                        <div class="d-flex flex-wrap gap-1">
+                            <button type="button" class="btn btn-sm btn-outline-success clk-export" id="clk-export" data-format="xlsx"
+                                    title="Jornadas y pulsaciones de las fechas elegidas: de los marcados o, si no hay nadie marcado, de todos los del filtro. Los fichajes no se corrigen ni se borran: se conservan cuatro años.">
+                                <i class="bi bi-file-earmark-excel me-1"></i>Excel
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger clk-export" data-format="pdf"
+                                    title="Lo mismo que el Excel, en PDF.">
+                                <i class="bi bi-file-earmark-pdf me-1"></i>PDF
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary clk-export" data-format="print"
+                                    title="Lo mismo que el Excel, para imprimir.">
+                                <i class="bi bi-printer me-1"></i>Imprimir
+                            </button>
+                        </div>
                     </div>
                     {# S141: ajustes de fichaje de los marcados. #}
                     <div class="col-6">
@@ -451,14 +461,20 @@ recordatorios, secciones que fichan y permiso de envío).
 
     // Exportar: mismos filtros y fechas que se ven; los marcados, o
     // todos los del filtro si no hay nadie marcado.
-    document.getElementById("clk-export").addEventListener("click", function () {
+    // S148: Excel, PDF o impresión (pestaña nueva).
+    document.querySelectorAll(".clk-export").forEach(function (exportBtn) { exportBtn.addEventListener("click", function () {
         const params = new URLSearchParams();
         new FormData(filters).forEach(function (value, key) {
             if (key !== "only_selected" && key !== "selected_ids") params.append(key, value);
         });
         params.set("selected_ids", Array.from(selection.keys()).join(","));
-        window.location.href = EXPORT_URL + "?" + params.toString();
-    });
+        params.set("export_format", exportBtn.dataset.format || "xlsx");
+        if (exportBtn.dataset.format === "print") {
+            window.open(EXPORT_URL + "?" + params.toString(), "_blank");
+        } else {
+            window.location.href = EXPORT_URL + "?" + params.toString();
+        }
+    }); });
 
     // S141: ajustes de fichaje. Cada acción devuelve la tabla con los
     // filtros que se veían (_f_) y, fuera de banda, el bloque de

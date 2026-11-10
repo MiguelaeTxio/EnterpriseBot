@@ -7,6 +7,7 @@ from django.shortcuts import redirect, render
 from django.db.models import Q, Prefetch
 from django.utils.timezone import now
 
+from panel.export_formats import workbook_response
 from panel.mixins import (
     SupervisorAccessMixin,
     AdminRoleRequiredMixin,
@@ -2445,7 +2446,7 @@ class WorkOrderExportView(SupervisorAccessMixin, View):
         import io
         import openpyxl
         from openpyxl.styles import Alignment, Font, PatternFill
-        from django.http import HttpResponse, HttpResponseBadRequest
+        from django.http import HttpResponseBadRequest
         from django.utils.timezone import now as tz_now
         from work_order_processor.models import (
             WorkOrderEntryLine,
@@ -2752,17 +2753,8 @@ class WorkOrderExportView(SupervisorAccessMixin, View):
                     "partes seleccionados."
                 )
 
-        output = io.BytesIO()
-        wb.save(output)
-        output.seek(0)
-
         filename = f"EXPORTACION_{tz_now().strftime('%d-%m-%y')}.xlsx"
-        response = HttpResponse(
-            output.read(),
-            content_type=XLSX_CONTENT_TYPE,
-        )
-        response["Content-Disposition"] = f'attachment; filename="{filename}"'
-        return response
+        return workbook_response(request, wb, filename)
 
 
 class WorkOrderDuplicateSearchView(SupervisorAccessMixin, View):
@@ -6034,10 +6026,9 @@ class WorkOrderAdminExportView(SupervisorAccessMixin, View):
         seleccionados, restringido a orígenes DIGITAL y GENERATED únicamente.
         Soporta los modos de exportación single_sheet y multi_sheet.
         """
-        import io
         import openpyxl
         from openpyxl.styles import Alignment, Font, PatternFill
-        from django.http import HttpResponse, HttpResponseBadRequest
+        from django.http import HttpResponseBadRequest
         from django.utils.timezone import now as tz_now
         from work_order_processor.models import (
             WorkOrderEntryLine,
@@ -6271,20 +6262,9 @@ class WorkOrderAdminExportView(SupervisorAccessMixin, View):
                     max_len + 4, 60
                 )
 
-            buf = io.BytesIO()
-            wb.save(buf)
-            buf.seek(0)
-
             stamp = tz_now().strftime("%Y%m%d_%H%M%S")
             filename = f"partes_digitales_{stamp}.xlsx"
-            response = HttpResponse(
-                buf.read(),
-                content_type=XLSX_CONTENT_TYPE,
-            )
-            response["Content-Disposition"] = (
-                f'attachment; filename="{filename}"'
-            )
-            return response
+            return workbook_response(request, wb, filename)
 
         dest_wb = openpyxl.Workbook()
         dest_wb.remove(dest_wb.active)
@@ -6349,18 +6329,9 @@ class WorkOrderAdminExportView(SupervisorAccessMixin, View):
                 "Verifica que los partes seleccionados tienen Excel generado."
             )
 
-        buf = io.BytesIO()
-        dest_wb.save(buf)
-        buf.seek(0)
-
         stamp = tz_now().strftime("%Y%m%d_%H%M%S")
         filename = f"partes_digitales_multi_{stamp}.xlsx"
-        response = HttpResponse(
-            buf.read(),
-            content_type=XLSX_CONTENT_TYPE,
-        )
-        response["Content-Disposition"] = f'attachment; filename="{filename}"'
-        return response
+        return workbook_response(request, dest_wb, filename)
 
     def _build_digital_full_excel(
         self, request, company, pk_list, operator_filter
@@ -6391,10 +6362,9 @@ class WorkOrderAdminExportView(SupervisorAccessMixin, View):
         Devuelve HTTP 400 si no se encuentran partes digitales/generados
         validos.
         """
-        import io
         import openpyxl
         from openpyxl.styles import Alignment, Font, PatternFill
-        from django.http import HttpResponse, HttpResponseBadRequest
+        from django.http import HttpResponseBadRequest
         from django.utils.timezone import now as tz_now
         from work_order_processor.models import (
             WorkOrderEntry,
@@ -6731,18 +6701,9 @@ class WorkOrderAdminExportView(SupervisorAccessMixin, View):
 
         _autofit(ws_gaps)
 
-        buf = io.BytesIO()
-        wb.save(buf)
-        buf.seek(0)
-
         stamp = tz_now().strftime("%Y%m%d_%H%M%S")
         filename = f"partes_digitales_completo_{stamp}.xlsx"
-        response = HttpResponse(
-            buf.read(),
-            content_type=XLSX_CONTENT_TYPE,
-        )
-        response["Content-Disposition"] = f'attachment; filename="{filename}"'
-        return response
+        return workbook_response(request, wb, filename)
 
 
 class WorkOrderMachineFilterView(SupervisorAccessMixin, View):

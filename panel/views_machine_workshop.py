@@ -23,7 +23,6 @@ Acceso: los roles de Centros de gasto (FleetAccessMixin). Filtros,
 orden y selección se guardan por usuario y por máquina (directriz
 4.15). La lógica vive en panel/machine_workshop.py.
 """
-import io
 
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, render
@@ -32,6 +31,7 @@ from django.utils import timezone
 from django.views import View
 
 from fleet.models import MachineAsset
+from panel.export_formats import workbook_response
 from panel import machine_workshop as workshop
 from panel.mixins import FleetAccessMixin
 from work_order_processor.models import WorkOrderEntry
@@ -174,7 +174,7 @@ def _page_context(request, machine, kind):
     }
 
 
-def _xlsx_response(workbook, name):
+def _xlsx_response(request, workbook, name):
     """
     HTTP download of a workbook.
 
@@ -182,13 +182,9 @@ def _xlsx_response(workbook, name):
 
     Descarga HTTP de un libro Excel.
     """
-    buffer = io.BytesIO()
-    workbook.save(buffer)
-    response = HttpResponse(buffer.getvalue(), content_type=XLSX_CONTENT_TYPE)
-    response["Content-Disposition"] = 'attachment; filename="%s_%s.xlsx"' % (
+    return workbook_response(request, workbook, "%s_%s.xlsx" % (
         name, timezone.localtime().strftime("%Y%m%d_%H%M"),
-    )
-    return response
+    ))
 
 
 def _sheet(workbook, title, columns, first=False):
@@ -433,7 +429,7 @@ class MachineWorkshopTasksExportView(FleetAccessMixin, View):
             )
         workbook = Workbook()
         _write_tasks(workbook, rows)
-        return _xlsx_response(workbook, "partes_%s" % machine.code)
+        return _xlsx_response(request, workbook, "partes_%s" % machine.code)
 
 
 # ---------------------------------------------------------------------------
@@ -603,7 +599,7 @@ class MachineWorkshopTicketsExportView(FleetAccessMixin, View):
             for cell in sheet[column][1:]:
                 cell.number_format = "DD/MM/YYYY HH:MM"
         _write_tasks(workbook, tasks, first=False)
-        return _xlsx_response(workbook, "averias_%s" % machine.code)
+        return _xlsx_response(request, workbook, "averias_%s" % machine.code)
 
 
 # ---------------------------------------------------------------------------

@@ -28,7 +28,6 @@ solo lectura.
 """
 import datetime
 from decimal import Decimal
-import io
 import logging
 import os
 
@@ -50,6 +49,7 @@ from hr_calendar.clock_report import format_duration, reports_by_user
 from hr_calendar.models import ClockCorrection
 from hr_calendar.models import ClockEvent
 from hr_calendar.models import ClockType
+from panel.export_formats import workbook_response
 from panel.mixins import SupervisorAccessMixin
 from panel.navigation_persistence import (
     apply_list_navigation,
@@ -1737,19 +1737,7 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
                 ((days, day_headers), (presses, press_headers),
                  (fixes, fix_headers)),
             )
-        buffer = io.BytesIO()
-        book.save(buffer)
         filename = "fichajes_%s_%s.xlsx" % (
             date_from.strftime("%Y%m%d"), date_to.strftime("%Y%m%d"),
         )
-        response = HttpResponse(
-            buffer.getvalue(),
-            content_type=(
-                "application/vnd.openxmlformats-officedocument."
-                "spreadsheetml.sheet"
-            ),
-        )
-        response["Content-Disposition"] = (
-            'attachment; filename="%s"' % filename
-        )
-        return response
+        return workbook_response(request, book, filename)

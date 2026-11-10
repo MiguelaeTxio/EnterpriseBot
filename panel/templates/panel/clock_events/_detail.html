@@ -32,7 +32,9 @@ cuándo y por qué.
                 onclick="clkOpenAdd(this)"><i class="bi bi-plus-lg me-1"></i>Añadir fichaje</button>
         {% endif %}
         {% if has_account and shifts %}{# S141: el Excel de este trabajador en estas fechas. #}
-        <a class="btn btn-sm btn-outline-success py-0 ms-2" href="{% url 'panel:clock_events_export' %}?selected_ids={{ person.pk }}&amp;date_from={{ date_from|date:'Y-m-d' }}&amp;date_to={{ date_to|date:'Y-m-d' }}"><i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel</a>
+        <a class="btn btn-sm btn-outline-success py-0 ms-2" href="{% url 'panel:clock_events_export' %}?selected_ids={{ person.pk }}&amp;date_from={{ date_from|date:'Y-m-d' }}&amp;date_to={{ date_to|date:'Y-m-d' }}"><i class="bi bi-file-earmark-excel me-1"></i>Excel</a>
+        <a class="btn btn-sm btn-outline-danger py-0 ms-1" href="{% url 'panel:clock_events_export' %}?selected_ids={{ person.pk }}&amp;date_from={{ date_from|date:'Y-m-d' }}&amp;date_to={{ date_to|date:'Y-m-d' }}&amp;export_format=pdf"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</a>
+        <a class="btn btn-sm btn-outline-secondary py-0 ms-1" target="_blank" href="{% url 'panel:clock_events_export' %}?selected_ids={{ person.pk }}&amp;date_from={{ date_from|date:'Y-m-d' }}&amp;date_to={{ date_to|date:'Y-m-d' }}&amp;export_format=print"><i class="bi bi-printer me-1"></i>Imprimir</a>
         {% endif %}
     </div>
 </div>

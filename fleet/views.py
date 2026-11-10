@@ -34,6 +34,7 @@ from document_explorer.machine_folder_service import sync_machine_documents
 from fleet.forms import MachineAssetForm
 from fleet.models import MachineAsset
 from ivr_config.models import CompanyUser, PresenceStatus
+from panel.export_formats import workbook_response
 from panel.views_machine_intake import store_intake_documents
 from panel.mixins import (
     AdminRoleRequiredMixin,
@@ -1152,7 +1153,6 @@ class MachineAssetExportView(FleetAccessMixin, View):
         ---
         Construye y devuelve el libro Excel.
         """
-        from io import BytesIO
 
         from openpyxl import Workbook
         from openpyxl.styles import Font
@@ -1189,22 +1189,10 @@ class MachineAssetExportView(FleetAccessMixin, View):
             sheet.column_dimensions[column].width = width
         sheet.freeze_panes = "A2"
 
-        buffer = BytesIO()
-        workbook.save(buffer)
         filename = (
             f"centros_de_gasto_{now().strftime('%Y%m%d_%H%M')}.xlsx"
         )
-        response = HttpResponse(
-            buffer.getvalue(),
-            content_type=(
-                "application/vnd.openxmlformats-officedocument."
-                "spreadsheetml.sheet"
-            ),
-        )
-        response["Content-Disposition"] = (
-            f'attachment; filename="{filename}"'
-        )
-        return response
+        return workbook_response(request, workbook, filename)
 
 
 # ---------------------------------------------------------------------------

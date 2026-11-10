@@ -158,10 +158,20 @@ screen_key "clock_worker"); la selección, por trabajador.
                     </div>
                     <div class="col-6 pe-2 border-top pt-1 mt-1">
                         <div class="small text-muted fw-bold">Exportar</div>
-                        <button type="button" class="btn btn-sm btn-outline-success" id="cw-export"
-                                title="Jornadas y pulsaciones del trabajador en las fechas elegidas.">
-                            <i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel
-                        </button>
+                        <div class="d-flex flex-wrap gap-1">
+                            <button type="button" class="btn btn-sm btn-outline-success cw-export" id="cw-export" data-format="xlsx"
+                                    title="Jornadas y pulsaciones del trabajador en las fechas elegidas.">
+                                <i class="bi bi-file-earmark-excel me-1"></i>Excel
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger cw-export" data-format="pdf"
+                                    title="Lo mismo que el Excel, en PDF.">
+                                <i class="bi bi-file-earmark-pdf me-1"></i>PDF
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary cw-export" data-format="print"
+                                    title="Lo mismo que el Excel, para imprimir.">
+                                <i class="bi bi-printer me-1"></i>Imprimir
+                            </button>
+                        </div>
                     </div>
                     {# S144: bolsa de horas extras. S143: lo que pasa del tope de cada mes son horas acumuladas. #}
                     <div class="col-6 border-top pt-1 mt-1">
@@ -679,13 +689,19 @@ screen_key "clock_worker"); la selección, por trabajador.
     });
 
     // Exportar: el trabajador, con las fechas que se ven.
-    document.getElementById("cw-export").addEventListener("click", function () {
+    // S148: Excel, PDF o impresión (pestaña nueva).
+    document.querySelectorAll(".cw-export").forEach(function (exportBtn) { exportBtn.addEventListener("click", function () {
         const params = new URLSearchParams();
         params.set("selected_ids", PERSON_PK);
         params.set("date_from", filters.querySelector('[name="date_from"]').value);
         params.set("date_to", filters.querySelector('[name="date_to"]').value);
-        window.location.href = EXPORT_URL + "?" + params.toString();
-    });
+        params.set("export_format", exportBtn.dataset.format || "xlsx");
+        if (exportBtn.dataset.format === "print") {
+            window.open(EXPORT_URL + "?" + params.toString(), "_blank");
+        } else {
+            window.location.href = EXPORT_URL + "?" + params.toString();
+        }
+    }); });
 
     // Pantalla completa (directriz 4.26).
     const bottom = document.getElementById("cw-bottom-panel");

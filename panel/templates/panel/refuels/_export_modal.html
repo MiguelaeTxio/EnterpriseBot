@@ -16,7 +16,7 @@ Vista: panel/views_refuels_export.py.
         <div class="modal-content border-0 shadow">
             <div class="modal-header border-bottom py-3">
                 <h6 class="modal-title fw-semibold" id="refuelsExportModalLabel">
-                    <i class="bi bi-file-earmark-excel me-2 text-success"></i><span id="rexp-title">Exportar a Excel</span>
+                    <i class="bi bi-file-earmark-excel me-2 text-success"></i><span id="rexp-title">Exportar</span>
                 </h6>
                 <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
             </div>
@@ -76,7 +76,9 @@ Vista: panel/views_refuels_export.py.
                 <small class="text-muted" id="rexp-count"></small>
                 <div class="d-flex gap-2" id="rexp-export-buttons">
                     <button type="button" class="btn btn-outline-secondary btn-sm px-3" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-success btn-sm px-4" id="rexp-submit"><i class="bi bi-file-earmark-excel me-1"></i>Exportar</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm px-3 rexp-go" data-format="print"><i class="bi bi-printer me-1"></i>Imprimir</button>
+                    <button type="button" class="btn btn-outline-danger btn-sm px-3 rexp-go" data-format="pdf"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</button>
+                    <button type="button" class="btn btn-success btn-sm px-4 rexp-go" id="rexp-submit" data-format="xlsx"><i class="bi bi-file-earmark-excel me-1"></i>Excel</button>
                 </div>
                 <div class="d-none" id="rexp-manage-buttons">
                     <button type="button" class="btn btn-outline-secondary btn-sm px-3" id="rexp-back"><i class="bi bi-arrow-left me-1"></i>Volver a exportar</button>
@@ -127,7 +129,7 @@ Vista: panel/views_refuels_export.py.
         $("rexp-manage-view").classList.add("d-none");
         $("rexp-export-buttons").classList.remove("d-none");
         $("rexp-manage-buttons").classList.add("d-none");
-        $("rexp-title").textContent = "Exportar " + (VIEW_LABELS[view] || "") + " a Excel";
+        $("rexp-title").textContent = "Exportar " + (VIEW_LABELS[view] || "");
         updateCount();
     }
     function updateSummary() {
@@ -182,7 +184,9 @@ Vista: panel/views_refuels_export.py.
     });
     $("rexp-template").addEventListener("change", updateSummary);
 
-    $("rexp-submit").addEventListener("click", function () {
+    // S148: Excel, PDF o impresión (pestaña nueva) con la misma plantilla.
+    document.querySelectorAll(".rexp-go").forEach(function (goBtn) { goBtn.addEventListener("click", function () {
+        const fmt = goBtn.dataset.format || "xlsx";
         const tpl = current();
         if (!tpl) {
             $("rexp-error").textContent = "Elige una plantilla.";
@@ -191,9 +195,14 @@ Vista: panel/views_refuels_export.py.
         }
         const params = host().params();
         params.set("template_pk", tpl.id);
-        window.location.href = EXPORT_URL + "?" + params.toString();
+        params.set("export_format", fmt);
+        if (fmt === "print") {
+            window.open(EXPORT_URL + "?" + params.toString(), "_blank");
+        } else {
+            window.location.href = EXPORT_URL + "?" + params.toString();
+        }
         bootstrap.Modal.getOrCreateInstance(modalEl).hide();
-    });
+    }); });
 
     // ---- Vista gestionar ----
     $("rexp-manage").addEventListener("click", function () {

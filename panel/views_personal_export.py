@@ -21,7 +21,6 @@ enseña el listado con su búsqueda, filtros y orden. Plantillas
 personales (una por defecto) y globales de empresa (solo ADMIN). Solo
 para ADMIN, SUPERVISOR y WORKSHOPBOSS, como la exportación de partes.
 """
-import io
 import json
 
 from django.http import HttpResponse, JsonResponse
@@ -29,6 +28,7 @@ from django.views import View
 
 from document_explorer.models import PersonalExportTemplate
 from ivr_config.models import CompanyUser
+from panel.export_formats import workbook_response
 from panel.mixins import SupervisorAccessMixin
 
 
@@ -298,19 +298,7 @@ class PersonalExportView(SupervisorAccessMixin, View):
             if column[4]:
                 for cell in sheet[letter][1:]:
                     cell.number_format = "DD/MM/YYYY"
-        buffer = io.BytesIO()
-        book.save(buffer)
         filename = "personal_%s.xlsx" % timezone.localdate().strftime(
             "%Y%m%d",
         )
-        response = HttpResponse(
-            buffer.getvalue(),
-            content_type=(
-                "application/vnd.openxmlformats-officedocument."
-                "spreadsheetml.sheet"
-            ),
-        )
-        response["Content-Disposition"] = (
-            'attachment; filename="%s"' % filename
-        )
-        return response
+        return workbook_response(request, book, filename)

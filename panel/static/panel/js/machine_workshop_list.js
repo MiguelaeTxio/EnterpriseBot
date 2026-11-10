@@ -239,15 +239,22 @@
             }
         );
 
-        // Excel de la selección: formulario POST temporal, para que el
-        // navegador gestione la descarga como cualquier otra.
-        document.getElementById("mw-mass-export").addEventListener(
-            "click", function () {
+        // Excel, PDF o impresión (S148, pestaña nueva) de la selección:
+        // formulario POST temporal, para que el navegador gestione la
+        // descarga como cualquier otra.
+        document.querySelectorAll(".mw-mass-export").forEach(function (btn) {
+            btn.addEventListener("click", function () {
                 if (!selection.size) { return; }
                 var form = document.createElement("form");
                 form.method = "post";
                 form.action = exportUrl;
                 form.style.display = "none";
+                if (btn.dataset.format === "print") { form.target = "_blank"; }
+                var fmt = document.createElement("input");
+                fmt.type = "hidden";
+                fmt.name = "export_format";
+                fmt.value = btn.dataset.format || "xlsx";
+                form.appendChild(fmt);
                 var csrf = document.createElement("input");
                 csrf.type = "hidden";
                 csrf.name = "csrfmiddlewaretoken";
@@ -263,8 +270,8 @@
                 document.body.appendChild(form);
                 form.submit();
                 form.remove();
-            }
-        );
+            });
+        });
 
         document.getElementById("mw-fullscreen").addEventListener(
             "click", function () {

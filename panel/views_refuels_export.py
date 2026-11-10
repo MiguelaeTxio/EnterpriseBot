@@ -22,7 +22,6 @@ Exporta las filas marcadas o, si no hay ninguna, todas las del filtro
 S144 (lista de Alberto): en Repostadores, columnas con los vehículos
 de cada repostador ("Km en vez de horas en" y "Vehículos repostados").
 """
-import io
 import json
 
 from django.db.models import Count, Q
@@ -36,6 +35,7 @@ from fleet.models import (
     RefuelExportTemplate,
 )
 from ivr_config.models import CompanyUser
+from panel.export_formats import workbook_response
 from panel.mixins import CompanyUserRequiredMixin
 from panel.views_refuels import (
     VIEW_QUESTIONS,
@@ -428,18 +428,9 @@ def _excel_response(book, prefix, request):
 
     El libro como descarga .xlsx, con las fechas del filtro en el nombre.
     """
-    buffer = io.BytesIO()
-    book.save(buffer)
     date_from, date_to = _date_range(request)
-    response = HttpResponse(
-        buffer.getvalue(),
-        content_type=("application/vnd.openxmlformats-officedocument."
-                      "spreadsheetml.sheet"))
-    response["Content-Disposition"] = (
-        'attachment; filename="%s_%s_%s.xlsx"' % (
-            prefix, date_from.strftime("%Y%m%d"),
-            date_to.strftime("%Y%m%d")))
-    return response
+    return workbook_response(request, book, "%s_%s_%s.xlsx" % (
+        prefix, date_from.strftime("%Y%m%d"), date_to.strftime("%Y%m%d")))
 
 
 class RefuelsExportView(CompanyUserRequiredMixin, View):

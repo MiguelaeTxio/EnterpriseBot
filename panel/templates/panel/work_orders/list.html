@@ -49,12 +49,27 @@
         {# Disparador modal exportación — visible solo en Revisados     #}
         <button type="button"
                 id="btn-export-trigger"
-                class="btn btn-outline-success btn-sm d-none"
+                class="btn btn-outline-success btn-sm d-none wo-export-btn"
                 disabled
+                data-format="xlsx"
                 title="Selecciona partes revisados para descargar"
                 data-bs-toggle="modal"
                 data-bs-target="#exportModal">
             <i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel
+        </button>
+        <button type="button"
+                class="btn btn-outline-danger btn-sm d-none wo-export-btn"
+                disabled
+                data-format="pdf"
+                title="Selecciona partes revisados para descargar en PDF">
+            <i class="bi bi-file-earmark-pdf me-1"></i>PDF
+        </button>
+        <button type="button"
+                class="btn btn-outline-secondary btn-sm d-none wo-export-btn"
+                disabled
+                data-format="print"
+                title="Selecciona partes revisados para imprimir">
+            <i class="bi bi-printer me-1"></i>Imprimir
         </button>
         <a href="{% url 'panel:work_order_upload' %}" class="btn btn-primary btn-sm">
             <i class="bi bi-upload me-1"></i>Subir PDF
@@ -745,6 +760,7 @@
     {% csrf_token %}
     <div id="export-pks-container"></div>
     <input type="hidden" id="export-mode-input" name="export_mode" value="single_sheet">
+    <input type="hidden" id="export-format-input" name="export_format" value="xlsx">
 </form>
 
 {# ================================================================== #}
@@ -832,17 +848,18 @@
     // Handler de cambio de pestaña — mostrar/ocultar botón en Revisados
     // ------------------------------------------------------------------
     var exportTabIds     = new Set(["tab-reviewed"]);
-    var btnExportTrigger = document.getElementById("btn-export-trigger");
+    var exportButtons    = Array.prototype.slice.call(
+        document.querySelectorAll(".wo-export-btn"));
 
     document.querySelectorAll("#woTabs button[data-bs-toggle='tab']").forEach(function (btn) {
         btn.addEventListener("shown.bs.tab", function (event) {
             if (exportTabIds.has(event.target.id)) {
-                if (btnExportTrigger) { btnExportTrigger.classList.remove("d-none"); }
+                exportButtons.forEach(function (b) { b.classList.remove("d-none"); });
             } else {
-                if (btnExportTrigger) {
-                    btnExportTrigger.classList.add("d-none");
-                    btnExportTrigger.disabled = true;
-                }
+                exportButtons.forEach(function (b) {
+                    b.classList.add("d-none");
+                    b.disabled = true;
+                });
                 document.querySelectorAll(".wo-export-chk").forEach(function (chk) {
                     chk.checked = false;
                 });
@@ -856,7 +873,7 @@
     (function _initExportButtonVisibility() {
         var activeTab = document.querySelector("#woTabs button.active");
         if (activeTab && exportTabIds.has(activeTab.id)) {
-            if (btnExportTrigger) { btnExportTrigger.classList.remove("d-none"); }
+            exportButtons.forEach(function (b) { b.classList.remove("d-none"); });
         }
     }());
 
@@ -865,9 +882,9 @@
     // ------------------------------------------------------------------
     function _syncExportButton() {
         var checked = document.querySelectorAll(".wo-export-chk:checked");
-        if (btnExportTrigger) {
-            btnExportTrigger.disabled = (checked.length === 0);
-        }
+        exportButtons.forEach(function (b) {
+            b.disabled = (checked.length === 0);
+        });
         var pksContainer = document.getElementById("export-pks-container");
         if (pksContainer) {
             pksContainer.innerHTML = "";
@@ -908,9 +925,18 @@
         return names.size || 2;
     }
 
-    if (btnExportTrigger) {
-        btnExportTrigger.addEventListener("click", function (event) {
+    var exportFormatInput = document.getElementById("export-format-input");
+
+    exportButtons.forEach(function (btn) {
+        btn.addEventListener("click", function (event) {
             event.preventDefault();
+            // S148: Excel, PDF o impresión (pestaña nueva) del mismo export.
+            var fmt = btn.getAttribute("data-format") || "xlsx";
+            if (exportFormatInput) { exportFormatInput.value = fmt; }
+            if (exportForm) {
+                if (fmt === "print") { exportForm.target = "_blank"; }
+                else { exportForm.removeAttribute("target"); }
+            }
             var workerCount = _getUniqueWorkerCount();
             var wcEl = document.getElementById("export-workers-count");
             if (wcEl) { wcEl.textContent = workerCount; }
@@ -922,7 +948,7 @@
                 bsModal.show();
             }
         });
-    }
+    });
 
     function _forceCleanupOrphanBackdrops() {
         /*
