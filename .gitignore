@@ -27,3 +27,7 @@ work_orders/
 media/
 logs/
 /app/
+
+# S149: copias cifradas de las nóminas hasta su envío (hr_calendar/
+# payslip_delivery.py). Nunca al repositorio.
+/private/

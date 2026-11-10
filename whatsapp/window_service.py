@@ -172,7 +172,7 @@ def render_template_text(client, content_sid, variables):
 
 def send_notification(
     client, sender, company, phone, content_sid, variables=None,
-    text=None, status_callback=None,
+    text=None, status_callback=None, media_url=None,
 ):
     """
     Send a notification: plain text inside the window, else template.
@@ -186,7 +186,9 @@ def send_notification(
     `sent_as_text` dice cómo salió. Las excepciones de Twilio se
     propagan, como antes, para que cada llamador las trate igual.
     `status_callback` (H37, S132), si se da, es la URL a la que Twilio
-    manda el estado de entrega del mensaje.
+    manda el estado de entrega del mensaje. `media_url` (S149, nóminas),
+    si se da, es el archivo que acompaña al texto libre dentro de la
+    ventana; fuera, el archivo lo lleva la propia plantilla.
     """
     to_number = to_e164(phone)
     from_number = sender if sender.startswith("whatsapp:") else (
@@ -196,6 +198,8 @@ def send_notification(
     if window_open(company, to_number):
         body = text or render_template_text(client, content_sid, variables)
     extra = {"status_callback": status_callback} if status_callback else {}
+    if body and media_url:
+        extra["media_url"] = [media_url]
     if body:
         message = client.messages.create(
             from_=from_number, to="whatsapp:%s" % to_number, body=body,
