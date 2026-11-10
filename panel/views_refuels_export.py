@@ -36,6 +36,7 @@ from fleet.models import (
 )
 from ivr_config.models import CompanyUser
 from panel.export_formats import workbook_response
+from panel.export_templates import find_template, with_panel_template
 from panel.mixins import CompanyUserRequiredMixin
 from panel.views_refuels import (
     VIEW_QUESTIONS,
@@ -176,6 +177,29 @@ _BY_KEY = {
     view: {column[0]: column for column in columns}
     for view, columns in _COLUMNS.items()
 }
+# S148: la plantilla "Vista del panel" de cada vista = las columnas de
+# su tabla en el panel, en su orden (panel/export_templates.py).
+_PANEL_COLUMNS = {
+    VIEW_SUPPLIES: [
+        "fecha", "hora", "centro", "matricula", "quien", "km", "litros",
+        "estado", "unidad", "motivo",
+    ],
+    VIEW_VEHICLES: [
+        "centro", "vehiculo", "nombre", "repostajes", "litros", "ultimo",
+        "ultimos_km", "dudosos", "km_horas", "sin_anotar", "repostadores",
+        "unidad",
+    ],
+    VIEW_USERS: [
+        "repostador", "ficha", "repostajes", "litros", "ultimo", "dudosos",
+        "en_horas", "km_horas", "sin_anotar", "vehiculos", "pregunta",
+    ],
+    VIEW_QUESTIONS: [
+        "enviada", "chofer", "centro", "pregunta", "dato", "motivo",
+        "estado", "respuesta", "respondida",
+    ],
+}
+# La que se creaba sola como por defecto antes de S148.
+_AUTO_NAME = "Todas las columnas"
 _SHEETS = {
     VIEW_SUPPLIES: ("Repostajes", "repostajes"),
     VIEW_VEHICLES: ("Vehículos", "repostajes_vehiculos"),
@@ -194,14 +218,13 @@ def _is_admin(company_user):
 
 def _visible_templates(company_user, view):
     """
-    The user's own templates of the view and the company's global ones;
-    with neither, an "all columns" default one is created first.
+    The user's own templates of the view and the company's global ones.
 
     ---
 
-    Las plantillas propias de la vista y las globales de la empresa; si
-    no hay ninguna, se crea antes una propia por defecto con todas las
-    columnas (el Excel de antes de S144).
+    Las plantillas propias de la vista y las globales de la empresa.
+    S148: ya no se crea ninguna sola; sin plantillas propias está la
+    "Vista del panel" (panel/export_templates.py).
     """
     company = company_user.company
     own = RefuelExportTemplate.objects.filter(
@@ -209,11 +232,6 @@ def _visible_templates(company_user, view):
         is_global=False)
     shared = RefuelExportTemplate.objects.filter(
         company=company, view=view, is_global=True)
-    if not own.exists() and not shared.exists():
-        RefuelExportTemplate.objects.create(
-            company=company, company_user=company_user, view=view,
-            name="Todas las columnas", is_default=True,
-            columns=[column[0] for column in _COLUMNS[view]])
     return list(own.order_by("-is_default", "name")) + list(
         shared.order_by("name"))
 
@@ -255,9 +273,11 @@ class RefuelsExportTemplateListView(CompanyUserRequiredMixin, View):
         company_user = request.user.company_user
         view = _template_view(request.GET.get("view"))
         return JsonResponse({
-            "templates": [_as_dict(template, company_user)
-                          for template in _visible_templates(
-                              company_user, view)],
+            "templates": with_panel_template(
+                [_as_dict(template, company_user)
+                 for template in _visible_templates(company_user, view)],
+                _PANEL_COLUMNS[view],
+                ((_AUTO_NAME, [column[0] for column in _COLUMNS[view]]),)),
             "columns": [{"key": column[0], "label": column[1]}
                         for column in _COLUMNS[view]],
             "is_admin": _is_admin(company_user),
@@ -453,12 +473,9 @@ class RefuelsExportView(CompanyUserRequiredMixin, View):
 
         company_user = request.user.company_user
         view = _view(request)
-        template_pk = request.GET.get("template_pk", "")
-        template = None
-        if template_pk.isdigit():
-            template = next(
-                (item for item in _visible_templates(company_user, view)
-                 if item.pk == int(template_pk)), None)
+        template = find_template(
+            request.GET.get("template_pk"),
+            _visible_templates(company_user, view), _PANEL_COLUMNS[view])
         if template is None:
             return HttpResponse("Plantilla no encontrada.", status=404)
         known = _BY_KEY[view]

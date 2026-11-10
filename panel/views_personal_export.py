@@ -29,6 +29,7 @@ from django.views import View
 from document_explorer.models import PersonalExportTemplate
 from ivr_config.models import CompanyUser
 from panel.export_formats import workbook_response
+from panel.export_templates import find_template, with_panel_template
 from panel.mixins import SupervisorAccessMixin
 
 
@@ -41,6 +42,26 @@ def _label(person):
         p for p in (person.first_surname, person.second_surname) if p
     )
     return "%s, %s" % (surnames, person.given_name)
+
+
+# S148: columnas que enseña el panel y no tenía el Excel (las pone
+# _person_list_page: person.onboarding y person.ws_row).
+def _onboarding(person):
+    state = getattr(person, "onboarding", None)
+    return getattr(state, "label", "") if state else ""
+
+
+def _section(person):
+    row = getattr(person, "ws_row", None)
+    state = getattr(row, "state", None)
+    section = getattr(state, "section", None)
+    return section.name if section else ""
+
+
+def _schedule(person):
+    row = getattr(person, "ws_row", None)
+    schedule = getattr(row, "schedule", None)
+    return schedule.label if schedule else "Sin horario"
 
 
 # (key, header, width, getter, is_date). Order = order offered in the
@@ -89,12 +110,22 @@ PERSONAL_EXPORT_COLUMNS = (
      lambda p: "Sí" if p.company_user_id else "No", False),
     ("documentos", "Documentos", 10,
      lambda p: getattr(p, "doc_count", None), False),
+    ("alta_fichaje", "Alta en el fichaje", 22, _onboarding, False),
+    ("seccion", "Sección", 22, _section, False),
+    ("horario", "Horario", 22, _schedule, False),
 )
 _COLUMNS_BY_KEY = {c[0]: c for c in PERSONAL_EXPORT_COLUMNS}
 DEFAULT_COLUMNS = [
     "apellidos_nombre", "dni", "empresa", "estado", "fecha_alta",
     "categoria", "requisito", "telefono", "email",
 ]
+# S148: la plantilla "Vista del panel" = las columnas del listado.
+PANEL_COLUMNS = [
+    "apellidos_nombre", "dni", "fecha_alta", "documentos", "requisito",
+    "alta_fichaje", "seccion", "horario",
+]
+# La que se creaba sola como por defecto antes de S148.
+AUTO_TEMPLATES = (("Listado estándar", DEFAULT_COLUMNS),)
 
 
 def column_choices():
@@ -107,11 +138,11 @@ def _is_admin(company_user):
 
 def _visible_templates(company_user):
     """
-    The user's own templates and the company's global ones; with
-    neither, a default personal one is created first.
+    The user's own templates and the company's global ones.
     ---
-    Las plantillas propias y las globales de la empresa; si no hay
-    ninguna, se crea antes una personal por defecto.
+    Las plantillas propias y las globales de la empresa. S148: ya no se
+    crea ninguna sola; sin plantillas propias está la "Vista del panel"
+    (panel/export_templates.py).
     """
     company = company_user.company
     own = PersonalExportTemplate.objects.filter(
@@ -120,12 +151,6 @@ def _visible_templates(company_user):
     shared = PersonalExportTemplate.objects.filter(
         company=company, is_global=True,
     )
-    if not own.exists() and not shared.exists():
-        PersonalExportTemplate.objects.create(
-            company=company, company_user=company_user,
-            name="Listado estándar", is_default=True,
-            columns=list(DEFAULT_COLUMNS),
-        )
     return list(own.order_by("-is_default", "name")) + list(
         shared.order_by("name"),
     )
@@ -166,9 +191,10 @@ class PersonalExportTemplateListView(SupervisorAccessMixin, View):
     def get(self, request):
         cu = request.user.company_user
         return JsonResponse({
-            "templates": [
-                _as_dict(t, cu) for t in _visible_templates(cu)
-            ],
+            "templates": with_panel_template(
+                [_as_dict(t, cu) for t in _visible_templates(cu)],
+                PANEL_COLUMNS, AUTO_TEMPLATES,
+            ),
             "columns": column_choices(),
             "is_admin": _is_admin(cu),
         })
@@ -267,14 +293,10 @@ class PersonalExportView(SupervisorAccessMixin, View):
         from panel.views_documentation_h30 import _person_list_page
 
         cu = request.user.company_user
-        template_pk = request.GET.get("template_pk", "")
-        template = None
-        if template_pk.isdigit():
-            template = next(
-                (t for t in _visible_templates(cu)
-                 if t.pk == int(template_pk)),
-                None,
-            )
+        template = find_template(
+            request.GET.get("template_pk"), _visible_templates(cu),
+            PANEL_COLUMNS,
+        )
         if template is None:
             return HttpResponse("Plantilla no encontrada.", status=404)
         columns = [
