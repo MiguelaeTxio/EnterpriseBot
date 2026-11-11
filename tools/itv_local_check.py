@@ -241,6 +241,26 @@ def _write(report, rows, output_path):
             datetime.strptime(vehicle["itv_due"], "%Y-%m-%d").strftime(
                 "%d/%m/%Y"), vehicle["days_left"],
             vehicle["enterprisebot"], local))
+    # S150: lo que va en el correo a Alejandro Alvarez. Vehiculos con la
+    # ITV vencida cuya ITV nueva no esta en el panel (por eso sale
+    # vencida) ni en local (ningun archivo de ITV mas nuevo).
+    missing = [r for r in ordered
+               if r[0]["days_left"] < 0 and not r[3]]
+    lines += [
+        "",
+        "## ITV vencida sin la ITV nueva ni en el panel ni en local",
+        "",
+    ]
+    if missing:
+        lines += ["| Vehículo | Matrícula | ITV vencida el | Días vencida |",
+                  "|---|---|---|---|"]
+        for vehicle, _problems, _folders, _extra in missing:
+            lines.append("| %s | %s | %s | %d |" % (
+                vehicle["code"], vehicle["plate"],
+                datetime.strptime(vehicle["itv_due"], "%Y-%m-%d").strftime(
+                    "%d/%m/%Y"), -vehicle["days_left"]))
+    else:
+        lines.append("Ninguno.")
     with open(output_path, "w", encoding="utf-8") as handle:
         handle.write("\n".join(lines) + "\n")
 
