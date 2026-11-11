@@ -233,6 +233,11 @@ def _write(report, rows, output_path):
         r[0]["days_left"] < 0, abs(r[0]["days_left"])))
     for vehicle, problems, _folders, extra in ordered:
         local = "; ".join(problems) or "al día"
+        if vehicle["days_left"] < 0 and not extra:
+            # S150: con la ITV vencida, "al dia" solo decia que en local
+            # esta el mismo documento que en el panel, el caducado (R22).
+            local = "; ".join(problems + [
+                "no hay ITV nueva en local (solo la vencida)"])
         if extra:
             local += "; en local hay una ITV más nueva: %s" % ", ".join(
                 "«%s»" % name for name in extra)
