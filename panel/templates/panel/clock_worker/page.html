@@ -291,6 +291,26 @@ screen_key "clock_worker"); la selección, por trabajador.
                         </div>
                     </div>
                 </div>
+                {# S149: intercalar un tramo de otro tipo. #}
+                <div id="cw-fix-insert" class="d-none">
+                    <input type="hidden" name="insert_entry" id="cw-fix-insert-entry">
+                    <label class="form-label mb-0" for="cwFixInsertType">Tipo que se intercala</label>
+                    <select class="form-select form-select-sm mb-2" name="insert_type" id="cwFixInsertType">
+                        <option value="">—</option>
+                        {% for clock_type in clock_types %}<option value="{{ clock_type.pk }}">{{ clock_type.name }}</option>{% endfor %}
+                    </select>
+                    <div class="row g-2 mb-1">
+                        <div class="col-6">
+                            <label class="form-label mb-0" for="cwFixInsertStart">Desde</label>
+                            <input class="form-control form-control-sm" type="datetime-local" name="insert_start" id="cwFixInsertStart">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label mb-0" for="cwFixInsertEnd">Hasta</label>
+                            <input class="form-control form-control-sm" type="datetime-local" name="insert_end" id="cwFixInsertEnd">
+                        </div>
+                    </div>
+                    <div class="text-muted mb-2">Sin «Hasta», el tramo llega hasta el siguiente fichaje que ya había (p. ej. el paso a presencia). Con «Hasta», a esa hora vuelve al tipo que llevaba.</div>
+                </div>
                 <div class="alert alert-danger py-1 d-none" id="cw-fix-cancel-note">
                     No se borra nada: las pulsaciones quedan tachadas en su día y en el historial.
                 </div>
@@ -303,6 +323,7 @@ screen_key "clock_worker"); la selección, por trabajador.
                     <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Se quedó trabajando con ">Se quedó trabajando con…</button>
                     <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Fichó a una hora que no era: ">Hora equivocada</button>
                     <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Olvido del trabajador: no fichó la pausa de comida.">Olvidó la comida</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Olvido del trabajador: no fichó el desplazamiento.">Olvidó el desplazamiento</button>
                 </div>
             </div>
             <div class="modal-footer">
@@ -533,11 +554,18 @@ screen_key "clock_worker"); la selección, por trabajador.
         document.getElementById("cw-fix-action").value = opts.action;
         document.getElementById("cw-fix-label").textContent = opts.label || "";
         const isMeal = opts.action === "MEAL";
+        const isInsert = opts.action === "INSERT";
         document.getElementById("cwFixModalLabel").textContent = opts.action === "ADD" ? "Añadir un fichaje"
             : (opts.action === "CANCEL" ? "Anular"
-                : (isMeal ? (opts.entry ? "Añadir la pausa de comida" : "Corregir la pausa de comida") : "Corregir un fichaje"));
+                : (isMeal ? (opts.entry ? "Añadir la pausa de comida" : "Corregir la pausa de comida")
+                    : (isInsert ? "Intercalar un tipo" : "Corregir un fichaje")));
         const isCancel = opts.action === "CANCEL";
-        document.getElementById("cw-fix-change").classList.toggle("d-none", isCancel || isMeal);
+        document.getElementById("cw-fix-change").classList.toggle("d-none", isCancel || isMeal || isInsert);
+        // S149: intercalar un tipo.
+        document.getElementById("cw-fix-insert").classList.toggle("d-none", !isInsert);
+        document.getElementById("cw-fix-insert-entry").value = isInsert ? (opts.entry || "") : "";
+        document.getElementById("cwFixInsertStart").value = isInsert ? (opts.start || "") : "";
+        document.getElementById("cwFixInsertEnd").value = "";
         // S149: pausa de comida.
         document.getElementById("cw-fix-meal").classList.toggle("d-none", !isMeal);
         document.getElementById("cw-fix-meal-out").value = opts.out || "";

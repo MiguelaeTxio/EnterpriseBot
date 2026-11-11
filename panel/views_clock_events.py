@@ -1384,6 +1384,7 @@ def apply_correction(request, person):
     from hr_calendar.clock_corrections import add_event
     from hr_calendar.clock_corrections import correct_event
     from hr_calendar.clock_corrections import meal_break
+    from hr_calendar.clock_corrections import insert_type
 
     form = {
         "event_id": request.POST.get("event_id", ""),
@@ -1460,6 +1461,30 @@ def apply_correction(request, person):
         return " ".join(filter(None, (
             "Pausa de comida guardada. Queda en el historial con quién, "
             "cuándo y por qué.",
+            _resync_partes(person, before)))), "", {}
+    # S149 (Miguel Ángel): intercalar un tramo de otro tipo (p. ej. el
+    # desplazamiento que no fichó entre el trabajo efectivo y la
+    # presencia). Sin hora de fin, llega hasta el siguiente fichaje.
+    if form["action"] == "INSERT":
+        start = parse_datetime(request.POST.get("insert_start", ""))
+        end = parse_datetime(request.POST.get("insert_end", ""))
+        start, end = [
+            timezone.make_aware(v) if v is not None and timezone.is_naive(v)
+            else v for v in (start, end)
+        ]
+        before = _bounds_before(person, [start, end])
+        try:
+            insert_type(
+                person.company_user, person, by, form["reason"],
+                request.POST.get("insert_entry") or None,
+                request.POST.get("insert_type") or None, start, end,
+                user_agent=agent,
+            )
+        except ClockCorrectionError as exc:
+            return "", str(exc), form
+        return " ".join(filter(None, (
+            "Tramo intercalado. Queda en el historial con quién, cuándo "
+            "y por qué.",
             _resync_partes(person, before)))), "", {}
     # S144: añadir una pulsación (partir un tramo, o la que falta).
     if form["action"] == ClockCorrection.Action.ADD:

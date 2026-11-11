@@ -331,3 +331,94 @@ def meal_break(company_user, person, corrected_by, reason, start, end,
                       reason, user_agent=user_agent,
                       new_clock_type_id=type_id)
         return len(steps)
+
+
+def insert_type(company_user, person, corrected_by, reason, entry_event_id,
+                clock_type_id, start, end=None, user_agent=""):
+    """
+    Insert a stretch of another clock type inside a shift with types.
+
+    ---
+
+    Intercala un tramo de otro tipo dentro de una jornada por tipos
+    (S149, Miguel Ángel: "un compañero no ha ticado el desplazamiento y
+    ha finalizado un trabajo efectivo con presencia; debería poder
+    intercalar entre ese trabajo efectivo y esa presencia un
+    desplazamiento"). Ninguna pulsación se toca; se añaden:
+    - un cambio al tipo nuevo a `start`;
+    - sin `end`: nada más, el tramo dura hasta el siguiente fichaje que
+      ya había (o hasta la salida, o sigue si la jornada está abierta);
+    - con `end`: un cambio de vuelta al tipo que llevaba a `end`, salvo
+      que `end` sea justo el siguiente fichaje (entonces ya empieza
+      allí el tramo que seguía).
+    El tramo cae dentro de la jornada y sin otra pulsación en medio.
+    Devuelve cuántas pulsaciones se han añadido.
+    """
+    if start is None:
+        raise ClockCorrectionError("Indique cuándo empieza el tramo.")
+    if not clock_type_id:
+        raise ClockCorrectionError("Elija el tipo que se intercala.")
+    if company_user is None:
+        raise ClockCorrectionError("Ese trabajador no tiene usuario del "
+                                   "panel en esta empresa.")
+    start = start.replace(second=0, microsecond=0)
+    if end is not None:
+        end = end.replace(second=0, microsecond=0)
+        if end <= start:
+            raise ClockCorrectionError("El tramo tiene que acabar después "
+                                       "de empezar.")
+    new_type = ClockType.objects.filter(
+        pk=clock_type_id, company=company_user.company, is_active=True,
+    ).first()
+    if new_type is None:
+        raise ClockCorrectionError("Ese tipo de fichaje ya no está activo.")
+    events = ClockEvent.objects.current().filter(company_user=company_user)
+    with transaction.atomic():
+        entry = events.filter(pk=entry_event_id,
+                              kind=ClockEvent.Kind.IN).first()
+        if entry is None:
+            raise ClockCorrectionError("Esa jornada ya no está; vuelva a "
+                                       "cargar la página.")
+        if entry.clock_type_id is None:
+            raise ClockCorrectionError("Esa jornada no se ficha por tipos.")
+        after = list(events.filter(
+            pressed_at__gt=entry.pressed_at).order_by("pressed_at"))
+        exit_ = next((e for e in after if e.kind == ClockEvent.Kind.OUT),
+                     None)
+        limit = exit_.pressed_at if exit_ is not None else timezone.now()
+        inside = [e for e in after if e.pressed_at < limit]
+        if not entry.pressed_at < start < limit:
+            raise ClockCorrectionError(
+                "El tramo tiene que empezar dentro de la jornada."
+                if exit_ is not None else
+                "El tramo tiene que empezar dentro de la jornada y antes "
+                "de ahora.")
+        if any(e.pressed_at.replace(second=0, microsecond=0) == start
+               for e in inside):
+            raise ClockCorrectionError("Ya hay un fichaje a esa hora: "
+                                       "corrija ese.")
+        current = [entry] + [e for e in inside if e.pressed_at < start]
+        back_type = current[-1].clock_type_id
+        if back_type == new_type.pk:
+            raise ClockCorrectionError("A esa hora ya lleva ese tipo.")
+        following = next((e for e in after if e.pressed_at > start), None)
+        steps = [(start, new_type.pk)]
+        if end is not None:
+            stop = following.pressed_at if following is not None else None
+            stop = stop.replace(second=0, microsecond=0) if stop else None
+            if stop is None and exit_ is None and end >= timezone.now():
+                raise ClockCorrectionError("El tramo tiene que acabar "
+                                           "antes de ahora.")
+            if stop is not None and end > stop:
+                raise ClockCorrectionError(
+                    "Hay otro fichaje antes de esa hora de fin (a las "
+                    "%s): el tramo no puede pasar por encima. Déjelo sin "
+                    "fin para que llegue hasta él."
+                    % timezone.localtime(stop).strftime("%H:%M"))
+            if stop is None or end < stop:
+                steps.append((end, back_type))
+        for when, type_id in steps:
+            add_event(company_user, person, corrected_by,
+                      ClockEvent.Kind.CHANGE, when, reason,
+                      user_agent=user_agent, new_clock_type_id=type_id)
+        return len(steps)

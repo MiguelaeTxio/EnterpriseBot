@@ -171,6 +171,12 @@ historial: quién, cuándo, antes, después y motivo).
                                data-label="Pausa de comida del {{ meal.out.time|date:'d/m/Y' }} ({{ meal.out.time|date:'H:i' }}–{{ meal.back.time|date:'H:i' }})"><i class="bi bi-cup-hot me-1"></i>Corregir la pausa de las {{ meal.out.time|date:"H:i" }}</a></li>
                         {% endfor %}
                         {% endif %}
+                        {# S149 (Miguel Ángel): intercalar un tipo que no fichó (p. ej. el desplazamiento). #}
+                        {% if row.entry and row.entry.event.clock_type_id %}
+                        <li><a class="dropdown-item cw-fix" href="#" data-action="INSERT" data-entry="{{ row.entry.event.pk }}" data-start="{{ row.entry.input_value }}"
+                               data-label="Intercalar un tipo en la jornada del {{ row.day|date:'d/m/Y' }} ({{ row.entry.time|date:'H:i' }}–{% if row.exit %}{{ row.exit.time|date:'H:i' }}{% else %}en curso{% endif %})"
+                               title="Meter un tramo de otro tipo que no fichó (p. ej. un desplazamiento entre el trabajo efectivo y la presencia). Queda quién lo añadió, cuándo y por qué."><i class="bi bi-arrow-left-right me-1"></i>Intercalar un tipo</a></li>
+                        {% endif %}
                         {# S149: también con la jornada abierta (la vuelta, antes de ahora). #}
                         {% if row.entry %}
                         <li><a class="dropdown-item cw-fix" href="#" data-action="MEAL" data-entry="{{ row.entry.event.pk }}" data-start="{% if row.lunch %}{{ row.lunch.0 }}{% else %}{{ row.entry.input_value }}{% endif %}" data-end="{% if row.lunch %}{{ row.lunch.1 }}{% elif row.exit %}{{ row.exit.input_value }}{% else %}{{ row.entry.input_value }}{% endif %}"
