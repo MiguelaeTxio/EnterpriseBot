@@ -1,0 +1,65 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/.github/workflows/itv_report.yml
+name: Informe de ITV (solo lectura, EnterpriseBot)
+
+# H31 (S150). Lo dispara la tarea programada de ITV (Hoja de Ruta S150,
+# punto 1) por la API de GitHub. Ejecuta en PythonAnywhere el comando de
+# solo lectura `itv_documentation_report` (vehículos con la ITV a N días
+# o menos, sus documentos de ITV, el MD5 de cada uno en el cubo y su
+# ruta en el OneDrive local) y sube el JSON a la carpeta de Drive
+# "EnterpriseBot - Intercambio Claude" (com-actions-relay: nunca a git;
+# lleva matrículas y nombres de archivo de la empresa). Si el comando
+# falla, sube su log con el error, y el paso queda en rojo.
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Días hasta la ITV (por defecto 30)"
+        required: false
+        default: "30"
+        type: string
+
+env:
+  DRIVE_FOLDER_ID: "1SSHSY2FHt-7eN17Wgza2Qcybs-ij6to0"
+
+concurrency:
+  group: enterprisebot-itv-report
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Preparar clave SSH dedicada (solo lectura, misma que db_query.yml)
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PA_DB_READONLY_SSH_PRIVATE_KEY }}" > ~/.ssh/pa_readonly_key
+          chmod 600 ~/.ssh/pa_readonly_key
+          ssh-keyscan -H ssh.pythonanywhere.com >> ~/.ssh/known_hosts
+
+      - name: Generar el informe en el servidor y subirlo a Drive
+        env:
+          DAYS: ${{ inputs.days }}
+        run: |
+          set +e
+          case "$DAYS" in ''|*[!0-9]*) echo "::error title=Días no válidos::$DAYS"; exit 1;; esac
+          RUN=${{ github.run_id }}
+          SWAP=/home/MiguelAeTxio/SWAP
+          DRIVE_SCRIPT="$SWAP/drive_upload_$RUN.py"
+          OUT="$SWAP/informe_itv_$RUN.json"
+          scp -i ~/.ssh/pa_readonly_key .github/scripts/drive_upload.py \
+            MiguelAeTxio@ssh.pythonanywhere.com:"$DRIVE_SCRIPT"
+          ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
+            "cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; export PYTHONPATH=/home/MiguelAeTxio/PROJECTS/EnterpriseBot; python -m dotenv run python manage.py itv_documentation_report --days '$DAYS' --output '$OUT' > /dev/null 2>> '$OUT.log'; RC=\$?; if [ \$RC -eq 0 ]; then python -m dotenv run python3 '$DRIVE_SCRIPT' '$OUT' 'informe_itv_$RUN.json' '${{ env.DRIVE_FOLDER_ID }}'; else python -m dotenv run python3 '$DRIVE_SCRIPT' '$OUT.log' 'informe_itv_${RUN}_ERROR.log' '${{ env.DRIVE_FOLDER_ID }}'; fi; UP=\$?; rm -f '$DRIVE_SCRIPT' '$OUT' '$OUT.log'; [ \$RC -eq 0 ] && [ \$UP -eq 0 ]" \
+            > /tmp/out.txt 2>&1
+          RC=$?
+          if [ "$RC" -ne 0 ]; then
+            MSG=$(grep -v "PythonAnywhere SSH" /tmp/out.txt | tail -c 600 | tr '\n' ' ')
+            echo "::error title=Informe de ITV fallido (exit $RC)::${MSG:-sin mensaje}"
+          fi
+          exit "$RC"
