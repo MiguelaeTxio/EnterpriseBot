@@ -310,6 +310,14 @@ screen_key "clock_worker"); la selección, por trabajador.
                         </div>
                     </div>
                     <div class="text-muted mb-2">Sin «Hasta», el tramo llega hasta el siguiente fichaje que ya había (p. ej. el paso a presencia). Con «Hasta», a esa hora vuelve al tipo que llevaba.</div>
+                    {# S149 (Miguel Ángel): ver los tramos actuales para elegir las horas. #}
+                    <div class="fw-semibold mb-1">Tramos de la jornada</div>
+                    <div class="text-muted mb-1">Pulsa en la barra para marcar «Desde» y luego «Hasta» (de 5 en 5 minutos), o pulsa una hora de abajo para usarla exacta. En azul, el tramo que se va a intercalar.</div>
+                    <div id="cw-ins-bar" class="position-relative rounded overflow-hidden" style="height:40px;cursor:crosshair;background:#e9ecef" role="img" aria-label="Tramos de la jornada"></div>
+                    <div id="cw-ins-ticks" class="position-relative mb-2" style="height:44px"></div>
+                    <div id="cw-ins-legend" class="d-flex flex-wrap gap-2 mb-2"></div>
+                    <div id="cw-ins-summary" class="fw-semibold text-primary mb-2"></div>
+
                 </div>
                 <div class="alert alert-danger py-1 d-none" id="cw-fix-cancel-note">
                     No se borra nada: las pulsaciones quedan tachadas en su día y en el historial.
@@ -566,6 +574,11 @@ screen_key "clock_worker"); la selección, por trabajador.
         document.getElementById("cw-fix-insert-entry").value = isInsert ? (opts.entry || "") : "";
         document.getElementById("cwFixInsertStart").value = isInsert ? (opts.start || "") : "";
         document.getElementById("cwFixInsertEnd").value = "";
+        modalDialog.classList.toggle("modal-lg", isInsert);
+        insBar = [];
+        try { insBar = isInsert && opts.bar ? JSON.parse(opts.bar) : []; } catch (e) { insBar = []; }
+        insNext = "start";
+        drawInsert();
         // S149: pausa de comida.
         document.getElementById("cw-fix-meal").classList.toggle("d-none", !isMeal);
         document.getElementById("cw-fix-meal-out").value = opts.out || "";
@@ -580,6 +593,122 @@ screen_key "clock_worker"); la selección, por trabajador.
         document.getElementById("cwFixTime").value = opts.time || "";
         fixModal().show();
     }
+    // S149: barra de tramos del modal «Intercalar un tipo».
+    const modalDialog = fixModalEl.querySelector(".modal-dialog");
+    const insBarEl = document.getElementById("cw-ins-bar");
+    const insTicksEl = document.getElementById("cw-ins-ticks");
+    const insStart = document.getElementById("cwFixInsertStart");
+    const insEnd = document.getElementById("cwFixInsertEnd");
+    let insBar = [], insNext = "start";
+    function insMs(value) { const d = value ? new Date(value) : null; return d && !isNaN(d) ? d.getTime() : null; }
+    function insValue(ms) {
+        const d = new Date(ms);
+        const two = function (n) { return String(n).padStart(2, "0"); };
+        return d.getFullYear() + "-" + two(d.getMonth() + 1) + "-" + two(d.getDate()) + "T" + two(d.getHours()) + ":" + two(d.getMinutes());
+    }
+    function insHm(value) { return value.slice(11, 16); }
+    function insRange() {
+        if (!insBar.length) return null;
+        return {from: insMs(insBar[0].from), to: insMs(insBar[insBar.length - 1].to)};
+    }
+    function insPct(ms, range) { return Math.min(100, Math.max(0, (ms - range.from) * 100 / Math.max(range.to - range.from, 1))); }
+    function drawInsert() {
+        insBarEl.innerHTML = ""; insTicksEl.innerHTML = "";
+        const legend = document.getElementById("cw-ins-legend");
+        legend.innerHTML = "";
+        const summary = document.getElementById("cw-ins-summary");
+        summary.textContent = "";
+        const range = insRange();
+        if (!range) return;
+        const seen = new Set();
+        insBar.forEach(function (seg) {
+            const piece = document.createElement("div");
+            const left = insPct(insMs(seg.from), range), right = insPct(insMs(seg.to), range);
+            piece.className = "position-absolute top-0 h-100 d-flex align-items-center justify-content-center text-white small overflow-hidden";
+            piece.style.cssText = "left:" + left + "%;width:" + (right - left) + "%;background:" + seg.color + ";border-right:1px solid #fff;text-shadow:0 0 2px rgba(0,0,0,.6)";
+            piece.title = seg.name + ": " + insHm(seg.from) + "–" + insHm(seg.to);
+            if (right - left > 14) piece.textContent = seg.name;
+            insBarEl.appendChild(piece);
+            if (!seen.has(seg.name)) {
+                seen.add(seg.name);
+                const item = document.createElement("span");
+                item.className = "d-inline-flex align-items-center gap-1";
+                const sw = document.createElement("span");
+                sw.style.cssText = "display:inline-block;width:12px;height:12px;border-radius:2px;background:" + seg.color;
+                item.appendChild(sw);
+                item.appendChild(document.createTextNode(seg.name));
+                legend.appendChild(item);
+            }
+        });
+        // Las horas de cambio: se pueden pulsar para usarlas exactas.
+        const marks = insBar.map(function (seg) { return seg.from; }).concat([insBar[insBar.length - 1].to]);
+        marks.forEach(function (value, i) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "btn btn-sm btn-outline-secondary py-0 px-1 position-absolute";
+            btn.style.cssText = "top:" + (i % 2 ? 22 : 2) + "px;left:" + insPct(insMs(value), range) + "%;transform:translateX(" +
+                (i === 0 ? "0" : (i === marks.length - 1 ? "-100%" : "-50%")) + ");font-size:.75rem";
+            btn.textContent = insHm(value);
+            btn.title = "Usar las " + insHm(value);
+            btn.dataset.value = value;
+            insTicksEl.appendChild(btn);
+        });
+        // El tramo que se va a intercalar (sin «Hasta»: hasta el siguiente fichaje).
+        const start = insMs(insStart.value);
+        if (start === null || start <= range.from || start >= range.to) return;
+        let end = insMs(insEnd.value);
+        const next = marks.map(insMs).filter(function (ms) { return ms > start; });
+        const nextMs = next.length ? next[0] : range.to;
+        // Sin «Hasta», o con «Hasta» justo en el siguiente fichaje: no hay vuelta.
+        const untilNext = end === null || end === nextMs;
+        if (end === null) end = nextMs;
+        if (end <= start) return;
+        const sel = document.createElement("div");
+        sel.className = "position-absolute top-0 h-100";
+        sel.style.cssText = "left:" + insPct(start, range) + "%;width:" + (insPct(end, range) - insPct(start, range)) +
+            "%;background:repeating-linear-gradient(45deg,rgba(13,110,253,.55),rgba(13,110,253,.55) 6px,rgba(13,110,253,.3) 6px,rgba(13,110,253,.3) 12px);outline:2px solid #0d6efd;outline-offset:-2px";
+        sel.title = "Tramo a intercalar: " + insHm(insValue(start)) + "–" + insHm(insValue(end));
+        insBarEl.appendChild(sel);
+        const typeSel = document.getElementById("cwFixInsertType");
+        const typeName = typeSel.value ? typeSel.options[typeSel.selectedIndex].text : "El tipo elegido";
+        summary.textContent = "Se intercala: " + typeName + " de " + insHm(insValue(start)) + " a " + insHm(insValue(end)) +
+            (untilNext ? " (hasta el siguiente fichaje)." : ", y vuelve al tipo que llevaba.");
+    }
+    insBarEl.addEventListener("click", function (evt) {
+        const range = insRange();
+        if (!range) return;
+        const box = insBarEl.getBoundingClientRect();
+        const ratio = Math.min(1, Math.max(0, (evt.clientX - box.left) / box.width));
+        const step = 5 * 60 * 1000;
+        const ms = Math.round((range.from + ratio * (range.to - range.from)) / step) * step;
+        const start = insMs(insStart.value);
+        if (insNext === "end" && start !== null && ms > start) {
+            insEnd.value = insValue(ms);
+            insNext = "start";
+        } else {
+            insStart.value = insValue(ms);
+            insEnd.value = "";
+            insNext = "end";
+        }
+        drawInsert();
+    });
+    insTicksEl.addEventListener("click", function (evt) {
+        const btn = evt.target.closest("button[data-value]");
+        if (!btn) return;
+        const ms = insMs(btn.dataset.value), start = insMs(insStart.value);
+        if (insNext === "end" && start !== null && ms > start) {
+            insEnd.value = btn.dataset.value;
+            insNext = "start";
+        } else {
+            insStart.value = btn.dataset.value;
+            insEnd.value = "";
+            insNext = "end";
+        }
+        drawInsert();
+    });
+    [insStart, insEnd].forEach(function (input) { input.addEventListener("input", drawInsert); });
+    document.getElementById("cwFixInsertType").addEventListener("change", drawInsert);
+    fixModalEl.addEventListener("shown.bs.modal", drawInsert);
     document.getElementById("cw-fix-reasons").addEventListener("click", function (evt) {
         const btn = evt.target.closest("[data-reason]");
         if (!btn) return;
@@ -600,7 +729,7 @@ screen_key "clock_worker"); la selección, por trabajador.
             action: link.dataset.action, event: link.dataset.event, ids: link.dataset.ids,
             kind: link.dataset.kind, type: link.dataset.type, time: link.dataset.time, label: link.dataset.label,
             out: link.dataset.out, back: link.dataset.back, entry: link.dataset.entry,
-            start: link.dataset.start, end: link.dataset.end,
+            start: link.dataset.start, end: link.dataset.end, bar: link.dataset.bar,
         });
     });
     document.getElementById("cw-add").addEventListener("click", function () {

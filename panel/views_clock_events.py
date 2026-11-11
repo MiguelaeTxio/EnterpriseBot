@@ -1037,7 +1037,9 @@ def worker_detail_data(company, person, date_from, date_to):
         "changes": [_press_view(c, by_replacement) for c in s.changes],
         "type_hours": _type_hours(s),
         # S143: barra de tramos de la jornada, con su color por tipo.
-        "bar": _shift_bar(s),
+        "bar": (bar := _shift_bar(s)),
+        # S149: la barra para el modal de «Intercalar un tipo».
+        "bar_json": _bar_json(bar),
         # S144: día flexible tras una jornada con poco descanso.
         "rest_note": REST_NOTE if s.after_short_rest else "",
         # S144: las pulsaciones de la jornada, para anularla entera.
@@ -1154,6 +1156,24 @@ def _shift_bar(shift):
             "duration": format_duration(int(seconds)),
         })
     return bar
+
+
+def _bar_json(bar):
+    """
+    The shift's bar as JSON, for the "insert a type" timeline.
+    ---
+    S149 (Miguel Ángel): "facilitar el poder intercalar el tramo viendo
+    visualmente los tramos actuales; cuando sale el modal ya no se ven".
+    Cada tramo con su nombre, color y horas en el formato de los campos
+    de fecha y hora del modal.
+    """
+    import json
+
+    return json.dumps([{
+        "name": seg["name"], "color": seg["color"],
+        "from": seg["from"].strftime("%Y-%m-%dT%H:%M"),
+        "to": seg["to"].strftime("%Y-%m-%dT%H:%M"),
+    } for seg in bar])
 
 
 def _attach_reviewed(person, shifts):
