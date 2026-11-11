@@ -59,6 +59,15 @@ BUCKET = "cgs_grupo_alvarez"
 MANUAL_OBSOLETE_MARKERS = ("/OBSOLETO/", "/OBSOLETOS/")
 
 
+def _codes(raw):
+    """
+    "A,B" -> ["A", "B"].
+    ---
+    "A,B" -> ["A", "B"]; vacío -> [].
+    """
+    return [code.strip() for code in (raw or "").split(",") if code.strip()]
+
+
 class Command(BaseCommand):
     help = (
         "H30 (S119) -- punto 2: vigencia y avisos de caducidad de "
@@ -67,6 +76,18 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--apply", action="store_true")
+        # S150: limitar el recálculo a unas máquinas y unos tipos (p. ej.
+        # tras corregir la fecha de unas ITV), sin tocar el resto.
+        parser.add_argument(
+            "--machines", default="",
+            help="Códigos de máquina separados por comas (por defecto, "
+                 "todas las activas).",
+        )
+        parser.add_argument(
+            "--types", default="",
+            help="Códigos de tipo separados por comas (por defecto, "
+                 "todos los no acumulables).",
+        )
         parser.add_argument(
             "--log-file", required=True,
             help="Log propio (pantalla y archivo a la vez, 0bis).",
@@ -85,7 +106,8 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self._log_handle = open(options["log_file"], "a", encoding="utf-8")
         try:
-            self._run(options["apply"])
+            self._run(options["apply"], _codes(options["machines"]),
+                      _codes(options["types"]))
         finally:
             self._log_handle.close()
 
@@ -109,14 +131,14 @@ class Command(BaseCommand):
             cache[requirement_id] = get_required_type_ids(machine)
         return cache[requirement_id]
 
-    def _run(self, apply_changes):
+    def _run(self, apply_changes, machine_codes=(), type_codes=()):
         today = date.today()
         machine_ct = ContentType.objects.get_for_model(MachineAsset)
         entry_ct = ContentType.objects.get_for_model(DocumentIndexEntry)
-        machines = {
-            machine.pk: machine
-            for machine in MachineAsset.objects.filter(is_active=True)
-        }
+        active = MachineAsset.objects.filter(is_active=True)
+        if machine_codes:
+            active = active.filter(code__in=machine_codes)
+        machines = {machine.pk: machine for machine in active}
         entries = DocumentIndexEntry.objects.filter(
             bucket=BUCKET, entry_kind=DocumentIndexEntry.KIND_FILE,
             deleted_at__isnull=True, purged_at__isnull=True,
@@ -125,6 +147,8 @@ class Command(BaseCommand):
             document_type__isnull=False,
             document_type__is_cumulative=False,
         ).select_related("document_type").order_by("id")
+        if type_codes:
+            entries = entries.filter(document_type__code__in=type_codes)
         groups = {}
         for entry in entries:
             key = (entry.document_type_id, entry.domain_object_id)
