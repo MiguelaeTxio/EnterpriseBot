@@ -608,6 +608,7 @@ explícitamente no abordada por decisión de Miguel Ángel.
 | S141 | 2026-10-29 → 2026-11-03 | Fichajes completos para arrancar con la plantilla: recordatorios por WhatsApp (activados y comprobados con un aviso real leído), fichajes inmodificables con corrección e historial, tipos de fichaje, horarios por día y "Todo el año", pestaña Horarios por trabajador y sección, acceso al fichaje creado por el supervisor y circular "Alta en el fichaje" por WhatsApp, teléfono 1 de empresa, Excel de fichajes con coordenadas, membrete y detalle por trabajador. Desvío a H30: marca de horas sin anotar en Repostajes. Ver "COMPLETADAS EN S141" (7.9) y la hoja de ruta S144 (7.10). |
 | S144 | 2026-11-03 → 2026-11-04 | Estado del alta en el fichaje y "Reenviar el alta"; motes y secciones del Excel de motes; recordatorios con botón y pre-aviso "Recuerde fichar". Añadido en la sesión: horarios abiertos, de noche y con festivos; correcciones de fichajes; página "Fichajes del trabajador"; bolsa de horas, vehículo propio con km y pausa para comer; confirmación de 3 s en acciones masivas; altas y bajas en la carpeta local de OneDrive por el agente H28; anterior/siguiente y todas las secciones en la ficha. Ver "COMPLETADAS EN S144" (7.11) y la hoja de ruta S145 (7.12). |
 | S143 (invasora) | 2026-11-04 → 2026-11-06 | Fichajes en paralelo con S144/S145/S146 (sin mover EN PROGRESO): avisos con casillas, horario propio para los avisos, salida olvidada y correcciones sin error 500, «Ficha desde», visado de incidencias, hora redondeada, comida y cena sin fichar, convenio (horas extra mensuales con cupo y bolsa, días libres en Vacaciones, desplazamiento por km, presencia y fuerza mayor, plazos), flexibilidad total, página del trabajador con horario y barra por día. Ver "COMPLETADAS EN S143 (sesión invasora)" (7.15). |
+| S147 (invasora) | 2026-11-06 → 2026-11-11 | En paralelo con S146 (H24) y luego S148/S150 (H31), sin mover EN PROGRESO: página de servicio del trabajador (Mis solicitudes y pestaña Solicitudes), justificante de asistencia médica, alta en el fichaje que respeta rol/sección/base y enlaza cuentas, grupos de selección en árbol y por carpetas de creador en todas las vistas de personal, comida fichada frente al parte (manda lo fichado), jornada intensiva/partida guardada en el parte, fichaje solo desde móvil con GPS, mínimo 2 min entre fichajes y confirmación de toda salida, rectificar la ubicación en el mapa, vídeos demostrativos del fichaje y nóminas confidenciales cifradas. Ver "COMPLETADAS EN S147 (sesión invasora)" (7.18). |
 
 ---
 
@@ -2087,3 +2088,100 @@ Queda en H24, intacto, para cuando se reactive:
   de Gutiérrez Santiago Nicolás, 231 documentos quitados de fichas y la
   posible ficha duplicada de Gutiérrez.
 - Lo de fichajes de la invasora S147 sigue en su chat.
+
+---
+### 7.18. COMPLETADAS EN S147 (sesión invasora, 06/11 → 11/11/2026, PEE PC)
+
+Invasora sobre H24 en paralelo con S146 (H24 EN PROGRESO, copias de
+seguridad) y, tras el PCH de S146, con S148/S150 (H31) y la invasora
+S149 (fichajes desde el 09/11). El marcador EN PROGRESO no se movió y
+ninguna hoja de ruta se tocó. SWAP 100-105 y 150-155. Migraciones
+`hr_calendar` 0033 y `document_explorer` 0204-0210, todas aplicadas en
+producción (la 0210 chocó con la 0210 de S148; la principal renumeró la
+suya a 0211).
+
+**Página de servicio del trabajador (encargo de la sesión)**
+- `WorkerRequest`/`WorkerRequestFile` y `hr_calendar/worker_requests.py`:
+  vacaciones, asuntos propios, médico (con horas), documentos que la
+  empresa debe facilitar y reclamaciones; aprobar crea el
+  `VacationPeriod`/`AbsencePeriod`, deshacer lo borra (`eb199e6`, 0033).
+- Mi perfil > Mis solicitudes (`/panel/mis-solicitudes/`) con saldo de
+  vacaciones, justificante desde el móvil y descarga de lo entregado;
+  Documentación > Solicitudes para supervisores, formato 4.24
+  (`7d75584`, `8875633`). Acceso desde la app de fichaje (`5f1a060`).
+- Tipo JUSTIFICANTE_ASISTENCIA_MEDICA (0204) y retipado de los dos
+  históricos (36621 con fecha 20/08/2026, 53206) (`5fa4037`, `aedc341`).
+- Alta en el fichaje: conserva sección, base y rol de quien ya los tiene,
+  enlaza la cuenta existente en vez de duplicar usuario (caso Rocío
+  Macías), cambio de usuario en Editar usuario y «Base de los marcados»
+  desde Personal (`434e197`, `ae5406e`, `043c707`, `8fae0ad`).
+
+**Grupos de selección (todas las vistas de personal)**
+- «Grupos de reparto» pasan a «Grupos de selección» (0205), con cambios
+  visibles antes de guardar; sin `escapejs` en atributos data-* de 7
+  plantillas (`ec0a168`, `9830ba8`).
+- Árbol de grupos (0206): otro nombre crea un grupo nuevo, «Dentro de»
+  por niveles, los integrantes de un subgrupo pertenecen al padre (0208)
+  y nadie está en dos subgrupos del mismo padre (0209, Carlos Núñez).
+  Los grupos sin autor pasan a alvarez_admin (0207).
+- Globales a todas las vistas, los usa cualquiera y solo los cambia
+  quien los creó; marcar un grupo SELECCIONA (no filtra), con la misma
+  tarjeta que Personal en Fichajes, Vacaciones, Solicitudes, Horarios,
+  Usuarios y Partes digitales (`f7fad65` … `a4fa6f7`).
+- Grupos principales en negrita y carpetas por creador: Generales (los
+  de alvarez_admin, abierta), Usuarios (una por usuario, plegada) y
+  Propios (`50d9d85`, `e4fca8f`). Lo plegado se recuerda por usuario.
+- Decisión de Miguel Ángel: para añadir a alguien a un subgrupo se marca
+  el subgrupo, se busca a la persona con los filtros y se actualiza el
+  grupo. Se probaron y revirtieron un desplegable de «personas del
+  padre» y la reutilización por nombre (`d97648e`, `49e6950`).
+
+**Fichajes y partes**
+- Lo fichado manda; el parte solo rellena lo no fichado como corrección
+  de alvarez_admin. Comida fichada cotejada con el parte (horas
+  redondeadas), primera tarea con la hora de entrada, sin estirar la
+  última; dieta automática si come a más de 5 km de la base
+  (`b50c551`, `ffded85`, `06b83ec`).
+- Plantillas de WhatsApp y avisos de la salida a comer y de la vuelta,
+  con los mismos márgenes que entrada y salida (`021a931`, `126b739`).
+- El parte guarda todo en cada guardado (jornada intensiva/partida,
+  dieta, in situ) (`0459a66`). Jornada de los partes del periodo abierto
+  (21/10-20/11) deducida por los días de alrededor: 44 partida y 6
+  intensiva, sin tocar periodos pagados (`5c8de01` … `dab77bc`, SWAP
+  154).
+- Salida de Antonio Fontalba del 06/11 corregida a las 17:30.
+- Fichaje solo desde el móvil («Solo se permite fichar desde
+  dispositivos móviles.») y, como Adidas, sin permiso de ubicación no se
+  ficha; recuadro con cómo dar y quitar el permiso (icono instalado ›
+  Configuración del sitio › Ubicación) y aviso de no pulsar «Eliminar
+  datos y restablecer permisos» (`efd86ae` … `182ad13`).
+- Mínimo 2 minutos entre fichajes (salvo elegir otro tipo) y toda salida
+  confirmada en un recuadro a prueba de doble pulsación (`d0be507`,
+  `18ac62b`, `a6e8f3a`). Los duplicados anteriores se dejaron como
+  estaban, por decisión de Miguel Ángel.
+- Rectificar la ubicación de un fichaje en el mapa desde la corrección,
+  con antes/después en el historial (`4ff70bb`).
+- Vídeos demostrativos del fichaje (taller y por tipos), grabados con
+  trabajadores ficticios en un servidor de prueba y entregados en el
+  chat. La bolsa de horas se queda como estaba (convenio, art. 20, 22 y
+  23), confirmado por Miguel Ángel.
+
+**Nóminas confidenciales**
+- Decisión de Miguel Ángel: solo las nóminas que se pidan y envíen a
+  partir de ahora; las 93 que ya hay se quedan como están.
+- Tipo NOMINA confidencial (0210): se guardan cifradas (Fernet, llave
+  `CONFIDENTIAL_DOCS_KEY` del `.env`, creada con SWAP 155), sin OCR, con
+  remitente; solo las abren el trabajador y quien la envió, el resto ve
+  un candado y «Documento confidencial» (403); fuera del dossier, de la
+  clasificación, la auditoría y el partido de PDF; registro de accesos
+  `ConfidentialAccessLog` (`fbedab2`). Miguel Ángel guarda copia de la
+  llave fuera del servidor.
+
+**Pasa a otras sesiones**
+- Fichajes siguen en la invasora S149 (salida del 06/11 y jornada de las
+  10:00 de Alejandro García Luque, vista de grupos de los demás
+  usuarios).
+- La bandeja de entrada de documentación (S126, sin uso en producción)
+  se amplía con la carpeta de facturación en la invasora S151 (H28).
+- TIREA: Miguel Ángel lo aparca.
+
