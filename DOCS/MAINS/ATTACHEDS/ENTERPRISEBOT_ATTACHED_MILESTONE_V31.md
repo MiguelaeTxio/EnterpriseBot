@@ -4048,3 +4048,132 @@ la pestaña de personal"*.
      grupos de selección que Personal, usado en producción con grupos
      reales creados.
 4. Cualquier otra cosa de UX que surja en la sesión.
+
+---
+
+## COMPLETADAS EN S148 (10-11/11/2026, PEE PC; en paralelo con la invasora S149 de nóminas y fichajes)
+
+Hoja de Ruta S148 cerrada en sus tres puntos y, a petición de Miguel
+Ángel, una larga serie de mejoras de UX y de extracción de datos.
+
+### 1. Personal sin scroll vertical -- `be2bb4e`, `60cc3e6`, `0db1589`, `a323dd1`, `7bfbab0`
+- Empresa como desplegable con casillas en Personal, Fichajes, Horarios
+  y Vacaciones; Estado, Fichajes y atajos de fechas en desplegables;
+  pestaña EPIs con el formato único (4.24); "Horario y sección" en
+  pestaña propia de las acciones.
+- La columna "Grupos de selección" (Personal y el recuadro común de las
+  demás vistas) ya no estira el panel fijo: toma el alto de las otras
+  columnas (mínimo 15rem) y su árbol hace scroll dentro (`.eb-fit-col`).
+
+### 2. Alta por formulario sin documentos -- `6b31f0a`, `cb1ec90`, `f296653`, `d82ae6b`, `5946866`
+- "Dar de alta" permite el formulario sin documentos con las mismas
+  reglas que el alta por documentos (empresa y sección de desplegable,
+  fecha de alta, reactivación, carpeta local en segundo plano).
+- `person_facts_service.py`: la ficha se actualiza con cada documento
+  subido (caducidades, datos del contrato, C.P.); comando
+  `fill_person_fields_from_documents` (--apply, --category).
+- C.P. por dirección con el geocoder oficial de CartoCiudad (el C.P. del
+  contrato era el de la empresa: revertido, `1dd3860`/`35dad56`).
+- Categoría profesional leída del contrato (64 de 78 activos con ella).
+
+### 3. Maquinaria igual que Personal -- `74f02b1`, `8c2afba`, `e041d9b`, `1793ce7`, `613b18b`, `09cd72f`, `25c6381`, `fd50997`, `c8022be`, `71b76a5`, `e5b50dc`
+- Centros de gasto con el formato de Personal (acciones en pestañas,
+  Estado con casillas) y grupos de selección de máquinas iguales que
+  los de personas; carpeta local (OneDrive) de las máquinas, con lo
+  sustituido a OBSOLETOS.
+- Alta de centro de gasto por documentos o sin ellos
+  (`views_machine_intake.py`), reactivando la máquina si ya existía.
+- `fill_machine_fields_from_documents` (--apply, --only-purchase):
+  148 datos rellenados y 13 fechas de compra; se descartan documentos de
+  tipo dudoso o de otra matrícula (G15 tenía el recibo de G09).
+- Observaciones (campo Memo) en máquinas y personas (migraciones fleet
+  0035 y document_explorer 0212); avisos propios de cada centro de gasto
+  desde su ficha (`MachineAlertRule`, 0213); horario y modo de fichaje
+  en la ficha de personal.
+- Recibo de seguro de G09 (entrada 15802) colocado en BD, cubo y local.
+
+### 4. Exportaciones: imprimir, PDF y plantillas -- `9a42df2`, `1becee8`, `0d41ce3`, `3b010ec`, `5e3e98c`, `7b35312`
+- `panel/export_formats.py`: toda exportación a Excel sale también en
+  PDF (A4 apaisado, WeasyPrint) o para imprimir (pestaña nueva).
+- Plantillas: "Vista del panel" fija y por defecto (`export_templates.py`)
+  en Personal y Repostajes; plantillas comunes
+  (`panel.ScreenExportTemplate`, migración panel 0003,
+  `screen_exports.py`, `screen_export_catalog.py`, modal
+  `_screen_export_modal.html`) en Centros de gasto (la hoja MAQUINARIA
+  de Yolanda queda como plantilla global), Taller (tareas y averías) y
+  Fichajes (hoja Jornadas; por decisión de Miguel Ángel su "Vista del
+  panel" es el Excel completo de antes). Partes revisados no tiene
+  plantillas (junta los Excel de cada parte).
+
+### 5. Grupos, dosieres, pedir documentos, fichajes y roles -- `f7a8a05`, `0692cfa`, `c46e16d`, `aa23074`, `80ee23e`, `62f4c2b`, `21052cf`, `112e560`
+- Papelera en cada grupo de selección propio sin subgrupos; los
+  administradores (rol ADMIN) borran cualquiera salvo los Generales.
+- Dosier: de cada tipo acumulable solo el documento más reciente
+  (fecha de emisión, si no la del nombre, si no la de subida); los del
+  mismo día van todos. Con Paraschiv Caraion pasó de 21 documentos a
+  los vigentes.
+- Pestaña "Pedir documentos" (`views_doc_requests.py`): cualquier tipo
+  de Personal por WhatsApp a los marcados, con los filtros y grupos de
+  siempre (`create_requests(any_type=True)`); enlace desde Avisos.
+- Fichajes: los desplegables del panel de arriba ya no se cortan; tipo
+  de fichaje propio de un trabajador por encima de su sección
+  (`WorkerClockSetting.clock_mode`, migración hr_calendar 0036) y
+  horario propio desde el mismo panel.
+- Rol nuevo Comercial (`SALES`, migración ivr_config 0057), sin
+  permisos propios todavía.
+- Desplegables del hub al vuelo (`views_live_options.py`): circulares,
+  Docuten, obras, plantillas de dosier y lotes de EPIs aparecen sin
+  recargar al cambiar de pestaña o volver a la ventana.
+
+### Incidencias
+- Recarga de la web por API con tiempo agotado varias veces: se relanza
+  `deploy.yml` (workflow_dispatch) y termina bien.
+- La release privada `relevo-imagenes` tiene 135 adjuntos (páginas de
+  documentos de personas) y la sesión no puede borrarlos (HTTP 403,
+  tipo de sesión): los borra Miguel Ángel a mano (ver Hoja de Ruta).
+- Impresora Brother HL-L2400DWE del taller: conectada a WIFIALVAREZ
+  (192.168.3.226); ya imprime.
+
+---
+
+## Hoja de Ruta S150 (va antes que la "Hoja de Ruta pendiente al reactivar H31", que sigue intacta)
+
+Miguel Ángel, al cerrar S148: *"la siguiente va a versar sobre crear
+una tarea programada en la que vas a usar la aplicación web
+EnterpriseBot, para detectar los vehículos con las ITV que caducan en un
+mes o menos y asegurarte de que la documentación la tienen actualizada
+en local (microsoft 365) y en EnterpriseBot"*.
+
+1. **Tarea programada de ITV.** Crear una tarea programada (herramienta
+   de tareas programadas de la sesión, nunca cron local) que, en cada
+   ejecución:
+   - Lee en EnterpriseBot los centros de gasto activos con
+     `MachineAsset.itv_date` dentro de los próximos 30 días o ya
+     vencida (relevo `db_query.yml`, resultado por Drive).
+   - Para cada uno comprueba que en EnterpriseBot hay un documento de
+     ITV vigente (`DocumentIndexEntry` de su tipo ITV, no obsoleto, con
+     caducidad igual a `itv_date`) y que en local (OneDrive de Microsoft
+     365, carpeta `DOC. MAQUINAS/ACTIVAS/...` de la máquina) está el
+     mismo archivo (mismo nombre y MD5 que en el cubo).
+   - Deja un informe con los vehículos, su fecha de ITV y, por cada
+     uno, "al día" o lo que falta (en EnterpriseBot, en local o en
+     ambos).
+   - **Cierre:** la tarea programada existe y una primera ejecución
+     real ha dejado el informe con todos los vehículos con ITV a 30
+     días o menos, contrastado a mano con dos de ellos.
+2. **Release `relevo-imagenes`.** Miguel Ángel borra en GitHub
+   (Releases → relevo-imagenes) los 135 adjuntos; **cierre:** la
+   release queda con 0 adjuntos.
+3. **Pruebas reales pendientes de S148** (las hace Miguel Ángel en el
+   panel): alta de persona sin documentos, alta de centro de gasto con
+   documentos, aviso propio en la ficha de una máquina, tipo de
+   fichaje "normal" a Miguel Ángel Pérez Sánchez y "Pedir documentos"
+   a un trabajador con móvil. **Cierre:** cada prueba hecha y, si
+   falla algo, corregido en la propia sesión.
+4. **Datos sueltos:** las dos "Formación PRL Art. 18 y 19" de Paraschiv
+   Caraion (entradas 28028 y 36691, misma fecha) se comparan por MD5 y,
+   si son el mismo archivo, se borra la copia; B49 y A70 tienen como
+   FACTURA_COMPRA facturas de leasing del notario: se retipan a
+   LEASING. **Cierre:** consulta a BD con un solo documento de PRL 18-19
+   para Paraschiv (si eran iguales) y B49/A70 sin esas facturas como
+   FACTURA_COMPRA.

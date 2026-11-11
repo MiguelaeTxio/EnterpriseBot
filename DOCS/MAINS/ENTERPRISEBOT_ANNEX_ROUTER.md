@@ -69,13 +69,13 @@ Todos los anexos viven en `DOCS/MAINS/ATTACHEDS/`.
 ## 3. Resultado Actual
 
 **Hito EN PROGRESO:** H31 — Interfaz de Gestión Documental de
-Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`. Reactivado al
-cierre de S146 por Miguel Ángel (PCH desde H24): *"la siguiente sesión
-nos vamos a dedicar a la UX de personal"*. La sesión siguiente es la
-S148 (S147 es la invasora de fichajes) y empieza por la sección
-"REACTIVADO AL CIERRE DE S146 -- Hoja de Ruta S148" al final del anexo:
-empresas en desplegable con casillas sin scroll, alta por formulario
-sin documentos y Maquinaria igual que Personal con sus grupos.
+Personal → `ENTERPRISEBOT_ATTACHED_MILESTONE_V31.md`. S148 cerró su hoja
+de ruta (UX de Personal, alta por formulario, Maquinaria igual que
+Personal). La sesión siguiente es la S150 (S149 fue la invasora de
+nóminas) y empieza por la sección "Hoja de Ruta S150" al final del
+anexo: tarea programada que detecta los vehículos con ITV a 30 días o
+menos y comprueba su documentación en EnterpriseBot y en local
+(Microsoft 365).
 
 **Hito PAUSADO al cierre de S146:** H24 — Vacaciones, Ausencias y
 Control Horario → `ENTERPRISEBOT_ATTACHED_MILESTONE_V24.md`. En S146 se
