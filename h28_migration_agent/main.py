@@ -50,6 +50,7 @@ from heartbeat import start_heartbeat_thread
 from onedrive_watchdog import start_watchdog_thread
 from db_backup_download import process_backups, resolve_folder
 from local_download import process_jobs as process_local_downloads
+from invoice_folder import process_invoices
 from history import append_event, load_events
 from reconciler import reconcile_folder
 from state import load_watched_folders, save_watched_folders
@@ -1062,6 +1063,12 @@ def _catchup_loop(icon):
         for texto in process_backups(list(_watched_folders)):
             append_event("Copia de la BD", "OneDrive", texto)
             icon.notify(texto, title="Agente H28")
+
+        # H28 (S151): carpeta local FACTURACIÓN de la bandeja
+        # (`invoice_folder.py`): sube las facturas nuevas, pasa a
+        # procesadas las ya procesadas y baja las del panel.
+        for texto in process_invoices():
+            append_event("Facturas", "FACTURACIÓN", texto)
 
         started_at = time.monotonic()
         had_news = _run_catchup_pass(icon, client)

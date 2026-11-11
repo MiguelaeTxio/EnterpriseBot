@@ -356,7 +356,7 @@ def _index_new_blob(blob_name, display_name):
     return entry
 
 
-def register_upload(name, data, uploaded_by):
+def register_upload(name, data, uploaded_by, from_local=False):
     """
     Store one uploaded invoice in "Facturas nuevas" and queue it.
 
@@ -365,10 +365,12 @@ def register_upload(name, data, uploaded_by):
 
     ---
 
-    Guarda una factura subida desde la bandeja en "Facturas nuevas" y
-    la encola. El mismo archivo (huella SHA-256) ya subido no se
-    guarda otra vez: vuelve con una nota. Devuelve (factura, creada,
-    nota).
+    Guarda una factura en "Facturas nuevas" del cubo y la encola, la
+    suba alguien desde la bandeja (`uploaded_by`) o el agente H28 desde
+    la carpeta local FACTURACIÓN (`from_local`, sin usuario: ya está en
+    local, no hay que bajarla). El mismo archivo (huella SHA-256) ya
+    subido no se guarda otra vez: vuelve con una nota. Devuelve
+    (factura, creada, nota).
     """
     extension = _extension_of(name)
     if extension not in ALLOWED_EXTENSIONS:
@@ -381,6 +383,9 @@ def register_upload(name, data, uploaded_by):
         "-pk",
     ).first()
     if previous is not None and previous.entry_id:
+        if from_local and previous.local_synced_at is None:
+            previous.local_synced_at = timezone.now()
+            previous.save(update_fields=["local_synced_at"])
         return previous, False, "Ya se había subido (%s)." % (
             previous.get_status_display()
         )
@@ -397,8 +402,12 @@ def register_upload(name, data, uploaded_by):
             sha256=sha256,
             original_name=name[:255],
             content_type=content_type,
-            company=uploaded_by.company,
+            company=(
+                uploaded_by.company if uploaded_by is not None
+                else _default_company()
+            ),
             uploaded_by=uploaded_by,
+            local_synced_at=timezone.now() if from_local else None,
         )
         _queue(invoice.pk)
     return invoice, True, ""

@@ -16,6 +16,7 @@ import os
 
 from google.cloud.storage import transfer_manager
 
+import invoice_folder
 from config import QUARANTINE_PREFIX, UPLOAD_MAX_WORKERS
 from server_notify import notify_server_of_upload
 from fs_utils import (
@@ -78,9 +79,28 @@ def iter_relative_file_paths(
     """
     walk_error_handler = make_walk_error_handler(context_label)
     skipped_transient_count = 0
-    for current_dir, _dirs, file_names in os.walk(
+    # H28 (S151): la carpeta local FACTURACIÓN de la bandeja nunca va a
+    # cuarentena, aunque cuelgue de una carpeta vigilada: sus facturas
+    # las sube `invoice_folder.py` por su propio camino.
+    # ---
+    # The local FACTURACIÓN folder never goes to quarantine, even under
+    # a watched folder: `invoice_folder.py` uploads its invoices.
+    invoice_root = invoice_folder.resolve_root()
+    invoice_root = os.path.normcase(invoice_root) if invoice_root else ""
+    for current_dir, dirs, file_names in os.walk(
         root_folder, onerror=walk_error_handler,
     ):
+        if invoice_root:
+            dirs[:] = [
+                name for name in dirs
+                if os.path.normcase(os.path.normpath(
+                    os.path.join(current_dir, name),
+                )) != invoice_root
+            ]
+            if os.path.normcase(os.path.normpath(
+                current_dir,
+            )) == invoice_root:
+                continue
         for file_name in file_names:
             # Los temporales de Office/OneDrive no son documentacion y
             # no deben llegar ni al cubo ni a la cola de cuarentena
