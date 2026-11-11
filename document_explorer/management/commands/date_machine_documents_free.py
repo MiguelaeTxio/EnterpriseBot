@@ -45,6 +45,7 @@ from document_explorer.filename_date_service import (
     extract_date_by_filename,
 )
 from document_explorer.machine_date_rules import (
+    EXPIRY_BY_NAME_CODES,
     dates_by_rules,
     fallback_dates,
     normalize,
@@ -151,6 +152,15 @@ class Command(BaseCommand):
         """
         if fallback:
             found = fallback_dates(original_name(entry), entry.ocr_text)
+        elif entry.document_type.code in EXPIRY_BY_NAME_CODES and (
+                extract_date_by_filename(
+                    entry.document_type.code, original_name(entry))):
+            # S150: en ITV/OCA la fecha completa escrita en el nombre es la
+            # caducidad y manda sobre el texto. La regla de la tarjeta ITV
+            # ("la inspección más reciente") cogía la fila de la ITV
+            # anterior: B34 "ITV 08-03-27" quedó con 06/09/2026 y obsoleta
+            # (igual P27 y A59). Sin reglas, decide _decide() por el nombre.
+            return {}, None
         else:
             found = dates_by_rules(
                 entry.document_type.code, original_name(entry),
