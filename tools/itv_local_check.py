@@ -252,8 +252,10 @@ def _write(report, rows, output_path):
         "",
     ]
     if missing:
-        lines += ["| Vehículo | Matrícula | ITV vencida el | Días vencida |",
-                  "|---|---|---|---|"]
+        lines += [
+            "| Vehículo | Matrícula | ITV vencida el | Días vencida |",
+            "|---|---|---|---|",
+        ]
         for vehicle, _problems, _folders, _extra in missing:
             lines.append("| %s | %s | %s | %d |" % (
                 vehicle["code"], vehicle["plate"],
