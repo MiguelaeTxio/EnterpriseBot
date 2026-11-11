@@ -143,6 +143,10 @@ INSTALLED_APPS = [
     # obra, pensado como costura para los futuros modelos de Cliente/
     # Proveedor/facturación.
     'worksites',
+    # Supplier invoices of the inbox FACTURACIÓN folder: parts checked
+    # against delivery notes, warehouse and work orders -- facturas de
+    # proveedor de la carpeta FACTURACIÓN de la bandeja (H28, S151).
+    'supplier_invoices',
 ]
 
 # Middleware stack optimized for async processing in Django 5.2.12.
@@ -537,6 +541,14 @@ CELERY_BEAT_SCHEDULE = {
     'backup-database': {
         'task':     'document_explorer.tasks.backup_database_task',
         'schedule': crontab(hour=3, minute=0),
+    },
+
+    # H28 (S151): facturas que llegan a FACTURACION/FACTURAS NUEVAS por
+    # otra vía que la bandeja (explorador, OneDrive) -> agente de
+    # facturas.
+    'sweep-invoice-folder': {
+        'task':     'supplier_invoices.tasks.sweep_invoice_folder_task',
+        'schedule': crontab(minute='*/10'),
     },
 }
 
