@@ -1,0 +1,97 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/supplier_invoices/templates/supplier_invoices/_table.html #}
+{% comment %}
+H28 (S151). Tabla de la carpeta FACTURACIÓN de la bandeja: la devuelven
+la carga inicial, cada cambio de subcarpeta, filtro u orden y cada
+refresco mientras quedan facturas en cola. Todo llega resuelto desde la
+vista (plantillas tontas); la selección vive en el JS de _pane.html.
+{% endcomment %}
+<div id="inv-fragment-state" class="d-none"
+     data-count="{{ invoices|length }}"
+     data-filtered="{% if is_filtered %}1{% endif %}"
+     data-sort-active="{% if sort_active %}1{% endif %}"
+     data-sort="{{ current_sort }}"
+     data-has-open="{% if has_open %}1{% endif %}"
+     data-folder="{{ filter_folder }}"
+     {% for folder in folders %}data-count-{{ folder.key }}="{{ folder.count }}" {% endfor %}></div>
+<span id="inv-sort-inputs" class="d-none">
+    <input type="hidden" name="sort" value="{{ current_sort }}">
+</span>
+{% if invoices %}
+<table class="table table-sm table-hover align-middle mb-0" id="inv-table">
+    <thead class="table-light">
+        <tr>
+            <th class="inv-check-col">
+                <input class="form-check-input" type="checkbox" id="inv-check-all"
+                       title="Marcar/desmarcar todas las visibles">
+            </th>
+            {% for column in sort_columns %}
+            <th>
+                <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
+                   hx-get="{% url 'supplier_invoices:results' %}"
+                   hx-target="#inv-table-container"
+                   hx-include="#inv-filter-folder, #inv-filter-search, #inv-filter-status, #inv-only-selected, #inv-selected-ids"
+                   hx-trigger="click"
+                   hx-vals='{"sort": "{{ column.next }}"}'>
+                    {{ column.label }}
+                    {% if column.arrow %}
+                        <i class="bi bi-arrow-{{ column.arrow }}-short"></i>{% if column.priority %}<sup class="small">{{ column.priority }}</sup>{% endif %}
+                    {% else %}
+                        <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
+                    {% endif %}
+                </a>
+            </th>
+            {% endfor %}
+            <th>Resultado</th>
+            <th class="inv-actions-col"></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for invoice in invoices %}
+        <tr>
+            <td>
+                <input class="form-check-input inv-row-check" type="checkbox"
+                       data-pk="{{ invoice.pk }}" data-label="{{ invoice.original_name }}">
+            </td>
+            <td>{{ invoice.created_at|date:"d/m/Y H:i" }}</td>
+            <td>
+                {% if invoice.file_url %}
+                <a href="{{ invoice.file_url }}" target="_blank" rel="noopener">{{ invoice.original_name }}</a>
+                {% else %}
+                {{ invoice.original_name }}
+                {% endif %}
+            </td>
+            <td>{{ invoice.supplier_name|default:"—" }}</td>
+            <td>{{ invoice.invoice_number|default:"—" }}</td>
+            <td>{{ invoice.invoice_date|date:"d/m/Y"|default:"—" }}</td>
+            <td class="text-end">{{ invoice.lines_count }}</td>
+            <td class="text-end">{{ invoice.covered_count }}</td>
+            <td class="text-end">{{ invoice.purchased_count }}</td>
+            <td class="text-end">{{ invoice.placed_count }}</td>
+            <td>
+                <span class="badge {{ invoice.status_badge }}">
+                    {% if invoice.is_open %}<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>{% endif %}{{ invoice.get_status_display }}
+                </span>
+            </td>
+            <td class="inv-reason">{{ invoice.reason|default:"" }}</td>
+            <td>
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-secondary border-0 px-2" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                        <li><a class="dropdown-item" href="{{ invoice.detail_url }}"><i class="bi bi-list-columns-reverse me-2"></i>Ver líneas y destino</a></li>
+                        {% if invoice.file_url %}
+                        <li><a class="dropdown-item" href="{{ invoice.file_url }}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf me-2"></i>Abrir la factura</a></li>
+                        {% endif %}
+                    </ul>
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="text-muted small p-3">
+    {% if is_filtered %}Ninguna factura coincide con el filtro.{% elif filter_folder == "procesadas" %}Todavía no hay facturas procesadas.{% else %}No hay facturas nuevas.{% endif %}
+</div>
+{% endif %}

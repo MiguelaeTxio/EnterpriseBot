@@ -300,10 +300,19 @@ class InboxTabView(DocsUploadAccessMixin, View):
         )
         if not isinstance(saved_selection, list):
             saved_selection = []
+        # H28 (S151): carpeta abierta de la bandeja (documentos de
+        # personal o FACTURACIÓN), recordada por usuario (4.15).
+        inbox_folder = get_saved_state_key(
+            request.user.company_user, SCREEN_KEY, "folder", "docs",
+        )
         return render(request, "panel/inbox/_pane.html", {
             **_list_context(request),
             "screen_key": SCREEN_KEY,
             "saved_selection": saved_selection,
+            "inbox_folder": (
+                inbox_folder if inbox_folder in ("docs", "facturacion")
+                else "docs"
+            ),
         })
 
 

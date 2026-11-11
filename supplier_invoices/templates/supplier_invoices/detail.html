@@ -1,0 +1,158 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/supplier_invoices/templates/supplier_invoices/detail.html #}
+{% extends "panel/base.html" %}
+{% comment %}
+H28 (S151). Detalle de una factura de la carpeta FACTURACIÓN: lo que se
+leyó de cada línea, su destino (albarán que ya la cubría, entrada en
+almacén, sin cantidad, no es repuesto) y las líneas de los partes en
+las que se ha dado por colocada. Solo lectura; todo llega resuelto
+desde la vista.
+{% endcomment %}
+
+{% block page_title %}Factura {{ invoice.invoice_number|default:invoice.original_name }}{% endblock page_title %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+    <h5 class="mb-0 fw-semibold">
+        Factura {{ invoice.invoice_number|default:"s/n" }}
+        <span class="badge {{ invoice.status_badge }} ms-2">{{ invoice.get_status_display }}</span>
+    </h5>
+    <div class="d-flex gap-2">
+        {% if invoice.file_url %}
+        <a href="{{ invoice.file_url }}" target="_blank" rel="noopener" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-file-earmark-pdf me-1"></i>Abrir la factura
+        </a>
+        {% endif %}
+        {% if panel_back_url %}
+        <a href="{{ panel_back_url }}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i>Volver
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card shadow-sm mb-3">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">Proveedor</div>
+                <div class="fw-semibold">{{ invoice.supplier.name|default:invoice.supplier_name|default:"—" }}</div>
+                <div class="small text-muted">{{ invoice.supplier_tax_id }}</div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="text-muted small">Fecha</div>
+                <div class="fw-semibold">{{ invoice.invoice_date|date:"d/m/Y"|default:"—" }}</div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="text-muted small">Importe total</div>
+                <div class="fw-semibold">{% if invoice.total_amount is not None %}{{ invoice.total_amount }} €{% else %}—{% endif %}</div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="text-muted small">Archivo</div>
+                <div class="fw-semibold text-break">{{ invoice.original_name }}</div>
+            </div>
+            <div class="col-12 col-md-3">
+                <div class="text-muted small">Subida</div>
+                <div class="fw-semibold">{{ invoice.created_at|date:"d/m/Y H:i" }}</div>
+                <div class="small text-muted">{{ invoice.uploaded_by.user.get_full_name|default:invoice.uploaded_by.user.username|default:"Llegó a la carpeta por otra vía" }}</div>
+            </div>
+        </div>
+        {% if invoice.reason %}
+        <div class="alert alert-light border small mt-3 mb-0">{{ invoice.reason }}</div>
+        {% endif %}
+        <div class="small text-muted mt-2">
+            El almacén resultante es un punto de partida: muchos partes antiguos se digitalizaron sin repuestos, así que habrá repuestos que constan en almacén y ya están colocados en sus máquinas.
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm mb-3">
+    <div class="card-header fw-semibold small">Líneas de la factura</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Nº</th>
+                        <th>Referencia</th>
+                        <th>Descripción</th>
+                        <th class="text-end">Cantidad</th>
+                        <th class="text-end">Precio</th>
+                        <th class="text-end">Importe</th>
+                        <th>Albarán citado</th>
+                        <th>Destino</th>
+                        <th>Albarán que la cubre</th>
+                        <th>Repuesto en almacén</th>
+                        <th class="text-end">Colocada</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for line in lines %}
+                    <tr>
+                        <td>{{ line.line_number }}</td>
+                        <td>{{ line.reference|default:"—" }}</td>
+                        <td>{{ line.description|default:"—" }}</td>
+                        <td class="text-end">{{ line.quantity|default:"—" }}</td>
+                        <td class="text-end">{{ line.unit_price|default:"—" }}</td>
+                        <td class="text-end">{{ line.total_price|default:"—" }}</td>
+                        <td>{{ line.delivery_number_raw|default:"—" }}</td>
+                        <td>{{ line.get_outcome_display }}</td>
+                        <td>
+                            {% if line.delivery_url %}
+                            <a href="{{ line.delivery_url }}">{{ line.delivery_label }}</a>
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if line.spare_part_entry %}
+                            {{ line.spare_part_entry.internal_reference|default:line.spare_part_entry.description }}
+                            <span class="text-muted small">({{ line.spare_part_entry.get_status_display }})</span>
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                        </td>
+                        <td class="text-end">{{ line.placed_quantity }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="11" class="text-muted small p-3">No se ha leído ninguna línea.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% if has_placements %}
+<div class="card shadow-sm mb-3">
+    <div class="card-header fw-semibold small">Colocados según los partes de trabajo</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Línea de factura</th>
+                        <th>Fecha del parte</th>
+                        <th>Operario</th>
+                        <th>Máquina</th>
+                        <th>Repuesto en el parte</th>
+                        <th class="text-end">Cantidad</th>
+                        <th>Coincidencia</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for line in lines %}
+                    {% for row in line.placement_rows %}
+                    <tr>
+                        <td>{{ line.line_number }} · {{ line.reference|default:line.description }}</td>
+                        <td>{{ row.date|date:"d/m/Y"|default:"—" }}</td>
+                        <td>{{ row.worker|default:"—" }}</td>
+                        <td>{{ row.machine|default:"—" }}</td>
+                        <td>{{ row.material|default:"—" }}</td>
+                        <td class="text-end">{{ row.quantity }}{% if row.assumed %} <span class="text-muted small" title="El parte no indicaba unidades">(supuesta)</span>{% endif %}</td>
+                        <td>{{ row.match }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock content %}

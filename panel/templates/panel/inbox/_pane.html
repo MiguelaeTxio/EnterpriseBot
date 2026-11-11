@@ -12,7 +12,20 @@ Los archivos se mandan de uno en uno (se ve el avance de cada uno); la
 lista se refresca sola mientras queda algo en cola o clasificándose.
 Filtros, orden y selección persistidos por usuario (screen_key
 "inbox").
+H28 (S151): carpetas de la bandeja. "Documentos de personal" es lo de
+siempre; "FACTURACIÓN" (facturas de proveedor, con sus subcarpetas de
+nuevas y procesadas) se carga aparte desde supplier_invoices. La
+carpeta abierta se recuerda por usuario (clave "folder").
 {% endcomment %}
+<div class="btn-group btn-group-sm mb-2" role="group" aria-label="Carpetas de la bandeja de entrada" id="inbox-folder-nav">
+    <button type="button" class="btn btn-outline-secondary inbox-folder-btn{% if inbox_folder == 'docs' %} active{% endif %}" data-inbox-folder="docs">
+        <i class="bi bi-person-vcard me-1"></i>Documentos de personal
+    </button>
+    <button type="button" class="btn btn-outline-secondary inbox-folder-btn{% if inbox_folder == 'facturacion' %} active{% endif %}" data-inbox-folder="facturacion">
+        <i class="bi bi-folder2 me-1"></i>FACTURACIÓN
+    </button>
+</div>
+<div id="inbox-invoices-pane" class="d-none" data-url="{% url 'supplier_invoices:pane' %}"></div>
 <div class="border rounded p-2 mb-2" id="inbox-top-panel">
     <div class="row g-2">
         <div class="col-lg-6">
@@ -447,6 +460,41 @@ Filtros, orden y selección persistidos por usuario (screen_key
         if (!evt.detail.target || evt.detail.target.id !== "inbox-table-container") return;
         refreshFromFragment();
     });
+
+    // ---------------------------------------------------------------
+    // H28 (S151): carpetas de la bandeja. FACTURACIÓN se carga la
+    // primera vez que se abre; la carpeta abierta se guarda por usuario.
+    // ---------------------------------------------------------------
+    const invoicesPane = document.getElementById("inbox-invoices-pane");
+    let invoicesLoaded = false;
+    function openInboxFolder(folder, save) {
+        const isInvoices = folder === "facturacion";
+        const topPanel = document.getElementById("inbox-top-panel");
+        [topPanel, document.getElementById("inbox-bottom-panel")].forEach(function (panel) {
+            panel.classList.toggle("d-none", isInvoices);
+        });
+        const toggle = topPanel.previousElementSibling;
+        if (toggle && toggle.classList.contains("fl-toggle")) {
+            toggle.classList.toggle("d-none", isInvoices);
+        }
+        invoicesPane.classList.toggle("d-none", !isInvoices);
+        document.querySelectorAll(".inbox-folder-btn").forEach(function (btn) {
+            btn.classList.toggle("active", btn.dataset.inboxFolder === folder);
+        });
+        if (isInvoices && !invoicesLoaded) {
+            invoicesLoaded = true;
+            invoicesPane.innerHTML = '<div class="text-muted small py-3">Cargando…</div>';
+            htmx.ajax("GET", invoicesPane.dataset.url, {target: "#inbox-invoices-pane"});
+        }
+        if (save) window.EbNavState.save(SCREEN_KEY, {folder: folder});
+        window.dispatchEvent(new Event("resize"));
+    }
+    document.querySelectorAll(".inbox-folder-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+            openInboxFolder(btn.dataset.inboxFolder, true);
+        });
+    });
+    openInboxFolder("{{ inbox_folder|escapejs }}", false);
 
     refreshFromFragment();
 }());
