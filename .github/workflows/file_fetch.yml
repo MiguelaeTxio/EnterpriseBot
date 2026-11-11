@@ -46,6 +46,19 @@ on:
         required: false
         default: "110"
         type: string
+      delivery:
+        # S150: "release" (solo modo pythonanywhere, sin grep ni tail):
+        # el archivo va comprimido a la release privada relevo-imagenes,
+        # que el modelo baja con gh y vacía al cierre de sesión, como
+        # db_query.yml (S145). Para archivos que el conector de Drive no
+        # sabe leer como texto (un .json de un Comando S).
+        description: "Entrega (solo pythonanywhere): drive (por defecto) o release"
+        required: false
+        default: "drive"
+        type: choice
+        options:
+          - drive
+          - release
       max_pages:
         description: "Opcional (solo gcs_image): páginas máximas por documento. 4 por defecto; más para PDF que agrupan varios documentos (S121)."
         required: false
@@ -82,8 +95,26 @@ jobs:
           scp -i ~/.ssh/pa_readonly_key .github/scripts/drive_upload.py \
             MiguelAeTxio@ssh.pythonanywhere.com:/home/MiguelAeTxio/SWAP/drive_upload_${{ github.run_id }}.py
 
+      - name: PythonAnywhere — archivo a la release privada (delivery=release, S150)
+        if: inputs.mode == 'pythonanywhere' && inputs.delivery == 'release'
+        env:
+          REMOTE_PATH: ${{ inputs.remote_path }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          NAME="$(basename "$REMOTE_PATH")_${{ github.run_id }}.gz"
+          scp -i ~/.ssh/pa_readonly_key \
+            MiguelAeTxio@ssh.pythonanywhere.com:"$REMOTE_PATH" /tmp/fetched
+          gzip -9 -c /tmp/fetched > "/tmp/$NAME"
+          gh release view relevo-imagenes >/dev/null 2>&1 || \
+            gh release create relevo-imagenes --prerelease \
+              --title "Relevo de imágenes (solo lectura, temporal)" \
+              --notes "Material temporal del relevo para el modelo. Se vacía al cierre de sesión."
+          gh release upload relevo-imagenes "/tmp/$NAME" --clobber
+          echo "RELEASE_ASSET=$NAME"
+
       - name: PythonAnywhere — preparar el archivo y subirlo a Drive
-        if: inputs.mode == 'pythonanywhere'
+        if: inputs.mode == 'pythonanywhere' && inputs.delivery != 'release'
         env:
           REMOTE_PATH: ${{ inputs.remote_path }}
           TAIL_LINES: ${{ inputs.tail_lines }}
