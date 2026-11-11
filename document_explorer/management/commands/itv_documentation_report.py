@@ -48,6 +48,9 @@ from fleet.models import MachineAsset
 from spare_parts.gcs_service import get_storage_client
 
 ITV_TYPE_CODE = "ITV"
+# Lo que entra por el agente H28 sin clasificar del todo vive en el cubo
+# bajo esta cuarentena; en local está en la misma ruta sin el prefijo.
+QUARANTINE_PREFIX = "_CUARENTENA/"
 
 
 class Command(BaseCommand):
@@ -143,6 +146,8 @@ class Command(BaseCommand):
         for entry in docs:
             if entry.blob_name.startswith(PANEL_PREFIXES):
                 local_path = "%s/%s" % (folder, entry.name)
+            elif entry.blob_name.startswith(QUARANTINE_PREFIX):
+                local_path = entry.blob_name[len(QUARANTINE_PREFIX):]
             else:
                 local_path = entry.blob_name
             blob = bucket.get_blob(entry.blob_name)
