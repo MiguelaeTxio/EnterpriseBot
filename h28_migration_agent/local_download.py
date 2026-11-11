@@ -50,6 +50,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import socket
 import unicodedata
 import urllib.parse
@@ -250,17 +251,35 @@ def _plain(text):
         c for c in text if not unicodedata.combining(c)).upper().strip()
 
 
+def _stem(name):
+    """Folder name before its first bracket, letters and digits only.
+    ---
+    El nombre de la carpeta hasta su primer parentesis, solo letras y
+    numeros: "DOCUMENT 2030JVK PEUGEOT 208 (TR)" y "DOCUMENT 2030JVK
+    PEUGEOT 208" dan lo mismo.
+    """
+    return re.sub(r"[^A-Z0-9]", "", _plain(name.split("(", 1)[0]))
+
+
 def find_person_folder(watched_folders, previous):
-    """Find a person folder by name in every known category.
+    """Find a person or machine folder by name in every known category.
     ---
     Busca la carpeta de la persona por su nombre (sin tildes ni
     mayusculas) en todas las categorias conocidas. Devuelve su ruta
     virtual si hay exactamente una; "" si no hay ninguna o hay varias
     (con dos iguales no se adivina: se avisa en el log).
+    S150: las carpetas vacias no cuentan (no hay nada que mover; las
+    deja un trabajo anterior que no encontro la de verdad). En maquinas,
+    si no hay ninguna con el nombre exacto, vale la que tiene el mismo
+    nombre hasta el primer parentesis: en local muchas llevan la empresa
+    al final ("DOCUMENT 2030JVK PEUGEOT 208 (TR)") o el estado ("R-12
+    B-10513-R FC (VENDIDA)") y el servidor no lo sabe.
     """
     wanted = _plain(previous.rsplit("/", 1)[-1])
-    found = []
-    if previous.startswith(MACHINE_ROOT + "/"):
+    machine = previous.startswith(MACHINE_ROOT + "/")
+    stem = _stem(previous.rsplit("/", 1)[-1]) if machine else ""
+    found, similar = [], []
+    if machine:
         root, containers = MACHINE_ROOT, MACHINE_CONTAINERS
     else:
         root, containers = PERSON_ROOT, PERSON_CONTAINERS
@@ -274,9 +293,14 @@ def find_person_folder(watched_folders, previous):
         if not os.path.isdir(to_long_path(base)):
             continue
         for name in os.listdir(to_long_path(base)):
-            if _plain(name) == wanted and os.path.isdir(
-                    to_long_path(os.path.join(base, name))):
+            path = to_long_path(os.path.join(base, name))
+            if not os.path.isdir(path) or not os.listdir(path):
+                continue
+            if _plain(name) == wanted:
                 found.append("%s/%s" % (virtual, name))
+            elif len(stem) >= 5 and _stem(name) == stem:
+                similar.append("%s/%s" % (virtual, name))
+    found = found or similar
     if len(found) == 1:
         logger.info("Descarga a local: %s no esta; encontrada en %s",
                     previous, found[0])
@@ -292,8 +316,11 @@ def move_person_folder(watched_folders, previous, target):
     ---
     Mueve la carpeta de la persona entera, tal cual. Si el destino no
     existe, se renombra la carpeta; si existe, se pasa dentro lo que no
-    este y la de antes se borra solo si queda vacia. Devuelve un texto
-    para el historial, o "" si no habia nada que mover.
+    este y la de antes se borra solo si queda vacia. Devuelve (texto
+    para el historial o "" si no habia nada que mover, carpeta destino).
+    S150: texto None si la carpeta no esta en local; y si se encontro
+    con otro nombre (una maquina con la empresa al final), el destino
+    conserva ese nombre: en local no se renombra nada.
     """
     person = is_person_folder(previous) and is_person_folder(target)
     machine = is_machine_previous(previous) and is_machine_folder(target)
@@ -303,23 +330,36 @@ def move_person_folder(watched_folders, previous, target):
             % (previous, target))
     folder, old_rel, source = _local(watched_folders, previous)
     _folder2, new_rel, dest = _local(watched_folders, target)
+    if os.path.isdir(to_long_path(source)) and not os.listdir(
+            to_long_path(source)):
+        # S150: vacia, la dejo un trabajo anterior; la buena puede tener
+        # otro nombre.
+        os.rmdir(to_long_path(source))
     if not os.path.isdir(to_long_path(source)):
         # S146: la carpeta que dice el servidor es la de cuando se
         # subieron sus documentos; si en local la movieron a mano (p. ej.
         # a TRABAJADORES INACTIVOS tras la baja), se busca por su nombre.
         found = find_person_folder(watched_folders, previous)
         if not found:
-            return ""
+            return None, target
+        if machine:
+            target = "%s/%s" % (target.rsplit("/", 1)[0],
+                                found.rsplit("/", 1)[-1])
+            _folder2, new_rel, dest = _local(watched_folders, target)
         previous = found
         folder, old_rel, source = _local(watched_folders, previous)
     if os.path.normcase(os.path.abspath(source)) == os.path.normcase(
             os.path.abspath(dest)):
-        return ""
+        return "", target
+    if os.path.isdir(to_long_path(dest)) and not os.listdir(
+            to_long_path(dest)):
+        # S150: una carpeta vacia que dejo un trabajo anterior.
+        os.rmdir(to_long_path(dest))
     if not os.path.exists(to_long_path(dest)):
         os.makedirs(to_long_path(os.path.dirname(dest)), exist_ok=True)
         os.replace(to_long_path(source), to_long_path(dest))
         _reindex_moved(folder, old_rel, new_rel)
-        return "carpeta movida de %s a %s" % (previous, target)
+        return "carpeta movida de %s a %s" % (previous, target), target
     kept = []
     for name in os.listdir(to_long_path(source)):
         src = os.path.join(source, name)
@@ -331,9 +371,10 @@ def move_person_folder(watched_folders, previous, target):
         _reindex_moved(folder, old_rel + "/" + name, new_rel + "/" + name)
     if not kept:
         os.rmdir(to_long_path(source))
-        return "contenido pasado de %s a %s" % (previous, target)
+        return "contenido pasado de %s a %s" % (previous, target), target
     return ("contenido pasado a %s; se quedan en %s %d elemento(s) que "
-            "ya estaban en el destino" % (target, previous, len(kept)))
+            "ya estaban en el destino" % (target, previous, len(kept)),
+            target)
 
 
 def _download_file(bucket, blob_name, target):
@@ -394,16 +435,29 @@ def _run_job(bucket, job, watched_folders, events):
     if target and not is_subject_folder(target):
         return 0, ("la carpeta destino no es una carpeta de persona ni de "
                    "maquina: %s" % target)
+    missing = False
     if previous:
         try:
-            text = move_person_folder(watched_folders, previous, target)
+            text, moved_to = move_person_folder(
+                watched_folders, previous, target)
         except Exception as error:  # noqa: BLE001
             logger.exception("Descarga a local: fallo moviendo %s: %s",
                              previous, error)
             return 0, "moviendo la carpeta: %s" % error
-        if text:
+        if text is None:
+            # S150: sin carpeta en local no se crea una vacia (antes
+            # quedaban carpetas vacias con el nombre del servidor).
+            missing = True
+            events.append("Trabajo %s: no encuentro en local %s" % (
+                job_id, previous))
+        elif text:
             events.append("Trabajo %s: %s" % (job_id, text))
-    if target:
+        if moved_to != target:
+            # Los archivos del panel van a la carpeta con su nombre real.
+            files = [dict(item, path=moved_to + item["path"][len(target):])
+                     for item in files]
+            target = moved_to
+    if target and not (missing and not files):
         # S148: en el alta de una maquina (o de una persona sin
         # documentos) la carpeta se crea aunque no haya nada que bajar.
         try:
