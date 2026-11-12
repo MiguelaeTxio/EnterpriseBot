@@ -2372,6 +2372,50 @@ class CompanyFiscalProfile(models.Model):
         return self.legal_name
 
 
+class CompanySignature(models.Model):
+    """
+    S153. Stored signature (and stamp) of a group company, encrypted.
+    ---
+    Firma (con su sello) de una empresa del grupo, para generar los
+    documentos firmados que piden los clientes (actas de adhesión al
+    plan de seguridad y salud...). Miguel Ángel: "Las firmas tendrían
+    que quedar guardadas. A esto solamente puede tener acceso Yolanda."
+    La imagen se guarda cifrada (Fernet, CONFIDENTIAL_DOCS_KEY), ya
+    recortada y con el fondo blanco transparente (PNG).
+    """
+
+    company = models.ForeignKey(
+        CompanyFiscalProfile,
+        on_delete=models.PROTECT,
+        related_name="signatures",
+        verbose_name="Empresa",
+    )
+    label = models.CharField(
+        max_length=120, verbose_name="Nombre de la firma",
+        help_text="Quién firma (p. ej. \"Adolfo\").",
+    )
+    image_encrypted = models.BinaryField(
+        verbose_name="Imagen de la firma (cifrada, PNG)",
+    )
+    created_by = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name="Guardada por",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Firma de empresa"
+        verbose_name_plural = "Firmas de empresa"
+        ordering = ["company__legal_name", "label"]
+
+    def __str__(self):
+        return "%s · %s" % (self.company.legal_name, self.label)
+
+
 class EpiDeliveryBatchTemplate(models.Model):
     """
     H31 (S113). "Lote" de EPIs -- Miguel Ángel: el proceso real de la

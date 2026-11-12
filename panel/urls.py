@@ -111,6 +111,14 @@ from panel.views_payslips import (
     PayslipTabView,
     PayslipUploadView,
 )
+# S153: pestaña Firmas (firmas de empresa y documentos firmados).
+from panel.views_signatures import (
+    SignatureDeleteView,
+    SignatureImageView,
+    SignatureSaveView,
+    SignatureTabView,
+    SignedFormsGenerateView,
+)
 # H24 (S147): solicitudes de los trabajadores.
 from panel.views_worker_requests import (
     MyRequestCancelView,
@@ -2300,6 +2308,32 @@ urlpatterns = [
         "documentacion/nominas/",
         PayslipTabView.as_view(),
         name="payslip_tab",
+    ),
+    # S153: pestaña Firmas.
+    path(
+        "documentacion/firmas/",
+        SignatureTabView.as_view(),
+        name="signature_tab",
+    ),
+    path(
+        "documentacion/firmas/guardar/",
+        SignatureSaveView.as_view(),
+        name="signature_save",
+    ),
+    path(
+        "documentacion/firmas/<int:pk>/borrar/",
+        SignatureDeleteView.as_view(),
+        name="signature_delete",
+    ),
+    path(
+        "documentacion/firmas/<int:pk>/imagen/",
+        SignatureImageView.as_view(),
+        name="signature_image",
+    ),
+    path(
+        "documentacion/firmas/generar/",
+        SignedFormsGenerateView.as_view(),
+        name="signed_forms_generate",
     ),
     # Sin sesión: Twilio recoge de aquí el PDF de cada nómina (enlace
     # temporal con token largo).

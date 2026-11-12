@@ -511,6 +511,17 @@ class CompanyUser(models.Model):
             "los supervisores que deban enviarlas."
         ),
     )
+    # S153 (Miguel Ángel): pestaña "Firmas" de Documentación (firmas de
+    # las empresas y actas de adhesión firmadas). "A esto solamente puede
+    # tener acceso Yolanda" (y alvarez_admin, para pruebas).
+    signature_access = models.BooleanField(
+        default=False,
+        verbose_name="Firmas de empresa",
+        help_text=(
+            "Puede guardar las firmas de las empresas y generar con ellas "
+            "los documentos firmados (pestaña Firmas de Documentación)."
+        ),
+    )
     alias = models.CharField(
         max_length=50,
         blank=True,

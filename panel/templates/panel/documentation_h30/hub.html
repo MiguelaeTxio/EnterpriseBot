@@ -233,6 +233,17 @@ EbTypePicker.init() (ver panel/_doc_type_picker.html).
         </a>
     </li>
     {% endif %}
+    {% if can_use_signatures %}
+    <li class="nav-item">
+        {# S153: firmas de las empresas y documentos firmados (solo Yolanda). #}
+        <a class="nav-link {% if persisted_active_tab == 'firmas' %}active{% endif %}" id="tab-firmas" data-bs-toggle="tab" href="#pane-firmas"
+           hx-get="{% url 'panel:signature_tab' %}"
+           hx-target="#pane-firmas"
+           hx-trigger="{% if persisted_active_tab == 'firmas' %}load once{% else %}click once{% endif %}">
+            <i class="bi bi-pen me-1"></i>Firmas
+        </a>
+    </li>
+    {% endif %}
     {% if can_use_inbox %}
     <li class="nav-item">
         {% comment %}
@@ -308,6 +319,11 @@ EbTypePicker.init() (ver panel/_doc_type_picker.html).
     <div class="tab-pane fade {% if persisted_active_tab == 'plantillas' %}show active{% endif %}" id="pane-plantillas">
         <div class="text-muted small py-3">Cargando…</div>
     </div>
+    {% if can_use_signatures %}
+    <div class="tab-pane fade {% if persisted_active_tab == 'firmas' %}show active{% endif %}" id="pane-firmas">
+        <div class="text-muted small py-3">Cargando…</div>
+    </div>
+    {% endif %}
     {% if can_use_inbox %}
     <div class="tab-pane fade {% if persisted_active_tab == 'bandeja' %}show active{% endif %}" id="pane-bandeja">
         <div class="text-muted small py-3">Cargando…</div>

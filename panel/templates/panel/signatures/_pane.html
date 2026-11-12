@@ -1,0 +1,238 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/signatures/_pane.html #}
+{% comment %}
+S153. Pestaña "Firmas" del hub de Documentación (solo con
+CompanyUser.signature_access). Arriba, generar los documentos firmados:
+se suben los PDF que envía el cliente (vacíos, sin firmar), se elige la
+empresa nuestra que hace el trabajo y su firma, y con un botón salen
+todos rellenos (empresa subcontratista con su CIF) y firmados, en un PDF
+o en un ZIP. Abajo, las firmas guardadas de cada empresa (cifradas).
+Lógica: panel/views_signatures.py y
+document_explorer/signed_forms_service.py.
+{% endcomment %}
+<style>
+    .sig-thumb { max-height: 3.5rem; max-width: 12rem; background: #fff; }
+    .sig-preview { max-height: 5rem; max-width: 100%; }
+</style>
+<div id="sig-root"
+     data-tab-url="{% url 'panel:signature_tab' %}"
+     data-generate-url="{% url 'panel:signed_forms_generate' %}"
+     data-save-url="{% url 'panel:signature_save' %}">
+    <div class="row g-3">
+        <div class="col-lg-7">
+            <div class="border rounded p-3 h-100">
+                <div class="fw-bold mb-2"><i class="bi bi-file-earmark-check me-1"></i>Generar documentos firmados</div>
+                <p class="small text-muted mb-2">
+                    Sube los PDF que ha enviado el cliente (uno o varios), elige la empresa nuestra que hace el trabajo y su firma.
+                    En cada documento se escribe la empresa subcontratista con su CIF y se pone la firma bajo «Representante de la subcontrata».
+                </p>
+                <form id="sig-generate-form" autocomplete="off" onsubmit="return false;">
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold mb-0" for="sig-documents">Documentos del cliente (PDF)</label>
+                        <input type="file" class="form-control form-control-sm" id="sig-documents" name="documents" accept="application/pdf,.pdf" multiple>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold mb-0" for="sig-company">Empresa</label>
+                            <select class="form-select form-select-sm" id="sig-company" name="company">
+                                <option value="">Elige la empresa…</option>
+                                {% for profile in profiles %}
+                                <option value="{{ profile.pk }}"{% if profile.pk not in profiles_with_signature %} disabled{% endif %}>{{ profile.legal_name }}{% if profile.pk not in profiles_with_signature %} (sin firma){% endif %}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold mb-0" for="sig-signature">Firma</label>
+                            <select class="form-select form-select-sm" id="sig-signature" name="signature">
+                                <option value="">Elige primero la empresa</option>
+                                {% for signature in signatures %}
+                                <option value="{{ signature.pk }}" data-company="{{ signature.company_id }}" hidden>{{ signature.label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-2 d-none" id="sig-chosen-wrap"></div>
+                    <button type="button" class="btn btn-primary btn-sm" id="sig-generate-btn">
+                        <i class="bi bi-pen me-1"></i>Generar documentos
+                    </button>
+                    <span class="small ms-2" id="sig-generate-msg"></span>
+                </form>
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="border rounded p-3 h-100">
+                <div class="fw-bold mb-2"><i class="bi bi-plus-circle me-1"></i>Guardar una firma</div>
+                <p class="small text-muted mb-2">
+                    Imagen de la firma con su sello (JPG o PNG). El fondo blanco se quita solo para que no tape el documento.
+                </p>
+                <form id="sig-save-form" autocomplete="off" onsubmit="return false;">
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold mb-0" for="sig-new-company">Empresa</label>
+                        <select class="form-select form-select-sm" id="sig-new-company" name="company">
+                            <option value="">Elige la empresa…</option>
+                            {% for profile in profiles %}
+                            <option value="{{ profile.pk }}">{{ profile.legal_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold mb-0" for="sig-new-label">Quién firma</label>
+                        <input type="text" class="form-control form-control-sm" id="sig-new-label" name="label" maxlength="120" placeholder="p. ej. Adolfo">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold mb-0" for="sig-new-image">Imagen</label>
+                        <input type="file" class="form-control form-control-sm" id="sig-new-image" name="image" accept="image/*">
+                    </div>
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="sig-save-btn">
+                        <i class="bi bi-save me-1"></i>Guardar firma
+                    </button>
+                    <span class="small ms-2" id="sig-save-msg"></span>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="border rounded p-3 mt-3">
+        <div class="fw-bold mb-2">Firmas guardadas ({{ signatures|length }})</div>
+        {% if signatures %}
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Empresa</th>
+                        <th>Quién firma</th>
+                        <th>Firma</th>
+                        <th>Guardada</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for signature in signatures %}
+                    <tr>
+                        <td>{{ signature.company.legal_name }}</td>
+                        <td>{{ signature.label }}</td>
+                        <td><img src="{% url 'panel:signature_image' signature.pk %}" alt="Firma de {{ signature.label }}" class="sig-thumb border rounded p-1"></td>
+                        <td class="small text-muted">{{ signature.created_at|date:"d/m/Y H:i" }}{% if signature.created_by %} · {{ signature.created_by.user.username }}{% endif %}</td>
+                        <td class="text-end">
+                            <button type="button" class="btn btn-outline-danger btn-sm" data-sig-delete="{% url 'panel:signature_delete' signature.pk %}" data-sig-name="{{ signature.label }} ({{ signature.company.legal_name }})">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="small text-muted">Todavía no hay ninguna firma guardada.</div>
+        {% endif %}
+    </div>
+</div>
+<script>
+(function () {
+    var root = document.getElementById("sig-root");
+    if (!root) { return; }
+    var company = document.getElementById("sig-company");
+    var signature = document.getElementById("sig-signature");
+    var chosenWrap = document.getElementById("sig-chosen-wrap");
+    var imageBase = "{% url 'panel:signature_image' 0 %}";
+
+    function csrf() {
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? meta.getAttribute("content") : "";
+    }
+    function reloadTab() {
+        htmx.ajax("GET", root.dataset.tabUrl, {target: "#pane-firmas", swap: "innerHTML"});
+    }
+    function say(el, text, ok) {
+        el.textContent = text;
+        el.className = "small ms-2 " + (ok ? "text-success" : "text-danger");
+    }
+    function errorOf(response) {
+        return response.text().then(function (body) {
+            try { return JSON.parse(body).error || body; } catch (e) { return body || ("Error " + response.status); }
+        });
+    }
+    function showChosen() {
+        if (signature.value) {
+            var img = document.createElement("img");
+            img.src = imageBase.replace("/0/", "/" + signature.value + "/");
+            img.alt = "Firma elegida";
+            img.className = "sig-preview border rounded p-1";
+            chosenWrap.replaceChildren(img);
+            chosenWrap.classList.remove("d-none");
+        } else {
+            chosenWrap.replaceChildren();
+            chosenWrap.classList.add("d-none");
+        }
+    }
+    function fillSignatures() {
+        var options = signature.querySelectorAll("option[data-company]");
+        var first = null;
+        options.forEach(function (opt) {
+            var match = opt.dataset.company === company.value;
+            opt.hidden = !match;
+            if (match && first === null) { first = opt; }
+        });
+        signature.options[0].textContent = company.value ? "Elige la firma…" : "Elige primero la empresa";
+        signature.value = first ? first.value : "";
+        showChosen();
+    }
+    company.addEventListener("change", fillSignatures);
+    signature.addEventListener("change", showChosen);
+
+    document.getElementById("sig-generate-btn").addEventListener("click", function () {
+        var btn = this;
+        var msg = document.getElementById("sig-generate-msg");
+        var files = document.getElementById("sig-documents").files;
+        if (!files.length) { say(msg, "Elige los PDF del cliente.", false); return; }
+        if (!company.value || !signature.value) { say(msg, "Elige la empresa y la firma.", false); return; }
+        var data = new FormData(document.getElementById("sig-generate-form"));
+        btn.disabled = true;
+        say(msg, "Generando…", true);
+        fetch(root.dataset.generateUrl, {method: "POST", body: data, headers: {"X-CSRFToken": csrf()}})
+            .then(function (response) {
+                if (!response.ok) { return errorOf(response).then(function (text) { throw new Error(text); }); }
+                var disposition = response.headers.get("Content-Disposition") || "";
+                var match = disposition.match(/filename\*=UTF-8''([^;]+)/);
+                var name = match ? decodeURIComponent(match[1]) : "documentos.pdf";
+                return response.blob().then(function (blob) {
+                    var link = document.createElement("a");
+                    link.href = URL.createObjectURL(blob);
+                    link.download = name;
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    setTimeout(function () { URL.revokeObjectURL(link.href); }, 2000);
+                    say(msg, files.length + " documento(s) generados: " + name, true);
+                });
+            })
+            .catch(function (err) { say(msg, err.message, false); })
+            .finally(function () { btn.disabled = false; });
+    });
+
+    document.getElementById("sig-save-btn").addEventListener("click", function () {
+        var btn = this;
+        var msg = document.getElementById("sig-save-msg");
+        var data = new FormData(document.getElementById("sig-save-form"));
+        btn.disabled = true;
+        fetch(root.dataset.saveUrl, {method: "POST", body: data, headers: {"X-CSRFToken": csrf()}})
+            .then(function (response) {
+                if (!response.ok) { return errorOf(response).then(function (text) { throw new Error(text); }); }
+                reloadTab();
+            })
+            .catch(function (err) { say(msg, err.message, false); btn.disabled = false; });
+    });
+
+    root.querySelectorAll("[data-sig-delete]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+            if (!window.confirm("¿Borrar la firma " + btn.dataset.sigName + "?")) { return; }
+            fetch(btn.dataset.sigDelete, {method: "POST", headers: {"X-CSRFToken": csrf()}})
+                .then(function (response) {
+                    if (!response.ok) { return errorOf(response).then(function (text) { throw new Error(text); }); }
+                    reloadTab();
+                })
+                .catch(function (err) { window.alert(err.message); });
+        });
+    });
+}());
+</script>
