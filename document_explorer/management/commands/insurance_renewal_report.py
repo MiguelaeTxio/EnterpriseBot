@@ -86,6 +86,7 @@ RESPONSE_SCHEMA = {
         "insurer": _NULLABLE_STRING,
         "broker": _NULLABLE_STRING,
         "policy_number": _NULLABLE_STRING,
+        "receipt_number": _NULLABLE_STRING,
         "policyholder": _NULLABLE_STRING,
         "insured_plates": {"type": "array", "items": {"type": "string"}},
         "insured_object": _NULLABLE_STRING,
@@ -100,6 +101,7 @@ RESPONSE_SCHEMA = {
     },
     "required": [
         "document_kind", "insurer", "broker", "policy_number",
+        "receipt_number",
         "policyholder", "insured_plates", "insured_object", "cover",
         "total_premium", "net_premium", "payment_frequency",
         "period_start", "period_end", "renewal_date", "notes",
@@ -117,7 +119,10 @@ solo lo que conste en él, sin inventar nada. Si un dato no consta, null.
 - insurer: compañía aseguradora (Allianz, AXA, Mapfre, Generali...).
 - broker: mediador, corredor o agente (correduría, agencia o agente con
   su nombre; también su clave o código si aparece). No la aseguradora.
-- policy_number: número de póliza tal cual figura.
+- policy_number: número de póliza tal cual figura. Nunca el número del
+  recibo: en un recibo, el número de póliza suele ir junto a la palabra
+  "Póliza"; si solo hay número de recibo, null.
+- receipt_number: número del recibo, si lo es.
 - policyholder: tomador del seguro.
 - insured_plates: matrículas o números de bastidor de los vehículos o
   máquinas asegurados que aparezcan.
@@ -136,7 +141,8 @@ solo lo que conste en él, sin inventar nada. Si un dato no consta, null.
   formato AAAA-MM-DD.
 - notes: cualquier dato útil para renegociar el precio con el mediador
   (bonificaciones, franquicias, número de siniestros, capital
-  asegurado), en una frase. null si no hay nada.
+  asegurado), en una frase. Sin datos personales de nadie (ni
+  conductores, ni fechas de nacimiento, ni DNI). null si no hay nada.
 
 Responde únicamente con el JSON solicitado."""
 
