@@ -60,6 +60,8 @@ _RETRY_DELAY_SECONDS = 5
 # tabla, nunca hardcodeada aquí). Se consulta en cada llamada -- un
 # tipo nuevo que Miguel Ángel añada al catálogo se reconoce solo, sin
 # tocar este archivo.
+
+
 def _personal_type_catalog():
     from document_explorer.models import DocumentTypeCatalog
     return list(
@@ -70,12 +72,15 @@ def _personal_type_catalog():
 
 
 def _build_response_schema():
-    codes = [code for code, _label in _personal_type_catalog()] + ["DESCONOCIDO"]
+    codes = [code for code, _label in _personal_type_catalog()]
+    codes.append("DESCONOCIDO")
     return {
         "type": "object",
         "properties": {
             "document_type_code": {"type": "string", "enum": codes},
-            "confidence": {"type": "string", "enum": ["ALTA", "MEDIA", "BAJA"]},
+            "confidence": {
+                "type": "string", "enum": ["ALTA", "MEDIA", "BAJA"],
+            },
             "reasoning": {"type": "string"},
             "first_surname_hint": {"type": "string"},
             "second_surname_hint": {"type": "string"},
@@ -95,7 +100,8 @@ def _build_response_schema():
         "required": [
             "document_type_code", "confidence", "reasoning",
             "first_surname_hint", "second_surname_hint", "given_name_hint",
-            "dni_hint", "ss_number_hint", "birth_date_hint", "expiry_hint", "issue_hint",
+            "dni_hint", "ss_number_hint", "birth_date_hint", "expiry_hint",
+            "issue_hint",
             "address_hint", "city_hint", "province_hint",
             "employer_company_hint", "hire_date_hint",
             "professional_category_hint",
@@ -281,6 +287,8 @@ _KNOWN_EMPLOYER_COMPANIES = (
     "TRANSGRUAL SL",
     "GRUALDI S.L",
     "ASIST.GRUAS GRANADA",
+    # S153: Geogrúas (CIF B93654010).
+    "GEOGRUAS SL",
 )
 
 
@@ -406,8 +414,9 @@ def _cloud_vision_text(data: bytes, mime_type: str, filename: str) -> str:
     return cloud_vision_text(data, filename)
 
 
-
-def extract_one_document(data: bytes, mime_type: str, filename: str = "") -> dict:
+def extract_one_document(
+    data: bytes, mime_type: str, filename: str = "",
+) -> dict:
     """
     Extrae datos de UN documento subido (bytes en memoria, nunca
     todavía indexado en GCS -- este flujo sube de verdad solo tras la
@@ -512,7 +521,7 @@ def extract_one_document(data: bytes, mime_type: str, filename: str = "") -> dic
         # El detalle completo sigue en el log de arriba para
         # diagnóstico; el supervisor solo ve un mensaje en castellano.
         return {"error": "no se pudo procesar el documento (fallo técnico "
-                          "del servicio de lectura)."}
+                         "del servicio de lectura)."}
 
 
 def merge_person_draft(extractions: list, filenames: list = None) -> dict:
@@ -618,7 +627,8 @@ def merge_person_draft(extractions: list, filenames: list = None) -> dict:
         # todos y rechazar el documento en minoría."
         if result.get("dni_hint"):
             candidate_dni = normalize_dni(result["dni_hint"])
-            candidate_valid = bool(candidate_dni) and is_valid_spanish_dni(candidate_dni)
+            candidate_valid = bool(candidate_dni) and is_valid_spanish_dni(
+                candidate_dni)
             if candidate_dni and not candidate_valid:
                 warnings.append(
                     "%s: el DNI leído (%s) no pasa la letra "
@@ -698,7 +708,8 @@ def merge_person_draft(extractions: list, filenames: list = None) -> dict:
                 % doc_label,
             )
         if doc_type == "CONTRATO":
-            if not draft["employer_company"] and result.get("employer_company_hint"):
+            hint = result.get("employer_company_hint")
+            if not draft["employer_company"] and hint:
                 draft["employer_company"] = normalize_employer_company(
                     result["employer_company_hint"],
                 )

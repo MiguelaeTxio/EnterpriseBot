@@ -22,7 +22,7 @@ sigue la vuestra, por categorías y con su carpeta de inactivos
 - La categoría sale de su sección (Administración, Guardas, Taller,
   Asistencia; el resto, OPERARIOS) y de si está activo o de baja.
 - Una persona nueva: "APELLIDOS, NOMBRE (CÓDIGO)" con el código de su
-  empresa (GR, TR, GL, AGG); en Asistencia, "NOMBRE APELLIDOS".
+  empresa (GR, TR, GL, AGG, GEO); en Asistencia, "NOMBRE APELLIDOS".
 - Si cambia de sitio, el agente mueve la carpeta ENTERA, tal cual, con
   todo lo que tenga. Después descarga solo lo que se subió desde el
   panel (alta, ficha) y no está en local. Nunca toca nada fuera de la
@@ -71,6 +71,9 @@ KNOWN_CONTAINERS = sorted(
     key=len, reverse=True,
 )
 COMPANY_CODES = (
+    # S153 (Miguel Ángel): Geogrúas no tenía código en local; "GEO".
+    # Primero: "GEOGRUAS" no debe caer en ninguna de las de abajo.
+    ("GEOGRUAS", "GEO"),
     ("TRANSGRUAL", "TR"),
     ("GRUALDI", "GL"),
     ("ASISTENCIA", "AGG"),
@@ -172,7 +175,7 @@ def new_folder_name(person, category):
     return _plain(name + (" (%s)" % code if code else "")).strip()
 
 
-_CODE_SUFFIX = re.compile(r"\((TR|GR|GL|AGG)\)\s*$")
+_CODE_SUFFIX = re.compile(r"\((TR|GR|GL|AGG|GEO)\)\s*$")
 
 
 def _company_code(person):
@@ -193,7 +196,7 @@ def target_local_folder(person, current=""):
     name = current.rsplit("/", 1)[-1] if current else new_folder_name(
         person, category)
     # S146 (Miguel Ángel): en local las carpetas llevan el código de su
-    # empresa (TR, GR, GL, AGG). Una carpeta que ya existe sin código lo
+    # empresa (TR, GR, GL, AGG, GEO). Una carpeta que ya existe sin código lo
     # recibe; si ya trae uno entre paréntesis, se respeta tal cual.
     # Si trae exactamente uno de los códigos y la empresa ha cambiado
     # (S146: ARANDA REYES pasó de GR a Transgrual), se cambia el código;

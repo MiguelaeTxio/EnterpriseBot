@@ -151,6 +151,8 @@ COMPANY_FILTER_CHOICES = [
         "Asistencia y Grúas Granada",
         ["ASIST.GRUAS GRANADA"],
     ),
+    # S153 (Miguel Ángel): Geogrúas, CIF B93654010, carpeta local GEO.
+    ("geogruas", "Geogrúas S.L.", ["GEOGRUAS SL"]),
     ("sin_empresa", "Sin empresa asignada", [""]),
 ]
 
@@ -160,7 +162,7 @@ COMPANY_FILTER_CHOICES = [
 # (Transgrual, TRANSGRUAL, Grualdi, GRUALDI S.L....). En el alta se
 # guarda siempre el texto canónico de cada empresa (el primero de su
 # lista en COMPANY_FILTER_CHOICES), que es el que reconoce también el
-# código de su carpeta local (TR, GR, GL, AGG).
+# código de su carpeta local (TR, GR, GL, AGG, GEO).
 ALTA_COMPANY_CHOICES = [
     (raws[0], label) for slug, label, raws in COMPANY_FILTER_CHOICES
     if slug != "sin_empresa"
