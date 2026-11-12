@@ -131,7 +131,14 @@ class ScopeSnapshot:
 
         True si el aviso entra en el ámbito de este supervisor.
         """
-        if notice.requirement_id in self.excluded_requirement_ids:
+        # S153: un aviso puede venir de varios requisitos; solo queda
+        # fuera si TODOS los que lo piden están excluidos (si otro
+        # requisito no excluido también pide el documento, se avisa).
+        requirement_ids = set(notice.requirement_ids or ()) or (
+            {notice.requirement_id} if notice.requirement_id else set()
+        )
+        if requirement_ids and requirement_ids <= (
+                self.excluded_requirement_ids):
             return False
         if notice.document_type_id in self.excluded_type_ids:
             return False

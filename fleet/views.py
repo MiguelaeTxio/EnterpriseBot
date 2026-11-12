@@ -22,7 +22,7 @@ import csv
 import datetime as dt
 import json
 
-from django.db.models import Count, FloatField, Q, Sum
+from django.db.models import Count, FloatField, OuterRef, Q, Subquery, Sum
 from django.db.models.functions import Coalesce
 from django.http import HttpResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, render
@@ -31,6 +31,7 @@ from django.views import View
 
 from document_explorer import machine_local_folder_service
 from document_explorer.machine_folder_service import sync_machine_documents
+from document_explorer.models import JobPosition
 from fleet.forms import MachineAssetForm
 from fleet.models import MachineAsset
 from ivr_config.models import CompanyUser, PresenceStatus
@@ -108,7 +109,9 @@ _SORTABLE_FIELDS = {
     # recuento en Python, ver _build_fragment_context
     "doc_count": "doc_count",
     # H30 (S123), punto 6: ordenar por requisito de documentación.
-    "requirement": "document_requirement__name",
+    # S153: varios por máquina -- el primero por nombre (anotado en
+    # _build_queryset).
+    "requirement": "requirement_name",
 }
 _MAX_SORT_KEYS = 4
 
@@ -200,11 +203,9 @@ def _sort_assets_in_python(assets, sort_keys):
     que el orden en BD de _build_queryset.
     """
     def value(asset, key):
-        if key == "requirement":
-            requirement = asset.document_requirement
-            raw = requirement.name if requirement else None
-        else:
-            raw = getattr(asset, key, None)
+        raw = getattr(
+            asset, "requirement_name" if key == "requirement" else key, None,
+        )
         if raw is None:
             return (1, "")
         if isinstance(raw, str):
@@ -265,7 +266,14 @@ def _build_queryset(company, request):
         .filter(company=company)
         # H30 (S118): foto de la máquina en su fila, sin una query
         # extra por fila.
-        .select_related("avatar_document", "document_requirement")
+        .select_related("avatar_document")
+        .prefetch_related("document_requirements")
+        # S153: varios requisitos por máquina; para ordenar, el primero
+        # por nombre.
+        .annotate(requirement_name=Subquery(
+            JobPosition.objects.filter(machines=OuterRef("pk"))
+            .order_by("name").values("name")[:1],
+        ))
         .order_by("company_code", "family", "code")
     )
 
@@ -291,11 +299,15 @@ def _build_queryset(company, request):
 
         # H30 (S123): filtro por requisito de documentación, mismo
         # criterio que Personal ("" todos, "none" sin requisito, pk).
+        # S153: un pk = las máquinas que lo tengan entre los suyos
+        # (subconsulta por pk, sin duplicar filas).
         requirement_filter = _gp("requirement").strip()
         if requirement_filter == "none":
-            qs = qs.filter(document_requirement__isnull=True)
+            qs = qs.filter(document_requirements__isnull=True)
         elif requirement_filter.isdigit():
-            qs = qs.filter(document_requirement_id=int(requirement_filter))
+            qs = qs.filter(pk__in=MachineAsset.objects.filter(
+                document_requirements=int(requirement_filter),
+            ).values("pk"))
 
         # Estado en casillas (S117): "" ambas, "1" solo activos, "0"
         # solo inactivos, "none" ninguna marcada -> ningún resultado
@@ -452,13 +464,11 @@ def _build_fragment_context(company, company_user, request):
     if any(key == "doc_count" for key, _desc in sort_keys):
         assets = _sort_assets_in_python(assets, sort_keys)
     # H30 (S119): mismo cálculo que Personal, ceñido al requisito de
-    # documentación de CADA máquina (MachineAsset.document_requirement,
-    # mismo catálogo único JobPosition) -- ver docstring completo en
-    # _attach_required_document_alerts. Sin requisito asignado, la
-    # máquina no avisa de nada.
-    assets = _attach_required_document_alerts(
-        assets, machine_ct, requirement_field="document_requirement",
-    )
+    # documentación de CADA máquina (MachineAsset.document_requirements,
+    # mismo catálogo único JobPosition; S153: varios) -- ver docstring
+    # completo en _attach_required_document_alerts. Sin requisito
+    # asignado, la máquina no avisa de nada.
+    assets = _attach_required_document_alerts(assets, machine_ct)
     return {
         "assets": assets,
         "families": _get_families(company),
@@ -512,7 +522,7 @@ def _build_pane_context(request, door):
     # H30 (S119): mismo catálogo ÚNICO de "Requisitos de
     # documentación" que Personal (JobPosition, sin modelo aparte para
     # máquina) -- para el desplegable de asignación masiva.
-    from document_explorer.models import JobPosition, PersonalDossierTemplate
+    from document_explorer.models import PersonalDossierTemplate
 
     return {
         **fragment_ctx,
@@ -1008,31 +1018,32 @@ class MachineAssetBulkStatusView(FleetManageAccessMixin, View):
 
 class MachineAssetBulkSetDocumentRequirementView(FleetManageAccessMixin, View):
     """
-    Assigns (or clears, with document_requirement_id empty) a
-    document requirement to every selected MachineAsset at once.
+    Adds or removes a document requirement on every selected
+    MachineAsset at once (S153: several per machine).
 
     POST /panel/fleet/bulk/requisito/
     ---
-    H30 (S119). Asigna (o desasigna, con `document_requirement_id`
-    vacío) un requisito de documentación a la vez a todos los
-    MachineAsset seleccionados -- mismo mecanismo que
-    `MachineAssetBulkStatusView` y que
-    `PersonMassSetJobPositionView` en Personal, sobre el mismo
-    catálogo ÚNICO `JobPosition` (nunca un modelo aparte para máquina
-    -- Miguel Ángel: "los requisitos documentales no son ni para
-    personas ni para máquinas [...] la gestión es global"). Una
-    asignación masiva nueva SIEMPRE sustituye el requisito anterior de
-    cada máquina, nunca lo acumula (`ForeignKey`, no M2M -- una
-    máquina tiene un único requisito a la vez).
+    H30 (S119). Requisitos de documentación de todos los MachineAsset
+    seleccionados a la vez -- mismo mecanismo que
+    `MachineAssetBulkStatusView` y que `PersonMassSetJobPositionView`
+    en Personal, sobre el mismo catálogo ÚNICO `JobPosition` (Miguel
+    Ángel: "los requisitos documentales no son ni para personas ni
+    para máquinas [...] la gestión es global").
 
-    POST /panel/fleet/bulk/requisito/
+    S153: varios requisitos por máquina. `mode=add` añade el elegido
+    sin tocar los que ya tenga cada máquina; `mode=remove` lo quita
+    (sin requisito elegido, los quita todos). Antes asignar sustituía
+    al anterior.
     """
 
     def post(self, request, *args, **kwargs):
-        from document_explorer.models import JobPosition
+        from document_explorer.required_documentation_service import (
+            MASS_ADD, MASS_REMOVE, bulk_change_requirements,
+        )
 
         company_user = request.user.company_user
         company = company_user.company
+        mode = request.POST.get("mode", "")
         requirement_id = request.POST.get(
             "document_requirement_id", "",
         ).strip()
@@ -1040,17 +1051,25 @@ class MachineAssetBulkSetDocumentRequirementView(FleetManageAccessMixin, View):
             get_object_or_404(JobPosition, pk=requirement_id)
             if requirement_id else None
         )
-        updated = _selected_assets(company, request).update(
-            document_requirement=requirement,
+        if mode not in (MASS_ADD, MASS_REMOVE) or (
+                mode == MASS_ADD and requirement is None):
+            return _fragment_with_message(
+                request, company, company_user,
+                "Elige el requisito que añadir.",
+            )
+        updated = bulk_change_requirements(
+            MachineAsset,
+            _selected_assets(company, request).values_list("pk", flat=True),
+            mode, requirement,
         )
-        verb = (
-            f"asignado el requisito «{requirement}»" if requirement
-            else "quitado su requisito de documentación"
-        )
-        message = (
-            f"{updated} centro{'s' if updated != 1 else ''} de gasto "
-            f"con {verb}."
-        )
+        plural = "s" if updated != 1 else ""
+        if mode == MASS_ADD:
+            verb = f"con el requisito «{requirement}» añadido"
+        elif requirement:
+            verb = f"sin el requisito «{requirement}»"
+        else:
+            verb = "sin requisitos de documentación"
+        message = f"{updated} centro{plural} de gasto {verb}."
         return _fragment_with_message(
             request, company, company_user, message,
         )
@@ -1163,7 +1182,7 @@ class MachineAssetExportView(FleetAccessMixin, View):
             return HttpResponse("Plantilla no encontrada.", status=404)
         assets = list(
             _selected_assets(company, request)
-            .select_related("document_requirement")
+            .prefetch_related("document_requirements")
             .annotate(use_count=Count("work_order_lines", distinct=True))
             .order_by("code")
         )

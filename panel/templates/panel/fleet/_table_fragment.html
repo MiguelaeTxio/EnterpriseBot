@@ -245,7 +245,7 @@ pestaña Personal, S113/S114):
                 mientras que si aparece en personal, no lo hace en la
                 maquinaria".
                 {% endcomment %}
-                <td class="small" data-label="Requisito">{{ asset.document_requirement.name|default:"—" }}</td>
+                <td class="small" data-label="Requisito">{% for requirement in asset.document_requirements.all %}{{ requirement.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
 
                 <td class="text-center" data-label="Estado">
                     {% if asset.is_active %}
@@ -279,14 +279,14 @@ pestaña Personal, S113/S114):
                             {% if can_manage %}
                             {% if asset.is_active %}
                             <li>
-                                <button class="dropdown-item text-warning"
+                                <button type="button" class="dropdown-item text-warning"
                                         onclick="fleetDeactivateAsset({{ asset.pk }})">
                                     <i class="bi bi-dash-circle me-2"></i>Dar de baja
                                 </button>
                             </li>
                             {% else %}
                             <li>
-                                <button class="dropdown-item text-success"
+                                <button type="button" class="dropdown-item text-success"
                                         onclick="fleetReactivateAsset({{ asset.pk }})">
                                     <i class="bi bi-check-circle me-2"></i>Reactivar
                                 </button>
@@ -296,7 +296,7 @@ pestaña Personal, S113/S114):
                             {% if can_delete %}
                             <li><hr class="dropdown-divider"></li>
                             <li>
-                                <button class="dropdown-item text-danger"
+                                <button type="button" class="dropdown-item text-danger"
                                         onclick="fleetDeleteAsset({{ asset.pk }})">
                                     <i class="bi bi-trash me-2"></i>Eliminar
                                 </button>

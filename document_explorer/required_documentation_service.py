@@ -27,9 +27,13 @@ para máquinas [...] la gestión de requisitos documentales es global
 [...] ese requisito se asigna a una máquina, a una dependencia o a una
 persona [...] no tenemos que tener un arreglo para máquinas y un
 arreglo para personas." Un único catálogo (`JobPosition`), asignado
-por `PersonIdentity.job_position` o por `MachineAsset.
-document_requirement` -- esta función sirve a los dos sujetos con el
+por `PersonIdentity.document_requirements` o por `MachineAsset.
+document_requirements` -- esta función sirve a los dos sujetos con el
 mismo cálculo, sin ninguna rama por dominio.
+
+S153: VARIOS requisitos por sujeto (antes uno solo). Lo obligatorio es
+la UNIÓN de los tipos y clases de permiso de sus requisitos activos;
+un tipo que piden dos requisitos cuenta una sola vez.
 
 Regla, para cada tipo del requisito asignado (nunca otro documento que
 el sujeto tenga, exija o no su requisito):
@@ -81,24 +85,42 @@ class RequiredDrivingCategory:
         return self.label
 
 
-def get_requirement(subject):
+def get_requirements(subject):
     """
-    Return the JobPosition assigned to this subject, or None.
+    Return the active JobPositions assigned to this subject.
     ---
-    H30 (S120). Requisito asignado al sujeto
-    (`PersonIdentity.job_position` o `MachineAsset.
-    document_requirement`), o None. S128: None también si el requisito
-    está desactivado (`JobPosition.is_active`).
+    S153. Requisitos ACTIVOS asignados al sujeto
+    (`PersonIdentity.document_requirements` o `MachineAsset.
+    document_requirements`), ordenados por nombre; lista vacía si no
+    tiene ninguno. S128: un requisito desactivado no genera avisos --
+    para todo lo que pasa por este servicio es como no tenerlo. Lee
+    `.all()` para aprovechar un `prefetch_related` del llamador.
     """
-    requirement = (
-        getattr(subject, "job_position", None)
-        or getattr(subject, "document_requirement", None)
+    manager = getattr(subject, "document_requirements", None)
+    if manager is None or subject.pk is None:
+        return []
+    return sorted(
+        (req for req in manager.all() if req.is_active),
+        key=lambda req: req.name,
     )
-    # S128: un requisito desactivado no genera avisos -- para todo lo
-    # que pasa por este servicio es como no tener requisito.
-    if requirement is not None and not requirement.is_active:
-        return None
-    return requirement
+
+
+def required_driving_categories(subject):
+    """
+    Union of the licence classes required by the subject's
+    requirements, in catalog order.
+    ---
+    S153. Unión de las clases de permiso que exigen los requisitos
+    activos del sujeto, sin repetir, en el orden del catálogo.
+    """
+    by_pk = {}
+    for requirement in get_requirements(subject):
+        for category in requirement.required_driving_categories.all():
+            by_pk[category.pk] = category
+    return sorted(
+        by_pk.values(),
+        key=lambda category: (category.display_order, category.pk),
+    )
 
 
 def latest_driving_card(cards, card_ids_with_grants=frozenset()):
@@ -184,19 +206,16 @@ def get_required_type_ids(subject):
     subject right now, or an empty frozenset if none assigned.
     ---
     H30 (S119). Devuelve el conjunto de pk de `DocumentTypeCatalog`
-    exigidos ahora mismo por el requisito de documentación de `subject`
-    (`PersonIdentity.job_position` o `MachineAsset.document_requirement`
-    -- mismo catálogo único `JobPosition`), vacío si no tiene ninguno
-    asignado. Único punto de esta lectura -- lo usan tanto
+    exigidos ahora mismo por los requisitos de documentación de
+    `subject` (S153: la unión de todos los activos), vacío si no tiene
+    ninguno asignado. Único punto de esta lectura -- lo usan tanto
     `resolve_required_document_status` como `vigencia_selector.
     current_fn_for` (vía sus llamadores), para que los dos calculen
     "obligatorio para este sujeto" exactamente igual.
     """
-    requirement = get_requirement(subject)
-    if requirement is None:
-        return frozenset()
     return frozenset(
-        requirement.required_document_types.values_list("pk", flat=True),
+        dt.pk for requirement in get_requirements(subject)
+        for dt in requirement.required_document_types.all()
     )
 
 
@@ -208,10 +227,10 @@ def resolve_required_document_status(subject):
     `family_code -> [DocumentTypeCatalog, ...]` (faltantes) y
     `family_code -> [str label, ...]` (caducados), listos para el
     mismo contrato de plantilla que ya usan las fichas. `subject` es
-    una `PersonIdentity` (usa `job_position`) o un `MachineAsset` (usa
-    `document_requirement`) -- ambos FK al mismo catálogo
-    `JobPosition`. Sin ningún requisito asignado, los dos salen
-    vacíos -- ningún tipo es obligatorio.
+    una `PersonIdentity` o un `MachineAsset` (los dos con
+    `document_requirements`, mismo catálogo `JobPosition`). Sin ningún
+    requisito asignado, los dos salen vacíos -- ningún tipo es
+    obligatorio.
     """
     from document_explorer.models import (
         DocumentIndexEntry, DocumentTypeCatalog,
@@ -221,11 +240,7 @@ def resolve_required_document_status(subject):
 
     missing_by_family = {}
     expired_by_family = {}
-    requirement = get_requirement(subject)
-    required_categories = (
-        list(requirement.required_driving_categories.all())
-        if requirement is not None else []
-    )
+    required_categories = required_driving_categories(subject)
     required_type_ids = get_required_type_ids(subject)
     if not required_type_ids and not required_categories:
         return missing_by_family, expired_by_family
@@ -341,13 +356,9 @@ def attach_driving_grants(entries, subject):
     ]
     if not cards:
         return entries
-    requirement = get_requirement(subject)
-    required_codes = (
-        set(requirement.required_driving_categories.values_list(
-            "code", flat=True,
-        ))
-        if requirement is not None else set()
-    )
+    required_codes = {
+        category.code for category in required_driving_categories(subject)
+    }
     today = date.today()
     grants_by_card = {}
     for grant in DrivingLicenceGrant.objects.filter(
@@ -428,3 +439,46 @@ def attach_subtype_documents(entries, current, obsolete):
         [entry for entry in current if entry.pk not in moved],
         [entry for entry in obsolete if entry.pk not in moved],
     )
+
+
+MASS_ADD = "add"
+MASS_REMOVE = "remove"
+
+
+def bulk_change_requirements(subject_model, subject_ids, mode, requirement):
+    """
+    Add or remove one requirement (or all, removing) on many subjects.
+    ---
+    S153. Asignación masiva de requisitos con varios por sujeto
+    (personas o centros de gasto, mismo catálogo): `MASS_ADD` añade
+    `requirement` a cada sujeto sin tocar los que ya tenga;
+    `MASS_REMOVE` se lo quita, o quita TODOS si `requirement` es None.
+    Antes (un solo requisito) asignar sustituía al anterior. Devuelve
+    cuántos sujetos se han tocado de verdad.
+    """
+    from django.db import transaction
+
+    through = subject_model.document_requirements.through
+    source = "%s_id" % subject_model._meta.model_name
+    ids = set(
+        subject_model.objects.filter(pk__in=subject_ids).values_list(
+            "pk", flat=True,
+        ),
+    )
+    links = through.objects.filter(**{"%s__in" % source: ids})
+    with transaction.atomic():
+        if mode == MASS_ADD:
+            have = set(links.filter(jobposition=requirement).values_list(
+                source, flat=True,
+            ))
+            missing = sorted(ids - have)
+            through.objects.bulk_create([
+                through(**{source: pk, "jobposition_id": requirement.pk})
+                for pk in missing
+            ])
+            return len(missing)
+        if requirement is not None:
+            links = links.filter(jobposition=requirement)
+        touched = len(set(links.values_list(source, flat=True)))
+        links.delete()
+        return touched

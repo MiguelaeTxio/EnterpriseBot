@@ -97,20 +97,17 @@ class MachineAsset(models.Model):
             "CARRETILLAS, AUTOCARGANTES, ASISTENCIA)."
         ),
     )
-    document_requirement = models.ForeignKey(
+    document_requirements = models.ManyToManyField(
         "document_explorer.JobPosition",
-        null=True,
         blank=True,
-        on_delete=models.SET_NULL,
         related_name="machines",
-        verbose_name=_("Requisito de documentación"),
+        verbose_name=_("Requisitos de documentación"),
         help_text=_(
             "S119 -- mismo catálogo único que el de una persona "
             "(Requisitos de documentación): sin requisito asignado, "
             "esta máquina no avisa de ningún documento faltante ni "
-            "caducado. Para exigirle otro conjunto de documentos, se "
-            "reasigna a otro requisito ya existente o nuevo, nunca se "
-            "marca una excepción dentro de este mismo."
+            "caducado. S153: varios por máquina (antes uno solo); lo "
+            "obligatorio es la unión de los requisitos activos."
         ),
     )
     type_code = models.CharField(

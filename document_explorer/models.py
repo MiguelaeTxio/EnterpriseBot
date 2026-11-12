@@ -1743,18 +1743,17 @@ class PersonIdentity(models.Model):
         null=True, blank=True, verbose_name="Fecha de baja en la empresa",
     )
     # ------------------------------------------------------------------
-    # H31 (S109). Puesto de trabajo -- gobierna qué tipos documentales
-    # se marcan como FALTANTES en la ficha (ver JobPosition arriba).
-    # Nullable a propósito: sin puesto asignado, ningún tipo se marca
-    # como faltante -- nunca se asume un conjunto por defecto. El
-    # aviso de documento CADUCADO es independiente y no depende de
-    # este campo.
+    # H31 (S109). Requisitos de documentación -- gobiernan qué tipos
+    # documentales se marcan como FALTANTES o CADUCADOS en la ficha y
+    # en los avisos (ver JobPosition). Sin ninguno, nada es obligatorio.
+    # S153: VARIOS por persona (antes un FK `job_position`, uno solo).
+    # Miguel Ángel: "Necesito poder añadir varios requisitos de
+    # documentación tanto a una persona como a un centro de gasto." Lo
+    # obligatorio es la unión de los requisitos activos.
     # ------------------------------------------------------------------
-    job_position = models.ForeignKey(
+    document_requirements = models.ManyToManyField(
         "document_explorer.JobPosition",
-        null=True,
         blank=True,
-        on_delete=models.SET_NULL,
         related_name="people",
         verbose_name="Requisitos de documentación",
     )
@@ -3001,11 +3000,13 @@ class JobPosition(models.Model):
     lleva a corregir la asignación, sin necesidad de ninguna
     validación que lo impida de antemano.
 
-    `PersonIdentity.job_position` y `MachineAsset.document_requirement`
-    (los dos FK, nullable) son la persona o la máquina relacionada con
-    el requisito -- sin ninguno asignado, ningún tipo se marca como
-    faltante ni como caducado (nunca se asume un conjunto por defecto
-    sin que Miguel Ángel lo haya definido explícitamente). El catálogo
+    `PersonIdentity.document_requirements` y `MachineAsset.
+    document_requirements` (S153: varios por sujeto; antes un FK, uno
+    solo) relacionan la persona o la máquina con sus requisitos -- lo
+    obligatorio es la unión de los activos; sin ninguno asignado,
+    ningún tipo se marca como faltante ni como caducado (nunca se asume
+    un conjunto por defecto sin que Miguel Ángel lo haya definido
+    explícitamente). El catálogo
     de requisitos es deliberadamente abierto y editable -- "que eso se
     pueda seguir perfilando en el futuro" -- nunca una lista cerrada
     fija en código.

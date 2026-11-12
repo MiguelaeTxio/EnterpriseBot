@@ -27,7 +27,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.contrib.staticfiles.finders import find as find_static
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.db.models import Count, F, OuterRef, Q, Subquery, Value
 from django.db.models.functions import Coalesce, Replace
 from django.http import HttpResponse, JsonResponse
@@ -218,11 +218,15 @@ def _apply_personal_filters(qs, request):
     # sin requisito, un pk = ese requisito. (Incidente S123: la primera
     # versión se insertó entre el `if company_filter` y su `else`, que
     # quedó colgado de este filtro y vaciaba la lista con "Todos".)
+    # S153: varios requisitos por persona; un pk = quien lo tenga entre
+    # los suyos. Subconsulta por pk para no duplicar filas.
     requirement_filter = request.GET.get("requirement", "")
     if requirement_filter == "none":
-        qs = qs.filter(job_position__isnull=True)
+        qs = qs.filter(document_requirements__isnull=True)
     elif requirement_filter.isdigit():
-        qs = qs.filter(job_position_id=int(requirement_filter))
+        qs = qs.filter(pk__in=PersonIdentity.objects.filter(
+            document_requirements=int(requirement_filter),
+        ).values("pk"))
 
     return qs
 
@@ -335,15 +339,13 @@ def _split_current_obsolete(entries, required_type_ids=frozenset()):
     return current, obsolete
 
 
-def _attach_required_document_alerts(
-    objects, content_type, requirement_field="job_position",
-):
+def _attach_required_document_alerts(objects, content_type):
     """
     H31 (S119). Alert flags for a listing (Personal or MachineAsset)
-    -- based ONLY on the subject's `JobPosition.required_document_
-    types` (via `requirement_field`, "job_position" or "document_
-    requirement" -- both FK to the SAME catálogo único), never on any
-    document type it happens to have. Replaces the old pair
+    -- based ONLY on the `JobPosition.required_document_types` of the
+    subject's requirements (`document_requirements`, the SAME catálogo
+    único for both), never on any document type it happens to have.
+    Replaces the old pair
     (`_attach_alert_flags` + `_attach_missing_required_alert`) for
     Personal, y el uso genérico de `_attach_alert_flags` para Centros
     de Gasto/`MachineAsset` -- ambos alertaban de CUALQUIER tipo
@@ -354,11 +356,14 @@ def _attach_required_document_alerts(
 
     AMPLIADO S119: "los requisitos documentales no son ni para
     personas ni para máquinas [...] la gestión es global" -- un único
-    catálogo (`JobPosition`), asignado por `job_position` en
-    `PersonIdentity` o por `document_requirement` en `MachineAsset`.
-    Esta función sirve a los dos con el mismo cálculo, parametrizando
-    solo el nombre del campo FK -- nunca dos implementaciones de la
-    misma regla.
+    catálogo (`JobPosition`), asignado por `document_requirements` en
+    `PersonIdentity` y en `MachineAsset`. Esta función sirve a los dos
+    con el mismo cálculo -- nunca dos implementaciones de la misma
+    regla.
+
+    S153: varios requisitos por sujeto; lo exigido es la UNIÓN de los
+    tipos y clases de sus requisitos activos (un tipo que piden dos
+    requisitos cuenta una vez).
 
     Same rule as `required_documentation_service.
     resolve_required_document_status` (nunca duplicar la decisión sin
@@ -379,35 +384,65 @@ def _attach_required_document_alerts(
         latest_driving_card,
     )
 
-    requirement_fk_id = requirement_field + "_id"
-    objects_by_requirement = {}
     for obj in objects:
-        requirement_id = getattr(obj, requirement_fk_id, None)
-        if requirement_id:
-            objects_by_requirement.setdefault(
-                requirement_id, [],
-            ).append(obj)
         obj.has_alert = False
         obj.alert_labels = []
+    if not objects:
+        return objects
+    # S128: un requisito desactivado no genera avisos -- solo cuentan
+    # los activos. Una consulta a la tabla intermedia para la página.
+    subject_model = content_type.model_class()
+    through = subject_model.document_requirements.through
+    source = subject_model._meta.model_name
+    requirement_ids_of = {}
+    for object_id, requirement_id in through.objects.filter(
+        **{
+            "%s_id__in" % source: [obj.pk for obj in objects],
+            "jobposition__is_active": True,
+        }
+    ).values_list("%s_id" % source, "jobposition_id"):
+        requirement_ids_of.setdefault(object_id, set()).add(requirement_id)
+    objects_by_requirement = {}
+    for obj in objects:
+        key = tuple(sorted(requirement_ids_of.get(obj.pk, ())))
+        if key:
+            objects_by_requirement.setdefault(key, []).append(obj)
     if not objects_by_requirement:
         return objects
 
-    # S128: un requisito desactivado no genera avisos -- sus sujetos
-    # quedan sin tipos exigidos (los `.get(..., [])` de abajo).
     requirements = list(JobPosition.objects.filter(
-        pk__in=objects_by_requirement.keys(), is_active=True,
+        pk__in={pk for key in objects_by_requirement for pk in key},
     ).prefetch_related(
         "required_document_types", "required_driving_categories",
     ))
-    required_by_requirement = {
+    types_of = {
         jp.pk: list(jp.required_document_types.all())
         for jp in requirements
     }
-    # H30 (S120). Clases de permiso exigidas por requisito -- mismo
-    # cálculo que la ficha (`evaluate_driving_categories`), en lote.
-    categories_by_requirement = {
+    # H30 (S120). Clases de permiso exigidas -- mismo cálculo que la
+    # ficha (`evaluate_driving_categories`), en lote.
+    categories_of = {
         jp.pk: list(jp.required_driving_categories.all())
         for jp in requirements
+    }
+
+    def _union(by_requirement, key, sort_key):
+        merged = {}
+        for requirement_id in key:
+            for item in by_requirement.get(requirement_id, []):
+                merged[item.pk] = item
+        return sorted(merged.values(), key=sort_key)
+
+    required_by_requirement = {
+        key: _union(types_of, key, lambda dt: dt.pk)
+        for key in objects_by_requirement
+    }
+    categories_by_requirement = {
+        key: _union(
+            categories_of, key,
+            lambda category: (category.display_order, category.pk),
+        )
+        for key in objects_by_requirement
     }
     all_object_ids = [
         obj.pk
@@ -442,8 +477,8 @@ def _attach_required_document_alerts(
     # exige alguna clase -- dos consultas para toda la página.
     category_object_ids = [
         obj.pk
-        for requirement_id, group in objects_by_requirement.items()
-        if categories_by_requirement.get(requirement_id)
+        for key, group in objects_by_requirement.items()
+        if categories_by_requirement.get(key)
         for obj in group
     ]
     cards_by_object = {}
@@ -467,11 +502,9 @@ def _attach_required_document_alerts(
         ).select_related("category"):
             grants_by_card.setdefault(grant.entry_id, []).append(grant)
 
-    for requirement_id, group in objects_by_requirement.items():
-        required_types = required_by_requirement.get(requirement_id, [])
-        required_categories = categories_by_requirement.get(
-            requirement_id, [],
-        )
+    for key, group in objects_by_requirement.items():
+        required_types = required_by_requirement.get(key, [])
+        required_categories = categories_by_requirement.get(key, [])
         for obj in group:
             docs_by_type = docs_by_object.get(obj.pk, {})
             present_codes = {
@@ -861,7 +894,7 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
             missing_types_by_family.setdefault(dt.family, []).append(dt)
         # H30 (S119): "Falta" y "Caducado" del triángulo por familia
         # salen SOLO del requisito de documentación de la máquina
-        # (MachineAsset.document_requirement, mismo catálogo único
+        # (MachineAsset.document_requirements, mismo catálogo único
         # JobPosition que Personal) -- ver resolve_required_document_
         # status.
         missing_required_types_by_family, attention_types_by_family = (
@@ -1096,8 +1129,8 @@ def _person_list_page(request, ids_only=False):
     avatares (S144: anterior/siguiente en la ficha).
     """
     qs = PersonIdentity.objects.select_related(
-        "job_position", "company_user__workday_schedule",
-    )
+        "company_user__workday_schedule",
+    ).prefetch_related("document_requirements")
     # H31 (S113). Miguel Ángel: "si tuviésemos una casilla que dijese
     # mostrar [...] que mostrase en el listado de trabajadores
     # justamente los trabajadores que están en el grupo de reparto".
@@ -1181,9 +1214,9 @@ def _person_list_page(request, ids_only=False):
         # requisito de documentación asignado (p. ej. escribir
         # "general" encuentra a todos los que tienen ese requisito) --
         # mismo criterio AND-entre-palabras/OR-entre-campos de arriba,
-        # un campo más a la lista. select_related("job_position") ya
-        # aplicado arriba cubre el JOIN sin coste extra; al ser FK
-        # (no M2M), no hay riesgo de duplicar filas.
+        # un campo más a la lista. S153: varios requisitos por persona
+        # (M2M) -- se busca por subconsulta de pks para no duplicar
+        # filas.
         # S137: Miguel Ángel, "¿puedo buscar un operario por el número de
         # teléfono?". Los dos teléfonos entran en la búsqueda comparando
         # solo cifras: se quitan espacios, puntos, guiones y paréntesis
@@ -1198,7 +1231,9 @@ def _person_list_page(request, ids_only=False):
                 Q(first_surname__icontains=word)
                 | Q(second_surname__icontains=word)
                 | Q(given_name__icontains=word) | Q(dni__icontains=word)
-                | Q(job_position__name__icontains=word)
+                | Q(pk__in=PersonIdentity.objects.filter(
+                    document_requirements__name__icontains=word,
+                ).values("pk"))
                 | Q(nickname__icontains=word)
             )
             digits = "".join(ch for ch in word if ch.isdigit())
@@ -1232,11 +1267,16 @@ def _person_list_page(request, ids_only=False):
         .values("n")
     )
     qs = qs.annotate(doc_count=Coalesce(Subquery(doc_count_subquery), 0))
+    # S153: con varios requisitos se ordena por el primero por nombre.
+    qs = qs.annotate(requirement_name=Subquery(
+        JobPosition.objects.filter(people=OuterRef("pk"))
+        .order_by("name").values("name")[:1],
+    ))
     sort_columns = [
         ("first_surname", "Primer apellido"), ("given_name", "Nombre"),
         ("hire_date", "Alta"), ("doc_count", "Documentos"),
         # H30 (S123), punto 6: ordenar por requisito de documentación.
-        ("job_position__name", "Requisito"),
+        ("requirement_name", "Requisito"),
     ]
     # H24 (S144): "Alta en el fichaje" se ordena en Python (no es un
     # campo de BD); la base, por apellidos y nombre.
@@ -1254,7 +1294,7 @@ def _person_list_page(request, ids_only=False):
             [c for c in sort_columns if c[0] not in python_sorts],
             "first_surname",
         )
-    if sort_key == "job_position__name":
+    if sort_key == "requirement_name":
         # Dentro de un mismo requisito, por apellidos y nombre.
         qs = qs.order_by(
             *qs.query.order_by, "first_surname", "second_surname",
@@ -2444,6 +2484,13 @@ class PersonalDetailView(CompanyUserRequiredMixin, View):
                     "GOOGLE_MAPS_MAP_ID", ""
                 ),
                 "person": person,
+                # S153: requisitos de la persona (varios), para las
+                # casillas de la ficha.
+                "person_requirement_ids": set(
+                    person.document_requirements.values_list(
+                        "pk", flat=True,
+                    ),
+                ),
                 "current": current,
                 "obsolete": obsolete,
                 "families": families,
@@ -2759,19 +2806,17 @@ def _attach_contract_alerts(objects):
     """
     from document_explorer.employer_service import CONTRACT_TYPE_CODES
 
-    requirement_ids = {
-        obj.job_position_id for obj in objects
-        if obj.is_active_employee is True and obj.job_position_id
-    }
-    contract_requirement_ids = set(JobPosition.objects.filter(
-        pk__in=requirement_ids, is_active=True,
-        required_document_types__code__in=CONTRACT_TYPE_CODES,
+    # S153: varios requisitos por persona; basta con que uno activo
+    # exija el contrato.
+    active_ids = set(PersonIdentity.objects.filter(
+        pk__in=[
+            obj.pk for obj in objects if obj.is_active_employee is True
+        ],
+        document_requirements__is_active=True,
+        document_requirements__required_document_types__code__in=(
+            CONTRACT_TYPE_CODES
+        ),
     ).values_list("pk", flat=True))
-    active_ids = {
-        obj.pk for obj in objects
-        if obj.is_active_employee is True
-        and obj.job_position_id in contract_requirement_ids
-    }
     latest_by_person = {}
     for entry in DocumentIndexEntry.objects.filter(
         entry_kind=DocumentIndexEntry.KIND_FILE,
@@ -4418,8 +4463,8 @@ class JobPositionManageView(CompanyUserRequiredMixin, View):
     -- el catálogo es de toda la plataforma, mismo criterio que
     `PersonGroupTemplate`. Sin concepto de "plantilla activa" -- un
     requisito no se "aplica" sobre nadie, solo se asigna desde la
-    propia ficha (`PersonIdentity.job_position` o `MachineAsset.
-    document_requirement`) o en lote desde el listado.
+    propia ficha (`PersonIdentity.document_requirements`; S153: varios)
+    o en lote desde los listados de Personal y Centros de gasto.
 
     AMPLIADO EN S119 -- CATÁLOGO ÚNICO, GLOBAL: el selector de tipos ya
     NO filtra por dominio (antes solo PERSONAL/BOTH) -- Miguel Ángel,
@@ -5906,14 +5951,12 @@ class PersonalUpdateView(DocsUploadAccessMixin, View):
         "notes",
     )
     DATE_EDITABLE_FIELDS = ("hire_date", "termination_date")
-    # H31 (S109): `job_position` -- FK a JobPosition, editable igual
-    # que el resto de esta ficha (nunca un formulario aparte). Sin
-    # valor en el POST -> desasigna (None), mismo criterio que un
-    # campo de fecha vacío.
-    FK_EDITABLE_FIELDS = ("job_position",)
-    EDITABLE_FIELDS = (
-        TEXT_EDITABLE_FIELDS + DATE_EDITABLE_FIELDS + FK_EDITABLE_FIELDS
-    )
+    # H31 (S109): requisitos de documentación, editables igual que el
+    # resto de esta ficha (nunca un formulario aparte). S153: varios
+    # por persona -- casillas `document_requirements`; el campo oculto
+    # `document_requirements_sent` distingue "ninguna marcada" (se
+    # quitan todos) de "no se envió".
+    EDITABLE_FIELDS = TEXT_EDITABLE_FIELDS + DATE_EDITABLE_FIELDS
 
     NAME_FIELDS = ("given_name", "first_surname", "second_surname")
 
@@ -5948,16 +5991,20 @@ class PersonalUpdateView(DocsUploadAccessMixin, View):
                 else:
                     setattr(person, field, None)
                 updated_fields.append(field)
-        for field in self.FK_EDITABLE_FIELDS:
-            if field in request.POST:
-                raw_value = request.POST.get(field, "").strip()
-                if raw_value:
-                    job_position = get_object_or_404(JobPosition, pk=raw_value)
-                    setattr(person, field, job_position)
-                else:
-                    setattr(person, field, None)
-                updated_fields.append(field)
-        if not updated_fields:
+        requirements = None
+        if "document_requirements_sent" in request.POST:
+            wanted = {
+                int(value)
+                for value in request.POST.getlist("document_requirements")
+                if value.isdigit()
+            }
+            requirements = list(JobPosition.objects.filter(pk__in=wanted))
+            if len(requirements) != len(wanted):
+                return JsonResponse(
+                    {"ok": False, "error": "Algún requisito ya no existe."},
+                    status=400,
+                )
+        if not updated_fields and requirements is None:
             return JsonResponse(
                 {"ok": False, "error": "Sin campos que actualizar."},
                 status=400,
@@ -5968,7 +6015,11 @@ class PersonalUpdateView(DocsUploadAccessMixin, View):
             return JsonResponse(
                 {"ok": False, "error": "; ".join(exc.messages)}, status=400,
             )
-        person.save(update_fields=updated_fields)
+        with transaction.atomic():
+            if updated_fields:
+                person.save(update_fields=updated_fields)
+            if requirements is not None:
+                person.document_requirements.set(requirements)
         renamed = 0
         if tuple(getattr(person, f) for f in self.NAME_FIELDS) != old_names:
             renamed = _realign_person_document_names(person)
@@ -5976,10 +6027,10 @@ class PersonalUpdateView(DocsUploadAccessMixin, View):
             f: getattr(person, f)
             for f in self.TEXT_EDITABLE_FIELDS + self.DATE_EDITABLE_FIELDS
         }
-        person_data["job_position"] = (
-            {"id": person.job_position_id, "name": str(person.job_position)}
-            if person.job_position_id else None
-        )
+        person_data["document_requirements"] = [
+            {"id": req.pk, "name": req.name}
+            for req in person.document_requirements.order_by("name")
+        ]
         return JsonResponse({
             "ok": True, "person": person_data,
             "renamed_documents": renamed,
@@ -6700,20 +6751,25 @@ class PersonalNotificationSendView(DocsUploadAccessMixin, View):
 
 class PersonMassSetJobPositionView(DocsUploadAccessMixin, View):
     """
-    H31 (S109). POST: asigna (o desasigna, con `job_position_id`
-    vacío) un puesto de trabajo a varias personas a la vez -- sobre
-    el mismo Set `selection` de siempre, mismo mecanismo que el resto
-    de acciones masivas de esta barra. Miguel Ángel, verbatim: "vamos
-    a crear el puesto ya de chófer [...] elegir los choferes [...]
-    asígnales el puesto de chófer [...] cambiaríamos en esos el
-    puesto de General por el puesto de chófer" -- una asignación
-    masiva nueva SIEMPRE sustituye el puesto anterior de cada
-    persona, nunca lo acumula (un `ForeignKey`, no M2M -- una persona
-    tiene un único puesto a la vez).
+    H31 (S109). POST: requisitos de documentación de varias personas a
+    la vez -- sobre el mismo Set `selection` de siempre, mismo
+    mecanismo que el resto de acciones masivas de esta barra.
+
+    S153: varios requisitos por persona (Miguel Ángel: "Necesito poder
+    añadir varios requisitos de documentación"). Antes asignar
+    SUSTITUÍA el requisito anterior; ahora `mode=add` añade el elegido
+    sin tocar los demás y `mode=remove` lo quita (sin requisito
+    elegido, los quita todos) -- ver `required_documentation_service.
+    bulk_change_requirements`.
     """
 
     def post(self, request):
+        from document_explorer.required_documentation_service import (
+            MASS_ADD, MASS_REMOVE, bulk_change_requirements,
+        )
+
         person_ids = request.POST.getlist("person_ids")
+        mode = request.POST.get("mode", "")
         job_position_id = request.POST.get("job_position_id", "").strip()
 
         if not person_ids:
@@ -6721,18 +6777,26 @@ class PersonMassSetJobPositionView(DocsUploadAccessMixin, View):
                 {"ok": False, "error": "No hay ninguna persona seleccionada."},
                 status=400,
             )
-
+        if mode not in (MASS_ADD, MASS_REMOVE):
+            return JsonResponse(
+                {"ok": False, "error": "Acción no válida."}, status=400,
+            )
         if job_position_id:
             job_position = get_object_or_404(JobPosition, pk=job_position_id)
+        elif mode == MASS_ADD:
+            return JsonResponse(
+                {"ok": False, "error": "Elige el requisito que añadir."},
+                status=400,
+            )
         else:
             job_position = None
 
-        updated = PersonIdentity.objects.filter(
-            pk__in=person_ids,
-        ).update(job_position=job_position)
-
+        updated = bulk_change_requirements(
+            PersonIdentity, person_ids, mode, job_position,
+        )
         return JsonResponse({
             "ok": True,
+            "mode": mode,
             "updated_count": updated,
             "job_position_name": str(job_position) if job_position else None,
         })

@@ -20,10 +20,17 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views import View
 
+from document_explorer.document_notice_service import (
+    _custom_pairs,
+    merge_rules,
+)
 from document_explorer.models import (
     DocumentTypeCatalog,
     MachineAlertRule,
     RequirementAlertRule,
+)
+from document_explorer.required_documentation_service import (
+    get_requirements,
 )
 from fleet.models import MachineAsset
 from panel.mixins import FleetManageAccessMixin
@@ -56,14 +63,17 @@ def machine_alerts_context(machine, present_type_ids):
     resto de tipos con caducidad para añadir.
     """
     types = _machine_types()
-    requirement_rules = {}
-    if machine.document_requirement_id and (
-            machine.document_requirement.is_active):
-        requirement_rules = {
-            rule.document_type_id: _alert_rule_to_dict(rule)
-            for rule in RequirementAlertRule.objects.filter(
-                job_position_id=machine.document_requirement_id)
-        }
+    # S153: varios requisitos por máquina; las reglas de un mismo tipo
+    # se juntan como en la pestaña Avisos (merge_rules).
+    requirements = get_requirements(machine)
+    grouped = {}
+    for rule in RequirementAlertRule.objects.filter(
+            job_position__in=requirements).select_related("document_type"):
+        grouped.setdefault(rule.document_type_id, []).append(rule)
+    requirement_rules = {
+        type_id: _merged_rule_to_dict(merge_rules(rules))
+        for type_id, rules in grouped.items()
+    }
     own_rules = {
         rule.document_type_id: _alert_rule_to_dict(rule)
         for rule in MachineAlertRule.objects.filter(machine=machine)
@@ -86,10 +96,33 @@ def machine_alerts_context(machine, present_type_ids):
         "machine_alerts_data": {
             "shown": shown, "others": others,
             "requirement": (
-                machine.document_requirement.name
+                ", ".join(req.name for req in requirements)
                 if requirement_rules else ""),
         },
         "machine_alerts_own_count": len(own_rules),
+    }
+
+
+def _merged_rule_to_dict(rule):
+    """
+    Serialize a requirement rule (single or merged) for the client.
+    ---
+    S153. Serializa una regla de requisito, sola o combinada de varios
+    requisitos, con las mismas claves que `_alert_rule_to_dict` (la
+    ficha solo la muestra; caben dos avisos personalizados).
+    """
+    pairs = [pair for pair in _custom_pairs(rule) if pair[0] and pair[1]]
+    pairs += [(None, "")] * (2 - len(pairs))
+    return {
+        "missing": rule.notify_missing,
+        "d30": rule.notify_30_days,
+        "d15": rule.notify_15_days,
+        "d7": rule.notify_7_days,
+        "d1": rule.notify_day_before,
+        "c1v": pairs[0][0],
+        "c1u": pairs[0][1],
+        "c2v": pairs[1][0],
+        "c2u": pairs[1][1],
     }
 
 

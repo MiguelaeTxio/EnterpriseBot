@@ -45,10 +45,10 @@ desliza entera, sin columnas fijas (S123). Mismo formato en PC y móvil.
             </th>
             <th>
                 <a href="#"
-                   hx-get="{% url 'panel:documentation_personal_results' %}?sort=job_position__name&dir={% if sort_key == 'job_position__name' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}{% if requirement_filter %}&requirement={{ requirement_filter }}{% endif %}{% if onboarding_filter %}&onboarding={{ onboarding_filter }}{% endif %}{% if section_filter %}&section={{ section_filter }}{% endif %}{% if schedule_filter %}&schedule={{ schedule_filter }}{% endif %}"
+                   hx-get="{% url 'panel:documentation_personal_results' %}?sort=requirement_name&dir={% if sort_key == 'requirement_name' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}{% if requirement_filter %}&requirement={{ requirement_filter }}{% endif %}{% if onboarding_filter %}&onboarding={{ onboarding_filter }}{% endif %}{% if section_filter %}&section={{ section_filter }}{% endif %}{% if schedule_filter %}&schedule={{ schedule_filter }}{% endif %}"
                    hx-target="#personal-results" class="text-decoration-none text-dark">
                     Requisitos de documentación
-                    {% if sort_key == 'job_position__name' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
+                    {% if sort_key == 'requirement_name' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
                 </a>
             </th>
             <th>
@@ -89,7 +89,7 @@ desliza entera, sin columnas fijas (S123). Mismo formato en PC y móvil.
             <td data-label="DNI">{{ person.dni }}</td>
             <td data-label="Alta">{{ person.hire_date|date:"d/m/Y"|default_if_none:"" }}</td>
             <td data-label="Documentos">{{ person.doc_count }}</td>
-            <td data-label="Requisito">{{ person.job_position.name|default:"—" }}</td>
+            <td data-label="Requisito">{% for requirement in person.document_requirements.all %}{{ requirement.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
             <td data-label="Alta en el fichaje"><span class="badge text-bg-{{ person.onboarding.badge }} fw-normal">{{ person.onboarding.label }}</span></td>
             {% with row=person.ws_row %}
             <td data-label="Sección">{{ row.state.section.name|default:"—" }}</td>

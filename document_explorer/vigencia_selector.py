@@ -33,8 +33,9 @@ correcto:
    aplica exactamente igual a una persona que a una máquina -- nunca
    depende del dominio, depende únicamente de si ESE tipo, para ESE
    sujeto en concreto, está en su requisito de documentación asignado
-   ahora mismo (`PersonIdentity.job_position` o `MachineAsset.
-   document_requirement`, mismo catálogo único `JobPosition`).
+   ahora mismo (`PersonIdentity.document_requirements` o `MachineAsset.
+   document_requirements`, mismo catálogo único `JobPosition`; S153:
+   la unión de todos sus requisitos activos).
 
 Consecuencia real del error, antes de esta corrección: un tipo
 obligatorio caducado y sin sustituto perdía la competición de

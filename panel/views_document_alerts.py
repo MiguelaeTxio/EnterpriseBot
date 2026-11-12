@@ -1001,11 +1001,15 @@ class DocumentNoticesView(CompanyUserRequiredMixin, View):
             domain, include_service=True,
         )
 
-        requirement_names = sorted({n.requirement_name for n in pending} | {
-            item.notice.requirement_name for item in calendar_items
-        })
+        # S153: un aviso puede venir de varios requisitos.
+        requirement_ids = {
+            pk for n in pending for pk in n.requirement_ids
+        } | {
+            pk for item in calendar_items
+            for pk in item.notice.requirement_ids
+        }
         requirement_options = list(
-            JobPosition.objects.filter(name__in=requirement_names)
+            JobPosition.objects.filter(pk__in=requirement_ids)
             .order_by("name").values("pk", "name"),
         )
         type_ids = {
@@ -1019,11 +1023,8 @@ class DocumentNoticesView(CompanyUserRequiredMixin, View):
         # Un filtro que no existe en este dominio (p. ej. tras cambiar
         # de Personal a Centros de gasto) se descarta, nunca vacía la
         # lista sin motivo visible.
-        requirement_name = next((
-            option["name"] for option in requirement_options
-            if option["pk"] == requirement_pk
-        ), None)
-        if requirement_name is None:
+        if requirement_pk not in {
+                option["pk"] for option in requirement_options}:
             requirement_pk = None
         if doc_type_pk not in {option["pk"] for option in type_options}:
             doc_type_pk = None
@@ -1045,8 +1046,8 @@ class DocumentNoticesView(CompanyUserRequiredMixin, View):
             if who == "none" and notice.recipient_ids:
                 return False
             if (
-                requirement_name is not None
-                and notice.requirement_name != requirement_name
+                requirement_pk is not None
+                and requirement_pk not in notice.requirement_ids
             ):
                 return False
             if (
@@ -1100,8 +1101,8 @@ class DocumentNoticesView(CompanyUserRequiredMixin, View):
         has_service_plans = False
         if is_personal:
             has_subjects = PersonIdentity.objects.filter(
-                is_active_employee=True, job_position__isnull=False,
-                job_position__is_active=True,
+                is_active_employee=True,
+                document_requirements__is_active=True,
             ).exists()
         else:
             has_service_plans = MachineAsset.objects.filter(
@@ -1112,8 +1113,7 @@ class DocumentNoticesView(CompanyUserRequiredMixin, View):
                 is_active=True,
             ).exists()
             has_subjects = has_service_plans or MachineAsset.objects.filter(
-                is_active=True, document_requirement__isnull=False,
-                document_requirement__is_active=True,
+                is_active=True, document_requirements__is_active=True,
             ).exists()
 
         can_request_docs = (

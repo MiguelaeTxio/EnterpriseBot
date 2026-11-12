@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from django.contrib.contenttypes.models import ContentType
+from django.db.models import Prefetch, Q
 
 from document_explorer import employment_period_service as periods
 from document_explorer.naming_service import is_gerencia
@@ -89,6 +90,12 @@ class DocumentNotice:
     document_type_id: object
     kind: str
     requirement_id: int = None
+    # S153: un sujeto puede tener varios requisitos; un tipo que piden
+    # dos de ellos da UN aviso, con los dos requisitos aquí.
+    # `requirement_id`/`requirement_name` son el primero y la lista
+    # legible, para lo que ya los usaba.
+    requirement_ids: tuple = ()
+    requirement_names: tuple = ()
     subject_company: str = ""
     subject_family: str = ""
     expiry_date: date = None
@@ -210,10 +217,7 @@ def notice_steps(rule, expiry_date):
             steps.append(
                 NoticeStep(label, expiry_date - timedelta(days=days)),
             )
-    for amount, unit in (
-        (rule.custom_1_value, rule.custom_1_unit),
-        (rule.custom_2_value, rule.custom_2_unit),
-    ):
+    for amount, unit in _custom_pairs(rule):
         step = _custom_step(amount, unit, expiry_date)
         if step is not None:
             steps.append(step)
@@ -232,8 +236,76 @@ def has_expiry_notice(rule):
     return bool(
         rule.notify_30_days or rule.notify_15_days or rule.notify_7_days
         or rule.notify_day_before
-        or (rule.custom_1_value and rule.custom_1_unit)
-        or (rule.custom_2_value and rule.custom_2_unit)
+        or any(amount and unit for amount, unit in _custom_pairs(rule))
+    )
+
+
+def _custom_pairs(rule):
+    """
+    (amount, unit) of every custom notice of a rule.
+
+    ---
+
+    S153. (antelación, unidad) de cada aviso personalizado de una
+    regla: los dos campos de una regla normal, o todos los de una
+    regla combinada (`MergedAlertRule`).
+    """
+    pairs = getattr(rule, "custom_pairs", None)
+    if pairs is not None:
+        return pairs
+    return (
+        (rule.custom_1_value, rule.custom_1_unit),
+        (rule.custom_2_value, rule.custom_2_unit),
+    )
+
+
+@dataclass
+class MergedAlertRule:
+    """
+    Notice settings of one document type required by several
+    requirements of the same subject.
+
+    ---
+
+    S153. Configuración de avisos de UN tipo que piden VARIOS
+    requisitos del mismo sujeto: cada casilla vale si la marca alguno
+    de ellos, y los avisos personalizados son todos los de todos, sin
+    repetir. Se avisa una vez por documento, nunca una por requisito.
+    """
+
+    document_type: object
+    notify_missing: bool = False
+    notify_30_days: bool = False
+    notify_15_days: bool = False
+    notify_7_days: bool = False
+    notify_day_before: bool = False
+    custom_pairs: tuple = ()
+
+
+def merge_rules(rules):
+    """
+    One rule for several rules of the same document type.
+
+    ---
+
+    S153. Una sola regla para las de varios requisitos sobre el mismo
+    tipo (ver MergedAlertRule). Con una sola, la devuelve tal cual.
+    """
+    if len(rules) == 1:
+        return rules[0]
+    pairs = []
+    for rule in rules:
+        for amount, unit in _custom_pairs(rule):
+            if amount and unit and (amount, unit) not in pairs:
+                pairs.append((amount, unit))
+    return MergedAlertRule(
+        document_type=rules[0].document_type,
+        notify_missing=any(rule.notify_missing for rule in rules),
+        notify_30_days=any(rule.notify_30_days for rule in rules),
+        notify_15_days=any(rule.notify_15_days for rule in rules),
+        notify_7_days=any(rule.notify_7_days for rule in rules),
+        notify_day_before=any(rule.notify_day_before for rule in rules),
+        custom_pairs=tuple(pairs),
     )
 
 
@@ -343,19 +415,23 @@ def _compute_document_notices(domain):
     from fleet.models import MachineAsset
 
     today = date.today()
+    # S153: varios requisitos por sujeto; un requisito desactivado no
+    # avisa (S128).
+    active_requirements = Prefetch(
+        "document_requirements",
+        queryset=JobPosition.objects.filter(is_active=True).order_by(
+            "name",
+        ),
+    )
     if domain == DOMAIN_PERSONAL:
         subjects = list(
             PersonIdentity.objects.filter(
-                is_active_employee=True, job_position__isnull=False,
-                # S128: requisito desactivado, sin avisos.
-                job_position__is_active=True,
-            ).select_related("job_position"),
+                is_active_employee=True,
+                document_requirements__is_active=True,
+            ).distinct().prefetch_related(active_requirements),
         )
-        requirement_of = {s.pk: s.job_position for s in subjects}
         subject_model = PersonIdentity
     else:
-        from django.db.models import Q
-
         from document_explorer.models import MachineAlertRule
 
         # S148: también las máquinas con avisos propios
@@ -364,25 +440,21 @@ def _compute_document_notices(domain):
             "machine_id", flat=True))
         subjects = list(
             MachineAsset.objects.filter(is_active=True).filter(
-                Q(document_requirement__isnull=False,
-                  document_requirement__is_active=True)
+                Q(document_requirements__is_active=True)
                 | Q(pk__in=own_ids),
-            ).select_related("document_requirement"),
+            ).distinct().prefetch_related(active_requirements),
         )
-        requirement_of = {
-            s.pk: s.document_requirement
-            if s.document_requirement_id
-            and s.document_requirement.is_active else None
-            for s in subjects
-        }
         subject_model = MachineAsset
+    requirements_of = {
+        s.pk: list(s.document_requirements.all()) for s in subjects
+    }
 
     pending, scheduled, calendar_items = [], [], []
     if not subjects:
         return pending, scheduled, calendar_items
 
     requirement_ids = {
-        req.pk for req in requirement_of.values() if req is not None}
+        req.pk for reqs in requirements_of.values() for req in reqs}
     rules = {}
     for rule in RequirementAlertRule.objects.filter(
         job_position_id__in=requirement_ids,
@@ -465,10 +537,23 @@ def _compute_document_notices(domain):
         grants_by_card.setdefault(grant.entry_id, []).append(grant)
 
     for subject in subjects:
-        requirement = requirement_of[subject.pk]
-        subject_rules = dict(
-            rules.get(requirement.pk, {}) if requirement else {})
-        subject_rules.update(own_rules.get(subject.pk, {}))
+        requirements = requirements_of[subject.pk]
+        # S153: reglas de todos sus requisitos, juntas por tipo (un
+        # aviso por documento, con los requisitos que lo piden).
+        rules_by_type, sources_by_type = {}, {}
+        for requirement in requirements:
+            for type_id, rule in rules.get(requirement.pk, {}).items():
+                rules_by_type.setdefault(type_id, []).append(rule)
+                sources_by_type.setdefault(type_id, []).append(requirement)
+        subject_rules = {
+            type_id: merge_rules(group)
+            for type_id, group in rules_by_type.items()
+        }
+        # S148: los avisos propios de la máquina sustituyen a los de
+        # sus requisitos para ese tipo.
+        for type_id, rule in own_rules.get(subject.pk, {}).items():
+            subject_rules[type_id] = rule
+            sources_by_type[type_id] = []
         if not subject_rules:
             continue
         entries = entries_by_subject.get(subject.pk, [])
@@ -478,8 +563,14 @@ def _compute_document_notices(domain):
         present_codes = {entry.document_type.code for entry in entries}
         has_identity = bool(set(IDENTITY_CODES) & present_codes)
         identity_notified = False
-        categories = (
-            categories_of.get(requirement.pk, []) if requirement else [])
+        categories_by_pk = {}
+        for requirement in requirements:
+            for category in categories_of.get(requirement.pk, []):
+                categories_by_pk[category.pk] = category
+        categories = sorted(
+            categories_by_pk.values(),
+            key=lambda category: (category.display_order, category.pk),
+        )
         label = _subject_label(subject, domain)
         # H30 (S122): datos del sujeto que usan los ámbitos de avisos
         # de cada supervisor (notice_recipients).
@@ -492,14 +583,17 @@ def _compute_document_notices(domain):
 
         for type_id, rule in subject_rules.items():
             doc_type = rule.document_type
+            sources = sources_by_type.get(type_id, [])
             base = {
                 "domain": domain,
                 "subject_id": subject.pk,
                 "subject_label": label,
                 "requirement_name": (
-                    requirement.name if requirement
-                    else "Avisos de la máquina"),
-                "requirement_id": requirement.pk if requirement else None,
+                    ", ".join(req.name for req in sources)
+                    or "Avisos de la máquina"),
+                "requirement_id": sources[0].pk if sources else None,
+                "requirement_ids": tuple(req.pk for req in sources),
+                "requirement_names": tuple(req.name for req in sources),
                 "subject_company": subject_company,
                 "subject_family": subject_family,
                 "document_label": doc_type.label,

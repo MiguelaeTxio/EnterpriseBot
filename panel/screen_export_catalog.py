@@ -46,8 +46,8 @@ FLEET = register(Screen(
                lambda a: getattr(a, "doc_count", None), summed=True),
         Column("contadores", "Contadores", 22, _counters),
         Column("requisito", "Requisito de documentación", 26,
-               lambda a: (a.document_requirement.name
-                          if a.document_requirement_id else "")),
+               lambda a: ", ".join(sorted(
+                   req.name for req in a.document_requirements.all()))),
         Column("estado", "Estado", 10,
                lambda a: "Activo" if a.is_active else "Inactivo"),
         Column("usos", "Usos (líneas de parte)", 12,

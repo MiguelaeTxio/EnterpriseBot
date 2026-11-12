@@ -254,24 +254,39 @@ y se habilita "Guardar".
                 </div>
                 {% comment %}
                 H31 (S109, renombrado en S113): "Requisitos de
-                documentación" -- gobierna qué tipos documentales se
-                marcan como faltantes en esta misma ficha (ver
-                JobPosition.required_document_types). Modelo/campo
-                internos siguen llamándose JobPosition/job_position,
-                solo cambia el rótulo visible. Mismo patrón de
-                bloqueo que el resto del formulario, pero con
-                `disabled` en vez de `readonly` (los <select> no
-                respetan `readonly` en ningún navegador) -- el JS de
-                modo edición distingue el tipo de campo.
+                documentación" -- gobiernan qué tipos documentales se
+                marcan como faltantes o caducados en esta misma ficha
+                (ver JobPosition.required_document_types). S153: VARIOS
+                por persona, en un desplegable con casillas (Miguel
+                Ángel: "Necesito poder añadir varios requisitos de
+                documentación"). Mismo bloqueo que el resto del
+                formulario: casillas `disabled` hasta entrar en modo
+                edición (las casillas no respetan `readonly`). El campo
+                oculto dice al servidor que se envían los requisitos,
+                aunque no haya ninguno marcado (= quitarlos todos).
                 {% endcomment %}
                 <div class="col-12 col-md-4">
-                    <label class="form-label small mb-0">Requisitos de documentación</label>
-                    <select name="job_position" class="form-select form-select-sm personal-edit-field" disabled>
-                        <option value="">Sin requisitos asignados</option>
-                        {% for position in job_positions %}
-                        <option value="{{ position.pk }}" {% if person.job_position_id == position.pk %}selected{% endif %}>{{ position.name }}</option>
-                        {% endfor %}
-                    </select>
+                    <div class="form-label small mb-0">Requisitos de documentación</div>
+                    <div class="dropdown checkdrop" data-none="Sin requisitos asignados">
+                        <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle w-100"
+                                data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+                            <span class="checkdrop-text">Sin requisitos asignados</span>
+                        </button>
+                        <div class="dropdown-menu p-2 small">
+                            {% for position in job_positions %}
+                            <div class="form-check">
+                                <input class="form-check-input personal-edit-field" type="checkbox" name="document_requirements"
+                                       value="{{ position.pk }}" id="personReq{{ position.pk }}" data-label="{{ position.name }}"
+                                       {% if position.pk in person_requirement_ids %}checked{% endif %} disabled>
+                                <label class="form-check-label text-nowrap" for="personReq{{ position.pk }}">{{ position.name }}{% if not position.is_active %} (desactivado){% endif %}</label>
+                            </div>
+                            {% empty %}
+                            <div class="text-muted">No hay requisitos creados.</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <input type="hidden" name="document_requirements_sent" value="1">
+                    {% include "panel/_checkdrop_js.html" %}
                 </div>
                 {# S148: observaciones libres (campo Memo): avisos y notas. #}
                 <div class="col-12">
@@ -1918,7 +1933,7 @@ function requestEditMode() {
 
 function confirmEditMode() {
     document.querySelectorAll('.personal-edit-field').forEach((el) => {
-        if (el.tagName === 'SELECT') { el.disabled = false; } else { el.readOnly = false; }
+        if (el.tagName === 'SELECT' || el.type === 'checkbox') { el.disabled = false; } else { el.readOnly = false; }
     });
     document.getElementById('personalEditModeBtn').classList.add('d-none');
     document.getElementById('personalSaveBtn').classList.remove('d-none');
@@ -1927,7 +1942,7 @@ function confirmEditMode() {
 
 function exitEditMode() {
     document.querySelectorAll('.personal-edit-field').forEach((el) => {
-        if (el.tagName === 'SELECT') { el.disabled = true; } else { el.readOnly = true; }
+        if (el.tagName === 'SELECT' || el.type === 'checkbox') { el.disabled = true; } else { el.readOnly = true; }
     });
     document.getElementById('personalEditModeBtn').classList.remove('d-none');
     document.getElementById('personalSaveBtn').classList.add('d-none');

@@ -10,8 +10,8 @@ ACTIVAS, tras el fechado del punto 1.
 Por grupo (mismo tipo no acumulable + misma máquina activa):
 
 1. Criterio: `vigencia_selector.current_fn_for()` -- en tipos que
-   caducan Y están en el requisito de documentación de ESA máquina en
-   concreto (`MachineAsset.document_requirement`), `is_current_expiring`;
+   caducan Y están en los requisitos de documentación de ESA máquina en
+   concreto (`MachineAsset.document_requirements`), `is_current_expiring`;
    en el resto, `is_current` de siempre. Corregido tras el incidente
    real de Alberto Javier Álvarez Díaz (S119): el criterio nunca fue
    por dominio, es por si el tipo es obligatorio para el sujeto -- ver
@@ -119,23 +119,23 @@ class Command(BaseCommand):
     @staticmethod
     def _get_required_type_ids(machine, cache):
         """
-        Cached per document_requirement_id -- avoids one query per
-        machine when many share (or lack) the same requirement.
+        Cached per machine (S153: several requirements each; the
+        requirements come prefetched with their types).
         ---
-        Cacheado por document_requirement_id -- evita una consulta por
-        máquina cuando muchas comparten (o carecen de) el mismo
-        requisito.
+        Cacheado por máquina (S153: varios requisitos por máquina; los
+        requisitos llegan precargados con sus tipos).
         """
-        requirement_id = machine.document_requirement_id
-        if requirement_id not in cache:
-            cache[requirement_id] = get_required_type_ids(machine)
-        return cache[requirement_id]
+        if machine.pk not in cache:
+            cache[machine.pk] = get_required_type_ids(machine)
+        return cache[machine.pk]
 
     def _run(self, apply_changes, machine_codes=(), type_codes=()):
         today = date.today()
         machine_ct = ContentType.objects.get_for_model(MachineAsset)
         entry_ct = ContentType.objects.get_for_model(DocumentIndexEntry)
-        active = MachineAsset.objects.filter(is_active=True)
+        active = MachineAsset.objects.filter(
+            is_active=True,
+        ).prefetch_related("document_requirements__required_document_types")
         if machine_codes:
             active = active.filter(code__in=machine_codes)
         machines = {machine.pk: machine for machine in active}

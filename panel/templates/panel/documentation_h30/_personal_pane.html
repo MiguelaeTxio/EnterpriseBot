@@ -141,19 +141,20 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                     <div class="small text-muted fw-bold">Requisitos de documentación</div>
                     <div class="d-flex gap-1 flex-wrap">
                         {% comment %}
-                        H31 (S109, renombrado en S113). Asignar
-                        requisito de documentación masivo -- sustituye
-                        siempre el anterior de cada persona (FK, no
-                        acumulativo). Modelo/campo internos siguen
-                        llamándose JobPosition/job_position.
+                        H31 (S109, renombrado en S113). Requisitos de
+                        documentación masivos. S153: varios por
+                        persona -- "Añadir" suma el elegido a los que
+                        ya tenga cada persona; "Quitar" lo quita (con
+                        "Todos", los quita todos).
                         {% endcomment %}
                         <select id="person-mass-job-position" data-requirement-select class="form-select form-select-sm ppane-select-auto">
-                            <option value="">— Sin requisito (quitar) —</option>
+                            <option value="">— Todos (solo al quitar) —</option>
                             {% for position in job_positions %}
                             <option value="{{ position.pk }}">{{ position.name }}</option>
                             {% endfor %}
                         </select>
-                        <button type="button" class="btn btn-sm btn-primary" id="person-mass-job-position-submit">Asignar</button>
+                        <button type="button" class="btn btn-sm btn-primary person-mass-job-position-submit" id="person-mass-job-position-add" data-mode="add" title="Añade el requisito a los seleccionados, sin quitarles los que ya tengan">Añadir</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger person-mass-job-position-submit" id="person-mass-job-position-remove" data-mode="remove" title="Quita el requisito a los seleccionados (con «Todos», les quita todos)">Quitar</button>
                     </div>
                     <div class="small text-muted fw-bold mt-1">EPIs</div>
                     <button type="button" class="btn btn-sm btn-primary" id="person-mass-epi-submit">Entregar EPIs…</button>
@@ -580,9 +581,16 @@ las filas de debajo se desplacen de verdad.
             }
         }, true);
     }
-    guardMassButton('person-mass-job-position-submit', function () {
+    // S153: añadir o quitar (varios requisitos por persona).
+    guardMassButton('person-mass-job-position-add', function () {
         const sel = document.getElementById('person-mass-job-position');
-        return 'Asignar el requisito de documentación: ' + sel.options[sel.selectedIndex].textContent.trim();
+        return 'Añadir el requisito de documentación: ' + sel.options[sel.selectedIndex].textContent.trim();
+    });
+    guardMassButton('person-mass-job-position-remove', function () {
+        const sel = document.getElementById('person-mass-job-position');
+        return sel.value
+            ? 'Quitar el requisito de documentación: ' + sel.options[sel.selectedIndex].textContent.trim()
+            : 'Quitar todos los requisitos de documentación';
     });
     guardMassButton('person-mass-epi-submit', 'Entregar EPIs');
     guardMassButton('person-mass-photo-queue', 'Volver a sacar la foto de carné');
@@ -1162,8 +1170,23 @@ las filas de debajo se desplacen de verdad.
     }
     window.deletePersonGroup = deletePersonGroup;
 
-    document.getElementById('person-mass-job-position-submit').addEventListener('click', function () {
+    let personMassJobPositionMode = 'add';
+    // S153: "Añadir" necesita un requisito concreto ("Todos" solo vale
+    // para quitar).
+    (function () {
+        const reqSelect = document.getElementById('person-mass-job-position');
+        const addButton = document.getElementById('person-mass-job-position-add');
+        function syncAddButton() { addButton.disabled = !reqSelect.value; }
+        reqSelect.addEventListener('change', syncAddButton);
+        syncAddButton();
+    }());
+    document.querySelectorAll('.person-mass-job-position-submit').forEach((button) => button.addEventListener('click', function () {
         const jobPositionId = document.getElementById('person-mass-job-position').value;
+        personMassJobPositionMode = button.dataset.mode;
+        if (personMassJobPositionMode === 'add' && !jobPositionId) {
+            resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">Elige el requisito que añadir.</div>';
+            return;
+        }
         if (selection.size === 0) {
             resultEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0">No hay personas seleccionadas.</div>';
             return;
@@ -1175,18 +1198,25 @@ las filas de debajo se desplacen de verdad.
         // listado de quiénes son ya está siempre visible en el visor
         // de "Selección actual" -- no hace falta repetirlo aquí.
         const select = document.getElementById('person-mass-job-position');
-        // S130: la opción vacía ("Sin requisito (quitar)") quita el
-        // requisito, igual que en Maquinaria; el servidor ya lo admitía.
+        // S153: varios requisitos por persona. Con "Todos" al quitar,
+        // se les quitan todos.
         const jobPositionName = jobPositionId
             ? select.options[select.selectedIndex].textContent
-            : '(ninguno -- se quita el requisito actual)';
-        document.getElementById('personMassJobPositionConfirmText').textContent =
-            `Vas a cambiar el requisito de documentación de ${selection.size} trabajador(es) a "${jobPositionName}".`;
+            : '';
+        let confirmText;
+        if (personMassJobPositionMode === 'add') {
+            confirmText = `Vas a añadir el requisito "${jobPositionName}" a ${selection.size} trabajador(es). Los requisitos que ya tengan se mantienen.`;
+        } else if (jobPositionId) {
+            confirmText = `Vas a quitar el requisito "${jobPositionName}" a ${selection.size} trabajador(es).`;
+        } else {
+            confirmText = `Vas a quitar TODOS los requisitos de documentación a ${selection.size} trabajador(es).`;
+        }
+        document.getElementById('personMassJobPositionConfirmText').textContent = confirmText;
         if (!personMassJobPositionModalInstance) {
             personMassJobPositionModalInstance = new bootstrap.Modal(document.getElementById('personMassJobPositionConfirmModal'));
         }
         personMassJobPositionModalInstance.show();
-    });
+    }));
 
     document.getElementById('personMassJobPositionConfirmBtn').addEventListener('click', function () {
         const jobPositionId = document.getElementById('person-mass-job-position').value;
@@ -1196,7 +1226,8 @@ las filas de debajo se desplacen de verdad.
         const formData = new FormData();
         selection.forEach((pk) => formData.append('person_ids', pk));
         formData.append('job_position_id', jobPositionId);
-        resultEl.innerHTML = '<div class="text-muted">Asignando…</div>';
+        formData.append('mode', personMassJobPositionMode);
+        resultEl.innerHTML = '<div class="text-muted">Guardando…</div>';
         fetch("{% url 'panel:documentation_personal_job_position_mass_set' %}", {
             method: 'POST',
             headers: {'X-CSRFToken': getCookie('csrftoken')},
@@ -1204,9 +1235,15 @@ las filas de debajo se desplacen de verdad.
         }).then((r) => r.json()).then((data) => {
             resultEl.innerHTML = '';
             if (data.ok) {
-                showPersonGroupToast(data.job_position_name
-                    ? `${data.updated_count} persona(s) asignadas al requisito "${data.job_position_name}".`
-                    : `Requisito quitado a ${data.updated_count} persona(s).`);
+                let toastText;
+                if (data.mode === 'add') {
+                    toastText = `Requisito "${data.job_position_name}" añadido a ${data.updated_count} persona(s).`;
+                } else if (data.job_position_name) {
+                    toastText = `Requisito "${data.job_position_name}" quitado a ${data.updated_count} persona(s).`;
+                } else {
+                    toastText = `Requisitos quitados a ${data.updated_count} persona(s).`;
+                }
+                showPersonGroupToast(toastText);
                 // H31 (S119): refresca la pestaña de Personal en el
                 // sitio (mismo endpoint htmx que la carga la primera
                 // vez) para que el listado ya muestre el cambio sin
@@ -1219,7 +1256,7 @@ las filas de debajo se desplacen de verdad.
                     });
                 }
             } else {
-                showPersonGroupToast(data.error || 'Error al asignar el requisito.', true);
+                showPersonGroupToast(data.error || 'Error al cambiar el requisito.', true);
             }
         }).catch(() => {
             resultEl.innerHTML = '';

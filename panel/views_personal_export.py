@@ -46,6 +46,20 @@ def _label(person):
 
 # S148: columnas que enseña el panel y no tenía el Excel (las pone
 # _person_list_page: person.onboarding y person.ws_row).
+def _requirements(person):
+    """
+    S153: names of the person's requirements (several), comma-joined.
+    ---
+    S153: nombres de los requisitos de la persona (varios), separados
+    por comas.
+    """
+    return ", ".join(
+        req.name for req in sorted(
+            person.document_requirements.all(), key=lambda r: r.name,
+        )
+    )
+
+
 def _onboarding(person):
     state = getattr(person, "onboarding", None)
     return getattr(state, "label", "") if state else ""
@@ -84,10 +98,10 @@ PERSONAL_EXPORT_COLUMNS = (
     ("fecha_baja", "Fecha de baja", 12, lambda p: p.termination_date, True),
     ("categoria", "Categoría profesional", 24,
      lambda p: p.professional_category, False),
-    ("requisito", "Requisito de documentación", 26,
-     lambda p: p.job_position.name if p.job_position_id else "", False),
+    ("requisito", "Requisitos de documentación", 26, _requirements, False),
     ("telefono", "Teléfono de empresa", 14, lambda p: p.phone, False),
-    ("telefono_2", "Teléfono particular", 14, lambda p: p.phone_secondary, False),
+    ("telefono_2", "Teléfono particular", 14,
+     lambda p: p.phone_secondary, False),
     ("email", "Correo electrónico", 30, lambda p: p.email, False),
     ("direccion", "Dirección", 32, lambda p: p.address_street, False),
     ("codigo_postal", "Código postal", 9, lambda p: p.postal_code, False),
