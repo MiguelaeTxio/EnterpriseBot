@@ -18,6 +18,18 @@ on:
         required: false
         default: "30"
         type: string
+      delivery:
+        # S152: "release" deja además el JSON comprimido en la release
+        # privada relevo-imagenes, para que el modelo lo baje con la API
+        # (p. ej. para probar tools/itv_local_check.py en el PC). Drive
+        # sigue siendo la entrega de la tarea programada.
+        description: "Entrega: drive (por defecto) o release (además, comprimido en la release privada)"
+        required: false
+        default: "drive"
+        type: choice
+        options:
+          - drive
+          - release
 
 env:
   DRIVE_FOLDER_ID: "1SSHSY2FHt-7eN17Wgza2Qcybs-ij6to0"
@@ -27,7 +39,8 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  # write solo para la release privada en delivery=release (S152).
+  contents: write
 
 jobs:
   report:
@@ -55,11 +68,28 @@ jobs:
           scp -i ~/.ssh/pa_readonly_key .github/scripts/drive_upload.py \
             MiguelAeTxio@ssh.pythonanywhere.com:"$DRIVE_SCRIPT"
           ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
-            "cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; export PYTHONPATH=/home/MiguelAeTxio/PROJECTS/EnterpriseBot; python -m dotenv run python manage.py itv_documentation_report --days '$DAYS' --output '$OUT' > /dev/null 2>> '$OUT.log'; RC=\$?; if [ \$RC -eq 0 ]; then python -m dotenv run python3 '$DRIVE_SCRIPT' '$OUT' 'informe_itv_$RUN.json' '${{ env.DRIVE_FOLDER_ID }}'; else python -m dotenv run python3 '$DRIVE_SCRIPT' '$OUT.log' 'informe_itv_${RUN}_ERROR.log' '${{ env.DRIVE_FOLDER_ID }}'; fi; UP=\$?; rm -f '$DRIVE_SCRIPT' '$OUT' '$OUT.log'; [ \$RC -eq 0 ] && [ \$UP -eq 0 ]" \
+            "cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; export PYTHONPATH=/home/MiguelAeTxio/PROJECTS/EnterpriseBot; python -m dotenv run python manage.py itv_documentation_report --days '$DAYS' --output '$OUT' > /dev/null 2>> '$OUT.log'; RC=\$?; if [ \$RC -eq 0 ] && [ '${{ inputs.delivery }}' = release ]; then cp '$OUT' '$OUT.release'; fi; if [ \$RC -eq 0 ]; then python -m dotenv run python3 '$DRIVE_SCRIPT' '$OUT' 'informe_itv_$RUN.json' '${{ env.DRIVE_FOLDER_ID }}'; else python -m dotenv run python3 '$DRIVE_SCRIPT' '$OUT.log' 'informe_itv_${RUN}_ERROR.log' '${{ env.DRIVE_FOLDER_ID }}'; fi; UP=\$?; rm -f '$DRIVE_SCRIPT' '$OUT' '$OUT.log'; [ \$RC -eq 0 ] && [ \$UP -eq 0 ]" \
             > /tmp/out.txt 2>&1
           RC=$?
           if [ "$RC" -ne 0 ]; then
             MSG=$(grep -v "PythonAnywhere SSH" /tmp/out.txt | tail -c 600 | tr '\n' ' ')
             echo "::error title=Informe de ITV fallido (exit $RC)::${MSG:-sin mensaje}"
           fi
+          if [ "$RC" -eq 0 ] && [ "${{ inputs.delivery }}" = release ]; then
+            scp -i ~/.ssh/pa_readonly_key "MiguelAeTxio@ssh.pythonanywhere.com:$OUT.release" "/tmp/informe_itv_$RUN.json" || RC=1
+            ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com "rm -f '$OUT.release'"
+          fi
           exit "$RC"
+
+      - name: JSON a la release privada (delivery=release, S152)
+        if: inputs.delivery == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          gzip -9 -c /tmp/informe_itv_${{ github.run_id }}.json > /tmp/informe_itv_${{ github.run_id }}.json.gz
+          gh release view relevo-imagenes >/dev/null 2>&1 || \
+            gh release create relevo-imagenes --prerelease \
+              --title "Relevo de imágenes (solo lectura, temporal)" \
+              --notes "Material temporal del relevo para el modelo. Se vacía al cierre de sesión."
+          gh release upload relevo-imagenes /tmp/informe_itv_${{ github.run_id }}.json.gz --clobber
