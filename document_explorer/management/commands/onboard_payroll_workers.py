@@ -118,6 +118,7 @@ class Command(BaseCommand):
             raise CommandError("No existe %s" % data["by_username"])
         self.person_ct = ContentType.objects.get_for_model(PersonIdentity)
         self.summary = []
+        self._new_sections = set()
         self.errors = []
         self._log("Modo: %s" % ("APLICAR" if self.apply else "SIMULACIÓN"))
 
@@ -178,9 +179,7 @@ class Command(BaseCommand):
 
     def _worker(self, spec):
         person = PersonIdentity.objects.filter(dni=spec["dni"]).first()
-        section = Section.objects.filter(pk=spec["section_id"]).first()
-        if section is None:
-            raise ValueError("no existe la sección %s" % spec["section_id"])
+        section = self._section(spec)
         label = "%s %s, %s" % (spec["first_surname"],
                                spec.get("second_surname", ""),
                                spec["given_name"])
@@ -205,6 +204,31 @@ class Command(BaseCommand):
         if person is not None and self.apply:
             self._fill_blanks(person, spec)
         self._account(person, spec, section, label)
+
+    def _section(self, spec):
+        """
+        The worker's section: by id, or by name (created if missing).
+        ---
+        La sección del trabajador: por id o por nombre; por nombre se
+        crea si no existe (S153: "Taller Geogrúas"). En simulación, una
+        sección que falta se devuelve sin guardar.
+        """
+        if spec.get("section_name"):
+            name = spec["section_name"]
+            section = Section.objects.filter(
+                company=self.by.company, name=name).first()
+            if section is None:
+                if name not in self._new_sections:
+                    self._new_sections.add(name)
+                    self._note("Sección nueva: %s" % name)
+                section = Section(company=self.by.company, name=name)
+                if self.apply:
+                    section.save()
+            return section
+        section = Section.objects.filter(pk=spec["section_id"]).first()
+        if section is None:
+            raise ValueError("no existe la sección %s" % spec["section_id"])
+        return section
 
     def _create_person(self, spec, section):
         from document_explorer.person_facts_service import refresh_person
@@ -327,8 +351,10 @@ class Command(BaseCommand):
             self._log("  conserva su usuario %s"
                       % person.company_user.user.username)
             return
-        acc_section = Section.objects.filter(
-            pk=account.get("section_id", section.pk)).first()
+        acc_section = section
+        if account.get("section_id"):
+            acc_section = Section.objects.filter(
+                pk=account["section_id"]).first()
         base = Base.objects.filter(pk=account["base_id"]).first() if (
             account.get("base_id")) else None
         if person is None:
