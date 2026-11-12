@@ -4136,44 +4136,110 @@ Hoja de Ruta S148 cerrada en sus tres puntos y, a petición de Miguel
 
 ---
 
-## Hoja de Ruta S150 (va antes que la "Hoja de Ruta pendiente al reactivar H31", que sigue intacta)
+## COMPLETADAS EN S150 (11-12/11/2026, PEE PC; en paralelo con la invasora S151 de FACTURACIÓN y con trabajo de fichajes)
 
-Miguel Ángel, al cerrar S148: *"la siguiente va a versar sobre crear
-una tarea programada en la que vas a usar la aplicación web
-EnterpriseBot, para detectar los vehículos con las ITV que caducan en un
-mes o menos y asegurarte de que la documentación la tienen actualizada
-en local (microsoft 365) y en EnterpriseBot"*.
+### 1. Tarea programada de ITV -- `1fc3e73`, `70c7bcf`, `b8fc2e9`, `197476c`, `9519768`, `70ed59f`, `9abc229`
+- `itv_documentation_report` (document_explorer) + `itv_report.yml`:
+  informe JSON de solo lectura (máquinas ACTIVAS con carpeta local y
+  ITV vencida o a 30 días; fecha de ITV = máx. de `itv_date` y del
+  documento de ITV vigente; MD5 de cada documento en GCS), subido a la
+  carpeta de intercambio de Drive.
+- `tools/itv_local_check.py`: mitad local en el PC (busca cada documento
+  por ruta, por nombre + MD5 y por MD5 + matrícula); escribe la tabla
+  Markdown y, al final, la sección "ITV vencida sin la ITV nueva ni en
+  el panel ni en local". Con la ITV vencida, la columna Local ya no dice
+  "al día" (caso R22: decía al día porque en local estaba el mismo
+  documento caducado que en el panel).
+- Tarea programada `trig_01Vij2L5sD13BiXuCdp29cbg` ("EnterpriseBot —
+  Control de ITV a 30 días"), lunes 7:47 Europe/Madrid, requiere el PC
+  (carpeta DOC. MAQUINAS), aprobación automática, aviso al móvil. Deja
+  el informe en un documento de Claude Docs ("Informe de ITV —
+  DD/MM/AAAA") y envía un correo desde el Outlook de escritorio del PC
+  (uso del ordenador) a Alejandro Álvarez <alejandro@gruasalvarez.com>
+  con la lista de ITV vencidas sin ITV nueva, indicando que lo ha hecho
+  el agente de Claude. Primera ejecución con correo: 11/11/2026.
+- Cinco ITV mal fechadas corregidas (A59 42115, P27 43282, B34 43287,
+  G02 53045, Z103 53199) y causa raíz arreglada en
+  `date_machine_documents_free` (en ITV/OCA la fecha completa del nombre
+  manda). `recalculate_machine_vigencia` admite `--machines` y `--types`.
+- Informe real del 11/11: 52 máquinas activas con la ITV vencida; con
+  ITV nueva en local solo Z17 (04-03-2027) y P16 (18-02-2027, en una
+  subcarpeta). Revisados a mano B39 (el script marcó por fecha de
+  modificación una ITV de 2024), 6951HZS (un `.log` de 116 bytes) y R22
+  (renombrada hoy en local a `ITV 19-11-26`: la fecha del panel,
+  10/11/2026, puede estar mal).
 
-1. **Tarea programada de ITV.** Crear una tarea programada (herramienta
-   de tareas programadas de la sesión, nunca cron local) que, en cada
-   ejecución:
-   - Lee en EnterpriseBot los centros de gasto activos con
-     `MachineAsset.itv_date` dentro de los próximos 30 días o ya
-     vencida (relevo `db_query.yml`, resultado por Drive).
-   - Para cada uno comprueba que en EnterpriseBot hay un documento de
-     ITV vigente (`DocumentIndexEntry` de su tipo ITV, no obsoleto, con
-     caducidad igual a `itv_date`) y que en local (OneDrive de Microsoft
-     365, carpeta `DOC. MAQUINAS/ACTIVAS/...` de la máquina) está el
-     mismo archivo (mismo nombre y MD5 que en el cubo).
-   - Deja un informe con los vehículos, su fecha de ITV y, por cada
-     uno, "al día" o lo que falta (en EnterpriseBot, en local o en
-     ambos).
-   - **Cierre:** la tarea programada existe y una primera ejecución
-     real ha dejado el informe con todos los vehículos con ITV a 30
-     días o menos, contrastado a mano con dos de ellos.
-2. **Release `relevo-imagenes`.** Miguel Ángel borra en GitHub
-   (Releases → relevo-imagenes) los 135 adjuntos; **cierre:** la
-   release queda con 0 adjuntos.
-3. **Pruebas reales pendientes de S148** (las hace Miguel Ángel en el
-   panel): alta de persona sin documentos, alta de centro de gasto con
-   documentos, aviso propio en la ficha de una máquina, tipo de
-   fichaje "normal" a Miguel Ángel Pérez Sánchez y "Pedir documentos"
-   a un trabajador con móvil. **Cierre:** cada prueba hecha y, si
-   falla algo, corregido en la propia sesión.
-4. **Datos sueltos:** las dos "Formación PRL Art. 18 y 19" de Paraschiv
-   Caraion (entradas 28028 y 36691, misma fecha) se comparan por MD5 y,
-   si son el mismo archivo, se borra la copia; B49 y A70 tienen como
-   FACTURA_COMPRA facturas de leasing del notario: se retipan a
-   LEASING. **Cierre:** consulta a BD con un solo documento de PRL 18-19
-   para Paraschiv (si eran iguales) y B49/A70 sin esas facturas como
-   FACTURA_COMPRA.
+### 2. Estado Activo/Inactivo de la flota -- `3ee7168`
+- `reconcile_machine_activity` (fleet): cruza repostajes de GasoGes
+  (desde enero de 2026, ventana de 180 días) con pruebas de baja
+  (BAJA_DEFINITIVA/BAJA_TEMPORAL/FACTURA_VENTA o carpeta local de
+  baja/venta). Criterio de Miguel Ángel: activa = reposta; sin
+  repostajes y con baja documentada = inactiva.
+- Hojas para comprobar en campo: "Activas a inactivar" (39) e "Inactivas
+  a activar" (16). Miguel Ángel aplicó los cambios; desactivó además X10
+  y 7308BWM. A29 sigue activa. Las plataformas sin repostajes quedan a
+  su comprobación en campo.
+
+### 3. Agente H28: mover carpetas de máquina -- `e005ce3`
+- Al cambiar una máquina de estado, el agente creaba una carpeta vacía
+  con el nombre del servidor si en local la carpeta tenía otro nombre
+  ("(GR)", "(TR)", "(VENDIDA)") y no movía la de verdad.
+- Corregido: busca por el nombre hasta el primer paréntesis, conserva el
+  nombre local, ignora y borra carpetas vacías, y no crea una vacía si
+  no encuentra la carpeta. Recompilado y arrancado en el PC.
+- Borradas 9 carpetas vacías sobrantes; reprocesados los trabajos 24,
+  25, 26 y 37: R-12, 2030JVK, 3968HWN y 7308BWM ya están en sus
+  carpetas de baja con todos sus archivos.
+- Nota: el agente no atiende trabajos hasta terminar la reconciliación
+  de arranque (unos 15 minutos con DOC. PERSONAL).
+
+### 4. Relevo -- `86578f6`
+- `file_fetch.yml` admite `delivery=release` (modo pythonanywhere): el
+  archivo llega comprimido a la release privada `relevo-imagenes`.
+
+### 5. Puntos 2-4 de la Hoja de Ruta S150
+- Release `relevo-imagenes`: vaciada (S149/S150); vaciarla es tarea del
+  modelo al cierre, con `relevo_cleanup.yml`.
+- Pruebas de S148: Miguel Ángel las da por cerradas; todas las pruebas
+  se hacen en producción.
+- Paraschiv PRL 18-19 duplicada y facturas de notario de B49/A70 a
+  LEASING: hecho.
+
+## Hoja de Ruta S152 (va antes que la "Hoja de Ruta pendiente al reactivar H31", que sigue intacta)
+
+Encargo de Alejandro Álvarez (11/11/2026, verbatim): *"en el mes de
+diciembre vence la mayoría de los seguros y Necesito que os pongáis a
+sacarme un listado de todos los seguros con la información necesaria
+para su renovación de precio y demas con los mediadores de seguros.
+Llamarme por favor por la mañana y nos conectamos para iniciar esto."*
+Miguel Ángel llama a Alejandro por la mañana; lo que concrete Alejandro
+en esa llamada se suma a este punto al arrancar la sesión.
+
+1. **Listado de seguros para la renovación.** Situación en BD al
+   12/11/2026 (documentos no obsoletos): `SEGURO` (recibo) 315, 50 con
+   caducidad en diciembre de 2026; `POLIZA_SEGURO` 247, 7 en diciembre;
+   `CERTIFICADO_SEGURO` 37, 2 en diciembre; `CARTA_VERDE` 27;
+   `POLIZA_SEGURO_EMPRESA` 1; `CONDICIONES_GENERALES_SEGURO` 1. En local,
+   carpeta `DOC. MAQUINAS/SEGUROS` y el OneDrive `GRUALDI SL` (conectado
+   al PC el 12/11).
+   - Sacar, por cada centro de gasto activo y por cada seguro de empresa:
+     centro de gasto, matrícula, aseguradora, mediador, número de póliza,
+     tipo de cobertura, prima del último recibo, fecha de vencimiento y
+     documento de origen (panel o local). Los datos que no estén en
+     campos de BD se leen del documento (texto OCR del panel).
+   - Entregarlo como Sheet (tipo Sheets), ordenado por vencimiento, con
+     los de diciembre de 2026 primero.
+   - **Cierre:** el Sheet tiene una fila por cada póliza vigente de
+     centro de gasto activo y de empresa; los 50 recibos con caducidad en
+     diciembre están en él; cada fila tiene aseguradora, número de póliza,
+     vencimiento y prima, o la marca "no consta en el documento".
+2. **Script local de ITV**: en `tools/itv_local_check.py`, decidir qué
+   ITV es "más nueva" por la fecha del nombre del archivo, no por la de
+   modificación; buscar en toda la carpeta de la máquina (subcarpetas
+   incluidas, menos OBSOLETOS); descartar archivos que no sean PDF ni
+   imagen. **Cierre:** con el JSON del 11/11, P16 y Z17 salen con ITV
+   nueva en local, y B39 y 6951HZS no.
+3. **R22**: comprobar en el PDF `R-22 MU08876R ITV 19-11-26.pdf` (cubo)
+   la fecha real de caducidad y corregir `expiry_date` en el panel si es
+   el 19/11/2026. **Cierre:** consulta a BD con la entrada 16616 y la
+   fecha que dice el documento.
