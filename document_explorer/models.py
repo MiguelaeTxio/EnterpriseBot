@@ -2534,6 +2534,11 @@ class SignedFormFile(models.Model):
         verbose_name="PDF generado (cifrado)")
     signed_encrypted = models.BinaryField(
         null=True, blank=True, verbose_name="PDF firmado (cifrado)")
+    # S153: configuración de AutoFirma para que la firma digital se vea
+    # (recuadro junto a la imagen de la firma); vacío = invisible.
+    signature_config = models.TextField(
+        blank=True, default="",
+        verbose_name="Configuración de la firma visible (AutoFirma)")
     error = models.TextField(blank=True, default="",
                              verbose_name="Error")
     taken_at = models.DateTimeField(null=True, blank=True)

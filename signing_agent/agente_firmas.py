@@ -42,6 +42,7 @@ SIGN_TIMEOUT_SECONDS = 180
 HTTP_TIMEOUT = 60
 LOCK_PORT = 47653
 APP_NAME = "AgenteFirmas"
+VERSION = "2"
 CREATE_NO_WINDOW = 0x08000000
 
 DATA_DIR = os.path.join(
@@ -222,7 +223,7 @@ class Agent:
     def __init__(self, code):
         self.session = requests.Session()
         self.session.headers["Authorization"] = "Bearer " + code
-        self.host = socket.gethostname()
+        self.host = "%s (agente v%s)" % (socket.gethostname(), VERSION)
         self.cli = ""
         self.last_heartbeat = 0.0
         self.last_error = ""
@@ -273,12 +274,15 @@ class Agent:
             if not self.cli:
                 error = "AutoFirma no está instalado en el ordenador"
             else:
-                try:
-                    code, output = run([
-                        self.cli, "sign", "-i", source, "-o", target,
+                args = [self.cli, "sign", "-i", source, "-o", target,
                         "-format", "pades", "-store", "windows",
-                        "-alias", item["alias"],
-                    ], SIGN_TIMEOUT_SECONDS)
+                        "-alias", item["alias"]]
+                # S153: firma visible (recuadro "Firmado digitalmente
+                # por..." junto a la imagen de la firma).
+                if item.get("config"):
+                    args += ["-config", item["config"]]
+                try:
+                    code, output = run(args, SIGN_TIMEOUT_SECONDS)
                 except subprocess.TimeoutExpired:
                     code, output = -1, ("AutoFirma no ha terminado en %d s "
                                         "(¿pide contraseña o confirmación?)"

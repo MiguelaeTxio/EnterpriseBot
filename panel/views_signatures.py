@@ -227,7 +227,7 @@ class SignedFormsGenerateView(SignatureAccessMixin, View):
         person = PersonIdentity.objects.filter(
             pk=request.POST.get("person") or 0).first()
         values = forms.form_values(profile, person)
-        results, errors, names, notes = [], [], set(), []
+        results, errors, names, notes, configs = [], [], set(), [], []
         for upload in files:
             if upload.size > MAX_FORM_BYTES:
                 errors.append("%s: pasa de 25 MB" % upload.name)
@@ -247,6 +247,8 @@ class SignedFormsGenerateView(SignatureAccessMixin, View):
                 number += 1
             names.add(name)
             results.append((name, data))
+            configs.append(forms.autofirma_config(data,
+                                                  filled.signature_box))
         if errors:
             return JsonResponse({"error": "No se ha generado nada. "
                                           + "; ".join(errors)}, status=400)
@@ -255,8 +257,10 @@ class SignedFormsGenerateView(SignatureAccessMixin, View):
                     profile.legal_name, request.user.username)
         if signature.certificate_alias:
             # S153: con certificado, a la cola del agente de firmas.
-            job = agents.create_job(signature, results, notes,
-                                    request.user.company_user)
+            job = agents.create_job(
+                signature, [(name, data, config) for (name, data), config
+                            in zip(results, configs)],
+                notes, request.user.company_user)
             return JsonResponse({
                 "job": job.pk, "notes": notes,
                 "status_url": reverse("panel:signed_job_status",
@@ -450,6 +454,7 @@ class AgentPendingView(AgentApiMixin, View):
             "id": item.pk,
             "name": item.name,
             "alias": item.job.certificate_alias,
+            "config": item.signature_config,
             "download": reverse("panel:signing_agent_file",
                                 args=[item.pk]),
             "result": reverse("panel:signing_agent_result",

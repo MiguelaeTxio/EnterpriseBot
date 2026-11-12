@@ -114,10 +114,11 @@ def record_heartbeat(agent, host="", aliases=None, autofirma="", error=""):
 
 def create_job(signature, documents, notes, by):
     """
-    Queue generated PDFs [(name, bytes)] for the digital signature.
+    Queue generated PDFs [(name, bytes, config)] for the signature.
     ---
-    Deja en cola los PDF generados [(nombre, bytes)] para que el agente
-    los firme con el certificado de la firma elegida.
+    Deja en cola los PDF generados [(nombre, bytes, configuración de la
+    firma visible)] para que el agente los firme con el certificado de
+    la firma elegida.
     """
     purge_old()
     with transaction.atomic():
@@ -127,8 +128,9 @@ def create_job(signature, documents, notes, by):
             notes=notes, created_by=by)
         SignedFormFile.objects.bulk_create([
             SignedFormFile(job=job, name=name,
-                           unsigned_encrypted=encrypt(data))
-            for name, data in documents
+                           unsigned_encrypted=encrypt(data),
+                           signature_config=config or "")
+            for name, data, config in documents
         ])
     return job
 

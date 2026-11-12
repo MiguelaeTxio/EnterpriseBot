@@ -102,6 +102,10 @@ class FillResult:
     data: bytes
     method: str
     notes: list = field(default_factory=list)
+    # S153: dónde ha quedado la imagen de la firma (página 1-based y
+    # rectángulo en puntos, origen arriba a la izquierda) y el alto de
+    # esa página, para poner al lado la firma digital visible.
+    signature_box: tuple = None
 
 
 class SignedFormError(ValueError):
@@ -195,12 +199,28 @@ def _open(pdf_bytes):
     return doc
 
 
+def _place_signature(page, box, png):
+    """
+    Insert the signature image fitted in `box`; return where it went.
+    ---
+    Pone la imagen de la firma ajustada (sin deformar) dentro de `box`,
+    pegada arriba a la izquierda, y devuelve el rectángulo real.
+    """
+    with Image.open(io.BytesIO(png)) as image:
+        width, height = image.size
+    scale = min(box.width / width, box.height / height)
+    rect = fitz.Rect(box.x0, box.y0, box.x0 + width * scale,
+                     box.y0 + height * scale)
+    page.insert_image(rect, stream=png)
+    return rect
+
+
 def _fill_by_text(doc, text, png):
     """
     Text path: the two known labels; False if they are not there.
     ---
     Por texto: las dos etiquetas conocidas. False si no están (entonces
-    va por Gemini) y no toca nada.
+    va por Gemini) y no toca nada; si no, dónde quedó la firma.
     """
     company_page, company_label = _first_hit(doc, COMPANY_LABELS)
     sign_page, sign_label = _last_hit(doc, SIGNATURE_LABELS)
@@ -218,8 +238,8 @@ def _fill_by_text(doc, text, png):
                              color=(0, 0, 0))
     box = fitz.Rect(sign_label.x0, top, sign_label.x0 + SIGNATURE_WIDTH,
                     bottom)
-    sign_page.insert_image(box, stream=png, keep_proportion=True)
-    return True
+    rect = _place_signature(sign_page, box, png)
+    return (sign_page.number + 1, tuple(rect), sign_page.rect.height)
 
 
 def _gemini_schema():
@@ -346,7 +366,8 @@ def _sign_in_box(page, rect, png):
     if rect.width < MIN_SIGNATURE_BOX_WIDTH:
         rect.x1 = min(rect.x0 + MIN_SIGNATURE_BOX_WIDTH, page.rect.x1 - 10)
     rect.y1 = min(rect.y1, rect.y0 + SIGNATURE_HEIGHT * 1.5)
-    page.insert_image(rect, stream=png, keep_proportion=True)
+    placed = _place_signature(page, rect, png)
+    return (page.number + 1, tuple(placed), page.rect.height)
 
 
 def _fill_by_gemini(doc, values, png):
@@ -354,7 +375,8 @@ def _fill_by_gemini(doc, values, png):
     Gemini path: write each value where Gemini says. Returns notes.
     ---
     Por Gemini: escribe cada dato donde dice Gemini. Devuelve los
-    avisos. SignedFormError si no encuentra ningún hueco.
+    avisos y dónde quedó la firma (o None). SignedFormError si no
+    encuentra ningún hueco.
     """
     items = _ask_gemini(doc)
     if not items:
@@ -367,7 +389,7 @@ def _fill_by_gemini(doc, values, png):
         values = dict(values)
         values[FIELD_COMPANY] = "%s (CIF %s)" % (
             values[FIELD_COMPANY], values[FIELD_TAX_ID])
-    notes, missing, placed = [], set(), 0
+    notes, missing, placed, sign_box = [], set(), 0, None
     for item in items:
         key = item["field"]
         if item.get("already_filled"):
@@ -377,7 +399,8 @@ def _fill_by_gemini(doc, values, png):
         if rect.is_empty or rect.width < 5:
             continue
         if key == FIELD_SIGNATURE:
-            _sign_in_box(page, rect, png)
+            box = _sign_in_box(page, rect, png)
+            sign_box = sign_box or box
             placed += 1
             continue
         value = values.get(key) or ""
@@ -393,7 +416,7 @@ def _fill_by_gemini(doc, values, png):
         notes.append("no se ha encontrado dónde va la firma de la empresa")
     for key in sorted(missing):
         notes.append("pide %s y no se ha indicado" % FIELD_LABELS[key])
-    return notes
+    return notes, sign_box
 
 
 def fill_form(pdf_bytes, values, png):
@@ -409,13 +432,119 @@ def fill_form(pdf_bytes, values, png):
     text = values.get(FIELD_COMPANY, "")
     if values.get(FIELD_TAX_ID):
         text = "%s (CIF %s)" % (text, values[FIELD_TAX_ID])
-    if _fill_by_text(doc, text, png):
+    sign_box = _fill_by_text(doc, text, png)
+    if sign_box:
         method, notes = METHOD_TEXT, []
     else:
-        method, notes = METHOD_GEMINI, _fill_by_gemini(doc, values, png)
+        method = METHOD_GEMINI
+        notes, sign_box = _fill_by_gemini(doc, values, png)
     out = doc.tobytes(garbage=3, deflate=True)
     doc.close()
-    return FillResult(out, method, notes)
+    return FillResult(out, method, notes, sign_box or None)
+
+
+# Firma digital visible (AutoFirma, PAdES): texto del recuadro. $$...$$
+# los rellena AutoFirma con los datos del certificado y la fecha.
+VISIBLE_TEXT = ("Firmado digitalmente por $$SUBJECTCN$$ "
+                "Fecha: $$SIGNDATE=dd/MM/yyyy HH:mm$$")
+VISIBLE_HEIGHT = 26
+VISIBLE_MIN_WIDTH = 170
+VISIBLE_FONT_SIZE = 6
+
+
+def _blank(pix, scale, rect, page_rect):
+    """
+    True if `rect` (points) is inside the page and has no ink.
+    ---
+    True si el rectángulo está dentro de la página (con margen) y en
+    blanco: ni texto, ni líneas, ni la propia imagen de la firma.
+    """
+    margin = 18
+    if (rect.x0 < margin or rect.y0 < margin
+            or rect.x1 > page_rect.width - margin
+            or rect.y1 > page_rect.height - margin):
+        return False
+    x0, y0 = int(rect.x0 * scale), int(rect.y0 * scale)
+    x1, y1 = int(rect.x1 * scale), int(rect.y1 * scale)
+    samples, stride = pix.samples, pix.stride
+    dark = 0
+    for y in range(y0, min(y1, pix.height)):
+        row = samples[y * stride + x0:y * stride + min(x1, pix.width)]
+        dark += sum(1 for value in row if value < 200)
+        if dark > 2:
+            return False
+    return True
+
+
+def _visible_rect(pdf_bytes, signature_box):
+    """
+    A blank spot next to the stamp for the digital signature box.
+    ---
+    Busca un hueco en blanco junto a la imagen de la firma (debajo, a la
+    derecha, encima o a la izquierda) mirando la página ya
+    rellenada como imagen, así vale también para los escaneados. Si no
+    hay ninguno, sobre la parte de abajo de la propia imagen.
+    """
+    page_number, (x0, y0, x1, y1), _height = signature_box
+    stamp = fitz.Rect(x0, y0, x1, y1)
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    page = doc[page_number - 1]
+    dpi = 50
+    scale = dpi / 72
+    pix = page.get_pixmap(dpi=dpi, colorspace=fitz.csGRAY, alpha=False)
+    page_rect = page.rect
+    doc.close()
+    height = VISIBLE_HEIGHT
+    candidates = []
+    for width in (VISIBLE_MIN_WIDTH + 30, VISIBLE_MIN_WIDTH, 130):
+        middle = stamp.y0 + (stamp.height - height) / 2
+        for gap in (2, 6):
+            candidates.append(fitz.Rect(stamp.x0, stamp.y1 + gap,
+                                        stamp.x0 + width,
+                                        stamp.y1 + gap + height))
+        for top in (middle, stamp.y0, stamp.y1 - height):
+            candidates.append(fitz.Rect(stamp.x1 + 4, top,
+                                        stamp.x1 + 4 + width, top + height))
+        for gap in (2, 10, 20):
+            candidates.append(fitz.Rect(stamp.x0, stamp.y0 - gap - height,
+                                        stamp.x0 + width, stamp.y0 - gap))
+        candidates.append(fitz.Rect(stamp.x0 - 4 - width, middle,
+                                    stamp.x0 - 4, middle + height))
+    for rect in candidates:
+        if _blank(pix, scale, rect, page_rect):
+            return page_number, rect, page_rect.height
+    rect = fitz.Rect(stamp.x0, stamp.y1 - height,
+                     stamp.x0 + max(stamp.width, VISIBLE_MIN_WIDTH),
+                     stamp.y1)
+    return page_number, rect, page_rect.height
+
+
+def autofirma_config(pdf_bytes, signature_box):
+    """
+    AutoFirma -config for a visible digital signature near the stamp.
+    ---
+    La configuración de AutoFirma (-config) para que la firma digital
+    sea visible: un recuadro "Firmado digitalmente por ... Fecha: ..."
+    en un hueco en blanco junto a la imagen de la firma. AutoFirma mide
+    desde abajo a la izquierda; las líneas van separadas por "\\n"
+    literal, como las lee su línea de comandos. "" si no se sabe dónde
+    está la firma (queda invisible).
+    """
+    if not signature_box:
+        return ""
+    page_number, rect, page_height = _visible_rect(pdf_bytes,
+                                                   signature_box)
+    params = [
+        ("signaturePage", page_number),
+        ("signaturePositionOnPageLowerLeftX", int(rect.x0)),
+        ("signaturePositionOnPageLowerLeftY", int(page_height - rect.y1)),
+        ("signaturePositionOnPageUpperRightX", int(rect.x1)),
+        ("signaturePositionOnPageUpperRightY", int(page_height - rect.y0)),
+        ("layer2Text", VISIBLE_TEXT),
+        ("layer2FontSize", VISIBLE_FONT_SIZE),
+        ("layer2FontColor", "black"),
+    ]
+    return "\\n".join("%s=%s" % pair for pair in params)
 
 
 def form_values(profile, person=None):
