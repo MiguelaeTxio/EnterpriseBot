@@ -7258,8 +7258,15 @@ class PersonalReactivateView(DocsUploadAccessMixin, View):
         })
 
 
-class PersonGroupTemplateSaveView(DocsUploadAccessMixin, View):
+class PersonGroupTemplateSaveView(CompanyUserRequiredMixin, View):
     """
+    S149 (Miguel Ángel: a Jerónimo, Supervisor, le salía "Error de red"
+    al guardar un grupo): cualquier usuario del panel, como crear un
+    grupo con la selección o borrarlo; solo quien creó un grupo lo
+    cambia (person_groups.save_group, `editor`). Antes pedía
+    DocsUploadAccessMixin y redirigía, y el fetch lo veía como error de
+    red.
+
     H31 (S113). POST: crea un grupo nuevo (sin `group_pk`) o edita uno
     existente (renombrar y/o cambiar la composición) -- guarda con
     nombre el Set `selection` que ya acumula el frontend de
