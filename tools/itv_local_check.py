@@ -23,8 +23,10 @@ con el mismo nombre y el mismo MD5:
   ej. con la empresa al final: "DOCUMENT 1245LJB (MERCEDES V ALE) (GR)").
 Cuenta el documento cuya caducidad es la fecha de ITV del vehículo; si
 no hay ninguno, todos. Además lista los archivos con "ITV" en el nombre
-que hay en local junto a ese documento y que EnterpriseBot no tiene
-(p. ej. una ITV nueva escaneada en local y no subida).
+que hay en local en la carpeta de la máquina (subcarpetas incluidas,
+menos OBSOLETOS), que EnterpriseBot no tiene y cuya fecha en el nombre
+es posterior a la ITV del vehículo (p. ej. una ITV nueva escaneada en
+local y no subida). Solo PDF e imágenes (S152).
 
 Uso:
     python3 itv_local_check.py <informe.json> <raiz> <salida.md>
@@ -36,11 +38,21 @@ import os
 import re
 import sys
 import unicodedata
+from datetime import date
 from datetime import datetime
 
 LOCAL_ROOT = "DOC. MAQUINAS"
 QUARANTINE_PREFIX = "_CUARENTENA/"
 HEARTBEAT_EVERY = 10
+# S152: solo cuentan como ITV los PDF y las imágenes (en S150 un .log de
+# 116 bytes de 6951HZS salió como "ITV más nueva").
+DOCUMENT_EXTENSIONS = (".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff",
+                       ".bmp", ".gif", ".webp", ".heic")
+# Fechas en el nombre: 20261119 (nombre canónico del panel), 19-11-26,
+# 19-11-2026, 19.11.2026, 19_11_26 y 2026-11-19.
+_ISO_DATE = re.compile(r"(?<!\d)(20\d\d)[-_.]?([01]\d)[-_.]?([0-3]\d)(?!\d)")
+_DMY_DATE = re.compile(
+    r"(?<!\d)([0-3]?\d)[-_. /]([01]?\d)[-_. /](20\d\d|\d\d)(?!\d)")
 
 
 def _log(log_file, text):
@@ -125,6 +137,94 @@ def _locate(root, index, document, plate):
     return "falta", ""
 
 
+def _is_document(name):
+    """
+    True for PDF and image files.
+
+    ---
+
+    True para PDF e imágenes: lo demás (.log, .db, .lnk...) no es una ITV.
+    """
+    return name.lower().endswith(DOCUMENT_EXTENSIONS)
+
+
+def _name_date(name):
+    """
+    The latest date written in a file name, or None.
+
+    ---
+
+    La fecha más reciente escrita en el nombre del archivo, o None. S152:
+    la ITV "más nueva" se decide por esta fecha, nunca por la de
+    modificación (en S150, B39 salió con una ITV de 2024 modificada
+    hace poco).
+    """
+    found = []
+    for year, month, day in _ISO_DATE.findall(name):
+        found.append((int(year), int(month), int(day)))
+    for day, month, year in _DMY_DATE.findall(name):
+        year = int(year)
+        found.append((year + 2000 if year < 100 else year, int(month),
+                      int(day)))
+    dates = []
+    for year, month, day in found:
+        try:
+            dates.append(date(year, month, day))
+        except ValueError:
+            continue
+    return max(dates) if dates else None
+
+
+def _machine_folders(vehicle, folders):
+    """
+    The local folders of the machine: the panel's own, and each folder
+    where its ITV documents were found, cut at the machine level.
+
+    ---
+
+    Las carpetas locales de la máquina: la que dice el panel y cada
+    carpeta donde se encontraron sus documentos de ITV, cortada al nivel
+    de la máquina (tantos tramos como la ruta del panel). S152: la ITV
+    nueva puede estar en una subcarpeta (P16, en S150).
+    """
+    depth = len(vehicle["local_folder"].split("/"))
+    found = {vehicle["local_folder"]}
+    for folder in folders:
+        parts = folder.split("/")
+        if len(parts) >= depth:
+            found.add("/".join(parts[:depth]))
+    return sorted(found)
+
+
+def _newer_itv_files(root, vehicle, folders):
+    """
+    ITV files (PDF or image) anywhere under the machine folders, outside
+    OBSOLETOS, whose name carries a date later than the vehicle's ITV.
+
+    ---
+
+    Archivos de ITV (PDF o imagen) en toda la carpeta de la máquina,
+    subcarpetas incluidas y fuera de OBSOLETOS, cuyo nombre lleva una
+    fecha posterior a la ITV del vehículo.
+    """
+    itv_due = datetime.strptime(vehicle["itv_due"], "%Y-%m-%d").date()
+    known = {_nfc(d["local_path"].rsplit("/", 1)[-1])
+             for d in vehicle["documents"]}
+    extra = []
+    for machine_folder in _machine_folders(vehicle, folders):
+        base = os.path.join(root, machine_folder)
+        for folder, dirs, files in os.walk(base):
+            dirs[:] = [d for d in dirs if "OBSOLET" not in d.upper()]
+            for name in files:
+                name_date = _name_date(name)
+                if ("ITV" in name.upper() and _is_document(name)
+                        and _nfc(name) not in known
+                        and name_date and name_date > itv_due):
+                    rel = os.path.relpath(os.path.join(folder, name), base)
+                    extra.append((name_date, _nfc(rel.replace(os.sep, "/"))))
+    return [rel for _date, rel in sorted(set(extra), reverse=True)]
+
+
 def _latest_itv_files(root, index, plate, limit=2):
     """
     Newest local files with "ITV" in the name whose path carries the
@@ -132,8 +232,9 @@ def _latest_itv_files(root, index, plate, limit=2):
 
     ---
 
-    Los archivos locales más recientes con "ITV" en el nombre cuya ruta
-    lleva la matrícula, fuera de OBSOLETOS. En S150 los documentos de
+    Los archivos locales (PDF o imagen) con "ITV" en el nombre cuya ruta
+    lleva la matrícula, fuera de OBSOLETOS, de fecha más reciente en el
+    nombre (S152). En S150 los documentos de
     ITV que el panel separó de una "FICHA TECNICA + ITV" (p. ej.
     FURGLAR) no tienen gemelo exacto en local: en local está el PDF
     combinado.
@@ -146,10 +247,10 @@ def _latest_itv_files(root, index, plate, limit=2):
         if "ITV" not in name.upper():
             continue
         for rel in paths:
-            if key in _compact(rel) and "OBSOLET" not in rel.upper():
-                found.append((os.path.getmtime(os.path.join(root, rel)),
-                              name))
-    return [name for _mtime, name in sorted(found, reverse=True)[:limit]]
+            if (key in _compact(rel) and "OBSOLET" not in rel.upper()
+                    and _is_document(name)):
+                found.append((_name_date(name) or date.min, name))
+    return [name for _date, name in sorted(found, reverse=True)[:limit]]
 
 
 def _vehicle(root, index, vehicle):
@@ -157,12 +258,10 @@ def _vehicle(root, index, vehicle):
         vehicle["documents"])
     problems = []
     folders = set()
-    newest = 0.0
     for document in docs:
         state, rel = _locate(root, index, document, vehicle["plate"])
         if rel:
             folders.add(rel.rsplit("/", 1)[0])
-            newest = max(newest, os.path.getmtime(os.path.join(root, rel)))
         if state == "nombre":
             problems.append("«%s» está en local con otro nombre (%s)"
                             % (document["name"], rel))
@@ -175,19 +274,10 @@ def _vehicle(root, index, vehicle):
                 document["local_path"].rsplit("/", 1)[-1],
                 " (lo último de ITV en local: %s)" % ", ".join(
                     "«%s»" % h for h in hints) if hints else ""))
-    # Solo los archivos de ITV más nuevos (fecha de modificación) que el
-    # documento de EnterpriseBot: una ITV escaneada en local y no subida.
-    known = {_nfc(d["local_path"].rsplit("/", 1)[-1])
-             for d in vehicle["documents"]}
-    extra = []
-    for folder in sorted(folders):
-        path = os.path.join(root, folder)
-        for name in sorted(os.listdir(path)):
-            full = os.path.join(path, name)
-            if (os.path.isfile(full) and "ITV" in name.upper()
-                    and _nfc(name) not in known
-                    and os.path.getmtime(full) > newest):
-                extra.append(name)
+    # Las ITV con fecha en el nombre posterior a la del panel: una ITV
+    # escaneada en local y no subida (S152: por la fecha del nombre, en
+    # toda la carpeta de la máquina, solo PDF e imágenes).
+    extra = _newer_itv_files(root, vehicle, sorted(folders))
     return problems, sorted(folders), extra
 
 
