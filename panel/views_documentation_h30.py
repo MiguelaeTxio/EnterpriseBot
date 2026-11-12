@@ -3833,6 +3833,76 @@ def _picker_initial_pk(request, nav_key):
     return _picker_nav_value(request, nav_key, "loaded_pk")
 
 
+# S153. Grupos del gestor de Requisitos: Personal (personas y EPIs),
+# Centros de gasto (máquinas) y Comunes (tipos de los dos dominios y de
+# empresa, que se ven siempre).
+PICKER_GROUP_PERSONAL = "personal"
+PICKER_GROUP_MACHINE = "machine"
+PICKER_GROUP_COMMON = "common"
+PICKER_GROUP_VIEWS = (
+    (PICKER_GROUP_PERSONAL, "Personal"),
+    (PICKER_GROUP_MACHINE, "Centros de gasto"),
+    ("all", "Todos"),
+)
+PICKER_GROUP_DEFAULT = "all"
+_PICKER_GROUP_OF_DOMAIN = {
+    DocumentTypeCatalog.DOMAIN_PERSONAL: PICKER_GROUP_PERSONAL,
+    DocumentTypeCatalog.DOMAIN_EPI: PICKER_GROUP_PERSONAL,
+    DocumentTypeCatalog.DOMAIN_MACHINE: PICKER_GROUP_MACHINE,
+}
+_PICKER_GROUP_TITLES = (
+    (PICKER_GROUP_PERSONAL, "Personal"),
+    (PICKER_GROUP_MACHINE, "Centros de gasto"),
+    (PICKER_GROUP_COMMON, "Comunes (personas, máquinas y empresa)"),
+)
+
+
+def _requirement_type_sections(doc_types, category_section):
+    """
+    Picker sections of the requirements manager, split into Personal,
+    cost centres and common types.
+    ---
+    S153. Secciones del gestor de Requisitos separadas en Personal
+    (tipos de persona y EPI, con las clases del permiso), Centros de
+    gasto (tipos de máquina) y Comunes (los de los dos dominios y los
+    de empresa). Dentro de cada grupo, por familia como siempre; en
+    Personal con el rótulo de persona ("Conducción"). La primera
+    sección de cada grupo lleva su título.
+    """
+    by_group = {}
+    for dt in doc_types:
+        group = _PICKER_GROUP_OF_DOMAIN.get(dt.domain, PICKER_GROUP_COMMON)
+        by_group.setdefault(group, []).append(dt)
+    sections = []
+    for group, title in _PICKER_GROUP_TITLES:
+        group_sections = _type_family_sections(
+            by_group.get(group, []),
+            lambda code, group=group: DocumentTypeCatalog.family_label(
+                code, for_person=group == PICKER_GROUP_PERSONAL,
+            ),
+        )
+        if group == PICKER_GROUP_PERSONAL:
+            group_sections = [dict(category_section)] + group_sections
+        for section in group_sections:
+            section["group"] = group
+        if group_sections:
+            group_sections[0]["group_title"] = title
+        sections += group_sections
+    return sections
+
+
+def _picker_group_view(request, nav_key):
+    """
+    Saved group view of the picker ("personal", "machine" or "all").
+    ---
+    S153. Grupo que el usuario dejó elegido en el gestor de
+    Requisitos; la primera vez, todos.
+    """
+    value = _picker_nav_value(request, nav_key, "group_view")
+    valid = {code for code, _label in PICKER_GROUP_VIEWS}
+    return value if value in valid else PICKER_GROUP_DEFAULT
+
+
 def _picker_category_view(request, nav_key):
     """
     Saved category view of the picker ("1", "2" or "all").
@@ -4485,12 +4555,11 @@ class JobPositionManageView(CompanyUserRequiredMixin, View):
         doc_types = DocumentTypeCatalog.objects.filter(
             is_active=True,
         ).order_by("family", "label")
-        family_labels = dict(DocumentTypeCatalog.FAMILY_CHOICES)
         # H30 (S120). Clases concretas del permiso de conducción --
         # Miguel Ángel: "esto en realidad es una matriz". Con alguna
         # clase marcada, "Carnet de conducir" (si también se marca)
         # solo avisa si falta el carné, nunca por caducidad.
-        sections = [{
+        category_section = {
             "title": "Permiso de conducción -- clases exigidas",
             "color": "",
             "kind": "category",
@@ -4501,9 +4570,12 @@ class JobPositionManageView(CompanyUserRequiredMixin, View):
                  "text": cat.code, "title": cat.label}
                 for cat in DrivingLicenceCategory.objects.all()
             ],
-        }] + _type_family_sections(
-            doc_types, lambda code: family_labels.get(code, "Sin familia"),
-        )
+        }
+        # S153: documentos de Personal y de Centros de gasto separados
+        # (Miguel Ángel: "sería conveniente que quedasen separados los
+        # de personal y los de los centros de gasto"). Sigue siendo el
+        # catálogo completo (S119): solo se agrupan y se pueden ocultar.
+        sections = _requirement_type_sections(doc_types, category_section)
 
         rows = [
             {
@@ -4534,6 +4606,9 @@ class JobPositionManageView(CompanyUserRequiredMixin, View):
             "initial_pk": _picker_initial_pk(request, nav_key),
             "item_kinds": "category,type",
             "category_views": PICKER_CATEGORY_VIEWS,
+            "category_url": reverse("panel:job_position_type_category"),
+            "group_views": PICKER_GROUP_VIEWS,
+            "group_view": _picker_group_view(request, nav_key),
             "category_view": _picker_category_view(request, nav_key),
             "require_name": True,
             "require_items": False,
@@ -4633,7 +4708,7 @@ class JobPositionBulkActiveView(CompanyUserRequiredMixin, View):
     """
     H30 (S128), hoja de ruta punto 1. POST `ids` + `active` (1/0):
     activa o desactiva varios requisitos. Un requisito desactivado no
-    genera avisos (`required_documentation_service.get_requirement` y
+    genera avisos (`required_documentation_service.get_requirements` y
     `document_notice_service`), pero sigue asignado a quien lo tenga.
     """
 
@@ -4646,6 +4721,45 @@ class JobPositionBulkActiveView(CompanyUserRequiredMixin, View):
             is_active=active, updated_at=timezone.now(),
         )
         return JsonResponse({"ok": True, "count": count})
+
+
+class JobPositionTypeCategoryView(CompanyUserRequiredMixin, View):
+    """
+    S153. POST `type_id` + `category` (1/2): moves one document type to
+    the other category from the requirements manager itself.
+    ---
+    S153. Cambia de categoría (1 esencial / 2 resto) un tipo documental
+    desde el propio gestor de Requisitos, sin pasar por el Catálogo de
+    tipos (solo del administrador). Miguel Ángel: "poder añadir o pasar
+    de categoría 1 a categoría 2 ciertos documentos [...] la persona
+    que se va a dedicar a llevar este tema [...] le interesará tener
+    más limpio aún el CRUD". Mismo acceso que crear y editar
+    requisitos.
+    """
+
+    def post(self, request):
+        type_id = request.POST.get("type_id", "")
+        category = request.POST.get("category", "")
+        valid = {
+            str(code) for code, _label
+            in DocumentTypeCatalog.REQUIREMENT_CATEGORY_CHOICES
+        }
+        if not type_id.isdigit() or category not in valid:
+            return JsonResponse(
+                {"ok": False, "error": "Datos no válidos."}, status=400,
+            )
+        doc_type = DocumentTypeCatalog.objects.filter(pk=type_id).first()
+        if doc_type is None:
+            return JsonResponse(
+                {"ok": False, "error": "El tipo ya no existe."}, status=404,
+            )
+        doc_type.requirement_category = int(category)
+        doc_type.save(update_fields=["requirement_category"])
+        return JsonResponse({
+            "ok": True, "type_id": doc_type.pk,
+            "category": doc_type.requirement_category,
+            "label": doc_type.label,
+        })
 
 
 def _document_type_history_response(request, subject_model, subject_pk,

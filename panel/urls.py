@@ -271,6 +271,7 @@ from panel.views_documentation_h30 import (
     DossierTemplateMissingCheckView,
     DossierTemplateSaveView,
     JobPositionBulkActiveView,
+    JobPositionTypeCategoryView,
     JobPositionBulkDeleteView,
     JobPositionManageView,
     JobPositionSaveView,
@@ -1461,6 +1462,13 @@ urlpatterns = [
         "documentacion/puestos/activar/",
         JobPositionBulkActiveView.as_view(),
         name="job_positions_bulk_active",
+    ),
+    # S153: pasar un tipo de la categoría 1 a la 2 (o al revés) desde
+    # el propio gestor de Requisitos.
+    path(
+        "documentacion/puestos/categoria/",
+        JobPositionTypeCategoryView.as_view(),
+        name="job_position_type_category",
     ),
     # H30 (S119): gestión de requisitos de documentación de máquina -- misma
     # mecánica, filtro de tipos MACHINE/BOTH.

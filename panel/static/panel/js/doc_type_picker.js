@@ -131,14 +131,22 @@
         // nunca queda marcado algo que no se ve. Las secciones sin
         // nada visible se ocultan.
         var categoryView = cfg.tpCategoryView || '';
+        // S153: además, Personal / Centros de gasto / Todos (Miguel
+        // Ángel: "que quedasen separados los de personal y los de los
+        // centros de gasto"). Los comunes se ven siempre.
+        var groupView = cfg.tpGroupView || '';
 
+        function groupVisible(group) {
+            return !groupView || groupView === 'all' || !group
+                || group === 'common' || group === groupView;
+        }
         function applyCategoryView() {
-            if (!categoryView) {
+            if (!categoryView && !groupView) {
                 return;
             }
             qa('[data-tp-cat]').forEach(function (label) {
                 var box = label.querySelector('input[data-tp-item]');
-                var visible = categoryView === 'all'
+                var visible = !categoryView || categoryView === 'all'
                     || label.dataset.tpCat === categoryView
                     || (box && box.checked);
                 label.classList.toggle('d-none', !visible);
@@ -146,15 +154,37 @@
             qa('[data-tp-section]').forEach(function (section) {
                 var items = section.querySelectorAll('.tp-item');
                 var shown = section.querySelectorAll('.tp-item:not(.d-none)');
-                section.classList.toggle(
-                    'd-none', items.length > 0 && shown.length === 0
-                );
+                var checked = section.querySelector('input[data-tp-item]:checked');
+                var hidden = (items.length > 0 && shown.length === 0)
+                    || (!groupVisible(section.dataset.tpGroup) && !checked);
+                section.classList.toggle('d-none', hidden);
+            });
+            qa('[data-tp-group-title]').forEach(function (title) {
+                var group = title.dataset.tpGroup;
+                var anyShown = qa(
+                    '[data-tp-section][data-tp-group="' + group + '"]'
+                ).some(function (section) {
+                    return !section.classList.contains('d-none');
+                });
+                title.classList.toggle('d-none', !anyShown);
             });
             qa('[data-tp-cat-view]').forEach(function (btn) {
                 var active = btn.dataset.tpCatView === categoryView;
                 btn.classList.toggle('active', active);
                 btn.setAttribute('aria-pressed', active ? 'true' : 'false');
             });
+            qa('[data-tp-group-view]').forEach(function (btn) {
+                var active = btn.dataset.tpGroupView === groupView;
+                btn.classList.toggle('active', active);
+                btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+            });
+        }
+        function setGroupView(value) {
+            groupView = value;
+            applyCategoryView();
+            if (cfg.tpNavKey && window.EbNavState) {
+                window.EbNavState.save(cfg.tpNavKey, {group_view: value});
+            }
         }
         function setCategoryView(value) {
             categoryView = value;
@@ -162,6 +192,66 @@
             if (cfg.tpNavKey && window.EbNavState) {
                 window.EbNavState.save(cfg.tpNavKey, {category_view: value});
             }
+        }
+
+        // --- Cambiar la categoría de un documento (S153) -----------
+        // Miguel Ángel: "poder añadir o pasar de categoría 1 a categoría
+        // 2 ciertos documentos [...] la persona que se va a dedicar a
+        // llevar este tema [...] le interesará tener más limpio aún el
+        // CRUD". Con "Cambiar categorías" pulsado, cada documento lleva
+        // un botón que lo pasa a la otra categoría (se guarda al
+        // momento); sin pulsar, no se ve nada.
+        var categoryEditing = false;
+
+        function paintCategorySwitch(label) {
+            var button = label.querySelector('[data-tp-cat-switch]');
+            if (!categoryEditing) {
+                if (button) {
+                    button.remove();
+                }
+                return;
+            }
+            if (!button) {
+                button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'btn btn-link btn-sm p-0 ms-1 align-baseline';
+                button.setAttribute('data-tp-cat-switch', '');
+                label.appendChild(button);
+            }
+            var target = label.dataset.tpCat === '1' ? '2' : '1';
+            button.dataset.target = target;
+            button.textContent = '→ Cat. ' + target;
+            button.title = 'Pasar a la categoría ' + target;
+        }
+        function setCategoryEditing(on) {
+            categoryEditing = on;
+            qa('[data-tp-cat]').forEach(paintCategorySwitch);
+            qa('[data-tp-cat-edit]').forEach(function (btn) {
+                btn.classList.toggle('active', on);
+                btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+            });
+        }
+        function switchCategory(button) {
+            var label = button.closest('[data-tp-cat]');
+            var box = label.querySelector('input[data-tp-item]');
+            var formData = new FormData();
+            formData.append('type_id', box.value);
+            formData.append('category', button.dataset.target);
+            button.disabled = true;
+            postForm(cfg.tpCategoryUrl, formData).then(function (data) {
+                button.disabled = false;
+                if (!data.ok) {
+                    showError(data.error || 'No se pudo cambiar la categoría.');
+                    return;
+                }
+                label.dataset.tpCat = String(data.category);
+                paintCategorySwitch(label);
+                applyCategoryView();
+                toast('«' + data.label + '» pasa a la categoría ' + data.category + '.');
+            }).catch(function () {
+                button.disabled = false;
+                showError('Error de red al cambiar la categoría.');
+            });
         }
 
         // --- Visor: lo marcado ahora mismo, siempre a la vista -------
@@ -533,6 +623,23 @@
             }
         });
         root.addEventListener('click', function (event) {
+            var catSwitch = event.target.closest('[data-tp-cat-switch]');
+            if (catSwitch && root.contains(catSwitch)) {
+                // Dentro de la etiqueta de la casilla: que no la marque.
+                event.preventDefault();
+                switchCategory(catSwitch);
+                return;
+            }
+            var catEdit = event.target.closest('[data-tp-cat-edit]');
+            if (catEdit && root.contains(catEdit)) {
+                setCategoryEditing(!categoryEditing);
+                return;
+            }
+            var groupButton = event.target.closest('button[data-tp-group-view]');
+            if (groupButton && root.contains(groupButton)) {
+                setGroupView(groupButton.dataset.tpGroupView);
+                return;
+            }
             var catButton = event.target.closest('[data-tp-cat-view]');
             if (catButton && root.contains(catButton)) {
                 setCategoryView(catButton.dataset.tpCatView);
