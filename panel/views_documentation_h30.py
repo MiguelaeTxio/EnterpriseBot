@@ -65,8 +65,10 @@ from document_explorer.epi_delivery_document_service import (
     build_epi_delivery_pdf_bytes, resolve_company_fiscal_profile,
 )
 from document_explorer.required_documentation_service import (
+    STATUS_EXPIRED, STATUS_MISSING, STATUS_OK,
     attach_driving_grants, attach_subtype_documents,
-    get_required_type_ids, resolve_required_document_status,
+    get_required_type_ids, requirement_item_statuses, requirement_items,
+    resolve_required_document_status,
 )
 from document_explorer.vigencia_selector import current_fn_for
 from document_explorer.subject_upload_service import (
@@ -720,8 +722,10 @@ def _build_personal_tab_querystring(filters):
     requirement_value = personal_filters.get("requirement", "")
     if isinstance(requirement_value, str) and requirement_value:
         params.append(("requirement", requirement_value))
-    # H24 (S144): "Alta en el fichaje", "Sección" y "Horario".
-    for key in ("onboarding", "section", "schedule"):
+    # H24 (S144): "Alta en el fichaje", "Sección" y "Horario"; S153:
+    # "Situación" y "Documento" del requisito elegido.
+    for key in ("onboarding", "section", "schedule", "req_state",
+                "req_item"):
         value = personal_filters.get(key, "")
         if isinstance(value, str) and value:
             params.append((key, value))
@@ -1119,6 +1123,52 @@ def _attach_person_avatars(persons, person_ct):
     return persons
 
 
+# S153. Filtro "Situación" del requisito elegido en Personal.
+REQUIREMENT_STATE_CHOICES = (
+    (STATUS_MISSING, "Le falta"),
+    (STATUS_EXPIRED, "Caducado"),
+    ("any", "Le falta o caducado"),
+    (STATUS_OK, "Al día"),
+)
+
+
+def _requirement_state_matches(statuses, req_state, req_item):
+    """
+    True if a person's item statuses match the "Situación" filter.
+    ---
+    S153. Si la situación de una persona en el requisito elegido
+    cumple el filtro: "Le falta" (alguna cosa falta), "Caducado"
+    (alguna caducada), "Le falta o caducado" o "Al día" (todo bien).
+    Con "Documento" elegido, solo cuenta esa cosa.
+    """
+    if req_item:
+        states = [statuses[req_item][0]] if req_item in statuses else []
+    else:
+        states = [state for state, _text in statuses.values()]
+    if req_state in (STATUS_MISSING, STATUS_EXPIRED):
+        return req_state in states
+    if req_state == "any":
+        return any(state != STATUS_OK for state in states)
+    return all(state == STATUS_OK for state in states)
+
+
+def _requirement_items_map():
+    """
+    {requirement pk: [[key, label], ...]} for the "Documento" filter.
+    ---
+    S153. Lo que pide cada requisito, para el desplegable "Documento"
+    del filtro de Personal (se rellena al elegir requisito).
+    """
+    return {
+        str(requirement.pk): [list(item) for item in requirement_items(
+            requirement,
+        )]
+        for requirement in JobPosition.objects.prefetch_related(
+            "required_document_types", "required_driving_categories",
+        )
+    }
+
+
 def _person_list_page(request, ids_only=False):
     """
     The Personal list (filters, search, sort). With ids_only, only the
@@ -1243,6 +1293,35 @@ def _person_list_page(request, ids_only=False):
                     | Q(phone2_digits__contains=digits)
                 )
             qs = qs.filter(match)
+    # S153: situación de un requisito concreto -- Miguel Ángel: "poder
+    # ver a quién le falta un determinado requisito [...] un listado de
+    # los que no lo tienen [...] o de los que lo tienen caducado". Con
+    # un requisito elegido en el filtro, se evalúa cada cosa que pide
+    # (tipos y clases del permiso) para todo el listado, y "Situación"
+    # (y "Documento", para una sola cosa) filtra por ella.
+    person_ct = ContentType.objects.get_for_model(PersonIdentity)
+    requirement_raw = request.GET.get("requirement", "")
+    req_state = request.GET.get("req_state", "")
+    if req_state not in dict(REQUIREMENT_STATE_CHOICES):
+        req_state = ""
+    req_item = request.GET.get("req_item", "")
+    status_requirement = None
+    item_statuses = {}
+    if requirement_raw.isdigit() and not only_selected:
+        status_requirement = JobPosition.objects.filter(
+            pk=int(requirement_raw),
+        ).prefetch_related(
+            "required_document_types", "required_driving_categories",
+        ).first()
+    if status_requirement is not None:
+        item_statuses = requirement_item_statuses(
+            status_requirement, qs.values_list("pk", flat=True), person_ct,
+        )
+        if req_state:
+            qs = qs.filter(pk__in=[
+                pk for pk, statuses in item_statuses.items()
+                if _requirement_state_matches(statuses, req_state, req_item)
+            ])
     # H31 (S100): Miguel Ángel pidió ordenar también por Nombre, Alta y
     # Documentos (todas menos DNI). `domain_object` es una
     # GenericForeignKey sin `GenericRelation` inversa -- no admite
@@ -1251,7 +1330,6 @@ def _person_list_page(request, ids_only=False):
     # COMPLETO (antes de paginar), para que el `order_by` de
     # `_apply_sort` pueda usarlo (mismo patrón que usa desde S117 el
     # panel compartido de maquinaria, fleet.views).
-    person_ct = ContentType.objects.get_for_model(PersonIdentity)
     doc_count_subquery = (
         DocumentIndexEntry.objects.filter(
             bucket=BUCKET,
@@ -1324,6 +1402,15 @@ def _person_list_page(request, ids_only=False):
     states = onboarding_states(page.object_list)
     for person in page.object_list:
         person.onboarding = states[person.pk]
+        # S153: lo que le falta o tiene caducado del requisito elegido
+        # (o de la cosa elegida en "Documento").
+        if status_requirement is not None:
+            person.requirement_status = [
+                text for key, (state, text)
+                in item_statuses.get(person.pk, {}).items()
+                if state != STATUS_OK and (not req_item or key == req_item)
+            ]
+            person.requirement_status_checked = True
     # H24 (S144): sección vigente y horario que le toca (como Horarios).
     for row in schedule_rows(company, page.object_list):
         row.person.ws_row = row
@@ -1335,6 +1422,11 @@ def _person_list_page(request, ids_only=False):
         "active_filter": request.GET.getlist("active"),
         "company_filter": request.GET.getlist("company"),
         "requirement_filter": request.GET.get("requirement", ""),
+        "req_state_filter": req_state,
+        "req_item_filter": req_item,
+        "req_state_choices": REQUIREMENT_STATE_CHOICES,
+        "requirement_items_map": _requirement_items_map(),
+        "status_requirement": status_requirement,
         "onboarding_filter": onboarding_raw,
         "onboarding_checked": onboarding_codes,
         "onboarding_choices": ONBOARDING_CHOICES,

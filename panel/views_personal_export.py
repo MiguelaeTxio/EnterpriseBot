@@ -60,6 +60,23 @@ def _requirements(person):
     )
 
 
+def _requirement_state(person):
+    """
+    S153: what the person lacks or has expired.
+    ---
+    S153: lo que le falta o tiene caducado: del requisito elegido en el
+    filtro si lo hay, si no de todos sus requisitos activos (las mismas
+    insignias del listado). "Al día" si no le falta nada.
+    """
+    if getattr(person, "requirement_status_checked", False):
+        labels = person.requirement_status
+    else:
+        if not person.document_requirements.all():
+            return ""
+        labels = getattr(person, "alert_labels", [])
+    return "; ".join(labels) or "Al día"
+
+
 def _onboarding(person):
     state = getattr(person, "onboarding", None)
     return getattr(state, "label", "") if state else ""
@@ -99,6 +116,8 @@ PERSONAL_EXPORT_COLUMNS = (
     ("categoria", "Categoría profesional", 24,
      lambda p: p.professional_category, False),
     ("requisito", "Requisitos de documentación", 26, _requirements, False),
+    ("estado_requisito", "Situación de la documentación", 50,
+     _requirement_state, False),
     ("telefono", "Teléfono de empresa", 14, lambda p: p.phone, False),
     ("telefono_2", "Teléfono particular", 14,
      lambda p: p.phone_secondary, False),
@@ -136,7 +155,7 @@ DEFAULT_COLUMNS = [
 # S148: la plantilla "Vista del panel" = las columnas del listado.
 PANEL_COLUMNS = [
     "apellidos_nombre", "dni", "fecha_alta", "documentos", "requisito",
-    "alta_fichaje", "seccion", "horario",
+    "estado_requisito", "alta_fichaje", "seccion", "horario",
 ]
 # La que se creaba sola como por defecto antes de S148.
 AUTO_TEMPLATES = (("Listado estándar", DEFAULT_COLUMNS),)

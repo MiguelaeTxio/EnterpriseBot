@@ -84,17 +84,38 @@ para un momento distinto.
                 </div>
             </div>
         </div>
-        {% comment %}H30 (S123): filtro por requisito de documentación.{% endcomment %}
+        {% comment %}
+        H30 (S123): filtro por requisito de documentación. S153: con un
+        requisito elegido, "Situación" (le falta, caducado, al día) y
+        "Documento" (una sola cosa del requisito) -- Miguel Ángel:
+        "poder ver a quién le falta un determinado requisito [...] un
+        listado de los que no lo tienen [...] o de los que lo tienen
+        caducado". Sin requisito elegido van desactivados (no se envían).
+        {% endcomment %}
         <div>
             <div class="fw-semibold mb-1">Requisito</div>
-            <select name="requirement" class="form-select form-select-sm personal-filter-checkbox personal-filter-select" data-requirement-select
-                    id="filterRequirement" autocomplete="off">
-                <option value="" data-fixed {% if not requirement_filter %}selected{% endif %}>Todos</option>
-                <option value="none" data-fixed {% if requirement_filter == "none" %}selected{% endif %}>Sin requisito</option>
-                {% for position in job_positions %}
-                <option value="{{ position.pk }}" {% if requirement_filter == position.pk|stringformat:"s" %}selected{% endif %}>{{ position.name }}</option>
-                {% endfor %}
-            </select>
+            <div class="d-flex gap-1">
+                <select name="requirement" class="form-select form-select-sm personal-filter-checkbox personal-filter-select" data-requirement-select
+                        id="filterRequirement" autocomplete="off">
+                    <option value="" data-fixed {% if not requirement_filter %}selected{% endif %}>Todos</option>
+                    <option value="none" data-fixed {% if requirement_filter == "none" %}selected{% endif %}>Sin requisito</option>
+                    {% for position in job_positions %}
+                    <option value="{{ position.pk }}" {% if requirement_filter == position.pk|stringformat:"s" %}selected{% endif %}>{{ position.name }}</option>
+                    {% endfor %}
+                </select>
+                <select name="req_state" class="form-select form-select-sm personal-filter-checkbox personal-filter-select" id="filterRequirementState"
+                        autocomplete="off" title="Situación de cada persona en el requisito elegido">
+                    <option value="">Cualquier situación</option>
+                    {% for code, label in req_state_choices %}
+                    <option value="{{ code }}" {% if req_state_filter == code %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <select name="req_item" class="form-select form-select-sm personal-filter-checkbox personal-filter-select" id="filterRequirementItem"
+                        autocomplete="off" title="Solo esta cosa del requisito (un documento o una clase del permiso)" data-selected="{{ req_item_filter }}">
+                    <option value="">Todo el requisito</option>
+                </select>
+            </div>
+            {{ requirement_items_map|json_script:"personalRequirementItems" }}
         </div>
         {# H24 (S144): sección vigente hoy y horario que le toca, como en la pestaña Horarios. #}
         <div>
@@ -170,6 +191,43 @@ para un momento distinto.
 .personal-filters-compact .form-check { margin-bottom: 0; min-height: 1.3rem; }
 </style>
 <script>
+    // S153. "Situación" y "Documento" dependen del requisito elegido:
+    // el desplegable "Documento" se rellena con lo que pide ese
+    // requisito y los dos se desactivan sin requisito concreto. Se
+    // escucha en captura en el formulario para que el cambio quede
+    // hecho ANTES de que htmx lea el formulario y pida el listado.
+    (function () {
+        const form = document.getElementById('personal-search-form');
+        const requirement = document.getElementById('filterRequirement');
+        const state = document.getElementById('filterRequirementState');
+        const item = document.getElementById('filterRequirementItem');
+        const mapEl = document.getElementById('personalRequirementItems');
+        if (!form || !requirement || !state || !item || !mapEl) { return; }
+        const itemsByRequirement = JSON.parse(mapEl.textContent);
+        function fillItems(selected) {
+            const items = itemsByRequirement[requirement.value] || [];
+            item.innerHTML = '';
+            const all = document.createElement('option');
+            all.value = '';
+            all.textContent = 'Todo el requisito';
+            item.appendChild(all);
+            items.forEach(function (pair) {
+                const option = document.createElement('option');
+                option.value = pair[0];
+                option.textContent = pair[1];
+                if (pair[0] === selected) { option.selected = true; }
+                item.appendChild(option);
+            });
+            const concrete = /^\d+$/.test(requirement.value);
+            state.disabled = !concrete;
+            item.disabled = !concrete;
+        }
+        form.addEventListener('change', function (ev) {
+            if (ev.target === requirement) { fillItems(''); }
+        }, true);
+        fillItems(item.dataset.selected || '');
+    }());
+
     // H31 (S76). Convenience toggle -- marca/desmarca todas las
     // empresas de un clic (Miguel Ángel: "te ahorras un montón de
     // clics"). Puramente client-side, no dispara guardado por sí solo

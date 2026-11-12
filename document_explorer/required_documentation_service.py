@@ -482,3 +482,153 @@ def bulk_change_requirements(subject_model, subject_ids, mode, requirement):
         touched = len(set(links.values_list(source, flat=True)))
         links.delete()
         return touched
+
+
+STATUS_MISSING = "missing"
+STATUS_EXPIRED = "expired"
+STATUS_OK = "ok"
+
+
+def requirement_items(requirement):
+    """
+    The items a requirement asks for: document types and licence
+    classes, as (key, label).
+    ---
+    S153. Lo que pide un requisito, como (clave, rótulo): cada tipo
+    documental ("t<pk>") y cada clase del permiso ("c<pk>", "Permiso
+    de conducción C"). Para el filtro "a quién le falta" de Personal.
+    """
+    items = [
+        ("t%d" % dt.pk, dt.label)
+        for dt in sorted(
+            requirement.required_document_types.all(),
+            key=lambda dt: dt.label,
+        )
+    ]
+    items += [
+        ("c%d" % category.pk, "Permiso de conducción %s" % category.code)
+        for category in sorted(
+            requirement.required_driving_categories.all(),
+            key=lambda category: (category.display_order, category.pk),
+        )
+    ]
+    return items
+
+
+def requirement_item_statuses(requirement, subject_ids, content_type):
+    """
+    Status of every item of one requirement for many subjects.
+    ---
+    S153. Situación de cada cosa que pide UN requisito para muchos
+    sujetos a la vez: `{sujeto: {clave: (estado, texto)}}`, estado
+    `STATUS_MISSING`, `STATUS_EXPIRED` o `STATUS_OK`. Miguel Ángel:
+    "quiero que me saque un listado de los que no lo tienen [...] o
+    de los que lo tienen caducado". Mismas reglas que la ficha
+    (`resolve_required_document_status`): el documento más moderno de
+    cada tipo; DNI y NIE se cubren entre sí; con clases exigidas, el
+    carné solo cuenta para "falta" y la caducidad es la de cada clase
+    en el carné más reciente con matriz. Se evalúa el requisito
+    elegido aunque esté desactivado: es una consulta, no un aviso.
+    Cuatro consultas para todos los sujetos.
+    """
+    from document_explorer.models import (
+        DocumentIndexEntry, DrivingLicenceGrant,
+    )
+
+    subject_ids = list(subject_ids)
+    types = list(requirement.required_document_types.all())
+    categories = list(requirement.required_driving_categories.all())
+    today = date.today()
+    docs = {}
+    type_ids = [dt.pk for dt in types]
+    identity_ids = [dt.pk for dt in types if dt.code in IDENTITY_CODES]
+    base = DocumentIndexEntry.objects.filter(
+        bucket=BUCKET, domain_content_type=content_type,
+        domain_object_id__in=subject_ids,
+        entry_kind=DocumentIndexEntry.KIND_FILE,
+        deleted_at__isnull=True, purged_at__isnull=True,
+    )
+    for entry in base.filter(document_type_id__in=type_ids).only(
+        "pk", "domain_object_id", "document_type_id", "issue_date",
+        "expiry_date",
+    ):
+        docs.setdefault(entry.domain_object_id, {}).setdefault(
+            entry.document_type_id, [],
+        ).append(entry)
+    cards, grants_by_card = {}, {}
+    if categories:
+        for card in base.filter(
+            document_type__code=DRIVING_CARD_CODE,
+        ).only("pk", "domain_object_id", "issue_date", "expiry_date"):
+            cards.setdefault(card.domain_object_id, []).append(card)
+        for grant in DrivingLicenceGrant.objects.filter(
+            entry_id__in=[c.pk for group in cards.values() for c in group],
+        ).select_related("category"):
+            grants_by_card.setdefault(grant.entry_id, []).append(grant)
+
+    result = {}
+    for subject_id in subject_ids:
+        by_type = docs.get(subject_id, {})
+        has_identity = any(by_type.get(pk) for pk in identity_ids)
+        statuses = {}
+        for dt in types:
+            key = "t%d" % dt.pk
+            entries = by_type.get(dt.pk, [])
+            if not entries:
+                if dt.code in IDENTITY_CODES and has_identity:
+                    statuses[key] = (STATUS_OK, dt.label)
+                else:
+                    statuses[key] = (
+                        STATUS_MISSING, "Falta: %s" % dt.label,
+                    )
+                continue
+            latest = max(
+                entries,
+                key=lambda entry: (
+                    entry.expiry_date or entry.issue_date or date.min,
+                    entry.pk,
+                ),
+            )
+            if dt.code == DRIVING_CARD_CODE and categories:
+                statuses[key] = (STATUS_OK, dt.label)
+            elif (
+                dt.tracks_expiry and dt.expires and latest.expiry_date
+                and latest.expiry_date < today
+            ):
+                statuses[key] = (
+                    STATUS_EXPIRED, "Caducado: %s — caducó el %s" % (
+                        dt.label, latest.expiry_date.strftime("%d/%m/%Y"),
+                    ),
+                )
+            else:
+                statuses[key] = (STATUS_OK, dt.label)
+        if categories:
+            subject_cards = cards.get(subject_id, [])
+            card = latest_driving_card(
+                subject_cards,
+                frozenset(
+                    c.pk for c in subject_cards if c.pk in grants_by_card
+                ),
+            )
+            grants = {
+                grant.category.code: grant
+                for grant in grants_by_card.get(card.pk, [])
+            } if card is not None else {}
+            for category in categories:
+                key = "c%d" % category.pk
+                label = "Permiso de conducción %s" % category.code
+                grant = grants.get(category.code)
+                if grant is None:
+                    if card is not None and not grants:
+                        label += " (clases del carné sin registrar)"
+                    statuses[key] = (STATUS_MISSING, "Falta: %s" % label)
+                elif grant.expiry_date and grant.expiry_date < today:
+                    statuses[key] = (
+                        STATUS_EXPIRED, "Caducado: %s — caducó el %s" % (
+                            label, grant.expiry_date.strftime("%d/%m/%Y"),
+                        ),
+                    )
+                else:
+                    statuses[key] = (STATUS_OK, label)
+        result[subject_id] = statuses
+    return result

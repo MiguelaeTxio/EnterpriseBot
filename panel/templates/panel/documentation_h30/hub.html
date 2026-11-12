@@ -676,6 +676,9 @@ la plantilla de algún grupo marcado se abre este modal para elegirla.
             // H24 (S144): filtros "Sección" y "Horario".
             filters[hit.tab].section = parsed.searchParams.get('section') || '';
             filters[hit.tab].schedule = parsed.searchParams.get('schedule') || '';
+            // S153: "Situación" y "Documento" del requisito elegido.
+            filters[hit.tab].req_state = parsed.searchParams.get('req_state') || '';
+            filters[hit.tab].req_item = parsed.searchParams.get('req_item') || '';
         }
         lastFilters[hit.tab] = filters[hit.tab];
         saveState({filters: filters});
