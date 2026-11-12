@@ -60,15 +60,17 @@ pantalla completa aparte, no un fragmento htmx de este pane.
         flex item) y la gestión queda anclada abajo, con su altura
         natural.
         {% endcomment %}
-        <div class="border rounded p-2 h-100 d-flex flex-column eb-fit-card">
+        <div class="border rounded p-2 h-100 d-flex flex-column eb-fit-card eb-split">
             {# S147: antes "Grupos de reparto" (Miguel Ángel: "grupos de selección, que es más acorde con lo que hace"). #}
             <div class="fw-bold small mb-1">Grupos de selección</div>
-            <div class="mb-1 ppane-scroll-fill">
+            <div class="mb-1 ppane-scroll-fill eb-split-top">
                 <ul class="list-group list-group-flush small" id="personGroupSavedList" data-collapsed="{{ person_groups_collapsed|join:',' }}">
                     {% include "panel/documentation_h30/_person_groups_tree.html" %}
                 </ul>
             </div>
-            <hr class="my-1">
+            {# S149: barra para repartir el alto (panel/static/panel/js/group_splitter.js). #}
+            <div class="eb-split-handle" role="separator" aria-orientation="horizontal" aria-label="Repartir el espacio entre los grupos y lo de debajo" tabindex="0" title="Arrastra para dar más espacio a los grupos o a lo de debajo (doble clic: como estaba)"></div>
+            <div class="eb-split-bottom">
             <p class="text-muted small mb-0" id="personGroupManagementEmpty">
                 Marca uno o varios grupos (la selección es la suma), o marca personas en el listado para empezar uno nuevo.
             </p>
@@ -101,6 +103,7 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                     <button type="button" class="btn btn-sm btn-outline-danger d-none" id="personGroupDeleteBtn" onclick="deletePersonGroup()">Eliminar</button>
                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="resetPersonGroupForm()">Vaciar / nuevo</button>
                 </div>
+            </div>
             </div>
         </div>
     </div>

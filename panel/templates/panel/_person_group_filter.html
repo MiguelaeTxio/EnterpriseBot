@@ -22,15 +22,17 @@ volver a él. Cada vista da su selección en
 window.EbGroupGet[pg_prefix]() -> {persons: [pk...], users: [pk...]}.
 {% endcomment %}
 <div class="col-lg-3 eb-fit-col">
-    <div class="border rounded p-2 h-100 d-flex flex-column eb-fit-card">
+    <div class="border rounded p-2 h-100 d-flex flex-column eb-fit-card eb-split">
         <div class="fw-bold small mb-1">Grupos de selección</div>
-        <div class="mb-1 eb-group-scroll-fill">
+        <div class="mb-1 eb-group-scroll-fill eb-split-top">
             <ul class="list-group list-group-flush small" id="{{ pg_prefix }}-group-list"
                 data-collapsed="{{ person_groups_collapsed|join:',' }}">
                 {% include "panel/documentation_h30/_person_groups_tree.html" with pg_id=pg_prefix|add:"Group" %}
             </ul>
         </div>
-        <hr class="my-1">
+        {# S149: barra para repartir el alto (panel/static/panel/js/group_splitter.js). #}
+        <div class="eb-split-handle" role="separator" aria-orientation="horizontal" aria-label="Repartir el espacio entre los grupos y lo de debajo" tabindex="0" title="Arrastra para dar más espacio a los grupos o a lo de debajo (doble clic: como estaba)"></div>
+        <div class="eb-split-bottom">
         <p class="text-muted small mb-1">
             Marca uno o varios grupos (la selección es la suma). Se cambian en Personal.
         </p>
@@ -43,6 +45,7 @@ window.EbGroupGet[pg_prefix]() -> {persons: [pk...], users: [pk...]}.
             </button>
         </div>
         <div class="small mt-1 d-none" id="{{ pg_prefix }}-group-new-msg"></div>
+        </div>
     </div>
 </div>
 <style>

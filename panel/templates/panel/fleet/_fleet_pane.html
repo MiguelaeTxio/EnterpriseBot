@@ -169,15 +169,17 @@ la lista hace scroll. Dos paneles:
             lógica es panel/static/panel/js/selection_groups.js.
             {% endcomment %}
             <div class="col-lg-3">
-                <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="border rounded p-2 h-100 d-flex flex-column eb-split">
                     <div class="fw-bold small mb-1">Grupos de selección</div>
-                    <div class="mb-1 fleet-group-scroll">
+                    <div class="mb-1 fleet-group-scroll eb-split-top">
                         <ul class="list-group list-group-flush small" id="machineGroupSavedList"
                             data-collapsed="{{ machine_groups_collapsed|join:',' }}">
                             {% include "panel/documentation_h30/_person_groups_tree.html" with person_group_nodes=machine_group_nodes pg_id="machineGroup" %}
                         </ul>
                     </div>
-                    <hr class="my-1">
+                    {# S149: barra para repartir el alto (panel/static/panel/js/group_splitter.js). #}
+                    <div class="eb-split-handle" role="separator" aria-orientation="horizontal" aria-label="Repartir el espacio entre los grupos y lo de debajo" tabindex="0" title="Arrastra para dar más espacio a los grupos o a lo de debajo (doble clic: como estaba)"></div>
+                    <div class="eb-split-bottom">
                     <p class="text-muted small mb-0" id="machineGroupManagementEmpty">
                         Marca uno o varios grupos (la selección es la suma), o marca máquinas en el listado para empezar uno nuevo.
                     </p>
@@ -197,6 +199,7 @@ la lista hace scroll. Dos paneles:
                             <button type="button" class="btn btn-sm btn-outline-danger d-none" id="machineGroupDeleteBtn">Eliminar</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary" id="machineGroupResetBtn">Vaciar / nuevo</button>
                         </div>
+                    </div>
                     </div>
                 </div>
             </div>
