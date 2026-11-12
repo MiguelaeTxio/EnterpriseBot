@@ -453,7 +453,8 @@
     {# explicit correction from Miguel Ángel in S024, see                  #}
     {# ENTERPRISEBOT_ATTACHED_MILESTONE_V23.md "Corrección de rumbo".      #}
     {# ------------------------------------------------------------------ #}
-    {% if company_user.is_admin_level or company_user.role == 'DOCS_SUPERVISOR' %}
+    {# S149 (Miguel Ángel): también los Supervisores (Jerónimo, nóminas). Cada pestaña sigue filtrada por rol en la vista. #}
+    {% if company_user.is_admin_level or company_user.role == 'DOCS_SUPERVISOR' or company_user.role == 'SUPERVISOR' %}
         <li class="nav-item">
             <a class="nav-link {% if active_nav == 'documentation_hub' %}active{% endif %}"
                href="{{ documentation_hub_href }}">
