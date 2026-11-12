@@ -27,6 +27,7 @@ from django.utils import timezone
 from django.views import View
 
 from document_explorer.models import PersonIdentity
+from hr_calendar import payslip_access as access
 from hr_calendar import payslip_delivery as pd
 from hr_calendar.models import PayslipBatch, PayslipItem
 from hr_calendar.worker_requests import person_label
@@ -80,20 +81,35 @@ _CANCELABLE = (PayslipBatch.Status.UPLOADING, PayslipBatch.Status.READING,
 PAYSLIP_ROLES = set(MANAGE_ROLES) | {CompanyUser.ROLE_DOCS_SUPERVISOR}
 
 
-def can_send_payslips(company_user):
+def can_upload_payslips(company_user):
     """
-    True if this user may use the payslip delivery.
+    True if this user may start payslip deliveries.
     ---
-    True si este usuario puede usar la entrega de nóminas.
+    True si este usuario puede subir entregas de nóminas (PAYSLIP_ROLES).
     """
     return company_user is not None and company_user.role in PAYSLIP_ROLES
 
 
+def can_send_payslips(company_user):
+    """
+    True if this user may use the payslip screen.
+    ---
+    True si este usuario puede entrar en Nóminas: quien sube entregas
+    y, S153, quien tiene acceso a todas o al que le han compartido
+    alguna (aunque su rol no suba nóminas).
+    """
+    return can_upload_payslips(company_user) or access.has_any_batch(
+        company_user)
+
+
 class PayslipAccessMixin(CompanyUserRequiredMixin):
     """
-    Access for PAYSLIP_ROLES; the rest go back to the panel.
+    Access for who may use payslips; the rest go back to the panel.
     ---
-    Acceso para PAYSLIP_ROLES; el resto vuelve al panel con un aviso.
+    Acceso para quien puede entrar en Nóminas (can_send_payslips); el
+    resto vuelve al panel con un aviso. Dentro, cada uno solo ve las
+    entregas que subió, las que le comparten o, con acceso a todas,
+    todas (S153).
     """
 
     def dispatch(self, request, *args, **kwargs):
@@ -163,8 +179,9 @@ def _sort_rows(rows, sort_keys):
     return rows
 
 
-def _batches(company):
-    return list(PayslipBatch.objects.filter(company=company).select_related(
+def _batches(company_user):
+    # S153: solo las entregas que este usuario ve.
+    return list(access.visible_batches(company_user).select_related(
         "created_by__user", "approved_by__user"))
 
 
@@ -215,9 +232,12 @@ def _decorate(item):
     return item
 
 
-def _batch_summary(batch):
+def _batch_summary(batch, company_user=None):
     if batch is None:
         return {}
+    shares = list(batch.shares.select_related("company_user__user"))
+    for share in shares:
+        share.label = access.user_label(share.company_user)
     counts = {value: 0 for value in PayslipItem.Status.values}
     for status in batch.items.values_list("status", flat=True):
         counts[status] += 1
@@ -230,10 +250,14 @@ def _batch_summary(batch):
         "count_ready": counts[PayslipItem.Status.READY],
         "count_retry": (counts[PayslipItem.Status.FILED]
                         + counts[PayslipItem.Status.ERROR]),
+        # S153: con quién está compartida y si quien mira puede cambiarlo.
+        "batch_shares": shares,
+        "batch_share_ids": {share.company_user_id for share in shares},
+        "batch_can_share": access.can_share(batch, company_user),
     }
 
 
-def _filtered_items(request, company):
+def _filtered_items(request, company_user):
     """
     The payslips that meet the filters (all deliveries by default).
     ---
@@ -245,8 +269,10 @@ def _filtered_items(request, company):
         statuses = [v for v in _param(request, "status").split(",") if v]
     else:
         statuses = list(PayslipItem.Status.values)
-    qs = PayslipItem.objects.filter(batch__company=company).select_related(
-        "batch", "person__company_user")
+    # S153: solo las nóminas de las entregas que este usuario ve.
+    qs = PayslipItem.objects.filter(
+        batch__in=access.visible_batches(company_user),
+    ).select_related("batch", "person__company_user")
     filters = {
         "search": _param(request, "search").strip(),
         "status": statuses,
@@ -291,10 +317,10 @@ def _filtered_items(request, company):
 
 
 def _list_context(request):
-    company = request.user.company_user.company
-    batches = _batches(company)
+    company_user = request.user.company_user
+    batches = _batches(company_user)
     batch = _current_batch(request, batches)
-    qs, filters = _filtered_items(request, company)
+    qs, filters = _filtered_items(request, company_user)
     rows = [_decorate(item) for item in qs]
     raw_sort = _param(request, "sort", DEFAULT_SORT)
     rows = _sort_rows(rows, _parse_sort(raw_sort))
@@ -308,7 +334,8 @@ def _list_context(request):
                         and batch.status == PayslipBatch.Status.READY),
         "batch_cancelable": (batch is not None
                              and batch.status in _CANCELABLE),
-        **_batch_summary(batch),
+        **_batch_summary(batch, company_user),
+        "share_candidates": _share_candidates(company_user, batch),
         "filter_search": filters["search"],
         "filter_status": filters["status"],
         "filter_month_from": filters["month_from"],
@@ -318,6 +345,22 @@ def _list_context(request):
         "status_choices": PayslipItem.Status.choices,
         **_sort_controls(raw_sort),
     }
+
+
+def _share_candidates(company_user, batch=None):
+    """
+    Users a batch can be shared with, labelled.
+    ---
+    S153: los supervisores a los que se puede dar acceso (sin quien
+    subió la entrega).
+    """
+    users = access.share_candidates(
+        company_user.company,
+        exclude=batch.created_by if batch is not None else company_user,
+    )
+    for user in users:
+        user.label = access.user_label(user)
+    return users
 
 
 def _people(company):
@@ -348,6 +391,8 @@ def _pane_context(request):
         **_list_context(request),
         **group_filter_context(request),
         "people": _people(cu.company),
+        "can_upload": can_upload_payslips(cu),
+        "new_share_candidates": _share_candidates(cu),
         "screen_key": SCREEN_KEY,
         "saved_selection": saved if isinstance(saved, list) else [],
     }
@@ -395,11 +440,23 @@ class PayslipResultsView(PayslipAccessMixin, View):
 
 
 def _own_batch(request, pk):
-    batch = PayslipBatch.objects.filter(
-        pk=pk, company=request.user.company_user.company).first()
+    batch = access.visible_batches(request.user.company_user).filter(
+        pk=pk).first()
     if batch is None:
         raise Http404
     return batch
+
+
+def _chosen_users(request, company_user, batch=None):
+    """
+    The share candidates ticked in the request ("share" values).
+    ---
+    S153: los usuarios marcados en "Acceso para" (valores "share"),
+    siempre de la lista de candidatos (nunca otro usuario cualquiera).
+    """
+    wanted = set(request.POST.getlist("share"))
+    return [user for user in _share_candidates(company_user, batch)
+            if str(user.pk) in wanted]
 
 
 class PayslipBatchCreateView(PayslipAccessMixin, View):
@@ -412,11 +469,17 @@ class PayslipBatchCreateView(PayslipAccessMixin, View):
 
     def post(self, request):
         cu = request.user.company_user
+        if not can_upload_payslips(cu):
+            return JsonResponse({"ok": False, "error": "Tu rol no sube "
+                                 "nóminas."}, status=403)
         batch = PayslipBatch.objects.create(
             company=cu.company, created_by=cu,
             folder_name=request.POST.get("folder", "")[:255],
             notify_whatsapp=request.POST.get("notify") != "0",
         )
+        # S153: acceso para los supervisores marcados (se les avisa al
+        # terminar la lectura).
+        access.set_shares(batch, _chosen_users(request, cu), cu)
         return JsonResponse({"ok": True, "id": batch.pk})
 
 
@@ -486,13 +549,13 @@ class PayslipActionView(PayslipAccessMixin, View):
 
         cu = request.user.company_user
         raw = request.POST.get("batch_id", "")
-        batch = PayslipBatch.objects.filter(
-            pk=raw if raw.isdigit() else 0, company=cu.company).first()
+        visible = access.visible_batches(cu)
+        batch = visible.filter(pk=raw if raw.isdigit() else 0).first()
         action = request.POST.get("action", "")
         ids = [v for v in request.POST.getlist("selected") if v.isdigit()]
         items = list(PayslipItem.objects.filter(
-            pk__in=ids, batch__company=cu.company).select_related("batch"))
-        if action in ("approve", "retry", "notify", "cancel") and (
+            pk__in=ids, batch__in=visible).select_related("batch"))
+        if action in ("approve", "retry", "notify", "cancel", "share") and (
                 batch is None):
             return _table_response(
                 request, "Elige la entrega en el filtro «Entrega».",
@@ -538,6 +601,17 @@ class PayslipActionView(PayslipAccessMixin, View):
             elif action == "cancel":
                 pd.cancel(batch)
                 message = "Entrega anulada; sus copias se han borrado."
+            elif action == "share":
+                # S153: quién más ve, descarga y envía esta entrega.
+                if not access.can_share(batch, cu):
+                    raise pd.PayslipError(
+                        "Solo quien subió la entrega puede cambiar el "
+                        "acceso.")
+                added, removed = access.set_shares(
+                    batch, _chosen_users(request, cu, batch), cu)
+                message = "Acceso guardado (%d nuevo%s, %d quitado%s)." % (
+                    added, "" if added == 1 else "s",
+                    removed, "" if removed == 1 else "s")
             else:
                 raise pd.PayslipError("Acción desconocida.")
         except pd.PayslipError as exc:
@@ -564,7 +638,7 @@ class PayslipExportView(PayslipAccessMixin, View):
         cu = request.user.company_user
         ids = [v for v in request.POST.getlist("selected") if v.isdigit()]
         rows = [_decorate(item) for item in PayslipItem.objects.filter(
-            pk__in=ids, batch__company=cu.company).select_related(
+            pk__in=ids, batch__in=access.visible_batches(cu)).select_related(
                 "batch", "person__company_user").order_by(
                     "-batch__created_at", "original_name", "page_from")]
         if not rows:
@@ -578,6 +652,89 @@ class PayslipExportView(PayslipAccessMixin, View):
         sheet.title = "NOMINAS"
         write_sheet(sheet, columns, rows)
         return workbook_response(request, workbook, "entrega_nominas")
+
+
+def _download_name(item):
+    """
+    File name of one payslip when downloaded.
+    ---
+    S153: nombre del PDF descargado: apellidos y nombre del trabajador,
+    mes y número de nómina ("RUIZ_GIL_ANA_Nomina_Octubre_2026_15.pdf").
+    """
+    import re
+
+    parts = [item.person_label or "Sin_trabajador", "Nomina",
+             item.period_label or "", str(item.pk)]
+    text = "_".join(part for part in parts if part)
+    return re.sub(r"[^A-Za-z0-9]+", "_", pd._plain(text)).strip("_") + ".pdf"
+
+
+def _item_bytes(item, company_user):
+    """
+    The PDF of one payslip for this user.
+    ---
+    S153: el PDF de una nómina: el archivado en la ficha del trabajador
+    si ya se envió (confidencial: queda en su registro de accesos) o,
+    si no, sus páginas de la copia cifrada de la subida.
+    """
+    from document_explorer.confidential import ConfidentialError, open_bytes
+
+    if item.entry_id is not None:
+        try:
+            return open_bytes(item.entry, company_user)
+        except ConfidentialError as exc:
+            raise pd.PayslipError(str(exc)) from exc
+    if not item.staged_path:
+        raise pd.PayslipError("La nómina %s no tiene PDF guardado."
+                              % item.pk)
+    return pd.item_pdf(item)
+
+
+class PayslipDownloadView(PayslipAccessMixin, View):
+    """
+    POST: the marked payslips as a PDF (one) or a ZIP (several).
+    ---
+    POST: descarga las nóminas marcadas -- una, su PDF; varias, un ZIP
+    con un PDF por nómina. S153, Miguel Ángel: el supervisor podrá
+    "descargarlas también a su directorio local para poder usarlas,
+    para subirlas a plataformas". Solo de las entregas que ve.
+    """
+
+    def post(self, request):
+        import io
+        import zipfile
+
+        cu = request.user.company_user
+        ids = [v for v in request.POST.getlist("selected") if v.isdigit()]
+        items = [_decorate(item) for item in PayslipItem.objects.filter(
+            pk__in=ids, batch__in=access.visible_batches(cu),
+        ).exclude(page_to=0).select_related(
+            "batch", "entry", "person__company_user").order_by(
+                "period_end", "person__first_surname", "pk")]
+        if not items:
+            return HttpResponse("No hay ninguna nómina seleccionada que "
+                                "se pueda descargar.", status=400)
+        try:
+            if len(items) == 1:
+                data = _item_bytes(items[0], cu)
+                response = HttpResponse(data, content_type="application/pdf")
+                name = _download_name(items[0])
+            else:
+                buffer = io.BytesIO()
+                with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+                    for item in items:
+                        zf.writestr(_download_name(item),
+                                    _item_bytes(item, cu))
+                response = HttpResponse(buffer.getvalue(),
+                                        content_type="application/zip")
+                name = "Nominas_%s.zip" % timezone.localdate().strftime(
+                    "%Y%m%d")
+        except pd.PayslipError as exc:
+            return HttpResponse(str(exc), status=400)
+        response["Content-Disposition"] = (
+            "attachment; filename*=UTF-8''%s" % quote(name))
+        response["Cache-Control"] = "private, no-store"
+        return response
 
 
 class PayslipMediaView(View):

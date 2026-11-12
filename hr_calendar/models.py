@@ -2144,7 +2144,8 @@ class PayslipBatch(models.Model):
         null=True, blank=True, verbose_name="Leída",
     )
     notify_whatsapp = models.BooleanField(
-        default=True, verbose_name="Avisar por WhatsApp al terminar la lectura",
+        default=True,
+        verbose_name="Avisar por WhatsApp al terminar la lectura",
         help_text="S149: lo marca o no quien inicia la entrega.",
     )
     notified_at = models.DateTimeField(
@@ -2173,6 +2174,58 @@ class PayslipBatch(models.Model):
     def __str__(self) -> str:
         return "Entrega de nóminas #%s (%s)" % (
             self.pk, self.get_status_display())
+
+
+class PayslipBatchShare(models.Model):
+    """
+    A supervisor who may see, download and send one payslip batch.
+    ---
+    S153. A quién da acceso a una entrega quien la sube. Miguel Ángel:
+    "Jerónimo en cada carga de carpeta será el que dé el acceso a esa
+    carga para el supervisor correspondiente [...] la persona con el
+    permiso suficiente recibirá una notificación [...] y podrá enviar
+    las nóminas a los trabajadores [...] y de poder descargarlas". Con
+    acceso: ve la entrega, sus nóminas (también ya archivadas en la
+    ficha del trabajador, aunque sean confidenciales), las descarga y
+    da el visto bueno y envía. Aviso por WhatsApp al tenerla lista.
+    """
+
+    batch = models.ForeignKey(
+        PayslipBatch, on_delete=models.CASCADE, related_name="shares",
+        verbose_name="Entrega",
+    )
+    company_user = models.ForeignKey(
+        CompanyUser, on_delete=models.CASCADE,
+        related_name="payslip_batch_shares", verbose_name="Usuario",
+    )
+    granted_by = models.ForeignKey(
+        CompanyUser, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+", verbose_name="Compartida por",
+    )
+    granted_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Compartida",
+    )
+    notified_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Avisado",
+    )
+    notify_error = models.CharField(
+        max_length=255, blank=True, default="",
+        verbose_name="Error del aviso",
+    )
+
+    class Meta:
+        verbose_name = "Acceso a una entrega de nóminas"
+        verbose_name_plural = "Accesos a las entregas de nóminas"
+        ordering = ["pk"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("batch", "company_user"),
+                name="unique_payslip_share_per_user",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return "%s -> %s" % (self.batch, self.company_user)
 
 
 class PayslipItem(models.Model):
@@ -2209,7 +2262,8 @@ class PayslipItem(models.Model):
     )
     staged_path = models.CharField(
         max_length=255, blank=True, default="",
-        verbose_name="Copia cifrada hasta el envío",
+        # S153: la copia ya no se borra al enviar (no son efímeras).
+        verbose_name="Copia cifrada del PDF subido",
     )
     page_from = models.PositiveSmallIntegerField(
         default=1, verbose_name="Desde la página",

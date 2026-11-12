@@ -32,7 +32,15 @@ vez se acepta el listado, se envía."
    cifrada, con quien da el visto bueno como remitente) y se le manda
    el PDF por WhatsApp. Twilio recoge el PDF de un enlace temporal
    (`media_token`, caduca a las pocas horas) que solo sirve esa nómina.
-   La copia de la subida se borra al archivarla.
+
+S153 -- quién la ve y no son efímeras (Miguel Ángel: "no pueden ser
+efímeras [...] la persona que recibe las nóminas puede tenerlas como
+archivo, buscarlas por fecha, por periodos"): quien sube la entrega la
+comparte con los supervisores que deban enviarla
+(hr_calendar/payslip_access.py), a los que se avisa por WhatsApp en
+cuanto está leída; la copia cifrada de la subida ya NO se borra al
+enviar (solo al anular la entrega), para poder descargar cualquier
+nómina más adelante, también las que se dejaron fuera.
 """
 import datetime
 import io
@@ -299,27 +307,6 @@ def item_pdf(item):
         return buffer.getvalue()
 
 
-def _drop_staged(batch):
-    """
-    Deletes the encrypted copies no item of the batch still needs.
-    ---
-    Borra las copias cifradas que ya no necesita ninguna nómina de la
-    entrega (todas archivadas o fuera).
-    """
-    from hr_calendar.models import PayslipItem
-
-    waiting = PayslipItem.Status.READY, PayslipItem.Status.UNMATCHED, \
-        PayslipItem.Status.PENDING, PayslipItem.Status.ERROR
-    for relative in set(batch.items.values_list("staged_path", flat=True)):
-        if not relative or batch.items.filter(
-                staged_path=relative, status__in=waiting).exists():
-            continue
-        try:
-            os.remove(_staged_abs(relative))
-        except OSError:
-            pass
-
-
 # ----------------------------------------------------------------------
 # Paso 2: lectura en segundo plano
 # ----------------------------------------------------------------------
@@ -382,6 +369,11 @@ def read_batch(batch):
     batch.save(update_fields=["status", "read_at"])
     if batch.notify_whatsapp:
         notify_ready(batch)
+    # S153: aviso a cada supervisor con acceso a la entrega.
+    from hr_calendar.payslip_access import notify_share
+
+    for share in batch.shares.select_related("company_user__user"):
+        notify_share(share)
     return batch
 
 
@@ -727,8 +719,8 @@ def send_batch(batch):
     """
     Sends every approved payslip of the batch.
     ---
-    Envía todas las nóminas con visto bueno de la entrega y borra las
-    copias cifradas que ya no hacen falta.
+    Envía todas las nóminas con visto bueno de la entrega. S153: las
+    copias cifradas se quedan (no son efímeras).
     """
     from hr_calendar.models import PayslipBatch, PayslipItem
 
@@ -739,7 +731,6 @@ def send_batch(batch):
     batch.status = PayslipBatch.Status.SENT
     batch.finished_at = timezone.now()
     batch.save(update_fields=["status", "finished_at"])
-    _drop_staged(batch)
     return batch
 
 
@@ -760,5 +751,4 @@ def retry_whatsapp(batch):
         send_item(item, batch.approved_by)
         if item.status == PayslipItem.Status.SENT != before:
             sent += 1
-    _drop_staged(batch)
     return sent

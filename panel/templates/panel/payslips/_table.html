@@ -22,6 +22,36 @@ mientras alguna entrega se lee o se envía, la tabla se pide sola.
     <div><strong>#{{ batch.pk }} · {{ batch.get_status_display }}</strong>{% if batch_live %} <span class="spinner-border spinner-border-sm text-secondary"></span>{% endif %}
         · {{ count_total }} nómina{{ count_total|pluralize }}{% for label, n in count_by_status %} · {{ label|lower }}: {{ n }}{% endfor %}</div>
     <div class="text-muted">Carpeta «{{ batch.folder_name|default:"—" }}» · iniciada por {{ batch.created_by.user.get_full_name|default:batch.created_by.user.username|default:"—" }} el {{ batch.created_at|date:"d/m/Y H:i" }}{% if batch.read_at %} · leída{% if batch.notified_at %}, avisado por WhatsApp{% elif not batch.notify_whatsapp %}, sin aviso por WhatsApp (no pedido){% elif batch.notify_error %}, <span class="text-danger">sin aviso: {{ batch.notify_error }}</span>{% endif %}{% endif %}{% if batch.approved_at %} · visto bueno de {{ batch.approved_by.user.get_full_name|default:batch.approved_by.user.username }} el {{ batch.approved_at|date:"d/m/Y H:i" }}{% endif %}</div>
+    {% comment %}
+    S153: con quién está compartida (ven, descargan y envían) y si se
+    les ha avisado. Quien subió la entrega (o quien tiene acceso a
+    todas) puede cambiarlo aquí mismo; el JS de _pane.html escucha en
+    #psl-batch-box, donde se copia este bloque.
+    {% endcomment %}
+    <div class="mt-1"><span class="fw-semibold">Acceso:</span>
+        {% for share in batch_shares %}{{ share.label }}{% if share.notified_at %} <span class="text-success" title="Avisado el {{ share.notified_at|date:'d/m/Y H:i' }}"><i class="bi bi-check2"></i></span>{% elif share.notify_error %} <span class="text-danger" title="{{ share.notify_error }}"><i class="bi bi-exclamation-triangle"></i></span>{% endif %}{% if not forloop.last %}, {% endif %}{% empty %}<span class="text-muted">solo quien la subió{% if batch_can_share %} (y quien tiene acceso a todas){% endif %}</span>{% endfor %}
+    </div>
+    {% if batch_can_share %}
+    <div class="d-flex flex-wrap align-items-center gap-1 mt-1">
+        <div class="dropdown" data-psl-share-drop>
+            <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
+                    data-bs-auto-close="outside" aria-expanded="false"><span data-psl-share-text>Nadie más</span></button>
+            <div class="dropdown-menu p-2 small">
+                {% for user in share_candidates %}
+                <div class="form-check">
+                    <label class="form-check-label text-nowrap">
+                        <input class="form-check-input psl-share-edit" type="checkbox" value="{{ user.pk }}"
+                               data-label="{{ user.label }}"{% if user.pk in batch_share_ids %} checked{% endif %}>
+                        {{ user.label }}
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-primary" data-psl-share-save
+                title="Guarda quién más ve, descarga y envía esta entrega; a los nuevos se les avisa por WhatsApp si ya está leída.">Guardar acceso</button>
+    </div>
+    {% endif %}
     {% else %}
     <div class="text-muted">Todas las entregas. Para darle el visto bueno, reintentar o anular, elige una en «Entrega»; para una nueva, «Elegir carpeta».</div>
     {% endif %}
@@ -54,7 +84,7 @@ mientras alguna entrega se lee o se envía, la tabla se pide sola.
         <tr>
             <td><input type="checkbox" class="form-check-input psl-row-check" data-pk="{{ row.pk }}" data-status="{{ row.status }}" data-person="{{ row.person_id|default:'' }}" data-label="{{ row.label }}"></td>
             <td title="{{ row.batch.folder_name }}">#{{ row.batch_id }} · {{ row.batch.created_at|date:"d/m/Y" }}</td>
-            <td class="text-truncate" style="max-width: 16rem;" title="{{ row.original_name }}">{{ row.original_name }}</td>
+            <td class="text-truncate psl-col-file" title="{{ row.original_name }}">{{ row.original_name }}</td>
             <td>{{ row.pages_label|default:"—" }}</td>
             <td>{% if row.person %}{{ row.person_label }}{% if row.match_source == 'MANUAL' %} <span class="text-primary small">(a mano)</span>{% endif %}{% else %}<span class="text-danger">Sin trabajador</span>{% endif %}</td>
             <td>{{ row.dni_found|default:"—" }}</td>
@@ -62,11 +92,14 @@ mientras alguna entrega se lee o se envía, la tabla se pide sola.
             <td>{% if row.phone_label %}{{ row.phone_label }}{% elif row.person %}<span class="text-danger">sin móvil</span>{% endif %}</td>
             <td><span class="badge {% if row.status == 'SENT' %}text-bg-success{% elif row.status == 'READY' %}text-bg-primary{% elif row.status == 'UNMATCHED' or row.status == 'ERROR' %}text-bg-danger{% elif row.status == 'FILED' %}text-bg-warning{% else %}text-bg-secondary{% endif %}">{{ row.get_status_display }}</span></td>
             <td>{{ row.sent_at|date:"d/m/Y H:i"|default:"" }}</td>
-            <td class="small text-truncate" style="max-width: 20rem;" title="{{ row.note }}">{{ row.note }}</td>
+            <td class="small text-truncate psl-col-note" title="{{ row.note }}">{{ row.note }}</td>
             <td>
                 <div class="dropdown">
                     <button class="btn btn-sm btn-link text-dark" type="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-three-dots-vertical"></i></button>
                     <ul class="dropdown-menu dropdown-menu-end">
+                        {% if row.page_to %}
+                        <li><a class="dropdown-item psl-row-action" href="#" data-pk="{{ row.pk }}" data-action="download"><i class="bi bi-download me-1"></i>Descargar</a></li>
+                        {% endif %}
                         {% if row.can_change %}
                         <li><a class="dropdown-item psl-row-action" href="#" data-pk="{{ row.pk }}" data-action="assign-open"><i class="bi bi-person-check me-1"></i>Poner el trabajador</a></li>
                         {% if row.status == 'EXCLUDED' %}

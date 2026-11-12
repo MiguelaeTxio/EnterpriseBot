@@ -100,6 +100,10 @@ refresca sola. Lógica: hr_calendar/payslip_delivery.py.
                             title="Excel, PDF o imprimir el listado de las nóminas marcadas, con la plantilla que elijas (nunca su contenido)">
                         <i class="bi bi-box-arrow-up me-1"></i>Exportar / imprimir
                     </button>
+                    <button type="button" class="btn btn-sm btn-outline-primary psl-needs-selection" id="psl-mass-download" disabled
+                            title="Descarga las nóminas marcadas: una, su PDF; varias, un ZIP con un PDF por nómina.">
+                        <i class="bi bi-download me-1"></i>Descargar
+                    </button>
                     <button type="button" class="btn btn-sm btn-outline-danger psl-needs-selection psl-mass" data-action="exclude" disabled
                             title="No se envían: quedan fuera de su entrega (solo en entregas para el visto bueno).">Dejar fuera</button>
                     <button type="button" class="btn btn-sm btn-outline-secondary psl-needs-selection psl-mass" data-action="include" disabled
@@ -115,6 +119,25 @@ refresca sola. Lógica: hr_calendar/payslip_delivery.py.
                 <div class="small text-muted fw-bold">La entrega <span class="fw-normal">(la elegida en «Entrega»)</span></div>
                 <div id="psl-batch-box" class="small mb-1"></div>
                 <div class="d-flex gap-1 flex-wrap align-items-center">
+                    {% if can_upload %}
+                    {% comment %}
+                    S153: a quién se da acceso a la entrega nueva (ven,
+                    descargan y envían; se les avisa al terminar la
+                    lectura). Quien tiene acceso a todas no hace falta
+                    marcarlo.
+                    {% endcomment %}
+                    <div class="dropdown checkdrop" data-none="Acceso: solo yo" title="Supervisores que podrán ver, descargar y enviar la entrega nueva">
+                        <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
+                                data-bs-auto-close="outside" aria-expanded="false"><span class="checkdrop-text">Acceso: solo yo</span></button>
+                        <div class="dropdown-menu p-2 small">
+                            {% for user in new_share_candidates %}
+                            <div class="form-check">
+                                <input class="form-check-input psl-share-new" type="checkbox" value="{{ user.pk }}" id="pslShareNew{{ user.pk }}" data-label="{{ user.label }}">
+                                <label class="form-check-label text-nowrap" for="pslShareNew{{ user.pk }}">{{ user.label }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
                     <label class="btn btn-sm btn-primary mb-0" for="psl-folder" title="Elige la carpeta con las nóminas en PDF: se suben todas y se leen en segundo plano. Si marcas «Avisarme por WhatsApp», al acabar te llega el enlace al listado.">
                         <i class="bi bi-folder2-open"></i> Elegir carpeta
                     </label>
@@ -123,6 +146,7 @@ refresca sola. Lógica: hr_calendar/payslip_delivery.py.
                         <input class="form-check-input" type="checkbox" id="psl-notify-me" checked>
                         <label class="form-check-label" for="psl-notify-me">Avisarme por WhatsApp</label>
                     </div>
+                    {% endif %}
                     <button type="button" class="btn btn-sm btn-success" id="psl-approve" disabled
                             title="Archiva cada nómina en la ficha de su trabajador (confidencial) y se la manda por WhatsApp.">
                         <i class="bi bi-send-check"></i> Visto bueno y enviar
@@ -135,7 +159,7 @@ refresca sola. Lógica: hr_calendar/payslip_delivery.py.
                             title="Anula la entrega (aún no enviada) y borra las copias de sus PDF.">Anular</button>
                 </div>
                 <div id="psl-upload-progress" class="d-none mt-2 small">
-                    <div class="progress" style="height: 8px;"><div class="progress-bar" id="psl-upload-bar" style="width: 0%"></div></div>
+                    <div class="progress psl-progress"><div class="progress-bar psl-progress-bar" id="psl-upload-bar"></div></div>
                     <div class="text-muted mt-1" id="psl-upload-text"></div>
                 </div>
             </div>
@@ -154,7 +178,7 @@ refresca sola. Lógica: hr_calendar/payslip_delivery.py.
                             hx-include="#psl-filters" hx-vals='{"sort": ""}'>Quitar orden</button>
                     <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" id="psl-fullscreen" title="Pantalla completa"><i class="bi bi-fullscreen"></i></button>
                 </div>
-                <div id="psl-results-scroll" class="psl-fill fixed-list-scroll" style="overflow: auto;">
+                <div id="psl-results-scroll" class="psl-fill fixed-list-scroll psl-scroll">
                     <div id="psl-results"
                          hx-get="{% url 'panel:payslip_results' %}"
                          hx-include="#psl-filters, #psl-sort-inputs"
@@ -167,7 +191,7 @@ refresca sola. Lógica: hr_calendar/payslip_delivery.py.
         <div class="col-lg-3 h-100">
             <div class="border rounded p-2 h-100 d-flex flex-column">
                 <div class="fw-bold small mb-1">Selección actual (<span id="psl-selection-count">0</span>)</div>
-                <div class="psl-fill" style="overflow-y: auto;">
+                <div class="psl-fill psl-scroll-y">
                     <ul class="mb-0 small ps-0 list-unstyled" id="psl-selection-list">
                         <li class="text-muted">Nada seleccionado todavía.</li>
                     </ul>
@@ -180,6 +204,12 @@ refresca sola. Lógica: hr_calendar/payslip_delivery.py.
 <style>
 #psl-results-scroll table td, #psl-results-scroll table th { white-space: nowrap; }
 .psl-fill { flex: 1 1 auto; min-height: 0; }
+.psl-scroll { overflow: auto; }
+.psl-scroll-y { overflow-y: auto; }
+.psl-progress { height: 8px; }
+.psl-progress-bar { width: 0%; }
+.psl-col-file { max-width: 16rem; }
+.psl-col-note { max-width: 20rem; }
 #psl-list-col > div:fullscreen { background-color: var(--bs-body-bg); padding: 1rem; }
 #psl-list-col > div:fullscreen .psl-fill { height: calc(100vh - 4rem); }
 </style>
@@ -211,6 +241,7 @@ refresca sola. Lógica: hr_calendar/payslip_delivery.py.
         upload: "{% url 'panel:payslip_upload' 0 %}",
         read: "{% url 'panel:payslip_start_reading' 0 %}",
         action: "{% url 'panel:payslip_action' %}",
+        download: "{% url 'panel:payslip_download' %}",
     };
     function url(name, pk) { return URLS[name].replace("/0/", "/" + pk + "/"); }
 
@@ -315,6 +346,7 @@ refresca sola. Lógica: hr_calendar/payslip_delivery.py.
         document.getElementById("psl-clear-sort").classList.toggle("d-none", !data.sortActive);
         const box = document.getElementById("psl-batch-state");
         document.getElementById("psl-batch-box").innerHTML = box ? box.innerHTML : "";
+        if (typeof paintShareDrop === "function") paintShareDrop();
         const ready = data.ready === "1";
         const approve = document.getElementById("psl-approve");
         approve.disabled = !ready || data.unmatched !== "0" || data.toSend === "0";
@@ -367,7 +399,7 @@ refresca sola. Lógica: hr_calendar/payslip_delivery.py.
         refreshFromFragment();
     });
 
-    function post(action, extra, pks) {
+    function post(action, extra, pks, shares) {
         const body = new FormData();
         new FormData(filters).forEach(function (value, key) { body.append("_f_" + key, value); });
         const sortInput = results.querySelector('#psl-sort-inputs input[name="sort"]');
@@ -376,6 +408,7 @@ refresca sola. Lógica: hr_calendar/payslip_delivery.py.
         body.append("batch_id", state().dataset.batch || "");
         Object.keys(extra || {}).forEach(function (key) { body.append(key, extra[key]); });
         (pks || []).forEach(function (pk) { body.append("selected", pk); });
+        (shares || []).forEach(function (pk) { body.append("share", pk); });
         return fetch(URLS.action, {method: "POST", headers: {"X-CSRFToken": csrfToken}, body: body})
             .then(function (r) {
                 if (!r.ok) { showToast("No se ha podido completar (" + r.status + ").", true); return false; }
@@ -426,6 +459,10 @@ refresca sola. Lógica: hr_calendar/payslip_delivery.py.
         if (!link) return;
         evt.preventDefault();
         const action = link.dataset.action;
+        if (action === "download") {
+            download([link.dataset.pk]);
+            return;
+        }
         if (action === "assign-open") {
             const check = results.querySelector('.psl-row-check[data-pk="' + link.dataset.pk + '"]');
             selection.clear();
@@ -449,6 +486,51 @@ refresca sola. Lógica: hr_calendar/payslip_delivery.py.
         }))) return;
         post("approve", {}, []);
     });
+    // S153: descargar (PDF de una o ZIP de varias) con un formulario
+    // temporal, para que el navegador lo trate como una descarga.
+    function download(pks) {
+        const form = document.createElement("form");
+        form.method = "post";
+        form.action = URLS.download;
+        form.className = "d-none";
+        const token = document.createElement("input");
+        token.type = "hidden";
+        token.name = "csrfmiddlewaretoken";
+        token.value = csrfToken;
+        form.appendChild(token);
+        pks.forEach(function (pk) {
+            const input = document.createElement("input");
+            input.type = "hidden";
+            input.name = "selected";
+            input.value = pk;
+            form.appendChild(input);
+        });
+        document.body.appendChild(form);
+        form.submit();
+        form.remove();
+    }
+    document.getElementById("psl-mass-download").addEventListener("click", function () {
+        if (!selection.size) return;
+        download(Array.from(selection.keys()));
+    });
+    // S153: guardar con quién está compartida la entrega elegida (el
+    // bloque se copia en #psl-batch-box en cada repintado).
+    const batchBox = document.getElementById("psl-batch-box");
+    batchBox.addEventListener("click", function (evt) {
+        if (!evt.target.closest("[data-psl-share-save]")) return;
+        const users = Array.from(batchBox.querySelectorAll(".psl-share-edit:checked")).map(function (cb) { return cb.value; });
+        post("share", {}, [], users);
+    });
+    // El botón del desplegable dice a quién se ha marcado.
+    function paintShareDrop() {
+        const text = batchBox.querySelector("[data-psl-share-text]");
+        if (!text) return;
+        const names = Array.from(batchBox.querySelectorAll(".psl-share-edit:checked")).map(function (cb) { return cb.dataset.label; });
+        text.textContent = names.length ? names.join(", ") : "Nadie más";
+    }
+    batchBox.addEventListener("change", function (evt) {
+        if (evt.target.classList.contains("psl-share-edit")) paintShareDrop();
+    });
     document.getElementById("psl-retry").addEventListener("click", function () { post("retry", {}, []); });
     document.getElementById("psl-notify").addEventListener("click", function () { post("notify", {}, []); });
     document.getElementById("psl-cancel").addEventListener("click", function () {
@@ -458,7 +540,9 @@ refresca sola. Lógica: hr_calendar/payslip_delivery.py.
 
     // Elegir carpeta: se crea la entrega, se suben sus PDF de uno en uno,
     // empieza la lectura en segundo plano y el filtro pasa a esa entrega.
-    document.getElementById("psl-folder").addEventListener("change", async function () {
+    // S153: sin «Elegir carpeta» para quien solo tiene acceso compartido.
+    const folderInput = document.getElementById("psl-folder");
+    if (folderInput) folderInput.addEventListener("change", async function () {
         const input = this;
         const files = Array.from(input.files || []).filter(function (f) { return /\.pdf$/i.test(f.name); });
         input.value = "";
@@ -472,8 +556,13 @@ refresca sola. Lógica: hr_calendar/payslip_delivery.py.
         const headers = {"X-CSRFToken": csrfToken};
         try {
             const created = await fetch(URLS.create, {method: "POST", headers: headers,
-                body: new URLSearchParams({folder: folder,
-                    notify: document.getElementById("psl-notify-me").checked ? "1" : "0"})}).then(function (r) { return r.json(); });
+                body: (function () {
+                    const params = new URLSearchParams({folder: folder,
+                        notify: document.getElementById("psl-notify-me").checked ? "1" : "0"});
+                    // S153: acceso para los supervisores marcados.
+                    document.querySelectorAll(".psl-share-new:checked").forEach(function (cb) { params.append("share", cb.value); });
+                    return params;
+                }())}).then(function (r) { return r.json(); });
             if (!created.ok) throw new Error(created.error || "No se ha podido crear la entrega.");
             const errors = [];
             for (let i = 0; i < files.length; i++) {

@@ -14,8 +14,11 @@ trabajador que la recibe".
   confidencial cada documento que se suba de ahí en adelante: se guarda
   cifrado en el cubo (Fernet, llave CONFIDENTIAL_DOCS_KEY del .env), sin
   lectura automática (OCR), y la fila apunta quién lo envió.
-- Lo abren solo el trabajador (su usuario del panel) y quien lo envió.
-  Nadie más, tampoco un administrador: ve que existe, no el contenido.
+- Lo abren solo el trabajador (su usuario del panel) y quien lo envió;
+  desde S153, si es una nómina de una entrega, también quienes ven esa
+  entrega (quien la subió, a quien se la compartió y quien tiene acceso
+  a todas las nóminas). Nadie más, tampoco un administrador: ve que
+  existe, no el contenido.
 - Cualquier otro camino que lea el archivo del cubo recibe el cifrado,
   ilegible: lo que no pase por aquí no puede enseñarlo.
 - Cada intento de abrirlo queda en ConfidentialAccessLog.
@@ -28,8 +31,8 @@ from cryptography.fernet import Fernet, InvalidToken
 logger = logging.getLogger(__name__)
 
 KEY_ENV = "CONFIDENTIAL_DOCS_KEY"
-DENIED = ("Documento confidencial: solo lo pueden abrir el trabajador y "
-          "quien se lo envió.")
+DENIED = ("Documento confidencial: solo lo pueden abrir el trabajador, "
+          "quien se lo envió y quien tiene acceso a su entrega.")
 NO_KEY = ("No se puede guardar un documento confidencial: falta la llave "
           "de cifrado en el servidor. Avisa a los administradores del "
           "sistema.")
@@ -100,8 +103,15 @@ def can_open(entry, company_user):
         return True
     if company_user is None:
         return False
-    return company_user.pk in (entry.confidential_sender_id,
-                               worker_user_id(entry))
+    if company_user.pk in (entry.confidential_sender_id,
+                           worker_user_id(entry)):
+        return True
+    # S153: una nómina de una entrega la abren también quienes ven esa
+    # entrega (quien la subió, a quien se la compartió y quien tiene
+    # acceso a todas) -- hr_calendar.payslip_access.
+    from hr_calendar.payslip_access import can_open_payslip_entry
+
+    return can_open_payslip_entry(entry, company_user)
 
 
 def open_bytes(entry, company_user):

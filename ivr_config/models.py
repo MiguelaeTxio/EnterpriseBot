@@ -488,6 +488,19 @@ class CompanyUser(models.Model):
             "de Administrador. No concede ningún otro permiso de ADMIN."
         ),
     )
+    # S153 (H24, nóminas). Miguel Ángel: "Tendrá acceso única y
+    # exclusivamente Alejandro a todas sin necesidad de darle permiso en
+    # cada carga de carpeta". Ve, descarga y envía todas las entregas de
+    # nóminas; el resto, solo las que suben ellos o les comparten.
+    payslip_full_access = models.BooleanField(
+        default=False,
+        verbose_name="Acceso a todas las nóminas",
+        help_text=(
+            "Ve, descarga y envía todas las entregas de nóminas sin que "
+            "se las compartan. El resto de usuarios solo ve las que sube "
+            "y las que le comparte quien las sube."
+        ),
+    )
     alias = models.CharField(
         max_length=50,
         blank=True,

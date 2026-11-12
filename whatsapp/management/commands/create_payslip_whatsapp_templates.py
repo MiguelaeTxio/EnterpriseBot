@@ -76,6 +76,27 @@ TEMPLATES = [
         "variables": {"1": "Juan", "2": "Octubre 2026",
                       "3": "ejemploDeTokenTemporal"},
     },
+    {
+        # S153: a quien quien sube la entrega le da acceso (jefe de
+        # departamento), con el botón al listado para revisarlas,
+        # descargarlas y enviarlas. `{{4}}` es quien la ha subido.
+        "name": "payslip_batch_shared",
+        "types": {"twilio/card": {
+            "title": (
+                _PREAMBLE
+                + "{{4}} le ha dado acceso a una entrega de {{2}} nominas. "
+                "Puede revisarlas, descargarlas y enviarlas en el panel."
+            ),
+            "subtitle": "Grupo Alvarez",
+            "actions": [{
+                "type": "URL",
+                "title": "Ver el listado",
+                "url": settings.PLATFORM_BASE_URL + "/panel/nominas/{{3}}",
+            }],
+        }},
+        "variables": {"1": "Juan", "2": "45", "3": "?batch=1",
+                      "4": "Jeronimo"},
+    },
 ]
 
 
@@ -90,7 +111,8 @@ class Command(BaseCommand):
 
     help = (
         "Crea y somete a aprobacion de Meta las plantillas WhatsApp "
-        "payslip_batch_ready y payslip_delivery (H24, S149)."
+        "payslip_batch_ready, payslip_delivery (H24, S149) y "
+        "payslip_batch_shared (S153)."
     )
 
     def add_arguments(self, parser):

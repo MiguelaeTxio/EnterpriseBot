@@ -102,6 +102,7 @@ from panel.views_dossier_bundle import DossierBundleEmailView
 from panel.views_payslips import (
     PayslipActionView,
     PayslipBatchCreateView,
+    PayslipDownloadView,
     PayslipExportView,
     PayslipMediaView,
     PayslipPageView,
@@ -2288,6 +2289,12 @@ urlpatterns = [
         "nominas/exportar/",
         PayslipExportView.as_view(),
         name="payslip_export",
+    ),
+    # S153: descargar las nóminas marcadas (PDF o ZIP).
+    path(
+        "nominas/descargar/",
+        PayslipDownloadView.as_view(),
+        name="payslip_download",
     ),
     path(
         "documentacion/nominas/",
