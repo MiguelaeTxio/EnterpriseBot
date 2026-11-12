@@ -113,11 +113,20 @@ from panel.views_payslips import (
 )
 # S153: pestaña Firmas (firmas de empresa y documentos firmados).
 from panel.views_signatures import (
+    AgentFileView,
+    AgentHeartbeatView,
+    AgentPendingView,
+    AgentResultView,
+    SignatureCertificateView,
     SignatureDeleteView,
     SignatureImageView,
     SignatureSaveView,
     SignatureTabView,
     SignedFormsGenerateView,
+    SignedJobDownloadView,
+    SignedJobStatusView,
+    SigningAgentCreateView,
+    SigningAgentDeactivateView,
 )
 # H24 (S147): solicitudes de los trabajadores.
 from panel.views_worker_requests import (
@@ -2334,6 +2343,52 @@ urlpatterns = [
         "documentacion/firmas/generar/",
         SignedFormsGenerateView.as_view(),
         name="signed_forms_generate",
+    ),
+    path(
+        "documentacion/firmas/<int:pk>/certificado/",
+        SignatureCertificateView.as_view(),
+        name="signature_certificate",
+    ),
+    path(
+        "documentacion/firmas/lote/<int:pk>/",
+        SignedJobStatusView.as_view(),
+        name="signed_job_status",
+    ),
+    path(
+        "documentacion/firmas/lote/<int:pk>/descargar/",
+        SignedJobDownloadView.as_view(),
+        name="signed_job_download",
+    ),
+    path(
+        "documentacion/firmas/agente/nuevo/",
+        SigningAgentCreateView.as_view(),
+        name="signing_agent_create",
+    ),
+    path(
+        "documentacion/firmas/agente/<int:pk>/baja/",
+        SigningAgentDeactivateView.as_view(),
+        name="signing_agent_deactivate",
+    ),
+    # API del agente de firmas (Authorization: Bearer <código>).
+    path(
+        "firmas/agente/latido/",
+        AgentHeartbeatView.as_view(),
+        name="signing_agent_heartbeat",
+    ),
+    path(
+        "firmas/agente/pendientes/",
+        AgentPendingView.as_view(),
+        name="signing_agent_pending",
+    ),
+    path(
+        "firmas/agente/documento/<int:pk>/",
+        AgentFileView.as_view(),
+        name="signing_agent_file",
+    ),
+    path(
+        "firmas/agente/documento/<int:pk>/resultado/",
+        AgentResultView.as_view(),
+        name="signing_agent_result",
     ),
     # Sin sesión: Twilio recoge de aquí el PDF de cada nómina (enlace
     # temporal con token largo).

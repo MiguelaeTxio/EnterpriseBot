@@ -1,0 +1,5 @@
+# S153. Agente de firmas (Windows). El candado (requirements.txt) se
+# compila en el propio runner Windows del workflow
+# signing_agent_build.yml (plataforma de destino), nunca a mano.
+requests
+pyinstaller

@@ -113,6 +113,7 @@ document_explorer/signed_forms_service.py.
                         <th>Empresa</th>
                         <th>Quién firma</th>
                         <th>Firma</th>
+                        <th>Certificado digital</th>
                         <th>Guardada</th>
                         <th></th>
                     </tr>
@@ -123,6 +124,14 @@ document_explorer/signed_forms_service.py.
                         <td>{{ signature.company.legal_name }}</td>
                         <td>{{ signature.label }}</td>
                         <td><img src="{% url 'panel:signature_image' signature.pk %}" alt="Firma de {{ signature.label }}" class="sig-thumb border rounded p-1"></td>
+                        <td>
+                            <select class="form-select form-select-sm" data-sig-cert="{% url 'panel:signature_certificate' signature.pk %}" aria-label="Certificado digital de {{ signature.label }}">
+                                <option value="">Sin firma digital (solo imagen)</option>
+                                {% for alias in certificate_aliases %}
+                                <option value="{{ alias }}"{% if alias == signature.certificate_alias %} selected{% endif %}>{{ alias }}</option>
+                                {% endfor %}
+                            </select>
+                        </td>
                         <td class="small text-muted">{{ signature.created_at|date:"d/m/Y H:i" }}{% if signature.created_by %} · {{ signature.created_by.user.username }}{% endif %}</td>
                         <td class="text-end">
                             <button type="button" class="btn btn-outline-danger btn-sm" data-sig-delete="{% url 'panel:signature_delete' signature.pk %}" data-sig-name="{{ signature.label }} ({{ signature.company.legal_name }})">
@@ -137,6 +146,57 @@ document_explorer/signed_forms_service.py.
         {% else %}
         <div class="small text-muted">Todavía no hay ninguna firma guardada.</div>
         {% endif %}
+    </div>
+
+    <div class="row g-3 mt-0">
+        <div class="col-lg-6">
+            <div class="border rounded p-3 h-100">
+                <div class="fw-bold mb-2"><i class="bi bi-shield-lock me-1"></i>Firma digital: agente de firmas</div>
+                <p class="small text-muted mb-2">
+                    El agente es un programa en el ordenador donde están instalados los certificados. Firma con AutoFirma sin que la clave salga de ese ordenador.
+                    Las firmas con un certificado elegido arriba se generan, quedan en cola y vuelven firmadas digitalmente.
+                </p>
+                {% for agent in agents %}
+                <div class="d-flex align-items-center justify-content-between border rounded p-2 mb-2 small">
+                    <div>
+                        <span class="badge {% if agent.online %}bg-success{% else %}bg-secondary{% endif %} me-1">{% if agent.online %}Conectado{% else %}Desconectado{% endif %}</span>
+                        <strong>{{ agent.name }}</strong>{% if agent.host %} · {{ agent.host }}{% endif %}
+                        <div class="text-muted">
+                            Último contacto: {{ agent.last_seen_at|date:"d/m/Y H:i"|default:"nunca" }}
+                            · AutoFirma: {{ agent.autofirma_version|default:"no encontrado" }}
+                            · Certificados: {{ agent.aliases|length }}
+                        </div>
+                        {% if agent.last_error %}<div class="text-danger">{{ agent.last_error|truncatechars:300 }}</div>{% endif %}
+                    </div>
+                    <button type="button" class="btn btn-outline-danger btn-sm" data-agent-off="{% url 'panel:signing_agent_deactivate' agent.pk %}" data-agent-name="{{ agent.name }}">Dar de baja</button>
+                </div>
+                {% empty %}
+                <div class="small text-muted mb-2">No hay ningún agente vinculado.</div>
+                {% endfor %}
+                <div class="input-group input-group-sm">
+                    <input type="text" class="form-control" id="agent-new-name" maxlength="120" placeholder="Nombre del ordenador (p. ej. Ordenador de Yolanda)" aria-label="Nombre del ordenador">
+                    <button type="button" class="btn btn-outline-primary" id="agent-new-btn" data-url="{% url 'panel:signing_agent_create' %}">Generar código de vinculación</button>
+                </div>
+                <div class="alert alert-warning small mt-2 mb-0 d-none" id="agent-new-code"></div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="border rounded p-3 h-100">
+                <div class="fw-bold mb-2"><i class="bi bi-hourglass-split me-1"></i>Últimos lotes con firma digital</div>
+                {% for job in jobs %}
+                <div class="border rounded p-2 mb-2 small">
+                    <div class="d-flex justify-content-between">
+                        <span>#{{ job.pk }} · {{ job.created_at|date:"d/m/Y H:i" }} · {{ job.signature.company.legal_name }} · {{ job.signature.label }}</span>
+                        <span>{{ job.get_status_display }} ({{ job.done }}/{{ job.total }})</span>
+                    </div>
+                    {% for error in job.errors %}<div class="text-danger">{{ error|truncatechars:300 }}</div>{% endfor %}
+                    {% if job.done %}<a href="{% url 'panel:signed_job_download' job.pk %}" class="btn btn-link btn-sm p-0">Descargar firmados</a>{% endif %}
+                </div>
+                {% empty %}
+                <div class="small text-muted">Todavía no hay ninguno. Se borran a los 7 días.</div>
+                {% endfor %}
+            </div>
+        </div>
     </div>
 </div>
 <script>
@@ -192,6 +252,50 @@ document_explorer/signed_forms_service.py.
     company.addEventListener("change", fillSignatures);
     signature.addEventListener("change", showChosen);
 
+    function saveBlob(blob, name) {
+        var link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = name;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(function () { URL.revokeObjectURL(link.href); }, 2000);
+    }
+    function showNotes(notes) {
+        var notesList = document.getElementById("sig-generate-notes");
+        notes.forEach(function (item) {
+            var li = document.createElement("li");
+            li.textContent = item.file + " — por " + item.method + (item.notes.length ? ": " + item.notes.join("; ") : "");
+            if (item.notes.length) { li.className = "text-warning-emphasis"; }
+            notesList.appendChild(li);
+        });
+        if (notes.length) { notesList.classList.remove("d-none"); }
+    }
+    function pollJob(url, msg) {
+        return new Promise(function (resolve) {
+            function tick() {
+                if (!document.body.contains(root)) { resolve(); return; }
+                fetch(url, {headers: {"Accept": "application/json"}})
+                    .then(function (response) { return response.json(); })
+                    .then(function (body) {
+                        if (body.error) { say(msg, body.error, false); resolve(); return; }
+                        if (body.status === "pending") {
+                            say(msg, "Firmando digitalmente… " + body.done + "/" + body.total + " (el agente tiene que estar encendido)", true);
+                            setTimeout(tick, 4000);
+                            return;
+                        }
+                        var ok = body.status === "done";
+                        say(msg, (ok ? "Firmados digitalmente " : "Terminado con errores: firmados ") + body.done + "/" + body.total
+                            + (body.errors.length ? ". " + body.errors.join("; ") : ""), ok);
+                        if (body.download_url) { window.location.href = body.download_url; }
+                        resolve();
+                    })
+                    .catch(function () { setTimeout(tick, 8000); });
+            }
+            tick();
+        });
+    }
+
     document.getElementById("sig-generate-btn").addEventListener("click", function () {
         var btn = this;
         var msg = document.getElementById("sig-generate-msg");
@@ -207,26 +311,21 @@ document_explorer/signed_forms_service.py.
         fetch(root.dataset.generateUrl, {method: "POST", body: data, headers: {"X-CSRFToken": csrf()}})
             .then(function (response) {
                 if (!response.ok) { return errorOf(response).then(function (text) { throw new Error(text); }); }
+                if (response.status === 202) {
+                    return response.json().then(function (body) {
+                        showNotes(body.notes || []);
+                        say(msg, "Generados. Esperando la firma digital del agente…", true);
+                        return pollJob(body.status_url, msg);
+                    });
+                }
                 var disposition = response.headers.get("Content-Disposition") || "";
                 var match = disposition.match(/filename\*=UTF-8''([^;]+)/);
                 var name = match ? decodeURIComponent(match[1]) : "documentos.pdf";
                 var notes = [];
                 try { notes = JSON.parse(decodeURIComponent(response.headers.get("X-Signed-Notes") || "%5B%5D")); } catch (e) { notes = []; }
-                notes.forEach(function (item) {
-                    var li = document.createElement("li");
-                    li.textContent = item.file + " — por " + item.method + (item.notes.length ? ": " + item.notes.join("; ") : "");
-                    if (item.notes.length) { li.className = "text-warning-emphasis"; }
-                    notesList.appendChild(li);
-                });
-                if (notes.length) { notesList.classList.remove("d-none"); }
+                showNotes(notes);
                 return response.blob().then(function (blob) {
-                    var link = document.createElement("a");
-                    link.href = URL.createObjectURL(blob);
-                    link.download = name;
-                    document.body.appendChild(link);
-                    link.click();
-                    link.remove();
-                    setTimeout(function () { URL.revokeObjectURL(link.href); }, 2000);
+                    saveBlob(blob, name);
                     say(msg, files.length + " documento(s) generados: " + name, true);
                 });
             })
@@ -247,6 +346,53 @@ document_explorer/signed_forms_service.py.
             .catch(function (err) { say(msg, err.message, false); btn.disabled = false; });
     });
 
+    root.querySelectorAll("[data-sig-cert]").forEach(function (select) {
+        select.addEventListener("change", function () {
+            var data = new FormData();
+            data.append("alias", select.value);
+            fetch(select.dataset.sigCert, {method: "POST", body: data, headers: {"X-CSRFToken": csrf()}})
+                .then(function (response) {
+                    if (!response.ok) { return errorOf(response).then(function (text) { throw new Error(text); }); }
+                    select.classList.add("is-valid");
+                    setTimeout(function () { select.classList.remove("is-valid"); }, 1500);
+                })
+                .catch(function (err) { window.alert(err.message); });
+        });
+    });
+    var agentBtn = document.getElementById("agent-new-btn");
+    agentBtn.addEventListener("click", function () {
+        var data = new FormData();
+        data.append("name", document.getElementById("agent-new-name").value);
+        fetch(agentBtn.dataset.url, {method: "POST", body: data, headers: {"X-CSRFToken": csrf()}})
+            .then(function (response) {
+                if (!response.ok) { return errorOf(response).then(function (text) { throw new Error(text); }); }
+                return response.json();
+            })
+            .then(function (body) {
+                var box = document.getElementById("agent-new-code");
+                box.replaceChildren();
+                var title = document.createElement("div");
+                title.className = "fw-semibold";
+                title.textContent = "Código de vinculación (cópialo ahora: no se vuelve a mostrar). Se pega en el agente al instalarlo:";
+                var code = document.createElement("code");
+                code.className = "user-select-all d-block mt-1";
+                code.textContent = body.code;
+                box.append(title, code);
+                box.classList.remove("d-none");
+            })
+            .catch(function (err) { window.alert(err.message); });
+    });
+    root.querySelectorAll("[data-agent-off]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+            if (!window.confirm("¿Dar de baja el agente " + btn.dataset.agentName + "? Su código dejará de valer.")) { return; }
+            fetch(btn.dataset.agentOff, {method: "POST", headers: {"X-CSRFToken": csrf()}})
+                .then(function (response) {
+                    if (!response.ok) { return errorOf(response).then(function (text) { throw new Error(text); }); }
+                    reloadTab();
+                })
+                .catch(function (err) { window.alert(err.message); });
+        });
+    });
     root.querySelectorAll("[data-sig-delete]").forEach(function (btn) {
         btn.addEventListener("click", function () {
             if (!window.confirm("¿Borrar la firma " + btn.dataset.sigName + "?")) { return; }

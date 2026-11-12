@@ -1,0 +1,62 @@
+name: Agente de firmas (Windows) -- compilar el .exe
+
+# S153. Construye AgenteFirmas.exe (signing_agent/agente_firmas.py) en un
+# runner Windows -- la plataforma de destino, donde también se compila el
+# candado con pip-tools (com-environment-management 3.4) -- y lo sube a la
+# release "agente-firmas" del repositorio, de donde se descarga para
+# instalarlo en el ordenador con los certificados.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'signing_agent/**'
+      - '.github/workflows/signing_agent_build.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: signing-agent-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Compilar el candado e instalar (pip-tools)
+        working-directory: signing_agent
+        run: |
+          python -m pip install --upgrade pip pip-tools
+          pip-compile --quiet requirements.in -o requirements.txt
+          pip-sync requirements.txt
+          type requirements.txt
+
+      - name: Empaquetar (PyInstaller)
+        working-directory: signing_agent
+        run: |
+          pyinstaller --onefile --noconsole --name AgenteFirmas agente_firmas.py
+          dir dist
+
+      - name: Publicar en la release agente-firmas
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          if ! gh release view agente-firmas >/dev/null 2>&1; then
+            gh release create agente-firmas --title "Agente de firmas (Windows)" \
+              --notes "AgenteFirmas.exe: agente de firma digital con AutoFirma (pestaña Firmas del panel). Se actualiza solo en cada cambio de signing_agent/."
+          fi
+          cp signing_agent/requirements.txt signing_agent/dist/requirements-agente-firmas.txt
+          gh release upload agente-firmas signing_agent/dist/AgenteFirmas.exe \
+            signing_agent/dist/requirements-agente-firmas.txt --clobber
+          echo "Commit: ${GITHUB_SHA}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Release: agente-firmas (AgenteFirmas.exe)" >> "$GITHUB_STEP_SUMMARY"

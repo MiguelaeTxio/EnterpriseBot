@@ -2397,6 +2397,13 @@ class CompanySignature(models.Model):
     image_encrypted = models.BinaryField(
         verbose_name="Imagen de la firma (cifrada, PNG)",
     )
+    # S153: certificado digital con el que el agente de firmas firma
+    # (alias en el almacén de Windows del ordenador del agente). Vacío =
+    # solo imagen, sin firma digital.
+    certificate_alias = models.CharField(
+        max_length=255, blank=True, default="",
+        verbose_name="Certificado digital (alias en el agente)",
+    )
     created_by = models.ForeignKey(
         "ivr_config.CompanyUser",
         null=True,
@@ -2414,6 +2421,127 @@ class CompanySignature(models.Model):
 
     def __str__(self):
         return "%s · %s" % (self.company.legal_name, self.label)
+
+
+class SigningAgent(models.Model):
+    """
+    S153. Signing agent on the PC that holds the company certificates.
+    ---
+    Agente de firmas: programa en el ordenador donde están instalados
+    los certificados de las empresas (el de Yolanda), que firma con
+    AutoFirma sin sacar la clave de ese ordenador. Se vincula con un
+    código que se genera en la pestaña Firmas; aquí solo se guarda su
+    huella (SHA-256), nunca el código.
+    """
+
+    name = models.CharField(max_length=120, verbose_name="Nombre")
+    token_hash = models.CharField(
+        max_length=64, unique=True, verbose_name="Huella del código")
+    host = models.CharField(max_length=255, blank=True, default="",
+                            verbose_name="Ordenador")
+    aliases = models.JSONField(
+        default=list, blank=True,
+        verbose_name="Certificados que ve (alias)")
+    autofirma_version = models.CharField(
+        max_length=120, blank=True, default="",
+        verbose_name="AutoFirma")
+    last_error = models.TextField(blank=True, default="",
+                                  verbose_name="Último error")
+    last_seen_at = models.DateTimeField(null=True, blank=True,
+                                        verbose_name="Último contacto")
+    is_active = models.BooleanField(default=True, verbose_name="Activo")
+    created_by = models.ForeignKey(
+        "ivr_config.CompanyUser", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+        verbose_name="Creado por")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Agente de firmas"
+        verbose_name_plural = "Agentes de firmas"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.name
+
+
+class SignedFormJob(models.Model):
+    """
+    S153. A batch of generated forms waiting for the digital signature.
+    ---
+    Lote de documentos generados (empresa y firma con sello ya puestas)
+    que espera la firma digital del agente. Los PDF van cifrados.
+    """
+
+    STATUS_PENDING = "pending"
+    STATUS_DONE = "done"
+    STATUS_ERROR = "error"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pendiente de firma digital"),
+        (STATUS_DONE, "Firmado"),
+        (STATUS_ERROR, "Con errores"),
+    ]
+
+    signature = models.ForeignKey(
+        CompanySignature, on_delete=models.CASCADE,
+        related_name="jobs", verbose_name="Firma")
+    certificate_alias = models.CharField(
+        max_length=255, verbose_name="Certificado (alias)")
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES,
+                              default=STATUS_PENDING,
+                              verbose_name="Estado")
+    notes = models.JSONField(default=list, blank=True,
+                             verbose_name="Avisos al rellenar")
+    created_by = models.ForeignKey(
+        "ivr_config.CompanyUser", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+        verbose_name="Creado por")
+    created_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Lote de firma digital"
+        verbose_name_plural = "Lotes de firma digital"
+        ordering = ["-created_at"]
+
+
+class SignedFormFile(models.Model):
+    """
+    S153. One PDF of a SignedFormJob (before and after signing).
+    ---
+    Un PDF del lote: el generado (sin firma digital) y, cuando vuelve
+    del agente, el firmado. Ambos cifrados.
+    """
+
+    STATUS_PENDING = "pending"
+    STATUS_SIGNING = "signing"
+    STATUS_DONE = "done"
+    STATUS_ERROR = "error"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pendiente"),
+        (STATUS_SIGNING, "Firmándose"),
+        (STATUS_DONE, "Firmado"),
+        (STATUS_ERROR, "Error"),
+    ]
+
+    job = models.ForeignKey(SignedFormJob, on_delete=models.CASCADE,
+                            related_name="files", verbose_name="Lote")
+    name = models.CharField(max_length=255, verbose_name="Nombre")
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES,
+                              default=STATUS_PENDING,
+                              verbose_name="Estado")
+    unsigned_encrypted = models.BinaryField(
+        verbose_name="PDF generado (cifrado)")
+    signed_encrypted = models.BinaryField(
+        null=True, blank=True, verbose_name="PDF firmado (cifrado)")
+    error = models.TextField(blank=True, default="",
+                             verbose_name="Error")
+    taken_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Documento a firmar"
+        verbose_name_plural = "Documentos a firmar"
+        ordering = ["pk"]
 
 
 class EpiDeliveryBatchTemplate(models.Model):
