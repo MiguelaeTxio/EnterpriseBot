@@ -14,6 +14,7 @@ guardadas (cifradas). Solo entra quien tiene
 Lógica: document_explorer/signed_forms_service.py.
 """
 import io
+import json
 import logging
 import zipfile
 from urllib.parse import quote
@@ -25,7 +26,11 @@ from django.views import View
 
 from document_explorer import signed_forms_service as forms
 from document_explorer.confidential import ConfidentialError
-from document_explorer.models import CompanyFiscalProfile, CompanySignature
+from document_explorer.models import (
+    CompanyFiscalProfile,
+    CompanySignature,
+    PersonIdentity,
+)
 from panel.mixins import CompanyUserRequiredMixin
 
 logger = logging.getLogger(__name__)
@@ -65,10 +70,14 @@ def _pane_context():
     profiles = list(CompanyFiscalProfile.objects.order_by("legal_name"))
     signatures = list(CompanySignature.objects.select_related(
         "company", "created_by__user"))
+    people = PersonIdentity.objects.filter(is_active_employee=True).order_by(
+        "first_surname", "second_surname", "given_name").only(
+        "pk", "first_surname", "second_surname", "given_name")
     return {
         "profiles": profiles,
         "signatures": signatures,
         "profiles_with_signature": {s.company_id for s in signatures},
+        "people": people,
     }
 
 
@@ -163,9 +172,12 @@ class SignedFormsGenerateView(SignatureAccessMixin, View):
     """
     POST: fill and sign the uploaded forms; one PDF or a ZIP.
     ---
-    POST: rellena y firma los PDF subidos con la empresa y la firma
-    elegidas. Devuelve el PDF (si es uno) o un ZIP. Si alguno no se
-    puede rellenar, no se genera nada y se dice cuál y por qué (JSON).
+    POST: rellena y firma los PDF subidos con la empresa, la firma y,
+    si el documento lo pide, el trabajador elegidos (por texto o, si no
+    se puede, por Gemini). Devuelve el PDF (si es uno) o un ZIP, con la
+    cabecera X-Signed-Notes (cómo se rellenó cada uno y sus avisos). Si
+    alguno no se puede rellenar, no se genera nada y se dice cuál y por
+    qué (JSON).
     """
 
     def post(self, request):
@@ -186,17 +198,22 @@ class SignedFormsGenerateView(SignatureAccessMixin, View):
             png = forms.signature_png(signature)
         except ConfidentialError as exc:
             return JsonResponse({"error": str(exc)}, status=500)
-        text = forms.company_text(profile)
-        results, errors, names = [], [], set()
+        person = PersonIdentity.objects.filter(
+            pk=request.POST.get("person") or 0).first()
+        values = forms.form_values(profile, person)
+        results, errors, names, notes = [], [], set(), []
         for upload in files:
             if upload.size > MAX_FORM_BYTES:
                 errors.append("%s: pasa de 25 MB" % upload.name)
                 continue
             try:
-                data = forms.fill_form(upload.read(), text, png)
+                filled = forms.fill_form(upload.read(), values, png)
             except forms.SignedFormError as exc:
                 errors.append("%s: %s" % (upload.name, exc))
                 continue
+            data = filled.data
+            notes.append({"file": upload.name, "method": filled.method,
+                          "notes": filled.notes})
             name = forms.output_name(upload.name, profile)
             base, number = name[:-4], 2
             while name in names:
@@ -224,4 +241,6 @@ class SignedFormsGenerateView(SignatureAccessMixin, View):
             ).strftime("%Y-%m-%d")
         response["Content-Disposition"] = (
             "attachment; filename*=UTF-8''%s" % quote(name))
+        # Cómo se rellenó cada uno y qué pedía que no se ha puesto.
+        response["X-Signed-Notes"] = quote(json.dumps(notes))
         return response

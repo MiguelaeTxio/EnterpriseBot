@@ -23,7 +23,9 @@ document_explorer/signed_forms_service.py.
                 <div class="fw-bold mb-2"><i class="bi bi-file-earmark-check me-1"></i>Generar documentos firmados</div>
                 <p class="small text-muted mb-2">
                     Sube los PDF que ha enviado el cliente (uno o varios), elige la empresa nuestra que hace el trabajo y su firma.
-                    En cada documento se escribe la empresa subcontratista con su CIF y se pone la firma bajo «Representante de la subcontrata».
+                    Si el PDF tiene texto con «Empresa Subcontratista» y «Representante de la subcontrata», se rellena directamente;
+                    si no (escaneado u otro modelo), Gemini lee el documento y dice dónde va cada dato: empresa, CIF, domicilio social,
+                    trabajador y su DNI, y la firma de la empresa.
                 </p>
                 <form id="sig-generate-form" autocomplete="off" onsubmit="return false;">
                     <div class="mb-2">
@@ -50,11 +52,21 @@ document_explorer/signed_forms_service.py.
                             </select>
                         </div>
                     </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold mb-0" for="sig-person">Trabajador (solo si el documento lo pide)</label>
+                        <select class="form-select form-select-sm" id="sig-person" name="person">
+                            <option value="">Ninguno</option>
+                            {% for person in people %}
+                            <option value="{{ person.pk }}">{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
                     <div class="mb-2 d-none" id="sig-chosen-wrap"></div>
                     <button type="button" class="btn btn-primary btn-sm" id="sig-generate-btn">
                         <i class="bi bi-pen me-1"></i>Generar documentos
                     </button>
                     <span class="small ms-2" id="sig-generate-msg"></span>
+                    <ol class="small mt-2 mb-0 d-none" id="sig-generate-notes"></ol>
                 </form>
             </div>
         </div>
@@ -187,14 +199,26 @@ document_explorer/signed_forms_service.py.
         if (!files.length) { say(msg, "Elige los PDF del cliente.", false); return; }
         if (!company.value || !signature.value) { say(msg, "Elige la empresa y la firma.", false); return; }
         var data = new FormData(document.getElementById("sig-generate-form"));
+        var notesList = document.getElementById("sig-generate-notes");
+        notesList.replaceChildren();
+        notesList.classList.add("d-none");
         btn.disabled = true;
-        say(msg, "Generando…", true);
+        say(msg, "Generando… (si va por Gemini, unos segundos por documento)", true);
         fetch(root.dataset.generateUrl, {method: "POST", body: data, headers: {"X-CSRFToken": csrf()}})
             .then(function (response) {
                 if (!response.ok) { return errorOf(response).then(function (text) { throw new Error(text); }); }
                 var disposition = response.headers.get("Content-Disposition") || "";
                 var match = disposition.match(/filename\*=UTF-8''([^;]+)/);
                 var name = match ? decodeURIComponent(match[1]) : "documentos.pdf";
+                var notes = [];
+                try { notes = JSON.parse(decodeURIComponent(response.headers.get("X-Signed-Notes") || "%5B%5D")); } catch (e) { notes = []; }
+                notes.forEach(function (item) {
+                    var li = document.createElement("li");
+                    li.textContent = item.file + " — por " + item.method + (item.notes.length ? ": " + item.notes.join("; ") : "");
+                    if (item.notes.length) { li.className = "text-warning-emphasis"; }
+                    notesList.appendChild(li);
+                });
+                if (notes.length) { notesList.classList.remove("d-none"); }
                 return response.blob().then(function (blob) {
                     var link = document.createElement("a");
                     link.href = URL.createObjectURL(blob);
