@@ -37,6 +37,7 @@ STALE_MINUTES = 15
 ONLINE_MINUTES = 3
 KEEP_DAYS = 7
 MAX_FILES_PER_POLL = 5
+NOT_ALIAS_PREFIXES = ("buscando tarjeta",)
 
 
 def token_hash(token):
@@ -95,7 +96,15 @@ def record_heartbeat(agent, host="", aliases=None, autofirma="", error=""):
     """
     agent.host = (host or "")[:255]
     if aliases is not None:
-        agent.aliases = [str(a)[:255] for a in aliases][:50]
+        # S153: AutoFirma mezcla en la lista avisos que no son
+        # certificados ("Buscando tarjeta compatible en el terminal 0
+        # (Windows Hello for Business 1)"); fuera, y sin repetidos.
+        clean = []
+        for alias in (str(a).strip()[:255] for a in aliases):
+            if alias and alias not in clean and not alias.lower(
+                    ).startswith(NOT_ALIAS_PREFIXES):
+                clean.append(alias)
+        agent.aliases = clean[:50]
     agent.autofirma_version = (autofirma or "")[:120]
     agent.last_error = (error or "")[:2000]
     agent.last_seen_at = timezone.now()
