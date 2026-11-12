@@ -3769,7 +3769,7 @@ def _type_family_sections(doc_types, label_for):
             "note": "",
             "items": [
                 {"pk": dt.pk, "label": dt.label, "text": dt.label,
-                 "title": ""}
+                 "title": "", "category": dt.requirement_category}
                 for dt in by_family[code]
             ],
         }
@@ -3785,12 +3785,45 @@ def _picker_initial_pk(request, nav_key):
     (directriz 4.15): al volver a la pestaña sigue en la misma
     plantilla o requisito. La guarda el propio JS en `loaded_pk`.
     """
+    return _picker_nav_value(request, nav_key, "loaded_pk")
+
+
+def _picker_category_view(request, nav_key):
+    """
+    Saved category view of the picker ("1", "2" or "all").
+    ---
+    S153. Vista de categoría que el usuario dejó elegida en el gestor;
+    la primera vez, solo la categoría 1.
+    """
+    value = _picker_nav_value(request, nav_key, "category_view")
+    valid = {code for code, _label in PICKER_CATEGORY_VIEWS}
+    return value if value in valid else PICKER_CATEGORY_DEFAULT
+
+
+def _picker_nav_value(request, nav_key, key):
+    """
+    One key of the picker's saved navigation, or None.
+    ---
+    Un dato de la navegación guardada del gestor (directriz 4.15), o
+    None si el usuario no ha guardado nada todavía.
+    """
     nav_state = PanelNavigationState.objects.filter(
         company_user=request.user.company_user, screen_key=nav_key,
     ).first()
     if nav_state is None or not isinstance(nav_state.state, dict):
         return None
-    return nav_state.state.get("loaded_pk")
+    return nav_state.state.get(key)
+
+
+# S153. Vistas del filtro de categoría del gestor de Requisitos: por
+# defecto solo la categoría 1 (Miguel Ángel: "por defecto tengamos
+# solamente los de categoría 1 en pantalla").
+PICKER_CATEGORY_VIEWS = (
+    ("1", "Categoría 1"),
+    ("2", "Categoría 2"),
+    ("all", "Ambas"),
+)
+PICKER_CATEGORY_DEFAULT = "1"
 
 
 class DossierTemplateSaveView(CompanyUserRequiredMixin, View):
@@ -4455,6 +4488,8 @@ class JobPositionManageView(CompanyUserRequiredMixin, View):
             "nav_key": nav_key,
             "initial_pk": _picker_initial_pk(request, nav_key),
             "item_kinds": "category,type",
+            "category_views": PICKER_CATEGORY_VIEWS,
+            "category_view": _picker_category_view(request, nav_key),
             "require_name": True,
             "require_items": False,
             "can_toggle_active": True,

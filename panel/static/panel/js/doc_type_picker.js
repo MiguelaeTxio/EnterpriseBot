@@ -123,6 +123,47 @@
             return snapshot !== null && snapshot !== currentState();
         }
 
+        // --- Filtro de categoría (S153, solo Requisitos) -----------
+        // Miguel Ángel: "un botón [...] para mostrar la categoría 1,
+        // mostrar la categoría 2 o mostrar ambas [...] por defecto
+        // tengamos solamente los de categoría 1 en pantalla". Un
+        // documento marcado se ve siempre, sea de la categoría que sea:
+        // nunca queda marcado algo que no se ve. Las secciones sin
+        // nada visible se ocultan.
+        var categoryView = cfg.tpCategoryView || '';
+
+        function applyCategoryView() {
+            if (!categoryView) {
+                return;
+            }
+            qa('[data-tp-cat]').forEach(function (label) {
+                var box = label.querySelector('input[data-tp-item]');
+                var visible = categoryView === 'all'
+                    || label.dataset.tpCat === categoryView
+                    || (box && box.checked);
+                label.classList.toggle('d-none', !visible);
+            });
+            qa('[data-tp-section]').forEach(function (section) {
+                var items = section.querySelectorAll('.tp-item');
+                var shown = section.querySelectorAll('.tp-item:not(.d-none)');
+                section.classList.toggle(
+                    'd-none', items.length > 0 && shown.length === 0
+                );
+            });
+            qa('[data-tp-cat-view]').forEach(function (btn) {
+                var active = btn.dataset.tpCatView === categoryView;
+                btn.classList.toggle('active', active);
+                btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+            });
+        }
+        function setCategoryView(value) {
+            categoryView = value;
+            applyCategoryView();
+            if (cfg.tpNavKey && window.EbNavState) {
+                window.EbNavState.save(cfg.tpNavKey, {category_view: value});
+            }
+        }
+
         // --- Visor: lo marcado ahora mismo, siempre a la vista -------
         function refreshPreview() {
             var lines = [];
@@ -190,6 +231,7 @@
             highlight(pk);
             resultEl.textContent = '';
             refreshPreview();
+            applyCategoryView();
             takeSnapshot();
         }
         function resetForm() {
@@ -202,6 +244,7 @@
             highlight('');
             resultEl.textContent = '';
             refreshPreview();
+            applyCategoryView();
             takeSnapshot();
         }
 
@@ -490,6 +533,11 @@
             }
         });
         root.addEventListener('click', function (event) {
+            var catButton = event.target.closest('[data-tp-cat-view]');
+            if (catButton && root.contains(catButton)) {
+                setCategoryView(catButton.dataset.tpCatView);
+                return;
+            }
             var action = event.target.closest('[data-tp-action]');
             if (action && root.contains(action)) {
                 var what = action.dataset.tpAction;

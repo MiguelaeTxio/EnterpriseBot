@@ -100,6 +100,15 @@
                 <option value="no" {% if filters.worker == "no" %}selected{% endif %}>No</option>
             </select>
         </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label small mb-1" for="id_filter_category">Categoría para requisitos</label>
+            <select class="form-select form-select-sm" id="id_filter_category" name="cat">
+                <option value="">Todas</option>
+                {% for value, display in category_choices %}
+                    <option value="{{ value }}" {% if filters.cat == value|stringformat:"s" %}selected{% endif %}>{{ display }}</option>
+                {% endfor %}
+            </select>
+        </div>
         <div class="col-6 col-md-2 d-flex gap-1">
             <button type="submit" class="btn btn-sm btn-outline-primary flex-fill" title="Filtrar">
                 <i class="bi bi-search"></i> Filtrar
@@ -121,6 +130,12 @@
         </button>
         <button type="submit" name="action" value="unmark_worker" class="btn btn-sm btn-outline-secondary js-bulk-button">
             <i class="bi bi-person-dash"></i> Quitar la marca
+        </button>
+        <button type="submit" name="action" value="set_category_1" class="btn btn-sm btn-outline-primary js-bulk-button" title="Documentos esenciales: salen por defecto al crear un requisito">
+            Pasar a categoría 1
+        </button>
+        <button type="submit" name="action" value="set_category_2" class="btn btn-sm btn-outline-secondary js-bulk-button" title="El resto: solo salen al pedir la categoría 2 o ambas">
+            Pasar a categoría 2
         </button>
         <button type="submit" name="action" value="activate" class="btn btn-sm btn-outline-success js-bulk-button">
             Reactivar
@@ -152,6 +167,7 @@
                     <th><a href="{{ sort_urls.label }}" class="text-decoration-none text-dark">Nombre visible {{ sort_arrows.label }}<sup>{{ sort_priority.label }}</sup></a></th>
                     <th><a href="{{ sort_urls.domain }}" class="text-decoration-none text-dark">Dominio {{ sort_arrows.domain }}<sup>{{ sort_priority.domain }}</sup></a></th>
                     <th><a href="{{ sort_urls.worker }}" class="text-decoration-none text-dark">Lo aporta el trabajador {{ sort_arrows.worker }}<sup>{{ sort_priority.worker }}</sup></a></th>
+                    <th><a href="{{ sort_urls.cat }}" class="text-decoration-none text-dark">Cat. {{ sort_arrows.cat }}<sup>{{ sort_priority.cat }}</sup></a></th>
                     <th><a href="{{ sort_urls.state }}" class="text-decoration-none text-dark">Estado {{ sort_arrows.state }}<sup>{{ sort_priority.state }}</sup></a></th>
                     <th><a href="{{ sort_urls.created }}" class="text-decoration-none text-dark">Alta {{ sort_arrows.created }}<sup>{{ sort_priority.created }}</sup></a></th>
                     <th></th>
@@ -174,6 +190,7 @@
                                    {% if doc_type.worker_provides %}checked{% endif %}>
                             <span class="small ms-1 catalog-worker-status"></span>
                         </td>
+                        <td>{{ doc_type.requirement_category }}</td>
                         <td>
                             {% if doc_type.is_active %}
                                 <span class="badge bg-success">Activo</span>
@@ -194,7 +211,7 @@
                     </tr>
                 {% empty %}
                     <tr>
-                        <td colspan="8" class="text-center text-muted py-4">
+                        <td colspan="9" class="text-center text-muted py-4">
                             Sin resultados para este filtro.
                         </td>
                     </tr>

@@ -165,11 +165,12 @@ from spare_parts.gcs_service import (
     delete_file, download_bytes, generate_signed_url, get_storage_client,
 )
 
-from document_explorer import friendly_names, index_writer, move_service, permissions
+from document_explorer import (
+    friendly_names, index_writer, move_service, permissions,
+)
 from document_explorer import empty_folder_service
 from document_explorer import (
-    archive_service, classification_service, duplicates_service,
-    naming_service, tasks,
+    archive_service, duplicates_service, naming_service, tasks,
 )
 from document_explorer.buckets import (
     BUCKET_DISPLAY_NAMES, INDEXED_BUCKETS, NO_CONFORMES_PREFIX,
@@ -1546,7 +1547,9 @@ class EmptyFoldersMixin(ExplorerAccessMixin):
     def _scope(self, data):
         company_user = self.request.user.company_user
         if not permissions.is_unrestricted(company_user):
-            raise Http404("Solo el administrador puede limpiar carpetas vacías.")
+            raise Http404(
+                "Solo el administrador puede limpiar carpetas vacías.",
+            )
         bucket = data.get("bucket") or ""
         if bucket not in INDEXED_BUCKETS:
             raise Http404("Cubo desconocido.")
@@ -1608,7 +1611,8 @@ class EmptyFoldersCleanView(EmptyFoldersMixin, View):
             )
         messages.success(
             request,
-            "%d carpeta(s) vacía(s) movida(s) a tu papelera." % log.groups_count,
+            "%d carpeta(s) vacía(s) movida(s) a tu papelera."
+            % log.groups_count,
         )
         return redirect(
             reverse("document_explorer:operation_log_detail", args=[log.pk])
@@ -3600,13 +3604,22 @@ class RegisterUploadedObjectView(View):
 
 
 TYPE_CATALOG_SCREEN_KEY = "document_type_catalog"
-_TYPE_CATALOG_FILTER_KEYS = ("q", "domain", "state", "worker", "sort")
+_TYPE_CATALOG_FILTER_KEYS = (
+    "q", "domain", "state", "worker", "cat", "sort",
+)
 _TYPE_CATALOG_BULK_ACTIONS = {
     "mark_worker": (
         "worker_provides", True, "Marcados «lo aporta el trabajador»",
     ),
     "unmark_worker": (
         "worker_provides", False, "Sin la marca «lo aporta el trabajador»",
+    ),
+    # S153: categoría del gestor de Requisitos de documentación.
+    "set_category_1": (
+        "requirement_category", 1, "Pasados a la categoría 1",
+    ),
+    "set_category_2": (
+        "requirement_category", 2, "Pasados a la categoría 2",
     ),
     "activate": ("is_active", True, "Reactivados"),
     "deactivate": ("is_active", False, "Desactivados"),
@@ -3660,6 +3673,7 @@ class DocumentTypeCatalogListView(ExplorerAccessMixin, TemplateView):
         "domain": "domain",
         "state": "is_active",
         "worker": "worker_provides",
+        "cat": "requirement_category",
         "created": "created_at",
     }
     _MAX_SORT_KEYS = 4
@@ -3742,6 +3756,7 @@ class DocumentTypeCatalogListView(ExplorerAccessMixin, TemplateView):
         domain = (params.get("domain") or "").strip()
         state = (params.get("state") or "").strip()
         worker = (params.get("worker") or "").strip()
+        category = (params.get("cat") or "").strip()
         sort_keys = self._parse_sort_param(params.get("sort"))
 
         types = DocumentTypeCatalog.objects.all()
@@ -3759,6 +3774,8 @@ class DocumentTypeCatalogListView(ExplorerAccessMixin, TemplateView):
             types = types.filter(worker_provides=True)
         elif worker == "no":
             types = types.filter(worker_provides=False)
+        if category in ("1", "2"):
+            types = types.filter(requirement_category=int(category))
 
         order = [
             ("-" if desc else "") + self._SORT_FIELDS[key]
@@ -3781,8 +3798,12 @@ class DocumentTypeCatalogListView(ExplorerAccessMixin, TemplateView):
         context["active_nav"] = "document_explorer"
         context["types"] = types
         context["domain_choices"] = DocumentTypeCatalog.DOMAIN_CHOICES
+        context["category_choices"] = (
+            DocumentTypeCatalog.REQUIREMENT_CATEGORY_CHOICES
+        )
         context["filters"] = {
             "q": q, "domain": domain, "state": state, "worker": worker,
+            "cat": category,
         }
         context["current_sort"] = params.get("sort", "")
         context["selected_ids"] = selected_ids
@@ -3829,13 +3850,15 @@ class DocumentTypeCatalogWorkerProvidesView(ExplorerAccessMixin, View):
 class DocumentTypeCatalogBulkView(ExplorerAccessMixin, View):
     """
     Bulk actions over the selected catalog types (H30, S125): mark or
-    unmark "worker provides", activate or deactivate (never delete).
+    unmark "worker provides", activate or deactivate (never delete);
+    since S153 also move them to requirement category 1 or 2.
 
     ---
 
     Acciones masivas sobre los tipos seleccionados (H30, S125): marcar
     o quitar «lo aporta el trabajador», reactivar o desactivar (nunca
-    borrar -- desactivar conserva el histórico).
+    borrar -- desactivar conserva el histórico); desde S153, pasar a la
+    categoría 1 o 2 del gestor de Requisitos.
     """
 
     def post(self, request):

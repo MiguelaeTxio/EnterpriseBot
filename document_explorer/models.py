@@ -1020,6 +1020,36 @@ class DocumentTypeCatalog(models.Model):
         ),
     )
 
+    # S153. Categoría para el gestor de Requisitos de documentación.
+    # Miguel Ángel: "una categoría 1, donde para un vehículo sea sus
+    # documentos obligatorios que tienes que llevar para que no te
+    # multen, y para una persona [...] la identificación es
+    # fundamental [...] DNIs, CAP, tarjetas de conducción, todo lo
+    # referente a los puestos de trabajo, los cursos de formación
+    # importantes, los EPIs [...] un documento de compraventa pues va
+    # a ser de categoría 2 [...] por defecto tengamos solamente los de
+    # categoría 1 en pantalla".
+    REQUIREMENT_CATEGORY_ESSENTIAL = 1
+    REQUIREMENT_CATEGORY_OTHER = 2
+    REQUIREMENT_CATEGORY_CHOICES = [
+        (REQUIREMENT_CATEGORY_ESSENTIAL, "Categoría 1 (esencial)"),
+        (REQUIREMENT_CATEGORY_OTHER, "Categoría 2 (resto)"),
+    ]
+    requirement_category = models.PositiveSmallIntegerField(
+        choices=REQUIREMENT_CATEGORY_CHOICES,
+        default=REQUIREMENT_CATEGORY_OTHER,
+        verbose_name="Categoría para requisitos",
+        help_text=(
+            "S153. Categoría 1: documentos esenciales (los obligatorios "
+            "de un vehículo para circular y trabajar; identidad, "
+            "conducción, contrato, formación, EPIs y PRL de una "
+            "persona). Categoría 2: el resto. El gestor de Requisitos "
+            "de documentación enseña por defecto solo la categoría 1. "
+            "Un tipo nuevo nace en la 2; se cambia desde el Catálogo "
+            "de tipos."
+        ),
+    )
+
     tags = models.ManyToManyField(
         "DocumentTag",
         blank=True,
@@ -4743,4 +4773,3 @@ class ConfidentialAccessLog(models.Model):
     def __str__(self) -> str:
         return "%s %s %s" % (self.entry_id, self.company_user_id,
                              self.opened_at)
-

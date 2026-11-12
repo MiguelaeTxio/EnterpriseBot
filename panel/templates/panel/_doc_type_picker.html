@@ -39,7 +39,8 @@ panel/views_documentation_h30.py).
      data-tp-noun-new="{{ picker.noun_new }}"
      data-tp-saved-event="{{ picker.saved_event }}"
      data-tp-deleted-event="{{ picker.deleted_event }}"
-     data-tp-changed-event="{{ picker.changed_event }}">
+     data-tp-changed-event="{{ picker.changed_event }}"
+     data-tp-category-view="{{ picker.category_view|default:'' }}">
 
     <div class="tp-head">
         <p class="text-muted small mb-2">{{ picker.help_text }}</p>
@@ -95,15 +96,24 @@ panel/views_documentation_h30.py).
         </div>
 
         <div class="card tp-col">
-            <div class="card-header py-1 small fw-bold">Documentos (marca o desmarca al vuelo)</div>
+            <div class="card-header py-1 small fw-bold d-flex flex-wrap align-items-center justify-content-between gap-1">
+                <span>Documentos (marca o desmarca al vuelo)</span>
+                {% if picker.category_views %}
+                <div class="btn-group btn-group-sm" role="group" aria-label="Categoría de documentos">
+                    {% for code, label in picker.category_views %}
+                    <button type="button" class="btn btn-outline-secondary py-0" data-tp-cat-view="{{ code }}" title="{% if code == '1' %}Documentos esenciales{% elif code == '2' %}El resto del catálogo{% else %}Todo el catálogo{% endif %}. Lo marcado se ve siempre.">{{ label }}</button>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
             <div class="tp-scroll p-2">
                 {% for section in picker.sections %}
-                <div class="mb-2 p-2 rounded{% if not section.color %} border{% endif %}"{% if section.color %} data-tp-bg="{{ section.color }}"{% endif %}>
+                <div class="mb-2 p-2 rounded{% if not section.color %} border{% endif %}" data-tp-section{% if section.color %} data-tp-bg="{{ section.color }}"{% endif %}>
                     <div class="fw-bold small mb-1">{{ section.title }}</div>
                     {% if section.note %}<div class="alert alert-warning py-1 px-2 small mb-2">{{ section.note }}</div>{% endif %}
                     <div class="{% if section.inline %}d-flex flex-wrap gap-3{% else %}tp-columns{% endif %}">
                         {% for item in section.items %}
-                        <label class="form-check tp-item small"{% if item.title %} title="{{ item.title }}"{% endif %}>
+                        <label class="form-check tp-item small"{% if item.title %} title="{{ item.title }}"{% endif %}{% if item.category %} data-tp-cat="{{ item.category }}"{% endif %}>
                             <input class="form-check-input" type="checkbox" data-tp-item="{{ section.kind }}" value="{{ item.pk }}" data-tp-label="{{ item.label }}">
                             <span class="form-check-label">{{ item.text }}</span>
                         </label>
