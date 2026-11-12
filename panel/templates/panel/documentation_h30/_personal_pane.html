@@ -419,7 +419,7 @@ superior.
 <div class="row g-2 h-100" id="personal-results-row">
     <div class="col-lg-8 h-100" id="personal-results-col">
         <div class="border rounded p-2 h-100 d-flex flex-column">
-            <div class="fw-bold small mb-1">Trabajadores</div>
+            <div class="fw-bold small mb-1">Trabajadores (<span id="personalResultsCount">{{ page.paginator.count }}</span>)</div>
             <div id="personal-results-scroll" class="ppane-scroll-fill ppane-scroll-x">
             <div id="personal-results">
                 {% include "panel/documentation_h30/_personal_results.html" with page=page sort_key=sort_key sort_dir=sort_dir search=search %}
@@ -737,6 +737,10 @@ las filas de debajo se desplacen de verdad.
     paneRoot.addEventListener('htmx:afterSwap', function (ev) {
         if (ev.target && ev.target.id === 'personal-results') {
             syncCheckboxesToSelection();
+            // S153: contador de la cabecera "Trabajadores".
+            const total = document.getElementById('personal-results-total');
+            const counter = document.getElementById('personalResultsCount');
+            if (total && counter) { counter.textContent = total.dataset.count; }
         }
     });
 

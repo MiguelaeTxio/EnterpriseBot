@@ -1,6 +1,8 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/documentation_h30/_personal_results.html #}
 {# H31 (S129): orden actual, para que la exportación a Excel salga en el mismo orden que el listado. #}
 <span id="personal-current-sort" class="d-none" data-sort="{{ sort_key }}" data-dir="{{ sort_dir }}"></span>
+{# S153: cuántos trabajadores salen con los filtros; lo pinta la cabecera "Trabajadores" de _personal_pane.html. #}
+<span id="personal-results-total" class="d-none" data-count="{{ page.paginator.count }}"></span>
 {% comment %}
 H31 (S75) punto 1: columna de casillero -- selección para acciones masivas
 (entrega de EPI / envío de circular). El estado marcado/desmarcado lo
