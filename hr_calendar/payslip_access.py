@@ -13,8 +13,8 @@ necesidad de darle permiso en cada carga de carpeta y Jerónimo en cada
 carga de carpeta será el que dé el acceso a esa carga para el
 supervisor correspondiente".
 
-- Sube entregas quien tiene uno de los roles de nóminas
-  (`panel.views_payslips.PAYSLIP_ROLES`).
+- Sube entregas solo quien tiene `CompanyUser.payslip_uploader`
+  (Jerónimo, Alejandro y Miguel Ángel para pruebas).
 - Una entrega la ven, descargan y envían: quien la subió, los usuarios
   a los que se la compartió (`PayslipBatchShare`) y quien tiene
   `CompanyUser.payslip_full_access` (Alejandro). Nadie más, tampoco un

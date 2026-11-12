@@ -501,6 +501,16 @@ class CompanyUser(models.Model):
             "y las que le comparte quien las sube."
         ),
     )
+    # S153. Miguel Ángel: "Sólo cargan Jerónimo y Alejandro. Yo para
+    # pruebas." Sube entregas de nóminas solo quien lo tiene marcado.
+    payslip_uploader = models.BooleanField(
+        default=False,
+        verbose_name="Carga nóminas",
+        help_text=(
+            "Puede subir entregas de nóminas y dar acceso a cada una a "
+            "los supervisores que deban enviarlas."
+        ),
+    )
     alias = models.CharField(
         max_length=50,
         blank=True,

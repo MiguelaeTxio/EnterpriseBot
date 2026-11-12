@@ -31,13 +31,11 @@ from hr_calendar import payslip_access as access
 from hr_calendar import payslip_delivery as pd
 from hr_calendar.models import PayslipBatch, PayslipItem
 from hr_calendar.worker_requests import person_label
-from ivr_config.models import CompanyUser
 from panel.mixins import CompanyUserRequiredMixin
 from panel.navigation_persistence import (
     apply_list_navigation,
     get_saved_state_key,
 )
-from panel.views_vacation_balance import MANAGE_ROLES
 
 logger = logging.getLogger(__name__)
 
@@ -74,20 +72,17 @@ _CANCELABLE = (PayslipBatch.Status.UPLOADING, PayslipBatch.Status.READING,
                PayslipBatch.Status.READY)
 
 
-# Los roles que gestionan las solicitudes (los de Vacaciones y
-# Solicitudes) y, S149 (Miguel Ángel: "deben de tener tanto Yolanda como
-# Jerónimo"), Supervisor de documentación. Las nóminas son confidenciales:
-# cada una solo la abren su trabajador y quien la envió.
-PAYSLIP_ROLES = set(MANAGE_ROLES) | {CompanyUser.ROLE_DOCS_SUPERVISOR}
-
-
 def can_upload_payslips(company_user):
     """
     True if this user may start payslip deliveries.
     ---
-    True si este usuario puede subir entregas de nóminas (PAYSLIP_ROLES).
+    True si este usuario puede subir entregas de nóminas. S153, Miguel
+    Ángel: "Sólo cargan Jerónimo y Alejandro. Yo para pruebas." -- solo
+    quien tiene `CompanyUser.payslip_uploader` (antes, en S149, cualquier
+    rol de Vacaciones/Solicitudes y Supervisor de documentación).
     """
-    return company_user is not None and company_user.role in PAYSLIP_ROLES
+    return bool(company_user is not None
+                and getattr(company_user, "payslip_uploader", False))
 
 
 def can_send_payslips(company_user):
