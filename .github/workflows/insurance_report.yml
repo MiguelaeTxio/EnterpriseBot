@@ -1,0 +1,97 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/.github/workflows/insurance_report.yml
+name: Informe de seguros para la renovación (solo lectura, EnterpriseBot)
+
+# H31 (S152). Hoja de Ruta S152, punto 1 (encargo de Alejandro Álvarez,
+# 11/11/2026). Ejecuta en PythonAnywhere el comando de solo lectura
+# `insurance_renewal_report` (documentos de seguro de los centros de
+# gasto activos y de la empresa, leídos con Gemini) y sube el JSON y su
+# log, comprimidos, a la release privada `relevo-imagenes`
+# (com-actions-relay: nunca a git; lleva pólizas y matrículas de la
+# empresa). El modelo los baja con la API y vacía la release al cierre.
+# Si el comando falla, el paso queda en rojo y el log va igualmente a
+# la release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      until:
+        description: "Incluir todos los documentos que caducan hasta (AAAA-MM-DD)"
+        required: false
+        default: "2026-12-31"
+        type: string
+      limit:
+        description: "Solo los N primeros documentos (0 = todos)"
+        required: false
+        default: "0"
+        type: string
+
+concurrency:
+  group: enterprisebot-insurance-report
+  cancel-in-progress: false
+
+permissions:
+  # write solo para subir el resultado a la release privada; nunca se
+  # comitea nada.
+  contents: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Preparar clave SSH dedicada (solo lectura, misma que db_query.yml)
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PA_DB_READONLY_SSH_PRIVATE_KEY }}" > ~/.ssh/pa_readonly_key
+          chmod 600 ~/.ssh/pa_readonly_key
+          ssh-keyscan -H ssh.pythonanywhere.com >> ~/.ssh/known_hosts
+
+      - name: Generar el informe en el servidor
+        env:
+          UNTIL: ${{ inputs.until }}
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          set +e
+          case "$UNTIL" in [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;; *) echo "::error title=Fecha no válida::$UNTIL"; exit 1;; esac
+          case "$LIMIT" in ''|*[!0-9]*) echo "::error title=Límite no válido::$LIMIT"; exit 1;; esac
+          RUN=${{ github.run_id }}
+          OUT="/home/MiguelAeTxio/SWAP/informe_seguros_$RUN.json"
+          ssh -o ServerAliveInterval=60 -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com \
+            "cd /home/MiguelAeTxio/PROJECTS/EnterpriseBot; source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate; export PYTHONPATH=/home/MiguelAeTxio/PROJECTS/EnterpriseBot; python -m dotenv run python manage.py insurance_renewal_report --until '$UNTIL' --limit '$LIMIT' --output '$OUT' 2>> '$OUT.log'" \
+            > /tmp/out.txt 2>&1
+          RC=$?
+          echo "RC=$RC" > /tmp/rc.txt
+          for f in "$OUT" "$OUT.log"; do
+            scp -i ~/.ssh/pa_readonly_key "MiguelAeTxio@ssh.pythonanywhere.com:$f" /tmp/ 2>/dev/null
+          done
+          ssh -i ~/.ssh/pa_readonly_key MiguelAeTxio@ssh.pythonanywhere.com "rm -f '$OUT' '$OUT.log'"
+          if [ "$RC" -ne 0 ]; then
+            MSG=$(grep -v "PythonAnywhere SSH" /tmp/out.txt | tail -c 600 | tr '\n' ' ')
+            echo "::error title=Informe de seguros fallido (exit $RC)::${MSG:-sin mensaje}"
+          fi
+
+      - name: Subir JSON y log a la release privada
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          RUN=${{ github.run_id }}
+          gh release view relevo-imagenes >/dev/null 2>&1 || \
+            gh release create relevo-imagenes --prerelease \
+              --title "Relevo de imágenes (solo lectura, temporal)" \
+              --notes "Material temporal del relevo para el modelo. Se vacía al cierre de sesión."
+          for f in /tmp/informe_seguros_$RUN.json /tmp/informe_seguros_$RUN.json.log; do
+            if [ -f "$f" ]; then
+              gzip -9 -c "$f" > "$f.gz"
+              gh release upload relevo-imagenes "$f.gz" --clobber
+            fi
+          done
+          RC=$(sed 's/RC=//' /tmp/rc.txt 2>/dev/null || echo 1)
+          exit "$RC"
+
+      - name: Limpiar clave SSH
+        if: always()
+        run: rm -f ~/.ssh/pa_readonly_key
