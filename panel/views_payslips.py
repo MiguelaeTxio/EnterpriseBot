@@ -41,7 +41,8 @@ logger = logging.getLogger(__name__)
 
 SCREEN_KEY = "payslips"
 FILTER_KEYS = ("batch", "search", "status", "month_from", "month_to",
-               "date_from", "date_to", "sort")
+               "date_from", "date_to", "sort", "active", "company", "group",
+               "section")
 DEFAULT_SORT = "-batch,file"
 _MAX_SORT_KEYS = 4
 _COLUMNS = (
@@ -296,6 +297,14 @@ def _filtered_items(request, company_user):
         qs = qs.filter(batch__created_at__date__gte=day_from)
     if day_to:
         qs = qs.filter(batch__created_at__date__lte=day_to)
+    # S153 (directriz 4.27): bloque común de las pestañas de personas
+    # sobre el trabajador de cada nómina; las que aún no tienen
+    # trabajador (sin casar) se ven siempre.
+    from panel.common_filters import common_people
+
+    people, _active, _companies = common_people(request)
+    qs = qs.filter(Q(person__in=[person.pk for person in people])
+                   | Q(person__isnull=True))
     for word in filters["search"].split():
         qs = qs.filter(
             Q(original_name__icontains=word)
@@ -377,12 +386,20 @@ def _table_response(request, message="", error=False):
 
 
 def _pane_context(request):
+    from panel.common_filters import person_filter_context
     from panel.person_groups import group_filter_context
+    from panel.views_documentation_h30 import COMPANY_FILTER_CHOICES
+    from panel.views_vacation_balance import _csv_param
 
     apply_list_navigation(request, SCREEN_KEY, FILTER_KEYS)
     cu = request.user.company_user
     saved = get_saved_state_key(cu, SCREEN_KEY, "selection", [])
     return {
+        # S153 (4.27): bloque común de filtros de personas.
+        **person_filter_context(request),
+        "filter_active": _csv_param(request, "active", ["true"]),
+        "filter_company": _csv_param(request, "company", [
+            slug for slug, _l, _r in COMPANY_FILTER_CHOICES]),
         **_list_context(request),
         **group_filter_context(request),
         "people": _people(cu.company),
