@@ -1306,7 +1306,23 @@ class ClockCorrection(models.Model):
         related_name="+",
         verbose_name="Tipo de fichaje nuevo",
     )
+
+    class Source(models.TextChoices):
+        # S149 (Miguel Ángel): "en la corrección del fichaje, corregido
+        # por IA con el usuario que corresponda"; la manual, por quien la
+        # hizo.
+        MANUAL = "MANUAL", "Manual"
+        AI = "AI", "IA"
+
     reason = models.TextField(verbose_name="Motivo")
+    source = models.CharField(
+        max_length=10,
+        choices=Source.choices,
+        default=Source.MANUAL,
+        verbose_name="Origen",
+        help_text="IA: la hizo el cotejo de albaranes, lanzado por "
+                  "«Corregido por».",
+    )
     corrected_by = models.ForeignKey(
         CompanyUser,
         on_delete=models.PROTECT,
@@ -2329,3 +2345,163 @@ class PayslipItem(models.Model):
     def __str__(self) -> str:
         return "%s (págs. %s-%s)" % (self.original_name, self.page_from,
                                      self.page_to)
+
+
+class AlbaranBatch(models.Model):
+    """
+    A folder of a worker's production delivery notes (S149).
+
+    ---
+
+    Carpeta de albaranes de producción de un trabajador (H24, S149,
+    Miguel Ángel: "desde la ficha de fichajes de un trabajador, un botón
+    para cargar una carpeta [...] los vamos a ir comparando con los
+    fichajes"). Gemini lee cada albarán; con los de cada día se compara
+    la jornada y se corrige por IA lo que pase de la tolerancia.
+    """
+
+    class Status(models.TextChoices):
+        UPLOADING = "UPLOADING", "Subiendo"
+        READING = "READING", "Leyendo"
+        READY = "READY", "Comparada"
+        CANCELLED = "CANCELLED", "Anulada"
+
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name="albaran_batches",
+        verbose_name="Empresa",
+    )
+    person = models.ForeignKey(
+        "document_explorer.PersonIdentity", on_delete=models.CASCADE,
+        related_name="albaran_batches", verbose_name="Trabajador",
+    )
+    created_by = models.ForeignKey(
+        CompanyUser, null=True, on_delete=models.SET_NULL,
+        related_name="+", verbose_name="Cargada por",
+    )
+    created_at = models.DateTimeField(auto_now_add=True,
+                                      verbose_name="Cargada")
+    status = models.CharField(max_length=10, choices=Status.choices,
+                              default=Status.UPLOADING,
+                              verbose_name="Estado")
+    folder_name = models.CharField(max_length=255, blank=True,
+                                   verbose_name="Carpeta")
+    read_at = models.DateTimeField(null=True, blank=True,
+                                   verbose_name="Comparada")
+    error = models.TextField(blank=True, verbose_name="Error")
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Carga de albaranes"
+        verbose_name_plural = "Cargas de albaranes"
+
+    def __str__(self) -> str:
+        return "Albaranes %s (%s)" % (self.pk, self.person_id)
+
+
+class AlbaranSheet(models.Model):
+    """
+    One production delivery note read by Gemini (S149).
+
+    ---
+
+    Un albarán de producción leído por Gemini: un archivo de la carpeta
+    puede traer varios (uno por fila). Las horas son las del parte de
+    producción: salida de base, llegada al trabajo, salida del trabajo y
+    llegada a base.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Por leer"
+        READ = "READ", "Leído"
+        UNREADABLE = "UNREADABLE", "Ilegible"
+        ERROR = "ERROR", "Error"
+
+    batch = models.ForeignKey(AlbaranBatch, on_delete=models.CASCADE,
+                              related_name="sheets", verbose_name="Carga")
+    original_name = models.CharField(max_length=255,
+                                     verbose_name="Archivo")
+    staged_path = models.CharField(max_length=255, blank=True,
+                                   verbose_name="Copia guardada")
+    position = models.PositiveSmallIntegerField(
+        default=1, verbose_name="Albarán dentro del archivo")
+    status = models.CharField(max_length=12, choices=Status.choices,
+                              default=Status.PENDING,
+                              verbose_name="Estado")
+    number = models.CharField(max_length=40, blank=True,
+                              verbose_name="Nº de albarán")
+    day = models.DateField(null=True, blank=True, verbose_name="Fecha")
+    operator_name = models.CharField(max_length=120, blank=True,
+                                     verbose_name="Operario")
+    machine = models.CharField(max_length=60, blank=True,
+                               verbose_name="Máquina")
+    observations = models.CharField(max_length=255, blank=True,
+                                    verbose_name="Observaciones")
+    base_out = models.TimeField(null=True, blank=True,
+                                verbose_name="Salida de base")
+    work_in = models.TimeField(null=True, blank=True,
+                               verbose_name="Llegada al trabajo")
+    work_out = models.TimeField(null=True, blank=True,
+                                verbose_name="Salida del trabajo")
+    base_in = models.TimeField(null=True, blank=True,
+                               verbose_name="Llegada a base")
+    name_mismatch = models.BooleanField(
+        default=False, verbose_name="El nombre no es el del trabajador")
+    raw = models.TextField(blank=True, verbose_name="Lectura de Gemini")
+    note = models.CharField(max_length=255, blank=True,
+                            verbose_name="Nota")
+
+    class Meta:
+        ordering = ["day", "base_out", "work_in", "pk"]
+        verbose_name = "Albarán leído"
+        verbose_name_plural = "Albaranes leídos"
+
+    def __str__(self) -> str:
+        return "%s %s" % (self.number or self.original_name, self.day)
+
+
+class ClockDayAiCheck(models.Model):
+    """
+    A clock-in day compared by AI against its delivery notes (S149).
+
+    ---
+
+    Día de fichajes comparado por IA con sus albaranes (Miguel Ángel:
+    "un previsado automático [...] se marca como comparado
+    automáticamente por IA"). Queda quién lanzó la comparación, si hubo
+    corrección por IA y qué se vio; el visado del supervisor sigue en
+    ClockDayReview.
+    """
+
+    company_user = models.ForeignKey(
+        CompanyUser, on_delete=models.CASCADE,
+        related_name="clock_ai_checks", verbose_name="Trabajador",
+    )
+    day = models.DateField(verbose_name="Día")
+    batch = models.ForeignKey(
+        AlbaranBatch, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="day_checks", verbose_name="Carga de albaranes",
+    )
+    checked_by = models.ForeignKey(
+        CompanyUser, null=True, on_delete=models.SET_NULL,
+        related_name="+", verbose_name="Lanzado por",
+    )
+    checked_at = models.DateTimeField(auto_now=True,
+                                      verbose_name="Comparado")
+    corrected = models.BooleanField(default=False,
+                                    verbose_name="Corregido por IA")
+    albaranes = models.CharField(max_length=255, blank=True,
+                                 verbose_name="Albaranes")
+    summary = models.TextField(blank=True, verbose_name="Resultado")
+
+    class Meta:
+        verbose_name = "Día comparado por IA"
+        verbose_name_plural = "Días comparados por IA"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("company_user", "day"),
+                name="clockdayaicheck_unique_user_day",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return "%s %s" % (self.company_user_id, self.day)

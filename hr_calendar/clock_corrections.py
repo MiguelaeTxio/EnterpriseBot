@@ -44,7 +44,7 @@ class ClockCorrectionError(Exception):
 
 def correct_event(event_id, corrected_by, action, reason, new_kind="",
                   new_pressed_at=None, user_agent="", new_clock_type_id=None,
-                  new_location=None):
+                  new_location=None, source=ClockCorrection.Source.MANUAL):
     """
     Correct one current press. Returns the ClockCorrection.
 
@@ -124,6 +124,7 @@ def correct_event(event_id, corrected_by, action, reason, new_kind="",
             old_clock_type=event.clock_type,
             new_clock_type=new_clock_type,
             reason=reason,
+            source=source,
             corrected_by=corrected_by,
             user_agent=(user_agent or "")[:200],
         )
@@ -131,7 +132,7 @@ def correct_event(event_id, corrected_by, action, reason, new_kind="",
 
 def add_event(company_user, person, corrected_by, new_kind, new_pressed_at,
               reason, user_agent="", new_clock_type_id=None,
-              new_location=None):
+              new_location=None, source=ClockCorrection.Source.MANUAL):
     """
     Add a press the worker did not make. Returns the ClockCorrection.
 
@@ -185,6 +186,7 @@ def add_event(company_user, person, corrected_by, new_kind, new_pressed_at,
             old_clock_type=None,
             new_clock_type=new_clock_type,
             reason=reason,
+            source=source,
             corrected_by=corrected_by,
             user_agent=(user_agent or "")[:200],
         )
@@ -425,7 +427,7 @@ def insert_type(company_user, person, corrected_by, reason, entry_event_id,
 
 
 def edit_presses(company_user, person, corrected_by, reason, rows,
-                 user_agent=""):
+                 user_agent="", source=ClockCorrection.Source.MANUAL):
     """
     Apply a whole edit of a shift's presses at once.
 
@@ -531,14 +533,15 @@ def edit_presses(company_user, person, corrected_by, reason, rows,
         for event in cancel:
             correct_event(event.pk, corrected_by,
                           ClockCorrection.Action.CANCEL, reason,
-                          user_agent=user_agent)
+                          user_agent=user_agent, source=source)
         for event, kind, at, type_id in change:
             correct_event(event.pk, corrected_by,
                           ClockCorrection.Action.CHANGE, reason,
                           new_kind=kind, new_pressed_at=at,
                           user_agent=user_agent,
-                          new_clock_type_id=type_id)
+                          new_clock_type_id=type_id, source=source)
         for kind, at, type_id in add:
             add_event(company_user, person, corrected_by, kind, at, reason,
-                      user_agent=user_agent, new_clock_type_id=type_id)
+                      user_agent=user_agent, new_clock_type_id=type_id,
+                      source=source)
         return len(cancel), len(change), len(add)
