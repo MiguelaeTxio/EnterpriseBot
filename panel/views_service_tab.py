@@ -47,7 +47,7 @@ from panel.views_machine_service import can_edit_service
 SCREEN_KEY = "service_tab"
 # S131: sin filtro de requisito (Miguel Ángel: "en esa vista no es
 # necesario").
-FILTER_KEYS = ("search", "family", "is_active", "sort")
+FILTER_KEYS = ("search", "family", "is_active", "sort", "group")
 KM_INTERVAL_SUGGESTIONS = (20000, 30000, 40000)
 # S131: grupo de casillas abierto en la tabla ("read" = lectura nueva,
 # "svc" = revisión nueva); solo se ve uno.
@@ -343,11 +343,35 @@ class ServiceTabPaneView(CompanyUserRequiredMixin, View):
         selection = get_saved_state_key(
             request.user.company_user, SCREEN_KEY, "selection", [],
         )
+        selection = selection if isinstance(selection, list) else []
+        # S153 (4.27): mismo formato que Centros de gasto -- filtro y
+        # recuadro de grupos de máquinas, y el visor "Selección actual"
+        # (con el código de lo que ya estaba seleccionado).
+        from panel.person_groups import (
+            MACHINE_KIND, collapsed_state, group_filter_options,
+            group_tree, parent_choices, GROUP_FILTER_NONE,
+        )
+
+        company_user = request.user.company_user
+        codes = dict(MachineAsset.objects.filter(
+            company=company_user.company,
+            pk__in=[pk for pk in selection if str(pk).isdigit()],
+        ).values_list("pk", "code"))
         context.update({
-            "saved_selection": (
-                selection if isinstance(selection, list) else []
-            ),
+            "saved_selection": [
+                {"pk": str(pk), "label": codes.get(int(pk), "")}
+                for pk in selection if str(pk).isdigit()
+            ],
             "screen_key": SCREEN_KEY,
+            "group_filter": request.GET.get("group", ""),
+            "group_filter_none": GROUP_FILTER_NONE,
+            "group_filter_options": group_filter_options(
+                company_user, MACHINE_KIND),
+            "machine_group_nodes": group_tree(company_user, MACHINE_KIND),
+            "machine_groups_collapsed": collapsed_state(
+                company_user, MACHINE_KIND),
+            "machine_group_parents": parent_choices(
+                editor=company_user, kind=MACHINE_KIND),
         })
         return render(request, "panel/service_tab/pane.html", context)
 

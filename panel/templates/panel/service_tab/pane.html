@@ -11,8 +11,14 @@ Código y Estado quedan fijos a los lados; lectura nueva y revisión
 nueva son un acordeón (solo una abierta, guardada por usuario).
 {% endcomment %}
 <div class="border rounded p-2 mb-2" id="svc-top-panel">
+    {% comment %}
+    S153 (directriz 4.27): el mismo formato que Centros de gasto y el
+    resto de pestañas -- Buscar y filtrar (Estado · Familia · Grupo
+    arriba; lo propio debajo), Grupos de selección y Acciones con
+    "N seleccionados · Limpiar · Solo los filtrados".
+    {% endcomment %}
     <div class="row g-2">
-        <div class="col-lg-7">
+        <div class="col-lg-4">
             <form class="border rounded p-2 h-100" id="svc-filters"
                   hx-get="{% url 'panel:service_tab_pane' %}?fragment=1"
                   hx-target="#svc-table-container"
@@ -21,20 +27,26 @@ nueva son un acordeón (solo una abierta, guardada por usuario).
                 <input id="svc-search" type="search" class="form-control form-control-sm mb-2" name="search" value="{{ filter_search }}" placeholder="Buscar por código, marca/modelo, matrícula…" autocomplete="off">
                 <input type="hidden" name="sort" id="svc-sort" value="{{ current_sort }}">
                 <input type="hidden" name="is_active" id="svc-is-active" value="{{ filter_is_active }}">
-                <div class="d-flex flex-wrap gap-3">
+                <div class="d-flex flex-wrap gap-3 small">
                     <div>
-                        <div class="small fw-bold">Estado</div>
-                        <div class="form-check">
-                            <input class="form-check-input svc-estado" type="checkbox" id="svc-estado-activos" data-estado="1" {% if filter_is_active == '' or filter_is_active == '1' %}checked{% endif %}>
-                            <label class="form-check-label small" for="svc-estado-activos">Activos</label>
-                        </div>
-                        <div class="form-check">
-                            <input class="form-check-input svc-estado" type="checkbox" id="svc-estado-inactivos" data-estado="0" {% if filter_is_active == '' or filter_is_active == '0' %}checked{% endif %}>
-                            <label class="form-check-label small" for="svc-estado-inactivos">Inactivos</label>
+                        <div class="fw-semibold mb-1">Estado</div>
+                        <div class="dropdown checkdrop" data-all="Todos" data-none="Ninguno">
+                            <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
+                                    data-bs-auto-close="outside" aria-expanded="false"><span class="checkdrop-text">Todos</span></button>
+                            <div class="dropdown-menu p-2 small">
+                                <div class="form-check">
+                                    <input class="form-check-input svc-estado" type="checkbox" id="svc-estado-activos" data-estado="1" {% if filter_is_active == '' or filter_is_active == '1' %}checked{% endif %}>
+                                    <label class="form-check-label small" for="svc-estado-activos">Activos</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input svc-estado" type="checkbox" id="svc-estado-inactivos" data-estado="0" {% if filter_is_active == '' or filter_is_active == '0' %}checked{% endif %}>
+                                    <label class="form-check-label small" for="svc-estado-inactivos">Inactivos</label>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div class="flex-grow-1">
-                        <label class="small fw-bold" for="svc-family">Familia</label>
+                        <div class="fw-semibold mb-1">Familia</div>
                         <select id="svc-family" class="form-select form-select-sm" name="family">
                             <option value="">Todas las familias</option>
                             {% for fam in families %}
@@ -42,15 +54,33 @@ nueva son un acordeón (solo una abierta, guardada por usuario).
                             {% endfor %}
                         </select>
                     </div>
-                    <div class="align-self-end">
-                        <button type="button" class="btn btn-sm btn-outline-secondary" id="svc-clear-sort">Quitar orden</button>
-                    </div>
                 </div>
+                <div class="mt-2 small">
+                    {% include "panel/_group_filter_select.html" with gf_id="svc-filter-group" gf_class="w-100" gf_who="máquinas" %}
+                </div>
+                <hr class="eb-filters-sep">
+                <div class="small fw-semibold mb-1">Selección</div>
+                <div class="d-flex align-items-center justify-content-between gap-2 small">
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" id="svc-only-selected" name="only_selected" value="1" autocomplete="off">
+                        <label class="form-check-label" for="svc-only-selected">Mostrar solo la selección actual</label>
+                    </div>
+                    <input type="hidden" name="selected_ids" id="svc-selected-ids" value="">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="svc-clear-sort">
+                        <i class="bi bi-x-circle me-1"></i>Quitar orden
+                    </button>
+                </div>
+                {% include "panel/_checkdrop_js.html" %}
             </form>
         </div>
+        {% include "panel/_selection_groups_box.html" with sg="machineGroup" sg_nodes=machine_group_nodes sg_collapsed=machine_groups_collapsed sg_parents=machine_group_parents sg_hint="máquinas" %}
         <div class="col-lg-5">
             <div class="border rounded p-2 h-100">
-                <div class="fw-bold small mb-1">Revisión cada… a la selección (<span id="svc-selected-count">0</span>)</div>
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <strong class="small"><span id="svc-mass-count">0</span> seleccionados</strong>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="svc-mass-clear">Limpiar</button>
+                </div>
+                <div class="small text-muted fw-bold">Revisión cada… a los marcados</div>
                 {% if can_edit %}
                 <div class="svc-bulk-grid mb-2">
                     <select class="form-select form-select-sm" id="svc-bulk-hours" aria-label="Revisión por horas">
@@ -69,7 +99,6 @@ nueva son un acordeón (solo una abierta, guardada por usuario).
                 {% else %}
                 <p class="small text-muted mb-2">Solo lectura: no tienes permiso para anotar revisiones.</p>
                 {% endif %}
-                <button type="button" class="btn btn-sm btn-link p-0" id="svc-clear-selection">Vaciar selección</button>
                 <div class="alert small py-1 px-2 mt-2 mb-0 d-none" id="svc-result" role="status"></div>
             </div>
         </div>
@@ -77,10 +106,28 @@ nueva son un acordeón (solo una abierta, guardada por usuario).
 </div>
 
 <div class="border rounded p-2" id="svc-bottom-panel">
-    <div class="fixed-list-scroll h-100 overflow-auto position-relative" id="svc-table-container">
-        {% include "panel/service_tab/_table.html" %}
+    <div class="row g-2 h-100">
+        <div class="col-lg-9 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1" data-eb-fullscreen-header>Centros de gasto</div>
+                <div class="fixed-list-scroll flex-grow-1 overflow-auto position-relative" id="svc-table-container">
+                    {% include "panel/service_tab/_table.html" %}
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1">Selección actual (<span id="svc-selection-count">0</span>)</div>
+                <div class="flex-scroll-y">
+                    <ul class="mb-0 small ps-0 list-unstyled" id="svc-selection-list"></ul>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
+<style>
+.eb-filters-sep { margin: .5rem 0; opacity: .15; }
+</style>
 
 {{ saved_selection|json_script:"svc-saved-selection" }}
 {% include "panel/_fixed_list_layout.html" with top_id="svc-top-panel" bottom_id="svc-bottom-panel" %}
@@ -93,8 +140,10 @@ nueva son un acordeón (solo una abierta, guardada por usuario).
     const filters = document.getElementById("svc-filters");
     const container = document.getElementById("svc-table-container");
     const result = document.getElementById("svc-result");
-    const selection = new Set(
-        (JSON.parse(document.getElementById("svc-saved-selection").textContent) || []).map(String)
+    // S153: pk -> código, para el visor "Selección actual".
+    const selection = new Map(
+        (JSON.parse(document.getElementById("svc-saved-selection").textContent) || [])
+            .map(item => [String(item.pk), item.label || ""])
     );
 
     function csrfToken() {
@@ -125,19 +174,46 @@ nueva son un acordeón (solo una abierta, guardada por usuario).
         refreshFilters();
     });
 
-    // Selección (persistida por usuario, directriz 4.24/4.15).
+    // Selección (persistida por usuario, directriz 4.24/4.15). S153:
+    // contador, "Limpiar", visor "Selección actual" y grupos de
+    // selección, como en Centros de gasto (directriz 4.27).
+    let machineGroups = null;
+    function paintSelection() {
+        document.getElementById("svc-mass-count").textContent = selection.size;
+        document.getElementById("svc-selection-count").textContent = selection.size;
+        document.getElementById("svc-selected-ids").value = Array.from(selection.keys()).join(",");
+        const list = document.getElementById("svc-selection-list");
+        list.innerHTML = "";
+        if (!selection.size) {
+            const li = document.createElement("li");
+            li.className = "text-muted";
+            li.textContent = "Nada seleccionado todavía.";
+            list.appendChild(li);
+        }
+        Array.from(selection.entries())
+            .sort((x, y) => (x[1] || "").localeCompare(y[1] || ""))
+            .forEach(function ([pk, label]) {
+                const li = document.createElement("li");
+                li.textContent = label || ("#" + pk);
+                list.appendChild(li);
+            });
+        if (machineGroups) machineGroups.refresh();
+    }
     function saveSelection() {
-        if (window.EbNavState) window.EbNavState.save(SCREEN_KEY, {selection: Array.from(selection)});
-        document.getElementById("svc-selected-count").textContent = selection.size;
+        if (window.EbNavState) window.EbNavState.save(SCREEN_KEY, {selection: Array.from(selection.keys())});
+        paintSelection();
     }
     function syncChecks() {
-        const boxes = container.querySelectorAll(".svc-select");
-        boxes.forEach(function (box) { box.checked = selection.has(box.value); });
-        const all = document.getElementById("svc-select-all");
+        const boxes = container.querySelectorAll(".svc-row-check");
+        boxes.forEach(function (box) {
+            if (selection.has(box.value) && !selection.get(box.value)) selection.set(box.value, box.dataset.label || "");
+            box.checked = selection.has(box.value);
+        });
+        const all = document.getElementById("svc-check-all");
         if (all) all.checked = boxes.length > 0 && Array.from(boxes).every(b => b.checked);
-        document.getElementById("svc-selected-count").textContent = selection.size;
+        paintSelection();
     }
-    document.getElementById("svc-clear-selection").addEventListener("click", function () {
+    document.getElementById("svc-mass-clear").addEventListener("click", function () {
         selection.clear();
         saveSelection();
         syncChecks();
@@ -245,16 +321,16 @@ nueva son un acordeón (solo una abierta, guardada por usuario).
         if (save) saveRow(save.closest(".svc-row"));
     });
     container.addEventListener("change", function (ev) {
-        if (ev.target.id === "svc-select-all") {
-            container.querySelectorAll(".svc-select").forEach(function (box) {
+        if (ev.target.id === "svc-check-all") {
+            container.querySelectorAll(".svc-row-check").forEach(function (box) {
                 box.checked = ev.target.checked;
-                if (box.checked) selection.add(box.value); else selection.delete(box.value);
+                if (box.checked) selection.set(box.value, box.dataset.label || ""); else selection.delete(box.value);
             });
             saveSelection();
             return;
         }
-        if (ev.target.classList.contains("svc-select")) {
-            if (ev.target.checked) selection.add(ev.target.value); else selection.delete(ev.target.value);
+        if (ev.target.classList.contains("svc-row-check")) {
+            if (ev.target.checked) selection.set(ev.target.value, ev.target.dataset.label || ""); else selection.delete(ev.target.value);
             saveSelection();
             syncChecks();
             return;
@@ -285,7 +361,7 @@ nueva son un acordeón (solo una abierta, guardada por usuario).
             return;
         }
         const data = new FormData();
-        data.append("ids", JSON.stringify(Array.from(selection)));
+        data.append("ids", JSON.stringify(Array.from(selection.keys())));
         Object.keys(fields).forEach(k => data.append(k, fields[k]));
         fetch(BULK_URL, {method: "POST", headers: {"X-CSRFToken": csrfToken()}, body: data})
             .then(r => r.json()).then(function (res) {
@@ -309,6 +385,27 @@ nueva son un acordeón (solo una abierta, guardada por usuario).
             bulk({apply_km: "1", km_interval: document.getElementById("svc-bulk-km").value}, "Revisión por km");
         });
     }
+    // S153: grupos de selección de máquinas, los mismos que en Centros
+    // de gasto (panel/static/panel/js/selection_groups.js).
+    machineGroups = window.EbSelectionGroups.init({
+        prefix: "machineGroup",
+        collapsedKey: "machine_groups",
+        saveUrl: "{% url 'panel:fleet_group_save' %}",
+        updateUrl: function (pk) { return "/panel/fleet/grupos/" + pk + "/guardar/"; },
+        deleteUrl: function (pk) { return "/panel/fleet/grupos/" + pk + "/eliminar/"; },
+        memberField: "machine_ids",
+        noun: "máquina",
+        getIds: function () { return Array.from(selection.keys()); },
+        setIds: function (pairs) {
+            selection.clear();
+            pairs.forEach(function ([pk, name]) { selection.set(String(pk), (name || "").split(" ")[0]); });
+            saveSelection();
+            syncChecks();
+            if (document.getElementById("svc-only-selected").checked) refreshFilters();
+        },
+        labelOf: function (pk) { return selection.get(String(pk)) || ""; },
+        toast: function (text, isError) { showResult(text, isError ? "danger" : "success"); },
+    });
     syncChecks();
     stickSecondHeaderRow();
     placeBarArrow();

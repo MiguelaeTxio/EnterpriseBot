@@ -13,7 +13,7 @@ datos nuevos. Todo llega resuelto de la vista.
 {% endcomment %}
 <tr class="svc-row" data-pk="{{ machine.pk }}" data-save-url="{% url 'panel:service_tab_row_save' pk=machine.pk %}">
     <td class="text-nowrap svc-fix-left">
-        <input type="checkbox" class="form-check-input svc-select me-1" value="{{ machine.pk }}" aria-label="Seleccionar {{ machine.code }}">
+        <input type="checkbox" class="form-check-input svc-row-check me-1" value="{{ machine.pk }}" data-label="{{ machine.code }}" aria-label="Seleccionar {{ machine.code }}">
         <a href="{% url 'panel:documentation_machine_detail' pk=machine.pk %}?service_open=1#machineServicePlan" class="fw-semibold" title="{{ machine.brand_model|default:'' }}">{{ machine.code }}</a>
     </td>
     <td class="small svc-family" data-label="Familia">{{ machine.family|default:"—" }}</td>
