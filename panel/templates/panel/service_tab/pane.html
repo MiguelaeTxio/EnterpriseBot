@@ -389,6 +389,7 @@ nueva son un acordeón (solo una abierta, guardada por usuario).
     // de gasto (panel/static/panel/js/selection_groups.js).
     machineGroups = window.EbSelectionGroups.init({
         prefix: "machineGroup",
+        memoryKey: "svc",
         collapsedKey: "machine_groups",
         saveUrl: "{% url 'panel:fleet_group_save' %}",
         updateUrl: function (pk) { return "/panel/fleet/grupos/" + pk + "/guardar/"; },

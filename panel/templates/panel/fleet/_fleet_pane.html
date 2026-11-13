@@ -983,6 +983,7 @@ la lista hace scroll. Dos paneles:
     // H31 (S148): grupos de selección de máquinas (como en Personal).
     machineGroups = window.EbSelectionGroups.init({
         prefix: "machineGroup",
+        memoryKey: "fleet",
         collapsedKey: "machine_groups",
         saveUrl: "{% url 'panel:fleet_group_save' %}",
         updateUrl: function (pk) { return "/panel/fleet/grupos/" + pk + "/guardar/"; },

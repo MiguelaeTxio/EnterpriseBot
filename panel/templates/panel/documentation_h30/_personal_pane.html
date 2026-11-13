@@ -742,6 +742,12 @@ las filas de debajo se desplacen de verdad.
     function checkedGroups() {
         return Array.from(groupList.querySelectorAll('.person-group-select-checkbox:checked')).map((el) => el.dataset.pk);
     }
+    // S153: los grupos marcados se recuerdan en el navegador; al recargar
+    // o volver a la pestaña se sigue "cambiando el grupo" (Se añaden /
+    // Se quitan, Actualizar el grupo), como en panel/js/selection_groups.js.
+    function rememberPersonChecked() {
+        try { window.sessionStorage.setItem('ebSelectionGroups:personGroup', JSON.stringify(checkedGroups())); } catch (e) { /* sin almacenamiento */ }
+    }
 
     // S147 (Miguel Ángel): con un grupo marcado, cambiarle el nombre es
     // crear OTRO grupo (el original no se toca) con la selección de ese
@@ -972,6 +978,7 @@ las filas de debajo se desplacen de verdad.
         syncCheckboxesToSelection();
         refreshBar();
         refreshPersonSelectionPreview();
+        rememberPersonChecked();
     }
     window.onPersonGroupSelectChange = onPersonGroupSelectChange;
 
@@ -1020,9 +1027,24 @@ las filas de debajo se desplacen de verdad.
         document.getElementById('personGroupParent').value = '';
         document.getElementById('personGroupFormResult').innerHTML = '';
         refreshPersonGroupDiff();
+        rememberPersonChecked();
     }
     window.resetPersonGroupForm = resetPersonGroupForm;
     buildParentPicker();
+    (function restorePersonChecked() {
+        let saved = [];
+        try { saved = JSON.parse(window.sessionStorage.getItem('ebSelectionGroups:personGroup') || '[]') || []; } catch (e) { saved = []; }
+        saved.forEach((pk) => { const cb = groupCheckbox(pk); if (cb) cb.checked = true; });
+        const checkedSet = new Set(checkedGroups());
+        if (!checkedSet.size) return;
+        const roots = Array.from(checkedSet).filter((g) => {
+            const row = groupRow(g);
+            return !(row && row.dataset.parent && checkedSet.has(row.dataset.parent));
+        });
+        activatePersonGroupManagement();
+        setEditingTarget(roots.length === 1 ? roots[0] : '');
+        refreshPersonGroupDiff();
+    }());
 
     // H31 (S119): reutilizado tambien por la asignacion masiva de
     // requisito de documentacion (mas abajo) -- Miguel Angel: "deberia
@@ -1056,6 +1078,7 @@ las filas de debajo se desplacen de verdad.
             setEditingTarget('');
         }
         refreshPersonGroupDiff();
+        rememberPersonChecked();
     }
 
     function savePersonGroup() {

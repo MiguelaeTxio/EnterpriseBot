@@ -281,6 +281,7 @@ botón de cada fila le pasa trabajador, tipo y etiqueta de la fecha.
     {% if is_personal %}
     window.alertsGroups = window.EbSelectionGroups.init({
         prefix: "alertsGroup",
+        memoryKey: "alerts-{{ domain }}",
         collapsedKey: "person_groups",
         saveUrl: "{% url 'panel:documentation_personal_group_create' %}",
         updateUrl: function (pk) { return "{% url 'panel:documentation_personal_group_update' 0 %}".replace("/0/", "/" + pk + "/"); },
@@ -317,6 +318,7 @@ botón de cada fila le pasa trabajador, tipo y etiqueta de la fecha.
     {% else %}
     window.alertsGroups = window.EbSelectionGroups.init({
         prefix: "alertsGroup",
+        memoryKey: "alerts-{{ domain }}",
         collapsedKey: "machine_groups",
         saveUrl: "{% url 'panel:fleet_group_save' %}",
         updateUrl: function (pk) { return "/panel/fleet/grupos/" + pk + "/guardar/"; },

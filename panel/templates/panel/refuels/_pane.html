@@ -583,6 +583,7 @@ repostado o no, y las fechas no cuentan (se desactivan).
     // máquinas de las filas marcadas.
     const machineGroups = window.EbSelectionGroups.init({
         prefix: "machineGroup",
+        memoryKey: "rfl",
         collapsedKey: "machine_groups",
         saveUrl: "{% url 'panel:fleet_group_save' %}",
         updateUrl: function (pk) { return "/panel/fleet/grupos/" + pk + "/guardar/"; },

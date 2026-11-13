@@ -19,6 +19,8 @@
 //     labelOf: (pk) => "nombre",
 //     toast: (texto, esError) => {...},
 //     extra: (formData, accion) => {...},  // opcional: campos de más
+//     memoryKey: "fleet",                 // opcional: dónde se recuerdan
+//                                         // los grupos marcados
 //   });
 // Devuelve {refresh}: llamarlo cada vez que cambie la selección.
 // Reglas (iguales que Personal): marcar grupos selecciona la suma de
@@ -72,6 +74,30 @@
         }
         function checkedGroups() {
             return Array.from(list.querySelectorAll(".person-group-select-checkbox:checked")).map((el) => el.dataset.pk);
+        }
+        // S153 (Miguel Ángel: "ha llegado un momento en el que ya no me
+        // permitía [...] no salía para actualizar ni para añadir"): al
+        // recargar o volver a la pestaña se recuperaba la selección pero
+        // no el grupo marcado, así que el recuadro dejaba de estar
+        // "cambiando el grupo" (sin "Se añaden" ni "Actualizar el
+        // grupo"; Guardar creaba uno nuevo). Los grupos marcados se
+        // recuerdan en el navegador (sessionStorage, por pestaña).
+        const memory = "ebSelectionGroups:" + (cfg.memoryKey || p);
+        function rememberChecked() {
+            try { window.sessionStorage.setItem(memory, JSON.stringify(checkedGroups())); } catch (e) { /* sin almacenamiento */ }
+        }
+        function restoreChecked() {
+            let saved = [];
+            try { saved = JSON.parse(window.sessionStorage.getItem(memory) || "[]") || []; } catch (e) { saved = []; }
+            saved.forEach((pk) => { const cb = box(pk); if (cb) cb.checked = true; });
+            const checkedSet = new Set(checkedGroups());
+            if (!checkedSet.size) return;
+            const roots = Array.from(checkedSet).filter((g) => {
+                const r = row(g);
+                return !(r && r.dataset.parent && checkedSet.has(r.dataset.parent));
+            });
+            activate();
+            setEditingTarget(roots.length === 1 ? roots[0] : "");
         }
         function isNewCopy() {
             return Boolean(editingPk) && $("Name").value.trim() !== editingName;
@@ -259,6 +285,7 @@
             $("FormResult").innerHTML = "";
             setEditingTarget(roots.length === 1 ? roots[0] : "");
             if (!checkedGroups().length) $("Name").value = "";
+            rememberChecked();
             refresh();
         }
 
@@ -326,6 +353,7 @@
             } else {
                 setEditingTarget("");
             }
+            rememberChecked();
             refresh();
         }
 
@@ -335,6 +363,7 @@
             $("Name").value = "";
             $("Parent").value = "";
             $("FormResult").innerHTML = "";
+            rememberChecked();
             refresh();
         }
 
@@ -405,6 +434,8 @@
         $("ResetBtn").addEventListener("click", reset);
         applyCollapsed();
         buildParentPicker();
+        restoreChecked();
+        refresh();
         return {refresh: refresh};
     }
 

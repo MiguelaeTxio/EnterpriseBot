@@ -651,6 +651,7 @@ marcados".
     // selecciona los accesorios entregados ahora a sus máquinas.
     const machineGroups = window.EbSelectionGroups.init({
         prefix: "machineGroup",
+        memoryKey: "lifting",
         collapsedKey: "machine_groups",
         saveUrl: "{% url 'panel:fleet_group_save' %}",
         updateUrl: function (pk) { return "/panel/fleet/grupos/" + pk + "/guardar/"; },
