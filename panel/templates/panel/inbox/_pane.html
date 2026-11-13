@@ -28,7 +28,55 @@ carpeta abierta se recuerda por usuario (clave "folder").
 <div id="inbox-invoices-pane" class="d-none" data-url="{% url 'supplier_invoices:pane' %}"></div>
 <div class="border rounded p-2 mb-2" id="inbox-top-panel">
     <div class="row g-2">
-        <div class="col-lg-6">
+        {# S153 (directriz 4.27): el mismo orden que las demás pestañas -- Buscar y filtrar, lo propio de la pestaña (aquí, subir; los archivos no tienen grupos) y Acciones con "N seleccionados · Limpiar". #}
+        <div class="col-lg-4">
+            <div class="border rounded p-2 h-100">
+                <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                <div class="d-flex flex-wrap gap-2 mb-2">
+                    <input id="inbox-filter-search" type="search" name="search"
+                           class="form-control form-control-sm w-100"
+                           placeholder="Buscar por archivo, trabajador, tipo o resultado…"
+                           value="{{ filter_search }}" autocomplete="off"
+                           hx-get="{% url 'panel:inbox_results' %}"
+                           hx-target="#inbox-table-container"
+                           hx-include="#inbox-filter-search, #inbox-filter-status, #inbox-only-selected, #inbox-selected-ids, #inbox-sort-inputs"
+                           hx-trigger="input changed delay:300ms, search">
+                    <select id="inbox-filter-status" name="status" class="form-select form-select-sm w-auto" autocomplete="off"
+                            hx-get="{% url 'panel:inbox_results' %}"
+                            hx-target="#inbox-table-container"
+                            hx-include="#inbox-filter-search, #inbox-filter-status, #inbox-only-selected, #inbox-selected-ids, #inbox-sort-inputs"
+                            hx-trigger="change">
+                        <option value="">Todas las situaciones</option>
+                        <option value="attention" {% if filter_status == 'attention' %}selected{% endif %}>No conformes y errores</option>
+                        {% for code, label in status_choices %}
+                        <option value="{{ code }}" {% if filter_status == code %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" id="inbox-only-selected" name="only_selected" value="1" autocomplete="off"
+                               hx-get="{% url 'panel:inbox_results' %}"
+                               hx-target="#inbox-table-container"
+                               hx-include="#inbox-filter-search, #inbox-filter-status, #inbox-only-selected, #inbox-selected-ids, #inbox-sort-inputs"
+                               hx-trigger="change, inbox-selection-refresh">
+                        <label class="form-check-label small" for="inbox-only-selected">Mostrar solo la selección actual</label>
+                    </div>
+                    <input type="hidden" id="inbox-selected-ids" name="selected_ids" value="">
+                    <button type="button"
+                            class="btn btn-sm btn-outline-secondary{% if not sort_active %} d-none{% endif %}"
+                            id="inbox-clear-sort"
+                            hx-get="{% url 'panel:inbox_results' %}"
+                            hx-target="#inbox-table-container"
+                            hx-include="#inbox-filter-search, #inbox-filter-status, #inbox-only-selected, #inbox-selected-ids"
+                            hx-vals='{"sort": ""}'
+                            title="Deshacer todos los órdenes aplicados">
+                        <i class="bi bi-x-circle me-1"></i>Quitar orden
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3">
             <div class="border rounded p-2 h-100 d-flex flex-column">
                 <div class="fw-bold small mb-1">Subir documentos</div>
                 <div id="inbox-drop-zone" class="inbox-drop-zone rounded text-center p-3 mb-2">
@@ -58,51 +106,8 @@ carpeta abierta se recuerda por usuario (clave "folder").
                 <ul class="small mb-0 mt-1 ps-3 text-danger d-none" id="inbox-upload-errors"></ul>
             </div>
         </div>
-        <div class="col-lg-6">
+        <div class="col-lg-5">
             <div class="border rounded p-2 h-100">
-                <div class="fw-bold small mb-1">Buscar y filtrar</div>
-                <div class="d-flex gap-2 mb-2">
-                    <input id="inbox-filter-search" type="search" name="search"
-                           class="form-control form-control-sm"
-                           placeholder="Buscar por archivo, trabajador, tipo o resultado…"
-                           value="{{ filter_search }}" autocomplete="off"
-                           hx-get="{% url 'panel:inbox_results' %}"
-                           hx-target="#inbox-table-container"
-                           hx-include="#inbox-filter-search, #inbox-filter-status, #inbox-only-selected, #inbox-selected-ids, #inbox-sort-inputs"
-                           hx-trigger="input changed delay:300ms, search">
-                    <select id="inbox-filter-status" name="status" class="form-select form-select-sm w-auto" autocomplete="off"
-                            hx-get="{% url 'panel:inbox_results' %}"
-                            hx-target="#inbox-table-container"
-                            hx-include="#inbox-filter-search, #inbox-filter-status, #inbox-only-selected, #inbox-selected-ids, #inbox-sort-inputs"
-                            hx-trigger="change">
-                        <option value="">Todos los estados</option>
-                        <option value="attention" {% if filter_status == 'attention' %}selected{% endif %}>No conformes y errores</option>
-                        {% for code, label in status_choices %}
-                        <option value="{{ code }}" {% if filter_status == code %}selected{% endif %}>{{ label }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
-                    <div class="form-check mb-0">
-                        <input class="form-check-input" type="checkbox" id="inbox-only-selected" name="only_selected" value="1" autocomplete="off"
-                               hx-get="{% url 'panel:inbox_results' %}"
-                               hx-target="#inbox-table-container"
-                               hx-include="#inbox-filter-search, #inbox-filter-status, #inbox-only-selected, #inbox-selected-ids, #inbox-sort-inputs"
-                               hx-trigger="change, inbox-selection-refresh">
-                        <label class="form-check-label small" for="inbox-only-selected">Mostrar solo la selección actual</label>
-                    </div>
-                    <input type="hidden" id="inbox-selected-ids" name="selected_ids" value="">
-                    <button type="button"
-                            class="btn btn-sm btn-outline-secondary{% if not sort_active %} d-none{% endif %}"
-                            id="inbox-clear-sort"
-                            hx-get="{% url 'panel:inbox_results' %}"
-                            hx-target="#inbox-table-container"
-                            hx-include="#inbox-filter-search, #inbox-filter-status, #inbox-only-selected, #inbox-selected-ids"
-                            hx-vals='{"sort": ""}'
-                            title="Deshacer todos los órdenes aplicados">
-                        <i class="bi bi-x-circle me-1"></i>Quitar orden
-                    </button>
-                </div>
                 <div class="d-flex align-items-center gap-2 flex-wrap">
                     <strong class="small"><span id="inbox-mass-count">0</span> seleccionados</strong>
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="inbox-mass-clear">Limpiar</button>
