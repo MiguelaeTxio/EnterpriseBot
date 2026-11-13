@@ -118,7 +118,7 @@ historial: quién, cuándo, antes, después y motivo).
             <td data-label="Incidencias">
                 {% for incident in row.incidents %}<div class="text-danger">{{ incident }}</div>{% endfor %}
                 {# S143: casilla de visado; al corregir, queda visada sola. S153: la casilla se puede marcar siempre (antes, en una jornada corregida salía desactivada). #}
-                {% if row.incidents and has_account %}
+                {% if has_account and not row.only_cancelled %}
                 <label class="form-check text-nowrap mb-0 mt-1"{% if row.corrected_any %} title="Corregida: queda visada"{% else %} title="Marcar que el supervisor la ha visto"{% endif %}>
                     <input type="checkbox" class="form-check-input cw-review" data-day="{{ row.day|date:'Y-m-d' }}"{% if row.reviewed %} checked{% endif %}>
                     <span class="form-check-label">Visado</span>

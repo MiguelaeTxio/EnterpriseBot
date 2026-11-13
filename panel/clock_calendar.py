@@ -66,10 +66,12 @@ def _day_cell(day, shifts, today):
     """
     worked = [s for s in shifts if not s.get("only_cancelled")]
     with_incidents = [s for s in worked if s.get("incidents")]
-    if with_incidents:
-        status = (DAY_REVIEWED if all(s.get("reviewed")
-                                      for s in with_incidents)
-                  else DAY_ISSUES)
+    if any(not s.get("reviewed") for s in with_incidents):
+        status = DAY_ISSUES
+    # S153: un día visado (casilla o corregido) en amarillo, tenga
+    # incidencias o no.
+    elif worked and all(s.get("reviewed") for s in worked):
+        status = DAY_REVIEWED
     elif any(s.get("in_progress") for s in worked):
         status = DAY_OPEN
     elif worked:

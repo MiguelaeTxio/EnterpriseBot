@@ -79,7 +79,7 @@ mismas fechas: Jornadas, Calendario y Correcciones.
     <tbody>
         {% for shift in shifts %}
         {% if not shift.only_cancelled %}
-        <tr{% if shift.incidents %} class="{% if shift.reviewed %}table-warning{% else %}table-danger{% endif %}"{% elif shift.in_progress %} class="table-success" data-ok{% else %} data-ok{% endif %}>
+        <tr{% if shift.incidents and not shift.reviewed %} class="table-danger"{% elif shift.reviewed %} class="table-warning"{% if not shift.incidents %} data-ok{% endif %}{% elif shift.in_progress %} class="table-success" data-ok{% else %} data-ok{% endif %}>
             <td>{{ shift.day|date:"D d/m" }}</td>
             {% for press in shift.presses %}
             <td>
@@ -104,7 +104,7 @@ mismas fechas: Jornadas, Calendario y Correcciones.
             <td>{% for incident in shift.incidents %}<div class="text-danger fw-semibold">{{ incident }}</div>{% endfor %}{% if shift.rest_note %}<div class="text-muted small">{{ shift.rest_note }}</div>{% endif %}
                 {% if has_account %}
                 {# S153 (Miguel Ángel): el visado en todas las vistas de fichajes, también en la ficha del trabajador. #}
-                {% if shift.incidents %}
+                {% if not shift.only_cancelled %}
                 <label class="form-check text-nowrap mb-0" title="Marcar que el supervisor la ha visto: sus incidencias dejan de contar.">
                     <input type="checkbox" class="form-check-input" data-day="{{ shift.day|date:'Y-m-d' }}"
                            data-url="{% url 'panel:clock_worker_review' person.pk %}"{% if shift.reviewed %} checked{% endif %}
@@ -303,8 +303,9 @@ function clkReview(box) {
             box.disabled = false;
             if (!r.ok) { box.checked = !box.checked; alert('No se ha podido guardar el visado.'); return; }
             var row = box.closest('tr');
+            var hasIncidents = !!row.querySelector('.text-danger.fw-semibold');
             row.classList.toggle('table-warning', box.checked);
-            row.classList.toggle('table-danger', !box.checked);
+            row.classList.toggle('table-danger', !box.checked && hasIncidents);
         })
         .catch(function () { box.disabled = false; box.checked = !box.checked; alert('Sin conexión con el servidor: no se ha guardado nada.'); });
 }

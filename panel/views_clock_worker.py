@@ -63,7 +63,10 @@ STATUS_OPEN = "open"
 STATUS_CHOICES = (
     (STATUS_OPEN, "En curso"),
     (STATUS_OK, "Correctas"),
-    (STATUS_REVIEWED, "Incidencias visadas"),
+    # S153 (Miguel Ángel, con captura de Juan corrigiendo jornadas): se
+    # visa cualquier jornada, tenga incidencias o no; visada = casilla
+    # "Visado" o corregida.
+    (STATUS_REVIEWED, "Visadas"),
     (STATUS_ISSUES, "Incidencias sin visar"),
     (STATUS_CANCELLED, "Anuladas"),
 )
@@ -202,9 +205,10 @@ def _row(shift):
     changes = shift.get("changes") or []
     if shift.get("only_cancelled"):
         status = STATUS_CANCELLED
-    elif shift.get("incidents"):
-        status = (STATUS_REVIEWED if shift.get("reviewed")
-                  else STATUS_ISSUES)
+    elif shift.get("incidents") and not shift.get("reviewed"):
+        status = STATUS_ISSUES
+    elif shift.get("reviewed"):
+        status = STATUS_REVIEWED
     elif shift.get("in_progress"):
         status = STATUS_OPEN
     else:
