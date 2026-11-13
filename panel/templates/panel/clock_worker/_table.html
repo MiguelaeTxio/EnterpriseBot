@@ -137,6 +137,11 @@ historial: quién, cuándo, antes, después y motivo).
                         <i class="bi bi-three-dots-vertical"></i>
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end">
+                        {# S149 (Miguel Ángel): editar toda la jornada de una vez (corregir, anular, añadir y reordenar). #}
+                        <li><a class="dropdown-item cw-fix fw-semibold" href="#" data-action="EDIT" data-presses="{{ row.edit_json }}" data-day="{{ row.day|date:'Y-m-d' }}"
+                               data-label="Jornada del {{ row.day|date:'d/m/Y' }}"
+                               title="Todos los fichajes del día en una tabla: cambiar horas y tipos, anular y añadir. Se guarda todo junto, con un motivo."><i class="bi bi-list-check me-1"></i>Editar la jornada</a></li>
+                        <li><hr class="dropdown-divider"></li>
                         {% for part in row.parts %}{% with row=part %}
                         {% if not forloop.first %}<li><hr class="dropdown-divider"></li>{% endif %}
                         {% if forloop.revcounter0 or not forloop.first %}<li><h6 class="dropdown-header">Jornada de las {{ row.entry.time|date:"H:i"|default:"—" }}</h6></li>{% endif %}

@@ -252,6 +252,19 @@ screen_key "clock_worker"); la selección, por trabajador.
                 <input type="hidden" name="event_id" id="cw-fix-event">
                 <input type="hidden" name="event_ids" id="cw-fix-events">
                 <input type="hidden" name="action" id="cw-fix-action">
+                {# S149: «Editar la jornada»: todas las pulsaciones del día en una tabla. #}
+                <div id="cw-fix-edit" class="d-none">
+                    <input type="hidden" name="edit_rows" id="cw-edit-input">
+                    <div class="text-muted mb-1">Cambia la hora, el fichaje o el tipo de cada fila; al cambiar la hora se reordenan solas. La papelera anula la fila (se puede deshacer antes de guardar). Nada se borra: todo queda en el historial.</div>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-1">
+                            <thead><tr><th>Hora</th><th>Fichaje</th><th>Tipo</th><th></th></tr></thead>
+                            <tbody id="cw-edit-rows"></tbody>
+                        </table>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-primary mb-2" id="cw-edit-add"><i class="bi bi-plus-lg"></i> Añadir fichaje</button>
+                    <div id="cw-edit-check" class="mb-2"></div>
+                </div>
                 <div id="cw-fix-change">
                     <div class="row g-2 mb-2">
                         <div class="col-6">
@@ -563,18 +576,28 @@ screen_key "clock_worker"); la selección, por trabajador.
         document.getElementById("cw-fix-label").textContent = opts.label || "";
         const isMeal = opts.action === "MEAL";
         const isInsert = opts.action === "INSERT";
-        document.getElementById("cwFixModalLabel").textContent = opts.action === "ADD" ? "Añadir un fichaje"
+        const isEdit = opts.action === "EDIT";
+        document.getElementById("cwFixModalLabel").textContent = isEdit ? "Editar la jornada" : opts.action === "ADD" ? "Añadir un fichaje"
             : (opts.action === "CANCEL" ? "Anular"
                 : (isMeal ? (opts.entry ? "Añadir la pausa de comida" : "Corregir la pausa de comida")
                     : (isInsert ? "Intercalar un tipo" : "Corregir un fichaje")));
         const isCancel = opts.action === "CANCEL";
-        document.getElementById("cw-fix-change").classList.toggle("d-none", isCancel || isMeal || isInsert);
+        document.getElementById("cw-fix-change").classList.toggle("d-none", isCancel || isMeal || isInsert || isEdit);
+        // S149: «Editar la jornada».
+        document.getElementById("cw-fix-edit").classList.toggle("d-none", !isEdit);
+        editRows = [];
+        if (isEdit) {
+            try { editRows = JSON.parse(opts.presses || "[]"); } catch (e) { editRows = []; }
+            editRows.forEach(function (r) { r.orig = {kind: r.kind, at: r.at, type: r.type ? String(r.type) : ""}; r.type = r.type ? String(r.type) : ""; });
+            editDay = opts.day || "";
+        }
+        drawEdit();
         // S149: intercalar un tipo.
         document.getElementById("cw-fix-insert").classList.toggle("d-none", !isInsert);
         document.getElementById("cw-fix-insert-entry").value = isInsert ? (opts.entry || "") : "";
         document.getElementById("cwFixInsertStart").value = isInsert ? (opts.start || "") : "";
         document.getElementById("cwFixInsertEnd").value = "";
-        modalDialog.classList.toggle("modal-lg", isInsert);
+        modalDialog.classList.toggle("modal-lg", isInsert || isEdit);
         insBar = [];
         try { insBar = isInsert && opts.bar ? JSON.parse(opts.bar) : []; } catch (e) { insBar = []; }
         insNext = "start";
@@ -593,6 +616,118 @@ screen_key "clock_worker"); la selección, por trabajador.
         document.getElementById("cwFixTime").value = opts.time || "";
         fixModal().show();
     }
+    // S149 (Miguel Ángel): «Editar la jornada». Una fila por pulsación;
+    // se reordenan por hora, se anulan con la papelera (deshacer antes de
+    // guardar) y se añaden nuevas. Antes de guardar se comprueba que la
+    // jornada tiene sentido (el servidor lo vuelve a comprobar con lo que
+    // hay justo antes y después).
+    const KIND_OPTS = [{% for value, label in kind_choices %}["{{ value }}", "{{ label|escapejs }}"]{% if not forloop.last %}, {% endif %}{% endfor %}];
+    const TYPE_OPTS = [{% for clock_type in clock_types %}["{{ clock_type.pk }}", "{{ clock_type.name|escapejs }}"]{% if not forloop.last %}, {% endif %}{% endfor %}];
+    const KIND_NAME = {}; KIND_OPTS.forEach(function (k) { KIND_NAME[k[0]] = k[1]; });
+    const TYPE_NAME = {}; TYPE_OPTS.forEach(function (t) { TYPE_NAME[t[0]] = t[1]; });
+    let editRows = [], editDay = "";
+    function editSort() { editRows.sort(function (a, b) { return (a.at || "").localeCompare(b.at || ""); }); }
+    function editChanged(r) {
+        return !r.id || r.del || r.kind !== r.orig.kind || r.at !== r.orig.at || (r.kind !== "OUT" && r.type !== r.orig.type);
+    }
+    function editProblems() {
+        const live = editRows.filter(function (r) { return !r.del; });
+        const out = [];
+        if (!editRows.some(editChanged)) out.push("No has cambiado nada.");
+        live.forEach(function (r) {
+            if (!r.at) out.push("Falta la hora de algún fichaje.");
+            if (r.kind === "CHG" && !r.type) out.push("El cambio de las " + (r.at || "").slice(11, 16) + " necesita un tipo.");
+        });
+        for (let i = 1; i < live.length; i++) {
+            if (live[i].at && live[i].at === live[i - 1].at) out.push("Hay dos fichajes a las " + live[i].at.slice(11, 16) + ": deja uno.");
+        }
+        let open = null;
+        live.forEach(function (r, i) {
+            const hm = (r.at || "").slice(11, 16);
+            if (i === 0) { open = r.kind !== "OUT"; if (r.kind !== "IN") out.push("La jornada empieza con " + (r.kind === "OUT" ? "una salida" : "un cambio de tipo") + " (" + hm + "): ¿falta la entrada?"); return; }
+            if (r.kind === "IN" && open) out.push("La entrada de las " + hm + " llega con la jornada abierta: falta una salida antes.");
+            if (r.kind !== "IN" && !open) out.push((r.kind === "OUT" ? "La salida" : "El cambio de tipo") + " de las " + hm + " no tiene una entrada antes.");
+            open = r.kind !== "OUT";
+        });
+        return out.filter(function (v, i, a) { return a.indexOf(v) === i; });
+    }
+    function editSelect(options, value, cls, disabled, blank) {
+        const sel = document.createElement("select");
+        sel.className = "form-select form-select-sm " + cls;
+        if (blank) { const o = document.createElement("option"); o.value = ""; o.textContent = "—"; sel.appendChild(o); }
+        options.forEach(function (opt) {
+            const o = document.createElement("option");
+            o.value = opt[0]; o.textContent = opt[1];
+            sel.appendChild(o);
+        });
+        sel.value = value || "";
+        sel.disabled = !!disabled;
+        return sel;
+    }
+    function drawEdit() {
+        const body = document.getElementById("cw-edit-rows");
+        if (!body) return;
+        body.innerHTML = "";
+        editSort();
+        editRows.forEach(function (r, i) {
+            const tr = document.createElement("tr");
+            tr.className = r.del ? "table-danger" : (!r.id ? "table-success" : (editChanged(r) ? "table-warning" : ""));
+            const at = document.createElement("input");
+            at.type = "datetime-local"; at.className = "form-control form-control-sm"; at.value = r.at || ""; at.disabled = !!r.del;
+            at.addEventListener("change", function () { r.at = at.value; drawEdit(); });
+            const kind = editSelect(KIND_OPTS, r.kind, "", r.del, false);
+            kind.addEventListener("change", function () { r.kind = kind.value; drawEdit(); });
+            const type = editSelect(TYPE_OPTS, r.kind === "OUT" ? "" : r.type, "", r.del || r.kind === "OUT", true);
+            type.addEventListener("change", function () { r.type = type.value; drawEdit(); });
+            const del = document.createElement("button");
+            del.type = "button";
+            del.className = "btn btn-sm " + (r.del ? "btn-outline-secondary" : "btn-outline-danger");
+            del.innerHTML = r.del ? '<i class="bi bi-arrow-counterclockwise"></i>' : '<i class="bi bi-trash"></i>';
+            del.title = r.del ? "Deshacer: no anular" : (r.id ? "Anular este fichaje" : "Quitar esta fila");
+            del.setAttribute("aria-label", del.title);
+            del.addEventListener("click", function () {
+                if (!r.id) { editRows.splice(i, 1); } else { r.del = !r.del; }
+                drawEdit();
+            });
+            [at, kind, type, del].forEach(function (el, col) {
+                const td = document.createElement("td");
+                td.appendChild(el);
+                if (col === 0 && r.del) { const s = document.createElement("div"); s.className = "text-danger"; s.textContent = "Se anula"; td.appendChild(s); }
+                if (col === 0 && !r.id) { const s = document.createElement("div"); s.className = "text-success"; s.textContent = "Nuevo"; td.appendChild(s); }
+                tr.appendChild(td);
+            });
+            body.appendChild(tr);
+        });
+        const check = document.getElementById("cw-edit-check");
+        const problems = editProblems().filter(function (p) { return p !== "No has cambiado nada."; });
+        check.innerHTML = "";
+        if (problems.length) {
+            problems.forEach(function (p) { const d = document.createElement("div"); d.className = "text-danger"; d.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>'; d.appendChild(document.createTextNode(p)); check.appendChild(d); });
+        } else {
+            const live = editRows.filter(function (r) { return !r.del; });
+            const d = document.createElement("div");
+            d.className = "text-success";
+            d.textContent = live.length ? "Quedará: " + live.map(function (r) {
+                return r.at.slice(11, 16) + " " + (KIND_NAME[r.kind] || r.kind).toLowerCase() + (r.kind !== "OUT" && r.type ? " (" + (TYPE_NAME[r.type] || "") + ")" : "");
+            }).join(" → ") : "Quedará sin fichajes ese día.";
+            check.appendChild(d);
+        }
+    }
+    document.getElementById("cw-edit-add").addEventListener("click", function () {
+        const live = editRows.filter(function (r) { return !r.del && r.at; });
+        editSort();
+        const last = live[live.length - 1];
+        let at = editDay ? editDay + "T08:00" : "";
+        if (last) {
+            const d = new Date(last.at);
+            d.setHours(d.getHours() + 1);
+            at = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") +
+                "T" + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+        }
+        editRows.push({id: null, kind: last && last.kind !== "OUT" ? "OUT" : "IN", at: at,
+                       type: last && last.type ? last.type : "", orig: {}});
+        drawEdit();
+    });
     // S149: barra de tramos del modal «Intercalar un tipo».
     const modalDialog = fixModalEl.querySelector(".modal-dialog");
     const insBarEl = document.getElementById("cw-ins-bar");
@@ -730,6 +865,7 @@ screen_key "clock_worker"); la selección, por trabajador.
             kind: link.dataset.kind, type: link.dataset.type, time: link.dataset.time, label: link.dataset.label,
             out: link.dataset.out, back: link.dataset.back, entry: link.dataset.entry,
             start: link.dataset.start, end: link.dataset.end, bar: link.dataset.bar,
+            presses: link.dataset.presses, day: link.dataset.day,
         });
     });
     document.getElementById("cw-add").addEventListener("click", function () {
@@ -746,6 +882,13 @@ screen_key "clock_worker"); la selección, por trabajador.
     document.getElementById("cw-fix-save").addEventListener("click", function () {
         const btn = this;
         if (!document.getElementById("cwFixReason").value.trim()) { showToast("Escribe el motivo.", true); return; }
+        if (document.getElementById("cw-fix-action").value === "EDIT") {
+            const problems = editProblems();
+            if (problems.length) { showToast(problems[0], true); return; }
+            document.getElementById("cw-edit-input").value = JSON.stringify(editRows.map(function (r) {
+                return {id: r.id || null, "delete": !!r.del, kind: r.kind, at: r.at, type: r.kind === "OUT" ? null : (r.type || null)};
+            }));
+        }
         const body = new FormData(fixForm);
         if (body.get("action") === "CANCEL" && body.get("event_ids")) body.delete("event_id");
         new FormData(filters).forEach(function (value, key) { body.append("_f_" + key, value); });

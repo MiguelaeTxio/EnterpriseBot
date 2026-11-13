@@ -23,6 +23,7 @@ las mismas que en el detalle (views_clock_events.apply_correction): la
 pulsación nunca se toca, queda quién, cuándo y por qué.
 """
 import datetime
+import json
 
 from django.http import HttpResponse
 from django.shortcuts import render
@@ -219,6 +220,12 @@ def _row(shift):
     return {
         **shift,
         "key": key,
+        # S149: las pulsaciones vigentes para «Editar la jornada».
+        "edit_presses": [{
+            "id": p["event"].pk, "kind": p["event"].kind,
+            "at": p["input_value"],
+            "type": p["event"].clock_type_id,
+        } for p in presses if not shift.get("only_cancelled")],
         "entry": entry,
         "exit": exit_,
         "changes": changes,
@@ -276,6 +283,7 @@ def _group_by_day(rows):
             row = dict(parts[0])
             row["parts"] = parts
             row["gaps"] = []
+            row["edit_json"] = json.dumps(row.get("edit_presses") or [])
             groups.append(row)
             continue
         live = [p for p in parts if not p.get("only_cancelled")] or parts
@@ -329,6 +337,8 @@ def _group_by_day(rows):
                              "seconds": seconds,
                              "quick": seconds < QUICK_GAP_SECONDS})
         row["gaps"] = gaps
+        row["edit_json"] = json.dumps(
+            [item for p in live for item in p.get("edit_presses") or []])
         # La barra de todo el día.
         segments = [seg for p in live for seg in (p.get("bar") or [])]
         if segments:

@@ -422,3 +422,123 @@ def insert_type(company_user, person, corrected_by, reason, entry_event_id,
                       ClockEvent.Kind.CHANGE, when, reason,
                       user_agent=user_agent, new_clock_type_id=type_id)
         return len(steps)
+
+
+def edit_presses(company_user, person, corrected_by, reason, rows,
+                 user_agent=""):
+    """
+    Apply a whole edit of a shift's presses at once.
+
+    ---
+
+    Edita de una vez las pulsaciones de una jornada (S149, Miguel Ángel:
+    "simplificar la edición de la jornada [...] reordenar, eliminar [...]
+    un CRUD más sofisticado"). `rows` = la jornada como queda, una fila
+    por pulsación: {"id": pulsación vigente o None si es nueva,
+    "delete": bool, "kind": IN/CHG/OUT, "at": datetime, "type": id o
+    None}. Antes de tocar nada se comprueba que la jornada que resulta
+    tiene sentido (por orden de hora, con lo que hay justo antes y justo
+    después): una entrada con la jornada cerrada; un cambio de tipo o una
+    salida con ella abierta; nunca dos pulsaciones en el mismo minuto.
+    Luego, en una transacción: anula las borradas, corrige las cambiadas
+    y añade las nuevas, todo con el mismo motivo y en el historial.
+    Devuelve (anuladas, corregidas, añadidas).
+    """
+    if not (reason or "").strip():
+        raise ClockCorrectionError("El motivo de la corrección es "
+                                   "obligatorio.")
+    if company_user is None:
+        raise ClockCorrectionError("Ese trabajador no tiene usuario del "
+                                   "panel en esta empresa.")
+    events = ClockEvent.objects.current().filter(company_user=company_user)
+    labels = dict(ClockEvent.Kind.choices)
+    with transaction.atomic():
+        ids = [int(r["id"]) for r in rows if r.get("id")]
+        existing = {e.pk: e for e in events.select_for_update().filter(
+            pk__in=ids)}
+        if len(existing) != len(set(ids)):
+            raise ClockCorrectionError(
+                "Alguien ha cambiado esta jornada mientras la editaba: "
+                "vuelva a cargar la página.")
+        final, cancel, change, add = [], [], [], []
+        for row in rows:
+            event = existing.get(int(row["id"])) if row.get("id") else None
+            if row.get("delete"):
+                if event is not None:
+                    cancel.append(event)
+                continue
+            kind, at = row.get("kind"), row.get("at")
+            if kind not in ClockEvent.Kind.values:
+                raise ClockCorrectionError("Indique si cada fichaje es "
+                                           "entrada, cambio o salida.")
+            if at is None:
+                raise ClockCorrectionError("Indique la hora de cada "
+                                           "fichaje.")
+            at = at.replace(second=0, microsecond=0)
+            type_id = None if kind == ClockEvent.Kind.OUT else (
+                row.get("type") or None)
+            final.append((at, kind, event))
+            if event is None:
+                add.append((kind, at, type_id))
+            elif (kind != event.kind
+                  or at != event.pressed_at.replace(second=0, microsecond=0)
+                  or str(type_id or "") != str(event.clock_type_id or "")):
+                change.append((event, kind, at, type_id))
+        if not (cancel or change or add):
+            raise ClockCorrectionError("No ha cambiado nada.")
+        final.sort(key=lambda item: item[0])
+        minutes = [at for at, _kind, _event in final]
+        for a, b in zip(minutes, minutes[1:]):
+            if a == b:
+                raise ClockCorrectionError(
+                    "Hay dos fichajes a las %s: deje uno."
+                    % timezone.localtime(a).strftime("%d/%m %H:%M"))
+        touched = set(existing)
+        if final:
+            others = events.exclude(pk__in=touched)
+            before = others.filter(pressed_at__lt=final[0][0]).order_by(
+                "-pressed_at").first()
+            after = others.filter(pressed_at__gt=final[-1][0]).order_by(
+                "pressed_at").first()
+            inside = others.filter(pressed_at__gte=final[0][0],
+                                   pressed_at__lte=final[-1][0]).first()
+            if inside is not None:
+                raise ClockCorrectionError(
+                    "Hay otro fichaje (%s a las %s) en medio que no es de "
+                    "esta jornada: no se puede mezclar."
+                    % (labels[inside.kind].lower(), timezone.localtime(
+                        inside.pressed_at).strftime("%d/%m %H:%M")))
+            is_open = before is not None and before.kind != ClockEvent.Kind.OUT
+            for at, kind, _event in final:
+                when = timezone.localtime(at).strftime("%H:%M")
+                if kind == ClockEvent.Kind.IN and is_open:
+                    raise ClockCorrectionError(
+                        "La entrada de las %s llega con la jornada ya "
+                        "abierta: falta una salida antes." % when)
+                if kind != ClockEvent.Kind.IN and not is_open:
+                    raise ClockCorrectionError(
+                        "%s de las %s no tiene una entrada antes."
+                        % ("La salida" if kind == ClockEvent.Kind.OUT
+                           else "El cambio de tipo", when))
+                is_open = kind != ClockEvent.Kind.OUT
+            if (is_open and after is not None
+                    and after.kind == ClockEvent.Kind.IN):
+                raise ClockCorrectionError(
+                    "La jornada queda abierta y lo siguiente es otra "
+                    "entrada (%s): falta la salida."
+                    % timezone.localtime(after.pressed_at).strftime(
+                        "%d/%m %H:%M"))
+        for event in cancel:
+            correct_event(event.pk, corrected_by,
+                          ClockCorrection.Action.CANCEL, reason,
+                          user_agent=user_agent)
+        for event, kind, at, type_id in change:
+            correct_event(event.pk, corrected_by,
+                          ClockCorrection.Action.CHANGE, reason,
+                          new_kind=kind, new_pressed_at=at,
+                          user_agent=user_agent,
+                          new_clock_type_id=type_id)
+        for kind, at, type_id in add:
+            add_event(company_user, person, corrected_by, kind, at, reason,
+                      user_agent=user_agent, new_clock_type_id=type_id)
+        return len(cancel), len(change), len(add)

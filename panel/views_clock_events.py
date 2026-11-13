@@ -1405,6 +1405,7 @@ def apply_correction(request, person):
     from hr_calendar.clock_corrections import correct_event
     from hr_calendar.clock_corrections import meal_break
     from hr_calendar.clock_corrections import insert_type
+    from hr_calendar.clock_corrections import edit_presses
 
     form = {
         "event_id": request.POST.get("event_id", ""),
@@ -1485,6 +1486,39 @@ def apply_correction(request, person):
     # S149 (Miguel Ángel): intercalar un tramo de otro tipo (p. ej. el
     # desplazamiento que no fichó entre el trabajo efectivo y la
     # presencia). Sin hora de fin, llega hasta el siguiente fichaje.
+    # S149 (Miguel Ángel): «Editar la jornada», todas las pulsaciones
+    # de una vez (corregir, anular, añadir) con un solo motivo.
+    if form["action"] == "EDIT":
+        import json
+
+        try:
+            raw = json.loads(request.POST.get("edit_rows") or "[]")
+        except ValueError:
+            return "", "No se ha podido leer la jornada editada.", form
+        rows = []
+        for item in raw if isinstance(raw, list) else []:
+            at = parse_datetime(item.get("at") or "")
+            if at is not None and timezone.is_naive(at):
+                at = timezone.make_aware(at)
+            rows.append({"id": item.get("id"), "delete": bool(item.get("delete")),
+                         "kind": item.get("kind"), "at": at,
+                         "type": item.get("type")})
+        before = _bounds_before(person, [r["at"] for r in rows])
+        try:
+            cancelled, changed, added = edit_presses(
+                person.company_user, person, by, form["reason"], rows,
+                user_agent=agent,
+            )
+        except ClockCorrectionError as exc:
+            return "", str(exc), form
+        done = ", ".join(filter(None, (
+            "%d anulado%s" % (cancelled, "s" if cancelled != 1 else "") if cancelled else "",
+            "%d corregido%s" % (changed, "s" if changed != 1 else "") if changed else "",
+            "%d añadido%s" % (added, "s" if added != 1 else "") if added else "")))
+        return " ".join(filter(None, (
+            "Jornada guardada (%s). Queda en el historial con quién, "
+            "cuándo y por qué." % done,
+            _resync_partes(person, before)))), "", {}
     if form["action"] == "INSERT":
         start = parse_datetime(request.POST.get("insert_start", ""))
         end = parse_datetime(request.POST.get("insert_end", ""))
