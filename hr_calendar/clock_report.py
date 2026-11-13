@@ -1053,6 +1053,11 @@ AUTO_MEAL_MIN_OVERLAP = 3600
 # Un hueco entre dos jornadas del mismo día dentro de la franja de al
 # menos esto es la comida (o la cena) sin fichar como pausa.
 AUTO_MEAL_GAP = 30 * 60
+# S149 (Miguel Ángel): "si el albarán acaba a partir de las 10 de la
+# noche, ahí ya estaríamos descontando cena; si no, no". La cena sin
+# fichar solo se descuenta si la última salida del día es a esta hora o
+# más tarde (antes bastaba con salir a las 20:00).
+AUTO_DINNER_MIN_END = datetime.time(22, 0)
 
 
 def _parte_days(company, user_id, shifts):
@@ -1106,7 +1111,8 @@ def _deduct_missing_meals(shifts, no_lunch_days=(), parte_days=(),
       pausa del parte (solo comida), o un hueco de al menos AUTO_MEAL_GAP
       entre dos jornadas dentro de la franja; si no, y la jornada toca
       la franja al menos AUTO_MEAL_MIN_OVERLAP, una hora menos en la
-      jornada que más la toca.
+      jornada que más la toca. La cena, además, solo si la última salida
+      del día es a las AUTO_DINNER_MIN_END o más tarde (S149).
     """
     from hr_calendar.clock_extras import (
         DINNER, LUNCH, MEAL_DINNER, MEAL_LUNCH, meal_kind,
@@ -1145,6 +1151,11 @@ def _deduct_missing_meals(shifts, no_lunch_days=(), parte_days=(),
 
             if any(meal_kind(mark.pressed_at) == kind
                    for s in same for mark, _end in s.meal_segments):
+                continue
+            if kind == DINNER and max(
+                    s.clock_out.pressed_at for s in same
+            ) < timezone.make_aware(datetime.datetime.combine(
+                    day, AUTO_DINNER_MIN_END), tz):
                 continue
             if kind == LUNCH and (any(s.lunch_seconds for s in same)
                                   or day in no_lunch_days):
