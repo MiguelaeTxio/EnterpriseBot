@@ -344,15 +344,7 @@ screen_key "clock_worker"); la selección, por trabajador.
                 </div>
                 <label class="form-label mb-0" for="cwFixReason">Motivo (obligatorio, queda en el historial)</label>
                 <textarea class="form-control form-control-sm" name="reason" id="cwFixReason" rows="2" maxlength="1000" required></textarea>
-                {# S143: motivos habituales; se puede completar (p. ej. con quién se quedó). #}
-                <div class="d-flex flex-wrap gap-1 mt-1" id="cw-fix-reasons">
-                    <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Olvido del trabajador: no fichó la salida.">Olvidó la salida</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Olvido del trabajador: no fichó la entrada.">Olvidó la entrada</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Se quedó trabajando con ">Se quedó trabajando con…</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Fichó a una hora que no era: ">Hora equivocada</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Olvido del trabajador: no fichó la pausa de comida.">Olvidó la comida</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Olvido del trabajador: no fichó el desplazamiento.">Olvidó el desplazamiento</button>
-                </div>
+                {% include "panel/clock_worker/_fix_reasons.html" with reason_target="cwFixReason" %}
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
@@ -851,14 +843,6 @@ screen_key "clock_worker"); la selección, por trabajador.
     [insStart, insEnd].forEach(function (input) { input.addEventListener("input", drawInsert); });
     document.getElementById("cwFixInsertType").addEventListener("change", drawInsert);
     fixModalEl.addEventListener("shown.bs.modal", drawInsert);
-    document.getElementById("cw-fix-reasons").addEventListener("click", function (evt) {
-        const btn = evt.target.closest("[data-reason]");
-        if (!btn) return;
-        const box = document.getElementById("cwFixReason");
-        box.value = (box.value.trim() ? box.value.trim() + " " : "") + btn.dataset.reason;
-        box.focus();
-        box.setSelectionRange(box.value.length, box.value.length);
-    });
     document.getElementById("cwFixCancel").addEventListener("change", function () {
         document.getElementById("cw-fix-action").value = this.checked ? "CANCEL" : "CHANGE";
         document.getElementById("cw-fix-cancel-note").classList.toggle("d-none", !this.checked);

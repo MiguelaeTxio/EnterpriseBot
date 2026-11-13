@@ -212,7 +212,10 @@ mismas fechas: Jornadas, Calendario y Correcciones.
         <div class="clk-place-map rounded border mt-1 d-none" style="height: 300px;" data-lat="" data-lon=""></div>
     </div>
     <label class="form-label mb-0" for="clkFixReason{{ person.pk }}">Motivo (obligatorio)</label>
-    <textarea class="form-control form-control-sm mb-2" name="reason" id="clkFixReason{{ person.pk }}" rows="2" maxlength="1000" required>{{ form.reason }}</textarea>
+    <textarea class="form-control form-control-sm" name="reason" id="clkFixReason{{ person.pk }}" rows="2" maxlength="1000" required>{{ form.reason }}</textarea>
+    {% with pk_text=person.pk|stringformat:"s" %}
+    <div class="mb-2">{% include "panel/clock_worker/_fix_reasons.html" with reason_target="clkFixReason"|add:pk_text %}</div>
+    {% endwith %}
     <div class="d-flex gap-2">
         <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check2 me-1"></i>Guardar la corrección</button>
         <button type="button" class="btn btn-sm btn-outline-secondary" onclick="this.closest('form').classList.add('d-none');">Cancelar</button>

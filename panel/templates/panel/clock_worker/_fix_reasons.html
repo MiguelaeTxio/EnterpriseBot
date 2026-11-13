@@ -1,0 +1,36 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/clock_worker/_fix_reasons.html #}
+{% comment %}
+S143: motivos habituales de una corrección de fichaje; se puede
+completar (p. ej. con quién se quedó). S153 (Miguel Ángel): "Corrección
+según albarán n.º(s)", para escribir detrás el número o los números de
+albarán del día (a veces hay 2 o 3 en la misma jornada); así la
+corrección queda con la referencia al albarán. La misma botonera en
+todas las correcciones de fichajes (página del trabajador y su ficha en
+Personal). Uso:
+  {% include "panel/clock_worker/_fix_reasons.html" with reason_target="cwFixReason" %}
+{% endcomment %}
+<div class="d-flex flex-wrap gap-1 mt-1 eb-fix-reasons" data-reason-target="{{ reason_target }}">
+    <button type="button" class="btn btn-sm btn-outline-primary py-0" data-reason="Corrección según albarán n.º(s) " title="Escribe detrás el número o los números de albarán del día (p. ej. 348203 y 348204)">Según albarán n.º(s)…</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Olvido del trabajador: no fichó la salida.">Olvidó la salida</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Olvido del trabajador: no fichó la entrada.">Olvidó la entrada</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Se quedó trabajando con ">Se quedó trabajando con…</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Fichó a una hora que no era: ">Hora equivocada</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Olvido del trabajador: no fichó la pausa de comida.">Olvidó la comida</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Olvido del trabajador: no fichó el desplazamiento.">Olvidó el desplazamiento</button>
+</div>
+<script>
+(function () {
+    // Una sola escucha para todas las botoneras de motivos de la página.
+    if (window.ebFixReasonsBound) { return; }
+    window.ebFixReasonsBound = true;
+    document.addEventListener("click", function (evt) {
+        const btn = evt.target.closest(".eb-fix-reasons [data-reason]");
+        if (!btn) { return; }
+        const box = document.getElementById(btn.closest(".eb-fix-reasons").dataset.reasonTarget);
+        if (!box) { return; }
+        box.value = (box.value.trim() ? box.value.trim() + " " : "") + btn.dataset.reason;
+        box.focus();
+        box.setSelectionRange(box.value.length, box.value.length);
+    });
+})();
+</script>
