@@ -12,6 +12,8 @@ recuadro "Grupos de selección" de Centros de Gasto. Miguel Ángel:
 selección". Mismas reglas que los de personas (panel/person_groups.py
 con MACHINE_KIND): solo quien lo creó lo cambia o lo borra.
 """
+import re
+
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
@@ -43,7 +45,11 @@ def _tree_payload(request):
     return {
         "tree_html": render_to_string(TREE_TEMPLATE, {
             "person_group_nodes": group_tree(editor, MACHINE_KIND),
-            "pg_id": "machineGroup",
+            # S153: ids del árbol de la vista que pide (el mismo recuadro
+            # en Centros de gasto, Revisiones, Repostajes, Avisos...).
+            "pg_id": re.sub(r"[^A-Za-z0-9_-]", "",
+                            request.POST.get("pg_id", ""))[:40]
+            or "machineGroup",
         }, request=request),
         "parents": parent_choices(editor=editor, kind=MACHINE_KIND),
     }

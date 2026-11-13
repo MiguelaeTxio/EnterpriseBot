@@ -19,16 +19,48 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
 {% endcomment %}
 <div class="container-fluid px-3 pt-3" id="alertsNoticesRoot">
 
-    <form class="card mb-2" id="alertsNoticesFilters"
+    {% comment %}
+    S153 (directriz 4.27): el mismo panel de arriba que todas las
+    pestañas -- Buscar y filtrar (lo común arriba: Grupo y, en personas,
+    Sección; lo propio debajo), Grupos de selección y Acciones con
+    "N seleccionados · Limpiar".
+    {% endcomment %}
+    <div class="border rounded p-2 mb-2" id="alertsTopPanel">
+    <div class="row g-2">
+    <div class="col-lg-4">
+    <form class="border rounded p-2 h-100 small" id="alertsNoticesFilters"
           hx-get="{% url 'panel:document_notices' %}" hx-target="#alertsNoticesPane" hx-swap="innerHTML"
           hx-trigger="change, keyup changed delay:500ms from:#alertsNoticesQuery">
-        <div class="card-body py-2 d-flex flex-wrap align-items-center gap-2">
-            <div class="btn-group btn-group-sm" role="group" aria-label="Personal o centros de gasto">
-                <input type="radio" class="btn-check" name="domain" id="alertsDomainPersonal" value="personal" {% if is_personal %}checked{% endif %}>
-                <label class="btn btn-outline-primary" for="alertsDomainPersonal"><i class="bi bi-people me-1"></i>Personal</label>
-                <input type="radio" class="btn-check" name="domain" id="alertsDomainMachine" value="maquinaria" {% if not is_personal %}checked{% endif %}>
-                <label class="btn btn-outline-primary" for="alertsDomainMachine"><i class="bi bi-truck me-1"></i>Centros de gasto</label>
+        <div class="fw-bold mb-1">Buscar y filtrar</div>
+        <input type="search" class="form-control form-control-sm mb-2" name="q" id="alertsNoticesQuery" value="{{ query }}" placeholder="Buscar persona, máquina o documento">
+        <div class="d-flex flex-wrap align-items-end gap-3">
+            <div>
+                <div class="fw-semibold mb-1">Ver</div>
+                <div class="btn-group btn-group-sm" role="group" aria-label="Personal o centros de gasto">
+                    <input type="radio" class="btn-check" name="domain" id="alertsDomainPersonal" value="personal" {% if is_personal %}checked{% endif %}>
+                    <label class="btn btn-outline-primary" for="alertsDomainPersonal"><i class="bi bi-people me-1"></i>Personal</label>
+                    <input type="radio" class="btn-check" name="domain" id="alertsDomainMachine" value="maquinaria" {% if not is_personal %}checked{% endif %}>
+                    <label class="btn btn-outline-primary" for="alertsDomainMachine"><i class="bi bi-truck me-1"></i>Centros de gasto</label>
+                </div>
             </div>
+            {% if is_personal %}
+            {% include "panel/_group_filter_select.html" with gf_id="alerts-filter-group" gf_who="personas" %}
+            <div>
+                <div class="fw-semibold mb-1">Sección</div>
+                <select name="section" class="form-select form-select-sm" id="alerts-filter-section" autocomplete="off">
+                    <option value=""{% if not filter_section %} selected{% endif %}>Todas</option>
+                    <option value="{{ no_section }}"{% if filter_section == no_section %} selected{% endif %}>Sin sección</option>
+                    {% for section in sections %}
+                    <option value="{{ section.pk }}"{% if filter_section == section.pk|stringformat:"d" %} selected{% endif %}>{{ section.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% else %}
+            {% include "panel/_group_filter_select.html" with gf_id="alerts-filter-group" gf_who="máquinas" %}
+            {% endif %}
+        </div>
+        <hr class="eb-filters-sep">
+        <div class="d-flex flex-wrap gap-2">
             <select class="form-select form-select-sm alerts-filter-select" name="requirement" aria-label="Requisito">
                 <option value="">Todos los requisitos</option>
                 {% for option in requirement_options %}
@@ -46,27 +78,42 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
                 <option value="all" {% if who == 'all' %}selected{% endif %}>Todos los avisos</option>
                 <option value="none" {% if who == 'none' %}selected{% endif %}>Sin destinatario</option>
             </select>
-            <input type="search" class="form-control form-control-sm alerts-filter-query" name="q" id="alertsNoticesQuery" value="{{ query }}" placeholder="Buscar persona, máquina o documento">
         </div>
     </form>
-
-    {% if can_request_docs %}
-    {% comment %}
-    H30 (S125): luz verde del supervisor para pedir al trabajador, por
-    WhatsApp, los documentos que él mismo aporta (casillas de las filas).
-    Cola por trabajador: se le pide uno y, cuando se acepta, el siguiente.
-    {% endcomment %}
-    <div class="d-flex flex-wrap align-items-center gap-2 mb-2" id="docRequestBar">
-        <button type="button" class="btn btn-sm btn-success" id="docRequestSend" disabled>
-            <i class="bi bi-whatsapp me-1"></i>Pedir por WhatsApp al trabajador (<span id="docRequestCount">0</span>)
-        </button>
-        <button type="button" class="btn btn-sm btn-link" id="docRequestClear">Vaciar selección</button>
-        <span class="small text-muted">Solo tienen casilla los documentos que aporta el propio trabajador, con móvil válido.</span>
-        {# S148: cualquier documento, sin requisito ni aviso, en su propia pestaña. #}
-        <a href="#" class="small" onclick="var t = document.getElementById('tab-pedir'); if (t) { t.click(); } return false;">Pedir cualquier otro documento…</a>
     </div>
-    <div class="alert alert-info small py-1 d-none doc-request-result" id="docRequestResult"></div>
-    {% endif %}
+    {% include "panel/_selection_groups_box.html" with sg="alertsGroup" sg_nodes=alerts_group_nodes sg_collapsed=alerts_groups_collapsed sg_parents=alerts_group_parents sg_hint=is_personal|yesno:"documentos que pedir,máquinas" %}
+    <div class="col-lg-5">
+        <div class="border rounded p-2 h-100 small">
+            {% if can_request_docs %}
+            {% comment %}
+            H30 (S125): luz verde del supervisor para pedir al trabajador, por
+            WhatsApp, los documentos que él mismo aporta (casillas de las filas).
+            Cola por trabajador: se le pide uno y, cuando se acepta, el siguiente.
+            {% endcomment %}
+            <div class="d-flex align-items-center gap-2 mb-1" id="docRequestBar">
+                <strong><span id="docRequestCount">0</span> seleccionados</strong>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="docRequestClear">Limpiar</button>
+            </div>
+            <div class="text-muted fw-bold">Pedir al trabajador</div>
+            <button type="button" class="btn btn-sm btn-success mb-1" id="docRequestSend" disabled>
+                <i class="bi bi-whatsapp me-1"></i>Pedir por WhatsApp
+            </button>
+            <div class="text-muted">Solo tienen casilla los documentos que aporta el propio trabajador, con móvil válido.</div>
+            {# S148: cualquier documento, sin requisito ni aviso, en su propia pestaña. #}
+            <a href="#" onclick="var t = document.getElementById('tab-pedir'); if (t) { t.click(); } return false;">Pedir cualquier otro documento…</a>
+            <div class="alert alert-info small py-1 mt-1 d-none doc-request-result" id="docRequestResult"></div>
+            {% else %}
+            <div class="fw-bold mb-1">Acciones</div>
+            <div class="text-muted">{% if is_personal %}Tu rol no puede pedir documentos a los trabajadores.{% else %}En centros de gasto los avisos se resuelven desde cada fila (subir el documento o anotar la cita).{% endif %}</div>
+            {% endif %}
+        </div>
+    </div>
+    </div>
+    </div>
+    <style>
+    .eb-filters-sep { margin: .5rem 0; opacity: .15; }
+    #alertsNoticesFilters .alerts-filter-select { width: auto; max-width: 100%; }
+    </style>
 
     {% if not has_any_rules %}
     <div class="alert alert-info small">Ningún requisito tiene avisos configurados todavía. Configúralos en la subpestaña Configuración.</div>
@@ -221,8 +268,68 @@ botón de cada fila le pasa trabajador, tipo y etiqueta de la fecha.
             doc_type: data.get('doc_type') || '',
             q: data.get('q') || '',
             who: data.get('who') || '',
+            group: data.get('group') || '',
+            section: data.get('section') || '',
         });
     }
+
+    // S153 (4.27): el recuadro "Grupos de selección" común. En Personal,
+    // marcar un grupo marca los documentos que se pueden pedir a sus
+    // personas; Guardar guarda las personas de lo marcado. En centros
+    // de gasto no hay nada que marcar en la lista: el recuadro sirve
+    // para ver y ordenar los grupos (y filtrar con "Grupo").
+    {% if is_personal %}
+    window.alertsGroups = window.EbSelectionGroups.init({
+        prefix: "alertsGroup",
+        collapsedKey: "person_groups",
+        saveUrl: "{% url 'panel:documentation_personal_group_create' %}",
+        updateUrl: function (pk) { return "{% url 'panel:documentation_personal_group_update' 0 %}".replace("/0/", "/" + pk + "/"); },
+        deleteUrl: function (pk) { return "{% url 'panel:documentation_personal_group_delete' 0 %}".replace("/0/", "/" + pk + "/"); },
+        memberField: "person_ids",
+        noun: "persona",
+        getIds: function () {
+            const people = new Set();
+            (window.docRequestSelection || new Set()).forEach(function (key) { people.add(String(key).split("|")[0]); });
+            return Array.from(people);
+        },
+        setIds: function (pairs) {
+            const wanted = new Set(pairs.map(function (pair) { return String(pair[0]); }));
+            const selection = window.docRequestSelection || new Set();
+            selection.clear();
+            document.querySelectorAll(".notice-request-check").forEach(function (cb) {
+                cb.checked = wanted.has(String(cb.value).split("|")[0]);
+                if (cb.checked) { selection.add(cb.value); }
+            });
+            const counter = document.getElementById("docRequestCount");
+            if (counter) { counter.textContent = selection.size; }
+            const send = document.getElementById("docRequestSend");
+            if (send) { send.disabled = selection.size === 0; }
+        },
+        labelOf: function () { return ""; },
+        toast: function (text, isError) {
+            const box = document.getElementById("alertsGroupFormResult");
+            box.innerHTML = '<div class="small"></div>';
+            box.firstChild.className = "small " + (isError ? "text-danger" : "text-success");
+            box.firstChild.textContent = text;
+        },
+        extra: function (form) { form.append("pg_id", "alertsGroup"); },
+    });
+    {% else %}
+    window.alertsGroups = window.EbSelectionGroups.init({
+        prefix: "alertsGroup",
+        collapsedKey: "machine_groups",
+        saveUrl: "{% url 'panel:fleet_group_save' %}",
+        updateUrl: function (pk) { return "/panel/fleet/grupos/" + pk + "/guardar/"; },
+        deleteUrl: function (pk) { return "/panel/fleet/grupos/" + pk + "/eliminar/"; },
+        memberField: "machine_ids",
+        noun: "máquina",
+        getIds: function () { return []; },
+        setIds: function () {},
+        labelOf: function () { return ""; },
+        toast: function () {},
+        extra: function (form) { form.append("pg_id", "alertsGroup"); },
+    });
+    {% endif %}
 
     // H30 (S125): pedir documentación al trabajador. La selección vive
     // en window para sobrevivir al refresco htmx de filtros (4.24).
@@ -243,6 +350,7 @@ botón de cada fila le pasa trabajador, tipo y etiqueta de la fecha.
         function refresh() {
             counter.textContent = selection.size;
             sendButton.disabled = selection.size === 0;
+            if (window.alertsGroups) { window.alertsGroups.refresh(); }
         }
         function showResult(text, kind) {
             result.className = 'alert small py-1 doc-request-result alert-' + kind;

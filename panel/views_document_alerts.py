@@ -471,7 +471,8 @@ class DocumentAlertsPaneView(CompanyUserRequiredMixin, View):
             subtab = "pendientes"
         notices_query = {
             key: str(tab_state.get(key) or "")
-            for key in ("domain", "requirement", "doc_type", "q", "who")
+            for key in ("domain", "requirement", "doc_type", "q", "who",
+                        "group", "section")
         }
 
         return render(request, "panel/document_alerts/pane.html", {
@@ -980,6 +981,14 @@ class DocumentNoticesView(CompanyUserRequiredMixin, View):
         requirement_pk = _int_or_none(request.GET.get("requirement"))
         doc_type_pk = _int_or_none(request.GET.get("doc_type"))
         query = (request.GET.get("q") or "").strip()
+        # S153 (directriz 4.27): Grupo (de personas o de máquinas, según
+        # el dominio) y Sección (personas), comunes a todas las
+        # pestañas; None = sin filtrar.
+        group = (request.GET.get("group") or "").strip()
+        section = (request.GET.get("section") or "").strip()
+        if domain != notices.DOMAIN_PERSONAL:
+            section = ""
+        allowed = _allowed_subjects(request, domain, group, section)
         # H30 (S122): a quién va cada aviso. Un supervisor de
         # documentación ve por defecto solo los suyos; el administrador
         # también puede recibirlos y filtrar los suyos (S126).
@@ -1041,6 +1050,8 @@ class DocumentNoticesView(CompanyUserRequiredMixin, View):
                 )
 
         def keep(notice):
+            if allowed is not None and notice.subject_id not in allowed:
+                return False
             if who == "mine" and company_user.pk not in notice.recipient_ids:
                 return False
             if who == "none" and notice.recipient_ids:
@@ -1147,6 +1158,7 @@ class DocumentNoticesView(CompanyUserRequiredMixin, View):
             "who": who,
             "can_filter_mine": can_filter_mine,
             "can_request_docs": can_request_docs,
+            **_common_filter_context(request, domain, group, section),
         })
 
 
@@ -1236,3 +1248,60 @@ class NoticeScopeSaveView(CompanyUserRequiredMixin, View):
         return JsonResponse({"ok": True, "scope": _scope_to_dict(
             scope, _personal_company_options(), CompanyKeyResolver(),
         )})
+
+
+def _allowed_subjects(request, domain, group, section):
+    """
+    Subjects (people or machines) allowed by Grupo and Sección.
+    ---
+    S153 (directriz 4.27): pks de las personas o máquinas que cumplen
+    el filtro "Grupo" (y "Sección", en personas); None = sin filtrar.
+    """
+    from panel.common_filters import filter_people_by_section
+    from panel.person_groups import (
+        MACHINE_KIND, PERSON_KIND, filter_by_group,
+    )
+
+    if not group and not section:
+        return None
+    if domain == notices.DOMAIN_PERSONAL:
+        people = filter_by_group(
+            PersonIdentity.objects.filter(is_active_employee=True),
+            group, PERSON_KIND)
+        people = filter_people_by_section(
+            people, request.user.company_user.company, section)
+        return {person.pk for person in people}
+    return set(filter_by_group(
+        MachineAsset.objects.all(), group, MACHINE_KIND,
+    ).values_list("pk", flat=True))
+
+
+def _common_filter_context(request, domain, group, section):
+    """
+    Context of the common filters and of the groups box of Avisos.
+    ---
+    S153 (directriz 4.27): Grupo, Sección y el recuadro "Grupos de
+    selección" de personas o de máquinas, según el dominio.
+    """
+    from ivr_config.models import Section
+    from panel.common_filters import NO_SECTION
+    from panel.person_groups import (
+        GROUP_FILTER_NONE, MACHINE_KIND, PERSON_KIND, collapsed_state,
+        group_filter_options, group_tree, parent_choices,
+    )
+
+    editor = request.user.company_user
+    kind = PERSON_KIND if domain == notices.DOMAIN_PERSONAL else (
+        MACHINE_KIND)
+    return {
+        "group_filter": group,
+        "group_filter_none": GROUP_FILTER_NONE,
+        "group_filter_options": group_filter_options(editor, kind),
+        "filter_section": section,
+        "no_section": NO_SECTION,
+        "sections": Section.objects.filter(
+            company=editor.company).order_by("name"),
+        "alerts_group_nodes": group_tree(editor, kind),
+        "alerts_groups_collapsed": collapsed_state(editor, kind),
+        "alerts_group_parents": parent_choices(editor=editor, kind=kind),
+    }
