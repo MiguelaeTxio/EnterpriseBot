@@ -62,6 +62,11 @@ responsable corregirá la salida (clock_report.forgotten_after).
         #out-confirm .no { background: #e9ecef; color: #212529; }
         #out-confirm .yes { background: #dc3545; color: #fff; margin-top: 28px; }
         #out-confirm .yes:disabled { opacity: .5; }
+        #out-claim { margin-top: 12px; border: 1px solid #dee2e6; border-radius: 10px; padding: 10px; }
+        #out-claim summary { font-weight: 700; color: #0d6efd; }
+        #out-claim .claim-label { display: block; margin-top: 8px; font-weight: 600; }
+        #out-claim input { width: 100%; font-size: 1.1rem; padding: 8px; box-sizing: border-box; border: 1px solid #ced4da; border-radius: 8px; }
+        #out-claim .err-text { color: #842029; font-weight: 600; margin-top: 6px; }
         #types { display: none; margin-bottom: 10px; }
         #types-title { font-weight: 700; margin-bottom: 6px; }
         #types-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -171,6 +176,16 @@ responsable corregirá la salida (clock_report.forgotten_after).
         <div class="box">
             <div class="q" id="out-confirm-q">¿Fichar la SALIDA?</div>
             <div class="muted" id="out-confirm-help"></div>
+            <!-- S149 (Miguel Ángel): salida fichada tarde: la hora real y un mensaje para el encargado. -->
+            <details id="out-claim" class="hidden">
+                <summary>¿Saliste antes y se te olvidó fichar?</summary>
+                <label class="claim-label" for="out-claim-time">Hora real de salida</label>
+                <input type="time" id="out-claim-time">
+                <label class="claim-label" for="out-claim-note">Mensaje para tu encargado (opcional)</label>
+                <input type="text" id="out-claim-note" maxlength="200" placeholder="p. ej. se me olvidó fichar al llegar a base">
+                <div class="muted">La salida se ficha a la hora de ahora; tu encargado verá la hora que indicas y la corregirá.</div>
+                <div class="err-text hidden" id="out-claim-err"></div>
+            </details>
             <button type="button" class="no" id="out-confirm-no">No, no fichar</button>
             <button type="button" class="yes" id="out-confirm-yes">Sí, fichar la salida</button>
         </div>
@@ -541,8 +556,11 @@ responsable corregirá la salida (clock_report.forgotten_after).
     // S143: una salida a menos de 10 minutos de la entrada o del último
     // cambio de tipo casi siempre es un error: se avisa más claro.
     const QUICK_OUT_MS = 10 * 60 * 1000;
+    // S149: hora real de salida que indica el trabajador en la confirmación.
+    let pendingClaim = null;
     function confirmOut(records) {
         return new Promise(function (resolve) {
+            pendingClaim = null;
             if (decideKind(records) !== "OUT") { resolve(true); return; }
             const last = lastKnown(records);
             const quick = last && last.pressed_at && last.kind !== "OUT" &&
@@ -568,14 +586,45 @@ responsable corregirá la salida (clock_report.forgotten_after).
             const box = document.getElementById("out-confirm");
             const yes = document.getElementById("out-confirm-yes");
             const no = document.getElementById("out-confirm-no");
+            // S149: hora real de salida (salida fichada tarde).
+            const claim = document.getElementById("out-claim");
+            const claimTime = document.getElementById("out-claim-time");
+            const claimNote = document.getElementById("out-claim-note");
+            const claimErr = document.getElementById("out-claim-err");
+            claim.open = false;
+            claimTime.value = "";
+            claimNote.value = "";
+            claimErr.classList.add("hidden");
+            claim.classList.remove("hidden");
+            pendingClaim = null;
             function done(answer) {
                 box.classList.add("hidden");
+                claim.classList.add("hidden");
                 yes.onclick = no.onclick = null;
                 resolve(answer);
             }
             yes.disabled = true;
             setTimeout(function () { yes.disabled = false; }, 800);
-            yes.onclick = function () { done(true); };
+            yes.onclick = function () {
+                if (claimTime.value) {
+                    const nowDate = new Date();
+                    const parts = claimTime.value.split(":");
+                    const real = new Date(nowDate);
+                    real.setHours(parseInt(parts[0], 10), parseInt(parts[1], 10), 0, 0);
+                    // Una hora "posterior" a ahora es del día anterior (pasada la medianoche).
+                    if (real >= nowDate) real.setDate(real.getDate() - 1);
+                    if (startedAt && real <= startedAt) {
+                        claimErr.textContent = "La hora real tiene que ser después de tu último fichaje (" + hhmm(startedAt) + ").";
+                        claimErr.classList.remove("hidden");
+                        claim.open = true;
+                        return;
+                    }
+                    pendingClaim = {claimed_at: real.toISOString(), claim_note: claimNote.value.trim()};
+                } else if (claimNote.value.trim()) {
+                    pendingClaim = {claimed_at: "", claim_note: claimNote.value.trim()};
+                }
+                done(true);
+            };
             no.onclick = function () { done(false); };
             box.classList.remove("hidden");
         });
@@ -598,6 +647,7 @@ responsable corregirá la salida (clock_report.forgotten_after).
             const yes = document.getElementById("out-confirm-yes");
             const no = document.getElementById("out-confirm-no");
             const oldYes = yes.textContent, oldNo = no.textContent;
+            document.getElementById("out-claim").classList.add("hidden");
             document.getElementById("out-confirm-q").textContent = question;
             document.getElementById("out-confirm-help").textContent = help;
             yes.textContent = yesText;
@@ -908,6 +958,8 @@ responsable corregirá la salida (clock_report.forgotten_after).
     function press(type) {
         const pressedAt = new Date();   // la hora se toma AL PULSAR
         const chosen = type && type.id ? type : null;
+        const claimNow = chosen ? null : pendingClaim;
+        pendingClaim = null;
         setPressing(true);
         let decided = null;
         setStatus("Fichaje a las " + pressedAt.toLocaleTimeString("es-ES") + ". Buscando la ubicación…", "wait");
@@ -937,6 +989,9 @@ responsable corregirá la salida (clock_report.forgotten_after).
                     own_vehicle: !!(chosen && chosen.own_vehicle),
                     // S143: "No he parado para comer" (fichaje por tipos).
                     no_meal_break: byTypes() && !!load("fichaje-sin-comida"),
+                    // S149: hora real de salida y mensaje (solo en la salida).
+                    claimed_at: decided === "OUT" && claimNow ? claimNow.claimed_at : "",
+                    claim_note: decided === "OUT" && claimNow ? claimNow.claim_note : "",
                     // Con cobertura y nada pendiente decide el servidor.
                     auto: navigator.onLine && nothingPending,
                     pressed_at: pressedAt.toISOString(),

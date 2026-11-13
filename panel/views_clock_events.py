@@ -942,6 +942,12 @@ def _press_view(event, corrections_by_replacement=None):
         "correction": correction,
         "corrected_by": (_user_label(correction.corrected_by)
                          if correction else ""),
+        # S149: hora real de salida que indica el trabajador.
+        "claimed_at": (timezone.localtime(event.claimed_at)
+                       if event.claimed_at else None),
+        "claimed_value": (timezone.localtime(event.claimed_at).strftime(
+            "%Y-%m-%dT%H:%M") if event.claimed_at else ""),
+        "claim_note": event.claim_note,
         # S149: corrección hecha por la IA al cotejar los albaranes.
         "by_ai": bool(correction and correction.source
                       == ClockCorrection.Source.AI),

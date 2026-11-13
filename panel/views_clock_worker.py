@@ -203,6 +203,18 @@ def _row(shift):
     """
     entry, exit_ = (shift.get("presses") or [None, None])
     changes = shift.get("changes") or []
+    # S149: salida fichada tarde con la hora real que indica el
+    # trabajador: incidencia hasta que el supervisor la aplica (la
+    # pulsación corregida ya no la lleva) o visa el día.
+    if exit_ and (exit_.get("claimed_at") or exit_.get("claim_note")):
+        claim = "Salida fichada a las %s; indica %s%s" % (
+            timezone.localtime(exit_["event"].pressed_at).strftime("%H:%M"),
+            ("que salió a las %s" % exit_["claimed_at"].strftime("%H:%M")
+             if exit_.get("claimed_at") else "otra hora"),
+            (": «%s»" % exit_["claim_note"]) if exit_.get("claim_note")
+            else ".")
+        shift = {**shift, "incidents": list(shift.get("incidents") or [])
+                 + [claim]}
     if shift.get("only_cancelled"):
         status = STATUS_CANCELLED
     elif shift.get("incidents") and not shift.get("reviewed"):

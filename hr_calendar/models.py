@@ -1028,6 +1028,24 @@ class ClockEvent(models.Model):
         verbose_name="No he parado para comer",
         help_text="Marcada por el trabajador en la jornada.",
     )
+    # S149 (Miguel Ángel): "se le olvida picar la salida [...] tenía que
+    # salir a las 19 y ha picado a las 20 [...] la opción de poner un
+    # mensaje diciendo la hora real". La salida se guarda a la hora en
+    # que se pulsó; esto es lo que dice el trabajador, y el supervisor lo
+    # aplica (corrección) o no.
+    claimed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Hora real indicada",
+        help_text="Hora real de salida que indica el trabajador al "
+                  "fichar tarde la salida.",
+    )
+    claim_note = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Mensaje del trabajador",
+    )
     clock_type = models.ForeignKey(
         "hr_calendar.ClockType",
         null=True,

@@ -298,6 +298,9 @@ def record_press(company_user, payload, user_agent=""):
             # S143: "No he parado para comer" (fichaje por tipos).
             event.no_meal_break = bool(
                 by_types and payload.get("no_meal_break"))
+            # S149: salida fichada tarde con la hora real que indica.
+            if kind == ClockEvent.Kind.OUT:
+                _set_claim(event, company_user, payload)
             event.save()
     except IntegrityError:
         # Two sends of the same press at once (page and background).
@@ -316,6 +319,39 @@ def record_press(company_user, payload, user_agent=""):
                 forgotten_text(forgotten), result.parte_notice)))
         result.parte_ok = False
     return result
+
+
+def _set_claim(event, company_user, payload):
+    """
+    The real exit time the worker says, when he clocks out late.
+    ---
+    S149 (Miguel Ángel): "se le olvida picar la salida [...] que pueda
+    poner un mensaje diciendo hora real de salida". Se guarda junto a la
+    salida (que queda a la hora en que se pulsó) para que el supervisor
+    la aplique. Una hora que no cabe (no es anterior a la pulsación o no
+    es posterior al fichaje anterior) no se guarda como hora, pero el
+    mensaje sí, con lo que escribió.
+    """
+    raw = str(payload.get("claimed_at") or "").strip()
+    note = str(payload.get("claim_note") or "").strip()
+    if not raw and not note:
+        return
+    claimed = parse_datetime(raw) if raw else None
+    if claimed is not None and timezone.is_naive(claimed):
+        claimed = timezone.make_aware(claimed)
+    previous = ClockEvent.objects.current().filter(
+        company_user=company_user, pressed_at__lt=event.pressed_at,
+    ).order_by("-pressed_at").values_list("pressed_at", flat=True).first()
+    if claimed is not None and (
+            claimed >= event.pressed_at
+            or (previous is not None and claimed <= previous)):
+        note = "(hora indicada no válida: %s) %s" % (
+            timezone.localtime(claimed).strftime("%d/%m %H:%M"), note)
+        claimed = None
+    if claimed is None and raw and not note.startswith("(hora"):
+        note = "(hora indicada ilegible: %s) %s" % (raw[:20], note)
+    event.claimed_at = claimed
+    event.claim_note = note.strip()[:255]
 
 
 def _reject_too_soon(company_user, pressed_at, clock_type=None):

@@ -896,6 +896,17 @@ screen_key "clock_worker"); la selección, por trabajador.
             presses: link.dataset.presses, day: link.dataset.day,
         });
     });
+    // S149: salida fichada tarde: aplicar la hora real que indica el
+    // trabajador (el recuadro de corrección, con hora y motivo rellenos).
+    results.addEventListener("click", function (evt) {
+        const btn = evt.target.closest(".cw-claim-apply");
+        if (!btn) return;
+        evt.preventDefault();
+        openFix({action: "CHANGE", event: btn.dataset.event, kind: "OUT", time: btn.dataset.at,
+                 label: "Salida a la hora real que indica el trabajador."});
+        document.getElementById("cwFixReason").value = "Olvido del trabajador: no fichó la salida; hora real indicada por él" +
+            (btn.dataset.note ? ": «" + btn.dataset.note + "»" : "") + ".";
+    });
     document.getElementById("cw-add").addEventListener("click", function () {
         const now = new Date();
         openFix({action: "ADD", kind: "IN", time: isoDate(now) + "T" + String(now.getHours()).padStart(2, "0") + ":00",
