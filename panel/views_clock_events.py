@@ -602,6 +602,12 @@ class ClockWorkerSettingsView(SupervisorAccessMixin, View):
         # S148: tipo de fichaje propio y horario propio de los marcados.
         "clock_mode": ("clock_mode", None, ""),
         "schedule": ("schedule", None, ""),
+        # S153 (Miguel Ángel: "Juan no puede marcar visados [...] en el
+        # casillero marcándolo y añadir la acción de visado en el
+        # panel de acciones"): visar o quitar el visado de las jornadas
+        # con incidencias de los marcados, en las fechas del filtro.
+        "review": ("review", True, ""),
+        "unreview": ("review", False, ""),
     }
 
     def post(self, request):
@@ -664,6 +670,8 @@ class ClockWorkerSettingsView(SupervisorAccessMixin, View):
                     "abierto" if schedule.is_open else "fijo")
             return _settings_response(request, message)
 
+        if field == "review":
+            return _mass_review(request, ids, value)
         if field == "clocks_from":
             try:
                 day = datetime.date.fromisoformat(
@@ -688,6 +696,47 @@ class ClockWorkerSettingsView(SupervisorAccessMixin, View):
         return _settings_response(
             request, "%d trabajador(es) %s." % (count, label),
         )
+
+
+def _mass_review(request, ids, reviewed):
+    """
+    Mark (or unmark) as seen the days with incidents of some workers.
+    ---
+    S153. Visa (o quita el visado de) los días con incidencias de los
+    trabajadores marcados, en las fechas del filtro: lo mismo que la
+    casilla "Visado" de cada día en el detalle del trabajador.
+    """
+    from hr_calendar.models import ClockDayReview
+
+    company_user = request.user.company_user
+    date_from, date_to = _date_range(request)
+    users = [cu for cu in PersonIdentity.objects.filter(
+        pk__in=ids, company_user__isnull=False,
+    ).values_list("company_user_id", flat=True)]
+    period = "del %s al %s" % (date_from.strftime("%d/%m/%Y"),
+                               date_to.strftime("%d/%m/%Y"))
+    if not reviewed:
+        deleted, _detail = ClockDayReview.objects.filter(
+            company_user_id__in=users, day__gte=date_from,
+            day__lte=date_to,
+        ).delete()
+        return _settings_response(
+            request, "Quitado el visado de %d día(s) de %d trabajador(es) "
+            "(%s)." % (deleted, len(users), period))
+    reports = reports_by_user(company_user.company, users, date_from,
+                              date_to)
+    created = 0
+    for user_id, report in reports.items():
+        for day in {shift.day for shift in report.shifts
+                    if shift.incidents}:
+            _review, new = ClockDayReview.objects.get_or_create(
+                company_user_id=user_id, day=day,
+                defaults={"reviewed_by": company_user},
+            )
+            created += int(new)
+    return _settings_response(
+        request, "Visados %d día(s) con incidencias de %d trabajador(es) "
+        "(%s)." % (created, len(users), period))
 
 
 class ClockRemindersSwitchView(SupervisorAccessMixin, View):

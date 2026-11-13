@@ -203,6 +203,23 @@ recordatorios, secciones que fichan y permiso de envío).
                             <i class="bi bi-arrow-repeat me-1"></i>Reenviar el alta
                         </button>
                     </div>
+                    {% comment %}
+                    S153 (Miguel Ángel: "Juan no puede marcar visados [...]
+                    en el casillero marcándolo y añadir la acción de visado
+                    en el panel de acciones"): visar de una vez las jornadas
+                    con incidencias de los marcados, en las fechas del filtro.
+                    {% endcomment %}
+                    <div class="col-6 border-top pt-1 mt-1">
+                        <div class="small text-muted fw-bold">Visado de los marcados</div>
+                        <div class="d-flex flex-wrap gap-1">
+                            <button type="button" class="btn btn-sm btn-outline-warning clk-worker-btn" data-action="review"
+                                    title="Visa todas las jornadas con incidencias de los marcados entre Desde y Hasta (lo mismo que la casilla «Visado» de cada día): dejan de contar como incidencias.">
+                                <i class="bi bi-check2-square me-1"></i>Visar
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary clk-worker-btn" data-action="unreview"
+                                    title="Quita el visado de las jornadas de los marcados entre Desde y Hasta (las corregidas siguen contando como visadas).">Quitar visado</button>
+                        </div>
+                    </div>
                     {% include "panel/clock_events/_settings.html" %}
                 </div>
             </div>
