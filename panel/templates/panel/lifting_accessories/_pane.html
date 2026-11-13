@@ -16,7 +16,7 @@ screen_key "lifting_accessories"); la selección también (clave
 {% endcomment %}
 <div class="border rounded p-2 mb-2" id="lifting-top-panel">
     <div class="row g-2">
-        <div class="col-lg-5">
+        <div class="col-lg-4">
             <div class="border rounded p-2 h-100">
                 <div class="fw-bold small mb-1">Buscar y filtrar</div>
                 <input id="lifting-filter-search" type="search" name="search"
@@ -25,7 +25,7 @@ screen_key "lifting_accessories"); la selección también (clave
                        value="{{ filter_search }}" autocomplete="off"
                        hx-get="{% url 'panel:lifting_accessory_results' %}"
                        hx-target="#lifting-table-container"
-                       hx-include="#lifting-filter-search, #lifting-filter-type, #lifting-filter-status, #lifting-only-selected, #lifting-selected-ids, #lifting-sort-inputs"
+                       hx-include="#lifting-filter-search, #lifting-filter-type, #lifting-filter-group, #lifting-filter-status, #lifting-only-selected, #lifting-selected-ids, #lifting-sort-inputs"
                        hx-trigger="input changed delay:300ms, search">
                 <div class="d-flex gap-4">
                     <div>
@@ -36,6 +36,11 @@ screen_key "lifting_accessories"); la selección también (clave
                         mismo criterio que Centros de gasto -- ambas =
                         todos, ninguna = ninguno.
                         {% endcomment %}
+                        {# S153: casillas dentro de un desplegable, como en las demás pestañas. #}
+                        <div class="dropdown checkdrop" data-all="Todos" data-none="Ninguno">
+                            <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
+                                    data-bs-auto-close="outside" aria-expanded="false"><span class="checkdrop-text">Todos</span></button>
+                            <div class="dropdown-menu p-2 small">
                         <div class="form-check">
                             <input class="form-check-input lifting-status-check" type="checkbox" id="lifting-status-active" autocomplete="off"
                                    {% if filter_status == '' or filter_status == '1' %}checked{% endif %}>
@@ -46,10 +51,12 @@ screen_key "lifting_accessories"); la selección también (clave
                                    {% if filter_status == '' or filter_status == '0' %}checked{% endif %}>
                             <label class="form-check-label small" for="lifting-status-retired">Retirados</label>
                         </div>
+                            </div>
+                        </div>
                         <input type="hidden" id="lifting-filter-status" name="status" value="{{ filter_status }}"
                                hx-get="{% url 'panel:lifting_accessory_results' %}"
                                hx-target="#lifting-table-container"
-                               hx-include="#lifting-filter-search, #lifting-filter-type, #lifting-filter-status, #lifting-only-selected, #lifting-selected-ids, #lifting-sort-inputs"
+                               hx-include="#lifting-filter-search, #lifting-filter-type, #lifting-filter-group, #lifting-filter-status, #lifting-only-selected, #lifting-selected-ids, #lifting-sort-inputs"
                                hx-trigger="lifting-status-change">
                     </div>
                     <div class="flex-grow-1">
@@ -57,7 +64,7 @@ screen_key "lifting_accessories"); la selección también (clave
                         <select id="lifting-filter-type" name="type" class="form-select form-select-sm" autocomplete="off"
                                 hx-get="{% url 'panel:lifting_accessory_results' %}"
                                 hx-target="#lifting-table-container"
-                                hx-include="#lifting-filter-search, #lifting-filter-type, #lifting-filter-status, #lifting-only-selected, #lifting-selected-ids, #lifting-sort-inputs"
+                                hx-include="#lifting-filter-search, #lifting-filter-type, #lifting-filter-group, #lifting-filter-status, #lifting-only-selected, #lifting-selected-ids, #lifting-sort-inputs"
                                 hx-trigger="change">
                             <option value="">Todos los tipos</option>
                             {% for accessory_type in accessory_types %}
@@ -66,13 +73,19 @@ screen_key "lifting_accessories"); la selección también (clave
                         </select>
                     </div>
                 </div>
+                {% url 'panel:lifting_accessory_results' as lifting_results_url %}
+                <div class="mt-2 small">
+                    {% include "panel/_group_filter_select.html" with gf_id="lifting-filter-group" gf_class="w-100" gf_who="máquinas (accesorios entregados a ellas)" gf_hx_get=lifting_results_url gf_hx_target="#lifting-table-container" gf_hx_include="#lifting-filter-search, #lifting-filter-type, #lifting-filter-group, #lifting-filter-status, #lifting-only-selected, #lifting-selected-ids, #lifting-sort-inputs" %}
+                </div>
+                <hr class="eb-filters-sep">
+                {% include "panel/_checkdrop_js.html" %}
                 <div class="small fw-bold mt-2">Selección</div>
                 <div class="d-flex align-items-center justify-content-between gap-2">
                     <div class="form-check mb-0">
                         <input class="form-check-input" type="checkbox" id="lifting-only-selected" name="only_selected" value="1" autocomplete="off"
                                hx-get="{% url 'panel:lifting_accessory_results' %}"
                                hx-target="#lifting-table-container"
-                               hx-include="#lifting-filter-search, #lifting-filter-type, #lifting-filter-status, #lifting-only-selected, #lifting-selected-ids, #lifting-sort-inputs"
+                               hx-include="#lifting-filter-search, #lifting-filter-type, #lifting-filter-group, #lifting-filter-status, #lifting-only-selected, #lifting-selected-ids, #lifting-sort-inputs"
                                hx-trigger="change, lifting-selection-refresh">
                         <label class="form-check-label small" for="lifting-only-selected">Mostrar solo la selección actual</label>
                     </div>
@@ -82,7 +95,7 @@ screen_key "lifting_accessories"); la selección también (clave
                             id="lifting-clear-sort"
                             hx-get="{% url 'panel:lifting_accessory_results' %}"
                             hx-target="#lifting-table-container"
-                            hx-include="#lifting-filter-search, #lifting-filter-type, #lifting-filter-status, #lifting-only-selected, #lifting-selected-ids"
+                            hx-include="#lifting-filter-search, #lifting-filter-type, #lifting-filter-group, #lifting-filter-status, #lifting-only-selected, #lifting-selected-ids"
                             hx-vals='{"sort": ""}'
                             title="Deshacer todos los órdenes aplicados">
                         <i class="bi bi-x-circle me-1"></i>Quitar orden
@@ -91,7 +104,13 @@ screen_key "lifting_accessories"); la selección también (clave
             </div>
         </div>
 
-        <div class="col-lg-7">
+        {% comment %}
+        S153 (4.27): el mismo recuadro de grupos de máquinas que Centros de
+        gasto. Marcar un grupo selecciona los accesorios entregados ahora a
+        sus máquinas; Guardar guarda las máquinas de los marcados.
+        {% endcomment %}
+        {% include "panel/_selection_groups_box.html" with sg="machineGroup" sg_nodes=machine_group_nodes sg_collapsed=machine_groups_collapsed sg_parents=machine_group_parents sg_hint="accesorios" %}
+        <div class="col-lg-5">
             <div class="border rounded p-2 h-100">
                 <div class="d-flex align-items-center gap-2 mb-1">
                     <strong class="small"><span id="lifting-mass-count">0</span> seleccionados</strong>
@@ -184,6 +203,7 @@ respeta lo que se estaba viendo.
 <div id="lifting-live-filters" class="d-none">
     <input type="hidden" name="_f_search" value="{{ filter_search }}">
     <input type="hidden" name="_f_type" value="{{ filter_type }}">
+    <input type="hidden" name="_f_group" value="{{ group_filter }}">
     <input type="hidden" name="_f_status" value="{{ filter_status }}">
     <input type="hidden" name="_f_sort" value="{{ current_sort }}">
 </div>
@@ -431,6 +451,7 @@ marcados".
         }
         setLive("_f_search", document.getElementById("lifting-filter-search").value);
         setLive("_f_type", document.getElementById("lifting-filter-type").value);
+        setLive("_f_group", document.getElementById("lifting-filter-group").value);
         setLive("_f_status", document.getElementById("lifting-filter-status").value);
         container.querySelectorAll(".lifting-row-check").forEach(function (cb) {
             cb.checked = selection.has(cb.dataset.pk);
@@ -626,6 +647,40 @@ marcados".
         refreshFromFragment();
     });
 
+    // S153 (4.27): grupos de selección de máquinas. Marcar grupos
+    // selecciona los accesorios entregados ahora a sus máquinas.
+    const machineGroups = window.EbSelectionGroups.init({
+        prefix: "machineGroup",
+        collapsedKey: "machine_groups",
+        saveUrl: "{% url 'panel:fleet_group_save' %}",
+        updateUrl: function (pk) { return "/panel/fleet/grupos/" + pk + "/guardar/"; },
+        deleteUrl: function (pk) { return "/panel/fleet/grupos/" + pk + "/eliminar/"; },
+        memberField: "machine_ids",
+        noun: "máquina",
+        getIds: function () {
+            const machines = new Set();
+            container.querySelectorAll(".lifting-row-check").forEach(function (cb) {
+                if (selection.has(cb.dataset.pk) && cb.dataset.machine) machines.add(cb.dataset.machine);
+            });
+            return Array.from(machines);
+        },
+        setIds: function (pairs) {
+            const wanted = new Set(pairs.map(function (pair) { return String(pair[0]); }));
+            selection.clear();
+            container.querySelectorAll(".lifting-row-check").forEach(function (cb) {
+                if (cb.dataset.machine && wanted.has(cb.dataset.machine)) selection.set(cb.dataset.pk, cb.dataset.label || "");
+                cb.checked = selection.has(cb.dataset.pk);
+            });
+            updateSelectionUi();
+        },
+        labelOf: function () { return ""; },
+        toast: function (text, isError) { showToast(text, !!isError); },
+    });
+    const baseUpdate = updateSelectionUi;
+    updateSelectionUi = function () { baseUpdate(); machineGroups.refresh(); };
     refreshFromFragment();
 }());
 </script>
+<style>
+.eb-filters-sep { margin: .5rem 0; opacity: .15; }
+</style>

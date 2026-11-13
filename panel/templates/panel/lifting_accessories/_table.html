@@ -58,6 +58,7 @@ desliza entera, sin columnas fijas (S123). Mismo formato en PC y móvil.
             <td>
                 <input class="form-check-input lifting-row-check" type="checkbox"
                        data-pk="{{ accessory.pk }}"
+                       data-machine="{% if accessory.current_machine %}{{ accessory.current_machine.pk }}{% endif %}"
                        data-label="{{ accessory.accessory_type.label }} {{ accessory.identifier }}">
             </td>
             <td data-label="Modelo">{% if accessory.model %}{{ accessory.model.name }}{% else %}{{ accessory.accessory_type.label }}{% endif %}</td>

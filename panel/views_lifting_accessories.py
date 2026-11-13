@@ -58,7 +58,7 @@ from panel.navigation_persistence import (
 )
 
 SCREEN_KEY = "lifting_accessories"
-FILTER_KEYS = ("search", "type", "status", "sort")
+FILTER_KEYS = ("search", "type", "status", "sort", "group")
 MANAGE_ROLES = {
     CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_ADMIN_SUPERVISOR,
     CompanyUser.ROLE_DOCS_SUPERVISOR,
@@ -295,6 +295,18 @@ def _list_context(request):
                 a.responsible_label,
             )).upper()
         ]
+    # S153 (directriz 4.27): filtro "Grupo" común -- los accesorios
+    # entregados ahora a una máquina del grupo (o de sus subgrupos).
+    group = _param(request, "group")
+    if group:
+        from fleet.models import MachineAsset
+        from panel.person_groups import MACHINE_KIND, filter_by_group
+
+        machines = set(filter_by_group(
+            MachineAsset.objects.filter(company=company), group,
+            MACHINE_KIND).values_list("pk", flat=True))
+        rows = [a for a in rows
+                if a.current_machine and a.current_machine.pk in machines]
     if request.GET.get("only_selected") == "1":
         wanted = {
             pk for pk in request.GET.get("selected_ids", "").split(",")
@@ -307,7 +319,7 @@ def _list_context(request):
         "filter_search": search,
         "filter_type": type_id,
         "filter_status": status,
-        "is_filtered": bool(search or type_id or status),
+        "is_filtered": bool(search or type_id or status or group),
         "can_manage": _can_manage(request),
         **_sort_controls(_param(request, "sort")),
     }
@@ -399,10 +411,26 @@ class LiftingAccessoryTabView(CompanyUserRequiredMixin, View):
         )
         if not isinstance(saved_selection, list):
             saved_selection = []
+        from panel.person_groups import (
+            GROUP_FILTER_NONE, MACHINE_KIND, collapsed_state,
+            group_filter_options, group_tree, parent_choices,
+        )
+
+        company_user = request.user.company_user
         context = {
             **_list_context(request),
             **_types_context(request),
             **_models_context(request),
+            # S153 (4.27): filtro y recuadro de grupos de máquinas.
+            "group_filter": _param(request, "group"),
+            "group_filter_none": GROUP_FILTER_NONE,
+            "group_filter_options": group_filter_options(
+                company_user, MACHINE_KIND),
+            "machine_group_nodes": group_tree(company_user, MACHINE_KIND),
+            "machine_groups_collapsed": collapsed_state(
+                company_user, MACHINE_KIND),
+            "machine_group_parents": parent_choices(
+                editor=company_user, kind=MACHINE_KIND),
             "screen_key": SCREEN_KEY,
             "saved_selection": saved_selection,
             "active_types": LiftingAccessoryType.objects.filter(
