@@ -122,6 +122,8 @@ la lista hace scroll. Dos paneles:
                     <div class="mt-2 small">
                     {% include "panel/_group_filter_select.html" with gf_id="fleet-filter-group" gf_class="w-100" gf_who="máquinas" gf_hx_get=fleet_fragment_url gf_hx_target="#fleet-table-container" gf_hx_include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-group, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs" %}
                     </div>
+                    {# S153 (4.27): arriba, el bloque común de las pestañas de máquinas (Estado, Familia, Grupo); debajo, lo propio de esta. #}
+                    <hr class="eb-filters-sep">
                     {% comment %}H30 (S123): filtro por requisito de documentación; S153: en su propia línea, a todo el ancho del recuadro.{% endcomment %}
                     <div class="mt-2 fleet-req-filter">
                         <div class="small fw-bold">Requisito</div>
@@ -435,6 +437,7 @@ la lista hace scroll. Dos paneles:
 /* S153: requisito + situación + documento no se salen del recuadro:
    el requisito ocupa el ancho del recuadro y los otros dos se reparten
    la línea (o bajan) recortando el texto largo de sus opciones. */
+.eb-filters-sep { margin: .5rem 0; opacity: .15; }
 .fleet-req-filter { max-width: 100%; min-width: 0; }
 .fleet-req-filter .form-select { min-width: 0; max-width: 100%; text-overflow: ellipsis; }
 .fleet-req-filter .d-flex > .form-select { flex: 1 1 9rem; width: auto; }

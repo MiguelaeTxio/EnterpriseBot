@@ -1,0 +1,53 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/_person_common_filters.html #}
+{% comment %}
+S153, directriz 4.27 (Miguel Ángel: "una primera parte con lo que es
+común a todas las pestañas de ese tipo y luego lo que sea específico de
+cada pestaña"). Bloque común de "Buscar y filtrar" en TODAS las
+pestañas de personas, siempre igual y en este orden: Estado · Empresa ·
+Grupo · Sección. Va dentro del formulario de filtros de cada pestaña,
+justo después de Buscar; lo propio de la pestaña va debajo, tras una
+raya (<hr class="eb-filters-sep">).
+Las casillas siguen las clases e ids de siempre ({{p}}-active-check,
+{{p}}-active-input, {{p}}-company-check...), así que el JS de cada
+pestaña no cambia.
+Contexto: panel/common_filters.person_filter_context + filter_active y
+filter_company de la vista. Uso:
+  {% include "panel/_person_common_filters.html" with p="vbal" %}
+{% endcomment %}
+<div class="d-flex flex-wrap gap-3 align-items-start small eb-common-filters">
+    <div>
+        <div class="fw-semibold mb-1">Estado</div>
+        <div class="dropdown checkdrop" data-all="Todos" data-none="Ninguno">
+            <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
+                    data-bs-auto-close="outside" aria-expanded="false"><span class="checkdrop-text">Todos</span></button>
+            <div class="dropdown-menu p-2 small">
+                <div class="form-check">
+                    <input class="form-check-input {{ p }}-active-check" type="checkbox" value="true" id="{{ p }}ActiveTrue"
+                           {% if "true" in filter_active %}checked{% endif %}>
+                    <label class="form-check-label" for="{{ p }}ActiveTrue">Activos</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input {{ p }}-active-check" type="checkbox" value="false" id="{{ p }}ActiveFalse"
+                           {% if "false" in filter_active %}checked{% endif %}>
+                    <label class="form-check-label" for="{{ p }}ActiveFalse">Inactivos</label>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" name="active" id="{{ p }}-active-input" value="{{ filter_active|join:',' }}">
+    </div>
+    {% include "panel/_company_checkdrop.html" with prefix=p id_prefix=p|add:"Company" %}
+    {% include "panel/_group_filter_select.html" with gf_id=p|add:"-filter-group" gf_who="personas" %}
+    <div>
+        <div class="fw-semibold mb-1">Sección</div>
+        <select name="section" class="form-select form-select-sm" id="{{ p }}-filter-section" autocomplete="off">
+            <option value=""{% if not filter_section %} selected{% endif %}>Todas</option>
+            <option value="{{ no_section }}"{% if filter_section == no_section %} selected{% endif %}>Sin sección</option>
+            {% for section in sections %}
+            <option value="{{ section.pk }}"{% if filter_section == section.pk|stringformat:"d" %} selected{% endif %}>{{ section.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+</div>
+<style>
+.eb-filters-sep { margin: .5rem 0; opacity: .15; }
+</style>

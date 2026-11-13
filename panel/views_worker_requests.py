@@ -38,7 +38,8 @@ from panel.views_vacation_balance import MANAGE_ROLES
 logger = logging.getLogger(__name__)
 
 SCREEN_KEY = "worker_requests"
-FILTER_KEYS = ("search", "status", "kind", "sort")
+FILTER_KEYS = ("search", "status", "kind", "sort", "active", "company",
+               "group", "section")
 DEFAULT_STATUS = ["PENDING"]
 DEFAULT_SORT = "-created"
 _MAX_SORT_KEYS = 4
@@ -312,6 +313,10 @@ def _sort_rows(rows, sort_keys):
 
 
 def _list_context(request):
+    from panel.common_filters import common_people
+    from panel.views_documentation_h30 import COMPANY_FILTER_CHOICES
+    from panel.views_vacation_balance import _csv_param
+
     company = request.user.company_user.company
     statuses = _csv_param(request, "status", DEFAULT_STATUS)
     kinds = _csv_param(request, "kind", WorkerRequest.Kind.values)
@@ -319,6 +324,10 @@ def _list_context(request):
     qs = WorkerRequest.objects.filter(company=company).select_related(
         "person", "resolved_by__user",
     ).prefetch_related("files")
+    # S153 (4.27): Estado y Empresa del bloque común, para pintarlos.
+    active = _csv_param(request, "active", ["true"])
+    companies = _csv_param(request, "company", [
+        slug for slug, _l, _r in COMPANY_FILTER_CHOICES])
     selected = request.GET.get("only_selected") == "1"
     if selected:
         wanted = [pk for pk in request.GET.get("selected_ids", "").split(",")
@@ -326,6 +335,11 @@ def _list_context(request):
         qs = qs.filter(pk__in=wanted)
     else:
         qs = qs.filter(status__in=statuses, kind__in=kinds)
+        # S153 (4.27): bloque común de las pestañas de personas
+        # (Estado, Empresa, Grupo, Sección), sobre la persona de cada
+        # solicitud.
+        people, _active, _companies = common_people(request)
+        qs = qs.filter(person__in=[person.pk for person in people])
         for word in search.split():
             qs = qs.filter(
                 Q(person__first_surname__icontains=word)
@@ -341,6 +355,8 @@ def _list_context(request):
     return {
         "rows": rows,
         "filter_search": search,
+        "filter_active": active,
+        "filter_company": companies,
         "filter_status": statuses,
         "filter_kind": kinds,
         "status_choices": WorkerRequest.Status.choices,
@@ -368,9 +384,12 @@ def _pane_context(request):
         saved_selection = []
     pending = WorkerRequest.objects.filter(
         company=cu.company, status=WorkerRequest.Status.PENDING).count()
+    from panel.common_filters import person_filter_context
     from panel.person_groups import group_filter_context
 
     return {
+        # S153 (4.27): bloque común de filtros de personas.
+        **person_filter_context(request),
         **_list_context(request),
         **group_filter_context(request),
         "screen_key": SCREEN_KEY,

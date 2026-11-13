@@ -24,48 +24,10 @@ filtrar la sección, marcar todos y poner el horario.
                         <input type="text" name="search" id="hor-filter-search" class="form-control doc-h30-search"
                                placeholder="Buscar por nombre, apellidos, DNI…" value="{{ filter_search }}">
                     </div>
+                    {# S153 (4.27): bloque común de todas las pestañas de personas; debajo, lo propio de esta. #}
+                    {% include "panel/_person_common_filters.html" with p="hor" %}
+                    <hr class="eb-filters-sep">
                     <div class="d-flex flex-wrap gap-3 align-items-start small">
-                        <div>
-                            <div class="fw-semibold mb-1">Estado</div>
-                            {# S148: casillas dentro de un desplegable (panel/_checkdrop_js.html pinta el botón). #}
-                            <div class="dropdown checkdrop" data-all="Todos" data-none="Ninguno">
-                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
-                                        data-bs-auto-close="outside" aria-expanded="false"><span class="checkdrop-text">Todos</span></button>
-                                <div class="dropdown-menu p-2 small">
-                                    <div class="form-check">
-                                        <input class="form-check-input hor-active-check" type="checkbox" value="true" id="horActiveTrue"
-                                               {% if "true" in filter_active %}checked{% endif %}>
-                                        <label class="form-check-label" for="horActiveTrue">Activos</label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input hor-active-check" type="checkbox" value="false" id="horActiveFalse"
-                                               {% if "false" in filter_active %}checked{% endif %}>
-                                        <label class="form-check-label" for="horActiveFalse">Inactivos</label>
-                                    </div>
-                                </div>
-                            </div>
-                            <input type="hidden" name="active" id="hor-active-input" value="{{ filter_active|join:',' }}">
-                        </div>
-                        {% include "panel/_company_checkdrop.html" with prefix="hor" id_prefix="horCompany" %}
-                        <div>
-                            <div class="fw-semibold mb-1">Selección</div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="only_selected" value="1" id="horOnlySelected">
-                                <label class="form-check-label" for="horOnlySelected">Mostrar solo la selección actual</label>
-                            </div>
-                            <input type="hidden" name="selected_ids" id="hor-selected-ids" value="">
-                        </div>
-                        {# Sección vigente hoy (PersonSectionAssignment), como en Fichajes. #}
-                        <div>
-                            <div class="fw-semibold mb-1">Sección</div>
-                            <select name="section" class="form-select form-select-sm">
-                                <option value="">Todas</option>
-                                <option value="{{ no_section }}"{% if filter_section == no_section %} selected{% endif %}>Sin sección</option>
-                                {% for section in sections %}
-                                <option value="{{ section.pk }}"{% if filter_section == section.pk|stringformat:"d" %} selected{% endif %}>{{ section.name }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
                         {# El horario que le toca (propio, de la sección o por defecto). #}
                         <div>
                             <div class="fw-semibold mb-1">Horario</div>
@@ -76,6 +38,14 @@ filtrar la sección, marcar todos y poner el horario.
                                 <option value="{{ schedule.pk }}"{% if filter_schedule == schedule.pk|stringformat:"d" %} selected{% endif %}>{{ schedule.label }} ({{ schedule.get_season_display|lower }})</option>
                                 {% endfor %}
                             </select>
+                        </div>
+                        <div>
+                            <div class="fw-semibold mb-1">Selección</div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="only_selected" value="1" id="horOnlySelected">
+                                <label class="form-check-label" for="horOnlySelected">Mostrar solo la selección actual</label>
+                            </div>
+                            <input type="hidden" name="selected_ids" id="hor-selected-ids" value="">
                         </div>
                     </div>
                     {% include "panel/_checkdrop_js.html" %}

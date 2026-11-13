@@ -28,44 +28,11 @@ supervisores: el visor de cada trabajador irá fuera de aquí.
                         <input type="text" name="search" id="vbal-filter-search" class="form-control doc-h30-search"
                                placeholder="Buscar por nombre, apellidos, DNI…" value="{{ filter_search }}">
                     </div>
+                    {# S153 (4.27): bloque común de todas las pestañas de personas. #}
+                    {% include "panel/_person_common_filters.html" with p="vbal" %}
+                    <hr class="eb-filters-sep">
                     <div class="d-flex flex-wrap gap-3 align-items-start small">
                         <div>
-                            <div class="fw-semibold mb-1">Estado</div>
-                            {% comment %}
-                            Casillas sin "name": el JS junta las marcadas en el
-                            campo oculto (lista separada por comas) para que el
-                            filtro se pueda recordar por usuario. Misma lógica
-                            que Personal: ninguna marcada = nadie.
-                            {% endcomment %}
-                            {# S148: casillas dentro de un desplegable (panel/_checkdrop_js.html pinta el botón). #}
-                            <div class="dropdown checkdrop" data-all="Todos" data-none="Ninguno">
-                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
-                                        data-bs-auto-close="outside" aria-expanded="false"><span class="checkdrop-text">Todos</span></button>
-                                <div class="dropdown-menu p-2 small">
-                                    <div class="form-check">
-                                        <input class="form-check-input vbal-active-check" type="checkbox" value="true" id="vbalActiveTrue"
-                                               {% if "true" in filter_active %}checked{% endif %}>
-                                        <label class="form-check-label" for="vbalActiveTrue">Activos</label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input vbal-active-check" type="checkbox" value="false" id="vbalActiveFalse"
-                                               {% if "false" in filter_active %}checked{% endif %}>
-                                        <label class="form-check-label" for="vbalActiveFalse">Inactivos</label>
-                                    </div>
-                                </div>
-                            </div>
-                            <input type="hidden" name="active" id="vbal-active-input" value="{{ filter_active|join:',' }}">
-                        </div>
-                        {% include "panel/_company_checkdrop.html" with prefix="vbal" id_prefix="vbalCompany" %}
-                        <div>
-                            <div class="fw-semibold mb-1">Sección</div>
-                            <select name="section" class="form-select form-select-sm mb-2">
-                                <option value="">Todas</option>
-                                <option value="{{ no_section }}" {% if filter_section == no_section %}selected{% endif %}>Sin sección</option>
-                                {% for section in sections %}
-                                <option value="{{ section.pk }}" {% if filter_section == section.pk|stringformat:"d" %}selected{% endif %}>{{ section.name }}</option>
-                                {% endfor %}
-                            </select>
                             <div class="fw-semibold mb-1">Año</div>
                             <select name="year" class="form-select form-select-sm">
                                 {% for year in years %}

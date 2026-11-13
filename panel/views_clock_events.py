@@ -66,7 +66,7 @@ from panel.views_vacation_balance import (
 SCREEN_KEY = "clock_events"
 FILTER_KEYS = (
     "search", "active", "company", "date_from", "date_to", "sort",
-    "issues_only", "events", "section", "onboarding",
+    "issues_only", "events", "section", "onboarding", "group",
 )
 NO_SECTION = "none"
 _MAX_SORT_KEYS = 4
@@ -518,7 +518,11 @@ class ClockEventsTabView(SupervisorAccessMixin, View):
         from panel.person_groups import group_filter_context
 
         company = request.user.company_user.company
+        from panel.common_filters import person_filter_context
+
         return render(request, "panel/clock_events/_pane.html", {
+            # S153 (4.27): bloque común de filtros de personas.
+            **person_filter_context(request),
             **_list_context(request),
             **group_filter_context(request),
             **_settings_context(company),

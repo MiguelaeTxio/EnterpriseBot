@@ -84,6 +84,23 @@ para un momento distinto.
                 </div>
             </div>
         </div>
+        {# S153: grupo de selección como filtro (sus personas y las de sus subgrupos), sin seleccionarlos. #}
+        {% include "panel/_group_filter_select.html" with gf_id="filterGroup" gf_class="personal-filter-checkbox personal-filter-select" gf_who="personas" %}
+        {# H24 (S144): sección vigente hoy y horario que le toca, como en la pestaña Horarios. #}
+        <div>
+            <div class="fw-semibold mb-1">Sección</div>
+            <select name="section" class="form-select form-select-sm personal-filter-checkbox personal-filter-select" id="filterSection" autocomplete="off">
+                <option value=""{% if not section_filter %} selected{% endif %}>Todas</option>
+                <option value="{{ no_section }}"{% if section_filter == no_section %} selected{% endif %}>Sin sección</option>
+                {% for section in ws_sections %}
+                <option value="{{ section.pk }}"{% if section_filter == section.pk|stringformat:"d" %} selected{% endif %}>{{ section.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    {# S153 (4.27): arriba, el bloque común de todas las pestañas de personas (Estado, Empresa, Grupo, Sección); debajo, lo propio de Personal. #}
+    <hr class="eb-filters-sep">
+    <div class="d-flex flex-wrap column-gap-3 row-gap-1 align-items-start small personal-filters-compact">
         {% comment %}
         H30 (S123): filtro por requisito de documentación. S153: con un
         requisito elegido, "Situación" (le falta, caducado, al día) y
@@ -116,19 +133,6 @@ para un momento distinto.
                 </select>
             </div>
             {{ requirement_items_map|json_script:"personalRequirementItems" }}
-        </div>
-        {# S153: grupo de selección como filtro (sus personas y las de sus subgrupos), sin seleccionarlos. #}
-        {% include "panel/_group_filter_select.html" with gf_id="filterGroup" gf_class="personal-filter-checkbox personal-filter-select" gf_who="personas" %}
-        {# H24 (S144): sección vigente hoy y horario que le toca, como en la pestaña Horarios. #}
-        <div>
-            <div class="fw-semibold mb-1">Sección</div>
-            <select name="section" class="form-select form-select-sm personal-filter-checkbox personal-filter-select" id="filterSection" autocomplete="off">
-                <option value=""{% if not section_filter %} selected{% endif %}>Todas</option>
-                <option value="{{ no_section }}"{% if section_filter == no_section %} selected{% endif %}>Sin sección</option>
-                {% for section in ws_sections %}
-                <option value="{{ section.pk }}"{% if section_filter == section.pk|stringformat:"d" %} selected{% endif %}>{{ section.name }}</option>
-                {% endfor %}
-            </select>
         </div>
         <div>
             <div class="fw-semibold mb-1">Horario</div>
@@ -188,6 +192,7 @@ para un momento distinto.
     {% include "panel/_checkdrop_js.html" %}
 </form>
 <style>
+.eb-filters-sep { margin: .5rem 0; opacity: .15; }
 .personal-filters-compact .fw-semibold.mb-1 { margin-bottom: .1rem !important; }
 .personal-filters-compact .personal-filter-select { width: auto; max-width: 11rem; }
 /* S153: requisito + situación + documento nunca se salen del panel: si no caben, bajan de línea. */

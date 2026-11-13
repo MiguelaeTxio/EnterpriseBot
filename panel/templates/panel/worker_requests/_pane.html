@@ -22,9 +22,12 @@ acciones. Filtros, orden y selección persistidos por usuario
                       hx-trigger="input changed delay:300ms from:#wreq-filter-search, change, wreq-selection-refresh">
                     <input type="text" name="search" id="wreq-filter-search" class="form-control doc-h30-search mb-2"
                            placeholder="Buscar por trabajador, DNI, nota…" value="{{ filter_search }}">
+                    {# S153 (4.27): bloque común de todas las pestañas de personas; debajo, lo propio de esta. #}
+                    {% include "panel/_person_common_filters.html" with p="wreq" %}
+                    <hr class="eb-filters-sep">
                     <div class="d-flex flex-wrap gap-3 align-items-start small">
                         <div>
-                            <div class="fw-semibold mb-1">Estado</div>
+                            <div class="fw-semibold mb-1">Situación</div>
                             {% for value, label in status_choices %}
                             <div class="form-check">
                                 <input class="form-check-input wreq-status-check" type="checkbox" value="{{ value }}" id="wreqStatus{{ value }}"
@@ -267,6 +270,21 @@ acciones. Filtros, orden y selección persistidos por usuario
     });
     document.querySelectorAll(".wreq-kind-check").forEach(function (cb) {
         cb.addEventListener("change", function () { syncCsv(".wreq-kind-check", "wreq-kind-input"); });
+    });
+    // S153 (4.27): Estado y Empresa del bloque común, como en las demás.
+    document.querySelectorAll(".wreq-active-check").forEach(function (cb) {
+        cb.addEventListener("change", function () { syncCsv(".wreq-active-check", "wreq-active-input"); });
+    });
+    document.querySelectorAll(".wreq-company-check").forEach(function (cb) {
+        cb.addEventListener("change", function () { syncCsv(".wreq-company-check", "wreq-company-input"); });
+    });
+    document.getElementById("wreq-company-all").addEventListener("click", function (ev) {
+        ev.preventDefault();
+        const boxes = document.querySelectorAll(".wreq-company-check");
+        const allChecked = Array.from(boxes).every(function (b) { return b.checked; });
+        boxes.forEach(function (b) { b.checked = !allChecked; });
+        syncCsv(".wreq-company-check", "wreq-company-input");
+        htmx.trigger(document.getElementById("wreq-filters"), "change");
     });
 
     results.addEventListener("change", function (evt) {

@@ -31,29 +31,10 @@ recordatorios, secciones que fichan y permiso de envío).
                                placeholder="Buscar por nombre, apellidos, DNI…" value="{{ filter_search }}">
                     </div>
                     {# S143: más compacto (sin scroll vertical en el PC): atajos en dos columnas e incidencias junto a Fichajes. #}
+                    {# S153 (4.27): bloque común de todas las pestañas de personas; debajo, lo propio de esta. #}
+                    {% include "panel/_person_common_filters.html" with p="clk" %}
+                    <hr class="eb-filters-sep">
                     <div class="d-flex flex-wrap column-gap-3 row-gap-1 align-items-start small">
-                        <div>
-                            <div class="fw-semibold mb-1">Estado</div>
-                            {# S148: casillas dentro de un desplegable (panel/_checkdrop_js.html pinta el botón). #}
-                            <div class="dropdown checkdrop" data-all="Todos" data-none="Ninguno">
-                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
-                                        data-bs-auto-close="outside" aria-expanded="false"><span class="checkdrop-text">Todos</span></button>
-                                <div class="dropdown-menu p-2 small">
-                                    <div class="form-check">
-                                        <input class="form-check-input clk-active-check" type="checkbox" value="true" id="clkActiveTrue"
-                                               {% if "true" in filter_active %}checked{% endif %}>
-                                        <label class="form-check-label" for="clkActiveTrue">Activos</label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input clk-active-check" type="checkbox" value="false" id="clkActiveFalse"
-                                               {% if "false" in filter_active %}checked{% endif %}>
-                                        <label class="form-check-label" for="clkActiveFalse">Inactivos</label>
-                                    </div>
-                                </div>
-                            </div>
-                            <input type="hidden" name="active" id="clk-active-input" value="{{ filter_active|join:',' }}">
-                        </div>
-                        {% include "panel/_company_checkdrop.html" with prefix="clk" id_prefix="clkCompany" %}
                         {# S148: Desde y Hasta uno al lado del otro (antes uno encima del otro). #}
                         <div>
                             <div class="fw-semibold mb-1">Desde</div>
@@ -82,14 +63,6 @@ recordatorios, secciones que fichan y permiso de envío).
                                             title="Los cuatro últimos años: lo que se conservan los fichajes (art. 34.9 ET).">Cuatro años</button>
                                 </div>
                             </div>
-                        </div>
-                        <div>
-                            <div class="fw-semibold mb-1">Selección</div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="only_selected" value="1" id="clkOnlySelected">
-                                <label class="form-check-label" for="clkOnlySelected">Solo la selección actual</label>
-                            </div>
-                            <input type="hidden" name="selected_ids" id="clk-selected-ids" value="">
                         </div>
                         {% comment %}
                         S136 (Miguel Ángel): "filtro de trabajadores con/sin
@@ -122,17 +95,6 @@ recordatorios, secciones que fichan y permiso de envío).
                             </div>
                             <input type="hidden" name="events" id="clk-events-input" value="{{ filter_events|join:',' }}">
                         </div>
-                        {# H24 (S141): sección vigente hoy (PersonSectionAssignment). #}
-                        <div>
-                            <div class="fw-semibold mb-1">Sección</div>
-                            <select name="section" class="form-select form-select-sm">
-                                <option value="">Todas</option>
-                                <option value="{{ no_section }}"{% if filter_section == no_section %} selected{% endif %}>Sin sección</option>
-                                {% for section in sections %}
-                                <option value="{{ section.pk }}"{% if filter_section == section.pk|stringformat:"d" %} selected{% endif %}>{{ section.name }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
                         {% comment %}
                         H24 (S144): filtro "Alta en el fichaje", casillas con
                         semántica literal; el campo oculto lleva los marcados
@@ -156,6 +118,14 @@ recordatorios, secciones que fichan y permiso de envío).
                             <input type="hidden" name="onboarding" id="clk-onboarding-input" value="{{ filter_onboarding }}">
                         </div>
 
+                        <div>
+                            <div class="fw-semibold mb-1">Selección</div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="only_selected" value="1" id="clkOnlySelected">
+                                <label class="form-check-label" for="clkOnlySelected">Mostrar solo la selección actual</label>
+                            </div>
+                            <input type="hidden" name="selected_ids" id="clk-selected-ids" value="">
+                        </div>
                     </div>
                     {% include "panel/_checkdrop_js.html" %}
                 </form>

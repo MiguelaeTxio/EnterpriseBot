@@ -23,37 +23,10 @@ usuario (screen_key "doc_requests"). Vistas: panel/views_doc_requests.py.
                         <input type="text" name="search" id="dreq-filter-search" class="form-control doc-h30-search"
                                placeholder="Buscar por nombre, apellidos, DNI…" value="{{ filter_search }}">
                     </div>
+                    {# S153 (4.27): bloque común de todas las pestañas de personas; debajo, lo propio de esta. #}
+                    {% include "panel/_person_common_filters.html" with p="dreq" %}
+                    <hr class="eb-filters-sep">
                     <div class="d-flex flex-wrap gap-3 align-items-start small">
-                        <div>
-                            <div class="fw-semibold mb-1">Estado</div>
-                            {# S148: casillas dentro de un desplegable (panel/_checkdrop_js.html pinta el botón). #}
-                            <div class="dropdown checkdrop" data-all="Todos" data-none="Ninguno">
-                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
-                                        data-bs-auto-close="outside" aria-expanded="false"><span class="checkdrop-text">Todos</span></button>
-                                <div class="dropdown-menu p-2 small">
-                                    <div class="form-check">
-                                        <input class="form-check-input dreq-active-check" type="checkbox" value="true" id="dreqActiveTrue"
-                                               {% if "true" in filter_active %}checked{% endif %}>
-                                        <label class="form-check-label" for="dreqActiveTrue">Activos</label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input dreq-active-check" type="checkbox" value="false" id="dreqActiveFalse"
-                                               {% if "false" in filter_active %}checked{% endif %}>
-                                        <label class="form-check-label" for="dreqActiveFalse">Inactivos</label>
-                                    </div>
-                                </div>
-                            </div>
-                            <input type="hidden" name="active" id="dreq-active-input" value="{{ filter_active|join:',' }}">
-                        </div>
-                        {% include "panel/_company_checkdrop.html" with prefix="dreq" id_prefix="dreqCompany" %}
-                        <div>
-                            <div class="fw-semibold mb-1">Selección</div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="only_selected" value="1" id="dreqOnlySelected">
-                                <label class="form-check-label" for="dreqOnlySelected">Mostrar solo la selección actual</label>
-                            </div>
-                            <input type="hidden" name="selected_ids" id="dreq-selected-ids" value="">
-                        </div>
                         <div>
                             <div class="fw-semibold mb-1">Móvil</div>
                             <select name="mobile" class="form-select form-select-sm">
@@ -69,6 +42,14 @@ usuario (screen_key "doc_requests"). Vistas: panel/views_doc_requests.py.
                                 <option value="yes"{% if filter_pending == "yes" %} selected{% endif %}>Con algo pedido o en cola</option>
                                 <option value="no"{% if filter_pending == "no" %} selected{% endif %}>Sin nada pedido</option>
                             </select>
+                        </div>
+                        <div>
+                            <div class="fw-semibold mb-1">Selección</div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="only_selected" value="1" id="dreqOnlySelected">
+                                <label class="form-check-label" for="dreqOnlySelected">Mostrar solo la selección actual</label>
+                            </div>
+                            <input type="hidden" name="selected_ids" id="dreq-selected-ids" value="">
                         </div>
                     </div>
                     {% include "panel/_checkdrop_js.html" %}

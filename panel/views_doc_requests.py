@@ -50,7 +50,8 @@ from panel.views_vacation_balance import (
 )
 
 SCREEN_KEY = "doc_requests"
-FILTER_KEYS = ("search", "active", "company", "sort", "mobile", "pending")
+FILTER_KEYS = ("search", "active", "company", "sort", "mobile", "pending",
+               "group", "section")
 _MAX_SORT_KEYS = 4
 _COLUMNS = (
     ("person", "Apellidos, Nombre"),
@@ -216,6 +217,12 @@ def _list_context(request):
     pedido, ordenados.
     """
     people, active, companies, search = _filtered_people(request)
+    # S153 (4.27): Sección, del bloque común de filtros de personas.
+    from panel.common_filters import filter_people_by_section
+
+    people = filter_people_by_section(
+        people, request.user.company_user.company,
+        _param(request, "section"))
     if (request.GET.get("only_selected")
             or request.POST.get("_f_only_selected")) == "1":
         wanted = {
@@ -260,7 +267,11 @@ class DocRequestsTabView(CompanyUserRequiredMixin, View):
         )
         if not isinstance(saved_selection, list):
             saved_selection = []
+        from panel.common_filters import person_filter_context
+
         return render(request, "panel/doc_requests/_pane.html", {
+            # S153 (4.27): bloque común de filtros de personas.
+            **person_filter_context(request),
             **_list_context(request),
             **group_filter_context(request),
             "type_groups": _document_types(),

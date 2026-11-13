@@ -44,7 +44,8 @@ from panel.views_vacation_balance import (
 )
 
 SCREEN_KEY = "worker_schedules"
-FILTER_KEYS = ("search", "active", "company", "sort", "section", "schedule")
+FILTER_KEYS = ("search", "active", "company", "sort", "section", "schedule",
+               "group")
 NO_SECTION = "none"
 NO_SCHEDULE = "none"
 _MAX_SORT_KEYS = 4
@@ -318,7 +319,11 @@ class WorkerSchedulesTabView(SupervisorAccessMixin, View):
         from panel.person_groups import group_filter_context
 
         company = request.user.company_user.company
+        from panel.common_filters import person_filter_context
+
         return render(request, "panel/worker_schedules/_pane.html", {
+            # S153 (4.27): bloque común de filtros de personas.
+            **person_filter_context(request),
             **_list_context(request),
             **group_filter_context(request),
             "sections": _sections(company),

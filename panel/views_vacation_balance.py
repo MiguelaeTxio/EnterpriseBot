@@ -78,7 +78,8 @@ logger = logging.getLogger(__name__)
 SCREEN_KEY = "vacation_balance"
 # Mismos filtros que la pestaña Personal (Estado y Empresa, aquí como
 # listas separadas por comas para poder persistirlas) + sección y año.
-FILTER_KEYS = ("search", "active", "company", "section", "year", "sort")
+FILTER_KEYS = ("search", "active", "company", "section", "year", "sort",
+               "group")
 MANAGE_ROLES = {
     CompanyUser.ROLE_ADMIN,
     CompanyUser.ROLE_ADMIN_SUPERVISOR,
@@ -302,6 +303,8 @@ def _filtered_people(request):
     fake = QueryDict(mutable=True)
     fake.setlist("active", active)
     fake.setlist("company", companies)
+    # S153 (4.27): el filtro "Grupo", común a todas las pestañas.
+    fake["group"] = _param(request, "group")
     proxy = type("FilterRequest", (), {"GET": fake})()
     qs = _apply_personal_filters(
         PersonIdentity.objects.select_related("company_user__base"), proxy,
@@ -404,6 +407,7 @@ class VacationBalanceTabView(CompanyUserRequiredMixin, View):
         saved_selection = get_saved_state_key(cu, SCREEN_KEY, "selection", [])
         if not isinstance(saved_selection, list):
             saved_selection = []
+        from panel.common_filters import person_filter_context
         from panel.person_groups import group_filter_context
         from panel.views_documentation_h30 import COMPANY_FILTER_CHOICES
 
@@ -417,6 +421,8 @@ class VacationBalanceTabView(CompanyUserRequiredMixin, View):
             "years": range(today.year - 2, today.year + 2),
             "company_filter_choices": COMPANY_FILTER_CHOICES,
             **group_filter_context(request),
+            # S153 (4.27): bloque común de filtros de personas.
+            **person_filter_context(request),
         }
         return render(request, "panel/vacation_balance/_pane.html", context)
 
