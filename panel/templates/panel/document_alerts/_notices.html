@@ -74,7 +74,8 @@ desaparece solo en cuanto se sube el documento que lo resuelve.
     <div class="alert alert-info small">{% if is_personal %}Ninguna persona activa{% else %}Ningún centro de gasto activo{% endif %} tiene un requisito de documentación asignado.</div>
     {% endif %}
 
-    <div class="row g-2 alerts-notices-body" id="alertsNoticesBody">
+    {# S153: los avisos pendientes también se amplían a pantalla completa (list_fullscreen.js). #}
+    <div class="row g-2 alerts-notices-body" id="alertsNoticesBody" data-eb-fullscreen>
         <div class="col-12 col-lg-7 alerts-column">
             <div class="card alerts-panel">
                 <div class="card-header py-1 small fw-bold text-danger">Caducados{% if not is_personal %} y revisiones vencidas{% endif %} <span class="badge text-bg-danger">{{ expired|length }}</span></div>

@@ -35,6 +35,10 @@ En el ordenador el botón no existe y el panel no cambia.
     const bottomPanel = document.getElementById("{{ bottom_id|escapejs }}");
     const topPanel = document.getElementById("{{ top_id|escapejs }}");
     if (!bottomPanel) return;
+    // S153: botón "Ampliar" del listado (panel/static/panel/js/
+    // list_fullscreen.js, directriz 4.26), salvo que ya tenga el suyo.
+    bottomPanel.setAttribute("data-eb-fullscreen", "");
+    if (window.EbListFullscreen) window.EbListFullscreen.attach(bottomPanel);
 
     // H30 (S123), punto 5 de la hoja de ruta: mismo algoritmo que
     // Avisos (S122), el que sí se ve bien en cualquier pantalla. En el
