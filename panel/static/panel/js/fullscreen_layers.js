@@ -32,6 +32,47 @@
         modal._fsHome.insertBefore(modal, modal._fsNext);
         modal._fsHome = modal._fsNext = null;
     });
+    // S149 (Miguel Ángel): "cuando ampliamos [...] se amplía también la
+    // selección. Lo suyo sería que se ampliase solamente el listado.
+    // Pasa igual en todas las vistas." En pantalla completa, la columna
+    // "Selección actual" (la que lleva su contador *selection-count) se
+    // oculta y la columna de la lista ocupa todo el ancho; al salir,
+    // todo vuelve a su sitio.
+    var SELECTION_MARKS = '[id$="selection-count"], [id$="SelectionCount"], .ddp-selection-count';
+    var style = document.createElement("style");
+    style.textContent = ".eb-fs-hide{display:none!important}" +
+        ".eb-fs-wide{flex:0 0 100%!important;max-width:100%!important;width:100%!important}";
+    document.head.appendChild(style);
+    function column(el, root) {
+        // La columna de la rejilla (col-*) que lo contiene, dentro de root.
+        var node = el;
+        while (node && node !== root) {
+            var parent = node.parentElement;
+            if (parent && parent.classList.contains("row") && /(^|\s)col(-|\s|$)/.test(node.className)) {
+                return node;
+            }
+            node = parent;
+        }
+        return null;
+    }
+    function listOnly(full) {
+        document.querySelectorAll(".eb-fs-hide").forEach(function (el) { el.classList.remove("eb-fs-hide"); });
+        document.querySelectorAll(".eb-fs-wide").forEach(function (el) { el.classList.remove("eb-fs-wide"); });
+        if (!full) { return; }
+        full.querySelectorAll(SELECTION_MARKS).forEach(function (mark) {
+            var col = column(mark, full);
+            if (!col) { return; }
+            col.classList.add("eb-fs-hide");
+            Array.prototype.forEach.call(col.parentElement.children, function (sibling) {
+                if (sibling !== col && !sibling.classList.contains("eb-fs-hide")) {
+                    sibling.classList.add("eb-fs-wide");
+                }
+            });
+        });
+    }
+    document.addEventListener("fullscreenchange", function () {
+        listOnly(document.fullscreenElement);
+    });
     document.addEventListener("fullscreenchange", function () {
         var full = document.fullscreenElement;
         document.querySelectorAll(".toast-container").forEach(function (box) {
