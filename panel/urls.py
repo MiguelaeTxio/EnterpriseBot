@@ -179,6 +179,13 @@ from panel.views_clock_extras import (
     ClockWorkerReviewView,
     ClockWorkerTripView,
 )
+from panel.views_clock_albaranes import (
+    AlbaranFileView,
+    AlbaranFinishView,
+    AlbaranSheetFileView,
+    AlbaranStartView,
+    AlbaranStatusView,
+)
 from panel.views_clock_worker import (
     ClockWorkerActionView,
     ClockWorkerPageView,
@@ -2054,6 +2061,32 @@ urlpatterns = [
         "documentacion/fichajes/<int:pk>/jornadas/visado/",
         ClockWorkerReviewView.as_view(),
         name="clock_worker_review",
+    ),
+    # H24 (S149): albaranes cotejados con los fichajes por la IA.
+    path(
+        "documentacion/fichajes/<int:pk>/albaranes/carga/",
+        AlbaranStartView.as_view(),
+        name="clock_albaran_start",
+    ),
+    path(
+        "documentacion/fichajes/<int:pk>/albaranes/<int:batch_id>/archivo/",
+        AlbaranFileView.as_view(),
+        name="clock_albaran_file",
+    ),
+    path(
+        "documentacion/fichajes/<int:pk>/albaranes/<int:batch_id>/fin/",
+        AlbaranFinishView.as_view(),
+        name="clock_albaran_finish",
+    ),
+    path(
+        "documentacion/fichajes/<int:pk>/albaranes/<int:batch_id>/estado/",
+        AlbaranStatusView.as_view(),
+        name="clock_albaran_status",
+    ),
+    path(
+        "documentacion/fichajes/<int:pk>/albaranes/ver/<int:sheet_id>/",
+        AlbaranSheetFileView.as_view(),
+        name="clock_albaran_sheet",
     ),
     # H24 (S141): corrección de un fichaje (nunca se modifica el
     # original; queda en el historial con quién y por qué).

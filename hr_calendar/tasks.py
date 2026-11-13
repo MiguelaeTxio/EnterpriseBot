@@ -99,3 +99,30 @@ def retry_payslip_whatsapp_task(batch_id):
     if batch is None:
         return "sin entrega"
     return "reenviadas %s" % retry_whatsapp(batch)
+
+
+@shared_task(name="hr_calendar.tasks.read_albaran_batch_task")
+def read_albaran_batch_task(batch_id):
+    """
+    S149. Reads a worker's albaranes with Gemini and compares each day.
+
+    ---
+
+    Lee con Gemini los albaranes de una carga y compara cada día con
+    los fichajes (hr_calendar/albaran_check.read_batch).
+    """
+    from hr_calendar.albaran_check import read_batch
+    from hr_calendar.models import AlbaranBatch
+
+    batch = AlbaranBatch.objects.filter(
+        pk=batch_id, status=AlbaranBatch.Status.READING).select_related(
+        "person", "company", "created_by").first()
+    if batch is None:
+        return "sin carga que leer"
+    try:
+        read_batch(batch)
+    except Exception as exc:  # noqa: BLE001 -- queda anotado en la carga
+        logger.exception("# Albaranes %s: fallo al leer", batch_id)
+        AlbaranBatch.objects.filter(pk=batch_id).update(
+            status=AlbaranBatch.Status.READY, error=str(exc)[:500])
+    return "leída %s" % batch_id

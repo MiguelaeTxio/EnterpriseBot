@@ -13,7 +13,7 @@ horario, fichaje manual y correcciones.
 {% if is_entry and part.late_minutes is not None %}<div class="text-muted">horario {{ part.expected_start|time:"H:i" }} · {% if part.late_minutes > 0 %}{{ part.late_minutes }} min después{% elif part.late_minutes < 0 %}{{ part.late_minutes|stringformat:"d"|slice:"1:" }} min antes{% else %}en punto{% endif %}</div>{% endif %}
 {% if not is_entry and part.early_minutes is not None %}<div class="text-muted">horario {{ part.expected_end|time:"H:i" }} · {% if part.early_minutes > 0 %}{{ part.early_minutes }} min antes{% elif part.early_minutes < 0 %}{{ part.early_minutes|stringformat:"d"|slice:"1:" }} min después{% else %}en punto{% endif %}</div>{% endif %}
 {% if press.is_manual %}<div class="text-danger">fichaje manual, apuntado {{ press.received|date:"d/m H:i" }}</div>{% endif %}
-{% if press.is_added %}<div class="text-primary">añadido por {{ press.corrected_by }} · {{ press.correction.reason }}</div>{% elif press.correction %}<div class="text-primary">corregido por {{ press.corrected_by }}: antes {{ press.correction.get_old_kind_display|lower }} {{ press.old_time|date:"d/m H:i" }} · {{ press.correction.reason }}</div>{% endif %}
+{% if press.is_added %}<div class="text-primary">añadido{% if press.by_ai %} por IA ({{ press.corrected_by }}){% else %} por {{ press.corrected_by }}{% endif %} · {{ press.correction.reason }}</div>{% elif press.correction %}<div class="text-primary">corregido{% if press.by_ai %} por IA ({{ press.corrected_by }}){% else %} por {{ press.corrected_by }}{% endif %}: antes {{ press.correction.get_old_kind_display|lower }} {{ press.old_time|date:"d/m H:i" }} · {{ press.correction.reason }}</div>{% endif %}
 {% else %}
 <span class="text-warning-emphasis">—</span>
 {% endif %}

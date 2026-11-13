@@ -942,6 +942,9 @@ def _press_view(event, corrections_by_replacement=None):
         "correction": correction,
         "corrected_by": (_user_label(correction.corrected_by)
                          if correction else ""),
+        # S149: corrección hecha por la IA al cotejar los albaranes.
+        "by_ai": bool(correction and correction.source
+                      == ClockCorrection.Source.AI),
         "old_time": (timezone.localtime(correction.old_pressed_at)
                      if correction and correction.old_pressed_at else None),
         # S144: pulsación añadida por el supervisor (no corrige otra).
@@ -1238,21 +1241,38 @@ def _attach_reviewed(person, shifts):
     ("al corregir automáticamente se marca como visada"). También marca
     la jornada en curso de hoy ("in_progress").
     """
-    from hr_calendar.models import ClockDayReview
+    from hr_calendar.models import ClockDayAiCheck, ClockDayReview
 
-    days = set()
+    reviews, checks = {}, {}
     if person.company_user_id is not None and shifts:
-        days = set(ClockDayReview.objects.filter(
-            company_user_id=person.company_user_id,
-            day__in={s["day"] for s in shifts},
-        ).values_list("day", flat=True))
+        wanted = {s["day"] for s in shifts}
+        reviews = {r.day: r for r in ClockDayReview.objects.filter(
+            company_user_id=person.company_user_id, day__in=wanted,
+        ).select_related("reviewed_by__user")}
+        # S149: días comparados con sus albaranes por la IA.
+        checks = {c.day: c for c in ClockDayAiCheck.objects.filter(
+            company_user_id=person.company_user_id, day__in=wanted,
+        ).select_related("checked_by__user")}
     for shift in shifts:
         presses = [p for p in (shift.get("presses") or [])
                    + (shift.get("changes") or []) if p]
         shift["corrected_any"] = bool(shift.get("cancelled")) or any(
             p.get("correction") for p in presses)
-        shift["reviewed"] = shift["day"] in days or shift["corrected_any"]
-        shift["review_manual"] = shift["day"] in days
+        # S149 (Miguel Ángel): lo que corrige la IA no visa el día; el
+        # visado es solo del supervisor. Una corrección manual sí.
+        manual = any(not c.get("by_ai") for c in shift.get("cancelled")
+                     or []) or any(p.get("correction") and not
+                                   p.get("by_ai") for p in presses)
+        review = reviews.get(shift["day"])
+        shift["reviewed"] = review is not None or manual
+        shift["review_manual"] = review is not None
+        shift["reviewed_by"] = (_user_label(review.reviewed_by)
+                                if review and review.reviewed_by_id
+                                else "")
+        check = checks.get(shift["day"])
+        shift["ai_check"] = check
+        shift["ai_checked_by"] = (_user_label(check.checked_by)
+                                  if check and check.checked_by_id else "")
 
 
 def _render_detail(request, person, date_from, date_to, error="",
@@ -1328,6 +1348,7 @@ def _attach_cancelled(shifts, corrections, date_from, date_to):
             "by": _user_label(correction.corrected_by),
             "at": timezone.localtime(correction.corrected_at),
             "reason": correction.reason,
+            "by_ai": correction.source == ClockCorrection.Source.AI,
         })
     last_of_day = {}
     for shift in shifts:

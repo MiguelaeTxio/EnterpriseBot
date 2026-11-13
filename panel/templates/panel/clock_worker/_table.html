@@ -35,20 +35,21 @@ historial: quién, cuándo, antes, después y motivo).
 {# Historial de correcciones de las fechas elegidas, la más reciente arriba. #}
 <table class="table table-hover table-light align-middle small" id="cw-history-table">
     <thead class="table-light">
-        <tr><th>Corregido</th><th>Por</th><th>Corrección</th><th>Antes</th><th>Después</th><th>Motivo</th></tr>
+        <tr><th>Corregido</th><th>Por</th><th>Origen</th><th>Corrección</th><th>Antes</th><th>Después</th><th>Motivo</th></tr>
     </thead>
     <tbody>
         {% for item in history %}
         <tr{% if item.is_cancel %} class="table-secondary"{% endif %}>
             <td class="text-nowrap">{{ item.corrected_at|date:"d/m/Y H:i" }}</td>
             <td>{{ item.corrected_by }}</td>
+            <td>{% if item.correction.source == "AI" %}<span class="badge text-bg-info fw-normal">IA</span>{% else %}Manual{% endif %}</td>
             <td>{{ item.correction.get_action_display }}</td>
             <td class="text-nowrap">{% if item.old_time %}{{ item.correction.get_old_kind_display }}{% if item.correction.old_clock_type %} ({{ item.correction.old_clock_type.name }}){% endif %} {{ item.old_time|date:"d/m/Y H:i" }}{% else %}—{% endif %}</td>
             <td class="text-nowrap">{% if item.is_cancel %}<span class="text-danger">anulado</span>{% else %}{{ item.correction.get_new_kind_display }}{% if item.correction.new_clock_type %} ({{ item.correction.new_clock_type.name }}){% endif %} {{ item.new_time|date:"d/m/Y H:i" }}{% endif %}</td>
             <td class="text-wrap">{{ item.correction.reason }}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="6" class="text-muted py-3">Ningún fichaje corregido en estas fechas.</td></tr>
+        <tr><td colspan="7" class="text-muted py-3">Ningún fichaje corregido en estas fechas.</td></tr>
         {% endfor %}
     </tbody>
 </table>
@@ -123,7 +124,14 @@ historial: quién, cuándo, antes, después y motivo).
                     <input type="checkbox" class="form-check-input cw-review" data-day="{{ row.day|date:'Y-m-d' }}"{% if row.reviewed %} checked{% endif %}>
                     <span class="form-check-label">Visado</span>
                 </label>
+                {% if row.reviewed_by %}<div class="text-muted">visado por {{ row.reviewed_by }}</div>{% endif %}
                 {% endif %}
+                {# S149: día comparado con sus albaranes por la IA (pre-visado). #}
+                {% if row.ai_check %}
+                <div class="mt-1"><span class="badge {% if row.ai_check.corrected %}text-bg-info{% else %}text-bg-light border{% endif %} fw-normal" title="{{ row.ai_check.summary }}">{% if row.ai_check.corrected %}Corregido por IA{% else %}Comparado por IA{% endif %}</span> <span class="text-muted">lanzado por {{ row.ai_checked_by|default:"—" }}</span></div>
+                <div class="text-muted text-wrap" style="white-space:pre-line">{{ row.ai_check.summary }}</div>
+                {% endif %}
+                {% for alb in row.albaranes %}<div class="text-nowrap"><a href="{% url 'panel:clock_albaran_sheet' person.pk alb.pk %}" target="_blank" rel="noopener" title="Ver el albarán ({{ alb.original_name }}){% if alb.observations %} · {{ alb.observations }}{% endif %}"><i class="bi bi-file-earmark-text"></i> {{ alb.number|default:"albarán" }}</a>{% if alb.machine %} {{ alb.machine }}{% endif %}: {{ alb.base_out|time:"H:i"|default:"—" }} / {{ alb.work_in|time:"H:i"|default:"—" }}–{{ alb.work_out|time:"H:i"|default:"—" }} / {{ alb.base_in|time:"H:i"|default:"—" }}{% if alb.name_mismatch %} <span class="text-warning-emphasis" title="Nombre del albarán: {{ alb.operator_name }}"><i class="bi bi-exclamation-triangle"></i></span>{% endif %}</div>{% endfor %}
                 {% if row.status == 'open' %}<div class="text-success">En curso: falta la salida</div>{% endif %}
                 {% if row.rest_note %}<div class="text-muted">{{ row.rest_note }}</div>{% endif %}
                 {% if row.cancelled and not row.only_cancelled %}<div class="text-muted">Anulado ese día: {% for item in row.cancelled %}<s>{{ item.kind|lower }} {{ item.time|date:"H:i" }}</s>{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}

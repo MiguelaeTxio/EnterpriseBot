@@ -408,6 +408,12 @@ def _context(request, person):
     rows = _sort_rows(rows, _parse_sort(raw_sort))
     # S143: una fila por día con sus jornadas dentro.
     rows = _group_by_day(rows)
+    # S149: los albaranes leídos de cada día, junto a su jornada.
+    from panel.views_clock_albaranes import albaranes_by_day, uses_albaranes
+
+    albaranes = albaranes_by_day(person, date_from, date_to)
+    for row in rows:
+        row["albaranes"] = albaranes.get(row["day"], [])
     report = data["report"]
     calendar = {}
     if view == VIEW_CALENDAR:
@@ -426,6 +432,7 @@ def _context(request, person):
         "person": person,
         "person_label": _person_label(person),
         "has_account": person.company_user_id is not None,
+        "uses_albaranes": uses_albaranes(person),
         "rows": rows,
         "history": data["history"],
         "date_from": date_from,

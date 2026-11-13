@@ -452,13 +452,16 @@ def compare_day(batch, day):
                              "at": match.pressed_at,
                              "type": match.clock_type_id})
                 continue
-            rows.append({"id": match.pk, "kind": kind, "at": at,
+            # Dentro de la cortesía se respeta la hora fichada y solo se
+            # cambia el tipo.
+            when = match.pressed_at if off <= tolerance_delta else at
+            rows.append({"id": match.pk, "kind": kind, "at": when,
                          "type": type_id})
             lines.append("Corregido: %s de las %s a %s a las %s." % (
                 _label(match.kind, match.clock_type_id, travel, work, meal),
                 timezone.localtime(match.pressed_at).strftime("%H:%M"),
                 _label(kind, type_id, travel, work, meal).lower(),
-                timezone.localtime(at).strftime("%H:%M")))
+                timezone.localtime(when).strftime("%H:%M")))
         for event in events:
             if event.pk not in used:
                 rows.append({"id": event.pk, "delete": True})
