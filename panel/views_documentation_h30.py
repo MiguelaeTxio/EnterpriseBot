@@ -232,7 +232,66 @@ def _apply_personal_filters(qs, request):
             document_requirements=int(requirement_filter),
         ).values("pk"))
 
+    # S153: filtro por grupo de selección -- Miguel Ángel: "pasarlos a
+    # filtrado para que podamos filtrar sin tener seleccionados a los
+    # operarios, administrativos, etcétera". Un grupo = sus personas y
+    # las de todos sus subgrupos (como el total del árbol); "none" =
+    # quien no está en ningún grupo.
+    group_filter = request.GET.get("group", "")
+    if group_filter == GROUP_FILTER_NONE:
+        qs = qs.filter(group_templates__isnull=True)
+    elif group_filter.isdigit():
+        qs = qs.filter(pk__in=_group_member_ids(int(group_filter)))
+
     return qs
+
+
+GROUP_FILTER_NONE = "none"
+
+
+def _group_member_ids(group_pk):
+    """
+    pks of the people of a selection group and of all its subgroups.
+    ---
+    S153. Las personas de un grupo de selección y de todos sus
+    subgrupos (a cualquier profundidad).
+    """
+    from document_explorer.models import PersonGroupTemplate
+
+    children = {}
+    for pk, parent_id in PersonGroupTemplate.objects.values_list(
+            "pk", "parent_id"):
+        children.setdefault(parent_id, []).append(pk)
+    wanted, pending = set(), [group_pk]
+    while pending:
+        current = pending.pop()
+        if current in wanted:
+            continue
+        wanted.add(current)
+        pending.extend(children.get(current, []))
+    return PersonIdentity.objects.filter(
+        group_templates__in=wanted).values("pk")
+
+
+def _group_filter_options(company_user):
+    """
+    Options of the "Grupo" filter of Personal, in tree order.
+    ---
+    S153. Opciones del filtro "Grupo" de Personal en el orden del árbol
+    de grupos de selección (con sus carpetas Generales / Usuarios /
+    Propios como rótulos no elegibles): (valor, rótulo, elegible).
+    """
+    from panel.person_groups import PERSON_KIND, group_tree
+
+    options = []
+    for node in group_tree(company_user, PERSON_KIND):
+        pad = "\u00a0\u00a0\u00a0" * node["depth"]
+        if node["kind"] == "folder":
+            options.append(("", pad + node["label"], False))
+        else:
+            options.append((str(node["group"].pk), "%s%s (%d)" % (
+                pad, node["group"].name, node["total"]), True))
+    return options
 
 
 def _apply_sort(request, queryset, sort_columns, default_sort):
@@ -732,9 +791,9 @@ def _build_personal_tab_querystring(filters):
     if isinstance(requirement_value, str) and requirement_value:
         params.append(("requirement", requirement_value))
     # H24 (S144): "Alta en el fichaje", "Sección" y "Horario"; S153:
-    # "Situación" y "Documento" del requisito elegido.
+    # "Situación" y "Documento" del requisito elegido y "Grupo".
     for key in ("onboarding", "section", "schedule", "req_state",
-                "req_item"):
+                "req_item", "group"):
         value = personal_filters.get(key, "")
         if isinstance(value, str) and value:
             params.append((key, value))
@@ -1441,6 +1500,11 @@ def _person_list_page(request, ids_only=False):
         "onboarding_choices": ONBOARDING_CHOICES,
         "section_filter": section_raw,
         "schedule_filter": schedule_raw,
+        # S153: filtro por grupo de selección.
+        "group_filter": request.GET.get("group", ""),
+        "group_filter_none": GROUP_FILTER_NONE,
+        "group_filter_options": _group_filter_options(
+            request.user.company_user),
         "no_section": NO_SECTION,
         "no_schedule": NO_SCHEDULE,
         "ws_sections": _sections(company),

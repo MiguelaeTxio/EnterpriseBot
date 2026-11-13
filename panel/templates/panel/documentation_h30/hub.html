@@ -695,6 +695,8 @@ la plantilla de algún grupo marcado se abre este modal para elegirla.
             // S153: "Situación" y "Documento" del requisito elegido.
             filters[hit.tab].req_state = parsed.searchParams.get('req_state') || '';
             filters[hit.tab].req_item = parsed.searchParams.get('req_item') || '';
+            // S153: filtro por grupo de selección.
+            filters[hit.tab].group = parsed.searchParams.get('group') || '';
         }
         lastFilters[hit.tab] = filters[hit.tab];
         saveState({filters: filters});
