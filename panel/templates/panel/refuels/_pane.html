@@ -25,7 +25,7 @@ repostado o no, y las fechas no cuentan (se desactivan).
 {% endcomment %}
 <div class="border rounded p-2 mb-2" id="rfl-top-panel">
     <div class="row g-2">
-        <div class="col-lg-7">
+        <div class="col-lg-4">
             <div class="border rounded p-2 h-100">
                 <div class="fw-bold small mb-1">Buscar y filtrar</div>
                 <form id="rfl-filters" autocomplete="off" onsubmit="return false;"
@@ -46,7 +46,8 @@ repostado o no, y las fechas no cuentan (se desactivan).
                         <input type="text" name="search" id="rfl-filter-search" class="form-control doc-h30-search"
                                placeholder="Buscar por centro de gasto, matrícula, vehículo o chófer…" value="{{ filter_search }}">
                     </div>
-                    <div class="d-flex flex-wrap align-items-center gap-3 mb-2 small">
+                    {# S153 (4.27): arriba lo común de las pestañas de máquinas (Familia · Grupo); debajo, lo propio. #}
+                    <div class="d-flex flex-wrap align-items-end gap-3 mb-2 small">
                         {# S141: familias por casillas (entran las marcadas), no un desplegable de una sola. #}
                         <div class="d-flex align-items-center gap-2">
                             <span class="fw-semibold">Familias</span>
@@ -69,6 +70,10 @@ repostado o no, y las fechas no cuentan (se desactivan).
                             </div>
                             <input type="hidden" name="family" id="rfl-family-input" value="">
                         </div>
+                        {% include "panel/_group_filter_select.html" with gf_id="rfl-filter-group" gf_who="máquinas" %}
+                    </div>
+                    <hr class="eb-filters-sep">
+                    <div class="d-flex flex-wrap align-items-center gap-3 mb-2 small">
                         {# S141: vehículos de horas a los que les anotan km o nada. #}
                         <div class="d-flex align-items-center gap-2 rfl-supply-filter">
                             <label class="fw-semibold" for="rfl-filter-hours"><i class="bi bi-clock-history me-1"></i>Horas</label>
@@ -89,18 +94,29 @@ repostado o no, y las fechas no cuentan (se desactivan).
                     </div>
                     <div class="d-flex flex-wrap gap-3 align-items-start small">
                         <div class="rfl-supply-filter rfl-status-filter">
-                            <div class="fw-semibold mb-1">Estado</div>
+                            <div class="fw-semibold mb-1">Situación</div>
+                            {# S153: casillas dentro de un desplegable, como en las demás pestañas (panel/_checkdrop_js.html). #}
+                            <div class="dropdown checkdrop" data-all="Todas" data-none="Ninguna">
+                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
+                                        data-bs-auto-close="outside" aria-expanded="false"><span class="checkdrop-text">Todas</span></button>
+                                <div class="dropdown-menu p-2 small">
                             {% for choice in status_choices %}
                             <div class="form-check">
                                 <input class="form-check-input rfl-status-check" type="checkbox" value="{{ choice.code }}"
                                        id="rflStatus{{ forloop.counter }}"{% if choice.checked %} checked{% endif %}>
-                                <label class="form-check-label" for="rflStatus{{ forloop.counter }}">{{ choice.label }}</label>
+                                <label class="form-check-label text-nowrap" for="rflStatus{{ forloop.counter }}">{{ choice.label }}</label>
                             </div>
                             {% endfor %}
+                                </div>
+                            </div>
                             <input type="hidden" name="status" id="rfl-status-input" value="">
                         </div>
                         <div class="rfl-supply-filter">
-                            <div class="fw-semibold mb-1"><i class="bi bi-bell-slash me-1"></i>¿Se pregunta al chófer?</div>
+                            <div class="fw-semibold mb-1"><i class="bi bi-bell-slash me-1"></i>¿Se pregunta?</div>
+                            <div class="dropdown checkdrop" data-all="Todos" data-none="Ninguno">
+                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
+                                        data-bs-auto-close="outside" aria-expanded="false"><span class="checkdrop-text">Todos</span></button>
+                                <div class="dropdown-menu p-2 small">
                             {% for choice in ask_choices %}
                             <div class="form-check">
                                 <input class="form-check-input rfl-ask-check" type="checkbox" value="{{ choice.code }}"
@@ -108,11 +124,15 @@ repostado o no, y las fechas no cuentan (se desactivan).
                                 <label class="form-check-label" for="rflAsk{{ forloop.counter }}">{{ choice.label }}</label>
                             </div>
                             {% endfor %}
+                                </div>
+                            </div>
                             <input type="hidden" name="ask" id="rfl-ask-input" value="">
                         </div>
                         <div class="rfl-date-filter">
                             <div class="fw-semibold mb-1">Desde</div>
-                            <input type="date" name="date_from" class="form-control form-control-sm mb-2" value="{{ date_from|date:'Y-m-d' }}">
+                            <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from|date:'Y-m-d' }}">
+                        </div>
+                        <div class="rfl-date-filter">
                             <div class="fw-semibold mb-1">Hasta</div>
                             <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to|date:'Y-m-d' }}">
                         </div>
@@ -125,10 +145,18 @@ repostado o no, y las fechas no cuentan (se desactivan).
                             <input type="hidden" name="selected_ids" id="rfl-selected-ids" value="">
                         </div>
                     </div>
+                    {% include "panel/_checkdrop_js.html" %}
                 </form>
             </div>
         </div>
 
+        {% comment %}
+        S153 (4.27): el mismo recuadro de grupos de máquinas que Centros de
+        gasto y Revisiones. Marcar un grupo selecciona las filas de sus
+        máquinas (repostajes, vehículos o preguntas); en "Repostadores" no
+        hay máquina por fila.
+        {% endcomment %}
+        {% include "panel/_selection_groups_box.html" with sg="machineGroup" sg_nodes=machine_group_nodes sg_collapsed=machine_groups_collapsed sg_parents=machine_group_parents sg_hint="filas" %}
         <div class="col-lg-5">
             <div class="border rounded p-2 h-100">
                 <div class="d-flex align-items-center gap-2 mb-1">
@@ -550,7 +578,51 @@ repostado o no, y las fechas no cuentan (se desactivan).
         if (evt.detail.target && evt.detail.target.id === "rfl-results") refreshFromFragment();
     });
 
+    // S153 (4.27): grupos de selección de máquinas. Marcar grupos
+    // selecciona las filas de sus máquinas; "Guardar" guarda las
+    // máquinas de las filas marcadas.
+    const machineGroups = window.EbSelectionGroups.init({
+        prefix: "machineGroup",
+        collapsedKey: "machine_groups",
+        saveUrl: "{% url 'panel:fleet_group_save' %}",
+        updateUrl: function (pk) { return "/panel/fleet/grupos/" + pk + "/guardar/"; },
+        deleteUrl: function (pk) { return "/panel/fleet/grupos/" + pk + "/eliminar/"; },
+        memberField: "machine_ids",
+        noun: "máquina",
+        getIds: function () {
+            const selection = current();
+            const machines = new Set();
+            results.querySelectorAll(".rfl-row-check").forEach(function (cb) {
+                if (selection.has(cb.dataset.pk) && cb.dataset.machine) machines.add(cb.dataset.machine);
+            });
+            return Array.from(machines);
+        },
+        setIds: function (pairs) {
+            const wanted = new Set(pairs.map(function (pair) { return String(pair[0]); }));
+            const selection = current();
+            selection.clear();
+            results.querySelectorAll(".rfl-row-check").forEach(function (cb) {
+                if (cb.dataset.machine && wanted.has(cb.dataset.machine)) selection.set(cb.dataset.pk, cb.dataset.label || "");
+                cb.checked = selection.has(cb.dataset.pk);
+            });
+            updateSelectionUi();
+        },
+        labelOf: function () { return ""; },
+        toast: function (text, isError) {
+            const box = document.getElementById("machineGroupFormResult");
+            box.innerHTML = '<div class="small"></div>';
+            box.firstChild.className = "small " + (isError ? "text-danger" : "text-success");
+            box.firstChild.textContent = text;
+        },
+    });
+    const baseUpdate = updateSelectionUi;
+    updateSelectionUi = function () { baseUpdate(); machineGroups.refresh(); };
     refreshFromFragment();
 }());
 </script>
+<style>
+.eb-filters-sep { margin: .5rem 0; opacity: .15; }
+/* S153: "Ver" en una línea (la columna de filtros es la estrecha común). */
+#rfl-filters .btn-group .btn { padding: .1rem .4rem; font-size: .75rem; white-space: nowrap; }
+</style>
 {% include "panel/refuels/_export_modal.html" %}

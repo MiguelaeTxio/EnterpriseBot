@@ -63,7 +63,7 @@ mantiene columnas y cabecera en cualquier pantalla, con scroll lateral.
         {% for row in rows %}
         <tr>
             <td class="sticky-col sticky-col-1">
-                <input type="checkbox" class="form-check-input rfl-row-check" data-pk="{{ row.pk }}" data-label="{{ row.label }}">
+                <input type="checkbox" class="form-check-input rfl-row-check" data-pk="{{ row.pk }}" data-machine="{% if row.machine %}{{ row.machine.pk }}{% endif %}" data-label="{{ row.label }}">
             </td>
             <td class="sticky-col sticky-col-2">
                 {% if row.status_badge == "danger" %}<i class="bi bi-exclamation-triangle-fill text-danger" title="KM dudoso: no se ha convertido en lectura"></i>{% elif row.status_badge == "warning" %}<i class="bi bi-question-circle text-warning-emphasis" title="No se sabe si este vehículo apunta km u horas"></i>{% endif %}

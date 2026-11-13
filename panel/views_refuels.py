@@ -70,7 +70,7 @@ from panel.views_vacation_balance import _param, _parse_date
 
 SCREEN_KEY = "refuels"
 FILTER_KEYS = ("view", "search", "status", "ask", "date_from", "date_to",
-               "sort", "family", "all_active", "hours")
+               "sort", "family", "all_active", "hours", "group")
 NO_STATUS = "none"
 # Filtro "¿Se pregunta al chófer?": sí / no (S135).
 # ---
@@ -256,6 +256,24 @@ def _ask_values(request):
     return [code == "yes" for code in chosen]
 
 
+def _group_machines(request):
+    """
+    Machines of the chosen selection group, or None for all.
+    ---
+    S153 (directriz 4.27): filtro "Grupo", el mismo de todas las
+    pestañas -- las máquinas del grupo y de sus subgrupos ("Sin grupo":
+    las que no están en ninguno); None = sin filtrar.
+    """
+    from fleet.models import MachineAsset
+    from panel.person_groups import MACHINE_KIND, filter_by_group
+
+    raw = _param(request, "group").strip()
+    if not raw:
+        return None
+    return filter_by_group(
+        MachineAsset.objects.all(), raw, MACHINE_KIND).values("pk")
+
+
 def _families(request):
     """
     Chosen machine families, or None for all.
@@ -413,6 +431,9 @@ def _filtered_supplies(request):
     families = _families(request)
     if families is not None:
         supplies = supplies.filter(vehicle__machine__family__in=families)
+    machines = _group_machines(request)
+    if machines is not None:
+        supplies = supplies.filter(vehicle__machine__in=machines)
     hours_issues = _HOURS_FILTERS.get(_param(request, "hours"))
     if hours_issues:
         supplies = supplies.filter(hours_issue__in=hours_issues)
@@ -571,6 +592,9 @@ def _vehicle_groups(request, order, wanted=None):
     families = _families(request)
     if families is not None:
         vehicles = vehicles.filter(machine__family__in=families)
+    machines = _group_machines(request)
+    if machines is not None:
+        vehicles = vehicles.filter(machine__in=machines)
     ask_values = _ask_values(request)
     if len(ask_values) == 1:
         vehicles = vehicles.filter(ask_driver=ask_values[0])
@@ -615,6 +639,10 @@ def _user_groups(request, order, wanted=None):
     if families is not None:
         users = users.filter(pk__in=GasoGesSupply.objects.filter(
             vehicle__machine__family__in=families).values("user_id"))
+    machines = _group_machines(request)
+    if machines is not None:
+        users = users.filter(pk__in=GasoGesSupply.objects.filter(
+            vehicle__machine__in=machines).values("user_id"))
     ask_values = _ask_values(request)
     if len(ask_values) == 1:
         users = users.filter(ask_driver=ask_values[0])
@@ -749,6 +777,9 @@ def _filtered_questions(request):
     if families is not None:
         questions = questions.filter(
             vehicle__machine__family__in=families)
+    machines = _group_machines(request)
+    if machines is not None:
+        questions = questions.filter(vehicle__machine__in=machines)
     search = _param(request, "search").strip()
     if search:
         questions = questions.filter(
@@ -935,8 +966,24 @@ class RefuelsTabView(CompanyUserRequiredMixin, View):
         for view, key in _SELECTION_KEYS.items():
             value = get_saved_state_key(company_user, SCREEN_KEY, key, [])
             saved_selection[view] = value if isinstance(value, list) else []
+        # S153 (4.27): filtro y recuadro de grupos de máquinas, los
+        # mismos que en Centros de gasto.
+        from panel.person_groups import (
+            GROUP_FILTER_NONE, MACHINE_KIND, collapsed_state,
+            group_filter_options, group_tree, parent_choices,
+        )
+
         return render(request, "panel/refuels/_pane.html", {
             **_list_context(request),
+            "group_filter": _param(request, "group"),
+            "group_filter_none": GROUP_FILTER_NONE,
+            "group_filter_options": group_filter_options(
+                company_user, MACHINE_KIND),
+            "machine_group_nodes": group_tree(company_user, MACHINE_KIND),
+            "machine_groups_collapsed": collapsed_state(
+                company_user, MACHINE_KIND),
+            "machine_group_parents": parent_choices(
+                editor=company_user, kind=MACHINE_KIND),
             "screen_key": SCREEN_KEY,
             "saved_selection": saved_selection,
             "selection_keys": _SELECTION_KEYS,

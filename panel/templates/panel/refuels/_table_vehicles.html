@@ -29,7 +29,7 @@ Todo llega calculado desde panel/views_refuels.py (_vehicle_rows).
         {% for row in rows %}
         <tr>
             <td class="sticky-col sticky-col-1">
-                <input type="checkbox" class="form-check-input rfl-row-check" data-pk="{{ row.pk }}" data-label="{{ row.label }}">
+                <input type="checkbox" class="form-check-input rfl-row-check" data-pk="{{ row.pk }}" data-machine="{% if row.machine %}{{ row.machine.pk }}{% endif %}" data-label="{{ row.label }}">
             </td>
             <td class="sticky-col sticky-col-2">
                 {% if row.hours_km or row.hours_empty %}<i class="bi bi-clock-history text-danger" title="Va por horas y en el periodo le han anotado km o nada"></i>{% elif row.anomalies %}<i class="bi bi-exclamation-triangle-fill text-danger" title="Tiene repostajes con KM dudoso en el periodo"></i>{% elif not row.unit_known and row.machine %}<i class="bi bi-question-circle text-warning-emphasis" title="No se sabe si este vehículo apunta km u horas"></i>{% endif %}

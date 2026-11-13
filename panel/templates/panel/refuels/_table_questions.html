@@ -45,7 +45,7 @@ panel/views_refuels.py (_question_stats, _question_row).
         {% for row in rows %}
         <tr>
             <td class="sticky-col sticky-col-1">
-                <input type="checkbox" class="form-check-input rfl-row-check" data-pk="{{ row.pk }}" data-label="{{ row.label }}">
+                <input type="checkbox" class="form-check-input rfl-row-check" data-pk="{{ row.pk }}" data-machine="{% if row.machine %}{{ row.machine.pk }}{% endif %}" data-label="{{ row.label }}">
             </td>
             <td class="sticky-col sticky-col-2">
                 {% if row.status_badge == "warning" %}<i class="bi bi-hourglass-split text-warning-emphasis" title="Enviada, sin respuesta"></i>{% endif %}
