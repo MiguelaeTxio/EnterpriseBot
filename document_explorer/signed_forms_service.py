@@ -86,6 +86,7 @@ GEMINI_MAX_PAGES = 4
 GEMINI_DPI = 110
 MIN_SIGNATURE_BOX_HEIGHT = 45
 MIN_SIGNATURE_BOX_WIDTH = 150
+SIGNATURE_INSET = 6
 METHOD_TEXT = "texto"
 METHOD_GEMINI = "Gemini"
 
@@ -360,6 +361,18 @@ def _write_in_box(page, rect, text):
 
 
 def _sign_in_box(page, rect, png):
+    """
+    Put the signature in Gemini's box, a little inside it.
+    ---
+    Pone la firma en el hueco que dice Gemini, un poco por dentro
+    (SIGNATURE_INSET por cada lado) para que el sello no pise los bordes
+    del recuadro cuando Gemini lo marca algo más grande de lo real.
+    """
+    rect = fitz.Rect(rect)
+    if rect.width > 4 * SIGNATURE_INSET and (
+            rect.height > 4 * SIGNATURE_INSET):
+        rect = rect + (SIGNATURE_INSET, SIGNATURE_INSET,
+                       -SIGNATURE_INSET, -SIGNATURE_INSET)
     if rect.height < MIN_SIGNATURE_BOX_HEIGHT:
         rect.y1 = min(rect.y0 + MIN_SIGNATURE_BOX_HEIGHT,
                       page.rect.y1 - 10)
