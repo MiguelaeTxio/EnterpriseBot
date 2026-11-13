@@ -68,7 +68,7 @@ la lista hace scroll. Dos paneles:
                            autocomplete="off"
                            hx-get="{% url 'panel:fleet_fragment' %}"
                            hx-target="#fleet-table-container"
-                           hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
+                           hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
                            hx-trigger="input changed delay:300ms, search">
                     <div class="d-flex gap-4">
                         <div>
@@ -99,7 +99,7 @@ la lista hace scroll. Dos paneles:
                             <input type="hidden" id="fleet-filter-is-active" name="is_active" value="{{ filter_is_active }}"
                                    hx-get="{% url 'panel:fleet_fragment' %}"
                                    hx-target="#fleet-table-container"
-                                   hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
+                                   hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
                                    hx-trigger="fleet-estado-change">
                         </div>
                         <div class="flex-grow-1">
@@ -107,7 +107,7 @@ la lista hace scroll. Dos paneles:
                             <select id="fleet-filter-family" class="form-select form-select-sm"
                                     hx-get="{% url 'panel:fleet_fragment' %}"
                                     hx-target="#fleet-table-container"
-                                    hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
+                                    hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
                                     hx-trigger="change"
                                     name="family" autocomplete="off">
                                 <option value="">Todas las familias</option>
@@ -122,7 +122,7 @@ la lista hace scroll. Dos paneles:
                             <select id="fleet-filter-requirement" class="form-select form-select-sm" data-requirement-select
                                     hx-get="{% url 'panel:fleet_fragment' %}"
                                     hx-target="#fleet-table-container"
-                                    hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
+                                    hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
                                     hx-trigger="change"
                                     name="requirement" autocomplete="off">
                                 <option value="" data-fixed {% if not filter_requirement %}selected{% endif %}>Todos</option>
@@ -131,6 +131,33 @@ la lista hace scroll. Dos paneles:
                                 <option value="{{ position.pk }}" {% if filter_requirement == position.pk|stringformat:"s" %}selected{% endif %}>{{ position.name }}</option>
                                 {% endfor %}
                             </select>
+                            {% comment %}
+                            S153: "Situación" y "Documento" del requisito elegido, como en
+                            Personal ("ver quiénes tienen la ITV cumplida y quién no"). Sin
+                            requisito concreto van desactivados (no se envían).
+                            {% endcomment %}
+                            <div class="d-flex flex-wrap gap-1 mt-1 fleet-req-filter">
+                                <select id="fleet-filter-req-state" class="form-select form-select-sm fleet-select-auto"
+                                        hx-get="{% url 'panel:fleet_fragment' %}"
+                                        hx-target="#fleet-table-container"
+                                        hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
+                                        hx-trigger="change"
+                                        name="req_state" autocomplete="off" title="Situación de cada centro de gasto en el requisito elegido">
+                                    <option value="">Cualquier situación</option>
+                                    {% for code, label in req_state_choices %}
+                                    <option value="{{ code }}" {% if filter_req_state == code %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                                <select id="fleet-filter-req-item" class="form-select form-select-sm fleet-select-auto"
+                                        hx-get="{% url 'panel:fleet_fragment' %}"
+                                        hx-target="#fleet-table-container"
+                                        hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
+                                        hx-trigger="change"
+                                        name="req_item" autocomplete="off" title="Solo este documento del requisito" data-selected="{{ filter_req_item }}">
+                                    <option value="">Todo el requisito</option>
+                                </select>
+                            </div>
+                            {{ requirement_items_map|json_script:"fleetRequirementItems" }}
                         </div>
                     </div>
                     {% include "panel/_checkdrop_js.html" %}
@@ -140,7 +167,7 @@ la lista hace scroll. Dos paneles:
                             <input class="form-check-input" type="checkbox" id="fleet-only-selected" name="only_selected" value="1" autocomplete="off"
                                    hx-get="{% url 'panel:fleet_fragment' %}"
                                    hx-target="#fleet-table-container"
-                                   hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
+                                   hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
                                    hx-trigger="change, fleet-selection-refresh">
                             <label class="form-check-label small" for="fleet-only-selected">Mostrar solo la selección actual</label>
                         </div>
@@ -150,7 +177,7 @@ la lista hace scroll. Dos paneles:
                                 id="fleet-clear-sort"
                                 hx-get="{% url 'panel:fleet_fragment' %}"
                                 hx-target="#fleet-table-container"
-                                hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
+                                hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                                 hx-vals='{"sort": ""}'
                                 title="Deshacer todos los órdenes aplicados">
                             <i class="bi bi-x-circle me-1"></i>Quitar orden
@@ -389,11 +416,52 @@ la lista hace scroll. Dos paneles:
         <input type="hidden" name="_f_search" value="{{ filter_search }}">
         <input type="hidden" name="_f_family" value="{{ filter_family }}">
         <input type="hidden" name="_f_requirement" value="{{ filter_requirement }}">
+        <input type="hidden" name="_f_req_state" value="{{ filter_req_state }}">
+        <input type="hidden" name="_f_req_item" value="{{ filter_req_item }}">
         <input type="hidden" name="_f_is_active" value="{{ filter_is_active }}">
         <input type="hidden" name="_f_sort" value="{{ current_sort }}">
     </div>
 
+<script>
+    // S153. "Situación" y "Documento" dependen del requisito elegido
+    // (como en Personal): "Documento" se rellena con lo que pide ese
+    // requisito y los dos se desactivan sin requisito concreto. En
+    // captura, para que quede hecho ANTES de que htmx lea los valores.
+    (function () {
+        const requirement = document.getElementById("fleet-filter-requirement");
+        const state = document.getElementById("fleet-filter-req-state");
+        const item = document.getElementById("fleet-filter-req-item");
+        const mapEl = document.getElementById("fleetRequirementItems");
+        if (!requirement || !state || !item || !mapEl) { return; }
+        const itemsByRequirement = JSON.parse(mapEl.textContent);
+        function fillItems(selected) {
+            const items = itemsByRequirement[requirement.value] || [];
+            item.replaceChildren();
+            const all = document.createElement("option");
+            all.value = "";
+            all.textContent = "Todo el requisito";
+            item.appendChild(all);
+            items.forEach(function (pair) {
+                const option = document.createElement("option");
+                option.value = pair[0];
+                option.textContent = pair[1];
+                if (pair[0] === selected) { option.selected = true; }
+                item.appendChild(option);
+            });
+            const concrete = /^\d+$/.test(requirement.value);
+            state.disabled = !concrete;
+            item.disabled = !concrete;
+        }
+        requirement.parentElement.addEventListener("change", function (ev) {
+            if (ev.target === requirement) { fillItems(""); }
+        }, true);
+        fillItems(item.dataset.selected || "");
+    }());
+</script>
 <style>
+/* S153: requisito + situación + documento no se salen del recuadro. */
+.fleet-req-filter { max-width: 100%; min-width: 0; }
+.fleet-req-filter .form-select { min-width: 0; flex: 0 1 auto; }
 /* S148: la lista de grupos hace scroll dentro de su recuadro. */
 .fleet-select-auto { width: auto; max-width: 100%; min-width: 0; }
 .fleet-action-panes { display: grid; }
@@ -536,6 +604,10 @@ la lista hace scroll. Dos paneles:
         setLive("_f_search", document.getElementById("fleet-filter-search").value);
         setLive("_f_family", document.getElementById("fleet-filter-family").value);
         setLive("_f_requirement", document.getElementById("fleet-filter-requirement").value);
+        const reqState = document.getElementById("fleet-filter-req-state");
+        const reqItem = document.getElementById("fleet-filter-req-item");
+        setLive("_f_req_state", reqState.disabled ? "" : reqState.value);
+        setLive("_f_req_item", reqItem.disabled ? "" : reqItem.value);
         setLive("_f_is_active", document.getElementById("fleet-filter-is-active").value);
         // Casillas: repintar las marcadas según la selección vigente.
         container.querySelectorAll(".fleet-row-check").forEach(function (cb) {

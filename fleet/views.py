@@ -357,7 +357,11 @@ def _build_queryset(company, request):
 
 # S117 -- directrices 4.15/4.24: filtros y orden persistidos por
 # usuario con la pieza compartida panel.navigation_persistence.
-_FLEET_FILTER_KEYS = ("search", "family", "is_active", "sort", "requirement")
+# S153: "Situación" y "Documento" del requisito elegido, como Personal.
+_FLEET_FILTER_KEYS = (
+    "search", "family", "is_active", "sort", "requirement", "req_state",
+    "req_item",
+)
 
 # S117 -- decisión de Miguel Ángel (opción 2): UN solo componente de
 # maquinaria con DOS puertas de entrada -- "taller" (Taller Mecánico >
@@ -469,6 +473,49 @@ def _build_fragment_context(company, company_user, request):
     # completo en _attach_required_document_alerts. Sin requisito
     # asignado, la máquina no avisa de nada.
     assets = _attach_required_document_alerts(assets, machine_ct)
+    # S153: situación de un requisito concreto, exactamente como en
+    # Personal -- Miguel Ángel: "dejar el tema de los centros de gasto
+    # exactamente igual que el del personal [...] ver quiénes tienen la
+    # ITV cumplida y quién no". Con un requisito elegido se evalúa cada
+    # cosa que pide para todo el listado; "Situación" (y "Documento",
+    # para una sola cosa) filtra por ella.
+    from document_explorer.required_documentation_service import (
+        STATUS_OK, requirement_item_statuses,
+    )
+    from panel.views_documentation_h30 import (
+        REQUIREMENT_STATE_CHOICES, _requirement_state_matches,
+    )
+
+    requirement_raw = _p("requirement")
+    req_state = _p("req_state")
+    if req_state not in dict(REQUIREMENT_STATE_CHOICES):
+        req_state = ""
+    req_item = _p("req_item")
+    status_requirement = None
+    only_selected = request.GET.get("only_selected") == "1"
+    if requirement_raw.isdigit() and not only_selected:
+        status_requirement = JobPosition.objects.filter(
+            pk=int(requirement_raw),
+        ).prefetch_related(
+            "required_document_types", "required_driving_categories",
+        ).first()
+    if status_requirement is not None:
+        item_statuses = requirement_item_statuses(
+            status_requirement, [asset.pk for asset in assets], machine_ct,
+        )
+        if req_state:
+            assets = [
+                asset for asset in assets
+                if _requirement_state_matches(
+                    item_statuses.get(asset.pk, {}), req_state, req_item)
+            ]
+        for asset in assets:
+            asset.requirement_status = [
+                text for key, (state, text)
+                in item_statuses.get(asset.pk, {}).items()
+                if state != STATUS_OK and (not req_item or key == req_item)
+            ]
+            asset.requirement_status_checked = True
     return {
         "assets": assets,
         "families": _get_families(company),
@@ -476,6 +523,10 @@ def _build_fragment_context(company, company_user, request):
         "company_user": company_user,
         "filter_family": _p("family"),
         "filter_requirement": _p("requirement"),
+        "filter_req_state": req_state,
+        "filter_req_item": req_item,
+        "req_state_choices": REQUIREMENT_STATE_CHOICES,
+        "status_requirement": status_requirement,
         "filter_is_active": _p("is_active"),
         "filter_search": _p("search"),
         "only_selected": request.GET.get("only_selected") == "1",
@@ -523,6 +574,7 @@ def _build_pane_context(request, door):
     # documentación" que Personal (JobPosition, sin modelo aparte para
     # máquina) -- para el desplegable de asignación masiva.
     from document_explorer.models import PersonalDossierTemplate
+    from panel.views_documentation_h30 import _requirement_items_map
 
     return {
         **fragment_ctx,
@@ -534,6 +586,8 @@ def _build_pane_context(request, door):
             company_user, "fleet_actions", "tab", "doc"),
         "saved_selection": saved_selection,
         "job_positions": JobPosition.objects.order_by("name"),
+        # S153: lo que pide cada requisito (desplegable "Documento").
+        "requirement_items_map": _requirement_items_map(),
         # S130: plantillas de dosier de maquinaria, para descargar o
         # enviar la documentación desde aquí igual que en Personal.
         "dossier_machine_templates": company.dossier_templates.filter(

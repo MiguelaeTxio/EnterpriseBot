@@ -28,7 +28,7 @@ pestaña Personal, S113/S114):
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.code }}"}'
                        role="button">
@@ -44,7 +44,7 @@ pestaña Personal, S113/S114):
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.family }}"}'
                        role="button">
@@ -60,7 +60,7 @@ pestaña Personal, S113/S114):
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.brand_model }}"}'
                        role="button">
@@ -76,7 +76,7 @@ pestaña Personal, S113/S114):
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.type_name }}"}'
                        role="button">
@@ -92,7 +92,7 @@ pestaña Personal, S113/S114):
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.plate }}"}'
                        role="button">
@@ -108,7 +108,7 @@ pestaña Personal, S113/S114):
                     <a class="text-decoration-none text-reset d-flex align-items-center justify-content-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.doc_count }}"}'
                        role="button">
@@ -125,7 +125,7 @@ pestaña Personal, S113/S114):
                     <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.requirement }}"}'
                        role="button">
@@ -141,7 +141,7 @@ pestaña Personal, S113/S114):
                     <a class="text-decoration-none text-reset d-flex align-items-center justify-content-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.is_active }}"}'
                        role="button">
@@ -157,7 +157,7 @@ pestaña Personal, S113/S114):
                     <a class="text-decoration-none text-reset d-flex align-items-center justify-content-center gap-1 user-select-none"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
                        hx-vals='{"sort": "{{ sort_next.use_count }}"}'
                        role="button">
@@ -245,7 +245,7 @@ pestaña Personal, S113/S114):
                 mientras que si aparece en personal, no lo hace en la
                 maquinaria".
                 {% endcomment %}
-                <td class="small" data-label="Requisito">{% for requirement in asset.document_requirements.all %}{{ requirement.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
+                <td class="small" data-label="Requisito">{% for requirement in asset.document_requirements.all %}{{ requirement.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}{% if asset.requirement_status_checked %}<div class="{% if asset.requirement_status %}text-danger{% else %}text-success{% endif %}">{% if asset.requirement_status %}{{ asset.requirement_status|join:"; " }}{% else %}{{ status_requirement.name }}: al día{% endif %}</div>{% endif %}</td>
 
                 <td class="text-center" data-label="Estado">
                     {% if asset.is_active %}
@@ -325,7 +325,7 @@ para no perder el orden al buscar.
 {% endcomment %}
 <span id="fleet-fragment-state" class="d-none"
       data-count="{{ assets|length }}"
-      data-filtered="{% if filter_search or filter_family or filter_is_active or only_selected %}1{% endif %}"
+      data-filtered="{% if filter_search or filter_family or filter_is_active or filter_requirement or only_selected %}1{% endif %}"
       data-sort-active="{% if sort_active %}1{% endif %}"></span>
 <span id="fleet-sort-inputs" class="d-none">
     <input type="hidden" name="sort" value="{{ current_sort }}">
