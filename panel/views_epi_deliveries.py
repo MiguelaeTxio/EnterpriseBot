@@ -36,7 +36,8 @@ from panel.mixins import CompanyUserRequiredMixin
 from panel.navigation_persistence import apply_list_navigation
 
 SCREEN_KEY = "epi_deliveries"
-FILTER_KEYS = ["q", "sort", "family", "date_from", "date_to"]
+FILTER_KEYS = ["q", "sort", "family", "date_from", "date_to",
+               "active", "company", "group", "section"]
 MAX_SORT_KEYS = 4
 PAGE_SIZE = 200
 NO_FAMILY = "none"
@@ -175,6 +176,12 @@ def _list_context(request):
     sort_keys = _parse_sort(request.GET.get("sort", ""))
 
     qs = EpiDelivery.objects.select_related("person", "epi")
+    # S153 (directriz 4.27): bloque común de las pestañas de personas
+    # (Estado, Empresa, Grupo, Sección), sobre quien recibió el EPI.
+    from panel.common_filters import common_people
+
+    people, active, companies = common_people(request)
+    qs = qs.filter(person__in=[person.pk for person in people])
     if search:
         qs = qs.filter(
             Q(person__first_surname__icontains=search)
@@ -194,6 +201,8 @@ def _list_context(request):
     return {
         "page": page,
         "search": search,
+        "filter_active": active,
+        "filter_company": companies,
         "families": families,
         "family_filter": family_raw,
         "checked_families": checked_families,
@@ -219,7 +228,10 @@ class EpiTabFragmentView(CompanyUserRequiredMixin, View):
 
     def get(self, request):
         apply_list_navigation(request, SCREEN_KEY, FILTER_KEYS)
-        ctx = _list_context(request)
+        from panel.common_filters import person_filter_context
+
+        ctx = person_filter_context(request)
+        ctx.update(_list_context(request))
         ctx["catalog"] = EpiItemCatalog.objects.filter(
             is_active=True,
         ).order_by("family", "label")

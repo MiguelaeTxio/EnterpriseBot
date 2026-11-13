@@ -36,6 +36,9 @@ familia; aviso del navegador al salir con cambios sin guardar.
                       hx-trigger="input changed delay:300ms from:#epi-filter-search, change">
                     <input type="text" name="q" id="epi-filter-search" class="form-control doc-h30-search mb-1"
                            placeholder="Buscar por trabajador o EPI…" value="{{ search }}">
+                    {# S153 (4.27): bloque común de todas las pestañas de personas (de quien recibió el EPI); debajo, lo propio. #}
+                    {% include "panel/_person_common_filters.html" with p="epi" %}
+                    <hr class="eb-filters-sep">
                     <div class="d-flex flex-wrap column-gap-3 row-gap-1 align-items-start small">
                         {% comment %}
                         Familia: casillas sin "name"; el JS deja las marcadas en
@@ -76,7 +79,8 @@ familia; aviso del navegador al salir con cambios sin guardar.
 
         <div class="col-lg-3">
             <div class="border rounded p-2 h-100 d-flex flex-column">
-                <div class="fw-bold small mb-1">Lotes de EPIs</div>
+                {# S153 (4.27): la columna de grupos; aquí lo que se selecciona son EPIs, y sus grupos son los lotes. #}
+                <div class="fw-bold small mb-1">Grupos de selección: lotes de EPIs</div>
                 <div class="epi-batch-list mb-1">
                     <ul class="list-group list-group-flush small" id="epiBatchSavedList">
                         {% for template in batch_templates %}
@@ -233,6 +237,25 @@ propio de Bootstrap vía data-bs-delay) en vez de un modal bloqueante
         const allChecked = Array.from(familyBoxes).every(function (b) { return b.checked; });
         familyBoxes.forEach(function (b) { b.checked = !allChecked; });
         syncFamilies();
+        htmx.trigger(filters, "change");
+    });
+    // S153 (4.27): Estado y Empresa del bloque común, como en las demás.
+    function syncCsv(selector, inputId) {
+        document.getElementById(inputId).value = Array.from(document.querySelectorAll(selector + ":checked"))
+            .map(function (cb) { return cb.value; }).join(",");
+    }
+    document.querySelectorAll(".epi-active-check").forEach(function (cb) {
+        cb.addEventListener("change", function () { syncCsv(".epi-active-check", "epi-active-input"); });
+    });
+    document.querySelectorAll(".epi-company-check").forEach(function (cb) {
+        cb.addEventListener("change", function () { syncCsv(".epi-company-check", "epi-company-input"); });
+    });
+    document.getElementById("epi-company-all").addEventListener("click", function (ev) {
+        ev.preventDefault();
+        const boxes = document.querySelectorAll(".epi-company-check");
+        const allChecked = Array.from(boxes).every(function (b) { return b.checked; });
+        boxes.forEach(function (b) { b.checked = !allChecked; });
+        syncCsv(".epi-company-check", "epi-company-input");
         htmx.trigger(filters, "change");
     });
 
