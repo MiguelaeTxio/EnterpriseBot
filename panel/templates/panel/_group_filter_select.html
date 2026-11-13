@@ -1,0 +1,27 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/_group_filter_select.html #}
+{% comment %}
+S153 (Miguel Ángel: "Queremos filtrar por grupos en todas las
+pestañas"). EL filtro "Grupo" de "Buscar y filtrar", el mismo en todas
+las pestañas: un grupo = sus miembros y los de sus subgrupos; "Sin
+grupo" = los que no están en ninguno. No selecciona a nadie (eso es el
+recuadro "Grupos de selección"). Contexto:
+panel/person_groups.group_filter_select_context.
+Uso: {% include "panel/_group_filter_select.html" with gf_id="filterGroup" gf_class="personal-filter-select" gf_who="personas" %}
+(con htmx: gf_hx_get, gf_hx_target y gf_hx_include).
+{% endcomment %}
+<div>
+    <div class="fw-semibold mb-1">Grupo</div>
+    <select name="group" class="form-select form-select-sm {{ gf_class }}" id="{{ gf_id }}" autocomplete="off"
+            title="Solo las {{ gf_who }} del grupo (y de sus subgrupos)"{% if gf_hx_get %}
+            hx-get="{{ gf_hx_get }}" hx-target="{{ gf_hx_target }}" hx-include="{{ gf_hx_include }}" hx-trigger="change"{% endif %}>
+        <option value=""{% if not group_filter %} selected{% endif %}>Todos</option>
+        <option value="{{ group_filter_none }}"{% if group_filter == group_filter_none %} selected{% endif %}>Sin grupo</option>
+        {% for value, label, selectable in group_filter_options %}
+        {% if selectable %}
+        <option value="{{ value }}"{% if group_filter == value %} selected{% endif %}>{{ label }}</option>
+        {% else %}
+        <option disabled>{{ label }}</option>
+        {% endif %}
+        {% endfor %}
+    </select>
+</div>

@@ -371,3 +371,71 @@ def group_filter_context(request, kind=PERSON_KIND):
         # S153: el recuadro es el de Personal ("Dentro de" por niveles).
         "person_group_parents": parent_choices(editor=editor, kind=kind),
     }
+
+
+# S153 (Miguel Ángel: "Queremos filtrar por grupos en todas las
+# pestañas"): el filtro "Grupo" de "Buscar y filtrar", el mismo en todas
+# las pestañas (de personas y de máquinas). Plantilla:
+# panel/_group_filter_select.html.
+GROUP_FILTER_NONE = "none"
+
+
+def group_filter_options(editor=None, kind=PERSON_KIND):
+    """
+    Options of the "Grupo" filter, in tree order.
+    ---
+    Opciones del filtro "Grupo" en el orden del árbol (las carpetas
+    Generales / Usuarios / Propios, como rótulos no elegibles):
+    (valor, rótulo, elegible).
+    """
+    options = []
+    for node in group_tree(editor, kind):
+        pad = "   " * node["depth"]
+        if node["kind"] == "folder":
+            options.append(("", pad + node["label"], False))
+        else:
+            options.append((str(node["group"].pk), "%s%s (%d)" % (
+                pad, node["group"].name, node["total"]), True))
+    return options
+
+
+def filter_by_group(queryset, value, kind=PERSON_KIND):
+    """
+    Filters people or machines by a selection group.
+    ---
+    Deja las personas o máquinas del grupo elegido y de todos sus
+    subgrupos; GROUP_FILTER_NONE, las que no están en ningún grupo;
+    vacío, todas.
+    """
+    if value == GROUP_FILTER_NONE:
+        return queryset.filter(group_templates__isnull=True)
+    if not str(value).isdigit():
+        return queryset
+    children = {}
+    for pk, parent_id in _model(kind.model_path).objects.values_list(
+            "pk", "parent_id"):
+        children.setdefault(parent_id, []).append(pk)
+    wanted, pending = set(), [int(value)]
+    while pending:
+        current = pending.pop()
+        if current in wanted:
+            continue
+        wanted.add(current)
+        pending.extend(children.get(current, []))
+    members = _model(kind.member_path).objects.filter(
+        group_templates__in=wanted).values("pk")
+    return queryset.filter(pk__in=members)
+
+
+def group_filter_select_context(request, kind=PERSON_KIND):
+    """
+    Context of the shared "Grupo" filter select.
+    ---
+    Contexto del desplegable "Grupo" común (_group_filter_select.html).
+    """
+    return {
+        "group_filter": request.GET.get("group", ""),
+        "group_filter_none": GROUP_FILTER_NONE,
+        "group_filter_options": group_filter_options(
+            request.user.company_user, kind),
+    }

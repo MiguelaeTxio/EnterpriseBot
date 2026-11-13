@@ -49,8 +49,11 @@ from panel.navigation_persistence import (
     get_saved_state_key,
 )
 from panel.person_groups import (
+    GROUP_FILTER_NONE,
     MACHINE_KIND,
     collapsed_state,
+    filter_by_group,
+    group_filter_options,
     group_tree,
     parent_choices,
 )
@@ -296,6 +299,8 @@ def _build_queryset(company, request):
         family_filter = _gp("family").strip()
         if family_filter:
             qs = qs.filter(family__iexact=family_filter)
+        # S153: filtro "Grupo", el mismo de todas las pestañas.
+        qs = filter_by_group(qs, _gp("group").strip(), MACHINE_KIND)
 
         # H30 (S123): filtro por requisito de documentación, mismo
         # criterio que Personal ("" todos, "none" sin requisito, pk).
@@ -360,7 +365,7 @@ def _build_queryset(company, request):
 # S153: "Situación" y "Documento" del requisito elegido, como Personal.
 _FLEET_FILTER_KEYS = (
     "search", "family", "is_active", "sort", "requirement", "req_state",
-    "req_item",
+    "req_item", "group",
 )
 
 # S117 -- decisión de Miguel Ángel (opción 2): UN solo componente de
@@ -522,6 +527,11 @@ def _build_fragment_context(company, company_user, request):
         "company": company,
         "company_user": company_user,
         "filter_family": _p("family"),
+        # S153: filtro "Grupo" común (panel/_group_filter_select.html).
+        "group_filter": _p("group"),
+        "group_filter_none": GROUP_FILTER_NONE,
+        "group_filter_options": group_filter_options(
+            company_user, MACHINE_KIND),
         "filter_requirement": _p("requirement"),
         "filter_req_state": req_state,
         "filter_req_item": req_item,

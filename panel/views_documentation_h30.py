@@ -237,61 +237,24 @@ def _apply_personal_filters(qs, request):
     # operarios, administrativos, etcétera". Un grupo = sus personas y
     # las de todos sus subgrupos (como el total del árbol); "none" =
     # quien no está en ningún grupo.
-    group_filter = request.GET.get("group", "")
-    if group_filter == GROUP_FILTER_NONE:
-        qs = qs.filter(group_templates__isnull=True)
-    elif group_filter.isdigit():
-        qs = qs.filter(pk__in=_group_member_ids(int(group_filter)))
+    # S153: el mismo filtro en todas las pestañas (panel/person_groups).
+    from panel.person_groups import filter_by_group
+
+    qs = filter_by_group(qs, request.GET.get("group", ""))
 
     return qs
 
 
-GROUP_FILTER_NONE = "none"
-
-
-def _group_member_ids(group_pk):
-    """
-    pks of the people of a selection group and of all its subgroups.
-    ---
-    S153. Las personas de un grupo de selección y de todos sus
-    subgrupos (a cualquier profundidad).
-    """
-    from document_explorer.models import PersonGroupTemplate
-
-    children = {}
-    for pk, parent_id in PersonGroupTemplate.objects.values_list(
-            "pk", "parent_id"):
-        children.setdefault(parent_id, []).append(pk)
-    wanted, pending = set(), [group_pk]
-    while pending:
-        current = pending.pop()
-        if current in wanted:
-            continue
-        wanted.add(current)
-        pending.extend(children.get(current, []))
-    return PersonIdentity.objects.filter(
-        group_templates__in=wanted).values("pk")
-
-
 def _group_filter_options(company_user):
     """
-    Options of the "Grupo" filter of Personal, in tree order.
+    Options of the "Grupo" filter of Personal (shared helper).
     ---
-    S153. Opciones del filtro "Grupo" de Personal en el orden del árbol
-    de grupos de selección (con sus carpetas Generales / Usuarios /
-    Propios como rótulos no elegibles): (valor, rótulo, elegible).
+    S153. Opciones del filtro "Grupo"; el cálculo es el común de todas
+    las pestañas (panel/person_groups.group_filter_options).
     """
-    from panel.person_groups import PERSON_KIND, group_tree
+    from panel.person_groups import group_filter_options
 
-    options = []
-    for node in group_tree(company_user, PERSON_KIND):
-        pad = "\u00a0\u00a0\u00a0" * node["depth"]
-        if node["kind"] == "folder":
-            options.append(("", pad + node["label"], False))
-        else:
-            options.append((str(node["group"].pk), "%s%s (%d)" % (
-                pad, node["group"].name, node["total"]), True))
-    return options
+    return group_filter_options(company_user)
 
 
 def _apply_sort(request, queryset, sort_columns, default_sort):
@@ -1502,7 +1465,7 @@ def _person_list_page(request, ids_only=False):
         "schedule_filter": schedule_raw,
         # S153: filtro por grupo de selección.
         "group_filter": request.GET.get("group", ""),
-        "group_filter_none": GROUP_FILTER_NONE,
+        "group_filter_none": "none",
         "group_filter_options": _group_filter_options(
             request.user.company_user),
         "no_section": NO_SECTION,

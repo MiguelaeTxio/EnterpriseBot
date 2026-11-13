@@ -118,21 +118,7 @@ para un momento distinto.
             {{ requirement_items_map|json_script:"personalRequirementItems" }}
         </div>
         {# S153: grupo de selección como filtro (sus personas y las de sus subgrupos), sin seleccionarlos. #}
-        <div>
-            <div class="fw-semibold mb-1">Grupo</div>
-            <select name="group" class="form-select form-select-sm personal-filter-checkbox personal-filter-select" id="filterGroup" autocomplete="off"
-                    title="Solo las personas del grupo (y de sus subgrupos)">
-                <option value=""{% if not group_filter %} selected{% endif %}>Todos</option>
-                <option value="{{ group_filter_none }}"{% if group_filter == group_filter_none %} selected{% endif %}>Sin grupo</option>
-                {% for value, label, selectable in group_filter_options %}
-                {% if selectable %}
-                <option value="{{ value }}"{% if group_filter == value %} selected{% endif %}>{{ label }}</option>
-                {% else %}
-                <option disabled>{{ label }}</option>
-                {% endif %}
-                {% endfor %}
-            </select>
-        </div>
+        {% include "panel/_group_filter_select.html" with gf_id="filterGroup" gf_class="personal-filter-checkbox personal-filter-select" gf_who="personas" %}
         {# H24 (S144): sección vigente hoy y horario que le toca, como en la pestaña Horarios. #}
         <div>
             <div class="fw-semibold mb-1">Sección</div>

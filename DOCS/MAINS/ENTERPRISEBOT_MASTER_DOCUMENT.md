@@ -1961,3 +1961,42 @@ columnas sueltas del tablero no, Miguel Ángel: *"no le veo mucho
 sentido ampliar ya esas columnas en concreto"* -- el criterio es que
 el panel gane de verdad al verse grande); listado de albaranes de
 Servicios (S133).
+
+#### 4.27. DIRECTRIZ CRÍTICA — Lo que se pone en una pestaña se pone en todas, con la MISMA plantilla y el MISMO orden (añadida S153, incidente real con capturas)
+
+**Origen.** S153: Miguel Ángel recorrió Centros de gasto, Revisiones,
+Repostajes, Personal y EPIs con capturas: cada pestaña tenía los
+filtros en un sitio y un orden distintos, los grupos de selección solo
+estaban en algunas (y en tres versiones distintas: la de Personal, una
+copia en Centros de gasto y otra recortada en el resto), y el filtro
+«Grupo» solo en Personal. Verbatim: *"cuando instalamos una cosa en
+una pestaña, tenemos que hacerlo extensible a todas y tenemos que
+seguir el mismo formato en todas"*; *"Cada pestaña tiene un formato
+diferente [...] si tenemos 500, esto es imposible aprender a manejar
+este programa"*. La 4.24 ya lo exigía (punto 6) y se ignoró.
+
+**Regla, sin excepción, para toda pestaña con listado:**
+
+1. **Una pieza = una plantilla compartida.** Nada se copia ni se
+   reimplementa por pestaña. Piezas comunes vigentes:
+   - `panel/_selection_groups_box.html` + `selection_groups.js`:
+     recuadro «Grupos de selección» (personas o máquinas).
+   - `panel/_group_filter_select.html` +
+     `panel/person_groups.filter_by_group`: filtro «Grupo».
+   - `list_fullscreen.js`: botón «Ampliar» (4.26).
+2. **Fila de arriba, siempre tres columnas en este orden:**
+   - **Buscar y filtrar.** Primero el bloque común, siempre igual y en
+     este orden: Buscar · Estado · Empresa (personas) / Familia
+     (máquinas) · Grupo · Sección / Requisito. Debajo, separado, lo
+     propio de la pestaña.
+   - **Grupos de selección.** El recuadro común.
+   - **Acciones.** Arriba siempre «N seleccionados · Limpiar · Solo los
+     filtrados»; debajo, las acciones propias de la pestaña.
+3. **Fila de abajo:** listado (con «Ampliar») y «Selección actual» a la
+   derecha.
+4. **Lo propio de una pestaña va dentro de esas columnas**, nunca
+   cambiando su número ni su orden.
+5. **Al añadir o cambiar algo común en una pestaña, en el mismo bloque
+   de trabajo se aplica a todas** (o se deja anotado como pendiente
+   abierto con la lista exacta de pestañas que faltan, nunca
+   «cerrado»).
