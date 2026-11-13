@@ -548,10 +548,18 @@ responsable corregirá la salida (clock_report.forgotten_after).
             const quick = last && last.pressed_at && last.kind !== "OUT" &&
                 Date.now() - new Date(last.pressed_at).getTime() <= QUICK_OUT_MS;
             const now = new Date().toLocaleTimeString("es-ES", {hour: "2-digit", minute: "2-digit"});
-            document.getElementById("out-confirm-q").textContent = byTypes()
-                ? "¿Terminar la jornada? Se ficha la SALIDA a las " + now + "."
-                : "¿Fichar la SALIDA a las " + now + "?";
-            document.getElementById("out-confirm-help").textContent = (quick
+            // S149 (Jorge Milheiro): la jornada abierta era la de la
+            // tarde anterior y confirmó la salida creyendo que entraba.
+            const startedAt = last && last.pressed_at ? new Date(last.pressed_at) : null;
+            const otherDay = startedAt && startedAt.toDateString() !== new Date().toDateString();
+            document.getElementById("out-confirm-q").textContent = otherDay
+                ? "Tienes abierta una jornada desde el " + startedAt.toLocaleDateString("es-ES", {weekday: "long", day: "numeric"}) +
+                  " a las " + hhmm(startedAt) + ". Este botón ficha la SALIDA de esa jornada a las " + now + "; no es la entrada de hoy."
+                : (byTypes()
+                    ? "¿Terminar la jornada? Se ficha la SALIDA a las " + now + "."
+                    : "¿Fichar la SALIDA a las " + now + "?");
+            document.getElementById("out-confirm-help").textContent = (otherDay
+                ? "Si se te olvidó fichar la salida ese día, confírmala y avisa a tu encargado de la hora real; luego ficha la entrada de hoy. " : "") + (quick
                 ? "Fichaste " + label(last).toLowerCase() + " hace menos de 10 minutos. " : "") +
                 (byTypes()
                     ? "Para cambiar de tarea pulsa el tipo, no la salida. "
@@ -570,6 +578,69 @@ responsable corregirá la salida (clock_report.forgotten_after).
             yes.onclick = function () { done(true); };
             no.onclick = function () { done(false); };
             box.classList.remove("hidden");
+        });
+    }
+    // S149 (Miguel Ángel, Jorge Milheiro: diez cambios de tipo en dos
+    // minutos y una entrada a los cuatro minutos de la salida): el mismo
+    // recuadro de la salida para confirmar
+    //  - un cambio de tipo a menos de 10 minutos del último fichaje,
+    //  - una entrada a menos de una hora de una salida.
+    // El "Sí" no responde el primer momento (doble pulsación).
+    const QUICK_CHANGE_MS = 10 * 60 * 1000;
+    const QUICK_REENTRY_MS = 60 * 60 * 1000;
+    function minutesAgo(iso) {
+        const mins = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60000));
+        return mins < 1 ? "hace menos de un minuto" : (mins === 1 ? "hace 1 minuto" : "hace " + mins + " minutos");
+    }
+    function askConfirm(question, help, yesText, noText) {
+        return new Promise(function (resolve) {
+            const box = document.getElementById("out-confirm");
+            const yes = document.getElementById("out-confirm-yes");
+            const no = document.getElementById("out-confirm-no");
+            const oldYes = yes.textContent, oldNo = no.textContent;
+            document.getElementById("out-confirm-q").textContent = question;
+            document.getElementById("out-confirm-help").textContent = help;
+            yes.textContent = yesText;
+            no.textContent = noText;
+            function done(answer) {
+                box.classList.add("hidden");
+                yes.onclick = no.onclick = null;
+                yes.textContent = oldYes;
+                no.textContent = oldNo;
+                resolve(answer);
+            }
+            yes.disabled = true;
+            setTimeout(function () { yes.disabled = false; }, 800);
+            yes.onclick = function () { done(true); };
+            no.onclick = function () { done(false); };
+            box.classList.remove("hidden");
+        });
+    }
+    function confirmQuick(records, chosen) {
+        const kind = decideKind(records);
+        const last = lastKnown(records);
+        if (!last || !last.pressed_at) return Promise.resolve(true);
+        const since = Date.now() - Date.parse(last.pressed_at);
+        const at = hhmm(new Date(last.pressed_at));
+        if (kind === "OUT" && chosen && last.kind !== "OUT" && since <= QUICK_CHANGE_MS) {
+            return askConfirm(
+                "¿Cambiar a " + chosen.name + "?",
+                "Fichaste " + label(last).toLowerCase() + " a las " + at + " (" + minutesAgo(last.pressed_at) + "). " +
+                "Pulsa un tipo solo cuando cambies de verdad de tarea; no hace falta pulsar más para confirmar.",
+                "Sí, cambiar a " + chosen.name, "No, no fichar");
+        }
+        if (kind === "IN" && last.kind === "OUT" && since <= QUICK_REENTRY_MS) {
+            return askConfirm(
+                "¿Empezar otra jornada?",
+                "Fichaste la salida a las " + at + " (" + minutesAgo(last.pressed_at) + "). " +
+                "Confírmalo solo si vuelves a trabajar ahora.",
+                "Sí, fichar la entrada", "No, no fichar");
+        }
+        return Promise.resolve(true);
+    }
+    function guardedPress(type) {
+        allRecords().then(function (records) {
+            return confirmQuick(records, type && type.id ? type : null).then(function (ok) { if (ok) press(type); });
         });
     }
     // S141: fichaje por tipos. Con la jornada cerrada, un botón por tipo
@@ -615,7 +686,7 @@ responsable corregirá la salida (clock_report.forgotten_after).
                 b.type = "button";
                 b.textContent = v.name;
                 b.className = open ? "chg" : "";
-                b.addEventListener("click", function () { press(v); });
+                b.addEventListener("click", function () { guardedPress(v); });
                 grid.appendChild(b);
             });
         });
@@ -903,7 +974,7 @@ responsable corregirá la salida (clock_report.forgotten_after).
 
     document.getElementById("btn-fichar").addEventListener("click", function () {
         allRecords().then(function (records) {
-            return confirmOut(records).then(function (ok) { if (ok) press(null); });
+            return confirmOut(records).then(function (ok) { if (ok) guardedPress(null); });
         });
     });
     document.getElementById("btn-send").addEventListener("click", function () {
