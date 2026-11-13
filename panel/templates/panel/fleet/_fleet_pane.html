@@ -116,49 +116,49 @@ la lista hace scroll. Dos paneles:
                                 {% endfor %}
                             </select>
                         </div>
-                        {% comment %}H30 (S123): filtro por requisito de documentación.{% endcomment %}
-                        <div class="flex-grow-1">
-                            <div class="small fw-bold">Requisito</div>
-                            <select id="fleet-filter-requirement" class="form-select form-select-sm" data-requirement-select
+                    </div>
+                    {% comment %}H30 (S123): filtro por requisito de documentación; S153: en su propia línea, a todo el ancho del recuadro.{% endcomment %}
+                    <div class="mt-2 fleet-req-filter">
+                        <div class="small fw-bold">Requisito</div>
+                        <select id="fleet-filter-requirement" class="form-select form-select-sm w-100" data-requirement-select
+                                hx-get="{% url 'panel:fleet_fragment' %}"
+                                hx-target="#fleet-table-container"
+                                hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
+                                hx-trigger="change"
+                                name="requirement" autocomplete="off">
+                            <option value="" data-fixed {% if not filter_requirement %}selected{% endif %}>Todos</option>
+                            <option value="none" data-fixed {% if filter_requirement == "none" %}selected{% endif %}>Sin requisito</option>
+                            {% for position in job_positions %}
+                            <option value="{{ position.pk }}" {% if filter_requirement == position.pk|stringformat:"s" %}selected{% endif %}>{{ position.name }}</option>
+                            {% endfor %}
+                        </select>
+                        {% comment %}
+                        S153: "Situación" y "Documento" del requisito elegido, como en
+                        Personal ("ver quiénes tienen la ITV cumplida y quién no"). Sin
+                        requisito concreto van desactivados (no se envían).
+                        {% endcomment %}
+                        <div class="d-flex flex-wrap gap-1 mt-1">
+                            <select id="fleet-filter-req-state" class="form-select form-select-sm"
                                     hx-get="{% url 'panel:fleet_fragment' %}"
                                     hx-target="#fleet-table-container"
                                     hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
                                     hx-trigger="change"
-                                    name="requirement" autocomplete="off">
-                                <option value="" data-fixed {% if not filter_requirement %}selected{% endif %}>Todos</option>
-                                <option value="none" data-fixed {% if filter_requirement == "none" %}selected{% endif %}>Sin requisito</option>
-                                {% for position in job_positions %}
-                                <option value="{{ position.pk }}" {% if filter_requirement == position.pk|stringformat:"s" %}selected{% endif %}>{{ position.name }}</option>
+                                    name="req_state" autocomplete="off" title="Situación de cada centro de gasto en el requisito elegido">
+                                <option value="">Cualquier situación</option>
+                                {% for code, label in req_state_choices %}
+                                <option value="{{ code }}" {% if filter_req_state == code %}selected{% endif %}>{{ label }}</option>
                                 {% endfor %}
                             </select>
-                            {% comment %}
-                            S153: "Situación" y "Documento" del requisito elegido, como en
-                            Personal ("ver quiénes tienen la ITV cumplida y quién no"). Sin
-                            requisito concreto van desactivados (no se envían).
-                            {% endcomment %}
-                            <div class="d-flex flex-wrap gap-1 mt-1 fleet-req-filter">
-                                <select id="fleet-filter-req-state" class="form-select form-select-sm fleet-select-auto"
-                                        hx-get="{% url 'panel:fleet_fragment' %}"
-                                        hx-target="#fleet-table-container"
-                                        hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
-                                        hx-trigger="change"
-                                        name="req_state" autocomplete="off" title="Situación de cada centro de gasto en el requisito elegido">
-                                    <option value="">Cualquier situación</option>
-                                    {% for code, label in req_state_choices %}
-                                    <option value="{{ code }}" {% if filter_req_state == code %}selected{% endif %}>{{ label }}</option>
-                                    {% endfor %}
-                                </select>
-                                <select id="fleet-filter-req-item" class="form-select form-select-sm fleet-select-auto"
-                                        hx-get="{% url 'panel:fleet_fragment' %}"
-                                        hx-target="#fleet-table-container"
-                                        hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
-                                        hx-trigger="change"
-                                        name="req_item" autocomplete="off" title="Solo este documento del requisito" data-selected="{{ filter_req_item }}">
-                                    <option value="">Todo el requisito</option>
-                                </select>
-                            </div>
-                            {{ requirement_items_map|json_script:"fleetRequirementItems" }}
+                            <select id="fleet-filter-req-item" class="form-select form-select-sm"
+                                    hx-get="{% url 'panel:fleet_fragment' %}"
+                                    hx-target="#fleet-table-container"
+                                    hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door, #fleet-sort-inputs"
+                                    hx-trigger="change"
+                                    name="req_item" autocomplete="off" title="Solo este documento del requisito" data-selected="{{ filter_req_item }}">
+                                <option value="">Todo el requisito</option>
+                            </select>
                         </div>
+                        {{ requirement_items_map|json_script:"fleetRequirementItems" }}
                     </div>
                     {% include "panel/_checkdrop_js.html" %}
                     <div class="small fw-bold mt-2">Selección</div>
@@ -459,9 +459,12 @@ la lista hace scroll. Dos paneles:
     }());
 </script>
 <style>
-/* S153: requisito + situación + documento no se salen del recuadro. */
+/* S153: requisito + situación + documento no se salen del recuadro:
+   el requisito ocupa el ancho del recuadro y los otros dos se reparten
+   la línea (o bajan) recortando el texto largo de sus opciones. */
 .fleet-req-filter { max-width: 100%; min-width: 0; }
-.fleet-req-filter .form-select { min-width: 0; flex: 0 1 auto; }
+.fleet-req-filter .form-select { min-width: 0; max-width: 100%; text-overflow: ellipsis; }
+.fleet-req-filter .d-flex > .form-select { flex: 1 1 9rem; width: auto; }
 /* S148: la lista de grupos hace scroll dentro de su recuadro. */
 .fleet-select-auto { width: auto; max-width: 100%; min-width: 0; }
 .fleet-action-panes { display: grid; }
