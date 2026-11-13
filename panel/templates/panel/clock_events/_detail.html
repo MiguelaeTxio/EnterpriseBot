@@ -103,6 +103,15 @@ mismas fechas: Jornadas, Calendario y Correcciones.
             <td class="text-end">{{ shift.duration|default:"—" }}</td>
             <td>{% for incident in shift.incidents %}<div class="text-danger fw-semibold">{{ incident }}</div>{% endfor %}{% if shift.rest_note %}<div class="text-muted small">{{ shift.rest_note }}</div>{% endif %}
                 {% if has_account %}
+                {# S153 (Miguel Ángel): el visado en todas las vistas de fichajes, también en la ficha del trabajador. #}
+                {% if shift.incidents %}
+                <label class="form-check text-nowrap mb-0" title="Marcar que el supervisor la ha visto: sus incidencias dejan de contar.">
+                    <input type="checkbox" class="form-check-input" data-day="{{ shift.day|date:'Y-m-d' }}"
+                           data-url="{% url 'panel:clock_worker_review' person.pk %}"{% if shift.reviewed %} checked{% endif %}
+                           onchange="clkReview(this)">
+                    <span class="form-check-label">Visado</span>
+                </label>
+                {% endif %}
                 <div class="d-flex flex-wrap gap-2">
                 {% if shift.presses.0 and shift.presses.1 %}
                 {# S144: partir el tramo con un cambio de tipo a la hora que se elija. #}
@@ -281,6 +290,23 @@ async function clkOpenPlace(f) {
     st.marker.position = start;
     st.marker.map = has ? st.map : null;
     box.scrollIntoView({block: 'nearest'});
+}
+// S153: visar (o quitar el visado de) un día desde la ficha.
+function clkReview(box) {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    var body = new FormData();
+    body.append('day', box.dataset.day);
+    body.append('reviewed', box.checked ? '1' : '0');
+    box.disabled = true;
+    fetch(box.dataset.url, {method: 'POST', headers: {'X-CSRFToken': meta ? meta.content : ''}, body: body})
+        .then(function (r) {
+            box.disabled = false;
+            if (!r.ok) { box.checked = !box.checked; alert('No se ha podido guardar el visado.'); return; }
+            var row = box.closest('tr');
+            row.classList.toggle('table-warning', box.checked);
+            row.classList.toggle('table-danger', !box.checked);
+        })
+        .catch(function () { box.disabled = false; box.checked = !box.checked; alert('Sin conexión con el servidor: no se ha guardado nada.'); });
 }
 // S144: anular la jornada entera (todas sus pulsaciones, un solo motivo).
 function clkOpenCancelShift(btn) {

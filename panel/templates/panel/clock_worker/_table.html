@@ -76,7 +76,7 @@ historial: quién, cuándo, antes, después y motivo).
         {% for row in rows %}
         <tr class="{% if row.status == 'cancelled' %}table-secondary{% elif row.status == 'issues' %}table-danger{% elif row.status == 'reviewed' %}table-warning{% elif row.status == 'open' %}table-success{% endif %}" data-day="{{ row.day|date:'Y-m-d' }}">
             <td class="sticky-col sticky-col-1">
-                <input type="checkbox" class="form-check-input cw-row-check" data-pk="{{ row.key }}" data-label="{{ row.label }}" data-ids="{{ row.event_ids|default:'' }}">
+                <input type="checkbox" class="form-check-input cw-row-check" data-pk="{{ row.key }}" data-day="{{ row.day|date:'Y-m-d' }}" data-label="{{ row.label }}" data-ids="{{ row.event_ids|default:'' }}">
             </td>
             <td class="sticky-col sticky-col-2">
                 {% if row.status == 'issues' %}<i class="bi bi-exclamation-triangle-fill text-danger" title="Con incidencias"></i>{% elif row.corrected %}<i class="bi bi-pencil-square text-primary" title="Tiene correcciones"></i>{% endif %}

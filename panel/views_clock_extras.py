@@ -209,24 +209,32 @@ class ClockWorkerReviewView(SupervisorAccessMixin, View):
         from hr_calendar.models import ClockDayReview
 
         person = _person(pk)
-        try:
-            day = datetime.date.fromisoformat(request.POST.get("day") or "")
-        except ValueError:
-            day = None
-        if person.company_user_id is None or day is None:
+        # S153: uno o varios días (la casilla de un día o «Visar» con las
+        # jornadas marcadas).
+        days = set()
+        for raw in request.POST.getlist("day"):
+            try:
+                days.add(datetime.date.fromisoformat(raw))
+            except ValueError:
+                continue
+        if person.company_user_id is None or not days:
             return _table_response(request, person, "No se ha podido "
                                    "visar ese día.", error=True)
+        first = min(days).strftime("%d/%m/%Y")
         if request.POST.get("reviewed") == "1":
-            ClockDayReview.objects.get_or_create(
-                company_user_id=person.company_user_id, day=day,
-                defaults={"reviewed_by": request.user.company_user},
-            )
-            message = "Día %s visado." % day.strftime("%d/%m/%Y")
+            for day in days:
+                ClockDayReview.objects.get_or_create(
+                    company_user_id=person.company_user_id, day=day,
+                    defaults={"reviewed_by": request.user.company_user},
+                )
+            message = ("Día %s visado." % first if len(days) == 1
+                       else "%d días visados." % len(days))
         else:
             ClockDayReview.objects.filter(
-                company_user_id=person.company_user_id, day=day,
+                company_user_id=person.company_user_id, day__in=days,
             ).delete()
-            message = "Quitado el visado del %s." % day.strftime("%d/%m/%Y")
+            message = ("Quitado el visado del %s." % first if len(days) == 1
+                       else "Quitado el visado de %d días." % len(days))
         return _table_response(request, person, message)
 
 

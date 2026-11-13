@@ -64,7 +64,7 @@ STATUS_CHOICES = (
     (STATUS_OPEN, "En curso"),
     (STATUS_OK, "Correctas"),
     (STATUS_REVIEWED, "Incidencias visadas"),
-    (STATUS_ISSUES, "Con incidencias"),
+    (STATUS_ISSUES, "Incidencias sin visar"),
     (STATUS_CANCELLED, "Anuladas"),
 )
 _STATUS_LABELS = dict(STATUS_CHOICES)

@@ -155,6 +155,13 @@ screen_key "clock_worker"); la selección, por trabajador.
                                 title="Anula todas las pulsaciones de las jornadas marcadas. No se borra nada: se ven tachadas en su día y quedan en el historial.">
                             <i class="bi bi-x-circle me-1"></i>Anular
                         </button>
+                        {# S153 (Miguel Ángel: Juan visa las jornadas aquí, en la ficha de fichajes del trabajador). #}
+                        <button type="button" class="btn btn-sm btn-outline-warning cw-mass-review" data-reviewed="1"{% if not has_account %} disabled{% endif %}
+                                title="Visa las jornadas marcadas (lo mismo que la casilla «Visado» de cada día): sus incidencias dejan de contar.">
+                            <i class="bi bi-check2-square me-1"></i>Visar
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary cw-mass-review" data-reviewed="0"{% if not has_account %} disabled{% endif %}
+                                title="Quita el visado de las jornadas marcadas (las corregidas siguen contando como visadas).">Quitar visado</button>
                     </div>
                     <div class="col-6 pe-2 border-top pt-1 mt-1">
                         <div class="small text-muted fw-bold">Exportar</div>
@@ -416,13 +423,13 @@ screen_key "clock_worker"); la selección, por trabajador.
     const selection = new Map();
     try {
         JSON.parse(document.getElementById("cw-saved-selection").textContent).forEach(function (item) {
-            if (item && item.pk) selection.set(String(item.pk), {label: item.label || "", ids: item.ids || ""});
+            if (item && item.pk) selection.set(String(item.pk), {label: item.label || "", ids: item.ids || "", day: item.day || ""});
         });
     } catch (e) { /* estado ilegible: se empieza sin selección */ }
     let lastSaved = null;
     function saveSelection() {
         const payload = Array.from(selection.entries()).map(function ([pk, item]) {
-            return {pk: pk, label: item.label, ids: item.ids};
+            return {pk: pk, label: item.label, ids: item.ids, day: item.day || ""};
         });
         const serialized = JSON.stringify(payload);
         if (serialized === lastSaved) return;
@@ -537,13 +544,13 @@ screen_key "clock_worker"); la selección, por trabajador.
     results.addEventListener("change", function (evt) {
         const target = evt.target;
         if (target.classList.contains("cw-row-check")) {
-            if (target.checked) selection.set(target.dataset.pk, {label: target.dataset.label, ids: target.dataset.ids});
+            if (target.checked) selection.set(target.dataset.pk, {label: target.dataset.label, ids: target.dataset.ids, day: target.dataset.day});
             else selection.delete(target.dataset.pk);
             updateSelectionUi();
         } else if (target.id === "cw-check-all") {
             results.querySelectorAll(".cw-row-check").forEach(function (cb) {
                 cb.checked = target.checked;
-                if (target.checked) selection.set(cb.dataset.pk, {label: cb.dataset.label, ids: cb.dataset.ids});
+                if (target.checked) selection.set(cb.dataset.pk, {label: cb.dataset.label, ids: cb.dataset.ids, day: cb.dataset.day});
                 else selection.delete(cb.dataset.pk);
             });
             updateSelectionUi();
@@ -917,6 +924,37 @@ screen_key "clock_worker"); la selección, por trabajador.
 
     // S143: casilla de visado de las incidencias (amarillo).
     const REVIEW_URL = "{% url 'panel:clock_worker_review' person.pk %}";
+    // S153: visar o quitar el visado de todas las jornadas marcadas.
+    document.querySelectorAll(".cw-mass-review").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+            const days = Array.from(new Set(Array.from(selection.values()).map(function (item) { return item.day; }).filter(Boolean)));
+            if (!days.length) { showToast("Marca alguna jornada.", true); return; }
+            const body = new FormData();
+            days.forEach(function (day) { body.append("day", day); });
+            body.append("reviewed", btn.dataset.reviewed);
+            new FormData(filters).forEach(function (value, key) { body.append("_f_" + key, value); });
+            const sortInput = results.querySelector('#cw-sort-inputs input[name="sort"]');
+            body.append("_f_sort", sortInput ? sortInput.value : "");
+            btn.disabled = true;
+            fetch(REVIEW_URL, {
+                method: "POST", headers: {"X-CSRFToken": csrfMeta ? csrfMeta.content : ""}, body: body,
+            }).then(function (r) {
+                btn.disabled = false;
+                if (!r.ok) { showToast("No se ha podido guardar (" + r.status + ").", true); return; }
+                const message = r.headers.get("X-Clock-Message");
+                const isError = r.headers.get("X-Clock-Error") === "1";
+                return r.text().then(function (html) {
+                    if (message) showToast(decodeURIComponent(message), isError);
+                    results.innerHTML = html;
+                    htmx.process(results);
+                    refreshFromFragment();
+                });
+            }).catch(function () {
+                btn.disabled = false;
+                showToast("Sin conexión con el servidor: no se ha guardado nada.", true);
+            });
+        });
+    });
     results.addEventListener("change", function (evt) {
         const box = evt.target.closest(".cw-review");
         if (!box) return;
