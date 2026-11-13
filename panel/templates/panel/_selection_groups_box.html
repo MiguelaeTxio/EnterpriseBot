@@ -1,0 +1,60 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/_selection_groups_box.html #}
+{% comment %}
+S153 (Miguel Ángel: "cuando instalamos una cosa en una pestaña, tenemos
+que hacerlo extensible a todas y tenemos que seguir el mismo formato en
+todas"). EL recuadro "Grupos de selección" de toda la aplicación: el
+mismo en Personal, Centros de gasto y todas las demás pestañas (antes
+había tres versiones: la de Personal, una copia en Centros de gasto y
+otra más simple, solo "Grupo con la selección", en Fichajes, Horarios,
+Vacaciones...). Marcar grupos selecciona a sus miembros (la suma); con
+un grupo propio marcado él solo, marcar o desmarcar lo cambia; con otro
+nombre, Guardar crea uno nuevo; "Dentro de" por niveles; papelera en
+los propios. La lógica es panel/static/panel/js/selection_groups.js
+(salvo Personal, que conserva la suya con los mismos ids).
+Uso, como columna de la fila de arriba:
+  {% include "panel/_selection_groups_box.html" with sg="clkGroup" sg_nodes=person_group_nodes sg_collapsed=person_groups_collapsed sg_parents=person_group_parents sg_hint="personas" %}
+{% endcomment %}
+<div class="col-lg-3 eb-fit-col">
+    <div class="border rounded p-2 h-100 d-flex flex-column eb-fit-card eb-split">
+        <div class="fw-bold small mb-1">Grupos de selección</div>
+        <div class="mb-1 eb-group-scroll-fill eb-split-top">
+            <ul class="list-group list-group-flush small" id="{{ sg }}SavedList"
+                data-collapsed="{{ sg_collapsed|join:',' }}">
+                {% include "panel/documentation_h30/_person_groups_tree.html" with person_group_nodes=sg_nodes pg_id=sg %}
+            </ul>
+        </div>
+        {# S149: barra para repartir el alto (panel/static/panel/js/group_splitter.js). #}
+        <div class="eb-split-handle" role="separator" aria-orientation="horizontal" aria-label="Repartir el espacio entre los grupos y lo de debajo" tabindex="0" title="Arrastra para dar más espacio a los grupos o a lo de debajo (doble clic: como estaba)"></div>
+        <div class="eb-split-bottom">
+            <p class="text-muted small mb-0" id="{{ sg }}ManagementEmpty">
+                Marca uno o varios grupos (la selección es la suma), o marca {{ sg_hint }} en el listado para empezar uno nuevo.
+            </p>
+            <div id="{{ sg }}ManagementForm" class="d-none">
+                <div class="input-group input-group-sm mb-1">
+                    <input type="text" id="{{ sg }}Name" class="form-control form-control-sm" maxlength="120" placeholder="Nombre del grupo" aria-label="Nombre del grupo">
+                    <button type="button" class="btn btn-sm btn-primary" id="{{ sg }}SaveBtn">Guardar</button>
+                </div>
+                <select id="{{ sg }}Parent" class="d-none" aria-hidden="true" tabindex="-1">
+                    <option value="">Dentro de: ninguno (grupo principal)</option>
+                    {% for parent in sg_parents %}<option value="{{ parent.pk }}" data-parent="{{ parent.parent }}" data-name="{{ parent.name }}">Dentro de: {{ parent.label }}</option>{% endfor %}
+                </select>
+                <div id="{{ sg }}ParentPicker" title="Dentro de qué grupo va"></div>
+                <div id="{{ sg }}Diff" class="small mb-1 d-none"></div>
+                <div id="{{ sg }}FormResult" class="small mb-1"></div>
+                <div class="d-flex gap-1 flex-wrap">
+                    <button type="button" class="btn btn-sm btn-outline-danger d-none" id="{{ sg }}DeleteBtn">Eliminar</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="{{ sg }}ResetBtn">Vaciar / nuevo</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<style>
+.eb-group-scroll-fill { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+/* S148: la columna de grupos no estira el panel fijo: toma el alto de
+   las otras columnas y su árbol hace scroll dentro. */
+@media (min-width: 992px) {
+    .eb-fit-col { position: relative; min-height: 15rem; }
+    .eb-fit-col > .eb-fit-card { position: absolute; inset: 0 calc(var(--bs-gutter-x) * .5); }
+}
+</style>

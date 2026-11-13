@@ -195,41 +195,8 @@ la lista hace scroll. Dos paneles:
             marcado él solo, desmarcar o marcar máquinas lo cambia. La
             lógica es panel/static/panel/js/selection_groups.js.
             {% endcomment %}
-            <div class="col-lg-3">
-                <div class="border rounded p-2 h-100 d-flex flex-column eb-split">
-                    <div class="fw-bold small mb-1">Grupos de selección</div>
-                    <div class="mb-1 fleet-group-scroll eb-split-top">
-                        <ul class="list-group list-group-flush small" id="machineGroupSavedList"
-                            data-collapsed="{{ machine_groups_collapsed|join:',' }}">
-                            {% include "panel/documentation_h30/_person_groups_tree.html" with person_group_nodes=machine_group_nodes pg_id="machineGroup" %}
-                        </ul>
-                    </div>
-                    {# S149: barra para repartir el alto (panel/static/panel/js/group_splitter.js). #}
-                    <div class="eb-split-handle" role="separator" aria-orientation="horizontal" aria-label="Repartir el espacio entre los grupos y lo de debajo" tabindex="0" title="Arrastra para dar más espacio a los grupos o a lo de debajo (doble clic: como estaba)"></div>
-                    <div class="eb-split-bottom">
-                    <p class="text-muted small mb-0" id="machineGroupManagementEmpty">
-                        Marca uno o varios grupos (la selección es la suma), o marca máquinas en el listado para empezar uno nuevo.
-                    </p>
-                    <div id="machineGroupManagementForm" class="d-none">
-                        <div class="input-group input-group-sm mb-1">
-                            <input type="text" id="machineGroupName" class="form-control form-control-sm" placeholder="Nombre del grupo">
-                            <button type="button" class="btn btn-sm btn-primary" id="machineGroupSaveBtn">Guardar</button>
-                        </div>
-                        <select id="machineGroupParent" class="d-none" aria-hidden="true" tabindex="-1">
-                            <option value="">Dentro de: ninguno (grupo principal)</option>
-                            {% for parent in machine_group_parents %}<option value="{{ parent.pk }}" data-parent="{{ parent.parent }}" data-name="{{ parent.name }}">Dentro de: {{ parent.label }}</option>{% endfor %}
-                        </select>
-                        <div id="machineGroupParentPicker" title="Dentro de qué grupo va"></div>
-                        <div id="machineGroupDiff" class="small mb-1 d-none"></div>
-                        <div id="machineGroupFormResult" class="small mb-1"></div>
-                        <div class="d-flex gap-1 flex-wrap">
-                            <button type="button" class="btn btn-sm btn-outline-danger d-none" id="machineGroupDeleteBtn">Eliminar</button>
-                            <button type="button" class="btn btn-sm btn-outline-secondary" id="machineGroupResetBtn">Vaciar / nuevo</button>
-                        </div>
-                    </div>
-                    </div>
-                </div>
-            </div>
+            {# S153: el mismo recuadro de grupos que Personal y el resto de pestañas. #}
+            {% include "panel/_selection_groups_box.html" with sg="machineGroup" sg_nodes=machine_group_nodes sg_collapsed=machine_groups_collapsed sg_parents=machine_group_parents sg_hint="máquinas" %}
 
             {% comment %}
             Acciones sobre la selección, por categoría (como Personal):
@@ -470,7 +437,6 @@ la lista hace scroll. Dos paneles:
 .fleet-action-panes { display: grid; }
 .fleet-action-panes > .tab-pane { grid-area: 1 / 1; display: block; visibility: hidden; }
 .fleet-action-panes > .tab-pane.active { visibility: visible; }
-.fleet-group-scroll { flex: 1 1 auto; min-height: 4rem; max-height: 12rem; overflow-y: auto; }
 #fleet-results-scroll table td,
 #fleet-results-scroll table th {
     white-space: nowrap;

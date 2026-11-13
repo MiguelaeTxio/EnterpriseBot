@@ -18,6 +18,7 @@
 //     setIds: (pairs) => {...},          // [[pk, nombre], ...]
 //     labelOf: (pk) => "nombre",
 //     toast: (texto, esError) => {...},
+//     extra: (formData, accion) => {...},  // opcional: campos de más
 //   });
 // Devuelve {refresh}: llamarlo cada vez que cambie la selección.
 // Reglas (iguales que Personal): marcar grupos selecciona la suma de
@@ -348,6 +349,7 @@
             form.append("name", name);
             form.append("parent_id", $("Parent").value);
             cfg.getIds().forEach((pk) => form.append(cfg.memberField, pk));
+            if (cfg.extra) cfg.extra(form);
             const wasEditing = Boolean(editingPk) && !isNewCopy();
             const url = wasEditing ? cfg.updateUrl(editingPk) : cfg.saveUrl;
             fetch(url, {method: "POST", body: form, headers: {"X-CSRFToken": getCookie("csrftoken")}})
@@ -379,7 +381,9 @@
             const label = trashName ? "«" + trashName + "»" : "este grupo";
             if (!confirm("¿Eliminar " + label + "? No afecta a las " + nounPlural + " en sí.")) return;
             const result = $("FormResult");
-            fetch(cfg.deleteUrl(pk), {method: "POST", headers: {"X-CSRFToken": getCookie("csrftoken")}})
+            const body = new FormData();
+            if (cfg.extra) cfg.extra(body, "delete");
+            fetch(cfg.deleteUrl(pk), {method: "POST", body: body, headers: {"X-CSRFToken": getCookie("csrftoken")}})
                 .then((r) => r.json())
                 .then((data) => {
                     if (data.ok) {

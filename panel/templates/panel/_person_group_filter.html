@@ -1,208 +1,113 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/_person_group_filter.html #}
 {% comment %}
 S147 (Miguel Ángel): los grupos de selección son globales a todas las
-vistas de personal, y la interfaz es UNA para toda la aplicación: este
-recuadro es el mismo "Grupos de selección" de Personal (misma columna,
-mismo árbol _person_groups_tree.html, mismo plegado recordado por
-usuario en "person_groups") y hace lo mismo que allí: marcar grupos
-SELECCIONA a sus personas (la selección es la suma de los marcados; la
-casilla de un grupo marca sus subgrupos). Los grupos se crean y se
-cambian en Personal, y solo quien los creó.
-Cada vista recibe a las personas en window.EbGroupSelect[pg_prefix]
-({persons: [[pk, nombre]...], users: Map pk de CompanyUser -> nombre}) y las
-pone en su selección (por persona, por cuenta o por sus filas).
+vistas de personal, y la interfaz es UNA para toda la aplicación.
+S153 (Miguel Ángel: "Debería funcionar exactamente igual [...] cuando
+instalamos una cosa en una pestaña, tenemos que hacerlo extensible a
+todas"): hasta ahora aquí había un recuadro más simple que el de
+Personal (solo "Grupo con la selección", sin cambiar ni eliminar). Ahora
+es EL MISMO recuadro (panel/_selection_groups_box.html) con la misma
+lógica (panel/static/panel/js/selection_groups.js): crear, cambiar,
+eliminar, "Dentro de" por niveles y los cambios sin guardar a la vista.
+Cada vista sigue dando su selección igual que antes:
+  window.EbGroupSelect[pg_prefix]({persons: [[pk, nombre]...], users: Map})
+  window.EbGroupGet[pg_prefix]() -> {persons: [pk...], users: [pk...]}
+(por persona o por cuenta del panel; la cuenta se resuelve a su persona
+con los miembros de los grupos y, al guardar, en el servidor).
 Uso: es una columna de la fila de arriba (col-lg-3, como en Personal):
   {% include "panel/_person_group_filter.html" with pg_prefix="clk" %}
-Contexto: person_group_nodes y person_groups_collapsed
-(panel/person_groups.group_filter_context).
-S149 (Miguel Ángel): con la selección de la vista (p. ej. un grupo
-cruzado con el filtro con "Solo los filtrados") se crea aquí mismo un
-grupo nuevo, aparte ("los que faltan por fichar", "DNI caducado"), para
-volver a él. Cada vista da su selección en
-window.EbGroupGet[pg_prefix]() -> {persons: [pk...], users: [pk...]}.
+Contexto: panel/person_groups.group_filter_context.
 {% endcomment %}
-<div class="col-lg-3 eb-fit-col">
-    <div class="border rounded p-2 h-100 d-flex flex-column eb-fit-card eb-split">
-        <div class="fw-bold small mb-1">Grupos de selección</div>
-        <div class="mb-1 eb-group-scroll-fill eb-split-top">
-            <ul class="list-group list-group-flush small" id="{{ pg_prefix }}-group-list"
-                data-collapsed="{{ person_groups_collapsed|join:',' }}">
-                {% include "panel/documentation_h30/_person_groups_tree.html" with pg_id=pg_prefix|add:"Group" %}
-            </ul>
-        </div>
-        {# S149: barra para repartir el alto (panel/static/panel/js/group_splitter.js). #}
-        <div class="eb-split-handle" role="separator" aria-orientation="horizontal" aria-label="Repartir el espacio entre los grupos y lo de debajo" tabindex="0" title="Arrastra para dar más espacio a los grupos o a lo de debajo (doble clic: como estaba)"></div>
-        <div class="eb-split-bottom">
-        <p class="text-muted small mb-1">
-            Marca uno o varios grupos (la selección es la suma). Se cambian en Personal.
-        </p>
-        <div class="input-group input-group-sm">
-            <input type="text" class="form-control" id="{{ pg_prefix }}-group-new-name" maxlength="120"
-                   placeholder="Nombre del grupo nuevo" aria-label="Nombre del grupo nuevo">
-            <button type="button" class="btn btn-outline-primary" id="{{ pg_prefix }}-group-new-save"
-                    title="Guarda la selección actual como un grupo nuevo tuyo, aparte de los demás">
-                <i class="bi bi-plus-lg"></i> Grupo con la selección
-            </button>
-        </div>
-        <div class="small mt-1 d-none" id="{{ pg_prefix }}-group-new-msg"></div>
-        </div>
-    </div>
-</div>
-<style>
-.eb-group-scroll-fill { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-/* S148 ("el scroll..."): la columna de grupos no estira el panel fijo:
-   toma el alto de las otras columnas y su árbol hace scroll dentro. */
-@media (min-width: 992px) {
-    .eb-fit-col { position: relative; min-height: 15rem; }
-    .eb-fit-col > .eb-fit-card { position: absolute; inset: 0 calc(var(--bs-gutter-x) * .5); }
-}
-</style>
+{% with sg=pg_prefix|add:"Group" %}
+{% include "panel/_selection_groups_box.html" with sg=sg sg_nodes=person_group_nodes sg_collapsed=person_groups_collapsed sg_parents=person_group_parents sg_hint="personas" %}
 <script>
 (function () {
-    const list = document.getElementById('{{ pg_prefix }}-group-list');
-    if (!list || list.dataset.bound) { return; }
-    list.dataset.bound = '1';
-    const row = (pk) => list.querySelector('.person-group-node[data-pk="' + pk + '"]');
-    const box = (pk) => row(pk) && row(pk).querySelector('.person-group-select-checkbox');
-    const children = (pk) => (row(pk) && row(pk).dataset.children ? row(pk).dataset.children.split(',').filter(Boolean) : []);
-    function descendants(pk) {
-        const out = [];
-        const stack = children(pk);
-        while (stack.length) {
-            const child = stack.pop();
-            out.push(child);
-            children(child).forEach((c) => stack.push(c));
-        }
-        return out;
-    }
-    // Personas de los grupos marcados (las tienen los que no tienen
-    // subgrupos), como applyCheckedGroupsToSelection de Personal.
-    function checkedPeople() {
-        const persons = new Map();
-        const users = new Map();
-        list.querySelectorAll('.person-group-select-checkbox:checked').forEach((cb) => {
-            const node = row(cb.dataset.pk);
-            if (!node) { return; }
-            const ids = (node.dataset.memberIds || '').split(',');
-            const names = (node.dataset.memberNames || '').split('||');
-            const accounts = (node.dataset.memberUsers || '').split(',');
-            ids.forEach((id, i) => {
+    const prefix = "{{ pg_prefix|escapejs }}";
+    const sg = "{{ sg|escapejs }}";
+    const list = document.getElementById(sg + "SavedList");
+    if (!list || list.dataset.adapterBound) { return; }
+    list.dataset.adapterBound = "1";
+    // Cuenta del panel <-> persona y nombres, con los miembros de los
+    // grupos que pinta el árbol (se relee: el árbol se repinta al guardar).
+    function members() {
+        const userToPerson = new Map();
+        const personToUser = new Map();
+        const names = new Map();
+        list.querySelectorAll(".person-group-node").forEach(function (node) {
+            const ids = (node.dataset.memberIds || "").split(",");
+            const labels = (node.dataset.memberNames || "").split("||");
+            const accounts = (node.dataset.memberUsers || "").split(",");
+            ids.forEach(function (id, i) {
                 if (!id) { return; }
-                persons.set(id, names[i] || '');
-                if (accounts[i]) { users.set(accounts[i], names[i] || ''); }
+                names.set(id, labels[i] || "");
+                if (accounts[i]) {
+                    userToPerson.set(accounts[i], id);
+                    personToUser.set(id, accounts[i]);
+                }
             });
         });
-        return {persons: Array.from(persons.entries()), users: users};
+        return {userToPerson: userToPerson, personToUser: personToUser, names: names};
     }
-    list.addEventListener('change', function (ev) {
-        if (!ev.target.classList.contains('person-group-select-checkbox')) { return; }
-        const pk = ev.target.dataset.pk;
-        descendants(pk).forEach((c) => { if (box(c)) { box(c).checked = ev.target.checked; } });
-        let parent = row(pk) && row(pk).dataset.parent;
-        while (parent) {
-            // Marcar un subgrupo NUNCA marca el padre (el padre tiene
-            // más personas: Mecánicos no es todo Taller); desmarcarlo sí
-            // desmarca el padre. El padre queda a medias (indeterminado).
-            if (box(parent)) {
-                if (!ev.target.checked) { box(parent).checked = false; }
-                box(parent).indeterminate = !box(parent).checked && descendants(parent).some((k) => box(k) && box(k).checked);
-            }
-            parent = row(parent) && row(parent).dataset.parent;
-        }
-        const select = window.EbGroupSelect && window.EbGroupSelect['{{ pg_prefix }}'];
-        if (select) { select(checkedPeople()); }
+    function picked() {
+        const get = window.EbGroupGet && window.EbGroupGet[prefix];
+        const data = get ? get() : {persons: [], users: []};
+        return {persons: (data.persons || []).map(String), users: (data.users || []).map(String)};
+    }
+    function personIds() {
+        const data = picked();
+        const map = members().userToPerson;
+        const out = new Set(data.persons);
+        data.users.forEach(function (pk) { if (map.has(pk)) { out.add(map.get(pk)); } });
+        return Array.from(out);
+    }
+    const msg = document.getElementById(sg + "FormResult");
+    const groups = window.EbSelectionGroups.init({
+        prefix: sg,
+        collapsedKey: "person_groups",
+        saveUrl: "{% url 'panel:documentation_personal_group_create' %}",
+        updateUrl: function (pk) { return "{% url 'panel:documentation_personal_group_update' 0 %}".replace("/0/", "/" + pk + "/"); },
+        deleteUrl: function (pk) { return "{% url 'panel:documentation_personal_group_delete' 0 %}".replace("/0/", "/" + pk + "/"); },
+        memberField: "person_ids",
+        noun: "persona",
+        getIds: personIds,
+        setIds: function (pairs) {
+            const select = window.EbGroupSelect && window.EbGroupSelect[prefix];
+            if (!select) { return; }
+            const toUser = members().personToUser;
+            const users = new Map();
+            pairs.forEach(function (pair) {
+                const account = toUser.get(String(pair[0]));
+                if (account) { users.set(account, pair[1]); }
+            });
+            select({persons: pairs, users: users});
+        },
+        labelOf: function (pk) { return members().names.get(String(pk)) || ""; },
+        toast: function (text, isError) {
+            msg.innerHTML = '<div class="small ' + (isError ? "text-danger" : "text-success") + '"></div>';
+            msg.firstChild.textContent = text;
+        },
+        extra: function (form) {
+            // Ids del árbol de esta vista, y las cuentas sin persona
+            // conocida aquí (el servidor las resuelve a su ficha).
+            form.append("pg_id", sg);
+            const map = members().userToPerson;
+            picked().users.forEach(function (pk) { if (!map.has(pk)) { form.append("user_ids", pk); } });
+        },
     });
-    // Plegar/desplegar, recordado por usuario como en Personal.
-    const collapsed = new Set((list.dataset.collapsed || '').split(',').filter(Boolean));
-    // S147: carpetas por creador (Generales, Usuarios, Propios).
-    const folderRow = (key) => list.querySelector('.person-group-folder[data-pk="' + key + '"]');
-    function applyCollapsed() {
-        list.querySelectorAll('.person-group-node, .person-group-folder').forEach((node) => {
-            let hidden = false;
-            let parent = node.dataset.parent;
-            while (parent) {
-                if (collapsed.has(parent)) { hidden = true; break; }
-                parent = row(parent) && row(parent).dataset.parent;
-            }
-            let folder = node.dataset.folder;
-            while (!hidden && folder) {
-                if (collapsed.has(folder)) { hidden = true; break; }
-                folder = folderRow(folder) && folderRow(folder).dataset.folder;
-            }
-            node.classList.toggle('d-none', hidden);
-            const icon = node.querySelector('.person-group-toggle i');
-            if (icon) { icon.className = collapsed.has(node.dataset.pk) ? 'bi bi-chevron-right' : 'bi bi-chevron-down'; }
-        });
+    // La vista no avisa al recuadro cuando cambia su selección: se
+    // repasa tras cada clic o cambio en la pestaña (casillas, "Todos",
+    // "Limpiar"...).
+    const scope = list.closest(".tab-pane") || document;
+    let pending = false;
+    function later() {
+        if (pending) { return; }
+        pending = true;
+        setTimeout(function () { pending = false; groups.refresh(); }, 50);
     }
-    list.addEventListener('click', function (ev) {
-        // S148: papelera de cada grupo propio sin subgrupos; los demás
-        // grupos marcados siguen marcados y la selección se recalcula.
-        const trash = ev.target.closest('.person-group-delete');
-        if (trash) { deleteGroup(trash.dataset.pk, trash.dataset.name); return; }
-        const toggle = ev.target.closest('.person-group-toggle');
-        if (!toggle) { return; }
-        const pk = toggle.dataset.pk;
-        if (collapsed.has(pk)) { collapsed.delete(pk); } else { collapsed.add(pk); }
-        applyCollapsed();
-        if (window.EbNavState) { window.EbNavState.save('person_groups', {collapsed: Array.from(collapsed)}); }
-    });
-    applyCollapsed();
-    function deleteGroup(pk, name) {
-        if (!confirm('¿Eliminar el grupo «' + name + '»? No afecta a las personas en sí.')) { return; }
-        const kept = Array.from(list.querySelectorAll('.person-group-select-checkbox:checked'))
-            .map((cb) => cb.dataset.pk).filter((k) => k !== String(pk));
-        const body = new FormData();
-        body.append('pg_id', '{{ pg_prefix }}Group');
-        fetch('{% url "panel:documentation_personal_group_delete" 0 %}'.replace('/0/', '/' + pk + '/'), {
-            method: 'POST', headers: {'X-CSRFToken': csrf()}, body: body,
-        }).then((r) => r.json().catch(() => ({ok: false, error: 'No se ha podido eliminar (' + r.status + ').'})))
-            .then((data) => {
-                if (!data.ok) { say(data.error || 'No se ha podido eliminar.', true); return; }
-                list.innerHTML = data.tree_html;
-                kept.forEach((k) => { if (box(k)) { box(k).checked = true; } });
-                applyCollapsed();
-                const select = window.EbGroupSelect && window.EbGroupSelect['{{ pg_prefix }}'];
-                if (select) { select(checkedPeople()); }
-                say('Grupo «' + name + '» eliminado.', false);
-            })
-            .catch(() => say('Sin conexión con el servidor: no se ha eliminado nada.', true));
-    }
-    // S149: grupo nuevo con la selección actual de la vista.
-    const saveBtn = document.getElementById('{{ pg_prefix }}-group-new-save');
-    const nameInput = document.getElementById('{{ pg_prefix }}-group-new-name');
-    const msg = document.getElementById('{{ pg_prefix }}-group-new-msg');
-    function say(text, isError) {
-        msg.textContent = text;
-        msg.className = 'small mt-1 ' + (isError ? 'text-danger' : 'text-success');
-    }
-    function csrf() {
-        const meta = document.querySelector('meta[name="csrf-token"]');
-        return meta ? meta.content : '';
-    }
-    saveBtn.addEventListener('click', function () {
-        const name = nameInput.value.trim();
-        if (!name) { say('Escribe el nombre del grupo nuevo.', true); nameInput.focus(); return; }
-        const get = window.EbGroupGet && window.EbGroupGet['{{ pg_prefix }}'];
-        const picked = get ? get() : {persons: [], users: []};
-        if (!picked.persons.length && !picked.users.length) { say('No hay nadie seleccionado.', true); return; }
-        const body = new FormData();
-        body.append('name', name);
-        body.append('pg_id', '{{ pg_prefix }}Group');
-        picked.persons.forEach((pk) => body.append('person_ids', pk));
-        picked.users.forEach((pk) => body.append('user_ids', pk));
-        saveBtn.disabled = true;
-        fetch('{% url "panel:person_group_from_selection" %}', {
-            method: 'POST', headers: {'X-CSRFToken': csrf()}, body: body,
-        }).then((r) => r.json().catch(() => ({ok: false, error: 'No se ha podido guardar (' + r.status + ').'})))
-            .then((data) => {
-                if (!data.ok) { say(data.error || 'No se ha podido guardar.', true); return; }
-                list.innerHTML = data.tree_html;
-                applyCollapsed();
-                nameInput.value = '';
-                say('Grupo «' + data.name + '» guardado con ' + data.count + ' persona(s).', false);
-            })
-            .catch(() => say('Sin conexión con el servidor: no se ha guardado nada.', true))
-            .finally(() => { saveBtn.disabled = false; });
-    });
+    scope.addEventListener("change", later);
+    scope.addEventListener("click", later);
+    document.body.addEventListener("htmx:afterSwap", later);
+    later();
 })();
 </script>
+{% endwith %}

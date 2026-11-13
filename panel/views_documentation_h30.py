@@ -7365,11 +7365,20 @@ class PersonGroupTemplateSaveView(CompanyUserRequiredMixin, View):
             group = get_object_or_404(PersonGroupTemplate, pk=group_pk)
         else:
             group = PersonGroupTemplate(created_by=request.user.company_user)
+        # S153: el mismo recuadro en todas las vistas de personal; las
+        # que seleccionan por cuenta del panel mandan `user_ids`.
+        person_ids = [pk for pk in request.POST.getlist("person_ids")
+                      if pk.isdigit()]
+        user_ids = [pk for pk in request.POST.getlist("user_ids")
+                    if pk.isdigit()]
+        if user_ids:
+            person_ids += [str(pk) for pk in PersonIdentity.objects.filter(
+                company_user_id__in=user_ids).values_list("pk", flat=True)]
         try:
             group, people = save_group(
                 group, request.POST.get("name", ""),
                 request.POST.get("parent_id", ""),
-                request.POST.getlist("person_ids"),
+                sorted(set(person_ids)),
                 editor=request.user.company_user,
             )
         except GroupError as exc:
@@ -7387,10 +7396,22 @@ class PersonGroupTemplateSaveView(CompanyUserRequiredMixin, View):
             "tree_html": render_to_string(
                 "panel/documentation_h30/_person_groups_tree.html",
                 {"person_group_nodes": group_tree(
-                    request.user.company_user)}, request=request,
+                    request.user.company_user),
+                 "pg_id": _tree_ids(request)}, request=request,
             ),
             "parents": parent_choices(editor=request.user.company_user),
         })
+
+
+def _tree_ids(request):
+    """
+    Tree ids of the view that sent the request (`pg_id`), or None.
+    ---
+    Ids del árbol de la vista que pide (`pg_id`); None = los de
+    Personal (S153: el mismo recuadro en todas las vistas).
+    """
+    return re.sub(r"[^A-Za-z0-9_-]", "",
+                  request.POST.get("pg_id", ""))[:40] or None
 
 
 class PersonGroupFromSelectionView(CompanyUserRequiredMixin, View):

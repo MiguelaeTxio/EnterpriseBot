@@ -49,64 +49,18 @@ pantalla completa aparte, no un fragmento htmx de este pane.
         </div>
     </div>
 
-    <div class="col-lg-3 eb-fit-col">
-        {% comment %}
-        H31 (S113). Miguel Ángel: "bajamos esa parte [la gestión] en
-        la gestión de grupos de reparto para que nos quede todo el
-        espacio para la lista de grupos de reparto [...] esa lista
-        [...] debe ser scrollable". Columna en flex-column: el
-        listado crece para ocupar todo el hueco disponible (flex:1,
-        min-height:0 para que el overflow-y funcione dentro de un
-        flex item) y la gestión queda anclada abajo, con su altura
-        natural.
-        {% endcomment %}
-        <div class="border rounded p-2 h-100 d-flex flex-column eb-fit-card eb-split">
-            {# S147: antes "Grupos de reparto" (Miguel Ángel: "grupos de selección, que es más acorde con lo que hace"). #}
-            <div class="fw-bold small mb-1">Grupos de selección</div>
-            <div class="mb-1 ppane-scroll-fill eb-split-top">
-                <ul class="list-group list-group-flush small" id="personGroupSavedList" data-collapsed="{{ person_groups_collapsed|join:',' }}">
-                    {% include "panel/documentation_h30/_person_groups_tree.html" %}
-                </ul>
-            </div>
-            {# S149: barra para repartir el alto (panel/static/panel/js/group_splitter.js). #}
-            <div class="eb-split-handle" role="separator" aria-orientation="horizontal" aria-label="Repartir el espacio entre los grupos y lo de debajo" tabindex="0" title="Arrastra para dar más espacio a los grupos o a lo de debajo (doble clic: como estaba)"></div>
-            <div class="eb-split-bottom">
-            <p class="text-muted small mb-0" id="personGroupManagementEmpty">
-                Marca uno o varios grupos (la selección es la suma), o marca personas en el listado para empezar uno nuevo.
-            </p>
-            <div id="personGroupManagementForm" class="d-none">
-                <div class="input-group input-group-sm mb-1">
-                    <input type="text" id="personGroupName" class="form-control form-control-sm" placeholder="Nombre del grupo">
-                    <button type="button" class="btn btn-sm btn-primary" id="personGroupSaveBtn" onclick="savePersonGroup()">Guardar</button>
-                </div>
-                {% comment %}
-                S147: dónde va el grupo (cualquier grupo propio, tenga personas
-                o no). El desplegable con todos los grupos queda oculto (es el
-                valor que se guarda); se elige por niveles (Miguel Ángel: "que
-                aparezcan primero los grupos padre. Una vez que eliges un grupo
-                padre, que elija alguno de los grupos hijos"):
-                #personGroupParentPicker, armado por buildParentPicker().
-                {% endcomment %}
-                <select id="personGroupParent" class="d-none" aria-hidden="true" tabindex="-1">
-                    <option value="">Dentro de: ninguno (grupo principal)</option>
-                    {% for parent in person_group_parents %}<option value="{{ parent.pk }}" data-parent="{{ parent.parent }}" data-name="{{ parent.name }}">Dentro de: {{ parent.label }}</option>{% endfor %}
-                </select>
-                <div id="personGroupParentPicker" title="Dentro de qué grupo va"></div>
-                {% comment %}
-                S147 (Miguel Ángel): con un grupo cargado, desmarcar a alguien
-                lo quita y marcar a alguien (con cualquier filtro) lo añade;
-                aquí se ve qué cambia antes de guardar.
-                {% endcomment %}
-                <div id="personGroupDiff" class="small mb-1 d-none"></div>
-                <div id="personGroupFormResult" class="small mb-1"></div>
-                <div class="d-flex gap-1 flex-wrap">
-                    <button type="button" class="btn btn-sm btn-outline-danger d-none" id="personGroupDeleteBtn" onclick="deletePersonGroup()">Eliminar</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="resetPersonGroupForm()">Vaciar / nuevo</button>
-                </div>
-            </div>
-            </div>
-        </div>
-    </div>
+    {% comment %}
+    H31 (S113). Miguel Ángel: "bajamos esa parte [la gestión] en
+    la gestión de grupos de reparto para que nos quede todo el
+    espacio para la lista de grupos de reparto [...] esa lista
+    [...] debe ser scrollable". Columna en flex-column: el
+    listado crece para ocupar todo el hueco disponible (flex:1,
+    min-height:0 para que el overflow-y funcione dentro de un
+    flex item) y la gestión queda anclada abajo, con su altura
+    natural.
+    {% endcomment %}
+    {# S153: el recuadro de grupos es el mismo de todas las pestañas (panel/_selection_groups_box.html); aquí lo mueve el JS de Personal (mismos ids). #}
+    {% include "panel/_selection_groups_box.html" with sg="personGroup" sg_nodes=person_group_nodes sg_collapsed=person_groups_collapsed sg_parents=person_group_parents sg_hint="personas" %}
 
     {% comment %}
     H31 (S75/S113). Acciones masivas -- SIEMPRE VISIBLES (Miguel
@@ -1176,6 +1130,10 @@ las filas de debajo se desplacen de verdad.
         }).catch(() => showPersonGroupToast('No se ha podido eliminar el grupo.', true));
     }
     window.deletePersonGroup = deletePersonGroup;
+    // S153: el recuadro es el común (panel/_selection_groups_box.html), sin onclick.
+    document.getElementById('personGroupSaveBtn').addEventListener('click', function () { savePersonGroup(); });
+    document.getElementById('personGroupDeleteBtn').addEventListener('click', function () { deletePersonGroup(); });
+    document.getElementById('personGroupResetBtn').addEventListener('click', function () { resetPersonGroupForm(); });
 
     let personMassJobPositionMode = 'add';
     // S153: "Añadir" necesita un requisito concreto ("Todos" solo vale

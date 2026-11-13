@@ -368,4 +368,6 @@ def group_filter_context(request, kind=PERSON_KIND):
     return {
         "person_group_nodes": group_tree(editor, kind),
         "person_groups_collapsed": collapsed_state(editor, kind),
+        # S153: el recuadro es el de Personal ("Dentro de" por niveles).
+        "person_group_parents": parent_choices(editor=editor, kind=kind),
     }
