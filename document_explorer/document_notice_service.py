@@ -48,6 +48,8 @@ IDENTITY_CODES = ("DNI", "NIE")
 DRIVING_CARD_CODE = "CARNET_CONDUCIR"
 
 KIND_MISSING = "MISSING"
+# S153: tipo de la ITV (primera ITV de un vehículo nuevo).
+ITV_CODE = "ITV"
 KIND_EXPIRED = "EXPIRED"
 KIND_UPCOMING = "UPCOMING"
 
@@ -626,6 +628,22 @@ def _compute_document_notices(domain):
             if not docs:
                 if doc_type.code in IDENTITY_CODES and has_identity:
                     continue
+                if domain != DOMAIN_PERSONAL and doc_type.code == ITV_CODE:
+                    # S153 (Miguel Ángel): un vehículo nuevo no tiene
+                    # ITV hasta que le toca la primera; mientras, no
+                    # falta: se avisa de la fecha como de una caducidad.
+                    # Uno que no pasa ITV no avisa nunca.
+                    if subject.itv_category == subject.ITV_NONE:
+                        continue
+                    first_itv = subject.itv_exempt_until
+                    if first_itv is not None and first_itv >= today:
+                        base["document_label"] = "Primera ITV"
+                        _file_notice(
+                            _expiry_notice(base, rule, first_itv, None,
+                                           today),
+                            today, pending, scheduled, calendar_items,
+                        )
+                        continue
                 if doc_type.code in IDENTITY_CODES:
                     # S127: sin DNI ni NIE salían DOS avisos ("Falta DNI"
                     # y "Falta NIE") para un solo documento que falta.

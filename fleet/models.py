@@ -307,6 +307,47 @@ class MachineAsset(models.Model):
     )
 
     # ------------------------------------------------------------------
+    # S153 -- primera ITV de un vehículo nuevo. Miguel Ángel: "como
+    # podemos saber si un vehículo es nuevo y por eso aún no tenemos
+    # documento de ITV". La primera ITV toca a un plazo contado desde
+    # la primera matriculación (campo B del permiso de circulación),
+    # según el tipo de vehículo; hasta entonces está exento y no se
+    # avisa de que falta la ITV.
+    # ---
+    # S153 -- first ITV of a new vehicle: exempt until N years after the
+    # first registration, depending on the vehicle kind.
+    # ------------------------------------------------------------------
+    ITV_TURISMO = "TURISMO"
+    ITV_LIGERO = "LIGERO"
+    ITV_PESADO = "PESADO"
+    ITV_ESPECIAL = "ESPECIAL"
+    ITV_NONE = "SIN_ITV"
+    ITV_CATEGORY_CHOICES = [
+        ("", _("Sin indicar")),
+        (ITV_TURISMO, _("Turismo o furgoneta particular (1.ª ITV a los "
+                        "4 años)")),
+        (ITV_LIGERO, _("Ligero hasta 3.500 kg, mixto o furgoneta de "
+                       "mercancías (1.ª ITV a los 2 años)")),
+        (ITV_PESADO, _("Pesado de más de 3.500 kg (1.ª ITV al año)")),
+        (ITV_ESPECIAL, _("Vehículo especial de obras (1.ª ITV a los 4 "
+                         "años)")),
+        (ITV_NONE, _("No pasa ITV (sin matrícula)")),
+    ]
+    FIRST_ITV_YEARS = {
+        ITV_TURISMO: 4, ITV_LIGERO: 2, ITV_PESADO: 1, ITV_ESPECIAL: 4,
+    }
+    first_registration_date = models.DateField(
+        null=True, blank=True,
+        verbose_name=_("Fecha de primera matriculación"),
+        help_text=_("Campo B del permiso de circulación."),
+    )
+    itv_category = models.CharField(
+        max_length=10, blank=True, default="",
+        choices=ITV_CATEGORY_CHOICES,
+        verbose_name=_("Tipo de vehículo para la ITV"),
+    )
+
+    # ------------------------------------------------------------------
     # H30 (S118) -- foto de la máquina. Mismo mecanismo que
     # PersonIdentity.avatar_document (H35, S105): FK opcional al
     # documento-imagen YA indexado de esta máquina que se elige como
@@ -411,6 +452,23 @@ class MachineAsset(models.Model):
         """
         self.code = self.code.strip().upper()
         super().save(*args, **kwargs)
+
+    @property
+    def itv_exempt_until(self):
+        """
+        Date of the first ITV of a new vehicle, or None.
+        ---
+        S153: fecha en que le toca la primera ITV (primera matriculación
+        + los años de su tipo); None si falta la fecha o el tipo.
+        """
+        years = self.FIRST_ITV_YEARS.get(self.itv_category)
+        first = self.first_registration_date
+        if not years or first is None:
+            return None
+        try:
+            return first.replace(year=first.year + years)
+        except ValueError:  # 29 de febrero
+            return first.replace(year=first.year + years, day=28)
 
     @property
     def has_service_plan(self) -> bool:

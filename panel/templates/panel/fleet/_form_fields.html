@@ -100,6 +100,26 @@
         {{ form.hours }}
     </div>
 
+    {# S153: primera ITV de un vehículo nuevo #}
+    <div class="col-12 mt-1">
+        <h6 class="text-muted small fw-semibold text-uppercase mb-2">ITV</h6>
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm" for="{{ form.first_registration_date.id_for_label }}">{{ form.first_registration_date.label }}</label>
+        {{ form.first_registration_date }}
+    </div>
+
+    <div class="col-12 col-sm-8">
+        <label class="form-label form-label-sm" for="{{ form.itv_category.id_for_label }}">{{ form.itv_category.label }}</label>
+        {{ form.itv_category }}
+        {% if form.instance.itv_exempt_until %}
+        <div class="form-text">Primera ITV: {{ form.instance.itv_exempt_until|date:"d/m/Y" }}. Hasta entonces no se avisa de que falta la ITV.</div>
+        {% else %}
+        <div class="form-text">Con la fecha y el tipo, no se avisa de que falta la ITV hasta que le toque la primera.</div>
+        {% endif %}
+    </div>
+
     {# H30 (S131): plan de revisiones por horas y km #}
     <div class="col-12 mt-1">
         <h6 class="text-muted small fw-semibold text-uppercase mb-2">Revisiones</h6>

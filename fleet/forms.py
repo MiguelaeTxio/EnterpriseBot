@@ -45,6 +45,9 @@ class MachineAssetForm(forms.ModelForm):
             "type_code",
             "type_name",
             "purchase_date",
+            # S153: primera ITV de un vehículo nuevo.
+            "first_registration_date",
+            "itv_category",
             "mileage",
             "hours",
             "is_active",
@@ -95,6 +98,16 @@ class MachineAssetForm(forms.ModelForm):
                 },
                 format="%Y-%m-%d",
             ),
+            "first_registration_date": forms.DateInput(
+                attrs={
+                    "class": "form-control",
+                    "type": "date",
+                },
+                format="%Y-%m-%d",
+            ),
+            "itv_category": forms.Select(attrs={
+                "class": "form-select",
+            }),
             "mileage": forms.NumberInput(attrs={
                 "class": "form-control",
                 "min": "0",
@@ -135,6 +148,8 @@ class MachineAssetForm(forms.ModelForm):
             "type_code":      "Cód. Tipo",
             "type_name":      "Nombre Tipo",
             "purchase_date":  "Fecha de Compra",
+            "first_registration_date": "Primera matriculación",
+            "itv_category":   "Tipo para la ITV",
             "mileage":        "Kilómetros",
             "hours":          "Horas",
             "is_active":      "Activo",

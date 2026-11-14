@@ -92,9 +92,35 @@ _SCHEMA = {
         "insurer": {"type": "string"},
         "policy_number": {"type": "string"},
         "document_date": {"type": "string"},
+        "first_registration_date": {"type": "string"},
+        "vehicle_category": {"type": "string"},
+        "vehicle_classification": {"type": "string"},
+        "mma_kg": {"type": "string"},
     },
     "required": ["detected_type_code", "detected_description"],
 }
+
+# S153: datos de la primera ITV, solo de los documentos de
+# matriculación (permiso, ficha técnica, ITV, autorización provisional).
+_REGISTRATION_TYPES = (
+    "PERMISO_CIRCULACION", "FICHA_TECNICA", "ITV",
+    "AUTORIZACION_PROVISIONAL_CIRCULACION",
+)
+_FIRST_ITV_PROMPT = (
+    "- first_registration_date: fecha de primera matriculación del "
+    "vehículo (campo B del permiso de circulación o de la ficha "
+    "técnica), AAAA-MM-DD; vacío si no aparece. No es la fecha de "
+    "expedición del documento ni la de una inspección.\n"
+    "- vehicle_category: categoría del vehículo tal como aparece (campo "
+    "J: M1, N1, N2, N3, O1...O4, T...), o 'ESPECIAL' si es un vehículo "
+    "especial (matrícula E, grúa autopropulsada, maquinaria de obras); "
+    "vacío si no aparece.\n"
+    "- vehicle_classification: la clasificación del vehículo tal como "
+    "aparece (p. ej. '1000 Turismo', '3100 Vehículo mixto adaptable', "
+    "'2400 Furgón'); vacío si no aparece.\n"
+    "- mma_kg: masa máxima autorizada en kg (campo F.2), solo el "
+    "número; vacío si no aparece.\n"
+)
 
 # Current (1234BCD), special vehicles (E1234BCD), temporary (P1234BCD),
 # trailers (R1234BCD, old MA01520R) and old provincial (MA1234BC,
@@ -139,10 +165,11 @@ def _prompt(candidates, chosen_type, is_machine):
         "- policy_number: número de póliza; vacío si no aparece.\n"
         "- document_date: si es una factura, un contrato de compraventa "
         "o de leasing, su fecha de emisión o de firma, AAAA-MM-DD; vacío "
-        "en cualquier otro documento o si no se lee.\n"
+        "en cualquier otro documento o si no se lee.\n" + _FIRST_ITV_PROMPT
         if is_machine else
         "- plate, chassis_number, brand_model, insurer, policy_number, "
-        "document_date: vacíos.\n"
+        "document_date, first_registration_date, vehicle_category, "
+        "vehicle_classification, mma_kg: vacíos.\n"
     )
     return (
         "Eres un asistente que revisa documentación de un grupo de "
@@ -305,8 +332,68 @@ def check_document(*, document_type, is_machine, data, filename, text):
             "insurer": (answer.get("insurer") or "").strip()[:100],
             "policy_number": (answer.get("policy_number") or "").strip()[:60],
             "document_date": parse_document_date(answer.get("document_date")),
+            **first_itv_facts(answer, answer.get("plate")),
         }
     return result
+
+
+def first_itv_facts(answer, plate):
+    """
+    S153: first registration date and ITV kind read from a document.
+    ---
+    Fecha de primera matriculación y tipo de vehículo para la ITV.
+    """
+    import datetime
+
+    try:
+        first = datetime.date.fromisoformat(
+            (answer.get("first_registration_date") or "").strip()[:10])
+    except ValueError:
+        first = None
+    if first and not (
+        datetime.date(1950, 1, 1) <= first <= datetime.date.today()
+    ):
+        first = None
+    return {
+        "first_registration_date": first,
+        "itv_category": itv_category_from(
+            answer.get("vehicle_category"),
+            answer.get("vehicle_classification"),
+            answer.get("mma_kg"), plate),
+    }
+
+
+def itv_category_from(category, classification, mma, plate):
+    """
+    S153: ITV kind (MachineAsset.ITV_*) from category, classification,
+    maximum mass and plate; "" when it cannot be told.
+    ---
+    Tipo de vehículo para la ITV a partir de la categoría (J), la
+    clasificación, la MMA (F.2) y la matrícula; "" si no se sabe.
+    """
+    from fleet.models import MachineAsset
+
+    category = re.sub(r"\s", "", (category or "").upper())
+    classification = (classification or "").upper()
+    clean_plate = normalize_plate(plate)
+    try:
+        mass = int(re.sub(r"[^0-9]", "", str(mma or "")) or 0)
+    except ValueError:
+        mass = 0
+    if category.startswith("ESPECIAL") or re.match(
+            r"^E[0-9]{4}[A-Z]{3}$", clean_plate):
+        return MachineAsset.ITV_ESPECIAL
+    if "MIXTO" in classification or "DERIVADO" in classification:
+        return MachineAsset.ITV_LIGERO
+    if category.startswith(("N2", "N3", "M2", "M3", "O3", "O4")):
+        return MachineAsset.ITV_PESADO
+    if category.startswith(("N1", "O1", "O2")):
+        return MachineAsset.ITV_LIGERO
+    if category.startswith("M1"):
+        return MachineAsset.ITV_TURISMO
+    if mass > 3500:
+        return MachineAsset.ITV_PESADO
+    return ""
 
 
 def parse_document_date(value):
@@ -364,6 +451,20 @@ def apply_machine_facts(machine, document_type_code, facts, save=True):
         machine.purchase_date = purchase
         update_fields.append("purchase_date")
         filled["fecha de compra"] = purchase.strftime("%d/%m/%Y")
+    # S153: primera matriculación y tipo para la ITV, solo de los
+    # documentos de matriculación y solo si la ficha no los tiene.
+    if document_type_code in _REGISTRATION_TYPES:
+        first = facts.get("first_registration_date")
+        if first and not machine.first_registration_date:
+            machine.first_registration_date = first
+            update_fields.append("first_registration_date")
+            filled["primera matriculación"] = first.strftime("%d/%m/%Y")
+        kind = facts.get("itv_category")
+        if kind and not machine.itv_category:
+            machine.itv_category = kind
+            update_fields.append("itv_category")
+            filled["tipo para la ITV"] = dict(
+                machine.ITV_CATEGORY_CHOICES).get(kind, kind)
     for name, value in read.items():
         max_length = machine._meta.get_field(name).max_length
         value = value[:max_length] if max_length else value
@@ -411,7 +512,7 @@ def _intake_prompt(candidates):
         "- policy_number: número de póliza; vacío si no aparece.\n"
         "- document_date: si es una factura, un contrato de compraventa "
         "o de leasing, su fecha de emisión o de firma, AAAA-MM-DD; vacío "
-        "en cualquier otro documento.\n"
+        "en cualquier otro documento.\n" + _FIRST_ITV_PROMPT +
         "No inventes nada: deja vacío lo que no esté escrito en el "
         "documento."
     ) % (types_text, NO_TYPE)
@@ -457,6 +558,7 @@ def read_machine_document(data, filename):
         "insurer": (answer.get("insurer") or "").strip()[:100],
         "policy_number": (answer.get("policy_number") or "").strip()[:60],
         "document_date": parse_document_date(answer.get("document_date")),
+        **first_itv_facts(answer, answer.get("plate")),
     }
     return {
         "code": code,
@@ -503,6 +605,21 @@ def merge_machine_facts(readings):
     ]
     if dates:
         merged["purchase_date"] = min(dates).isoformat()
+    # S153: primera matriculación y tipo para la ITV de los documentos
+    # de matriculación (el que más se repite).
+    first_votes = collections.Counter(
+        reading["facts"]["first_registration_date"] for reading in readings
+        if reading.get("code") in _REGISTRATION_TYPES
+        and (reading.get("facts") or {}).get("first_registration_date"))
+    if first_votes:
+        merged["first_registration_date"] = first_votes.most_common(
+            1)[0][0].isoformat()
+    kind_votes = collections.Counter(
+        reading["facts"]["itv_category"] for reading in readings
+        if reading.get("code") in _REGISTRATION_TYPES
+        and (reading.get("facts") or {}).get("itv_category"))
+    if kind_votes:
+        merged["itv_category"] = kind_votes.most_common(1)[0][0]
     return merged
 
 
