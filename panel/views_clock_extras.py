@@ -20,7 +20,7 @@ hr_calendar/clock_extras.py.
 import datetime
 from decimal import Decimal, InvalidOperation
 
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.utils import timezone
 from django.views import View
@@ -195,6 +195,42 @@ def _table_response(request, person, message, error=False):
     if error:
         response["X-Clock-Error"] = "1"
     return response
+
+
+class AlbaranNumbersView(SupervisorAccessMixin, View):
+    """
+    Delivery note numbers of a worker on a day (for the fix reason).
+    ---
+    S153 (Miguel Ángel: "los albaranes que se suben tienen todos su
+    número"): números de los albaranes cargados del trabajador para ese
+    día (a veces 2 o 3 en la misma jornada), para que el motivo
+    "Corrección según albarán n.º(s)" los ponga solo.
+    """
+
+    def get(self, request, pk):
+        """
+        JSON {"numbers": [...]} for ?day=YYYY-MM-DD.
+        ---
+        JSON con los números, en el orden en que se cargaron.
+        """
+        from hr_calendar.models import AlbaranSheet
+
+        person = _person(pk)
+        try:
+            day = datetime.date.fromisoformat(request.GET.get("day") or "")
+        except ValueError:
+            return JsonResponse({"numbers": []})
+        numbers = []
+        for number in AlbaranSheet.objects.filter(
+            batch__person=person,
+            batch__company=request.user.company_user.company,
+            day=day,
+        ).exclude(number="").order_by(
+            "batch__created_at", "position",
+        ).values_list("number", flat=True):
+            if number.strip() not in numbers:
+                numbers.append(number.strip())
+        return JsonResponse({"numbers": numbers})
 
 
 class ClockWorkerReviewView(SupervisorAccessMixin, View):

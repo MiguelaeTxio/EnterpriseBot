@@ -6,11 +6,15 @@ según albarán n.º(s)", para escribir detrás el número o los números de
 albarán del día (a veces hay 2 o 3 en la misma jornada); así la
 corrección queda con la referencia al albarán. La misma botonera en
 todas las correcciones de fichajes (página del trabajador y su ficha en
-Personal). Uso:
-  {% include "panel/clock_worker/_fix_reasons.html" with reason_target="cwFixReason" %}
+Personal). Con reason_person, los números se ponen solos: los de los
+albaranes cargados de ese trabajador para el día de la corrección (el de
+las horas del formulario o data-day del formulario). Uso:
+  {% include "panel/clock_worker/_fix_reasons.html" with reason_target="cwFixReason" reason_person=person.pk %}
 {% endcomment %}
 <div class="d-flex flex-wrap gap-1 mt-1 eb-fix-reasons" data-reason-target="{{ reason_target }}">
-    <button type="button" class="btn btn-sm btn-outline-primary py-0" data-reason="Corrección según albarán n.º(s) " title="Escribe detrás el número o los números de albarán del día (p. ej. 348203 y 348204)">Según albarán n.º(s)…</button>
+    <button type="button" class="btn btn-sm btn-outline-primary py-0" data-reason="Corrección según albarán n.º(s) "{% if reason_person %}
+            data-albaran-numbers="{% url 'panel:clock_albaran_numbers' reason_person %}"{% endif %}
+            title="Pone los números de los albaranes cargados de ese día; si no hay, escribe detrás el número o los números (p. ej. 348203 y 348204)">Según albarán n.º(s)…</button>
     <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Olvido del trabajador: no fichó la salida.">Olvidó la salida</button>
     <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Olvido del trabajador: no fichó la entrada.">Olvidó la entrada</button>
     <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Se quedó trabajando con ">Se quedó trabajando con…</button>
@@ -28,9 +32,26 @@ Personal). Uso:
         if (!btn) { return; }
         const box = document.getElementById(btn.closest(".eb-fix-reasons").dataset.reasonTarget);
         if (!box) { return; }
-        box.value = (box.value.trim() ? box.value.trim() + " " : "") + btn.dataset.reason;
-        box.focus();
-        box.setSelectionRange(box.value.length, box.value.length);
+        function put(text) {
+            box.value = (box.value.trim() ? box.value.trim() + " " : "") + text;
+            box.focus();
+            box.setSelectionRange(box.value.length, box.value.length);
+        }
+        const url = btn.dataset.albaranNumbers;
+        const form = box.closest("form");
+        let day = form && form.dataset.day ? form.dataset.day : "";
+        if (!day && form) {
+            const timed = Array.from(form.querySelectorAll('input[type="datetime-local"]')).find(function (i) { return i.value; });
+            day = timed ? timed.value.slice(0, 10) : "";
+        }
+        if (!url || !day) { put(btn.dataset.reason); return; }
+        fetch(url + "?day=" + encodeURIComponent(day), {headers: {"X-Requested-With": "XMLHttpRequest"}})
+            .then(function (r) { return r.ok ? r.json() : {numbers: []}; })
+            .then(function (data) {
+                const numbers = (data && data.numbers) || [];
+                put(btn.dataset.reason + numbers.join(", ") + (numbers.length ? "." : ""));
+            })
+            .catch(function () { put(btn.dataset.reason); });
     });
 })();
 </script>

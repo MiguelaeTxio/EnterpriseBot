@@ -354,7 +354,7 @@ screen_key "clock_worker"); la selección, por trabajador.
                 </div>
                 <label class="form-label mb-0" for="cwFixReason">Motivo (obligatorio, queda en el historial)</label>
                 <textarea class="form-control form-control-sm" name="reason" id="cwFixReason" rows="2" maxlength="1000" required></textarea>
-                {% include "panel/clock_worker/_fix_reasons.html" with reason_target="cwFixReason" %}
+                {% include "panel/clock_worker/_fix_reasons.html" with reason_target="cwFixReason" reason_person=person.pk %}
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
@@ -627,6 +627,8 @@ screen_key "clock_worker"); la selección, por trabajador.
             editRows.forEach(function (r) { r.orig = {kind: r.kind, at: r.at, type: r.type ? String(r.type) : ""}; r.type = r.type ? String(r.type) : ""; });
             editDay = opts.day || "";
         }
+        // S153: día de la jornada, para los números de albarán del motivo.
+        document.getElementById("cw-fix-form").dataset.day = opts.day || "";
         drawEdit();
         // S149: intercalar un tipo.
         document.getElementById("cw-fix-insert").classList.toggle("d-none", !isInsert);

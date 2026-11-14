@@ -176,6 +176,7 @@ from panel.views_clock_events import (
 )
 from panel.views_clock_extras import (
     ClockWorkerOvertimeView,
+    AlbaranNumbersView,
     ClockWorkerReviewView,
     ClockWorkerTripView,
 )
@@ -2061,6 +2062,13 @@ urlpatterns = [
         "documentacion/fichajes/<int:pk>/jornadas/visado/",
         ClockWorkerReviewView.as_view(),
         name="clock_worker_review",
+    ),
+    # S153: números de los albaranes del día, para el motivo de una
+    # corrección ("Corrección según albarán n.º(s) ...").
+    path(
+        "documentacion/fichajes/<int:pk>/albaranes/numeros/",
+        AlbaranNumbersView.as_view(),
+        name="clock_albaran_numbers",
     ),
     # H24 (S149): albaranes cotejados con los fichajes por la IA.
     path(
