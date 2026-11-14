@@ -18,14 +18,20 @@ Para cada máquina activa con repostajes (GasoGes) en el periodo:
 2. Si no llega ninguno, la sección vigente de quien repostó, por el
    mismo reparto; si una sección llega al umbral, la máquina va al grupo
    que más personas de esa sección tiene ("sección").
-3. Si tampoco, la familia: el grupo que tienen la mayoría de máquinas
-   de su familia ya decididas (al menos 3), si llega al umbral
-   ("familia").
-4. Si no, queda "sin decidir" y se lista para decidirla a mano.
+3. Si no, queda "sin decidir" y se lista para decidirla a mano.
+
+Corrección de Miguel Ángel (misma sesión): "Los grupos no son
+homogéneos" -- nada por familia; y "Grúas y Camiones ya está creado [...]
+a ver si te vas a cargar el grupo que hice ayer":
+- Una máquina que ya está en un grupo de centros de gasto (hecho a mano)
+  NO se toca; si los repostajes dicen otro grupo, se señala como
+  discrepancia para que decida él.
+- --map "Grúas=Grúas y Camiones": lo que salga de un grupo de personas
+  va a un grupo de centros de gasto que ya existe (solo se añade).
 
 Sin --apply solo informa. Con --apply crea en Generales (de
-alvarez_admin) los grupos de centros de gasto con el mismo nombre que
-los de personas y AÑADE las máquinas (nunca quita las que ya tengan).
+alvarez_admin) los grupos que falten y AÑADE las máquinas (nunca quita
+ni mueve nada).
 Log propio con pantalla y archivo a la vez (com-standards 0bis).
 """
 import datetime
@@ -49,6 +55,9 @@ class Command(BaseCommand):
         parser.add_argument("--apply", action="store_true")
         parser.add_argument("--days", type=int, default=365)
         parser.add_argument("--threshold", type=float, default=0.6)
+        parser.add_argument(
+            "--map", action="append", default=[],
+            help='"Grupo de personas=Grupo de centros de gasto existente"')
         parser.add_argument("--log-file", required=True)
 
     def _log(self, text=""):
@@ -136,6 +145,19 @@ class Command(BaseCommand):
 
         machines = list(MachineAsset.objects.filter(
             company=admin.company, is_active=True).order_by("code"))
+        # Grupos de centros de gasto que ya existen (hechos a mano).
+        existing = defaultdict(list)
+        for group in MachineGroupTemplate.objects.prefetch_related(
+                "members"):
+            for machine in group.members.all():
+                existing[machine.pk].append(group.name)
+        target = {}
+        for pair in options["map"]:
+            source, _sep, dest = pair.partition("=")
+            target[source.strip()] = dest.strip()
+        self._log("Destinos: %s" % (", ".join(
+            "%s -> «%s»" % kv for kv in target.items()) or "ninguno"))
+        conflicts = []
         refuels = defaultdict(Counter)
         names = {}
         for machine_id, person_id, given, surname in (
@@ -183,7 +205,17 @@ class Command(BaseCommand):
                     choice = (section_group[section],
                               "sección %s %d%%" % (section, round(
                                   100 * times / n)))
-            if choice:
+            if machine.pk in existing:
+                already = existing[machine.pk]
+                dest = target.get(choice[0], choice[0]) if choice else None
+                if dest and dest not in already:
+                    conflicts.append("%s: está en %s; repostajes -> %s (%s)"
+                                     % (machine.code, ", ".join(
+                                         "«%s»" % g for g in already),
+                                        dest, choice[1]))
+                self._plain("    -> ya en %s: no se toca" % ", ".join(
+                    "«%s»" % g for g in already))
+            elif choice:
                 decided[machine.pk] = (machine,) + choice
                 self._plain("    -> %s (%s)" % choice)
             else:
@@ -192,32 +224,23 @@ class Command(BaseCommand):
             if index % 25 == 0:
                 self._log("Progreso: %d/%d" % (index, total))
 
-        # Familia, para las que quedan.
-        family_votes = defaultdict(Counter)
-        for machine, name, _why in decided.values():
-            if machine.family:
-                family_votes[machine.family][name] += 1
-        still = []
-        for machine, why in undecided:
-            votes = family_votes.get(machine.family)
-            # Al menos 3 máquinas de la familia ya decididas: con una
-            # o dos, la familia no dice nada.
-            if votes and sum(votes.values()) >= 3:
-                name, times = votes.most_common(1)[0]
-                if times / sum(votes.values()) >= threshold:
-                    decided[machine.pk] = (machine, name, "familia %s" % (
-                        machine.family))
-                    continue
-            still.append((machine, why))
+        still = [(m, why) for m, why in undecided if m.pk not in existing]
 
         self._plain()
         self._plain("RESUMEN")
         per_group = defaultdict(list)
         for machine, name, why in decided.values():
-            per_group[name].append("%s (%s)" % (machine.code, why))
+            per_group[target.get(name, name)].append("%s %s (%s)" % (
+                machine.code, machine.family or "sin familia", why))
         for name in sorted(per_group):
-            self._plain("%s (%d): %s" % (name, len(per_group[name]),
-                                         "; ".join(sorted(per_group[name]))))
+            self._plain("«%s» -- se añaden %d: %s" % (
+                name, len(per_group[name]),
+                "; ".join(sorted(per_group[name]))))
+        self._plain("Ya en un grupo hecho a mano y no se tocan: %d" % len(
+            existing))
+        self._plain("Discrepancias (%d):" % len(conflicts))
+        for line in conflicts:
+            self._plain("  " + line)
         self._plain("Sin decidir (%d): %s" % (len(still), ", ".join(
             "%s [%s]" % (m.code, why) for m, why in still)))
 
@@ -225,11 +248,15 @@ class Command(BaseCommand):
             self._plain("Simulación: no se ha cambiado nada.")
             return
         with transaction.atomic():
-            for name, items in per_group.items():
-                group, created = MachineGroupTemplate.objects.get_or_create(
-                    name=name, parent=None, created_by=admin)
+            for name in per_group:
+                group = MachineGroupTemplate.objects.filter(
+                    name=name).order_by("pk").first()
+                created = group is None
+                if created:
+                    group = MachineGroupTemplate.objects.create(
+                        name=name, parent=None, created_by=admin)
                 pks = [machine.pk for machine, gname, _w in decided.values()
-                       if gname == name]
+                       if target.get(gname, gname) == name]
                 group.members.add(*pks)
                 self._plain("%s «%s»: %d centros de gasto añadidos." % (
                     "Creado" if created else "Ya existía", name, len(pks)))
