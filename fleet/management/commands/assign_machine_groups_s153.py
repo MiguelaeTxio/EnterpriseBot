@@ -74,6 +74,11 @@ ASSIGNMENTS = [
     ("0672KKZ", "Grúas y Camiones / Comerciales"),
     ("9843KBZ", "Plataformas / Comerciales"),
     ("0067JDK", "Plataformas / Comerciales"),
+    # S153: las "2 tractoras de plataformas que llevan Berenguer y Manuel
+    # Alonso" son los autocargantes B38 y B41 (repostajes); la P16 se
+    # queda solo en «Grúas y Camiones».
+    ("B38", "Plataformas / Transporte"),
+    ("B41", "Plataformas / Transporte"),
 ]
 ASSISTANCE_FAMILY = "ASISTENCIA"
 ASSISTANCE_PATH = "Asistencia / Málaga"
