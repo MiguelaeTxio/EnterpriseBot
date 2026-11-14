@@ -46,6 +46,13 @@ logger = logging.getLogger(__name__)
 
 STAGING_DIR = os.path.join(settings.BASE_DIR, "private", "albaranes")
 MAX_FILE_BYTES = 40 * 1024 * 1024
+# S153 (Miguel Ángel: "hay que guardarlos en el cubo, estos albaranes no
+# son como los de taller, aquellos son de terceros y estos son albaranes
+# de trabajo. Van en carpetas diferentes"): cada archivo cargado se
+# guarda también en el cubo principal, en la carpeta del trabajador,
+# subcarpeta propia (los de taller van en "Fotos Albaranes").
+ARCHIVE_BUCKET = "cgs_grupo_alvarez"
+ARCHIVE_SUBFOLDER = "ALBARANES DE TRABAJO"
 DEFAULT_TOLERANCE = 15
 _MIME = {
     b"%PDF": "application/pdf",
@@ -149,9 +156,63 @@ def stage_file(batch, filename, data):
     os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
     with open(path, "wb") as handle:
         handle.write(data)
+    archive_in_bucket(batch, filename, data, mime, extension)
     return AlbaranSheet.objects.create(
         batch=batch, original_name=filename[:255], staged_path=relative,
     )
+
+
+def archive_in_bucket(batch, filename, data, mime, extension):
+    """
+    Keep a copy of an uploaded albarán in the worker's bucket folder.
+    ---
+    S153. Guarda el archivo tal cual en el cubo principal, en
+    <carpeta del trabajador>/ALBARANES DE TRABAJO/, con la fecha y hora
+    de la carga delante del nombre original (nunca sobrescribe), y lo
+    deja en el índice del explorador. Sin carpeta del trabajador:
+    ALBARANES DE TRABAJO/SIN CARPETA/<id del trabajador>/.
+    """
+    from document_explorer.index_writer import ensure_folder_chain
+    from document_explorer.models import (
+        DocumentIndexEntry,
+        DocumentTypeCatalog,
+        path_digest,
+    )
+    from spare_parts.gcs_service import upload_bytes
+
+    person = batch.person
+    base = (person.folder_path or "").strip("/")
+    folder = ("%s/%s" % (base, ARCHIVE_SUBFOLDER) if base else
+              "%s/SIN CARPETA/%s" % (ARCHIVE_SUBFOLDER, person.pk))
+    stem = re.sub(r"[^0-9A-Za-z._-]+", "_", unicodedata.normalize(
+        "NFKD", os.path.splitext(os.path.basename(filename))[0],
+    ).encode("ascii", "ignore").decode()).strip("_")[:80] or "albaran"
+    name = "%s_%s_%s.%s" % (
+        timezone.localtime().strftime("%Y%m%d-%H%M%S"),
+        secrets.token_hex(3), stem, extension)
+    blob_name = "%s/%s" % (folder, name)
+    try:
+        ensure_folder_chain(ARCHIVE_BUCKET, folder)
+        upload_bytes(ARCHIVE_BUCKET, blob_name, data, content_type=mime)
+    except Exception as exc:  # noqa: BLE001 -- se informa al que carga
+        logger.exception("Albarán sin guardar en el cubo: %s", blob_name)
+        raise AlbaranError(
+            "%s no se ha podido guardar en el cubo (%s)."
+            % (filename, exc)) from exc
+    DocumentIndexEntry.objects.create(
+        bucket=ARCHIVE_BUCKET,
+        entry_kind=DocumentIndexEntry.KIND_FILE,
+        blob_name=blob_name,
+        blob_name_hash=path_digest(blob_name),
+        parent_path=folder,
+        parent_path_hash=path_digest(folder),
+        name=name,
+        size_bytes=len(data),
+        content_type=mime,
+        document_type=DocumentTypeCatalog.objects.filter(
+            code="ALBARAN_TRABAJO").first(),
+    )
+    return blob_name
 
 
 def staged_bytes(sheet):
