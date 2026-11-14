@@ -115,15 +115,32 @@ class Command(BaseCommand):
                 group = by_pk[group.parent_id]
             return group
 
+        def path(group):
+            names, seen = [group.name], set()
+            while group.parent_id and group.parent_id in by_pk \
+                    and group.pk not in seen:
+                seen.add(group.pk)
+                group = by_pk[group.parent_id]
+                names.insert(0, group.name)
+            return tuple(names)
+
+        # Corrección de Miguel Ángel: "dentro de asistencia, está Málaga
+        # y Granada" -- cada persona cuenta en su grupo y en todos los
+        # de encima (Asistencia / Málaga cuenta también en Asistencia),
+        # y la máquina va al grupo MÁS concreto que llegue al umbral.
+        person_paths = defaultdict(set)
         person_roots = defaultdict(set)
         for group in groups:
-            top = root(group)
-            if not is_general(top):
+            if not is_general(root(group)):
                 continue
+            full = path(group)
             for person in group.members.all():
-                person_roots[person.pk].add(top.name)
+                person_roots[person.pk].add(full[0])
+                for depth in range(1, len(full) + 1):
+                    person_paths[person.pk].add(full[:depth])
         self._log("Grupos Generales de personas: %s" % ", ".join(sorted(
-            {name for names in person_roots.values() for name in names})))
+            " / ".join(p) for p in {
+                p for paths in person_paths.values() for p in paths})))
 
         # Sección vigente hoy de cada persona.
         section_of = {}
@@ -158,6 +175,11 @@ class Command(BaseCommand):
         self._log("Destinos: %s" % (", ".join(
             "%s -> «%s»" % kv for kv in target.items()) or "ninguno"))
         conflicts = []
+
+        def shown(group_path):
+            first = target.get(group_path[0], group_path[0])
+            return " / ".join((first,) + tuple(group_path[1:]))
+
         refuels = defaultdict(Counter)
         names = {}
         for machine_id, person_id, given, surname in (
@@ -184,8 +206,8 @@ class Command(BaseCommand):
             by_group = Counter()
             by_section = Counter()
             for person_id, times in counts.items():
-                for name in person_roots.get(person_id, ()):
-                    by_group[name] += times
+                for group_path in person_paths.get(person_id, ()):
+                    by_group[group_path] += times
                 section = section_of.get(person_id)
                 if section:
                     by_section[section] += times
@@ -194,21 +216,24 @@ class Command(BaseCommand):
             self._plain("%s (%s) -- %d repostajes: %s" % (
                 machine.code, machine.family or "sin familia", n, top))
             choice = None
-            if by_group:
-                name, times = by_group.most_common(1)[0]
-                if times / n >= threshold:
-                    choice = (name, "repostajes %d%%" % round(
-                        100 * times / n))
+            reach = [(len(gp), times, gp) for gp, times in by_group.items()
+                     if times / n >= threshold]
+            if reach:
+                _depth, times, group_path = max(reach)
+                choice = (group_path, "repostajes %d%%" % round(
+                    100 * times / n))
             if choice is None and by_section:
                 section, times = by_section.most_common(1)[0]
                 if times / n >= threshold and section in section_group:
-                    choice = (section_group[section],
+                    choice = ((section_group[section],),
                               "sección %s %d%%" % (section, round(
                                   100 * times / n)))
             if machine.pk in existing:
                 already = existing[machine.pk]
-                dest = target.get(choice[0], choice[0]) if choice else None
-                if dest and dest not in already:
+                dest = shown(choice[0]) if choice else None
+                if dest and choice[0] and target.get(
+                        choice[0][0], choice[0][0]) not in already \
+                        and choice[0][-1] not in already:
                     conflicts.append("%s: está en %s; repostajes -> %s (%s)"
                                      % (machine.code, ", ".join(
                                          "«%s»" % g for g in already),
@@ -217,7 +242,7 @@ class Command(BaseCommand):
                     "«%s»" % g for g in already))
             elif choice:
                 decided[machine.pk] = (machine,) + choice
-                self._plain("    -> %s (%s)" % choice)
+                self._plain("    -> %s (%s)" % (shown(choice[0]), choice[1]))
             else:
                 undecided.append((machine, "ningún grupo llega al umbral"))
                 self._plain("    -> sin decidir")
@@ -230,7 +255,7 @@ class Command(BaseCommand):
         self._plain("RESUMEN")
         per_group = defaultdict(list)
         for machine, name, why in decided.values():
-            per_group[target.get(name, name)].append("%s %s (%s)" % (
+            per_group[shown(name)].append("%s %s (%s)" % (
                 machine.code, machine.family or "sin familia", why))
         for name in sorted(per_group):
             self._plain("«%s» -- se añaden %d: %s" % (
@@ -249,14 +274,24 @@ class Command(BaseCommand):
             return
         with transaction.atomic():
             for name in per_group:
+                parts = name.split(" / ")
                 group = MachineGroupTemplate.objects.filter(
-                    name=name).order_by("pk").first()
+                    name=parts[0], parent__isnull=True).order_by(
+                    "pk").first()
                 created = group is None
                 if created:
                     group = MachineGroupTemplate.objects.create(
-                        name=name, parent=None, created_by=admin)
-                pks = [machine.pk for machine, gname, _w in decided.values()
-                       if target.get(gname, gname) == name]
+                        name=parts[0], parent=None, created_by=admin)
+                for part in parts[1:]:
+                    child = MachineGroupTemplate.objects.filter(
+                        name=part, parent=group).order_by("pk").first()
+                    if child is None:
+                        child = MachineGroupTemplate.objects.create(
+                            name=part, parent=group, created_by=admin)
+                        created = True
+                    group = child
+                pks = [machine.pk for machine, gpath, _w in decided.values()
+                       if shown(gpath) == name]
                 group.members.add(*pks)
                 self._plain("%s «%s»: %d centros de gasto añadidos." % (
                     "Creado" if created else "Ya existía", name, len(pks)))
