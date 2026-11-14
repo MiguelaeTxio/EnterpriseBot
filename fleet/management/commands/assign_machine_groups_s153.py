@@ -8,7 +8,8 @@ S153. Tras la prueba de inferencia por repostajes (EnterpriseBot_310),
 Miguel Ángel decidió a mano el primer lote ("De momento asignamos
 esto"):
 
-- 8029BZV (Mercedes ML270, vehículo de socios) -> Gerentes.
+- 8029BZV (Mercedes ML270, vehículo de socios) -> Gerentes, con los
+  Porsche y los otros de alta gama (BMW X5, Audi Q7, Lexus).
 - 5080MZV (coche de Pepe) -> Asistencia / Granada / Administración.
 - 7245GBM (el coche que lleva él) -> Administración / Informática.
 - 0672KKZ (el de Miguel Ángel, comercial) -> Grúas y Camiones /
@@ -16,7 +17,10 @@ esto"):
 - 9843KBZ (Tomás) y 0067JDK (Carlín) -> Plataformas / Comerciales.
 - "Los demás de asistencia pueden ir a Asistencia:Málaga": todas las
   máquinas activas de familia ASISTENCIA que no estén en la lista de
-  arriba (X02 incluida, ya unificada con 7386BNH).
+  arriba (X02 incluida, ya unificada con 7386BNH); las de ASISTENCIA
+  sin repostajes van a Asistencia / Granada ("ponlas en Granada").
+- La A30 espera al lunes (está en «Grúas y Camiones», no se toca) y
+  las carretillas T quedan sin asignar.
 - P23: a Asistencia / Granada si reposta con Francisco Miguel o con
   Antonio de Granada; si no, con las demás a Asistencia / Málaga.
 
@@ -42,6 +46,29 @@ from django.utils import timezone
 
 ASSIGNMENTS = [
     ("8029BZV", "Gerentes"),
+    # S153: "Mete solo los Porsche y los otros de alta gama" (sin los
+    # Mercedes GLA/B180 ni las furgonetas de taller).
+    ("2667LMK", "Gerentes"),
+    ("4089LDP", "Gerentes"),
+    ("ALE", "Gerentes"),
+    ("ADOLFO", "Gerentes"),
+    ("ADOLFO2", "Gerentes"),
+    ("2119NGV", "Gerentes"),
+    ("0168DZS", "Gerentes"),
+    ("6951HZS", "Gerentes"),
+    # S153: "Las de Asistencia sin repostajes ponlas en Granada".
+    ("A60", "Asistencia / Granada"),
+    ("B30", "Asistencia / Granada"),
+    ("G09", "Asistencia / Granada"),
+    ("G11", "Asistencia / Granada"),
+    ("G12", "Asistencia / Granada"),
+    ("G14", "Asistencia / Granada"),
+    ("G15", "Asistencia / Granada"),
+    ("G16", "Asistencia / Granada"),
+    ("P22", "Asistencia / Granada"),
+    ("P27", "Asistencia / Granada"),
+    ("X06", "Asistencia / Granada"),
+    ("X09", "Asistencia / Granada"),
     ("5080MZV", "Asistencia / Granada / Administración"),
     ("7245GBM", "Administración / Informática"),
     ("0672KKZ", "Grúas y Camiones / Comerciales"),
