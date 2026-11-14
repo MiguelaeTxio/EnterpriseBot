@@ -156,9 +156,10 @@ def stage_file(batch, filename, data):
     os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
     with open(path, "wb") as handle:
         handle.write(data)
-    archive_in_bucket(batch, filename, data, mime, extension)
+    blob = archive_in_bucket(batch, filename, data, mime, extension)
     return AlbaranSheet.objects.create(
         batch=batch, original_name=filename[:255], staged_path=relative,
+        bucket_blob=blob,
     )
 
 
@@ -321,12 +322,24 @@ def read_batch(batch):
             sheet.note = "No parece un parte de producción."
             sheet.save(update_fields=["status", "note"])
             continue
+        made = []
         for position, item in enumerate(found, start=1):
             target = sheet if position == 1 else AlbaranSheet(
                 batch=batch, original_name=sheet.original_name,
-                staged_path=sheet.staged_path, position=position)
+                staged_path=sheet.staged_path, position=position,
+                bucket_blob=sheet.bucket_blob)
             _fill(target, item, batch.person)
             target.save()
+            made.append(target)
+        # S153: la copia digital completa (todos los datos del albarán,
+        # no solo las horas); si falla, el cotejo sigue y se repite con
+        # backfill_albaranes_s153.
+        try:
+            from hr_calendar.albaran_full import store_full
+
+            store_full(made, data, mime_of(data))
+        except Exception:  # noqa: BLE001 -- se anota y se sigue
+            logger.exception("# Albarán %s: sin copia completa", sheet.pk)
     compare_batch(batch)
 
 

@@ -2465,6 +2465,18 @@ class AlbaranSheet(models.Model):
     name_mismatch = models.BooleanField(
         default=False, verbose_name="El nombre no es el del trabajador")
     raw = models.TextField(blank=True, verbose_name="Lectura de Gemini")
+    # S153 (Miguel Ángel: "es necesario extraer los datos [...] una
+    # copia digital exacta en base de datos"): todo lo que trae el
+    # albarán, no solo las horas (hr_calendar/albaran_full.py), y dónde
+    # está guardado en el cubo.
+    full_data = models.JSONField(default=dict, blank=True,
+                                 verbose_name="Datos completos")
+    full_text = models.TextField(blank=True,
+                                 verbose_name="Transcripción completa")
+    full_read_at = models.DateTimeField(null=True, blank=True,
+                                        verbose_name="Datos extraídos")
+    bucket_blob = models.CharField(max_length=500, blank=True,
+                                   verbose_name="Archivo en el cubo")
     note = models.CharField(max_length=255, blank=True,
                             verbose_name="Nota")
 
