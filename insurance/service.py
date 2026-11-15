@@ -28,6 +28,7 @@ from insurance.models import InsuranceReport
 logger = logging.getLogger(__name__)
 
 CHUNK_SECONDS = 150
+PROGRESS_SECONDS = 10
 # Copia de los PDF del mayor: prefijo interno (como _BANDEJA_ENTRADA),
 # nunca indexado en el explorador; son datos de contabilidad.
 LEDGER_PREFIX = "_SEGUROS_LIBROS_MAYORES/"
@@ -231,30 +232,61 @@ def run_step(report_id):
 
 
 def _read_chunk(report, todo, total):
+    """
+    Read documents for CHUNK_SECONDS, keeping the progress up to date.
+    ---
+    Lee documentos durante CHUNK_SECONDS. El avance (leídos, total y
+    hora aproximada de fin) se guarda cada PROGRESS_SECONDS, no solo al
+    final de la tanda, para que la lista del panel lo muestre mientras
+    lee (S152: con 580 documentos la fila no decía cuánto quedaba).
+    """
     from ai_services.gemini_client import get_gemini_client
     from spare_parts.gcs_service import get_storage_client
 
     storage = get_storage_client()
     client = get_gemini_client()
     start = time.monotonic()
+    saved_at = 0.0
     done_now = errors = 0
+    _save_progress(report, total - len(todo), total, None)
     for entry in todo:
         _data, error = readings.read(entry, storage, client)
         done_now += 1
         errors += bool(error)
-        if time.monotonic() - start > CHUNK_SECONDS:
+        elapsed = time.monotonic() - start
+        left = len(todo) - done_now
+        if elapsed - saved_at >= PROGRESS_SECONDS or not left:
+            saved_at = elapsed
+            _save_progress(report, total - left, total,
+                           elapsed / done_now * left)
+        if elapsed > CHUNK_SECONDS:
             break
     left = len(todo) - done_now
-    elapsed = time.monotonic() - start
-    eta = timezone.localtime() + datetime.timedelta(
-        seconds=elapsed / max(done_now, 1) * left * 1.1)
+    _log(report, "Leídos %d de %d documentos (%d con error en esta "
+                 "tanda)." % (total - left, total, errors))
+    if left:
+        # El texto de avance lo pisa _log; se vuelve a poner.
+        _save_progress(report, total - left, total,
+                       (time.monotonic() - start) / done_now * left)
+
+
+def _save_progress(report, done, total, seconds_left):
+    """
+    Store the reading progress shown in the panel list.
+    ---
+    Guarda el avance de la lectura que enseña la lista del panel:
+    «Leídos 123 de 580 · fin aprox. 12:58».
+    """
+    text = "Leídos %d de %d documentos" % (done, total)
+    if seconds_left is not None and done < total:
+        end = timezone.localtime() + datetime.timedelta(
+            seconds=seconds_left * 1.1)
+        text += " · fin aprox. %s" % end.strftime("%H:%M")
+    report.progress_done = done
     report.progress_total = total
-    report.progress_done = total - left
-    report.save(update_fields=["progress_done", "progress_total"])
-    _log(report, "Leídos %d de %d documentos (%d con error en esta tanda)"
-                 "%s." % (total - left, total, errors,
-                          "; fin aprox. %s" % eta.strftime("%H:%M")
-                          if left else ""))
+    report.progress_text = text
+    InsuranceReport.objects.filter(pk=report.pk).update(
+        progress_done=done, progress_total=total, progress_text=text)
 
 
 def retry(report):

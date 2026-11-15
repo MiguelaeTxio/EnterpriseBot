@@ -46,7 +46,7 @@ algún informe se hace, la tabla se pide sola (#ins-fragment-state).
                 {% elif row.status == 'ERROR' %}<span class="badge text-bg-danger" title="{{ row.error }}">{{ row.get_status_display }}</span>
                 {% else %}<span class="badge text-bg-primary">{{ row.get_status_display }}</span> <span class="spinner-border spinner-border-sm text-secondary"></span>
                 <div class="progress ins-progress mt-1" title="{{ row.progress_text }}"><div class="progress-bar" style="width: {{ row.progress_pct|unlocalize }}%"></div></div>
-                <div class="small text-muted text-truncate ins-col-note" title="{{ row.progress_text }}">{{ row.progress_text }}</div>
+                <div class="small text-muted ins-progress-text">{% if row.progress_total %}<strong>{{ row.progress_pct }} %</strong> · {% endif %}{{ row.progress_text }}</div>
                 {% endif %}
             </td>
             <td>{% if row.status == 'DONE' %}{{ row.policy_count }}{% endif %}</td>
