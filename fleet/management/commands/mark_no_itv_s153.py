@@ -46,6 +46,9 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--apply", action="store_true")
         parser.add_argument("--log-file", required=True)
+        parser.add_argument(
+            "--exclude", default="",
+            help="Códigos que no se marcan, separados por comas.")
 
     def _log(self, text):
         line = "[%s] %s" % (timezone.localtime().strftime("%H:%M:%S"), text)
@@ -61,16 +64,20 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         with open(options["log_file"], "a", encoding="utf-8") as out:
             self._out = out
-            self._run(options["apply"])
+            self._run(options["apply"], {
+                code.strip().upper()
+                for code in options["exclude"].split(",") if code.strip()
+            })
 
-    def _run(self, apply_changes):
+    def _run(self, apply_changes, excluded):
         from fleet.models import MachineAsset
 
         self._log("Marcar «No pasa ITV» (%s)" % (
             "APLICANDO" if apply_changes else "simulación, sin cambios"))
         candidates = MachineAsset.objects.filter(
             is_active=True, itv_category="",
-        ).exclude(plate="").exclude(plate__isnull=True).order_by("code")
+        ).exclude(plate="").exclude(plate__isnull=True).exclude(
+            code__in=excluded).order_by("code")
         marked, kept = [], []
         for machine in candidates:
             if has_real_plate(machine.plate):
@@ -88,5 +95,7 @@ class Command(BaseCommand):
             len(marked), "; ".join(marked) or "ninguna"))
         self._plain("Con matrícula de verdad, sin tocar (%d): %s" % (
             len(kept), ", ".join(kept) or "ninguna"))
+        if excluded:
+            self._plain("Excluidas a mano: %s" % ", ".join(sorted(excluded)))
         self._plain("Aplicado." if apply_changes
                     else "Simulación: no se ha cambiado nada.")
