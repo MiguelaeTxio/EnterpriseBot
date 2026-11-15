@@ -419,6 +419,9 @@ class ServicesDeliveryNotesExportView(
         for cell in sheet["O"][1:]:
             cell.number_format = "DD/MM/YYYY HH:MM"
         sheet.freeze_panes = "A2"
+        from panel.xlsx_style import colorize_workbook
+
+        colorize_workbook(workbook)  # S153: con colores
         buffer = io.BytesIO()
         workbook.save(buffer)
         response = HttpResponse(
@@ -1478,6 +1481,9 @@ def _xlsx_response(workbook, filename):
 
     from django.http import HttpResponse
 
+    from panel.xlsx_style import colorize_workbook
+
+    colorize_workbook(workbook)  # S153: con colores
     buffer = io.BytesIO()
     workbook.save(buffer)
     response = HttpResponse(

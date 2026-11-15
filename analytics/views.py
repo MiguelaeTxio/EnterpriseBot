@@ -2665,6 +2665,9 @@ class AnalyticsLabExportView(SupervisorAccessMixin, View):
                 col_cells[0].column_letter
             ].width = min(max_length + 4, 60)
 
+        from panel.xlsx_style import colorize_workbook
+
+        colorize_workbook(wb)  # S153: con colores
         buf = io.BytesIO()
         wb.save(buf)
         buf.seek(0)

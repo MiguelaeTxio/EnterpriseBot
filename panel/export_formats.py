@@ -183,6 +183,10 @@ def workbook_response(request, workbook, filename):
     stem = filename[:-5] if filename.lower().endswith(".xlsx") else filename
     fmt = export_format(request)
     if fmt == "xlsx":
+        from panel.xlsx_style import colorize_workbook
+
+        # S153: todas las exportaciones a Excel van con colores.
+        colorize_workbook(workbook)
         buffer = io.BytesIO()
         workbook.save(buffer)
         response = HttpResponse(

@@ -4732,6 +4732,9 @@ class InsurerTariffExportExcelView(AssistanceSupervisorAccessMixin, View):
                     max_len + 4, 40
                 )
 
+        from panel.xlsx_style import colorize_workbook
+
+        colorize_workbook(wb)  # S153: con colores
         buffer = io.BytesIO()
         wb.save(buffer)
         buffer.seek(0)
@@ -4960,6 +4963,9 @@ class BudgetExportExcelView(AssistanceSupervisorAccessMixin, View):
                     max_len + 4, 40
                 )
 
+        from panel.xlsx_style import colorize_workbook
+
+        colorize_workbook(wb)  # S153: con colores
         buffer = io.BytesIO()
         wb.save(buffer)
         buffer.seek(0)

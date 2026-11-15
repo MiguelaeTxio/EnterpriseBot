@@ -7394,6 +7394,9 @@ class WorkOrderAdminExportByTemplateView(SupervisorAccessMixin, View):
             return response
 
         wb = build_export_from_template(template, qs)
+        from panel.xlsx_style import colorize_workbook
+
+        colorize_workbook(wb)  # S153: con colores
         buf = io.BytesIO()
         wb.save(buf)
         buf.seek(0)
