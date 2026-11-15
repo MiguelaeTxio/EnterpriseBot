@@ -23,6 +23,8 @@ two places.
 import logging
 import os
 
+from config import DOCUMENTS_ROOT_NAME
+
 logger = logging.getLogger(__name__)
 
 # Atributos de Windows usados por OneDrive Files On-Demand.
@@ -213,6 +215,32 @@ def is_transient_file(path):
     return file_name.endswith(TRANSIENT_FILE_SUFFIXES)
 
 
+def mirror_name(folder_path):
+    """Name of a watched folder inside the bucket.
+    ---
+    Nombre de una carpeta vigilada dentro del cubo: su ruta desde la
+    carpeta raiz de la documentacion (config.DOCUMENTS_ROOT_NAME), con
+    "/" como separador. Para las que cuelgan directamente de la raiz
+    (DOC. MAQUINAS, DOC. PERSONAL) es su nombre, igual que siempre
+    (S031); para una subcarpeta, "DOC. GRUALDI/POLIZA AVERIA
+    MAQUINARIA" (S152), para que dos carpetas con el mismo nombre en
+    empresas distintas no se pisen. Fuera de esa raiz, su nombre.
+    ---
+    Mirror name of a watched folder: its path from the documentation
+    root, or its own name if it is a direct child or lives elsewhere.
+    """
+    normalized = os.path.normpath(folder_path)
+    parts = [p for p in normalized.replace("\\", "/").split("/") if p]
+    upper = [part.upper() for part in parts]
+    root = DOCUMENTS_ROOT_NAME.upper()
+    if root in upper:
+        index = len(upper) - 1 - upper[::-1].index(root)
+        relative = parts[index + 1:]
+        if relative:
+            return "/".join(relative)
+    return os.path.basename(normalized)
+
+
 def to_safe_name(folder_path):
     """Turn a folder path into a name usable as a file name.
 
@@ -228,7 +256,7 @@ def to_safe_name(folder_path):
     Real folders carry spaces, dots, accents and parentheses, so they
     cannot name derived files directly. Only alphanumerics survive.
     """
-    folder_name = os.path.basename(os.path.normpath(folder_path))
+    folder_name = mirror_name(folder_path)
     return "".join(
         character if character.isalnum() else "_"
         for character in folder_name

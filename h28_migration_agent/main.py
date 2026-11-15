@@ -41,6 +41,8 @@ from config import (
     CATCHUP_HEARTBEAT_EVERY_SWEEPS,
     CATCHUP_INTERVAL_SECONDS,
     DIRTY_BUCKET_NAME,
+    DOCUMENTS_ROOT_NAME,
+    INSURANCE_FOLDERS,
     LOG_BACKUP_COUNT,
     LOG_FILE_NAME,
     LOG_MAX_BYTES,
@@ -696,6 +698,117 @@ def _watch_migrated_folder(icon, _menu_item):
     )
 
 
+def _documents_root():
+    """Local path of the documentation root, from the watched folders.
+    ---
+    Ruta local de la carpeta raiz de la documentacion
+    (config.DOCUMENTS_ROOT_NAME), sacada de las carpetas ya vigiladas
+    (DOC. MAQUINAS cuelga de ella), o None si ninguna cuelga de ella.
+    """
+    root_name = DOCUMENTS_ROOT_NAME.upper()
+    for folder in _watched_folders:
+        current = os.path.normpath(folder)
+        while True:
+            if os.path.basename(current).upper() == root_name:
+                return current
+            parent = os.path.dirname(current)
+            if parent == current:
+                break
+            current = parent
+    return None
+
+
+def _watch_insurance_folders(icon, _menu_item):
+    """Reconcile and watch the companies' insurance folders (S152).
+    ---
+    Reconcilia y deja vigiladas las carpetas de polizas y recibos de
+    seguros de las empresas (config.INSURANCE_FOLDERS), para que la
+    pestana Seguros del panel tenga la documentacion al dia. Mismo
+    camino que "Vigilar carpeta ya migrada": lo que falte en el cubo
+    va a la cuarentena (con su ruta desde DOCUMENTOS GRUPO ALVAREZ) y
+    el panel lo clasifica en DOC. EMPRESA/SEGUROS. Las que no existen
+    en este equipo o ya se vigilan se saltan.
+    """
+    root = _get_tk_root()
+    documents_root = _documents_root()
+    if documents_root is None:
+        messagebox.showerror(
+            "Agente H28",
+            f"No encuentro la carpeta «{DOCUMENTS_ROOT_NAME}»: ninguna "
+            "carpeta vigilada cuelga de ella.",
+            parent=root,
+        )
+        return
+
+    pending = []
+    missing = []
+    for relative in INSURANCE_FOLDERS:
+        folder = os.path.normpath(
+            os.path.join(documents_root, *relative.split("/")))
+        if folder in _watched_folders:
+            continue
+        if os.path.isdir(folder):
+            pending.append(folder)
+        else:
+            missing.append(relative)
+
+    if not pending:
+        messagebox.showinfo(
+            "Agente H28",
+            "Todas las carpetas de seguros que hay en este equipo ya "
+            "se estan vigilando."
+            + (f"\n\nNo existen aqui: {len(missing)}." if missing
+               else ""),
+            parent=root,
+        )
+        return
+
+    confirmed = messagebox.askyesno(
+        "Agente H28",
+        f"Se van a reconciliar y dejar vigiladas {len(pending)} "
+        "carpetas de seguros de las empresas"
+        + (f" ({len(missing)} no existen en este equipo y se saltan)"
+           if missing else "")
+        + ".\n\nLo que falte en el cubo va a la cuarentena y el panel "
+        "lo clasifica en DOC. EMPRESA/SEGUROS. Puede tardar varios "
+        "minutos.\n\n¿Continuar?",
+        parent=root,
+    )
+    if not confirmed:
+        return
+
+    try:
+        client = build_client()
+    except MissingCredentialsError as error:
+        messagebox.showerror("Agente H28", str(error), parent=root)
+        return
+
+    for number, folder in enumerate(pending, start=1):
+        logger.info(
+            "Seguros %d/%d: reconciliando %s", number, len(pending),
+            folder)
+        icon.notify(
+            f"Seguros {number}/{len(pending)}: reconciliando "
+            f"{os.path.basename(folder)}...",
+            title="Agente H28",
+        )
+        _run_reconciliation(icon, client, folder)
+        _watched_folders.append(folder)
+        save_watched_folders(_watched_folders)
+        append_event(
+            "Vigilancia de seguros", folder,
+            "Reconciliada y anadida a carpetas vigiladas",
+        )
+    for relative in missing:
+        logger.info("Seguros: no existe en este equipo: %s", relative)
+
+    _start_catchup_thread(icon)
+    icon.notify(
+        f"Carpetas de seguros vigiladas: {len(pending)}.",
+        title="Agente H28",
+    )
+
+
 def _select_folder_and_copy(icon, _menu_item):
     """Open the folder picker, then copy and watch it.
     ---
@@ -1180,6 +1293,9 @@ def main():
         ),
         pystray.MenuItem(
             "Vigilar carpeta ya migrada", _watch_migrated_folder
+        ),
+        pystray.MenuItem(
+            "Vigilar carpetas de seguros", _watch_insurance_folders
         ),
         pystray.MenuItem("Poner al día ahora", _catchup_now),
         pystray.MenuItem("Auditar carpeta (Fase 2)", _audit_folder),

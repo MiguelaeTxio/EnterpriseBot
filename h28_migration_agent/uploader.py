@@ -22,6 +22,7 @@ from fs_utils import (
     is_cloud_only,
     is_transient_file,
     make_walk_error_handler,
+    mirror_name,
     request_hydration,
     to_long_path,
 )
@@ -122,14 +123,16 @@ def build_blob_name(selected_folder, relative_path):
     Confirmado por Miguel Angel (S031): la carpeta elegida es
     siempre la raiz de la ruta dentro del cubo — nunca se incluye lo
     que hay por encima de ella en la ruta local de Windows (unidad,
-    OneDrive, DOCUMENTOS GRUPO ALVAREZ, etc.).
+    OneDrive, DOCUMENTOS GRUPO ALVAREZ, etc.). S152: si la carpeta es
+    una subcarpeta de DOCUMENTOS GRUPO ALVAREZ (las de seguros de cada
+    empresa), lleva delante su ruta desde ahi (`fs_utils.mirror_name`).
     ---
     Confirmed by Miguel Angel (S031): the chosen folder is always
     the root of the path inside the bucket — whatever sits above it
     in the local Windows path (drive, OneDrive, DOCUMENTOS GRUPO
     ALVAREZ, etc.) is never included.
     """
-    folder_name = os.path.basename(os.path.normpath(selected_folder))
+    folder_name = mirror_name(selected_folder)
     posix_relative = relative_path.replace(os.sep, "/")
     return f"{folder_name}/{posix_relative}"
 
@@ -243,7 +246,7 @@ def upload_folder_recursive(
         selected_folder,
     )
 
-    folder_name = os.path.basename(os.path.normpath(selected_folder))
+    folder_name = mirror_name(selected_folder)
     blob_name_prefix = f"{folder_name}/"
 
     request_hydration_for_cloud_only(selected_folder, relative_paths)

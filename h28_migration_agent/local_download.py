@@ -61,7 +61,7 @@ from config import (
     DIRTY_BUCKET_NAME, HASH_CHUNK_SIZE_BYTES, SERVER_BASE_URL,
     SERVER_NOTIFY_TIMEOUT_SECONDS, get_server_api_token,
 )
-from fs_utils import to_long_path
+from fs_utils import mirror_name, to_long_path
 from known_contents import remember_upload
 
 logger = logging.getLogger(__name__)
@@ -205,15 +205,21 @@ def is_subject_folder(path):
 def _watched_root(watched_folders, virtual_path):
     """Watched folder whose name is the first segment of the path.
     ---
-    Carpeta vigilada cuyo nombre es el primer tramo de la ruta (la raiz
-    del cubo es el nombre de la carpeta elegida, igual que en
-    `uploader.build_blob_name`), y la ruta relativa dentro de ella.
+    Carpeta vigilada cuyo nombre en el cubo es el principio de la ruta
+    (igual que en `uploader.build_blob_name`), y la ruta relativa
+    dentro de ella.
     """
-    first, _sep, relative = virtual_path.partition("/")
+    # S152: el nombre en el cubo puede tener varios tramos ("DOC.
+    # GRUALDI/POLIZA RC", `fs_utils.mirror_name`); gana el mas largo.
+    best = None
     for folder in watched_folders:
-        if os.path.basename(os.path.normpath(folder)) == first:
-            return folder, relative
-    return None, relative
+        name = mirror_name(folder)
+        if virtual_path == name or virtual_path.startswith(name + "/"):
+            if best is None or len(name) > len(best[1]):
+                best = (folder, name)
+    if best is None:
+        return None, virtual_path.partition("/")[2]
+    return best[0], virtual_path[len(best[1]) + 1:]
 
 
 def _local(watched_folders, path):

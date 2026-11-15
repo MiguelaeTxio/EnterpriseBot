@@ -40,7 +40,12 @@ from config import (
     RECONCILE_PROGRESS_EVERY_FILES,
     RECONCILE_RETRY_DELAYS_SECONDS,
 )
-from fs_utils import is_cloud_only, request_hydration, to_long_path
+from fs_utils import (
+    is_cloud_only,
+    mirror_name,
+    request_hydration,
+    to_long_path,
+)
 from known_contents import (
     compute_md5_base64,
     find_known_md5,
@@ -416,7 +421,7 @@ def reconcile_folder(client, bucket_name, selected_folder,
         unrecoverable_relative_paths)
     """
     bucket = client.bucket(bucket_name)
-    folder_name = os.path.basename(os.path.normpath(selected_folder))
+    folder_name = mirror_name(selected_folder)
     blob_name_prefix = f"{folder_name}/"
     quarantine_name_prefix = QUARANTINE_PREFIX + blob_name_prefix
 
