@@ -1,0 +1,20 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/invoice_upload_agent/requirements.in
+# Supplier invoice upload agent: direct dependencies. Single editable
+# source; requirements.txt is generated with pip-compile on the Windows
+# machine that builds the .exe, never by hand
+# (com-environment-management, sections 2 and 3.4).
+# ---
+# Agente de subida de facturas: dependencias directas. Única fuente
+# editable; requirements.txt se genera con pip-compile en la máquina
+# Windows que compila el .exe, nunca a mano (com-environment-management,
+# secciones 2 y 3.4).
+
+# Subida directa al cubo, como el agente H28.
+google-cloud-storage>=2.18.0
+
+# Icono de bandeja.
+pystray>=0.19.5
+Pillow>=10.0.0
+
+# Empaquetado (misma convención que el agente H28, sección 2.2).
+pyinstaller>=6.17.0

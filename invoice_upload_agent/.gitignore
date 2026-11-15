@@ -1,0 +1,6 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/invoice_upload_agent/.gitignore
+# Artefactos de compilación de PyInstaller (igual que h28_migration_agent).
+__pycache__/
+build/
+dist/
+*.spec
