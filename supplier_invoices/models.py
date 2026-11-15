@@ -1,19 +1,20 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/supplier_invoices/models.py
 """
-Supplier invoices read from the FACTURACIÓN folder of the inbox.
+Supplier invoices uploaded by Ani's agent (warehouse pipeline).
 
 ---
 
-H28 (S151, sesión invasora). Facturas de proveedor de la carpeta
-FACTURACIÓN de la bandeja de entrada (Documentación > Bandeja de
-entrada). Tarea de Miguel Ángel, tal cual: un agente procesa cada
-factura que entra, extrae sus repuestos (referencia, descripción,
-cantidad, precio, proveedor, fecha), los coteja con los albaranes que
-ya tenemos para no duplicar, da por comprados los que no tienen
-albarán, pone al día el almacén con ellos y lo coteja con los partes
-de trabajo para saber lo que se ha colocado y lo que no, en la medida
-de lo posible. Al terminar, la factura pasa a la subcarpeta de
-procesadas.
+H28 (S151, sesión invasora). Facturas de proveedor (pagadas) que el
+agente de facturas del PC de Ani sube al cubo, a FACTURACION
+PROVEEDORES (carpeta propia, separada de cualquier otra). Tarea de
+Miguel Ángel, tal cual: el pipeline del almacén procesa cada factura
+que entra, extrae sus repuestos (referencia, descripción, cantidad,
+precio, proveedor, fecha), los coteja con los albaranes subidos desde
+el pipeline de albaranes del taller para no duplicar, da por comprados
+los que no tienen albarán, pone al día el almacén con ellos y lo
+coteja con los partes de trabajo para saber lo que se ha colocado y lo
+que no, en la medida de lo posible. Al terminar, la factura pasa a la
+subcarpeta de procesadas.
 
 - `SupplierInvoice`: la factura (su archivo en el índice, lo leído y
   el resultado).
@@ -32,8 +33,8 @@ class SupplierInvoice(models.Model):
 
     ---
 
-    Una factura de proveedor (su archivo en FACTURACIÓN) y lo que hizo
-    el agente con ella.
+    Una factura de proveedor (su archivo en FACTURACION PROVEEDORES) y
+    lo que hizo con ella el pipeline del almacén.
     """
 
     STATUS_PENDING = "PENDING"

@@ -5,10 +5,14 @@ que Ani le indica y sube al cubo `cgs_grupo_alvarez`, a
 `FACTURACION PROVEEDORES/FACTURAS NUEVAS`, cada factura (PDF o imagen)
 que aparezca en ella o en sus subcarpetas. No hace nada más:
 
+- `FACTURACION PROVEEDORES` es una carpeta propia, separada de
+  cualquier otra (nada de bandeja de entrada).
 - El servidor revisa esa carpeta del cubo cada 5 minutos, indexa lo
-  nuevo, procesa cada factura (`supplier_invoices`: albaranes, almacén,
-  partes) y la pasa a `FACTURAS PROCESADAS`. En el panel:
-  Documentación > Bandeja de entrada > FACTURACIÓN PROVEEDORES.
+  nuevo y el pipeline del almacén procesa cada factura
+  (`supplier_invoices`: la coteja con los albaranes del taller para no
+  duplicar repuestos, da entrada a lo comprado sin albarán y lo cruza
+  con los partes); después la pasa a `FACTURAS PROCESADAS`. En el
+  panel: Almacén > Facturas de proveedor.
 - Nunca borra ni mueve nada de la carpeta de Ani.
 - El mismo archivo nunca se sube dos veces (objeto
   `<12 primeros de la huella SHA-256>_<nombre>`; el servidor quita el

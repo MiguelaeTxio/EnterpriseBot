@@ -4,12 +4,13 @@ App configuration for supplier_invoices.
 
 ---
 
-H28 (S151, sesión invasora). Facturación en la bandeja de entrada de
-documentación: las facturas de proveedor que entran en
-FACTURACIÓN > Facturas nuevas se leen, se cotejan con los albaranes
-ya registrados, ponen al día el almacén y se cruzan con los partes de
-trabajo. App propia (y no dentro de document_explorer) para que sus
-migraciones no choquen con las de las sesiones en paralelo.
+H28 (S151, sesión invasora). Pipeline del almacén para las facturas de
+proveedor que el agente del PC de Ani sube al cubo, a FACTURACION
+PROVEEDORES: se leen, se cotejan con los albaranes del taller, ponen
+al día el almacén y se cruzan con los partes de trabajo. En el panel:
+Almacén > Facturas de proveedor. App propia (y no dentro de
+document_explorer) para que sus migraciones no choquen con las de las
+sesiones en paralelo.
 """
 from django.apps import AppConfig
 

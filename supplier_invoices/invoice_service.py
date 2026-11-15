@@ -1,19 +1,21 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/supplier_invoices/invoice_service.py
 """
-Invoice agent: FACTURACIÓN folder of the inbox -> warehouse -> work
-orders.
+Warehouse pipeline for supplier invoices: delivery notes -> warehouse
+-> work orders.
 
 ---
 
-H28 (S151, sesión invasora). Agente de facturas de la carpeta
-FACTURACIÓN de la bandeja de entrada. Tarea de Miguel Ángel, tal cual:
+H28 (S151, sesión invasora). Pipeline del almacén para las facturas de
+proveedor (pagadas) que el agente de facturas del PC de Ani
+(`invoice_upload_agent`) sube al cubo, a FACTURACION PROVEEDORES:
+carpeta propia, separada de cualquier otra (Miguel Ángel: nada de
+bandeja de entrada, cada cosa en su sitio). Tarea, tal cual:
 
-1. Cada factura que entra en "Facturas nuevas" (subida desde la
-   bandeja del panel, o subida al cubo por el agente de facturas del
-   PC de Ani, `invoice_upload_agent`) se lee con
+1. Cada factura que entra en "Facturas nuevas" se lee con
    Gemini: proveedor, número, fecha y sus líneas (referencia,
    descripción, cantidad, precio y el albarán que cita, si lo cita).
-2. Cada repuesto se coteja con los albaranes que ya tenemos (mismo
+2. Cada repuesto se coteja con los albaranes subidos desde el
+   pipeline de albaranes del taller (mismo
    proveedor, por número de albarán si la factura lo cita o por fecha
    si no, y por referencia o descripción): si ya tiene albarán, no se
    duplica nada en el almacén.
@@ -58,7 +60,7 @@ from document_explorer.subject_upload_service import (
 )
 from ivr_config.models import Company, CompanyUser
 from spare_parts.gcs_service import (
-    download_bytes, get_storage_client, upload_bytes,
+    download_bytes, get_storage_client,
 )
 from spare_parts.models import (
     DeliveryNote, DeliveryNoteLine, SparePartEntry, StockMovement,
@@ -83,7 +85,6 @@ INVOICES_ROOT = "FACTURACION PROVEEDORES"
 NEW_FOLDER = INVOICES_ROOT + "/FACTURAS NUEVAS"
 PROCESSED_FOLDER = INVOICES_ROOT + "/FACTURAS PROCESADAS"
 
-ALLOWED_EXTENSIONS = {"pdf", "jpg", "jpeg", "png", "webp", "heic"}
 GEMINI_MIME_TYPES = {
     "application/pdf", "image/jpeg", "image/png", "image/webp",
     "image/heic",
@@ -169,17 +170,6 @@ _PROMPT = (
 )
 
 
-class InvoiceUploadError(Exception):
-    """
-    A file the FACTURACIÓN folder does not accept.
-
-    ---
-
-    Archivo que la carpeta FACTURACIÓN no admite (mensaje para quien
-    lo sube).
-    """
-
-
 class TransientInvoiceError(Exception):
     """
     Gemini saturated/unavailable: try again later.
@@ -193,32 +183,6 @@ class TransientInvoiceError(Exception):
 # ---------------------------------------------------------------------
 # Utilidades
 # ---------------------------------------------------------------------
-
-def _extension_of(name):
-    """
-    Lowercase extension of a file name ("" if none).
-
-    ---
-
-    Extensión en minúsculas del nombre ("" si no tiene).
-    """
-    return name.rsplit(".", 1)[-1].lower() if "." in name else ""
-
-
-def _safe_name(name):
-    """
-    File name safe for a GCS object (no slashes, no control chars).
-
-    ---
-
-    Nombre apto para un objeto de GCS: sin barras ni caracteres de
-    control, en NFC (S036: los acentos descompuestos generan
-    duplicados fantasma).
-    """
-    name = unicodedata.normalize("NFC", name)
-    name = re.sub(r"[\x00-\x1f/\\]", "_", name).strip() or "factura"
-    return name[:180]
-
 
 def _norm_code(value):
     """
@@ -328,88 +292,6 @@ def _queue(invoice_pk):
     )
 
 
-def _index_new_blob(blob_name, display_name):
-    """
-    Index a just-uploaded object of "Facturas nuevas" under its name.
-
-    ---
-
-    Indexa un objeto recién subido a "Facturas nuevas" y le pone, en
-    el índice, el nombre original (el del objeto lleva delante el
-    principio de la huella para no pisar nunca otro objeto).
-    """
-    blob = get_storage_client().bucket(BUCKET).get_blob(blob_name)
-    with transaction.atomic():
-        index_writer.ensure_folder_chain(BUCKET, NEW_FOLDER)
-        index_writer.ensure_folder_chain(BUCKET, PROCESSED_FOLDER)
-        index_writer.persist_rows(BUCKET, [index_writer.file_row(blob)])
-        index_writer.recount_children(
-            BUCKET,
-            folder_paths=index_writer.ancestors_of(NEW_FOLDER)
-            + [PROCESSED_FOLDER],
-        )
-    entry = DocumentIndexEntry.objects.get(
-        bucket=BUCKET, blob_name=blob_name,
-        deleted_at__isnull=True, purged_at__isnull=True,
-    )
-    if entry.name != display_name:
-        entry.name = display_name
-        move_entry(entry, NEW_FOLDER)
-    return entry
-
-
-def register_upload(name, data, uploaded_by):
-    """
-    Store one uploaded invoice in "Facturas nuevas" and queue it.
-
-    Returns (invoice, created, note). Raises InvoiceUploadError for a
-    file type not accepted.
-
-    ---
-
-    Guarda una factura subida desde la bandeja en "Facturas nuevas" y
-    la encola. El mismo archivo (huella SHA-256) ya subido no se
-    guarda otra vez: vuelve con una nota. Devuelve (factura, creada,
-    nota).
-    """
-    extension = _extension_of(name)
-    if extension not in ALLOWED_EXTENSIONS:
-        raise InvoiceUploadError(
-            "%s: solo se admiten PDF e imágenes (JPG, PNG, WEBP, HEIC)."
-            % name
-        )
-    sha256 = hashlib.sha256(data).hexdigest()
-    previous = SupplierInvoice.objects.filter(sha256=sha256).order_by(
-        "-pk",
-    ).first()
-    if previous is not None and previous.entry_id:
-        return previous, False, "Ya se había subido (%s)." % (
-            previous.get_status_display()
-        )
-    content_type = content_type_of(data, name)
-    if content_type == "application/octet-stream" and extension == "heic":
-        content_type = "image/heic"
-    display_name = _safe_name(name)
-    blob_name = "%s/%s_%s" % (NEW_FOLDER, sha256[:12], display_name)
-    upload_bytes(BUCKET, blob_name, data, content_type=content_type)
-    entry = _index_new_blob(blob_name, display_name)
-    already = SupplierInvoice.objects.filter(entry=entry).first()
-    if already is not None:
-        # El barrido la ha registrado entre la subida y el indexado.
-        return already, True, ""
-    with transaction.atomic():
-        invoice = SupplierInvoice.objects.create(
-            entry=entry,
-            sha256=sha256,
-            original_name=name[:255],
-            content_type=content_type,
-            company=uploaded_by.company,
-            uploaded_by=uploaded_by,
-        )
-        _queue(invoice.pk)
-    return invoice, True, ""
-
-
 # Prefijo que pone el agente de facturas (invoice_upload_agent) delante
 # del nombre: los 12 primeros caracteres de la huella SHA-256 y "_".
 _AGENT_PREFIX_RE = re.compile(r"^[0-9a-f]{12}_(.+)$")
@@ -470,14 +352,13 @@ def _index_unindexed_blobs():
 
 def sweep_new_folder():
     """
-    Register files that reached "Facturas nuevas" by any other route.
+    Register the invoices that reached "Facturas nuevas".
 
     ---
 
-    Registra y encola las facturas que han llegado a "Facturas nuevas"
-    sin pasar por la bandeja del panel: las que sube el agente de
-    facturas del PC de Ani directamente al cubo (se indexan primero) y
-    las que se dejen con el explorador. Devuelve cuántas ha encolado.
+    Registra y encola las facturas que han llegado a "Facturas nuevas":
+    las que sube el agente de facturas del PC de Ani directamente al
+    cubo (se indexan primero). Devuelve cuántas ha encolado.
     """
     _index_unindexed_blobs()
     entries = DocumentIndexEntry.objects.filter(

@@ -1,10 +1,10 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/supplier_invoices/urls.py
 """
-URLs of the FACTURACIÓN folder of the inbox.
+URLs of Warehouse > Supplier invoices.
 
 ---
 
-URLs de la carpeta FACTURACIÓN de la bandeja de entrada (H28, S151).
+URLs de Almacén > Facturas de proveedor (H28, S151).
 """
 from django.urls import path
 
@@ -13,11 +13,10 @@ from . import views
 app_name = "supplier_invoices"
 
 urlpatterns = [
-    path("", views.InvoicesPaneView.as_view(), name="pane"),
+    path("", views.InvoicesPageView.as_view(), name="list"),
     path(
         "resultados/", views.InvoicesResultsView.as_view(), name="results",
     ),
-    path("subir/", views.InvoiceUploadView.as_view(), name="upload"),
     path(
         "reprocesar/", views.InvoiceRetryView.as_view(), name="retry",
     ),

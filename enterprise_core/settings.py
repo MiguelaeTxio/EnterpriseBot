@@ -146,9 +146,9 @@ INSTALLED_APPS = [
     # obra, pensado como costura para los futuros modelos de Cliente/
     # Proveedor/facturación.
     'worksites',
-    # Supplier invoices of the inbox FACTURACIÓN folder: parts checked
-    # against delivery notes, warehouse and work orders -- facturas de
-    # proveedor de la carpeta FACTURACIÓN de la bandeja (H28, S151).
+    # Supplier invoices uploaded by Ani's agent: warehouse pipeline
+    # (delivery notes, warehouse, work orders) -- facturas de proveedor
+    # de FACTURACION PROVEEDORES, pipeline del almacén (H28, S151).
     'supplier_invoices',
 ]
 

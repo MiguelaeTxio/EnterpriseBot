@@ -1,7 +1,7 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/supplier_invoices/templates/supplier_invoices/detail.html #}
 {% extends "panel/base.html" %}
 {% comment %}
-H28 (S151). Detalle de una factura de la carpeta FACTURACIÓN: lo que se
+H28 (S151). Detalle de una factura de proveedor (Almacén): lo que se
 leyó de cada línea, su destino (albarán que ya la cubría, entrada en
 almacén, sin cantidad, no es repuesto) y las líneas de los partes en
 las que se ha dado por colocada. Solo lectura; todo llega resuelto
@@ -53,7 +53,7 @@ desde la vista.
             <div class="col-12 col-md-3">
                 <div class="text-muted small">Subida</div>
                 <div class="fw-semibold">{{ invoice.created_at|date:"d/m/Y H:i" }}</div>
-                <div class="small text-muted">{{ invoice.uploaded_by.user.get_full_name|default:invoice.uploaded_by.user.username|default:"Llegó a la carpeta por otra vía" }}</div>
+                <div class="small text-muted">{{ uploaded_label }}</div>
             </div>
         </div>
         {% if invoice.reason %}

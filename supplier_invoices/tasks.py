@@ -1,13 +1,13 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/supplier_invoices/tasks.py
 """
-Celery tasks of the invoice agent (FACTURACIÓN folder of the inbox).
+Celery tasks of the warehouse pipeline for supplier invoices.
 
 ---
 
-H28 (S151, sesión invasora). Tareas Celery del agente de facturas: el
-proceso de cada factura (fuera de la petición web, Gemini tarda) y el
-barrido de "Facturas nuevas" para las que lleguen a la carpeta por
-cualquier otra vía.
+H28 (S151, sesión invasora). Tareas Celery del pipeline del almacén
+para las facturas de proveedor: el proceso de cada factura (Gemini
+tarda) y el barrido de FACTURACION PROVEEDORES/FACTURAS NUEVAS, donde
+las deja el agente de facturas del PC de Ani.
 """
 import logging
 
@@ -43,12 +43,12 @@ def process_supplier_invoice_task(self, invoice_id: int) -> str:
 @app.task(base=DjangoTask, bind=True, max_retries=0)
 def sweep_invoice_folder_task(self) -> int:
     """
-    Queue files that reached "Facturas nuevas" by another route.
+    Queue the invoices Ani's agent left in "Facturas nuevas".
 
     ---
 
-    Encola los archivos que han llegado a "Facturas nuevas" por otra
-    vía (explorador, agente de OneDrive...) y no tienen factura.
+    Indexa y encola las facturas que el agente de facturas del PC de
+    Ani ha dejado en FACTURACION PROVEEDORES/FACTURAS NUEVAS.
     """
     from .invoice_service import sweep_new_folder
 

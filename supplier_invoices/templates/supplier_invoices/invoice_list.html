@@ -1,0 +1,15 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/supplier_invoices/templates/supplier_invoices/invoice_list.html #}
+{% extends "panel/base.html" %}
+{% comment %}
+H28 (S151). Almacén > Facturas de proveedor: página que envuelve el
+panel fijo y la lista (_pane.html).
+{% endcomment %}
+
+{% block page_title %}Facturas de proveedor{% endblock page_title %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-2">
+    <h5 class="mb-0 fw-semibold">Facturas de proveedor</h5>
+</div>
+{% include "supplier_invoices/_pane.html" %}
+{% endblock content %}

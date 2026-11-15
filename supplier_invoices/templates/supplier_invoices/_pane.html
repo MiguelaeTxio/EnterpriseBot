@@ -1,50 +1,22 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/supplier_invoices/templates/supplier_invoices/_pane.html #}
 {% comment %}
-H28 (S151, sesión invasora). Carpeta FACTURACIÓN de la bandeja de
-entrada, con sus dos subcarpetas: "Facturas nuevas" (entran aquí; las
-que no se han podido procesar se quedan) y "Facturas procesadas". El
-agente lee cada factura, la coteja con los albaranes, pone al día el
-almacén y lo cruza con los partes (supplier_invoices/invoice_service).
-Directriz 4.24:
-- #inv-top-panel (fijo): subida, subcarpetas, filtros y acciones.
+H28 (S151, sesión invasora). Facturas de proveedor (Almacén): las que
+el agente de facturas del PC de Ani sube al cubo, a FACTURACION
+PROVEEDORES, separada de cualquier otra carpeta. El almacén las coteja
+con los albaranes del taller para no duplicar repuestos, da entrada a
+lo comprado sin albarán y lo cruza con los partes
+(supplier_invoices/invoice_service). Subcarpetas: "Facturas nuevas"
+(las que entran y las que no se han podido procesar) y "Facturas
+procesadas". Directriz 4.24:
+- #inv-top-panel (fijo): subcarpetas, filtros y acciones.
 - #inv-bottom-panel: lista con scroll propio (2/3) y "Selección
   actual" (1/3); pantalla completa de la lista (4.26).
 Subcarpeta, filtros, orden y selección persistidos por usuario
-(screen_key "inbox_invoices").
+(screen_key "warehouse_invoices").
 {% endcomment %}
 <div class="border rounded p-2 mb-2" id="inv-top-panel">
     <div class="row g-2">
-        <div class="col-lg-4">
-            <div class="border rounded p-2 h-100 d-flex flex-column">
-                <div class="fw-bold small mb-1">Subir facturas a "Facturas nuevas"</div>
-                <div id="inv-drop-zone" class="inv-drop-zone rounded text-center p-2 mb-1">
-                    <i class="bi bi-receipt fs-4 d-block"></i>
-                    <div class="small">Arrastra aquí las facturas o una carpeta (PDF o imágenes)</div>
-                    <div class="d-flex justify-content-center gap-2 mt-2">
-                        <button type="button" class="btn btn-sm btn-primary" id="inv-pick-files">
-                            <i class="bi bi-file-earmark-arrow-up me-1"></i>Elegir archivos
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-primary" id="inv-pick-folder">
-                            <i class="bi bi-folder2-open me-1"></i>Elegir carpeta
-                        </button>
-                    </div>
-                    <input type="file" id="inv-file-input" class="d-none" multiple
-                           accept=".pdf,.jpg,.jpeg,.png,.webp,.heic">
-                    <input type="file" id="inv-folder-input" class="d-none" webkitdirectory multiple>
-                </div>
-                <div id="inv-progress" class="small d-none">
-                    <div class="d-flex align-items-center gap-2">
-                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                        <span id="inv-progress-text"></span>
-                    </div>
-                    <div class="progress mt-1 inv-progress">
-                        <div class="progress-bar" id="inv-progress-bar"></div>
-                    </div>
-                </div>
-                <ul class="small mb-0 mt-1 ps-3 text-danger d-none" id="inv-upload-errors"></ul>
-            </div>
-        </div>
-        <div class="col-lg-5">
+        <div class="col-lg-8">
             <div class="border rounded p-2 h-100">
                 <div class="fw-bold small mb-1">Buscar y filtrar</div>
                 <input type="hidden" id="inv-filter-folder" name="folder" value="{{ filter_folder }}">
@@ -100,7 +72,7 @@ Subcarpeta, filtros, orden y selección persistidos por usuario
                 </div>
             </div>
         </div>
-        <div class="col-lg-3">
+        <div class="col-lg-4">
             <div class="border rounded p-2 h-100">
                 <div class="d-flex align-items-center gap-2 mb-2">
                     <strong class="small"><span id="inv-mass-count">0</span> seleccionadas</strong>
@@ -161,8 +133,6 @@ Subcarpeta, filtros, orden y selección persistidos por usuario
 .inv-scroll-both { overflow: auto; }
 .inv-check-col { width: 2rem; }
 .inv-actions-col { width: 2.5rem; }
-.inv-drop-zone { border: 2px dashed #adb5bd; background-color: #f8f9fa; }
-.inv-drop-zone.inv-drag-over { border-color: #0d6efd; background-color: #e7f1ff; }
 #inv-list-box:fullscreen { background: var(--bs-body-bg, #fff); padding: 1rem; }
 #inv-list-box:fullscreen #inv-results-scroll { height: calc(100vh - 4rem); }
 </style>
@@ -187,10 +157,8 @@ Subcarpeta, filtros, orden y selección persistidos por usuario
     const folderInput = document.getElementById("inv-filter-folder");
     const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute("content");
     const SCREEN_KEY = "{{ screen_key|escapejs }}";
-    const UPLOAD_URL = "{% url 'supplier_invoices:upload' %}";
     const RESULTS_URL = "{% url 'supplier_invoices:results' %}";
     const RETRY_URL = "{% url 'supplier_invoices:retry' %}";
-    const ALLOWED = ["pdf", "jpg", "jpeg", "png", "webp", "heic"];
     const POLL_MS = 4000;
 
     function showToast(text, danger) {
@@ -365,153 +333,6 @@ Subcarpeta, filtros, orden y selección persistidos por usuario
         }
         document.getElementById("inv-list-box").requestFullscreen().catch(function (err) {
             console.warn("Pantalla completa no disponible:", err);
-        });
-    });
-
-    // ---------------------------------------------------------------
-    // Subida: arrastrar y soltar (archivos o carpetas) o diálogos. Un
-    // archivo por petición, en orden, mostrando el avance.
-    // ---------------------------------------------------------------
-    const dropZone = document.getElementById("inv-drop-zone");
-    const fileInput = document.getElementById("inv-file-input");
-    const dirInput = document.getElementById("inv-folder-input");
-    const errorsList = document.getElementById("inv-upload-errors");
-    let uploading = false;
-
-    function extensionOf(name) {
-        const parts = name.split(".");
-        return parts.length > 1 ? parts.pop().toLowerCase() : "";
-    }
-
-    function addError(text) {
-        errorsList.classList.remove("d-none");
-        const li = document.createElement("li");
-        li.textContent = text;
-        errorsList.appendChild(li);
-    }
-
-    function setProgress(done, total, name) {
-        const box = document.getElementById("inv-progress");
-        box.classList.toggle("d-none", total === 0 || done >= total);
-        document.getElementById("inv-progress-text").textContent =
-            "Subiendo " + (done + 1) + " de " + total + ": " + name;
-        document.getElementById("inv-progress-bar").style.width =
-            (total ? Math.round(done * 100 / total) : 0) + "%";
-    }
-
-    function uploadOne(file) {
-        const formData = new FormData();
-        formData.append("file", file, file.name);
-        return fetch(UPLOAD_URL, {
-            method: "POST", body: formData,
-            headers: {"X-CSRFToken": csrfToken},
-        }).then(function (r) {
-            return r.json().catch(function () {
-                return {ok: false, error: file.name + ": el servidor respondió con un error (HTTP " + r.status + ")."};
-            });
-        }).catch(function () {
-            return {ok: false, error: file.name + ": sin conexión con el servidor."};
-        });
-    }
-
-    async function uploadAll(files) {
-        if (uploading) { showToast("Espera a que termine la subida en curso.", true); return; }
-        const accepted = [];
-        files.forEach(function (file) {
-            if (file.name.startsWith(".")) return;
-            if (ALLOWED.indexOf(extensionOf(file.name)) === -1) {
-                addError(file.name + ": solo se admiten PDF e imágenes.");
-            } else {
-                accepted.push(file);
-            }
-        });
-        if (!accepted.length) return;
-        uploading = true;
-        errorsList.innerHTML = "";
-        errorsList.classList.add("d-none");
-        let queued = 0, repeated = 0, failed = 0;
-        for (let i = 0; i < accepted.length; i++) {
-            setProgress(i, accepted.length, accepted[i].name);
-            const data = await uploadOne(accepted[i]);
-            if (!data.ok) {
-                failed += 1;
-                addError(data.error || accepted[i].name + ": no se pudo subir.");
-                continue;
-            }
-            if (data.note) {
-                repeated += 1;
-                addError(accepted[i].name + ": " + data.note);
-            } else {
-                queued += 1;
-            }
-        }
-        setProgress(accepted.length, accepted.length, "");
-        uploading = false;
-        let message = queued + " factura(s) en cola para procesar.";
-        if (repeated) message += " " + repeated + " ya se habían subido.";
-        if (failed) message += " " + failed + " no se pudieron subir.";
-        showToast(message, failed > 0);
-        if (folderInput.value !== "nuevas") {
-            document.querySelector('.inv-folder-btn[data-folder="nuevas"]').click();
-        } else {
-            refreshTable();
-        }
-    }
-
-    // Lectura recursiva de carpetas arrastradas (webkitGetAsEntry).
-    function readEntry(entry) {
-        return new Promise(function (resolve) {
-            if (entry.isFile) {
-                entry.file(function (file) { resolve([file]); }, function () { resolve([]); });
-                return;
-            }
-            if (!entry.isDirectory) { resolve([]); return; }
-            const reader = entry.createReader();
-            const collected = [];
-            (function readBatch() {
-                reader.readEntries(async function (entries) {
-                    if (!entries.length) {
-                        const nested = await Promise.all(collected.map(readEntry));
-                        resolve([].concat.apply([], nested));
-                        return;
-                    }
-                    collected.push.apply(collected, entries);
-                    readBatch();
-                }, function () { resolve([]); });
-            })();
-        });
-    }
-
-    ["dragenter", "dragover"].forEach(function (name) {
-        dropZone.addEventListener(name, function (evt) {
-            evt.preventDefault();
-            dropZone.classList.add("inv-drag-over");
-        });
-    });
-    ["dragleave", "drop"].forEach(function (name) {
-        dropZone.addEventListener(name, function (evt) {
-            evt.preventDefault();
-            dropZone.classList.remove("inv-drag-over");
-        });
-    });
-    dropZone.addEventListener("drop", async function (evt) {
-        const items = evt.dataTransfer.items;
-        let files = [];
-        if (items && items.length && items[0].webkitGetAsEntry) {
-            const entries = Array.from(items).map(function (it) { return it.webkitGetAsEntry(); }).filter(Boolean);
-            const nested = await Promise.all(entries.map(readEntry));
-            files = [].concat.apply([], nested);
-        } else {
-            files = Array.from(evt.dataTransfer.files || []);
-        }
-        uploadAll(files);
-    });
-    document.getElementById("inv-pick-files").addEventListener("click", function () { fileInput.click(); });
-    document.getElementById("inv-pick-folder").addEventListener("click", function () { dirInput.click(); });
-    [fileInput, dirInput].forEach(function (input) {
-        input.addEventListener("change", function () {
-            uploadAll(Array.from(input.files || []));
-            input.value = "";
         });
     });
 

@@ -1,17 +1,18 @@
 # /home/MiguelAeTxio/PROJECTS/EnterpriseBot/supplier_invoices/views.py
 """
-FACTURACIÓN folder of the inbox: list, upload, reprocess and detail.
+Supplier invoices (Warehouse): list, reprocess and detail.
 
 ---
 
-H28 (S151, sesión invasora). Carpeta FACTURACIÓN de la bandeja de
-entrada (Documentación > Bandeja de entrada), con sus dos subcarpetas:
-"Facturas nuevas" (las que entran y las que no se han podido procesar)
-y "Facturas procesadas". Formato de la directriz 4.24: panel fijo
-(subida, subcarpetas, filtros y acciones) y lista con scroll propio,
-orden múltiple, casillas, selección visible y navegación persistida
-por usuario (4.15). Mismo acceso que la bandeja
-(`DocsUploadAccessMixin`).
+H28 (S151, sesión invasora). Almacén > Facturas de proveedor: las
+facturas que el agente de facturas del PC de Ani sube al cubo, a
+FACTURACION PROVEEDORES (carpeta propia, separada de cualquier otra;
+nada de bandeja de entrada), con sus dos subcarpetas: "Facturas
+nuevas" (las que entran y las que no se han podido procesar) y
+"Facturas procesadas". Formato de la directriz 4.24: panel fijo
+(subcarpetas, filtros y acciones) y lista con scroll propio, orden
+múltiple, casillas, selección visible y navegación persistida por
+usuario (4.15). Mismo acceso que Albaranes (`SupervisorAccessMixin`).
 """
 import json
 
@@ -20,17 +21,15 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.views import View
 
-from panel.mixins import DocsUploadAccessMixin
+from panel.mixins import SupervisorAccessMixin
 from panel.navigation_persistence import (
     apply_list_navigation, get_saved_state_key,
 )
 
-from .invoice_service import (
-    InvoiceUploadError, register_upload, requeue_invoices,
-)
+from .invoice_service import requeue_invoices
 from .models import SupplierInvoice
 
-SCREEN_KEY = "inbox_invoices"
+SCREEN_KEY = "warehouse_invoices"
 FILTER_KEYS = ("folder", "search", "status", "sort")
 MAX_ROWS = 500
 FOLDER_NEW = "nuevas"
@@ -261,14 +260,13 @@ def _list_context(request):
     }
 
 
-class InvoicesPaneView(DocsUploadAccessMixin, View):
+class InvoicesPageView(SupervisorAccessMixin, View):
     """
-    GET: the whole FACTURACIÓN folder (fixed panel and list), via htmx.
+    GET: Warehouse > Supplier invoices (fixed panel and list).
 
     ---
 
-    GET: la carpeta FACTURACIÓN completa (panel fijo y lista), cargada
-    por htmx dentro de la bandeja de entrada.
+    GET: Almacén > Facturas de proveedor (panel fijo y lista).
     """
 
     def get(self, request):
@@ -278,14 +276,15 @@ class InvoicesPaneView(DocsUploadAccessMixin, View):
         )
         if not isinstance(saved_selection, list):
             saved_selection = []
-        return render(request, "supplier_invoices/_pane.html", {
+        return render(request, "supplier_invoices/invoice_list.html", {
             **_list_context(request),
             "screen_key": SCREEN_KEY,
             "saved_selection": saved_selection,
+            "active_nav": "supplier_invoices",
         })
 
 
-class InvoicesResultsView(DocsUploadAccessMixin, View):
+class InvoicesResultsView(SupervisorAccessMixin, View):
     """
     GET: only the table (subfolder, search, filter, sort), stored.
 
@@ -303,35 +302,7 @@ class InvoicesResultsView(DocsUploadAccessMixin, View):
         )
 
 
-class InvoiceUploadView(DocsUploadAccessMixin, View):
-    """
-    POST: one invoice file into "Facturas nuevas".
-
-    ---
-
-    POST: un archivo de factura a "Facturas nuevas" (el navegador los
-    manda de uno en uno para mostrar el avance). Responde JSON, nunca
-    en silencio.
-    """
-
-    def post(self, request):
-        upload = request.FILES.get("file")
-        if upload is None:
-            return JsonResponse(
-                {"ok": False, "error": "No ha llegado ningún archivo."},
-                status=400,
-            )
-        name = upload.name.replace("\\", "/").rsplit("/", 1)[-1]
-        try:
-            _invoice, created, note = register_upload(
-                name, upload.read(), request.user.company_user,
-            )
-        except InvoiceUploadError as exc:
-            return JsonResponse({"ok": False, "error": str(exc)}, status=400)
-        return JsonResponse({"ok": True, "created": created, "note": note})
-
-
-class InvoiceRetryView(DocsUploadAccessMixin, View):
+class InvoiceRetryView(SupervisorAccessMixin, View):
     """
     POST: process again the selected "not an invoice"/failed ones.
 
@@ -370,7 +341,7 @@ class InvoiceRetryView(DocsUploadAccessMixin, View):
         return JsonResponse({"ok": True, "message": message})
 
 
-class InvoiceDetailView(DocsUploadAccessMixin, View):
+class InvoiceDetailView(SupervisorAccessMixin, View):
     """
     GET: one invoice, its lines and the work orders it was placed in.
 
@@ -432,4 +403,10 @@ class InvoiceDetailView(DocsUploadAccessMixin, View):
             "invoice": invoice,
             "lines": lines,
             "has_placements": any(line.placement_rows for line in lines),
+            "uploaded_label": (
+                invoice.uploaded_by.user.get_full_name()
+                or invoice.uploaded_by.user.username
+                if invoice.uploaded_by_id else "Agente de facturas"
+            ),
+            "active_nav": "supplier_invoices",
         })

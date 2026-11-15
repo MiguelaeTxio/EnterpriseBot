@@ -134,10 +134,10 @@ urlpatterns = [
         'panel/explorador/',
         include('document_explorer.urls', namespace='document_explorer'),
     ),
-    # FACTURACIÓN folder of the inbox (supplier invoices) — carpeta
-    # FACTURACIÓN de la bandeja de entrada (H28, S151).
+    # Warehouse > supplier invoices uploaded by Ani's agent — Almacén >
+    # facturas de proveedor que sube el agente de Ani (H28, S151).
     path(
-        'panel/documentacion/bandeja/facturacion/',
+        'panel/repuestos/facturas-proveedor/',
         include('supplier_invoices.urls', namespace='supplier_invoices'),
     ),
 ]

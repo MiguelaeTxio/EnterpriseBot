@@ -594,6 +594,15 @@
                                 </a>
                             </li>
                         {% endif %}
+                        {# H28 (S151): facturas de proveedor que sube el agente del PC de Ani (pipeline del almacén). Mismo acceso que la vista (SupervisorAccessMixin). #}
+                        {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' %}
+                            <li class="nav-item">
+                                <a class="nav-link {% if active_nav == 'supplier_invoices' %}active{% endif %}"
+                                   href="{% url 'supplier_invoices:list' %}">
+                                    <i class="bi bi-receipt-cutoff"></i>Facturas de proveedor
+                                </a>
+                            </li>
+                        {% endif %}
                         {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
                             <li class="nav-item">
                                 <a class="nav-link {% if active_nav == 'suppliers' %}active{% endif %}"
