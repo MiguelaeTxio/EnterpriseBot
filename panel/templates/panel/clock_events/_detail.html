@@ -35,6 +35,7 @@ cuándo y por qué.
         <a class="btn btn-sm btn-outline-success py-0 ms-2" href="{% url 'panel:clock_events_export' %}?selected_ids={{ person.pk }}&amp;date_from={{ date_from|date:'Y-m-d' }}&amp;date_to={{ date_to|date:'Y-m-d' }}"><i class="bi bi-file-earmark-excel me-1"></i>Excel</a>
         <a class="btn btn-sm btn-outline-danger py-0 ms-1" href="{% url 'panel:clock_events_export' %}?selected_ids={{ person.pk }}&amp;date_from={{ date_from|date:'Y-m-d' }}&amp;date_to={{ date_to|date:'Y-m-d' }}&amp;export_format=pdf"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</a>
         <a class="btn btn-sm btn-outline-secondary py-0 ms-1" target="_blank" href="{% url 'panel:clock_events_export' %}?selected_ids={{ person.pk }}&amp;date_from={{ date_from|date:'Y-m-d' }}&amp;date_to={{ date_to|date:'Y-m-d' }}&amp;export_format=print"><i class="bi bi-printer me-1"></i>Imprimir</a>
+        <a class="btn btn-sm btn-outline-primary py-0 ms-1" href="{% url 'panel:clock_events_export' %}?selected_ids={{ person.pk }}&amp;date_from={{ date_from|date:'Y-m-d' }}&amp;date_to={{ date_to|date:'Y-m-d' }}&amp;export_format=html" title="Página interactiva"><i class="bi bi-filetype-html me-1"></i>HTML</a>
         {% endif %}
     </div>
 </div>

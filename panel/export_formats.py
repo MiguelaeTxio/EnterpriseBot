@@ -28,7 +28,8 @@ from django.http import HttpResponse
 XLSX_CONTENT_TYPE = (
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
-FORMATS = ("xlsx", "pdf", "print")
+# S153: "html" = página interactiva (panel/export_html.py).
+FORMATS = ("xlsx", "pdf", "print", "html")
 
 
 def export_format(request):
@@ -195,6 +196,8 @@ def workbook_response(request, workbook, filename):
             'attachment; filename="%s.xlsx"' % stem)
         return response
     title = stem.replace("_", " ")
+    if fmt == "html":
+        return html_download(workbook, stem)
     page = workbook_html(workbook, title, printable=(fmt == "print"))
     if fmt == "print":
         return HttpResponse(page)
@@ -203,4 +206,19 @@ def workbook_response(request, workbook, filename):
     response = HttpResponse(
         HTML(string=page).write_pdf(), content_type="application/pdf")
     response["Content-Disposition"] = 'attachment; filename="%s.pdf"' % stem
+    return response
+
+
+def html_download(workbook, stem):
+    """
+    The workbook as an interactive .html download (S153).
+    ---
+    El libro como descarga .html interactiva (S153).
+    """
+    from panel.export_html import workbook_interactive_html
+
+    response = HttpResponse(
+        workbook_interactive_html(workbook, stem.replace("_", " ")),
+        content_type="text/html; charset=utf-8")
+    response["Content-Disposition"] = 'attachment; filename="%s.html"' % stem
     return response

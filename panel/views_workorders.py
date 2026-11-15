@@ -7369,7 +7369,7 @@ class WorkOrderAdminExportByTemplateView(SupervisorAccessMixin, View):
         # plantilla/partes/operator_pks de arriba, solo cambia el generador
         # y el content_type/extensión de salida.
         export_format = request.POST.get("format", "xlsx").strip().lower()
-        if export_format not in ("xlsx", "pdf"):
+        if export_format not in ("xlsx", "pdf", "html"):
             export_format = "xlsx"
 
         if export_format == "pdf":
@@ -7394,6 +7394,12 @@ class WorkOrderAdminExportByTemplateView(SupervisorAccessMixin, View):
             return response
 
         wb = build_export_from_template(template, qs)
+        if export_format == "html":
+            # S153: la misma exportación como página interactiva.
+            from panel.export_formats import html_download
+
+            return html_download(
+                wb, f"partes_digitales_{tz_now().strftime('%Y%m%d_%H%M%S')}")
         from panel.xlsx_style import colorize_workbook
 
         colorize_workbook(wb)  # S153: con colores
