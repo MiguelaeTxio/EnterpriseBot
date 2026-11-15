@@ -213,12 +213,16 @@ def _recency(entry):
             entry.issue_date or datetime.date.min, entry.pk)
 
 
-def pending(entries):
+def pending(entries, since=None):
     """
     The entries without a valid reading (new, changed or failed).
     ---
     Los documentos sin lectura buena: nuevos, cambiados (otro md5) o
-    cuya lectura falló.
+    cuya lectura falló antes de `since` (el comienzo del informe). Uno
+    que ya falló durante este informe no se vuelve a intentar con el
+    mismo archivo (S152: un PDF cifrado dejó el informe leyendo «580 de
+    580» en bucle); lo vuelve a intentar un informe nuevo o «Volver a
+    generar».
     """
     done = {
         reading.entry_id: reading for reading in
@@ -228,9 +232,11 @@ def pending(entries):
     result = []
     for entry in entries:
         reading = done.get(entry.pk)
-        if (reading is None or reading.error or reading.data is None
-                or (entry.md5_hash or "") != reading.md5_hash):
+        if reading is None or (entry.md5_hash or "") != reading.md5_hash:
             result.append(entry)
+        elif reading.error or reading.data is None:
+            if since is None or reading.read_at < since:
+                result.append(entry)
     return result
 
 
@@ -293,20 +299,25 @@ def _first_pages(pdf_bytes):
     The first MAX_PAGES pages of a PDF (whole PDF if shorter/unreadable).
     ---
     Las MAX_PAGES primeras páginas de un PDF (entero si es más corto o
-    no se puede abrir).
+    no se puede abrir). Un PDF cifrado solo con contraseña de
+    propietario (se abre sin contraseña, pero no deja copiar páginas
+    tal cual) se manda descifrado (S152: «document closed or encrypted»
+    en la póliza de 4986NTC).
     """
     import fitz  # PyMuPDF
 
-    from ai_services.document_vision_service import extract_pages
-
     try:
         with fitz.open(stream=pdf_bytes, filetype="pdf") as pdf:
+            if pdf.needs_pass and not pdf.authenticate(""):
+                return pdf_bytes
             pages = pdf.page_count
+            if pages <= MAX_PAGES and not pdf.is_encrypted:
+                return pdf_bytes
+            with fitz.open() as out:
+                out.insert_pdf(pdf, to_page=min(pages, MAX_PAGES) - 1)
+                return out.tobytes()
     except Exception:  # noqa: BLE001 -- se manda tal cual
         return pdf_bytes
-    if pages <= MAX_PAGES:
-        return pdf_bytes
-    return extract_pages(pdf_bytes, list(range(1, MAX_PAGES + 1)))
 
 
 LEDGER_PROMPT = """Cada línea es un seguro que aparece en la contabilidad

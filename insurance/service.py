@@ -23,6 +23,7 @@ from insurance import builder
 from insurance import companies
 from insurance import ledger as ledger_reader
 from insurance import readings
+from insurance.models import InsuranceDocumentReading
 from insurance.models import InsuranceLedger
 from insurance.models import InsuranceReport
 
@@ -192,7 +193,7 @@ def run_step(report_id):
         return False
     try:
         entries = readings.candidates(report.month_from)
-        todo = readings.pending(entries)
+        todo = readings.pending(entries, since=report.created_at)
         total = len(entries)
         if todo:
             if report.status != InsuranceReport.Status.READING:
@@ -341,6 +342,9 @@ def retry(report):
     report.finished_at = None
     report.progress_done = 0
     report.save()
+    # Los que fallaron se vuelven a intentar (pending: falló antes del
+    # comienzo del informe).
+    InsuranceDocumentReading.objects.exclude(error="").delete()
     _log(report, "Vuelto a lanzar.")
     transaction.on_commit(
         lambda: run_insurance_report_task.delay(report.pk))
