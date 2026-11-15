@@ -522,6 +522,17 @@ class CompanyUser(models.Model):
             "los documentos firmados (pestaña Firmas de Documentación)."
         ),
     )
+    # S152 (Miguel Ángel): pestaña "Seguros" de Documentación (informes
+    # de renovación de seguros con los libros mayores), "visible solo
+    # para Yolanda y Alejandro (y yo)".
+    insurance_access = models.BooleanField(
+        default=False,
+        verbose_name="Informes de seguros",
+        help_text=(
+            "Puede ver y crear los informes de renovación de seguros "
+            "(pestaña Seguros de Documentación)."
+        ),
+    )
     alias = models.CharField(
         max_length=50,
         blank=True,

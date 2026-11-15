@@ -122,6 +122,9 @@ INSTALLED_APPS = [
     # Vacation/absence calendar management — gestión del calendario de
     # vacaciones/ausencias (Hito 24).
     'hr_calendar',
+    # Insurance renewal reports -- informes de renovación de seguros
+    # (pestaña Seguros de Documentación, S152).
+    'insurance',
     # Personnel documentation ingestion and classification — ingesta y
     # clasificación de documentación de personal (Hito 25).
     'personal_documents',

@@ -1,0 +1,244 @@
+{% load insurance_tags l10n %}<!DOCTYPE html>
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/insurance/templates/insurance/report.html #}
+{% comment %}
+S152. Informe de renovación de seguros (insurance/exports.py): la página
+que se ve con «Ver», se descarga como HTML (se abre sin internet) y, con
+printable=True, se convierte en PDF. Mismo orden que el informe que se
+preparó a mano para Alejandro: resumen, cuándo vence la prima, antes de
+renovar, por aseguradora y mediador, y una sección por tipo de seguro
+con lo que vence antes arriba.
+{% endcomment %}
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<style>
+:root {
+  /* Informe de trabajo: resumen arriba, una sección por tipo, tablas por vencimiento. */
+  --paper:#f5f6f4; --card:#ffffff; --ink:#1c2530; --muted:#5c6773; --line:#dde1e4;
+  --accent:#c2550f; --accent-soft:#fbeadd;
+  --crit:#b42318; --crit-bg:#fde8e6; --warn:#a15c00; --warn-bg:#fff2d6; --soon:#fff8e1;
+  --info:#2f5f8a; --info-bg:#e5eef7; --ok:#2e7d4f;
+  --display:"Arial Narrow","Roboto Condensed",Arial,sans-serif;
+  --body:Arial,Helvetica,sans-serif;
+  color-scheme:light;
+}
+{% if not printable %}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#14181d; --card:#1c2229; --ink:#e7eaee; --muted:#9aa5b1; --line:#2f3740;
+  --accent:#f08a4b; --accent-soft:#3a2618; --crit:#ff8a7d; --crit-bg:#3d1c1a; --warn:#f4b860;
+  --warn-bg:#3a2c12; --soon:#2c2716; --info:#8cb8e3; --info-bg:#1b2a3a; --ok:#7fcf9f; color-scheme:dark;}}
+{% endif %}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--paper); color:var(--ink); font:14px/1.45 var(--body); }
+.wrap { max-width:1280px; margin:0 auto; padding:24px 18px 48px; }
+h1,h2,h3 { font-family:var(--display); font-weight:700; margin:0; }
+h1 { font-size:34px; line-height:1.1; }
+h2 { font-size:24px; }
+h3 { font-size:18px; margin-bottom:8px; }
+header { border-bottom:3px solid var(--accent); padding-bottom:14px; margin-bottom:18px; }
+.eyebrow { text-transform:uppercase; letter-spacing:.1em; color:var(--accent); font-weight:700; font-size:12px; }
+.sub { color:var(--muted); margin:6px 0 0; }
+.tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:10px; margin:16px 0; }
+.tile { background:var(--card); border:1px solid var(--line); border-left:5px solid var(--accent); border-radius:6px; padding:12px 14px; }
+.tile.hot { border-left-color:var(--crit); }
+.tile .n { font-family:var(--display); font-size:28px; font-weight:700; font-variant-numeric:tabular-nums; }
+.tile .l { color:var(--muted); font-size:12.5px; }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px; }
+.grid2 > * { min-width:0; }
+@media (max-width:900px) { .grid2 { grid-template-columns:1fr; } }
+.panel { background:var(--card); border:1px solid var(--line); border-radius:6px; padding:14px; }
+.bar { display:grid; grid-template-columns:150px 1fr 130px; gap:8px; align-items:center; padding:4px 0; font-size:13px; }
+.bt { background:var(--paper); border-radius:3px; height:14px; overflow:hidden; }
+.bf { height:100%; background:var(--accent); }
+.bar.b0 .bf { background:var(--crit); }
+.bv { text-align:right; font-weight:700; font-variant-numeric:tabular-nums; }
+.bv span { display:block; font-weight:400; color:var(--muted); font-size:11.5px; }
+.alert { padding:8px 10px; border-radius:5px; border-left:4px solid; margin-bottom:8px; }
+.alert.crit { background:var(--crit-bg); border-color:var(--crit); }
+.alert.warn { background:var(--warn-bg); border-color:var(--warn); }
+.alert.info { background:var(--info-bg); border-color:var(--info); }
+.alert ul { margin:4px 0 0; padding-left:18px; }
+nav.toc { position:sticky; top:0; z-index:5; background:var(--paper); border-bottom:1px solid var(--line); padding:8px 0; margin:24px 0 6px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+nav.toc a { font-size:12.5px; color:var(--ink); text-decoration:none; border:1px solid var(--line); background:var(--card); padding:3px 9px; border-radius:16px; }
+nav.toc a:hover, nav.toc a:focus-visible { border-color:var(--accent); color:var(--accent); outline:none; }
+.filt { display:flex; gap:6px; margin-left:auto; flex-wrap:wrap; }
+.filt input, .filt select { font:inherit; font-size:12.5px; padding:4px 8px; border:1px solid var(--line); border-radius:5px; background:var(--card); color:var(--ink); }
+section { margin-top:28px; }
+.sh2 { display:flex; justify-content:space-between; align-items:baseline; gap:10px; flex-wrap:wrap; border-bottom:2px solid var(--ink); padding-bottom:3px; }
+.kpi { display:flex; gap:14px; font-family:var(--display); font-size:17px; font-weight:700; }
+.kpi span:last-child { color:var(--accent); }
+.intro { color:var(--muted); margin:6px 0 10px; }
+.tw { overflow-x:auto; background:var(--card); border:1px solid var(--line); border-radius:6px; }
+table { border-collapse:collapse; width:100%; font-size:12.5px; }
+th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.03em; color:var(--muted); padding:7px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }
+td { padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+td.prima { font-weight:700; font-size:13.5px; }
+.small, .dias { font-size:11px; color:var(--muted); font-weight:400; }
+td.fecha { white-space:nowrap; font-weight:700; border-left:4px solid transparent; }
+tr.u0 td.fecha { border-left-color:var(--crit); } tr.u0 { background:var(--crit-bg); }
+tr.u1 td.fecha { border-left-color:var(--accent); } tr.u1 { background:var(--accent-soft); }
+tr.u2 td.fecha { border-left-color:var(--warn); } tr.u2 { background:var(--soon); }
+td.pol { font-size:11.5px; color:var(--muted); white-space:nowrap; }
+.nota { font-size:11.5px; color:var(--muted); margin-top:2px; max-width:70ch; }
+.up { color:var(--crit); font-weight:700; } .down { color:var(--ok); font-weight:700; }
+.pill { display:inline-block; font-size:10.5px; font-weight:700; padding:1px 6px; border-radius:9px; margin:0 3px 3px 0; white-space:nowrap; }
+.pill.crit { background:var(--crit); color:#fff; } .pill.warn { background:var(--warn-bg); color:var(--warn); border:1px solid var(--warn); }
+.pill.info { background:var(--info-bg); color:var(--info); } .pill.new { color:var(--muted); border:1px dashed var(--muted); }
+tr.mes td { background:var(--paper); font-family:var(--display); font-size:15px; font-weight:700; padding:9px 8px 4px; }
+details { margin-top:4px; } summary { cursor:pointer; color:var(--accent); font-size:12px; font-weight:700; }
+table.mini { width:auto; font-size:11.5px; } table.mini td { padding:1px 10px 1px 0; border:0; }
+.sh { display:inline-block; width:50px; height:7px; background:var(--paper); border-radius:2px; margin-right:5px; vertical-align:middle; overflow:hidden; }
+.sh span { display:block; height:100%; background:var(--accent); }
+.legend { display:flex; flex-wrap:wrap; gap:12px; font-size:12px; color:var(--muted); margin:6px 0 0; }
+.legend i { display:inline-block; width:11px; height:11px; border-radius:2px; margin-right:4px; vertical-align:-1px; }
+.foot { margin-top:30px; font-size:12px; color:var(--muted); }
+tr.hide { display:none; }
+{% if printable %}
+@page { size:A4 landscape; margin:10mm; }
+.tiles { display:flex; gap:8px; } .tile { flex:1; }
+.grid2 { display:block; } .panel { margin-bottom:8px; }
+nav.toc, .legend { display:none; }
+.bar { display:flex; } .bar > div:first-child { width:120px; } .bt { flex:1; } .bv { width:110px; }
+body { background:#fff; font-size:10.5px; }
+.wrap { max-width:none; padding:0; }
+section { break-before:page; }
+tr { break-inside:avoid; }
+.tw { overflow:visible; border:0; }
+table { font-size:9.5px; }
+td.prima { font-size:10.5px; }
+{% endif %}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="eyebrow">Grupo Álvarez · Informe de seguros · {{ generated|date:"d/m/Y H:i" }} · {{ supervisor }}</div>
+  <h1>{{ title }}</h1>
+  <p class="sub">Vencimiento: {{ due_label }} · {{ companies_label }}.
+     {% if ledgers %}Cotejado con {{ ledgers|length }} libro{{ ledgers|length|pluralize }} mayor{{ ledgers|length|pluralize:"es" }} de la cuenta 625{% else %}Sin libros mayores: los precios salen solo de los documentos{% endif %}.
+     Lo pagado según el mayor manda sobre lo que dice el documento.</p>
+</header>
+
+<div class="tiles">
+  <div class="tile"><div class="n">{{ base_premium|eur:0 }}</div><div class="l">Prima anual de {{ count }} seguros del informe{% if other_premium %} (más {{ other_premium|eur:0 }} de salud, crédito y otros cargos periódicos){% endif %}.</div></div>
+  <div class="tile"><div class="n">{{ soon_premium|eur:0 }}</div><div class="l">{{ soon_count }} seguros vencen en los próximos 60 días.</div></div>
+  <div class="tile hot"><div class="n">{{ overdue_count }}</div><div class="l">Vencidos o sin renovar (en rojo en las tablas).</div></div>
+  <div class="tile hot"><div class="n">{{ alert_count }}</div><div class="l">Seguros con algún aviso que conviene resolver antes de renovar.</div></div>
+</div>
+
+<div class="grid2">
+  <div class="panel">
+    <h3>Cuándo vence la prima</h3>
+    {% for b in buckets %}
+    <div class="bar {% if forloop.first %}b0{% endif %}"><div>{{ b.label }}</div><div class="bt"><div class="bf" style="width:{{ b.width|unlocalize }}%"></div></div><div class="bv">{{ b.premium|eur:0 }}<span>{{ b.count }} seguro{{ b.count|pluralize }}</span></div></div>
+    {% endfor %}
+  </div>
+  <div class="panel">
+    <h3>Antes de renovar</h3>
+    {% for name, item in alerts.items %}
+    <div class="alert {{ item.klass }}"><b>{{ name }} ({{ item.records|length }})</b>
+      <ul>{% for r in item.records|slice:":12" %}<li>{{ r.object }} · {{ r.company_label }} · {{ r.insurer }}{% if r.due_date %} · {{ r.due_date|date:"d/m/Y" }}{% endif %}</li>{% endfor %}
+      {% if item.records|length > 12 %}<li>y {{ item.records|length|add:"-12" }} más (columna «Avisos» de las tablas).</li>{% endif %}</ul>
+    </div>
+    {% empty %}
+    <p class="intro">Ningún aviso.</p>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="grid2">
+  <div class="panel"><h3>Por aseguradora</h3>
+    <div class="tw"><table><thead><tr><th>Aseguradora</th><th class="num">Seguros</th><th class="num">Prima anual</th><th class="num">% del total</th><th class="num">Vence en 90 días</th></tr></thead><tbody>
+    {% for i in by_insurer %}<tr><td><b>{{ i.name }}</b></td><td class="num">{{ i.count }}</td><td class="num">{{ i.premium|eur:0 }}</td><td class="num"><span class="sh"><span style="width:{{ i.share|unlocalize }}%"></span></span>{{ i.share }} %</td><td class="num">{{ i.soon|eur:0 }}</td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
+  <div class="panel"><h3>Por mediador</h3>
+    <div class="tw"><table><thead><tr><th>Mediador</th><th class="num">Seguros</th><th class="num">Prima anual</th><th class="num">% del total</th><th class="num">Vence en 90 días</th></tr></thead><tbody>
+    {% for i in by_broker %}<tr><td><b>{{ i.name }}</b></td><td class="num">{{ i.count }}</td><td class="num">{{ i.premium|eur:0 }}</td><td class="num"><span class="sh"><span style="width:{{ i.share|unlocalize }}%"></span></span>{{ i.share }} %</td><td class="num">{{ i.soon|eur:0 }}</td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
+</div>
+
+<nav class="toc" aria-label="Tipos de seguro">
+  {% for s in sections %}<a href="#{{ s.key }}">{{ s.label }}</a>{% endfor %}
+  {% if not printable %}
+  <div class="filt">
+    <select id="fe" aria-label="Empresa"><option value="">Todas las empresas</option>{% for c in companies_present %}<option>{{ c }}</option>{% endfor %}</select>
+    <input id="ft" type="search" placeholder="Buscar matrícula, póliza, aseguradora…" aria-label="Buscar">
+  </div>
+  {% endif %}
+</nav>
+<div class="legend"><span><i style="background:var(--crit)"></i>Vencido o sin renovar</span><span><i style="background:var(--accent)"></i>Vence en 30 días o menos</span><span><i style="background:var(--warn)"></i>De 31 a 60 días</span><span>«Año anterior» aparece cuando hay documentos o recibos de los dos años.</span></div>
+
+{% for s in sections %}
+<section id="{{ s.key }}">
+  <div class="sh2"><h2>{{ s.label }}</h2><div class="kpi"><span>{{ s.records|length }} seguros</span><span>{{ s.premium|eur:0 }} al año</span></div></div>
+  <p class="intro">Aseguradoras: {{ s.insurers }}.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Vence</th><th>Empresa</th><th>Seguro / vehículo</th><th>Aseguradora</th><th>Mediador</th><th>Póliza</th><th class="num">Prima anual</th><th class="num">Año anterior</th><th>Avisos</th></tr></thead>
+    <tbody>
+    {% for row in s.months %}
+    {% if row.separator %}
+    <tr class="mes"><td colspan="9">{{ row.label }} · {{ row.count }} seguro{{ row.count|pluralize }} · {{ row.premium|eur:0 }}</td></tr>
+    {% else %}{% with r=row.record %}
+    <tr class="{{ r.urgency }}" data-emp="{{ r.company_label }}" data-txt="{{ r.company_label|lower }} {{ r.object|lower }} {{ r.insurer|lower }} {{ r.broker|lower }} {{ r.policy|lower }} {{ r.plate|lower }} {{ r.alerts|join:' '|lower }}">
+      <td class="fecha">{{ r.due_date|date:"d/m/Y"|default:"—" }}<div class="dias">{{ r.days|days_label }}</div></td>
+      <td>{{ r.company_label }}</td>
+      <td><b>{{ r.object }}</b>{% if r.cover %}<div class="nota">{{ r.cover }}</div>{% endif %}
+        {% for c in r.comments %}<div class="nota">{{ c }}</div>{% endfor %}
+        {% if r.notes %}<div class="nota">{{ r.notes }}</div>{% endif %}
+        {% if r.fleet_rows %}<details{% if printable %} open{% endif %}><summary>Ver los {{ r.fleet_rows|length }} vehículos</summary><table class="mini">{% for name, premium, due in r.fleet_rows %}<tr><td>{{ name }}</td><td class="num">{{ premium|eur }}</td><td>{{ due|date:"d/m/Y" }}</td></tr>{% endfor %}</table></details>{% endif %}
+      </td>
+      <td>{{ r.insurer }}</td>
+      <td>{{ r.broker }}</td>
+      <td class="pol">{{ r.policy }}</td>
+      <td class="num prima">{% if r.premium is not None %}{{ r.premium|eur }}{% else %}<span class="small">sin precio</span>{% endif %}<div class="small">{{ r.frequency }}{% if r.premium_source %} · {{ r.premium_source|lower }}{% endif %}</div></td>
+      <td class="num">{% if r.previous %}{{ r.previous|eur }}{% if r.change is not None %}<br><span class="{% if r.change > 0 %}up{% else %}down{% endif %}">{{ r.change|floatformat:1 }} %</span>{% endif %}{% endif %}</td>
+      <td>{% for name, klass in r.alert_items %}<span class="pill {{ klass }}">{{ name }}</span>{% endfor %}{% if r.origin == "Mayor" %}<span class="pill new">Solo en el mayor</span>{% endif %}</td>
+    </tr>
+    {% endwith %}{% endif %}
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endfor %}
+
+{% if ledger_outside %}
+<section id="mayor-fuera">
+  <div class="sh2"><h2>Apuntes del mayor fuera del informe</h2><div class="kpi"><span>{{ ledger_outside|length }} apuntes</span></div></div>
+  <p class="intro">Recibos de seguros que vencen fuera de los meses elegidos o de empresas no marcadas.</p>
+  <div class="tw"><table><thead><tr><th>Empresa</th><th>Proyecto</th><th>Aseguradora</th><th>Fecha</th><th>Cubre hasta</th><th>Concepto</th><th class="num">Importe</th></tr></thead><tbody>
+  {% for l in ledger_outside %}<tr data-emp="{{ l.company_label }}" data-txt="{{ l.company_label|lower }} {{ l.project_text|lower }} {{ l.insurer|lower }} {{ l.concept|lower }}"><td>{{ l.company_label }}</td><td>{{ l.project_text }}</td><td>{{ l.insurer }}</td><td>{{ l.date }}</td><td>{{ l.covered_until }}</td><td>{{ l.concept }}</td><td class="num">{{ l.amount|eur }}</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endif %}
+
+<div class="foot">
+  <h3>De dónde salen los datos</h3>
+  <ul>
+    <li>Pólizas, recibos y certificados de seguro del panel de EnterpriseBot (los que llegan de las carpetas vigiladas por el agente H28), leídos con Gemini.</li>
+    {% for l in ledgers %}<li>Libro mayor de {{ l.company_label|default:"empresa sin identificar" }}, {{ l.date_from }} a {{ l.date_to }}.</li>{% endfor %}
+    <li>La prima anual es la suma de los recibos pagados en los 12 meses que acaban en la fecha hasta la que está pagado; sin mayor, la del documento (en recibos fraccionados, multiplicada por el número de recibos del año).</li>
+  </ul>
+</div>
+</div>
+{% if not printable %}
+<script>
+(function () {
+  var fe = document.getElementById("fe"), ft = document.getElementById("ft");
+  function apply() {
+    var e = fe.value, t = ft.value.trim().toLowerCase();
+    document.querySelectorAll("tr[data-txt]").forEach(function (r) {
+      var ok = (!e || r.getAttribute("data-emp") === e) && (!t || r.getAttribute("data-txt").indexOf(t) > -1);
+      r.classList.toggle("hide", !ok);
+    });
+  }
+  fe.addEventListener("change", apply); ft.addEventListener("input", apply);
+})();
+</script>
+{% endif %}
+</body>
+</html>
