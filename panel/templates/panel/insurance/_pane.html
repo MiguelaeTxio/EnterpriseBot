@@ -1,0 +1,568 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/insurance/_pane.html #}
+{% comment %}
+S152. Pestaña "Seguros" del hub de Documentación (panel/views_insurance.py),
+formato de la directriz 4.24, el mismo que Nóminas:
+- #ins-top-panel (fijo): "Buscar y filtrar" (búsqueda, estado, fecha del
+  informe, mes de vencimiento, supervisor, selección), "Nuevo informe"
+  (mes de vencimiento desde/hasta, empresas, libros mayores ya subidos o
+  subir otros, título) y las acciones sobre los marcados.
+- #ins-bottom-panel: el listado de informes (3/4) y "Selección actual"
+  (1/4).
+Solo con CompanyUser.insurance_access (Yolanda, Alejandro y Miguel
+Ángel). Mientras un informe se hace, la lista se refresca sola.
+{% endcomment %}
+<div class="border rounded p-2 mb-2" id="ins-top-panel">
+    <div class="row g-2">
+        <div class="col-lg-3">
+            <div class="border rounded p-2 h-100">
+                <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                <form id="ins-filters" autocomplete="off" onsubmit="return false;"
+                      hx-get="{% url 'panel:insurance_results' %}" hx-target="#ins-results"
+                      hx-include="#ins-sort-inputs"
+                      hx-trigger="input changed delay:300ms from:#ins-filter-search, change, ins-selection-refresh">
+                    <input type="text" name="search" id="ins-filter-search" class="form-control doc-h30-search mb-2"
+                           placeholder="Buscar por título o supervisor…" value="{{ filter_search }}">
+                    <div class="row g-1 small mb-2">
+                        <div class="col-6">
+                            <label class="form-label mb-0 fw-semibold" for="ins-date-from">Informe desde</label>
+                            <input type="date" class="form-control form-control-sm" name="date_from" id="ins-date-from" value="{{ filter_date_from }}">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label mb-0 fw-semibold" for="ins-date-to">hasta</label>
+                            <input type="date" class="form-control form-control-sm" name="date_to" id="ins-date-to" value="{{ filter_date_to }}">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label mb-0 fw-semibold" for="ins-due-from">Vencimiento desde</label>
+                            <input type="month" class="form-control form-control-sm" name="due_from" id="ins-due-from" value="{{ filter_due_from }}">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label mb-0 fw-semibold" for="ins-due-to">hasta</label>
+                            <input type="month" class="form-control form-control-sm" name="due_to" id="ins-due-to" value="{{ filter_due_to }}">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label mb-0 fw-semibold" for="ins-supervisor">Supervisor</label>
+                            <select class="form-select form-select-sm" name="supervisor" id="ins-supervisor">
+                                <option value="">Todos</option>
+                                {% for user in supervisors %}<option value="{{ user.pk }}"{% if filter_supervisor == user.pk|stringformat:"s" %} selected{% endif %}>{{ user.label }}</option>{% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-3 align-items-start small">
+                        <div>
+                            <div class="fw-semibold mb-1">Estado</div>
+                            <div class="dropdown checkdrop" data-all="Todos" data-none="Ninguno">
+                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
+                                        data-bs-auto-close="outside" aria-expanded="false"><span class="checkdrop-text">Todos</span></button>
+                                <div class="dropdown-menu p-2 small">
+                                    {% for value, label in status_choices %}
+                                    <div class="form-check">
+                                        <input class="form-check-input ins-status-check" type="checkbox" value="{{ value }}" id="insStatus{{ value }}"
+                                               {% if value in filter_status %}checked{% endif %}>
+                                        <label class="form-check-label text-nowrap" for="insStatus{{ value }}">{{ label }}</label>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <input type="hidden" name="status" id="ins-status-input" value="{{ filter_status|join:',' }}">
+                        </div>
+                        <div>
+                            <div class="fw-semibold mb-1">Selección</div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="only_selected" value="1" id="insOnlySelected">
+                                <label class="form-check-label" for="insOnlySelected">Mostrar solo la selección actual</label>
+                            </div>
+                            <input type="hidden" name="selected_ids" id="ins-selected-ids" value="">
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="border rounded p-2 h-100">
+                <div class="fw-bold small mb-1">Nuevo informe</div>
+                <div class="row g-1 small mb-1">
+                    <div class="col-4">
+                        <label class="form-label mb-0 fw-semibold" for="ins-new-from">Vencimiento desde</label>
+                        <input type="month" class="form-control form-control-sm" id="ins-new-from" value="{{ default_month }}">
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label mb-0 fw-semibold" for="ins-new-to">hasta <span class="fw-normal text-muted">(opcional)</span></label>
+                        <input type="month" class="form-control form-control-sm" id="ins-new-to" value="">
+                    </div>
+                    <div class="col-4">
+                        <div class="fw-semibold">Empresas</div>
+                        <div class="dropdown checkdrop" data-all="Todas" data-none="Ninguna">
+                            <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle w-100" data-bs-toggle="dropdown"
+                                    data-bs-auto-close="outside" aria-expanded="false"><span class="checkdrop-text">Todas</span></button>
+                            <div class="dropdown-menu p-2 small">
+                                {% for code, label in company_choices %}
+                                <div class="form-check">
+                                    <input class="form-check-input ins-company-check" type="checkbox" value="{{ code }}" id="insCompany{{ code }}" checked>
+                                    <label class="form-check-label text-nowrap" for="insCompany{{ code }}">{{ label }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <input type="text" class="form-control form-control-sm" id="ins-new-title" maxlength="200"
+                               placeholder="Título (opcional; si no, «Seguros que vencen…»)">
+                    </div>
+                </div>
+                <div class="d-flex align-items-center gap-2 small">
+                    <span class="fw-semibold">Libros mayores (cuenta 625)</span>
+                    <label class="btn btn-sm btn-outline-primary mb-0 ms-auto" for="ins-ledger-files"
+                           title="Elige uno o varios PDF del «Listado Mayor Analítico» de la cuenta 625: se leen al subirlos y quedan marcados para este informe.">
+                        <i class="bi bi-upload"></i> Subir libros mayores
+                    </label>
+                    <input type="file" id="ins-ledger-files" class="d-none" multiple accept="application/pdf">
+                </div>
+                <div class="border rounded p-1 small ins-ledger-box" id="ins-ledger-list">
+                    {% for ledger in ledgers %}
+                    <div class="d-flex align-items-center gap-1 ins-ledger-row" data-pk="{{ ledger.pk }}">
+                        <input class="form-check-input ins-ledger-check mt-0" type="checkbox" value="{{ ledger.pk }}" id="insLedger{{ ledger.pk }}">
+                        <select class="form-select form-select-sm ins-ledger-company" data-pk="{{ ledger.pk }}" aria-label="Empresa del libro mayor">
+                            {% if not ledger.company %}<option value="">¿Empresa?</option>{% endif %}
+                            {% for code, label in company_choices %}<option value="{{ code }}"{% if code == ledger.company %} selected{% endif %}>{{ label }}</option>{% endfor %}
+                        </select>
+                        <label class="form-check-label text-truncate" for="insLedger{{ ledger.pk }}" title="{{ ledger.label }}">{{ ledger.label }}</label>
+                    </div>
+                    {% empty %}
+                    <div class="text-muted ins-ledger-empty">Todavía no hay libros mayores. Sin ellos, los precios salen solo de los documentos.</div>
+                    {% endfor %}
+                </div>
+                <div class="d-flex align-items-center gap-2 mt-1">
+                    <button type="button" class="btn btn-sm btn-primary" id="ins-create"
+                            title="Lee los documentos de seguro del panel (solo los nuevos o cambiados), los coteja con los libros mayores marcados y monta el informe en segundo plano.">
+                        <i class="bi bi-file-earmark-plus"></i> Crear informe
+                    </button>
+                    <div id="ins-upload-text" class="small text-muted"></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="border rounded p-2 h-100">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <strong class="small"><span id="ins-mass-count">0</span> seleccionados</strong>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="ins-mass-clear">Limpiar</button>
+                </div>
+                <div class="small text-muted fw-bold">El marcado <span class="fw-normal">(uno, terminado)</span></div>
+                <div class="d-flex gap-1 flex-wrap mb-2">
+                    <button type="button" class="btn btn-sm btn-outline-primary ins-needs-one" data-fmt="view" disabled title="Abre el informe en otra pestaña."><i class="bi bi-eye me-1"></i>Ver</button>
+                    <button type="button" class="btn btn-sm btn-outline-success ins-needs-one" data-fmt="html" disabled title="Página que se abre sin internet, con buscador y filtro por empresa."><i class="bi bi-filetype-html me-1"></i>HTML</button>
+                    <button type="button" class="btn btn-sm btn-outline-success ins-needs-one" data-fmt="xlsx" disabled title="Excel con colores: resumen, seguros por tipo, avisos y libro mayor."><i class="bi bi-file-earmark-excel me-1"></i>Excel</button>
+                    <button type="button" class="btn btn-sm btn-outline-success ins-needs-one" data-fmt="pdf" disabled title="El informe para imprimir, A4 apaisado."><i class="bi bi-file-earmark-pdf me-1"></i>PDF</button>
+                    <button type="button" class="btn btn-sm btn-outline-success ins-needs-one" data-fmt="docx" disabled title="El informe en Word, para editarlo."><i class="bi bi-file-earmark-word me-1"></i>Word</button>
+                </div>
+                <div class="small text-muted fw-bold">Los marcados</div>
+                <div class="d-flex gap-1 flex-wrap">
+                    <button type="button" class="btn btn-sm btn-outline-secondary ins-needs-selection ins-mass" data-action="retry" disabled
+                            title="Los vuelve a hacer con los mismos meses, empresas y libros mayores (solo lee los documentos nuevos o cambiados).">
+                        <i class="bi bi-arrow-repeat me-1"></i>Volver a generar
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-danger ins-needs-selection ins-mass" data-action="delete" disabled>
+                        <i class="bi bi-trash me-1"></i>Borrar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="border rounded p-2" id="ins-bottom-panel">
+    <div class="row g-2 h-100">
+        <div class="col-lg-9 h-100" id="ins-list-col">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1 d-flex align-items-center">
+                    <span>Informes (<span id="ins-row-count">{{ rows|length }}</span>)</span>
+                    <button type="button" class="btn btn-sm btn-link py-0{% if not sort_active %} d-none{% endif %}" id="ins-clear-sort"
+                            hx-get="{% url 'panel:insurance_results' %}" hx-target="#ins-results"
+                            hx-include="#ins-filters" hx-vals='{"sort": ""}'>Quitar orden</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" id="ins-fullscreen" title="Pantalla completa"><i class="bi bi-fullscreen"></i></button>
+                </div>
+                <div id="ins-results-scroll" class="ins-fill fixed-list-scroll ins-scroll">
+                    <div id="ins-results"
+                         hx-get="{% url 'panel:insurance_results' %}"
+                         hx-include="#ins-filters, #ins-sort-inputs"
+                         hx-trigger="insurance-refresh from:body">
+                        {% include "panel/insurance/_table.html" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1">Selección actual (<span id="ins-selection-count">0</span>)</div>
+                <div class="ins-fill ins-scroll-y">
+                    <ul class="mb-0 small ps-0 list-unstyled" id="ins-selection-list">
+                        <li class="text-muted">Nada seleccionado todavía.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+#ins-results-scroll table td, #ins-results-scroll table th { white-space: nowrap; }
+.ins-fill { flex: 1 1 auto; min-height: 0; }
+.ins-scroll { overflow: auto; }
+.ins-scroll-y { overflow-y: auto; }
+.ins-progress { height: 6px; min-width: 6rem; }
+.ins-col-title { max-width: 22rem; overflow: hidden; text-overflow: ellipsis; }
+.ins-col-note { max-width: 16rem; }
+.ins-ledger-box { max-height: 7.5rem; overflow-y: auto; }
+.ins-ledger-company { width: 11rem; flex: 0 0 auto; }
+#ins-list-col > div:fullscreen { background-color: var(--bs-body-bg); padding: 1rem; }
+#ins-list-col > div:fullscreen .ins-fill { height: calc(100vh - 4rem); }
+</style>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="ins-toast" class="toast align-items-center text-bg-dark border-0"
+         role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="5000">
+        <div class="d-flex">
+            <div class="toast-body" id="ins-toast-msg"></div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+{{ saved_selection|json_script:"ins-saved-selection" }}
+{% include "panel/_fixed_list_layout.html" with top_id="ins-top-panel" bottom_id="ins-bottom-panel" %}
+{% include "panel/_checkdrop_js.html" %}
+<script>
+(function () {
+    "use strict";
+
+    const results = document.getElementById("ins-results");
+    const filters = document.getElementById("ins-filters");
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute("content");
+    const SCREEN_KEY = "{{ screen_key|escapejs }}";
+    const URLS = {
+        upload: "{% url 'panel:insurance_ledger_upload' %}",
+        company: "{% url 'panel:insurance_ledger_company' 0 %}",
+        create: "{% url 'panel:insurance_create' %}",
+        action: "{% url 'panel:insurance_action' %}",
+        export: "{% url 'panel:insurance_export' 0 'FMT' %}",
+    };
+    const COMPANIES = {{ company_choices_json|safe }};
+    const selection = new Map();
+
+    try {
+        JSON.parse(document.getElementById("ins-saved-selection").textContent).forEach(function (item) {
+            if (item && item.pk) selection.set(String(item.pk), item.label || "");
+        });
+    } catch (e) { /* estado ilegible: se empieza sin selección */ }
+    let lastSaved = null;
+    function saveSelection() {
+        const payload = Array.from(selection.entries()).map(function ([pk, label]) { return {pk: pk, label: label}; });
+        const serialized = JSON.stringify(payload);
+        if (serialized === lastSaved) return;
+        lastSaved = serialized;
+        if (window.EbNavState) window.EbNavState.save(SCREEN_KEY, {selection: payload});
+    }
+
+    function showToast(text, danger) {
+        const toast = document.getElementById("ins-toast");
+        toast.classList.toggle("text-bg-danger", !!danger);
+        toast.classList.toggle("text-bg-dark", !danger);
+        document.getElementById("ins-toast-msg").textContent = text;
+        new bootstrap.Toast(toast).show();
+    }
+
+    function state() { return document.getElementById("ins-fragment-state") || {dataset: {}}; }
+
+    function selectedDone() {
+        const check = results.querySelector('.ins-row-check[data-pk="' + Array.from(selection.keys())[0] + '"]');
+        return selection.size === 1 && check && check.dataset.done === "1";
+    }
+
+    function updateSelectionUi() {
+        saveSelection();
+        document.getElementById("ins-mass-count").textContent = selection.size;
+        document.getElementById("ins-selection-count").textContent = selection.size;
+        const list = document.getElementById("ins-selection-list");
+        list.innerHTML = "";
+        const names = Array.from(selection.values()).sort(function (a, b) { return a.localeCompare(b); });
+        if (!names.length) {
+            const li = document.createElement("li");
+            li.className = "text-muted";
+            li.textContent = "Nada seleccionado todavía.";
+            list.appendChild(li);
+        }
+        names.forEach(function (name) {
+            const li = document.createElement("li");
+            li.textContent = name;
+            list.appendChild(li);
+        });
+        const idsInput = document.getElementById("ins-selected-ids");
+        const newIds = Array.from(selection.keys()).join(",");
+        if (idsInput.value !== newIds) {
+            idsInput.value = newIds;
+            if (document.getElementById("insOnlySelected").checked) htmx.trigger(filters, "ins-selection-refresh");
+        }
+        document.querySelectorAll(".ins-needs-selection").forEach(function (btn) { btn.disabled = selection.size === 0; });
+        const one = selectedDone();
+        document.querySelectorAll(".ins-needs-one").forEach(function (btn) {
+            btn.disabled = !one;
+            btn.title = one ? btn.title : "Marca un solo informe terminado.";
+        });
+        const all = document.getElementById("ins-check-all");
+        if (!all) return;
+        const rows = results.querySelectorAll(".ins-row-check");
+        const checked = results.querySelectorAll(".ins-row-check:checked");
+        all.checked = rows.length > 0 && checked.length === rows.length;
+        all.indeterminate = checked.length > 0 && checked.length < rows.length;
+    }
+
+    let poll = null;
+    function refreshFromFragment() {
+        const data = state().dataset;
+        document.getElementById("ins-row-count").textContent = data.count || "0";
+        document.getElementById("ins-clear-sort").classList.toggle("d-none", !data.sortActive);
+        results.querySelectorAll(".ins-row-check").forEach(function (cb) { cb.checked = selection.has(cb.dataset.pk); });
+        updateSelectionUi();
+        // Mientras algún informe se hace, la lista se pide sola.
+        if (data.anyLive === "1" && !poll) {
+            poll = setInterval(function () {
+                if (!document.body.contains(results)) { clearInterval(poll); poll = null; return; }
+                htmx.trigger(document.body, "insurance-refresh");
+            }, 5000);
+        } else if (data.anyLive !== "1" && poll) {
+            clearInterval(poll);
+            poll = null;
+        }
+    }
+
+    document.querySelectorAll(".ins-status-check").forEach(function (cb) {
+        cb.addEventListener("change", function () {
+            document.getElementById("ins-status-input").value = Array.from(document.querySelectorAll(".ins-status-check:checked"))
+                .map(function (c) { return c.value; }).join(",");
+        });
+    });
+
+    results.addEventListener("change", function (evt) {
+        const target = evt.target;
+        if (target.classList.contains("ins-row-check")) {
+            if (target.checked) selection.set(target.dataset.pk, target.dataset.label);
+            else selection.delete(target.dataset.pk);
+            updateSelectionUi();
+        } else if (target.id === "ins-check-all") {
+            results.querySelectorAll(".ins-row-check").forEach(function (cb) {
+                cb.checked = target.checked;
+                if (target.checked) selection.set(cb.dataset.pk, cb.dataset.label);
+                else selection.delete(cb.dataset.pk);
+            });
+            updateSelectionUi();
+        }
+    });
+    document.getElementById("ins-mass-clear").addEventListener("click", function () {
+        selection.clear();
+        refreshFromFragment();
+    });
+
+    function post(action, pks) {
+        const body = new FormData();
+        new FormData(filters).forEach(function (value, key) { body.append("_f_" + key, value); });
+        const sortInput = results.querySelector('#ins-sort-inputs input[name="sort"]');
+        body.append("_f_sort", sortInput ? sortInput.value : "");
+        body.append("action", action);
+        pks.forEach(function (pk) { body.append("selected", pk); });
+        return fetch(URLS.action, {method: "POST", headers: {"X-CSRFToken": csrfToken}, body: body})
+            .then(function (r) {
+                if (!r.ok) { showToast("No se ha podido completar (" + r.status + ").", true); return false; }
+                const message = r.headers.get("X-Insurance-Message");
+                const isError = r.headers.get("X-Insurance-Error") === "1";
+                return r.text().then(function (html) {
+                    results.innerHTML = html;
+                    htmx.process(results);
+                    if (action === "delete" && !isError) pks.forEach(function (pk) { selection.delete(String(pk)); });
+                    refreshFromFragment();
+                    if (message) showToast(decodeURIComponent(message), isError);
+                    return !isError;
+                });
+            })
+            .catch(function () { showToast("Sin conexión con el servidor: no se ha guardado nada.", true); return false; });
+    }
+
+    const MASS_TEXT = {retry: "Volver a generar", delete: "Borrar"};
+    async function confirmMass(action, pks, names) {
+        if (window.EbMassConfirm) {
+            const visible = Array.from(results.querySelectorAll(".ins-row-check")).map(function (cb) { return cb.dataset.pk; });
+            const sel = new Map(pks.map(function (pk) { return [String(pk), selection.get(String(pk)) || ""]; }));
+            return window.EbMassConfirm({action: MASS_TEXT[action], names: names,
+                hidden: window.EbHiddenSelected ? window.EbHiddenSelected(sel, visible) : []});
+        }
+        return window.confirm(MASS_TEXT[action] + ": " + names.join(", ") + "?");
+    }
+    document.querySelectorAll(".ins-mass").forEach(function (btn) {
+        btn.addEventListener("click", async function () {
+            if (!selection.size) return;
+            const pks = Array.from(selection.keys());
+            if (!(await confirmMass(btn.dataset.action, pks, Array.from(selection.values())))) return;
+            post(btn.dataset.action, pks);
+        });
+    });
+    results.addEventListener("click", async function (evt) {
+        const download = evt.target.closest(".ins-download");
+        if (download) {
+            showToast("Preparando el archivo… la descarga empieza en unos segundos.", false);
+            setTimeout(function () { htmx.trigger(document.body, "insurance-refresh"); }, 4000);
+            return;
+        }
+        const link = evt.target.closest(".ins-row-action");
+        if (!link) return;
+        evt.preventDefault();
+        const check = results.querySelector('.ins-row-check[data-pk="' + link.dataset.pk + '"]');
+        const name = check ? check.dataset.label : "#" + link.dataset.pk;
+        if (!(await confirmMass(link.dataset.action, [link.dataset.pk], [name]))) return;
+        post(link.dataset.action, [link.dataset.pk]);
+    });
+
+    // Ver / exportar el informe marcado.
+    document.querySelectorAll(".ins-needs-one").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+            if (!selectedDone()) return;
+            const pk = Array.from(selection.keys())[0];
+            const fmt = btn.dataset.fmt === "view" ? "html" : btn.dataset.fmt;
+            const href = URLS.export.replace("/0/", "/" + pk + "/").replace("FMT", fmt);
+            if (btn.dataset.fmt === "view") {
+                window.open(href + "?view=1", "_blank", "noopener");
+                return;
+            }
+            showToast("Preparando el " + btn.textContent.trim() + "… la descarga empieza en unos segundos.", false);
+            const a = document.createElement("a");
+            a.href = href;
+            a.className = "d-none";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(function () { htmx.trigger(document.body, "insurance-refresh"); }, 4000);
+        });
+    });
+
+    // Libros mayores: subir (se leen al momento) y cambiar la empresa.
+    const ledgerList = document.getElementById("ins-ledger-list");
+    const uploadText = document.getElementById("ins-upload-text");
+    function companySelect(pk, code) {
+        const select = document.createElement("select");
+        select.className = "form-select form-select-sm ins-ledger-company";
+        select.dataset.pk = pk;
+        select.setAttribute("aria-label", "Empresa del libro mayor");
+        if (!code) {
+            const empty = document.createElement("option");
+            empty.value = "";
+            empty.textContent = "¿Empresa?";
+            select.appendChild(empty);
+        }
+        COMPANIES.forEach(function (pair) {
+            const option = document.createElement("option");
+            option.value = pair[0];
+            option.textContent = pair[1];
+            if (pair[0] === code) option.selected = true;
+            select.appendChild(option);
+        });
+        return select;
+    }
+    function addLedgerRow(res) {
+        const empty = ledgerList.querySelector(".ins-ledger-empty");
+        if (empty) empty.remove();
+        let row = ledgerList.querySelector('.ins-ledger-row[data-pk="' + res.id + '"]');
+        if (!row) {
+            row = document.createElement("div");
+            row.className = "d-flex align-items-center gap-1 ins-ledger-row";
+            row.dataset.pk = res.id;
+            const check = document.createElement("input");
+            check.type = "checkbox";
+            check.className = "form-check-input ins-ledger-check mt-0";
+            check.value = res.id;
+            check.id = "insLedger" + res.id;
+            const label = document.createElement("label");
+            label.className = "form-check-label text-truncate";
+            label.htmlFor = check.id;
+            label.title = res.label;
+            label.textContent = res.label;
+            row.append(check, companySelect(res.id, res.company), label);
+            ledgerList.prepend(row);
+        }
+        row.querySelector(".ins-ledger-check").checked = true;
+    }
+    document.getElementById("ins-ledger-files").addEventListener("change", async function () {
+        const files = Array.from(this.files || []).filter(function (f) { return /\.pdf$/i.test(f.name); });
+        this.value = "";
+        if (!files.length) { showToast("Elige los PDF del libro mayor.", true); return; }
+        const errors = [];
+        let unknown = 0;
+        for (let i = 0; i < files.length; i++) {
+            uploadText.textContent = "Leyendo " + (i + 1) + " de " + files.length + ": " + files[i].name + "…";
+            const body = new FormData();
+            body.append("file", files[i], files[i].name);
+            const res = await fetch(URLS.upload, {method: "POST", headers: {"X-CSRFToken": csrfToken}, body: body})
+                .then(function (r) { return r.json(); })
+                .catch(function () { return {ok: false, error: files[i].name + ": sin conexión."}; });
+            if (!res.ok) { errors.push(res.error); continue; }
+            if (!res.company) unknown += 1;
+            addLedgerRow(res);
+        }
+        uploadText.textContent = (files.length - errors.length) + " de " + files.length + " libro(s) leído(s) y marcado(s).";
+        if (errors.length) showToast("No se han podido leer: " + errors.join(" · "), true);
+        else if (unknown) showToast(unknown + " libro(s) sin empresa reconocida: elígela en su desplegable.", true);
+        else showToast("Libros mayores leídos y marcados para el informe.", false);
+    });
+    ledgerList.addEventListener("change", function (evt) {
+        const select = evt.target.closest(".ins-ledger-company");
+        if (!select || !select.value) return;
+        const body = new URLSearchParams({company: select.value});
+        fetch(URLS.company.replace("/0/", "/" + select.dataset.pk + "/"), {method: "POST", headers: {"X-CSRFToken": csrfToken}, body: body})
+            .then(function (r) { return r.json(); })
+            .then(function (res) { showToast(res.ok ? "Empresa del libro mayor guardada." : res.error, !res.ok); })
+            .catch(function () { showToast("Sin conexión con el servidor: no se ha guardado.", true); });
+    });
+
+    // Crear informe.
+    document.getElementById("ins-create").addEventListener("click", async function () {
+        const btn = this;
+        const monthFrom = document.getElementById("ins-new-from").value;
+        if (!monthFrom) { showToast("Pon el mes de vencimiento «desde».", true); return; }
+        const companies = Array.from(document.querySelectorAll(".ins-company-check:checked")).map(function (c) { return c.value; });
+        if (!companies.length) { showToast("Marca al menos una empresa.", true); return; }
+        const pending = Array.from(ledgerList.querySelectorAll(".ins-ledger-check:checked")).filter(function (cb) {
+            const select = cb.parentElement.querySelector(".ins-ledger-company");
+            return select && !select.value;
+        });
+        if (pending.length) { showToast("Hay libros mayores marcados sin empresa: elígela en su desplegable.", true); return; }
+        const body = new URLSearchParams({
+            month_from: monthFrom,
+            month_to: document.getElementById("ins-new-to").value,
+            title: document.getElementById("ins-new-title").value,
+        });
+        companies.forEach(function (c) { body.append("company", c); });
+        ledgerList.querySelectorAll(".ins-ledger-check:checked").forEach(function (cb) { body.append("ledger", cb.value); });
+        btn.disabled = true;
+        uploadText.textContent = "Creando el informe…";
+        try {
+            const res = await fetch(URLS.create, {method: "POST", headers: {"X-CSRFToken": csrfToken}, body: body})
+                .then(function (r) { return r.json(); });
+            if (!res.ok) throw new Error(res.error || "No se ha podido crear el informe.");
+            uploadText.textContent = "Informe #" + res.id + " en marcha: la lista se actualiza sola.";
+            showToast("Informe #" + res.id + " en marcha. La primera vez lee todos los documentos de seguro y tarda bastante; luego solo los nuevos.", false);
+            htmx.trigger(document.body, "insurance-refresh");
+        } catch (err) {
+            uploadText.textContent = "";
+            showToast(err.message || "No se ha podido crear el informe.", true);
+        } finally {
+            btn.disabled = false;
+        }
+    });
+
+    document.getElementById("ins-fullscreen").addEventListener("click", function () {
+        const box = document.getElementById("ins-list-col").firstElementChild;
+        if (document.fullscreenElement) document.exitFullscreen();
+        else if (box.requestFullscreen) box.requestFullscreen();
+    });
+    document.body.addEventListener("htmx:afterSwap", function (evt) {
+        if (evt.detail.target && evt.detail.target.id === "ins-results") refreshFromFragment();
+    });
+
+    refreshFromFragment();
+}());
+</script>

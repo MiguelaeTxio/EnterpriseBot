@@ -244,6 +244,17 @@ EbTypePicker.init() (ver panel/_doc_type_picker.html).
         </a>
     </li>
     {% endif %}
+    {% if can_use_insurance %}
+    <li class="nav-item">
+        {# S152: informes de renovación de seguros (Yolanda, Alejandro y Miguel Ángel). #}
+        <a class="nav-link {% if persisted_active_tab == 'seguros' %}active{% endif %}" id="tab-seguros" data-bs-toggle="tab" href="#pane-seguros"
+           hx-get="{% url 'panel:insurance_tab' %}"
+           hx-target="#pane-seguros"
+           hx-trigger="{% if persisted_active_tab == 'seguros' %}load once{% else %}click once{% endif %}">
+            <i class="bi bi-shield-check me-1"></i>Seguros
+        </a>
+    </li>
+    {% endif %}
     {% if can_use_inbox %}
     <li class="nav-item">
         {% comment %}
@@ -321,6 +332,11 @@ EbTypePicker.init() (ver panel/_doc_type_picker.html).
     </div>
     {% if can_use_signatures %}
     <div class="tab-pane fade {% if persisted_active_tab == 'firmas' %}show active{% endif %}" id="pane-firmas">
+        <div class="text-muted small py-3">Cargando…</div>
+    </div>
+    {% endif %}
+    {% if can_use_insurance %}
+    <div class="tab-pane fade {% if persisted_active_tab == 'seguros' %}show active{% endif %}" id="pane-seguros">
         <div class="text-muted small py-3">Cargando…</div>
     </div>
     {% endif %}

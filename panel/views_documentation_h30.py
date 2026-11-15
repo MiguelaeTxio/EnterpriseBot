@@ -618,7 +618,7 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
             "fichajes", "horarios", "calendario", "requisitos", "avisos",
             "circulares",
             "plantillas", "bandeja", "revisiones", "repostajes",
-            "solicitudes", "nominas", "pedir", "firmas",
+            "solicitudes", "nominas", "pedir", "firmas", "seguros",
         )
         # H30 (S126): "Bandeja de entrada" solo para quien puede subir
         # documentación (mismos roles que DocsUploadAccessMixin).
@@ -657,6 +657,13 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
         can_sign = can_use_signatures(request.user.company_user)
         if not can_sign:
             valid_tabs = tuple(t for t in valid_tabs if t != "firmas")
+        # S152: pestaña "Seguros", solo con acceso a los informes de
+        # seguros (Yolanda, Alejandro y Miguel Ángel).
+        from panel.views_insurance import can_use_insurance
+
+        can_insure = can_use_insurance(request.user.company_user)
+        if not can_insure:
+            valid_tabs = tuple(t for t in valid_tabs if t != "seguros")
         # H30 (S119): "Circulares", "Plantillas" y "Requisitos" pasan
         # de botones "Gestionar..." en la barra de acción de Personal a
         # pestañas propias del hub -- Miguel Ángel: "las gestiones
@@ -705,6 +712,7 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
             # S149: enlace a la entrega de nóminas (Yolanda y Jerónimo).
             "can_send_payslips": can_send_payslips(request.user.company_user),
             "can_use_signatures": can_sign,
+            "can_use_insurance": can_insure,
         })
 
 

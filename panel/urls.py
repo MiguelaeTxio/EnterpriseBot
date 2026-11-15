@@ -111,6 +111,16 @@ from panel.views_payslips import (
     PayslipTabView,
     PayslipUploadView,
 )
+# S152: pestaña Seguros (informes de renovación de seguros).
+from panel.views_insurance import (
+    InsuranceActionView,
+    InsuranceExportView,
+    InsuranceLedgerCompanyView,
+    InsuranceLedgerUploadView,
+    InsuranceReportCreateView,
+    InsuranceResultsView,
+    InsuranceTabView,
+)
 # S153: pestaña Firmas (firmas de empresa y documentos firmados).
 from panel.views_signatures import (
     AgentFileView,
@@ -2358,6 +2368,42 @@ urlpatterns = [
         "documentacion/nominas/",
         PayslipTabView.as_view(),
         name="payslip_tab",
+    ),
+    # S152: pestaña Seguros.
+    path(
+        "documentacion/seguros/",
+        InsuranceTabView.as_view(),
+        name="insurance_tab",
+    ),
+    path(
+        "documentacion/seguros/lista/",
+        InsuranceResultsView.as_view(),
+        name="insurance_results",
+    ),
+    path(
+        "documentacion/seguros/mayor/",
+        InsuranceLedgerUploadView.as_view(),
+        name="insurance_ledger_upload",
+    ),
+    path(
+        "documentacion/seguros/mayor/<int:pk>/empresa/",
+        InsuranceLedgerCompanyView.as_view(),
+        name="insurance_ledger_company",
+    ),
+    path(
+        "documentacion/seguros/nuevo/",
+        InsuranceReportCreateView.as_view(),
+        name="insurance_create",
+    ),
+    path(
+        "documentacion/seguros/accion/",
+        InsuranceActionView.as_view(),
+        name="insurance_action",
+    ),
+    path(
+        "documentacion/seguros/<int:pk>/<str:fmt>/",
+        InsuranceExportView.as_view(),
+        name="insurance_export",
     ),
     # S153: pestaña Firmas.
     path(

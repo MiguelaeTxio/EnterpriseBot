@@ -1,0 +1,82 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/insurance/_table.html #}
+{% comment %}
+S152. Tabla de informes de seguros: casilla, una fila por informe y el
+menú de tres puntos (ver, exportar, volver a generar, borrar). Mientras
+algún informe se hace, la tabla se pide sola (#ins-fragment-state).
+{% endcomment %}
+{% load l10n %}
+<div id="ins-fragment-state" class="d-none"
+     data-count="{{ rows|length }}"
+     data-sort-active="{% if sort_active %}1{% endif %}"
+     data-any-live="{% if any_live %}1{% endif %}"></div>
+<span id="ins-sort-inputs" class="d-none">
+    <input type="hidden" name="sort" value="{{ current_sort }}">
+</span>
+<table class="table table-hover table-light align-middle" id="ins-table">
+    <thead class="table-light">
+        <tr>
+            <th><input type="checkbox" class="form-check-input" id="ins-check-all" title="Seleccionar todos los que cumplen el filtro actual"></th>
+            {% for column in sort_columns %}
+            <th>
+                <a href="#" class="text-decoration-none text-dark"
+                   hx-get="{% url 'panel:insurance_results' %}"
+                   hx-target="#ins-results"
+                   hx-include="#ins-filters"
+                   hx-vals='{"sort": "{{ column.next }}"}'>
+                    {{ column.label }}
+                    {% if column.arrow %}<i class="bi bi-chevron-{% if column.arrow == 'up' %}up{% else %}down{% endif %}"></i>{% if column.priority %}<sup>{{ column.priority }}</sup>{% endif %}{% endif %}
+                </a>
+            </th>
+            {% endfor %}
+            <th>Empresas</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            <td><input type="checkbox" class="form-check-input ins-row-check" data-pk="{{ row.pk }}" data-done="{% if row.status == 'DONE' %}1{% endif %}" data-label="{{ row.label }}"></td>
+            <td>#{{ row.pk }}</td>
+            <td class="ins-col-title" title="{{ row.title }}">{% if row.status == 'DONE' %}<a href="{% url 'panel:insurance_export' row.pk 'html' %}?view=1" target="_blank" rel="noopener">{{ row.title }}</a>{% else %}{{ row.title }}{% endif %}</td>
+            <td>{{ row.created_at|date:"d/m/Y H:i" }}</td>
+            <td>{{ row.due_label }}</td>
+            <td>{{ row.supervisor_label|default:"—" }}</td>
+            <td>
+                {% if row.status == 'DONE' %}<span class="badge text-bg-success">{{ row.get_status_display }}</span>
+                {% elif row.status == 'ERROR' %}<span class="badge text-bg-danger" title="{{ row.error }}">{{ row.get_status_display }}</span>
+                {% else %}<span class="badge text-bg-primary">{{ row.get_status_display }}</span> <span class="spinner-border spinner-border-sm text-secondary"></span>
+                <div class="progress ins-progress mt-1" title="{{ row.progress_text }}"><div class="progress-bar" style="width: {{ row.progress_pct|unlocalize }}%"></div></div>
+                <div class="small text-muted text-truncate ins-col-note" title="{{ row.progress_text }}">{{ row.progress_text }}</div>
+                {% endif %}
+            </td>
+            <td>{% if row.status == 'DONE' %}{{ row.policy_count }}{% endif %}</td>
+            <td class="text-end">{% if row.status == 'DONE' %}{{ row.premium_total|floatformat:"2g" }} €{% endif %}</td>
+            <td>{% if row.status == 'DONE' %}{% if row.alert_count %}<span class="badge text-bg-warning">{{ row.alert_count }}</span>{% else %}0{% endif %}{% endif %}</td>
+            <td class="small text-truncate ins-col-note" title="{{ row.ledgers_label }}">{% if row.ledger_count %}{{ row.ledger_count }} · {{ row.ledgers_label }}{% else %}<span class="text-muted">Ninguno</span>{% endif %}</td>
+            <td class="small" title="{% for e in row.export_list %}{{ e.get_fmt_display }} {{ e.exported_at|date:'d/m/Y H:i' }}{% if not forloop.last %} · {% endif %}{% endfor %}">{{ row.exported_label|default:"—" }}</td>
+            <td class="small text-truncate ins-col-note" title="{{ row.companies_label }}">{{ row.companies_label }}</td>
+            <td>
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-link text-dark" type="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-three-dots-vertical"></i></button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        {% if row.status == 'DONE' %}
+                        <li><a class="dropdown-item" href="{% url 'panel:insurance_export' row.pk 'html' %}?view=1" target="_blank" rel="noopener"><i class="bi bi-eye me-1"></i>Ver</a></li>
+                        <li><a class="dropdown-item ins-download" href="{% url 'panel:insurance_export' row.pk 'html' %}"><i class="bi bi-filetype-html me-1"></i>Exportar a HTML</a></li>
+                        <li><a class="dropdown-item ins-download" href="{% url 'panel:insurance_export' row.pk 'xlsx' %}"><i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel</a></li>
+                        <li><a class="dropdown-item ins-download" href="{% url 'panel:insurance_export' row.pk 'pdf' %}"><i class="bi bi-file-earmark-pdf me-1"></i>Exportar a PDF</a></li>
+                        <li><a class="dropdown-item ins-download" href="{% url 'panel:insurance_export' row.pk 'docx' %}"><i class="bi bi-file-earmark-word me-1"></i>Exportar a Word</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        {% endif %}
+                        {% if row.status == 'DONE' or row.status == 'ERROR' %}
+                        <li><a class="dropdown-item ins-row-action" href="#" data-pk="{{ row.pk }}" data-action="retry"><i class="bi bi-arrow-repeat me-1"></i>Volver a generar</a></li>
+                        {% endif %}
+                        <li><a class="dropdown-item ins-row-action text-danger" href="#" data-pk="{{ row.pk }}" data-action="delete"><i class="bi bi-trash me-1"></i>Borrar</a></li>
+                    </ul>
+                </div>
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="14" class="text-muted small py-3">No hay informes con estos filtros. Para uno nuevo, pon el mes de vencimiento en «Nuevo informe» y pulsa «Crear informe».</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
