@@ -149,14 +149,6 @@ class SupplierInvoice(models.Model):
     processed_at = models.DateTimeField(
         null=True, blank=True, verbose_name="Procesada el",
     )
-    local_synced_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        verbose_name="En la carpeta local desde",
-        help_text="Cuándo quedó la factura en la carpeta FACTURACIÓN de "
-                  "OneDrive (subida desde allí o bajada por el agente "
-                  "H28). Vacío: el agente todavía tiene que bajarla.",
-    )
 
     class Meta:
         verbose_name = "Factura de proveedor"

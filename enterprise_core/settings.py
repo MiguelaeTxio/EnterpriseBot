@@ -501,7 +501,7 @@ CELERY_BEAT_SCHEDULE = {
     # pero marcados para revisión humana, nunca movidos a ciegas.
     'consume-quarantine': {
         'task':     'document_explorer.tasks.consume_quarantine_task',
-        'schedule': crontab(minute='*/10'),
+        'schedule': crontab(minute='*/5'),
     },
 
     # H30 (S123), punto 7: alerta por WhatsApp si el agente H28 lleva
@@ -543,12 +543,12 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': crontab(hour=3, minute=0),
     },
 
-    # H28 (S151): facturas que llegan a FACTURACION/FACTURAS NUEVAS por
-    # otra vía que la bandeja (explorador, OneDrive) -> agente de
-    # facturas.
+    # H28 (S151): facturas que el agente de facturas del PC de Ani sube
+    # al cubo (FACTURACION PROVEEDORES/FACTURAS NUEVAS) -> se indexan y
+    # se procesan.
     'sweep-invoice-folder': {
         'task':     'supplier_invoices.tasks.sweep_invoice_folder_task',
-        'schedule': crontab(minute='*/10'),
+        'schedule': crontab(minute='*/5'),
     },
 }
 

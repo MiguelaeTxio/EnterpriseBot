@@ -48,7 +48,7 @@ Subcarpeta, filtros, orden y selección persistidos por usuario
             <div class="border rounded p-2 h-100">
                 <div class="fw-bold small mb-1">Buscar y filtrar</div>
                 <input type="hidden" id="inv-filter-folder" name="folder" value="{{ filter_folder }}">
-                <div class="btn-group btn-group-sm w-100 mb-2" role="group" aria-label="Subcarpetas de FACTURACIÓN">
+                <div class="btn-group btn-group-sm w-100 mb-2" role="group" aria-label="Subcarpetas de FACTURACIÓN PROVEEDORES">
                     {% for folder in folders %}
                     <button type="button" class="btn btn-outline-secondary inv-folder-btn{% if folder.active %} active{% endif %}"
                             data-folder="{{ folder.key }}" title="Subcarpeta {{ folder.label }}">

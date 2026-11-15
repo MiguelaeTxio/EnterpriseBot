@@ -9,7 +9,8 @@ H28 (S151, sesión invasora). Agente de facturas de la carpeta
 FACTURACIÓN de la bandeja de entrada. Tarea de Miguel Ángel, tal cual:
 
 1. Cada factura que entra en "Facturas nuevas" (subida desde la
-   bandeja o dejada en la carpeta por cualquier otra vía) se lee con
+   bandeja del panel, o subida al cubo por el agente de facturas del
+   PC de Ani, `invoice_upload_agent`) se lee con
    Gemini: proveedor, número, fecha y sus líneas (referencia,
    descripción, cantidad, precio y el albarán que cita, si lo cita).
 2. Cada repuesto se coteja con los albaranes que ya tenemos (mismo
@@ -74,10 +75,11 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
-# Carpetas virtuales de FACTURACIÓN en el cubo histórico. Sin tilde en
-# la ruta, como el resto de carpetas del cubo (DOC. MAQUINAS, NO
-# CONFORMES...); en pantalla se llama FACTURACIÓN.
-INVOICES_ROOT = "FACTURACION"
+# Carpetas de FACTURACIÓN PROVEEDORES en el cubo histórico (S151,
+# Miguel Ángel: el agente de facturas de Ani sube a "Facturación
+# Proveedores"). Sin tilde en la ruta, como el resto de carpetas del
+# cubo (DOC. MAQUINAS, NO CONFORMES...); en pantalla lleva tilde.
+INVOICES_ROOT = "FACTURACION PROVEEDORES"
 NEW_FOLDER = INVOICES_ROOT + "/FACTURAS NUEVAS"
 PROCESSED_FOLDER = INVOICES_ROOT + "/FACTURAS PROCESADAS"
 
@@ -356,7 +358,7 @@ def _index_new_blob(blob_name, display_name):
     return entry
 
 
-def register_upload(name, data, uploaded_by, from_local=False):
+def register_upload(name, data, uploaded_by):
     """
     Store one uploaded invoice in "Facturas nuevas" and queue it.
 
@@ -365,12 +367,10 @@ def register_upload(name, data, uploaded_by, from_local=False):
 
     ---
 
-    Guarda una factura en "Facturas nuevas" del cubo y la encola, la
-    suba alguien desde la bandeja (`uploaded_by`) o el agente H28 desde
-    la carpeta local FACTURACIÓN (`from_local`, sin usuario: ya está en
-    local, no hay que bajarla). El mismo archivo (huella SHA-256) ya
-    subido no se guarda otra vez: vuelve con una nota. Devuelve
-    (factura, creada, nota).
+    Guarda una factura subida desde la bandeja en "Facturas nuevas" y
+    la encola. El mismo archivo (huella SHA-256) ya subido no se
+    guarda otra vez: vuelve con una nota. Devuelve (factura, creada,
+    nota).
     """
     extension = _extension_of(name)
     if extension not in ALLOWED_EXTENSIONS:
@@ -383,9 +383,6 @@ def register_upload(name, data, uploaded_by, from_local=False):
         "-pk",
     ).first()
     if previous is not None and previous.entry_id:
-        if from_local and previous.local_synced_at is None:
-            previous.local_synced_at = timezone.now()
-            previous.save(update_fields=["local_synced_at"])
         return previous, False, "Ya se había subido (%s)." % (
             previous.get_status_display()
         )
@@ -396,21 +393,79 @@ def register_upload(name, data, uploaded_by, from_local=False):
     blob_name = "%s/%s_%s" % (NEW_FOLDER, sha256[:12], display_name)
     upload_bytes(BUCKET, blob_name, data, content_type=content_type)
     entry = _index_new_blob(blob_name, display_name)
+    already = SupplierInvoice.objects.filter(entry=entry).first()
+    if already is not None:
+        # El barrido la ha registrado entre la subida y el indexado.
+        return already, True, ""
     with transaction.atomic():
         invoice = SupplierInvoice.objects.create(
             entry=entry,
             sha256=sha256,
             original_name=name[:255],
             content_type=content_type,
-            company=(
-                uploaded_by.company if uploaded_by is not None
-                else _default_company()
-            ),
+            company=uploaded_by.company,
             uploaded_by=uploaded_by,
-            local_synced_at=timezone.now() if from_local else None,
         )
         _queue(invoice.pk)
     return invoice, True, ""
+
+
+# Prefijo que pone el agente de facturas (invoice_upload_agent) delante
+# del nombre: los 12 primeros caracteres de la huella SHA-256 y "_".
+_AGENT_PREFIX_RE = re.compile(r"^[0-9a-f]{12}_(.+)$")
+
+
+def _index_unindexed_blobs():
+    """
+    Index the objects of "Facturas nuevas" not yet in the index.
+
+    ---
+
+    Indexa los objetos de "Facturas nuevas" del cubo que todavía no
+    están en el índice: los que sube directamente al cubo el agente de
+    facturas del PC de Ani (`invoice_upload_agent`), igual que el
+    agente H28, sin pasar por el servidor. En el índice llevan su
+    nombre original, sin el prefijo de la huella. Devuelve cuántos.
+    """
+    indexed = set(DocumentIndexEntry.objects.filter(
+        bucket=BUCKET,
+        blob_name__startswith=NEW_FOLDER + "/",
+        purged_at__isnull=True,
+    ).values_list("blob_name", flat=True))
+    fresh = [
+        blob for blob in get_storage_client().bucket(BUCKET).list_blobs(
+            prefix=NEW_FOLDER + "/",
+        )
+        if blob.name not in indexed and not blob.name.endswith("/")
+        and "/" not in blob.name[len(NEW_FOLDER) + 1:]
+    ]
+    if not fresh:
+        return 0
+    with transaction.atomic():
+        index_writer.ensure_folder_chain(BUCKET, NEW_FOLDER)
+        index_writer.ensure_folder_chain(BUCKET, PROCESSED_FOLDER)
+        index_writer.persist_rows(
+            BUCKET, [index_writer.file_row(blob) for blob in fresh],
+        )
+        index_writer.recount_children(
+            BUCKET,
+            folder_paths=index_writer.ancestors_of(NEW_FOLDER)
+            + [PROCESSED_FOLDER],
+        )
+    for blob in fresh:
+        entry = DocumentIndexEntry.objects.filter(
+            bucket=BUCKET, blob_name=blob.name,
+            deleted_at__isnull=True, purged_at__isnull=True,
+        ).first()
+        match = _AGENT_PREFIX_RE.match(entry.name) if entry else None
+        if match:
+            entry.name = match.group(1)
+            move_entry(entry, NEW_FOLDER)
+    logger.info(
+        "# [FACTURAS] %d objeto(s) nuevos de FACTURAS NUEVAS indexados.",
+        len(fresh),
+    )
+    return len(fresh)
 
 
 def sweep_new_folder():
@@ -419,10 +474,12 @@ def sweep_new_folder():
 
     ---
 
-    Registra y encola los archivos que han llegado a "Facturas nuevas"
-    por cualquier otra vía (explorador, agente de OneDrive...) y que
-    todavía no tienen factura. Devuelve cuántos ha encolado.
+    Registra y encola las facturas que han llegado a "Facturas nuevas"
+    sin pasar por la bandeja del panel: las que sube el agente de
+    facturas del PC de Ani directamente al cubo (se indexan primero) y
+    las que se dejen con el explorador. Devuelve cuántas ha encolado.
     """
+    _index_unindexed_blobs()
     entries = DocumentIndexEntry.objects.filter(
         bucket=BUCKET,
         parent_path=NEW_FOLDER,
@@ -441,10 +498,11 @@ def sweep_new_folder():
                 "# [FACTURAS] No se pudo leer %s", entry.blob_name,
             )
             continue
+        sha256 = hashlib.sha256(data).hexdigest()
         with transaction.atomic():
             invoice = SupplierInvoice.objects.create(
                 entry=entry,
-                sha256=hashlib.sha256(data).hexdigest(),
+                sha256=sha256,
                 original_name=entry.name[:255],
                 content_type=(
                     entry.content_type or content_type_of(data, entry.name)

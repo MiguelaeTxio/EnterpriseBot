@@ -13,7 +13,7 @@ lista se refresca sola mientras queda algo en cola o clasificándose.
 Filtros, orden y selección persistidos por usuario (screen_key
 "inbox").
 H28 (S151): carpetas de la bandeja. "Documentos de personal" es lo de
-siempre; "FACTURACIÓN" (facturas de proveedor, con sus subcarpetas de
+siempre; "FACTURACIÓN PROVEEDORES" (facturas de proveedor, con sus subcarpetas de
 nuevas y procesadas) se carga aparte desde supplier_invoices. La
 carpeta abierta se recuerda por usuario (clave "folder").
 {% endcomment %}
@@ -22,7 +22,7 @@ carpeta abierta se recuerda por usuario (clave "folder").
         <i class="bi bi-person-vcard me-1"></i>Documentos de personal
     </button>
     <button type="button" class="btn btn-outline-secondary inbox-folder-btn{% if inbox_folder == 'facturacion' %} active{% endif %}" data-inbox-folder="facturacion">
-        <i class="bi bi-folder2 me-1"></i>FACTURACIÓN
+        <i class="bi bi-folder2 me-1"></i>FACTURACIÓN PROVEEDORES
     </button>
 </div>
 <div id="inbox-invoices-pane" class="d-none" data-url="{% url 'supplier_invoices:pane' %}"></div>
