@@ -255,6 +255,7 @@ def _filtered(request):
 
 
 def _list_context(request):
+    service.revive_stalled()
     qs, filters = _filtered(request)
     rows = [_decorate(report) for report in qs]
     raw_sort = _param(request, "sort", DEFAULT_SORT)

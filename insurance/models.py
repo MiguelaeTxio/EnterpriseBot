@@ -130,6 +130,10 @@ class InsuranceReport(models.Model):
     created_at = models.DateTimeField(auto_now_add=True,
                                       verbose_name="Fecha del informe")
     finished_at = models.DateTimeField(null=True, blank=True)
+    # S152: última señal de vida de la tarea (avance, registro). Si un
+    # informe en marcha pasa STALL_MINUTES sin ella (worker reiniciado
+    # a mitad de una tanda), la lista lo vuelve a lanzar.
+    touched_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]

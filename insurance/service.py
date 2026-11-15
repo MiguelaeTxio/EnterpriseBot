@@ -16,6 +16,7 @@ import logging
 import time
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from insurance import builder
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 CHUNK_SECONDS = 150
 PROGRESS_SECONDS = 10
+STALL_MINUTES = 10
 # Copia de los PDF del mayor: prefijo interno (como _BANDEJA_ENTRADA),
 # nunca indexado en el explorador; son datos de contabilidad.
 LEDGER_PREFIX = "_SEGUROS_LIBROS_MAYORES/"
@@ -47,7 +49,8 @@ def _log(report, text):
                         text)
     logger.info("# [insurance %s] %s", report.pk, text)
     InsuranceReport.objects.filter(pk=report.pk).update(
-        log=(report.log + line + "\n")[-60000:], progress_text=text[:255])
+        log=(report.log + line + "\n")[-60000:], progress_text=text[:255],
+        touched_at=timezone.now())
     report.log = (report.log + line + "\n")[-60000:]
 
 
@@ -286,7 +289,41 @@ def _save_progress(report, done, total, seconds_left):
     report.progress_total = total
     report.progress_text = text
     InsuranceReport.objects.filter(pk=report.pk).update(
-        progress_done=done, progress_total=total, progress_text=text)
+        progress_done=done, progress_total=total, progress_text=text,
+        touched_at=timezone.now())
+
+
+def revive_stalled():
+    """
+    Re-queue live reports with no sign of life for STALL_MINUTES.
+    ---
+    Vuelve a lanzar los informes en marcha que llevan STALL_MINUTES sin
+    dar señales (S152: un reinicio del worker en un despliegue cortó una
+    tanda y el informe se quedó parado en «Leídos 61 de 580»; Redis no
+    devuelve la tarea hasta pasada una hora). Lo llama la lista de la
+    pestaña al refrescarse. Lo ya leído está guardado, así que solo se
+    sigue por donde iba.
+    """
+    from insurance.tasks import run_insurance_report_task
+
+    now = timezone.now()
+    limit = now - datetime.timedelta(minutes=STALL_MINUTES)
+    live = InsuranceReport.objects.filter(status__in=(
+        InsuranceReport.Status.QUEUED, InsuranceReport.Status.READING,
+        InsuranceReport.Status.BUILDING))
+    stalled = live.filter(
+        Q(touched_at__lt=limit)
+        | Q(touched_at__isnull=True, created_at__lt=limit))
+    for report in stalled:
+        # Solo uno de los refrescos simultáneos se queda con él.
+        claimed = InsuranceReport.objects.filter(
+            pk=report.pk, touched_at=report.touched_at).update(
+                touched_at=now)
+        if not claimed:
+            continue
+        _log(report, "Sin avance en %d minutos: se sigue por donde iba."
+                     % STALL_MINUTES)
+        run_insurance_report_task.delay(report.pk)
 
 
 def retry(report):
