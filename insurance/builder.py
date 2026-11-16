@@ -608,7 +608,7 @@ def build(entries, ledgers, month_from, month_to=None, company_codes=(),
     records = _drop_replaced(records)
     _fill_insurers(records)
     _alerts(records, ledger_companies, today)
-    records = _fleets(records)
+    records = _fleets(records, today)
     month_end = _month_end(month_to) if month_to else None
     wanted = set(company_codes or ())
     kept = []
@@ -871,7 +871,7 @@ def _alerts(records, ledger_companies, today):
                         plate, names))
 
 
-def _fleets(records):
+def _fleets(records, today):
     """
     Fold the vehicles of one fleet policy into one line.
     ---
@@ -900,6 +900,12 @@ def _fleets(records):
             for alert in record["alerts"]:
                 if alert not in alerts:
                     alerts.append(alert)
+        comments = [c for r in group for c in r["comments"]]
+        if due and due >= today and "Vencido" in alerts:
+            # S152: un vehículo con un recibo de un año anterior no
+            # deja vencida la flota, que sigue en vigor.
+            alerts.remove("Vencido")
+            comments = [c for c in comments if not c.startswith("Venció")]
         result.append({
             **group[0],
             "object": "Flota de %d vehículos" % len(group),
@@ -912,7 +918,7 @@ def _fleets(records):
             "premium": round(sum(r["premium"] or 0 for r in group), 2),
             "previous": None,
             "alerts": alerts,
-            "comments": [c for r in group for c in r["comments"]],
+            "comments": comments,
             "documents": [d for r in group for d in r["documents"]],
             "ledger": sorted({i for r in group for i in r["ledger"]}),
             "fleet": sorted(
