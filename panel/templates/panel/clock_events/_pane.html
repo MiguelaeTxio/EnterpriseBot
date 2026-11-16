@@ -213,12 +213,20 @@ recordatorios, secciones que fichan y permiso de envío).
                         <div class="small text-muted fw-bold">Visado de los marcados</div>
                         <div class="d-flex flex-wrap gap-1">
                             <button type="button" class="btn btn-sm btn-outline-warning clk-worker-btn" data-action="review"
-                                    title="Visa todas las jornadas con incidencias de los marcados entre Desde y Hasta (lo mismo que la casilla «Visado» de cada día): dejan de contar como incidencias.">
+                                    title="Visa todas las jornadas con incidencias o procesadas por la IA (albaranes) de los marcados entre Desde y Hasta (lo mismo que la casilla «Visado» de cada día): dejan de contar como incidencias.">
                                 <i class="bi bi-check2-square me-1"></i>Visar
                             </button>
                             <button type="button" class="btn btn-sm btn-outline-secondary clk-worker-btn" data-action="unreview"
                                     title="Quita el visado de las jornadas de los marcados entre Desde y Hasta (las corregidas siguen contando como visadas).">Quitar visado</button>
                         </div>
+                    </div>
+                    {# S149 (Miguel Ángel, 16/11): albaranes de varias personas a la vez, cotejados por la IA. #}
+                    <div class="col-6 border-top pt-1 mt-1">
+                        <div class="small text-muted fw-bold">Albaranes</div>
+                        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#clkAlbModal"
+                                title="Carpeta con albaranes de varios trabajadores: la IA lee cada uno, lo asigna por el nombre (entre los marcados o, sin marcados, entre los que fichan por tipos), compara su día con sus fichajes y corrige lo que se aparte de la cortesía. Los días quedan «Procesados por IA» hasta que los vise un supervisor.">
+                            <i class="bi bi-file-earmark-text me-1"></i>Cargar albaranes…
+                        </button>
                     </div>
                     {% include "panel/clock_events/_settings.html" %}
                 </div>
@@ -329,6 +337,8 @@ recordatorios, secciones que fichan y permiso de envío).
 
     // Selección (pk -> "Apellidos, Nombre"), recordada por usuario.
     const selection = new Map();
+    // S149: la carga de albaranes de varios reparte entre los marcados.
+    window.ebClkSelection = selection;
 
     // S147: "Grupos de selección" (como en Personal): la selección es la
     // suma de las personas de los grupos marcados.
@@ -648,6 +658,167 @@ recordatorios, secciones que fichan y permiso de envío).
 
     refreshFromFragment();
 }());
+</script>
+
+{# S149: carga de albaranes de varios trabajadores, cotejados con los fichajes por la IA. #}
+<div class="modal fade" id="clkAlbModal" tabindex="-1" aria-labelledby="clkAlbModalLabel" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="clkAlbModalLabel">Cargar albaranes de varios trabajadores</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" id="clk-alb-close"></button>
+            </div>
+            <div class="modal-body small">
+                <p class="mb-2">Elige la carpeta con los albaranes (PDF o fotos). La IA lee cada uno y lo asigna al trabajador por el <strong>nombre escrito</strong>: <span id="clk-alb-who"></span>. Después compara cada día con sus fichajes y <strong>corrige solo lo que se aparta más que la cortesía de su horario</strong>.</p>
+                <p class="mb-2">Los días quedan <span class="badge text-bg-info fw-normal">Procesados por IA</span> (corregidos a tu nombre) y <strong>sin visar</strong>: los visa después un supervisor, en la ficha de cada trabajador o con «Visar» de este panel.</p>
+                <input class="form-control form-control-sm mb-2" type="file" id="clk-alb-folder" webkitdirectory directory multiple>
+                <div class="text-muted mb-2">o archivos sueltos: <input type="file" id="clk-alb-files" accept="application/pdf,image/jpeg,image/png" multiple></div>
+                <div class="progress mb-2 d-none" id="clk-alb-progress" role="progressbar" aria-label="Progreso">
+                    <div class="progress-bar" style="width:0%"></div>
+                </div>
+                <div id="clk-alb-status" class="mb-1"></div>
+                <table class="table table-sm small mb-2 d-none" id="clk-alb-people">
+                    <thead><tr><th>Trabajador</th><th class="text-end">Albaranes</th><th class="text-end">Días comparados</th><th class="text-end">Corregidos por IA</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+                <ul id="clk-alb-notes" class="mb-0 ps-3"></ul>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-primary" id="clk-alb-go" disabled>Cargar y comparar</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+(function () {
+    "use strict";
+    // S149: subida archivo a archivo, con progreso; luego la IA lee, reparte y compara.
+    const START_URL = "{% url 'panel:clock_albaran_bulk_start' %}";
+    const BASE = START_URL.replace(/carga\/$/, "");
+    const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || "";
+    const modal = document.getElementById("clkAlbModal");
+    const folder = document.getElementById("clk-alb-folder");
+    const loose = document.getElementById("clk-alb-files");
+    const go = document.getElementById("clk-alb-go");
+    const bar = document.querySelector("#clk-alb-progress .progress-bar");
+    const status = document.getElementById("clk-alb-status");
+    const notes = document.getElementById("clk-alb-notes");
+    const table = document.getElementById("clk-alb-people");
+    const OK = /\.(pdf|jpe?g|png)$/i;
+    let files = [];
+    let busy = false;
+
+    function selectedIds() {
+        return window.ebClkSelection ? Array.from(window.ebClkSelection.keys()) : [];
+    }
+    modal.addEventListener("show.bs.modal", function () {
+        const n = selectedIds().length;
+        document.getElementById("clk-alb-who").textContent = n
+            ? "entre los " + n + " trabajador(es) marcados"
+            : "entre todos los que fichan por tipos (marca trabajadores en la lista para limitarlo a ellos)";
+    });
+    function pick(input) {
+        files = Array.from(input.files || []).filter(function (f) { return OK.test(f.name); });
+        status.textContent = files.length ? files.length + " archivo(s) PDF o foto." : "No hay PDF ni fotos.";
+        notes.innerHTML = "";
+        table.classList.add("d-none");
+        go.disabled = !files.length;
+    }
+    folder.addEventListener("change", function () { loose.value = ""; pick(folder); });
+    loose.addEventListener("change", function () { folder.value = ""; pick(loose); });
+
+    function note(text, cls) {
+        const li = document.createElement("li");
+        if (cls) li.className = cls;
+        li.textContent = text;
+        notes.appendChild(li);
+    }
+    function progress(done, total) {
+        document.getElementById("clk-alb-progress").classList.remove("d-none");
+        bar.style.width = Math.round(done * 100 / Math.max(total, 1)) + "%";
+    }
+    async function post(url, body) {
+        const r = await fetch(url, {method: "POST", headers: {"X-CSRFToken": csrf}, body: body});
+        const data = await r.json().catch(function () { return {error: "Respuesta no válida del servidor."}; });
+        if (!r.ok || data.error) throw new Error(data.error || ("Error " + r.status));
+        return data;
+    }
+    function lock(on) {
+        busy = on;
+        go.disabled = on;
+        folder.disabled = on;
+        loose.disabled = on;
+        document.getElementById("clk-alb-close").disabled = on;
+    }
+
+    go.addEventListener("click", async function () {
+        if (busy || !files.length) return;
+        lock(true);
+        notes.innerHTML = "";
+        table.classList.add("d-none");
+        try {
+            const first = files[0].webkitRelativePath || "";
+            const start = new FormData();
+            start.append("count", files.length);
+            start.append("folder", first.split("/")[0] || "");
+            start.append("selected", selectedIds().join(","));
+            const batch = (await post(START_URL, start)).batch;
+            for (let i = 0; i < files.length; i++) {
+                status.textContent = "Subiendo " + (i + 1) + " de " + files.length + "…";
+                const body = new FormData();
+                body.append("file", files[i], files[i].name);
+                const data = await post(BASE + batch + "/archivo/", body);
+                if (data.skipped) note(data.skipped, "text-warning-emphasis");
+                progress(i + 1, files.length);
+            }
+            await post(BASE + batch + "/fin/", new FormData());
+            bar.style.width = "0%";
+            await waitFor(batch);
+        } catch (err) {
+            status.innerHTML = "";
+            note(err.message, "text-danger");
+        }
+        lock(false);
+        files = [];
+        go.disabled = true;
+    });
+
+    function cell(row, text, end) {
+        const td = document.createElement("td");
+        if (end) td.className = "text-end";
+        td.textContent = text;
+        row.appendChild(td);
+    }
+    async function waitFor(batch) {
+        for (;;) {
+            await new Promise(function (ok) { setTimeout(ok, 3000); });
+            const d = await (await fetch(BASE + batch + "/estado/")).json();
+            progress(d.read, d.files);
+            if (d.status !== "READY" && d.status !== "CANCELLED") {
+                status.textContent = "La IA está leyendo: " + d.read + " de " + d.files + " archivo(s)…";
+                continue;
+            }
+            status.innerHTML = "";
+            note(d.albaranes + " albarán(es) leído(s) de " + (d.people || []).length + " trabajador(es); " +
+                 d.days + " día(s) procesado(s) por la IA, " + d.corrected + " corregido(s). Quedan sin visar.", "text-success");
+            const body = table.querySelector("tbody");
+            body.innerHTML = "";
+            (d.people || []).forEach(function (p) {
+                const tr = document.createElement("tr");
+                cell(tr, p.name); cell(tr, p.albaranes, true); cell(tr, p.days, true); cell(tr, p.corrected, true);
+                body.appendChild(tr);
+            });
+            table.classList.toggle("d-none", !(d.people || []).length);
+            (d.no_person || []).forEach(function (n) { note("Sin trabajador: " + n + " Cárgalo desde la ficha de fichajes de quien sea.", "text-warning-emphasis"); });
+            (d.mismatch || []).forEach(function (n) { note("El nombre «" + n + "» no coincide del todo con el trabajador asignado: revísalo.", "text-warning-emphasis"); });
+            (d.unreadable || []).forEach(function (n) { note("Sin leer: " + n, "text-danger"); });
+            if (d.error) note(d.error, "text-danger");
+            const filters = document.getElementById("clk-filters");
+            if (filters && window.htmx) htmx.trigger(filters, "clk-selection-refresh");
+            return;
+        }
+    }
+})();
 </script>
 {% url 'panel:clock_events_export' as clk_export_url %}
 {% include "panel/_screen_export_modal.html" with sx="clk" screen="clock_days" export_url=clk_export_url method="get" title="Exportar fichajes" %}

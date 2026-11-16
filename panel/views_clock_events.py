@@ -102,6 +102,8 @@ _SORT_VALUES = {
     "last": lambda r: (r.report.last_event.pressed_at
                        if r.report.last_event else None),
     "issues": lambda r: r.incident_count,
+    # S149: días procesados por la IA sin visar.
+    "ai": lambda r: r.ai_pending,
     # S143: horas de más del intervalo, su cupo y la bolsa (sin cuenta,
     # al final).
     "overtime": lambda r: r.overtime_seconds,
@@ -128,6 +130,7 @@ _COLUMNS = (
     ("onboarding", "Alta en el fichaje"),
     ("events", "Fichajes"),
     ("issues", "Incidencias"),
+    ("ai", "IA sin visar"),
     ("overtime", "Total de horas"),
     ("quota", "Cupo de horas"),
     ("bag", "Bolsa de horas"),
@@ -253,6 +256,8 @@ class _Row:
         # mes) y bolsa (el resto); None sin cuenta.
         # S143: incidencias sin visar (las visadas o corregidas no cuentan).
         self.incident_count = 0
+        # S149: días procesados por la IA sin visar.
+        self.ai_pending = 0
         self.overtime_seconds = self.quota_seconds = None
         self.bag_seconds = None
         self.overtime_label = self.quota_label = self.bag_label = ""
@@ -293,21 +298,43 @@ def _rows(request, people, date_from, date_to):
     # S143 (Miguel Ángel): visada (o corregida) "que no salga ya
     # incidencia para que solamente marque cuando hay una incidencia
     # real": el listado cuenta solo las de días sin visar.
-    from hr_calendar.models import ClockDayReview
+    from hr_calendar.models import (
+        ClockCorrection, ClockDayAiCheck, ClockDayReview,
+    )
 
+    user_ids = [p.company_user_id for p in people if p.company_user_id]
     reviewed = set(ClockDayReview.objects.filter(
-        company_user_id__in=[p.company_user_id for p in people
-                             if p.company_user_id],
+        company_user_id__in=user_ids,
         day__gte=date_from, day__lte=date_to,
     ).values_list("company_user_id", "day"))
+    # S149 (Miguel Ángel: "no queden visados para que los vise el
+    # supervisor"): lo que corrige la IA no cuenta como visado; los días
+    # que ha procesado y nadie ha visado se cuentan aparte.
+    by_ai = set(ClockCorrection.objects.filter(
+        source=ClockCorrection.Source.AI,
+        replacement__company_user_id__in=user_ids,
+    ).values_list("replacement_id", flat=True))
+    ai_days = set(ClockDayAiCheck.objects.filter(
+        company_user_id__in=user_ids,
+        day__gte=date_from, day__lte=date_to,
+    ).values_list("company_user_id", "day")) - reviewed
+
+    def manual_fix(shift):
+        return any(
+            e is not None and e.sent_by == ClockEvent.SentBy.CORRECTION
+            and e.pk not in by_ai
+            for e in [shift.clock_in, shift.clock_out] + list(shift.changes))
+
     for row in rows:
         row.incident_count = sum(
             len(s.incidents) for s in row.report.shifts
             if (row.person.company_user_id, s.day) not in reviewed
-            and not any(
-                e is not None and e.sent_by == ClockEvent.SentBy.CORRECTION
-                for e in [s.clock_in, s.clock_out] + list(s.changes))
+            and not manual_fix(s)
         )
+        row.ai_pending = sum(
+            1 for s in row.report.shifts
+            if (row.person.company_user_id, s.day) in ai_days
+            and not manual_fix(s)) if row.person.company_user_id else 0
     for row in rows:
         if row.has_account:
             months = split_by_month(
@@ -421,7 +448,8 @@ def _with_issues_filter(request, rows):
     """
     if _param(request, "issues_only") != "1":
         return rows
-    return [r for r in rows if r.incident_count]
+    # S149: los días procesados por la IA sin visar también se revisan.
+    return [r for r in rows if r.incident_count or r.ai_pending]
 
 
 def _with_events_filter(request, rows):
@@ -723,20 +751,27 @@ def _mass_review(request, ids, reviewed):
         return _settings_response(
             request, "Quitado el visado de %d día(s) de %d trabajador(es) "
             "(%s)." % (deleted, len(users), period))
+    from hr_calendar.models import ClockDayAiCheck
+
     reports = reports_by_user(company_user.company, users, date_from,
                               date_to)
+    # S149: también los días procesados por la IA (albaranes), tengan o
+    # no incidencias: los tiene que visar un supervisor.
+    ai_days = set(ClockDayAiCheck.objects.filter(
+        company_user_id__in=users, day__gte=date_from, day__lte=date_to,
+    ).values_list("company_user_id", "day"))
     created = 0
     for user_id, report in reports.items():
         for day in {shift.day for shift in report.shifts
-                    if shift.incidents}:
+                    if shift.incidents or (user_id, shift.day) in ai_days}:
             _review, new = ClockDayReview.objects.get_or_create(
                 company_user_id=user_id, day=day,
                 defaults={"reviewed_by": company_user},
             )
             created += int(new)
     return _settings_response(
-        request, "Visados %d día(s) con incidencias de %d trabajador(es) "
-        "(%s)." % (created, len(users), period))
+        request, "Visados %d día(s) con incidencias o procesados por la "
+        "IA de %d trabajador(es) (%s)." % (created, len(users), period))
 
 
 class ClockRemindersSwitchView(SupervisorAccessMixin, View):

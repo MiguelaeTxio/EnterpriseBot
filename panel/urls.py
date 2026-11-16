@@ -192,6 +192,10 @@ from panel.views_clock_extras import (
     ClockWorkerTripView,
 )
 from panel.views_clock_albaranes import (
+    AlbaranBulkFileView,
+    AlbaranBulkFinishView,
+    AlbaranBulkStartView,
+    AlbaranBulkStatusView,
     AlbaranFileView,
     AlbaranFinishView,
     AlbaranSheetFileView,
@@ -2101,6 +2105,27 @@ urlpatterns = [
         "documentacion/fichajes/<int:pk>/albaranes/<int:batch_id>/estado/",
         AlbaranStatusView.as_view(),
         name="clock_albaran_status",
+    ),
+    # S149: carga de albaranes de varios, desde la pestaña Fichajes.
+    path(
+        "documentacion/fichajes/albaranes/carga/",
+        AlbaranBulkStartView.as_view(),
+        name="clock_albaran_bulk_start",
+    ),
+    path(
+        "documentacion/fichajes/albaranes/<int:batch_id>/archivo/",
+        AlbaranBulkFileView.as_view(),
+        name="clock_albaran_bulk_file",
+    ),
+    path(
+        "documentacion/fichajes/albaranes/<int:batch_id>/fin/",
+        AlbaranBulkFinishView.as_view(),
+        name="clock_albaran_bulk_finish",
+    ),
+    path(
+        "documentacion/fichajes/albaranes/<int:batch_id>/estado/",
+        AlbaranBulkStatusView.as_view(),
+        name="clock_albaran_bulk_status",
     ),
     path(
         "documentacion/fichajes/<int:pk>/albaranes/ver/<int:sheet_id>/",

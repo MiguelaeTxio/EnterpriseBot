@@ -60,12 +60,18 @@ STATUS_CANCELLED = "cancelled"
 # S143: incidencias visadas (amarillo) y jornada en curso de hoy (verde).
 STATUS_REVIEWED = "reviewed"
 STATUS_OPEN = "open"
+# S149 (Miguel Ángel, 16/11: "importante la marca de que han sido
+# procesados de forma automática y no queden visados para que los vise
+# el supervisor"): día cotejado con sus albaranes por la IA y aún sin
+# visar.
+STATUS_AI = "ai"
 STATUS_CHOICES = (
     (STATUS_OPEN, "En curso"),
     (STATUS_OK, "Correctas"),
     # S153 (Miguel Ángel, con captura de Juan corrigiendo jornadas): se
     # visa cualquier jornada, tenga incidencias o no; visada = casilla
     # "Visado" o corregida.
+    (STATUS_AI, "Procesadas por IA, sin visar"),
     (STATUS_REVIEWED, "Visadas"),
     (STATUS_ISSUES, "Incidencias sin visar"),
     (STATUS_CANCELLED, "Anuladas"),
@@ -74,7 +80,7 @@ _STATUS_LABELS = dict(STATUS_CHOICES)
 _STATUS_BADGES = {
     STATUS_OK: "success", STATUS_ISSUES: "danger",
     STATUS_CANCELLED: "secondary", STATUS_REVIEWED: "warning",
-    STATUS_OPEN: "success",
+    STATUS_OPEN: "success", STATUS_AI: "info",
 }
 _COLUMNS = (
     ("day", "Día"),
@@ -129,6 +135,10 @@ def _statuses(request):
             chosen.append(STATUS_REVIEWED)
         if STATUS_OK in chosen:
             chosen.append(STATUS_OPEN)
+    # S149: un filtro guardado de antes no conoce "Procesadas por IA":
+    # va con las incidencias (son días que tiene que visar alguien).
+    if STATUS_AI not in chosen and STATUS_ISSUES in chosen:
+        chosen.append(STATUS_AI)
     return chosen if raw else list(_STATUS_LABELS)
 
 
@@ -217,6 +227,8 @@ def _row(shift):
                  + [claim]}
     if shift.get("only_cancelled"):
         status = STATUS_CANCELLED
+    elif shift.get("ai_check") and not shift.get("reviewed"):
+        status = STATUS_AI
     elif shift.get("incidents") and not shift.get("reviewed"):
         status = STATUS_ISSUES
     elif shift.get("reviewed"):
