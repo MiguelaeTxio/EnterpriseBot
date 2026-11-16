@@ -1,0 +1,25 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/clock_events/_albaran_batches.html #}
+{% comment %}
+S149 (H24): cargas de albaranes de varios recientes, con su avance
+(la lectura va en segundo plano) o su resultado. «Ver» abre la ventana
+con el detalle. La pestaña Fichajes la vuelve a pedir cada 20 s.
+{% endcomment %}
+{% if batches %}
+<div class="text-muted fw-bold mt-1">Cargas de albaranes</div>
+<ul class="list-unstyled mb-0">
+    {% for b in batches %}
+    <li class="text-nowrap" title="{{ b.folder_name|default:'Sin carpeta' }} · cargada por {{ b.by|default:'—' }}">
+        {{ b.created_at|date:"d/m H:i" }} ·
+        {% if b.status == "UPLOADING" %}
+            <span class="text-secondary">subiendo ({{ b.files }} archivo{{ b.files|pluralize }})</span>
+        {% elif b.status == "READING" %}
+            <span class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
+            <span class="text-primary">leyendo {{ b.done }} de {{ b.files }}</span>
+        {% else %}
+            <span class="text-success">{{ b.read_count }} {% if b.read_count == 1 %}albarán{% else %}albaranes{% endif %}, {{ b.days }} día{{ b.days|pluralize }} ({{ b.corrected }} corregido{{ b.corrected|pluralize }})</span>{% if b.no_person %} · <span class="text-warning-emphasis">{{ b.no_person }} sin trabajador</span>{% endif %}{% if b.failed %} · <span class="text-danger">{{ b.failed }} sin leer</span>{% endif %}
+        {% endif %}
+        {% if b.status != "UPLOADING" %}<a href="#" class="clk-alb-show ms-1" data-batch="{{ b.pk }}">Ver</a>{% endif %}
+    </li>
+    {% endfor %}
+</ul>
+{% endif %}

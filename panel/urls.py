@@ -194,6 +194,7 @@ from panel.views_clock_extras import (
 from panel.views_clock_albaranes import (
     AlbaranBulkFileView,
     AlbaranBulkFinishView,
+    AlbaranBulkListView,
     AlbaranBulkStartView,
     AlbaranBulkStatusView,
     AlbaranFileView,
@@ -2111,6 +2112,11 @@ urlpatterns = [
         "documentacion/fichajes/albaranes/carga/",
         AlbaranBulkStartView.as_view(),
         name="clock_albaran_bulk_start",
+    ),
+    path(
+        "documentacion/fichajes/albaranes/cargas/",
+        AlbaranBulkListView.as_view(),
+        name="clock_albaran_bulk_list",
     ),
     path(
         "documentacion/fichajes/albaranes/<int:batch_id>/archivo/",

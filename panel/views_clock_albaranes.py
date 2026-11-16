@@ -255,6 +255,57 @@ class AlbaranBulkStatusView(SupervisorAccessMixin, View):
         return JsonResponse(data)
 
 
+class AlbaranBulkListView(SupervisorAccessMixin, View):
+    """
+    GET: the recent multi-worker uploads, for the Fichajes pane.
+    ---
+    S149 (Miguel Ángel, 16/11: "realizarlo en segundo plano para que se
+    pueda seguir usando la plataforma"): las cargas de varios recientes
+    con su avance o su resultado; la pestaña la vuelve a pedir cada poco.
+    """
+
+    LIMIT = 6
+
+    def get(self, request):
+        from django.db.models import Count, Q
+        from django.shortcuts import render
+
+        from hr_calendar.models import AlbaranBatch, AlbaranSheet
+
+        Status = AlbaranSheet.Status
+        batches = list(AlbaranBatch.objects.filter(
+            company=request.user.company_user.company, person__isnull=True,
+        ).exclude(status=AlbaranBatch.Status.CANCELLED).annotate(
+            files=Count("sheets", distinct=True,
+                        filter=Q(sheets__position=1)),
+            pending=Count("sheets", distinct=True,
+                          filter=Q(sheets__position=1,
+                                   sheets__status=Status.PENDING)),
+            read_count=Count("sheets", distinct=True,
+                             filter=Q(sheets__status=Status.READ)),
+            no_person=Count("sheets", distinct=True, filter=Q(
+                sheets__status=Status.NO_PERSON)),
+            failed=Count("sheets", distinct=True,
+                         filter=Q(sheets__status__in=(
+                             Status.UNREADABLE, Status.ERROR))),
+            days=Count("day_checks", distinct=True),
+            corrected=Count("day_checks", distinct=True,
+                            filter=Q(day_checks__corrected=True)),
+        ).select_related("created_by__user").order_by("-created_at")[
+            :self.LIMIT])
+        for batch in batches:
+            batch.done = batch.files - batch.pending
+            batch.by = _person_label_user(batch.created_by)
+        return render(request, "panel/clock_events/_albaran_batches.html",
+                      {"batches": batches})
+
+
+def _person_label_user(company_user):
+    from panel.views_clock_events import _user_label
+
+    return _user_label(company_user) if company_user else ""
+
+
 class AlbaranSheetFileView(SupervisorAccessMixin, View):
     """GET: the file an albarán came in (to check what the AI read)."""
 
