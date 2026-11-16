@@ -223,6 +223,38 @@ def _doc_items(entries):
     return items
 
 
+# S152: Caser es de Helvetia y sus pólizas (C6 A96 …) salen leídas con
+# una u otra marca según el documento.
+_SAME_GROUP = {"Caser": "Helvetia"}
+
+
+def _insurer_group(insurer):
+    return _SAME_GROUP.get(insurer, insurer)
+
+
+def _known(insurer):
+    return insurer not in ("", "No consta")
+
+
+def _fill_insurers(records):
+    """
+    Take the insurer of a record from another one with its policy.
+    ---
+    Un seguro con la aseguradora sin leer toma la de otro con el mismo
+    número de póliza (S152: 3233NJM «No consta» con la póliza de flota
+    24G427000388 de Generali).
+    """
+    by_policy = {}
+    for record in records:
+        number = _digits(record["policy"])
+        if len(number) >= 5 and _known(record["insurer"]):
+            by_policy.setdefault(number, record["insurer"])
+    for record in records:
+        number = _digits(record["policy"])
+        if not _known(record["insurer"]) and number in by_policy:
+            record["insurer"] = by_policy[number]
+
+
 def _machine_pk(item):
     return item["machine"].pk if item["machine"] is not None else None
 
@@ -574,6 +606,7 @@ def build(entries, ledgers, month_from, month_to=None, company_codes=(),
         _apply_ledger(record, summary, other_brand)
     records.extend(_ledger_only(lines, used, classify))
     records = _drop_replaced(records)
+    _fill_insurers(records)
     _alerts(records, ledger_companies, today)
     records = _fleets(records)
     month_end = _month_end(month_to) if month_to else None
@@ -816,17 +849,26 @@ def _alerts(records, ledger_companies, today):
             record["alerts"].append("Sin recibo en el mayor")
     for plate, group in by_plate.items():
         alive = [r for r in group if r["due"] and r["due"] >= today
-                 and "Baja en la póliza" not in r["alerts"]]
-        if len({r["insurer"] for r in alive}) > 1:
-            names = ", ".join(sorted({"%s (%s)" % (
-                r["insurer"], companies.label(r["company"]))
-                for r in alive}))
-            for record in alive:
-                if "Doble seguro" not in record["alerts"]:
-                    record["alerts"].append("Doble seguro")
-                    record["comments"].append(
-                        "La matrícula %s tiene seguro con %s a la vez." % (
-                            plate, names))
+                 and "Baja en la póliza" not in r["alerts"]
+                 and _known(r["insurer"])]
+        # Doble seguro: dos aseguradoras distintas (Caser y Helvetia son
+        # la misma) con números de póliza distintos (S152: la flota C6
+        # A96 0000252 leída unas veces como Helvetia y otras como Caser).
+        doubled = [r for r in alive if any(
+            _insurer_group(r["insurer"]) != _insurer_group(o["insurer"])
+            and _digits(r["policy"]) != _digits(o["policy"])
+            for o in alive)]
+        if not doubled:
+            continue
+        names = ", ".join(sorted({"%s (%s)" % (
+            r["insurer"], companies.label(r["company"]))
+            for r in doubled}))
+        for record in doubled:
+            if "Doble seguro" not in record["alerts"]:
+                record["alerts"].append("Doble seguro")
+                record["comments"].append(
+                    "La matrícula %s tiene seguro con %s a la vez." % (
+                        plate, names))
 
 
 def _fleets(records):
@@ -839,10 +881,11 @@ def _fleets(records):
     """
     groups = collections.defaultdict(list)
     for record in records:
-        policy = re.sub(r"[^A-Z0-9]", "", companies.plain(record["policy"]))
+        policy = _digits(record["policy"])
         if record["category"] == "circulacion" and len(policy) >= 5 and (
                 record["machine_id"] or record["plate"]):
-            groups[(record["company"], record["insurer"], policy)].append(
+            groups[(record["company"],
+                    _insurer_group(record["insurer"]), policy)].append(
                 record)
     folded = set()
     result = []
