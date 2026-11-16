@@ -280,6 +280,31 @@ def _plain(text):
     return set(re.findall(r"[A-Z]{3,}", text))
 
 
+def _abbreviates(word, full):
+    """
+    Whether a written word is the name or a usual abbreviation of it.
+    ---
+    S149 (16/11, «Jose Garcia Fdez» es GARCÍA FERNÁNDEZ): la palabra
+    escrita coincide con el nombre o el apellido completo, o es su
+    abreviatura habitual: misma primera y última letra y el resto de sus
+    letras en orden dentro del completo (Fdez → FERNANDEZ, Glez →
+    GONZALEZ, Rguez → RODRIGUEZ, Hdez → HERNANDEZ).
+    """
+    if word == full:
+        return True
+    if len(word) < 3 or len(word) >= len(full) or (
+            word[0] != full[0] or word[-1] != full[-1]):
+        return False
+    rest = iter(full[1:-1])
+    return all(letter in rest for letter in word[1:-1])
+
+
+def _hits(words, names):
+    """The names (of a worker) that some written word matches."""
+    return {name for name in names
+            if any(_abbreviates(word, name) for word in words)}
+
+
 def name_matches(person, written):
     """
     Whether the albarán name is plausibly the worker's.
@@ -294,7 +319,7 @@ def name_matches(person, written):
         return True
     own = _plain(" ".join(filter(None, (
         person.given_name, person.first_surname, person.second_surname))))
-    return bool(words & own)
+    return bool(_hits(words, own))
 
 
 _SURNAME_WEIGHT = 2
@@ -325,10 +350,10 @@ def match_person(people, written):
     The worker whose name is written on the albarán, or None.
     ---
     El trabajador del nombre escrito (a mano) en el albarán: cada
-    apellido que coincide suma 2 y el nombre 1; vale el único que más
-    suma con al menos 2 (un apellido, o nombre y algo más). Solo con el
-    nombre de pila, o con un empate, no se adivina: queda "Sin
-    trabajador".
+    apellido que coincide (entero o abreviado, _abbreviates) suma 2 y
+    cada palabra del nombre 1; vale el único que más suma, y siempre con
+    algún apellido. Solo con el nombre de pila, o con un empate, no se
+    adivina: queda "Sin trabajador".
     """
     words = _plain(written)
     if not words:
@@ -338,10 +363,11 @@ def match_person(people, written):
         surnames = _plain(" ".join(filter(None, (
             person.first_surname, person.second_surname))))
         given = _plain(person.given_name) - surnames
-        score = (_SURNAME_WEIGHT * len(words & surnames)
-                 + len(words & given))
-        if score:
-            scored.append((score, person))
+        surname_hits = len(_hits(words, surnames))
+        # Sin ningún apellido no se adivina (solo el nombre de pila).
+        if surname_hits:
+            scored.append((_SURNAME_WEIGHT * surname_hits
+                           + len(_hits(words, given)), person))
     scored.sort(key=lambda item: -item[0])
     if not scored or scored[0][0] < _SURNAME_WEIGHT or (
             len(scored) > 1 and scored[1][0] == scored[0][0]):
@@ -426,7 +452,52 @@ def read_batch(batch):
             store_full(made, data, mime_of(data))
         except Exception:  # noqa: BLE001 -- se anota y se sigue
             logger.exception("# Albarán %s: sin copia completa", sheet.pk)
+    if people is not None:
+        rematch(batch, people)
     compare_batch(batch)
+
+
+def rematch(batch, people=None):
+    """
+    Assign again the albaranes of a batch left "Sin trabajador".
+    ---
+    S149: vuelve a repartir, con lo que Gemini ya leyó (sin llamarle
+    otra vez), los albaranes de una carga de varios que se quedaron sin
+    trabajador (p. ej. tras mejorar el reparto por nombre). Los que ahora
+    tienen dueño se guardan en su carpeta del cubo y pasan a leídos.
+    Devuelve cuántos se han asignado.
+    """
+    from hr_calendar.models import AlbaranSheet
+
+    if batch.person_id:
+        return 0
+    people = candidates(batch) if people is None else people
+    done, archived = 0, {}
+    for sheet in batch.sheets.filter(status=AlbaranSheet.Status.NO_PERSON):
+        try:
+            item = json.loads(sheet.raw or "{}")
+        except ValueError:
+            continue
+        person = match_person(people, item.get("operator_name") or "")
+        if person is None:
+            continue
+        sheet.person = person
+        _fill(sheet, item, person)
+        key = (sheet.staged_path, person.pk)
+        if key not in archived:
+            try:
+                data = staged_bytes(sheet)
+                archived[key] = archive_in_bucket(
+                    batch, sheet.original_name, data, mime_of(data),
+                    os.path.splitext(sheet.staged_path)[1].lstrip(".")
+                    or "pdf", person=person)
+            except (AlbaranError, OSError) as exc:
+                archived[key] = ""
+                sheet.note = ("%s %s" % (sheet.note, exc)).strip()[:255]
+        sheet.bucket_blob = archived[key]
+        sheet.save()
+        done += 1
+    return done
 
 
 def _fill(sheet, item, person):
