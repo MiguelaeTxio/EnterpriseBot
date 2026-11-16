@@ -181,7 +181,11 @@ def correct_day(company_user, day, now=None, dry_run=False):
     numbers = ", ".join("nº %d" % pk for pk in sorted(
         {e.work_order_id for e in entries}))
     rows, used = [], set()
-    for kind, at in [(k, aware(t)) for k, t in wanted]:
+    targets = [(k, aware(t)) for k, t in wanted]
+    # Primero la entrada y la salida de la jornada, luego la comida: la
+    # salida fichada al final del día es la salida, no la de comer.
+    order = [targets[0], targets[-1]] + targets[1:-1]
+    for kind, at in order:
         options = [e for e in events if e.pk not in used and e.kind == kind]
         options.sort(key=lambda e: abs((e.pressed_at - at).total_seconds()))
         match = options[0] if options else None
@@ -201,6 +205,7 @@ def correct_day(company_user, day, now=None, dry_run=False):
             _label(kind).lower(),
             timezone.localtime(match.pressed_at).strftime("%H:%M"),
             timezone.localtime(at).strftime("%H:%M")))
+    rows.sort(key=lambda row: row["at"])
     for event in events:
         if event.pk not in used:
             rows.append({"id": event.pk, "delete": True})
