@@ -62,9 +62,31 @@ Sale `dist\AgenteFacturas.exe`.
 
 ## Instalar en el PC de Ani
 
-1. Copiar `AgenteFacturas.exe` a `C:\EnterpriseBot\AgenteFacturas\`.
-2. Copiar la clave a
-   `%LOCALAPPDATA%\EnterpriseBot\AgenteFacturas\service_account_key.json`.
-3. Arranque automático: acceso directo al `.exe` en
-   `shell:startup` (carpeta Inicio del usuario de Ani).
-4. Abrir el `.exe`: pide la carpeta de facturas la primera vez.
+1. Copiar `AgenteFacturas.exe` (de `dist\` en el PC de Miguel Ángel) a
+   `C:\EnterpriseBot\AgenteFacturas\` del PC de Ani.
+2. Copiar la clave de la cuenta de servicio del H28 a
+   `%LOCALAPPDATA%\EnterpriseBot\AgenteFacturas\service_account_key.json`
+   del usuario de Ani.
+3. Con la sesión de Ani abierta, pegar en PowerShell (sin permisos de
+   administrador). Crea el acceso directo del escritorio ("Agente de
+   facturas", para lanzarlo a mano) y el de la carpeta Inicio (para que
+   arranque solo al iniciar sesión), y lo lanza. La primera vez pide la
+   carpeta de facturas. Si ya está en marcha, el acceso directo solo
+   avisa (instancia única).
+
+```powershell
+$exe = "C:\EnterpriseBot\AgenteFacturas\AgenteFacturas.exe"
+$key = "$env:LOCALAPPDATA\EnterpriseBot\AgenteFacturas\service_account_key.json"
+if (-not (Test-Path $exe)) { Write-Warning "Falta el ejecutable: $exe" }
+if (-not (Test-Path $key)) { Write-Warning "Falta la clave: $key" }
+$shell = New-Object -ComObject WScript.Shell
+foreach ($folder in @([Environment]::GetFolderPath("Desktop"), [Environment]::GetFolderPath("Startup"))) {
+    $link = $shell.CreateShortcut((Join-Path $folder "Agente de facturas.lnk"))
+    $link.TargetPath = $exe
+    $link.WorkingDirectory = Split-Path $exe
+    $link.Description = "EnterpriseBot - Agente de facturas"
+    $link.Save()
+    Write-Output "Acceso directo creado en: $folder"
+}
+Start-Process $exe
+```
