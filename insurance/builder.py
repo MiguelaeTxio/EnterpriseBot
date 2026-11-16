@@ -179,7 +179,11 @@ def _doc_items(entries):
     for entry in entries:
         data = readings.get(entry.pk)
         if not data or data.get("document_kind") in (
-                "carta_verde", "condiciones_generales", "no_es_seguro"):
+                "carta_verde", "condiciones_generales", "no_es_seguro",
+                "listado"):
+            # S152: un listado de varias pólizas (LISTADO TURISMOS Y
+            # FURGONETAS 2020) no es un seguro: cada uno sale de su
+            # documento o del mayor.
             continue
         machine = (machines.get(entry.domain_object_id)
                    if entry.domain_content_type_id == machine_ct.pk
@@ -424,7 +428,11 @@ def ledger_entries(ledgers):
             item["concept_plain"] = re.sub(
                 r"[^A-Z0-9]", "", companies.plain(entry["concept"]))
             item["plates"] = set(_PLATE.findall(item["concept_plain"]))
-            item["numbers"] = re.findall(r"\d{5,}", item["concept_plain"])
+            # S152: «S/FRA. CESCE…» lleva el número de factura, no el de
+            # la póliza: cada factura salía como un seguro distinto.
+            item["numbers"] = (
+                [] if item["concept_plain"].startswith("SFRA")
+                else re.findall(r"\d{5,}", item["concept_plain"]))
             item["project_plates"] = _plates(entry["project_text"])
             item["i"] = len(result)
             result.append(item)
@@ -604,6 +612,7 @@ def build(entries, ledgers, month_from, month_to=None, company_codes=(),
         summary["refund"] = _refund(record, matched)
         record["ledger"] = sorted(hits)
         _apply_ledger(record, summary, other_brand)
+    records = _merge_same_ledger(records)
     records.extend(_ledger_only(lines, used, classify))
     records = _drop_replaced(records)
     _fill_insurers(records)
@@ -650,6 +659,32 @@ def _refund(record, lines):
     if any(e["amount"] > 0 and e["date"] > last["date"] for e in own):
         return None
     return _date(last["date"]), last["amount"]
+
+
+def _merge_same_ledger(records):
+    """
+    Join company policies paid by exactly the same ledger lines.
+    ---
+    Junta los seguros sin vehículo de la misma empresa y aseguradora
+    que casan con los mismos apuntes del mayor: son la misma póliza con
+    el número mal leído en un documento (S152: RC de Generali
+    3R-G-427.000.498 y «3R4427000498», 43.475,56 € contados dos veces).
+    """
+    kept, seen = [], {}
+    for record in records:
+        if record["ledger"] and not record["machine_id"] \
+                and not record["plates"]:
+            key = (record["company"], _insurer_group(record["insurer"]),
+                   tuple(record["ledger"]))
+            first = seen.get(key)
+            if first is not None:
+                first["documents"].extend(
+                    d for d in record["documents"]
+                    if d not in first["documents"])
+                continue
+            seen[key] = record
+        kept.append(record)
+    return kept
 
 
 def _apply_ledger(record, summary, other_brand):
