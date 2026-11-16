@@ -16,6 +16,7 @@ aquí solo se guarda su huella.
 """
 import datetime
 import hashlib
+import re
 import secrets
 
 from django.db import transaction
@@ -38,6 +39,128 @@ ONLINE_MINUTES = 3
 KEEP_DAYS = 7
 MAX_FILES_PER_POLL = 5
 NOT_ALIAS_PREFIXES = ("buscando tarjeta",)
+# S153 (agente v3): avisar de la caducidad del certificado de una
+# empresa con esta antelación.
+EXPIRY_WARNING_DAYS = 60
+# CIF de la empresa en un certificado de representante: "(R: B29405040)"
+# en el nombre, o el identificador de organización "VATES-B29405040".
+_CIF_IN_NAME = re.compile(r"\(R:\s*([A-Z0-9]{8,10})\)", re.IGNORECASE)
+_CIF_IN_OID = re.compile(r"(?:OID\.2\.5\.4\.97|organizationIdentifier)"
+                         r"\s*=\s*VAT[A-Z]{2}-([A-Z0-9]{8,10})",
+                         re.IGNORECASE)
+_ORG = re.compile(r'(?:^|,\s*)O=("(?:[^"]|"")*"|[^,]*)')
+_THUMBPRINT = re.compile(r"^[0-9A-F]{40}$")
+
+
+class NoValidCertificate(Exception):
+    """
+    The company has no valid certificate on any agent.
+    ---
+    La empresa no tiene ningún certificado vigente en el agente.
+    """
+
+
+def parse_certificate(raw):
+    """
+    One certificate reported by the agent, or None if not a company one.
+    ---
+    Un certificado de los que cuenta el agente (huella, sujeto, nombre,
+    fechas), normalizado; None si no es de representante de una empresa
+    (sin CIF) o le falta algo.
+    """
+    if not isinstance(raw, dict):
+        return None
+    thumbprint = str(raw.get("t") or "").strip().upper()
+    subject = str(raw.get("s") or "")
+    if not _THUMBPRINT.match(thumbprint):
+        return None
+    match = _CIF_IN_NAME.search(subject) or _CIF_IN_OID.search(subject)
+    if not match:
+        return None
+    try:
+        not_before = datetime.date.fromisoformat(str(raw.get("a"))[:10])
+        not_after = datetime.date.fromisoformat(str(raw.get("b"))[:10])
+    except ValueError:
+        return None
+    org = _ORG.search(subject)
+    company = org.group(1).strip().strip('"').replace('""', '"') if org \
+        else ""
+    return {
+        "thumbprint": thumbprint,
+        "cif": match.group(1).upper(),
+        "company": company[:200],
+        "holder": str(raw.get("n") or "")[:200],
+        "not_before": not_before.isoformat(),
+        "not_after": not_after.isoformat(),
+    }
+
+
+def company_certificates(today=None):
+    """
+    Company certificates seen by the active agents, by CIF.
+    ---
+    Los certificados de empresa que ven los agentes activos, agrupados
+    por CIF (de más nuevo a más viejo), con el vigente que se usa al
+    firmar ("current"), los días que le quedan y el nivel de aviso:
+    "danger" si no hay ninguno vigente, "warning" si caduca en menos de
+    EXPIRY_WARNING_DAYS días, "" si está bien.
+    """
+    today = today or timezone.localdate()
+    by_cif = {}
+    for agent in SigningAgent.objects.filter(is_active=True):
+        for cert in agent.certificates or []:
+            entry = by_cif.setdefault(cert["cif"], {
+                "cif": cert["cif"], "company": cert["company"],
+                "certs": {}})
+            entry["certs"][cert["thumbprint"]] = cert
+    result = []
+    for entry in by_cif.values():
+        certs = sorted(entry["certs"].values(),
+                       key=lambda c: c["not_after"], reverse=True)
+        for cert in certs:
+            cert["valid"] = (cert["not_before"] <= today.isoformat()
+                             <= cert["not_after"])
+            cert["expires"] = datetime.date.fromisoformat(
+                cert["not_after"])
+        current = next((c for c in certs if c["valid"]), None)
+        days = (current["expires"] - today).days if current else None
+        if current is None:
+            level = "danger"
+        elif days <= EXPIRY_WARNING_DAYS:
+            level = "warning"
+        else:
+            level = ""
+        company = (current or certs[0])["company"] or entry["company"]
+        result.append({
+            "cif": entry["cif"], "company": company, "certs": certs,
+            "current": current, "days": days, "level": level,
+            "last_expired": certs[0]["expires"] if certs and not current
+            else None,
+        })
+    return sorted(result, key=lambda e: e["company"])
+
+
+def current_certificate(cif, today=None):
+    """
+    The valid certificate to sign with for a CIF.
+    ---
+    El certificado vigente con el que se firma por ese CIF (el que más
+    tarde caduca); NoValidCertificate si no hay ninguno.
+    """
+    for entry in company_certificates(today):
+        if entry["cif"] == cif:
+            if entry["current"] is None:
+                raise NoValidCertificate(
+                    "%s (%s) no tiene ningún certificado digital vigente "
+                    "en el ordenador del agente%s. Hace falta uno nuevo." % (
+                        entry["company"] or "La empresa", cif,
+                        " (el último caducó el %s)"
+                        % entry["last_expired"].strftime("%d/%m/%Y")
+                        if entry["last_expired"] else ""))
+            return entry["current"]
+    raise NoValidCertificate(
+        "El agente no ve ningún certificado de la empresa %s. Comprueba "
+        "que el agente está actualizado (versión 3) y encendido." % cif)
 
 
 def token_hash(token):
@@ -87,14 +210,19 @@ def is_online(agent):
                 < datetime.timedelta(minutes=ONLINE_MINUTES))
 
 
-def record_heartbeat(agent, host="", aliases=None, autofirma="", error=""):
+def record_heartbeat(agent, host="", aliases=None, autofirma="", error="",
+                     certificates=None):
     """
     Save what the agent reports (PC, certificates, AutoFirma, error).
     ---
-    Guarda lo que cuenta el agente: ordenador, certificados que ve,
-    versión de AutoFirma y último error.
+    Guarda lo que cuenta el agente: ordenador, certificados que ve
+    (alias de AutoFirma y, desde la versión 3, los de empresa con su
+    huella y fechas), versión de AutoFirma y último error.
     """
     agent.host = (host or "")[:255]
+    if certificates is not None:
+        parsed = [parse_certificate(raw) for raw in certificates[:200]]
+        agent.certificates = [c for c in parsed if c]
     if aliases is not None:
         # S153: AutoFirma mezcla en la lista avisos que no son
         # certificados ("Buscando tarjeta compatible en el terminal 0
@@ -108,8 +236,9 @@ def record_heartbeat(agent, host="", aliases=None, autofirma="", error=""):
     agent.autofirma_version = (autofirma or "")[:120]
     agent.last_error = (error or "")[:2000]
     agent.last_seen_at = timezone.now()
-    agent.save(update_fields=["host", "aliases", "autofirma_version",
-                              "last_error", "last_seen_at"])
+    agent.save(update_fields=["host", "aliases", "certificates",
+                              "autofirma_version", "last_error",
+                              "last_seen_at"])
 
 
 def create_job(signature, documents, notes, by):
@@ -121,10 +250,20 @@ def create_job(signature, documents, notes, by):
     la firma elegida.
     """
     purge_old()
+    alias, thumbprint = signature.certificate_alias, ""
+    if signature.certificate_cif:
+        # S153 (agente v3): el certificado vigente de la empresa, por su
+        # huella; NoValidCertificate si no hay ninguno (no se encola).
+        cert = current_certificate(signature.certificate_cif)
+        thumbprint = cert["thumbprint"]
+        alias = "%s (%s) · %s · hasta %s" % (
+            cert["company"], cert["cif"], cert["holder"],
+            cert["expires"].strftime("%d/%m/%Y"))
     with transaction.atomic():
         job = SignedFormJob.objects.create(
             signature=signature,
-            certificate_alias=signature.certificate_alias,
+            certificate_alias=alias[:255],
+            certificate_thumbprint=thumbprint,
             notes=notes, created_by=by)
         SignedFormFile.objects.bulk_create([
             SignedFormFile(job=job, name=name,

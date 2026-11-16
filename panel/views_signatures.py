@@ -87,6 +87,11 @@ def _pane_context():
                       for alias in agent.aliases or []}
                      | {s.certificate_alias for s in signatures
                         if s.certificate_alias})
+    # S153 (agente v3): certificados de empresa por CIF con su vigencia.
+    company_certs = agents.company_certificates()
+    certs_by_cif = {entry["cif"]: entry for entry in company_certs}
+    for signature in signatures:
+        signature.cert_entry = certs_by_cif.get(signature.certificate_cif)
     jobs = list(SignedFormJob.objects.select_related(
         "signature__company").prefetch_related("files")[:10])
     for job in jobs:
@@ -103,6 +108,9 @@ def _pane_context():
         "people": people,
         "agents": agent_list,
         "certificate_aliases": aliases,
+        "company_certs": company_certs,
+        "cert_alerts": [e for e in company_certs if e["level"]],
+        "agents_v3": any(agent.certificates for agent in agent_list),
         "jobs": jobs,
     }
 
@@ -255,12 +263,17 @@ class SignedFormsGenerateView(SignatureAccessMixin, View):
         logger.info("# [FIRMAS] %d documento(s) firmados con '%s' (%s) por "
                     "%s.", len(results), signature.label,
                     profile.legal_name, request.user.username)
-        if signature.certificate_alias:
-            # S153: con certificado, a la cola del agente de firmas.
-            job = agents.create_job(
-                signature, [(name, data, config) for (name, data), config
-                            in zip(results, configs)],
-                notes, request.user.company_user)
+        if signature.certificate_cif or signature.certificate_alias:
+            # S153: con certificado, a la cola del agente de firmas. Con
+            # el CIF (agente v3), solo con un certificado vigente.
+            try:
+                job = agents.create_job(
+                    signature, [(name, data, config) for (name, data),
+                                config in zip(results, configs)],
+                    notes, request.user.company_user)
+            except agents.NoValidCertificate as exc:
+                return JsonResponse({"error": "No se ha generado nada. "
+                                              + str(exc)}, status=400)
             return JsonResponse({
                 "job": job.pk, "notes": notes,
                 "status_url": reverse("panel:signed_job_status",
@@ -388,9 +401,18 @@ class SignatureCertificateView(SignatureAccessMixin, View):
         if signature is None:
             return JsonResponse({"error": "Esa firma ya no existe."},
                                 status=404)
-        signature.certificate_alias = (
-            request.POST.get("alias") or "").strip()[:255]
-        signature.save(update_fields=["certificate_alias"])
+        # S153 (agente v3): se elige la empresa del certificado (CIF);
+        # el alias suelto queda solo para el agente antiguo.
+        if "cif" in request.POST:
+            signature.certificate_cif = (
+                request.POST.get("cif") or "").strip().upper()[:20]
+            signature.certificate_alias = ""
+        else:
+            signature.certificate_alias = (
+                request.POST.get("alias") or "").strip()[:255]
+            signature.certificate_cif = ""
+        signature.save(update_fields=["certificate_alias",
+                                      "certificate_cif"])
         return JsonResponse({"ok": True})
 
 
@@ -429,9 +451,18 @@ class AgentHeartbeatView(AgentApiMixin, View):
             aliases = None
         if aliases is not None and not isinstance(aliases, list):
             aliases = None
+        # S153 (agente v3): certificados con huella y fechas.
+        try:
+            certificates = json.loads(
+                request.POST.get("certificates") or "null")
+        except ValueError:
+            certificates = None
+        if certificates is not None and not isinstance(certificates, list):
+            certificates = None
         agents.record_heartbeat(
             self.agent, request.POST.get("host", ""), aliases,
-            request.POST.get("autofirma", ""), request.POST.get("error", ""))
+            request.POST.get("autofirma", ""), request.POST.get("error", ""),
+            certificates)
         return JsonResponse({"ok": True, "name": self.agent.name})
 
 
@@ -454,6 +485,7 @@ class AgentPendingView(AgentApiMixin, View):
             "id": item.pk,
             "name": item.name,
             "alias": item.job.certificate_alias,
+            "thumbprint": item.job.certificate_thumbprint,
             "config": item.signature_config,
             "download": reverse("panel:signing_agent_file",
                                 args=[item.pk]),

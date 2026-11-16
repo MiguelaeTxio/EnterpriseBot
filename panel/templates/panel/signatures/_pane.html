@@ -17,6 +17,13 @@ document_explorer/signed_forms_service.py.
      data-tab-url="{% url 'panel:signature_tab' %}"
      data-generate-url="{% url 'panel:signed_forms_generate' %}"
      data-save-url="{% url 'panel:signature_save' %}">
+    {% for entry in cert_alerts %}
+    <div class="alert {% if entry.level == 'danger' %}alert-danger{% else %}alert-warning{% endif %} small py-2 mb-2">
+        <i class="bi bi-shield-exclamation me-1"></i><strong>{{ entry.company }} ({{ entry.cif }})</strong>:
+        {% if entry.current %}su certificado digital caduca el {{ entry.current.expires|date:"d/m/Y" }} (dentro de {{ entry.days }} días). Conviene renovarlo ya.
+        {% else %}no tiene ningún certificado digital vigente{% if entry.last_expired %} (el último caducó el {{ entry.last_expired|date:"d/m/Y" }}){% endif %}; no puede firmar digitalmente hasta que tenga uno nuevo.{% endif %}
+    </div>
+    {% endfor %}
     <div class="row g-3">
         <div class="col-lg-7">
             <div class="border rounded p-3 h-100">
@@ -127,10 +134,24 @@ document_explorer/signed_forms_service.py.
                         <td>
                             <select class="form-select form-select-sm" data-sig-cert="{% url 'panel:signature_certificate' signature.pk %}" aria-label="Certificado digital de {{ signature.label }}">
                                 <option value="">Sin firma digital (solo imagen)</option>
-                                {% for alias in certificate_aliases %}
-                                <option value="{{ alias }}"{% if alias == signature.certificate_alias %} selected{% endif %}>{{ alias }}</option>
+                                {% if agents_v3 %}
+                                {% for entry in company_certs %}
+                                <option value="{{ entry.cif }}" data-kind="cif"{% if entry.cif == signature.certificate_cif %} selected{% endif %}{% if not entry.current and entry.cif != signature.certificate_cif %} disabled{% endif %}>{{ entry.company }} ({{ entry.cif }}) · {% if entry.current %}vigente hasta {{ entry.current.expires|date:"d/m/Y" }}{% else %}sin certificado vigente{% endif %}</option>
                                 {% endfor %}
+                                {% if signature.certificate_alias and not signature.certificate_cif %}
+                                <option value="{{ signature.certificate_alias }}" data-kind="alias" selected>{{ signature.certificate_alias }} (elegido con el agente antiguo)</option>
+                                {% endif %}
+                                {% else %}
+                                {% for alias in certificate_aliases %}
+                                <option value="{{ alias }}" data-kind="alias"{% if alias == signature.certificate_alias %} selected{% endif %}>{{ alias }}</option>
+                                {% endfor %}
+                                {% endif %}
                             </select>
+                            {% if signature.certificate_cif %}
+                            <div class="small mt-1 {% if signature.cert_entry.level == 'danger' %}text-danger{% elif signature.cert_entry.level == 'warning' %}text-warning-emphasis{% else %}text-muted{% endif %}">
+                                {% if signature.cert_entry.current %}Firma con el de {{ signature.cert_entry.current.holder }}, hasta {{ signature.cert_entry.current.expires|date:"d/m/Y" }}.{% elif signature.cert_entry %}Sin certificado vigente: no se puede firmar digitalmente.{% else %}El agente no ve ningún certificado de este CIF.{% endif %}
+                            </div>
+                            {% endif %}
                         </td>
                         <td class="small text-muted">{{ signature.created_at|date:"d/m/Y H:i" }}{% if signature.created_by %} · {{ signature.created_by.user.username }}{% endif %}</td>
                         <td class="text-end">
@@ -165,6 +186,7 @@ document_explorer/signed_forms_service.py.
                             Último contacto: {{ agent.last_seen_at|date:"d/m/Y H:i"|default:"nunca" }}
                             · AutoFirma: {{ agent.autofirma_version|default:"no encontrado" }}
                             · Certificados: {{ agent.aliases|length }}
+                            {% if not agent.certificates %}· <span class="text-warning-emphasis">agente antiguo: actualízalo a la versión 3 para ver la vigencia de los certificados</span>{% endif %}
                         </div>
                         {% if agent.last_error %}<div class="text-danger">{{ agent.last_error|truncatechars:300 }}</div>{% endif %}
                     </div>
@@ -173,6 +195,34 @@ document_explorer/signed_forms_service.py.
                 {% empty %}
                 <div class="small text-muted mb-2">No hay ningún agente vinculado.</div>
                 {% endfor %}
+                {% if company_certs %}
+                <div class="table-responsive mb-2">
+                    <table class="table table-sm align-middle mb-0 small">
+                        <thead>
+                            <tr>
+                                <th>Empresa (certificado de representante)</th>
+                                <th>Titular</th>
+                                <th>Válido hasta</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for entry in company_certs %}
+                            {% for cert in entry.certs %}
+                            <tr class="{% if not cert.valid %}text-muted{% endif %}">
+                                <td>{% if forloop.first %}{{ entry.company }} ({{ entry.cif }}){% endif %}</td>
+                                <td>{{ cert.holder }}</td>
+                                <td>
+                                    {{ cert.expires|date:"d/m/Y" }}
+                                    {% if cert == entry.current %}<span class="badge {% if entry.level == 'warning' %}bg-warning text-dark{% else %}bg-success{% endif %} ms-1">se usa al firmar</span>
+                                    {% elif not cert.valid %}<span class="badge bg-secondary ms-1">caducado</span>{% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
                 <div class="input-group input-group-sm">
                     <input type="text" class="form-control" id="agent-new-name" maxlength="120" placeholder="Nombre del ordenador (p. ej. Ordenador de Yolanda)" aria-label="Nombre del ordenador">
                     <button type="button" class="btn btn-outline-primary" id="agent-new-btn" data-url="{% url 'panel:signing_agent_create' %}">Generar código de vinculación</button>
@@ -349,7 +399,10 @@ document_explorer/signed_forms_service.py.
     root.querySelectorAll("[data-sig-cert]").forEach(function (select) {
         select.addEventListener("change", function () {
             var data = new FormData();
-            data.append("alias", select.value);
+            // S153 (agente v3): empresa del certificado (CIF) o, con el
+            // agente antiguo, el alias.
+            var option = select.options[select.selectedIndex];
+            data.append(option && option.dataset.kind === "alias" ? "alias" : "cif", select.value);
             fetch(select.dataset.sigCert, {method: "POST", body: data, headers: {"X-CSRFToken": csrf()}})
                 .then(function (response) {
                     if (!response.ok) { return errorOf(response).then(function (text) { throw new Error(text); }); }

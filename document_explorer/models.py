@@ -2404,6 +2404,15 @@ class CompanySignature(models.Model):
         max_length=255, blank=True, default="",
         verbose_name="Certificado digital (alias en el agente)",
     )
+    # S153 (agente v3): la firma se asocia a la EMPRESA del certificado
+    # (CIF del "(R: ...)"), no a un certificado concreto. Al firmar se
+    # usa el certificado vigente más reciente de ese CIF; los caducados
+    # no se usan nunca. Miguel Ángel: "¿no podemos hacer esto de forma
+    # que el propio panel descarte los caducados?".
+    certificate_cif = models.CharField(
+        max_length=20, blank=True, default="",
+        verbose_name="Certificado digital (CIF de la empresa)",
+    )
     created_by = models.ForeignKey(
         "ivr_config.CompanyUser",
         null=True,
@@ -2442,6 +2451,11 @@ class SigningAgent(models.Model):
     aliases = models.JSONField(
         default=list, blank=True,
         verbose_name="Certificados que ve (alias)")
+    # S153 (agente v3): los certificados de representante del almacén de
+    # Windows con su huella, empresa, CIF y fechas de validez.
+    certificates = models.JSONField(
+        default=list, blank=True,
+        verbose_name="Certificados de empresa (huella y fechas)")
     autofirma_version = models.CharField(
         max_length=120, blank=True, default="",
         verbose_name="AutoFirma")
@@ -2487,6 +2501,11 @@ class SignedFormJob(models.Model):
         related_name="jobs", verbose_name="Firma")
     certificate_alias = models.CharField(
         max_length=255, verbose_name="Certificado (alias)")
+    # S153 (agente v3): huella SHA-1 del certificado vigente elegido al
+    # generar; el agente firma con -filter thumbprint:SHA1:<huella>.
+    certificate_thumbprint = models.CharField(
+        max_length=64, blank=True, default="",
+        verbose_name="Certificado (huella SHA-1)")
     status = models.CharField(max_length=10, choices=STATUS_CHOICES,
                               default=STATUS_PENDING,
                               verbose_name="Estado")

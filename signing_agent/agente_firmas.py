@@ -42,7 +42,7 @@ SIGN_TIMEOUT_SECONDS = 180
 HTTP_TIMEOUT = 60
 LOCK_PORT = 47653
 APP_NAME = "AgenteFirmas"
-VERSION = "2"
+VERSION = "3"
 CREATE_NO_WINDOW = 0x08000000
 
 DATA_DIR = os.path.join(
@@ -213,6 +213,42 @@ def list_aliases(cli):
     return aliases
 
 
+# S153 (v3): los certificados con clave privada del almacén de Windows
+# (usuario y equipo) con su huella, sujeto y fechas, en JSON. El panel
+# saca de ahí la empresa (CIF del "(R: ...)") y descarta los caducados.
+CERTIFICATES_SCRIPT = (
+    "$ErrorActionPreference='SilentlyContinue';"
+    "[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
+    "$l=foreach($c in (Get-ChildItem Cert:\\CurrentUser\\My,"
+    "Cert:\\LocalMachine\\My|Where-Object {$_.HasPrivateKey})){"
+    "[pscustomobject]@{t=$c.Thumbprint;s=$c.Subject;"
+    "n=$c.GetNameInfo('SimpleName',$false);f=$c.FriendlyName;"
+    "a=$c.NotBefore.ToString('yyyy-MM-dd');"
+    "b=$c.NotAfter.ToString('yyyy-MM-dd')}};"
+    "ConvertTo-Json -InputObject @($l) -Compress"
+)
+
+
+def list_certificates():
+    """
+    Certificates with a private key in the Windows store (v3).
+    ---
+    Los certificados con clave privada del almacén de Windows, con su
+    huella, sujeto, nombre y fechas (PowerShell, sin ventana).
+    """
+    code, output = run(["powershell", "-NoProfile", "-NonInteractive",
+                        "-ExecutionPolicy", "Bypass", "-Command",
+                        CERTIFICATES_SCRIPT], 120)
+    start = output.find("[")
+    if code != 0 or start < 0:
+        raise RuntimeError("No se pueden leer los certificados de "
+                           "Windows: %s" % output[-500:])
+    certificates = json.loads(output[start:output.rfind("]") + 1])
+    log.info("Certificados de Windows: %s", [
+        (c.get("n"), c.get("b")) for c in certificates])
+    return certificates
+
+
 class Agent:
     """
     The polling loop: heartbeat, pending documents, sign, answer.
@@ -240,6 +276,11 @@ class Agent:
     def heartbeat(self):
         self.cli = find_autofirma()
         aliases = None
+        certificates = None
+        try:
+            certificates = list_certificates()
+        except Exception as exc:  # noqa: BLE001 -- se informa
+            log.warning("%s", exc)
         if not self.cli:
             self.last_error = ("AutoFirma no está instalado en este "
                                "ordenador (firmaelectronica.gob.es)")
@@ -252,6 +293,8 @@ class Agent:
         self.post(API + "latido/", {
             "host": self.host,
             "aliases": json.dumps(aliases) if aliases is not None else "",
+            "certificates": (json.dumps(certificates)
+                             if certificates is not None else ""),
             "autofirma": self.cli,
             "error": self.last_error,
         })
@@ -260,8 +303,8 @@ class Agent:
                  self.cli or "-", aliases, self.last_error or "-")
 
     def sign_one(self, item):
-        log.info("Firmando %s (%s) con '%s'", item["id"], item["name"],
-                 item["alias"])
+        log.info("Firmando %s (%s) con '%s' %s", item["id"], item["name"],
+                 item["alias"], item.get("thumbprint") or "")
         response = self.session.get(SERVER + item["download"],
                                     timeout=HTTP_TIMEOUT)
         response.raise_for_status()
@@ -275,8 +318,15 @@ class Agent:
                 error = "AutoFirma no está instalado en el ordenador"
             else:
                 args = [self.cli, "sign", "-i", source, "-o", target,
-                        "-format", "pades", "-store", "windows",
-                        "-alias", item["alias"]]
+                        "-format", "pades", "-store", "windows"]
+                # S153 (v3): con huella, el certificado exacto (vigente)
+                # que eligió el panel; los nombres se repiten entre
+                # certificados caducados y vigentes.
+                if item.get("thumbprint"):
+                    args += ["-filter",
+                             "thumbprint:SHA1:%s" % item["thumbprint"]]
+                else:
+                    args += ["-alias", item["alias"]]
                 # S153: firma visible (recuadro "Firmado digitalmente
                 # por..." junto a la imagen de la firma).
                 if item.get("config"):
