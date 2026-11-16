@@ -431,8 +431,12 @@ def ledger_entries(ledgers):
             # S152: «00125047369 S/FRA. CESCE…» lleva el número de
             # factura, no el de la póliza: cada factura salía como un
             # seguro distinto.
+            # Tampoco matrícula: «…7369SFRA…» parecía la 7369SFR.
+            invoice = "SFRA" in item["concept_plain"]
+            if invoice:
+                item["plates"] = set()
             item["numbers"] = (
-                [] if "SFRA" in item["concept_plain"]
+                [] if invoice
                 else re.findall(r"\d{5,}", item["concept_plain"]))
             item["project_plates"] = _plates(entry["project_text"])
             item["i"] = len(result)
