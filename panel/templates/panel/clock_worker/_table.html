@@ -42,7 +42,7 @@ historial: quién, cuándo, antes, después y motivo).
         <tr{% if item.is_cancel %} class="table-secondary"{% endif %}>
             <td class="text-nowrap">{{ item.corrected_at|date:"d/m/Y H:i" }}</td>
             <td>{{ item.corrected_by }}</td>
-            <td>{% if item.correction.source == "AI" %}<span class="badge text-bg-info fw-normal">IA</span>{% else %}Manual{% endif %}</td>
+            <td>{% if item.correction.source == "AI" %}<span class="badge text-bg-info fw-normal">IA</span>{% elif item.correction.source == "PARTE" %}<span class="badge text-bg-info fw-normal">Parte</span>{% else %}Manual{% endif %}</td>
             <td>{{ item.correction.get_action_display }}</td>
             <td class="text-nowrap">{% if item.old_time %}{{ item.correction.get_old_kind_display }}{% if item.correction.old_clock_type %} ({{ item.correction.old_clock_type.name }}){% endif %} {{ item.old_time|date:"d/m/Y H:i" }}{% else %}—{% endif %}</td>
             <td class="text-nowrap">{% if item.is_cancel %}<span class="text-danger">anulado</span>{% else %}{{ item.correction.get_new_kind_display }}{% if item.correction.new_clock_type %} ({{ item.correction.new_clock_type.name }}){% endif %} {{ item.new_time|date:"d/m/Y H:i" }}{% endif %}</td>
@@ -128,7 +128,7 @@ historial: quién, cuándo, antes, después y motivo).
                 {% endif %}
                 {# S149: día comparado con sus albaranes por la IA (pre-visado). #}
                 {% if row.ai_check %}
-                <div class="mt-1"><span class="badge {% if row.ai_check.corrected %}text-bg-info{% else %}text-bg-light border{% endif %} fw-normal" title="{{ row.ai_check.summary }}">{% if row.ai_check.corrected %}Corregido por IA{% else %}Comparado por IA{% endif %}</span> <span class="text-muted">lanzado por {{ row.ai_checked_by|default:"—" }}</span></div>
+                <div class="mt-1"><span class="badge {% if row.ai_check.corrected %}text-bg-info{% else %}text-bg-light border{% endif %} fw-normal" title="{{ row.ai_check.summary }}">{% if row.ai_check.origin == "PARTE" %}{% if row.ai_check.corrected %}Corregido por el parte{% else %}Comparado con el parte{% endif %}{% elif row.ai_check.corrected %}Corregido por IA{% else %}Comparado por IA{% endif %}</span> <span class="text-muted">{% if row.ai_check.origin == "PARTE" %}{{ row.ai_check.albaranes }} de {{ row.ai_checked_by|default:"—" }}{% else %}lanzado por {{ row.ai_checked_by|default:"—" }}{% endif %}</span></div>
                 <div class="text-muted text-wrap" style="white-space:pre-line">{{ row.ai_check.summary }}</div>
                 {% endif %}
                 {% for alb in row.albaranes %}<div class="text-nowrap"><a href="{% url 'panel:clock_albaran_sheet' person.pk alb.pk %}" target="_blank" rel="noopener" title="Ver el albarán ({{ alb.original_name }}){% if alb.observations %} · {{ alb.observations }}{% endif %}"><i class="bi bi-file-earmark-text"></i> {{ alb.number|default:"albarán" }}</a>{% if alb.machine %} {{ alb.machine }}{% endif %}: {{ alb.base_out|time:"H:i"|default:"—" }} / {{ alb.work_in|time:"H:i"|default:"—" }}–{{ alb.work_out|time:"H:i"|default:"—" }} / {{ alb.base_in|time:"H:i"|default:"—" }}{% if alb.name_mismatch %} <span class="text-warning-emphasis" title="Nombre del albarán: {{ alb.operator_name }}"><i class="bi bi-exclamation-triangle"></i></span>{% endif %}</div>{% endfor %}

@@ -6088,6 +6088,26 @@ class WorkOrderEntryFormView(WorkOrderFormAccessMixin, View):
                     django_messages.info(request, _sync.notice)
             elif _sync is not None and _sync.notice:
                 _clock_hold = [_sync.notice]
+        # S153: el parte cerrado corrige los fichajes de su día, como los
+        # albaranes los de los gruistas (hr_calendar/parte_clock.py).
+        if work_order.status == WorkOrder.Status.DONE:
+            from hr_calendar.parte_clock import (
+                correct_from_work_order as _pc_correct,
+            )
+
+            try:
+                for _pc in _pc_correct(work_order):
+                    if _pc.corrected:
+                        django_messages.info(
+                            request,
+                            "Fichajes del %s corregidos según el parte: %s"
+                            % (_pc.day.strftime("%d/%m"), _pc.text),
+                        )
+            except Exception:
+                logger.exception(
+                    "# [PARTE-FICHAJE] Error corrigiendo los fichajes con "
+                    "el parte #%d.", work_order.pk,
+                )
         if _clock_hold:
             django_messages.warning(
                 request,

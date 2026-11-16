@@ -1331,6 +1331,9 @@ class ClockCorrection(models.Model):
         # hizo.
         MANUAL = "MANUAL", "Manual"
         AI = "AI", "IA"
+        # S153: corregido con el parte de trabajo del trabajador
+        # (hr_calendar/parte_clock.py).
+        PARTE = "PARTE", "Parte de trabajo"
 
     reason = models.TextField(verbose_name="Motivo")
     source = models.CharField(
@@ -2548,6 +2551,15 @@ class ClockDayAiCheck(models.Model):
     albaranes = models.CharField(max_length=255, blank=True,
                                  verbose_name="Albaranes")
     summary = models.TextField(blank=True, verbose_name="Resultado")
+
+    class Origin(models.TextChoices):
+        # S153: el día también se compara con el parte de trabajo del
+        # trabajador (hr_calendar/parte_clock.py).
+        AI = "AI", "IA (albaranes)"
+        PARTE = "PARTE", "Parte de trabajo"
+
+    origin = models.CharField(max_length=10, choices=Origin.choices,
+                              default=Origin.AI, verbose_name="Origen")
 
     class Meta:
         verbose_name = "Día comparado por IA"

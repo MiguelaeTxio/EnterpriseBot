@@ -310,8 +310,9 @@ def _rows(request, people, date_from, date_to):
     # S149 (Miguel Ángel: "no queden visados para que los vise el
     # supervisor"): lo que corrige la IA no cuenta como visado; los días
     # que ha procesado y nadie ha visado se cuentan aparte.
+    # S153: lo corregido con el parte de trabajo, igual.
     by_ai = set(ClockCorrection.objects.filter(
-        source=ClockCorrection.Source.AI,
+        source__in=(ClockCorrection.Source.AI, ClockCorrection.Source.PARTE),
         replacement__company_user_id__in=user_ids,
     ).values_list("replacement_id", flat=True))
     ai_days = set(ClockDayAiCheck.objects.filter(
@@ -984,8 +985,12 @@ def _press_view(event, corrections_by_replacement=None):
             "%Y-%m-%dT%H:%M") if event.claimed_at else ""),
         "claim_note": event.claim_note,
         # S149: corrección hecha por la IA al cotejar los albaranes.
+        # S153: o con el parte de trabajo (tampoco visa el día).
         "by_ai": bool(correction and correction.source
-                      == ClockCorrection.Source.AI),
+                      in (ClockCorrection.Source.AI,
+                          ClockCorrection.Source.PARTE)),
+        "by_parte": bool(correction and correction.source
+                         == ClockCorrection.Source.PARTE),
         "old_time": (timezone.localtime(correction.old_pressed_at)
                      if correction and correction.old_pressed_at else None),
         # S144: pulsación añadida por el supervisor (no corrige otra).
@@ -1389,7 +1394,9 @@ def _attach_cancelled(shifts, corrections, date_from, date_to):
             "by": _user_label(correction.corrected_by),
             "at": timezone.localtime(correction.corrected_at),
             "reason": correction.reason,
-            "by_ai": correction.source == ClockCorrection.Source.AI,
+            "by_ai": correction.source in (ClockCorrection.Source.AI,
+                                           ClockCorrection.Source.PARTE),
+            "by_parte": correction.source == ClockCorrection.Source.PARTE,
         })
     last_of_day = {}
     for shift in shifts:

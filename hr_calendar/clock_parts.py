@@ -75,6 +75,15 @@ logger = logging.getLogger(__name__)
 
 MIN_TASK_MINUTES = 30
 
+# S153 (Miguel Ángel): "he supeditado la realización de los partes a los
+# fichajes, y eso ha sido un error [...] separarlos y luego corregir los
+# fichajes con lo que digan los partes de trabajo". Con False los partes
+# vuelven a ser independientes, como antes de S129 (sin tramos fichados
+# que fijen o bloqueen sus horas, sin esperar a la salida para cerrarlos
+# y sin que un fichaje o su corrección toquen el parte), y es el parte
+# el que corrige los fichajes (hr_calendar/parte_clock.py).
+PARTES_FOLLOW_CLOCK = False
+
 
 @dataclass
 class Stretch:
@@ -146,6 +155,12 @@ def _time_of(minutes):
 
 
 def day_stretches(company_user, work_date):
+    if not PARTES_FOLLOW_CLOCK:
+        return []
+    return _day_stretches(company_user, work_date)
+
+
+def _day_stretches(company_user, work_date):
     """
     The clocked stretches of company_user on work_date, in order.
     ---
@@ -310,6 +325,12 @@ def check_tasks(stretches, tasks, closing=True, lunch=None):
 # Who is under the clock-in rule, and can the parte be closed?
 # ------------------------------------------------------------------
 def clock_required(company_user, work_date):
+    if not PARTES_FOLLOW_CLOCK:
+        return False
+    return _clock_required(company_user, work_date)
+
+
+def _clock_required(company_user, work_date):
     """
     True when the parte of company_user for work_date falls under the
     clock-in rules: from the day of the user's first clock-in on.
@@ -397,6 +418,12 @@ def clocked_pauses(company_user, work_date):
 
 
 def clocked_lunch(company_user, work_date):
+    if not PARTES_FOLLOW_CLOCK:
+        return None
+    return _clocked_lunch(company_user, work_date)
+
+
+def _clocked_lunch(company_user, work_date):
     """
     (start, end) of the day's clocked lunch break (the first clocked
     pause), or None: the parte takes it instead of the schedule's.
@@ -665,6 +692,12 @@ def fill_missing_presses(entry, upto=None, day_over=False):
 
 
 def clocked_start(company_user, work_date):
+    if not PARTES_FOLLOW_CLOCK:
+        return None
+    return _clocked_start(company_user, work_date)
+
+
+def _clocked_start(company_user, work_date):
     """
     Rounded time of the day's first clocked IN, or None. S147: the
     parte's first task starts at it and cannot be changed ("la primera
@@ -829,6 +862,12 @@ def on_clock_press(event):
     se cierra si ahora cuadra, o vuelve a "en curso" si deja de cuadrar.
     Devuelve el ClockOutOutcome de on_clock_out (vacío = nada).
     """
+    if not PARTES_FOLLOW_CLOCK:
+        # S153: el fichaje no toca el parte; el parte corrige el fichaje.
+        from hr_calendar.parte_clock import correct_after_press
+
+        correct_after_press(event)
+        return ClockOutOutcome()
     if event.kind == ClockEvent.Kind.OUT:
         return on_clock_out(event)
     if event.kind != ClockEvent.Kind.IN:
@@ -1158,6 +1197,9 @@ def resync_parte_after_correction(company_user, work_date, before):
     acababa en la salida antigua acaba en la nueva; el resto no se toca.
     Después se vuelve a cotejar el parte con lo fichado (on_clock_out).
     """
+    if not PARTES_FOLLOW_CLOCK:
+        # S153: corregir los fichajes no toca el parte.
+        return ClockOutOutcome()
     from work_order_processor.models import WorkOrderEntryLine
 
     entry = _day_entry(company_user, work_date)
