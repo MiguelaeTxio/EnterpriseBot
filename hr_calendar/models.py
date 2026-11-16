@@ -2388,9 +2388,18 @@ class AlbaranBatch(models.Model):
         Company, on_delete=models.CASCADE, related_name="albaran_batches",
         verbose_name="Empresa",
     )
+    # S149 (Miguel Ángel, 16/11: "pasarlo a la lista de fichajes para
+    # poder subir los albaranes de varias personas"): sin trabajador, la
+    # carga es de varios y cada albarán va al suyo por el nombre leído.
     person = models.ForeignKey(
-        "document_explorer.PersonIdentity", on_delete=models.CASCADE,
+        "document_explorer.PersonIdentity", null=True, blank=True,
+        on_delete=models.CASCADE,
         related_name="albaran_batches", verbose_name="Trabajador",
+    )
+    candidate_ids = models.JSONField(
+        default=list, blank=True, verbose_name="Entre quiénes repartir",
+        help_text="Carga de varios: los trabajadores marcados en la lista "
+                  "(vacío: todos los que fichan por tipos).",
     )
     created_by = models.ForeignKey(
         CompanyUser, null=True, on_delete=models.SET_NULL,
@@ -2433,9 +2442,18 @@ class AlbaranSheet(models.Model):
         READ = "READ", "Leído"
         UNREADABLE = "UNREADABLE", "Ilegible"
         ERROR = "ERROR", "Error"
+        # S149: carga de varios en la que el nombre no es de nadie.
+        NO_PERSON = "NO_PERSON", "Sin trabajador"
 
     batch = models.ForeignKey(AlbaranBatch, on_delete=models.CASCADE,
                               related_name="sheets", verbose_name="Carga")
+    # S149: de quién es (en la carga de un trabajador, el suyo; en la de
+    # varios, el del nombre leído).
+    person = models.ForeignKey(
+        "document_explorer.PersonIdentity", null=True, blank=True,
+        on_delete=models.CASCADE, related_name="albaran_sheets",
+        verbose_name="Trabajador",
+    )
     original_name = models.CharField(max_length=255,
                                      verbose_name="Archivo")
     staged_path = models.CharField(max_length=255, blank=True,

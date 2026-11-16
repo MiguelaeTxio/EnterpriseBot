@@ -73,8 +73,11 @@ class Command(BaseCommand):
         for index, ((_batch, path), sheets) in enumerate(files.items(), 1):
             first = sheets[0]
             label = "%s (%s, %d albarán/es)" % (
-                first.original_name, first.batch.person, len(sheets))
-            need_bucket = not first.bucket_blob
+                first.original_name, first.person or first.batch.person,
+                len(sheets))
+            # S149: un albarán sin trabajador (carga de varios) no va al cubo.
+            need_bucket = not first.bucket_blob and bool(
+                first.person_id or first.batch.person_id)
             need_full = any(s.full_read_at is None for s in sheets
                             if s.status == AlbaranSheet.Status.READ)
             if not need_bucket and not need_full:
@@ -93,7 +96,8 @@ class Command(BaseCommand):
                     try:
                         blob = archive_in_bucket(
                             first.batch, first.original_name, data, mime,
-                            os.path.splitext(path)[1].lstrip(".") or "pdf")
+                            os.path.splitext(path)[1].lstrip(".") or "pdf",
+                            person=first.person or first.batch.person)
                     except AlbaranError as exc:
                         self._plain("  ✗ %s: %s" % (label, exc))
                         counts["error al subir al cubo"] += 1

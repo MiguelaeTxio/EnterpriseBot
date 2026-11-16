@@ -156,14 +156,17 @@ def stage_file(batch, filename, data):
     os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
     with open(path, "wb") as handle:
         handle.write(data)
-    blob = archive_in_bucket(batch, filename, data, mime, extension)
+    # S149: en la carga de varios no se sabe de quién es hasta leerlo;
+    # se guarda en el cubo al repartirlo (read_batch).
+    blob = (archive_in_bucket(batch, filename, data, mime, extension)
+            if batch.person_id else "")
     return AlbaranSheet.objects.create(
-        batch=batch, original_name=filename[:255], staged_path=relative,
-        bucket_blob=blob,
+        batch=batch, person=batch.person, original_name=filename[:255],
+        staged_path=relative, bucket_blob=blob,
     )
 
 
-def archive_in_bucket(batch, filename, data, mime, extension):
+def archive_in_bucket(batch, filename, data, mime, extension, person=None):
     """
     Keep a copy of an uploaded albarán in the worker's bucket folder.
     ---
@@ -181,7 +184,7 @@ def archive_in_bucket(batch, filename, data, mime, extension):
     )
     from spare_parts.gcs_service import upload_bytes
 
-    person = batch.person
+    person = person or batch.person
     base = (person.folder_path or "").strip("/")
     folder = ("%s/%s" % (base, ARCHIVE_SUBFOLDER) if base else
               "%s/SIN CARPETA/%s" % (ARCHIVE_SUBFOLDER, person.pk))
@@ -294,6 +297,58 @@ def name_matches(person, written):
     return bool(words & own)
 
 
+_SURNAME_WEIGHT = 2
+
+
+def candidates(batch):
+    """
+    Who the albaranes of a multi-worker batch can belong to.
+    ---
+    Carga de varios (S149): los trabajadores marcados en la lista al
+    cargar o, sin marcados, todos los de la empresa que fichan por tipos
+    (los únicos que entregan estos albaranes).
+    """
+    from document_explorer.models import PersonIdentity
+    from hr_calendar.clock_settings import uses_types
+
+    people = PersonIdentity.objects.filter(
+        company=batch.company, company_user__isnull=False,
+    ).select_related("company_user")
+    if batch.candidate_ids:
+        people = people.filter(pk__in=batch.candidate_ids)
+    today = timezone.localdate()
+    return [p for p in people if uses_types(p.company_user, today)]
+
+
+def match_person(people, written):
+    """
+    The worker whose name is written on the albarán, or None.
+    ---
+    El trabajador del nombre escrito (a mano) en el albarán: cada
+    apellido que coincide suma 2 y el nombre 1; vale el único que más
+    suma con al menos 2 (un apellido, o nombre y algo más). Solo con el
+    nombre de pila, o con un empate, no se adivina: queda "Sin
+    trabajador".
+    """
+    words = _plain(written)
+    if not words:
+        return None
+    scored = []
+    for person in people:
+        surnames = _plain(" ".join(filter(None, (
+            person.first_surname, person.second_surname))))
+        given = _plain(person.given_name) - surnames
+        score = (_SURNAME_WEIGHT * len(words & surnames)
+                 + len(words & given))
+        if score:
+            scored.append((score, person))
+    scored.sort(key=lambda item: -item[0])
+    if not scored or scored[0][0] < _SURNAME_WEIGHT or (
+            len(scored) > 1 and scored[1][0] == scored[0][0]):
+        return None
+    return scored[0][1]
+
+
 def read_batch(batch):
     """
     Read every albarán of a batch with Gemini, then compare each day.
@@ -306,6 +361,7 @@ def read_batch(batch):
 
     AlbaranBatch.objects.filter(pk=batch.pk).update(
         status=AlbaranBatch.Status.READING)
+    people = None if batch.person_id else candidates(batch)
     for sheet in list(batch.sheets.filter(
             status=AlbaranSheet.Status.PENDING, position=1)):
         try:
@@ -322,13 +378,39 @@ def read_batch(batch):
             sheet.note = "No parece un parte de producción."
             sheet.save(update_fields=["status", "note"])
             continue
-        made = []
+        made, archived = [], {}
         for position, item in enumerate(found, start=1):
             target = sheet if position == 1 else AlbaranSheet(
                 batch=batch, original_name=sheet.original_name,
                 staged_path=sheet.staged_path, position=position,
-                bucket_blob=sheet.bucket_blob)
-            _fill(target, item, batch.person)
+                bucket_blob=sheet.bucket_blob, person=sheet.person)
+            # S149: carga de varios: el trabajador, por el nombre leído.
+            if people is not None:
+                target.person = match_person(
+                    people, item.get("operator_name") or "")
+            _fill(target, item, target.person)
+            if target.person is None:
+                target.status = AlbaranSheet.Status.NO_PERSON
+                target.note = ("Nombre «%s»: no se sabe de qué trabajador "
+                               "es (ninguno%s que fiche por tipos, o "
+                               "varios posibles)." % (
+                                   target.operator_name or "sin nombre",
+                                   " de los marcados" if batch.candidate_ids
+                                   else ""))[:255]
+            elif not target.bucket_blob:
+                # Al cubo, en la carpeta de su trabajador (una vez por
+                # trabajador si el archivo trae albaranes de varios).
+                if target.person_id not in archived:
+                    try:
+                        archived[target.person_id] = archive_in_bucket(
+                            batch, sheet.original_name, data, mime_of(data),
+                            os.path.splitext(sheet.staged_path)[1].lstrip(
+                                ".") or "pdf", person=target.person)
+                    except AlbaranError as exc:
+                        archived[target.person_id] = ""
+                        target.note = ("%s %s" % (target.note, exc)
+                                       ).strip()[:255]
+                target.bucket_blob = archived[target.person_id]
             target.save()
             made.append(target)
         # S153: la copia digital completa (todos los datos del albarán,
@@ -356,7 +438,8 @@ def _fill(sheet, item, person):
     sheet.base_in = parse_time(item.get("base_in"))
     sheet.work_in = parse_time(item.get("work_in"))
     sheet.work_out = parse_time(item.get("work_out"))
-    sheet.name_mismatch = not name_matches(person, sheet.operator_name)
+    sheet.name_mismatch = (person is not None
+                           and not name_matches(person, sheet.operator_name))
     notes = [item.get("note") or ""]
     has_times = any((sheet.base_out, sheet.base_in, sheet.work_in,
                      sheet.work_out))
@@ -374,15 +457,19 @@ def compare_batch(batch):
     """Compare every day of a batch and mark it ready."""
     from hr_calendar.models import AlbaranBatch, AlbaranSheet
 
-    days = sorted(set(batch.sheets.filter(
+    from document_explorer.models import PersonIdentity
+
+    pairs = sorted(set(batch.sheets.filter(
         status=AlbaranSheet.Status.READ, day__isnull=False,
-    ).values_list("day", flat=True)))
-    for day in days:
+        person__isnull=False,
+    ).values_list("person_id", "day")))
+    people = PersonIdentity.objects.in_bulk({p for p, _day in pairs})
+    for person_id, day in pairs:
         try:
-            compare_day(batch, day)
+            compare_day(batch, day, people[person_id])
         except Exception:  # noqa: BLE001 -- un día no para los demás
-            logger.exception("# Albaranes %s: fallo al comparar %s",
-                             batch.pk, day)
+            logger.exception("# Albaranes %s: fallo al comparar %s (%s)",
+                             batch.pk, day, person_id)
     AlbaranBatch.objects.filter(pk=batch.pk).update(
         status=AlbaranBatch.Status.READY, read_at=timezone.now())
 
@@ -444,7 +531,7 @@ def expected_presses(sheets, travel, work):
     return points
 
 
-def compare_day(batch, day):
+def compare_day(batch, day, person=None):
     """
     Compare one day with its albaranes; correct by AI what is off.
     ---
@@ -459,9 +546,9 @@ def compare_day(batch, day):
         AlbaranSheet, ClockCorrection, ClockDayAiCheck, ClockEvent,
     )
 
-    person = batch.person
+    person = person or batch.person
     company_user = person.company_user
-    sheets = list(batch.sheets.filter(day=day,
+    sheets = list(batch.sheets.filter(day=day, person=person,
                                       status=AlbaranSheet.Status.READ))
     numbers = ", ".join(s.number or s.original_name for s in sheets)
     lines = []
