@@ -126,3 +126,19 @@ def read_albaran_batch_task(batch_id):
         AlbaranBatch.objects.filter(pk=batch_id).update(
             status=AlbaranBatch.Status.READY, error=str(exc)[:500])
     return "leída %s" % batch_id
+
+
+@shared_task(name="hr_calendar.tasks.resume_albaran_batches_task")
+def resume_albaran_batches_task():
+    """
+    S149. Resumes the albarán readings cut half way (e.g. a deploy).
+
+    ---
+
+    Reanuda las lecturas de albaranes que se cortaron a medias (un
+    reinicio de Celery en un despliegue): albaran_check.resume_stalled.
+    """
+    from hr_calendar.albaran_check import resume_stalled
+
+    resumed = resume_stalled()
+    return "reanudadas %s" % (resumed or "ninguna")

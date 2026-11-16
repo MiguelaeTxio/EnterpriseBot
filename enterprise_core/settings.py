@@ -389,6 +389,12 @@ CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_REJECT_ON_WORKER_LOST = True
 
 CELERY_BEAT_SCHEDULE = {
+    # S149: lecturas de albaranes cortadas a medias (un reinicio de
+    # Celery en un despliegue) se reanudan solas donde se quedaron.
+    'resume-albaran-batches': {
+        'task':     'hr_calendar.tasks.resume_albaran_batches_task',
+        'schedule': crontab(minute='*/5'),
+    },
     # ---------------------------------------------------------------------------
     # WHATSAPP CHANNEL TASKS
     # Tareas del canal WhatsApp — Hito 4.

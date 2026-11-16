@@ -2415,6 +2415,14 @@ class AlbaranBatch(models.Model):
     read_at = models.DateTimeField(null=True, blank=True,
                                    verbose_name="Comparada")
     error = models.TextField(blank=True, verbose_name="Error")
+    # S149 (16/11, carga cortada por un reinicio de Celery a mitad): la
+    # lectura da señales de vida; si se para, se reanuda sola donde se
+    # quedó (resume_stalled_albaran_batches), como mucho MAX_RESUMES
+    # veces.
+    heartbeat_at = models.DateTimeField(null=True, blank=True,
+                                        verbose_name="Última señal")
+    resumes = models.PositiveSmallIntegerField(default=0,
+                                               verbose_name="Reanudaciones")
 
     class Meta:
         ordering = ["-created_at"]

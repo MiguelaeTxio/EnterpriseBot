@@ -360,10 +360,14 @@ def read_batch(batch):
     from hr_calendar.models import AlbaranBatch, AlbaranSheet
 
     AlbaranBatch.objects.filter(pk=batch.pk).update(
-        status=AlbaranBatch.Status.READING)
+        status=AlbaranBatch.Status.READING, heartbeat_at=timezone.now())
     people = None if batch.person_id else candidates(batch)
     for sheet in list(batch.sheets.filter(
             status=AlbaranSheet.Status.PENDING, position=1)):
+        # S149: señal de vida antes de cada archivo (dos llamadas a
+        # Gemini, como mucho unos minutos).
+        AlbaranBatch.objects.filter(pk=batch.pk).update(
+            heartbeat_at=timezone.now())
         try:
             data = staged_bytes(sheet)
             found = _read_with_gemini(data, mime_of(data))
@@ -451,6 +455,55 @@ def _fill(sheet, item, person):
     sheet.status = (AlbaranSheet.Status.READ if legible
                     else AlbaranSheet.Status.UNREADABLE)
     sheet.note = " ".join(n for n in notes if n)[:255]
+
+
+STALL_MINUTES = 15
+MAX_RESUMES = 3
+
+
+def resume_stalled():
+    """
+    Resume the batches whose reading stopped half way.
+    ---
+    S149 (16/11): un reinicio de Celery (un despliegue) corta la lectura
+    a medias y la carga se queda "Leyendo" para siempre. Las que llevan
+    STALL_MINUTES sin señal se vuelven a mandar a leer: read_batch solo
+    lee lo que sigue "Por leer", así que no se repite nada. Tras
+    MAX_RESUMES reanudaciones (algo la tumba cada vez) no se insiste: lo
+    que falta queda "Error" y se compara lo leído. Devuelve las cargas
+    reanudadas.
+    """
+    from django.db.models import Q
+
+    from hr_calendar.models import AlbaranBatch, AlbaranSheet
+    from hr_calendar.tasks import read_albaran_batch_task
+
+    limit = timezone.now() - datetime.timedelta(minutes=STALL_MINUTES)
+    resumed = []
+    for batch in AlbaranBatch.objects.filter(
+            status=AlbaranBatch.Status.READING,
+    ).filter(Q(heartbeat_at__lt=limit) | Q(heartbeat_at__isnull=True,
+                                           created_at__lt=limit)):
+        if batch.resumes >= MAX_RESUMES:
+            batch.sheets.filter(status=AlbaranSheet.Status.PENDING).update(
+                status=AlbaranSheet.Status.ERROR,
+                note="Lectura interrumpida %d veces: no se ha leído."
+                     % MAX_RESUMES)
+            AlbaranBatch.objects.filter(pk=batch.pk).update(
+                error="La lectura se cortó %d veces; lo que faltaba "
+                      "queda sin leer." % MAX_RESUMES)
+            compare_batch(batch)
+            continue
+        # Solo una reanudación a la vez (otro proceso puede verla igual).
+        if AlbaranBatch.objects.filter(
+                pk=batch.pk, heartbeat_at=batch.heartbeat_at,
+                resumes=batch.resumes,
+        ).update(heartbeat_at=timezone.now(), resumes=batch.resumes + 1):
+            logger.warning("# Albaranes %s: lectura parada, se reanuda "
+                           "(%d)", batch.pk, batch.resumes + 1)
+            read_albaran_batch_task.delay(batch.pk)
+            resumed.append(batch.pk)
+    return resumed
 
 
 def compare_batch(batch):
