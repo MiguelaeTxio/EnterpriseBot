@@ -4,3 +4,4 @@ __pycache__/
 build/
 dist/
 *.spec
+invoice_agent_venv/
