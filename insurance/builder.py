@@ -428,10 +428,11 @@ def ledger_entries(ledgers):
             item["concept_plain"] = re.sub(
                 r"[^A-Z0-9]", "", companies.plain(entry["concept"]))
             item["plates"] = set(_PLATE.findall(item["concept_plain"]))
-            # S152: «S/FRA. CESCE…» lleva el número de factura, no el de
-            # la póliza: cada factura salía como un seguro distinto.
+            # S152: «00125047369 S/FRA. CESCE…» lleva el número de
+            # factura, no el de la póliza: cada factura salía como un
+            # seguro distinto.
             item["numbers"] = (
-                [] if item["concept_plain"].startswith("SFRA")
+                [] if "SFRA" in item["concept_plain"]
                 else re.findall(r"\d{5,}", item["concept_plain"]))
             item["project_plates"] = _plates(entry["project_text"])
             item["i"] = len(result)
@@ -663,28 +664,43 @@ def _refund(record, lines):
 
 def _merge_same_ledger(records):
     """
-    Join company policies paid by exactly the same ledger lines.
+    Join the insurances paid by exactly the same ledger lines.
     ---
-    Junta los seguros sin vehículo de la misma empresa y aseguradora
-    que casan con los mismos apuntes del mayor: son la misma póliza con
-    el número mal leído en un documento (S152: RC de Generali
-    3R-G-427.000.498 y «3R4427000498», 43.475,56 € contados dos veces).
+    Junta los seguros de la misma empresa y aseguradora que casan con
+    exactamente los mismos apuntes del mayor: son el mismo seguro en
+    dos documentos que no se agruparon (S152: la RC de Generali
+    3R-G-427.000.498 leída «3R4427000498», 43.475,56 € contados dos
+    veces; 2034JVK con la póliza 47232398 y otro recibo sin número). Se
+    queda el que tiene máquina y número de póliza; dos máquinas
+    distintas no se juntan.
     """
-    kept, seen = [], {}
+    groups = collections.defaultdict(list)
     for record in records:
-        if record["ledger"] and not record["machine_id"] \
-                and not record["plates"]:
-            key = (record["company"], _insurer_group(record["insurer"]),
-                   tuple(record["ledger"]))
-            first = seen.get(key)
-            if first is not None:
-                first["documents"].extend(
-                    d for d in record["documents"]
-                    if d not in first["documents"])
+        if record["ledger"]:
+            groups[(record["company"], tuple(record["ledger"]))].append(
+                record)
+    dropped = set()
+    for group in groups.values():
+        if len(group) < 2:
+            continue
+        group.sort(key=lambda r: (r["machine_id"] is None,
+                                  not _known(r["policy"]),
+                                  not _known(r["insurer"])))
+        base = group[0]
+        for other in group[1:]:
+            if other["machine_id"] and base["machine_id"] \
+                    and other["machine_id"] != base["machine_id"]:
                 continue
-            seen[key] = record
-        kept.append(record)
-    return kept
+            if _known(other["insurer"]) and _known(base["insurer"]) and \
+                    _insurer_group(other["insurer"]) != \
+                    _insurer_group(base["insurer"]):
+                continue
+            base["documents"].extend(
+                d for d in other["documents"]
+                if d not in base["documents"])
+            base["plates"] |= other["plates"]
+            dropped.add(id(other))
+    return [r for r in records if id(r) not in dropped]
 
 
 def _apply_ledger(record, summary, other_brand):
