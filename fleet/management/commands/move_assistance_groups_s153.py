@@ -6,7 +6,7 @@ S153. New assistance subgroups (Comercial, Loja, Mollina) and moves.
 
 Miguel Ángel (S153): en los grupos de Asistencia se distingue
 Comercial (5080MZV), Loja (A60, B30, G09, G15, P22, P27, X06),
-Mollina (G11) y Málaga (X09, A30, G16, G14, G12).
+Mollina (B39, G11, P23, X02) y Málaga (X09, A30, G16, G14, G12).
 
 Cada máquina se saca de los demás subgrupos de «Asistencia» y se mete
 en el suyo y en «Asistencia» (quien está en un subgrupo está también en
@@ -33,6 +33,10 @@ MOVES = [
     ("P27", "Loja"),
     ("X06", "Loja"),
     ("G11", "Mollina"),
+    # S153: "los vehículos de Mollina son B39, G11, P23 y X02".
+    ("B39", "Mollina"),
+    ("P23", "Mollina"),
+    ("X02", "Mollina"),
     ("X09", "Málaga"),
     ("A30", "Málaga"),
     ("G16", "Málaga"),
