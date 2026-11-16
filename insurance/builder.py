@@ -981,9 +981,23 @@ def _fleets(records, today):
     primas y el detalle de cada vehículo.
     """
     groups = collections.defaultdict(list)
+    seen_policies = collections.defaultdict(set)
     for record in records:
         policy = _digits(record["policy"])
+        if "XXX" in companies.plain(record["policy"]).replace(" ", ""):
+            # S152: «0382XXXXX» es un número tapado; varias pólizas
+            # distintas de Allianz se juntaban como una flota.
+            continue
         if len(policy) >= 5 and (record["machine_id"] or record["plate"]):
+            # «427000376» y «24-G-427.000.376» son la misma póliza.
+            family = (record["company"],
+                      _insurer_group(record["insurer"]),
+                      record["category"])
+            policy = next((p for p in seen_policies[family]
+                           if min(len(p), len(policy)) >= 8
+                           and (p.endswith(policy) or policy.endswith(p))),
+                          policy)
+            seen_policies[family].add(policy)
             groups[(record["company"],
                     _insurer_group(record["insurer"]), policy,
                     record["category"])].append(record)
