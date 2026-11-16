@@ -294,11 +294,11 @@ def _queue(invoice_pk):
 
 # Pausa de la entrada de facturas (S151): mientras sea True, el barrido
 # solo indexa lo subido (para verlo en el explorador), no registra ni
-# encola ninguna factura, y las que estén en cola no se procesan.
-# Puesta tras elegir en el PC de Ani una carpeta equivocada (la de años
-# anteriores): nada debe tocar el almacén hasta limpiar lo subido por
-# error y apuntar el agente a "2026 facturas recibidas".
-INTAKE_PAUSED = True
+# encola ninguna factura, y las que estén en cola no se procesan. Se
+# puso el 16/11/2026 al elegirse en el PC de Ani una carpeta equivocada
+# (no llegó a subirse nada) y se quitó ese mismo día, antes de apuntar
+# el agente a "2026 facturas recibidas".
+INTAKE_PAUSED = False
 
 # Prefijo que pone el agente de facturas (invoice_upload_agent) delante
 # del nombre: los 12 primeros caracteres de la huella SHA-256 y "_".
