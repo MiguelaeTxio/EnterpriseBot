@@ -602,6 +602,7 @@ def build(entries, ledgers, month_from, month_to=None, company_codes=(),
             if line["cost_centre"]:
                 plate_centres.setdefault(plate, line["cost_centre"])
     used = set()
+    candidates = []
     for record in records:
         if not record["cost_centre"]:
             for plate in sorted(record["plates"]):
@@ -609,6 +610,18 @@ def build(entries, ledgers, month_from, month_to=None, company_codes=(),
                     record["cost_centre"] = plate_centres[plate]
                     break
         hits, other_brand = _match(record, lines)
+        record["ledger"] = sorted(hits)
+        candidates.append((record, hits, other_brand))
+    # Primero se juntan los seguros que casan con los mismos apuntes (el
+    # mismo seguro en dos documentos); luego cada apunte va a uno solo.
+    kept = {id(r) for r in _merge_same_ledger(records)}
+    candidates = [c for c in candidates if id(c[0]) in kept]
+    records = [c[0] for c in candidates]
+    owner = _line_owners(candidates, lines)
+    for record, _hits, _other in candidates:
+        record["ledger"] = []
+    for record, hits, other_brand in candidates:
+        hits = {i: w for i, w in hits.items() if owner[i] is record}
         if not hits:
             continue
         used.update(hits)
@@ -617,7 +630,6 @@ def build(entries, ledgers, month_from, month_to=None, company_codes=(),
         summary["refund"] = _refund(record, matched)
         record["ledger"] = sorted(hits)
         _apply_ledger(record, summary, other_brand)
-    records = _merge_same_ledger(records)
     records.extend(_ledger_only(lines, used, classify))
     records = _drop_replaced(records)
     _fill_insurers(records)
@@ -664,6 +676,35 @@ def _refund(record, lines):
     if any(e["amount"] > 0 and e["date"] > last["date"] for e in own):
         return None
     return _date(last["date"]), last["amount"]
+
+
+# S152: fuerza de cada forma de casar un apunte con un seguro.
+_WHY_RANK = {"póliza": 5, "matrícula": 4, "centro de gasto": 3,
+             "matrícula del proyecto": 2, "importe": 1}
+
+
+def _line_owners(candidates, lines):
+    """
+    The one insurance each ledger line belongs to.
+    ---
+    Cada apunte del mayor va a un solo seguro, el que mejor casa con él
+    (número de póliza, luego matrícula, centro de gasto, matrícula del
+    proyecto e importe; a igualdad, el de la misma aseguradora, con
+    máquina y con número de póliza). Antes un apunte podía contar en
+    varios seguros a la vez (S152: el mismo recibo de 3050MJD en tres
+    seguros; recibos de 9875GBF también en la flota de Generali).
+    """
+    best = {}
+    for position, (record, hits, _other) in enumerate(candidates):
+        for i, why in hits.items():
+            score = (_WHY_RANK.get(why, 0),
+                     lines[i]["brand"] == record["insurer"],
+                     record["machine_id"] is not None,
+                     _known(record["policy"]),
+                     -position)
+            if i not in best or score > best[i][0]:
+                best[i] = (score, record)
+    return {i: record for i, (_score, record) in best.items()}
 
 
 def _merge_same_ledger(records):
