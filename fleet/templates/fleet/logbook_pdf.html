@@ -1,0 +1,199 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/fleet/templates/fleet/logbook_pdf.html #}
+{% comment %}
+H23 (S154, invasora) -- libro historial de la grúa en PDF (weasyprint).
+Misma estructura que el libro impreso que usa la empresa (RD 837/2003,
+ITC MIE-AEM 4). Contexto: fleet.logbook_service.logbook_context.
+{% endcomment %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Libro historial {{ machine.code }}</title>
+<style>
+    @page {
+        size: A4;
+        margin: 18mm 15mm 20mm 15mm;
+        @bottom-left {
+            content: "Adaptado al Real Decreto 837/2003, ITC MIE-AEM 4 del Reglamento de Aparatos de Elevación y Manutención.";
+            font-size: 7pt; color: #555; font-family: "DejaVu Sans", Arial, sans-serif;
+        }
+        @bottom-right {
+            content: "Grúa {{ machine.code }} · Página " counter(page) " de " counter(pages);
+            font-size: 7pt; color: #555; font-family: "DejaVu Sans", Arial, sans-serif;
+        }
+    }
+    body { font-family: "DejaVu Sans", Arial, sans-serif; font-size: 9pt; color: #111; }
+    h1 { font-size: 20pt; text-align: center; margin: 0 0 4mm 0; }
+    h2 { font-size: 12pt; border-bottom: 2px solid #333; padding-bottom: 1mm; margin: 7mm 0 3mm 0; }
+    .cover { border: 2px solid #333; padding: 10mm; text-align: center; margin-top: 30mm; }
+    .cover .crane { font-size: 26pt; font-weight: bold; margin-top: 8mm; }
+    .cover .meta { margin-top: 6mm; font-size: 10pt; }
+    .index { margin: 18mm auto 0 auto; width: 80%; font-size: 10pt; }
+    .index td { padding: 1mm 0; }
+    .new-page { page-break-before: always; }
+    table.data { width: 100%; border-collapse: collapse; margin-bottom: 2mm; }
+    table.data th { background: #e9ecef; border: 1px solid #555; padding: 1.5mm; font-size: 8pt; text-align: left; }
+    table.data td { border: 1px solid #888; padding: 1.5mm; vertical-align: top; }
+    table.data tr { page-break-inside: avoid; }
+    table.fields { width: 100%; border-collapse: collapse; }
+    table.fields th { width: 38%; text-align: left; font-weight: normal; color: #444; padding: 1.5mm 0; border-bottom: 1px solid #ccc; }
+    table.fields td { padding: 1.5mm 0; border-bottom: 1px solid #ccc; font-weight: bold; }
+    .empty { color: #777; font-style: italic; }
+    .nowrap { white-space: nowrap; }
+    .small { font-size: 7.5pt; color: #555; }
+    .compiled-note { margin-top: 14mm; }
+    table.data.spaced { margin-top: 3mm; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+    <h1>LIBRO HISTORIAL<br>DE<br>GRÚA MÓVIL AUTOPROPULSADA</h1>
+    <div class="crane">Grúa {{ machine.code }}</div>
+    <div class="meta">
+        {{ machine.brand_model|default:"" }}{% if machine.plate %} · Matrícula {{ machine.plate }}{% endif %}<br>
+        Generado el {{ generated_at|date:"d/m/Y H:i" }}
+    </div>
+</div>
+
+<table class="index">
+    <tr><td>1.1 Identificación de la grúa</td></tr>
+    <tr><td>1.2 Pesos y dimensiones</td></tr>
+    <tr><td>1.3 Titularidad</td></tr>
+    <tr><td>2.1 Inspecciones oficiales de la base</td></tr>
+    <tr><td>2.2 Inspecciones oficiales de la estructura</td></tr>
+    <tr><td>3. Revisiones técnicas periódicas</td></tr>
+    <tr><td>4. Piezas sustituidas o reparaciones realizadas</td></tr>
+    <tr><td>5. Accidentes</td></tr>
+    <tr><td>6. Notas</td></tr>
+</table>
+<p class="small compiled-note">
+    Compilado a partir de {{ scans_read }} libro{{ scans_read|pluralize }} escaneado{{ scans_read|pluralize }} de esta grúa{% if scans_with_error %} ({{ scans_with_error }} sin poder leer){% endif %} y de los partes de trabajo del taller.
+</p>
+
+<h2 class="new-page">1.1 Identificación de la grúa</h2>
+<table class="fields">
+    <tr><th>Grúa número</th><td>{{ machine.code }}</td></tr>
+    <tr><th>Marca / modelo o tipo</th><td>{{ machine.brand_model|default:"—" }}</td></tr>
+    <tr><th>Número de serie</th><td>{{ machine.crane_serial_number|default:"—" }}</td></tr>
+    <tr><th>Año de fabricación</th><td>{{ machine.manufacture_year|default:"—" }}</td></tr>
+    <tr><th>Matrícula del vehículo</th><td>{{ machine.plate|default:"—" }}</td></tr>
+    <tr><th>Número de bastidor</th><td>{{ machine.chassis_number|default:"—" }}</td></tr>
+    <tr><th>Capacidad máxima</th><td>{{ machine.max_capacity|default:"—" }}</td></tr>
+</table>
+
+<h2>1.2 Pesos y dimensiones</h2>
+<table class="fields">
+    <tr><th>Longitud</th><td>{% if machine.length_mm %}{{ machine.length_mm }} mm{% else %}—{% endif %}</td></tr>
+    <tr><th>Anchura</th><td>{% if machine.width_mm %}{{ machine.width_mm }} mm{% else %}—{% endif %}</td></tr>
+    <tr><th>Altura</th><td>{% if machine.height_mm %}{{ machine.height_mm }} mm{% else %}—{% endif %}</td></tr>
+    <tr><th>Masa</th><td>{% if machine.mass_kg %}{{ machine.mass_kg }} kg{% else %}—{% endif %}</td></tr>
+    <tr><th>Número de ejes</th><td>{{ machine.axle_count|default:"—" }}</td></tr>
+    <tr><th>Masa por eje</th><td>{{ machine.axle_mass|default:"—" }}</td></tr>
+</table>
+
+<h2>1.3 Titularidad</h2>
+<table class="fields">
+    <tr><th>Primer propietario</th><td>{{ machine.first_owner_name|default:"—" }}</td></tr>
+    <tr><th>N.I.F. / C.I.F.</th><td>{{ machine.first_owner_tax_id|default:"—" }}</td></tr>
+    <tr><th>Domicilio</th><td>{{ machine.first_owner_address|default:"—" }}</td></tr>
+    <tr><th>C.P. y población</th><td>{{ machine.first_owner_city|default:"—" }}</td></tr>
+</table>
+{% if ownership_changes %}
+<table class="data spaced">
+    <thead><tr><th>Fecha</th><th>Nuevo propietario</th><th>Datos</th></tr></thead>
+    <tbody>
+        {% for row in ownership_changes %}
+        <tr><td class="nowrap">{{ row.entry_date|date:"d/m/Y"|default:"—" }}</td><td>{{ row.entity|default:"—" }}</td><td>{{ row.concept|default:"—" }}</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+<h2 class="new-page">2.1 Inspecciones oficiales de la base</h2>
+{% if inspections_base %}
+<table class="data">
+    <thead><tr><th>Fecha</th><th>Tipo</th><th>Entidad inspectora (O.C.A.)</th><th>Resultado</th><th>Próxima revisión</th></tr></thead>
+    <tbody>
+        {% for row in inspections_base %}
+        <tr><td class="nowrap">{{ row.entry_date|date:"d/m/Y"|default:"—" }}</td><td>{{ row.entry_type|default:"—" }}</td><td>{{ row.entity|default:"—" }}</td><td>{{ row.result|default:"—" }}</td><td class="nowrap">{{ row.next_date|date:"d/m/Y"|default:"—" }}</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="empty">Sin inspecciones oficiales de la base registradas.</p>
+{% endif %}
+
+<h2>2.2 Inspecciones oficiales de la estructura</h2>
+{% if inspections_structure %}
+<table class="data">
+    <thead><tr><th>Fecha</th><th>Tipo</th><th>Entidad inspectora (O.C.A.)</th><th>Resultado</th><th>Próxima revisión</th></tr></thead>
+    <tbody>
+        {% for row in inspections_structure %}
+        <tr><td class="nowrap">{{ row.entry_date|date:"d/m/Y"|default:"—" }}</td><td>{{ row.entry_type|default:"—" }}</td><td>{{ row.entity|default:"—" }}</td><td>{{ row.result|default:"—" }}</td><td class="nowrap">{{ row.next_date|date:"d/m/Y"|default:"—" }}</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="empty">Sin inspecciones oficiales de la estructura registradas.</p>
+{% endif %}
+
+<h2 class="new-page">3. Revisiones técnicas periódicas</h2>
+{% if reviews %}
+<table class="data">
+    <thead><tr><th>Fecha</th><th>Concepto</th><th>Empresa mantenedora</th><th>Resultado</th></tr></thead>
+    <tbody>
+        {% for row in reviews %}
+        <tr><td class="nowrap">{{ row.entry_date|date:"d/m/Y"|default:"—" }}</td><td>{{ row.concept|default:"—" }}{% if row.next_date and not row.concept %}<br><span class="small">Próxima revisión: {{ row.next_date|date:"d/m/Y" }}</span>{% endif %}</td><td>{{ row.entity|default:"—" }}</td><td>{{ row.result|default:"—" }}</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="empty">Sin revisiones técnicas periódicas registradas.</p>
+{% endif %}
+
+<h2 class="new-page">4. Piezas sustituidas o reparaciones realizadas</h2>
+<p class="small">Motores · Mecanismos o componentes hidráulicos · Elementos estructurales.</p>
+{% if repairs %}
+<table class="data">
+    <thead><tr><th>Fecha</th><th>Tipo de reparación o tipo de sustitución</th><th>Empresa mantenedora</th><th>Origen</th></tr></thead>
+    <tbody>
+        {% for row in repairs %}
+        <tr><td class="nowrap">{{ row.date|date:"d/m/Y"|default:"—" }}</td><td>{{ row.concept|default:"—" }}</td><td>{{ row.entity|default:"—" }}</td><td class="small">{{ row.source }}</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="empty">Sin piezas sustituidas ni reparaciones registradas.</p>
+{% endif %}
+
+<h2 class="new-page">5. Accidentes</h2>
+{% if accidents %}
+<table class="data">
+    <thead><tr><th>Fecha</th><th>Descripción</th></tr></thead>
+    <tbody>
+        {% for row in accidents %}
+        <tr><td class="nowrap">{{ row.entry_date|date:"d/m/Y"|default:"—" }}</td><td>{{ row.concept|default:"—" }}</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="empty">Sin accidentes registrados.</p>
+{% endif %}
+
+<h2>6. Notas</h2>
+{% if notes %}
+<table class="data">
+    <thead><tr><th>Fecha</th><th>Nota</th></tr></thead>
+    <tbody>
+        {% for row in notes %}
+        <tr><td class="nowrap">{{ row.entry_date|date:"d/m/Y"|default:"—" }}</td><td>{{ row.concept|default:"—" }}</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="empty">Sin notas.</p>
+{% endif %}
+
+</body>
+</html>

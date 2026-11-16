@@ -427,6 +427,59 @@ class MachineAsset(models.Model):
         help_text=_("Avisos y notas libres sobre el centro de gasto."),
     )
 
+    # H23 (S154, invasora) -- datos del libro historial de la grúa
+    # (RD 837/2003, ITC MIE-AEM 4): identificación, pesos y dimensiones
+    # y titularidad inicial. Miguel Ángel: "Campos nuevos en la ficha de
+    # la máquina". Se rellenan a partir de los libros escaneados
+    # (fleet.logbook_service) y se editan en la ficha.
+    # ---
+    # Crane logbook data (identification, weights and dimensions,
+    # first owner), filled from the scanned logbooks.
+    crane_serial_number = models.CharField(
+        _("Número de serie"), max_length=100, blank=True, default="",
+    )
+    manufacture_year = models.PositiveSmallIntegerField(
+        _("Año de fabricación"), null=True, blank=True,
+    )
+    max_capacity = models.CharField(
+        _("Capacidad máxima"), max_length=60, blank=True, default="",
+        help_text=_("Tal como figura en el libro (p. ej. 35 t)."),
+    )
+    length_mm = models.PositiveIntegerField(
+        _("Longitud (mm)"), null=True, blank=True,
+    )
+    width_mm = models.PositiveIntegerField(
+        _("Anchura (mm)"), null=True, blank=True,
+    )
+    height_mm = models.PositiveIntegerField(
+        _("Altura (mm)"), null=True, blank=True,
+    )
+    mass_kg = models.PositiveIntegerField(
+        _("Masa (kg)"), null=True, blank=True,
+    )
+    axle_count = models.PositiveSmallIntegerField(
+        _("Número de ejes"), null=True, blank=True,
+    )
+    axle_mass = models.CharField(
+        _("Masa por eje"), max_length=120, blank=True, default="",
+        help_text=_("Tal como figura en el libro (p. ej. 12.000 kg)."),
+    )
+    first_owner_name = models.CharField(
+        _("Primer propietario"), max_length=200, blank=True, default="",
+    )
+    first_owner_tax_id = models.CharField(
+        _("NIF/CIF del primer propietario"), max_length=20, blank=True,
+        default="",
+    )
+    first_owner_address = models.CharField(
+        _("Domicilio del primer propietario"), max_length=255, blank=True,
+        default="",
+    )
+    first_owner_city = models.CharField(
+        _("C.P. y población del primer propietario"), max_length=255,
+        blank=True, default="",
+    )
+
     class Meta:
         verbose_name = _("Centro de gasto")
         verbose_name_plural = _("Centros de gasto")
@@ -1525,3 +1578,135 @@ class MachineGroupTemplate(models.Model):
             pending = [pk for pk in children if pk not in found]
             found.update(pending)
         return found
+
+
+# ---------------------------------------------------------------------------
+# H23 (S154, invasora) -- libro historial de la grúa
+# H23 (S154) -- crane logbook
+# ---------------------------------------------------------------------------
+
+class MachineLogbookSource(models.Model):
+    """
+    A LIBRO_HISTORIAL document already read, or a book generated.
+
+    ---
+
+    Un documento LIBRO_HISTORIAL de una grúa ya leído (escaneo) o un
+    libro generado por la plataforma. Marca qué escaneos están leídos
+    (aunque no tuvieran filas) para no volver a leerlos, y qué libros
+    son generados, que nunca se leen como escaneo.
+    """
+
+    KIND_SCAN = "SCAN"
+    KIND_GENERATED = "GENERATED"
+    KIND_CHOICES = [
+        (KIND_SCAN, _("Libro escaneado")),
+        (KIND_GENERATED, _("Libro generado")),
+    ]
+
+    machine = models.ForeignKey(
+        MachineAsset,
+        on_delete=models.CASCADE,
+        related_name="logbook_sources",
+        verbose_name=_("Centro de gasto"),
+    )
+    document = models.OneToOneField(
+        "document_explorer.DocumentIndexEntry",
+        on_delete=models.CASCADE,
+        related_name="logbook_source",
+        verbose_name=_("Documento"),
+    )
+    kind = models.CharField(
+        _("Origen"), max_length=10, choices=KIND_CHOICES,
+    )
+    rows_found = models.PositiveIntegerField(_("Filas leídas"), default=0)
+    error = models.TextField(_("Error de lectura"), blank=True, default="")
+    created_by = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name=_("Generado por"),
+    )
+    processed_at = models.DateTimeField(_("Procesado el"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("Documento del libro historial")
+        verbose_name_plural = _("Documentos del libro historial")
+        ordering = ["-processed_at"]
+
+    def __str__(self) -> str:
+        return f"{self.machine.code} -- {self.get_kind_display()}"
+
+
+class MachineLogbookEntry(models.Model):
+    """
+    One row read from a scanned crane logbook.
+
+    ---
+
+    Una fila leída de un libro historial escaneado: inspección oficial,
+    revisión técnica periódica, reparación, accidente, nota o cambio de
+    titularidad. Las reparaciones de los partes digitales no se copian
+    aquí: el libro las toma en vivo de los partes.
+    """
+
+    SECTION_INSPECTION_BASE = "INSPECTION_BASE"
+    SECTION_INSPECTION_STRUCTURE = "INSPECTION_STRUCTURE"
+    SECTION_PERIODIC_REVIEW = "PERIODIC_REVIEW"
+    SECTION_REPAIR = "REPAIR"
+    SECTION_ACCIDENT = "ACCIDENT"
+    SECTION_NOTE = "NOTE"
+    SECTION_OWNERSHIP = "OWNERSHIP"
+    SECTION_CHOICES = [
+        (SECTION_INSPECTION_BASE, _("Inspección oficial de la base")),
+        (SECTION_INSPECTION_STRUCTURE,
+         _("Inspección oficial de la estructura")),
+        (SECTION_PERIODIC_REVIEW, _("Revisión técnica periódica")),
+        (SECTION_REPAIR, _("Pieza sustituida o reparación")),
+        (SECTION_ACCIDENT, _("Accidente")),
+        (SECTION_NOTE, _("Nota")),
+        (SECTION_OWNERSHIP, _("Cambio de titularidad")),
+    ]
+
+    source = models.ForeignKey(
+        MachineLogbookSource,
+        on_delete=models.CASCADE,
+        related_name="entries",
+        verbose_name=_("Documento de origen"),
+    )
+    machine = models.ForeignKey(
+        MachineAsset,
+        on_delete=models.CASCADE,
+        related_name="logbook_entries",
+        verbose_name=_("Centro de gasto"),
+    )
+    section = models.CharField(
+        _("Sección"), max_length=25, choices=SECTION_CHOICES,
+    )
+    entry_date = models.DateField(_("Fecha"), null=True, blank=True)
+    entry_type = models.CharField(
+        _("Tipo"), max_length=120, blank=True, default="",
+    )
+    concept = models.TextField(_("Concepto"), blank=True, default="")
+    entity = models.CharField(
+        _("Entidad o empresa"), max_length=200, blank=True, default="",
+    )
+    result = models.CharField(
+        _("Resultado"), max_length=200, blank=True, default="",
+    )
+    next_date = models.DateField(
+        _("Próxima revisión"), null=True, blank=True,
+    )
+
+    class Meta:
+        verbose_name = _("Fila del libro historial")
+        verbose_name_plural = _("Filas del libro historial")
+        ordering = ["machine", "section", "entry_date", "id"]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.machine.code} -- {self.get_section_display()} "
+            f"{self.entry_date or ''}"
+        )

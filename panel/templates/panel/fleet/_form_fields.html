@@ -120,6 +120,26 @@
         {% endif %}
     </div>
 
+    {% if show_logbook_fields %}
+    {% comment %}
+    H23 (S154, invasora): datos del libro historial de la grúa
+    (identificación, pesos y dimensiones, titularidad inicial). Solo en la
+    ficha de las grúas A y H (show_logbook_fields, MachineDetailView).
+    {% endcomment %}
+    <div class="col-12 mt-1">
+        <h6 class="text-muted small fw-semibold text-uppercase mb-2">Libro historial de la grúa</h6>
+    </div>
+    {% for field in logbook_form_fields %}
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm" for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.errors %}
+        <div class="invalid-feedback d-block">{{ field.errors.0 }}</div>
+        {% endif %}
+    </div>
+    {% endfor %}
+    {% endif %}
+
     {# H30 (S131): plan de revisiones por horas y km #}
     <div class="col-12 mt-1">
         <h6 class="text-muted small fw-semibold text-uppercase mb-2">Revisiones</h6>

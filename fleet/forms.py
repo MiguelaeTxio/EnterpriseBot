@@ -16,6 +16,25 @@ from django import forms
 from fleet.models import MachineAsset
 
 
+# H23 (S154, invasora): datos del libro historial de la grúa en la
+# ficha (Miguel Ángel: "Campos nuevos en la ficha de la máquina").
+LOGBOOK_FIELDS = [
+    "crane_serial_number",
+    "manufacture_year",
+    "max_capacity",
+    "length_mm",
+    "width_mm",
+    "height_mm",
+    "mass_kg",
+    "axle_count",
+    "axle_mass",
+    "first_owner_name",
+    "first_owner_tax_id",
+    "first_owner_address",
+    "first_owner_city",
+]
+
+
 class MachineAssetForm(forms.ModelForm):
     """
     Form for creating and updating a MachineAsset record from the panel.
@@ -57,7 +76,7 @@ class MachineAssetForm(forms.ModelForm):
             "service_every_km",
             # S148: observaciones libres (campo Memo).
             "notes",
-        ]
+        ] + LOGBOOK_FIELDS
         widgets = {
             "code": forms.TextInput(attrs={
                 "class": "form-control text-uppercase",
@@ -210,6 +229,12 @@ class MachineAssetForm(forms.ModelForm):
                 "data-new-family-value": self.NEW_FAMILY_VALUE,
             }),
         )
+        # S154: los campos del libro historial, con el estilo del resto.
+        for name in LOGBOOK_FIELDS:
+            widget = self.fields[name].widget
+            widget.attrs.setdefault("class", "form-control")
+            if isinstance(widget, forms.NumberInput):
+                widget.attrs.setdefault("min", "0")
 
     def clean(self):
         """

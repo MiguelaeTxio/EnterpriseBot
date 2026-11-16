@@ -72,6 +72,7 @@ from panel.views_machine_workshop import (
     MachineWorkshopTicketsView,
     WorkOrderDocumentView,
 )
+from panel.views_machine_logbook import MachineLogbookGenerateView
 from panel.views_machine_service import (
     MachineMeterReadingCreateView,
     MachineMeterReadingDeleteView,
@@ -1070,6 +1071,12 @@ urlpatterns = [
         "documentacion/maquinaria/<int:pk>/",
         MachineDetailView.as_view(),
         name="documentation_machine_detail",
+    ),
+    # H23 (S154, invasora): libro historial de la grúa (A y H).
+    path(
+        "documentacion/maquinaria/<int:pk>/libro-historial/generar/",
+        MachineLogbookGenerateView.as_view(),
+        name="machine_logbook_generate",
     ),
     # H30 (S131): revisiones y lecturas de horas/km del centro de gasto.
     path(
