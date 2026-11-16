@@ -49,6 +49,7 @@ _BRANDS = (
     ("CAJAMAR VIDA", "Cajamar Vida"), ("CAJAMAR", "Cajamar"),
     ("ASEFA", "ASEFA"), ("CASER", "Caser"), ("SANTANDER", "Santander"),
     ("ABANCA", "Abanca"), ("CESCE", "CESCE"),
+    ("SEGUROS REUNIDOS", "Caser"),
     ("LAGE LANDEN", "De Lage Landen"),
     ("SANITAS", "Sanitas"), ("ADESLAS", "Adeslas"),
     ("SEGURCAIXA", "Adeslas"), ("ADELAS", "Adeslas"), ("REALE", "Reale"),
@@ -76,6 +77,9 @@ def brand(text):
     value = companies.plain(text).replace(" ", "")
     if not value:
         return ""
+    if value == "ALLI":
+        # Recibo con la aseguradora cortada (S152, B46).
+        return "Allianz"
     for key, name in _BRANDS:
         if key.replace(" ", "") in value:
             return name
@@ -219,6 +223,67 @@ def _doc_items(entries):
     return items
 
 
+def _machine_pk(item):
+    return item["machine"].pk if item["machine"] is not None else None
+
+
+def _same_content(a, b):
+    """
+    Two readings of the same document (same receipt, other file).
+    ---
+    Dos lecturas del mismo documento en archivos distintos: un recibo
+    protegido y su copia ya sin protección tienen otro hash pero el
+    mismo contenido (Miguel Ángel, S152: salían como seguros
+    duplicados). Mismo tipo, mismo vehículo (máquina o matrícula),
+    vencimiento a menos de un mes y la misma prima, o, sin prima en
+    ninguno, el mismo número de póliza.
+    """
+    if a["kind"] != b["kind"] or not a["due"] or not b["due"]:
+        return False
+    if abs((a["due"] - b["due"]).days) > 31:
+        return False
+    if _machine_pk(a) is not None and _machine_pk(b) is not None:
+        # La misma póliza de flota guardada en la carpeta de cada
+        # máquina no es un duplicado: cada máquina lleva la suya.
+        same_unit = _machine_pk(a) == _machine_pk(b)
+    else:
+        same_unit = bool(a["plates"] & b["plates"])
+    if not same_unit:
+        return False
+    if a["premium"] is not None and b["premium"] is not None:
+        return abs(a["premium"] - b["premium"]) < 0.01
+    if a["premium"] is None and b["premium"] is None:
+        pa, pb = _digits(a["policy"]), _digits(b["policy"])
+        return len(pa) >= 5 and len(pb) >= 5 and (pa in pb or pb in pa)
+    return False
+
+
+def _completeness(item):
+    return (item["insurer"] not in ("", "No consta"),
+            bool(item["broker"]), bool(item["frequency"]),
+            len(item["policy"]))
+
+
+def _dedupe(items):
+    """
+    Keep one item per document content.
+    ---
+    Deja un solo documento por contenido (ver _same_content): se queda
+    el más completo y toma del otro lo que le falte.
+    """
+    kept = []
+    for item in sorted(items, key=_completeness, reverse=True):
+        twin = next((k for k in kept if _same_content(k, item)), None)
+        if twin is None:
+            kept.append(item)
+            continue
+        for field in ("broker", "frequency", "policy", "cover"):
+            if not twin[field] and item[field]:
+                twin[field] = item[field]
+        twin.setdefault("twins", []).append(item["entry_id"])
+    return kept
+
+
 def _group_key(item):
     machine = item["machine"]
     policy = re.sub(r"[^A-Z0-9]", "", companies.plain(item["policy"]))
@@ -243,7 +308,7 @@ def _records_from_docs(items):
     entre 10 y 14 meses antes.
     """
     groups = collections.defaultdict(list)
-    for item in items:
+    for item in _dedupe(items):
         groups[_group_key(item)].append(item)
     records = []
     for docs in groups.values():
