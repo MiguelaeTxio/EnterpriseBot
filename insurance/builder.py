@@ -689,15 +689,19 @@ def _line_owners(candidates, lines):
     ---
     Cada apunte del mayor va a un solo seguro, el que mejor casa con él
     (número de póliza, luego matrícula, centro de gasto, matrícula del
-    proyecto e importe; a igualdad, el de la misma aseguradora, con
-    máquina y con número de póliza). Antes un apunte podía contar en
+    proyecto e importe; a igualdad, el seguro cuyo recibo es ese
+    importe, el de la misma aseguradora, con máquina y con número de
+    póliza). Antes un apunte podía contar en
     varios seguros a la vez (S152: el mismo recibo de 3050MJD en tres
     seguros; recibos de 9875GBF también en la flota de Generali).
     """
     best = {}
     for position, (record, hits, _other) in enumerate(candidates):
         for i, why in hits.items():
+            receipt = record.get("receipt")
             score = (_WHY_RANK.get(why, 0),
+                     receipt is not None
+                     and abs(lines[i]["amount"] - receipt) < 0.01,
                      lines[i]["brand"] == record["insurer"],
                      record["machine_id"] is not None,
                      _known(record["policy"]),
@@ -972,21 +976,27 @@ def _fleets(records, today):
     Fold the vehicles of one fleet policy into one line.
     ---
     Las flotas (FLEET_MIN_VEHICLES vehículos o más con el mismo número
-    de póliza y aseguradora) se pliegan en una línea con la suma de
+    de póliza y aseguradora; dos o más máquinas si no es de
+    circulación) se pliegan en una línea con la suma de
     primas y el detalle de cada vehículo.
     """
     groups = collections.defaultdict(list)
     for record in records:
         policy = _digits(record["policy"])
-        if record["category"] == "circulacion" and len(policy) >= 5 and (
-                record["machine_id"] or record["plate"]):
+        if len(policy) >= 5 and (record["machine_id"] or record["plate"]):
             groups[(record["company"],
-                    _insurer_group(record["insurer"]), policy)].append(
-                record)
+                    _insurer_group(record["insurer"]), policy,
+                    record["category"])].append(record)
     folded = set()
     result = []
-    for (company, insurer, _policy), group in groups.items():
-        if len(group) < FLEET_MIN_VEHICLES:
+    for (company, insurer, _policy, category), group in groups.items():
+        # S152: una póliza de avería (u otra que no es de circulación)
+        # de varias máquinas se paga con los mismos recibos; desde que
+        # cada recibo cuenta una sola vez, por máquina salía un precio
+        # sin sentido (24-G-427.000.411: B33, B46 y B48).
+        minimum = (FLEET_MIN_VEHICLES if category == "circulacion"
+                   else 2)
+        if len(group) < minimum:
             continue
         folded.update(id(r) for r in group)
         dues = collections.Counter(r["due"] for r in group if r["due"])
@@ -1002,16 +1012,29 @@ def _fleets(records, today):
             # deja vencida la flota, que sigue en vigor.
             alerts.remove("Vencido")
             comments = [c for c in comments if not c.startswith("Venció")]
+        # Con recibos en el mayor, la prima es lo pagado (cada recibo ya
+        # está en un solo vehículo); sin ellos, la suma de los
+        # documentos, salvo en una póliza de varias máquinas, cuyo
+        # documento ya trae la prima de todas.
+        paid = [r for r in group if r["ledger"]]
+        if paid:
+            premium = sum(r["premium"] or 0 for r in paid)
+            alerts = [a for a in alerts if a != "Sin recibo en el mayor"]
+        elif category == "circulacion":
+            premium = sum(r["premium"] or 0 for r in group)
+        else:
+            premium = max((r["premium"] or 0 for r in group), default=0)
         result.append({
             **group[0],
-            "object": "Flota de %d vehículos" % len(group),
+            "object": ("Flota de %d vehículos" if category == "circulacion"
+                       else "Póliza de %d máquinas") % len(group),
             "plate": "",
             "plates": set().union(*(r["plates"] for r in group)),
             "code": "",
             "cost_centre": "",
             "machine_id": None,
             "due": due,
-            "premium": round(sum(r["premium"] or 0 for r in group), 2),
+            "premium": round(premium, 2),
             "previous": None,
             "alerts": alerts,
             "comments": comments,
