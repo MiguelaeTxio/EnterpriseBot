@@ -21,18 +21,26 @@ refresca sola. Lógica: hr_calendar/payslip_delivery.py.
     <div class="row g-2">
         <div class="col-lg-4">
             <div class="border rounded p-2 h-100">
-                <div class="fw-bold small mb-1">Buscar y filtrar</div>
                 <form id="psl-filters" autocomplete="off" onsubmit="return false;"
                       hx-get="{% url 'panel:payslip_results' %}" hx-target="#psl-results"
                       hx-include="#psl-sort-inputs"
                       hx-trigger="input changed delay:300ms from:#psl-filter-search, change, psl-selection-refresh">
+                    {# S153: sin scroll vertical arriba (Miguel Ángel): «Selección» va en la línea del título y «Situación» junto a «Entrega». #}
+                    <div class="d-flex align-items-center justify-content-between gap-2 mb-1">
+                        <div class="fw-bold small">Buscar y filtrar</div>
+                        <div class="form-check small mb-0" title="Mostrar solo la selección actual">
+                            <input class="form-check-input" type="checkbox" name="only_selected" value="1" id="pslOnlySelected">
+                            <label class="form-check-label" for="pslOnlySelected">Solo la selección actual</label>
+                        </div>
+                    </div>
+                    <input type="hidden" name="selected_ids" id="psl-selected-ids" value="">
                     <input type="text" name="search" id="psl-filter-search" class="form-control doc-h30-search mb-2"
                            placeholder="Buscar por trabajador, DNI, archivo, carpeta, mes…" value="{{ filter_search }}">
                     {# S153 (4.27): bloque común de todas las pestañas de personas (del trabajador de cada nómina); debajo, lo propio. #}
                     {% include "panel/_person_common_filters.html" with p="psl" %}
                     <hr class="eb-filters-sep">
-                    <div class="row g-1 small mb-2">
-                        <div class="col-12">
+                    <div class="row g-1 small">
+                        <div class="col-8">
                             <label class="form-label mb-0 fw-semibold" for="psl-batch-select">Entrega</label>
                             <select class="form-select form-select-sm" name="batch" id="psl-batch-select">
                                 <option value="">Todas las entregas</option>
@@ -40,6 +48,24 @@ refresca sola. Lógica: hr_calendar/payslip_delivery.py.
                                 <option value="{{ item.pk }}"{% if batch and item.pk == batch.pk %} selected{% endif %}>#{{ item.pk }} · {{ item.created_at|date:"d/m/Y H:i" }} · {{ item.folder_name|default:"sin carpeta"|truncatechars:30 }} · {{ item.get_status_display }}</option>
                                 {% endfor %}
                             </select>
+                        </div>
+                        <div class="col-4">
+                            <div class="form-label mb-0 fw-semibold">Situación</div>
+                            {# Casillas dentro de un desplegable, como en las demás vistas (panel/_checkdrop_js.html pinta el botón). #}
+                            <div class="dropdown checkdrop" data-all="Todos" data-none="Ninguno">
+                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle w-100 text-start" data-bs-toggle="dropdown"
+                                        data-bs-auto-close="outside" aria-expanded="false"><span class="checkdrop-text">Todos</span></button>
+                                <div class="dropdown-menu p-2 small">
+                                    {% for value, label in status_choices %}
+                                    <div class="form-check">
+                                        <input class="form-check-input psl-status-check" type="checkbox" value="{{ value }}" id="pslStatus{{ value }}"
+                                               {% if value in filter_status %}checked{% endif %}>
+                                        <label class="form-check-label text-nowrap" for="pslStatus{{ value }}">{{ label }}</label>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <input type="hidden" name="status" id="psl-status-input" value="{{ filter_status|join:',' }}">
                         </div>
                         <div class="col-6">
                             <label class="form-label mb-0 fw-semibold" for="psl-month-from">Mes de la nómina desde</label>
@@ -56,34 +82,6 @@ refresca sola. Lógica: hr_calendar/payslip_delivery.py.
                         <div class="col-6">
                             <label class="form-label mb-0 fw-semibold" for="psl-date-to">hasta</label>
                             <input type="date" class="form-control form-control-sm" name="date_to" id="psl-date-to" value="{{ filter_date_to }}">
-                        </div>
-                    </div>
-                    <div class="d-flex flex-wrap gap-3 align-items-start small">
-                        <div>
-                            <div class="fw-semibold mb-1">Situación</div>
-                            {# Casillas dentro de un desplegable, como en las demás vistas (panel/_checkdrop_js.html pinta el botón). #}
-                            <div class="dropdown checkdrop" data-all="Todos" data-none="Ninguno">
-                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
-                                        data-bs-auto-close="outside" aria-expanded="false"><span class="checkdrop-text">Todos</span></button>
-                                <div class="dropdown-menu p-2 small">
-                                    {% for value, label in status_choices %}
-                                    <div class="form-check">
-                                        <input class="form-check-input psl-status-check" type="checkbox" value="{{ value }}" id="pslStatus{{ value }}"
-                                               {% if value in filter_status %}checked{% endif %}>
-                                        <label class="form-check-label text-nowrap" for="pslStatus{{ value }}">{{ label }}</label>
-                                    </div>
-                                    {% endfor %}
-                                </div>
-                            </div>
-                            <input type="hidden" name="status" id="psl-status-input" value="{{ filter_status|join:',' }}">
-                        </div>
-                        <div>
-                            <div class="fw-semibold mb-1">Selección</div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="only_selected" value="1" id="pslOnlySelected">
-                                <label class="form-check-label" for="pslOnlySelected">Mostrar solo la selección actual</label>
-                            </div>
-                            <input type="hidden" name="selected_ids" id="psl-selected-ids" value="">
                         </div>
                     </div>
                 </form>
