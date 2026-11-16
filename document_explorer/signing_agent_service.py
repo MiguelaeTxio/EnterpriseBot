@@ -248,7 +248,7 @@ def record_heartbeat(agent, host="", aliases=None, autofirma="", error="",
                               "last_seen_at"])
 
 
-def create_job(signature, documents, notes, by):
+def create_job(signature, documents, notes, by, all_pages=False):
     """
     Queue generated PDFs [(name, bytes, config)] for the signature.
     ---
@@ -270,7 +270,7 @@ def create_job(signature, documents, notes, by):
         job = SignedFormJob.objects.create(
             signature=signature,
             certificate_alias=alias[:255],
-            certificate_thumbprint=thumbprint,
+            certificate_thumbprint=thumbprint, all_pages=all_pages,
             notes=notes, created_by=by)
         SignedFormFile.objects.bulk_create([
             SignedFormFile(job=job, name=name,

@@ -40,10 +40,19 @@ jobs:
           pip-sync requirements.txt
           type requirements.txt
 
+      - name: Probar la firma nativa (certificados de prueba CNG y CryptoAPI)
+        working-directory: signing_agent
+        shell: pwsh
+        run: |
+          $cng = New-SelfSignedCertificate -Subject "CN=PRUEBA CNG (R: B00000000), O=PRUEBA SL, C=ES" -CertStoreLocation Cert:\CurrentUser\My -KeyAlgorithm RSA -KeyLength 2048 -KeyExportPolicy NonExportable -HashAlgorithm SHA256
+          $capi = New-SelfSignedCertificate -Subject "CN=PRUEBA CAPI (R: B00000001), O=PRUEBA SL, C=ES" -CertStoreLocation Cert:\CurrentUser\My -Provider "Microsoft Enhanced Cryptographic Provider v1.0" -KeySpec Signature -KeyLength 2048 -KeyExportPolicy NonExportable -HashAlgorithm SHA256
+          python prueba_firma_nativa.py $cng.Thumbprint $capi.Thumbprint
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
       - name: Empaquetar (PyInstaller)
         working-directory: signing_agent
         run: |
-          pyinstaller --onefile --noconsole --name AgenteFirmas agente_firmas.py
+          pyinstaller --onefile --noconsole --name AgenteFirmas --hidden-import firma_nativa --collect-all pyhanko --collect-all pyhanko_certvalidator --collect-all uharfbuzz --collect-data fontTools agente_firmas.py
           dir dist
 
       - name: Publicar en la release agente-firmas
@@ -53,7 +62,7 @@ jobs:
         run: |
           if ! gh release view agente-firmas >/dev/null 2>&1; then
             gh release create agente-firmas --title "Agente de firmas (Windows)" \
-              --notes "AgenteFirmas.exe: agente de firma digital con AutoFirma (pestaña Firmas del panel). Se actualiza solo en cada cambio de signing_agent/."
+              --notes "AgenteFirmas.exe: agente de firma digital (pestaña Firmas del panel). Se actualiza solo en cada cambio de signing_agent/."
           fi
           cp signing_agent/requirements.txt signing_agent/dist/requirements-agente-firmas.txt
           gh release upload agente-firmas signing_agent/dist/AgenteFirmas.exe \

@@ -274,7 +274,8 @@ class SignedFormsGenerateView(SignatureAccessMixin, View):
                 job = agents.create_job(
                     signature, [(name, data, config) for (name, data),
                                 config in zip(results, configs)],
-                    notes, request.user.company_user)
+                    notes, request.user.company_user,
+                    all_pages=request.POST.get("all_pages") == "1")
             except agents.NoValidCertificate as exc:
                 return JsonResponse({"error": "No se ha generado nada. "
                                               + str(exc)}, status=400)
@@ -511,6 +512,7 @@ class AgentPendingView(AgentApiMixin, View):
             "alias": item.job.certificate_alias,
             "thumbprint": item.job.certificate_thumbprint,
             "config": item.signature_config,
+            "all_pages": item.job.all_pages,
             "download": reverse("panel:signing_agent_file",
                                 args=[item.pk]),
             "result": reverse("panel:signing_agent_result",

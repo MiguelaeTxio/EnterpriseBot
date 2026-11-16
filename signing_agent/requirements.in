@@ -2,4 +2,7 @@
 # compila en el propio runner Windows del workflow
 # signing_agent_build.yml (plataforma de destino), nunca a mano.
 requests
+# S153 (v4): firma nativa con sello como el de Acrobat (letra embebida:
+# fontTools y uharfbuzz del extra opentype).
+pyhanko[opentype]
 pyinstaller

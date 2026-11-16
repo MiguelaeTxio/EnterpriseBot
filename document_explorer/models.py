@@ -2539,6 +2539,10 @@ class SignedFormJob(models.Model):
     certificate_thumbprint = models.CharField(
         max_length=64, blank=True, default="",
         verbose_name="Certificado (huella SHA-1)")
+    # S153 (agente v4): firmar al pie de todas las páginas (como cuando se
+    # firma en Acrobat página a página) o solo donde lo pide el documento.
+    all_pages = models.BooleanField(
+        default=False, verbose_name="Firmar en todas las páginas")
     status = models.CharField(max_length=10, choices=STATUS_CHOICES,
                               default=STATUS_PENDING,
                               verbose_name="Estado")

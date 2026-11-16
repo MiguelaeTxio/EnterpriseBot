@@ -1,6 +1,7 @@
 # C:\EnterpriseBot\AgenteFirmas\agente_firmas.py
 """
-S153. EnterpriseBot signing agent (Windows): signs with AutoFirma the
+S153. EnterpriseBot signing agent (Windows): signs (v4: natively, with
+an Acrobat-like appearance; AutoFirma only for old alias jobs) the
 documents generated in the panel's "Firmas" tab, using the company
 certificates installed in this PC's Windows store (the private key never
 leaves the PC).
@@ -42,7 +43,7 @@ SIGN_TIMEOUT_SECONDS = 180
 HTTP_TIMEOUT = 60
 LOCK_PORT = 47653
 APP_NAME = "AgenteFirmas"
-VERSION = "3"
+VERSION = "4"
 CREATE_NO_WINDOW = 0x08000000
 
 DATA_DIR = os.path.join(
@@ -302,12 +303,38 @@ class Agent:
         log.info("Latido: AutoFirma=%s, certificados=%s, error=%s",
                  self.cli or "-", aliases, self.last_error or "-")
 
+    def sign_native(self, item, pdf_bytes):
+        """
+        v4: sign without AutoFirma, with an Acrobat-like appearance.
+        ---
+        v4: firma sin AutoFirma (firma_nativa.py): clave del almacén de
+        Windows por su huella, firma de tipo Adobe y sello como el de
+        Acrobat, en todas las páginas si se pidió.
+        """
+        import firma_nativa
+
+        font_path, font_name = firma_nativa.find_font()
+        key = firma_nativa.WindowsStoreKey(item["thumbprint"])
+        signer = firma_nativa.WindowsStoreSigner(key)
+        places = firma_nativa.placements(pdf_bytes, item.get("config"),
+                                         bool(item.get("all_pages")))
+        log.info("Firma nativa de %s: %d firma(s) en las páginas %s, "
+                 "letra %s", item["id"], len(places),
+                 [page for page, _box in places], font_name)
+        return firma_nativa.sign_pdf(pdf_bytes, signer, places, font_path)
+
     def sign_one(self, item):
         log.info("Firmando %s (%s) con '%s' %s", item["id"], item["name"],
                  item["alias"], item.get("thumbprint") or "")
         response = self.session.get(SERVER + item["download"],
                                     timeout=HTTP_TIMEOUT)
         response.raise_for_status()
+        if item.get("thumbprint"):
+            signed = self.sign_native(item, response.content)
+            self.post(item["result"], files={
+                "signed": (item["name"], signed, "application/pdf")})
+            log.info("Firmado y devuelto %s", item["id"])
+            return
         with tempfile.TemporaryDirectory() as tmp:
             source = os.path.join(tmp, "entrada.pdf")
             target = os.path.join(tmp, "firmado.pdf")
