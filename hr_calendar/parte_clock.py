@@ -196,7 +196,10 @@ def correct_day(company_user, day, now=None, dry_run=False):
                     "%H:%M")))
             continue
         used.add(match.pk)
-        if abs(match.pressed_at - at) <= tolerance_delta:
+        # La cortesía se cuenta en minutos enteros (13:45:30 frente a
+        # 13:30 son 15 minutos, dentro de la cortesía).
+        pressed = match.pressed_at.replace(second=0, microsecond=0)
+        if abs(pressed - at) <= tolerance_delta:
             rows.append({"id": match.pk, "kind": kind,
                          "at": match.pressed_at, "type": None})
             continue
