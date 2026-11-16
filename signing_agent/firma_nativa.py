@@ -586,7 +586,8 @@ def parse_config(config):
     Página y recuadro de la firma visible (configuración de AutoFirma
     que manda el panel); None si no hay.
     """
-    values = dict(line.split("=", 1) for line in (config or "").splitlines()
+    text = (config or "").replace("\\n", "\n")
+    values = dict(line.split("=", 1) for line in text.splitlines()
                   if "=" in line)
     try:
         return (int(values["signaturePage"]),

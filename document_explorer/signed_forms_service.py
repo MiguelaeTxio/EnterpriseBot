@@ -383,7 +383,7 @@ def _sign_in_box(page, rect, png):
     return (page.number + 1, tuple(placed), page.rect.height)
 
 
-def _fill_by_gemini(doc, values, png):
+def _fill_by_gemini(doc, values, png, allow_empty=False):
     """
     Gemini path: write each value where Gemini says. Returns notes.
     ---
@@ -393,6 +393,8 @@ def _fill_by_gemini(doc, values, png):
     """
     items = _ask_gemini(doc)
     if not items:
+        if allow_empty:
+            return [NOTHING_TO_FILL], None
         raise SignedFormError("Gemini no ha encontrado en el documento "
                               "ningún hueco para nuestros datos")
     found = {item["field"] for item in items}
@@ -423,6 +425,8 @@ def _fill_by_gemini(doc, values, png):
         _write_in_box(page, rect, value)
         placed += 1
     if not placed:
+        if allow_empty:
+            return [NOTHING_TO_FILL], None
         raise SignedFormError("Gemini no ha encontrado ningún hueco libre "
                               "para nuestros datos")
     if FIELD_SIGNATURE not in found:
@@ -432,7 +436,13 @@ def _fill_by_gemini(doc, values, png):
     return notes, sign_box
 
 
-def fill_form(pdf_bytes, values, png):
+# S153: un documento ya relleno (o sin huecos) se puede firmar solo
+# digitalmente cuando la firma tiene certificado.
+NOTHING_TO_FILL = ("no había nada que rellenar: solo lleva la firma "
+                   "digital (al pie)")
+
+
+def fill_form(pdf_bytes, values, png, allow_empty=False):
     """
     The form filled and signed (FillResult).
     ---
@@ -450,7 +460,8 @@ def fill_form(pdf_bytes, values, png):
         method, notes = METHOD_TEXT, []
     else:
         method = METHOD_GEMINI
-        notes, sign_box = _fill_by_gemini(doc, values, png)
+        notes, sign_box = _fill_by_gemini(doc, values, png,
+                                          allow_empty=allow_empty)
     out = doc.tobytes(garbage=3, deflate=True)
     doc.close()
     return FillResult(out, method, notes, sign_box or None)
@@ -460,8 +471,10 @@ def fill_form(pdf_bytes, values, png):
 # los rellena AutoFirma con los datos del certificado y la fecha.
 VISIBLE_TEXT = ("Firmado digitalmente por $$SUBJECTCN$$ "
                 "Fecha: $$SIGNDATE=dd/MM/yyyy HH:mm$$")
-VISIBLE_HEIGHT = 26
-VISIBLE_MIN_WIDTH = 170
+# S153 (agente v4): recuadro con las proporciones del sello de Acrobat
+# (unos 136 x 49 puntos en las firmas de Adobe de Yolanda).
+VISIBLE_HEIGHT = 48
+VISIBLE_MIN_WIDTH = 136
 VISIBLE_FONT_SIZE = 6
 
 

@@ -245,7 +245,12 @@ class SignedFormsGenerateView(SignatureAccessMixin, View):
                 errors.append("%s: pasa de 25 MB" % upload.name)
                 continue
             try:
-                filled = forms.fill_form(upload.read(), values, png)
+                # S153: con certificado, un documento sin huecos que
+                # rellenar se firma solo digitalmente.
+                filled = forms.fill_form(
+                    upload.read(), values, png,
+                    allow_empty=bool(signature.certificate_cif
+                                     or signature.certificate_alias))
             except forms.SignedFormError as exc:
                 errors.append("%s: %s" % (upload.name, exc))
                 continue
@@ -511,7 +516,11 @@ class AgentPendingView(AgentApiMixin, View):
             "name": item.name,
             "alias": item.job.certificate_alias,
             "thumbprint": item.job.certificate_thumbprint,
-            "config": item.signature_config,
+            # S153: el agente v4 (firma nativa, con huella) lee la
+            # configuración por líneas; AutoFirma la quiere con "\\n".
+            "config": (item.signature_config.replace("\\n", "\n")
+                       if item.job.certificate_thumbprint
+                       else item.signature_config),
             "all_pages": item.job.all_pages,
             "download": reverse("panel:signing_agent_file",
                                 args=[item.pk]),
