@@ -2479,6 +2479,39 @@ class SigningAgent(models.Model):
         return self.name
 
 
+class CertificateAlertDismissal(models.Model):
+    """
+    S153. A certificate alert someone chose not to see again.
+    ---
+    Aviso de certificado digital (empresa sin certificado vigente o que
+    caduca pronto) que alguien ha marcado como «No mostrar más». Va
+    ligado a la situación concreta (alert_key: nivel y fecha), así que
+    si cambia (llega un certificado nuevo y vuelve a caducar, o el
+    vigente pasa a caducado) el aviso vuelve a salir.
+    """
+
+    cif = models.CharField(max_length=20, verbose_name="CIF")
+    alert_key = models.CharField(max_length=40,
+                                 verbose_name="Situación avisada")
+    dismissed_by = models.ForeignKey(
+        "ivr_config.CompanyUser", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+        verbose_name="Ocultado por")
+    dismissed_at = models.DateTimeField(auto_now_add=True,
+                                        verbose_name="Ocultado el")
+
+    class Meta:
+        verbose_name = "Aviso de certificado ocultado"
+        verbose_name_plural = "Avisos de certificado ocultados"
+        constraints = [
+            models.UniqueConstraint(fields=["cif", "alert_key"],
+                                    name="uniq_cert_alert_dismissal"),
+        ]
+
+    def __str__(self):
+        return f"{self.cif} {self.alert_key}"
+
+
 class SignedFormJob(models.Model):
     """
     S153. A batch of generated forms waiting for the digital signature.

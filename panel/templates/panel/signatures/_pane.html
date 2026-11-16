@@ -18,10 +18,13 @@ document_explorer/signed_forms_service.py.
      data-generate-url="{% url 'panel:signed_forms_generate' %}"
      data-save-url="{% url 'panel:signature_save' %}">
     {% for entry in cert_alerts %}
-    <div class="alert {% if entry.level == 'danger' %}alert-danger{% else %}alert-warning{% endif %} small py-2 mb-2">
+    <div class="alert {% if entry.level == 'danger' %}alert-danger{% else %}alert-warning{% endif %} small py-2 mb-2 d-flex align-items-start gap-2">
+        <div class="flex-grow-1">
         <i class="bi bi-shield-exclamation me-1"></i><strong>{{ entry.company }} ({{ entry.cif }})</strong>:
         {% if entry.current %}su certificado digital caduca el {{ entry.current.expires|date:"d/m/Y" }} (dentro de {{ entry.days }} días). Conviene renovarlo ya.
         {% else %}no tiene ningún certificado digital vigente{% if entry.last_expired %} (el último caducó el {{ entry.last_expired|date:"d/m/Y" }}){% endif %}; no puede firmar digitalmente hasta que tenga uno nuevo.{% endif %}
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary py-0 text-nowrap" data-cert-dismiss data-cif="{{ entry.cif }}" data-key="{{ entry.alert_key }}" data-url="{% url 'panel:signature_alert_dismiss' %}">No mostrar más</button>
     </div>
     {% endfor %}
     <div class="row g-3">
@@ -408,6 +411,19 @@ document_explorer/signed_forms_service.py.
                     if (!response.ok) { return errorOf(response).then(function (text) { throw new Error(text); }); }
                     select.classList.add("is-valid");
                     setTimeout(function () { select.classList.remove("is-valid"); }, 1500);
+                })
+                .catch(function (err) { window.alert(err.message); });
+        });
+    });
+    root.querySelectorAll("[data-cert-dismiss]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+            var data = new FormData();
+            data.append("cif", btn.dataset.cif);
+            data.append("key", btn.dataset.key);
+            fetch(btn.dataset.url, {method: "POST", body: data, headers: {"X-CSRFToken": csrf()}})
+                .then(function (response) {
+                    if (!response.ok) { return errorOf(response).then(function (text) { throw new Error(text); }); }
+                    btn.closest(".alert").remove();
                 })
                 .catch(function (err) { window.alert(err.message); });
         });

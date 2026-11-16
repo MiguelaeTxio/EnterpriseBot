@@ -127,6 +127,7 @@ from panel.views_signatures import (
     AgentHeartbeatView,
     AgentPendingView,
     AgentResultView,
+    SignatureAlertDismissView,
     SignatureCertificateView,
     SignatureDeleteView,
     SignatureImageView,
@@ -2430,6 +2431,11 @@ urlpatterns = [
         "documentacion/firmas/generar/",
         SignedFormsGenerateView.as_view(),
         name="signed_forms_generate",
+    ),
+    path(
+        "documentacion/firmas/avisos/ocultar/",
+        SignatureAlertDismissView.as_view(),
+        name="signature_alert_dismiss",
     ),
     path(
         "documentacion/firmas/<int:pk>/certificado/",

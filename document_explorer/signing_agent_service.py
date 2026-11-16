@@ -131,11 +131,18 @@ def company_certificates(today=None):
         else:
             level = ""
         company = (current or certs[0])["company"] or entry["company"]
+        last_expired = (certs[0]["expires"] if certs and not current
+                        else None)
+        # Situación concreta del aviso, para «No mostrar más».
+        alert_key = ""
+        if level:
+            when = current["expires"] if current else last_expired
+            alert_key = "%s:%s" % (level, when.isoformat() if when
+                                   else "")
         result.append({
             "cif": entry["cif"], "company": company, "certs": certs,
             "current": current, "days": days, "level": level,
-            "last_expired": certs[0]["expires"] if certs and not current
-            else None,
+            "last_expired": last_expired, "alert_key": alert_key,
         })
     return sorted(result, key=lambda e: e["company"])
 

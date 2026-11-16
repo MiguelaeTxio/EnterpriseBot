@@ -31,6 +31,7 @@ from document_explorer import signed_forms_service as forms
 from document_explorer import signing_agent_service as agents
 from document_explorer.confidential import ConfidentialError
 from document_explorer.models import (
+    CertificateAlertDismissal,
     CompanyFiscalProfile,
     CompanySignature,
     PersonIdentity,
@@ -90,6 +91,8 @@ def _pane_context():
     # S153 (agente v3): certificados de empresa por CIF con su vigencia.
     company_certs = agents.company_certificates()
     certs_by_cif = {entry["cif"]: entry for entry in company_certs}
+    dismissed = set(CertificateAlertDismissal.objects.values_list(
+        "cif", "alert_key"))
     for signature in signatures:
         signature.cert_entry = certs_by_cif.get(signature.certificate_cif)
     jobs = list(SignedFormJob.objects.select_related(
@@ -109,7 +112,8 @@ def _pane_context():
         "agents": agent_list,
         "certificate_aliases": aliases,
         "company_certs": company_certs,
-        "cert_alerts": [e for e in company_certs if e["level"]],
+        "cert_alerts": [e for e in company_certs if e["level"]
+                        and (e["cif"], e["alert_key"]) not in dismissed],
         "agents_v3": any(agent.certificates for agent in agent_list),
         "jobs": jobs,
     }
@@ -413,6 +417,26 @@ class SignatureCertificateView(SignatureAccessMixin, View):
             signature.certificate_cif = ""
         signature.save(update_fields=["certificate_alias",
                                       "certificate_cif"])
+        return JsonResponse({"ok": True})
+
+
+class SignatureAlertDismissView(SignatureAccessMixin, View):
+    """
+    POST: "No mostrar más" on a certificate alert.
+    ---
+    POST: «No mostrar más» en un aviso de certificado (CIF y situación);
+    vuelve a salir si la situación cambia.
+    """
+
+    def post(self, request):
+        cif = (request.POST.get("cif") or "").strip().upper()[:20]
+        key = (request.POST.get("key") or "").strip()[:40]
+        if not cif or not key:
+            return JsonResponse({"error": "Falta el aviso."}, status=400)
+        CertificateAlertDismissal.objects.get_or_create(
+            cif=cif, alert_key=key,
+            defaults={"dismissed_by": getattr(request.user,
+                                              "company_user", None)})
         return JsonResponse({"ok": True})
 
 
