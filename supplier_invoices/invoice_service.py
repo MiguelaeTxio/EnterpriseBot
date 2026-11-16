@@ -293,11 +293,11 @@ def _queue(invoice_pk):
 
 
 # Pausa de la entrada de facturas (S151): mientras sea True, el barrido
-# no indexa ni encola nada y las facturas en cola no se procesan (se
-# quedan "En cola"). Puesta tras elegir en el PC de Ani una carpeta
-# equivocada (la de años anteriores): nada debe tocar el almacén hasta
-# limpiar lo subido por error y apuntar el agente a "2026 facturas
-# recibidas".
+# solo indexa lo subido (para verlo en el explorador), no registra ni
+# encola ninguna factura, y las que estén en cola no se procesan.
+# Puesta tras elegir en el PC de Ani una carpeta equivocada (la de años
+# anteriores): nada debe tocar el almacén hasta limpiar lo subido por
+# error y apuntar el agente a "2026 facturas recibidas".
 INTAKE_PAUSED = True
 
 # Prefijo que pone el agente de facturas (invoice_upload_agent) delante
@@ -329,11 +329,13 @@ def _index_unindexed_blobs():
         if blob.name not in indexed and not blob.name.endswith("/")
         and "/" not in blob.name[len(NEW_FOLDER) + 1:]
     ]
+    with transaction.atomic():
+        # Las carpetas existen en el explorador aunque estén vacías.
+        index_writer.ensure_folder_chain(BUCKET, NEW_FOLDER)
+        index_writer.ensure_folder_chain(BUCKET, PROCESSED_FOLDER)
     if not fresh:
         return 0
     with transaction.atomic():
-        index_writer.ensure_folder_chain(BUCKET, NEW_FOLDER)
-        index_writer.ensure_folder_chain(BUCKET, PROCESSED_FOLDER)
         index_writer.persist_rows(
             BUCKET, [index_writer.file_row(blob) for blob in fresh],
         )
@@ -368,10 +370,13 @@ def sweep_new_folder():
     las que sube el agente de facturas del PC de Ani directamente al
     cubo (se indexan primero). Devuelve cuántas ha encolado.
     """
-    if INTAKE_PAUSED:
-        logger.info("# [FACTURAS] Entrada en pausa: no se barre nada.")
-        return 0
     _index_unindexed_blobs()
+    if INTAKE_PAUSED:
+        logger.info(
+            "# [FACTURAS] Entrada en pausa: se indexa lo subido (visible "
+            "en el explorador) pero no se registra ni se procesa nada.",
+        )
+        return 0
     entries = DocumentIndexEntry.objects.filter(
         bucket=BUCKET,
         parent_path=NEW_FOLDER,
