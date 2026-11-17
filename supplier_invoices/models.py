@@ -150,6 +150,13 @@ class SupplierInvoice(models.Model):
     processed_at = models.DateTimeField(
         null=True, blank=True, verbose_name="Procesada el",
     )
+    # Cuándo se mandó al worker (S151, 17/11/2026). Las facturas se
+    # mandan de pocas en pocas (invoice_service.feed_queue) para no
+    # llenar la cola única del worker, que comparten todas las tareas
+    # de la plataforma.
+    queued_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="En cola desde",
+    )
 
     class Meta:
         verbose_name = "Factura de proveedor"

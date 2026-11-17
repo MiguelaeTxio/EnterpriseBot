@@ -44,7 +44,7 @@ import unicodedata
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from google.genai.types import GenerateContentConfig, HttpOptions, Part
 
@@ -282,19 +282,57 @@ def _movement_author(invoice):
 # Entrada en la carpeta
 # ---------------------------------------------------------------------
 
-def _queue(invoice_pk):
+def feed_queue():
     """
-    Queue the agent for one invoice once the transaction commits.
+    Send a few pending invoices to the worker, never the whole backlog.
 
     ---
 
-    Encola el agente para una factura al confirmar la transacción.
+    Manda al worker unas pocas facturas en cola, nunca todo el atasco
+    de golpe: el worker tiene una sola cola (`work_orders`) y dos
+    procesos para TODA la plataforma (avisos de fichaje, albaranes,
+    WhatsApp...). Encolar 3.381 facturas de una vez (17/11/2026) dejó
+    esas tareas esperando detrás. Se mantienen como mucho FEED_SLOTS
+    facturas mandadas a la vez; cada factura terminada pide la
+    siguiente (tasks.py) y el barrido de cada 5 minutos hace de
+    respaldo. Las mandadas hace más de QUEUE_STALE_MINUTES sin
+    terminar (worker reiniciado) se vuelven a mandar; el reclamo
+    atómico de `process_invoice` impide procesar una dos veces.
+    Devuelve cuántas ha mandado.
     """
     from .tasks import process_supplier_invoice_task
 
-    transaction.on_commit(
-        lambda: process_supplier_invoice_task.delay(invoice_pk),
+    stale = timezone.now() - timedelta(minutes=QUEUE_STALE_MINUTES)
+    SupplierInvoice.objects.filter(
+        status=SupplierInvoice.STATUS_PENDING, queued_at__lt=stale,
+    ).update(queued_at=None)
+    stuck = SupplierInvoice.objects.filter(
+        status=SupplierInvoice.STATUS_PROCESSING, queued_at__lt=stale,
+        lines__isnull=True,
+    ).values_list("pk", flat=True)
+    SupplierInvoice.objects.filter(pk__in=list(stuck)).update(
+        status=SupplierInvoice.STATUS_PENDING, queued_at=None,
     )
+    if INTAKE_PAUSED:
+        return 0
+    busy = SupplierInvoice.objects.filter(
+        status__in=SupplierInvoice.OPEN_STATUSES,
+        queued_at__gte=stale,
+    ).count()
+    free = FEED_SLOTS - busy
+    if free <= 0:
+        return 0
+    ids = list(SupplierInvoice.objects.filter(
+        status=SupplierInvoice.STATUS_PENDING, queued_at__isnull=True,
+    ).order_by("created_at", "pk").values_list("pk", flat=True)[:free])
+    if not ids:
+        return 0
+    SupplierInvoice.objects.filter(pk__in=ids).update(
+        queued_at=timezone.now(),
+    )
+    for pk in ids:
+        process_supplier_invoice_task.delay(pk)
+    return len(ids)
 
 
 # Pausa de la entrada de facturas (S151): mientras sea True, el barrido
@@ -306,6 +344,13 @@ def _queue(invoice_pk):
 # llegar las 3.381 facturas de 2026 y se quitó ese mismo día al
 # decidir Miguel Ángel que se procesan todas las del año.
 INTAKE_PAUSED = False
+
+# Goteo hacia el worker (ver feed_queue): facturas mandadas a la vez,
+# minutos tras los que una mandada sin terminar se vuelve a mandar, y
+# archivos que registra cada barrido (para que no ocupe el worker).
+FEED_SLOTS = 2
+QUEUE_STALE_MINUTES = 30
+SWEEP_BATCH = 150
 
 # Prefijo que pone el agente de facturas (invoice_upload_agent) delante
 # del nombre: los 12 primeros caracteres de la huella SHA-256 y "_".
@@ -375,7 +420,9 @@ def sweep_new_folder():
 
     Registra y encola las facturas que han llegado a "Facturas nuevas":
     las que sube el agente de facturas del PC de Ani directamente al
-    cubo (se indexan primero). Devuelve cuántas ha encolado.
+    cubo (se indexan primero), como mucho SWEEP_BATCH por barrido, y
+    manda al worker las siguientes (feed_queue). Devuelve cuántas ha
+    registrado.
     """
     _index_unindexed_blobs()
     if INTAKE_PAUSED:
@@ -391,9 +438,9 @@ def sweep_new_folder():
         deleted_at__isnull=True,
         purged_at__isnull=True,
         supplier_invoice__isnull=True,
-    )
+    ).order_by("pk")[:SWEEP_BATCH]
     company = _default_company()
-    queued = 0
+    registered = 0
     for entry in entries:
         try:
             data = download_bytes(BUCKET, entry.blob_name)
@@ -403,19 +450,24 @@ def sweep_new_folder():
             )
             continue
         sha256 = hashlib.sha256(data).hexdigest()
-        with transaction.atomic():
-            invoice = SupplierInvoice.objects.create(
-                entry=entry,
-                sha256=sha256,
-                original_name=entry.name[:255],
-                content_type=(
-                    entry.content_type or content_type_of(data, entry.name)
-                ),
-                company=company,
-            )
-            _queue(invoice.pk)
-        queued += 1
-    return queued
+        try:
+            with transaction.atomic():
+                SupplierInvoice.objects.create(
+                    entry=entry,
+                    sha256=sha256,
+                    original_name=entry.name[:255],
+                    content_type=(
+                        entry.content_type
+                        or content_type_of(data, entry.name)
+                    ),
+                    company=company,
+                )
+        except IntegrityError:
+            # Otro barrido la registró a la vez: ya está.
+            continue
+        registered += 1
+    feed_queue()
+    return registered
 
 
 def requeue_invoices(invoices, uploaded_by):
@@ -443,11 +495,14 @@ def requeue_invoices(invoices, uploaded_by):
             invoice.processed_at = None
             if invoice.uploaded_by_id is None:
                 invoice.uploaded_by = uploaded_by
+            invoice.queued_at = None
             invoice.save(update_fields=[
                 "status", "reason", "processed_at", "uploaded_by",
+                "queued_at",
             ])
-            _queue(invoice.pk)
         requeued += 1
+    if requeued:
+        feed_queue()
     return requeued, skipped
 
 
@@ -909,19 +964,23 @@ def process_invoice(invoice_id, final=False):
         logger.info("# [FACTURAS] Entrada en pausa: %s sigue en cola.",
                     invoice.pk)
         return invoice.status
+    # Reclamo atómico: si la misma factura está en cola dos veces
+    # (reencolado), solo una tarea la procesa y el almacén no se duplica.
+    # Solo se reclaman las mandadas por feed_queue (queued_at): los
+    # mensajes viejos de la cola, de antes del goteo, salen sin hacer
+    # nada.
+    claimed = SupplierInvoice.objects.filter(
+        pk=invoice.pk, status=SupplierInvoice.STATUS_PENDING,
+        queued_at__isnull=False,
+    ).update(status=SupplierInvoice.STATUS_PROCESSING)
+    if not claimed:
+        return invoice.status
+    invoice.status = SupplierInvoice.STATUS_PROCESSING
     if invoice.entry is None:
         return _finish(
             invoice, SupplierInvoice.STATUS_ERROR,
             "El archivo de la factura ya no está en el índice.",
         )
-    # Reclamo atómico: si la misma factura está en cola dos veces
-    # (reencolado), solo una tarea la procesa y el almacén no se duplica.
-    claimed = SupplierInvoice.objects.filter(
-        pk=invoice.pk, status=SupplierInvoice.STATUS_PENDING,
-    ).update(status=SupplierInvoice.STATUS_PROCESSING)
-    if not claimed:
-        return invoice.status
-    invoice.status = SupplierInvoice.STATUS_PROCESSING
     try:
         data = download_bytes(BUCKET, invoice.entry.blob_name)
     except Exception as exc:
