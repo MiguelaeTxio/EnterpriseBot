@@ -21,6 +21,7 @@ Log propio, pantalla y archivo a la vez, con progreso y ETA
 """
 import datetime
 import json
+import time
 from collections import defaultdict
 
 from django.core.management.base import BaseCommand
@@ -106,6 +107,10 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--apply", action="store_true")
         parser.add_argument("--log-file", required=True)
+        # 17/11: con las peticiones seguidas, Vertex devuelve 429
+        # (RESOURCE_EXHAUSTED; la cuota se comparte con la lectura de
+        # albaranes en Celery): una pausa entre archivos.
+        parser.add_argument("--pause", type=float, default=10.0)
 
     def _log(self, text):
         line = "[%s] %s" % (timezone.localtime().strftime("%H:%M:%S"), text)
@@ -116,6 +121,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         with open(options["log_file"], "a", encoding="utf-8") as out:
             self._out = out
+            self._pause = options["pause"]
             self._run(options["apply"])
 
     def _run(self, apply):
@@ -133,15 +139,14 @@ class Command(BaseCommand):
             "APLICANDO" if apply else "simulación: se leen las casillas, "
             "sin recotejar"))
         start = datetime.datetime.now()
-        flagged, errors = [], 0
+        flagged, failed = [], []
         for index, (path, sheets) in enumerate(files.items(), 1):
             first = sheets[0]
-            try:
-                data = staged_bytes(first)
-                found = _read_boxes(data, mime_of(data))
-            except Exception as exc:  # noqa: BLE001 -- se anota y se sigue
-                errors += 1
-                self._log("  ERROR %s: %s" % (first.original_name, exc))
+            if index > 1:
+                time.sleep(self._pause)
+            found = self._read(first, mime_of, staged_bytes)
+            if found is None:
+                failed.append(first.original_name)
                 continue
             by_number = {_digits(i.get("number")): i for i in found}
             for sheet in sheets:
@@ -176,9 +181,40 @@ class Command(BaseCommand):
                 days.add((sheet.person_id,
                           sheet.day + datetime.timedelta(days=1)))
         self._log("Casillas marcadas: %d albarán/es; días que cambian: %d; "
-                  "errores de lectura: %d" % (len(flagged), len(days),
-                                              errors))
+                  "sin leer: %d%s" % (len(flagged), len(days), len(failed),
+                                      (" (" + ", ".join(failed) + ")")
+                                      if failed else ""))
         self._recompare(sorted(days), apply)
+
+    QUOTA_WAIT = 120
+    QUOTA_TRIES = 3
+
+    def _read(self, sheet, mime_of, staged_bytes):
+        """
+        The boxes of a file, waiting out Gemini's quota; None if it fails.
+        ---
+        Las casillas de un archivo. Si Vertex sigue diciendo 429 después
+        de sus reintentos, espera QUOTA_WAIT segundos y vuelve a probar
+        (QUOTA_TRIES veces); cualquier otro error, o la cuota agotada al
+        final, deja el archivo sin leer (None) y se sigue.
+        """
+        for attempt in range(1, self.QUOTA_TRIES + 2):
+            try:
+                data = staged_bytes(sheet)
+                return _read_boxes(data, mime_of(data))
+            except Exception as exc:  # noqa: BLE001 -- se anota y se sigue
+                quota = "429" in str(exc) or "RESOURCE_EXHAUSTED" in str(exc)
+                if quota and attempt <= self.QUOTA_TRIES:
+                    self._log("  %s: cuota de Gemini agotada, espero %d s "
+                              "(%d/%d)" % (sheet.original_name,
+                                           self.QUOTA_WAIT, attempt,
+                                           self.QUOTA_TRIES))
+                    time.sleep(self.QUOTA_WAIT)
+                    continue
+                self._log("  ERROR %s: %s" % (sheet.original_name,
+                                              str(exc)[:200]))
+                return None
+        return None
 
     def _recompare(self, days, apply):
         from hr_calendar.albaran_check import compare_day
