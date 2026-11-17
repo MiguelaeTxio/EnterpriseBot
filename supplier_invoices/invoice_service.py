@@ -302,8 +302,10 @@ def _queue(invoice_pk):
 # encola ninguna factura, y las que estén en cola no se procesan. Se
 # puso el 16/11/2026 al elegirse en el PC de Ani una carpeta equivocada
 # (no llegó a subirse nada) y se quitó ese mismo día, antes de apuntar
-# el agente a "2026 facturas recibidas".
-INTAKE_PAUSED = True
+# el agente a "2026 facturas recibidas". Se volvió a poner el 17/11 al
+# llegar las 3.381 facturas de 2026 y se quitó ese mismo día al
+# decidir Miguel Ángel que se procesan todas las del año.
+INTAKE_PAUSED = False
 
 # Prefijo que pone el agente de facturas (invoice_upload_agent) delante
 # del nombre: los 12 primeros caracteres de la huella SHA-256 y "_".
