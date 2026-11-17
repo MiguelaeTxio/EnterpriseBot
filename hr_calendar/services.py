@@ -557,7 +557,8 @@ def absence_categories(company):
 
 
 def create_absence_period(person, company, created_by, category_id,
-                          date_start, date_end, note=""):
+                          date_start, date_end, note="", time_from=None,
+                          time_to=None):
     """
     Registers an absence (S130). ValueError with the message for the
     supervisor when the kind is not offered, the dates are reversed or
@@ -581,6 +582,18 @@ def create_absence_period(person, company, created_by, category_id,
         raise ValueError(
             f"«{category.label}» necesita una nota: escribe el motivo."
         )
+    # S153: horas opcionales (una cita médica de unas horas, p. ej.),
+    # con el mismo texto que ponía la solicitud del trabajador.
+    if time_from or time_to:
+        if time_from and time_to and time_to <= time_from:
+            raise ValueError(
+                "La hora de vuelta tiene que ser posterior a la de salida."
+            )
+        hours = "Horas: %s a %s." % (
+            time_from.strftime("%H:%M") if time_from else "—",
+            time_to.strftime("%H:%M") if time_to else "—",
+        )
+        note = ("%s %s" % (hours, note)).strip()
     return AbsencePeriod.objects.create(
         person=person,
         company=company,

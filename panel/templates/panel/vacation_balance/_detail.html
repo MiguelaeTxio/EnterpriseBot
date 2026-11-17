@@ -158,6 +158,12 @@ gastan días de vacaciones; el calendario las pinta en naranja.
         <input type="date" name="date_start" class="form-control form-control-sm" required aria-label="Desde">
         <input type="date" name="date_end" class="form-control form-control-sm" required aria-label="Hasta">
     </div>
+    {# S153: horas opcionales (cita médica de unas horas, por ejemplo). #}
+    <div class="d-flex gap-2 mb-1 align-items-center">
+        <span class="small text-muted text-nowrap">Horas (opcional)</span>
+        <input type="time" name="time_from" class="form-control form-control-sm" aria-label="Sale a las">
+        <input type="time" name="time_to" class="form-control form-control-sm" aria-label="Vuelve a las">
+    </div>
     <input type="text" name="note" class="form-control form-control-sm mb-1" placeholder="Nota (obligatoria si el tipo lo indica)">
     <button type="submit" class="btn btn-sm btn-primary">
         <span class="htmx-indicator spinner-border spinner-border-sm me-1"></span>Registrar ausencia

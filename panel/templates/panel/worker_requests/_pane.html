@@ -38,17 +38,6 @@ acciones. Filtros, orden y selección persistidos por usuario
                             <input type="hidden" name="status" id="wreq-status-input" value="{{ filter_status|join:',' }}">
                         </div>
                         <div>
-                            <div class="fw-semibold mb-1">Tipo</div>
-                            {% for value, label in kind_choices %}
-                            <div class="form-check">
-                                <input class="form-check-input wreq-kind-check" type="checkbox" value="{{ value }}" id="wreqKind{{ value }}"
-                                       {% if value in filter_kind %}checked{% endif %}>
-                                <label class="form-check-label" for="wreqKind{{ value }}">{{ label }}</label>
-                            </div>
-                            {% endfor %}
-                            <input type="hidden" name="kind" id="wreq-kind-input" value="{{ filter_kind|join:',' }}">
-                        </div>
-                        <div>
                             <div class="fw-semibold mb-1">Selección</div>
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" name="only_selected" value="1" id="wreqOnlySelected">
@@ -70,12 +59,8 @@ acciones. Filtros, orden y selección persistidos por usuario
                 </div>
                 <div class="small text-muted fw-bold">Resolver las marcadas</div>
                 <div class="d-flex gap-1 flex-wrap mb-1">
-                    <button type="button" class="btn btn-sm btn-success wreq-needs-selection wreq-mass" data-action="approve" disabled
-                            title="Aprueba las vacaciones, asuntos propios y médico marcados y crea sus periodos.">Aprobar</button>
                     <button type="button" class="btn btn-sm btn-outline-danger wreq-needs-selection wreq-mass" data-action="deny" disabled
                             title="Deniega las marcadas con el motivo de la casilla.">Denegar</button>
-                    <button type="button" class="btn btn-sm btn-outline-primary wreq-needs-selection wreq-mass" data-action="proof_valid" disabled
-                            title="Da por buenos los justificantes recibidos de las marcadas.">Justificantes válidos</button>
                 </div>
                 <input type="text" id="wreq-mass-reason" class="form-control form-control-sm" maxlength="500"
                        placeholder="Motivo (para denegar)">
@@ -267,9 +252,6 @@ acciones. Filtros, orden y selección persistidos por usuario
     }
     document.querySelectorAll(".wreq-status-check").forEach(function (cb) {
         cb.addEventListener("change", function () { syncCsv(".wreq-status-check", "wreq-status-input"); });
-    });
-    document.querySelectorAll(".wreq-kind-check").forEach(function (cb) {
-        cb.addEventListener("change", function () { syncCsv(".wreq-kind-check", "wreq-kind-input"); });
     });
     // S153 (4.27): Estado y Empresa del bloque común, como en las demás.
     document.querySelectorAll(".wreq-active-check").forEach(function (cb) {

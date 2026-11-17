@@ -33,17 +33,14 @@ la vista; la selección vive en el JS de _pane.html.
     <tbody>
         {% for row in rows %}
         <tr>
-            <td><input type="checkbox" class="form-check-input wreq-row-check" data-pk="{{ row.pk }}" data-person="{{ row.person_id }}" data-label="{{ row.person_label }} — {{ row.get_kind_display }} {{ row.detail }}"></td>
+            <td><input type="checkbox" class="form-check-input wreq-row-check" data-pk="{{ row.pk }}" data-person="{{ row.person_id }}" data-label="{{ row.person_label }} — {{ row.detail }}"></td>
             <td>{{ row.created_at|date:"d/m/Y H:i" }}</td>
             <td>
                 <a href="#" data-bs-toggle="modal" data-bs-target="#wreqDetailModal"
                    hx-get="{% url 'panel:worker_request_detail' row.pk %}" hx-target="#wreq-detail-container">{{ row.person_label }}</a>
             </td>
-            <td>{{ row.get_kind_display }}</td>
             <td>{{ row.detail }}</td>
-            <td class="text-end">{{ row.days|default_if_none:"" }}</td>
             <td><span class="badge {% if row.status == 'PENDING' %}text-bg-warning{% elif row.status == 'DENIED' %}text-bg-danger{% elif row.status == 'CANCELLED' %}text-bg-secondary{% else %}text-bg-success{% endif %}">{{ row.get_status_display }}</span></td>
-            <td>{% if row.kind == 'MEDICAL' %}<span class="{% if row.proof_status == 'RECEIVED' %}fw-semibold text-primary{% elif row.proof_status == 'REJECTED' %}text-danger{% elif row.proof_status == 'NONE' %}text-muted{% endif %}">{{ row.get_proof_status_display }}</span>{% endif %}</td>
             <td>{% if row.resolved_at %}{{ row.resolved_at|date:"d/m/Y H:i" }}{% if row.resolved_by %} · {{ row.resolved_by.user.get_full_name|default:row.resolved_by.user.username }}{% endif %}{% endif %}</td>
             <td class="small text-truncate" style="max-width: 18rem;" title="{{ row.note }}">{{ row.note }}</td>
             <td>

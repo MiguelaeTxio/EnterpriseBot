@@ -43,24 +43,24 @@ FILTER_KEYS = ("search", "status", "kind", "sort", "active", "company",
 DEFAULT_STATUS = ["PENDING"]
 DEFAULT_SORT = "-created"
 _MAX_SORT_KEYS = 4
+# S153: la pestaña es solo de documentos (sin Tipo, Días ni
+# Justificante).
 _COLUMNS = (
     ("created", "Pedida"),
     ("person", "Trabajador"),
-    ("kind", "Tipo"),
     ("detail", "Qué pide"),
-    ("days", "Días"),
     ("status", "Estado"),
-    ("proof", "Justificante"),
     ("resolved", "Resuelta"),
+)
+DOCUMENT_STATUSES = (
+    WorkerRequest.Status.PENDING, WorkerRequest.Status.DELIVERED,
+    WorkerRequest.Status.DENIED, WorkerRequest.Status.CANCELLED,
 )
 _SORT_VALUES = {
     "created": lambda r: r.created_at,
     "person": lambda r: r.person_label.upper(),
-    "kind": lambda r: r.get_kind_display(),
     "detail": lambda r: r.date_start or datetime.date.min,
-    "days": lambda r: r.days if r.days is not None else -1,
     "status": lambda r: r.get_status_display(),
-    "proof": lambda r: r.get_proof_status_display(),
     "resolved": lambda r: r.resolved_at,
 }
 
@@ -97,6 +97,7 @@ def _decorate(item):
 # ------------------------------------------------------------------
 def _my_context(request, person, message="", error=False):
     from hr_calendar.balance import BalanceCalculator
+    from hr_calendar.models import AbsencePeriod
 
     company = request.user.company_user.company
     today = datetime.date.today()
@@ -107,6 +108,12 @@ def _my_context(request, person, message="", error=False):
             person=person,
         ).prefetch_related("files").order_by("-created_at", "-pk")
     ]
+    # S153: lo concedido del año (vacaciones y ausencias), solo lectura.
+    absences = AbsencePeriod.objects.filter(
+        person=person,
+        date_start__lte=datetime.date(today.year, 12, 31),
+        date_end__gte=datetime.date(today.year, 1, 1),
+    ).select_related("category").order_by("date_start", "pk")
     return {
         "person": person,
         "balance": balance,
@@ -115,7 +122,7 @@ def _my_context(request, person, message="", error=False):
         "year": today.year,
         "today": today,
         "items": items,
-        "kinds": WorkerRequest.Kind.choices,
+        "absences": absences,
         "documents": wr.DOCUMENTS,
         "message": message,
         "error": error,
@@ -318,10 +325,13 @@ def _list_context(request):
     from panel.views_vacation_balance import _csv_param
 
     company = request.user.company_user.company
-    statuses = _csv_param(request, "status", DEFAULT_STATUS)
-    kinds = _csv_param(request, "kind", WorkerRequest.Kind.values)
+    statuses = [value for value in _csv_param(
+        request, "status", DEFAULT_STATUS) if value in DOCUMENT_STATUSES]
+    kinds = [WorkerRequest.Kind.DOCUMENT]
     search = _param(request, "search").strip()
-    qs = WorkerRequest.objects.filter(company=company).select_related(
+    qs = WorkerRequest.objects.filter(
+        company=company, kind__in=kinds,
+    ).select_related(
         "person", "resolved_by__user",
     ).prefetch_related("files")
     # S153 (4.27): Estado y Empresa del bloque común, para pintarlos.
@@ -359,8 +369,9 @@ def _list_context(request):
         "filter_company": companies,
         "filter_status": statuses,
         "filter_kind": kinds,
-        "status_choices": WorkerRequest.Status.choices,
-        "kind_choices": WorkerRequest.Kind.choices,
+        "status_choices": [
+            (value, label) for value, label in WorkerRequest.Status.choices
+            if value in DOCUMENT_STATUSES],
         "can_manage": can_manage(request),
         **_sort_controls(raw_sort),
     }
@@ -383,7 +394,8 @@ def _pane_context(request):
     if not isinstance(saved_selection, list):
         saved_selection = []
     pending = WorkerRequest.objects.filter(
-        company=cu.company, status=WorkerRequest.Status.PENDING).count()
+        company=cu.company, status=WorkerRequest.Status.PENDING,
+        kind=WorkerRequest.Kind.DOCUMENT).count()
     from panel.common_filters import person_filter_context
     from panel.person_groups import group_filter_context
 

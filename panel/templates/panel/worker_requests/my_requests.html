@@ -2,10 +2,12 @@
 {% extends "panel/base.html" %}
 {% comment %}
 H24 (S147). "Mis solicitudes" del trabajador, pensada para el móvil:
-su saldo de vacaciones del año, el formulario para pedir (vacaciones,
-asuntos propios, médico, un documento o una reclamación) y la lista de
-sus peticiones con estado, respuesta, justificante y archivos
-entregados. Todo llega resuelto desde panel/views_worker_requests.py.
+su saldo de vacaciones del año, lo concedido (vacaciones y ausencias,
+solo lectura), el formulario para pedir un documento y la lista de sus
+peticiones con estado, respuesta y archivos entregados. S153: solo se
+piden documentos; vacaciones, días libres y médico siguen el cauce
+habitual y la empresa los apunta en Vacaciones. Todo llega resuelto
+desde panel/views_worker_requests.py.
 {% endcomment %}
 
 {% block title %}Mis solicitudes{% endblock %}
@@ -57,42 +59,42 @@ entregados. Todo llega resuelto desde panel/views_worker_requests.py.
     </div>
 
     <div class="card mb-3">
+        <div class="card-body py-2">
+            <div class="fw-bold small mb-2">Lo que tengo concedido en {{ year }}</div>
+            <div class="small fw-semibold">Vacaciones</div>
+            {% if balance.period_uses %}
+            <ul class="list-unstyled small mb-2">
+                {% for use in balance.period_uses %}
+                <li class="border-bottom py-1">{{ use.period.date_start|date:"d/m/Y" }}{% if use.period.date_end != use.period.date_start %} a {{ use.period.date_end|date:"d/m/Y" }}{% endif %} · {{ use.days|floatformat:"-1" }} día{{ use.days|pluralize }}</li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <div class="small text-muted mb-2">Ninguna todavía.</div>
+            {% endif %}
+            <div class="small fw-semibold">Días libres, médico y otras ausencias</div>
+            {% if absences %}
+            <ul class="list-unstyled small mb-0">
+                {% for absence in absences %}
+                <li class="border-bottom py-1"><span class="fw-semibold">{{ absence.category.label }}</span> · {{ absence.date_start|date:"d/m/Y" }}{% if absence.date_end != absence.date_start %} a {{ absence.date_end|date:"d/m/Y" }}{% endif %}{% if absence.note %}<div class="text-muted">{{ absence.note }}</div>{% endif %}</li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <div class="small text-muted mb-0">Ninguna todavía.</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card mb-3">
         <div class="card-body">
-            <div class="fw-bold mb-2">Pedir</div>
+            <div class="fw-bold mb-1">Pedir un documento</div>
+            <p class="small text-muted mb-2">Las vacaciones, los días libres y las citas médicas se piden por el cauce habitual; cuando te los concedan, aparecerán arriba.</p>
             <form method="post" action="{% url 'panel:my_requests' %}" id="wr-form" autocomplete="off">
                 {% csrf_token %}
-                <div class="d-flex flex-wrap gap-2 mb-3" role="group">
-                    {% for value, label in kinds %}
-                    <input type="radio" class="btn-check wr-kind" name="kind" id="wrKind{{ value }}" value="{{ value }}"
-                           {% if form.kind == value %}checked{% endif %} required>
-                    <label class="btn btn-outline-primary" for="wrKind{{ value }}">{{ label }}</label>
-                    {% endfor %}
-                </div>
-                <div class="row g-2 wr-dated d-none">
-                    <div class="col-6 col-md-3">
-                        <label class="form-label small mb-0" for="wrStart">Desde (o el día)</label>
-                        <input type="date" class="form-control" name="date_start" id="wrStart" value="{{ form.date_start }}">
-                    </div>
-                    <div class="col-6 col-md-3">
-                        <label class="form-label small mb-0" for="wrEnd">Hasta (si son varios días)</label>
-                        <input type="date" class="form-control" name="date_end" id="wrEnd" value="{{ form.date_end }}">
-                    </div>
-                    <div class="col-6 col-md-3 wr-medical d-none">
-                        <label class="form-label small mb-0" for="wrFrom">Salgo a las (opcional)</label>
-                        <input type="time" class="form-control" name="time_from" id="wrFrom" value="{{ form.time_from }}">
-                    </div>
-                    <div class="col-6 col-md-3 wr-medical d-none">
-                        <label class="form-label small mb-0" for="wrTo">Vuelvo a las (opcional)</label>
-                        <input type="time" class="form-control" name="time_to" id="wrTo" value="{{ form.time_to }}">
-                    </div>
-                    <div class="col-12 wr-medical d-none small text-muted">
-                        Si ya fuiste, pon el día igualmente; después sube el justificante en la lista de abajo.
-                    </div>
-                </div>
-                <div class="row g-2 wr-document d-none">
+                <input type="hidden" name="kind" value="DOCUMENT">
+                <div class="row g-2">
                     <div class="col-md-6">
                         <label class="form-label small mb-0" for="wrDoc">Documento</label>
-                        <select class="form-select" name="document_code" id="wrDoc">
+                        <select class="form-select" name="document_code" id="wrDoc" required>
                             <option value="">Elige…</option>
                             {% for code, label, legal, _type in documents %}
                             <option value="{{ code }}" {% if form.document_code == code %}selected{% endif %}>{{ label }}{% if legal %} ({{ legal }}){% endif %}</option>
@@ -195,22 +197,14 @@ entregados. Todo llega resuelto desde panel/views_worker_requests.py.
     "use strict";
     const form = document.getElementById("wr-form");
     if (!form) return;
-    const DATED = ["VACATION", "PERSONAL", "MEDICAL"];
-    function show(selector, visible) {
-        form.querySelectorAll(selector).forEach(function (el) { el.classList.toggle("d-none", !visible); });
-    }
+    // S153: solo documentos; "Otro documento" exige la nota.
+    const doc = document.getElementById("wrDoc");
     function refresh() {
-        const checked = form.querySelector(".wr-kind:checked");
-        const kind = checked ? checked.value : "";
-        show(".wr-dated", DATED.indexOf(kind) !== -1);
-        show(".wr-medical", kind === "MEDICAL");
-        show(".wr-document", kind === "DOCUMENT");
-        show(".wr-note-required", kind === "CLAIM");
-        document.getElementById("wrStart").required = DATED.indexOf(kind) !== -1;
-        document.getElementById("wrDoc").required = kind === "DOCUMENT";
-        document.getElementById("wrNote").required = kind === "CLAIM";
+        const other = doc.value === "OTRO";
+        form.querySelector(".wr-note-required").classList.toggle("d-none", !other);
+        document.getElementById("wrNote").required = other;
     }
-    form.querySelectorAll(".wr-kind").forEach(function (radio) { radio.addEventListener("change", refresh); });
+    doc.addEventListener("change", refresh);
     refresh();
 
     // S147: justificante -- nombre del archivo elegido y "Subiendo…".

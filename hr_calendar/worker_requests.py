@@ -78,6 +78,10 @@ DATED_KINDS = (
     WorkerRequest.Kind.MEDICAL,
 )
 MAX_FILE_BYTES = 15 * 1024 * 1024
+# S153: desde "Mis solicitudes" solo se piden documentos. Miguel Ángel:
+# vacaciones, días libres y médico "que sigan el cauce normal"; lo
+# concedido lo apunta la empresa en Vacaciones y el trabajador lo ve.
+WORKER_KINDS = (WorkerRequest.Kind.DOCUMENT,)
 
 
 class RequestError(ValueError):
@@ -135,8 +139,11 @@ def create_request(person, company, created_by, data):
     sí (se puede pedir después, con el justificante).
     """
     kind = (data.get("kind") or "").strip()
-    if kind not in WorkerRequest.Kind.values:
-        raise RequestError("Elige qué quieres pedir.")
+    if kind not in WORKER_KINDS:
+        raise RequestError(
+            "Desde aquí solo se piden documentos. Las vacaciones, los "
+            "días libres y las citas médicas se piden por el cauce "
+            "habitual.")
     note = (data.get("note") or "").strip()
     fields = {
         "company": company, "person": person, "kind": kind, "note": note,

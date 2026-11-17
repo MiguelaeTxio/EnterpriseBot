@@ -786,6 +786,18 @@ class VacationPeriodRemoveView(SupervisorAccessMixin, View):
 # ------------------------------------------------------------------
 # Ausencias (S130, punto 4 de la hoja de ruta 7.5)
 # ------------------------------------------------------------------
+def _parse_time(raw):
+    """
+    "HH:MM" to a time, or None.
+    ---
+    "HH:MM" a hora, o None si viene vacío o mal.
+    """
+    try:
+        return datetime.time.fromisoformat((raw or "").strip()[:5])
+    except ValueError:
+        return None
+
+
 class AbsencePeriodCreateView(SupervisorAccessMixin, View):
     """
     POST: register an absence for a worker from their breakdown.
@@ -811,6 +823,8 @@ class AbsencePeriodCreateView(SupervisorAccessMixin, View):
                 person, cu.company, cu,
                 _parse_int(request.POST.get("category_id")),
                 date_start, date_end, request.POST.get("note"),
+                _parse_time(request.POST.get("time_from")),
+                _parse_time(request.POST.get("time_to")),
             )
         except ValueError as exc:
             return _detail_response(request, person, year, str(exc),
