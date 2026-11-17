@@ -1,0 +1,88 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/machine_workshop/_logbooks_table.html #}
+{% comment %}
+H23 (S154, invasora). Tabla de libros historial y órdenes de
+mantenimiento de la máquina (directriz 4.24), con las columnas a elegir
+(mwc-<clave>) y la fila de totales al pie, como Partes de trabajo y
+Averías. En el menú de cada fila: ver el documento.
+{% endcomment %}
+{% if rows %}
+<table class="table table-sm table-hover align-middle mb-0 small" id="mw-table">
+    <thead class="table-light">
+        <tr>
+            <th><input class="form-check-input" type="checkbox" id="mw-check-all" title="Marcar/desmarcar todos los visibles"></th>
+            <th class="mwc-type">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.type label="Tipo" %}</th>
+            <th class="mwc-date">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.date label="Fecha" %}</th>
+            <th class="mwc-name">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.name label="Archivo" %}</th>
+            <th class="mwc-origin">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.origin label="Origen" %}</th>
+            <th class="mwc-state">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.state label="Estado" %}</th>
+            <th class="mwc-rows text-end">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.rows label="Filas leídas" align_end=True %}</th>
+            <th class="mwc-by">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.by label="Generado por" %}</th>
+            <th class="text-end">Acciones</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr class="{% if not row.is_current %}text-muted{% endif %}">
+            <td>
+                <input class="form-check-input mw-row-check" type="checkbox"
+                       data-key="{{ row.key }}" data-label="{{ row.label }}">
+            </td>
+            <td class="mwc-type">{{ row.type_label|default:"—" }}</td>
+            <td class="mwc-date">{{ row.date|date:"d/m/Y"|default:"—" }}</td>
+            <td class="mwc-name mw-col-text">{{ row.entry.name }}</td>
+            <td class="mwc-origin">
+                {% if row.is_generated %}
+                <span class="badge bg-success-subtle text-success border border-success-subtle">{{ row.origin_label }}</span>
+                {% else %}
+                {{ row.origin_label }}
+                {% endif %}
+            </td>
+            <td class="mwc-state">
+                {% if row.is_current %}
+                <span class="badge bg-primary-subtle text-primary border border-primary-subtle">Vigente</span>
+                {% else %}
+                <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">Histórico</span>
+                {% endif %}
+            </td>
+            <td class="mwc-rows text-end">
+                {% if row.read_error %}<i class="bi bi-exclamation-circle text-warning" title="No se pudo leer: {{ row.read_error }}"></i>{% elif row.is_generated %}—{% else %}{{ row.rows_found }}{% endif %}
+            </td>
+            <td class="mwc-by">{{ row.generated_by|default:"—" }}</td>
+            <td class="text-end">
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-secondary border-0 px-2" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                        <li><a class="dropdown-item" href="{% url 'panel:documentation_document_view' pk=row.entry.pk %}" target="_blank" rel="noopener"><i class="bi bi-eye me-2"></i>Ver el documento</a></li>
+                    </ul>
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+    <tfoot class="mw-totals">
+        <tr class="fw-semibold">
+            <td></td>
+            <td class="mwc-type">Total</td>
+            <td class="mwc-date">{{ totals.count }} documento{{ totals.count|pluralize }}</td>
+            <td class="mwc-name">{{ totals.current }} vigente{{ totals.current|pluralize }}</td>
+            <td class="mwc-origin">{{ totals.generated }} generado{{ totals.generated|pluralize }}</td>
+            <td class="mwc-state"></td>
+            <td class="mwc-rows text-end">{{ totals.rows }}</td>
+            <td class="mwc-by"></td>
+            <td></td>
+        </tr>
+    </tfoot>
+</table>
+{% else %}
+<div class="text-center text-muted py-5">
+    <i class="bi bi-journal-text fs-1 d-block mb-2 opacity-25"></i>
+    <p class="mb-0">No hay libros historial ni órdenes de mantenimiento que coincidan con los filtros aplicados.</p>
+</div>
+{% endif %}
+<span id="mw-fragment-state" class="d-none"
+      data-count="{{ totals.count }}"
+      data-filtered="{% if is_filtered %}1{% endif %}"
+      data-sort-active="{% if sort_active %}1{% endif %}"
+      data-sort="{{ current_sort }}"></span>

@@ -7,7 +7,8 @@
 //   a filtros, orden y repintados, guardada por usuario (EbNavState,
 //   directriz 4.15) y con sus totales en el visor "Selección actual".
 // - Casillas de estado (Abiertas/Cerradas) traducidas a un único valor
-//   ("" ambas, "open", "closed", "none" ninguna), solo en Averías.
+//   ("" ambas, "open", "closed", "none" ninguna), en Averías; en Libros
+//   historial (S154), Vigentes/Históricos con "current"/"historic".
 // - Casilleros de columnas visibles, guardados por usuario.
 // - Excel de la selección (POST), pantalla completa de la lista
 //   (formato del laboratorio de análisis, directriz 4.26) y totales de lo
@@ -187,8 +188,12 @@
             cb.addEventListener("change", function () {
                 var open = document.getElementById("mw-state-open").checked;
                 var closed = document.getElementById("mw-state-closed").checked;
+                // S154: Libros historial usa sus propios valores
+                // (current/historic) en data-open-value/data-closed-value.
+                var openValue = stateHidden.dataset.openValue || "open";
+                var closedValue = stateHidden.dataset.closedValue || "closed";
                 stateHidden.value = open && closed ? "" : (
-                    open ? "open" : (closed ? "closed" : "none")
+                    open ? openValue : (closed ? closedValue : "none")
                 );
                 htmx.trigger(stateHidden, "mw-state-change");
             });

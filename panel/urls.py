@@ -72,7 +72,12 @@ from panel.views_machine_workshop import (
     MachineWorkshopTicketsView,
     WorkOrderDocumentView,
 )
-from panel.views_machine_logbook import MachineLogbookGenerateView
+from panel.views_machine_logbook import (
+    MachineLogbookGenerateView,
+    MachineWorkshopLogbooksFragmentView,
+    MachineWorkshopLogbooksView,
+    MachineWorkshopLogbooksZipView,
+)
 from panel.views_machine_service import (
     MachineMeterReadingCreateView,
     MachineMeterReadingDeleteView,
@@ -1130,6 +1135,22 @@ urlpatterns = [
         "documentacion/maquinaria/<int:pk>/taller/averias/excel/",
         MachineWorkshopTicketsExportView.as_view(),
         name="machine_workshop_tickets_export",
+    ),
+    # H23 (S154, invasora): pestaña Libros historial del taller.
+    path(
+        "documentacion/maquinaria/<int:pk>/taller/libros-historial/",
+        MachineWorkshopLogbooksView.as_view(),
+        name="machine_workshop_logbooks",
+    ),
+    path(
+        "documentacion/maquinaria/<int:pk>/taller/libros-historial/tabla/",
+        MachineWorkshopLogbooksFragmentView.as_view(),
+        name="machine_workshop_logbooks_table",
+    ),
+    path(
+        "documentacion/maquinaria/<int:pk>/taller/libros-historial/zip/",
+        MachineWorkshopLogbooksZipView.as_view(),
+        name="machine_workshop_logbooks_zip",
     ),
     path(
         "taller/partes/<int:entry_pk>/documento/",
