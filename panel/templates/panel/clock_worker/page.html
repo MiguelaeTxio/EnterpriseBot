@@ -1131,7 +1131,6 @@ screen_key "clock_worker"); la selección, por trabajador.
 {% url 'panel:clock_events_export' as cw_export_url %}
 {% include "panel/_screen_export_modal.html" with sx="cw" screen="clock_days" export_url=cw_export_url method="get" title="Exportar fichajes" %}
 {% if uses_albaranes %}
-<script src="{% static 'panel/js/albaran_upload.js' %}"></script>
 <script>
 (function () {
     "use strict";

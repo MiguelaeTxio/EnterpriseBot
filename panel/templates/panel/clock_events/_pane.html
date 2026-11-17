@@ -694,7 +694,6 @@ recordatorios, secciones que fichan y permiso de envío).
         </div>
     </div>
 </div>
-<script src="{% static 'panel/js/albaran_upload.js' %}"></script>
 <script>
 (function () {
     "use strict";
@@ -740,13 +739,18 @@ recordatorios, secciones que fichan y permiso de envío).
         },
         onDone: refreshList,
     });
-    // «Ver» en la lista de cargas.
-    document.addEventListener("click", function (evt) {
-        const link = evt.target.closest(".clk-alb-show");
-        if (!link) return;
-        evt.preventDefault();
-        upload.showBatch(link.dataset.batch);
-    });
+    // «Ver» en la lista de cargas: un solo manejador aunque la pestaña
+    // se vuelva a abrir (usa la ventana de la última vez que se abrió).
+    window.ebClkAlbUpload = upload;
+    if (!window.ebClkAlbShowBound) {
+        window.ebClkAlbShowBound = true;
+        document.addEventListener("click", function (evt) {
+            const link = evt.target.closest(".clk-alb-show");
+            if (!link || !window.ebClkAlbUpload) return;
+            evt.preventDefault();
+            window.ebClkAlbUpload.showBatch(link.dataset.batch);
+        });
+    }
 })();
 </script>
 {% url 'panel:clock_events_export' as clk_export_url %}
