@@ -59,7 +59,9 @@ class Command(BaseCommand):
     def _run(self, apply):
         import datetime
 
-        from hr_calendar.albaran_check import day_locked, plausible_day
+        from hr_calendar.albaran_check import (
+            compare_day, day_locked, fix_year, plausible_day,
+        )
         from hr_calendar.clock_corrections import edit_presses
         from hr_calendar.models import (
             AlbaranSheet, ClockCorrection, ClockDayAiCheck, ClockEvent,
@@ -76,7 +78,7 @@ class Command(BaseCommand):
             sum(len(v) for v in bad.values()), len(bad),
             "APLICANDO" if apply else "simulación, sin cambios"))
         tz = timezone.get_current_timezone()
-        undone, kept = 0, []
+        undone, kept, real_days = 0, [], set()
         for (_person_id, day), sheets in sorted(
                 bad.items(), key=lambda item: item[0][1]):
             person = sheets[0].person
@@ -113,6 +115,13 @@ class Command(BaseCommand):
                         for e in events)))
             else:
                 self._log("  %s: sin fichajes ese día" % label)
+            for sheet in sheets:
+                fixed = fix_year(day, sheet.batch.created_at)
+                self._log("    albarán %s: %s" % (
+                    sheet.number or sheet.original_name,
+                    "pasa al %s y se coteja ese día" % fixed.strftime(
+                        "%d/%m/%Y") if fixed else
+                    "fecha sin arreglo, queda para revisar a mano"))
             if not apply:
                 continue
             with transaction.atomic():
@@ -130,11 +139,33 @@ class Command(BaseCommand):
                     ClockDayAiCheck.objects.filter(
                         company_user=company_user, day=day).delete()
                 for sheet in sheets:
+                    fixed = fix_year(day, sheet.batch.created_at)
+                    if fixed is not None:
+                        # S149: solo el año estaba mal; el albarán va a
+                        # su día de verdad, que se vuelve a cotejar.
+                        sheet.day = fixed
+                        sheet.note = ("Año corregido (leído %s). %s" % (
+                            day.strftime("%d/%m/%Y"),
+                            sheet.note or "")).strip()[:255]
+                        sheet.save(update_fields=["day", "note"])
+                        real_days.add((sheet.person_id, fixed))
+                        continue
                     sheet.status = AlbaranSheet.Status.UNREADABLE
                     sheet.note = ("Fecha dudosa (%s): revísala; no se coteja."
                                   " %s" % (day.strftime("%d/%m/%Y"),
                                            sheet.note or "")).strip()[:255]
                     sheet.save(update_fields=["status", "note"])
+        for person_id, real in sorted(real_days, key=lambda i: i[1]):
+            sheet = AlbaranSheet.objects.filter(
+                person_id=person_id, day=real,
+                status=AlbaranSheet.Status.READ,
+            ).select_related("batch", "person__company_user").order_by(
+                "-batch__created_at").first()
+            label = "%s %s" % (_name(sheet.person), real.strftime("%d/%m/%Y"))
+            check = compare_day(sheet.batch, real, sheet.person)
+            self._log("  Cotejado %s%s" % (
+                label, (": " + check.summary.replace("\n", " / "))
+                if check else ""))
         for line in kept:
             self._log("  SIN TOCAR (revisar a mano) %s" % line)
         self._log("Fin: %d día/s anulado/s, %d sin tocar." % (

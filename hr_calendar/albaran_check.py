@@ -526,12 +526,41 @@ def plausible_day(day, loaded_at):
     return loaded - datetime.timedelta(days=DAY_WINDOW) <= day <= loaded
 
 
+def fix_year(day, loaded_at):
+    """
+    The albarán's date with its year fixed, or None if it can't be.
+    ---
+    S149 (17/11, albarán 348065 de Mérida Alcaide leído como 16/11/2020,
+    que era el 16/11/2026): si la fecha no cabe, prueba el mismo día y
+    mes en el año de la carga y en el anterior; si uno cabe, es ese. Un
+    día o un mes mal leídos no se adivinan (None: se revisa a mano).
+    """
+    if day is None or plausible_day(day, loaded_at):
+        return None
+    loaded = timezone.localdate(loaded_at or timezone.now())
+    for year in (loaded.year, loaded.year - 1):
+        try:
+            candidate = day.replace(year=year)
+        except ValueError:
+            continue
+        if plausible_day(candidate, loaded_at):
+            return candidate
+    return None
+
+
 def _fill(sheet, item, person):
     from hr_calendar.models import AlbaranSheet
 
     sheet.raw = json.dumps(item, ensure_ascii=False)[:20000]
     sheet.number = (item.get("number") or "")[:40]
     sheet.day = parse_day(item.get("date"))
+    loaded_at = getattr(sheet.batch, "created_at", None)
+    fixed = fix_year(sheet.day, loaded_at)
+    year_note = ""
+    if fixed is not None:
+        year_note = "Año corregido (leído %s)." % sheet.day.strftime(
+            "%d/%m/%Y")
+        sheet.day = fixed
     sheet.operator_name = (item.get("operator_name") or "")[:120]
     sheet.machine = (item.get("machine") or "")[:60]
     sheet.observations = (item.get("observations") or "")[:255]
@@ -544,7 +573,7 @@ def _fill(sheet, item, person):
     sheet.continues_previous = bool(item.get("continues_previous"))
     sheet.name_mismatch = (person is not None
                            and not name_matches(person, sheet.operator_name))
-    notes = [item.get("note") or ""]
+    notes = [item.get("note") or "", year_note]
     has_times = any((sheet.base_out, sheet.base_in, sheet.work_in,
                      sheet.work_out))
     if sheet.day is None:
@@ -750,8 +779,18 @@ def compare_day(batch, day, person=None):
 
     person = person or batch.person
     company_user = person.company_user
-    sheets = list(batch.sheets.filter(day=day, person=person,
-                                      status=AlbaranSheet.Status.READ))
+    # S149 (17/11): todos los albaranes leídos del día, de cualquier
+    # carga (un albarán en otra carga dejaba el día cortado); el mismo
+    # número cargado dos veces cuenta una, el de la carga más reciente.
+    sheets, seen = [], set()
+    for sheet in AlbaranSheet.objects.filter(
+            batch__company=batch.company, day=day, person=person,
+            status=AlbaranSheet.Status.READ,
+    ).order_by("-batch__created_at", "position"):
+        key = sheet.number or ("#%d" % sheet.pk)
+        if key not in seen:
+            seen.add(key)
+            sheets.append(sheet)
     numbers = ", ".join(s.number or s.original_name for s in sheets)
     lines, car_notes = [], []
     travel, work, meal = _types(batch.company)
