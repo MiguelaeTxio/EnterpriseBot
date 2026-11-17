@@ -76,6 +76,10 @@ De cada albarán devuelve:
 - base_in: hora de "Llegada base" (HH:MM).
 - work_in: "Hora llegada trabajo" (HH:MM).
 - work_out: "Hora salida trabajo" (HH:MM).
+- vehicle_on_site: true si está marcada la casilla "Vehículo en obra"
+  (arriba, junto al número de albarán); false si está vacía.
+- continues_previous: true si está marcada la casilla "Continuación día
+  ant." (junto a la anterior); false si está vacía.
 - legible: false si no se pueden leer con seguridad la fecha o las horas.
 - note: una frase corta si algo es dudoso (letra ilegible, hora
   tachada, dos horas posibles); vacío si todo está claro.
@@ -104,6 +108,8 @@ _SCHEMA = {
                     "work_out": {"type": "string"},
                     "legible": {"type": "boolean"},
                     "note": {"type": "string"},
+                    "vehicle_on_site": {"type": "boolean"},
+                    "continues_previous": {"type": "boolean"},
                 },
                 "required": ["number", "date", "legible"],
             },
@@ -513,6 +519,9 @@ def _fill(sheet, item, person):
     sheet.base_in = parse_time(item.get("base_in"))
     sheet.work_in = parse_time(item.get("work_in"))
     sheet.work_out = parse_time(item.get("work_out"))
+    # S149 (17/11): casillas «Vehículo en obra» y «Continuación día ant.».
+    sheet.vehicle_on_site = bool(item.get("vehicle_on_site"))
+    sheet.continues_previous = bool(item.get("continues_previous"))
     sheet.name_mismatch = (person is not None
                            and not name_matches(person, sheet.operator_name))
     notes = [item.get("note") or ""]
@@ -621,7 +630,8 @@ def tolerance_minutes(company_user):
     return int(minutes) if minutes else DEFAULT_TOLERANCE
 
 
-def expected_presses(sheets, travel, work):
+def expected_presses(sheets, travel, work, start_by_car=False,
+                     end_by_car=False):
     """
     The day as the albaranes tell it: [(kind, time, type or None)].
     ---
@@ -632,12 +642,21 @@ def expected_presses(sheets, travel, work):
     base del último la cierra. Si falta la salida de base, la jornada
     empieza al llegar al trabajo; si falta la llegada a base, acaba al
     salir del último trabajo.
+
+    S149 (Miguel Ángel, 17/11: "si marca esa casilla, el camión se queda
+    en la obra, el operario vuelve en coche [...] no se apunta nada; al
+    día siguiente ese trabajador no tiene desplazamiento tampoco porque
+    va en coche"): con `end_by_car` (el último albarán del día marca
+    «Vehículo en obra») la jornada acaba al salir del trabajo, sin la
+    vuelta; con `start_by_car` (el día anterior lo marcó, o el primer
+    albarán dice «Continuación día ant.») empieza al llegar al trabajo,
+    sin la ida.
     """
     ordered = sorted(sheets, key=lambda s: s.base_out or s.work_in
                      or s.work_out or s.base_in or datetime.time.max)
     points = []
     first, last = ordered[0], ordered[-1]
-    if first.base_out:
+    if first.base_out and not start_by_car:
         points.append(("IN", first.base_out, travel.pk))
     for index, sheet in enumerate(ordered):
         if sheet.work_in:
@@ -645,11 +664,11 @@ def expected_presses(sheets, travel, work):
                            work.pk))
         is_last = index == len(ordered) - 1
         if sheet.work_out and points:
-            if is_last and not last.base_in:
+            if is_last and (end_by_car or not last.base_in):
                 points.append(("OUT", sheet.work_out, None))
             else:
                 points.append(("CHG", sheet.work_out, travel.pk))
-    if last.base_in and points:
+    if last.base_in and points and not (end_by_car and last.work_out):
         points.append(("OUT", last.base_in, None))
     points.sort(key=lambda p: p[1])
     return points
@@ -675,7 +694,7 @@ def compare_day(batch, day, person=None):
     sheets = list(batch.sheets.filter(day=day, person=person,
                                       status=AlbaranSheet.Status.READ))
     numbers = ", ".join(s.number or s.original_name for s in sheets)
-    lines = []
+    lines, car_notes = [], []
     travel, work, meal = _types(batch.company)
     corrected = False
     if company_user is None or travel is None or work is None:
@@ -693,8 +712,26 @@ def compare_day(batch, day, person=None):
             company_user=company_user, pressed_at__gte=start,
             pressed_at__lt=start + datetime.timedelta(days=1),
         ).order_by("pressed_at"))
+        # S149: sin desplazamiento de vuelta si el camión se queda en la
+        # obra, ni de ida al día siguiente (va en coche).
+        ordered = sorted(sheets, key=lambda s: s.base_out or s.work_in
+                         or s.work_out or s.base_in or datetime.time.max)
+        end_by_car = ordered[-1].vehicle_on_site
+        start_by_car = (
+            ordered[0].continues_previous
+            or AlbaranSheet.objects.filter(
+                person=person, day=day - datetime.timedelta(days=1),
+                status=AlbaranSheet.Status.READ, vehicle_on_site=True,
+            ).exists())
+        if end_by_car:
+            car_notes.append("Vehículo en obra: vuelve en coche, sin "
+                             "desplazamiento de vuelta.")
+        if start_by_car:
+            car_notes.append("Va en coche a la obra (vehículo en obra "
+                             "desde el día anterior): sin desplazamiento "
+                             "de ida.")
         wanted = [(k, aware(t), ty) for k, t, ty in expected_presses(
-            sheets, travel, work)]
+            sheets, travel, work, start_by_car, end_by_car)]
         # La comida fichada se respeta si cae dentro de un tramo de
         # trabajo: su cambio a comida y la vuelta (al trabajo) siguen.
         work_spans = [(a[1], b[1]) for a, b in zip(wanted, wanted[1:])
@@ -770,6 +807,7 @@ def compare_day(batch, day, person=None):
         if not lines:
             lines.append("Coincide con el albarán (dentro de %d min)."
                          % tolerance)
+        lines = car_notes + lines
     if any(s.name_mismatch for s in sheets):
         lines.append("Aviso: el nombre del albarán (%s) no parece el del "
                      "trabajador." % ", ".join(

@@ -2493,6 +2493,14 @@ class AlbaranSheet(models.Model):
                                verbose_name="Llegada a base")
     name_mismatch = models.BooleanField(
         default=False, verbose_name="El nombre no es el del trabajador")
+    # S149 (Miguel Ángel, 17/11): con «Vehículo en obra» el camión se
+    # queda en la obra y el operario vuelve en coche: no se apunta
+    # desplazamiento de vuelta, ni al día siguiente el de ida.
+    # «Continuación día ant.»: viene del día anterior (sin ida).
+    vehicle_on_site = models.BooleanField(
+        default=False, verbose_name="Vehículo en obra")
+    continues_previous = models.BooleanField(
+        default=False, verbose_name="Continuación del día anterior")
     raw = models.TextField(blank=True, verbose_name="Lectura de Gemini")
     # S153 (Miguel Ángel: "es necesario extraer los datos [...] una
     # copia digital exacta en base de datos"): todo lo que trae el
