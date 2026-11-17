@@ -92,6 +92,11 @@ recordatorios, secciones que fichan y permiso de envío).
                                         <input class="form-check-input" type="checkbox" name="issues_only" value="1" id="clkIssuesOnly"{% if filter_issues_only %} checked{% endif %}>
                                         <label class="form-check-label" for="clkIssuesOnly">Solo con incidencias</label>
                                     </div>
+                                    {# S149: solo los que tienen días con todo lo fichado anulado. #}
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="cancelled_only" value="1" id="clkCancelledOnly"{% if filter_cancelled_only %} checked{% endif %}>
+                                        <label class="form-check-label" for="clkCancelledOnly">Solo con anuladas</label>
+                                    </div>
                                 </div>
                             </div>
                             <input type="hidden" name="events" id="clk-events-input" value="{{ filter_events|join:',' }}">

@@ -29,7 +29,7 @@ y Albaranes de Servicios.
             <th class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input" id="clk-check-all" title="Seleccionar todos los que cumplen el filtro actual"></th>
             <th class="sticky-col sticky-col-2"></th>
             {% for column in sort_columns %}
-            <th class="{% if column.key == 'person' %}sticky-col sticky-col-3 sticky-col-last{% elif column.key == 'events' or column.key == 'issues' or column.key == 'ai' or column.key == 'overtime' or column.key == 'quota' or column.key == 'bag' %}text-end{% endif %}"{% if column.key == 'issues' %} title="Incidencias: llegada tarde, salida antes de hora, fichaje sin su pareja (entrada sin salida o al revés) y fichaje a más de 3 horas de su horario. El detalle del trabajador las explica una a una."{% endif %}>
+            <th class="{% if column.key == 'person' %}sticky-col sticky-col-3 sticky-col-last{% elif column.key == 'events' or column.key == 'issues' or column.key == 'ai' or column.key == 'cancelled' or column.key == 'overtime' or column.key == 'quota' or column.key == 'bag' %}text-end{% endif %}"{% if column.key == 'issues' %} title="Incidencias: llegada tarde, salida antes de hora, fichaje sin su pareja (entrada sin salida o al revés) y fichaje a más de 3 horas de su horario. El detalle del trabajador las explica una a una."{% endif %}>
                 <a href="#" class="text-decoration-none text-dark"
                    hx-get="{% url 'panel:clock_events_results' %}"
                    hx-target="#clk-results"
@@ -66,6 +66,8 @@ y Albaranes de Servicios.
             <td class="text-end{% if row.incident_count %} text-danger fw-bold{% endif %}" data-label="Incidencias" title="Incidencias sin visar (las visadas o corregidas no cuentan)">{{ row.incident_count }}</td>
             {# S149: días procesados por la IA (albaranes) que nadie ha visado aún. #}
             <td class="text-end" data-label="IA sin visar" title="Días comparados con sus albaranes por la IA que todavía no ha visado un supervisor">{% if row.ai_pending %}<a class="badge text-bg-info fw-normal text-decoration-none" href="{% url 'panel:clock_worker' row.person.pk %}?date_from={{ date_from|date:'Y-m-d' }}&date_to={{ date_to|date:'Y-m-d' }}&status=ai">{{ row.ai_pending }}</a>{% else %}<span class="text-muted">0</span>{% endif %}</td>
+            {# S149: días con todo lo fichado anulado en el intervalo. #}
+            <td class="text-end" data-label="Anuladas" title="Días con todo lo fichado anulado">{% if row.cancelled_days %}<a class="badge text-bg-secondary fw-normal text-decoration-none" href="{% url 'panel:clock_worker' row.person.pk %}?date_from={{ date_from|date:'Y-m-d' }}&date_to={{ date_to|date:'Y-m-d' }}&status=cancelled">{{ row.cancelled_days }}</a>{% else %}<span class="text-muted">0</span>{% endif %}</td>
             {# S143: total de horas de más del intervalo, cupo (hasta el tope de cada mes) y bolsa (el resto). #}
             <td class="text-end text-nowrap" data-label="Total de horas" title="Horas extra de las fechas filtradas: cada mes, trabajo efectivo menos días laborables × 8 h (convenio, art. 23)">{% if row.has_account %}{{ row.overtime_label }} h{% else %}<span class="text-muted">—</span>{% endif %}</td>
             <td class="text-end text-nowrap" data-label="Cupo de horas" title="Horas extra del cupo: hasta el tope de cada mes ({{ overtime_cap }} h)">{% if row.has_account %}{{ row.quota_label }} h{% else %}<span class="text-muted">—</span>{% endif %}</td>
@@ -94,7 +96,7 @@ y Albaranes de Servicios.
             </td>
         </tr>
         {% empty %}
-        <tr><td colspan="18" class="text-muted small py-3">No se encontró personal.</td></tr>
+        <tr><td colspan="19" class="text-muted small py-3">No se encontró personal.</td></tr>
         {% endfor %}
     </tbody>
 </table>

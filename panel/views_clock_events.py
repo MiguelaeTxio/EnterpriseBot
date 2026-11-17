@@ -67,6 +67,7 @@ SCREEN_KEY = "clock_events"
 FILTER_KEYS = (
     "search", "active", "company", "date_from", "date_to", "sort",
     "issues_only", "events", "section", "onboarding", "group",
+    "cancelled_only",
 )
 NO_SECTION = "none"
 _MAX_SORT_KEYS = 4
@@ -104,6 +105,8 @@ _SORT_VALUES = {
     "issues": lambda r: r.incident_count,
     # S149: días procesados por la IA sin visar.
     "ai": lambda r: r.ai_pending,
+    # S149: días con todo anulado.
+    "cancelled": lambda r: r.cancelled_days,
     # S143: horas de más del intervalo, su cupo y la bolsa (sin cuenta,
     # al final).
     "overtime": lambda r: r.overtime_seconds,
@@ -131,6 +134,7 @@ _COLUMNS = (
     ("events", "Fichajes"),
     ("issues", "Incidencias"),
     ("ai", "IA sin visar"),
+    ("cancelled", "Anuladas"),
     ("overtime", "Total de horas"),
     ("quota", "Cupo de horas"),
     ("bag", "Bolsa de horas"),
@@ -256,8 +260,9 @@ class _Row:
         # mes) y bolsa (el resto); None sin cuenta.
         # S143: incidencias sin visar (las visadas o corregidas no cuentan).
         self.incident_count = 0
-        # S149: días procesados por la IA sin visar.
+        # S149: días procesados por la IA sin visar y días anulados.
         self.ai_pending = 0
+        self.cancelled_days = 0
         self.overtime_seconds = self.quota_seconds = None
         self.bag_seconds = None
         self.overtime_label = self.quota_label = self.bag_label = ""
@@ -336,6 +341,28 @@ def _rows(request, people, date_from, date_to):
             1 for s in row.report.shifts
             if (row.person.company_user_id, s.day) in ai_days
             and not manual_fix(s)) if row.person.company_user_id else 0
+    # S149 (Miguel Ángel, 17/11: "poder listar las jornadas anuladas, que
+    # aparezcan en el listado general"): días con todo lo fichado
+    # anulado (como "Día anulado" en la ficha del trabajador).
+    cancelled = {}
+    tz = timezone.get_current_timezone()
+    for user_id, when in ClockCorrection.objects.filter(
+            action=ClockCorrection.Action.CANCEL,
+            event__company_user_id__in=user_ids,
+            old_pressed_at__isnull=False,
+            old_pressed_at__gte=timezone.make_aware(
+                datetime.datetime.combine(date_from, datetime.time.min),
+                tz) - datetime.timedelta(days=1),
+            old_pressed_at__lt=timezone.make_aware(
+                datetime.datetime.combine(date_to, datetime.time.min),
+                tz) + datetime.timedelta(days=2),
+    ).values_list("event__company_user_id", "old_pressed_at"):
+        day = timezone.localtime(when).date()
+        if date_from <= day <= date_to:
+            cancelled.setdefault(user_id, set()).add(day)
+    for row in rows:
+        days = cancelled.get(row.person.company_user_id, set())
+        row.cancelled_days = len(days - {s.day for s in row.report.shifts})
     for row in rows:
         if row.has_account:
             months = split_by_month(
@@ -447,10 +474,16 @@ def _with_issues_filter(request, rows):
     "Solo con incidencias": solo los trabajadores con alguna
     incidencia en las fechas elegidas.
     """
-    if _param(request, "issues_only") != "1":
+    # S149: "Solo con anuladas" (días con todo anulado); con las dos
+    # casillas, los que tengan una cosa u otra.
+    issues = _param(request, "issues_only") == "1"
+    cancelled = _param(request, "cancelled_only") == "1"
+    if not issues and not cancelled:
         return rows
     # S149: los días procesados por la IA sin visar también se revisan.
-    return [r for r in rows if r.incident_count or r.ai_pending]
+    return [r for r in rows
+            if (issues and (r.incident_count or r.ai_pending))
+            or (cancelled and r.cancelled_days)]
 
 
 def _with_events_filter(request, rows):
@@ -510,6 +543,7 @@ def _list_context(request):
         "date_from": date_from,
         "date_to": date_to,
         "filter_issues_only": _param(request, "issues_only") == "1",
+        "filter_cancelled_only": _param(request, "cancelled_only") == "1",
         "filter_events": _csv_param(request, "events", _EVENTS_CHOICES),
         "filter_section": _param(request, "section"),
         "filter_onboarding": _param(request, "onboarding"),
