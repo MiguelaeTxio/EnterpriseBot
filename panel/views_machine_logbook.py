@@ -16,6 +16,7 @@ from django.contrib import messages
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.views import View
 
 from fleet.logbook_service import (
@@ -272,3 +273,260 @@ class MachineWorkshopLogbooksZipView(FleetAccessMixin, View):
                 "No hay ningún documento seleccionado.", status=400,
             )
         return _build_dossier_zip_response(machine, entries)
+
+
+# ---------------------------------------------------------------------------
+# Pestaña "Revisiones" y libro para externos (S154)
+# ---------------------------------------------------------------------------
+
+REVIEWS_TEMPLATE = "panel/machine_workshop/reviews.html"
+REVIEWS_TABLE_TEMPLATE = "panel/machine_workshop/_reviews_table.html"
+REVIEWS_KIND = "reviews"
+
+
+def _crane(request, pk):
+    """
+    The machine, only if it is an A/H crane (404 otherwise).
+
+    ---
+
+    La máquina, solo si es grúa A/H (404 si no).
+    """
+    from django.http import Http404
+
+    from panel.views_machine_workshop import _machine
+
+    machine = _machine(request, pk)
+    if not is_logbook_machine(machine):
+        raise Http404("Solo las grúas móviles A y H llevan libro historial.")
+    return machine
+
+
+def _reviews_context(request, machine):
+    """
+    Context of the reviews table fragment.
+
+    ---
+
+    Contexto del fragmento de la tabla de revisiones.
+    """
+    from fleet.logbook_service import SIGN_ROLES
+    from panel import machine_workshop as workshop
+    from panel import machine_workshop_reviews as reviews
+    from panel.views_machine_workshop import _only_keys, _params
+
+    params = _params(request, reviews.REVIEW_FILTER_KEYS)
+    only_keys = _only_keys(request)
+    rows = reviews.build_review_rows(machine, params, only_keys=only_keys)
+    company_user = request.user.company_user
+    for row in rows:
+        row.can_remove = bool(
+            row.signed_by_pk and (
+                row.signed_by_pk == company_user.pk
+                or company_user.role == "ADMIN"
+            )
+        )
+    return {
+        "machine": machine,
+        "rows": rows,
+        "totals": reviews.review_totals(rows),
+        "filters": params,
+        "only_selected": only_keys is not None,
+        "is_filtered": bool(
+            any(params[key] for key in params if key != "sort")
+            or only_keys is not None
+        ),
+        "can_sign": company_user.role in SIGN_ROLES,
+        "table_url": reverse(
+            "panel:machine_workshop_reviews_table",
+            kwargs={"pk": machine.pk},
+        ),
+        **workshop.sort_controls(params["sort"], reviews.REVIEW_SORTABLE),
+    }
+
+
+def _reviews_page_context(request, machine):
+    """
+    Page context of the reviews tab.
+
+    ---
+
+    Contexto de la página de la pestaña Revisiones.
+    """
+    from fleet.logbook_service import default_maintainer
+    from panel import machine_workshop as workshop
+    from panel import machine_workshop_reviews as reviews
+    from panel.navigation_persistence import get_saved_state_key
+    from panel.views_machine_workshop import _saved_selection, _screen_key
+
+    screen_key = _screen_key(REVIEWS_KIND, machine)
+    hidden = get_saved_state_key(
+        request.user.company_user, screen_key, "hidden_columns", [],
+    )
+    hidden = [key for key in hidden if isinstance(key, str)] if isinstance(
+        hidden, list) else []
+    columns = workshop.column_choices(reviews.REVIEW_COLUMNS, hidden)
+    return {
+        "columns": columns,
+        "hidden_columns": [
+            column["key"] for column in columns if not column["visible"]
+        ],
+        "machine": machine,
+        "active_kind": REVIEWS_KIND,
+        "machine_detail_url": reverse(
+            "panel:documentation_machine_detail", kwargs={"pk": machine.pk},
+        ),
+        "screen_key": screen_key,
+        "saved_selection": _saved_selection(request, REVIEWS_KIND, machine),
+        "origins": reviews.ORIGIN_CHOICES,
+        "default_maintainer": default_maintainer(machine),
+        "today": timezone.localdate(),
+    }
+
+
+class MachineWorkshopReviewsView(FleetAccessMixin, View):
+    """
+    Periodic reviews tab of an A/H crane.
+
+    ---
+
+    Pestaña "Revisiones" de una grúa A/H.
+    """
+
+    def get(self, request, pk):
+        from panel import machine_workshop_reviews as reviews
+        from panel.navigation_persistence import apply_list_navigation
+        from panel.views_machine_workshop import _screen_key
+
+        machine = _crane(request, pk)
+        apply_list_navigation(
+            request, _screen_key(REVIEWS_KIND, machine),
+            reviews.REVIEW_FILTER_KEYS,
+        )
+        return render(request, REVIEWS_TEMPLATE, {
+            **_reviews_page_context(request, machine),
+            **_reviews_context(request, machine),
+        })
+
+
+class MachineWorkshopReviewsFragmentView(FleetAccessMixin, View):
+    """
+    Reviews table fragment.
+
+    ---
+
+    Fragmento de la tabla de revisiones. Guarda filtros y orden.
+    """
+
+    def get(self, request, pk):
+        from panel import machine_workshop_reviews as reviews
+        from panel.navigation_persistence import apply_list_navigation
+        from panel.views_machine_workshop import _screen_key
+
+        machine = _crane(request, pk)
+        apply_list_navigation(
+            request, _screen_key(REVIEWS_KIND, machine),
+            reviews.REVIEW_FILTER_KEYS,
+        )
+        return render(
+            request, REVIEWS_TABLE_TEMPLATE,
+            _reviews_context(request, machine),
+        )
+
+
+class MachineReviewSignView(FleetAccessMixin, View):
+    """
+    POST: record one periodic review signed by the current user.
+
+    ---
+
+    POST: anota una revisión técnica periódica firmada por quien la
+    graba (jefe de taller o administrador). La fecha la escribe él; la
+    plataforma nunca la calcula.
+    """
+
+    def post(self, request, pk):
+        from fleet.logbook_service import annotate_review
+        from panel.machine_workshop import parse_date
+
+        machine = _crane(request, pk)
+        try:
+            annotate_review(
+                machine,
+                request.user.company_user,
+                entry_date=parse_date(request.POST.get("entry_date")),
+                result=request.POST.get("result", ""),
+                entity=request.POST.get("entity", ""),
+                next_date=parse_date(request.POST.get("next_date")),
+                concept=request.POST.get("concept", ""),
+                is_reconstructed=request.POST.get("is_reconstructed") == "1",
+            )
+        except LogbookReadError as exc:
+            messages.error(request, str(exc))
+        else:
+            messages.success(request, "Revisión anotada y firmada.")
+        return redirect(
+            "panel:machine_workshop_reviews", pk=machine.pk,
+        )
+
+
+class MachineReviewRemoveView(FleetAccessMixin, View):
+    """
+    POST: remove selected signed reviews (signer or administrator).
+
+    ---
+
+    POST: quita las revisiones firmadas seleccionadas (selected=r<pk>);
+    solo las firmadas por quien lo pide, o cualquiera si es
+    administrador. Las de los escaneos no se tocan.
+    """
+
+    def post(self, request, pk):
+        from fleet.models import MachineLogbookEntry
+
+        machine = _crane(request, pk)
+        company_user = request.user.company_user
+        pks = [
+            int(key[1:]) for key in request.POST.getlist("selected")
+            if key[:1] == "r" and key[1:].isdigit()
+        ]
+        entries = MachineLogbookEntry.objects.filter(
+            machine=machine, pk__in=pks, source__isnull=True,
+            signed_by__isnull=False,
+        )
+        if company_user.role != "ADMIN":
+            entries = entries.filter(signed_by=company_user)
+        removed, _detail = entries.delete()
+        messages.success(
+            request,
+            "Revisiones firmadas quitadas: %d." % removed,
+        )
+        return redirect(
+            "panel:machine_workshop_reviews", pk=machine.pk,
+        )
+
+
+class MachineLogbookExternalView(FleetAccessMixin, View):
+    """
+    GET: download the logbook for external companies.
+
+    ---
+
+    GET: descarga el libro para compartir con empresas de fuera (sin
+    nombres de mecánicos; familia y subfamilia de la avería en las
+    reparaciones). No se guarda en el cubo: el libro vigente de la grúa
+    sigue siendo el interno.
+    """
+
+    def get(self, request, pk):
+        from fleet.logbook_service import render_logbook_pdf
+
+        machine = _crane(request, pk)
+        data = render_logbook_pdf(machine, external=True)
+        response = HttpResponse(data, content_type="application/pdf")
+        response["Content-Disposition"] = (
+            'attachment; filename="%s_LIBRO_HISTORIAL_EXTERNO_%s.pdf"' % (
+                machine.code, timezone.localdate().strftime("%Y%m%d"),
+            )
+        )
+        return response

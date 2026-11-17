@@ -1,0 +1,83 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/machine_workshop/_reviews_table.html #}
+{% comment %}
+H23 (S154, invasora). Tabla de revisiones técnicas periódicas de la
+grúa (directriz 4.24): revisiones escaneadas y firmadas, y los huecos de
+más de seis meses sin revisión en amarillo, sin casilla (no son
+filas que se puedan seleccionar ni rellenar solas).
+{% endcomment %}
+{% if rows %}
+<table class="table table-sm table-hover align-middle mb-0 small" id="mw-table">
+    <thead class="table-light">
+        <tr>
+            <th><input class="form-check-input" type="checkbox" id="mw-check-all" title="Marcar/desmarcar todos los visibles"></th>
+            <th class="mwc-date">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.date label="Fecha" %}</th>
+            <th class="mwc-concept">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.concept label="Concepto" %}</th>
+            <th class="mwc-entity">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.entity label="Empresa mantenedora" %}</th>
+            <th class="mwc-result">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.result label="Resultado" %}</th>
+            <th class="mwc-next">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.next label="Próxima revisión" %}</th>
+            <th class="mwc-origin">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.origin label="Origen" %}</th>
+            <th class="mwc-signed">Firma</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        {% if row.is_gap %}
+        <tr class="table-warning">
+            <td></td>
+            <td class="mwc-date">{{ row.date|date:"d/m/Y" }} → {{ row.gap_end|date:"d/m/Y" }}</td>
+            <td class="mwc-concept mw-col-text"><i class="bi bi-exclamation-triangle me-1"></i>Sin revisión anotada en {{ row.gap_days }} días</td>
+            <td class="mwc-entity"></td>
+            <td class="mwc-result"></td>
+            <td class="mwc-next"></td>
+            <td class="mwc-origin">{{ row.origin_label }}</td>
+            <td class="mwc-signed"></td>
+        </tr>
+        {% else %}
+        <tr>
+            <td>
+                {% if row.can_remove %}
+                <input class="form-check-input mw-row-check" type="checkbox"
+                       data-key="{{ row.key }}" data-label="{{ row.label }}">
+                {% endif %}
+            </td>
+            <td class="mwc-date">{{ row.date|date:"d/m/Y"|default:"—" }}</td>
+            <td class="mwc-concept mw-col-text">{{ row.concept|default:"—" }}</td>
+            <td class="mwc-entity">{{ row.entity|default:"—" }}</td>
+            <td class="mwc-result">{{ row.result|default:"—" }}</td>
+            <td class="mwc-next">{{ row.next_date|date:"d/m/Y"|default:"—" }}</td>
+            <td class="mwc-origin">
+                {% if row.origin == "scanned" %}
+                {{ row.origin_label }}
+                {% else %}
+                <span class="badge bg-success-subtle text-success border border-success-subtle">{{ row.origin_label }}</span>
+                {% endif %}
+            </td>
+            <td class="mwc-signed mw-col-text">{{ row.signature_note|default:"—" }}</td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+    </tbody>
+    <tfoot class="mw-totals">
+        <tr class="fw-semibold">
+            <td></td>
+            <td class="mwc-date">Total</td>
+            <td class="mwc-concept">{{ totals.count }} revisi{{ totals.count|pluralize:"ón,ones" }}</td>
+            <td class="mwc-entity">{{ totals.signed }} firmada{{ totals.signed|pluralize }}</td>
+            <td class="mwc-result">{{ totals.gaps }} hueco{{ totals.gaps|pluralize }}</td>
+            <td class="mwc-next"></td>
+            <td class="mwc-origin"></td>
+            <td class="mwc-signed"></td>
+        </tr>
+    </tfoot>
+</table>
+{% else %}
+<div class="text-center text-muted py-5">
+    <i class="bi bi-clipboard-check fs-1 d-block mb-2 opacity-25"></i>
+    <p class="mb-0">No hay revisiones ni huecos que coincidan con los filtros aplicados.</p>
+</div>
+{% endif %}
+<span id="mw-fragment-state" class="d-none"
+      data-count="{{ totals.count }}"
+      data-filtered="{% if is_filtered %}1{% endif %}"
+      data-sort-active="{% if sort_active %}1{% endif %}"
+      data-sort="{{ current_sort }}"></span>

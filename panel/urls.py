@@ -73,7 +73,12 @@ from panel.views_machine_workshop import (
     WorkOrderDocumentView,
 )
 from panel.views_machine_logbook import (
+    MachineLogbookExternalView,
     MachineLogbookGenerateView,
+    MachineReviewRemoveView,
+    MachineReviewSignView,
+    MachineWorkshopReviewsFragmentView,
+    MachineWorkshopReviewsView,
     MachineWorkshopLogbooksFragmentView,
     MachineWorkshopLogbooksView,
     MachineWorkshopLogbooksZipView,
@@ -1159,6 +1164,32 @@ urlpatterns = [
         "documentacion/maquinaria/<int:pk>/taller/libros-historial/zip/",
         MachineWorkshopLogbooksZipView.as_view(),
         name="machine_workshop_logbooks_zip",
+    ),
+    # H23 (S154, invasora): revisiones firmadas y libro para externos.
+    path(
+        "documentacion/maquinaria/<int:pk>/taller/revisiones/",
+        MachineWorkshopReviewsView.as_view(),
+        name="machine_workshop_reviews",
+    ),
+    path(
+        "documentacion/maquinaria/<int:pk>/taller/revisiones/tabla/",
+        MachineWorkshopReviewsFragmentView.as_view(),
+        name="machine_workshop_reviews_table",
+    ),
+    path(
+        "documentacion/maquinaria/<int:pk>/taller/revisiones/firmar/",
+        MachineReviewSignView.as_view(),
+        name="machine_review_sign",
+    ),
+    path(
+        "documentacion/maquinaria/<int:pk>/taller/revisiones/quitar/",
+        MachineReviewRemoveView.as_view(),
+        name="machine_review_remove",
+    ),
+    path(
+        "documentacion/maquinaria/<int:pk>/libro-historial/externo/",
+        MachineLogbookExternalView.as_view(),
+        name="machine_logbook_external",
     ),
     path(
         "taller/partes/<int:entry_pk>/documento/",

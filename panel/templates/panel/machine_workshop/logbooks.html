@@ -152,6 +152,10 @@ alta y va en el panel de acciones.
                                 <i class="bi bi-journal-plus me-1"></i>Generar libro historial
                             </button>
                         </form>
+                        <a class="btn btn-sm btn-outline-success mt-1" href="{% url 'panel:machine_logbook_external' pk=machine.pk %}"
+                           title="Libro para compartir con empresas de fuera: sin nombres de mecánicos y con la familia y la subfamilia de la avería">
+                            <i class="bi bi-file-earmark-arrow-down me-1"></i>Libro para externos
+                        </a>
                     </div>
                     {% endif %}
                 </div>

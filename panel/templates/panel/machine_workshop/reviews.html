@@ -1,0 +1,265 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/machine_workshop/reviews.html #}
+{% extends "panel/base.html" %}
+{% load static %}
+
+{% block title %}{{ machine.code }} — Revisiones{% endblock %}
+{% block page_title %}{{ machine.code }} — {{ machine.brand_model }}{% endblock %}
+
+{% block extra_head %}
+<style>
+#mw-results-scroll table td,
+#mw-results-scroll table th { white-space: nowrap; }
+#mw-results-scroll .mw-col-text { white-space: normal; min-width: 16rem; max-width: 28rem; }
+#mw-results-scroll tfoot.mw-totals td { position: sticky; bottom: 0; background-color: #f8f9fa; z-index: 2; border-top: 2px solid var(--bs-border-color, #dee2e6); }
+#mw-list-box:fullscreen { background: var(--bs-body-bg, #fff); padding: 1rem; }
+#mw-list-box:fullscreen #mw-results-scroll { height: calc(100vh - 4rem); }
+</style>
+<script src="{% static 'panel/js/machine_workshop_list.js' %}"></script>
+{% endblock %}
+
+{% block content %}
+{% comment %}
+H23 (S154, invasora). Revisiones técnicas periódicas de la grúa: las de
+los libros escaneados y las anotadas y firmadas aquí por el responsable,
+con los huecos de más de seis meses sin revisión a la vista (directriz
+4.24). La plataforma nunca rellena un hueco: cada revisión la anota y la
+firma el responsable con su fecha real; si el registro original se
+extravió, la revisión se marca como reconstruida y el libro lo dice.
+{% endcomment %}
+{% include "panel/machine_workshop/_header.html" %}
+
+<div id="mw-root"
+     data-table-url="{{ table_url }}"
+     data-screen-key="{{ screen_key }}">
+
+<div class="border rounded p-2 mb-2" id="mw-top-panel">
+    <div class="row g-2">
+        <div class="col-lg-7">
+            <div class="border rounded p-2 h-100" id="mw-filters">
+                <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                <input type="search" class="form-control form-control-sm mb-2"
+                       placeholder="Buscar en el concepto, la empresa mantenedora, el resultado o la firma…"
+                       name="search" value="{{ filters.search }}" autocomplete="off"
+                       hx-get="{{ table_url }}" hx-target="#mw-table-container"
+                       hx-include="#mw-filters, #mw-sort"
+                       hx-trigger="input changed delay:300ms, search">
+                <div class="d-flex flex-wrap gap-3">
+                    <div>
+                        <div class="small fw-bold">Estado</div>
+                        {% comment %}
+                        Casillas sin "name": el JS común traduce la
+                        combinación al valor único de state -- ambas =
+                        todos, ninguna = ninguno (semántica literal).
+                        {% endcomment %}
+                        <div class="form-check">
+                            <input class="form-check-input mw-state-check" type="checkbox" id="mw-state-open" autocomplete="off"
+                                   {% if filters.state == '' or filters.state == 'reviews' %}checked{% endif %}>
+                            <label class="form-check-label small" for="mw-state-open">Revisiones</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input mw-state-check" type="checkbox" id="mw-state-closed" autocomplete="off"
+                                   {% if filters.state == '' or filters.state == 'gaps' %}checked{% endif %}>
+                            <label class="form-check-label small" for="mw-state-closed">Huecos sin revisión</label>
+                        </div>
+                        <input type="hidden" id="mw-filter-state" name="state" value="{{ filters.state }}"
+                               data-open-value="reviews" data-closed-value="gaps"
+                               hx-get="{{ table_url }}" hx-target="#mw-table-container"
+                               hx-include="#mw-filters, #mw-sort" hx-trigger="mw-state-change">
+                    </div>
+                    <div>
+                        <div class="small fw-bold">Origen</div>
+                        <select class="form-select form-select-sm" name="origin" autocomplete="off"
+                                hx-get="{{ table_url }}" hx-target="#mw-table-container"
+                                hx-include="#mw-filters, #mw-sort" hx-trigger="change">
+                            <option value="">Todos</option>
+                            {% for value, label in origins %}
+                            <option value="{{ value }}"{% if filters.origin == value %} selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <div class="small fw-bold">Fecha de la revisión</div>
+                        <div class="d-flex gap-1">
+                            <input type="date" class="form-control form-control-sm" name="date_from" value="{{ filters.date_from }}" title="Desde"
+                                   hx-get="{{ table_url }}" hx-target="#mw-table-container"
+                                   hx-include="#mw-filters, #mw-sort" hx-trigger="change">
+                            <input type="date" class="form-control form-control-sm" name="date_to" value="{{ filters.date_to }}" title="Hasta"
+                                   hx-get="{{ table_url }}" hx-target="#mw-table-container"
+                                   hx-include="#mw-filters, #mw-sort" hx-trigger="change">
+                        </div>
+                    </div>
+                </div>
+                <div class="small fw-bold mt-2">Selección</div>
+                <div class="d-flex align-items-center justify-content-between gap-2">
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" id="mw-only-selected" name="only_selected" value="1" autocomplete="off"
+                               {% if only_selected %}checked{% endif %}
+                               hx-get="{{ table_url }}" hx-target="#mw-table-container"
+                               hx-include="#mw-filters, #mw-sort"
+                               hx-trigger="change, mw-selection-refresh">
+                        <label class="form-check-label small" for="mw-only-selected">Mostrar solo la selección actual</label>
+                    </div>
+                    <input type="hidden" id="mw-selected-ids" name="selected_ids" value="">
+                    <button type="button"
+                            class="btn btn-sm btn-outline-secondary{% if not sort_active %} d-none{% endif %}"
+                            id="mw-clear-sort"
+                            hx-get="{{ table_url }}" hx-target="#mw-table-container"
+                            hx-include="#mw-filters" hx-vals='{"sort": ""}'
+                            title="Deshacer todos los órdenes aplicados">
+                        <i class="bi bi-x-circle me-1"></i>Quitar orden
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="border rounded p-2 h-100">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <strong class="small"><span id="mw-mass-count">0</span> seleccionados</strong>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="mw-mass-clear">Limpiar</button>
+                </div>
+                <div class="row g-1">
+                    <div class="col-md-6 border-end pe-2">
+                        <div class="small text-muted fw-bold">Con la selección</div>
+                        <form method="post" action="{% url 'panel:machine_review_remove' pk=machine.pk %}" id="mw-remove-form"
+                              onsubmit="return confirm('¿Quitar las revisiones firmadas seleccionadas? Las de los libros escaneados no se tocan.');">
+                            {% csrf_token %}
+                            <div id="mw-remove-selected"></div>
+                            <button type="submit" class="btn btn-sm btn-outline-danger mw-needs-selection" disabled
+                                    title="Quita las revisiones firmadas seleccionadas (solo las tuyas, o cualquiera si eres administrador)">
+                                <i class="bi bi-x-circle me-1"></i>Quitar firmadas
+                            </button>
+                        </form>
+                    </div>
+                    <div class="col-md-6 ps-2">
+                        <div class="small text-muted fw-bold">Revisiones y libro</div>
+                        <div class="d-flex flex-wrap gap-1">
+                            {% if can_sign %}
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#reviewSignModal">
+                                <i class="bi bi-pen me-1"></i>Anotar y firmar revisión
+                            </button>
+                            {% endif %}
+                            <a class="btn btn-sm btn-outline-success" href="{% url 'panel:machine_logbook_external' pk=machine.pk %}"
+                               title="Libro para compartir con empresas de fuera: sin nombres de mecánicos y con la familia y la subfamilia de la avería">
+                                <i class="bi bi-file-earmark-arrow-down me-1"></i>Libro para externos
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12">
+            <div class="border rounded px-2 py-1">
+                {% include "panel/machine_workshop/_columns_picker.html" %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="border rounded p-2" id="mw-bottom-panel">
+    <div class="row g-2 h-100">
+        <div class="col-lg-9 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column" id="mw-list-box">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <div class="fw-bold small">
+                        <span id="mw-row-count">{{ totals.count }}</span> revisiones
+                        <span id="mw-row-filtered" class="text-muted fw-normal{% if not is_filtered %} d-none{% endif %}">(filtrado)</span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" id="mw-fullscreen" title="Pantalla completa">
+                        <i class="bi bi-fullscreen"></i>
+                    </button>
+                </div>
+                <div id="mw-results-scroll" class="fixed-list-scroll flex-scroll-xy">
+                    <div id="mw-table-container">
+                        {% include "panel/machine_workshop/_reviews_table.html" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1">Selección actual (<span id="mw-selection-count">0</span>)</div>
+                <div class="small text-muted mb-1 d-none" id="mw-selection-totals"></div>
+                <div class="flex-scroll-y">
+                    <ul class="mb-0 small ps-0 list-unstyled" id="mw-selection-list">
+                        <li class="text-muted">Nada seleccionado todavía.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<span id="mw-sort" class="d-none"><input type="hidden" name="sort" value="{{ current_sort }}"></span>
+{{ saved_selection|json_script:"mw-saved-selection" }}
+</div>
+{% include "panel/_fixed_list_layout.html" with top_id="mw-top-panel" bottom_id="mw-bottom-panel" %}
+<script>
+// S154: "Quitar firmadas" lleva las claves seleccionadas (r<pk>).
+document.getElementById("mw-remove-form").addEventListener("submit", function () {
+    var holder = document.getElementById("mw-remove-selected");
+    holder.innerHTML = "";
+    document.getElementById("mw-selected-ids").value.split(",").forEach(function (key) {
+        if (!key) { return; }
+        var input = document.createElement("input");
+        input.type = "hidden";
+        input.name = "selected";
+        input.value = key;
+        holder.appendChild(input);
+    });
+});
+</script>
+{% if can_sign %}
+{% comment %}
+Anotar y firmar: la fecha la escribe el responsable (nunca se propone
+una); la empresa mantenedora se propone con la de la última revisión
+escaneada. Al guardar quedan su usuario y la hora de la firma.
+{% endcomment %}
+<div class="modal fade" id="reviewSignModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="post" action="{% url 'panel:machine_review_sign' pk=machine.pk %}">
+            {% csrf_token %}
+            <div class="modal-header">
+                <h5 class="modal-title">Anotar y firmar revisión técnica periódica</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-2">
+                    <div class="col-6">
+                        <label class="form-label form-label-sm" for="review-date">Fecha en que se hizo</label>
+                        <input type="date" class="form-control form-control-sm" id="review-date" name="entry_date" max="{{ today|date:'Y-m-d' }}" required>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label form-label-sm" for="review-next">Próxima revisión</label>
+                        <input type="date" class="form-control form-control-sm" id="review-next" name="next_date">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label form-label-sm" for="review-entity">Empresa mantenedora</label>
+                        <input type="text" class="form-control form-control-sm" id="review-entity" name="entity" maxlength="200" value="{{ default_maintainer }}" required>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label form-label-sm" for="review-result">Resultado</label>
+                        <input type="text" class="form-control form-control-sm" id="review-result" name="result" maxlength="200" required>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label form-label-sm" for="review-concept">Concepto u observaciones</label>
+                        <textarea class="form-control form-control-sm" id="review-concept" name="concept" rows="2"></textarea>
+                    </div>
+                    <div class="col-12">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="review-reconstructed" name="is_reconstructed" value="1">
+                            <label class="form-check-label small" for="review-reconstructed">Registro original extraviado: la revisión se hizo y se reconstruye ahora. El libro lo indicará así.</label>
+                        </div>
+                    </div>
+                </div>
+                <p class="small text-muted mt-2 mb-0">Al pulsar «Firmar» la revisión queda a tu nombre como responsable, con la fecha y la hora de la firma.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-pen me-1"></i>Firmar</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

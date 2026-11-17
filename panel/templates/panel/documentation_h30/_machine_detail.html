@@ -655,6 +655,11 @@ puede ser es que la interfaz no informe de lo que pasa."
                     <a href="{% url 'panel:machine_workshop_logbooks' pk=machine.pk %}" class="btn btn-sm btn-outline-primary">
                         <i class="bi bi-journal-text me-1"></i>Libros historial
                     </a>
+                    {% if machine.is_logbook_crane %}
+                    <a href="{% url 'panel:machine_workshop_reviews' pk=machine.pk %}" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-clipboard-check me-1"></i>Revisiones
+                    </a>
+                    {% endif %}
                     {% endif %}
                     {% if show_logbook_button %}
                     <form method="post" action="{% url 'panel:machine_logbook_generate' pk=machine.pk %}" class="d-inline" onsubmit="const b = this.querySelector('button'); b.disabled = true; b.innerHTML = 'Generando…';">
