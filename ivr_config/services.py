@@ -172,6 +172,26 @@ def _build_presence_context(company) -> str:
 
     presence_lines = []
 
+    # S153, incidente real: una consulta de PresenceStatus por contacto
+    # (73 contactos internos, ~60 ms cada una desde la tarea always-on)
+    # tardaba 4-5 s antes de saludar; con los 3-4 s que Twilio tarda en
+    # abrir el WebSocket, el llamante oía ~9 s de silencio y colgaba.
+    # Ahora una sola consulta para todos: la presencia activa más
+    # reciente de cada company_user (mismo criterio que
+    # _get_active_presence).
+    internal_contacts = list(internal_contacts)
+    user_ids = [c.company_user_id for c in internal_contacts
+                if c.company_user_id]
+    current_time = now()
+    active_by_user = {}
+    for status in (
+        PresenceStatus.objects
+        .filter(company_user_id__in=user_ids, starts_at__lte=current_time)
+        .filter(Q(ends_at__isnull=True) | Q(ends_at__gt=current_time))
+        .order_by("company_user_id", "-starts_at")
+    ):
+        active_by_user.setdefault(status.company_user_id, status)
+
     for contact in internal_contacts:
         if contact.company_user is None:
             # is_internal=True but no company_user linked — data integrity issue.
@@ -185,7 +205,7 @@ def _build_presence_context(company) -> str:
             )
             continue
 
-        presence = _get_active_presence(contact.company_user)
+        presence = active_by_user.get(contact.company_user_id)
 
         if presence is None:
             # No active PresenceStatus — treat as AVAILABLE by convention.
@@ -218,9 +238,6 @@ def _build_presence_context(company) -> str:
             line = f"{contact.name} {label}."
 
         presence_lines.append(line)
-        logger.debug(
-            f"[CONFIG] Presencia resuelta para '{contact.name}': {line}"
-        )
 
     return "\n".join(presence_lines)
 
