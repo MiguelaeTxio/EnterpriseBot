@@ -248,6 +248,14 @@ class Shift:
     # parado para comer"): una hora cada una, no es tiempo trabajado.
     auto_meal_seconds: int = 0
     auto_meals: list = field(default_factory=list)
+    # S149 (Miguel Ángel, 17/11): de esa hora, la parte que cae en tramos
+    # que no son jornada, por papel del tipo ({rol o "": segundos}):
+    # la comida se descuenta de lo que se hacía a esa hora (presencia,
+    # p. ej.), no siempre del trabajo efectivo.
+    auto_meal_uncounted: dict = field(default_factory=dict)
+    # Lo mismo, una por cada comida o cena descontada (en el orden de
+    # auto_meals), para enseñar de dónde ha salido.
+    auto_meal_from: list = field(default_factory=list)
     # S141: cambios de tipo dentro de la jornada, en orden.
     changes: list = field(default_factory=list)
     # S144: día flexible tras una jornada con poco descanso (REST_HOURS):
@@ -437,6 +445,11 @@ class Shift:
                     ClockType.BAG_ROLES:
                 result[clock_type.role] = result.get(clock_type.role, 0) \
                     + max(int((end - start).total_seconds()), 0)
+        # S149: la comida sin fichar que cayó en presencia (o fuerza
+        # mayor) sale de ahí.
+        for role, seconds in self.auto_meal_uncounted.items():
+            if role in result:
+                result[role] = max(result[role] - seconds, 0)
         return result
 
     @property
@@ -449,7 +462,11 @@ class Shift:
         # la hora exacta; fichar a las 7:58 no da 2 minutos de más.
         gross = int((_rounded(self.clock_out)
                      - _rounded(self.clock_in)).total_seconds())
-        return max(gross - self.lunch_seconds - self.auto_meal_seconds
+        # S149: de la comida sin fichar, solo lo que cayó en jornada; lo
+        # que cayó en presencia ya no cuenta (uncounted_seconds).
+        counted_meal = self.auto_meal_seconds - sum(
+            self.auto_meal_uncounted.values())
+        return max(gross - self.lunch_seconds - counted_meal
                    - self.uncounted_seconds, 0)
 
     @property
@@ -1058,6 +1075,62 @@ AUTO_MEAL_GAP = 30 * 60
 # fichar solo se descuenta si la última salida del día es a esta hora o
 # más tarde (antes bastaba con salir a las 20:00).
 AUTO_DINNER_MIN_END = datetime.time(22, 0)
+# S149 (Miguel Ángel, 17/11): "en el horario de una y media a 3 es donde
+# vamos a descontar la hora de comida": la hora sale de lo que se hacía
+# en esa franja (trabajo, presencia...); si no llega a una hora, del
+# resto de la franja de comida más cerca (antes y luego después).
+AUTO_LUNCH_WINDOW = (datetime.time(13, 30), datetime.time(15, 0))
+
+
+def _meal_taken(shift, day, kind):
+    """
+    {role or "": seconds} of the uncounted time the missing meal hour
+    falls on.
+    ---
+    S149: dónde cae la hora de comida sin fichar. Comida: primero la
+    franja AUTO_LUNCH_WINDOW, luego hacia atrás hasta el inicio de la
+    franja de comida y luego hacia delante hasta su final. Cena: desde el
+    inicio de su franja. Devuelve, de esa hora, lo que cae en tramos que
+    no son jornada (presencia, fuerza mayor, tipos que no cuentan), por
+    papel del tipo; lo demás sale de la jornada.
+    """
+    from hr_calendar.clock_extras import DINNER, MEAL_DINNER, MEAL_LUNCH
+
+    tz = timezone.get_current_timezone()
+
+    def at(t):
+        return timezone.make_aware(datetime.datetime.combine(day, t), tz)
+
+    if kind == DINNER:
+        pieces = [(at(MEAL_DINNER[0]), at(MEAL_DINNER[1]), False)]
+    else:
+        start, end = AUTO_LUNCH_WINDOW
+        pieces = [(at(start), at(end), False),
+                  (at(MEAL_LUNCH[0]), at(start), True),
+                  (at(end), at(MEAL_LUNCH[1]), False)]
+    segments = shift.segments or [
+        (None, shift.clock_in.pressed_at, shift.clock_out.pressed_at)]
+    left, taken = AUTO_MEAL_SECONDS, {}
+    for low, high, backwards in pieces:
+        parts = []
+        for clock_type, start, end in segments:
+            a, b = max(start, low), min(end, high)
+            if b > a:
+                parts.append((clock_type, a, b))
+        if backwards:
+            parts.reverse()
+        for clock_type, a, b in parts:
+            if left <= 0:
+                break
+            seconds = min(int((b - a).total_seconds()), left)
+            left -= seconds
+            counted = clock_type is None or (
+                clock_type.counts_as_work
+                and clock_type.role not in ClockType.BAG_ROLES)
+            if not counted:
+                key = clock_type.role or ""
+                taken[key] = taken.get(key, 0) + seconds
+    return taken
 
 
 def _parte_days(company, user_id, shifts):
@@ -1170,6 +1243,12 @@ def _deduct_missing_meals(shifts, no_lunch_days=(), parte_days=(),
                 continue
             best.auto_meal_seconds += AUTO_MEAL_SECONDS
             best.auto_meals.append(kind)
+            # S149: la hora sale de lo que se hacía a esa hora.
+            taken = _meal_taken(best, day, kind)
+            best.auto_meal_from.append(taken)
+            for role, seconds in taken.items():
+                best.auto_meal_uncounted[role] = \
+                    best.auto_meal_uncounted.get(role, 0) + seconds
 
 
 def _review_flexible_days(shifts):

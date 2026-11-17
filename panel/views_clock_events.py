@@ -1156,7 +1156,14 @@ def worker_detail_data(company, person, date_from, date_to):
         "meal_edits": _meal_edits(s, by_replacement),
         "lunch": lunch(s.day),
         # S143: comida o cena sin fichar que se descuenta (1 h cada una).
-        "auto_meals": s.auto_meals,
+        # S149: con de dónde sale la hora si no es de la jornada (p. ej.
+        # "de presencia 1:00").
+        "auto_meals": [
+            "%s descontada: −1:00 h" % kind + (", de %s" % ", ".join(
+                "%s %s" % (_ROLE_LABELS.get(role, "otros tipos"),
+                           format_duration(seconds))
+                for role, seconds in taken.items()) if taken else "")
+            for kind, taken in zip(s.auto_meals, s.auto_meal_from)],
         "no_meal_break": any(
             getattr(e, "no_meal_break", False)
             for e in [s.clock_in] + list(s.changes) + [s.clock_out]
@@ -1276,6 +1283,10 @@ def _bar_json(bar):
         "from": seg["from"].strftime("%Y-%m-%dT%H:%M"),
         "to": seg["to"].strftime("%Y-%m-%dT%H:%M"),
     } for seg in bar])
+
+
+# S149: de dónde sale la comida sin fichar cuando no es de la jornada.
+_ROLE_LABELS = {"presence": "presencia", "force": "fuerza mayor"}
 
 
 def _attach_reviewed(person, shifts):
