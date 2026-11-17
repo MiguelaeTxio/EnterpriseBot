@@ -55,7 +55,6 @@ from fleet.models import (
 logger = logging.getLogger(__name__)
 
 LOGBOOK_TYPE_CODE = "LIBRO_HISTORIAL"
-LOGBOOK_CODE_RE = re.compile(r"^[AH]\d")
 
 # Criterio del propio libro (sección 4, "Piezas sustituidas o
 # reparaciones realizadas": motores, mecanismos o componentes
@@ -64,6 +63,15 @@ LOGBOOK_CODE_RE = re.compile(r"^[AH]\d")
 REPAIR_FAULT_CATEGORIES = ("HYDRAULIC", "LIFTING_STRUCTURE")
 REPAIR_FAULT_SUBCATEGORIES = ("ET_ENGINE", "BC_CHASSIS")
 REPAIR_TASK_TYPES = ("AVERIA", "")
+
+# Revisiones técnicas periódicas: cada seis meses (lo que se ve en los
+# libros escaneados); un hueco se avisa pasado un mes de margen.
+REVIEW_INTERVAL_DAYS = 183
+REVIEW_GRACE_DAYS = 31
+# Quién firma revisiones como responsable (S154, Miguel Ángel: "firmadas
+# por Alberto Álvarez Díaz", jefe de taller): jefe de taller y
+# administrador.
+SIGN_ROLES = {"WORKSHOPBOSS", "ADMIN"}
 
 # Gemini 3.5 Flash (ficha del modelo en Vertex AI, consultada en S154):
 # 7 MB por archivo en línea y 65.536 tokens de salida como máximo. Un
@@ -179,7 +187,7 @@ def is_logbook_machine(machine) -> bool:
     Si este centro de gasto lleva libro historial de grúa: de momento
     solo las grúas móviles A y H (Miguel Ángel, S154).
     """
-    return bool(LOGBOOK_CODE_RE.match((machine.code or "").upper()))
+    return machine.is_logbook_crane
 
 
 def _machine_content_type():
@@ -550,17 +558,135 @@ def repair_lines(machine):
     )
 
 
-def logbook_context(machine) -> dict:
+def _signature_note(row) -> str:
+    """
+    Note printed under a review annotated and signed in the platform.
+
+    ---
+
+    Nota que el libro imprime bajo una revisión anotada y firmada en la
+    plataforma: quién la firmó y cuándo y, si reconstruye un registro
+    extraviado, que lo dice tal cual.
+    """
+    if row.signed_by_id is None:
+        return ""
+    signer = _signer_name(row.signed_by)
+    when = (
+        timezone.localtime(row.signed_at).strftime("%d/%m/%Y")
+        if row.signed_at else ""
+    )
+    if row.is_reconstructed:
+        return (
+            "Revisión realizada por la empresa mantenedora; registro "
+            "original extraviado. Reconstruida y firmada por %s el %s."
+            % (signer, when)
+        )
+    return "Anotada y firmada por %s el %s." % (signer, when)
+
+
+def _signer_name(company_user) -> str:
+    if company_user is None or company_user.user_id is None:
+        return ""
+    user = company_user.user
+    return user.get_full_name() or user.username
+
+
+def annotated_rows(machine):
+    """
+    Rows annotated and signed in the platform (no source document).
+
+    ---
+
+    Filas anotadas y firmadas en la plataforma (sin documento de
+    origen), con su firmante.
+    """
+    return list(
+        MachineLogbookEntry.objects.filter(
+            machine=machine, source__isnull=True,
+        ).select_related("signed_by__user")
+    )
+
+
+def review_rows(machine):
+    """
+    Periodic reviews of the crane: scans (deduplicated) plus signed ones.
+
+    ---
+
+    Revisiones técnicas periódicas de la grúa: las de los escaneos, sin
+    repetidos, más las anotadas y firmadas en la plataforma, por fecha.
+    Cada fila lleva `signature_note`.
+    """
+    scanned = _deduplicated(
+        MachineLogbookEntry.objects.filter(
+            machine=machine, source__isnull=False,
+            section=MachineLogbookEntry.SECTION_PERIODIC_REVIEW,
+        )
+    )
+    signed = [
+        row for row in annotated_rows(machine)
+        if row.section == MachineLogbookEntry.SECTION_PERIODIC_REVIEW
+    ]
+    rows = scanned + signed
+    for row in rows:
+        row.signature_note = _signature_note(row)
+    rows.sort(
+        key=lambda row: (row.entry_date is None, row.entry_date, row.pk),
+    )
+    return rows
+
+
+def review_gaps(reviews, today=None):
+    """
+    Periods longer than the review interval without any review.
+
+    ---
+
+    Periodos sin ninguna revisión anotada más largos que el intervalo
+    semestral (más REVIEW_GRACE_DAYS de margen): entre dos revisiones
+    seguidas y desde la última hasta hoy. Solo informa de los huecos;
+    la plataforma nunca los rellena (S154).
+    Devuelve [{"start", "end", "days"}].
+    """
+    today = today or timezone.localdate()
+    dates = sorted({row.entry_date for row in reviews if row.entry_date})
+    gaps = []
+    limit = REVIEW_INTERVAL_DAYS + REVIEW_GRACE_DAYS
+    for previous, following in zip(dates, dates[1:] + [today]):
+        days = (following - previous).days
+        if days > limit:
+            gaps.append({"start": previous, "end": following, "days": days})
+    return gaps
+
+
+def _external_repair_concept(line) -> str:
+    parts = [
+        line.get_fault_category_display() if line.fault_category else "",
+        (
+            line.get_fault_subcategory_display()
+            if line.fault_subcategory else ""
+        ),
+    ]
+    return " · ".join(part for part in parts if part) or "Reparación"
+
+
+def logbook_context(machine, external=False) -> dict:
     """
     Everything the logbook PDF shows, by section.
 
     ---
 
     Todo lo que muestra el libro, por sección: ficha de la máquina,
-    filas de los escaneos sin repetidos y reparaciones de los partes.
+    filas de los escaneos sin repetidos, revisiones anotadas y firmadas
+    y reparaciones de los partes. Con `external` (libro para compartir
+    con empresas de fuera, S154): sin nombres de mecánicos y, en vez de
+    la descripción de la reparación, la familia y la subfamilia de la
+    avería.
     """
     rows = _deduplicated(
-        MachineLogbookEntry.objects.filter(machine=machine)
+        MachineLogbookEntry.objects.filter(
+            machine=machine, source__isnull=False,
+        )
     )
     by_section = {code: [] for code in SECTION_CODES}
     for row in rows:
@@ -575,18 +701,23 @@ def logbook_context(machine) -> dict:
         for row in by_section[MachineLogbookEntry.SECTION_REPAIR]
     ]
     for line in repair_lines(machine):
-        concept = " -- ".join(
-            part for part in (
-                (line.fault_description or "").strip(),
-                (line.repair_notes or "").strip(),
-            ) if part
-        )
+        if external:
+            concept = _external_repair_concept(line)
+            entity = "Taller propio"
+        else:
+            concept = " -- ".join(
+                part for part in (
+                    (line.fault_description or "").strip(),
+                    (line.repair_notes or "").strip(),
+                ) if part
+            ) or line.get_fault_subcategory_display()
+            entity = "Taller propio (%s)" % (
+                line.entry.worker_name or "parte de trabajo"
+            )
         repairs.append({
             "date": line.entry.work_date,
-            "concept": concept or line.get_fault_subcategory_display(),
-            "entity": "Taller propio (%s)" % (
-                line.entry.worker_name or "parte de trabajo"
-            ),
+            "concept": concept,
+            "entity": entity,
             "source": line.get_fault_category_display(),
         })
     repairs.sort(key=lambda item: (item["date"] is None, item["date"]))
@@ -595,12 +726,13 @@ def logbook_context(machine) -> dict:
     )
     return {
         "machine": machine,
+        "external": external,
         "generated_at": timezone.localtime(),
         "inspections_base": by_section[
             MachineLogbookEntry.SECTION_INSPECTION_BASE],
         "inspections_structure": by_section[
             MachineLogbookEntry.SECTION_INSPECTION_STRUCTURE],
-        "reviews": by_section[MachineLogbookEntry.SECTION_PERIODIC_REVIEW],
+        "reviews": review_rows(machine),
         "repairs": repairs,
         "accidents": by_section[MachineLogbookEntry.SECTION_ACCIDENT],
         "notes": by_section[MachineLogbookEntry.SECTION_NOTE],
@@ -611,18 +743,74 @@ def logbook_context(machine) -> dict:
     }
 
 
-def render_logbook_pdf(machine) -> bytes:
+def render_logbook_pdf(machine, external=False) -> bytes:
     """
     The logbook as PDF bytes (weasyprint).
 
     ---
 
-    El libro en PDF (weasyprint, como el resto de PDF del panel).
+    El libro en PDF (weasyprint, como el resto de PDF del panel); con
+    `external`, el libro para compartir con empresas de fuera.
     """
     from weasyprint import HTML
 
-    html = render_to_string("fleet/logbook_pdf.html", logbook_context(machine))
+    html = render_to_string(
+        "fleet/logbook_pdf.html", logbook_context(machine, external),
+    )
     return HTML(string=html).write_pdf()
+
+
+def annotate_review(machine, user, entry_date, result, entity,
+                    next_date=None, concept="", is_reconstructed=False):
+    """
+    Records one periodic review signed by the user.
+
+    ---
+
+    Anota una revisión técnica periódica firmada por el usuario que la
+    graba (su usuario y la hora de la firma quedan guardados). La fecha
+    es la que escribe el responsable: la plataforma nunca la calcula.
+    """
+    if not is_logbook_machine(machine):
+        raise LogbookReadError(
+            "Solo las grúas móviles A y H llevan libro historial."
+        )
+    if user is None or user.role not in SIGN_ROLES:
+        raise LogbookReadError(
+            "Solo el responsable del taller puede firmar revisiones."
+        )
+    if entry_date is None or entry_date > timezone.localdate():
+        raise LogbookReadError(
+            "La fecha de la revisión es obligatoria y no puede ser futura."
+        )
+    return MachineLogbookEntry.objects.create(
+        machine=machine,
+        section=MachineLogbookEntry.SECTION_PERIODIC_REVIEW,
+        entry_date=entry_date,
+        concept=(concept or "").strip(),
+        entity=(entity or "").strip()[:200],
+        result=(result or "").strip()[:200],
+        next_date=next_date,
+        signed_by=user,
+        signed_at=timezone.now(),
+        is_reconstructed=is_reconstructed,
+    )
+
+
+def default_maintainer(machine) -> str:
+    """
+    Maintainer of the latest scanned review, to prefill the form.
+
+    ---
+
+    Empresa mantenedora de la última revisión escaneada, para proponerla
+    en el formulario (se puede cambiar).
+    """
+    row = MachineLogbookEntry.objects.filter(
+        machine=machine, source__isnull=False,
+        section=MachineLogbookEntry.SECTION_PERIODIC_REVIEW,
+    ).exclude(entity="").order_by("-entry_date", "-id").first()
+    return row.entity if row else ""
 
 
 def _trash_same_day_books(machine, new_entry, user):

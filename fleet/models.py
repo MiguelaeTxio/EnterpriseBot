@@ -492,6 +492,19 @@ class MachineAsset(models.Model):
     def __str__(self) -> str:
         return f"{self.code} — {self.brand_model} [{self.company_code}]"
 
+    @property
+    def is_logbook_crane(self) -> bool:
+        """
+        Whether this cost centre carries the crane logbook.
+
+        ---
+
+        H23 (S154): si lleva libro historial de grúa (de momento solo
+        las grúas móviles A y H, Miguel Ángel).
+        """
+        code = (self.code or "").upper()
+        return len(code) > 1 and code[0] in "AH" and code[1].isdigit()
+
     def save(self, *args, **kwargs) -> None:
         """
         Normalises the `code` field to uppercase before saving to ensure
@@ -1670,8 +1683,12 @@ class MachineLogbookEntry(models.Model):
         (SECTION_OWNERSHIP, _("Cambio de titularidad")),
     ]
 
+    # S154: vacío en las revisiones anotadas en la plataforma (sin
+    # documento de origen), que llevan su firma (signed_by/signed_at).
     source = models.ForeignKey(
         MachineLogbookSource,
+        null=True,
+        blank=True,
         on_delete=models.CASCADE,
         related_name="entries",
         verbose_name=_("Documento de origen"),
@@ -1698,6 +1715,25 @@ class MachineLogbookEntry(models.Model):
     )
     next_date = models.DateField(
         _("Próxima revisión"), null=True, blank=True,
+    )
+    # S154 (H23, invasora): revisión anotada en la plataforma y firmada
+    # por el responsable (Miguel Ángel: "firmadas por Alberto Álvarez
+    # Díaz y que sea él quien pulse el botón para que quede como
+    # responsable"). `is_reconstructed`: revisión hecha cuyo registro
+    # original se extravió; el libro lo dice tal cual.
+    signed_by = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="+",
+        verbose_name=_("Firmada por"),
+    )
+    signed_at = models.DateTimeField(
+        _("Firmada el"), null=True, blank=True,
+    )
+    is_reconstructed = models.BooleanField(
+        _("Registro original extraviado (reconstruida)"), default=False,
     )
 
     class Meta:

@@ -2,7 +2,9 @@
 {% comment %}
 H23 (S154, invasora) -- libro historial de la grúa en PDF (weasyprint).
 Misma estructura que el libro impreso que usa la empresa (RD 837/2003,
-ITC MIE-AEM 4). Contexto: fleet.logbook_service.logbook_context.
+ITC MIE-AEM 4). Contexto: fleet.logbook_service.logbook_context. Con `external` (S154),
+el libro para compartir con empresas de fuera: sin nombres de mecánicos
+y con la familia y la subfamilia de la avería en las reparaciones.
 {% endcomment %}
 <!DOCTYPE html>
 <html lang="es">
@@ -67,9 +69,11 @@ ITC MIE-AEM 4). Contexto: fleet.logbook_service.logbook_context.
     <tr><td>5. Accidentes</td></tr>
     <tr><td>6. Notas</td></tr>
 </table>
+{% if not external %}
 <p class="small compiled-note">
     Compilado a partir de {{ scans_read }} libro{{ scans_read|pluralize }} escaneado{{ scans_read|pluralize }} de esta grúa{% if scans_with_error %} ({{ scans_with_error }} sin poder leer){% endif %} y de los partes de trabajo del taller.
 </p>
+{% endif %}
 
 <h2 class="new-page">1.1 Identificación de la grúa</h2>
 <table class="fields">
@@ -144,7 +148,7 @@ ITC MIE-AEM 4). Contexto: fleet.logbook_service.logbook_context.
     <thead><tr><th>Fecha</th><th>Concepto</th><th>Empresa mantenedora</th><th>Resultado</th></tr></thead>
     <tbody>
         {% for row in reviews %}
-        <tr><td class="nowrap">{{ row.entry_date|date:"d/m/Y"|default:"—" }}</td><td>{{ row.concept|default:"—" }}{% if row.next_date and not row.concept %}<br><span class="small">Próxima revisión: {{ row.next_date|date:"d/m/Y" }}</span>{% endif %}</td><td>{{ row.entity|default:"—" }}</td><td>{{ row.result|default:"—" }}</td></tr>
+        <tr><td class="nowrap">{{ row.entry_date|date:"d/m/Y"|default:"—" }}</td><td>{{ row.concept|default:"—" }}{% if row.next_date and not row.concept %}<br><span class="small">Próxima revisión: {{ row.next_date|date:"d/m/Y" }}</span>{% endif %}{% if row.signature_note %}<br><span class="small">{{ row.signature_note }}</span>{% endif %}</td><td>{{ row.entity|default:"—" }}</td><td>{{ row.result|default:"—" }}</td></tr>
         {% endfor %}
     </tbody>
 </table>
@@ -156,10 +160,10 @@ ITC MIE-AEM 4). Contexto: fleet.logbook_service.logbook_context.
 <p class="small">Motores · Mecanismos o componentes hidráulicos · Elementos estructurales.</p>
 {% if repairs %}
 <table class="data">
-    <thead><tr><th>Fecha</th><th>Tipo de reparación o tipo de sustitución</th><th>Empresa mantenedora</th><th>Origen</th></tr></thead>
+    <thead><tr><th>Fecha</th><th>{% if external %}Familia · subfamilia de la avería{% else %}Tipo de reparación o tipo de sustitución{% endif %}</th><th>Empresa mantenedora</th>{% if not external %}<th>Origen</th>{% endif %}</tr></thead>
     <tbody>
         {% for row in repairs %}
-        <tr><td class="nowrap">{{ row.date|date:"d/m/Y"|default:"—" }}</td><td>{{ row.concept|default:"—" }}</td><td>{{ row.entity|default:"—" }}</td><td class="small">{{ row.source }}</td></tr>
+        <tr><td class="nowrap">{{ row.date|date:"d/m/Y"|default:"—" }}</td><td>{{ row.concept|default:"—" }}</td><td>{{ row.entity|default:"—" }}</td>{% if not external %}<td class="small">{{ row.source }}</td>{% endif %}</tr>
         {% endfor %}
     </tbody>
 </table>
