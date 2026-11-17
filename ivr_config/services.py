@@ -118,7 +118,7 @@ def _get_active_presence(company_user) -> PresenceStatus | None:
     )
 
 
-def _build_presence_context(company) -> str:
+def _build_presence_context(company, section_pks=None) -> str:
     """
     Queries all internal contacts of the given company and assembles a
     human-readable Spanish paragraph describing the current availability
@@ -156,10 +156,17 @@ def _build_presence_context(company) -> str:
         Una cadena multilínea con una línea de presencia por contacto interno,
         o una cadena vacía si no se encuentran contactos internos.
     """
+    # S153 (Miguel Ángel): "contactos que deban recibir llamadas están en
+    # las secciones y son muy pocos [...] solo son las secciones activas y
+    # cada sección activa en IVR tiene uno o dos contactos a lo sumo".
+    # Solo los contactos internos de las secciones del IVR (las de
+    # section_callflow_map), no todos los de la empresa (eran 73).
     internal_contacts = (
         Contact.objects
-        .filter(company=company, is_internal=True)
+        .filter(company=company, is_internal=True,
+                sections__pk__in=list(section_pks or []))
         .select_related("company_user")
+        .distinct()
         .order_by("name")
     )
 
@@ -904,7 +911,8 @@ def build_live_config(
     # ------------------------------------------------------------------
     # STEP 5 — Build Presence Context / Construir Contexto de Presencia
     # ------------------------------------------------------------------
-    presence_context = _build_presence_context(company)
+    presence_context = _build_presence_context(
+        company, section_callflow_map.keys())
     if presence_context:
         logger.info(
             f"[CONFIG] Contexto de presencia generado para '{company.name}' "
