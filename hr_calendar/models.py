@@ -1334,6 +1334,10 @@ class ClockCorrection(models.Model):
         # S153: corregido con el parte de trabajo del trabajador
         # (hr_calendar/parte_clock.py).
         PARTE = "PARTE", "Parte de trabajo"
+        # S149 (Miguel Ángel, 17/11): la IA corrigió días ya visados por
+        # un error del sistema; se dejan tal y como los dejó el
+        # supervisor, con esta marca.
+        SYSTEM = "SYSTEM", "Restaurado por error del sistema"
 
     reason = models.TextField(verbose_name="Motivo")
     source = models.CharField(

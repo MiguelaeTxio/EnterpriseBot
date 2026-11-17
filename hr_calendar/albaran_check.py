@@ -737,6 +737,8 @@ def day_locked(company_user, day):
     alguna corrección manual (alguien lo revisó a mano), se queda como
     lo dejaron: ni el cotejo de una carga ni un comando lo cambian.
     """
+    from django.db.models import Q
+
     from hr_calendar.models import ClockCorrection, ClockDayReview
 
     review = ClockDayReview.objects.filter(
@@ -750,10 +752,15 @@ def day_locked(company_user, day):
     start = timezone.make_aware(
         datetime.datetime.combine(day, datetime.time.min), tz)
     end = start + datetime.timedelta(days=1)
+    # Las añadidas a mano no tienen fichaje corregido: van por la nueva.
     manual = ClockCorrection.objects.filter(
-        source=ClockCorrection.Source.MANUAL,
-        event__company_user=company_user,
-        event__pressed_at__gte=start, event__pressed_at__lt=end,
+        Q(event__company_user=company_user, event__pressed_at__gte=start,
+          event__pressed_at__lt=end)
+        | Q(event__isnull=True, replacement__company_user=company_user,
+            replacement__pressed_at__gte=start,
+            replacement__pressed_at__lt=end),
+        source__in=(ClockCorrection.Source.MANUAL,
+                    ClockCorrection.Source.SYSTEM),
     ).select_related("corrected_by__user").order_by("-corrected_at").first()
     if manual is not None:
         who = getattr(getattr(manual.corrected_by, "user", None),
