@@ -65,9 +65,11 @@ REPAIR_FAULT_CATEGORIES = ("HYDRAULIC", "LIFTING_STRUCTURE")
 REPAIR_FAULT_SUBCATEGORIES = ("ET_ENGINE", "BC_CHASSIS")
 REPAIR_TASK_TYPES = ("AVERIA", "")
 
-# Gemini: límite de 50 MB por PDF en línea (documentación de Vertex AI,
-# "Document understanding", consultada en S154); margen por debajo.
-MAX_SCAN_BYTES = 45 * 1024 * 1024
+# Gemini 3.5 Flash (ficha del modelo en Vertex AI, consultada en S154):
+# 7 MB por archivo en línea y 65.536 tokens de salida como máximo. Un
+# PDF mayor, o cuya respuesta no sale entera, se lee página a página.
+MAX_INLINE_BYTES = 7 * 1024 * 1024
+MAX_OUTPUT_TOKENS = 65_536
 READABLE_TYPES = ("application/pdf", "image/png", "image/jpeg",
                   "image/webp")
 GEMINI_TIMEOUT_MS = 180_000
@@ -219,15 +221,15 @@ def scan_documents(machine=None):
     return result
 
 
-def read_scan(entry, machine) -> dict:
+def _ask_gemini(data, mime, machine) -> dict:
     """
-    Reads one scanned logbook with Gemini.
+    One Gemini call over one file or page; raises on invalid JSON.
 
     ---
 
-    Lee un libro escaneado con Gemini (PDF o imagen, nunca OCR local) y
-    devuelve el JSON del esquema `_READ_SCHEMA`. Lanza LogbookReadError
-    si el archivo no se puede leer.
+    Una llamada a Gemini sobre un archivo o una página. Lanza
+    LogbookReadError si la respuesta no es JSON válido, con el motivo
+    de fin de Gemini (p. ej. MAX_TOKENS) para saber por qué.
     """
     from google.genai.types import (
         GenerateContentConfig, HttpOptions, Part, ThinkingConfig,
@@ -237,21 +239,9 @@ def read_scan(entry, machine) -> dict:
         _generate_content_with_retry,
     )
     from ai_services.gemini_client import DEFAULT_MODEL, get_gemini_client
-    from document_explorer.subject_upload_service import content_type_of
-    from spare_parts.gcs_service import download_bytes
 
-    data = download_bytes(entry.bucket, entry.blob_name)
-    if len(data) > MAX_SCAN_BYTES:
-        raise LogbookReadError(
-            "Archivo de %d MB, por encima del límite de Gemini."
-            % (len(data) // (1024 * 1024))
-        )
-    mime = content_type_of(data, entry.name)
-    if mime not in READABLE_TYPES:
-        raise LogbookReadError("Formato no legible: %s" % mime)
-    client = get_gemini_client()
     response = _generate_content_with_retry(
-        client,
+        get_gemini_client(),
         model=DEFAULT_MODEL,
         contents=[
             Part.from_bytes(data=data, mime_type=mime),
@@ -263,12 +253,106 @@ def read_scan(entry, machine) -> dict:
             response_schema=_READ_SCHEMA,
             thinking_config=ThinkingConfig(thinking_level="low"),
             temperature=0.0,
+            max_output_tokens=MAX_OUTPUT_TOKENS,
         ),
     )
     try:
         return json.loads(response.text.strip())
     except (ValueError, AttributeError) as exc:
-        raise LogbookReadError("Respuesta de Gemini no válida.") from exc
+        reason = ""
+        candidates = getattr(response, "candidates", None) or []
+        if candidates:
+            reason = str(getattr(candidates[0], "finish_reason", "") or "")
+        raise LogbookReadError(
+            "Respuesta de Gemini no válida%s." % (
+                " (fin: %s)" % reason if reason else ""
+            )
+        ) from exc
+
+
+def _pdf_pages(data):
+    """
+    Splits a PDF into single-page PDFs (PyMuPDF).
+
+    ---
+
+    Parte un PDF en PDF de una página (PyMuPDF), para leerlo página a
+    página cuando el documento entero no sale.
+    """
+    import fitz
+
+    pages = []
+    with fitz.open(stream=data, filetype="pdf") as source:
+        for number in range(source.page_count):
+            single = fitz.open()
+            single.insert_pdf(source, from_page=number, to_page=number)
+            pages.append(single.tobytes(garbage=3, deflate=True))
+            single.close()
+    return pages
+
+
+def _merge_reads(parts) -> dict:
+    """
+    Joins page reads: first non-empty identification value, all rows.
+
+    ---
+
+    Junta las lecturas por página: de la identificación, el primer
+    valor no vacío de cada campo; las filas, todas.
+    """
+    identification = {}
+    rows = []
+    for part in parts:
+        for key, value in (part.get("identification") or {}).items():
+            if value and not identification.get(key):
+                identification[key] = value
+        rows.extend(part.get("rows") or [])
+    return {"identification": identification, "rows": rows}
+
+
+def read_scan(entry, machine) -> dict:
+    """
+    Reads one scanned logbook with Gemini.
+
+    ---
+
+    Lee un libro escaneado con Gemini (PDF o imagen, nunca OCR local) y
+    devuelve el JSON del esquema `_READ_SCHEMA`. Un PDF que no sale
+    entero (respuesta no válida, o por encima del límite de datos en
+    línea) se lee página a página y se juntan las lecturas. Lanza
+    LogbookReadError si el archivo no se puede leer.
+    """
+    from document_explorer.subject_upload_service import content_type_of
+    from spare_parts.gcs_service import download_bytes
+
+    data = download_bytes(entry.bucket, entry.blob_name)
+    mime = content_type_of(data, entry.name)
+    if mime not in READABLE_TYPES:
+        raise LogbookReadError("Formato no legible: %s" % mime)
+    if mime != "application/pdf":
+        if len(data) > MAX_INLINE_BYTES:
+            raise LogbookReadError(
+                "Imagen de %d MB, por encima del límite de Gemini."
+                % (len(data) // (1024 * 1024))
+            )
+        return _ask_gemini(data, mime, machine)
+    if len(data) <= MAX_INLINE_BYTES:
+        try:
+            return _ask_gemini(data, mime, machine)
+        except LogbookReadError as exc:
+            logger.warning(
+                "# [read_scan] %s (id %s): %s -- se lee página a página",
+                machine.code, entry.pk, exc,
+            )
+    parts = []
+    for page in _pdf_pages(data):
+        if len(page) > MAX_INLINE_BYTES:
+            raise LogbookReadError(
+                "Página de %d MB, por encima del límite de Gemini."
+                % (len(page) // (1024 * 1024))
+            )
+        parts.append(_ask_gemini(page, mime, machine))
+    return _merge_reads(parts)
 
 
 def _parse_date(value):
