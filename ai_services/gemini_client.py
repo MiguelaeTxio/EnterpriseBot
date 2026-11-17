@@ -30,9 +30,14 @@ gemini-3.5-flash.
 """
 import logging
 import os
+import random
 
 from google import genai
-from google.genai.types import GenerateContentConfig, HttpOptions
+from google.genai.types import (
+    GenerateContentConfig,
+    HttpOptions,
+    HttpRetryOptions,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +67,45 @@ DEFAULT_TIMEOUT_MS = 60_000
 # peticiones a la región con más capacidad disponible, reduciendo
 # errores 429 por contención temporal en endpoints regionales.
 DEFAULT_LOCATION = 'global'
+
+# S153: reintentos del propio SDK (google-genai 2.x, tenacity), según la
+# estrategia de reintentos de la documentación de Vertex AI ("Retry
+# strategy" y "Error code 429", Gemini Enterprise Agent Platform,
+# consultadas el 17/11/2026): backoff exponencial truncado CON jitter,
+# empezando en ~1-2 s, doblando, con tope de 60 s, y solo para 408,
+# 429 y 5xx (nunca 400/401). Hasta S153 el cliente no reintentaba nada
+# (sin retry_options el SDK hace un único intento) y los envoltorios de
+# cada app esperaban 60 s FIJOS: todos los procesos que se topaban con
+# el 429 a la vez volvían a la vez 60 s después y volvían a chocar. La
+# documentación lo desaconseja: el 429 de Standard PayGo es contención
+# momentánea de la cuota compartida, no un límite fijo agotado, y se
+# resuelve con esperas cortas, crecientes y desincronizadas.
+#
+# SDK-level retries (Vertex AI "Retry strategy"): truncated exponential
+# backoff with jitter on 408/429/5xx only.
+RETRY_STATUS_CODES = [408, 429, 500, 502, 503, 504]
+DEFAULT_RETRY_OPTIONS = HttpRetryOptions(
+    attempts=5,
+    initial_delay=2.0,
+    exp_base=2,
+    max_delay=60,
+    jitter=1,
+    http_status_codes=RETRY_STATUS_CODES,
+)
+
+
+def backoff_delay(attempt: int, base: float, cap: float = 300) -> float:
+    """
+    Exponential backoff with jitter for the apps' own outer retries.
+    ---
+    Espera del reintento propio de cada app (por encima de los del
+    SDK): base, 2·base, 4·base... con tope `cap`, más un jitter
+    aleatorio de hasta la mitad, para que varios procesos que chocaron
+    a la vez no vuelvan a la vez (S153).
+    """
+    delay = min(base * (2 ** max(attempt - 1, 0)), cap)
+    return delay + random.uniform(0, delay / 2)
+
 
 # Default API version for the underlying REST calls.
 # Versión de API por defecto para las llamadas REST subyacentes.
@@ -119,7 +163,10 @@ def get_gemini_client(
     """
     ensure_gcp_credentials()
     client = genai.Client(
-        http_options=HttpOptions(api_version=api_version),
+        http_options=HttpOptions(
+            api_version=api_version,
+            retry_options=DEFAULT_RETRY_OPTIONS,
+        ),
         vertexai=True,
         project=os.environ.get('GOOGLE_CLOUD_PROJECT'),
         location=location,

@@ -73,7 +73,11 @@ from django.db.models import Q
 from django.utils import timezone
 from google.genai.types import GenerateContentConfig, HttpOptions, Part
 
-from ai_services.gemini_client import DEFAULT_MODEL, get_gemini_client
+from ai_services.gemini_client import (
+    DEFAULT_MODEL,
+    backoff_delay,
+    get_gemini_client,
+)
 from ai_services.gemini_rate_limiter import acquire_gemini_slot
 from fleet.models import MachineAsset
 from spare_parts.gcs_service import download_bytes
@@ -91,7 +95,7 @@ from .models import DocumentIndexEntry, DocumentTypeCatalog, PersonIdentity
 logger = logging.getLogger(__name__)
 
 _MAX_GEMINI_ATTEMPTS = 3
-_RETRY_DELAY_SECONDS = 60
+_RETRY_DELAY_SECONDS = 30  # S153: base del backoff exponencial con jitter
 
 # Verificado online el 2026-07-31 contra la documentación real de
 # Document understanding de Gemini (ai.google.dev/gemini-api/docs/
@@ -485,13 +489,15 @@ def _generate_content_with_retry(client, **kwargs):
             )
             if not is_retryable or attempt == _MAX_GEMINI_ATTEMPTS:
                 raise
+            # S153: espera creciente con jitter (documentación de Vertex AI).
+            delay = backoff_delay(attempt, _RETRY_DELAY_SECONDS)
             logger.warning(
                 "# [classification_service] Error transitorio de "
-                "Vertex AI (intento %d/%d): %s. Reintentando en %ds.",
+                "Vertex AI (intento %d/%d): %s. Reintentando en %.0fs.",
                 attempt, _MAX_GEMINI_ATTEMPTS, exc_str[:200],
-                _RETRY_DELAY_SECONDS,
+                delay,
             )
-            time.sleep(_RETRY_DELAY_SECONDS)
+            time.sleep(delay)
     raise last_exc  # pragma: no cover -- inalcanzable
 
 

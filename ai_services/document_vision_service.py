@@ -76,7 +76,11 @@ from google.genai.types import (
     ThinkingConfig,
 )
 
-from .gemini_client import DEFAULT_MODEL, get_gemini_client
+from .gemini_client import (
+    DEFAULT_MODEL,
+    backoff_delay,
+    get_gemini_client,
+)
 from .gemini_rate_limiter import acquire_gemini_slot
 
 logger = logging.getLogger(__name__)
@@ -89,7 +93,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _MAX_GEMINI_ATTEMPTS = 3
-_RETRY_DELAY_SECONDS = 60
+_RETRY_DELAY_SECONDS = 30  # S153: base del backoff exponencial con jitter
 
 
 def _generate_content_with_retry(client, **kwargs):
@@ -125,12 +129,14 @@ def _generate_content_with_retry(client, **kwargs):
             )
             if not is_quota_error or attempt == _MAX_GEMINI_ATTEMPTS:
                 raise
+            # S153: espera creciente con jitter (documentación de Vertex AI).
+            delay = backoff_delay(attempt, _RETRY_DELAY_SECONDS)
             logger.warning(
                 "# [_generate_content_with_retry] 429 de Vertex AI "
-                "(intento %d/%d). Reintentando en %ds.",
-                attempt, _MAX_GEMINI_ATTEMPTS, _RETRY_DELAY_SECONDS,
+                "(intento %d/%d). Reintentando en %.0fs.",
+                attempt, _MAX_GEMINI_ATTEMPTS, delay,
             )
-            time.sleep(_RETRY_DELAY_SECONDS)
+            time.sleep(delay)
     # Inalcanzable: el bucle siempre retorna o lanza.
     raise last_exc  # pragma: no cover
 

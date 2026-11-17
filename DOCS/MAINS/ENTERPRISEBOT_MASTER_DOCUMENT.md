@@ -761,6 +761,72 @@ versión contra `vox_bridge/services.py`.
 - **Transcodificación:** mu-law 8kHz ↔ PCM 16kHz ↔ PCM 24kHz via `audioop`
 - **streamSid:** OBLIGATORIO en nivel raíz de cada mensaje `media` saliente
 
+#### 4.1.3. DIRECTRIZ -- Errores 429 de Vertex AI: reintentos, consumo y procesos por lotes (S153, contrastado con la documentación de Google)
+
+**Origen.** S153: Miguel Ángel vio muchos 429 (`RESOURCE_EXHAUSTED`)
+el mismo día (log de la web: 10:11-10:12 y 11:05-11:07, el último
+agotó los tres intentos). Pidió revisar los retardos y si Vertex AI
+permite procesos por lotes. Documentación oficial consultada el
+17/11/2026 (Vertex AI ahora vive en "Gemini Enterprise Agent
+Platform"): *Error code 429*, *Retry strategy*, *Standard PayGo*,
+*Flex PayGo* y *Batch inference overview*.
+
+**Lo que dice Google (y lo que hacíamos mal):**
+
+1. **El 429 de Standard PayGo no es una cuota fija agotada**, es
+   contención momentánea de la capacidad compartida (cuota dinámica
+   compartida). El nivel de uso lo da el gasto de los últimos 30 días
+   (Tier 1: 10-250 $, 2.000.000 TPM para modelos Flash; no hay límite
+   de peticiones por minuto) y lo que pasa del nivel se sirve si sobra
+   capacidad. Los picos de segundos provocan 429 aunque la media del
+   minuto esté dentro: hay que repartir las peticiones, no dispararlas
+   en ráfaga.
+2. **Reintentos: backoff exponencial truncado con jitter**, solo para
+   408, 429 y 5xx (nunca 400/401). Valores de referencia del SDK
+   `google-genai` (`HttpRetryOptions`): `initial_delay` 1 s,
+   `exp_base` 2, `max_delay` 60 s, `attempts` 5, `jitter` 1. Nosotros
+   esperábamos **60 s fijos** y el cliente compartido **no tenía
+   reintentos** (sin `retry_options` el SDK hace un único intento):
+   los procesos que chocaban a la vez volvían todos a la vez.
+3. **Endpoint `global`** (ya lo usábamos, `DEFAULT_LOCATION`).
+4. **Batch inference** (procesos por lotes): para trabajos que no
+   tienen que contestar al momento. 50 % más barato que la petición
+   en vivo (en Gemini 3 y posteriores se suma a la caché implícita
+   hasta 95 %), **sin cuota predefinida** (cola de capacidad
+   compartida), la mayoría acaba en menos de 24 h (pueden esperar en
+   cola hasta 72 h), hasta 200.000 peticiones por trabajo, entrada en
+   Cloud Storage (JSONL, hasta 1 GB) o BigQuery. Admite
+   `gemini-3.5-flash` y el endpoint `global`. No se reintentan
+   peticiones sueltas dentro de un lote.
+5. **Flex PayGo** (preview): 50 % más barato, más latencia, solo
+   endpoint `global`, cuota adicional de 3000 QPM por modelo base;
+   se activa por petición con las cabeceras
+   `X-Vertex-AI-LLM-Request-Type: shared` y
+   `X-Vertex-AI-LLM-Shared-Request-Type: flex` (en el SDK, en
+   `HttpOptions.headers`), timeout hasta 30 min. Para tareas en segundo
+   plano que sí esperan respuesta pero no tienen prisa.
+6. **Provisioned Throughput**: capacidad reservada de pago fijo; solo
+   si algún día hace falta garantía de servicio.
+
+**Regla vigente desde S153:**
+
+- `ai_services/gemini_client.get_gemini_client()` crea el cliente con
+  `DEFAULT_RETRY_OPTIONS` (5 intentos, 2 s inicial, doble, tope 60 s,
+  jitter, códigos 408/429/500/502/503/504): todo el código que usa el
+  cliente compartido reintenta solo, sin tocar nada más.
+- Los envoltorios `_generate_content_with_retry` de cada app esperan
+  con `backoff_delay()` (exponencial con jitter, base 30 s en segundo
+  plano y 5 s en ventanas en vivo), nunca un número fijo.
+- Un proceso nuevo de muchos documentos que no necesita la respuesta
+  en el momento (barridos, auditorías, reclasificaciones, inventarios)
+  se plantea como **batch inference**, no como bucle de peticiones en
+  vivo. Las pantallas en las que alguien espera (Firmas, altas)
+  siguen en vivo con los reintentos.
+- Limitación conocida: el limitador propio
+  (`ai_services/gemini_rate_limiter.acquire_gemini_slot`) es por
+  proceso; varios procesos a la vez (web, tareas always-on, comandos)
+  no se coordinan entre sí. Por eso importan el jitter y el lote.
+
 #### 4.3. Infraestructura y Framework
 
 - **Framework:** Django `5.2.12`
