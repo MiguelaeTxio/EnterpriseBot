@@ -248,7 +248,8 @@ def record_heartbeat(agent, host="", aliases=None, autofirma="", error="",
                               "last_seen_at"])
 
 
-def create_job(signature, documents, notes, by, all_pages=False):
+def create_job(signature, documents, notes, by, all_pages=False,
+               person=None):
     """
     Queue generated PDFs [(name, bytes, config)] for the signature.
     ---
@@ -279,12 +280,37 @@ def create_job(signature, documents, notes, by, all_pages=False):
             signature=signature,
             certificate_alias=alias[:255],
             certificate_thumbprint=thumbprint, all_pages=all_pages,
-            notes=notes, created_by=by)
+            notes=notes, created_by=by, person=person)
         SignedFormFile.objects.bulk_create([
             SignedFormFile(job=job, name=name,
                            unsigned_encrypted=encrypt(data),
                            signature_config=config or "")
             for name, data, config in documents
+        ])
+    return job
+
+
+def record_image_job(signature, documents, notes, by, person=None):
+    """
+    Keep a batch signed only with the image [(name, bytes)].
+    ---
+    S153: guarda un lote firmado solo con la imagen (ya terminado), para
+    que salga en el listado de documentos firmados con los digitales y
+    se pueda volver a descargar.
+    """
+    purge_old()
+    now = timezone.now()
+    with transaction.atomic():
+        job = SignedFormJob.objects.create(
+            signature=signature, kind=SignedFormJob.KIND_IMAGE,
+            status=SignedFormJob.STATUS_DONE, notes=notes, created_by=by,
+            person=person, finished_at=now)
+        SignedFormFile.objects.bulk_create([
+            SignedFormFile(job=job, name=name,
+                           status=SignedFormFile.STATUS_DONE,
+                           unsigned_encrypted=b"",
+                           signed_encrypted=encrypt(data))
+            for name, data in documents
         ])
     return job
 

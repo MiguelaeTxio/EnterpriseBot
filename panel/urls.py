@@ -138,13 +138,20 @@ from panel.views_signatures import (
     SignatureDeleteView,
     SignatureImageView,
     SignatureSaveView,
-    SignatureTabView,
     SignedFormsGenerateView,
     SignedJobDownloadView,
     SignedJobCancelView,
     SignedJobStatusView,
     SigningAgentCreateView,
     SigningAgentDeactivateView,
+)
+# S153: Firmas con el formato único de listados (4.24/4.27).
+from panel.views_signatures_lists import (
+    SignatureMassView,
+    SignatureResultsView,
+    SignatureTabView,
+    SignedFileDownloadView,
+    SignedFilesBulkDownloadView,
 )
 # H24 (S147): solicitudes de los trabajadores.
 from panel.views_worker_requests import (
@@ -2471,6 +2478,26 @@ urlpatterns = [
         "documentacion/firmas/",
         SignatureTabView.as_view(),
         name="signature_tab",
+    ),
+    path(
+        "documentacion/firmas/resultados/",
+        SignatureResultsView.as_view(),
+        name="signature_results",
+    ),
+    path(
+        "documentacion/firmas/acciones/",
+        SignatureMassView.as_view(),
+        name="signature_mass",
+    ),
+    path(
+        "documentacion/firmas/documento/<int:pk>/",
+        SignedFileDownloadView.as_view(),
+        name="signed_file_download",
+    ),
+    path(
+        "documentacion/firmas/documentos/",
+        SignedFilesBulkDownloadView.as_view(),
+        name="signed_files_download",
     ),
     path(
         "documentacion/firmas/guardar/",

@@ -20,7 +20,6 @@ import zipfile
 from urllib.parse import quote
 
 from django.http import HttpResponse, JsonResponse
-from django.shortcuts import render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.decorators import method_decorator
@@ -72,63 +71,6 @@ class SignatureAccessMixin(CompanyUserRequiredMixin):
             return HttpResponse("Acceso denegado: las firmas no son para "
                                 "tu usuario.", status=403)
         return super().dispatch(request, *args, **kwargs)
-
-
-def _pane_context():
-    profiles = list(CompanyFiscalProfile.objects.order_by("legal_name"))
-    signatures = list(CompanySignature.objects.select_related(
-        "company", "created_by__user"))
-    people = PersonIdentity.objects.filter(is_active_employee=True).order_by(
-        "first_surname", "second_surname", "given_name").only(
-        "pk", "first_surname", "second_surname", "given_name")
-    agent_list = list(SigningAgent.objects.filter(is_active=True))
-    for agent in agent_list:
-        agent.online = agents.is_online(agent)
-    aliases = sorted({alias for agent in agent_list
-                      for alias in agent.aliases or []}
-                     | {s.certificate_alias for s in signatures
-                        if s.certificate_alias})
-    # S153 (agente v3): certificados de empresa por CIF con su vigencia.
-    company_certs = agents.company_certificates()
-    certs_by_cif = {entry["cif"]: entry for entry in company_certs}
-    dismissed = set(CertificateAlertDismissal.objects.values_list(
-        "cif", "alert_key"))
-    for signature in signatures:
-        signature.cert_entry = certs_by_cif.get(signature.certificate_cif)
-    jobs = list(SignedFormJob.objects.select_related(
-        "signature__company").prefetch_related("files")[:10])
-    for job in jobs:
-        files = list(job.files.all())
-        job.total = len(files)
-        job.done = sum(f.status == SignedFormFile.STATUS_DONE
-                       for f in files)
-        job.errors = [f"{f.name}: {f.error}" for f in files
-                      if f.status == SignedFormFile.STATUS_ERROR]
-    return {
-        "profiles": profiles,
-        "signatures": signatures,
-        "profiles_with_signature": {s.company_id for s in signatures},
-        "people": people,
-        "agents": agent_list,
-        "certificate_aliases": aliases,
-        "company_certs": company_certs,
-        "cert_alerts": [e for e in company_certs if e["level"]
-                        and (e["cif"], e["alert_key"]) not in dismissed],
-        "agents_v3": any(agent.certificates for agent in agent_list),
-        "jobs": jobs,
-    }
-
-
-class SignatureTabView(SignatureAccessMixin, View):
-    """
-    GET: the "Firmas" tab.
-    ---
-    GET: la pestaña "Firmas" (firmas guardadas y generar documentos).
-    """
-
-    def get(self, request):
-        return render(request, "panel/signatures/_pane.html",
-                      _pane_context())
 
 
 class SignatureSaveView(SignatureAccessMixin, View):
@@ -280,7 +222,8 @@ class SignedFormsGenerateView(SignatureAccessMixin, View):
                     signature, [(name, data, config) for (name, data),
                                 config in zip(results, configs)],
                     notes, request.user.company_user,
-                    all_pages=request.POST.get("all_pages") == "1")
+                    all_pages=request.POST.get("all_pages") == "1",
+                    person=person)
             except agents.NoValidCertificate as exc:
                 return JsonResponse({"error": "No se ha generado nada. "
                                               + str(exc)}, status=400)
@@ -289,6 +232,9 @@ class SignedFormsGenerateView(SignatureAccessMixin, View):
                 "status_url": reverse("panel:signed_job_status",
                                       args=[job.pk]),
             }, status=202)
+        # S153: también queda en el listado de documentos firmados.
+        agents.record_image_job(signature, results, notes,
+                                request.user.company_user, person=person)
         response = _files_response(results)
         # Cómo se rellenó cada uno y qué pedía que no se ha puesto.
         response["X-Signed-Notes"] = quote(json.dumps(notes))

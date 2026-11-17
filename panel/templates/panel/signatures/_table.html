@@ -1,0 +1,129 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/signatures/_table.html #}
+{% comment %}
+S153. Tabla del listado elegido de la pestaña Firmas (Documentos
+firmados, Firmas, Certificados o Agentes): casilla, columnas ordenables
+y menú de tres puntos al final. Todo llega calculado desde
+panel/views_signatures_lists.py; la selección vive en el JS de _pane.html.
+{% endcomment %}
+<div id="sig-fragment-state" class="d-none"
+     data-count="{{ rows|length }}"
+     data-sort-active="{% if sort_active %}1{% endif %}"></div>
+<span id="sig-sort-inputs" class="d-none">
+    <input type="hidden" name="sort" value="{{ current_sort }}">
+</span>
+<table class="table table-hover table-light table-sm align-middle mb-0" id="sig-table">
+    <thead class="table-light">
+        <tr>
+            <th><input type="checkbox" class="form-check-input" id="sig-check-all" title="Seleccionar todos los que cumplen el filtro actual"></th>
+            {% for column in sort_columns %}
+            <th>
+                <a href="#" class="text-decoration-none text-dark"
+                   hx-get="{% url 'panel:signature_results' %}"
+                   hx-target="#sig-results"
+                   hx-include="#sig-filters"
+                   hx-vals='{"sort": "{{ column.next }}"}'>
+                    {{ column.label }}
+                    {% if column.arrow %}<i class="bi bi-chevron-{% if column.arrow == 'up' %}up{% else %}down{% endif %}"></i>{% if column.priority %}<sup>{{ column.priority }}</sup>{% endif %}{% endif %}
+                </a>
+            </th>
+            {% endfor %}
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            <td><input type="checkbox" class="form-check-input sig-row-check" data-pk="{{ row.key }}" data-person="{{ row.person_id|default:'' }}" data-label="{{ row.label }}"></td>
+            {% if lista == "documentos" %}
+            <td class="text-nowrap">{{ row.job.created_at|date:"d/m/Y H:i" }}</td>
+            <td>{{ row.item.name }}{% if row.item.error %}<div class="small text-danger">{{ row.item.error|truncatechars:200 }}</div>{% endif %}</td>
+            <td>{{ row.job.signature.company.legal_name }}</td>
+            <td>{{ row.job.signature.label }}</td>
+            <td>{{ row.person }}</td>
+            <td>{{ row.job.get_kind_display }}{% if row.job.all_pages %}<span class="text-muted"> · todas las páginas</span>{% endif %}</td>
+            <td><span class="badge {% if row.status == 'done' %}text-bg-success{% elif row.status == 'error' %}text-bg-danger{% elif row.status == 'cancelled' %}text-bg-secondary{% else %}text-bg-warning{% endif %}">{{ row.status_label }}</span></td>
+            <td>
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-link text-dark" type="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-three-dots-vertical"></i></button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        {% if row.can_download %}
+                        <li><a class="dropdown-item" href="{% url 'panel:signed_file_download' row.item.pk %}">Descargar</a></li>
+                        {% endif %}
+                        {% if row.can_cancel %}
+                        <li><button type="button" class="dropdown-item text-danger" data-sig-job-cancel="{% url 'panel:signed_job_cancel' row.job.pk %}">Cancelar el lote #{{ row.job.pk }}</button></li>
+                        {% endif %}
+                        {% if not row.can_download and not row.can_cancel %}
+                        <li><span class="dropdown-item-text text-muted small">Nada que hacer</span></li>
+                        {% endif %}
+                    </ul>
+                </div>
+            </td>
+            {% elif lista == "firmas" %}
+            {% with signature=row.signature %}
+            <td>{{ signature.company.legal_name }}</td>
+            <td>{{ signature.label }}</td>
+            <td><img src="{% url 'panel:signature_image' signature.pk %}" alt="Firma de {{ signature.label }}" class="sig-thumb border rounded p-1"></td>
+            <td style="min-width: 18rem;">
+                <select class="form-select form-select-sm" data-sig-cert="{% url 'panel:signature_certificate' signature.pk %}" aria-label="Certificado digital de {{ signature.label }}">
+                    <option value="">Sin firma digital (solo imagen)</option>
+                    {% if agents_v3 %}
+                    {% for entry in company_certs %}
+                    <option value="{{ entry.cif }}" data-kind="cif"{% if entry.cif == signature.certificate_cif %} selected{% endif %}{% if not entry.current and entry.cif != signature.certificate_cif %} disabled{% endif %}>{{ entry.company }} ({{ entry.cif }}) · {% if entry.current %}vigente hasta {{ entry.current.expires|date:"d/m/Y" }}{% else %}sin certificado vigente{% endif %}</option>
+                    {% endfor %}
+                    {% if signature.certificate_alias and not signature.certificate_cif %}
+                    <option value="{{ signature.certificate_alias }}" data-kind="alias" selected>{{ signature.certificate_alias }} (elegido con el agente antiguo)</option>
+                    {% endif %}
+                    {% else %}
+                    {% for alias in certificate_aliases %}
+                    <option value="{{ alias }}" data-kind="alias"{% if alias == signature.certificate_alias %} selected{% endif %}>{{ alias }}</option>
+                    {% endfor %}
+                    {% endif %}
+                </select>
+                {% if signature.certificate_cif %}
+                <div class="small {% if signature.cert_entry.level == 'danger' %}text-danger{% elif signature.cert_entry.level == 'warning' %}text-warning-emphasis{% else %}text-muted{% endif %}">
+                    {% if signature.cert_entry.current %}Firma con el de {{ signature.cert_entry.current.holder }}, hasta {{ signature.cert_entry.current.expires|date:"d/m/Y" }}.{% elif signature.cert_entry %}Sin certificado vigente: no se puede firmar digitalmente.{% else %}El agente no ve ningún certificado de este CIF.{% endif %}
+                </div>
+                {% endif %}
+            </td>
+            <td class="small text-nowrap">{{ signature.created_at|date:"d/m/Y H:i" }}{% if signature.created_by %} · {{ signature.created_by.user.username }}{% endif %}</td>
+            <td>
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-link text-dark" type="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-three-dots-vertical"></i></button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="{% url 'panel:signature_image' signature.pk %}" target="_blank" rel="noopener">Ver la imagen</a></li>
+                        <li><button type="button" class="dropdown-item text-danger" data-sig-delete="{% url 'panel:signature_delete' signature.pk %}" data-sig-name="{{ signature.label }} ({{ signature.company.legal_name }})">Borrar</button></li>
+                    </ul>
+                </div>
+            </td>
+            {% endwith %}
+            {% elif lista == "certificados" %}
+            <td>{{ row.entry.company }}</td>
+            <td class="text-nowrap">{{ row.entry.cif }}</td>
+            <td>{{ row.cert.holder }}</td>
+            <td class="text-nowrap">{{ row.cert.expires|date:"d/m/Y" }}</td>
+            <td><span class="badge {% if row.state == 'current' %}{% if row.warning %}bg-warning text-dark{% else %}bg-success{% endif %}{% elif row.state == 'valid' %}bg-info text-dark{% else %}bg-secondary{% endif %}">{{ row.state_label }}</span>{% if row.state == 'current' and row.entry.days is not None %} <span class="small text-muted">quedan {{ row.entry.days }} días</span>{% endif %}</td>
+            <td></td>
+            {% else %}
+            {% with agent=row.agent %}
+            <td><span class="badge {% if row.online %}bg-success{% else %}bg-secondary{% endif %}">{% if row.online %}Conectado{% else %}Desconectado{% endif %}</span></td>
+            <td>{{ agent.name }}{% if agent.last_error %}<div class="small text-danger">{{ agent.last_error|truncatechars:200 }}</div>{% endif %}</td>
+            <td>{{ agent.host }}</td>
+            <td class="text-nowrap">{{ agent.last_seen_at|date:"d/m/Y H:i"|default:"nunca" }}</td>
+            <td>{{ agent.autofirma_version|default:"no encontrado" }}</td>
+            <td>{{ agent.aliases|length }}{% if not agent.certificates %} <span class="small text-warning-emphasis" title="Agente antiguo: actualízalo para ver la vigencia de los certificados">(antiguo)</span>{% endif %}</td>
+            <td>
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-link text-dark" type="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-three-dots-vertical"></i></button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><button type="button" class="dropdown-item text-danger" data-agent-off="{% url 'panel:signing_agent_deactivate' agent.pk %}" data-agent-name="{{ agent.name }}">Dar de baja</button></li>
+                    </ul>
+                </div>
+            </td>
+            {% endwith %}
+            {% endif %}
+        </tr>
+        {% empty %}
+        <tr><td colspan="{{ sort_columns|length|add:2 }}" class="text-muted small">No hay nada con estos filtros.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>

@@ -2531,11 +2531,26 @@ class SignedFormJob(models.Model):
         (STATUS_CANCELLED, "Cancelado"),
     ]
 
+    # S153 (formato 4.24 de Firmas): también se guardan los lotes
+    # firmados solo con la imagen, para listarlos con los digitales.
+    KIND_DIGITAL = "digital"
+    KIND_IMAGE = "image"
+    KIND_CHOICES = [
+        (KIND_DIGITAL, "Digital"),
+        (KIND_IMAGE, "Normal (imagen)"),
+    ]
+
     signature = models.ForeignKey(
         CompanySignature, on_delete=models.CASCADE,
         related_name="jobs", verbose_name="Firma")
+    kind = models.CharField(max_length=10, choices=KIND_CHOICES,
+                            default=KIND_DIGITAL, verbose_name="Tipo")
+    person = models.ForeignKey(
+        PersonIdentity, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+", verbose_name="Trabajador")
     certificate_alias = models.CharField(
-        max_length=255, verbose_name="Certificado (alias)")
+        max_length=255, blank=True, default="",
+        verbose_name="Certificado (alias)")
     # S153 (agente v3): huella SHA-1 del certificado vigente elegido al
     # generar; el agente firma con -filter thumbprint:SHA1:<huella>.
     certificate_thumbprint = models.CharField(
@@ -2558,8 +2573,8 @@ class SignedFormJob(models.Model):
     finished_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        verbose_name = "Lote de firma digital"
-        verbose_name_plural = "Lotes de firma digital"
+        verbose_name = "Lote de documentos firmados"
+        verbose_name_plural = "Lotes de documentos firmados"
         ordering = ["-created_at"]
 
 
