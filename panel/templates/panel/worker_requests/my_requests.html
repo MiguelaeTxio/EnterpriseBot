@@ -87,7 +87,7 @@ desde panel/views_worker_requests.py.
     <div class="card mb-3">
         <div class="card-body">
             <div class="fw-bold mb-1">Pedir un documento</div>
-            <p class="small text-muted mb-2">Las vacaciones, los días libres y las citas médicas se piden por el cauce habitual; cuando te los concedan, aparecerán arriba.</p>
+            <p class="small text-muted mb-2">Aquí puedes pedir cualquier documento laboral tuyo.</p>
             <form method="post" action="{% url 'panel:my_requests' %}" id="wr-form" autocomplete="off">
                 {% csrf_token %}
                 <input type="hidden" name="kind" value="DOCUMENT">
