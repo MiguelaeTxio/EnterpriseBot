@@ -1837,6 +1837,55 @@ def _letterhead(row, date_from, date_to, sheets):
         )
 
 
+def _list_value(row, key):
+    """
+    The text of a column of the Fichajes list for one worker (S149).
+    ---
+    El texto de una columna de la lista de Fichajes para un trabajador,
+    como se ve en el panel (hoja "Trabajadores" de la exportación).
+    """
+    state = row.state
+    if key == "person":
+        return row.label
+    if key == "section":
+        return state.section_name or "—"
+    if key == "clocks":
+        if not state.section_clocks:
+            return "No (sección)"
+        if state.worker_clocks and state.starts_later:
+            return "Desde %s" % state.clocks_from.strftime("%d/%m/%Y")
+        return "Sí" if state.worker_clocks else "No"
+    if key == "reminders":
+        return "Sí" if state.reminders else "No"
+    if key == "onboarding":
+        return row.onboarding.label if row.onboarding else ""
+    if key == "events":
+        return len(row.report.events)
+    if key == "issues":
+        return row.incident_count
+    if key == "ai":
+        return row.ai_pending
+    if key == "cancelled":
+        return row.cancelled_days
+    if key in ("overtime", "quota", "bag"):
+        return getattr(row, key + "_label") if row.has_account else "—"
+    last = row.report.last_day
+    if last is None:
+        return ("" if key != "last" else
+                "Sin usuario del panel" if not row.has_account else "—")
+    if key == "last":
+        return last.day.strftime("%d/%m/%Y")
+    if key == "entry":
+        return (timezone.localtime(last.clock_in.pressed_at).strftime(
+            "%H:%M") if last.clock_in else "—")
+    if key == "exit":
+        return (timezone.localtime(last.clock_out.pressed_at).strftime(
+            "%H:%M") if last.clock_out else "—")
+    if key == "place":
+        return (last.last.municipality if last.last else "") or "—"
+    return ""
+
+
 class ClockEventsExportView(SupervisorAccessMixin, View):
     """
     GET: Excel of the range for the marked workers (or all filtered).
@@ -1874,8 +1923,20 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
             ))
         rows = sorted(rows, key=lambda r: r.sort_name)
         book = Workbook()
-        days = book.active
-        days.title = "Jornadas"
+        # S149 (Miguel Ángel, 17/11: "exporto lo que tengo señalado y lo
+        # que tengo señalado no se está exportando"): primero la lista
+        # tal como se ve en el panel, una fila por trabajador marcado
+        # (aunque tenga 0 fichajes); luego el detalle.
+        workers = book.active
+        workers.title = "Trabajadores"
+        worker_headers = [("DNI", 12)] + [
+            (label, 34 if key == "person" else 14)
+            for key, label in _COLUMNS]
+        workers.append([h for h, _w in worker_headers])
+        for row in rows:
+            workers.append([row.person.dni] + [
+                _list_value(row, key) for key, _label in _COLUMNS])
+        days = book.create_sheet("Jornadas")
         # S148: las columnas de "Jornadas" salen de la plantilla de
         # exportación ("Vista del panel" por defecto = el Excel completo
         # de antes, excepción de Fichajes); DNI y nombre van siempre
@@ -1991,7 +2052,8 @@ class ClockEventsExportView(SupervisorAccessMixin, View):
                     fix.old_clock_type.name if fix.old_clock_type else "",
                     fix.new_clock_type.name if fix.new_clock_type else "",
                 ])
-        for sheet, headers in ((days, day_headers), (presses, press_headers),
+        for sheet, headers in ((workers, worker_headers),
+                               (days, day_headers), (presses, press_headers),
                                (fixes, fix_headers)):
             for cell in sheet[1]:
                 cell.font = Font(bold=True)
