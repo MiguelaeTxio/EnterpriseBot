@@ -161,10 +161,15 @@ _PROMPT = (
     "delivery_number y delivery_date (número y fecha AAAA-MM-DD del "
     "albarán al que pertenece la línea, si la factura los indica en la "
     "línea o en un encabezado de grupo de líneas tipo 'Albarán nº ... "
-    "de fecha ...'; si no, cadena vacía) e is_spare_part (true si es un "
-    "repuesto, pieza o material físico; false si es mano de obra, "
-    "portes, transporte, desplazamiento, recargos, tasas, servicios o "
-    "una línea de texto sin artículo).\n"
+    "de fecha ...'; si no, cadena vacía) e is_spare_part (true solo si "
+    "es un repuesto, pieza o material del taller para vehículos y "
+    "maquinaria: piezas, filtros, aceites, líquidos, tornillería, "
+    "consumibles de taller; false si es mano de obra, portes, "
+    "transporte, desplazamiento, recargos, tasas, servicios, una línea "
+    "de texto sin artículo, o material para administración u otras "
+    "dependencias que no son el taller: oficina, papelería, informática, "
+    "consumibles de impresora, mobiliario, limpieza, alimentación o "
+    "combustible).\n"
     "No incluyas filas de subtotal, impuestos ni totales. No inventes "
     "ningún dato que no se lea en el documento."
 )
@@ -907,8 +912,14 @@ def process_invoice(invoice_id, final=False):
             invoice, SupplierInvoice.STATUS_ERROR,
             "El archivo de la factura ya no está en el índice.",
         )
+    # Reclamo atómico: si la misma factura está en cola dos veces
+    # (reencolado), solo una tarea la procesa y el almacén no se duplica.
+    claimed = SupplierInvoice.objects.filter(
+        pk=invoice.pk, status=SupplierInvoice.STATUS_PENDING,
+    ).update(status=SupplierInvoice.STATUS_PROCESSING)
+    if not claimed:
+        return invoice.status
     invoice.status = SupplierInvoice.STATUS_PROCESSING
-    invoice.save(update_fields=["status"])
     try:
         data = download_bytes(BUCKET, invoice.entry.blob_name)
     except Exception as exc:
