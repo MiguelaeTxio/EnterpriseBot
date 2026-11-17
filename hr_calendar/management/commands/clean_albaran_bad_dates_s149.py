@@ -59,7 +59,7 @@ class Command(BaseCommand):
     def _run(self, apply):
         import datetime
 
-        from hr_calendar.albaran_check import plausible_day
+        from hr_calendar.albaran_check import day_locked, plausible_day
         from hr_calendar.clock_corrections import edit_presses
         from hr_calendar.models import (
             AlbaranSheet, ClockCorrection, ClockDayAiCheck, ClockEvent,
@@ -97,6 +97,12 @@ class Command(BaseCommand):
                 replacement__in=events,
             ).values_list("replacement_id", flat=True))
             foreign = [e for e in events if e.pk not in by_ai]
+            # S149 (Miguel Ángel, 17/11): lo visado se deja tal cual.
+            locked = (day_locked(company_user, day)
+                      if company_user is not None else "")
+            if locked:
+                kept.append("%s: %s" % (label, locked))
+                continue
             if foreign:
                 kept.append("%s: hay %d pulsación/es que no puso la IA"
                             % (label, len(foreign)))

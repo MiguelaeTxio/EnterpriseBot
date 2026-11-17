@@ -700,6 +700,39 @@ def expected_presses(sheets, travel, work, start_by_car=False,
     return points
 
 
+def day_locked(company_user, day):
+    """
+    Why the AI must not touch a day, or "" if it may.
+    ---
+    S149 (Miguel Ángel, 17/11): un día visado por un supervisor, o con
+    alguna corrección manual (alguien lo revisó a mano), se queda como
+    lo dejaron: ni el cotejo de una carga ni un comando lo cambian.
+    """
+    from hr_calendar.models import ClockCorrection, ClockDayReview
+
+    review = ClockDayReview.objects.filter(
+        company_user=company_user, day=day,
+    ).select_related("reviewed_by__user").first()
+    if review is not None:
+        who = getattr(getattr(review.reviewed_by, "user", None),
+                      "get_full_name", lambda: "")() or "un supervisor"
+        return "el día está visado por %s" % who
+    tz = timezone.get_current_timezone()
+    start = timezone.make_aware(
+        datetime.datetime.combine(day, datetime.time.min), tz)
+    end = start + datetime.timedelta(days=1)
+    manual = ClockCorrection.objects.filter(
+        source=ClockCorrection.Source.MANUAL,
+        event__company_user=company_user,
+        event__pressed_at__gte=start, event__pressed_at__lt=end,
+    ).select_related("corrected_by__user").order_by("-corrected_at").first()
+    if manual is not None:
+        who = getattr(getattr(manual.corrected_by, "user", None),
+                      "get_full_name", lambda: "")() or "un supervisor"
+        return "el día lo corrigió a mano %s" % who
+    return ""
+
+
 def compare_day(batch, day, person=None):
     """
     Compare one day with its albaranes; correct by AI what is off.
@@ -819,7 +852,16 @@ def compare_day(batch, day, person=None):
                                         travel, work, meal),
                                  timezone.localtime(
                                      event.pressed_at).strftime("%H:%M")))
-        if any(_changed(row, events) for row in rows):
+        locked = day_locked(company_user, day)
+        if locked and any(_changed(row, events) for row in rows):
+            # S149 (Miguel Ángel, 17/11: "lo que esté ya visado lo dejamos
+            # tal cual está"): la IA no toca un día visado ni uno que un
+            # supervisor ha corregido a mano; deja dicho lo que vería.
+            lines = ["No se corrige: %s. Lo que la IA cambiaría:" % locked] \
+                + [line.replace("Corregido:", "cambiaría").replace(
+                    "Añadido:", "añadiría").replace("Anulado:", "anularía")
+                   for line in lines]
+        elif any(_changed(row, events) for row in rows):
             reason = "Corrección por IA según albarán %s (tolerancia %d " \
                      "min)." % (numbers, tolerance)
             try:
