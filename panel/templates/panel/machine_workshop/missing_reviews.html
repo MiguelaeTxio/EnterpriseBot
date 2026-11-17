@@ -1,0 +1,56 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/machine_workshop/missing_reviews.html #}
+{% extends "panel/base.html" %}
+
+{% block title %}Revisiones que faltan{% endblock %}
+{% block page_title %}Revisiones técnicas periódicas que faltan{% endblock %}
+
+{% block content %}
+{% comment %}
+H23 (S154, invasora). Avisos de las revisiones que faltan en las grúas
+A y H: cada hueco de más de seis meses (más un mes de margen) sin
+ninguna revisión leída o reconstruida, y las grúas sin ninguna revisión.
+Cada hueco se cubre buscando la revisión en el libro de la grúa y
+subiendo el escaneo desde su pestaña Revisiones. Contexto:
+FleetMissingReviewsView (fleet.logbook_service.missing_reviews).
+{% endcomment %}
+<div class="border rounded p-2 mb-2 small">
+    <i class="bi bi-info-circle me-1"></i>
+    Busca cada revisión en el libro de revisiones de la grúa y súbela escaneada desde «Revisiones»: se lee sola y el aviso desaparece.
+    Solo si el registro se perdió de verdad, anota una reconstrucción; no vale hasta la firma digital desde el PC de Yolanda.
+</div>
+
+{% if cranes %}
+<div class="fw-bold small mb-1">{{ cranes|length }} grúa{{ cranes|length|pluralize }} con avisos · {{ gaps_total }} hueco{{ gaps_total|pluralize }} sin revisión</div>
+<table class="table table-sm table-hover align-middle small">
+    <thead class="table-light">
+        <tr>
+            <th>Grúa</th>
+            <th>Revisiones leídas</th>
+            <th>Huecos sin revisión</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for item in cranes %}
+        <tr>
+            <td class="fw-semibold text-nowrap">{{ item.machine.code }} <span class="text-muted fw-normal">{{ item.machine.brand_model|default:"" }}</span></td>
+            <td>{{ item.reviews }}</td>
+            <td>
+                {% for gap in item.gaps %}
+                <div class="text-warning-emphasis"><i class="bi bi-exclamation-triangle me-1"></i>{{ gap.start|date:"d/m/Y" }} → {{ gap.end|date:"d/m/Y" }} ({{ gap.days }} días)</div>
+                {% empty %}
+                <div class="text-danger"><i class="bi bi-exclamation-octagon me-1"></i>Ninguna revisión leída: falta escanear su libro de revisiones</div>
+                {% endfor %}
+            </td>
+            <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ item.reviews_url }}"><i class="bi bi-clipboard-check me-1"></i>Revisiones</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="text-center text-muted py-5">
+    <i class="bi bi-clipboard-check fs-1 d-block mb-2 opacity-25"></i>
+    <p class="mb-0">No falta ninguna revisión en las grúas A y H.</p>
+</div>
+{% endif %}
+{% endblock %}

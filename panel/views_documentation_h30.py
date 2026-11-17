@@ -971,9 +971,17 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
         # sus datos en "Datos del centro de gasto" y el botón de generar
         # el libro en la sección Taller.
         from fleet.forms import LOGBOOK_FIELDS
-        from fleet.logbook_service import is_logbook_machine
+        from fleet.logbook_service import (
+            is_logbook_machine, review_gaps, review_rows,
+        )
 
         is_logbook_crane = is_logbook_machine(machine)
+        # S154: aviso de las revisiones que faltan (huecos sin revisión).
+        logbook_reviews = review_rows(machine) if is_logbook_crane else []
+        logbook_missing = (
+            len(review_gaps(logbook_reviews)) if logbook_reviews
+            else int(is_logbook_crane)
+        )
 
         return render(
             request,
@@ -1023,6 +1031,7 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
                 "show_logbook_button": (
                     is_logbook_crane and self._can_edit(request)
                 ),
+                "logbook_missing_reviews": logbook_missing,
                 # S148: avisos propios de este centro de gasto.
                 **machine_alerts_context(machine, {
                     entry.document_type_id for entry in entries_list

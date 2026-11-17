@@ -1,0 +1,67 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/fleet/templates/fleet/logbook_reconstruction_pdf.html #}
+{% comment %}
+H23 (S154, invasora) -- declaración de una revisión técnica periódica
+reconstruida (registro original extraviado), para la firma digital con
+el certificado de la empresa en el PC de Yolanda. El margen inferior de
+5 cm queda siempre en blanco: ahí va el recuadro de la firma digital
+(fleet.logbook_service.RECONSTRUCTION_SIGNATURE_RECT).
+Contexto: fleet.logbook_service.reconstruction_pdf.
+{% endcomment %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Reconstrucción de revisión {{ machine.code }}</title>
+<style>
+    @page {
+        size: A4;
+        margin: 18mm 15mm 50mm 15mm;
+    }
+    body { font-family: "DejaVu Sans", Arial, sans-serif; font-size: 9.5pt; color: #111; }
+    h1 { font-size: 14pt; text-align: center; margin: 0 0 2mm 0; }
+    .subtitle { text-align: center; font-size: 9pt; color: #444; margin-bottom: 8mm; }
+    h2 { font-size: 11pt; border-bottom: 2px solid #333; padding-bottom: 1mm; margin: 6mm 0 3mm 0; }
+    table.fields { width: 100%; border-collapse: collapse; }
+    table.fields th { width: 38%; text-align: left; font-weight: normal; color: #444; padding: 1.5mm 0; border-bottom: 1px solid #ccc; vertical-align: top; }
+    table.fields td { padding: 1.5mm 0; border-bottom: 1px solid #ccc; font-weight: bold; }
+    .statement { margin-top: 6mm; line-height: 1.5; text-align: justify; }
+    .small { font-size: 7.5pt; color: #555; margin-top: 6mm; }
+</style>
+</head>
+<body>
+
+<h1>RECONSTRUCCIÓN DE REVISIÓN TÉCNICA PERIÓDICA</h1>
+<div class="subtitle">Libro historial de grúa móvil autopropulsada · Real Decreto 837/2003, ITC MIE-AEM 4</div>
+
+<h2>Grúa</h2>
+<table class="fields">
+    <tr><th>Código</th><td>{{ machine.code }}</td></tr>
+    <tr><th>Marca / modelo o tipo</th><td>{{ machine.brand_model|default:"—" }}</td></tr>
+    <tr><th>Número de serie</th><td>{{ machine.crane_serial_number|default:"—" }}</td></tr>
+    <tr><th>Matrícula del vehículo</th><td>{{ machine.plate|default:"—" }}</td></tr>
+</table>
+
+<h2>Revisión</h2>
+<table class="fields">
+    <tr><th>Fecha en que se realizó</th><td>{{ row.entry_date|date:"d/m/Y" }}</td></tr>
+    <tr><th>Empresa mantenedora</th><td>{{ row.entity|default:"—" }}</td></tr>
+    <tr><th>Resultado</th><td>{{ row.result|default:"—" }}</td></tr>
+    <tr><th>Próxima revisión</th><td>{{ row.next_date|date:"d/m/Y"|default:"—" }}</td></tr>
+    <tr><th>Concepto u observaciones</th><td>{{ row.concept|default:"—"|linebreaksbr }}</td></tr>
+</table>
+
+<div class="statement">
+    La revisión técnica periódica indicada se realizó en la fecha señalada,
+    pero su registro original se ha extraviado y no consta en el libro
+    historial escaneado de la grúa. Se reconstruye en esta declaración para
+    que el libro quede completo; el libro la recoge como revisión
+    reconstruida. La declaración solo tiene validez con la firma digital del
+    responsable de la empresa.
+</div>
+
+<div class="small">
+    Reconstruida{% if created_by %} por {{ created_by }}{% endif %}. Declaración generada el {{ generated_at|date:"d/m/Y H:i" }}. Referencia interna {{ machine.code }}-{{ row.pk }}.
+</div>
+
+</body>
+</html>

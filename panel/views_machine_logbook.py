@@ -310,7 +310,7 @@ def _reviews_context(request, machine):
 
     Contexto del fragmento de la tabla de revisiones.
     """
-    from fleet.logbook_service import SIGN_ROLES
+    from fleet.logbook_service import can_reconstruct, can_send_to_sign
     from panel import machine_workshop as workshop
     from panel import machine_workshop_reviews as reviews
     from panel.views_machine_workshop import _only_keys, _params
@@ -319,10 +319,15 @@ def _reviews_context(request, machine):
     only_keys = _only_keys(request)
     rows = reviews.build_review_rows(machine, params, only_keys=only_keys)
     company_user = request.user.company_user
+    can_sign = can_send_to_sign(company_user)
     for row in rows:
-        row.can_remove = bool(
-            row.signed_by_pk and (
-                row.signed_by_pk == company_user.pk
+        # Se seleccionan las reconstrucciones pendientes: para quitarlas
+        # (quien la anotó o un administrador) o para enviarlas a la
+        # firma digital (quien tiene acceso a las firmas).
+        row.can_select = bool(
+            row.origin == reviews.ORIGIN_PENDING and (
+                can_sign
+                or row.created_by_pk == company_user.pk
                 or company_user.role == "ADMIN"
             )
         )
@@ -336,7 +341,8 @@ def _reviews_context(request, machine):
             any(params[key] for key in params if key != "sort")
             or only_keys is not None
         ),
-        "can_sign": company_user.role in SIGN_ROLES,
+        "can_reconstruct": can_reconstruct(company_user),
+        "can_send_to_sign": can_sign,
         "table_url": reverse(
             "panel:machine_workshop_reviews_table",
             kwargs={"pk": machine.pk},
@@ -353,7 +359,8 @@ def _reviews_page_context(request, machine):
 
     Contexto de la página de la pestaña Revisiones.
     """
-    from fleet.logbook_service import default_maintainer
+    from document_explorer.models import CompanySignature
+    from fleet.logbook_service import can_send_to_sign, default_maintainer
     from panel import machine_workshop as workshop
     from panel import machine_workshop_reviews as reviews
     from panel.navigation_persistence import get_saved_state_key
@@ -381,7 +388,27 @@ def _reviews_page_context(request, machine):
         "origins": reviews.ORIGIN_CHOICES,
         "default_maintainer": default_maintainer(machine),
         "today": timezone.localdate(),
+        "can_upload_scan": _can_upload_scan(request.user.company_user),
+        "signatures": (
+            CompanySignature.objects.exclude(
+                certificate_cif="", certificate_alias="",
+            ).select_related("company").order_by("company__pk", "label")
+            if can_send_to_sign(request.user.company_user) else []
+        ),
+        "gaps_url": reverse("panel:fleet_missing_reviews"),
     }
+
+
+def _can_upload_scan(company_user):
+    """
+    Whether this user may upload a scanned review.
+
+    ---
+
+    Si este usuario puede subir el escaneo de una revisión: quien edita
+    la ficha y el jefe de taller.
+    """
+    return company_user.role in LOGBOOK_ROLES | {"WORKSHOPBOSS"}
 
 
 class MachineWorkshopReviewsView(FleetAccessMixin, View):
@@ -394,11 +421,18 @@ class MachineWorkshopReviewsView(FleetAccessMixin, View):
     """
 
     def get(self, request, pk):
+        from fleet.logbook_service import sync_reconstructions
         from panel import machine_workshop_reviews as reviews
         from panel.navigation_persistence import apply_list_navigation
         from panel.views_machine_workshop import _screen_key
 
         machine = _crane(request, pk)
+        # Las reconstrucciones que el agente acaba de firmar se cierran
+        # ya, sin esperar a la pasada periódica.
+        try:
+            sync_reconstructions()
+        except Exception:  # noqa: BLE001 -- la pasada periódica reintenta
+            logger.exception("# [reviews] sync_reconstructions falló")
         apply_list_navigation(
             request, _screen_key(REVIEWS_KIND, machine),
             reviews.REVIEW_FILTER_KEYS,
@@ -434,24 +468,117 @@ class MachineWorkshopReviewsFragmentView(FleetAccessMixin, View):
         )
 
 
-class MachineReviewSignView(FleetAccessMixin, View):
+def _selected_pks(request):
+    return [
+        int(key[1:]) for key in request.POST.getlist("selected")
+        if key[:1] == "r" and key[1:].isdigit()
+    ]
+
+
+def _back_to_reviews(machine):
+    return redirect("panel:machine_workshop_reviews", pk=machine.pk)
+
+
+MAX_SCAN_BYTES = 25 * 1024 * 1024
+SCAN_EXTENSIONS = (".pdf", ".jpg", ".jpeg", ".png")
+
+
+class MachineReviewScanUploadView(FleetAccessMixin, View):
     """
-    POST: record one periodic review signed by the current user.
+    POST: upload the scan of a missing review; it is read on its own.
 
     ---
 
-    POST: anota una revisión técnica periódica firmada por quien la
-    graba (jefe de taller o administrador). La fecha la escribe él; la
-    plataforma nunca la calcula.
+    POST: sube el escaneo de la hoja del libro con la revisión que
+    faltaba (S154, Miguel Ángel: "si alguna revisión falta hay que
+    buscar su libro de revisiones y escanearla"). Se guarda como
+    documento LIBRO_HISTORIAL de la grúa, con la fecha de la revisión, y
+    el pipeline lo lee con Gemini enseguida (y si no, en la pasada
+    periódica): el hueco desaparece cuando la revisión queda leída.
     """
 
     def post(self, request, pk):
-        from fleet.logbook_service import annotate_review
+        from document_explorer.models import DocumentTypeCatalog
+        from document_explorer.subject_upload_service import (
+            SubjectUploadError, upload_subject_document,
+        )
+        from fleet.logbook_service import (
+            LOGBOOK_TYPE_CODE, _machine_content_type,
+        )
+        from fleet.tasks import logbook_pipeline_task
+        from panel.machine_workshop import parse_date
+
+        machine = _crane(request, pk)
+        if not _can_upload_scan(request.user.company_user):
+            return HttpResponse(
+                "No tienes permiso para subir escaneos del libro.",
+                status=403,
+            )
+        upload = request.FILES.get("scan")
+        review_date = parse_date(request.POST.get("review_date"))
+        if upload is None or not upload.name.lower().endswith(
+                SCAN_EXTENSIONS):
+            messages.error(request, "Elige el escaneo (PDF, JPG o PNG).")
+            return _back_to_reviews(machine)
+        if upload.size > MAX_SCAN_BYTES:
+            messages.error(request, "El escaneo pasa de 25 MB.")
+            return _back_to_reviews(machine)
+        if review_date is None or review_date > timezone.localdate():
+            messages.error(
+                request,
+                "Escribe la fecha de la revisión que aparece en el "
+                "escaneo (no puede ser futura).",
+            )
+            return _back_to_reviews(machine)
+        try:
+            result = upload_subject_document(
+                subject=machine,
+                domain_content_type=_machine_content_type(),
+                document_type=DocumentTypeCatalog.objects.get(
+                    code=LOGBOOK_TYPE_CODE),
+                data=upload.read(),
+                original_filename=upload.name,
+                typed_date=None,
+                subject_label=machine.code,
+                uploaded_by=request.user.company_user,
+                typed_issue_date=review_date,
+                filename_date=review_date,
+            )
+        except SubjectUploadError as exc:
+            messages.error(request, str(exc))
+            return _back_to_reviews(machine)
+        entry = result["entry"]
+        logbook_pipeline_task.delay(document_id=entry.pk)
+        logger.info(
+            "# [reviews] %s: escaneo de revisión subido (documento %s) "
+            "por %s", machine.code, entry.pk, request.user.username,
+        )
+        messages.success(
+            request,
+            "Escaneo subido. Se está leyendo: en unos minutos sus "
+            "revisiones aparecen en la lista.",
+        )
+        return _back_to_reviews(machine)
+
+
+class MachineReviewReconstructView(FleetAccessMixin, View):
+    """
+    POST: record a review whose record was lost (pending signature).
+
+    ---
+
+    POST: anota la reconstrucción de una revisión que se hizo pero cuyo
+    registro se perdió de verdad. Queda pendiente de la firma digital
+    desde el PC de Yolanda; hasta entonces no cuenta como firmada.
+    """
+
+    def post(self, request, pk):
+        from fleet.logbook_service import create_reconstruction
         from panel.machine_workshop import parse_date
 
         machine = _crane(request, pk)
         try:
-            annotate_review(
+            create_reconstruction(
                 machine,
                 request.user.company_user,
                 entry_date=parse_date(request.POST.get("entry_date")),
@@ -459,26 +586,71 @@ class MachineReviewSignView(FleetAccessMixin, View):
                 entity=request.POST.get("entity", ""),
                 next_date=parse_date(request.POST.get("next_date")),
                 concept=request.POST.get("concept", ""),
-                is_reconstructed=request.POST.get("is_reconstructed") == "1",
             )
         except LogbookReadError as exc:
             messages.error(request, str(exc))
         else:
-            messages.success(request, "Revisión anotada y firmada.")
-        return redirect(
-            "panel:machine_workshop_reviews", pk=machine.pk,
+            messages.success(
+                request,
+                "Reconstrucción anotada. Queda pendiente de la firma "
+                "digital con el certificado de la empresa.",
+            )
+        return _back_to_reviews(machine)
+
+
+class MachineReviewSendToSignView(FleetAccessMixin, View):
+    """
+    POST: queue the selected reconstructions for the digital signature.
+
+    ---
+
+    POST: envía las reconstrucciones pendientes seleccionadas a la cola
+    del agente de firmas (PC de Yolanda) con la firma de empresa
+    elegida. Solo quien tiene acceso a las firmas.
+    """
+
+    def post(self, request, pk):
+        from document_explorer.models import CompanySignature
+        from fleet.logbook_service import (
+            can_send_to_sign, reconstructed_rows, send_to_sign,
         )
+
+        machine = _crane(request, pk)
+        company_user = request.user.company_user
+        if not can_send_to_sign(company_user):
+            return HttpResponse(
+                "Acceso denegado: las firmas no son para tu usuario.",
+                status=403,
+            )
+        pks = set(_selected_pks(request))
+        rows = [row for row in reconstructed_rows(machine) if row.pk in pks]
+        signature = CompanySignature.objects.filter(
+            pk=request.POST.get("signature") or 0).first()
+        try:
+            job = send_to_sign(rows, signature, company_user)
+        except LogbookReadError as exc:
+            messages.error(request, str(exc))
+        else:
+            messages.success(
+                request,
+                "Enviadas a la firma digital: %d. El agente del PC de "
+                "Yolanda las firma con «%s»; el lote aparece en "
+                "Documentación → Firmas." % (
+                    job.files.count(), signature.label),
+            )
+        return _back_to_reviews(machine)
 
 
 class MachineReviewRemoveView(FleetAccessMixin, View):
     """
-    POST: remove selected signed reviews (signer or administrator).
+    POST: remove selected pending reconstructions.
 
     ---
 
-    POST: quita las revisiones firmadas seleccionadas (selected=r<pk>);
-    solo las firmadas por quien lo pide, o cualquiera si es
-    administrador. Las de los escaneos no se tocan.
+    POST: quita las reconstrucciones pendientes seleccionadas
+    (selected=r<pk>): solo las que aún no se han enviado a la firma,
+    las anotadas por quien lo pide o cualquiera si es administrador.
+    Ni las escaneadas ni las firmadas se tocan.
     """
 
     def post(self, request, pk):
@@ -486,24 +658,46 @@ class MachineReviewRemoveView(FleetAccessMixin, View):
 
         machine = _crane(request, pk)
         company_user = request.user.company_user
-        pks = [
-            int(key[1:]) for key in request.POST.getlist("selected")
-            if key[:1] == "r" and key[1:].isdigit()
-        ]
         entries = MachineLogbookEntry.objects.filter(
-            machine=machine, pk__in=pks, source__isnull=True,
-            signed_by__isnull=False,
+            machine=machine, pk__in=_selected_pks(request),
+            source__isnull=True, is_reconstructed=True,
+            signed_at__isnull=True, signing_file__isnull=True,
         )
         if company_user.role != "ADMIN":
-            entries = entries.filter(signed_by=company_user)
+            entries = entries.filter(created_by=company_user)
         removed, _detail = entries.delete()
         messages.success(
-            request,
-            "Revisiones firmadas quitadas: %d." % removed,
+            request, "Reconstrucciones pendientes quitadas: %d." % removed,
         )
-        return redirect(
-            "panel:machine_workshop_reviews", pk=machine.pk,
-        )
+        return _back_to_reviews(machine)
+
+
+class FleetMissingReviewsView(FleetAccessMixin, View):
+    """
+    Notices of the periodic reviews missing in every A/H crane.
+
+    ---
+
+    Avisos de las revisiones que faltan (S154, Miguel Ángel: "dar los
+    avisos de las que falten"): por grúa A/H, cada hueco sin revisión
+    de más de seis meses (más un mes de margen) y las grúas sin ninguna
+    revisión leída. Cada hueco es una revisión que hay que buscar en su
+    libro y escanear desde la pestaña Revisiones de la grúa.
+    """
+
+    def get(self, request):
+        from fleet.logbook_service import missing_reviews
+
+        cranes = missing_reviews()
+        for item in cranes:
+            item["reviews_url"] = reverse(
+                "panel:machine_workshop_reviews",
+                kwargs={"pk": item["machine"].pk},
+            )
+        return render(request, "panel/machine_workshop/missing_reviews.html", {
+            "cranes": cranes,
+            "gaps_total": sum(len(item["gaps"]) for item in cranes),
+        })
 
 
 class MachineLogbookExternalView(FleetAccessMixin, View):

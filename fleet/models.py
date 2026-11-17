@@ -1716,24 +1716,55 @@ class MachineLogbookEntry(models.Model):
     next_date = models.DateField(
         _("Próxima revisión"), null=True, blank=True,
     )
-    # S154 (H23, invasora): revisión anotada en la plataforma y firmada
-    # por el responsable (Miguel Ángel: "firmadas por Alberto Álvarez
-    # Díaz y que sea él quien pulse el botón para que quede como
-    # responsable"). `is_reconstructed`: revisión hecha cuyo registro
-    # original se extravió; el libro lo dice tal cual.
+    # S154 (H23, invasora). Miguel Ángel, tras hablarlo con Alejandro:
+    # una revisión que falta se busca en su libro y se escanea; solo si
+    # el registro se perdió de verdad "ponemos que es una reconstrucción
+    # y queda para firma digital, única y exclusivamente desde el
+    # ordenador de Yolanda, que es el que tiene los certificados".
+    # Una reconstrucción no tiene documento de origen (`source` vacío);
+    # queda pendiente hasta que el agente de firmas devuelve el PDF
+    # firmado con el certificado de la empresa (`signed_at`).
+    is_reconstructed = models.BooleanField(
+        _("Registro original extraviado (reconstruida)"), default=False,
+    )
+    created_by = models.ForeignKey(
+        "ivr_config.CompanyUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name=_("Reconstruida por"),
+    )
     signed_by = models.ForeignKey(
         "ivr_config.CompanyUser",
         null=True,
         blank=True,
         on_delete=models.PROTECT,
         related_name="+",
-        verbose_name=_("Firmada por"),
+        verbose_name=_("Enviada a la firma digital por"),
+    )
+    signing_file = models.ForeignKey(
+        "document_explorer.SignedFormFile",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name=_("Documento en la cola de firma"),
     )
     signed_at = models.DateTimeField(
-        _("Firmada el"), null=True, blank=True,
+        _("Firmada digitalmente el"), null=True, blank=True,
     )
-    is_reconstructed = models.BooleanField(
-        _("Registro original extraviado (reconstruida)"), default=False,
+    signed_certificate = models.CharField(
+        _("Certificado de la firma"), max_length=255, blank=True,
+        default="",
+    )
+    signed_document = models.ForeignKey(
+        "document_explorer.DocumentIndexEntry",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="logbook_reconstructions",
+        verbose_name=_("Declaración firmada"),
     )
 
     class Meta:

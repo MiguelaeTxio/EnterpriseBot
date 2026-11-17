@@ -6,10 +6,11 @@ H23 (S154, invasora). "Revisiones" list of a crane's workshop.
 
 H23 (S154, invasora). Pestaña "Revisiones" del taller de una grúa A/H
 (directriz 4.24, mismo formato que Libros historial): las revisiones
-técnicas periódicas leídas de los escaneos y las anotadas y firmadas en
-la plataforma por el responsable, con los huecos de más de seis meses
-sin revisión a la vista. La plataforma solo informa de los huecos:
-cada revisión la anota y la firma el responsable con su fecha real.
+técnicas periódicas leídas de los escaneos y las reconstruidas (registro
+original extraviado), con los huecos de más de seis meses sin revisión a
+la vista. Un hueco se cubre buscando la revisión en su libro y
+escaneándola; solo si se perdió de verdad se reconstruye, y la
+reconstrucción no vale hasta la firma digital del PC de Yolanda.
 """
 import datetime
 from dataclasses import dataclass
@@ -25,12 +26,14 @@ REVIEW_FILTER_KEYS = (
 STATE_REVIEWS = "reviews"
 STATE_GAPS = "gaps"
 ORIGIN_SCANNED = "scanned"
+ORIGIN_PENDING = "pending"
+ORIGIN_SIGNING = "signing"
 ORIGIN_SIGNED = "signed"
-ORIGIN_RECONSTRUCTED = "reconstructed"
 ORIGIN_CHOICES = (
     (ORIGIN_SCANNED, "Libro escaneado"),
-    (ORIGIN_SIGNED, "Anotada y firmada"),
-    (ORIGIN_RECONSTRUCTED, "Reconstruida (registro extraviado)"),
+    (ORIGIN_PENDING, "Reconstruida, pendiente de firma"),
+    (ORIGIN_SIGNING, "Reconstruida, en la cola de firma"),
+    (ORIGIN_SIGNED, "Reconstruida y firmada digitalmente"),
 )
 ORIGIN_LABELS = dict(ORIGIN_CHOICES)
 
@@ -70,17 +73,15 @@ class ReviewRow:
     origin: str = ""
     origin_label: str = ""
     signature_note: str = ""
-    signed_by_pk: int = None
+    created_by_pk: int = None
     haystack: str = ""
 
 
 def _row_from_entry(entry):
-    if entry.signed_by_id is None:
+    if not entry.is_reconstructed:
         origin = ORIGIN_SCANNED
-    elif entry.is_reconstructed:
-        origin = ORIGIN_RECONSTRUCTED
     else:
-        origin = ORIGIN_SIGNED
+        origin = logbook_service.reconstruction_state(entry)
     row = ReviewRow(
         key="r%d" % entry.pk,
         date=entry.entry_date,
@@ -91,7 +92,8 @@ def _row_from_entry(entry):
         origin=origin,
         origin_label=ORIGIN_LABELS[origin],
         signature_note=getattr(entry, "signature_note", ""),
-        signed_by_pk=entry.signed_by_id,
+        created_by_pk=(
+            entry.created_by_id if entry.is_reconstructed else None),
     )
     row.label = "%s · %s" % (
         row.date.strftime("%d/%m/%Y") if row.date else "sin fecha",
@@ -178,13 +180,13 @@ def review_totals(rows):
 
     ---
 
-    Totales de lo listado: revisiones, firmadas y huecos.
+    Totales de lo listado: revisiones, reconstruidas y huecos.
     """
     return {
         "count": sum(1 for row in rows if not row.is_gap),
-        "signed": sum(
+        "rebuilt": sum(
             1 for row in rows
-            if row.origin in (ORIGIN_SIGNED, ORIGIN_RECONSTRUCTED)
+            if row.origin in (ORIGIN_PENDING, ORIGIN_SIGNING, ORIGIN_SIGNED)
         ),
         "gaps": sum(1 for row in rows if row.is_gap),
     }

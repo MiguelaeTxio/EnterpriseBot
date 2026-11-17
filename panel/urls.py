@@ -73,10 +73,13 @@ from panel.views_machine_workshop import (
     WorkOrderDocumentView,
 )
 from panel.views_machine_logbook import (
+    FleetMissingReviewsView,
     MachineLogbookExternalView,
     MachineLogbookGenerateView,
+    MachineReviewReconstructView,
     MachineReviewRemoveView,
-    MachineReviewSignView,
+    MachineReviewScanUploadView,
+    MachineReviewSendToSignView,
     MachineWorkshopReviewsFragmentView,
     MachineWorkshopReviewsView,
     MachineWorkshopLogbooksFragmentView,
@@ -1177,9 +1180,24 @@ urlpatterns = [
         name="machine_workshop_reviews_table",
     ),
     path(
-        "documentacion/maquinaria/<int:pk>/taller/revisiones/firmar/",
-        MachineReviewSignView.as_view(),
-        name="machine_review_sign",
+        "documentacion/maquinaria/<int:pk>/taller/revisiones/escaneo/",
+        MachineReviewScanUploadView.as_view(),
+        name="machine_review_scan_upload",
+    ),
+    path(
+        "documentacion/maquinaria/<int:pk>/taller/revisiones/reconstruir/",
+        MachineReviewReconstructView.as_view(),
+        name="machine_review_reconstruct",
+    ),
+    path(
+        "documentacion/maquinaria/<int:pk>/taller/revisiones/a-firma/",
+        MachineReviewSendToSignView.as_view(),
+        name="machine_review_send_to_sign",
+    ),
+    path(
+        "documentacion/maquinaria/revisiones-que-faltan/",
+        FleetMissingReviewsView.as_view(),
+        name="fleet_missing_reviews",
     ),
     path(
         "documentacion/maquinaria/<int:pk>/taller/revisiones/quitar/",

@@ -68,10 +68,15 @@ REPAIR_TASK_TYPES = ("AVERIA", "")
 # libros escaneados); un hueco se avisa pasado un mes de margen.
 REVIEW_INTERVAL_DAYS = 183
 REVIEW_GRACE_DAYS = 31
-# Quién firma revisiones como responsable (S154, Miguel Ángel: "firmadas
-# por Alberto Álvarez Díaz", jefe de taller): jefe de taller y
-# administrador.
-SIGN_ROLES = {"WORKSHOPBOSS", "ADMIN"}
+# Quién anota una reconstrucción (revisión hecha cuyo registro se
+# perdió): jefe de taller y administrador, más quien tiene acceso a las
+# firmas de la empresa. Solo queda firmada con la firma digital del
+# agente del PC de Yolanda (S154).
+RECONSTRUCT_ROLES = {"WORKSHOPBOSS", "ADMIN"}
+# Recuadro de la firma digital visible en la declaración (puntos PDF,
+# origen abajo a la izquierda, página 1): dentro del margen inferior de
+# 5 cm que la plantilla deja siempre en blanco.
+RECONSTRUCTION_SIGNATURE_RECT = (330, 64, 520, 118)
 
 # Gemini 3.5 Flash (ficha del modelo en Vertex AI, consultada en S154):
 # 7 MB por archivo en línea y 65.536 tokens de salida como máximo. Un
@@ -215,7 +220,11 @@ def scan_documents(machine=None):
         is_confidential=False,
     ).exclude(
         logbook_source__kind=MachineLogbookSource.KIND_GENERATED,
-    ).order_by("domain_object_id", "id")
+    ).exclude(
+        # S154: las declaraciones firmadas de las reconstrucciones
+        # tampoco se leen como escaneo.
+        logbook_reconstructions__isnull=False,
+    ).order_by("domain_object_id", "id").distinct()
     if machine is not None:
         entries = entries.filter(domain_object_id=machine.pk)
     machines = MachineAsset.objects.in_bulk(
@@ -560,28 +569,28 @@ def repair_lines(machine):
 
 def _signature_note(row) -> str:
     """
-    Note printed under a review annotated and signed in the platform.
+    Note printed under a reconstructed review.
 
     ---
 
-    Nota que el libro imprime bajo una revisión anotada y firmada en la
-    plataforma: quién la firmó y cuándo y, si reconstruye un registro
-    extraviado, que lo dice tal cual.
+    Nota que el libro imprime bajo una revisión reconstruida: que el
+    registro original se extravió, quién la reconstruyó y, si ya está
+    firmada, con qué certificado y cuándo; si no, que está pendiente de
+    la firma digital. Las escaneadas no llevan nota.
     """
-    if row.signed_by_id is None:
+    if not row.is_reconstructed:
         return ""
-    signer = _signer_name(row.signed_by)
-    when = (
-        timezone.localtime(row.signed_at).strftime("%d/%m/%Y")
-        if row.signed_at else ""
+    who = _signer_name(row.created_by)
+    text = "Revisión realizada por la empresa mantenedora; registro " \
+        "original extraviado. Reconstruida%s" % (
+            " por %s" % who if who else "")
+    if row.signed_at is None:
+        return text + ". Pendiente de la firma digital."
+    return "%s y firmada digitalmente%s el %s." % (
+        text,
+        " (%s)" % row.signed_certificate if row.signed_certificate else "",
+        timezone.localtime(row.signed_at).strftime("%d/%m/%Y"),
     )
-    if row.is_reconstructed:
-        return (
-            "Revisión realizada por la empresa mantenedora; registro "
-            "original extraviado. Reconstruida y firmada por %s el %s."
-            % (signer, when)
-        )
-    return "Anotada y firmada por %s el %s." % (signer, when)
 
 
 def _signer_name(company_user) -> str:
@@ -591,31 +600,50 @@ def _signer_name(company_user) -> str:
     return user.get_full_name() or user.username
 
 
-def annotated_rows(machine):
+def reconstructed_rows(machine):
     """
-    Rows annotated and signed in the platform (no source document).
+    Reconstructed reviews of the crane (no source document).
 
     ---
 
-    Filas anotadas y firmadas en la plataforma (sin documento de
-    origen), con su firmante.
+    Revisiones reconstruidas de la grúa (sin documento de origen),
+    firmadas o pendientes de la firma digital.
     """
     return list(
         MachineLogbookEntry.objects.filter(
-            machine=machine, source__isnull=True,
-        ).select_related("signed_by__user")
+            machine=machine, source__isnull=True, is_reconstructed=True,
+        ).select_related(
+            "created_by__user", "signed_by__user", "signing_file",
+        )
     )
 
 
-def review_rows(machine):
+def reconstruction_state(row) -> str:
     """
-    Periodic reviews of the crane: scans (deduplicated) plus signed ones.
+    "signed", "signing" (queued for the agent) or "pending".
+
+    ---
+
+    Estado de una reconstrucción: firmada, en la cola del agente de
+    firmas o pendiente de enviar a la firma.
+    """
+    if row.signed_at is not None:
+        return "signed"
+    if row.signing_file_id is not None:
+        return "signing"
+    return "pending"
+
+
+def review_rows(machine, signed_only=False):
+    """
+    Periodic reviews of the crane: scans (deduplicated) plus reconstructed.
 
     ---
 
     Revisiones técnicas periódicas de la grúa: las de los escaneos, sin
-    repetidos, más las anotadas y firmadas en la plataforma, por fecha.
-    Cada fila lleva `signature_note`.
+    repetidos, más las reconstruidas, por fecha. Con `signed_only` (libro
+    para externos), solo las reconstrucciones ya firmadas. Cada fila
+    lleva `signature_note`.
     """
     scanned = _deduplicated(
         MachineLogbookEntry.objects.filter(
@@ -623,11 +651,12 @@ def review_rows(machine):
             section=MachineLogbookEntry.SECTION_PERIODIC_REVIEW,
         )
     )
-    signed = [
-        row for row in annotated_rows(machine)
+    rebuilt = [
+        row for row in reconstructed_rows(machine)
         if row.section == MachineLogbookEntry.SECTION_PERIODIC_REVIEW
+        and (row.signed_at is not None or not signed_only)
     ]
-    rows = scanned + signed
+    rows = scanned + rebuilt
     for row in rows:
         row.signature_note = _signature_note(row)
     rows.sort(
@@ -732,7 +761,7 @@ def logbook_context(machine, external=False) -> dict:
             MachineLogbookEntry.SECTION_INSPECTION_BASE],
         "inspections_structure": by_section[
             MachineLogbookEntry.SECTION_INSPECTION_STRUCTURE],
-        "reviews": review_rows(machine),
+        "reviews": review_rows(machine, signed_only=external),
         "repairs": repairs,
         "accidents": by_section[MachineLogbookEntry.SECTION_ACCIDENT],
         "notes": by_section[MachineLogbookEntry.SECTION_NOTE],
@@ -760,28 +789,69 @@ def render_logbook_pdf(machine, external=False) -> bytes:
     return HTML(string=html).write_pdf()
 
 
-def annotate_review(machine, user, entry_date, result, entity,
-                    next_date=None, concept="", is_reconstructed=False):
+def can_reconstruct(company_user) -> bool:
     """
-    Records one periodic review signed by the user.
+    Whether this user may record a reconstructed review.
 
     ---
 
-    Anota una revisión técnica periódica firmada por el usuario que la
-    graba (su usuario y la hora de la firma quedan guardados). La fecha
-    es la que escribe el responsable: la plataforma nunca la calcula.
+    Si este usuario puede anotar una reconstrucción: jefe de taller,
+    administrador o quien tiene acceso a las firmas de la empresa.
+    """
+    return bool(company_user is not None and (
+        company_user.role in RECONSTRUCT_ROLES
+        or getattr(company_user, "signature_access", False)
+    ))
+
+
+def can_send_to_sign(company_user) -> bool:
+    """
+    Whether this user may queue reconstructions for the digital signature.
+
+    ---
+
+    Si este usuario puede enviar reconstrucciones a la firma digital:
+    solo quien tiene acceso a las firmas de la empresa (Yolanda,
+    Alejandro y Miguel Ángel).
+    """
+    return bool(company_user is not None
+                and getattr(company_user, "signature_access", False))
+
+
+def create_reconstruction(machine, user, entry_date, result, entity,
+                          next_date=None, concept=""):
+    """
+    Records one review whose original record was lost (unsigned).
+
+    ---
+
+    Anota una revisión técnica periódica que se hizo pero cuyo registro
+    original se ha perdido de verdad (S154). Queda pendiente de la firma
+    digital: no cuenta como firmada hasta que el agente de firmas
+    devuelve la declaración firmada con el certificado de la empresa. La
+    fecha la escribe quien la reconstruye y tiene que caer dentro de un
+    hueco sin revisiones (entre dos revisiones, o desde la última hasta
+    hoy).
     """
     if not is_logbook_machine(machine):
         raise LogbookReadError(
             "Solo las grúas móviles A y H llevan libro historial."
         )
-    if user is None or user.role not in SIGN_ROLES:
+    if not can_reconstruct(user):
         raise LogbookReadError(
-            "Solo el responsable del taller puede firmar revisiones."
+            "Tu usuario no puede anotar reconstrucciones de revisiones."
         )
-    if entry_date is None or entry_date > timezone.localdate():
+    today = timezone.localdate()
+    if entry_date is None or entry_date > today:
         raise LogbookReadError(
             "La fecha de la revisión es obligatoria y no puede ser futura."
+        )
+    gaps = review_gaps(review_rows(machine), today=today)
+    if not any(gap["start"] < entry_date < gap["end"] for gap in gaps):
+        raise LogbookReadError(
+            "El %s no cae en ningún hueco sin revisiones de %s: solo se "
+            "reconstruye una revisión que falta." % (
+                entry_date.strftime("%d/%m/%Y"), machine.code)
         )
     return MachineLogbookEntry.objects.create(
         machine=machine,
@@ -791,10 +861,262 @@ def annotate_review(machine, user, entry_date, result, entity,
         entity=(entity or "").strip()[:200],
         result=(result or "").strip()[:200],
         next_date=next_date,
-        signed_by=user,
-        signed_at=timezone.now(),
-        is_reconstructed=is_reconstructed,
+        is_reconstructed=True,
+        created_by=user,
     )
+
+
+def reconstruction_filename(row) -> str:
+    """
+    File name of the reconstruction declaration.
+
+    ---
+
+    Nombre del PDF de la declaración de una reconstrucción.
+    """
+    return "%s_RECONSTRUCCION_REVISION_%s_%d.pdf" % (
+        row.machine.code,
+        row.entry_date.strftime("%Y%m%d") if row.entry_date else "SF",
+        row.pk,
+    )
+
+
+def reconstruction_pdf(row) -> bytes:
+    """
+    The declaration of one reconstructed review, as PDF bytes.
+
+    ---
+
+    La declaración de una revisión reconstruida en PDF (weasyprint):
+    grúa, revisión, que el registro original se extravió y quién la
+    reconstruyó, con el pie de página en blanco para la firma digital.
+    """
+    from weasyprint import HTML
+
+    html = render_to_string("fleet/logbook_reconstruction_pdf.html", {
+        "row": row,
+        "machine": row.machine,
+        "created_by": _signer_name(row.created_by),
+        "generated_at": timezone.localtime(),
+    })
+    return HTML(string=html).write_pdf()
+
+
+def _signature_config() -> str:
+    """
+    AutoFirma -config for the visible signature of a declaration.
+
+    ---
+
+    La configuración de AutoFirma para la firma digital visible de la
+    declaración, igual que la de la pestaña Firmas (mismo texto, letra
+    y color), en el recuadro fijo del pie de la página 1.
+    """
+    from document_explorer import signed_forms_service as forms
+
+    x0, y0, x1, y1 = RECONSTRUCTION_SIGNATURE_RECT
+    params = [
+        ("signaturePage", 1),
+        ("signaturePositionOnPageLowerLeftX", x0),
+        ("signaturePositionOnPageLowerLeftY", y0),
+        ("signaturePositionOnPageUpperRightX", x1),
+        ("signaturePositionOnPageUpperRightY", y1),
+        ("layer2Text", forms.VISIBLE_TEXT),
+        ("layer2FontSize", forms.VISIBLE_FONT_SIZE),
+        ("layer2FontColor", "black"),
+    ]
+    return "\\n".join("%s=%s" % pair for pair in params)
+
+
+def send_to_sign(rows, signature, user):
+    """
+    Queue the declarations of pending reconstructions for the agent.
+
+    ---
+
+    Envía a la cola del agente de firmas (PC de Yolanda, con el
+    certificado de la empresa) las declaraciones de las reconstrucciones
+    pendientes. Solo quien tiene acceso a las firmas y solo con una
+    firma que tenga certificado. Devuelve el lote creado.
+    """
+    from document_explorer import signing_agent_service as agents
+
+    if not can_send_to_sign(user):
+        raise LogbookReadError(
+            "Solo quien tiene acceso a las firmas de la empresa puede "
+            "enviar reconstrucciones a la firma digital."
+        )
+    if signature is None or not (signature.certificate_cif
+                                 or signature.certificate_alias):
+        raise LogbookReadError(
+            "Elige una firma de la empresa con certificado digital."
+        )
+    rows = [row for row in rows if reconstruction_state(row) == "pending"]
+    if not rows:
+        raise LogbookReadError(
+            "No hay ninguna reconstrucción pendiente de firma en la "
+            "selección."
+        )
+    config = _signature_config()
+    documents = [
+        (reconstruction_filename(row), reconstruction_pdf(row), config)
+        for row in rows
+    ]
+    notes = [
+        {"file": name, "method": "Libro historial (reconstrucción)",
+         "notes": []}
+        for name, _data, _config in documents
+    ]
+    try:
+        job = agents.create_job(signature, documents, notes, user)
+    except agents.NoValidCertificate as exc:
+        raise LogbookReadError(str(exc)) from exc
+    files = {item.name: item for item in job.files.all()}
+    for row in rows:
+        row.signing_file = files[reconstruction_filename(row)]
+        row.signed_by = user
+        row.save(update_fields=["signing_file", "signed_by"])
+    logger.info(
+        "# [send_to_sign] %d reconstrucción(es) a la firma digital "
+        "(lote %s)", len(rows), job.pk,
+    )
+    return job
+
+
+def sync_reconstructions():
+    """
+    Close the reconstructions whose declaration the agent signed.
+
+    ---
+
+    Cierra las reconstrucciones cuya declaración ya ha firmado el
+    agente: guarda el PDF firmado como documento LIBRO_HISTORIAL de la
+    grúa (con la fecha de la revisión) y la marca firmada con el
+    certificado del lote. Si el agente dio error o el lote se canceló,
+    la reconstrucción vuelve a quedar pendiente de enviar.
+    Devuelve {"signed": n, "failed": n}.
+    """
+    from document_explorer import signing_agent_service as agents
+    from document_explorer.models import (
+        DocumentTypeCatalog, SignedFormFile,
+    )
+    from document_explorer.subject_upload_service import (
+        upload_subject_document,
+    )
+
+    signed = failed = 0
+    rows = MachineLogbookEntry.objects.filter(
+        is_reconstructed=True, signed_at__isnull=True,
+        signing_file__isnull=False,
+    ).select_related("machine", "signing_file__job", "signed_by")
+    document_type = None
+    for row in rows:
+        item = row.signing_file
+        if item.status == SignedFormFile.STATUS_ERROR:
+            logger.warning(
+                "# [sync_reconstructions] %s (%s): la firma falló: %s",
+                row.machine.code, row.pk, item.error,
+            )
+            row.signing_file = None
+            row.save(update_fields=["signing_file"])
+            failed += 1
+            continue
+        if item.status != SignedFormFile.STATUS_DONE:
+            continue
+        if document_type is None:
+            document_type = DocumentTypeCatalog.objects.get(
+                code=LOGBOOK_TYPE_CODE)
+        result = upload_subject_document(
+            subject=row.machine,
+            domain_content_type=_machine_content_type(),
+            document_type=document_type,
+            data=agents.signed_pdf(item),
+            original_filename=reconstruction_filename(row),
+            typed_date=None,
+            subject_label=row.machine.code,
+            uploaded_by=row.signed_by,
+            typed_issue_date=row.entry_date,
+            filename_date=row.entry_date,
+        )
+        row.signed_document = result["entry"]
+        row.signed_at = item.job.finished_at or timezone.now()
+        row.signed_certificate = (item.job.certificate_alias or "")[:255]
+        row.save(update_fields=[
+            "signed_document", "signed_at", "signed_certificate",
+        ])
+        signed += 1
+        logger.info(
+            "# [sync_reconstructions] %s: revisión del %s firmada "
+            "(documento %s)", row.machine.code, row.entry_date,
+            result["entry"].pk,
+        )
+    return {"signed": signed, "failed": failed}
+
+
+def unread_scans(limit=None):
+    """
+    Scans not read yet (any upload channel).
+
+    ---
+
+    Escaneos LIBRO_HISTORIAL de grúas A/H que todavía no se han leído,
+    hayan llegado por donde hayan llegado (pestaña Revisiones, ficha,
+    explorador de archivos).
+    """
+    read = set(
+        MachineLogbookSource.objects.values_list("document_id", flat=True)
+    )
+    pending = [
+        (entry, machine) for entry, machine in scan_documents()
+        if entry.pk not in read
+    ]
+    return pending[:limit] if limit else pending
+
+
+def read_and_store(entry, machine) -> dict:
+    """
+    Read one scan with Gemini and store its rows (errors are stored).
+
+    ---
+
+    Lee un escaneo con Gemini y guarda sus filas; si la lectura falla,
+    queda marcado con el error (se reintenta con el comando de lectura).
+    """
+    try:
+        parsed = read_scan(entry, machine)
+    except Exception as exc:  # noqa: BLE001 -- se anota y sigue
+        logger.warning("# [read_and_store] %s (%s): %s",
+                       machine.code, entry.pk, exc)
+        return store_scan(entry, machine, error=str(exc)[:2000])
+    return store_scan(entry, machine, parsed=parsed)
+
+
+def missing_reviews(today=None):
+    """
+    Gaps without reviews of every A/H crane, for the notices.
+
+    ---
+
+    Huecos sin revisiones de todas las grúas A/H, para los avisos:
+    [{"machine", "gaps", "reviews"}], solo las grúas con algún hueco o
+    sin ninguna revisión. Cada hueco es la revisión que hay que buscar
+    en su libro y escanear (o, si se perdió, reconstruir).
+    """
+    today = today or timezone.localdate()
+    result = []
+    machines = MachineAsset.objects.filter(
+        code__regex=r"^[AaHh][0-9]",
+    ).order_by("code")
+    for machine in machines:
+        if not is_logbook_machine(machine):
+            continue
+        reviews = review_rows(machine)
+        gaps = review_gaps(reviews, today=today)
+        if gaps or not reviews:
+            result.append({
+                "machine": machine, "gaps": gaps, "reviews": len(reviews),
+            })
+    return result
 
 
 def default_maintainer(machine) -> str:

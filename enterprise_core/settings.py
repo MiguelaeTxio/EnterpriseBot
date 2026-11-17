@@ -390,6 +390,13 @@ CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_REJECT_ON_WORKER_LOST = True
 
 CELERY_BEAT_SCHEDULE = {
+    # S154 (H23): libro historial de las grúas A/H -- lee los escaneos
+    # nuevos (las revisiones que faltaban, subidas por cualquier vía) y
+    # cierra las reconstrucciones ya firmadas en el PC de Yolanda.
+    'logbook-pipeline': {
+        'task':     'fleet.tasks.logbook_pipeline_task',
+        'schedule': crontab(minute='*/10'),
+    },
     # S149: lecturas de albaranes cortadas a medias (un reinicio de
     # Celery en un despliegue) se reanudan solas donde se quedaron.
     'resume-albaran-batches': {

@@ -20,11 +20,12 @@
 {% block content %}
 {% comment %}
 H23 (S154, invasora). Revisiones técnicas periódicas de la grúa: las de
-los libros escaneados y las anotadas y firmadas aquí por el responsable,
-con los huecos de más de seis meses sin revisión a la vista (directriz
-4.24). La plataforma nunca rellena un hueco: cada revisión la anota y la
-firma el responsable con su fecha real; si el registro original se
-extravió, la revisión se marca como reconstruida y el libro lo dice.
+los libros escaneados y las reconstruidas, con los huecos de más de seis
+meses sin revisión a la vista (directriz 4.24). Un hueco se cubre
+buscando la revisión en su libro y subiendo el escaneo (se lee solo).
+Solo si el registro se perdió de verdad se anota una reconstrucción,
+que no vale hasta la firma digital con el certificado de la empresa en
+el PC de Yolanda (la envía a firmar quien tiene acceso a las firmas).
 {% endcomment %}
 {% include "panel/machine_workshop/_header.html" %}
 
@@ -121,24 +122,52 @@ extravió, la revisión se marca como reconstruida y el libro lo dice.
                 <div class="row g-1">
                     <div class="col-md-6 border-end pe-2">
                         <div class="small text-muted fw-bold">Con la selección</div>
-                        <form method="post" action="{% url 'panel:machine_review_remove' pk=machine.pk %}" id="mw-remove-form"
-                              onsubmit="return confirm('¿Quitar las revisiones firmadas seleccionadas? Las de los libros escaneados no se tocan.');">
+                        {% if can_send_to_sign %}
+                        <form method="post" action="{% url 'panel:machine_review_send_to_sign' pk=machine.pk %}" class="mw-selection-form mb-1"
+                              onsubmit="return confirm('¿Enviar las reconstrucciones seleccionadas a la firma digital? Las firma el agente del PC de Yolanda con el certificado de la empresa.');">
                             {% csrf_token %}
-                            <div id="mw-remove-selected"></div>
+                            <div class="mw-selection-holder"></div>
+                            {% if signatures %}
+                            <select class="form-select form-select-sm mb-1" name="signature" required title="Firma de la empresa con certificado digital">
+                                {% for signature in signatures %}
+                                <option value="{{ signature.pk }}">{{ signature.label }} ({{ signature.company }})</option>
+                                {% endfor %}
+                            </select>
+                            <button type="submit" class="btn btn-sm btn-outline-primary mw-needs-selection" disabled>
+                                <i class="bi bi-patch-check me-1"></i>Enviar a firma digital
+                            </button>
+                            {% else %}
+                            <div class="small text-muted">No hay ninguna firma de empresa con certificado digital (Documentación → Firmas).</div>
+                            {% endif %}
+                        </form>
+                        {% endif %}
+                        <form method="post" action="{% url 'panel:machine_review_remove' pk=machine.pk %}" class="mw-selection-form"
+                              onsubmit="return confirm('¿Quitar las reconstrucciones pendientes seleccionadas? Las escaneadas y las ya enviadas a firmar no se tocan.');">
+                            {% csrf_token %}
+                            <div class="mw-selection-holder"></div>
                             <button type="submit" class="btn btn-sm btn-outline-danger mw-needs-selection" disabled
-                                    title="Quita las revisiones firmadas seleccionadas (solo las tuyas, o cualquiera si eres administrador)">
-                                <i class="bi bi-x-circle me-1"></i>Quitar firmadas
+                                    title="Quita las reconstrucciones pendientes seleccionadas (las tuyas, o cualquiera si eres administrador)">
+                                <i class="bi bi-x-circle me-1"></i>Quitar pendientes
                             </button>
                         </form>
                     </div>
                     <div class="col-md-6 ps-2">
                         <div class="small text-muted fw-bold">Revisiones y libro</div>
                         <div class="d-flex flex-wrap gap-1">
-                            {% if can_sign %}
-                            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#reviewSignModal">
-                                <i class="bi bi-pen me-1"></i>Anotar y firmar revisión
+                            {% if can_upload_scan %}
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#reviewScanModal">
+                                <i class="bi bi-upload me-1"></i>Subir escaneo de revisión
                             </button>
                             {% endif %}
+                            {% if can_reconstruct %}
+                            <button type="button" class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#reviewReconstructModal">
+                                <i class="bi bi-journal-x me-1"></i>Reconstruir revisión extraviada
+                            </button>
+                            {% endif %}
+                            <a class="btn btn-sm btn-outline-secondary" href="{{ gaps_url }}"
+                               title="Revisiones que faltan en todas las grúas A y H">
+                                <i class="bi bi-exclamation-triangle me-1"></i>Revisiones que faltan
+                            </a>
                             <a class="btn btn-sm btn-outline-success" href="{% url 'panel:machine_logbook_external' pk=machine.pk %}"
                                title="Libro para compartir con empresas de fuera: sin nombres de mecánicos y con la familia y la subfamilia de la avería">
                                 <i class="bi bi-file-earmark-arrow-down me-1"></i>Libro para externos
@@ -195,68 +224,100 @@ extravió, la revisión se marca como reconstruida y el libro lo dice.
 </div>
 {% include "panel/_fixed_list_layout.html" with top_id="mw-top-panel" bottom_id="mw-bottom-panel" %}
 <script>
-// S154: "Quitar firmadas" lleva las claves seleccionadas (r<pk>).
-document.getElementById("mw-remove-form").addEventListener("submit", function () {
-    var holder = document.getElementById("mw-remove-selected");
-    holder.innerHTML = "";
-    document.getElementById("mw-selected-ids").value.split(",").forEach(function (key) {
-        if (!key) { return; }
-        var input = document.createElement("input");
-        input.type = "hidden";
-        input.name = "selected";
-        input.value = key;
-        holder.appendChild(input);
+// S154: "Enviar a firma digital" y "Quitar pendientes" llevan las
+// claves seleccionadas (r<pk>).
+document.querySelectorAll(".mw-selection-form").forEach(function (form) {
+    form.addEventListener("submit", function () {
+        var holder = form.querySelector(".mw-selection-holder");
+        holder.innerHTML = "";
+        document.getElementById("mw-selected-ids").value.split(",").forEach(function (key) {
+            if (!key) { return; }
+            var input = document.createElement("input");
+            input.type = "hidden";
+            input.name = "selected";
+            input.value = key;
+            holder.appendChild(input);
+        });
     });
 });
 </script>
-{% if can_sign %}
+{% if can_upload_scan %}
 {% comment %}
-Anotar y firmar: la fecha la escribe el responsable (nunca se propone
-una); la empresa mantenedora se propone con la de la última revisión
-escaneada. Al guardar quedan su usuario y la hora de la firma.
+Subir el escaneo de la hoja del libro con la revisión que faltaba: se
+guarda como documento LIBRO_HISTORIAL de la grúa y se lee solo.
 {% endcomment %}
-<div class="modal fade" id="reviewSignModal" tabindex="-1">
+<div class="modal fade" id="reviewScanModal" tabindex="-1">
     <div class="modal-dialog">
-        <form class="modal-content" method="post" action="{% url 'panel:machine_review_sign' pk=machine.pk %}">
+        <form class="modal-content" method="post" enctype="multipart/form-data" action="{% url 'panel:machine_review_scan_upload' pk=machine.pk %}">
             {% csrf_token %}
             <div class="modal-header">
-                <h5 class="modal-title">Anotar y firmar revisión técnica periódica</h5>
+                <h5 class="modal-title">Subir escaneo de revisión</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <p class="small text-muted">Busca la revisión que falta en el libro de revisiones de la grúa y sube el escaneo de su hoja. Se lee sola en unos minutos y el hueco desaparece.</p>
                 <div class="row g-2">
+                    <div class="col-12">
+                        <label class="form-label form-label-sm" for="scan-file">Escaneo (PDF, JPG o PNG)</label>
+                        <input type="file" class="form-control form-control-sm" id="scan-file" name="scan" accept=".pdf,.jpg,.jpeg,.png" required>
+                    </div>
                     <div class="col-6">
-                        <label class="form-label form-label-sm" for="review-date">Fecha en que se hizo</label>
-                        <input type="date" class="form-control form-control-sm" id="review-date" name="entry_date" max="{{ today|date:'Y-m-d' }}" required>
-                    </div>
-                    <div class="col-6">
-                        <label class="form-label form-label-sm" for="review-next">Próxima revisión</label>
-                        <input type="date" class="form-control form-control-sm" id="review-next" name="next_date">
-                    </div>
-                    <div class="col-12">
-                        <label class="form-label form-label-sm" for="review-entity">Empresa mantenedora</label>
-                        <input type="text" class="form-control form-control-sm" id="review-entity" name="entity" maxlength="200" value="{{ default_maintainer }}" required>
-                    </div>
-                    <div class="col-12">
-                        <label class="form-label form-label-sm" for="review-result">Resultado</label>
-                        <input type="text" class="form-control form-control-sm" id="review-result" name="result" maxlength="200" required>
-                    </div>
-                    <div class="col-12">
-                        <label class="form-label form-label-sm" for="review-concept">Concepto u observaciones</label>
-                        <textarea class="form-control form-control-sm" id="review-concept" name="concept" rows="2"></textarea>
-                    </div>
-                    <div class="col-12">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="review-reconstructed" name="is_reconstructed" value="1">
-                            <label class="form-check-label small" for="review-reconstructed">Registro original extraviado: la revisión se hizo y se reconstruye ahora. El libro lo indicará así.</label>
-                        </div>
+                        <label class="form-label form-label-sm" for="scan-date">Fecha de la revisión</label>
+                        <input type="date" class="form-control form-control-sm" id="scan-date" name="review_date" max="{{ today|date:'Y-m-d' }}" required>
                     </div>
                 </div>
-                <p class="small text-muted mt-2 mb-0">Al pulsar «Firmar» la revisión queda a tu nombre como responsable, con la fecha y la hora de la firma.</p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
-                <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-pen me-1"></i>Firmar</button>
+                <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-upload me-1"></i>Subir</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+{% if can_reconstruct %}
+{% comment %}
+Reconstruir: solo si el registro original se perdió de verdad. La fecha
+la escribe quien la reconstruye (nunca se propone una) y tiene que caer
+en un hueco sin revisiones. Queda pendiente de la firma digital.
+{% endcomment %}
+<div class="modal fade" id="reviewReconstructModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="post" action="{% url 'panel:machine_review_reconstruct' pk=machine.pk %}">
+            {% csrf_token %}
+            <div class="modal-header">
+                <h5 class="modal-title">Reconstruir revisión extraviada</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning small py-2">Solo si la revisión se hizo y su registro original se ha perdido de verdad. Si está en el libro de revisiones, súbela escaneada.</div>
+                <div class="row g-2">
+                    <div class="col-6">
+                        <label class="form-label form-label-sm" for="rebuild-date">Fecha en que se hizo</label>
+                        <input type="date" class="form-control form-control-sm" id="rebuild-date" name="entry_date" max="{{ today|date:'Y-m-d' }}" required>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label form-label-sm" for="rebuild-next">Próxima revisión</label>
+                        <input type="date" class="form-control form-control-sm" id="rebuild-next" name="next_date">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label form-label-sm" for="rebuild-entity">Empresa mantenedora</label>
+                        <input type="text" class="form-control form-control-sm" id="rebuild-entity" name="entity" maxlength="200" value="{{ default_maintainer }}" required>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label form-label-sm" for="rebuild-result">Resultado</label>
+                        <input type="text" class="form-control form-control-sm" id="rebuild-result" name="result" maxlength="200" required>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label form-label-sm" for="rebuild-concept">Concepto u observaciones</label>
+                        <textarea class="form-control form-control-sm" id="rebuild-concept" name="concept" rows="2"></textarea>
+                    </div>
+                </div>
+                <p class="small text-muted mt-2 mb-0">Queda como «Reconstruida, pendiente de firma». Solo vale cuando se firma digitalmente con el certificado de la empresa desde el PC de Yolanda; el libro para externos no la incluye hasta entonces.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-sm btn-warning"><i class="bi bi-journal-x me-1"></i>Anotar reconstrucción</button>
             </div>
         </form>
     </div>

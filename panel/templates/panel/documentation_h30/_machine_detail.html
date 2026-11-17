@@ -643,6 +643,11 @@ puede ser es que la interfaz no informe de lo que pasa."
                     {{ work_lines_count }} parte{{ work_lines_count|pluralize }} · {{ work_lines_total_hours|floatformat:2 }} h ·
                     {{ workshop_documents_count }} documento{{ workshop_documents_count|pluralize }} en Libros historial
                 </p>
+                {% if logbook_missing_reviews %}
+                <div class="alert alert-warning small py-1 px-2 mb-2">
+                    <i class="bi bi-exclamation-triangle me-1"></i>Faltan revisiones técnicas periódicas: {{ logbook_missing_reviews }} hueco{{ logbook_missing_reviews|pluralize }} sin revisión. Búscalas en el libro de revisiones y súbelas escaneadas desde «Revisiones».
+                </div>
+                {% endif %}
                 {% if can_manage_workshop or show_logbook_button %}
                 <div class="d-flex flex-wrap gap-2">
                     {% if can_manage_workshop %}

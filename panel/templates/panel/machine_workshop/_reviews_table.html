@@ -1,9 +1,10 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/machine_workshop/_reviews_table.html #}
 {% comment %}
 H23 (S154, invasora). Tabla de revisiones técnicas periódicas de la
-grúa (directriz 4.24): revisiones escaneadas y firmadas, y los huecos de
-más de seis meses sin revisión en amarillo, sin casilla (no son
-filas que se puedan seleccionar ni rellenar solas).
+grúa (directriz 4.24): revisiones escaneadas y reconstruidas, y los
+huecos de más de seis meses sin revisión en amarillo, sin casilla. Solo
+se seleccionan las reconstrucciones pendientes de firma (para enviarlas
+a la firma digital o quitarlas).
 {% endcomment %}
 {% if rows %}
 <table class="table table-sm table-hover align-middle mb-0 small" id="mw-table">
@@ -25,7 +26,7 @@ filas que se puedan seleccionar ni rellenar solas).
         <tr class="table-warning">
             <td></td>
             <td class="mwc-date">{{ row.date|date:"d/m/Y" }} → {{ row.gap_end|date:"d/m/Y" }}</td>
-            <td class="mwc-concept mw-col-text"><i class="bi bi-exclamation-triangle me-1"></i>Sin revisión anotada en {{ row.gap_days }} días</td>
+            <td class="mwc-concept mw-col-text"><i class="bi bi-exclamation-triangle me-1"></i>Falta revisión: {{ row.gap_days }} días sin ninguna. Búscala en su libro y sube el escaneo</td>
             <td class="mwc-entity"></td>
             <td class="mwc-result"></td>
             <td class="mwc-next"></td>
@@ -35,7 +36,7 @@ filas que se puedan seleccionar ni rellenar solas).
         {% else %}
         <tr>
             <td>
-                {% if row.can_remove %}
+                {% if row.can_select %}
                 <input class="form-check-input mw-row-check" type="checkbox"
                        data-key="{{ row.key }}" data-label="{{ row.label }}">
                 {% endif %}
@@ -48,8 +49,10 @@ filas que se puedan seleccionar ni rellenar solas).
             <td class="mwc-origin">
                 {% if row.origin == "scanned" %}
                 {{ row.origin_label }}
-                {% else %}
+                {% elif row.origin == "signed" %}
                 <span class="badge bg-success-subtle text-success border border-success-subtle">{{ row.origin_label }}</span>
+                {% else %}
+                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">{{ row.origin_label }}</span>
                 {% endif %}
             </td>
             <td class="mwc-signed mw-col-text">{{ row.signature_note|default:"—" }}</td>
@@ -62,7 +65,7 @@ filas que se puedan seleccionar ni rellenar solas).
             <td></td>
             <td class="mwc-date">Total</td>
             <td class="mwc-concept">{{ totals.count }} revisi{{ totals.count|pluralize:"ón,ones" }}</td>
-            <td class="mwc-entity">{{ totals.signed }} firmada{{ totals.signed|pluralize }}</td>
+            <td class="mwc-entity">{{ totals.rebuilt }} reconstruida{{ totals.rebuilt|pluralize }}</td>
             <td class="mwc-result">{{ totals.gaps }} hueco{{ totals.gaps|pluralize }}</td>
             <td class="mwc-next"></td>
             <td class="mwc-origin"></td>
