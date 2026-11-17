@@ -1873,16 +1873,17 @@ def _list_value(row, key):
     if last is None:
         return ("" if key != "last" else
                 "Sin usuario del panel" if not row.has_account else "—")
+    # report.last_day es un diccionario (día, entrada, salida, última).
     if key == "last":
-        return last.day.strftime("%d/%m/%Y")
+        return last["day"].strftime("%d/%m/%Y")
     if key == "entry":
-        return (timezone.localtime(last.clock_in.pressed_at).strftime(
-            "%H:%M") if last.clock_in else "—")
+        return (timezone.localtime(last["clock_in"].pressed_at).strftime(
+            "%H:%M") if last["clock_in"] else "—")
     if key == "exit":
-        return (timezone.localtime(last.clock_out.pressed_at).strftime(
-            "%H:%M") if last.clock_out else "—")
+        return (timezone.localtime(last["clock_out"].pressed_at).strftime(
+            "%H:%M") if last["clock_out"] else "—")
     if key == "place":
-        return (last.last.municipality if last.last else "") or "—"
+        return (last["last"].municipality if last["last"] else "") or "—"
     return ""
 
 
