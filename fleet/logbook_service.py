@@ -625,6 +625,42 @@ def render_logbook_pdf(machine) -> bytes:
     return HTML(string=html).write_pdf()
 
 
+def _trash_same_day_books(machine, new_entry, user):
+    """
+    Sends earlier books generated today for this crane to the trash.
+
+    ---
+
+    Manda a la papelera del cubo los libros generados ese mismo día
+    para esta grúa, salvo el nuevo (Miguel Ángel, S154: el del mismo
+    día se sustituye, no se acumula como histórico con "_1"). Escritura
+    de índice pura (deleted_at/deleted_by), el blob no se toca, igual
+    que `trash_dossier_entry`.
+    """
+    from document_explorer.classification_service import (
+        trash_dossier_entry,
+    )
+    from document_explorer.models import DocumentIndexEntry
+
+    earlier = DocumentIndexEntry.objects.filter(
+        logbook_source__machine=machine,
+        logbook_source__kind=MachineLogbookSource.KIND_GENERATED,
+        deleted_at__isnull=True,
+        issue_date=new_entry.issue_date,
+    ).exclude(pk=new_entry.pk)
+    for old in earlier:
+        if user is not None:
+            old.deleted_at = timezone.now()
+            old.deleted_by = user
+            old.save(update_fields=["deleted_at", "deleted_by"])
+        elif not trash_dossier_entry(old):
+            continue
+        logger.info(
+            "# [generate_logbook] %s -> libro del mismo día %s a la "
+            "papelera", machine.code, old.name,
+        )
+
+
 def generate_logbook(machine, user=None):
     """
     Generates the logbook and stores it as the machine's document.
@@ -633,8 +669,9 @@ def generate_logbook(machine, user=None):
 
     Genera el libro y lo guarda en el cubo como documento
     LIBRO_HISTORIAL de la máquina (subida de siempre: nombre canónico,
-    sin pisar nunca un blob, sustitución de vigencia). Devuelve la
-    entrada del índice creada.
+    sin pisar nunca un blob, sustitución de vigencia). Un libro ya
+    generado ese mismo día para la grúa va a la papelera (S154).
+    Devuelve la entrada del índice creada.
     """
     from document_explorer.models import DocumentTypeCatalog
     from document_explorer.subject_upload_service import (
@@ -663,6 +700,7 @@ def generate_logbook(machine, user=None):
         machine=machine, document=entry,
         kind=MachineLogbookSource.KIND_GENERATED, created_by=user,
     )
+    _trash_same_day_books(machine, entry, user)
     logger.info(
         "# [generate_logbook] %s -> libro generado, documento %s",
         machine.code, entry.pk,
