@@ -506,6 +506,26 @@ def rematch(batch, people=None):
     return done
 
 
+# S149 (17/11): Gemini leyó años y meses imposibles (2020, 2021, 2024,
+# enero) y la IA creó días de fichaje enteros en esas fechas. Un
+# albarán solo se coteja si su fecha cae entre DAY_WINDOW días antes de
+# la carga y el día de la carga.
+DAY_WINDOW = 62
+
+
+def plausible_day(day, loaded_at):
+    """
+    Whether an albarán's date fits the day it was loaded.
+    ---
+    Si la fecha leída del albarán puede ser: no posterior al día de la
+    carga ni de más de DAY_WINDOW días antes.
+    """
+    if day is None:
+        return False
+    loaded = timezone.localdate(loaded_at or timezone.now())
+    return loaded - datetime.timedelta(days=DAY_WINDOW) <= day <= loaded
+
+
 def _fill(sheet, item, person):
     from hr_calendar.models import AlbaranSheet
 
@@ -529,9 +549,15 @@ def _fill(sheet, item, person):
                      sheet.work_out))
     if sheet.day is None:
         notes.append("Sin fecha legible.")
+    elif not plausible_day(sheet.day, getattr(sheet.batch, "created_at",
+                                              None)):
+        notes.append("Fecha dudosa (%s): revísala; no se coteja."
+                     % sheet.day.strftime("%d/%m/%Y"))
     if not has_times:
         notes.append("Sin horas legibles.")
-    legible = item.get("legible", True) and sheet.day and has_times
+    legible = (item.get("legible", True) and has_times
+               and plausible_day(sheet.day,
+                                 getattr(sheet.batch, "created_at", None)))
     sheet.status = (AlbaranSheet.Status.READ if legible
                     else AlbaranSheet.Status.UNREADABLE)
     sheet.note = " ".join(n for n in notes if n)[:255]
