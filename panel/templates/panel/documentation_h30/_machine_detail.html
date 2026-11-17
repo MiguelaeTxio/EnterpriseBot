@@ -247,7 +247,7 @@ puede ser es que la interfaz no informe de lo que pasa."
                                 {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}
                             </td>
                             <td class="stack-mobile-full">
-                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button><a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:documentation_document_view' pk=entry.pk %}?descargar=1" title="Descargar este documento" aria-label="Descargar"><i class="bi bi-download"></i></a>
                                 {% if entry.name|is_image_document %}
                                 <button type="button" class="btn btn-sm btn-outline-success" onclick="usarComoFotoMaquina({{ entry.pk }}, this)" title="Usar esta imagen como foto de la máquina"><i class="bi bi-truck"></i></button>
                                 {% endif %}
@@ -286,7 +286,7 @@ puede ser es que la interfaz no informe de lo que pasa."
                         <tr>
                             <td class="small stack-mobile-title">{{ entry.name }}</td>
                             <td class="stack-mobile-full">
-                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button><a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:documentation_document_view' pk=entry.pk %}?descargar=1" title="Descargar este documento" aria-label="Descargar"><i class="bi bi-download"></i></a>
                                 {% if entry.name|is_image_document %}
                                 <button type="button" class="btn btn-sm btn-outline-success" onclick="usarComoFotoMaquina({{ entry.pk }}, this)" title="Usar esta imagen como foto de la máquina"><i class="bi bi-truck"></i></button>
                                 {% endif %}

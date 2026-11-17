@@ -7712,19 +7712,27 @@ class CalendarResultsFragmentView(CompanyUserRequiredMixin, View):
 
 
 class DocumentViewView(CompanyUserRequiredMixin, View):
-    """GET: redirige a la URL firmada (GCS) real del documento -- 'Ver'."""
+    """
+    GET: redirige a la URL firmada (GCS) real del documento -- 'Ver'.
+    Con ?descargar=1 (S153), la misma URL pero como descarga, con el
+    nombre del documento.
+    """
 
     def get(self, request, pk):
         entry = get_object_or_404(
             DocumentIndexEntry, pk=pk, deleted_at__isnull=True,
         )
+        download = request.GET.get("descargar") == "1"
         # S147: confidencial (nómina): solo el trabajador y quien la
         # envió, descifrada aquí (nunca una URL firmada del cubo).
         if entry.is_confidential:
             from document_explorer.confidential import file_response
 
-            return file_response(entry, request.user.company_user)
-        url = generate_signed_url(entry.bucket, entry.blob_name)
+            return file_response(entry, request.user.company_user,
+                                 attachment=download)
+        url = generate_signed_url(
+            entry.bucket, entry.blob_name,
+            download_name=(entry.name or "documento") if download else "")
         return redirect(url)
 
 

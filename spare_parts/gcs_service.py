@@ -239,7 +239,8 @@ def upload_file(bucket_name: str, blob_name: str, file_path: str) -> str:
     return blob_name
 
 
-def generate_signed_url(bucket_name: str, blob_name: str) -> str:
+def generate_signed_url(bucket_name: str, blob_name: str,
+                        download_name: str = "") -> str:
     """
     Genera una URL V4 firmada, válida durante SIGNED_URL_EXPIRATION,
     para leer (GET) el objeto indicado. Se genera al vuelo en cada
@@ -250,8 +251,16 @@ def generate_signed_url(bucket_name: str, blob_name: str) -> str:
     client = get_storage_client()
     bucket = client.bucket(bucket_name)
     blob = bucket.blob(blob_name)
+    extra = {}
+    if download_name:
+        # S153: descarga directa (no abrir en el navegador) con su nombre.
+        from urllib.parse import quote
+
+        extra["response_disposition"] = (
+            "attachment; filename*=UTF-8''%s" % quote(download_name))
     return blob.generate_signed_url(
         version='v4', expiration=SIGNED_URL_EXPIRATION, method='GET',
+        **extra,
     )
 
 

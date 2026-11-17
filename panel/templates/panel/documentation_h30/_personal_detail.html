@@ -439,7 +439,7 @@ H30 (S128), punto 6: tablas `stack-mobile` -- en el móvil cada fila es una tarj
                 {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}
             </td>
             <td class="stack-mobile-full">
-                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>{% if entry.source_dossier_pk %}<button type="button" class="btn btn-sm btn-outline-secondary" title="Abrir el dossier del que se sacó este documento" onclick="openSplitModal({{ entry.source_dossier_pk }})">Original</button>{% endif %}
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button><a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:documentation_document_view' pk=entry.pk %}?descargar=1" title="Descargar este documento" aria-label="Descargar"><i class="bi bi-download"></i></a>{% if entry.source_dossier_pk %}<button type="button" class="btn btn-sm btn-outline-secondary" title="Abrir el dossier del que se sacó este documento" onclick="openSplitModal({{ entry.source_dossier_pk }})">Original</button>{% endif %}
                 {% if entry.name|is_image_document %}
                 <button type="button" class="btn btn-sm btn-outline-success" onclick="usarComoFotoPerfil({{ entry.pk }}, this)" title="Usar esta imagen como foto de perfil"><i class="bi bi-person-badge"></i></button>
                 {% endif %}
@@ -752,7 +752,7 @@ vacaciones).
                 {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}
             </td>
             <td class="stack-mobile-full">
-                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>{% if entry.source_dossier_pk %}<button type="button" class="btn btn-sm btn-outline-secondary" title="Abrir el dossier del que se sacó este documento" onclick="openSplitModal({{ entry.source_dossier_pk }})">Original</button>{% endif %}
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button><a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:documentation_document_view' pk=entry.pk %}?descargar=1" title="Descargar este documento" aria-label="Descargar"><i class="bi bi-download"></i></a>{% if entry.source_dossier_pk %}<button type="button" class="btn btn-sm btn-outline-secondary" title="Abrir el dossier del que se sacó este documento" onclick="openSplitModal({{ entry.source_dossier_pk }})">Original</button>{% endif %}
                 {% if entry.name|is_image_document %}
                 <button type="button" class="btn btn-sm btn-outline-success" onclick="usarComoFotoPerfil({{ entry.pk }}, this)" title="Usar esta imagen como foto de perfil"><i class="bi bi-person-badge"></i></button>
                 {% endif %}
@@ -866,7 +866,7 @@ vez de una lista única sin estructura.
                                 {% if entry.expiry_date %}{{ entry.expiry_date }}{% elif entry.issue_date %}<span class="text-muted small">Emisión:</span> {{ entry.issue_date }}{% else %}—{% endif %}
                             </td>
                             <td class="stack-mobile-full">
-                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button>{% if entry.source_dossier_pk %}<button type="button" class="btn btn-sm btn-outline-secondary" title="Abrir el dossier del que se sacó este documento" onclick="openSplitModal({{ entry.source_dossier_pk }})">Original</button>{% endif %}
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=entry.pk %}')">Ver</button><a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:documentation_document_view' pk=entry.pk %}?descargar=1" title="Descargar este documento" aria-label="Descargar"><i class="bi bi-download"></i></a>{% if entry.source_dossier_pk %}<button type="button" class="btn btn-sm btn-outline-secondary" title="Abrir el dossier del que se sacó este documento" onclick="openSplitModal({{ entry.source_dossier_pk }})">Original</button>{% endif %}
                                 {% if entry.name|is_image_document %}
                                 <button type="button" class="btn btn-sm btn-outline-success" onclick="usarComoFotoPerfil({{ entry.pk }}, this)" title="Usar esta imagen como foto de perfil"><i class="bi bi-person-badge"></i></button>
                                 {% endif %}
@@ -934,7 +934,7 @@ vez de una lista única sin estructura.
                                     <i class="bi bi-arrow-return-right text-muted"></i>
                                     <span>{{ sub.document_type.label }}</span>
                                     <span class="text-muted">{% if sub.expiry_date %}{{ sub.expiry_date }}{% elif sub.issue_date %}Emisión: {{ sub.issue_date }}{% endif %}</span>
-                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=sub.pk %}')">Ver</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openDocumentViewer('{% url 'panel:documentation_document_view' pk=sub.pk %}')">Ver</button><a class="btn btn-sm btn-outline-secondary" href="{% url 'panel:documentation_document_view' pk=sub.pk %}?descargar=1" title="Descargar este documento" aria-label="Descargar"><i class="bi bi-download"></i></a>
                                     <button type="button" class="btn btn-sm btn-outline-warning"
                                             onclick="openChangeTypeModal({{ sub.pk }}, '{{ sub.document_type.label|escapejs }}')">Tipo</button>
                                     {% if sub.name|lower|slice:"-4:" == ".pdf" %}<button type="button" class="btn btn-sm btn-outline-secondary" title="Sacar de este archivo los documentos que lleva dentro (un DNI en un dossier, p. ej.)"

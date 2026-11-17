@@ -150,14 +150,18 @@ panel/static/panel/js/document_download_picker.js.
                                         {% elif row.state == "caducado" %}<span class="badge text-bg-danger">{{ row.state_label }}</span>
                                         {% else %}<span class="badge text-bg-secondary">{{ row.state_label }}</span>{% endif %}
                                     </td>
-                                    <td class="text-end">
+                                    <td class="text-end text-nowrap">
+                                        {# S153: descarga directa de un solo documento, en la propia fila (Miguel Ángel). #}
+                                        <a class="btn btn-sm btn-link text-dark py-0" href="{% url 'panel:documentation_document_view' pk=row.entry.pk %}?descargar=1"
+                                           title="Descargar este documento" aria-label="Descargar"><i class="bi bi-download"></i></a>
                                         {# S136: acciones de la fila en el menú de tres puntos (4.24, regla 9). #}
-                                        <div class="dropdown">
+                                        <div class="dropdown d-inline-block">
                                             <button class="btn btn-sm btn-link text-dark py-0" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" title="Acciones">
                                                 <i class="bi bi-three-dots-vertical"></i>
                                             </button>
                                             <ul class="dropdown-menu dropdown-menu-end">
                                                 <li><a class="dropdown-item" href="{% url 'panel:documentation_document_view' pk=row.entry.pk %}" target="_blank" rel="noopener"><i class="bi bi-eye me-1"></i>Ver</a></li>
+                                                <li><a class="dropdown-item" href="{% url 'panel:documentation_document_view' pk=row.entry.pk %}?descargar=1"><i class="bi bi-download me-1"></i>Descargar</a></li>
                                                 {% if can_trash %}<li><button type="button" class="dropdown-item text-danger ddp-row-trash"><i class="bi bi-trash me-1"></i>Enviar a la papelera</button></li>{% endif %}
                                             </ul>
                                         </div>
