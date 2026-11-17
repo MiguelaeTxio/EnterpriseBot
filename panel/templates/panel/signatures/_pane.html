@@ -80,6 +80,8 @@ document_explorer/signed_forms_service.py.
                         <i class="bi bi-pen me-1"></i>Generar documentos
                     </button>
                     <span class="small ms-2" id="sig-generate-msg"></span>
+                    {# S153: cancelar un lote que aún se está firmando. #}
+                    <button type="button" class="btn btn-sm btn-outline-danger ms-2 d-none" id="sig-cancel-btn">Cancelar</button>
                     <ol class="small mt-2 mb-0 d-none" id="sig-generate-notes"></ol>
                 </form>
             </div>
@@ -336,9 +338,18 @@ document_explorer/signed_forms_service.py.
                     .then(function (response) { return response.json(); })
                     .then(function (body) {
                         if (body.error) { say(msg, body.error, false); resolve(); return; }
+                        var cancelBtn = document.getElementById("sig-cancel-btn");
                         if (body.status === "pending") {
                             say(msg, "Firmando digitalmente… " + body.done + "/" + body.total + " (el agente tiene que estar encendido)", true);
+                            cancelBtn.dataset.url = body.cancel_url;
+                            cancelBtn.classList.remove("d-none");
                             setTimeout(tick, 4000);
+                            return;
+                        }
+                        cancelBtn.classList.add("d-none");
+                        if (body.status === "cancelled") {
+                            say(msg, "Cancelado: no se ha firmado nada" + (body.done ? " más (ya firmados " + body.done + "/" + body.total + ")" : "") + ".", false);
+                            resolve();
                             return;
                         }
                         var ok = body.status === "done";
@@ -352,6 +363,19 @@ document_explorer/signed_forms_service.py.
             tick();
         });
     }
+
+    document.getElementById("sig-cancel-btn").addEventListener("click", function () {
+        var btn = this;
+        if (!btn.dataset.url) { return; }
+        btn.disabled = true;
+        fetch(btn.dataset.url, {method: "POST", headers: {"X-CSRFToken": csrf()}})
+            .then(function (response) { return response.json(); })
+            .then(function (body) {
+                btn.disabled = false;
+                if (body.error) { window.alert(body.error); }
+            })
+            .catch(function () { btn.disabled = false; });
+    });
 
     document.getElementById("sig-generate-btn").addEventListener("click", function () {
         var btn = this;

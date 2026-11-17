@@ -141,6 +141,7 @@ from panel.views_signatures import (
     SignatureTabView,
     SignedFormsGenerateView,
     SignedJobDownloadView,
+    SignedJobCancelView,
     SignedJobStatusView,
     SigningAgentCreateView,
     SigningAgentDeactivateView,
@@ -2505,6 +2506,11 @@ urlpatterns = [
         "documentacion/firmas/lote/<int:pk>/",
         SignedJobStatusView.as_view(),
         name="signed_job_status",
+    ),
+    path(
+        "documentacion/firmas/lote/<int:pk>/cancelar/",
+        SignedJobCancelView.as_view(),
+        name="signed_job_cancel",
     ),
     path(
         "documentacion/firmas/lote/<int:pk>/descargar/",

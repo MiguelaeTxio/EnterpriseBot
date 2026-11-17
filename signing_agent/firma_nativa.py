@@ -599,6 +599,29 @@ def parse_config(config):
         return None
 
 
+def parse_page_placements(config):
+    """
+    {page: box} from the panel's «pagePlacements=» line.
+    ---
+    Los huecos al pie de cada página que manda el panel
+    («pagePlacements=2:x0,y0,x1,y1;3:...», puntos PDF).
+    """
+    text = (config or "").replace("\\n", "\n")
+    result = {}
+    for line in text.splitlines():
+        if not line.startswith("pagePlacements="):
+            continue
+        for part in line.split("=", 1)[1].split(";"):
+            try:
+                page, box = part.split(":", 1)
+                values = tuple(float(v) for v in box.split(","))
+            except ValueError:
+                continue
+            if len(values) == 4:
+                result[int(page)] = values
+    return result
+
+
 def placements(pdf_bytes, config, all_pages):
     """
     [(page 1-based, box)] where to sign.
@@ -610,6 +633,7 @@ def placements(pdf_bytes, config, all_pages):
     from pyhanko.pdf_utils.reader import PdfFileReader
 
     main = parse_config(config)
+    footer = parse_page_placements(config)
     reader = PdfFileReader(io.BytesIO(pdf_bytes), strict=False)
     total = int(reader.root["/Pages"]["/Count"])
     if main is None:
@@ -624,6 +648,9 @@ def placements(pdf_bytes, config, all_pages):
     for number in range(1, total + 1):
         if number == page:
             result.append((number, (llx, lly, urx, ury)))
+        elif number in footer:
+            # S153: hueco en blanco al pie buscado por el panel.
+            result.append((number, footer[number]))
         else:
             result.append((number, (llx, OTHER_PAGES_BOTTOM, urx,
                                     OTHER_PAGES_BOTTOM + height)))

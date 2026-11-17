@@ -341,6 +341,8 @@ class SignedJobStatusView(SignatureAccessMixin, View):
                        if f.status == SignedFormFile.STATUS_ERROR],
             "download_url": reverse("panel:signed_job_download",
                                     args=[job.pk]) if done else "",
+            "cancel_url": reverse("panel:signed_job_cancel",
+                                  args=[job.pk]),
         })
 
 
@@ -497,6 +499,26 @@ class AgentHeartbeatView(AgentApiMixin, View):
 
 
 @method_decorator(csrf_exempt, name="dispatch")
+class SignedJobCancelView(SignatureAccessMixin, View):
+    """
+    POST: cancel a digital-signature job still in progress.
+    ---
+    POST: cancela un lote de firma digital que aún no ha terminado.
+    """
+
+    def post(self, request, pk):
+        job = SignedFormJob.objects.filter(pk=pk).first()
+        if job is None:
+            return JsonResponse({"error": "Ese lote ya no existe."},
+                                status=404)
+        if not agents.cancel_job(job, request.user.company_user):
+            return JsonResponse({"error": "Ese lote ya ha terminado."},
+                                status=400)
+        logger.info("# [FIRMAS] Lote %s cancelado por %s.", job.pk,
+                    request.user.username)
+        return JsonResponse({"ok": True})
+
+
 class AgentPendingView(AgentApiMixin, View):
     """
     POST: next documents to sign.
@@ -557,6 +579,7 @@ class AgentResultView(AgentApiMixin, View):
         item = SignedFormFile.objects.select_related("job").filter(
             pk=pk, status=SignedFormFile.STATUS_SIGNING).first()
         if item is None:
+            # S153: también si el lote se canceló mientras se firmaba.
             return JsonResponse({"error": "no está pendiente"}, status=404)
         upload = request.FILES.get("signed")
         if upload is not None:

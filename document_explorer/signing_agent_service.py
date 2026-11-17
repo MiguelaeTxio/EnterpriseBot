@@ -266,6 +266,14 @@ def create_job(signature, documents, notes, by, all_pages=False):
         alias = "%s (%s) · %s · hasta %s" % (
             cert["company"], cert["cif"], cert["holder"],
             cert["expires"].strftime("%d/%m/%Y"))
+    if all_pages:
+        # S153: sitio en blanco al pie de cada una de las demás páginas.
+        from document_explorer.signed_forms_service import page_placements
+
+        documents = [
+            (name, data, "\\n".join(filter(None, [
+                config or "", page_placements(data, config)])))
+            for name, data, config in documents]
     with transaction.atomic():
         job = SignedFormJob.objects.create(
             signature=signature,
@@ -324,6 +332,27 @@ def signed_pdf(item):
     El PDF firmado de un documento.
     """
     return decrypt(bytes(item.signed_encrypted))
+
+
+def cancel_job(job, by=None):
+    """
+    Cancel a job still being signed; returns True if it was pending.
+    ---
+    S153 (Miguel Ángel: "deberíamos de incluir un botón para cancelar"):
+    anula un lote que aún no ha terminado. Lo que quedaba por firmar se
+    marca como cancelado y lo que el agente devuelva después se tira.
+    """
+    if job.status != SignedFormJob.STATUS_PENDING:
+        return False
+    who = by.user.get_full_name() if by is not None else ""
+    job.files.filter(status__in=[SignedFormFile.STATUS_PENDING,
+                                 SignedFormFile.STATUS_SIGNING]).update(
+        status=SignedFormFile.STATUS_ERROR,
+        error=("Cancelado por %s" % who) if who else "Cancelado")
+    job.status = SignedFormJob.STATUS_CANCELLED
+    job.finished_at = timezone.now()
+    job.save(update_fields=["status", "finished_at"])
+    return True
 
 
 def finish_file(item, signed=None, error=""):

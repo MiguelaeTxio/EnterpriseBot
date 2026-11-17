@@ -545,6 +545,64 @@ def _visible_rect(pdf_bytes, signature_box):
     return page_number, rect, page_rect.height
 
 
+def page_placements(pdf_bytes, config):
+    """
+    Blank footer spots for the digital signature on every other page.
+    ---
+    S153 (Miguel Ángel, prueba de Yolanda: "en algunas páginas no ha
+    firmado bien"): con «todas las páginas», el recuadro de la firma
+    digital del resto de páginas iba siempre a 24 puntos del borde de
+    abajo y tapaba el pie de página. Para cada página (menos la de la
+    firma) se busca un hueco en blanco del mismo tamaño en la parte de
+    abajo, mirando la página como imagen: de abajo arriba hasta media
+    página, a la altura de la firma, centrado, a la izquierda o a la
+    derecha. Devuelve la línea «pagePlacements=página:x0,y0,x1,y1;...»
+    (puntos PDF, origen abajo a la izquierda) para el agente, o "" si
+    no hay huecos.
+    """
+    values = dict(line.split("=", 1) for line in
+                  (config or "").replace("\\n", "\n").splitlines()
+                  if "=" in line)
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    except (fitz.FileDataError, RuntimeError, ValueError):
+        return ""
+    try:
+        main_page = int(values["signaturePage"])
+        llx = float(values["signaturePositionOnPageLowerLeftX"])
+        width = float(values["signaturePositionOnPageUpperRightX"]) - llx
+        height = (float(values["signaturePositionOnPageUpperRightY"])
+                  - float(values["signaturePositionOnPageLowerLeftY"]))
+    except (KeyError, ValueError):
+        main_page, llx = doc.page_count, None
+        width, height = VISIBLE_MIN_WIDTH + 30, VISIBLE_HEIGHT
+    dpi = 50
+    scale = dpi / 72
+    parts = []
+    for index, page in enumerate(doc, start=1):
+        if index == main_page:
+            continue
+        pix = page.get_pixmap(dpi=dpi, colorspace=fitz.csGRAY, alpha=False)
+        page_rect = page.rect
+        xs = [x for x in (llx, (page_rect.width - width) / 2, 36,
+                          page_rect.width - 36 - width) if x is not None]
+        found = None
+        bottom = page_rect.height - 20
+        while found is None and bottom - height > page_rect.height * 0.5:
+            for x in xs:
+                rect = fitz.Rect(x, bottom - height, x + width, bottom)
+                if _blank(pix, scale, rect, page_rect):
+                    found = rect
+                    break
+            bottom -= 6
+        if found is not None:
+            parts.append("%d:%.1f,%.1f,%.1f,%.1f" % (
+                index, found.x0, page_rect.height - found.y1, found.x1,
+                page_rect.height - found.y0))
+    doc.close()
+    return "pagePlacements=" + ";".join(parts) if parts else ""
+
+
 def autofirma_config(pdf_bytes, signature_box):
     """
     AutoFirma -config for a visible digital signature near the stamp.

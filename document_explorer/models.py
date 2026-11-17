@@ -2523,10 +2523,12 @@ class SignedFormJob(models.Model):
     STATUS_PENDING = "pending"
     STATUS_DONE = "done"
     STATUS_ERROR = "error"
+    STATUS_CANCELLED = "cancelled"
     STATUS_CHOICES = [
         (STATUS_PENDING, "Pendiente de firma digital"),
         (STATUS_DONE, "Firmado"),
         (STATUS_ERROR, "Con errores"),
+        (STATUS_CANCELLED, "Cancelado"),
     ]
 
     signature = models.ForeignKey(
