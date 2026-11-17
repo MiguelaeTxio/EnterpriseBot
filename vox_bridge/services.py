@@ -246,6 +246,49 @@ INITIAL_GREETING_FALLBACK = (
 # VOICE ORCHESTRATION SERVICE / SERVICIO DE ORQUESTACIÓN DE VOZ
 # ---------------------------------------------------------------------------
 
+# S153: añadido al saludo inicial para que el modelo hable antes de
+# invocar ninguna función.
+GREETING_FIRST_RULE = (
+    "\n\nEmpieza a hablar ya con el saludo. En este primer turno no "
+    "invoques ninguna función: las funciones solo después de que el "
+    "llamante haya hablado."
+)
+
+
+def prepare_call(twilio_number: str, caller_number: str) -> dict:
+    """
+    Builds everything the call needs from the database, ahead of time.
+    ---
+    S153 (Miguel Ángel: "sigue siendo mucho tiempo sin hablar"): todo lo
+    que la llamada necesita de la base de datos (configuración del IVR y
+    si quien llama puede dar servicios), para prepararlo en cuanto entra
+    la llamada (POST de Twilio) mientras suena la locución de entrada, y
+    no después, cuando ya se ha abierto el WebSocket. Síncrona (ORM): se
+    llama con sync_to_async. Cada parte guarda su error en vez de lanzar.
+    """
+    from ivr_config.services import build_live_config
+
+    result = {"config": None, "config_error": None,
+              "service_user_pk": None, "service_instruction": "",
+              "service_error": None}
+    try:
+        result["config"] = build_live_config(twilio_number, caller_number)
+    except Exception as exc:
+        result["config_error"] = exc
+    try:
+        from budgets.service_intake import (
+            service_giver_for_call,
+            voice_instruction,
+        )
+        user = service_giver_for_call(twilio_number, caller_number)
+        if user is not None:
+            result["service_user_pk"] = user.pk
+            result["service_instruction"] = voice_instruction(user)
+    except Exception as exc:
+        result["service_error"] = exc
+    return result
+
+
 class VoiceOrchestrationService:
     """
     Manages the full lifecycle of a real-time voice session between a Twilio
@@ -690,19 +733,32 @@ class VoiceOrchestrationService:
         # en
         # BD, sin CallFlow activo, BD inaccesible), las constantes de fallback
         # establecidas en __init__() se preservan y la sesión continúa.
+        # S153: la configuración se prepara en cuanto entra la llamada
+        # (prepare_call, lanzada desde el POST de Twilio mientras suena la
+        # locución); si no llegó a lanzarse, se prepara aquí.
+        prepared_task = getattr(self, "prepared_task", None)
         try:
-            from asgiref.sync import sync_to_async
-            from ivr_config.services import build_live_config
+            if prepared_task is not None:
+                prepared = await prepared_task
+                logger.info("[CONFIG] Configuración preparada al entrar la "
+                            "llamada (POST de Twilio).")
+            else:
+                from asgiref.sync import sync_to_async
+                prepared = await sync_to_async(prepare_call)(
+                    self.twilio_number, self.caller_number)
+        except Exception as prepare_exc:
+            prepared = {"config": None, "config_error": prepare_exc,
+                        "service_user_pk": None, "service_instruction": "",
+                        "service_error": None}
+
+        if prepared["config"] is not None:
             (
                 self.system_instruction,
                 self.initial_greeting_text,
                 self.voice_name,
                 self.section_callflow_map,
                 self.general_call_flow,
-            ) = await sync_to_async(build_live_config)(
-                self.twilio_number,
-                self.caller_number,
-            )
+            ) = prepared["config"]
             logger.info(
                 f"[CONFIG] Configuración IVR dinámica cargada correctamente "
                 f"para el número '{self.twilio_number}' "
@@ -710,7 +766,8 @@ class VoiceOrchestrationService:
                 "Secciones con flujo propio: "
                 f"{len(self.section_callflow_map)}."
             )
-        except Exception as config_exc:
+        else:
+            config_exc = prepared["config_error"]
             logger.error(
                 f"[CONFIG] No se pudo cargar la configuración dinámica para "
                 f"'{self.twilio_number}': {type(config_exc).__name__}: "
@@ -718,39 +775,19 @@ class VoiceOrchestrationService:
                 "Usando SYSTEM_INSTRUCTION_FALLBACK e "
                 "INITIAL_GREETING_FALLBACK."
             )
-            # Fallback values were already set in __init__() — no reassignment
-            # needed.
-            # Los valores de fallback ya fueron establecidos en __init__() — no
-            # se
-            # necesita reasignación.
 
-        # H37 (S133): giving a service by phone. If the caller is an
-        # assistance supervisor (or admin), the call can also give
-        # services: instructions and tools of budgets.service_intake.
-        # Dar un servicio por teléfono. Si quien llama es supervisor de
-        # asistencia (o administrador), la llamada también puede dar
-        # servicios: instrucciones y herramientas de
-        # budgets.service_intake (reunión con Pepe, anexo V37 6.3).
-        self.service_user_pk = None
-        try:
-            from asgiref.sync import sync_to_async as _s2a_si
-            from budgets.service_intake import (
-                service_giver_for_call,
-                voice_instruction,
+        # H37 (S133): dar un servicio por teléfono (supervisor de
+        # asistencia o administrador): instrucciones y herramientas de
+        # budgets.service_intake.
+        self.service_user_pk = prepared["service_user_pk"]
+        if self.service_user_pk is not None:
+            self.system_instruction += prepared["service_instruction"]
+            logger.info(
+                f"[H37-SERVICIO] Llama {self.caller_number}, puede dar "
+                f"servicios (CompanyUser {self.service_user_pk})."
             )
-            _service_user = await _s2a_si(service_giver_for_call)(
-                self.twilio_number, self.caller_number,
-            )
-            if _service_user is not None:
-                self.service_user_pk = _service_user.pk
-                self.system_instruction += await _s2a_si(
-                    voice_instruction
-                )(_service_user)
-                logger.info(
-                    f"[H37-SERVICIO] Llama {self.caller_number}, puede dar "
-                    f"servicios (CompanyUser {self.service_user_pk})."
-                )
-        except Exception as service_exc:
+        if prepared["service_error"] is not None:
+            service_exc = prepared["service_error"]
             logger.error(
                 f"[H37-SERVICIO] No se pudo preparar el alta de servicios: "
                 f"{type(service_exc).__name__}: {service_exc}"
@@ -795,7 +832,10 @@ class VoiceOrchestrationService:
                                 "según la tabla IDENTIFICADORES DE SECCIÓN "
                                 "del "
                                 "system_instruction. "
-                                "Solo invoca esta función una vez por llamada."
+                                "Solo invoca esta función una vez por llamada. "
+                                "Nunca la invoques antes de haber saludado y "
+                                "de que el llamante haya explicado qué "
+                                "necesita."
                             ),
                             parameters={
                                 "type": "object",
@@ -1059,7 +1099,8 @@ class VoiceOrchestrationService:
                                 "Registra un resumen de la conversación en el "
                                 "sistema. "
                                 "Es obligatoria en todas las llamadas sin "
-                                "excepción."
+                                "excepción. Nunca al principio de la llamada: "
+                                "solo al terminar la conversación."
                             ),
                             parameters={
                                 "type": "object",
@@ -1356,7 +1397,14 @@ class VoiceOrchestrationService:
                     session.send_client_content(
                         turns=types.Content(
                             role="user",
-                            parts=[types.Part(text=self.initial_greeting_text)]
+                            # S153: que salude ya, sin invocar antes
+                            # ninguna función (route_to_section y
+                            # submit_call_summary se adelantaban al
+                            # saludo con contactos internos y lo
+                            # retrasaban).
+                            parts=[types.Part(text=(
+                                self.initial_greeting_text
+                                + GREETING_FIRST_RULE))]
                         ),
                         turn_complete=True
                     ),

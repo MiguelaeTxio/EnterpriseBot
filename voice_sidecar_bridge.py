@@ -238,6 +238,22 @@ class UniversalVoiceBridge:
         self._pending_twilio_number = twilio_number
         self._pending_caller_number = caller_number
 
+        # S153: preparar ya la configuración de la llamada (BD) mientras
+        # Twilio reproduce la locución y abre el WebSocket; la sesión de
+        # voz la recoge al arrancar (VoiceOrchestrationService.prepared_task).
+        try:
+            from asgiref.sync import sync_to_async
+            from vox_bridge.services import prepare_call
+
+            self._pending_prepared_task = asyncio.ensure_future(
+                sync_to_async(prepare_call)(twilio_number, caller_number))
+        except Exception as prep_exc:
+            logger.error(
+                f"# [HTTP POST] No se pudo lanzar la preparación de la "
+                f"llamada: {prep_exc}. Se preparará al abrir el WebSocket."
+            )
+            self._pending_prepared_task = None
+
         # Derive the WSS URL from the request host header so that the TwiML
         # always points to the correct tunnel regardless of the ngrok session.
         # The /media path is the registered WebSocket upgrade endpoint.
@@ -440,6 +456,12 @@ class UniversalVoiceBridge:
                             twilio_number=twilio_number,
                             caller_number=caller_number,
                         )
+                        # S153: la configuración que se empezó a preparar
+                        # en el POST, si es de esta misma llamada.
+                        prepared_task = getattr(
+                            self, "_pending_prepared_task", None)
+                        self._pending_prepared_task = None
+                        service.prepared_task = prepared_task
 
                         # Store the Twilio Call SID on the service instance.
                         # The call_sid is required by _execute_transfer() to update
