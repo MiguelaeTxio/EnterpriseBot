@@ -1,0 +1,220 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/warehouse_inventory/templates/warehouse_inventory/home.html #}
+{% extends "panel/base.html" %}
+{% comment %}
+H10 (S151, sesión invasora). Almacén > Inventario por fotos: captura
+desde el móvil. Se escribe la ubicación, se hacen fotos y cada una se
+sube al momento (cola en el propio navegador, una detrás de otra); el
+servidor las lee con Gemini en segundo plano y la lista se refresca
+sola. Solo superusuario (Miguel Ángel).
+{% endcomment %}
+
+{% block page_title %}Inventario por fotos{% endblock page_title %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-2">
+    <h5 class="mb-0 fw-semibold">Inventario por fotos</h5>
+</div>
+
+{% if not count %}
+<div class="border rounded p-3 mb-3">
+    <p class="mb-2">No hay ningún recuento abierto.</p>
+    <p class="small text-muted mb-3">
+        Al empezar uno, vas fotografiando cada estantería, balda o cajón (etiquetas, cajas y piezas sueltas).
+        Nada cambia en el almacén hasta que revises y confirmes las diferencias.
+    </p>
+    <form method="post" action="{% url 'warehouse_inventory:start' %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-primary">
+            <i class="bi bi-camera me-1"></i>Empezar recuento
+        </button>
+    </form>
+</div>
+{% else %}
+<div class="border rounded p-3 mb-3" id="wi-capture">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+        <div class="fw-semibold">
+            Recuento {{ count.pk }} · empezado el {{ count.started_at|date:"d/m/Y H:i" }}
+        </div>
+        <div class="d-flex gap-2">
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'warehouse_inventory:differences' count.pk %}">
+                <i class="bi bi-list-check me-1"></i>Diferencias (<span id="wi-pending">{{ pending }}</span> pendientes)
+            </a>
+            <form method="post" action="{% url 'warehouse_inventory:close' count.pk %}"
+                  onsubmit="return confirm('¿Cerrar el recuento? Aparecerá también lo que el sistema tiene y no se ha visto en ninguna foto.');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline-danger">
+                    <i class="bi bi-flag me-1"></i>Cerrar recuento
+                </button>
+            </form>
+        </div>
+    </div>
+    <label class="form-label small fw-bold mb-1" for="wi-location">Ubicación</label>
+    <input type="text" id="wi-location" class="form-control mb-2" list="wi-location-list"
+           placeholder="Ej.: Estantería 3 · Balda 2" maxlength="120" autocomplete="off">
+    <datalist id="wi-location-list">
+        {% for location in locations %}<option value="{{ location.name }}"></option>{% endfor %}
+    </datalist>
+    <div class="d-flex flex-wrap gap-2 mb-2">
+        <label class="btn btn-primary mb-0">
+            <i class="bi bi-camera me-1"></i>Hacer foto
+            <input type="file" id="wi-camera" accept="image/*" capture="environment" class="d-none">
+        </label>
+        <label class="btn btn-outline-primary mb-0">
+            <i class="bi bi-images me-1"></i>Elegir de la galería
+            <input type="file" id="wi-gallery" accept="image/*" multiple class="d-none">
+        </label>
+    </div>
+    <ul class="list-unstyled small mb-0" id="wi-queue"></ul>
+</div>
+
+<div class="border rounded p-2 mb-3">
+    <div id="wi-photos">
+        {% include "warehouse_inventory/_photos.html" %}
+    </div>
+</div>
+{% endif %}
+
+{% if past_counts %}
+<div class="border rounded p-2">
+    <div class="fw-bold small mb-1">Recuentos anteriores</div>
+    <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+                <tr><th>Recuento</th><th>Empezado</th><th>Cerrado</th><th class="text-end">Fotos</th><th class="text-end">Pendientes</th><th></th></tr>
+            </thead>
+            <tbody>
+                {% for past in past_counts %}
+                <tr>
+                    <td>{{ past.pk }}</td>
+                    <td>{{ past.started_at|date:"d/m/Y H:i" }}</td>
+                    <td>{{ past.closed_at|date:"d/m/Y H:i" }}</td>
+                    <td class="text-end">{{ past.photo_total }}</td>
+                    <td class="text-end">{{ past.pending }}</td>
+                    <td><a href="{% url 'warehouse_inventory:differences' past.pk %}">Diferencias</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% if count %}
+<script>
+(function () {
+    "use strict";
+
+    const UPLOAD_URL = "{% url 'warehouse_inventory:upload' %}";
+    const PHOTOS_URL = "{% url 'warehouse_inventory:photos' count.pk %}";
+    const LOCATION_KEY = "eb_inventory_location";
+    const MAX_SIDE = 2400;
+    const POLL_MS = 5000;
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute("content");
+    const locationInput = document.getElementById("wi-location");
+    const queueList = document.getElementById("wi-queue");
+    const pending = [];
+    let busy = false;
+    let pollTimer = null;
+
+    try { locationInput.value = localStorage.getItem(LOCATION_KEY) || ""; } catch (e) { /* sin almacenamiento */ }
+    locationInput.addEventListener("change", function () {
+        try { localStorage.setItem(LOCATION_KEY, locationInput.value.trim()); } catch (e) { /* sin almacenamiento */ }
+    });
+
+    // Reduce la foto a MAX_SIDE px de lado (las etiquetas se siguen leyendo
+    // y se sube mucho más rápido con datos móviles). Si el navegador no la
+    // puede abrir (p. ej. HEIC), se sube el original.
+    function shrink(file) {
+        return new Promise(function (resolve) {
+            if (!/^image\/(jpeg|png|webp)$/.test(file.type)) { resolve(file); return; }
+            const url = URL.createObjectURL(file);
+            const img = new Image();
+            img.onload = function () {
+                URL.revokeObjectURL(url);
+                const scale = Math.min(1, MAX_SIDE / Math.max(img.width, img.height));
+                if (scale >= 1) { resolve(file); return; }
+                const canvas = document.createElement("canvas");
+                canvas.width = Math.round(img.width * scale);
+                canvas.height = Math.round(img.height * scale);
+                canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+                canvas.toBlob(function (blob) {
+                    resolve(blob ? new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", {type: "image/jpeg"}) : file);
+                }, "image/jpeg", 0.88);
+            };
+            img.onerror = function () { URL.revokeObjectURL(url); resolve(file); };
+            img.src = url;
+        });
+    }
+
+    function addRow(text) {
+        const li = document.createElement("li");
+        li.textContent = text;
+        queueList.prepend(li);
+        return li;
+    }
+
+    function next() {
+        if (busy || !pending.length) return;
+        busy = true;
+        const job = pending.shift();
+        job.row.textContent = "Subiendo " + job.file.name + " (" + job.location + ")…";
+        shrink(job.file).then(function (file) {
+            const form = new FormData();
+            form.append("photo", file);
+            form.append("location", job.location);
+            return fetch(UPLOAD_URL, {method: "POST", headers: {"X-CSRFToken": csrfToken}, body: form});
+        }).then(function (r) {
+            return r.json().catch(function () {
+                return {ok: false, error: "El servidor respondió con un error (HTTP " + r.status + ")."};
+            });
+        }).then(function (data) {
+            job.row.textContent = data.ok ? "✓ " + data.message : "✗ " + job.file.name + ": " + data.error;
+            job.row.className = data.ok ? "text-success" : "text-danger";
+            refreshPhotos();
+        }).catch(function () {
+            job.row.textContent = "✗ " + job.file.name + ": sin conexión con el servidor.";
+            job.row.className = "text-danger";
+        }).finally(function () {
+            busy = false;
+            next();
+        });
+    }
+
+    function enqueue(input) {
+        const location = locationInput.value.trim();
+        if (!location) {
+            alert("Escribe primero la ubicación de la foto.");
+            input.value = "";
+            return;
+        }
+        Array.from(input.files).forEach(function (file) {
+            pending.push({file: file, location: location, row: addRow("En cola: " + file.name + " (" + location + ")")});
+        });
+        input.value = "";
+        next();
+    }
+
+    document.getElementById("wi-camera").addEventListener("change", function () { enqueue(this); });
+    document.getElementById("wi-gallery").addEventListener("change", function () { enqueue(this); });
+
+    function refreshPhotos() {
+        clearTimeout(pollTimer);
+        htmx.ajax("GET", PHOTOS_URL, {target: "#wi-photos"});
+    }
+
+    function afterPhotos() {
+        clearTimeout(pollTimer);
+        const state = document.getElementById("wi-photos-state");
+        if (!state) return;
+        document.getElementById("wi-pending").textContent = state.dataset.pending;
+        if (state.dataset.hasOpen) pollTimer = setTimeout(refreshPhotos, POLL_MS);
+    }
+
+    document.body.addEventListener("htmx:afterSwap", function (evt) {
+        if (evt.detail.target && evt.detail.target.id === "wi-photos") afterPhotos();
+    });
+    afterPhotos();
+}());
+</script>
+{% endif %}
+{% endblock content %}

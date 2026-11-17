@@ -1,0 +1,49 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/warehouse_inventory/templates/warehouse_inventory/_photos.html #}
+{% comment %}
+H10 (S151). Fotos del recuento y lo leído en cada una. Lo devuelve la
+carga inicial y cada refresco (mientras queda alguna por leer). Todo
+llega resuelto desde la vista.
+{% endcomment %}
+<div id="wi-photos-state" class="d-none"
+     data-has-open="{% if has_open %}1{% endif %}"
+     data-pending="{{ pending }}"></div>
+<div class="fw-bold small mb-2">{{ photo_total }} foto(s) en este recuento{% if photo_total > photos|length %} · últimas {{ photos|length }}{% endif %}</div>
+{% if photos %}
+<div class="row g-2">
+    {% for photo in photos %}
+    <div class="col-12 col-md-6 col-xl-4">
+        <div class="border rounded p-2 h-100 d-flex gap-2">
+            {% if photo.file_url %}
+            <a href="{{ photo.file_url }}" target="_blank" rel="noopener" class="flex-shrink-0">
+                <img src="{{ photo.file_url }}" alt="Foto {{ photo.pk }}" loading="lazy" width="96" height="96" class="wi-thumb rounded border">
+            </a>
+            {% endif %}
+            <div class="small flex-grow-1 min-w-0">
+                <div class="d-flex justify-content-between gap-1">
+                    <strong class="text-truncate">{{ photo.location.name }}</strong>
+                    <span class="badge {{ photo.badge }}">
+                        {% if photo.is_open %}<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>{% endif %}{{ photo.get_status_display }}
+                    </span>
+                </div>
+                <div class="text-muted">{{ photo.created_at|date:"d/m H:i" }}{% if photo.reason %} · {{ photo.reason }}{% endif %}</div>
+                {% if photo.item_rows %}
+                <ul class="list-unstyled mb-0 mt-1">
+                    {% for item in photo.item_rows %}
+                    <li>
+                        <i class="bi {% if item.matched %}bi-check-circle text-success{% else %}bi-plus-circle text-primary{% endif %} me-1"
+                           title="{{ item.match }} · {{ item.source }}"></i>{{ item.quantity }}{% if item.estimate %}≈{% endif %} × {{ item.label }}
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="text-muted small">Todavía no hay fotos: escribe la ubicación y pulsa «Hacer foto».</div>
+{% endif %}
+<style>
+.wi-thumb { width: 96px; height: 96px; object-fit: cover; }
+</style>

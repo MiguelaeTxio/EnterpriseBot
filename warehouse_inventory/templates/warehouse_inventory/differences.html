@@ -1,0 +1,337 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/warehouse_inventory/templates/warehouse_inventory/differences.html #}
+{% extends "panel/base.html" %}
+{% comment %}
+H10 (S151, sesión invasora). Diferencias de un recuento del inventario
+por fotos. Directriz 4.24:
+- #wid-top-panel (fijo): búsqueda, filtros y acciones (Confirmar /
+  Descartar las marcadas).
+- #wid-bottom-panel: lista con scroll propio y "Selección actual";
+  pantalla completa de la lista (4.26).
+Filtros, orden y selección persistidos por usuario (screen_key
+"warehouse_inventory_differences"). Nada cambia en el almacén hasta que
+Miguel Ángel confirma.
+{% endcomment %}
+
+{% block page_title %}Diferencias del inventario{% endblock page_title %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-2">
+    <h5 class="mb-0 fw-semibold">
+        Diferencias · recuento {{ count.pk }} del {{ count.started_at|date:"d/m/Y" }}
+        {% if count.is_open %}<span class="badge text-bg-info ms-1">abierto</span>{% else %}<span class="badge text-bg-secondary ms-1">cerrado</span>{% endif %}
+    </h5>
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'warehouse_inventory:home' %}">
+        <i class="bi bi-camera me-1"></i>Volver a las fotos
+    </a>
+</div>
+
+<div class="border rounded p-2 mb-2" id="wid-top-panel">
+    <div class="row g-2">
+        <div class="col-lg-8">
+            <div class="border rounded p-2 h-100">
+                <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                <div class="d-flex flex-wrap gap-2 mb-2">
+                    <input id="wid-filter-search" type="search" name="search"
+                           class="form-control form-control-sm flex-grow-1 w-auto"
+                           placeholder="Buscar por referencia, descripción o ubicación…"
+                           value="{{ filter_search }}" autocomplete="off"
+                           hx-get="{% url 'warehouse_inventory:differences_results' count.pk %}"
+                           hx-target="#wid-table-container"
+                           hx-include="#wid-filter-search, #wid-filter-kind, #wid-filter-status, #wid-only-selected, #wid-selected-ids, #wid-sort-inputs"
+                           hx-trigger="input changed delay:300ms, search">
+                    <select id="wid-filter-kind" name="kind" class="form-select form-select-sm w-auto" autocomplete="off"
+                            hx-get="{% url 'warehouse_inventory:differences_results' count.pk %}"
+                            hx-target="#wid-table-container"
+                            hx-include="#wid-filter-search, #wid-filter-kind, #wid-filter-status, #wid-only-selected, #wid-selected-ids, #wid-sort-inputs"
+                            hx-trigger="change">
+                        <option value="">Todos los tipos</option>
+                        {% for code, label in kind_choices %}
+                        <option value="{{ code }}" {% if filter_kind == code %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <select id="wid-filter-status" name="status" class="form-select form-select-sm w-auto" autocomplete="off"
+                            hx-get="{% url 'warehouse_inventory:differences_results' count.pk %}"
+                            hx-target="#wid-table-container"
+                            hx-include="#wid-filter-search, #wid-filter-kind, #wid-filter-status, #wid-only-selected, #wid-selected-ids, #wid-sort-inputs"
+                            hx-trigger="change">
+                        <option value="">Todos los estados</option>
+                        {% for code, label in status_choices %}
+                        <option value="{{ code }}" {% if filter_status == code %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="d-flex align-items-center justify-content-between gap-2">
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" id="wid-only-selected" name="only_selected" value="1" autocomplete="off"
+                               hx-get="{% url 'warehouse_inventory:differences_results' count.pk %}"
+                               hx-target="#wid-table-container"
+                               hx-include="#wid-filter-search, #wid-filter-kind, #wid-filter-status, #wid-only-selected, #wid-selected-ids, #wid-sort-inputs"
+                               hx-trigger="change, wid-selection-refresh">
+                        <label class="form-check-label small" for="wid-only-selected">Mostrar solo la selección actual</label>
+                    </div>
+                    <input type="hidden" id="wid-selected-ids" name="selected_ids" value="">
+                    <button type="button"
+                            class="btn btn-sm btn-outline-secondary{% if not sort_active %} d-none{% endif %}"
+                            id="wid-clear-sort"
+                            hx-get="{% url 'warehouse_inventory:differences_results' count.pk %}"
+                            hx-target="#wid-table-container"
+                            hx-include="#wid-filter-search, #wid-filter-kind, #wid-filter-status, #wid-only-selected, #wid-selected-ids"
+                            hx-vals='{"sort": ""}'
+                            title="Deshacer todos los órdenes aplicados">
+                        <i class="bi bi-x-circle me-1"></i>Quitar orden
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="border rounded p-2 h-100">
+                <div class="d-flex align-items-center gap-2 mb-2">
+                    <strong class="small"><span id="wid-mass-count">0</span> seleccionadas</strong>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="wid-mass-clear">Limpiar</button>
+                </div>
+                <div class="text-muted small fw-bold mb-1">Revisión</div>
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-sm btn-success wid-needs-selection wid-resolve" data-action="apply" disabled
+                            title="Ajusta el almacén con lo contado en las marcadas">
+                        <i class="bi bi-check2-circle me-1"></i>Confirmar
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary wid-needs-selection wid-resolve" data-action="discard" disabled
+                            title="Las marcadas se descartan sin tocar el almacén">
+                        <i class="bi bi-x-lg me-1"></i>Descartar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="border rounded p-2" id="wid-bottom-panel">
+    <div class="row g-2 h-100">
+        <div class="col-lg-9 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column" id="wid-list-box">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <div class="fw-bold small">
+                        <span id="wid-row-count">{{ differences|length }}</span> diferencias
+                        <span id="wid-row-filtered" class="text-muted fw-normal{% if not is_filtered %} d-none{% endif %}">(filtrado)</span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" id="wid-fullscreen" title="Pantalla completa">
+                        <i class="bi bi-fullscreen"></i>
+                    </button>
+                </div>
+                <div id="wid-results-scroll" class="fixed-list-scroll wid-fill wid-scroll-both">
+                    <div id="wid-table-container">
+                        {% include "warehouse_inventory/_differences_table.html" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1">Selección actual (<span id="wid-selection-count">0</span>)</div>
+                <div class="wid-fill wid-scroll-both">
+                    <ul class="mb-0 small ps-0 list-unstyled" id="wid-selection-list">
+                        <li class="text-muted">Nada seleccionado todavía.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="wid-live-filters" class="d-none">
+    <input type="hidden" name="_f_sort" value="{{ current_sort }}">
+</div>
+
+<style>
+#wid-results-scroll table td,
+#wid-results-scroll table th { white-space: nowrap; }
+#wid-results-scroll td.wid-note { white-space: normal; min-width: 16rem; }
+.wid-fill { flex: 1 1 auto; min-height: 0; }
+.wid-scroll-both { overflow: auto; }
+.wid-check-col { width: 2rem; }
+#wid-list-box:fullscreen { background: var(--bs-body-bg, #fff); padding: 1rem; }
+#wid-list-box:fullscreen #wid-results-scroll { height: calc(100vh - 4rem); }
+</style>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="wid-toast" class="toast align-items-center text-bg-dark border-0"
+         role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="5000">
+        <div class="d-flex">
+            <div class="toast-body" id="wid-toast-msg"></div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+{{ saved_selection|json_script:"wid-saved-selection" }}
+{% include "panel/_fixed_list_layout.html" with top_id="wid-top-panel" bottom_id="wid-bottom-panel" %}
+<script>
+(function () {
+    "use strict";
+
+    const container = document.getElementById("wid-table-container");
+    const liveFilters = document.getElementById("wid-live-filters");
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute("content");
+    const SCREEN_KEY = "{{ screen_key|escapejs }}";
+    const RESULTS_URL = "{% url 'warehouse_inventory:differences_results' count.pk %}";
+    const RESOLVE_URL = "{% url 'warehouse_inventory:differences_resolve' count.pk %}";
+
+    function showToast(text, danger) {
+        const toast = document.getElementById("wid-toast");
+        toast.classList.toggle("text-bg-danger", !!danger);
+        toast.classList.toggle("text-bg-dark", !danger);
+        document.getElementById("wid-toast-msg").textContent = text;
+        new bootstrap.Toast(toast).show();
+    }
+
+    // Selección (pk -> descripción), persistida por usuario.
+    const selection = new Map();
+    try {
+        JSON.parse(document.getElementById("wid-saved-selection").textContent).forEach(function (item) {
+            if (item && item.pk) selection.set(String(item.pk), item.label || "");
+        });
+    } catch (e) { /* estado ilegible: se empieza sin selección */ }
+    let lastSaved = null;
+    function saveSelection() {
+        const payload = Array.from(selection.entries()).map(function ([pk, label]) {
+            return {pk: pk, label: label};
+        });
+        const serialized = JSON.stringify(payload);
+        if (serialized === lastSaved) return;
+        lastSaved = serialized;
+        window.EbNavState.save(SCREEN_KEY, {selection: payload});
+    }
+
+    function updateSelectionUi() {
+        saveSelection();
+        document.getElementById("wid-mass-count").textContent = selection.size;
+        document.getElementById("wid-selection-count").textContent = selection.size;
+        const list = document.getElementById("wid-selection-list");
+        list.innerHTML = "";
+        if (!selection.size) {
+            const empty = document.createElement("li");
+            empty.className = "text-muted";
+            empty.textContent = "Nada seleccionado todavía.";
+            list.appendChild(empty);
+        } else {
+            Array.from(selection.values()).sort().forEach(function (label) {
+                const li = document.createElement("li");
+                li.textContent = label;
+                list.appendChild(li);
+            });
+        }
+        const idsInput = document.getElementById("wid-selected-ids");
+        const newIds = Array.from(selection.keys()).join(",");
+        if (idsInput.value !== newIds) {
+            idsInput.value = newIds;
+            const onlySel = document.getElementById("wid-only-selected");
+            if (onlySel.checked) htmx.trigger(onlySel, "wid-selection-refresh");
+        }
+        document.querySelectorAll(".wid-needs-selection").forEach(function (btn) {
+            btn.disabled = selection.size === 0;
+        });
+        const all = document.getElementById("wid-check-all");
+        if (!all) return;
+        const rows = container.querySelectorAll(".wid-row-check");
+        const checked = container.querySelectorAll(".wid-row-check:checked");
+        all.checked = rows.length > 0 && checked.length === rows.length;
+        all.indeterminate = checked.length > 0 && checked.length < rows.length;
+    }
+
+    function refreshTable() {
+        const params = new URLSearchParams();
+        params.set("search", document.getElementById("wid-filter-search").value);
+        params.set("kind", document.getElementById("wid-filter-kind").value);
+        params.set("status", document.getElementById("wid-filter-status").value);
+        params.set("sort", liveFilters.querySelector('input[name="_f_sort"]').value);
+        if (document.getElementById("wid-only-selected").checked) {
+            params.set("only_selected", "1");
+            params.set("selected_ids", document.getElementById("wid-selected-ids").value);
+        }
+        htmx.ajax("GET", RESULTS_URL + "?" + params.toString(), {target: "#wid-table-container"});
+    }
+
+    function refreshFromFragment() {
+        const state = document.getElementById("wid-fragment-state");
+        if (state) {
+            document.getElementById("wid-row-count").textContent = state.dataset.count;
+            document.getElementById("wid-row-filtered").classList.toggle("d-none", !state.dataset.filtered);
+            document.getElementById("wid-clear-sort").classList.toggle("d-none", !state.dataset.sortActive);
+            liveFilters.querySelector('input[name="_f_sort"]').value = state.dataset.sort || "";
+        }
+        container.querySelectorAll(".wid-row-check").forEach(function (cb) {
+            cb.checked = selection.has(cb.dataset.pk);
+        });
+        updateSelectionUi();
+    }
+
+    container.addEventListener("change", function (evt) {
+        const target = evt.target;
+        if (target.classList.contains("wid-row-check")) {
+            if (target.checked) selection.set(target.dataset.pk, target.dataset.label);
+            else selection.delete(target.dataset.pk);
+            updateSelectionUi();
+        } else if (target.id === "wid-check-all") {
+            container.querySelectorAll(".wid-row-check").forEach(function (cb) {
+                cb.checked = target.checked;
+                if (target.checked) selection.set(cb.dataset.pk, cb.dataset.label);
+                else selection.delete(cb.dataset.pk);
+            });
+            updateSelectionUi();
+        }
+    });
+
+    document.getElementById("wid-mass-clear").addEventListener("click", function () {
+        selection.clear();
+        container.querySelectorAll(".wid-row-check").forEach(function (cb) { cb.checked = false; });
+        updateSelectionUi();
+    });
+
+    document.querySelectorAll(".wid-resolve").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+            const action = btn.dataset.action;
+            const question = action === "apply"
+                ? "¿Confirmar " + selection.size + " diferencia(s)? El almacén se ajustará con lo contado."
+                : "¿Descartar " + selection.size + " diferencia(s)? No se toca el almacén.";
+            if (!confirm(question)) return;
+            const original = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Enviando…';
+            fetch(RESOLVE_URL, {
+                method: "POST",
+                headers: {"X-CSRFToken": csrfToken, "Content-Type": "application/json"},
+                body: JSON.stringify({selected: Array.from(selection.keys()), action: action}),
+            }).then(function (r) {
+                return r.json().catch(function () {
+                    return {ok: false, error: "El servidor respondió con un error (HTTP " + r.status + ")."};
+                });
+            }).then(function (data) {
+                btn.innerHTML = original;
+                if (!data.ok) { updateSelectionUi(); showToast(data.error || "No se pudo.", true); return; }
+                selection.clear();
+                updateSelectionUi();
+                showToast(data.message, false);
+                refreshTable();
+            }).catch(function () {
+                btn.innerHTML = original;
+                updateSelectionUi();
+                showToast("Sin conexión con el servidor.", true);
+            });
+        });
+    });
+
+    document.getElementById("wid-fullscreen").addEventListener("click", function () {
+        if (document.fullscreenElement) { document.exitFullscreen(); return; }
+        document.getElementById("wid-list-box").requestFullscreen().catch(function (err) {
+            console.warn("Pantalla completa no disponible:", err);
+        });
+    });
+
+    document.body.addEventListener("htmx:afterSwap", function (evt) {
+        if (!evt.detail.target || evt.detail.target.id !== "wid-table-container") return;
+        refreshFromFragment();
+    });
+
+    refreshFromFragment();
+}());
+</script>
+{% endblock content %}

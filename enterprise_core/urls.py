@@ -140,4 +140,10 @@ urlpatterns = [
         'panel/repuestos/facturas-proveedor/',
         include('supplier_invoices.urls', namespace='supplier_invoices'),
     ),
+    # Warehouse > photo inventory — Almacén > inventario por fotos (H10,
+    # S151). Solo superusuario de momento.
+    path(
+        'panel/repuestos/inventario/',
+        include('warehouse_inventory.urls', namespace='warehouse_inventory'),
+    ),
 ]

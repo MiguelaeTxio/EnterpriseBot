@@ -150,6 +150,7 @@ INSTALLED_APPS = [
     # (delivery notes, warehouse, work orders) -- facturas de proveedor
     # de FACTURACION PROVEEDORES, pipeline del almacén (H28, S151).
     'supplier_invoices',
+    'warehouse_inventory',
 ]
 
 # Middleware stack optimized for async processing in Django 5.2.12.

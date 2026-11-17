@@ -603,6 +603,15 @@
                                 </a>
                             </li>
                         {% endif %}
+                        {# H10 (S151): inventario del almacén por fotos. Solo superusuario de momento (SuperuserRequiredMixin). #}
+                        {% if request.user.is_superuser %}
+                            <li class="nav-item">
+                                <a class="nav-link {% if active_nav == 'warehouse_inventory' %}active{% endif %}"
+                                   href="{% url 'warehouse_inventory:home' %}">
+                                    <i class="bi bi-camera"></i>Inventario por fotos
+                                </a>
+                            </li>
+                        {% endif %}
                         {% if company_user.is_admin_level or company_user.role == 'SUPERVISOR' or company_user.role == 'WORKSHOPBOSS' %}
                             <li class="nav-item">
                                 <a class="nav-link {% if active_nav == 'suppliers' %}active{% endif %}"
