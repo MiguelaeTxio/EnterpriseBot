@@ -295,7 +295,10 @@ jobs:
         # o en el futuro debe disparar el reinicio.
         # S155: el reinicio del bridge/worker depende solo del git pull,
         # independiente de la recarga de la web: llegó el código al servidor.
-        if: steps.pull.outcome == 'success'
+        # S156: sin una función de estado, GitHub antepone success() a la
+        # condición y el paso se saltaba igual si la recarga fallaba
+        # (despliegue fc14953): !cancelled() la hace explícita.
+        if: ${{ !cancelled() && steps.pull.outcome == 'success' }}
         run: |
           set -o pipefail
           CHANGED=$(sed -n '/--- CHANGED_FILES_START ---/,/--- CHANGED_FILES_END ---/p' /tmp/deploy_output.txt | sed '1d;$d')
