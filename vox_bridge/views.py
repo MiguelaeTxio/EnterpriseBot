@@ -451,6 +451,11 @@ class ContactStatusView(View):
 
     FAILED_STATUSES = {"no-answer", "busy", "failed", "canceled"}
 
+    # S155: statuses of the caller's call meaning the caller is gone.
+    # S155: estados de la llamada del llamante que indican que ya no está.
+    CALLER_ENDED_STATUSES = {"completed", "canceled", "failed", "busy",
+                             "no-answer"}
+
     def _get_wss_url(self) -> str:
         """
         Reads the active ngrok HTTPS URL from the shared session file and
@@ -599,6 +604,18 @@ class ContactStatusView(View):
                 twilio_api_secret,
                 account_sid=twilio_account_sid,
             )
+            # S155: if the caller already hung up there is no one to
+            # reconnect María to.
+            # S155: si el llamante ya colgó no hay a quién reconectar a
+            # María (la llamada al contacto la canceló la vigilancia del
+            # puente, o no contestó después de que el llamante colgara).
+            caller_status = twilio_client.calls(caller_call_sid).fetch().status
+            if caller_status in self.CALLER_ENDED_STATUSES:
+                logger.info(
+                    f"[CONTACT-STATUS] El llamante {caller_call_sid} ya "
+                    f"colgó ({caller_status}). No se reconecta a María."
+                )
+                return HttpResponse("", status=200)
             twilio_client.calls(caller_call_sid).update(
                 twiml=self._twiml_reconnect_alia(self._get_wss_url()),
             )

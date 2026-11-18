@@ -168,6 +168,28 @@ TIMEOUT_INITIAL_GREETING_SECONDS = 60.0
 TIMEOUT_AUDIO_RECEIVE_SECONDS = 60.0
 TIMEOUT_CALL_COMPLETION_SECONDS = 60.0
 
+# S155: watching the caller while the section contact is being called.
+# Twilio does not reliably call the <Dial> action URL when the caller hangs
+# up first, so the bridge polls both calls: if the caller hangs up before
+# the contact is in the conference, the call to the contact is cancelled.
+# S155: vigilancia del llamante mientras se llama al contacto de la sección.
+# Twilio no llama de forma fiable al action del <Dial> si el llamante cuelga
+# primero, así que el puente consulta las dos llamadas: si el llamante cuelga
+# antes de que el contacto esté en la sala, se cancela la llamada al
+# contacto.
+TRANSFER_WATCH_INTERVAL_SECONDS = 2.0
+TRANSFER_WATCH_MAX_SECONDS = 180.0
+TRANSFER_WATCH_CONNECTED_SECONDS = 15.0
+CALL_ENDED_STATUSES = {"completed", "canceled", "failed", "busy",
+                       "no-answer"}
+CALL_NOT_ANSWERED_STATUSES = {"queued", "initiated", "ringing"}
+
+# Background tasks keep a strong reference here until they finish (asyncio
+# only keeps weak references to tasks).
+# Las tareas en segundo plano se guardan aquí hasta que terminan (asyncio
+# solo guarda referencias débiles a las tareas).
+_BACKGROUND_TASKS: set = set()
+
 # Audio format specification for Twilio ↔ Gemini Live bridge.
 # Especificación de formato de audio para el puente Twilio ↔ Gemini Live.
 GEMINI_AUDIO_MIME_TYPE = "audio/pcm;rate=16000"
@@ -3899,6 +3921,13 @@ class VoiceOrchestrationService:
                 f"({contact_phone}). OutboundCallSid: {outbound_call.sid}. "
                 f"StatusCallback registrado en: {contact_status_url}"
             )
+            # S155: si el llamante cuelga antes de que el contacto entre
+            # en la sala, se cancela la llamada al contacto.
+            watch_task = asyncio.ensure_future(
+                self._watch_caller_during_transfer(
+                    outbound_call.sid, contact.name))
+            _BACKGROUND_TASKS.add(watch_task)
+            watch_task.add_done_callback(_BACKGROUND_TASKS.discard)
             return True
 
         except Exception as twilio_exc:
@@ -3915,6 +3944,94 @@ class VoiceOrchestrationService:
             # la conference para que el llamante no quede en silencio.
             self.session_active = True
             return False
+
+    async def _watch_caller_during_transfer(self, outbound_sid: str,
+                                            contact_name: str) -> None:
+        """
+        Cancels the call to the section contact if the caller hangs up first.
+
+        Polls both calls every TRANSFER_WATCH_INTERVAL_SECONDS. Stops when
+        the call to the contact ends (ContactStatusView takes over), when the
+        contact has been connected for TRANSFER_WATCH_CONNECTED_SECONDS (the
+        conference ends with the caller: endConferenceOnExit), or after
+        TRANSFER_WATCH_MAX_SECONDS.
+        ---
+        S155: cancela la llamada al contacto de la sección si el llamante
+        cuelga antes (incidencia real del 18/11: colgó en espera y la
+        llamada a Ana Vargas siguió). Consulta las dos llamadas cada
+        TRANSFER_WATCH_INTERVAL_SECONDS. Termina cuando acaba la llamada al
+        contacto (sigue ContactStatusView), cuando el contacto lleva
+        TRANSFER_WATCH_CONNECTED_SECONDS contestado (la sala termina con el
+        llamante: endConferenceOnExit) o a los TRANSFER_WATCH_MAX_SECONDS.
+        """
+        caller_sid = self.call_sid
+        client = self.twilio_client
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        connected_since = None
+        logger.info(
+            f"[TRANSFER-WATCH] Vigilando la llamada {caller_sid} mientras "
+            f"se llama a '{contact_name}' ({outbound_sid})."
+        )
+        while loop.time() - started < TRANSFER_WATCH_MAX_SECONDS:
+            await asyncio.sleep(TRANSFER_WATCH_INTERVAL_SECONDS)
+            try:
+                caller_status = (await asyncio.to_thread(
+                    lambda: client.calls(caller_sid).fetch())).status
+                outbound_status = (await asyncio.to_thread(
+                    lambda: client.calls(outbound_sid).fetch())).status
+            except Exception as exc:
+                logger.warning(
+                    f"[TRANSFER-WATCH] No se pudo consultar el estado de las "
+                    f"llamadas: {type(exc).__name__}: {exc}"
+                )
+                continue
+
+            if outbound_status in CALL_ENDED_STATUSES:
+                logger.info(
+                    f"[TRANSFER-WATCH] La llamada a '{contact_name}' terminó "
+                    f"({outbound_status}). Fin de la vigilancia."
+                )
+                return
+
+            if caller_status in CALL_ENDED_STATUSES:
+                new_status = (
+                    "canceled" if outbound_status in CALL_NOT_ANSWERED_STATUSES
+                    else "completed"
+                )
+                try:
+                    await asyncio.to_thread(
+                        lambda: client.calls(outbound_sid).update(
+                            status=new_status))
+                    logger.info(
+                        f"[TRANSFER-WATCH] El llamante colgó durante la "
+                        f"transferencia ({caller_status}). Llamada a "
+                        f"'{contact_name}' ({outbound_status}) terminada "
+                        f"con status={new_status}."
+                    )
+                except Exception as exc:
+                    logger.error(
+                        f"[TRANSFER-WATCH] El llamante colgó pero no se pudo "
+                        f"terminar la llamada a '{contact_name}': "
+                        f"{type(exc).__name__}: {exc}"
+                    )
+                return
+
+            if outbound_status == "in-progress":
+                if connected_since is None:
+                    connected_since = loop.time()
+                elif (loop.time() - connected_since
+                      >= TRANSFER_WATCH_CONNECTED_SECONDS):
+                    logger.info(
+                        f"[TRANSFER-WATCH] '{contact_name}' contestó y está "
+                        "en la sala con el llamante. Fin de la vigilancia."
+                    )
+                    return
+
+        logger.info(
+            f"[TRANSFER-WATCH] Fin de la vigilancia de {caller_sid} por "
+            f"tiempo ({TRANSFER_WATCH_MAX_SECONDS:.0f} s)."
+        )
 
     def set_stream_sid(self, stream_sid: str) -> None:
         """
