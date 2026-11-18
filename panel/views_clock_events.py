@@ -1435,6 +1435,8 @@ def _attach_cancelled(shifts, corrections, date_from, date_to):
         by_day.setdefault(when.date(), []).append({
             "time": when,
             "kind": correction.get_old_kind_display(),
+            # S149: para recuperar el día en «Editar la jornada».
+            "kind_code": correction.old_kind,
             "clock_type": correction.old_clock_type,
             "by": _user_label(correction.corrected_by),
             "at": timezone.localtime(correction.corrected_at),

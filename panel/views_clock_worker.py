@@ -245,15 +245,34 @@ def _row(shift):
     first = (entry or exit_ or {}).get("event")
     key = ("s%d" % first.pk if first is not None
            else "c%s" % shift["day"].isoformat())
-    return {
-        **shift,
-        "key": key,
+    if shift.get("only_cancelled"):
+        # S149 (Miguel Ángel, 18/11): un día que quedó anulado entero (la
+        # salida olvidada que enganchaba con el día siguiente) se puede
+        # recuperar: «Editar la jornada» trae lo anulado como fichajes
+        # nuevos, para dejar, cambiar de hora o de tipo, o quitar.
+        edit_presses, seen = [], set()
+        for item in shift.get("cancelled") or []:
+            at = item["time"].strftime("%Y-%m-%dT%H:%M")
+            mark = (item.get("kind_code"), at)
+            if not item.get("kind_code") or mark in seen:
+                continue
+            seen.add(mark)
+            edit_presses.append({
+                "id": None, "kind": item["kind_code"], "at": at,
+                "type": getattr(item.get("clock_type"), "pk", None)
+                if item["kind_code"] != "OUT" else None,
+            })
+    else:
         # S149: las pulsaciones vigentes para «Editar la jornada».
-        "edit_presses": [{
+        edit_presses = [{
             "id": p["event"].pk, "kind": p["event"].kind,
             "at": p["input_value"],
             "type": p["event"].clock_type_id,
-        } for p in presses if not shift.get("only_cancelled")],
+        } for p in presses]
+    return {
+        **shift,
+        "key": key,
+        "edit_presses": edit_presses,
         "entry": entry,
         "exit": exit_,
         "changes": changes,

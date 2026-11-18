@@ -139,6 +139,19 @@ historial: quién, cuándo, antes, después y motivo).
             <td data-label="Estado"><span class="badge text-bg-{{ row.status_badge }} fw-normal">{% if row.only_cancelled %}Día anulado{% else %}{{ row.status_label }}{% endif %}</span></td>
             {# Acciones de la fila (directriz 4.24, regla 9). #}
             <td class="text-end">
+                {# S149 (Miguel Ángel, 18/11): un día anulado entero se recupera editándolo. #}
+                {% if has_account and row.only_cancelled %}
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-link text-dark py-0" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Acciones">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item cw-fix fw-semibold" href="#" data-action="EDIT" data-presses="{{ row.edit_json }}" data-day="{{ row.day|date:'Y-m-d' }}"
+                               data-label="Día anulado del {{ row.day|date:'d/m/Y' }}: lo anulado viene como fichajes nuevos"
+                               title="Recuperar el día: lo anulado aparece como fichajes nuevos para dejarlo, cambiar horas y tipos o quitarlo, y añadir lo que falte. Se guarda todo junto, con un motivo."><i class="bi bi-arrow-counterclockwise me-1"></i>Recuperar el día</a></li>
+                    </ul>
+                </div>
+                {% endif %}
                 {% if has_account and not row.only_cancelled %}
                 <div class="dropdown">
                     <button class="btn btn-sm btn-link text-dark py-0" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Acciones">
