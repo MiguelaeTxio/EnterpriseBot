@@ -55,7 +55,7 @@ jobs:
   # ejecutándose, uno que acaba de ejecutar, con lo cual se están
   # pisando unas sesiones con otras"): con varias sesiones empujando a
   # la vez, cada push esperaba su turno y recargaba la web. Ahora cada
-  # push espera 90 s; si en ese rato llega otro, el anterior se cancela
+  # push espera 45 s; si en ese rato llega otro, el anterior se cancela
   # y se despliega solo el último (git pull trae todo lo pendiente y el
   # diff se calcula desde lo que había en el servidor, así que no se
   # pierde nada). Un lanzamiento manual no espera.
@@ -70,7 +70,7 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "Lanzamiento manual: sin espera."
           else
-            sleep 90
+            sleep 45
           fi
 
   deploy:
@@ -232,11 +232,18 @@ jobs:
           fi
           # S155: muestra el código HTTP de PythonAnywhere si falla (antes
           # solo "exit code 22", sin saber por qué).
-          RESP=$(curl -s --max-time 60 -w "\nHTTP_STATUS:%{http_code}" -X POST \
-            "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/webapps/enterprisebot-miguelaetxio.pythonanywhere.com/reload/" \
-            -H "Authorization: Token ${{ secrets.PA_API_TOKEN }}") || true
-          echo "$RESP"
-          STATUS=$(echo "$RESP" | grep -oE "HTTP_STATUS:[0-9]+" | cut -d: -f2 || true)
+          # S153 (Miguel Ángel: en horas de sobrecarga PythonAnywhere da
+          # error incluso pasados los 60 s): hasta 180 s por intento y un
+          # segundo intento si el primero falla o se queda sin respuesta.
+          for INTENTO in 1 2; do
+            RESP=$(curl -s --max-time 180 -w "\nHTTP_STATUS:%{http_code}" -X POST \
+              "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/webapps/enterprisebot-miguelaetxio.pythonanywhere.com/reload/" \
+              -H "Authorization: Token ${{ secrets.PA_API_TOKEN }}") || true
+            echo "Intento $INTENTO: $RESP"
+            STATUS=$(echo "$RESP" | grep -oE "HTTP_STATUS:[0-9]+" | cut -d: -f2 || true)
+            [ "${STATUS:0:1}" = "2" ] && break
+            [ "$INTENTO" = "1" ] && sleep 20
+          done
           if [ "${STATUS:0:1}" != "2" ]; then
             echo "::error title=Recarga de la web fallida::HTTP $STATUS -- $(echo "$RESP" | head -c 300 | tr '\n' ' ')"
             exit 1
