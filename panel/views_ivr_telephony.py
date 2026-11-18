@@ -17,7 +17,6 @@ definir en la parte de telefonía".
 
 from django.contrib import messages as django_messages
 from django.db.models import Q
-from django.forms import modelformset_factory
 from django.shortcuts import redirect
 from django.utils.timezone import now
 from django.views.generic import ListView, UpdateView
@@ -27,9 +26,9 @@ from ivr_config.models import (
     PresenceStatus,
     Section,
     SectionContact,
-    SectionSchedule,
+    WorkdaySchedule,
 )
-from panel.forms import SectionScheduleForm, SectionTelephonyForm
+from panel.forms import SectionTelephonyForm
 from panel.mixins import AdminRoleRequiredMixin
 
 WEEKDAY_SHORT = ["L", "M", "X", "J", "V", "S", "D"]
@@ -54,27 +53,41 @@ def _transfer_contacts(section) -> list:
     )
 
 
-def _opening_hours_summary(section) -> str:
+def _legacy_slots_summary(section) -> str:
     """
-    Short text with the opening hours of the section.
+    Old SectionSchedule slots grouped by days, or "".
     ---
-    Texto corto con el horario de atención: "24 h", "Sin horario" o las
-    franjas agrupadas por días ("L M X J V 07:00–15:00").
+    Franjas antiguas (SectionSchedule) agrupadas por días
+    ("L M X J V 07:00–15:00"), o "" si no tiene.
     """
-    if section.is_24h:
-        return "24 h"
     slots = {}
     for sched in section.schedules.all():
         key = (sched.time_open, sched.time_close)
         slots.setdefault(key, set()).add(sched.weekday)
     if not slots:
-        return "Sin horario"
+        return ""
     parts = []
     for (t_open, t_close), days in sorted(slots.items()):
         day_text = " ".join(
             WEEKDAY_SHORT[d] for d in sorted(days) if 0 <= d < 7)
         parts.append(f"{day_text} {t_open:%H:%M}–{t_close:%H:%M}")
     return " · ".join(parts)
+
+
+def _opening_hours_summary(section) -> str:
+    """
+    Short text with the opening hours of the section.
+    ---
+    Texto corto con el horario de atención: "24 h", el horario de jornada
+    elegido, las franjas antiguas mientras no haya uno elegido, o "Sin
+    horario".
+    """
+    if section.is_24h:
+        return "24 h"
+    if section.attention_schedule_id:
+        return section.attention_schedule.label
+    legacy = _legacy_slots_summary(section)
+    return f"{legacy} (franjas antiguas)" if legacy else "Sin horario"
 
 
 def section_ivr_status(section) -> dict:
@@ -100,7 +113,8 @@ def section_ivr_status(section) -> dict:
         if not with_phone:
             warnings.append(
                 "Ningún contacto con teléfono: no podrá pasar la llamada.")
-        if not section.is_24h and not section.schedules.exists():
+        if (not section.is_24h and not section.attention_schedule_id
+                and not section.schedules.exists()):
             warnings.append(
                 "Sin horario de atención: la dará siempre por cerrada.")
     return {
@@ -110,6 +124,9 @@ def section_ivr_status(section) -> dict:
         "contacts": contacts,
         "contacts_with_phone": len(with_phone),
         "hours": _opening_hours_summary(section),
+        "legacy_slots": (
+            "" if section.attention_schedule_id
+            else _legacy_slots_summary(section)),
     }
 
 
@@ -148,7 +165,8 @@ class IvrSectionListView(AdminRoleRequiredMixin, ListView):
         return (
             Section.objects.filter(
                 company=self.request.user.company_user.company)
-            .select_related("call_flow", "data_capture_set")
+            .select_related(
+                "call_flow", "data_capture_set", "attention_schedule")
             .prefetch_related("schedules")
             .order_by("-is_active", "name")
         )
@@ -174,32 +192,14 @@ class IvrSectionUpdateView(AdminRoleRequiredMixin, UpdateView):
     Edits what the switchboard needs from one section.
     ---
     Edita lo que la centralita necesita de una sección: casillas IVR,
-    conjunto de captura y horario de atención. Al guardar, la señal de
+    conjunto de captura y horario de atención (uno de los horarios de
+    jornada). Al guardar, la señal de
     Section regenera su flujo IVR.
     """
 
     model = Section
     form_class = SectionTelephonyForm
     template_name = "panel/ivr_sections/form.html"
-
-    def _schedule_formset(self, data=None):
-        """
-        SectionSchedule formset of the section (3 empty rows).
-        ---
-        Formset de franjas de horario de atención de la sección.
-        """
-        formset_class = modelformset_factory(
-            SectionSchedule,
-            form=SectionScheduleForm,
-            extra=3,
-            can_delete=True,
-        )
-        return formset_class(
-            data,
-            queryset=SectionSchedule.objects.filter(
-                section=self.object).order_by("weekday", "time_open"),
-            prefix="schedules",
-        )
 
     def get_queryset(self):
         """
@@ -223,43 +223,34 @@ class IvrSectionUpdateView(AdminRoleRequiredMixin, UpdateView):
         ).order_by("name")
         field.required = False
         field.empty_label = "— Ninguno —"
+        field = form.fields["attention_schedule"]
+        field.queryset = WorkdaySchedule.objects.filter(
+            company=self.request.user.company_user.company
+        ).order_by("label")
+        field.required = False
+        field.empty_label = "— Sin horario —"
         return form
 
-    def post(self, request, *args, **kwargs):
+    def form_valid(self, form):
         """
-        Validates and saves the form and the opening hours together.
+        Saves the section; Section post_save regenerates its CallFlow.
         ---
-        Valida y guarda a la vez el formulario y el horario de atención.
+        Guarda la sección; el post_save de Section regenera su flujo IVR.
         """
-        self.object = self.get_object()
-        form = self.get_form()
-        schedule_formset = self._schedule_formset(request.POST)
-        if not (form.is_valid() and schedule_formset.is_valid()):
-            return self.render_to_response(self.get_context_data(
-                form=form, schedule_formset=schedule_formset))
-        for schedule in schedule_formset.save(commit=False):
-            schedule.section = self.object
-            schedule.save()
-        for deleted in schedule_formset.deleted_objects:
-            deleted.delete()
-        # Section post_save regenerates the section CallFlow.
-        # El post_save de Section regenera el flujo IVR de la sección.
         self.object = form.save()
         django_messages.success(
-            request,
+            self.request,
             f"Centralita de '{self.object.name}' guardada correctamente.")
         return redirect("panel:ivr_section_list")
 
     def get_context_data(self, **kwargs):
         """
-        Adds the opening hours formset, the status and transfer contacts.
+        Adds the switchboard status and the transfer contacts.
         ---
-        Añade el horario de atención, el estado en la centralita y los
-        contactos a los que se pasa la llamada.
+        Añade el estado en la centralita y los contactos a los que se pasa
+        la llamada.
         """
         context = super().get_context_data(**kwargs)
-        if "schedule_formset" not in context:
-            context["schedule_formset"] = self._schedule_formset()
         context["ivr_status"] = section_ivr_status(self.object)
         context["company"] = self.request.user.company_user.company
         context["company_user"] = self.request.user.company_user

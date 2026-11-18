@@ -3,97 +3,6 @@
 
 {% block title %}Centralita · {{ object.name }}{% endblock %}
 
-{% block extra_scripts %}
-<script>
-/*
- * Dynamic SectionSchedule formset row addition.
- * Adds a new empty schedule row by cloning the last empty row in the formset,
- * updating all field name/id attributes to use the new form index, and
- * incrementing the TOTAL_FORMS management form counter.
- *
- * Adición dinámica de filas al formset de SectionSchedule.
- * Añade una nueva fila vacía clonando la última fila vacía del formset,
- * actualizando todos los atributos name/id de campos al nuevo índice de formulario,
- * e incrementando el contador TOTAL_FORMS del management form.
- */
-(function () {
-    'use strict';
-
-    const addBtn     = document.getElementById('add-schedule-row');
-    const tableBody  = document.querySelector('#schedule-table tbody');
-    const totalForms = document.getElementById('id_schedules-TOTAL_FORMS');
-
-    if (!addBtn || !tableBody || !totalForms) return;
-
-    addBtn.addEventListener('click', function () {
-        /* Current total number of forms — Número total actual de formularios */
-        const formCount = parseInt(totalForms.value, 10);
-
-        /* Find the last schedule row to use as clone template.
-           Buscar la última fila de horario para usar como plantilla de clonación. */
-        const rows = tableBody.querySelectorAll('tr.schedule-row');
-        if (rows.length === 0) return;
-
-        const lastRow   = rows[rows.length - 1];
-        const newRow    = lastRow.cloneNode(true);
-
-        /* Update all name and id attributes from the last index to the new one.
-           Actualizar todos los atributos name e id del último índice al nuevo. */
-        const lastIndex = formCount - 1;
-        const newIndex  = formCount;
-
-        newRow.querySelectorAll('input, select').forEach(function (el) {
-            if (el.name) {
-                el.name = el.name.replace(
-                    'schedules-' + lastIndex + '-',
-                    'schedules-' + newIndex + '-'
-                );
-            }
-            if (el.id) {
-                el.id = el.id.replace(
-                    'id_schedules-' + lastIndex + '-',
-                    'id_schedules-' + newIndex + '-'
-                );
-            }
-            /* Reset field values — Reiniciar valores de los campos */
-            if (el.tagName === 'SELECT') {
-                el.selectedIndex = 0;
-            } else if (el.type === 'time') {
-                el.value = '';
-            } else if (el.type === 'checkbox') {
-                el.checked = false;
-            } else if (el.type === 'hidden') {
-                /* Clear hidden id field (pk) for new rows.
-                   Limpiar el campo id oculto (pk) para filas nuevas. */
-                if (el.name && el.name.endsWith('-id')) {
-                    el.value = '';
-                }
-            }
-        });
-
-        /* Hide DELETE checkbox on new rows (no pk yet).
-           Ocultar checkbox DELETE en filas nuevas (aún sin pk). */
-        const deleteCell = newRow.querySelector('td:last-child');
-        if (deleteCell) {
-            deleteCell.innerHTML = '';
-        }
-
-        /* Clear any validation error messages from the cloned row.
-           Limpiar mensajes de error de validación de la fila clonada. */
-        newRow.querySelectorAll('.text-danger').forEach(function (el) {
-            el.textContent = '';
-        });
-
-        tableBody.appendChild(newRow);
-
-        /* Increment TOTAL_FORMS counter.
-           Incrementar el contador TOTAL_FORMS. */
-        totalForms.value = newIndex + 1;
-    });
-}());
-</script>
-{% endblock %}
-
 {% block page_title %}Centralita · {{ object.name }}{% endblock %}
 
 {% block content %}
@@ -176,8 +85,9 @@
                         <i class="bi bi-clock me-2 text-primary"></i>Horario de atención
                     </h6>
                     <p class="text-muted mb-3 text-sm">
-                        Cuándo la centralita da la sección por abierta. Puedes poner varias franjas
-                        por día para horarios partidos.
+                        Cuándo la centralita da la sección por abierta. Se elige entre los
+                        <a href="{% url 'panel:workday_schedule' %}">horarios de jornada</a>; si el
+                        horario no varía según el día, cuenta de lunes a viernes.
                     </p>
                     <div class="mb-3">
                         <div class="form-check form-switch">
@@ -186,77 +96,20 @@
                                 {{ form.is_24h.label }}
                             </label>
                         </div>
-                        <div class="form-text">Si está marcado, las franjas de abajo no cuentan.</div>
                     </div>
-
-                    {{ schedule_formset.management_form }}
-
-                    <div class="table-responsive">
-                        <table class="table table-sm align-middle" id="schedule-table">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Día</th>
-                                    <th>Apertura</th>
-                                    <th>Cierre</th>
-                                    <th class="text-center">Eliminar</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for sched_form in schedule_formset %}
-                                <tr class="schedule-row">
-                                    <td class="w-100">
-                                        {{ sched_form.id }}
-                                        <div class="w-100">{{ sched_form.weekday }}</div>
-                                        {% if sched_form.weekday.errors %}
-                                        <div class="text-danger text-xs">
-                                            {% for e in sched_form.weekday.errors %}{{ e }}{% endfor %}
-                                        </div>
-                                        {% endif %}
-                                    </td>
-                                    <td class="w-100">
-                                        <div class="w-100">{{ sched_form.time_open }}</div>
-                                        {% if sched_form.time_open.errors %}
-                                        <div class="text-danger text-xs">
-                                            {% for e in sched_form.time_open.errors %}{{ e }}{% endfor %}
-                                        </div>
-                                        {% endif %}
-                                    </td>
-                                    <td class="w-100">
-                                        <div class="w-100">{{ sched_form.time_close }}</div>
-                                        {% if sched_form.time_close.errors %}
-                                        <div class="text-danger text-xs">
-                                            {% for e in sched_form.time_close.errors %}{{ e }}{% endfor %}
-                                        </div>
-                                        {% endif %}
-                                    </td>
-                                    <td class="text-center">
-                                        {% if sched_form.instance.pk %}
-                                        <div class="form-check d-flex justify-content-center">
-                                            {{ sched_form.DELETE }}
-                                        </div>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                {% if sched_form.non_field_errors %}
-                                <tr>
-                                    <td colspan="4">
-                                        <div class="text-danger text-xs">
-                                            {% for e in sched_form.non_field_errors %}{{ e }}{% endfor %}
-                                        </div>
-                                    </td>
-                                </tr>
-                                {% endif %}
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <!-- Add schedule row button — Botón de añadir franja horaria -->
                     <div class="mb-4">
-                        <button type="button" class="btn btn-outline-primary btn-sm"
-                                id="add-schedule-row">
-                            <i class="bi bi-plus-lg me-1"></i>Añadir franja horaria
-                        </button>
+                        <label class="form-label fw-medium" for="{{ form.attention_schedule.id_for_label }}">
+                            {{ form.attention_schedule.label }}
+                        </label>
+                        {{ form.attention_schedule }}
+                        {% for error in form.attention_schedule.errors %}<div class="text-danger mt-1 text-err">{{ error }}</div>{% endfor %}
+                        <div class="form-text">No cuenta si la sección es 24 horas.</div>
+                        {% if ivr_status.legacy_slots %}
+                        <div class="form-text text-warning-emphasis">
+                            Mientras no elijas un horario, la centralita usa las franjas antiguas de
+                            esta sección: {{ ivr_status.legacy_slots }}.
+                        </div>
+                        {% endif %}
                     </div>
 
                     <hr class="my-4">

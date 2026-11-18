@@ -176,8 +176,10 @@ class SectionTelephonyForm(forms.ModelForm):
             "ivr_breakdown_enabled",
             "data_capture_set",
             "is_24h",
+            "attention_schedule",
         ]
         widgets = {
+            "attention_schedule": forms.Select(attrs={"class": "form-select"}),
             "ivr_transfer_enabled": forms.CheckboxInput(
                 attrs={"class": "form-check-input"}),
             "ivr_breakdown_enabled": forms.CheckboxInput(
@@ -191,6 +193,7 @@ class SectionTelephonyForm(forms.ModelForm):
             "ivr_breakdown_enabled": "Registra averías de flota",
             "data_capture_set": "Conjunto de captura de datos",
             "is_24h": "Disponible 24 horas",
+            "attention_schedule": "Horario de atención",
         }
 
 
