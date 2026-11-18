@@ -332,18 +332,47 @@ def register_photo(count, location, data, filename, uploaded_by):
 # Lectura con Gemini y cruce con el almacén
 # ---------------------------------------------------------------------
 
-def _read_with_gemini(data, content_type):
+_OVERLAP_PROMPT = (
+    "Las fotos de una misma balda se hacen seguidas y se solapan: lo que "
+    "sale en el borde de una vuelve a salir en la siguiente. La PRIMERA "
+    "imagen es la foto anterior de esta misma ubicación, solo como "
+    "referencia; la SEGUNDA es la foto nueva. Enumera únicamente los "
+    "artículos (y las unidades) de la foto nueva que NO se veían ya en la "
+    "anterior, para no contarlos dos veces. Si un mismo artículo tiene "
+    "unidades en las dos fotos, cuenta solo las que aparecen por primera "
+    "vez en la nueva."
+)
+
+
+def _read_with_gemini(data, content_type, previous=None):
     """
     Ask Gemini for the articles visible in the photo.
 
+    `previous` is (bytes, content_type) of the previous photo of the
+    same location: then only what is new in this photo is listed.
+
     ---
 
-    Pide a Gemini los artículos que se ven en la foto.
+    Pide a Gemini los artículos que se ven en la foto. Con `previous`
+    (la foto anterior de la misma ubicación), solo lo que no salía ya
+    en ella: las fotos de una balda se solapan (Miguel Ángel,
+    18/11/2026: un repuesto sale a la izquierda en una foto y a la
+    derecha en la siguiente).
     """
+    contents = []
+    if previous is not None:
+        contents += [
+            Part.from_bytes(data=previous[0], mime_type=previous[1]),
+            Part.from_bytes(data=data, mime_type=content_type),
+            _OVERLAP_PROMPT + "\n\n" + _PROMPT,
+        ]
+    else:
+        contents += [Part.from_bytes(data=data, mime_type=content_type),
+                     _PROMPT]
     response = _generate_content_with_retry(
         get_gemini_client(),
         model=DEFAULT_MODEL,
-        contents=[Part.from_bytes(data=data, mime_type=content_type), _PROMPT],
+        contents=contents,
         config=GenerateContentConfig(
             http_options=HttpOptions(timeout=180_000),
             response_mime_type="application/json",
@@ -352,6 +381,21 @@ def _read_with_gemini(data, content_type):
         ),
     )
     return json.loads(response.text.strip())
+
+
+def _previous_photo(photo):
+    """
+    The photo taken just before in the same location of the same count.
+
+    ---
+
+    La foto hecha justo antes en la misma ubicación del mismo recuento
+    (aunque aún no se haya leído: solo hace falta su imagen).
+    """
+    return InventoryPhoto.objects.filter(
+        count_id=photo.count_id, location_id=photo.location_id,
+        pk__lt=photo.pk,
+    ).order_by("-pk").first()
 
 
 def _warehouse_index(company):
@@ -429,7 +473,9 @@ def process_photo(photo_id, final=False):
     ).update(status=InventoryPhoto.STATUS_PROCESSING)
     photo = InventoryPhoto.objects.select_related(
         "count__company", "location",
-    ).get(pk=photo_id)
+    ).filter(pk=photo_id).first()
+    if photo is None:
+        return "REMOVED"
     if not claimed:
         return photo.status
     try:
@@ -439,8 +485,23 @@ def process_photo(photo_id, final=False):
             photo, InventoryPhoto.STATUS_ERROR,
             "No se pudo leer la foto del cubo: %s" % exc,
         )
+    previous_photo = _previous_photo(photo)
+    previous = None
+    if previous_photo is not None:
+        try:
+            previous = (
+                download_bytes(BUCKET, previous_photo.blob_name),
+                previous_photo.content_type,
+            )
+        except Exception:
+            logger.warning(
+                "# [INVENTARIO] Sin foto anterior para comparar (%s)",
+                previous_photo.pk,
+            )
     try:
-        extraction = _read_with_gemini(data, photo.content_type)
+        extraction = _read_with_gemini(
+            data, photo.content_type, previous=previous,
+        )
     except Exception as exc:
         if not final:
             photo.status = InventoryPhoto.STATUS_PENDING
@@ -480,12 +541,18 @@ def process_photo(photo_id, final=False):
                 match_kind=kind,
             )
         count = photo.items.count()
+        compared = (
+            " Comparada con la foto anterior de la balda."
+            if previous is not None else ""
+        )
         _finish(
             photo, InventoryPhoto.STATUS_DONE,
             (
-                "%d artículo(s) vistos, %d en el almacén digital."
-                % (count, matched)
-            ) if count else "No se ve ningún artículo del almacén.",
+                (
+                    "%d artículo(s) nuevos, %d en el almacén digital."
+                    % (count, matched)
+                ) if count else "Nada nuevo que no estuviera ya."
+            ) + compared,
             extraction=extraction,
         )
         recompute_differences(photo.count)
@@ -674,6 +741,37 @@ def close_count(count):
         count.closed_at = timezone.now()
         count.save(update_fields=["closed_at"])
     recompute_differences(count)
+
+
+def remove_photo(photo, company_user):
+    """
+    Remove a photo (repeated, blurred, wrong location).
+
+    ---
+
+    Quita una foto (repetida, movida, con la ubicación mal puesta): su
+    archivo va a la papelera del explorador de quien la quita, se borra
+    lo leído en ella y se recalculan las diferencias. Solo con el
+    recuento abierto.
+    """
+    count = photo.count
+    if not count.is_open:
+        raise InventoryUploadError(
+            "El recuento está cerrado: reábrelo para quitar fotos.",
+        )
+    with transaction.atomic():
+        entry = photo.entry
+        if entry is not None and entry.deleted_at is None:
+            entry.deleted_at = timezone.now()
+            entry.deleted_by = company_user
+            entry.save(update_fields=["deleted_at", "deleted_by"])
+            index_writer.recount_children(
+                BUCKET, folder_paths=index_writer.ancestors_of(
+                    entry.parent_path,
+                ),
+            )
+        photo.delete()
+        recompute_differences(count)
 
 
 def reopen_count(count):

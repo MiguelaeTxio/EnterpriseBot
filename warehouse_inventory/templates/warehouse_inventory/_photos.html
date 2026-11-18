@@ -26,6 +26,14 @@ llega resuelto desde la vista.
                     </span>
                 </div>
                 <div class="text-muted">{{ photo.created_at|date:"d/m H:i" }}{% if photo.reason %} · {{ photo.reason }}{% endif %}</div>
+                {% if count.is_open %}
+                <button type="button" class="btn btn-link btn-sm text-danger p-0"
+                        hx-post="{% url 'warehouse_inventory:photo_remove' photo.pk %}"
+                        hx-target="#wi-photos"
+                        hx-confirm="¿Quitar esta foto? Lo leído en ella deja de contar.">
+                    <i class="bi bi-trash me-1"></i>Quitar foto
+                </button>
+                {% endif %}
                 {% if photo.item_rows %}
                 <ul class="list-unstyled mb-0 mt-1">
                     {% for item in photo.item_rows %}

@@ -21,6 +21,10 @@ urlpatterns = [
         name="photos",
     ),
     path(
+        "foto/<int:pk>/quitar/", views.InventoryPhotoRemoveView.as_view(),
+        name="photo_remove",
+    ),
+    path(
         "<int:pk>/cerrar/", views.InventoryCloseView.as_view(),
         name="close",
     ),

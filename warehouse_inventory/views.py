@@ -29,7 +29,8 @@ from panel.navigation_persistence import (
 
 from .inventory_service import (
     InventoryUploadError, close_count, location_for, open_count,
-    register_photo, reopen_count, resolve_differences, start_count,
+    register_photo, remove_photo, reopen_count, resolve_differences,
+    start_count,
 )
 from .models import (
     InventoryCount, InventoryDifference, InventoryLocation, InventoryPhoto,
@@ -255,6 +256,37 @@ class InventoryPhotosView(SuperuserRequiredMixin, View):
             InventoryCount, pk=pk,
             company=request.user.company_user.company,
         )
+        photos = _photo_rows(count)
+        return render(request, "warehouse_inventory/_photos.html", {
+            "count": count,
+            "photos": photos,
+            "has_open": any(p.is_open for p in photos),
+            "photo_total": count.photos.count(),
+            "pending": _pending_differences(count),
+        })
+
+
+class InventoryPhotoRemoveView(SuperuserRequiredMixin, View):
+    """
+    POST: remove one photo; replies with the refreshed photo list.
+
+    ---
+
+    POST: quita una foto (repetida, movida, mal ubicada) y devuelve la
+    lista de fotos actualizada.
+    """
+
+    def post(self, request, pk):
+        company_user = request.user.company_user
+        photo = get_object_or_404(
+            InventoryPhoto.objects.select_related("count", "entry"),
+            pk=pk, count__company=company_user.company,
+        )
+        count = photo.count
+        try:
+            remove_photo(photo, company_user)
+        except InventoryUploadError as exc:
+            messages.error(request, str(exc))
         photos = _photo_rows(count)
         return render(request, "warehouse_inventory/_photos.html", {
             "count": count,
