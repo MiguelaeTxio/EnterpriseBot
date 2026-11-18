@@ -11,6 +11,9 @@
     button { width: 100%; padding: 8px; margin-bottom: 6px; cursor: pointer; }
     #open { font-weight: bold; }
     #saved { color: #555; margin: 6px 0 10px; }
+    .check { display: flex; gap: 6px; align-items: center; color: #222;
+             margin-top: 4px; }
+    .check input { width: auto; margin: 0; }
     #status { white-space: pre-wrap; margin-top: 6px; }
     .error { color: #b00020; }
   </style>
@@ -22,7 +25,8 @@
   <div id="saved"></div>
   <button id="open">Abrir PRODUCCIÓN</button>
   <button id="save">Guardar disposición actual</button>
+  <label class="check"><input type="checkbox" id="autoOpen"> Abrirla sola al arrancar Chrome</label>
   <div id="status"></div>
-  <script src="popup.js"></script>
+  <script type="module" src="popup.js"></script>
 </body>
 </html>
