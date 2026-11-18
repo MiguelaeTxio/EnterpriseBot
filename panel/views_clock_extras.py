@@ -242,7 +242,7 @@ class ClockWorkerReviewView(SupervisorAccessMixin, View):
     """
 
     def post(self, request, pk):
-        from hr_calendar.models import ClockDayReview
+        from hr_calendar.models import ClockDayHold, ClockDayReview
 
         person = _person(pk)
         # S153: uno o varios días (la casilla de un día o «Visar» con las
@@ -258,6 +258,11 @@ class ClockWorkerReviewView(SupervisorAccessMixin, View):
                                    "visar ese día.", error=True)
         first = min(days).strftime("%d/%m/%Y")
         if request.POST.get("reviewed") == "1":
+            # S149 (18/11): visar con la casilla quita la marca de
+            # «Pendiente de revisar».
+            ClockDayHold.objects.filter(
+                company_user_id=person.company_user_id, day__in=days,
+            ).delete()
             for day in days:
                 ClockDayReview.objects.get_or_create(
                     company_user_id=person.company_user_id, day=day,
@@ -271,6 +276,51 @@ class ClockWorkerReviewView(SupervisorAccessMixin, View):
             ).delete()
             message = ("Quitado el visado del %s." % first if len(days) == 1
                        else "Quitado el visado de %d días." % len(days))
+        return _table_response(request, person, message)
+
+
+class ClockWorkerHoldView(SupervisorAccessMixin, View):
+    """
+    POST: set a worker's day aside to review later, or clear it.
+    ---
+    POST: marca un día del trabajador como «Pendiente de revisar» (con
+    un motivo, p. ej. que falta el albarán) o quita la marca (S149,
+    Miguel Ángel, 18/11).
+    """
+
+    def post(self, request, pk):
+        from hr_calendar.models import ClockDayHold
+
+        person = _person(pk)
+        days = set()
+        for raw in request.POST.getlist("day"):
+            try:
+                days.add(datetime.date.fromisoformat(raw))
+            except ValueError:
+                continue
+        if person.company_user_id is None or not days:
+            return _table_response(request, person, "No se ha podido "
+                                   "marcar ese día.", error=True)
+        first = min(days).strftime("%d/%m/%Y")
+        if request.POST.get("hold") == "1":
+            note = (request.POST.get("note") or "").strip()[:255]
+            for day in days:
+                ClockDayHold.objects.update_or_create(
+                    company_user_id=person.company_user_id, day=day,
+                    defaults={"note": note,
+                              "held_by": request.user.company_user},
+                )
+            message = ("Día %s pendiente de revisar." % first
+                       if len(days) == 1 else
+                       "%d días pendientes de revisar." % len(days))
+        else:
+            ClockDayHold.objects.filter(
+                company_user_id=person.company_user_id, day__in=days,
+            ).delete()
+            message = ("Quitada la marca de pendiente del %s." % first
+                       if len(days) == 1 else
+                       "Quitada la marca de pendiente de %d días."
+                       % len(days))
         return _table_response(request, person, message)
 
 

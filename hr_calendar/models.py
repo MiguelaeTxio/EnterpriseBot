@@ -1914,6 +1914,49 @@ class ClockDayReview(models.Model):
         return "%s %s" % (self.company_user_id, self.day)
 
 
+class ClockDayHold(models.Model):
+    """
+    A worker's day set aside to review later (S149).
+
+    ---
+
+    Día de fichajes de un trabajador marcado para revisarlo después (H24,
+    S149, Miguel Ángel, 18/11: "no se dispone del albarán y no hay forma
+    de cotejarlo con los fichajes, pues marcarla para una revisión
+    posterior y darle un color diferente"). Se quita a mano o al visar
+    el día con la casilla.
+    """
+
+    company_user = models.ForeignKey(
+        CompanyUser, on_delete=models.CASCADE,
+        related_name="clock_day_holds", verbose_name="Trabajador",
+    )
+    day = models.DateField(verbose_name="Día")
+    note = models.CharField(
+        max_length=255, blank=True, default="", verbose_name="Motivo",
+    )
+    held_by = models.ForeignKey(
+        CompanyUser, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+", verbose_name="Marcado por",
+    )
+    held_at = models.DateTimeField(
+        auto_now_add=True, verbose_name="Marcado",
+    )
+
+    class Meta:
+        verbose_name = "Día de fichajes pendiente de revisar"
+        verbose_name_plural = "Días de fichajes pendientes de revisar"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("company_user", "day"),
+                name="clockdayhold_unique_user_day",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return "%s %s" % (self.company_user_id, self.day)
+
+
 class OvertimeAdjustment(models.Model):
     """
     A manual movement of a worker's overtime bag (S144).

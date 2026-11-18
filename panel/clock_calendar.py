@@ -35,6 +35,8 @@ DAY_EMPTY = "empty"
 # salida (verde).
 DAY_REVIEWED = "reviewed"
 DAY_OPEN = "open"
+# S149 (18/11): marcado para revisar después, en morado.
+DAY_HOLD = "hold"
 
 
 def calendar_range(today=None):
@@ -66,7 +68,9 @@ def _day_cell(day, shifts, today):
     """
     worked = [s for s in shifts if not s.get("only_cancelled")]
     with_incidents = [s for s in worked if s.get("incidents")]
-    if any(not s.get("reviewed") for s in with_incidents):
+    if any(s.get("hold") and not s.get("review_manual") for s in worked):
+        status = DAY_HOLD
+    elif any(not s.get("reviewed") for s in with_incidents):
         status = DAY_ISSUES
     # S153: un día visado (casilla o corregido) en amarillo, tenga
     # incidencias o no.

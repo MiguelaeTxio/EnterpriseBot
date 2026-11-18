@@ -65,7 +65,11 @@ STATUS_OPEN = "open"
 # el supervisor"): día cotejado con sus albaranes por la IA y aún sin
 # visar.
 STATUS_AI = "ai"
+# S149 (Miguel Ángel, 18/11: "marcarla para una revisión posterior y
+# darle un color diferente"): sin el albarán a mano, por ejemplo.
+STATUS_HOLD = "hold"
 STATUS_CHOICES = (
+    (STATUS_HOLD, "Pendientes de revisar"),
     (STATUS_OPEN, "En curso"),
     (STATUS_OK, "Correctas"),
     # S153 (Miguel Ángel, con captura de Juan corrigiendo jornadas): se
@@ -80,7 +84,7 @@ _STATUS_LABELS = dict(STATUS_CHOICES)
 _STATUS_BADGES = {
     STATUS_OK: "success", STATUS_ISSUES: "danger",
     STATUS_CANCELLED: "secondary", STATUS_REVIEWED: "warning",
-    STATUS_OPEN: "success", STATUS_AI: "info",
+    STATUS_OPEN: "success", STATUS_AI: "info", STATUS_HOLD: "hold",
 }
 _COLUMNS = (
     ("day", "Día"),
@@ -139,6 +143,9 @@ def _statuses(request):
     # va con las incidencias (son días que tiene que visar alguien).
     if STATUS_AI not in chosen and STATUS_ISSUES in chosen:
         chosen.append(STATUS_AI)
+        # S149 (18/11): las pendientes de revisar, igual.
+        if STATUS_HOLD not in chosen:
+            chosen.append(STATUS_HOLD)
     return chosen if raw else list(_STATUS_LABELS)
 
 
@@ -227,6 +234,10 @@ def _row(shift):
                  + [claim]}
     if shift.get("only_cancelled"):
         status = STATUS_CANCELLED
+    # Marcada para después: hasta que se quite o se vise con la casilla
+    # (una corrección a mano no la quita).
+    elif shift.get("hold") and not shift.get("review_manual"):
+        status = STATUS_HOLD
     elif shift.get("ai_check") and not shift.get("reviewed"):
         status = STATUS_AI
     elif shift.get("incidents") and not shift.get("reviewed"):
@@ -294,8 +305,9 @@ def _row(shift):
     }
 
 
-_STATUS_WEIGHT = {STATUS_ISSUES: 4, STATUS_REVIEWED: 3, STATUS_OPEN: 2,
-                  STATUS_OK: 1, STATUS_CANCELLED: 0}
+_STATUS_WEIGHT = {STATUS_HOLD: 6, STATUS_AI: 5, STATUS_ISSUES: 4,
+                  STATUS_REVIEWED: 3, STATUS_OPEN: 2, STATUS_OK: 1,
+                  STATUS_CANCELLED: 0}
 GAP_COLOR = ("repeating-linear-gradient(45deg,#f8d7da,#f8d7da 3px,"
              "#fff 3px,#fff 6px)")
 # Una salida y vuelta a entrar en menos de esto es casi seguro un error.
@@ -368,6 +380,7 @@ def _group_by_day(rows):
         row["corrected"] = any(p.get("corrected") for p in live)
         row["corrected_any"] = any(p.get("corrected_any") for p in live)
         row["reviewed"] = any(p.get("reviewed") for p in live)
+        row["hold"] = next((p["hold"] for p in live if p.get("hold")), None)
         row["no_meal_break"] = any(p.get("no_meal_break") for p in live)
         row["travel"] = next((p["travel"] for p in live
                               if p.get("travel")), None)

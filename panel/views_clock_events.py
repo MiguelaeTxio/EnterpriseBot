@@ -1332,9 +1332,11 @@ def _attach_reviewed(person, shifts):
     ("al corregir automáticamente se marca como visada"). También marca
     la jornada en curso de hoy ("in_progress").
     """
-    from hr_calendar.models import ClockDayAiCheck, ClockDayReview
+    from hr_calendar.models import (
+        ClockDayAiCheck, ClockDayHold, ClockDayReview,
+    )
 
-    reviews, checks = {}, {}
+    reviews, checks, holds = {}, {}, {}
     if person.company_user_id is not None and shifts:
         wanted = {s["day"] for s in shifts}
         reviews = {r.day: r for r in ClockDayReview.objects.filter(
@@ -1344,6 +1346,10 @@ def _attach_reviewed(person, shifts):
         checks = {c.day: c for c in ClockDayAiCheck.objects.filter(
             company_user_id=person.company_user_id, day__in=wanted,
         ).select_related("checked_by__user")}
+        # S149 (18/11): días marcados para revisar después.
+        holds = {h.day: h for h in ClockDayHold.objects.filter(
+            company_user_id=person.company_user_id, day__in=wanted,
+        ).select_related("held_by__user")}
     for shift in shifts:
         presses = [p for p in (shift.get("presses") or [])
                    + (shift.get("changes") or []) if p]
@@ -1360,6 +1366,10 @@ def _attach_reviewed(person, shifts):
         shift["reviewed_by"] = (_user_label(review.reviewed_by)
                                 if review and review.reviewed_by_id
                                 else "")
+        hold = holds.get(shift["day"])
+        shift["hold"] = hold
+        shift["held_by"] = (_user_label(hold.held_by)
+                            if hold and hold.held_by_id else "")
         check = checks.get(shift["day"])
         shift["ai_check"] = check
         shift["ai_checked_by"] = (_user_label(check.checked_by)

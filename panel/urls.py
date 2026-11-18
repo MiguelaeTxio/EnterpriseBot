@@ -210,6 +210,7 @@ from panel.views_clock_events import (
 from panel.views_clock_extras import (
     ClockWorkerOvertimeView,
     AlbaranNumbersView,
+    ClockWorkerHoldView,
     ClockWorkerReviewView,
     ClockWorkerTripView,
 )
@@ -2163,6 +2164,12 @@ urlpatterns = [
         "documentacion/fichajes/<int:pk>/jornadas/visado/",
         ClockWorkerReviewView.as_view(),
         name="clock_worker_review",
+    ),
+    # S149 (18/11): marcar un día para revisarlo después.
+    path(
+        "documentacion/fichajes/<int:pk>/jornadas/pendiente/",
+        ClockWorkerHoldView.as_view(),
+        name="clock_worker_hold",
     ),
     # S153: números de los albaranes del día, para el motivo de una
     # corrección ("Corrección según albarán n.º(s) ...").

@@ -75,7 +75,7 @@ historial: quién, cuándo, antes, después y motivo).
     </thead>
     <tbody>
         {% for row in rows %}
-        <tr class="{% if row.status == 'cancelled' %}table-secondary{% elif row.status == 'issues' %}table-danger{% elif row.status == 'reviewed' %}table-warning{% elif row.status == 'open' %}table-success{% endif %}" data-day="{{ row.day|date:'Y-m-d' }}">
+        <tr class="{% if row.status == 'hold' %}cw-row-hold{% elif row.status == 'cancelled' %}table-secondary{% elif row.status == 'issues' %}table-danger{% elif row.status == 'reviewed' %}table-warning{% elif row.status == 'open' %}table-success{% endif %}" data-day="{{ row.day|date:'Y-m-d' }}">
             <td class="sticky-col sticky-col-1">
                 <input type="checkbox" class="form-check-input cw-row-check" data-pk="{{ row.key }}" data-day="{{ row.day|date:'Y-m-d' }}" data-label="{{ row.label }}" data-ids="{{ row.event_ids|default:'' }}">
             </td>
@@ -126,6 +126,8 @@ historial: quién, cuándo, antes, después y motivo).
                 </label>
                 {% if row.reviewed_by %}<div class="text-muted">visado por {{ row.reviewed_by }}</div>{% endif %}
                 {% endif %}
+                {# S149 (18/11): marcado para revisar después. #}
+                {% if row.hold %}<div class="mt-1" style="color:#59359a"><i class="bi bi-hourglass-split"></i> <strong>Pendiente de revisar</strong>{% if row.hold.note %}: {{ row.hold.note }}{% endif %} <span class="text-muted">({{ row.held_by|default:"—" }}, {{ row.hold.held_at|date:"d/m H:i" }})</span></div>{% endif %}
                 {# S149: día comparado con sus albaranes por la IA (pre-visado). #}
                 {% if row.ai_check %}
                 <div class="mt-1"><span class="badge {% if row.ai_check.corrected %}text-bg-info{% else %}text-bg-light border{% endif %} fw-normal" title="{{ row.ai_check.summary }}">{% if row.ai_check.origin == "PARTE" %}{% if row.ai_check.corrected %}Corregido por el parte{% else %}Comparado con el parte{% endif %}{% elif row.ai_check.corrected %}Corregido por IA{% else %}Comparado por IA{% endif %}</span> <span class="text-muted">{% if row.ai_check.origin == "PARTE" %}{{ row.ai_check.albaranes }} de {{ row.ai_checked_by|default:"—" }}{% else %}lanzado por {{ row.ai_checked_by|default:"—" }}{% endif %}</span></div>
@@ -162,6 +164,13 @@ historial: quién, cuándo, antes, después y motivo).
                         <li><a class="dropdown-item cw-fix fw-semibold" href="#" data-action="EDIT" data-presses="{{ row.edit_json }}" data-day="{{ row.day|date:'Y-m-d' }}"
                                data-label="Jornada del {{ row.day|date:'d/m/Y' }}"
                                title="Todos los fichajes del día en una tabla: cambiar horas y tipos, anular y añadir. Se guarda todo junto, con un motivo."><i class="bi bi-list-check me-1"></i>Editar la jornada</a></li>
+                        {# S149 (18/11): sin el albarán a mano, dejarla para revisar después. #}
+                        {% if row.hold %}
+                        <li><a class="dropdown-item cw-hold" href="#" data-hold="0" data-day="{{ row.day|date:'Y-m-d' }}"><i class="bi bi-hourglass-bottom me-1"></i>Quitar «Pendiente de revisar»</a></li>
+                        {% else %}
+                        <li><a class="dropdown-item cw-hold" href="#" data-hold="1" data-day="{{ row.day|date:'Y-m-d' }}" data-label="Jornada del {{ row.day|date:'d/m/Y' }}"
+                               title="Dejar la jornada para revisarla después (p. ej. falta el albarán): sale en morado hasta que se quite la marca o se vise."><i class="bi bi-hourglass-split me-1" style="color:#6f42c1"></i>Marcar pendiente de revisar</a></li>
+                        {% endif %}
                         <li><hr class="dropdown-divider"></li>
                         {% for part in row.parts %}{% with row=part %}
                         {% if not forloop.first %}<li><hr class="dropdown-divider"></li>{% endif %}

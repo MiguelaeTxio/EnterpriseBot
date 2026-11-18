@@ -255,6 +255,9 @@ screen_key "clock_worker"); la selección, por trabajador.
 #cw-bottom-panel:fullscreen #cw-results-scroll { height: calc(100vh - 7rem); }
 #cw-results-scroll tr.cw-flash > td { box-shadow: inset 0 0 0 9999px rgba(13, 110, 253, .18); }
 #cw-results-scroll .cw-cal-day:not(.cw-cal-empty) { cursor: pointer; }
+/* S149 (18/11): días marcados «Pendiente de revisar», en morado. */
+.cw-row-hold > td { --bs-table-bg: #e2d9f3; --bs-table-accent-bg: #e2d9f3; background-color: #e2d9f3; }
+.text-bg-hold { color: #fff !important; background-color: #6f42c1 !important; }
 </style>
 
 {# Corrección (cambiar, anular, añadir): se envía con los filtros que se ven (_f_). #}
@@ -421,6 +424,29 @@ screen_key "clock_worker"); la selección, por trabajador.
             <div class="modal-footer">
                 <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
                 <button type="button" class="btn btn-sm btn-primary" id="cw-trip-save">Guardar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="cwHoldModal" tabindex="-1" aria-labelledby="cwHoldModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <form class="modal-content" id="cw-hold-form" autocomplete="off" onsubmit="return false;">
+            <div class="modal-header">
+                <h5 class="modal-title" id="cwHoldModalLabel">Pendiente de revisar</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body small">
+                <div class="text-muted mb-2" id="cw-hold-label"></div>
+                <input type="hidden" name="hold" value="1">
+                <input type="hidden" name="day" id="cw-hold-day">
+                <label class="form-label mb-0" for="cwHoldNote">Por qué (opcional)</label>
+                <input class="form-control form-control-sm" type="text" maxlength="255" name="note" id="cwHoldNote" placeholder="p. ej. falta el albarán para cotejar">
+                <div class="form-text">El día sale en morado hasta que se quite la marca o se vise con la casilla.</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-sm btn-primary" id="cw-hold-save">Marcar</button>
             </div>
         </form>
     </div>
@@ -1050,6 +1076,54 @@ screen_key "clock_worker"); la selección, por trabajador.
             });
         }).catch(function () {
             showToast("Sin conexión con el servidor: no se ha guardado nada.", true);
+        }).finally(function () { btn.disabled = false; });
+    });
+
+    // S149 (18/11): marcar un día «Pendiente de revisar» o quitar la marca.
+    const HOLD_URL = "{% url 'panel:clock_worker_hold' person.pk %}";
+    function sendHold(body, done) {
+        new FormData(filters).forEach(function (value, key) { body.append("_f_" + key, value); });
+        const sortInput = results.querySelector('#cw-sort-inputs input[name="sort"]');
+        body.append("_f_sort", sortInput ? sortInput.value : "");
+        return fetch(HOLD_URL, {
+            method: "POST", headers: {"X-CSRFToken": csrfMeta ? csrfMeta.content : ""}, body: body,
+        }).then(function (r) {
+            if (!r.ok) { showToast("No se ha podido guardar (" + r.status + ").", true); return; }
+            const message = r.headers.get("X-Clock-Message");
+            const isError = r.headers.get("X-Clock-Error") === "1";
+            return r.text().then(function (html) {
+                if (message) showToast(decodeURIComponent(message), isError);
+                if (isError) return;
+                results.innerHTML = html;
+                htmx.process(results);
+                refreshFromFragment();
+                if (done) done();
+            });
+        }).catch(function () {
+            showToast("Sin conexión con el servidor: no se ha guardado nada.", true);
+        });
+    }
+    results.addEventListener("click", function (evt) {
+        const link = evt.target.closest(".cw-hold");
+        if (!link) return;
+        evt.preventDefault();
+        if (link.dataset.hold === "0") {
+            const body = new FormData();
+            body.append("day", link.dataset.day);
+            body.append("hold", "0");
+            sendHold(body);
+            return;
+        }
+        document.getElementById("cw-hold-day").value = link.dataset.day;
+        document.getElementById("cw-hold-label").textContent = link.dataset.label || "";
+        document.getElementById("cwHoldNote").value = link.dataset.note || "";
+        bootstrap.Modal.getOrCreateInstance(document.getElementById("cwHoldModal")).show();
+    });
+    document.getElementById("cw-hold-save").addEventListener("click", function () {
+        const btn = this;
+        btn.disabled = true;
+        sendHold(new FormData(document.getElementById("cw-hold-form")), function () {
+            bootstrap.Modal.getOrCreateInstance(document.getElementById("cwHoldModal")).hide();
         }).finally(function () { btn.disabled = false; });
     });
 
