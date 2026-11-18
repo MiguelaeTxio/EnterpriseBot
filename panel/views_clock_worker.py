@@ -572,6 +572,8 @@ def schedule_info(person):
         labels_in.get(k, k) for k in probe.in_reminder_keys()) or "ninguno"
     info["out_reminders"] = ", ".join(
         labels_out.get(k, k) for k in probe.out_reminder_keys()) or "ninguno"
+    # S149 (18/11): por qué se cambió su horario (con efecto atrás).
+    info["schedule_note"] = getattr(setting, "schedule_note", "")
     # S149 (18/11): su salida sube a la media hora desde N minutos.
     info["out_round_up"] = getattr(setting, "out_round_up_minutes", None)
     if setting is not None and setting.own_shifts():

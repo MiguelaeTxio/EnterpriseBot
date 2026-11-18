@@ -1651,6 +1651,15 @@ class WorkerClockSetting(models.Model):
         help_text="Vacío: la regla general (la salida va a la media hora "
                   "anterior salvo a 5 minutos de la siguiente).",
     )
+    # S149 (Miguel Ángel, 18/11, Yolanda Bandera): por qué se cambió su
+    # horario con efecto en lo ya fichado, quién y cuándo (las horas se
+    # calculan siempre con el horario vigente, también las pasadas).
+    schedule_note = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Nota del cambio de horario",
+    )
     # S141 (Miguel Ángel): el horario va en el trabajador, no en su
     # usuario del panel: chóferes, gruistas y administrativos no tienen
     # (ni tendrán de momento) acceso al panel, solo al fichaje. Se pone

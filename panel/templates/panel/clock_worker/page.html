@@ -41,6 +41,7 @@ screen_key "clock_worker"); la selección, por trabajador.
             {% else %} · {{ sched.tracts }}{% if sched.schedule.is_intensive %} <span class="text-muted">(intensiva)</span>{% endif %}{% endif %}
             {% if sched.schedule.works_holidays %} · <span class="text-muted">trabaja festivos</span>{% endif %}
         {% endif %}</span>
+    {% if sched.schedule_note %}<span class="text-muted" title="Cambio de horario"><i class="bi bi-journal-text me-1"></i>{{ sched.schedule_note }}</span>{% endif %}
     {% if sched.state %}
     <span><i class="bi bi-phone me-1"></i><strong>Ficha:</strong>
         {% if not sched.state.section_clocks %}su sección no ficha
