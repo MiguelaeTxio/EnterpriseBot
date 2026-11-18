@@ -248,6 +248,37 @@ def record_heartbeat(agent, host="", aliases=None, autofirma="", error="",
                               "last_seen_at"])
 
 
+def _certificate(signature):
+    """
+    The certificate the agent must use: (alias, thumbprint).
+    ---
+    El certificado con el que firmará el agente: (alias, huella). S153
+    (agente v3): con el CIF, el certificado vigente de la empresa por su
+    huella; NoValidCertificate si no hay ninguno (no se encola).
+    """
+    alias, thumbprint = signature.certificate_alias, ""
+    if signature.certificate_cif:
+        cert = current_certificate(signature.certificate_cif)
+        thumbprint = cert["thumbprint"]
+        alias = "%s (%s) · %s · hasta %s" % (
+            cert["company"], cert["cif"], cert["holder"],
+            cert["expires"].strftime("%d/%m/%Y"))
+    return alias, thumbprint
+
+
+def _all_pages_config(data, config):
+    """
+    S153: the visible-signature config plus a blank spot on each page.
+    ---
+    S153: la configuración de la firma visible más un sitio en blanco al
+    pie de cada una de las demás páginas.
+    """
+    from document_explorer.signed_forms_service import page_placements
+
+    return "\\n".join(filter(None, [config or "",
+                                    page_placements(data, config)]))
+
+
 def create_job(signature, documents, notes, by, all_pages=False,
                person=None):
     """
@@ -258,23 +289,10 @@ def create_job(signature, documents, notes, by, all_pages=False,
     la firma elegida.
     """
     purge_old()
-    alias, thumbprint = signature.certificate_alias, ""
-    if signature.certificate_cif:
-        # S153 (agente v3): el certificado vigente de la empresa, por su
-        # huella; NoValidCertificate si no hay ninguno (no se encola).
-        cert = current_certificate(signature.certificate_cif)
-        thumbprint = cert["thumbprint"]
-        alias = "%s (%s) · %s · hasta %s" % (
-            cert["company"], cert["cif"], cert["holder"],
-            cert["expires"].strftime("%d/%m/%Y"))
+    alias, thumbprint = _certificate(signature)
     if all_pages:
-        # S153: sitio en blanco al pie de cada una de las demás páginas.
-        from document_explorer.signed_forms_service import page_placements
-
-        documents = [
-            (name, data, "\\n".join(filter(None, [
-                config or "", page_placements(data, config)])))
-            for name, data, config in documents]
+        documents = [(name, data, _all_pages_config(data, config))
+                     for name, data, config in documents]
     with transaction.atomic():
         job = SignedFormJob.objects.create(
             signature=signature,
@@ -313,6 +331,139 @@ def record_image_job(signature, documents, notes, by, person=None):
             for name, data in documents
         ])
     return job
+
+
+def is_digital(signature):
+    """
+    Whether the signature signs with a certificate (agent) or the image.
+    ---
+    Si la firma lleva certificado (la firma el agente) o solo la imagen.
+    """
+    return bool(signature.certificate_cif or signature.certificate_alias)
+
+
+def create_waiting_job(signature, documents, by, all_pages=False,
+                       person=None):
+    """
+    S156: keep the client's PDFs [(name, bytes)] until Gemini is back.
+    ---
+    S156 (hoja de ruta, punto 2): Gemini saturado al localizar los
+    huecos. Se guardan los PDF originales del cliente (cifrados) en un
+    lote "Esperando a Gemini" y fill_signed_job_task los rellena cuando
+    Vertex AI deja de devolver 429. Con certificado, el certificado se
+    elige ya (NoValidCertificate si no hay ninguno, como en create_job).
+    """
+    purge_old()
+    digital = is_digital(signature)
+    alias, thumbprint = _certificate(signature) if digital else ("", "")
+    with transaction.atomic():
+        job = SignedFormJob.objects.create(
+            signature=signature,
+            kind=(SignedFormJob.KIND_DIGITAL if digital
+                  else SignedFormJob.KIND_IMAGE),
+            status=SignedFormJob.STATUS_WAITING,
+            certificate_alias=alias[:255],
+            certificate_thumbprint=thumbprint, all_pages=all_pages,
+            notes=[], created_by=by, person=person)
+        SignedFormFile.objects.bulk_create([
+            SignedFormFile(job=job, name=name,
+                           status=SignedFormFile.STATUS_WAITING,
+                           unsigned_encrypted=encrypt(data))
+            for name, data in documents
+        ])
+    return job
+
+
+def _close_waiting_job(job):
+    """
+    S156: the waiting job once every file is filled (or failed).
+    ---
+    S156: con todos los documentos rellenos (o con error), el lote pasa
+    a la cola del agente (digital) o queda terminado (imagen). Solo si
+    sigue esperando: una cancelación entretanto no se pisa.
+    """
+    statuses = set(job.files.values_list("status", flat=True))
+    if job.kind == SignedFormJob.KIND_DIGITAL and (
+            SignedFormFile.STATUS_PENDING in statuses):
+        update = {"status": SignedFormJob.STATUS_PENDING}
+    else:
+        update = {
+            "status": (SignedFormJob.STATUS_DONE
+                       if statuses == {SignedFormFile.STATUS_DONE}
+                       else SignedFormJob.STATUS_ERROR),
+            "finished_at": timezone.now(),
+        }
+    SignedFormJob.objects.filter(
+        pk=job.pk, status=SignedFormJob.STATUS_WAITING).update(**update)
+    return update["status"]
+
+
+def fill_waiting_files(job):
+    """
+    S156: fill the waiting files of a job; GeminiBusyError to retry.
+    ---
+    S156: rellena los documentos del lote que esperan a Gemini, uno a
+    uno, guardando cada uno al terminarlo (un reintento no repite los ya
+    rellenos). Si Gemini sigue saturado, GeminiBusyError (la tarea
+    reintenta más tarde). Un documento que no se puede rellenar queda
+    con su error, como en la pantalla. Devuelve el estado final del lote.
+    """
+    from document_explorer import signed_forms_service as forms
+
+    signature = job.signature
+    digital = job.kind == SignedFormJob.KIND_DIGITAL
+    png = forms.signature_png(signature)
+    values = forms.form_values(signature.company, job.person)
+    notes = list(job.notes or [])
+    pending = job.files.filter(
+        status=SignedFormFile.STATUS_WAITING).order_by("pk")
+    for item in pending:
+        job.refresh_from_db(fields=["status"])
+        if job.status != SignedFormJob.STATUS_WAITING:
+            return job.status
+        try:
+            filled = forms.fill_form(
+                decrypt(item.unsigned_encrypted), values, png,
+                allow_empty=digital, live=False)
+        except forms.GeminiBusyError:
+            raise
+        except forms.SignedFormError as exc:
+            item.status = SignedFormFile.STATUS_ERROR
+            item.error = str(exc)[:2000]
+            item.save(update_fields=["status", "error"])
+            continue
+        notes.append({"file": item.name, "method": filled.method,
+                      "notes": filled.notes})
+        if digital:
+            config = forms.autofirma_config(filled.data,
+                                            filled.signature_box)
+            if job.all_pages:
+                config = _all_pages_config(filled.data, config)
+            item.unsigned_encrypted = encrypt(filled.data)
+            item.signature_config = config or ""
+            item.status = SignedFormFile.STATUS_PENDING
+        else:
+            item.unsigned_encrypted = b""
+            item.signed_encrypted = encrypt(filled.data)
+            item.status = SignedFormFile.STATUS_DONE
+        item.save(update_fields=["unsigned_encrypted", "signed_encrypted",
+                                 "signature_config", "status"])
+        SignedFormJob.objects.filter(pk=job.pk).update(notes=notes)
+    return _close_waiting_job(job)
+
+
+def fail_waiting_job(job, message):
+    """
+    S156: a waiting job that cannot be filled at all (unexpected error).
+    ---
+    S156: un lote que espera a Gemini y no se puede rellenar por un
+    error inesperado: los documentos que faltaban quedan con el error,
+    visibles en el listado, nunca esperando para siempre.
+    """
+    job.files.filter(status=SignedFormFile.STATUS_WAITING).update(
+        status=SignedFormFile.STATUS_ERROR,
+        error=("No se ha podido rellenar: %s" % message)[:2000])
+    return _close_waiting_job(job)
 
 
 def take_pending(agent, limit=MAX_FILES_PER_POLL):
@@ -368,10 +519,13 @@ def cancel_job(job, by=None):
     anula un lote que aún no ha terminado. Lo que quedaba por firmar se
     marca como cancelado y lo que el agente devuelva después se tira.
     """
-    if job.status != SignedFormJob.STATUS_PENDING:
+    if job.status not in (SignedFormJob.STATUS_PENDING,
+                          SignedFormJob.STATUS_WAITING):
         return False
     who = by.user.get_full_name() if by is not None else ""
-    job.files.filter(status__in=[SignedFormFile.STATUS_PENDING,
+    # S156: también un lote que espera a Gemini.
+    job.files.filter(status__in=[SignedFormFile.STATUS_WAITING,
+                                 SignedFormFile.STATUS_PENDING,
                                  SignedFormFile.STATUS_SIGNING]).update(
         status=SignedFormFile.STATUS_ERROR,
         error=("Cancelado por %s" % who) if who else "Cancelado")

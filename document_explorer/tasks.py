@@ -1171,3 +1171,52 @@ def restore_database_task(self, backup_pk: int, username: str) -> str:
     from .db_backup_service import restore_backup
 
     return restore_backup(backup_pk, username) or "correcta"
+
+
+# S156: base y tope de la espera entre reintentos cuando Gemini sigue
+# saturado (directriz 4.1.3: backoff exponencial con jitter, base 30 s
+# en segundo plano).
+SIGNED_JOB_RETRY_BASE = 30
+SIGNED_JOB_RETRY_CAP = 300
+
+
+@app.task(base=DjangoTask, bind=True, max_retries=None)
+def fill_signed_job_task(self, job_id: int) -> str:
+    """
+    S156. Fills the forms of a signed-form job left waiting for Gemini.
+
+    ---
+
+    S156 (hoja de ruta, punto 2). Rellena los documentos de un lote de
+    Firmas que se quedó "Esperando a Gemini" (429 al localizar los
+    huecos). Mientras Vertex AI siga saturado se reintenta sin límite,
+    con espera creciente y jitter; el lote se puede cancelar desde la
+    pantalla. Al terminar, el digital pasa a la cola del agente y el de
+    imagen queda listo para descargar.
+    """
+    from ai_services.gemini_client import backoff_delay
+
+    from . import signing_agent_service as agents
+    from .models import SignedFormJob
+    from .signed_forms_service import GeminiBusyError
+
+    job = SignedFormJob.objects.filter(pk=job_id).select_related(
+        "signature__company", "person").first()
+    if job is None or job.status != SignedFormJob.STATUS_WAITING:
+        return "skip"
+    try:
+        status = agents.fill_waiting_files(job)
+    except GeminiBusyError:
+        delay = backoff_delay(self.request.retries + 1,
+                              SIGNED_JOB_RETRY_BASE, SIGNED_JOB_RETRY_CAP)
+        logger.warning(
+            "# [FIRMAS] Lote %s: Gemini sigue saturado (reintento %d). "
+            "Otra vez en %.0f s.", job_id, self.request.retries + 1, delay)
+        raise self.retry(countdown=delay)
+    except Exception as exc:
+        logger.exception("# [FIRMAS] Lote %s: no se ha podido rellenar.",
+                         job_id)
+        return agents.fail_waiting_job(job, str(exc)[:300])
+    logger.info("# [FIRMAS] Lote %s rellenado tras esperar a Gemini: %s.",
+                job_id, status)
+    return status

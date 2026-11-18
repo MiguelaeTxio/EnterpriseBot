@@ -96,7 +96,8 @@ _MAX_GEMINI_ATTEMPTS = 3
 _RETRY_DELAY_SECONDS = 30  # S153: base del backoff exponencial con jitter
 
 
-def _generate_content_with_retry(client, **kwargs):
+def _generate_content_with_retry(client, *, attempts=None, retry_base=None,
+                                 **kwargs):
     """
     Acquires a proactive rate-limit slot (ai_services.
     gemini_rate_limiter.acquire_gemini_slot()), then calls
@@ -115,9 +116,16 @@ def _generate_content_with_retry(client, **kwargs):
     (RESOURCE_EXHAUSTED). Cualquier otra excepción se propaga de
     inmediato en el primer intento -- solo merece la pena esperar
     errores de cuota/límite de tasa.
+
+    S156: `attempts` y `retry_base` (opcionales) cambian los intentos y
+    la base de la espera: una ventana en la que alguien espera usa la
+    base de 5 s (directriz 4.1.3) y una tarea de Celery que reintenta
+    por su cuenta, un solo intento.
     """
+    attempts = attempts or _MAX_GEMINI_ATTEMPTS
+    retry_base = retry_base or _RETRY_DELAY_SECONDS
     last_exc = None
-    for attempt in range(1, _MAX_GEMINI_ATTEMPTS + 1):
+    for attempt in range(1, attempts + 1):
         acquire_gemini_slot()
         try:
             return client.models.generate_content(**kwargs)
@@ -127,14 +135,14 @@ def _generate_content_with_retry(client, **kwargs):
             is_quota_error = (
                 "429" in exc_str or "RESOURCE_EXHAUSTED" in exc_str
             )
-            if not is_quota_error or attempt == _MAX_GEMINI_ATTEMPTS:
+            if not is_quota_error or attempt == attempts:
                 raise
             # S153: espera creciente con jitter (documentación de Vertex AI).
-            delay = backoff_delay(attempt, _RETRY_DELAY_SECONDS)
+            delay = backoff_delay(attempt, retry_base)
             logger.warning(
                 "# [_generate_content_with_retry] 429 de Vertex AI "
                 "(intento %d/%d). Reintentando en %.0fs.",
-                attempt, _MAX_GEMINI_ATTEMPTS, delay,
+                attempt, attempts, delay,
             )
             time.sleep(delay)
     # Inalcanzable: el bucle siempre retorna o lanza.

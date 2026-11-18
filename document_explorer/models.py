@@ -2520,11 +2520,15 @@ class SignedFormJob(models.Model):
     que espera la firma digital del agente. Los PDF van cifrados.
     """
 
+    STATUS_WAITING = "waiting"
     STATUS_PENDING = "pending"
     STATUS_DONE = "done"
     STATUS_ERROR = "error"
     STATUS_CANCELLED = "cancelled"
+    # S156: Gemini saturado al localizar los huecos; una tarea de Celery
+    # rellena los documentos cuando vuelve (hoja de ruta S156, punto 2).
     STATUS_CHOICES = [
+        (STATUS_WAITING, "Esperando a Gemini"),
         (STATUS_PENDING, "Pendiente de firma digital"),
         (STATUS_DONE, "Firmado"),
         (STATUS_ERROR, "Con errores"),
@@ -2586,11 +2590,15 @@ class SignedFormFile(models.Model):
     del agente, el firmado. Ambos cifrados.
     """
 
+    STATUS_WAITING = "waiting"
     STATUS_PENDING = "pending"
     STATUS_SIGNING = "signing"
     STATUS_DONE = "done"
     STATUS_ERROR = "error"
+    # S156: "waiting" = PDF original del cliente, sin rellenar todavía
+    # (Gemini saturado); la tarea lo rellena y pasa a "pending"/"done".
     STATUS_CHOICES = [
+        (STATUS_WAITING, "Esperando a Gemini"),
         (STATUS_PENDING, "Pendiente"),
         (STATUS_SIGNING, "Firmándose"),
         (STATUS_DONE, "Firmado"),

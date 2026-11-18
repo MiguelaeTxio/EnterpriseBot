@@ -19,6 +19,7 @@ import logging
 import zipfile
 from urllib.parse import quote
 
+from django.db import transaction
 from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
 from django.utils import timezone
@@ -157,7 +158,9 @@ class SignedFormsGenerateView(SignatureAccessMixin, View):
     se puede, por Gemini). Devuelve el PDF (si es uno) o un ZIP, con la
     cabecera X-Signed-Notes (cómo se rellenó cada uno y sus avisos). Si
     alguno no se puede rellenar, no se genera nada y se dice cuál y por
-    qué (JSON).
+    qué (JSON). S156: si Gemini está saturado (429), nada se pierde: los
+    PDF quedan en un lote "Esperando a Gemini" que rellena una tarea de
+    Celery, y la pantalla sigue su estado (202 con status_url).
     """
 
     def post(self, request):
@@ -182,39 +185,50 @@ class SignedFormsGenerateView(SignatureAccessMixin, View):
             pk=request.POST.get("person") or 0).first()
         values = forms.form_values(profile, person)
         results, errors, names, notes, configs = [], [], set(), [], []
+        originals, busy = [], False
         for upload in files:
             if upload.size > MAX_FORM_BYTES:
                 errors.append("%s: pasa de 25 MB" % upload.name)
                 continue
-            try:
-                # S153: con certificado, un documento sin huecos que
-                # rellenar se firma solo digitalmente.
-                filled = forms.fill_form(
-                    upload.read(), values, png,
-                    allow_empty=bool(signature.certificate_cif
-                                     or signature.certificate_alias))
-            except forms.SignedFormError as exc:
-                errors.append("%s: %s" % (upload.name, exc))
-                continue
-            data = filled.data
-            notes.append({"file": upload.name, "method": filled.method,
-                          "notes": filled.notes})
+            raw = upload.read()
             name = forms.output_name(upload.name, profile)
             base, number = name[:-4], 2
             while name in names:
                 name = "%s (%d).pdf" % (base, number)
                 number += 1
             names.add(name)
+            originals.append((name, raw))
+            if busy:
+                continue
+            try:
+                # S153: con certificado, un documento sin huecos que
+                # rellenar se firma solo digitalmente.
+                filled = forms.fill_form(
+                    raw, values, png,
+                    allow_empty=agents.is_digital(signature))
+            except forms.GeminiBusyError:
+                # S156: Gemini saturado; los demás ya no se le piden.
+                busy = True
+                continue
+            except forms.SignedFormError as exc:
+                errors.append("%s: %s" % (upload.name, exc))
+                continue
+            data = filled.data
+            notes.append({"file": upload.name, "method": filled.method,
+                          "notes": filled.notes})
             results.append((name, data))
             configs.append(forms.autofirma_config(data,
                                                   filled.signature_box))
         if errors:
             return JsonResponse({"error": "No se ha generado nada. "
                                           + "; ".join(errors)}, status=400)
+        if busy:
+            return self._wait_for_gemini(request, signature, originals,
+                                         person)
         logger.info("# [FIRMAS] %d documento(s) firmados con '%s' (%s) por "
                     "%s.", len(results), signature.label,
                     profile.legal_name, request.user.username)
-        if signature.certificate_cif or signature.certificate_alias:
+        if agents.is_digital(signature):
             # S153: con certificado, a la cola del agente de firmas. Con
             # el CIF (agente v3), solo con un certificado vigente.
             try:
@@ -239,6 +253,35 @@ class SignedFormsGenerateView(SignatureAccessMixin, View):
         # Cómo se rellenó cada uno y qué pedía que no se ha puesto.
         response["X-Signed-Notes"] = quote(json.dumps(notes))
         return response
+
+    def _wait_for_gemini(self, request, signature, originals, person):
+        """
+        S156: Gemini saturated; the PDFs wait in a job filled by Celery.
+        ---
+        S156: Gemini saturado (429). Los PDF originales quedan en un
+        lote "Esperando a Gemini" y fill_signed_job_task los rellena
+        cuando vuelve; la pantalla sigue el lote como los digitales.
+        """
+        from document_explorer.tasks import fill_signed_job_task
+
+        try:
+            job = agents.create_waiting_job(
+                signature, originals, request.user.company_user,
+                all_pages=request.POST.get("all_pages") == "1",
+                person=person)
+        except agents.NoValidCertificate as exc:
+            return JsonResponse({"error": "No se ha generado nada. "
+                                          + str(exc)}, status=400)
+        transaction.on_commit(
+            lambda: fill_signed_job_task.delay(job.pk))
+        logger.warning("# [FIRMAS] Gemini saturado: lote %s (%d "
+                       "documento(s)) esperando a Gemini, por %s.",
+                       job.pk, len(originals), request.user.username)
+        return JsonResponse({
+            "job": job.pk, "notes": [], "waiting": True,
+            "status_url": reverse("panel:signed_job_status",
+                                  args=[job.pk]),
+        }, status=202)
 
 
 def _files_response(results):
@@ -281,6 +324,7 @@ class SignedJobStatusView(SignatureAccessMixin, View):
         done = [f for f in files if f.status == SignedFormFile.STATUS_DONE]
         return JsonResponse({
             "status": job.status,
+            "kind": job.kind,
             "total": len(files),
             "done": len(done),
             "errors": [f"{f.name}: {f.error}" for f in files

@@ -179,17 +179,26 @@ def _document_rows():
         status = ("cancelled" if job.status == SignedFormJob.STATUS_CANCELLED
                   and item.status != SignedFormFile.STATUS_DONE
                   else item.status)
+        # S156: "esperando a Gemini" y "firmándose" se filtran con
+        # "Pendiente de firma" (nada se pierde de vista, 4.24.8), con su
+        # propia etiqueta.
+        label = dict(STATUS_CHOICES).get(status) or dict(
+            SignedFormFile.STATUS_CHOICES).get(status, status)
+        if status in (SignedFormFile.STATUS_WAITING,
+                      SignedFormFile.STATUS_SIGNING):
+            status = SignedFormFile.STATUS_PENDING
         person = _person_label(job.person)
         rows.append({
             "key": str(item.pk),
             "label": "%s · %s" % (item.name, job.created_at.strftime(
                 "%d/%m/%Y")),
             "item": item, "job": job, "status": status,
-            "status_label": dict(STATUS_CHOICES).get(status, status),
+            "status_label": label,
             "person": person, "person_id": job.person_id or "",
             "company_id": job.signature.company_id,
             "kind": job.kind,
-            "can_cancel": job.status == SignedFormJob.STATUS_PENDING,
+            "can_cancel": job.status in (SignedFormJob.STATUS_PENDING,
+                                         SignedFormJob.STATUS_WAITING),
             "can_download": item.status == SignedFormFile.STATUS_DONE,
             "text": " ".join([item.name, job.signature.company.legal_name,
                               job.signature.label, person]).lower(),
@@ -198,7 +207,7 @@ def _document_rows():
                 "company": job.signature.company.legal_name.lower(),
                 "signer": job.signature.label.lower(),
                 "person": person.lower() or None,
-                "kind": job.get_kind_display(), "status": status,
+                "kind": job.get_kind_display(), "status": label,
             },
         })
     return rows

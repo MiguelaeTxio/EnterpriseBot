@@ -17,6 +17,7 @@ panel/views_signatures.py (acciones).
 <style>
     .sig-thumb { max-height: 2.6rem; max-width: 10rem; background: #fff; }
     .sig-preview { max-height: 5rem; max-width: 100%; }
+    .sig-scroll-y { overflow-y: auto; }
     #sig-results-scroll table td, #sig-results-scroll table th { white-space: nowrap; }
     .sig-fill { flex: 1 1 auto; min-height: 0; }
     #sig-list-col > div:fullscreen { background-color: var(--bs-body-bg); padding: 1rem; }
@@ -184,7 +185,7 @@ panel/views_signatures.py (acciones).
                             hx-include="#sig-filters" hx-vals='{"sort": ""}'>Quitar orden</button>
                     <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" id="sig-fullscreen" title="Pantalla completa"><i class="bi bi-fullscreen"></i></button>
                 </div>
-                <div id="sig-results-scroll" class="sig-fill fixed-list-scroll" style="overflow: auto;">
+                <div id="sig-results-scroll" class="sig-fill fixed-list-scroll overflow-auto">
                     <div id="sig-results"
                          hx-get="{% url 'panel:signature_results' %}"
                          hx-include="#sig-filters, #sig-sort-inputs"
@@ -197,7 +198,7 @@ panel/views_signatures.py (acciones).
         <div class="col-lg-3 h-100">
             <div class="border rounded p-2 h-100 d-flex flex-column">
                 <div class="fw-bold small mb-1">Selección actual (<span id="sig-selection-count">0</span>)</div>
-                <div class="sig-fill" style="overflow-y: auto;">
+                <div class="sig-fill sig-scroll-y">
                     <ul class="mb-0 small ps-0 list-unstyled" id="sig-selection-list">
                         <li class="text-muted">Nada seleccionado todavía.</li>
                     </ul>
@@ -623,6 +624,13 @@ panel/views_signatures.py (acciones).
                         .then(function (response) { return response.json(); })
                         .then(function (body) {
                             if (body.error) { say(msg, body.error, false); resolve(); return; }
+                            if (body.status === "waiting") {
+                                say(msg, "Esperando a Gemini… (está saturado; se reintenta solo y no hace falta volver a generar) " + body.done + "/" + body.total, true);
+                                cancelBtn.dataset.url = body.cancel_url;
+                                cancelBtn.classList.remove("d-none");
+                                setTimeout(tick, 5000);
+                                return;
+                            }
                             if (body.status === "pending") {
                                 say(msg, "Firmando digitalmente… " + body.done + "/" + body.total + " (el agente tiene que estar encendido)", true);
                                 cancelBtn.dataset.url = body.cancel_url;
@@ -638,7 +646,8 @@ panel/views_signatures.py (acciones).
                                 return;
                             }
                             const ok = body.status === "done";
-                            say(msg, (ok ? "Firmados digitalmente " : "Terminado con errores: firmados ") + body.done + "/" + body.total
+                            const how = body.kind === "image" ? "Generados " : "Firmados digitalmente ";
+                            say(msg, (ok ? how : "Terminado con errores: firmados ") + body.done + "/" + body.total
                                 + (body.errors.length ? ". " + body.errors.join("; ") : ""), ok);
                             if (body.download_url) window.location.href = body.download_url;
                             resolve();
@@ -672,7 +681,7 @@ panel/views_signatures.py (acciones).
                     if (response.status === 202) {
                         return response.json().then(function (body) {
                             showNotes(body.notes || []);
-                            say(msg, "Generados. Esperando la firma digital del agente…", true);
+                            say(msg, body.waiting ? "Esperando a Gemini… (está saturado; se reintenta solo)" : "Generados. Esperando la firma digital del agente…", true);
                             refreshList();
                             return pollJob(body.status_url, msg);
                         });

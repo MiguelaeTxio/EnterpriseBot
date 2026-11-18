@@ -117,6 +117,36 @@ class SignedFormError(ValueError):
     """
 
 
+class GeminiBusyError(SignedFormError):
+    """
+    Gemini is saturated or unavailable (429, 5xx): try again later.
+    ---
+    S156: Vertex AI saturado o caído (429, 503, 504) tras los
+    reintentos; el documento no tiene nada mal y se vuelve a intentar
+    más tarde desde una tarea de Celery (hoja de ruta S156, punto 2).
+    """
+
+
+# S156: marcas de un fallo pasajero de Vertex AI (mismas que
+# worker_request_service._is_transient).
+_BUSY_MARKS = ("429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE", "504",
+               "DEADLINE_EXCEEDED")
+# S156: en la ventana de Firmas (alguien esperando) dos intentos con la
+# base de 5 s (directriz 4.1.3); en la tarea, uno (reintenta Celery).
+LIVE_ATTEMPTS = 2
+LIVE_RETRY_BASE = 5
+
+
+def is_gemini_busy(exc):
+    """
+    Whether a Gemini failure is transient (quota, timeout, unavailable).
+    ---
+    Si el fallo de Gemini es pasajero (cuota, tiempo agotado, caído).
+    """
+    text = str(exc)
+    return any(mark in text for mark in _BUSY_MARKS)
+
+
 def prepare_signature(raw):
     """
     PNG bytes of a signature: white background removed, cropped.
@@ -293,12 +323,14 @@ def _gemini_prompt(pages):
     )
 
 
-def _ask_gemini(doc):
+def _ask_gemini(doc, live=True):
     """
     Where each field goes, according to Gemini (list of dicts).
     ---
     Dónde va cada dato según Gemini, a partir de la imagen de las
-    primeras páginas.
+    primeras páginas. GeminiBusyError si Vertex AI está saturado;
+    `live` (ventana de Firmas) reintenta dos veces con 5 s de base,
+    si no (tarea de Celery) un solo intento.
     """
     from google.genai.types import (
         GenerateContentConfig, HttpOptions, Part,
@@ -318,6 +350,8 @@ def _ask_gemini(doc):
     try:
         response = _generate_content_with_retry(
             get_gemini_client(),
+            attempts=LIVE_ATTEMPTS if live else 1,
+            retry_base=LIVE_RETRY_BASE,
             model=DEFAULT_MODEL,
             contents=parts + [_gemini_prompt(count)],
             config=GenerateContentConfig(
@@ -329,6 +363,11 @@ def _ask_gemini(doc):
         )
         result = json.loads(response.text.strip())
     except Exception as exc:
+        if is_gemini_busy(exc):
+            logger.warning("# [FIRMAS] Gemini saturado al localizar "
+                           "huecos: %s", str(exc)[:200])
+            raise GeminiBusyError("Gemini está saturado (%s)"
+                                  % str(exc)[:200]) from exc
         logger.exception("# [FIRMAS] Fallo de Gemini al localizar huecos.")
         raise SignedFormError("Gemini no ha podido leer el documento "
                               "(%s)" % str(exc)[:200]) from exc
@@ -383,7 +422,7 @@ def _sign_in_box(page, rect, png):
     return (page.number + 1, tuple(placed), page.rect.height)
 
 
-def _fill_by_gemini(doc, values, png, allow_empty=False):
+def _fill_by_gemini(doc, values, png, allow_empty=False, live=True):
     """
     Gemini path: write each value where Gemini says. Returns notes.
     ---
@@ -391,7 +430,7 @@ def _fill_by_gemini(doc, values, png, allow_empty=False):
     avisos y dónde quedó la firma (o None). SignedFormError si no
     encuentra ningún hueco.
     """
-    items = _ask_gemini(doc)
+    items = _ask_gemini(doc, live=live)
     if not items:
         if allow_empty:
             return [NOTHING_TO_FILL], None
@@ -442,14 +481,15 @@ NOTHING_TO_FILL = ("no había nada que rellenar: solo lleva la firma "
                    "digital (al pie)")
 
 
-def fill_form(pdf_bytes, values, png, allow_empty=False):
+def fill_form(pdf_bytes, values, png, allow_empty=False, live=True):
     """
     The form filled and signed (FillResult).
     ---
     Rellena y firma un documento. `values`: {empresa, cif,
     domicilio_social, trabajador, dni_trabajador}. Primero por texto
     (las dos etiquetas conocidas); si no están, por Gemini. Devuelve un
-    FillResult; SignedFormError si no se puede.
+    FillResult; SignedFormError si no se puede (GeminiBusyError si
+    Gemini está saturado: se puede reintentar). `live`: ver _ask_gemini.
     """
     doc = _open(pdf_bytes)
     text = values.get(FIELD_COMPANY, "")
@@ -461,7 +501,8 @@ def fill_form(pdf_bytes, values, png, allow_empty=False):
     else:
         method = METHOD_GEMINI
         notes, sign_box = _fill_by_gemini(doc, values, png,
-                                          allow_empty=allow_empty)
+                                          allow_empty=allow_empty,
+                                          live=live)
     out = doc.tobytes(garbage=3, deflate=True)
     doc.close()
     return FillResult(out, method, notes, sign_box or None)
