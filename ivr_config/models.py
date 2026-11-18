@@ -1176,6 +1176,21 @@ class Section(models.Model):
             "por defecto de empresa (WorkdaySchedule.is_default=True)."
         ),
     )
+    # S155 (Miguel Ángel): el horario de atención de la centralita se
+    # elige entre los horarios de jornada, no con franjas sueltas.
+    attention_schedule = models.ForeignKey(
+        "WorkdaySchedule",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="attention_sections",
+        verbose_name="Horario de atención",
+        help_text=(
+            "Horario de jornada en el que la centralita da la sección por "
+            "abierta. Sin «Horario distinto según el día», de lunes a "
+            "viernes. No cuenta si la sección es 24 horas."
+        ),
+    )
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de creación",

@@ -358,8 +358,8 @@ def _build_section_schedule_context(company) -> tuple[str, dict]:
             call_flow__isnull=False,
             call_flow__is_active=True,
         )
-        .select_related('call_flow')
-        .prefetch_related('schedules')
+        .select_related('call_flow', 'attention_schedule')
+        .prefetch_related('schedules', 'attention_schedule__days')
         .order_by('name')
     )
 
@@ -400,6 +400,31 @@ def _build_section_schedule_context(company) -> tuple[str, dict]:
             logger.debug(
                 f"[CONFIG] Sección '{section.name}': 24h — siempre disponible."
             )
+            continue
+
+        # S155: horario de atención elegido entre los horarios de jornada.
+        # Las franjas antiguas (SectionSchedule) solo cuentan si la
+        # sección todavía no tiene uno elegido.
+        if section.attention_schedule_id:
+            tracts = attention_tracts(
+                section.attention_schedule, local_now.date())
+            slots = ' y '.join(
+                f"{t_open:%H:%M}–{t_close:%H:%M}" for t_open, t_close in tracts)
+            if not tracts:
+                schedule_lines.append(
+                    f"La sección '{section.name}' no abre hoy y no está "
+                    "disponible en este momento."
+                )
+            elif any(_time_in_tract(local_time, t) for t in tracts):
+                schedule_lines.append(
+                    f"La sección '{section.name}' está disponible ahora mismo "
+                    f"(horario de hoy: {slots})."
+                )
+            else:
+                schedule_lines.append(
+                    f"La sección '{section.name}' está fuera de su horario "
+                    f"en este momento (horario de hoy: {slots})."
+                )
             continue
 
         schedules_today = section.schedules.filter(weekday=weekday)
@@ -450,6 +475,42 @@ def _build_section_schedule_context(company) -> tuple[str, dict]:
 # ---------------------------------------------------------------------------
 # BREAKDOWN SECTIONS CONTEXT / CONTEXTO DE SECCIONES DE AVERÍA INTERNA
 # ---------------------------------------------------------------------------
+
+def attention_tracts(schedule, day) -> list:
+    """
+    Opening tracts of a WorkdaySchedule on `day`, as (open, close) pairs.
+    ---
+    S155: tramos de atención de un horario de jornada el día `day`, como
+    pares (apertura, cierre). Con "Horario distinto según el día", los de
+    ese día (for_day); sin él, los del horario de lunes a viernes y
+    ninguno el fin de semana. Lista vacía si ese día no se abre.
+    """
+    if not schedule.varies_by_day and day.weekday() >= 5:
+        return []
+    applied = schedule.for_day(day)
+    if applied is None:
+        return []
+    tracts = [(applied.start_time_morning, applied.end_time_morning)]
+    if (not applied.is_intensive and applied.start_time_afternoon
+            and applied.end_time_afternoon):
+        tracts.append(
+            (applied.start_time_afternoon, applied.end_time_afternoon))
+    return [(t_open, t_close) for t_open, t_close in tracts
+            if t_open is not None and t_close is not None]
+
+
+def _time_in_tract(moment, tract) -> bool:
+    """
+    Whether `moment` falls inside the tract (it may end after midnight).
+    ---
+    Si la hora `moment` cae dentro del tramo (que puede acabar pasada la
+    medianoche, como el de un guarda).
+    """
+    t_open, t_close = tract
+    if t_open <= t_close:
+        return t_open <= moment <= t_close
+    return moment >= t_open or moment <= t_close
+
 
 def _build_breakdown_context(company) -> tuple[str, list[int]]:
     """
