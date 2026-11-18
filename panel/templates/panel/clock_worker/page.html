@@ -49,6 +49,9 @@ screen_key "clock_worker"); la selección, por trabajador.
     <span><i class="bi bi-bell me-1"></i><strong>Avisos:</strong>
         {% if sched.state.reminders %}entrada {{ sched.in_reminders|lower }}; salida {{ sched.out_reminders|lower }}{% else %}no{% endif %}</span>
     {% endif %}
+    {% if sched.out_round_up %}
+    <span title="Su salida sube a la media hora siguiente desde {{ sched.out_round_up }} minutos pasados (p. ej. 18:{{ sched.out_round_up|stringformat:'02d' }} cuenta 18:30). La hora real queda guardada."><i class="bi bi-clock-history me-1"></i><strong>Salida:</strong> sube a la media hora desde {{ sched.out_round_up }} min</span>
+    {% endif %}
     {% if sched.schedule.is_open %}
     <span><i class="bi bi-person-gear me-1"></i><strong>Su horario para los avisos:</strong>
         {% if sched.own %}{{ sched.own.tracts }} · {{ sched.own.days }}{% if sched.own.until %} · hasta el {{ sched.own.until|date:"d/m/Y" }}{% endif %}{% else %}<span class="text-muted">no se ha puesto ninguno</span>{% endif %}</span>

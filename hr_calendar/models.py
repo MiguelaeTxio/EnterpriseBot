@@ -841,8 +841,10 @@ class ImmutableClockRecord(Exception):
 
 # Campos de una pulsación que se pueden escribir después de crearla:
 # solo los derivados (municipio de las coordenadas, S129). Nunca el
-# tipo, la hora, la posición ni quién fichó.
-CLOCK_EVENT_DERIVED_FIELDS = frozenset({"municipality"})
+# tipo, la hora, la posición ni quién fichó. S149 (18/11): también la
+# hora redondeada, que se recalcula si cambia la regla del trabajador
+# (la hora real, pressed_at, nunca).
+CLOCK_EVENT_DERIVED_FIELDS = frozenset({"municipality", "rounded_at"})
 
 
 class ClockEventQuerySet(models.QuerySet):
@@ -1081,7 +1083,9 @@ class ClockEvent(models.Model):
         ---
         rounded_at sigue siempre a pressed_at (clock_rounding).
         """
-        from hr_calendar.clock_rounding import round_pressed_at
+        from hr_calendar.clock_rounding import (
+            out_round_up_minutes, round_pressed_at,
+        )
 
         # S141: una pulsación ya guardada solo admite sus campos
         # derivados.
@@ -1095,7 +1099,10 @@ class ClockEvent(models.Model):
                 )
             return super().save(*args, **kwargs)
         if self.pressed_at is not None:
-            self.rounded_at = round_pressed_at(self.pressed_at, self.kind)
+            self.rounded_at = round_pressed_at(
+                self.pressed_at, self.kind,
+                out_round_up_minutes(self.person_id)
+                if self.kind == self.Kind.OUT else None)
             update_fields = kwargs.get("update_fields")
             if update_fields is not None and "pressed_at" in update_fields:
                 kwargs["update_fields"] = set(update_fields) | {"rounded_at"}
@@ -1631,6 +1638,18 @@ class WorkerClockSetting(models.Model):
         choices=CLOCK_MODE_CHOICES,
         verbose_name="Tipo de fichaje",
         help_text="Vacío: como su sección.",
+    )
+    # S149 (Miguel Ángel, 18/11, Rocío Macías: sale más tarde y la
+    # salida bajaba a la media hora anterior): con un valor, su SALIDA
+    # sube a la media hora siguiente desde esos minutos pasados (15:
+    # 18:15 cuenta 18:30, 18:14 cuenta 18:00). Vacío: la regla de todos
+    # (clock_rounding).
+    out_round_up_minutes = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Salida: sube a la media hora desde (min)",
+        help_text="Vacío: la regla general (la salida va a la media hora "
+                  "anterior salvo a 5 minutos de la siguiente).",
     )
     # S141 (Miguel Ángel): el horario va en el trabajador, no en su
     # usuario del panel: chóferes, gruistas y administrativos no tienen

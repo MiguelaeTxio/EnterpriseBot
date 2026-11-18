@@ -30,7 +30,7 @@ import datetime
 TOLERANCE_MINUTES = 5
 
 
-def round_local(value, kind):
+def round_local(value, kind, round_up_from=None):
     """
     The rounded local datetime of a local datetime; kind "IN" or "OUT".
     ---
@@ -43,17 +43,39 @@ def round_local(value, kind):
     ceil = floor + datetime.timedelta(minutes=30)
     if past <= TOLERANCE_MINUTES:
         return floor
-    if 30 - past <= TOLERANCE_MINUTES or kind == "IN":
+    # S149 (Miguel Ángel, 18/11): a quien lo tenga puesto, la salida sube
+    # a la media hora siguiente desde esos minutos pasados.
+    up = (kind == "OUT" and round_up_from is not None
+          and past >= round_up_from)
+    if 30 - past <= TOLERANCE_MINUTES or kind == "IN" or up:
         return ceil if ceil.date() == value.date() else floor
     return floor
 
 
-def round_pressed_at(pressed_at, kind):
+def round_pressed_at(pressed_at, kind, round_up_from=None):
     """
     rounded_at for a stored (aware) pressed_at, in local time.
     ---
-    rounded_at para un pressed_at guardado (con zona), en hora local.
+    rounded_at para un pressed_at guardado (con zona), en hora local;
+    round_up_from: los minutos del trabajador para subir la salida
+    (out_round_up_minutes), o None.
     """
     from django.utils import timezone
 
-    return round_local(timezone.localtime(pressed_at), kind)
+    return round_local(timezone.localtime(pressed_at), kind, round_up_from)
+
+
+def out_round_up_minutes(person_id):
+    """
+    The worker's minutes to round an OUT up, or None (general rule).
+    ---
+    Los minutos desde los que sube la salida de ese trabajador
+    (WorkerClockSetting.out_round_up_minutes), o None: la regla general.
+    """
+    if person_id is None:
+        return None
+    from hr_calendar.models import WorkerClockSetting
+
+    return WorkerClockSetting.objects.filter(
+        person_id=person_id,
+    ).values_list("out_round_up_minutes", flat=True).first()
