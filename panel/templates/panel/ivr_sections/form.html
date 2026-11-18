@@ -1,0 +1,308 @@
+<!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/ivr_sections/form.html -->
+{% extends "panel/base.html" %}
+
+{% block title %}Centralita · {{ object.name }}{% endblock %}
+
+{% block extra_scripts %}
+<script>
+/*
+ * Dynamic SectionSchedule formset row addition.
+ * Adds a new empty schedule row by cloning the last empty row in the formset,
+ * updating all field name/id attributes to use the new form index, and
+ * incrementing the TOTAL_FORMS management form counter.
+ *
+ * Adición dinámica de filas al formset de SectionSchedule.
+ * Añade una nueva fila vacía clonando la última fila vacía del formset,
+ * actualizando todos los atributos name/id de campos al nuevo índice de formulario,
+ * e incrementando el contador TOTAL_FORMS del management form.
+ */
+(function () {
+    'use strict';
+
+    const addBtn     = document.getElementById('add-schedule-row');
+    const tableBody  = document.querySelector('#schedule-table tbody');
+    const totalForms = document.getElementById('id_schedules-TOTAL_FORMS');
+
+    if (!addBtn || !tableBody || !totalForms) return;
+
+    addBtn.addEventListener('click', function () {
+        /* Current total number of forms — Número total actual de formularios */
+        const formCount = parseInt(totalForms.value, 10);
+
+        /* Find the last schedule row to use as clone template.
+           Buscar la última fila de horario para usar como plantilla de clonación. */
+        const rows = tableBody.querySelectorAll('tr.schedule-row');
+        if (rows.length === 0) return;
+
+        const lastRow   = rows[rows.length - 1];
+        const newRow    = lastRow.cloneNode(true);
+
+        /* Update all name and id attributes from the last index to the new one.
+           Actualizar todos los atributos name e id del último índice al nuevo. */
+        const lastIndex = formCount - 1;
+        const newIndex  = formCount;
+
+        newRow.querySelectorAll('input, select').forEach(function (el) {
+            if (el.name) {
+                el.name = el.name.replace(
+                    'schedules-' + lastIndex + '-',
+                    'schedules-' + newIndex + '-'
+                );
+            }
+            if (el.id) {
+                el.id = el.id.replace(
+                    'id_schedules-' + lastIndex + '-',
+                    'id_schedules-' + newIndex + '-'
+                );
+            }
+            /* Reset field values — Reiniciar valores de los campos */
+            if (el.tagName === 'SELECT') {
+                el.selectedIndex = 0;
+            } else if (el.type === 'time') {
+                el.value = '';
+            } else if (el.type === 'checkbox') {
+                el.checked = false;
+            } else if (el.type === 'hidden') {
+                /* Clear hidden id field (pk) for new rows.
+                   Limpiar el campo id oculto (pk) para filas nuevas. */
+                if (el.name && el.name.endsWith('-id')) {
+                    el.value = '';
+                }
+            }
+        });
+
+        /* Hide DELETE checkbox on new rows (no pk yet).
+           Ocultar checkbox DELETE en filas nuevas (aún sin pk). */
+        const deleteCell = newRow.querySelector('td:last-child');
+        if (deleteCell) {
+            deleteCell.innerHTML = '';
+        }
+
+        /* Clear any validation error messages from the cloned row.
+           Limpiar mensajes de error de validación de la fila clonada. */
+        newRow.querySelectorAll('.text-danger').forEach(function (el) {
+            el.textContent = '';
+        });
+
+        tableBody.appendChild(newRow);
+
+        /* Increment TOTAL_FORMS counter.
+           Incrementar el contador TOTAL_FORMS. */
+        totalForms.value = newIndex + 1;
+    });
+}());
+</script>
+{% endblock %}
+
+{% block page_title %}Centralita · {{ object.name }}{% endblock %}
+
+{% block content %}
+
+<div class="row justify-content-center">
+    <div class="col-12 col-lg-7">
+
+        <div class="mb-3">
+            <a href="{% url 'panel:ivr_section_list' %}" class="text-muted text-decoration-none text-nav">
+                <i class="bi bi-arrow-left me-1"></i>Volver a Secciones en la centralita
+            </a>
+        </div>
+
+        <div class="alert {% if ivr_status.in_ivr %}alert-success{% else %}alert-secondary{% endif %} py-2 mb-3 text-sm">
+            <i class="bi bi-telephone me-1"></i>
+            {% if ivr_status.in_ivr %}
+                <strong>La centralita ofrece esta sección.</strong>
+            {% else %}
+                <strong>La centralita no ofrece esta sección.</strong>
+                {% for reason in ivr_status.reasons %}{{ reason }}{% if not forloop.last %} · {% endif %}{% endfor %}
+            {% endif %}
+            {% for warning in ivr_status.warnings %}<div class="text-warning-emphasis">{{ warning }}</div>{% endfor %}
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="bi bi-telephone me-2 text-primary"></i>{{ object.name }}
+                </h6>
+                <a href="{% url 'panel:section_edit' object.pk %}" class="text-sm">Ficha de la sección</a>
+            </div>
+            <div class="card-body p-4">
+
+                {% if object.description %}
+                <p class="text-muted text-sm mb-4">{{ object.description }}</p>
+                {% endif %}
+
+                <form method="post">
+                    {% csrf_token %}
+
+                    {% for field in form %}
+                    {% if field.name == "ivr_transfer_enabled" or field.name == "ivr_breakdown_enabled" %}
+                    <div class="mb-3">
+                        <div class="form-check">
+                            {{ field }}
+                            <label class="form-check-label fw-medium" for="{{ field.id_for_label }}">
+                                {{ field.label }}
+                            </label>
+                        </div>
+                        {% for error in field.errors %}<div class="text-danger mt-1 text-err">{{ error }}</div>{% endfor %}
+                        <div class="form-text">
+                            {% if field.name == "ivr_transfer_enabled" %}
+                                Quien llama puede pedir esta sección y la centralita le pasa con sus
+                                contactos. Hace falta además que la sección esté activa.
+                            {% else %}
+                                La centralita registra aquí las averías de máquinas propias que
+                                comunican los trabajadores por teléfono.
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+
+                    <hr class="my-4">
+                    <h6 class="fw-semibold mb-1">
+                        <i class="bi bi-ui-checks me-2 text-primary"></i>Captura de datos
+                    </h6>
+                    <div class="mb-4">
+                        {{ form.data_capture_set }}
+                        {% for error in form.data_capture_set.errors %}<div class="text-danger mt-1 text-err">{{ error }}</div>{% endfor %}
+                        <div class="form-text">
+                            Datos que Alia pide a quien llama antes de pasarle la llamada. Si la
+                            sección no los necesita, déjalo en «Ninguno». Los conjuntos se crean y
+                            editan en <a href="{% url 'panel:datacaptureset_list' %}">Conjuntos de captura</a>.
+                        </div>
+                    </div>
+
+                    <hr class="my-4">
+                    <h6 class="fw-semibold mb-1">
+                        <i class="bi bi-clock me-2 text-primary"></i>Horario de atención
+                    </h6>
+                    <p class="text-muted mb-3 text-sm">
+                        Cuándo la centralita da la sección por abierta. Puedes poner varias franjas
+                        por día para horarios partidos.
+                    </p>
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            {{ form.is_24h }}
+                            <label class="form-check-label fw-medium" for="{{ form.is_24h.id_for_label }}">
+                                {{ form.is_24h.label }}
+                            </label>
+                        </div>
+                        <div class="form-text">Si está marcado, las franjas de abajo no cuentan.</div>
+                    </div>
+
+                    {{ schedule_formset.management_form }}
+
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle" id="schedule-table">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Día</th>
+                                    <th>Apertura</th>
+                                    <th>Cierre</th>
+                                    <th class="text-center">Eliminar</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for sched_form in schedule_formset %}
+                                <tr class="schedule-row">
+                                    <td class="w-100">
+                                        {{ sched_form.id }}
+                                        <div class="w-100">{{ sched_form.weekday }}</div>
+                                        {% if sched_form.weekday.errors %}
+                                        <div class="text-danger text-xs">
+                                            {% for e in sched_form.weekday.errors %}{{ e }}{% endfor %}
+                                        </div>
+                                        {% endif %}
+                                    </td>
+                                    <td class="w-100">
+                                        <div class="w-100">{{ sched_form.time_open }}</div>
+                                        {% if sched_form.time_open.errors %}
+                                        <div class="text-danger text-xs">
+                                            {% for e in sched_form.time_open.errors %}{{ e }}{% endfor %}
+                                        </div>
+                                        {% endif %}
+                                    </td>
+                                    <td class="w-100">
+                                        <div class="w-100">{{ sched_form.time_close }}</div>
+                                        {% if sched_form.time_close.errors %}
+                                        <div class="text-danger text-xs">
+                                            {% for e in sched_form.time_close.errors %}{{ e }}{% endfor %}
+                                        </div>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-center">
+                                        {% if sched_form.instance.pk %}
+                                        <div class="form-check d-flex justify-content-center">
+                                            {{ sched_form.DELETE }}
+                                        </div>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% if sched_form.non_field_errors %}
+                                <tr>
+                                    <td colspan="4">
+                                        <div class="text-danger text-xs">
+                                            {% for e in sched_form.non_field_errors %}{{ e }}{% endfor %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endif %}
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Add schedule row button — Botón de añadir franja horaria -->
+                    <div class="mb-4">
+                        <button type="button" class="btn btn-outline-primary btn-sm"
+                                id="add-schedule-row">
+                            <i class="bi bi-plus-lg me-1"></i>Añadir franja horaria
+                        </button>
+                    </div>
+
+                    <hr class="my-4">
+                    <h6 class="fw-semibold mb-1">
+                        <i class="bi bi-people me-2 text-primary"></i>A quién pasa la llamada
+                    </h6>
+                    <p class="text-muted mb-3 text-sm">
+                        En este orden; si uno no contesta, prueba con el siguiente. Los contactos se
+                        cambian en la <a href="{% url 'panel:section_edit' object.pk %}">ficha de la sección</a>.
+                    </p>
+                    {% if ivr_status.contacts %}
+                    <ol class="text-sm mb-4">
+                        {% for sc in ivr_status.contacts %}
+                        <li>
+                            {{ sc.contact.name }}
+                            {% if sc.contact.phone_number %}
+                                <span class="text-muted">— {{ sc.contact.phone_number }}</span>
+                            {% else %}
+                                <span class="text-danger">— sin teléfono, se salta</span>
+                            {% endif %}
+                        </li>
+                        {% endfor %}
+                    </ol>
+                    {% else %}
+                    <p class="text-danger text-sm mb-4">La sección no tiene contactos.</p>
+                    {% endif %}
+
+                    <p class="text-muted text-sm mb-4">
+                        <i class="bi bi-gear-wide-connected me-1"></i>
+                        Flujo IVR de la sección:
+                        {% if object.call_flow %}
+                            <a href="{% url 'panel:callflow_edit' object.call_flow.pk %}">{{ object.call_flow.name }}</a>
+                            (se regenera al guardar).
+                        {% else %}
+                            se creará al guardar.
+                        {% endif %}
+                    </p>
+
+                    <div class="d-flex justify-content-end gap-2">
+                        <a href="{% url 'panel:ivr_section_list' %}" class="btn btn-outline-secondary">Cancelar</a>
+                        <button type="submit" class="btn btn-dark">Guardar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

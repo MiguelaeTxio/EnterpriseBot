@@ -38,6 +38,10 @@ from panel.views_refuels import (
     RefuelsVehicleUnitView,
 )
 from panel.views_person_menu import PersonGoView, PersonMenuView
+from panel.views_ivr_telephony import (
+    IvrSectionListView,
+    IvrSectionUpdateView,
+)
 from panel.views_personal_medical_leave import PersonalMedicalLeaveView
 from panel.views_personal_local_download import PersonalLocalDownloadStatusView
 from panel.views_personal_section import (
@@ -609,6 +613,17 @@ urlpatterns = [
         "contacts/<int:pk>/delete/",
         ContactDeleteView.as_view(),
         name="contact_delete",
+    ),
+    # S155: Telefonía → Secciones en la centralita.
+    path(
+        "telefonia/secciones/",
+        IvrSectionListView.as_view(),
+        name="ivr_section_list",
+    ),
+    path(
+        "telefonia/secciones/<int:pk>/",
+        IvrSectionUpdateView.as_view(),
+        name="ivr_section_edit",
     ),
     # CallFlow management — Gestión de flujos IVR.
     path("callflows/", CallFlowListView.as_view(), name="callflow_list"),

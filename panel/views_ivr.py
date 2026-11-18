@@ -6,12 +6,10 @@ from django.views.generic import View, ListView, UpdateView, CreateView, DeleteV
 from django.shortcuts import redirect, render
 from django.db.models import Q
 from django.utils.timezone import now
-from django.forms import modelformset_factory
 
 from panel.mixins import AdminRoleRequiredMixin
 from panel.forms import (
     SectionForm,
-    SectionScheduleForm,
     ContactForm,
     CallFlowForm,
     CorporateVoiceProfileForm,
@@ -20,7 +18,6 @@ from panel.forms import (
 )
 from ivr_config.models import (
     Section,
-    SectionSchedule,
     Contact,
     PresenceStatus,
     CompanyUser,
@@ -120,471 +117,187 @@ class SectionListView (AdminRoleRequiredMixin ,ListView ):
         Q (ends_at__isnull =True )|Q (ends_at__gt =now ())
         ).order_by ("-starts_at").first ()
 
-class SectionCreateView (AdminRoleRequiredMixin ,CreateView ):
+class SectionCreateView(AdminRoleRequiredMixin, CreateView):
     """
     Allows an ADMIN to create a new Section for their company.
-    Automatically assigns the company from the authenticated user's CompanyUser.
-    Manages an inline SectionSchedule formset for time slot configuration.
-    Updated 2026-04-16 (Step 37.C — Estrategia B): call_flow queryset restricted
-    to the company's own active CallFlows.
     ---
-    Permite a un ADMIN crear una nueva Section para su empresa.
-    Asigna automáticamente la empresa desde el CompanyUser del usuario autenticado.
-    Gestiona un formset inline de SectionSchedule para la configuración de horarios.
-    Actualización 2026-04-16 (Paso 37.C — Estrategia B): queryset de call_flow
-    restringido a los CallFlows activos de la empresa.
+    Permite a un ADMIN crear una nueva Section para su empresa. Desde S155
+    lo de la centralita (casillas IVR, conjunto de captura, horario de
+    atención) se configura en Telefonía → Secciones en la centralita.
     """
 
-    model =Section 
-    form_class =SectionForm 
-    template_name ="panel/sections/form.html"
+    model = Section
+    form_class = SectionForm
+    template_name = "panel/sections/form.html"
 
-    def _get_schedule_formset_class (self ):
+    def get_form(self, form_class=None):
         """
-        Returns the SectionSchedule inline formset class with 5 empty extra forms.
+        Restricts contacts and workday schedules to the user's company.
         ---
-        Retorna la clase de formset inline de SectionSchedule con 5 formularios extra vacíos.
+        Restringe contactos y horarios de jornada a la empresa del usuario.
         """
-        return modelformset_factory (
-        SectionSchedule ,
-        form =SectionScheduleForm ,
-        extra =5 ,
-        can_delete =True ,
+        form = super().get_form(form_class)
+        company = self.request.user.company_user.company
+        form.fields["contacts"].queryset = Contact.objects.filter(
+            company=company
+        ).exclude(
+            company_user__role__in=list(CompanyUser.WORKER_ROLES)
         )
+        from ivr_config.models import WorkdaySchedule as _WorkdaySchedule
+        form.fields["workday_schedule"].queryset = (
+            _WorkdaySchedule.objects.filter(company=company).order_by("label")
+        )
+        form.fields["workday_schedule"].required = False
+        return form
 
-    def get_form (self ,form_class =None ):
+    def form_valid(self, form):
         """
-        Restricts the contacts queryset to the authenticated user's company.
-        Restricts the call_flow queryset to the company's own active CallFlows
-        (Estrategia B — Step 37.C). call_flow is optional.
-        Restricts the data_capture_set queryset to the company's own DataCaptureSets.
-        data_capture_set is optional — can also be created inline from the section form.
+        Assigns the company and saves the Section.
         ---
-        Restringe el queryset de contactos a la empresa del usuario autenticado.
-        Restringe el queryset de call_flow a los CallFlows activos de la empresa
-        (Estrategia B — Paso 37.C). call_flow es opcional.
-        Restringe el queryset de data_capture_set a los DataCaptureSets de la empresa.
-        data_capture_set es opcional — también puede crearse inline desde el formulario de sección.
+        Asigna la empresa y guarda la Section.
         """
-        form =super ().get_form (form_class )
-        company =self .request .user .company_user .company 
-
-
-
-
-        form .fields ["contacts"].queryset =Contact .objects .filter (
-        company =company 
-        ).exclude (
-        company_user__role__in =list (CompanyUser .WORKER_ROLES )
+        form.instance.company = self.request.user.company_user.company
+        self.object = form.save()
+        django_messages.success(
+            self.request,
+            f"Sección '{self.object.name}' creada correctamente."
         )
-        form .fields ["call_flow"].queryset =CallFlow .objects .filter (
-        company =company ,
-        is_active =True ,
-        ).order_by ("name")
-        form .fields ["call_flow"].required =False 
-        form .fields ["data_capture_set"].queryset =DataCaptureSet .objects .filter (
-        company =company ,
-        ).order_by ("name")
-        form .fields ["data_capture_set"].required =False 
+        return redirect("/panel/sections/")
 
-
-        from ivr_config .models import WorkdaySchedule as _WorkdaySchedule 
-        form .fields ["workday_schedule"].queryset =_WorkdaySchedule .objects .filter (
-        company =company ,
-        ).order_by ("label")
-        form .fields ["workday_schedule"].required =False 
-        return form 
-
-    def get (self ,request ,*args ,**kwargs ):
+    def get_context_data(self, **kwargs):
         """
-        Renders the section form with an empty schedule formset.
+        Adds company, company_user, own_presence and the action flag.
         ---
-        Renderiza el formulario de sección con un formset de horarios vacío.
+        Añade company, company_user, own_presence y el flag de acción.
         """
-        self .object =None 
-        form =self .get_form ()
-        ScheduleFormSet =self ._get_schedule_formset_class ()
-        schedule_formset =ScheduleFormSet (
-        queryset =SectionSchedule .objects .none (),
-        prefix ="schedules",
-        )
-        return self .render_to_response (
-        self .get_context_data (form =form ,schedule_formset =schedule_formset )
-        )
-
-    def post (self ,request ,*args ,**kwargs ):
-        """
-        Validates and saves both the section form and the schedule formset.
-        ---
-        Valida y guarda tanto el formulario de sección como el formset de horarios.
-        """
-        self .object =None 
-        form =self .get_form ()
-        ScheduleFormSet =self ._get_schedule_formset_class ()
-        schedule_formset =ScheduleFormSet (
-        request .POST ,
-        queryset =SectionSchedule .objects .none (),
-        prefix ="schedules",
-        )
-        if form .is_valid ()and schedule_formset .is_valid ():
-            return self ._form_valid (form ,schedule_formset )
-        return self .render_to_response (
-        self .get_context_data (form =form ,schedule_formset =schedule_formset )
-        )
-
-    def _form_valid (self ,form ,schedule_formset ):
-        """
-        Saves the Section and all valid SectionSchedule entries.
-        If 'capture_fields_json' is present in POST and non-empty, creates a new
-        DataCaptureSet with the submitted fields and links it to the section,
-        overriding any selector choice. If the selector has a value but no inline
-        fields were submitted, the selected DataCaptureSet is linked as-is.
-        ---
-        Guarda la Section y todas las entradas SectionSchedule válidas.
-        Si 'capture_fields_json' está presente en el POST y no está vacío, crea un
-        nuevo DataCaptureSet con los campos enviados y lo vincula a la sección,
-        sobreescribiendo cualquier selección del selector. Si el selector tiene valor
-        pero no se enviaron campos inline, el DataCaptureSet seleccionado se vincula tal cual.
-        """
-        import json 
-        from django .contrib import messages as django_messages 
-        company =self .request .user .company_user .company 
-        form .instance .company =company 
+        context = super().get_context_data(**kwargs)
+        context["company"] = self.request.user.company_user.company
+        context["company_user"] = self.request.user.company_user
+        context["own_presence"] = _get_own_presence(self.request)
+        context["active_nav"] = "sections"
+        context["action"] = "Crear"
+        context["section_workers"] = []
+        return context
 
 
-
-        raw_json =self .request .POST .get ("capture_fields_json","").strip ()
-        capture_name =self .request .POST .get ("capture_set_name","").strip ()
-        if raw_json and raw_json !="[]":
-
-
-            try :
-                parsed_fields =json .loads (raw_json )
-            except (ValueError ,TypeError ):
-                parsed_fields =[]
-            dcs_name =capture_name or f"Captura — {form.cleaned_data.get('name', 'Sección')}"
-            new_dcs =DataCaptureSet .objects .create (
-            company =company ,
-            name =dcs_name ,
-            fields =parsed_fields ,
-            )
-            form .instance .data_capture_set =new_dcs 
-
-        self .object =form .save ()
-        schedules =schedule_formset .save (commit =False )
-        for schedule in schedules :
-            schedule .section =self .object 
-            schedule .save ()
-        for deleted in schedule_formset .deleted_objects :
-            deleted .delete ()
-        django_messages .success (
-        self .request ,
-        f"Sección '{self.object.name}' creada correctamente."
-        )
-        return redirect ("/panel/sections/")
-
-    def get_context_data (self ,**kwargs ):
-        """
-        Adds company, company_user, own_presence, action flag and schedule_formset.
-        ---
-        Añade company, company_user, own_presence, flag de acción y schedule_formset.
-        """
-        context =super ().get_context_data (**kwargs )
-        context ["company"]=self .request .user .company_user .company 
-        context ["company_user"]=self .request .user .company_user 
-        context ["own_presence"]=self ._get_own_presence ()
-        context ["active_nav"]="sections"
-        context ["action"]="Crear"
-        context ["section_workers"]=[]
-        if "schedule_formset"not in context :
-            ScheduleFormSet =self ._get_schedule_formset_class ()
-            context ["schedule_formset"]=ScheduleFormSet (
-            queryset =SectionSchedule .objects .none (),
-            prefix ="schedules",
-            )
-        return context 
-
-    def _get_own_presence (self ):
-        """
-        Returns the current active PresenceStatus for the authenticated user.
-        ---
-        Retorna el PresenceStatus activo actual del usuario autenticado.
-        """
-        from django .utils .timezone import now 
-        from django .db .models import Q 
-        company_user =self .request .user .company_user 
-        return PresenceStatus .objects .filter (
-        company_user =company_user ,
-        starts_at__lte =now (),
-        ).filter (
-        Q (ends_at__isnull =True )|Q (ends_at__gt =now ())
-        ).order_by ("-starts_at").first ()
-
-class SectionUpdateView (AdminRoleRequiredMixin ,UpdateView ):
+class SectionUpdateView(AdminRoleRequiredMixin, UpdateView):
     """
-    Allows an ADMIN to update an existing Section belonging to their company.
-    Prevents editing sections from other companies.
-    Manages an inline SectionSchedule formset pre-populated with existing time slots.
+    Allows an ADMIN to update an existing Section of their company.
     ---
-    Permite a un ADMIN actualizar una Section existente de su empresa.
-    Impide editar secciones de otras empresas.
-    Gestiona un formset inline de SectionSchedule prerellenado con las franjas existentes.
+    Permite a un ADMIN editar una Section de su empresa. Desde S155 lo de la
+    centralita se configura en Telefonía; aquí solo se muestra su estado con
+    un enlace.
     """
 
-    model =Section 
-    form_class =SectionForm 
-    template_name ="panel/sections/form.html"
+    model = Section
+    form_class = SectionForm
+    template_name = "panel/sections/form.html"
 
-    def _get_schedule_formset_class (self ):
+    def get_queryset(self):
         """
-        Returns the SectionSchedule inline formset class with 3 extra empty forms.
+        Restricts the queryset to the user's company.
         ---
-        Retorna la clase de formset inline de SectionSchedule con 3 formularios extra vacíos.
+        Restringe el queryset a la empresa del usuario.
         """
-        return modelformset_factory (
-        SectionSchedule ,
-        form =SectionScheduleForm ,
-        extra =3 ,
-        can_delete =True ,
+        return Section.objects.filter(
+            company=self.request.user.company_user.company
         )
 
-    def get_queryset (self ):
+    def get_form(self, form_class=None):
         """
-        Restricts the queryset to Section records of the authenticated user's company.
+        Restricts contacts and workday schedules to the user's company.
         ---
-        Restringe el queryset a los registros Section de la empresa del usuario autenticado.
+        Restringe contactos y horarios de jornada a la empresa del usuario.
         """
-        return Section .objects .filter (
-        company =self .request .user .company_user .company 
+        form = super().get_form(form_class)
+        company = self.request.user.company_user.company
+        form.fields["contacts"].queryset = Contact.objects.filter(
+            company=company
+        ).exclude(
+            company_user__role__in=list(CompanyUser.WORKER_ROLES)
         )
+        from ivr_config.models import WorkdaySchedule as _WorkdaySchedule
+        form.fields["workday_schedule"].queryset = (
+            _WorkdaySchedule.objects.filter(company=company).order_by("label")
+        )
+        form.fields["workday_schedule"].required = False
+        return form
 
-    def get_form (self ,form_class =None ):
+    def form_valid(self, form):
         """
-        Restricts the contacts queryset to the authenticated user's company.
-        Restricts the call_flow queryset to the company's own active CallFlows
-        (Estrategia B — Step 37.C). call_flow is optional.
-        Restricts the data_capture_set queryset to the company's own DataCaptureSets.
-        data_capture_set is optional — can also be created inline from the section form.
+        Saves the Section keeping the worker contacts in the M2M.
         ---
-        Restringe el queryset de contactos a la empresa del usuario autenticado.
-        Restringe el queryset de call_flow a los CallFlows activos de la empresa
-        (Estrategia B — Paso 37.C). call_flow es opcional.
-        Restringe el queryset de data_capture_set a los DataCaptureSets de la empresa.
-        data_capture_set es opcional — también puede crearse inline desde el formulario de sección.
+        Guarda la Section conservando en el M2M los contactos de trabajadores
+        (WORKSHOP/DRIVER), que el selector de contactos no muestra.
         """
-        form =super ().get_form (form_class )
-        company =self .request .user .company_user .company 
-
-
-
-
-        form .fields ["contacts"].queryset =Contact .objects .filter (
-        company =company 
-        ).exclude (
-        company_user__role__in =list (CompanyUser .WORKER_ROLES )
+        worker_contacts = list(
+            self.object.contacts.filter(
+                company_user__role__in=list(CompanyUser.WORKER_ROLES)
+            ).values_list("pk", flat=True)
         )
-        form .fields ["call_flow"].queryset =CallFlow .objects .filter (
-        company =company ,
-        is_active =True ,
-        ).order_by ("name")
-        form .fields ["call_flow"].required =False 
-        form .fields ["data_capture_set"].queryset =DataCaptureSet .objects .filter (
-        company =company ,
-        ).order_by ("name")
-        form .fields ["data_capture_set"].required =False 
-
-
-        from ivr_config .models import WorkdaySchedule as _WorkdaySchedule 
-        form .fields ["workday_schedule"].queryset =_WorkdaySchedule .objects .filter (
-        company =company ,
-        ).order_by ("label")
-        form .fields ["workday_schedule"].required =False 
-        return form 
-
-    def get (self ,request ,*args ,**kwargs ):
-        """
-        Renders the section form pre-populated with existing schedules.
-        ---
-        Renderiza el formulario de sección prerellenado con los horarios existentes.
-        """
-        self .object =self .get_object ()
-        form =self .get_form ()
-        ScheduleFormSet =self ._get_schedule_formset_class ()
-        schedule_formset =ScheduleFormSet (
-        queryset =SectionSchedule .objects .filter (section =self .object ).order_by ("weekday","time_open"),
-        prefix ="schedules",
-        )
-        return self .render_to_response (
-        self .get_context_data (form =form ,schedule_formset =schedule_formset )
-        )
-
-    def post (self ,request ,*args ,**kwargs ):
-        """
-        Validates and saves both the section form and the schedule formset.
-        ---
-        Valida y guarda tanto el formulario de sección como el formset de horarios.
-        """
-        self .object =self .get_object ()
-        form =self .get_form ()
-        ScheduleFormSet =self ._get_schedule_formset_class ()
-        schedule_formset =ScheduleFormSet (
-        request .POST ,
-        queryset =SectionSchedule .objects .filter (section =self .object ).order_by ("weekday","time_open"),
-        prefix ="schedules",
-        )
-        if form .is_valid ()and schedule_formset .is_valid ():
-            return self ._form_valid (form ,schedule_formset )
-        return self .render_to_response (
-        self .get_context_data (form =form ,schedule_formset =schedule_formset )
-        )
-
-    def _form_valid (self ,form ,schedule_formset ):
-        """
-        Saves the Section and all valid SectionSchedule entries.
-        Handles deletion of removed schedule entries.
-        If 'capture_fields_json' is present in POST and non-empty, updates the
-        existing linked DataCaptureSet fields in-place, or creates a new one if
-        none is linked. If the selector has a value but no inline fields were
-        submitted, the selected DataCaptureSet is linked as-is.
-        ---
-        Guarda la Section y todas las entradas SectionSchedule válidas.
-        Gestiona la eliminación de las franjas horarias eliminadas.
-        Si 'capture_fields_json' está presente en el POST y no está vacío, actualiza
-        los campos del DataCaptureSet vinculado existente en su lugar, o crea uno nuevo
-        si no hay ninguno vinculado. Si el selector tiene valor pero no se enviaron
-        campos inline, el DataCaptureSet seleccionado se vincula tal cual.
-        """
-        import json 
-        from django .contrib import messages as django_messages 
-        company =self .request .user .company_user .company 
-
-
-
-        raw_json =self .request .POST .get ("capture_fields_json","").strip ()
-        capture_name =self .request .POST .get ("capture_set_name","").strip ()
-        if raw_json and raw_json !="[]":
-
-
-            try :
-                parsed_fields =json .loads (raw_json )
-            except (ValueError ,TypeError ):
-                parsed_fields =[]
-            existing_dcs =self .object .data_capture_set if self .object .data_capture_set_id else None 
-            if existing_dcs is not None :
-
-
-                if capture_name :
-                    existing_dcs .name =capture_name 
-                existing_dcs .fields =parsed_fields 
-                existing_dcs .save (update_fields =["name","fields","updated_at"])
-            else :
-
-
-                dcs_name =capture_name or f"Captura — {form.cleaned_data.get('name', 'Sección')}"
-                new_dcs =DataCaptureSet .objects .create (
-                company =company ,
-                name =dcs_name ,
-                fields =parsed_fields ,
-                )
-                form .instance .data_capture_set =new_dcs 
-
-
-
-
-
-
-
-
-
-
-
-        _worker_contacts =list (
-        self .object .contacts .filter (
-        company_user__role__in =list (CompanyUser .WORKER_ROLES )
-        ).values_list ("pk",flat =True )
-        )
-
-        self .object =form .save ()
-
-
-
-        if _worker_contacts :
-            self .object .contacts .add (*_worker_contacts )
-            logger .info (
-            "# [SECTION UPDATE] %d contacto(s) WORKSHOP/DRIVER preservados en M2M de Section pk=%s.",
-            len (_worker_contacts ),
-            self .object .pk ,
+        self.object = form.save()
+        if worker_contacts:
+            self.object.contacts.add(*worker_contacts)
+            logger.info(
+                "# [SECTION UPDATE] %d contacto(s) WORKSHOP/DRIVER "
+                "preservados en M2M de Section pk=%s.",
+                len(worker_contacts),
+                self.object.pk,
             )
-
-        schedules =schedule_formset .save (commit =False )
-        for schedule in schedules :
-            schedule .section =self .object 
-            schedule .save ()
-        for deleted in schedule_formset .deleted_objects :
-            deleted .delete ()
-        django_messages .success (
-        self .request ,
-        f"Sección '{self.object.name}' actualizada correctamente."
+        django_messages.success(
+            self.request,
+            f"Sección '{self.object.name}' actualizada correctamente."
         )
-        return redirect ("/panel/sections/")
+        return redirect("/panel/sections/")
 
-    def get_context_data (self ,**kwargs ):
+    def get_context_data(self, **kwargs):
         """
-        Adds company, company_user, own_presence, action flag and schedule_formset.
+        Adds company context, section workers, workday schedules and the
+        phone switchboard status of the section.
         ---
-        Añade company, company_user, own_presence, flag de acción y schedule_formset.
+        Añade el contexto de empresa, los trabajadores de la sección, los
+        horarios de jornada y el estado de la sección en la centralita.
         """
-        context =super ().get_context_data (**kwargs )
-        context ["company"]=self .request .user .company_user .company 
-        context ["company_user"]=self .request .user .company_user 
-        context ["own_presence"]=self ._get_own_presence ()
-        context ["active_nav"]="sections"
-        context ["action"]="Guardar"
-
-
-        _section_contacts =(
-        self .object .contacts 
-        .filter (company_user__isnull =False )
-        .select_related ("company_user__user")
-        .order_by ("company_user__user__username")
+        from panel.views_ivr_telephony import section_ivr_status
+        from ivr_config.models import WorkdaySchedule as _WorkdaySchedule
+        context = super().get_context_data(**kwargs)
+        company = self.request.user.company_user.company
+        context["company"] = company
+        context["company_user"] = self.request.user.company_user
+        context["own_presence"] = _get_own_presence(self.request)
+        context["active_nav"] = "sections"
+        context["action"] = "Guardar"
+        workers = []
+        for contact in (
+            self.object.contacts.filter(company_user__isnull=False)
+            .select_related("company_user__user")
+            .order_by("company_user__user__username")
+        ):
+            cu = contact.company_user
+            cu.contact_phone = contact.phone_number or ""
+            cu.is_ivr_active = contact.is_internal
+            workers.append(cu)
+        context["section_workers"] = workers
+        context["workday_schedules"] = list(
+            _WorkdaySchedule.objects.filter(company=company).order_by("label")
         )
-        _workers =[]
-        for _contact in _section_contacts :
-            _cu =_contact .company_user 
-            _cu .contact_phone =_contact .phone_number or ""
-            _cu .is_ivr_active =_contact .is_internal 
-            _workers .append (_cu )
-        context ["section_workers"]=_workers 
+        context["ivr_status"] = section_ivr_status(self.object)
+        return context
 
 
-        from ivr_config .models import WorkdaySchedule as _WorkdaySchedule 
-        context ["workday_schedules"]=list (
-        _WorkdaySchedule .objects .filter (company =self .request .user .company_user .company )
-        .order_by ("label")
-        )
-        if "schedule_formset"not in context :
-            ScheduleFormSet =self ._get_schedule_formset_class ()
-            context ["schedule_formset"]=ScheduleFormSet (
-            queryset =SectionSchedule .objects .filter (section =self .object ).order_by ("weekday","time_open"),
-            prefix ="schedules",
-            )
-        return context 
+def _get_own_presence(request):
+    """
+    Returns the current active PresenceStatus of the authenticated user.
+    ---
+    Retorna el PresenceStatus activo actual del usuario autenticado.
+    """
+    return PresenceStatus.objects.filter(
+        company_user=request.user.company_user,
+        starts_at__lte=now(),
+    ).filter(
+        Q(ends_at__isnull=True) | Q(ends_at__gt=now())
+    ).order_by("-starts_at").first()
 
-    def _get_own_presence (self ):
-        """
-        Returns the current active PresenceStatus for the authenticated user.
-        ---
-        Retorna el PresenceStatus activo actual del usuario autenticado.
-        """
-        from django .utils .timezone import now 
-        from django .db .models import Q 
-        company_user =self .request .user .company_user 
-        return PresenceStatus .objects .filter (
-        company_user =company_user ,
-        starts_at__lte =now (),
-        ).filter (
-        Q (ends_at__isnull =True )|Q (ends_at__gt =now ())
-        ).order_by ("-starts_at").first ()
 
 class ContactListView (AdminRoleRequiredMixin ,ListView ):
     """

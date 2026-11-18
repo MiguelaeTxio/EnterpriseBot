@@ -133,18 +133,15 @@ class SectionForm(forms.ModelForm):
 
     class Meta:
         model = Section
-        fields = ["name", "description", "contacts", "call_flow", "data_capture_set", "is_24h", "is_active", "is_broadcast_enabled", "ivr_transfer_enabled", "ivr_breakdown_enabled", "workday_schedule", "default_role", "onboarding_enabled"]
+        # S155: lo de la centralita (casillas IVR, conjunto de captura,
+        # horario de atención) está en SectionTelephonyForm (Telefonía).
+        fields = ["name", "description", "contacts", "is_active", "is_broadcast_enabled", "workday_schedule", "default_role", "onboarding_enabled"]
         widgets = {
             "name": forms.TextInput(attrs={"class": "form-control"}),
             "description": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
             "contacts": forms.SelectMultiple(attrs={"class": "form-select", "size": "6"}),
-            "call_flow": forms.Select(attrs={"class": "form-select"}),
-            "data_capture_set": forms.Select(attrs={"class": "form-select"}),
-            "is_24h": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "is_active": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "is_broadcast_enabled": forms.CheckboxInput(attrs={"class": "form-check-input"}),
-            "ivr_transfer_enabled": forms.CheckboxInput(attrs={"class": "form-check-input"}),
-            "ivr_breakdown_enabled": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "workday_schedule": forms.Select(attrs={"class": "form-select"}),
             "default_role": forms.Select(attrs={"class": "form-select"}),
             "onboarding_enabled": forms.CheckboxInput(attrs={"class": "form-check-input"}),
@@ -153,16 +150,47 @@ class SectionForm(forms.ModelForm):
             "name": "Nombre",
             "description": "Descripción",
             "contacts": "Contactos",
-            "call_flow": "Flujo IVR de sección",
-            "data_capture_set": "Conjunto de captura de datos",
-            "is_24h": "Disponible 24 horas",
             "is_active": "Activa",
             "is_broadcast_enabled": "Habilitada para circulares WhatsApp",
-            "ivr_transfer_enabled": "Transferencia IVR habilitada",
-            "ivr_breakdown_enabled": "Avería interna IVR habilitada",
             "workday_schedule": "Horario de trabajo por defecto",
             "default_role": "Puesto de quien se da de alta por WhatsApp",
             "onboarding_enabled": "Se ofrece en el alta por WhatsApp",
+        }
+
+
+class SectionTelephonyForm(forms.ModelForm):
+    """
+    What the phone switchboard needs from a Section (Telephony panel).
+    ---
+    S155 (Miguel Ángel: "lo referente al flujo IVR, captura de datos, etc.
+    se debe definir en la parte de telefonía"): lo que la centralita
+    necesita de una sección, editado desde Telefonía → Secciones en la
+    centralita. El flujo IVR de la sección lo genera la señal de Section
+    al guardar (ivr_config/signals.py), así que no se elige aquí.
+    """
+
+    class Meta:
+        model = Section
+        fields = [
+            "ivr_transfer_enabled",
+            "ivr_breakdown_enabled",
+            "data_capture_set",
+            "is_24h",
+        ]
+        widgets = {
+            "ivr_transfer_enabled": forms.CheckboxInput(
+                attrs={"class": "form-check-input"}),
+            "ivr_breakdown_enabled": forms.CheckboxInput(
+                attrs={"class": "form-check-input"}),
+            "data_capture_set": forms.Select(attrs={"class": "form-select"}),
+            "is_24h": forms.CheckboxInput(
+                attrs={"class": "form-check-input"}),
+        }
+        labels = {
+            "ivr_transfer_enabled": "La centralita ofrece esta sección",
+            "ivr_breakdown_enabled": "Registra averías de flota",
+            "data_capture_set": "Conjunto de captura de datos",
+            "is_24h": "Disponible 24 horas",
         }
 
 

@@ -248,6 +248,12 @@
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link {% if active_nav == 'ivr_sections' %}active{% endif %}"
+                           href="{% url 'panel:ivr_section_list' %}">
+                            <i class="bi bi-diagram-3"></i>Secciones en la centralita
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link {% if active_nav == 'whatsapp_sessions' %}active{% endif %}"
                            href="{% url 'panel:whatsapp_active_sessions' %}">
                             <i class="bi bi-chat-dots"></i>Sesiones activas WA
@@ -870,6 +876,7 @@
         'voiceprofile':             'acc-telefonia',
         'blockedcallers':           'acc-telefonia',
         'datacapturesets':          'acc-telefonia',
+        'ivr_sections':             'acc-telefonia',
         'whatsapp_templates':       'acc-telefonia',
         'whatsapp_sessions':        'acc-telefonia',
         'bot_management':           'acc-telefonia',

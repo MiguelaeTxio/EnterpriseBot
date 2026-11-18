@@ -1,0 +1,67 @@
+<!-- /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/ivr_sections/list.html -->
+{% extends "panel/base.html" %}
+
+{% block title %}Secciones en la centralita{% endblock %}
+{% block page_title %}Secciones en la centralita{% endblock %}
+
+{% block content %}
+
+<p class="text-muted mb-4">
+    Qué secciones ofrece la centralita de <strong>{{ company.name }}</strong> y cómo las atiende.
+    Lo que define cada sección (descripción, contactos, trabajadores) está en
+    <a href="{% url 'panel:section_list' %}">Secciones</a>.
+</p>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-4">Sección</th>
+                        <th>Centralita</th>
+                        <th class="text-center">Averías</th>
+                        <th>Captura de datos</th>
+                        <th>Horario de atención</th>
+                        <th class="text-center">Contactos con teléfono</th>
+                        <th class="text-center">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for section in sections %}
+                    <tr{% if not section.is_active %} class="text-muted"{% endif %}>
+                        <td class="ps-4 fw-medium">
+                            {{ section.name }}
+                            {% if not section.is_active %}<span class="badge badge-inactive ms-1">Inactiva</span>{% endif %}
+                        </td>
+                        <td class="text-sm">
+                            {% if section.ivr.in_ivr %}
+                                <span class="badge badge-active">Sí</span>
+                            {% else %}
+                                <span class="badge badge-inactive">No</span>
+                                <span class="text-muted">{% for reason in section.ivr.reasons %}{{ reason }}{% if not forloop.last %} {% endif %}{% endfor %}</span>
+                            {% endif %}
+                            {% for warning in section.ivr.warnings %}<div class="text-warning-emphasis">{{ warning }}</div>{% endfor %}
+                        </td>
+                        <td class="text-center">
+                            {% if section.ivr_breakdown_enabled %}<i class="bi bi-check-lg"></i>{% endif %}
+                        </td>
+                        <td class="text-sm">{{ section.data_capture_set.name|default:"—" }}</td>
+                        <td class="text-sm">{{ section.ivr.hours }}</td>
+                        <td class="text-center">{{ section.ivr.contacts_with_phone }}</td>
+                        <td class="text-center">
+                            <a href="{% url 'panel:ivr_section_edit' section.pk %}" class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-pencil me-1"></i>Configurar
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="p-4 text-muted">No hay secciones.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

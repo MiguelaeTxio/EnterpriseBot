@@ -59,238 +59,6 @@
 </script>
 <script>
 /*
- * DataCaptureSet inline field row builder for the section form.
- * Manages dynamic addition/removal of capture field rows, serialises
- * the result to JSON in a hidden input before submit, and pre-populates
- * rows from existing data in edit mode.
- *
- * Constructor de filas de campos de captura inline para el formulario de sección.
- * Gestiona la adición/eliminación dinámica de filas de campos de captura, serializa
- * el resultado a JSON en un campo oculto antes del submit y prerellena las filas
- * desde datos existentes en modo edición.
- */
-(function () {
-    "use strict";
-
-    const FIELD_TYPES = [
-        { value: "text",      label: "Texto libre" },
-        { value: "phone",     label: "Teléfono" },
-        { value: "location",  label: "Ubicación" },
-        { value: "reference", label: "Referencia" },
-        { value: "date",      label: "Fecha" },
-        { value: "free_text", label: "Comentario libre" },
-    ];
-
-    const container    = document.getElementById("capture-fields-container");
-    const emptyState   = document.getElementById("capture-fields-empty-state");
-    const jsonInput    = document.getElementById("capture-fields-json-input");
-    const nameInput    = document.getElementById("capture-set-name-input");
-    const nameField    = document.getElementById("capture-set-name-field");
-    const btnAdd       = document.getElementById("btn-add-capture-field");
-    const mainForm     = container ? container.closest("form") : null;
-
-    if (!container || !jsonInput || !btnAdd || !mainForm) return;
-
-    function escapeHtml(str) {
-        return String(str)
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;");
-    }
-
-    function buildTypeOptions(selected) {
-        return FIELD_TYPES.map(function (t) {
-            return `<option value="${t.value}"${t.value === selected ? " selected" : ""}>${t.label}</option>`;
-        }).join("");
-    }
-
-    function updateEmptyState() {
-        emptyState.classList.toggle("d-none", container.children.length > 0);
-    }
-
-    function serialise() {
-        const rows = Array.from(container.querySelectorAll(".capture-field-row"));
-        const data = rows.map(function (row) {
-            return {
-                key:      row.querySelector(".cf-key").value.trim(),
-                label:    row.querySelector(".cf-label").value.trim(),
-                type:     row.querySelector(".cf-type").value,
-                required: row.querySelector(".cf-required").checked,
-            };
-        });
-        jsonInput.value = JSON.stringify(data);
-        if (nameField) {
-            nameInput.value = nameField.value.trim();
-        }
-    }
-
-    function buildRow(field) {
-        const key      = field.key      || "";
-        const label    = field.label    || "";
-        const type     = field.type     || "text";
-        const required = field.required !== false;
-
-        const div = document.createElement("div");
-        div.className = "capture-field-row p-2 border rounded bg-light";
-        div.innerHTML = `
-            <div class="row g-2 align-items-center">
-                <div class="col-12 col-md-3">
-                    <input type="text" class="form-control form-control-sm cf-key"
-                           placeholder="identificador" value="${escapeHtml(key)}">
-                </div>
-                <div class="col-12 col-md-3">
-                    <input type="text" class="form-control form-control-sm cf-label"
-                           placeholder="Etiqueta IVR" value="${escapeHtml(label)}">
-                </div>
-                <div class="col-12 col-md-3">
-                    <select class="form-select form-select-sm cf-type">
-                        ${buildTypeOptions(type)}
-                    </select>
-                </div>
-                <div class="col-6 col-md-2">
-                    <div class="form-check mb-0">
-                        <input class="form-check-input cf-required" type="checkbox"
-                               ${required ? "checked" : ""}>
-                        <label class="form-check-label text-sm">Obligatorio</label>
-                    </div>
-                </div>
-                <div class="col-6 col-md-1 text-end">
-                    <i class="bi bi-trash text-danger cf-remove" style="cursor:pointer;"></i>
-                </div>
-            </div>`;
-
-        div.querySelector(".cf-remove").addEventListener("click", function () {
-            div.remove();
-            updateEmptyState();
-            serialise();
-        });
-        div.querySelectorAll("input, select").forEach(function (el) {
-            el.addEventListener("input", serialise);
-            el.addEventListener("change", serialise);
-        });
-        return div;
-    }
-
-    btnAdd.addEventListener("click", function () {
-        container.appendChild(buildRow({}));
-        updateEmptyState();
-        serialise();
-    });
-
-    if (nameField) {
-        nameField.addEventListener("input", serialise);
-    }
-
-    mainForm.addEventListener("submit", function () {
-        serialise();
-    });
-
-    /* Pre-populate rows from existing JSON (edit mode).
-       Prerellenar filas desde JSON existente (modo edición). */
-    let existing = [];
-    try {
-        existing = JSON.parse(jsonInput.value || "[]");
-    } catch (e) {
-        existing = [];
-    }
-    existing.forEach(function (f) {
-        container.appendChild(buildRow(f));
-    });
-    updateEmptyState();
-
-}());
-</script>
-<script>
-/*
- * Dynamic SectionSchedule formset row addition.
- * Adds a new empty schedule row by cloning the last empty row in the formset,
- * updating all field name/id attributes to use the new form index, and
- * incrementing the TOTAL_FORMS management form counter.
- *
- * Adición dinámica de filas al formset de SectionSchedule.
- * Añade una nueva fila vacía clonando la última fila vacía del formset,
- * actualizando todos los atributos name/id de campos al nuevo índice de formulario,
- * e incrementando el contador TOTAL_FORMS del management form.
- */
-(function () {
-    'use strict';
-
-    const addBtn     = document.getElementById('add-schedule-row');
-    const tableBody  = document.querySelector('#schedule-table tbody');
-    const totalForms = document.getElementById('id_schedules-TOTAL_FORMS');
-
-    if (!addBtn || !tableBody || !totalForms) return;
-
-    addBtn.addEventListener('click', function () {
-        /* Current total number of forms — Número total actual de formularios */
-        const formCount = parseInt(totalForms.value, 10);
-
-        /* Find the last schedule row to use as clone template.
-           Buscar la última fila de horario para usar como plantilla de clonación. */
-        const rows = tableBody.querySelectorAll('tr.schedule-row');
-        if (rows.length === 0) return;
-
-        const lastRow   = rows[rows.length - 1];
-        const newRow    = lastRow.cloneNode(true);
-
-        /* Update all name and id attributes from the last index to the new one.
-           Actualizar todos los atributos name e id del último índice al nuevo. */
-        const lastIndex = formCount - 1;
-        const newIndex  = formCount;
-
-        newRow.querySelectorAll('input, select').forEach(function (el) {
-            if (el.name) {
-                el.name = el.name.replace(
-                    'schedules-' + lastIndex + '-',
-                    'schedules-' + newIndex + '-'
-                );
-            }
-            if (el.id) {
-                el.id = el.id.replace(
-                    'id_schedules-' + lastIndex + '-',
-                    'id_schedules-' + newIndex + '-'
-                );
-            }
-            /* Reset field values — Reiniciar valores de los campos */
-            if (el.tagName === 'SELECT') {
-                el.selectedIndex = 0;
-            } else if (el.type === 'time') {
-                el.value = '';
-            } else if (el.type === 'checkbox') {
-                el.checked = false;
-            } else if (el.type === 'hidden') {
-                /* Clear hidden id field (pk) for new rows.
-                   Limpiar el campo id oculto (pk) para filas nuevas. */
-                if (el.name && el.name.endsWith('-id')) {
-                    el.value = '';
-                }
-            }
-        });
-
-        /* Hide DELETE checkbox on new rows (no pk yet).
-           Ocultar checkbox DELETE en filas nuevas (aún sin pk). */
-        const deleteCell = newRow.querySelector('td:last-child');
-        if (deleteCell) {
-            deleteCell.innerHTML = '';
-        }
-
-        /* Clear any validation error messages from the cloned row.
-           Limpiar mensajes de error de validación de la fila clonada. */
-        newRow.querySelectorAll('.text-danger').forEach(function (el) {
-            el.textContent = '';
-        });
-
-        tableBody.appendChild(newRow);
-
-        /* Increment TOTAL_FORMS counter.
-           Incrementar el contador TOTAL_FORMS. */
-        totalForms.value = newIndex + 1;
-    });
-}());
-</script>
-<script>
-/*
  * Inline worker creation panel for the section form.
  * Panel de alta de trabajador inline para el formulario de seccion.
  */
@@ -459,6 +227,25 @@
                 <form method="post">
                     {% csrf_token %}
 
+                    {% if ivr_status %}
+                    <!-- S155: estado en la centralita; se configura en Telefonía -->
+                    <div class="alert {% if ivr_status.in_ivr %}alert-success{% else %}alert-secondary{% endif %} d-flex justify-content-between align-items-start gap-3 py-2 mb-4">
+                        <div class="text-sm">
+                            <i class="bi bi-telephone me-1"></i>
+                            {% if ivr_status.in_ivr %}
+                                <strong>En la centralita.</strong>
+                            {% else %}
+                                <strong>No está en la centralita.</strong>
+                            {% endif %}
+                            {% for reason in ivr_status.reasons %}{{ reason }}{% if not forloop.last %} · {% endif %}{% endfor %}
+                            {% for warning in ivr_status.warnings %}<div class="text-warning-emphasis">{{ warning }}</div>{% endfor %}
+                        </div>
+                        <a href="{% url 'panel:ivr_section_edit' object.pk %}" class="btn btn-sm btn-outline-secondary text-nowrap">
+                            Configurar en Telefonía
+                        </a>
+                    </div>
+                    {% endif %}
+
                     <!-- Name field — Campo de nombre -->
                     <div class="mb-4">
                         <label for="{{ form.name.id_for_label }}" class="form-label fw-medium">
@@ -488,8 +275,8 @@
                         </div>
                         {% endif %}
                         <div class="form-text">
-                            Descripción del servicio que ofrece esta sección. El IVR puede
-                            usarla para informar al llamante.
+                            Qué lleva esta sección. La centralita la usa para decidir a qué
+                            sección pasar cada llamada: cuanto más concreta, mejor.
                         </div>
                     </div>
 
@@ -508,125 +295,6 @@
                         <div class="form-text">
                             Mantén pulsado <kbd>Ctrl</kbd> (o <kbd>Cmd</kbd> en Mac)
                             para seleccionar varios contactos.
-                        </div>
-                    </div>
-
-                    <!-- call_flow field — Flujo IVR de sección (Estrategia B, Paso 37.C) -->
-                    <div class="mb-4">
-                        <label for="{{ form.call_flow.id_for_label }}" class="form-label fw-medium">
-                            Flujo IVR de sección
-                            <span class="text-muted fw-normal">(opcional)</span>
-                        </label>
-                        {{ form.call_flow }}
-                        {% if form.call_flow.errors %}
-                        <div class="text-danger mt-1 text-err">
-                            {% for error in form.call_flow.errors %}{{ error }}{% endfor %}
-                        </div>
-                        {% endif %}
-                        <div class="form-text">
-                            Flujo IVR específico que María cargará en cuanto detecte que el
-                            llamante desea ser atendido por esta sección (Estrategia B).
-                            Las secciones sin flujo asignado no participan en el enrutamiento
-                            dinámico por intención y son invisibles para el motor IVR en tiempo
-                            de llamada.
-                        </div>
-                    </div>
-
-                    <!-- data_capture_set field — Conjunto de captura de datos (Paso 8-pre, Hito 5) -->
-                    <hr class="my-4">
-                    <h6 class="fw-semibold mb-1">
-                        <i class="bi bi-ui-checks me-2 text-primary"></i>Captura de datos
-                    </h6>
-                    <p class="text-muted mb-3 text-sm">
-                        Define qué información recogerá María al llamante antes de transferir
-                        la llamada. Puede seleccionar un conjunto existente o crear uno nuevo
-                        directamente aquí.
-                    </p>
-
-                    {# Campo oculto que recibe el JSON serializado de las filas antes del submit #}
-                    {# Hidden field that receives the serialised JSON of the rows before submit #}
-                    <input type="hidden"
-                           name="capture_fields_json"
-                           id="capture-fields-json-input"
-                           value="{{ existing_capture_fields_json|default:'[]' }}">
-                    <input type="hidden"
-                           name="capture_set_name"
-                           id="capture-set-name-input"
-                           value="">
-
-                    <div class="mb-3">
-                        <label for="{{ form.data_capture_set.id_for_label }}"
-                               class="form-label fw-medium">
-                            Conjunto existente
-                            <span class="text-muted fw-normal">(opcional)</span>
-                        </label>
-                        {{ form.data_capture_set }}
-                        {% if form.data_capture_set.errors %}
-                        <div class="text-danger mt-1 text-err">
-                            {% for error in form.data_capture_set.errors %}{{ error }}{% endfor %}
-                        </div>
-                        {% endif %}
-                        <div class="form-text">
-                            Seleccione un conjunto de captura ya definido para esta sección,
-                            o defina uno nuevo a continuación.
-                        </div>
-                    </div>
-
-                    <div class="mb-2">
-                        <label class="form-label fw-medium">
-                            Nombre del nuevo conjunto
-                            <span class="text-muted fw-normal">(opcional si define campos abajo)</span>
-                        </label>
-                        <input type="text"
-                               class="form-control"
-                               id="capture-set-name-field"
-                               placeholder="Ej: Captura de datos de asistencia"
-                               value="">
-                        <div class="form-text">
-                            Si define campos a continuación sin seleccionar un conjunto existente,
-                            se creará un nuevo conjunto con este nombre.
-                        </div>
-                    </div>
-
-                    <div class="d-flex justify-content-between align-items-center mb-2 mt-3">
-                        <span class="fw-medium text-sm">Campos del conjunto</span>
-                        <button type="button"
-                                class="btn btn-outline-primary btn-sm"
-                                id="btn-add-capture-field">
-                            <i class="bi bi-plus-lg me-1"></i>Añadir campo
-                        </button>
-                    </div>
-
-                    <div id="capture-fields-empty-state"
-                         class="text-center py-3 mb-2 d-none">
-                        <p class="text-muted text-sm mb-0">
-                            Sin campos definidos. Pulse <strong>Añadir campo</strong> para comenzar.
-                        </p>
-                    </div>
-
-                    <div id="capture-fields-container" class="d-flex flex-column gap-2 mb-3">
-                    </div>
-
-                    <hr class="my-4">
-
-                    <!-- is_24h field — Disponibilidad 24 horas -->
-                    <div class="mb-4">
-                        <div class="form-check form-switch">
-                            {{ form.is_24h }}
-                            <label class="form-check-label fw-medium"
-                                   for="{{ form.is_24h.id_for_label }}">
-                                Disponible 24 horas
-                            </label>
-                        </div>
-                        {% if form.is_24h.errors %}
-                        <div class="text-danger mt-1 text-err">
-                            {% for error in form.is_24h.errors %}{{ error }}{% endfor %}
-                        </div>
-                        {% endif %}
-                        <div class="form-text">
-                            Si está activo, la sección estará siempre disponible y se ignorará
-                            el horario configurado más abajo. Usar para servicios de guardia permanente
-                            (p. ej. Asistencia en carretera).
                         </div>
                     </div>
 
@@ -664,48 +332,6 @@
                         <div class="form-text">
                             Las secciones inactivas no aparecen en el dashboard ni
                             están disponibles para el enrutamiento IVR.
-                        </div>
-                    </div>
-
-                    <!-- ivr_transfer_enabled (S155): estaba en el formulario pero no
-                         se mostraba, y al guardar la sección se desmarcaba sola -->
-                    <div class="mb-4">
-                        <div class="form-check">
-                            {{ form.ivr_transfer_enabled }}
-                            <label class="form-check-label fw-medium"
-                                   for="{{ form.ivr_transfer_enabled.id_for_label }}">
-                                {{ form.ivr_transfer_enabled.label }}
-                            </label>
-                        </div>
-                        {% if form.ivr_transfer_enabled.errors %}
-                        <div class="text-danger mt-1 text-err">
-                            {% for error in form.ivr_transfer_enabled.errors %}{{ error }}{% endfor %}
-                        </div>
-                        {% endif %}
-                        <div class="form-text">
-                            La centralita ofrece esta sección a quien llama y puede pasarle la
-                            llamada a sus contactos. Hace falta también que la sección esté activa
-                            y tenga flujo IVR.
-                        </div>
-                    </div>
-
-                    <!-- ivr_breakdown_enabled (S155): mismo caso que ivr_transfer_enabled -->
-                    <div class="mb-4">
-                        <div class="form-check">
-                            {{ form.ivr_breakdown_enabled }}
-                            <label class="form-check-label fw-medium"
-                                   for="{{ form.ivr_breakdown_enabled.id_for_label }}">
-                                {{ form.ivr_breakdown_enabled.label }}
-                            </label>
-                        </div>
-                        {% if form.ivr_breakdown_enabled.errors %}
-                        <div class="text-danger mt-1 text-err">
-                            {% for error in form.ivr_breakdown_enabled.errors %}{{ error }}{% endfor %}
-                        </div>
-                        {% endif %}
-                        <div class="form-text">
-                            La centralita registra en esta sección las averías de máquinas propias
-                            que comunican los trabajadores por teléfono.
                         </div>
                     </div>
 
@@ -775,87 +401,6 @@
                             Si no se selecciona ningún horario, Gate 4 usará el horario
                             por defecto de empresa como último recurso.
                         </div>
-                    </div>
-
-                    <!-- SectionSchedule formset — Horarios de la sección -->
-                    <hr class="my-4">
-                    <h6 class="fw-semibold mb-1">
-                        <i class="bi bi-clock me-2 text-primary"></i>Horario de atención
-                    </h6>
-                    <p class="text-muted mb-3 text-sm">
-                        Define las franjas horarias en las que esta sección está disponible.
-                        Si la sección es 24 horas, estas franjas se ignoran.
-                        Puedes añadir varias franjas por día para horarios partidos.
-                    </p>
-
-                    {{ schedule_formset.management_form }}
-
-                    <div class="table-responsive">
-                        <table class="table table-sm align-middle" id="schedule-table">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Día</th>
-                                    <th>Apertura</th>
-                                    <th>Cierre</th>
-                                    <th class="text-center">Eliminar</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for sched_form in schedule_formset %}
-                                <tr class="schedule-row">
-                                    <td class="w-100">
-                                        {{ sched_form.id }}
-                                        <div class="w-100">{{ sched_form.weekday }}</div>
-                                        {% if sched_form.weekday.errors %}
-                                        <div class="text-danger text-xs">
-                                            {% for e in sched_form.weekday.errors %}{{ e }}{% endfor %}
-                                        </div>
-                                        {% endif %}
-                                    </td>
-                                    <td class="w-100">
-                                        <div class="w-100">{{ sched_form.time_open }}</div>
-                                        {% if sched_form.time_open.errors %}
-                                        <div class="text-danger text-xs">
-                                            {% for e in sched_form.time_open.errors %}{{ e }}{% endfor %}
-                                        </div>
-                                        {% endif %}
-                                    </td>
-                                    <td class="w-100">
-                                        <div class="w-100">{{ sched_form.time_close }}</div>
-                                        {% if sched_form.time_close.errors %}
-                                        <div class="text-danger text-xs">
-                                            {% for e in sched_form.time_close.errors %}{{ e }}{% endfor %}
-                                        </div>
-                                        {% endif %}
-                                    </td>
-                                    <td class="text-center">
-                                        {% if sched_form.instance.pk %}
-                                        <div class="form-check d-flex justify-content-center">
-                                            {{ sched_form.DELETE }}
-                                        </div>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                {% if sched_form.non_field_errors %}
-                                <tr>
-                                    <td colspan="4">
-                                        <div class="text-danger text-xs">
-                                            {% for e in sched_form.non_field_errors %}{{ e }}{% endfor %}
-                                        </div>
-                                    </td>
-                                </tr>
-                                {% endif %}
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <!-- Add schedule row button — Boton de anadir franja horaria -->
-                    <div class="mb-4">
-                        <button type="button" class="btn btn-outline-primary btn-sm"
-                                id="add-schedule-row">
-                            <i class="bi bi-plus-lg me-1"></i>Anadir franja horaria
-                        </button>
                     </div>
 
                     <!-- Workers inline — Trabajadores de la seccion (H13) -->
