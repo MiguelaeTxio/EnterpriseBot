@@ -1695,6 +1695,20 @@ class PersonIdentity(models.Model):
     phone_secondary = models.CharField(
         max_length=30, blank=True, verbose_name="Segundo teléfono",
     )
+    # ------------------------------------------------------------------
+    # S153. Contacto de emergencia -- Miguel Ángel: "habría que añadir un
+    # teléfono auxiliar o de emergencia para tener el teléfono de
+    # cónyuges, madres o personas a las que llamar en caso de una
+    # emergencia". Nunca se le envían mensajes.
+    # ------------------------------------------------------------------
+    emergency_contact = models.CharField(
+        max_length=120, blank=True,
+        verbose_name="Contacto de emergencia",
+        help_text="A quién llamar (nombre y parentesco).",
+    )
+    phone_emergency = models.CharField(
+        max_length=30, blank=True, verbose_name="Teléfono de emergencia",
+    )
     email = models.EmailField(
         max_length=150, blank=True, verbose_name="Correo electrónico (Excel)",
     )

@@ -190,6 +190,15 @@ y se habilita "Guardar".
                     <label class="form-label small mb-0" title="No se le envía ningún mensaje a este número (S141).">Teléfono particular</label>
                     <input type="text" name="phone_secondary" class="form-control form-control-sm personal-edit-field" value="{{ person.phone_secondary }}" readonly>
                 </div>
+                {# S153: contacto de emergencia (cónyuge, madre... a quien llamar en una emergencia). #}
+                <div class="col-12 col-md-4">
+                    <label class="form-label small mb-0" title="A quién llamar en caso de emergencia (nombre y parentesco). No se le envía ningún mensaje.">Contacto de emergencia</label>
+                    <input type="text" name="emergency_contact" class="form-control form-control-sm personal-edit-field" value="{{ person.emergency_contact }}" maxlength="120" placeholder="Nombre y parentesco" readonly>
+                </div>
+                <div class="col-12 col-md-4">
+                    <label class="form-label small mb-0" title="Teléfono para avisar en caso de emergencia. No se le envía ningún mensaje.">Teléfono de emergencia</label>
+                    <input type="text" name="phone_emergency" class="form-control form-control-sm personal-edit-field" value="{{ person.phone_emergency }}" maxlength="30" readonly>
+                </div>
                 {% comment %}
                 H31 (S100), Miguel Ángel: "hay datos que sí son
                 necesarios para la empresa, para el supervisor y sin

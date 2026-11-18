@@ -1777,3 +1777,52 @@ class MachineLogbookEntry(models.Model):
             f"{self.machine.code} -- {self.get_section_display()} "
             f"{self.entry_date or ''}"
         )
+
+
+class Crew(models.Model):
+    """
+    A crew: one vehicle (cost centre) and one person, from a date.
+
+    A person may be in several crews at once (the car they commute in
+    and a given crane) and a vehicle may have several people. The
+    current crew has no end date (or one still to come).
+    ---
+    S153. Equipo: un vehículo (centro de gasto) y una persona, desde una
+    fecha. Miguel Ángel: "para que sepamos en todo momento quién está
+    ocupando un determinado vehículo". A mano de momento (los
+    repostajes no sirven: se marcan con DNI de otras personas). Una
+    persona puede estar en varios a la vez ("un coche que es con el que
+    va y viene, y [...] una grúa determinada").
+    """
+
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name="crews",
+        verbose_name=_("Empresa"))
+    machine = models.ForeignKey(
+        MachineAsset, on_delete=models.CASCADE, related_name="crews",
+        verbose_name=_("Centro de gasto"))
+    person = models.ForeignKey(
+        "document_explorer.PersonIdentity", on_delete=models.CASCADE,
+        related_name="crews", verbose_name=_("Persona"))
+    date_start = models.DateField(_("Desde"))
+    date_end = models.DateField(
+        _("Hasta"), null=True, blank=True,
+        help_text=_("Vacío mientras siga siendo el equipo actual."))
+    notes = models.CharField(_("Nota"), max_length=255, blank=True)
+    created_by = models.ForeignKey(
+        "ivr_config.CompanyUser", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+        verbose_name=_("Dado de alta por"))
+    created_at = models.DateTimeField(_("Alta"), auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("Equipo")
+        verbose_name_plural = _("Equipos")
+        ordering = ["machine__code", "-date_start", "pk"]
+        indexes = [
+            models.Index(fields=["company", "date_end"],
+                         name="fleet_crew_company_end_idx"),
+        ]
+
+    def __str__(self):
+        return "%s · %s" % (self.machine.code, self.person)

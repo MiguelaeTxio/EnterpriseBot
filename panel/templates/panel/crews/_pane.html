@@ -1,0 +1,376 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/crews/_pane.html #}
+{% comment %}
+S153. Pestaña "Equipos" del hub de Documentación: qué persona va en qué
+vehículo (centro de gasto), con el formato único de listados (4.24 y
+4.27): arriba, fijo, Buscar y filtrar · Grupos de selección (por la
+persona) · Acciones; abajo la lista (con Ampliar) y "Selección actual".
+Alta en ventana: un centro de gasto con una o varias personas desde una
+fecha. Lógica: panel/views_crews.py.
+{% endcomment %}
+<style>
+    .crew-fill { flex: 1 1 auto; min-height: 0; }
+    #crew-list-col > div:fullscreen { background-color: var(--bs-body-bg); padding: 1rem; }
+    #crew-list-col > div:fullscreen .crew-fill { height: calc(100vh - 4rem); }
+</style>
+<div id="crew-root"
+     data-tab-url="{% url 'panel:crew_tab' %}"
+     data-create-url="{% url 'panel:crew_create' %}"
+     data-mass-url="{% url 'panel:crew_mass' %}">
+<div id="crew-top-panel" class="mb-2">
+    <div class="border rounded p-2">
+    <div class="row g-2">
+        <div class="col-lg-4">
+            <div class="border rounded p-2 h-100">
+                <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                <form id="crew-filters" autocomplete="off" onsubmit="return false;"
+                      hx-get="{% url 'panel:crew_results' %}" hx-target="#crew-results"
+                      hx-include="#crew-sort-inputs"
+                      hx-trigger="input changed delay:300ms from:#crew-filter-search, change, crew-selection-refresh">
+                    <input type="text" name="search" id="crew-filter-search" class="form-control form-control-sm mb-2"
+                           placeholder="Buscar código, matrícula, persona, teléfono…" value="{{ filter_search }}">
+                    <div class="d-flex flex-wrap gap-3 align-items-start small">
+                        <div>
+                            <div class="fw-semibold mb-1">Situación</div>
+                            {% for value, label in state_choices %}
+                            <div class="form-check">
+                                <input class="form-check-input crew-state-check" type="checkbox" value="{{ value }}" id="crewState{{ value }}"
+                                       {% if value in filter_state %}checked{% endif %}>
+                                <label class="form-check-label" for="crewState{{ value }}">{{ label }}</label>
+                            </div>
+                            {% endfor %}
+                            <input type="hidden" name="state" id="crew-state-input" value="{{ filter_state|join:',' }}">
+                        </div>
+                        {% include "panel/_group_filter_select.html" with gf_id="crewFilterGroup" gf_who="personas" %}
+                        <div>
+                            <div class="fw-semibold mb-1">Selección</div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="only_selected" value="1" id="crewOnlySelected">
+                                <label class="form-check-label" for="crewOnlySelected">Mostrar solo la selección actual</label>
+                            </div>
+                            <input type="hidden" name="selected_ids" id="crew-selected-ids" value="">
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+        {% include "panel/_person_group_filter.html" with pg_prefix="crew" pg_form="crew-filters" %}
+        <div class="col-lg">
+            <div class="border rounded p-2 h-100">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <strong class="small"><span id="crew-mass-count">0</span> seleccionados</strong>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="crew-mass-clear">Limpiar</button>
+                </div>
+                <div class="small text-muted fw-bold">Equipos</div>
+                <div class="d-flex gap-1 flex-wrap mb-1">
+                    {% if can_manage %}
+                    <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#crewCreateModal"
+                            title="Un centro de gasto con una o varias personas, desde una fecha. Una persona puede estar en varios equipos a la vez.">
+                        <i class="bi bi-plus-circle me-1"></i>Nuevo equipo</button>
+                    {% endif %}
+                    <button type="button" class="btn btn-sm btn-outline-success crew-needs-selection" disabled
+                            data-bs-toggle="modal" data-bs-target="#crewExportModal"
+                            title="Excel, PDF o imprimir los equipos marcados, con la plantilla que elijas">
+                        <i class="bi bi-box-arrow-up me-1"></i>Exportar / imprimir</button>
+                </div>
+                {% if can_manage %}
+                <div class="small text-muted fw-bold">Los marcados</div>
+                <div class="d-flex gap-1 flex-wrap align-items-center">
+                    <input type="date" class="form-control form-control-sm" id="crew-end-date" value="{{ today|date:'Y-m-d' }}" style="max-width: 10rem;" aria-label="Fecha de fin">
+                    <button type="button" class="btn btn-sm btn-outline-secondary crew-needs-selection crew-mass" data-action="end" disabled
+                            title="Pone esa fecha como fin: dejan de ser el equipo actual (quedan en Terminados).">Terminar</button>
+                    <button type="button" class="btn btn-sm btn-outline-danger crew-needs-selection crew-mass" data-action="delete" disabled
+                            title="Borra los equipos marcados (para errores; para un cambio de vehículo, mejor Terminar).">Borrar</button>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    </div>
+</div>
+
+<div class="border rounded p-2" id="crew-bottom-panel">
+    <div class="row g-2 h-100">
+        <div class="col-lg-9 h-100" id="crew-list-col">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1 d-flex align-items-center">
+                    <span>Equipos (<span id="crew-row-count">{{ rows|length }}</span>)</span>
+                    <button type="button" class="btn btn-sm btn-link py-0{% if not sort_active %} d-none{% endif %}" id="crew-clear-sort"
+                            hx-get="{% url 'panel:crew_results' %}" hx-target="#crew-results"
+                            hx-include="#crew-filters" hx-vals='{"sort": ""}'>Quitar orden</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" id="crew-fullscreen" title="Pantalla completa"><i class="bi bi-fullscreen"></i></button>
+                </div>
+                <div class="crew-fill fixed-list-scroll" style="overflow: auto;">
+                    <div id="crew-results"
+                         hx-get="{% url 'panel:crew_results' %}"
+                         hx-include="#crew-filters, #crew-sort-inputs"
+                         hx-trigger="crew-refresh from:body">
+                        {% include "panel/crews/_table.html" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1">Selección actual (<span id="crew-selection-count">0</span>)</div>
+                <div class="crew-fill" style="overflow-y: auto;">
+                    <ul class="mb-0 small ps-0 list-unstyled" id="crew-selection-list">
+                        <li class="text-muted">Nada seleccionado todavía.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if can_manage %}
+<div class="modal fade" id="crewCreateModal" tabindex="-1" aria-labelledby="crewCreateModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h5 class="modal-title" id="crewCreateModalLabel"><i class="bi bi-truck me-1"></i>Nuevo equipo</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="crew-create-form" autocomplete="off" onsubmit="return false;">
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold mb-0" for="crew-machine">Centro de gasto</label>
+                        <input type="text" class="form-control form-control-sm mb-1" id="crew-machine-search" placeholder="Buscar código, matrícula…">
+                        <select class="form-select form-select-sm" id="crew-machine" name="machine" size="6">
+                            {% for machine in machines %}
+                            <option value="{{ machine.pk }}">{{ machine.code }}{% if machine.plate %} · {{ machine.plate }}{% endif %} · {{ machine.brand_model|default:machine.type_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold mb-0" for="crew-person">Persona (una o varias, con Ctrl)</label>
+                        <input type="text" class="form-control form-control-sm mb-1" id="crew-person-search" placeholder="Buscar persona…">
+                        <select class="form-select form-select-sm" id="crew-person" name="person" multiple size="8">
+                            {% for person in people %}
+                            <option value="{{ person.pk }}">{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-5">
+                            <label class="form-label small fw-semibold mb-0" for="crew-date-start">Desde</label>
+                            <input type="date" class="form-control form-control-sm" id="crew-date-start" name="date_start" value="{{ today|date:'Y-m-d' }}">
+                        </div>
+                        <div class="col-7">
+                            <label class="form-label small fw-semibold mb-0" for="crew-notes">Nota</label>
+                            <input type="text" class="form-control form-control-sm" id="crew-notes" name="notes" maxlength="255" placeholder="Opcional">
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-primary btn-sm" id="crew-create-btn"><i class="bi bi-save me-1"></i>Guardar</button>
+                    <span class="small ms-2" id="crew-create-msg"></span>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+</div>
+{{ saved_selection|json_script:"crew-saved-selection" }}
+{% url 'panel:crew_export' as crew_export_url %}
+{% include "panel/_screen_export_modal.html" with sx="crew" screen="crews" export_url=crew_export_url method="post" title="Exportar equipos" %}
+{% include "panel/_fixed_list_layout.html" with top_id="crew-top-panel" bottom_id="crew-bottom-panel" %}
+<script>
+(function () {
+    "use strict";
+    const root = document.getElementById("crew-root");
+    if (!root) { return; }
+    const results = document.getElementById("crew-results");
+    const filters = document.getElementById("crew-filters");
+    const SCREEN_KEY = "crews";
+    const selection = new Map();
+
+    function csrf() {
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? meta.getAttribute("content") : "";
+    }
+    function post(url, data) {
+        return fetch(url, {method: "POST", body: data, headers: {"X-CSRFToken": csrf()}})
+            .then(function (response) {
+                return response.json().catch(function () { return {}; }).then(function (body) {
+                    if (!response.ok) throw new Error(body.error || ("Error " + response.status));
+                    return body;
+                });
+            });
+    }
+    function refreshList() { htmx.trigger(document.body, "crew-refresh"); }
+
+    try {
+        JSON.parse(document.getElementById("crew-saved-selection").textContent).forEach(function (item) {
+            if (item && item.pk) selection.set(String(item.pk), item.label || "");
+        });
+    } catch (e) { /* estado ilegible: se empieza sin selección */ }
+    let lastSaved = null;
+    function saveSelection() {
+        const payload = Array.from(selection.entries()).map(function ([pk, label]) { return {pk: pk, label: label}; });
+        const serialized = JSON.stringify(payload);
+        if (serialized === lastSaved) return;
+        lastSaved = serialized;
+        if (window.EbNavState) window.EbNavState.save(SCREEN_KEY, {selection: payload});
+    }
+    function updateSelectionUi() {
+        saveSelection();
+        document.getElementById("crew-mass-count").textContent = selection.size;
+        document.getElementById("crew-selection-count").textContent = selection.size;
+        const list = document.getElementById("crew-selection-list");
+        list.innerHTML = "";
+        const names = Array.from(selection.values()).sort(function (a, b) { return a.localeCompare(b); });
+        if (!names.length) {
+            const li = document.createElement("li");
+            li.className = "text-muted";
+            li.textContent = "Nada seleccionado todavía.";
+            list.appendChild(li);
+        }
+        names.forEach(function (name) {
+            const li = document.createElement("li");
+            li.textContent = name;
+            list.appendChild(li);
+        });
+        const idsInput = document.getElementById("crew-selected-ids");
+        const newIds = Array.from(selection.keys()).join(",");
+        if (idsInput.value !== newIds) {
+            idsInput.value = newIds;
+            if (document.getElementById("crewOnlySelected").checked) htmx.trigger(filters, "crew-selection-refresh");
+        }
+        document.querySelectorAll(".crew-needs-selection").forEach(function (btn) { btn.disabled = selection.size === 0; });
+        const all = document.getElementById("crew-check-all");
+        if (!all) return;
+        const rows = results.querySelectorAll(".crew-row-check");
+        const checked = results.querySelectorAll(".crew-row-check:checked");
+        all.checked = rows.length > 0 && checked.length === rows.length;
+        all.indeterminate = checked.length > 0 && checked.length < rows.length;
+    }
+    function refreshFromFragment() {
+        const state = document.getElementById("crew-fragment-state");
+        if (state) {
+            document.getElementById("crew-row-count").textContent = state.dataset.count;
+            document.getElementById("crew-clear-sort").classList.toggle("d-none", !state.dataset.sortActive);
+        }
+        results.querySelectorAll(".crew-row-check").forEach(function (cb) { cb.checked = selection.has(cb.dataset.pk); });
+        updateSelectionUi();
+    }
+    results.addEventListener("change", function (ev) {
+        const cb = ev.target;
+        if (cb.id === "crew-check-all") {
+            results.querySelectorAll(".crew-row-check").forEach(function (row) {
+                row.checked = cb.checked;
+                if (cb.checked) selection.set(row.dataset.pk, row.dataset.label);
+                else selection.delete(row.dataset.pk);
+            });
+            updateSelectionUi();
+        } else if (cb.classList.contains("crew-row-check")) {
+            if (cb.checked) selection.set(cb.dataset.pk, cb.dataset.label);
+            else selection.delete(cb.dataset.pk);
+            updateSelectionUi();
+        }
+    });
+    document.getElementById("crew-mass-clear").addEventListener("click", function () {
+        selection.clear();
+        results.querySelectorAll(".crew-row-check").forEach(function (cb) { cb.checked = false; });
+        updateSelectionUi();
+    });
+    document.body.addEventListener("htmx:afterSettle", function (ev) {
+        if (ev.target === results || results.contains(ev.target)) refreshFromFragment();
+    });
+    document.querySelectorAll(".crew-state-check").forEach(function (cb) {
+        cb.addEventListener("change", function () {
+            document.getElementById("crew-state-input").value = Array.from(document.querySelectorAll(".crew-state-check:checked")).map(function (c) { return c.value; }).join(",");
+        });
+    });
+    document.getElementById("crew-fullscreen").addEventListener("click", function () {
+        const box = document.querySelector("#crew-list-col > div");
+        if (document.fullscreenElement) document.exitFullscreen();
+        else if (box.requestFullscreen) box.requestFullscreen();
+    });
+
+    // Grupos de selección: por la persona de cada equipo.
+    window.EbGroupSelect = window.EbGroupSelect || {};
+    window.EbGroupGet = window.EbGroupGet || {};
+    window.EbGroupGet["crew"] = function () {
+        const persons = new Set();
+        document.querySelectorAll(".crew-row-check").forEach(function (cb) {
+            if (selection.has(cb.dataset.pk)) persons.add(cb.dataset.person);
+        });
+        return {persons: Array.from(persons), users: []};
+    };
+    window.EbGroupSelect["crew"] = function (people) {
+        selection.clear();
+        const wanted = new Set(people.persons.map(function (p) { return String(p[0]); }));
+        document.querySelectorAll(".crew-row-check").forEach(function (cb) {
+            if (wanted.has(cb.dataset.person)) selection.set(cb.dataset.pk, cb.dataset.label);
+        });
+        refreshFromFragment();
+    };
+
+    // Exportar / imprimir (modal común con plantillas).
+    window.EbScreenExport = window.EbScreenExport || {};
+    window.EbScreenExport.crew = {
+        params: function () {
+            if (!selection.size) return null;
+            return Array.from(selection.keys()).map(function (pk) { return ["selected", pk]; });
+        },
+        count: function () {
+            return selection.size === 1 ? "Se exportará el equipo seleccionado."
+                : "Se exportarán los " + selection.size + " equipos seleccionados.";
+        },
+    };
+
+    // Terminar / borrar los marcados.
+    document.querySelectorAll(".crew-mass").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+            const ending = btn.dataset.action === "end";
+            const question = ending
+                ? "¿Terminar los " + selection.size + " equipos marcados con fecha " + document.getElementById("crew-end-date").value.split("-").reverse().join("/") + "?"
+                : "¿Borrar los " + selection.size + " equipos marcados? Para un cambio de vehículo es mejor Terminar.";
+            if (!window.confirm(question)) return;
+            const data = new FormData();
+            data.append("action", btn.dataset.action);
+            data.append("ids", Array.from(selection.keys()).join(","));
+            data.append("date_end", document.getElementById("crew-end-date").value);
+            post(root.dataset.massUrl, data)
+                .then(function () { selection.clear(); updateSelectionUi(); refreshList(); })
+                .catch(function (err) { window.alert(err.message); });
+        });
+    });
+
+    // Nuevo equipo (ventana).
+    function filterOptions(inputId, selectId) {
+        const input = document.getElementById(inputId);
+        const select = document.getElementById(selectId);
+        if (!input || !select) return;
+        input.addEventListener("input", function () {
+            const words = input.value.toLowerCase().split(/\s+/).filter(Boolean);
+            Array.from(select.options).forEach(function (opt) {
+                const text = opt.textContent.toLowerCase();
+                opt.hidden = !words.every(function (w) { return text.indexOf(w) !== -1; });
+            });
+        });
+    }
+    filterOptions("crew-machine-search", "crew-machine");
+    filterOptions("crew-person-search", "crew-person");
+    const createBtn = document.getElementById("crew-create-btn");
+    if (createBtn) {
+        createBtn.addEventListener("click", function () {
+            const msg = document.getElementById("crew-create-msg");
+            createBtn.disabled = true;
+            post(root.dataset.createUrl, new FormData(document.getElementById("crew-create-form")))
+                .then(function (body) {
+                    msg.className = "small ms-2 text-success";
+                    msg.textContent = "Guardado: " + body.created + (body.skipped ? " (" + body.skipped + " ya estaban en ese vehículo)" : "") + ".";
+                    document.getElementById("crew-person").selectedIndex = -1;
+                    refreshList();
+                })
+                .catch(function (err) {
+                    msg.className = "small ms-2 text-danger";
+                    msg.textContent = err.message;
+                })
+                .finally(function () { createBtn.disabled = false; });
+        });
+    }
+
+    refreshFromFragment();
+}());
+</script>

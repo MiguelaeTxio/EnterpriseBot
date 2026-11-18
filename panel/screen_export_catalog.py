@@ -292,3 +292,29 @@ PAYSLIPS = register(Screen(
         "mes", "movil", "estado", "enviada", "nota",
     ],
 ))
+
+
+# S153: equipos (un vehículo y una persona), pestaña Equipos.
+CREWS = register(Screen(
+    key="crews",
+    label="Equipos",
+    columns=(
+        Column("codigo", "Código", 12, lambda r: r["crew"].machine.code),
+        Column("centro", "Centro de gasto", 34, lambda r: r["machine"]),
+        Column("matricula", "Matrícula", 14,
+               lambda r: r["crew"].machine.plate),
+        Column("persona", "Persona", 32, lambda r: r["person"]),
+        Column("telefono", "Teléfono", 15, lambda r: r["phone"]),
+        Column("telefono_emergencia", "Teléfono de emergencia", 15,
+               lambda r: r["crew"].person.phone_emergency),
+        Column("contacto_emergencia", "Contacto de emergencia", 26,
+               lambda r: r["crew"].person.emergency_contact),
+        Column("desde", "Desde", 12, lambda r: r["crew"].date_start, DATE),
+        Column("hasta", "Hasta", 12, lambda r: r["crew"].date_end, DATE),
+        Column("nota", "Nota", 40, lambda r: r["crew"].notes),
+    ),
+    panel_columns=[
+        "codigo", "centro", "matricula", "persona", "telefono", "desde",
+        "hasta",
+    ],
+))

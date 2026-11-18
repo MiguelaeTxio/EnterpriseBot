@@ -89,6 +89,15 @@ EbTypePicker.init() (ver panel/_doc_type_picker.html).
         </a>
     </li>
     <li class="nav-item">
+        {# S153: Equipos (vehículo + persona), junto a Personal y Centros de gasto. #}
+        <a class="nav-link {% if persisted_active_tab == 'equipos' %}active{% endif %}" id="tab-equipos" data-bs-toggle="tab" href="#pane-equipos"
+           hx-get="{% url 'panel:crew_tab' %}"
+           hx-target="#pane-equipos"
+           hx-trigger="{% if persisted_active_tab == 'equipos' %}load once{% else %}click once{% endif %}">
+            <i class="bi bi-truck me-1"></i>Equipos
+        </a>
+    </li>
+    <li class="nav-item">
         <a class="nav-link {% if persisted_active_tab == 'epis' %}active{% endif %}" id="tab-epis" data-bs-toggle="tab" href="#pane-epis"
            hx-get="{% url 'panel:documentation_epi_tab' %}"
            hx-target="#pane-epis"
@@ -283,6 +292,9 @@ EbTypePicker.init() (ver panel/_doc_type_picker.html).
         <div class="text-muted small py-3">Cargando…</div>
     </div>
     <div class="tab-pane fade {% if persisted_active_tab == 'personal' %}show active{% endif %}" id="pane-personal">
+        <div class="text-muted small py-3">Cargando…</div>
+    </div>
+    <div class="tab-pane fade {% if persisted_active_tab == 'equipos' %}show active{% endif %}" id="pane-equipos">
         <div class="text-muted small py-3">Cargando…</div>
     </div>
     <div class="tab-pane fade {% if persisted_active_tab == 'epis' %}show active{% endif %}" id="pane-epis">

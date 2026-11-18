@@ -1,0 +1,47 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/crews/_table.html #}
+{% comment %}
+S153. Tabla de la pestaña Equipos (vehículo + persona): casilla,
+columnas ordenables y el teléfono para llamar. Todo llega calculado
+desde panel/views_crews.py; la selección vive en el JS de _pane.html.
+{% endcomment %}
+<div id="crew-fragment-state" class="d-none"
+     data-count="{{ rows|length }}"
+     data-sort-active="{% if sort_active %}1{% endif %}"></div>
+<span id="crew-sort-inputs" class="d-none">
+    <input type="hidden" name="sort" value="{{ current_sort }}">
+</span>
+<table class="table table-hover table-light table-sm align-middle mb-0" id="crew-table">
+    <thead class="table-light">
+        <tr>
+            <th><input type="checkbox" class="form-check-input" id="crew-check-all" title="Seleccionar todos los que cumplen el filtro actual"></th>
+            {% for column in sort_columns %}
+            <th>
+                <a href="#" class="text-decoration-none text-dark"
+                   hx-get="{% url 'panel:crew_results' %}"
+                   hx-target="#crew-results"
+                   hx-include="#crew-filters"
+                   hx-vals='{"sort": "{{ column.next }}"}'>
+                    {{ column.label }}
+                    {% if column.arrow %}<i class="bi bi-chevron-{% if column.arrow == 'up' %}up{% else %}down{% endif %}"></i>{% if column.priority %}<sup>{{ column.priority }}</sup>{% endif %}{% endif %}
+                </a>
+            </th>
+            {% endfor %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr{% if not row.current %} class="text-muted"{% endif %}>
+            <td><input type="checkbox" class="form-check-input crew-row-check" data-pk="{{ row.key }}" data-person="{{ row.person_id }}" data-label="{{ row.label }}"></td>
+            <td class="text-nowrap fw-semibold">{{ row.crew.machine.code }}</td>
+            <td>{{ row.machine }}</td>
+            <td class="text-nowrap">{{ row.crew.machine.plate }}</td>
+            <td>{{ row.person }}{% if row.crew.notes %}<div class="small text-muted">{{ row.crew.notes }}</div>{% endif %}</td>
+            <td class="text-nowrap">{% if row.phone %}<a href="tel:{{ row.phone }}" class="text-decoration-none"><i class="bi bi-telephone me-1"></i>{{ row.phone }}</a>{% endif %}{% if row.crew.person.phone_emergency %}<div class="small text-muted" title="Contacto de emergencia{% if row.crew.person.emergency_contact %}: {{ row.crew.person.emergency_contact }}{% endif %}"><i class="bi bi-exclamation-triangle me-1"></i>{{ row.crew.person.phone_emergency }}</div>{% endif %}</td>
+            <td class="text-nowrap">{{ row.crew.date_start|date:"d/m/Y" }}</td>
+            <td class="text-nowrap">{{ row.crew.date_end|date:"d/m/Y" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="{{ sort_columns|length|add:1 }}" class="text-muted small">No hay equipos con estos filtros.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>

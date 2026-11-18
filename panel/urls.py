@@ -157,6 +157,14 @@ from panel.views_signatures import (
     SigningAgentCreateView,
     SigningAgentDeactivateView,
 )
+# S153: Equipos (vehículo + persona), pestaña de Documentación.
+from panel.views_crews import (
+    CrewCreateView,
+    CrewExportView,
+    CrewMassView,
+    CrewResultsView,
+    CrewTabView,
+)
 # S153: Firmas con el formato único de listados (4.24/4.27).
 from panel.views_signatures_lists import (
     SignatureMassView,
@@ -2549,6 +2557,31 @@ urlpatterns = [
         "documentacion/firmas/",
         SignatureTabView.as_view(),
         name="signature_tab",
+    ),
+    path(
+        "documentacion/equipos/",
+        CrewTabView.as_view(),
+        name="crew_tab",
+    ),
+    path(
+        "documentacion/equipos/resultados/",
+        CrewResultsView.as_view(),
+        name="crew_results",
+    ),
+    path(
+        "documentacion/equipos/nuevo/",
+        CrewCreateView.as_view(),
+        name="crew_create",
+    ),
+    path(
+        "documentacion/equipos/acciones/",
+        CrewMassView.as_view(),
+        name="crew_mass",
+    ),
+    path(
+        "documentacion/equipos/exportar/",
+        CrewExportView.as_view(),
+        name="crew_export",
     ),
     path(
         "documentacion/firmas/resultados/",

@@ -614,7 +614,8 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
             else {}
         )
         valid_tabs = (
-            "maquinaria", "personal", "epis", "accesorios", "vacaciones",
+            "maquinaria", "personal", "equipos", "epis", "accesorios",
+            "vacaciones",
             "fichajes", "horarios", "calendario", "requisitos", "avisos",
             "circulares",
             "plantillas", "bandeja", "revisiones", "repostajes",
@@ -6183,6 +6184,8 @@ class PersonalUpdateView(DocsUploadAccessMixin, View):
         "phone_secondary", "email", "address_street", "postal_code",
         "city", "province", "ss_affiliation_number",
         "professional_category", "nickname",
+        # S153: contacto de emergencia.
+        "emergency_contact", "phone_emergency",
         # S148: observaciones libres (campo Memo).
         "notes",
     )

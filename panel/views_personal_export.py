@@ -123,6 +123,11 @@ PERSONAL_EXPORT_COLUMNS = (
     ("telefono", "Teléfono de empresa", 14, lambda p: p.phone, False),
     ("telefono_2", "Teléfono particular", 14,
      lambda p: p.phone_secondary, False),
+    # S153: contacto de emergencia.
+    ("contacto_emergencia", "Contacto de emergencia", 26,
+     lambda p: p.emergency_contact, False),
+    ("telefono_emergencia", "Teléfono de emergencia", 14,
+     lambda p: p.phone_emergency, False),
     ("email", "Correo electrónico", 30, lambda p: p.email, False),
     ("direccion", "Dirección", 32, lambda p: p.address_street, False),
     ("codigo_postal", "Código postal", 9, lambda p: p.postal_code, False),
