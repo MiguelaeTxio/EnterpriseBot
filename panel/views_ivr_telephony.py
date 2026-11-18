@@ -19,7 +19,7 @@ from django.contrib import messages as django_messages
 from django.db.models import Q
 from django.shortcuts import redirect
 from django.utils.timezone import now
-from django.views.generic import ListView, UpdateView
+from django.views.generic import UpdateView
 
 from ivr_config.models import (
     DataCaptureSet,
@@ -142,49 +142,6 @@ def _get_own_presence(request):
     ).filter(
         Q(ends_at__isnull=True) | Q(ends_at__gt=now())
     ).order_by("-starts_at").first()
-
-
-class IvrSectionListView(AdminRoleRequiredMixin, ListView):
-    """
-    Lists every section of the company with its switchboard status.
-    ---
-    Lista todas las secciones de la empresa con su estado en la
-    centralita; las inactivas, al final.
-    """
-
-    model = Section
-    template_name = "panel/ivr_sections/list.html"
-    context_object_name = "sections"
-
-    def get_queryset(self):
-        """
-        Sections of the user's company, active first.
-        ---
-        Secciones de la empresa del usuario, primero las activas.
-        """
-        return (
-            Section.objects.filter(
-                company=self.request.user.company_user.company)
-            .select_related(
-                "call_flow", "data_capture_set", "attention_schedule")
-            .prefetch_related("schedules")
-            .order_by("-is_active", "name")
-        )
-
-    def get_context_data(self, **kwargs):
-        """
-        Adds the switchboard status of every section.
-        ---
-        Añade el estado en la centralita de cada sección.
-        """
-        context = super().get_context_data(**kwargs)
-        for section in context["sections"]:
-            section.ivr = section_ivr_status(section)
-        context["company"] = self.request.user.company_user.company
-        context["company_user"] = self.request.user.company_user
-        context["own_presence"] = _get_own_presence(self.request)
-        context["active_nav"] = "ivr_sections"
-        return context
 
 
 class IvrSectionUpdateView(AdminRoleRequiredMixin, UpdateView):

@@ -38,9 +38,11 @@ from panel.views_refuels import (
     RefuelsVehicleUnitView,
 )
 from panel.views_person_menu import PersonGoView, PersonMenuView
-from panel.views_ivr_telephony import (
-    IvrSectionListView,
-    IvrSectionUpdateView,
+from panel.views_ivr_telephony import IvrSectionUpdateView
+from panel.telephony_lists import (
+    TelephonyListActionView,
+    TelephonyListPageView,
+    TelephonyListResultsView,
 )
 from panel.views_personal_medical_leave import PersonalMedicalLeaveView
 from panel.views_personal_local_download import PersonalLocalDownloadStatusView
@@ -389,19 +391,15 @@ from panel.views import (
     CompanyUserCreateView,
     CompanyUserUpdateView,
     CompanyUserSectionUnlinkView,
-    SectionListView,
     SectionCreateView,
     SectionUpdateView,
     ContactListView,
     ContactCreateView,
     ContactUpdateView,
     ContactDeleteView,
-    CallFlowListView,
     CallFlowCreateView,
     CallFlowUpdateView,
-    PhoneNumberListView,
     CorporateVoiceProfileUpdateView,
-    BlockedCallerListView,
     BlockedCallerCreateView,
     BlockedCallerDeleteView,
     PanelPasswordChangeView,
@@ -409,7 +407,6 @@ from panel.views import (
     VoiceProfileRestoreView,
     WhatsAppTemplateListView,
     WhatsAppActiveSessionListView,
-    DataCaptureSetListView,
     DataCaptureSetCreateView,
     DataCaptureSetUpdateView,
     WorkOrderListView,
@@ -598,7 +595,11 @@ urlpatterns = [
         name="password_change",
     ),
     # Section management — Gestión de secciones.
-    path("sections/", SectionListView.as_view(), name="section_list"),
+    path(
+        "sections/",
+        TelephonyListPageView.as_view(slug="sections"),
+        name="section_list",
+    ),
     path(
         "sections/create/", SectionCreateView.as_view(), name="section_create"
     ),
@@ -622,10 +623,22 @@ urlpatterns = [
         ContactDeleteView.as_view(),
         name="contact_delete",
     ),
+    # S155: tabla y acciones de los listados de Telefonía y Secciones
+    # (panel/telephony_lists.py).
+    path(
+        "telefonia/listas/<slug:slug>/tabla/",
+        TelephonyListResultsView.as_view(),
+        name="telephony_list_results",
+    ),
+    path(
+        "telefonia/listas/<slug:slug>/accion/",
+        TelephonyListActionView.as_view(),
+        name="telephony_list_action",
+    ),
     # S155: Telefonía → Secciones en la centralita.
     path(
         "telefonia/secciones/",
-        IvrSectionListView.as_view(),
+        TelephonyListPageView.as_view(slug="ivr_sections"),
         name="ivr_section_list",
     ),
     path(
@@ -634,7 +647,11 @@ urlpatterns = [
         name="ivr_section_edit",
     ),
     # CallFlow management — Gestión de flujos IVR.
-    path("callflows/", CallFlowListView.as_view(), name="callflow_list"),
+    path(
+        "callflows/",
+        TelephonyListPageView.as_view(slug="callflows"),
+        name="callflow_list",
+    ),
     path(
         "callflows/create/",
         CallFlowCreateView.as_view(),
@@ -647,7 +664,9 @@ urlpatterns = [
     ),
     # PhoneNumber management — Gestión de números de teléfono (solo lectura).
     path(
-        "phonenumbers/", PhoneNumberListView.as_view(), name="phonenumber_list"
+        "phonenumbers/",
+        TelephonyListPageView.as_view(slug="phonenumbers"),
+        name="phonenumber_list",
     ),
     # CorporateVoiceProfile management — Gestión de perfil de voz corporativa.
     path(
@@ -669,7 +688,7 @@ urlpatterns = [
     # BlockedCaller management — Gestión de números bloqueados.
     path(
         "blockedcallers/",
-        BlockedCallerListView.as_view(),
+        TelephonyListPageView.as_view(slug="blockedcallers"),
         name="blockedcaller_list",
     ),
     path(
@@ -702,7 +721,7 @@ urlpatterns = [
     # Paso 8-pre — Hito 5 (2026-04-21)
     path(
         "datacapturesets/",
-        DataCaptureSetListView.as_view(),
+        TelephonyListPageView.as_view(slug="datacapturesets"),
         name="datacaptureset_list",
     ),
     path(

@@ -1,0 +1,138 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/telephony_lists/page.html #}
+{% extends "panel/base.html" %}
+{% comment %}
+S155: página común de los listados de Telefonía y Secciones
+(panel/telephony_lists.py) con el formato único (4.24, 4.27): arriba,
+fijo, Buscar y filtrar y Acciones; abajo, la lista (3/4, Ampliar) y la
+Selección actual (1/4). Comportamiento en
+panel/static/panel/js/telephony_list.js. Sin grupos de selección: son
+de personas o máquinas (como Copias de seguridad).
+{% endcomment %}
+{% load static %}
+
+{% block title %}{{ spec.title }}{% endblock %}
+{% block page_title %}{{ spec.title }}{% endblock %}
+
+{% block content %}
+{% with p=spec.prefix %}
+<div id="{{ p }}-root" data-prefix="{{ p }}" data-screen-key="{{ spec.screen_key }}"
+     data-action-url="{{ action_url }}" data-noun="{{ spec.noun }}">
+
+<div class="border rounded p-2 mb-2" id="{{ p }}-top-panel">
+    {% if spec.intro %}<div class="small text-muted mb-2">{{ spec.intro }}</div>{% endif %}
+    <div class="row g-2">
+        <div class="col-lg-7">
+            <div class="border rounded p-2 h-100">
+                <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                <form id="{{ p }}-filters" autocomplete="off" onsubmit="return false;"
+                      hx-get="{{ results_url }}" hx-target="#{{ p }}-results"
+                      hx-include="#{{ p }}-sort-inputs"
+                      hx-trigger="input changed delay:300ms from:#{{ p }}-filter-search, change, {{ p }}-selection-refresh">
+                    <div class="d-flex gap-2 mb-2">
+                        <input type="text" name="search" id="{{ p }}-filter-search" class="form-control form-control-sm"
+                               placeholder="{{ spec.search_placeholder }}" value="{{ filter_search }}">
+                    </div>
+                    <div class="d-flex flex-wrap gap-4 align-items-start small">
+                        {% for g in group_state %}
+                        <div class="tl-group" data-group="{{ g.name }}">
+                            <div class="fw-semibold mb-1">{{ g.title }}</div>
+                            {% for code, label in g.options %}
+                            <div class="form-check">
+                                <input class="form-check-input tl-group-check" type="checkbox" value="{{ code }}" id="{{ p }}-{{ g.name }}-{{ code }}"
+                                       {% if code in g.wanted %}checked{% endif %}>
+                                <label class="form-check-label" for="{{ p }}-{{ g.name }}-{{ code }}">{{ label }}</label>
+                            </div>
+                            {% endfor %}
+                            <input type="hidden" name="{{ g.name }}" class="tl-group-input" value="{{ g.value }}">
+                        </div>
+                        {% endfor %}
+                        <div>
+                            <div class="fw-semibold mb-1">Selección</div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="only_selected" value="1" id="{{ p }}-only-selected">
+                                <label class="form-check-label" for="{{ p }}-only-selected">Mostrar solo la selección actual</label>
+                            </div>
+                            <input type="hidden" name="selected_ids" id="{{ p }}-selected-ids" value="">
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="border rounded p-2 h-100">
+                <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+                    <strong class="small"><span id="{{ p }}-mass-count">0</span> seleccionados</strong>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="{{ p }}-mass-clear">Limpiar</button>
+                </div>
+                <div class="small text-muted fw-bold">{{ spec.title }}</div>
+                <div class="d-flex flex-wrap gap-1">
+                    {% if create_url %}
+                    <a href="{{ create_url }}" class="btn btn-sm btn-outline-primary" title="{{ spec.create.0 }}">
+                        <i class="bi bi-plus-lg me-1"></i>{{ spec.create.0 }}
+                    </a>
+                    {% endif %}
+                    {% for code, label, icon, style, help, question in spec.actions %}
+                    <button type="button" class="btn btn-sm btn-{{ style }}" data-tl-action="{{ code }}" data-tl-question="{{ question }}" title="{{ help }}">
+                        <i class="bi {{ icon }} me-1"></i>{{ label }}
+                    </button>
+                    {% endfor %}
+                    {% if not create_url and not spec.actions %}
+                    <span class="small text-muted">Sin acciones sobre los marcados.</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="border rounded p-2" id="{{ p }}-bottom-panel">
+    <div class="row g-2 h-100">
+        <div class="col-lg-9 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1">{{ spec.title }} (<span id="{{ p }}-row-count">{{ rows|length }}</span>)
+                    <button type="button" class="btn btn-sm btn-link py-0{% if not sort_active %} d-none{% endif %}" id="{{ p }}-clear-sort"
+                            hx-get="{{ results_url }}" hx-target="#{{ p }}-results"
+                            hx-include="#{{ p }}-filters" hx-vals='{"sort": ""}'>Quitar orden</button>
+                </div>
+                <div class="tl-fill tl-scroll fixed-list-scroll">
+                    <div id="{{ p }}-results">
+                        {% include "panel/telephony_lists/_table.html" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1">Selección actual (<span id="{{ p }}-selection-count">0</span>)</div>
+                <div class="tl-fill tl-scroll-y">
+                    <ul class="mb-0 small ps-0 list-unstyled" id="{{ p }}-selection-list">
+                        <li class="text-muted">Nada seleccionado todavía.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+
+<style>
+.tl-fill { flex: 1 1 auto; min-height: 0; }
+.tl-scroll { overflow: auto; }
+.tl-scroll-y { overflow-y: auto; }
+</style>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="{{ p }}-toast" class="toast align-items-center text-bg-dark border-0" role="status" aria-live="polite">
+        <div class="d-flex">
+            <div class="toast-body" id="{{ p }}-toast-msg"></div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+{{ saved_selection|json_script:"tl-saved-selection" }}
+{% with top=p|add:"-top-panel" bottom=p|add:"-bottom-panel" %}
+{% include "panel/_fixed_list_layout.html" with top_id=top bottom_id=bottom %}
+{% endwith %}
+<script src="{% static 'panel/js/telephony_list.js' %}"></script>
+{% endwith %}
+{% endblock %}

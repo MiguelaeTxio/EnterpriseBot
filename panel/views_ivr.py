@@ -22,7 +22,6 @@ from ivr_config.models import (
     PresenceStatus,
     CompanyUser,
     CallFlow,
-    PhoneNumber,
     CorporateVoiceProfile,
     BlockedCaller,
     DataCaptureSet,
@@ -31,91 +30,6 @@ from ivr_config.models import (
 import logging
 
 logger = logging.getLogger(__name__)
-
-class SectionListView (AdminRoleRequiredMixin ,ListView ):
-    """
-    Lists all Section records belonging to the authenticated user's company.
-    Annotates each Section with two filtered counts:
-      - ivr_contact_count: contacts whose linked CompanyUser is None or has a
-        role other than WORKSHOP/DRIVER (true IVR contacts).
-      - worker_count: contacts whose linked CompanyUser has role WORKSHOP or DRIVER.
-    Accessible only to users with the ADMIN role.
-    ---
-    Lista todos los registros Section pertenecientes a la empresa del usuario autenticado.
-    Anota cada Section con dos contadores filtrados:
-      - ivr_contact_count: contactos cuyo CompanyUser vinculado es None o tiene un rol
-        distinto de WORKSHOP/DRIVER (contactos IVR reales).
-      - worker_count: contactos cuyo CompanyUser vinculado tiene rol WORKSHOP o DRIVER.
-    Solo accesible para usuarios con rol ADMIN.
-    """
-
-    model =Section 
-    template_name ="panel/sections/list.html"
-    context_object_name ="sections"
-
-    def get_queryset (self ):
-        """
-        Returns Section records scoped to the authenticated user's company,
-        annotated with ivr_contact_count and worker_count.
-        ivr_contact_count excludes contacts linked to WORKSHOP or DRIVER users.
-        worker_count counts only contacts linked to WORKSHOP or DRIVER users.
-        ---
-        Retorna los registros Section acotados a la empresa del usuario autenticado,
-        anotados con ivr_contact_count y worker_count.
-        ivr_contact_count excluye contactos vinculados a usuarios WORKSHOP o DRIVER.
-        worker_count cuenta solo los contactos vinculados a usuarios WORKSHOP o DRIVER.
-        """
-        from django .db .models import Count ,Q as _Q 
-        return Section .objects .filter (
-        company =self .request .user .company_user .company 
-        ).annotate (
-
-
-        ivr_contact_count =Count (
-        "contacts",
-        filter =_Q (
-        _Q (contacts__company_user__isnull =True )
-        |~_Q (contacts__company_user__role__in =list (CompanyUser .WORKER_ROLES ))
-        ),
-        distinct =True ,
-        ),
-
-
-        worker_count =Count (
-        "contacts",
-        filter =_Q (contacts__company_user__role__in =list (CompanyUser .WORKER_ROLES )),
-        distinct =True ,
-        ),
-        ).order_by ("name")
-
-    def get_context_data (self ,**kwargs ):
-        """
-        Adds company, company_user and own_presence to template context.
-        ---
-        Añade company, company_user y own_presence al contexto de la plantilla.
-        """
-        context =super ().get_context_data (**kwargs )
-        context ["company"]=self .request .user .company_user .company 
-        context ["company_user"]=self .request .user .company_user 
-        context ["own_presence"]=self ._get_own_presence ()
-        context ["active_nav"]="sections"
-        return context 
-
-    def _get_own_presence (self ):
-        """
-        Returns the current active PresenceStatus for the authenticated user.
-        ---
-        Retorna el PresenceStatus activo actual del usuario autenticado.
-        """
-        from django .utils .timezone import now 
-        from django .db .models import Q 
-        company_user =self .request .user .company_user 
-        return PresenceStatus .objects .filter (
-        company_user =company_user ,
-        starts_at__lte =now (),
-        ).filter (
-        Q (ends_at__isnull =True )|Q (ends_at__gt =now ())
-        ).order_by ("-starts_at").first ()
 
 class SectionCreateView(AdminRoleRequiredMixin, CreateView):
     """
@@ -593,58 +507,6 @@ class ContactDeleteView (AdminRoleRequiredMixin ,View ):
         )
         return redirect ("/panel/contacts/")
 
-class CallFlowListView (AdminRoleRequiredMixin ,ListView ):
-    """
-    Lists all CallFlow records belonging to the authenticated user's company.
-    Accessible only to users with the ADMIN role.
-    ---
-    Lista todos los registros CallFlow pertenecientes a la empresa del usuario autenticado.
-    Solo accesible para usuarios con rol ADMIN.
-    """
-
-    model =CallFlow 
-    template_name ="panel/callflows/list.html"
-    context_object_name ="call_flows"
-
-    def get_queryset (self ):
-        """
-        Returns CallFlow records scoped to the authenticated user's company.
-        ---
-        Retorna los registros CallFlow acotados a la empresa del usuario autenticado.
-        """
-        return CallFlow .objects .filter (
-        company =self .request .user .company_user .company 
-        ).order_by ("name")
-
-    def get_context_data (self ,**kwargs ):
-        """
-        Adds company, company_user and own_presence to template context.
-        ---
-        Añade company, company_user y own_presence al contexto de la plantilla.
-        """
-        context =super ().get_context_data (**kwargs )
-        context ["company"]=self .request .user .company_user .company 
-        context ["company_user"]=self .request .user .company_user 
-        context ["own_presence"]=self ._get_own_presence ()
-        context ["active_nav"]="callflows"
-        return context 
-
-    def _get_own_presence (self ):
-        """
-        Returns the current active PresenceStatus for the authenticated user.
-        ---
-        Retorna el PresenceStatus activo actual del usuario autenticado.
-        """
-        from django .utils .timezone import now 
-        from django .db .models import Q 
-        company_user =self .request .user .company_user 
-        return PresenceStatus .objects .filter (
-        company_user =company_user ,
-        starts_at__lte =now (),
-        ).filter (
-        Q (ends_at__isnull =True )|Q (ends_at__gt =now ())
-        ).order_by ("-starts_at").first ()
-
 class CallFlowCreateView (AdminRoleRequiredMixin ,CreateView ):
     """
     Allows an ADMIN to create a new CallFlow for their company.
@@ -869,60 +731,6 @@ class CallFlowUpdateView (AdminRoleRequiredMixin ,UpdateView ):
         or obj .backup_system_instruction 
         or obj .backup_initial_greeting 
         )
-        return context 
-
-    def _get_own_presence (self ):
-        """
-        Returns the current active PresenceStatus for the authenticated user.
-        ---
-        Retorna el PresenceStatus activo actual del usuario autenticado.
-        """
-        from django .utils .timezone import now 
-        from django .db .models import Q 
-        company_user =self .request .user .company_user 
-        return PresenceStatus .objects .filter (
-        company_user =company_user ,
-        starts_at__lte =now (),
-        ).filter (
-        Q (ends_at__isnull =True )|Q (ends_at__gt =now ())
-        ).order_by ("-starts_at").first ()
-
-class PhoneNumberListView (AdminRoleRequiredMixin ,ListView ):
-    """
-    Lists all PhoneNumber records belonging to the authenticated user's company.
-    Read-only view: Twilio number assignment is managed by the superuser.
-    Accessible only to users with the ADMIN role.
-    ---
-    Lista todos los registros PhoneNumber pertenecientes a la empresa del usuario autenticado.
-    Vista de solo lectura: la asignación de números Twilio la gestiona el superusuario.
-    Solo accesible para usuarios con rol ADMIN.
-    """
-
-    model =PhoneNumber 
-    template_name ="panel/phonenumbers/list.html"
-    context_object_name ="phone_numbers"
-
-    def get_queryset (self ):
-        """
-        Returns PhoneNumber records scoped to the authenticated user's company.
-        ---
-        Retorna los registros PhoneNumber acotados a la empresa del usuario autenticado.
-        """
-        return PhoneNumber .objects .filter (
-        company =self .request .user .company_user .company 
-        ).select_related ("call_flow").order_by ("number")
-
-    def get_context_data (self ,**kwargs ):
-        """
-        Adds company, company_user and own_presence to template context.
-        ---
-        Añade company, company_user y own_presence al contexto de la plantilla.
-        """
-        context =super ().get_context_data (**kwargs )
-        context ["company"]=self .request .user .company_user .company 
-        context ["company_user"]=self .request .user .company_user 
-        context ["own_presence"]=self ._get_own_presence ()
-        context ["active_nav"]="phonenumbers"
         return context 
 
     def _get_own_presence (self ):
@@ -1176,62 +984,6 @@ class VoiceProfileRestoreView (AdminRoleRequiredMixin ,View ):
         )
         return redirect ("panel:voiceprofile_detail")
 
-class BlockedCallerListView (AdminRoleRequiredMixin ,ListView ):
-    """
-    Lists all BlockedCaller records for the authenticated user's company.
-    Shows active blocks (blocked_until > now) and expired history separately.
-    Accessible only to users with the ADMIN role.
-    ---
-    Lista todos los registros BlockedCaller de la empresa del usuario autenticado.
-    Muestra los bloqueos activos (blocked_until > now) e historial expirado por separado.
-    Solo accesible para usuarios con rol ADMIN.
-    """
-
-    model =BlockedCaller 
-    template_name ="panel/blockedcallers/list.html"
-    context_object_name ="blocked_callers"
-
-    def get_queryset (self ):
-        """
-        Returns all BlockedCaller records for the company, ordered by most recent first.
-        ---
-        Retorna todos los registros BlockedCaller de la empresa, ordenados por más reciente primero.
-        """
-        return BlockedCaller .objects .filter (
-        company =self .request .user .company_user .company 
-        ).select_related ("blocked_by").order_by ("-blocked_at")
-
-    def get_context_data (self ,**kwargs ):
-        """
-        Adds active/expired partition, company, company_user and own_presence to context.
-        ---
-        Añade la partición activos/expirados, company, company_user y own_presence al contexto.
-        """
-        context =super ().get_context_data (**kwargs )
-        company_user =self .request .user .company_user 
-        all_records =context ["blocked_callers"]
-        context ["active_blocks"]=[b for b in all_records if b .is_active ]
-        context ["expired_blocks"]=[b for b in all_records if not b .is_active ]
-        context ["company"]=company_user .company 
-        context ["company_user"]=company_user 
-        context ["own_presence"]=self ._get_own_presence ()
-        context ["active_nav"]="blockedcallers"
-        return context 
-
-    def _get_own_presence (self ):
-        """
-        Returns the current active PresenceStatus for the authenticated user.
-        ---
-        Retorna el PresenceStatus activo actual del usuario autenticado.
-        """
-        company_user =self .request .user .company_user 
-        return PresenceStatus .objects .filter (
-        company_user =company_user ,
-        starts_at__lte =now (),
-        ).filter (
-        Q (ends_at__isnull =True )|Q (ends_at__gt =now ())
-        ).order_by ("-starts_at").first ()
-
 class BlockedCallerCreateView (AdminRoleRequiredMixin ,CreateView ):
     """
     Allows an ADMIN to manually block a phone number for their company.
@@ -1345,58 +1097,6 @@ class BlockedCallerDeleteView (AdminRoleRequiredMixin ,DeleteView ):
         context ["company_user"]=self .request .user .company_user 
         context ["own_presence"]=self ._get_own_presence ()
         context ["active_nav"]="blockedcallers"
-        return context 
-
-    def _get_own_presence (self ):
-        """
-        Returns the current active PresenceStatus for the authenticated user.
-        ---
-        Retorna el PresenceStatus activo actual del usuario autenticado.
-        """
-        company_user =self .request .user .company_user 
-        return PresenceStatus .objects .filter (
-        company_user =company_user ,
-        starts_at__lte =now (),
-        ).filter (
-        Q (ends_at__isnull =True )|Q (ends_at__gt =now ())
-        ).order_by ("-starts_at").first ()
-
-class DataCaptureSetListView (AdminRoleRequiredMixin ,ListView ):
-    """
-    Lists all DataCaptureSet records belonging to the authenticated user's company.
-    Accessible only to users with the ADMIN role.
-    ---
-    Lista todos los registros DataCaptureSet pertenecientes a la empresa del usuario autenticado.
-    Solo accesible para usuarios con rol ADMIN.
-    """
-
-    model =DataCaptureSet 
-    template_name ="panel/datacapturesets/list.html"
-    context_object_name ="capture_sets"
-
-    def get_queryset (self ):
-        """
-        Returns DataCaptureSet records scoped to the authenticated user's company,
-        ordered alphabetically by name.
-        ---
-        Retorna los registros DataCaptureSet acotados a la empresa del usuario autenticado,
-        ordenados alfabéticamente por nombre.
-        """
-        return DataCaptureSet .objects .filter (
-        company =self .request .user .company_user .company 
-        ).order_by ("name")
-
-    def get_context_data (self ,**kwargs ):
-        """
-        Adds company, company_user and own_presence to template context.
-        ---
-        Añade company, company_user y own_presence al contexto de la plantilla.
-        """
-        context =super ().get_context_data (**kwargs )
-        context ["company"]=self .request .user .company_user .company 
-        context ["company_user"]=self .request .user .company_user 
-        context ["own_presence"]=self ._get_own_presence ()
-        context ["active_nav"]="datacapturesets"
         return context 
 
     def _get_own_presence (self ):

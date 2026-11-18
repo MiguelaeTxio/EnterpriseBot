@@ -8,7 +8,7 @@
  * ocultos" (iba a quitar a Carlos Carlín de los fichajes y quitó la
  * sección entera de Taller).
  *
- * EbMassConfirm({action, names, hidden}) -> Promise<boolean>
+ * EbMassConfirm({action, names, hidden, noun}) -> Promise<boolean>
  *   action: qué se va a hacer ("Quitar los recordatorios").
  *   names:  nombres de todos los marcados.
  *   hidden: nombres de los marcados que NO se ven en la lista con los
@@ -57,7 +57,8 @@
         const hidden = new Set(opts.hidden || []);
         const q = function (key) { return modalEl.querySelector('[data-mc="' + key + '"]'); };
         q("action").textContent = opts.action || "Se va a aplicar un cambio";
-        q("count").innerHTML = "Tienes marcados <strong>" + names.length + "</strong> trabajador(es).";
+        // S155: opts.noun para listados que no son de personas.
+        q("count").innerHTML = "Tienes marcados <strong>" + names.length + "</strong> " + (opts.noun || "trabajador(es)") + ".";
         const hiddenBox = q("hidden");
         if (hidden.size) {
             hiddenBox.classList.remove("d-none");

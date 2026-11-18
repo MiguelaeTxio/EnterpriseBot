@@ -1,0 +1,60 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/telephony_lists/_table.html #}
+{% comment %}
+S155: tabla común de los listados de Telefonía y Secciones
+(panel/telephony_lists.py). Orden múltiple por cabeceras (4.24), casilla
+por fila y "todos", menú de tres puntos por fila.
+{% endcomment %}
+{% with p=spec.prefix %}
+<div id="{{ p }}-fragment-state" class="d-none" data-count="{{ rows|length }}" data-sort-active="{% if sort_active %}1{% endif %}"></div>
+<div id="{{ p }}-sort-inputs" class="d-none"><input type="hidden" name="sort" value="{{ current_sort }}"></div>
+<table class="table table-sm table-hover align-middle mb-0" id="{{ p }}-table">
+    <thead class="table-light">
+        <tr>
+            <th class="text-center" style="width: 2rem;">
+                <input class="form-check-input" type="checkbox" id="{{ p }}-check-all" aria-label="Seleccionar todos">
+            </th>
+            {% for col in columns %}
+            <th class="text-nowrap">
+                <a href="#" class="text-reset text-decoration-none"
+                   hx-get="{{ results_url }}" hx-target="#{{ p }}-results"
+                   hx-include="#{{ p }}-filters" hx-vals='{"sort": "{{ col.next }}"}'>
+                    {{ col.label }}{% if col.arrow == "up" %} <i class="bi bi-arrow-up"></i>{% elif col.arrow == "down" %} <i class="bi bi-arrow-down"></i>{% endif %}{% if col.priority %}<sup>{{ col.priority }}</sup>{% endif %}
+                </a>
+            </th>
+            {% endfor %}
+            <th style="width: 2.5rem;"></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            <td class="text-center">
+                <input class="form-check-input {{ p }}-row-check" type="checkbox" data-pk="{{ row.pk }}" data-label="{{ row.label }}" aria-label="Seleccionar {{ row.label }}">
+            </td>
+            {% for c in row.cells %}
+            <td class="{% if c.center %}text-center{% endif %}{% if c.muted %} text-muted{% endif %}">
+                {% if c.badge %}<span class="badge badge-{{ c.badge }}">{{ c.text }}</span>{% else %}{{ c.text }}{% endif %}
+                {% for note in c.notes %}<div class="small text-muted text-wrap">{{ note }}</div>{% endfor %}
+            </td>
+            {% endfor %}
+            <td class="text-end">
+                {% if row.menu %}
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-link text-reset py-0" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Acciones de {{ row.label }}">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        {% for text, url, icon in row.menu %}
+                        <li><a class="dropdown-item" href="{{ url }}"><i class="bi {{ icon }} me-2"></i>{{ text }}</a></li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="{{ columns|length|add:2 }}" class="text-muted p-3">No hay nada con estos filtros.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endwith %}
