@@ -426,7 +426,7 @@ def filter_by_onboarding(people, codes):
     return [p for p in people if states[p.pk].code in codes]
 
 
-def resend_onboarding(person):
+def resend_onboarding(person, keep_password=False):
     """
     Send the clock-in circular again and reset the access. (ok, reason).
     ---
@@ -437,6 +437,10 @@ def resend_onboarding(person):
     últimas cifras del DNI y quita sus dispositivos de confianza (por si
     ha cambiado de móvil). Si no se puede enviar, no se cambia nada.
     Devuelve (True, "") o (False, motivo).
+
+    S149 (Miguel Ángel, 18/11, Jerónimo ya tiene acceso): con
+    `keep_password` solo se envía la circular; no se tocan ni su
+    contraseña ni sus dispositivos de confianza.
     """
     from document_explorer.models import (
         DocumentAcknowledgment,
@@ -451,7 +455,7 @@ def resend_onboarding(person):
     if not account.is_active:
         return False, "su usuario está desactivado"
     password = password_of(person)
-    if not password:
+    if not password and not keep_password:
         return False, "no tiene DNI con cifras para la contraseña"
     if not mobile_of(person):
         return False, "sin teléfono 1 (de empresa)"
@@ -469,6 +473,8 @@ def resend_onboarding(person):
     if not send_circular_notification_whatsapp(ack):
         ack.delete()
         return False, "no se ha podido enviar el WhatsApp"
+    if keep_password:
+        return True, ""
     with transaction.atomic():
         user = account.user
         user.set_password(password)

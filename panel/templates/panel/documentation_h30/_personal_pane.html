@@ -264,6 +264,11 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                                 title="Vuelve a enviar por WhatsApp la circular Alta en el fichaje a los marcados y, si sale, les pone otra vez la contraseña de las 4 últimas cifras del DNI y les quita los dispositivos de confianza (por si han cambiado de móvil).">
                             <i class="bi bi-arrow-repeat me-1"></i>Reenviar el alta
                         </button>
+                        {# S149 (18/11): a quien ya entra en el panel, la circular sin tocar su contraseña. #}
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="person-mass-access-send" disabled
+                                title="Envía por WhatsApp la circular Alta en el fichaje a los marcados sin cambiarles la contraseña ni quitarles los dispositivos de confianza (para quien ya entra en el panel con la suya).">
+                            <i class="bi bi-send me-1"></i>Enviar el alta sin cambiar la contraseña
+                        </button>
                     </div>
                     {# S147: base de los marcados (la de su usuario del panel, como Administración > Usuarios). #}
                     <div class="small text-muted fw-bold mt-1">Base de los marcados</div>
@@ -587,6 +592,8 @@ las filas de debajo se desplacen de verdad.
         if (accessBtn) accessBtn.disabled = selection.size === 0;
         const resendBtn = document.getElementById('person-mass-access-resend');
         if (resendBtn) resendBtn.disabled = selection.size === 0;
+        const sendBtn = document.getElementById('person-mass-access-send');
+        if (sendBtn) sendBtn.disabled = selection.size === 0;
         // H24 (S144): horario y sección de los marcados.
         ['person-mass-schedule-assign', 'person-mass-schedule-clear', 'person-mass-section-assign', 'person-mass-base-assign', 'person-mass-employer-assign'].forEach((id) => {
             const btn = document.getElementById(id);
@@ -1557,14 +1564,19 @@ las filas de debajo se desplacen de verdad.
         });
     }
 
-    // H24 (S144): "Reenviar el alta" a los marcados.
-    const resendBtn = document.getElementById('person-mass-access-resend');
+    // H24 (S144): "Reenviar el alta" a los marcados. S149: el mismo
+    // envío sin tocar la contraseña ("Enviar el alta sin cambiar...").
+    [['person-mass-access-resend', false], ['person-mass-access-send', true]].forEach(([btnId, keep]) => {
+    const resendBtn = document.getElementById(btnId);
     if (resendBtn) {
         resendBtn.addEventListener('click', async function () {
             if (selection.size === 0) return;
-            if (!(await personMassConfirm('Reenviar el alta en el fichaje: se les vuelve a poner la contraseña de las 4 últimas cifras del DNI y se les quitan los dispositivos de confianza.'))) return;
+            if (!(await personMassConfirm(keep
+                ? 'Enviar el alta en el fichaje sin cambiar la contraseña: solo se envía la circular por WhatsApp; su contraseña y sus dispositivos de confianza no se tocan.'
+                : 'Reenviar el alta en el fichaje: se les vuelve a poner la contraseña de las 4 últimas cifras del DNI y se les quitan los dispositivos de confianza.'))) return;
             const formData = new FormData();
             selection.forEach((pk) => formData.append('person_ids', pk));
+            if (keep) formData.append('keep_password', '1');
             resendBtn.disabled = true;
             resultEl.innerHTML = '<div class="text-muted">Reenviando el alta…</div>';
             fetch("{% url 'panel:documentation_personal_access_resend' %}", {
@@ -1583,6 +1595,7 @@ las filas de debajo se desplacen de verdad.
             }).finally(() => { resendBtn.disabled = selection.size === 0; });
         });
     }
+    });
 
     // H24 (S144): pestañas de acciones -- la elegida se recuerda.
     (function () {

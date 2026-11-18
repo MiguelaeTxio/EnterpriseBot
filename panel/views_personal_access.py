@@ -179,7 +179,8 @@ class PersonalAccessResendView(SupervisorAccessMixin, View):
         for person in people:
             label = ("%s %s" % (person.given_name,
                                 person.first_surname)).strip()
-            ok, reason = resend_onboarding(person)
+            ok, reason = resend_onboarding(
+                person, keep_password=request.POST.get("keep_password") == "1")
             if ok:
                 sent.append(label)
             else:
