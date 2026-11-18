@@ -50,13 +50,37 @@ on:
         type: boolean
         default: false
 
-concurrency:
-  group: enterprisebot-pythonanywhere-ssh
-  cancel-in-progress: false
-
 jobs:
-  deploy:
+  # S153 (Miguel Ángel: "hay un despliegue en espera, un despliegue
+  # ejecutándose, uno que acaba de ejecutar, con lo cual se están
+  # pisando unas sesiones con otras"): con varias sesiones empujando a
+  # la vez, cada push esperaba su turno y recargaba la web. Ahora cada
+  # push espera 90 s; si en ese rato llega otro, el anterior se cancela
+  # y se despliega solo el último (git pull trae todo lo pendiente y el
+  # diff se calcula desde lo que había en el servidor, así que no se
+  # pierde nada). Un lanzamiento manual no espera.
+  agrupar:
     runs-on: ubuntu-latest
+    concurrency:
+      group: enterprisebot-deploy-debounce
+      cancel-in-progress: true
+    steps:
+      - name: Esperar por si llegan más pushes
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Lanzamiento manual: sin espera."
+          else
+            sleep 90
+          fi
+
+  deploy:
+    needs: agrupar
+    runs-on: ubuntu-latest
+    # Antes a nivel de workflow (S102): mismo grupo que
+    # compile-requirements.yml, para que sus sesiones SSH no se pisen.
+    concurrency:
+      group: enterprisebot-pythonanywhere-ssh
+      cancel-in-progress: false
     steps:
       - name: Preparar clave SSH dedicada
         run: |
@@ -144,14 +168,37 @@ jobs:
             git pull origin main
             NEW_HEAD=$(git rev-parse HEAD)
             source /home/MiguelAeTxio/.virtualenvs/EnterpriseBot_venv_py312/bin/activate
-            echo "--- pip-sync (dependencias) ---"
-            python -m dotenv run pip-sync requirements.txt || {
-              echo "⛔ pip-sync FALLO -- revisar manualmente, pero migrate/collectstatic/reload SIGUEN adelante.";
-            }
-            echo "--- migrate ---"
-            python -m dotenv run python manage.py migrate --noinput
-            echo "--- collectstatic ---"
-            python -m dotenv run python manage.py collectstatic --noinput --clear
+            # S153 (Miguel Ángel: con varias sesiones a la vez el panel
+            # iba lentísimo mientras se desplegaba): cada paso solo si el
+            # push lo necesita. collectstatic --clear deja la web sin
+            # estáticos mientras copia, y pip-sync tarda; un push de solo
+            # documentación ya no hace nada ni recarga la web.
+            DIFF=$(git diff --name-only "$OLD_HEAD" "$NEW_HEAD")
+            if echo "$DIFF" | grep -qE "^requirements\.txt$"; then
+              echo "--- pip-sync (dependencias) ---"
+              python -m dotenv run pip-sync requirements.txt || {
+                echo "⛔ pip-sync FALLO -- revisar manualmente, pero migrate/collectstatic/reload SIGUEN adelante.";
+              }
+            else
+              echo "--- pip-sync: requirements.txt sin cambios, se omite ---"
+            fi
+            if echo "$DIFF" | grep -qE "/migrations/[^/]+\.py$"; then
+              echo "--- migrate ---"
+              python -m dotenv run python manage.py migrate --noinput
+            else
+              echo "--- migrate: sin migraciones nuevas, se omite ---"
+            fi
+            if echo "$DIFF" | grep -qE "(^|/)static/"; then
+              echo "--- collectstatic ---"
+              python -m dotenv run python manage.py collectstatic --noinput --clear
+            else
+              echo "--- collectstatic: sin estáticos cambiados, se omite ---"
+            fi
+            if echo "$DIFF" | grep -qvE "^(DOCS/|\.github/)|\.md$"; then
+              echo "NEEDS_RELOAD=1"
+            else
+              echo "NEEDS_RELOAD=0"
+            fi
             echo "--- CHANGED_FILES_START ---"
             git diff --name-only "$OLD_HEAD" "$NEW_HEAD"
             echo "--- CHANGED_FILES_END ---"
@@ -177,6 +224,12 @@ jobs:
         # observados.
         if: success()
         run: |
+          # S153: un push de solo documentación (DOCS/, .md, .github/)
+          # no recarga la web.
+          if grep -q "^NEEDS_RELOAD=0" /tmp/deploy_output.txt; then
+            echo "--- Solo documentación: no hace falta recargar la web ---"
+            exit 0
+          fi
           # S155: muestra el código HTTP de PythonAnywhere si falla (antes
           # solo "exit code 22", sin saber por qué).
           RESP=$(curl -s --max-time 60 -w "\nHTTP_STATUS:%{http_code}" -X POST \
