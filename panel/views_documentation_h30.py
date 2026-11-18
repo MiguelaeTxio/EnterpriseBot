@@ -1679,12 +1679,10 @@ class PersonalListFragmentView(CompanyUserRequiredMixin, View):
                 "items",
             ).order_by("name")
         )
-        # H31 (S129): exportar a Excel con plantilla, mismos roles que
-        # la exportación de partes (lleva DNI, dirección y n.º de SS).
-        ctx["can_export_personal"] = request.user.company_user.role in (
-            CompanyUser.ROLE_ADMIN, CompanyUser.ROLE_ADMIN_SUPERVISOR,
-            CompanyUser.ROLE_SUPERVISOR, CompanyUser.ROLE_WORKSHOPBOSS,
-        )
+        # H31 (S129): exportar a Excel con plantilla. S153 (Miguel
+        # Ángel): quien ve el listado lo exporta igual que él (Yolanda
+        # no tenía el botón).
+        ctx["can_export_personal"] = True
         # H24 (S141): "Dar acceso al fichaje", mismos roles que crear
         # usuarios (SupervisorAccessMixin).
         ctx["can_create_accounts"] = request.user.company_user.role in (

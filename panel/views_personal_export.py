@@ -9,17 +9,19 @@ The export takes the marked workers or, with none marked, everyone the
 list shows with its current search, filters and order (the same
 _person_list_page the list uses). Templates: personal ones per user
 (one default) and company-wide global ones that only ADMIN creates or
-edits (document_explorer.PersonalExportTemplate). Limited to ADMIN,
-SUPERVISOR and WORKSHOPBOSS like the parte export (SupervisorAccessMixin):
-the sheet carries DNI, address and Social Security numbers.
+edits (document_explorer.PersonalExportTemplate). S153: anyone who can
+see the Personal list can export it (same CompanyUserRequiredMixin as
+the list): Miguel Ángel, "todas las exportaciones exactamente igual que
+tengo yo" en las vistas a las que se tiene acceso.
 
 ---
 
 Exportación a Excel del listado de Personal, con plantillas como la
 de partes. Exporta los marcados o, sin ninguno marcado, todos los que
 enseña el listado con su búsqueda, filtros y orden. Plantillas
-personales (una por defecto) y globales de empresa (solo ADMIN). Solo
-para ADMIN, SUPERVISOR y WORKSHOPBOSS, como la exportación de partes.
+personales (una por defecto) y globales de empresa (solo ADMIN). S153:
+la exporta quien puede ver el listado de Personal (antes solo ADMIN,
+SUPERVISOR y WORKSHOPBOSS; Yolanda no tenía el botón).
 """
 import json
 
@@ -30,7 +32,7 @@ from document_explorer.models import PersonalExportTemplate
 from ivr_config.models import CompanyUser
 from panel.export_formats import workbook_response
 from panel.export_templates import find_template, with_panel_template
-from panel.mixins import SupervisorAccessMixin
+from panel.mixins import CompanyUserRequiredMixin
 
 
 def _cell(value):
@@ -297,7 +299,7 @@ def _split_groups(request, people, values):
     return None
 
 
-class PersonalExportTemplateListView(SupervisorAccessMixin, View):
+class PersonalExportTemplateListView(CompanyUserRequiredMixin, View):
     """
     GET: the templates the user can use, and the column catalogue.
     ---
@@ -317,7 +319,7 @@ class PersonalExportTemplateListView(SupervisorAccessMixin, View):
         })
 
 
-class PersonalExportTemplateSaveView(SupervisorAccessMixin, View):
+class PersonalExportTemplateSaveView(CompanyUserRequiredMixin, View):
     """
     POST (JSON): create (no id) or update (id) a template.
     {id?, name, columns[], is_default, is_global}.
@@ -374,7 +376,7 @@ class PersonalExportTemplateSaveView(SupervisorAccessMixin, View):
         return JsonResponse({"ok": True, "id": template.pk})
 
 
-class PersonalExportTemplateDeleteView(SupervisorAccessMixin, View):
+class PersonalExportTemplateDeleteView(CompanyUserRequiredMixin, View):
     """
     POST: delete a template the user may edit.
     ---
@@ -391,7 +393,7 @@ class PersonalExportTemplateDeleteView(SupervisorAccessMixin, View):
         return JsonResponse({"ok": True})
 
 
-class PersonalExportView(SupervisorAccessMixin, View):
+class PersonalExportView(CompanyUserRequiredMixin, View):
     """
     GET ?template_pk=N + the list's own parameters (search, filters,
     order; only_selected=1&selected_ids=... for the marked ones): the

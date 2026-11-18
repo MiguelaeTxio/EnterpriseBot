@@ -376,12 +376,9 @@ class MachineHistoryView(CompanyUserRequiredMixin, View):
             # (WorkOrderAdminExportByTemplateView / SupervisorAccessMixin) --
             # es una acción de reporting, no la consulta de solo lectura ya
             # abierta a todos los roles.
-            "can_export": company_user.role in {
-                company_user.ROLE_ADMIN,
-                company_user.ROLE_ADMIN_SUPERVISOR,
-                company_user.ROLE_SUPERVISOR,
-                company_user.ROLE_WORKSHOPBOSS,
-            },
+            # S153 (Miguel Ángel): quien ve la página la exporta igual
+            # que él; ya no depende del rol.
+            "can_export": True,
         }
         return render(request, self.template_name, context)
 
@@ -430,7 +427,7 @@ class MachineHistoryView(CompanyUserRequiredMixin, View):
         """
         import io
         from django.http import (
-            HttpResponse, HttpResponseBadRequest, HttpResponseForbidden,
+            HttpResponse, HttpResponseBadRequest,
         )
         from django.utils.timezone import now as tz_now
         from work_order_processor.models import ExportTemplate, WorkOrder
@@ -440,12 +437,6 @@ class MachineHistoryView(CompanyUserRequiredMixin, View):
 
         company = self._get_company(request)
         cu = request.user.company_user
-
-        if cu.role not in (
-            cu.ROLE_ADMIN, cu.ROLE_ADMIN_SUPERVISOR, cu.ROLE_SUPERVISOR,
-            cu.ROLE_WORKSHOPBOSS,
-        ):
-            return HttpResponseForbidden("Acción no disponible para tu rol.")
 
         today = date.today()
         default_from = today - timedelta(days=_DEFAULT_DAYS)
