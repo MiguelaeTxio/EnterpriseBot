@@ -43,6 +43,12 @@ on:
         description: "Reiniciar el worker Celery aunque no haya cambios"
         type: boolean
         default: false
+      restart_bridge:
+        # S155: un despliegue cuya recarga de la web falló no reinicia el
+        # bridge, y el siguiente push ya no ve los cambios del bridge.
+        description: "Reiniciar el bridge de voz aunque no haya cambios"
+        type: boolean
+        default: false
 
 concurrency:
   group: enterprisebot-pythonanywhere-ssh
@@ -286,6 +292,11 @@ jobs:
           # restart_worker): un nombre que solo casa con su patrón.
           if [ "${{ inputs.restart_worker }}" = "true" ]; then
             CHANGED=$(printf '%s\n%s' "$CHANGED" "budgets/tasks.py")
+          fi
+          # S155: reinicio forzado del bridge (workflow_dispatch
+          # restart_bridge): un nombre que solo casa con su patrón.
+          if [ "${{ inputs.restart_bridge }}" = "true" ]; then
+            CHANGED=$(printf '%s\n%s' "$CHANGED" "voice_sidecar_bridge.py")
           fi
           FAILED=0
           {
