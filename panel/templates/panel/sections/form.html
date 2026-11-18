@@ -667,6 +667,48 @@
                         </div>
                     </div>
 
+                    <!-- ivr_transfer_enabled (S155): estaba en el formulario pero no
+                         se mostraba, y al guardar la sección se desmarcaba sola -->
+                    <div class="mb-4">
+                        <div class="form-check">
+                            {{ form.ivr_transfer_enabled }}
+                            <label class="form-check-label fw-medium"
+                                   for="{{ form.ivr_transfer_enabled.id_for_label }}">
+                                {{ form.ivr_transfer_enabled.label }}
+                            </label>
+                        </div>
+                        {% if form.ivr_transfer_enabled.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.ivr_transfer_enabled.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            La centralita ofrece esta sección a quien llama y puede pasarle la
+                            llamada a sus contactos. Hace falta también que la sección esté activa
+                            y tenga flujo IVR.
+                        </div>
+                    </div>
+
+                    <!-- ivr_breakdown_enabled (S155): mismo caso que ivr_transfer_enabled -->
+                    <div class="mb-4">
+                        <div class="form-check">
+                            {{ form.ivr_breakdown_enabled }}
+                            <label class="form-check-label fw-medium"
+                                   for="{{ form.ivr_breakdown_enabled.id_for_label }}">
+                                {{ form.ivr_breakdown_enabled.label }}
+                            </label>
+                        </div>
+                        {% if form.ivr_breakdown_enabled.errors %}
+                        <div class="text-danger mt-1 text-err">
+                            {% for error in form.ivr_breakdown_enabled.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">
+                            La centralita registra en esta sección las averías de máquinas propias
+                            que comunican los trabajadores por teléfono.
+                        </div>
+                    </div>
+
                     <!-- onboarding_enabled (S130) — se ofrece en el alta por WhatsApp -->
                     <div class="mb-4">
                         <div class="form-check">
