@@ -1845,13 +1845,10 @@ class DataCaptureSetUpdateView (AdminRoleRequiredMixin ,UpdateView ):
         context ["own_presence"]=self ._get_own_presence ()
         context ["active_nav"]="datacapturesets"
         context ["action"]="Guardar"
-        context ["section_workers"]=list (
-        CompanyUser .objects .filter (
-        company =self .request .user .company_user .company ,
-        user__isnull =False ,
-        contact_profile__section =self .object ,
-        ).select_related ("user","contact").order_by ("user__username")
-        )
+        # S155: la lista de trabajadores de sección se había copiado aquí
+        # filtrando por este conjunto de captura como si fuera una sección
+        # (ValueError al editar cualquier conjunto). Esta página no la usa.
+        context ["section_workers"]=[]
         context ["existing_fields_json"]=json .dumps (self .object .fields or [])
         return context 
 
