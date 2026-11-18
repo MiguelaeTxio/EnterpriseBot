@@ -103,6 +103,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger("VoiceSidecar")
 
+# S155: seconds a voice session started in Twilio's POST waits for the
+# WebSocket; past that (the caller hung up during the intro), it is closed.
+# S155: segundos que una sesión de voz arrancada en el POST de Twilio espera
+# al WebSocket; pasado ese tiempo (el llamante colgó durante la locución),
+# se cierra.
+PENDING_CALL_TIMEOUT_SECONDS = 20.0
+
 
 # ---------------------------------------------------------------------------
 # UNIVERSAL VOICE BRIDGE / PUENTE DE VOZ UNIVERSAL
@@ -205,6 +212,7 @@ class UniversalVoiceBridge:
             post_data = await request.post()
             twilio_number = post_data.get("To", "")
             caller_number = post_data.get("From", "")
+            call_sid = post_data.get("CallSid", "")
             if twilio_number:
                 logger.info(
                     f"# [HTTP POST] Número destino capturado del POST: {twilio_number}"
@@ -230,6 +238,7 @@ class UniversalVoiceBridge:
             )
             twilio_number = ""
             caller_number = ""
+            call_sid = ""
 
         # Store both numbers so handle_websocket_stream() can access them
         # when the WebSocket 'start' event arrives for this call.
@@ -253,6 +262,14 @@ class UniversalVoiceBridge:
                 f"llamada: {prep_exc}. Se preparará al abrir el WebSocket."
             )
             self._pending_prepared_task = None
+
+        # S155: arrancar ya la sesión de voz (Gemini Live y el saludo)
+        # mientras suena la locución; el audio del saludo espera en la cola
+        # hasta que Twilio abre el WebSocket (handle_websocket_stream).
+        if call_sid and self._pending_prepared_task is not None:
+            self._start_pending_call(
+                call_sid, twilio_number, caller_number,
+                self._pending_prepared_task)
 
         # Derive the WSS URL from the request host header so that the TwiML
         # always points to the correct tunnel regardless of the ngrok session.
@@ -283,6 +300,81 @@ class UniversalVoiceBridge:
 
         logger.info(f"# [HTTP POST] TwiML generado. WSS target: {wss_url}")
         return web.Response(text=twiml, content_type="text/xml")
+
+    def _start_pending_call(self, call_sid: str, twilio_number: str,
+                            caller_number: str, prepared_task) -> None:
+        """
+        Starts the voice session of a call from Twilio's POST.
+        ---
+        S155: arranca la sesión de voz de una llamada desde el POST de
+        Twilio, antes de que exista el WebSocket, y la deja pendiente por
+        su CallSid hasta que Twilio lo abre. Si no llega en
+        PENDING_CALL_TIMEOUT_SECONDS, se cierra (_expire_pending_call).
+        """
+        loop = asyncio.get_running_loop()
+        if not hasattr(self, "_pending_calls"):
+            self._pending_calls = {}
+        entry = {"service": loop.create_future(), "task": None}
+        self._pending_calls[call_sid] = entry
+        entry["task"] = asyncio.ensure_future(self._run_pending_call(
+            entry, call_sid, twilio_number, caller_number, prepared_task))
+        loop.call_later(PENDING_CALL_TIMEOUT_SECONDS,
+                        self._expire_pending_call, call_sid)
+
+    async def _run_pending_call(self, entry: dict, call_sid: str,
+                                twilio_number: str, caller_number: str,
+                                prepared_task) -> None:
+        """
+        Builds the service and runs the voice session without WebSocket.
+        ---
+        S155: crea el servicio (en un hilo: el cliente de Gemini tarda en
+        crearse y no debe retrasar la respuesta del POST) y ejecuta la
+        sesión de voz sin WebSocket; el audio va a Twilio cuando
+        handle_websocket_stream resuelve service.twilio_ws_future.
+        """
+        try:
+            service = await asyncio.to_thread(
+                VoiceOrchestrationService,
+                twilio_number=twilio_number,
+                caller_number=caller_number,
+            )
+        except Exception as exc:
+            logger.error(
+                f"# [HTTP POST] No se pudo arrancar la sesión de voz durante "
+                f"la locución: {exc}. Se arrancará al abrir el WebSocket."
+            )
+            entry["service"].set_result(None)
+            return
+        service.prepared_task = prepared_task
+        service.twilio_ws_future = asyncio.get_running_loop().create_future()
+        service.set_call_sid(call_sid)
+        entry["service"].set_result(service)
+        logger.info(
+            f"# [HTTP POST] Sesión de voz arrancada durante la locución "
+            f"(CallSid {call_sid})."
+        )
+        await service.run_voice_session(None)
+
+    def _expire_pending_call(self, call_sid: str) -> None:
+        """
+        Closes a voice session whose WebSocket never arrived.
+        ---
+        S155: cierra la sesión de voz de una llamada cuyo WebSocket no
+        llegó (el llamante colgó durante la locución).
+        """
+        entry = getattr(self, "_pending_calls", {}).pop(call_sid, None)
+        if entry is None:
+            return
+        logger.warning(
+            f"# [HTTP POST] La llamada {call_sid} no abrió el WebSocket en "
+            f"{PENDING_CALL_TIMEOUT_SECONDS:.0f} s. Se cierra su sesión de "
+            "voz."
+        )
+        service_future = entry["service"]
+        if service_future.done() and service_future.result() is not None:
+            service_future.result().terminate_session()
+        if entry["task"] is not None and not entry["task"].done():
+            entry["task"].cancel()
 
     async def handle_websocket_stream(self, request: web.Request) -> web.WebSocketResponse:
         """
@@ -452,62 +544,78 @@ class UniversalVoiceBridge:
                         # Cada llamada obtiene sus propias instancias de asyncio.Queue y
                         # un flag session_active limpio, evitando contaminación de estado
                         # entre llamadas consecutivas gestionadas por el mismo proceso bridge.
-                        service = VoiceOrchestrationService(
-                            twilio_number=twilio_number,
-                            caller_number=caller_number,
-                        )
-                        # S153: la configuración que se empezó a preparar
-                        # en el POST, si es de esta misma llamada.
-                        prepared_task = getattr(
-                            self, "_pending_prepared_task", None)
-                        self._pending_prepared_task = None
-                        service.prepared_task = prepared_task
+                        # S155: la sesión arrancada en el POST de esta
+                        # misma llamada (por CallSid), si la hay.
+                        pending = getattr(self, "_pending_calls", {}).pop(
+                            call_sid, None) if call_sid else None
+                        if pending is not None:
+                            try:
+                                service = await asyncio.wait_for(
+                                    pending["service"], timeout=10.0)
+                            except Exception:
+                                service = None
+                            if service is None and not pending["task"].done():
+                                pending["task"].cancel()
 
-                        # Store the Twilio Call SID on the service instance.
-                        # The call_sid is required by _execute_transfer() to update
-                        # the live call via Twilio REST API when a section transfer
-                        # is triggered by the transfer_to_section_contact tool call.
-                        # Almacenar el Call SID de Twilio en la instancia del servicio.
-                        # El call_sid es necesario por _execute_transfer() para actualizar
-                        # la llamada en curso vía REST API de Twilio cuando se dispara
-                        # una transferencia de sección por el tool call transfer_to_section_contact.
-                        if call_sid:
-                            service.set_call_sid(call_sid)
-                        else:
-                            logger.warning(
-                                "# [EVENT] callSid ausente en el evento 'start'. "
-                                "La transferencia de llamada no estará disponible "
-                                "para esta sesión."
+                        if service is not None:
+                            voice_task = pending["task"]
+                            self._pending_prepared_task = None
+                            if stream_sid:
+                                service.set_stream_sid(stream_sid)
+                            else:
+                                logger.warning(
+                                    "# [EVENT] Evento 'start' recibido sin "
+                                    "streamSid. Los mensajes 'media' "
+                                    "salientes no incluirán streamSid y "
+                                    "podrían ser descartados por Twilio "
+                                    "(Warning 31951)."
+                                )
+                            service.twilio_ws_future.set_result(ws)
+                            logger.info(
+                                "# [EVENT] Sesión de voz arrancada en el POST "
+                                "enlazada a este WebSocket."
                             )
-
-                        # Launch run_voice_session as a concurrent asyncio Task.
-                        # This task owns the Gemini Live session lifecycle via the SDK
-                        # context manager and runs concurrently with the Twilio event
-                        # reader loop below.
-                        # Lanzar run_voice_session como una Task asyncio concurrente.
-                        # Esta tarea es propietaria del ciclo de vida de la sesión Gemini
-                        # Live mediante el context manager del SDK y se ejecuta
-                        # concurrentemente con el bucle lector de eventos de Twilio.
-                        voice_task = asyncio.ensure_future(service.run_voice_session(ws))
-
-                        # Store the streamSid on the service instance.
-                        # This is MANDATORY for the Twilio Media Streams bidirectional
-                        # protocol: every outbound 'media' message must include 'streamSid'
-                        # at the root level. Omitting it causes Warning 31951 and silent
-                        # audio discard on Twilio's side.
-                        # Almacenar el streamSid en la instancia del servicio.
-                        # Esto es OBLIGATORIO para el protocolo bidireccional de Twilio
-                        # Media Streams: cada mensaje 'media' saliente debe incluir
-                        # 'streamSid' en el nivel raíz. Su omisión provoca el Warning
-                        # 31951 y el descarte silencioso del audio en el lado de Twilio.
-                        if stream_sid:
-                            service.set_stream_sid(stream_sid)
                         else:
-                            logger.warning(
-                                "# [EVENT] Evento 'start' recibido sin streamSid. "
-                                "Los mensajes 'media' salientes no incluirán streamSid "
-                                "y podrían ser descartados por Twilio (Warning 31951)."
+                            # Fallback (no session started in the POST): the
+                            # service is created here, as before S155.
+                            # Respaldo (sin sesión arrancada en el POST): el
+                            # servicio se crea aquí, como antes de S155.
+                            service = VoiceOrchestrationService(
+                                twilio_number=twilio_number,
+                                caller_number=caller_number,
                             )
+                            service.prepared_task = getattr(
+                                self, "_pending_prepared_task", None)
+                            self._pending_prepared_task = None
+
+                            # call_sid: needed by _execute_transfer().
+                            # call_sid: lo necesita _execute_transfer().
+                            if call_sid:
+                                service.set_call_sid(call_sid)
+                            else:
+                                logger.warning(
+                                    "# [EVENT] callSid ausente en el evento "
+                                    "'start'. La transferencia de llamada no "
+                                    "estará disponible para esta sesión."
+                                )
+
+                            voice_task = asyncio.ensure_future(
+                                service.run_voice_session(ws))
+
+                            # streamSid: mandatory in every outbound 'media'
+                            # message (Warning 31951 otherwise).
+                            # streamSid: obligatorio en cada mensaje 'media'
+                            # saliente (si no, Warning 31951).
+                            if stream_sid:
+                                service.set_stream_sid(stream_sid)
+                            else:
+                                logger.warning(
+                                    "# [EVENT] Evento 'start' recibido sin "
+                                    "streamSid. Los mensajes 'media' "
+                                    "salientes no incluirán streamSid y "
+                                    "podrían ser descartados por Twilio "
+                                    "(Warning 31951)."
+                                )
 
                         logger.info(
                             f"# [EVENT] Stream iniciado — streamSid: {stream_sid} | "

@@ -564,6 +564,14 @@ class VoiceOrchestrationService:
         # cumplir con el protocolo bidireccional de Twilio Media Streams.
         self.stream_sid: str = ""
 
+        # S155: when the session is started from Twilio's POST (before the
+        # WebSocket exists), the bridge resolves this future with the
+        # WebSocket once Twilio opens it.
+        # S155: si la sesión arranca en el POST de Twilio (antes de que
+        # exista el WebSocket), el puente resuelve este futuro con el
+        # WebSocket en cuanto Twilio lo abre.
+        self.twilio_ws_future: asyncio.Future | None = None
+
         # --- Dynamic IVR Configuration / Configuración IVR Dinámica ---
         # ARCHITECTURE NOTE (2026-04-11 — SynchronousOnlyOperation fix):
         # build_live_config() executes synchronous Django ORM queries. Calling
@@ -675,7 +683,8 @@ class VoiceOrchestrationService:
 
         Args:
             twilio_websocket: The active WebSocket connection to Twilio Media
-            Streams.
+            Streams, or None when the session starts in Twilio's POST (S155:
+            it then arrives through self.twilio_ws_future).
         ---
         Punto de entrada para el ciclo de vida completo de una sesión de voz.
 
@@ -700,7 +709,8 @@ class VoiceOrchestrationService:
 
         Args:
             twilio_websocket: La conexión WebSocket activa con Twilio Media
-            Streams.
+            Streams, o None si la sesión arranca en el POST de Twilio (S155:
+            llega después por self.twilio_ws_future).
         """
         self.session_active = True
         logger.info(
@@ -3060,6 +3070,17 @@ class VoiceOrchestrationService:
         logger.info(
             "[TWILIO-TX] Corrutina de envío de audio a Twilio iniciada.")
         try:
+            # S155: session started in Twilio's POST. The greeting audio
+            # waits in audio_output_queue until Twilio opens the WebSocket.
+            # S155: sesión arrancada en el POST de Twilio. El audio del
+            # saludo espera en audio_output_queue hasta que Twilio abre el
+            # WebSocket.
+            if twilio_websocket is None:
+                twilio_websocket = await self.twilio_ws_future
+                logger.info(
+                    "[TWILIO-TX] WebSocket de Twilio recibido; audio en "
+                    f"espera: {self.audio_output_queue.qsize()} fragmentos."
+                )
             while self.session_active:
                 try:
                     pcm_24khz_chunk = await asyncio.wait_for(
