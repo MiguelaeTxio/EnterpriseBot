@@ -499,6 +499,99 @@ ORIGIN_DEFAULT = "default"
 ORIGIN_NONE = "none"
 
 
+# ------------------------------------------------------------------
+# S153: caché por petición para resolver el horario de muchas personas
+# a la vez (Personal, Horarios). Incidente real: Personal tardaba 14-25 s
+# (logs/slow_requests.log del 18/11: ~260 consultas de WorkerClockSetting,
+# ~210 de PersonSectionAssignment, ~170 de PersonIdentity por usuario,
+# ~220 de WorkdaySchedule, una o varias por persona). bulk_schedule_cache()
+# las trae todas de golpe y los helpers de abajo leen de ella mientras
+# está activa; fuera de ella todo funciona igual que antes.
+# ------------------------------------------------------------------
+import contextlib
+import contextvars
+
+_SCHEDULE_CACHE = contextvars.ContextVar("schedule_cache", default=None)
+
+
+@contextlib.contextmanager
+def bulk_schedule_cache(people, company):
+    """
+    Preloads in bulk what resolve_person_schedule needs for `people`.
+    ---
+    Precarga en pocas consultas todo lo que resolve_person_schedule
+    necesita para estas personas: horario propio, sección vigente,
+    ficha de cada usuario, sección con horario de su contacto de la
+    centralita y los horarios por defecto e intensivo de la empresa.
+    """
+    from django.db.models import Prefetch
+
+    from document_explorer.models import PersonIdentity
+    from hr_calendar.clock_settings import current_sections
+    from hr_calendar.models import WorkerClockSetting
+    from ivr_config.models import Contact as _Contact_C
+    from ivr_config.models import Section as _Section_C
+    from ivr_config.models import WorkdaySchedule as _WDS_C
+
+    people = list(people)
+    user_ids = [p.company_user_id for p in people if p.company_user_id]
+    persons_of_users = {
+        p.company_user_id: p for p in PersonIdentity.objects.filter(
+            company_user_id__in=user_ids)
+    }
+    person_ids = {p.pk for p in people} | {
+        p.pk for p in persons_of_users.values()}
+    own = {pk: None for pk in person_ids}
+    for setting in WorkerClockSetting.objects.filter(
+            person_id__in=person_ids).select_related("workday_schedule"):
+        own[setting.person_id] = setting.workday_schedule
+    contact_section = {uid: (None, None) for uid in user_ids}
+    sections_qs = _Section_C.objects.filter(
+        is_active=True, workday_schedule__isnull=False,
+    ).select_related("workday_schedule").order_by("name")
+    for contact in _Contact_C.objects.filter(
+            company_user_id__in=user_ids).order_by(
+            "company__name", "name").prefetch_related(
+            Prefetch("sections", queryset=sections_qs,
+                     to_attr="schedule_sections")):
+        if contact_section.get(contact.company_user_id, (None,))[0]:
+            continue
+        if contact.schedule_sections:
+            sec = contact.schedule_sections[0]
+            contact_section[contact.company_user_id] = (
+                sec.workday_schedule, sec)
+    intensive = _WDS_C.objects.filter(
+        company=company, is_intensive=True, varies_by_day=False,
+    ).exclude(season=_WDS_C.Season.WINTER).order_by(
+        Case(When(season=_WDS_C.Season.SUMMER, then=0), default=1),
+        "label",
+    ).first()
+    cache = {
+        "person_of_user": persons_of_users,
+        "own": own,
+        "section": current_sections(person_ids),
+        "contact_section": contact_section,
+        "default": _WDS_C.objects.filter(
+            company=company, is_default=True).first(),
+        "intensive": intensive,
+        "company_id": company.pk if company else None,
+    }
+    token = _SCHEDULE_CACHE.set(cache)
+    try:
+        yield cache
+    finally:
+        _SCHEDULE_CACHE.reset(token)
+
+
+def _cache_for(company=None):
+    cache = _SCHEDULE_CACHE.get()
+    if cache is None:
+        return None
+    if company is not None and cache["company_id"] != company.pk:
+        return None
+    return cache
+
+
 def _person_of_user(cu):
     """
     The PersonIdentity of a CompanyUser, or None.
@@ -507,6 +600,10 @@ def _person_of_user(cu):
     """
     from django.core.exceptions import ObjectDoesNotExist
 
+    cache = _cache_for()
+    if cache is not None and cu is not None:
+        if cu.pk in cache["person_of_user"]:
+            return cache["person_of_user"][cu.pk]
     try:
         return cu.person_identity
     except (ObjectDoesNotExist, AttributeError):
@@ -523,6 +620,9 @@ def _person_schedule(person):
 
     if person is None:
         return None
+    cache = _cache_for()
+    if cache is not None and person.pk in cache["own"]:
+        return cache["own"][person.pk]
     setting = WorkerClockSetting.objects.filter(
         person=person,
     ).select_related("workday_schedule").first()
@@ -539,6 +639,9 @@ def _person_section(person):
 
     if person is None:
         return None
+    cache = _cache_for()
+    if cache is not None and person.pk in cache["section"]:
+        return cache["section"][person.pk]
     return current_sections([person.pk]).get(person.pk)
 
 
@@ -588,7 +691,12 @@ def resolve_person_schedule(person, company):
     section = _person_section(person)
     if section is not None and section.workday_schedule_id:
         return section.workday_schedule, (ORIGIN_SECTION, section)
-    default = _WDS_P.objects.filter(company=company, is_default=True).first()
+    cache = _cache_for(company)
+    if cache is not None:
+        default = cache["default"]
+    else:
+        default = _WDS_P.objects.filter(
+            company=company, is_default=True).first()
     return default, ((ORIGIN_DEFAULT if default else ORIGIN_NONE), None)
 
 
@@ -642,12 +750,16 @@ def _resolve_base_schedule_with_origin(cu, company):
         # colaba como "la jornada intensiva" de todos los que la tienen
         # marcada. Ahora solo un horario intensivo de verdad: igual toda
         # la semana y de verano (si no hay, uno de "todo el año").
-        _intensive = _WDS_R.objects.filter(
-            company=company, is_intensive=True, varies_by_day=False,
-        ).exclude(season=_WDS_R.Season.WINTER).order_by(
-            Case(When(season=_WDS_R.Season.SUMMER, then=0), default=1),
-            "label",
-        ).first()
+        _cache = _cache_for(company)
+        if _cache is not None:
+            _intensive = _cache["intensive"]
+        else:
+            _intensive = _WDS_R.objects.filter(
+                company=company, is_intensive=True, varies_by_day=False,
+            ).exclude(season=_WDS_R.Season.WINTER).order_by(
+                Case(When(season=_WDS_R.Season.SUMMER, then=0), default=1),
+                "label",
+            ).first()
         if _intensive is not None:
             return _intensive, (ORIGIN_INTENSIVE, None)
 
@@ -683,11 +795,18 @@ def _resolve_base_schedule_with_origin(cu, company):
         if _gate1_coherent:
             return _cu_sched, (ORIGIN_USER, None)
 
-    contact = (
-        _Contact_R.objects.filter(company_user=cu)
-        .prefetch_related("sections__workday_schedule")
-        .first()
-    )
+    _cache = _cache_for(company)
+    if _cache is not None and cu.pk in _cache["contact_section"]:
+        section_schedule, _section_of = _cache["contact_section"][cu.pk]
+        if section_schedule is not None:
+            return section_schedule, (ORIGIN_SECTION, _section_of)
+        contact = None
+    else:
+        contact = (
+            _Contact_R.objects.filter(company_user=cu)
+            .prefetch_related("sections__workday_schedule")
+            .first()
+        )
     if contact is not None:
         section_schedule = next(
             (
@@ -709,7 +828,12 @@ def _resolve_base_schedule_with_origin(cu, company):
     if _section is not None and _section.workday_schedule_id:
         return _section.workday_schedule, (ORIGIN_SECTION, _section)
 
-    default = _WDS_R.objects.filter(company=company, is_default=True).first()
+    _cache = _cache_for(company)
+    if _cache is not None:
+        default = _cache["default"]
+    else:
+        default = _WDS_R.objects.filter(
+            company=company, is_default=True).first()
     return default, ((ORIGIN_DEFAULT if default else ORIGIN_NONE), None)
 
 

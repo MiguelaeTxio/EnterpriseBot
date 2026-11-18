@@ -207,18 +207,25 @@ def _sort_rows(rows, sort_keys):
 
 def _rows(company, people):
     from hr_calendar.clock_settings import worker_states
-    from panel.views_operator import resolve_person_schedule
+    from panel.views_operator import (
+        bulk_schedule_cache,
+        resolve_person_schedule,
+    )
 
+    people = list(people)
     states = worker_states(people)
     rows = []
-    for person in people:
-        # S141: el horario va en el trabajador; no hace falta usuario
-        # del panel.
-        schedule, (origin, section) = resolve_person_schedule(
-            person, company,
-        )
-        rows.append(_Row(person, states[person.pk], schedule, origin,
-                         section))
+    # S153: todo lo del horario de golpe (antes, varias consultas por
+    # persona: Personal tardaba 14-25 s).
+    with bulk_schedule_cache(people, company):
+        for person in people:
+            # S141: el horario va en el trabajador; no hace falta
+            # usuario del panel.
+            schedule, (origin, section) = resolve_person_schedule(
+                person, company,
+            )
+            rows.append(_Row(person, states[person.pk], schedule, origin,
+                             section))
     return rows
 
 
