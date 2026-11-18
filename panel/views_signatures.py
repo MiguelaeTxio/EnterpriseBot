@@ -444,7 +444,6 @@ class AgentHeartbeatView(AgentApiMixin, View):
         return JsonResponse({"ok": True, "name": self.agent.name})
 
 
-@method_decorator(csrf_exempt, name="dispatch")
 class SignedJobCancelView(SignatureAccessMixin, View):
     """
     POST: cancel a digital-signature job still in progress.
@@ -465,6 +464,7 @@ class SignedJobCancelView(SignatureAccessMixin, View):
         return JsonResponse({"ok": True})
 
 
+@method_decorator(csrf_exempt, name="dispatch")
 class AgentPendingView(AgentApiMixin, View):
     """
     POST: next documents to sign.
