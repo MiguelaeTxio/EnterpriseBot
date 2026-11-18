@@ -333,8 +333,10 @@ pantalla completa aparte, no un fragmento htmx de este pane.
 <style>
 /* S144: las pestañas de acciones se apilan en la misma celda; el panel
    toma el alto de la más grande y no cambia al pasar de una a otra. */
-.ppane-action-panes { display: grid; }
-.ppane-action-panes > .tab-pane { grid-area: 1 / 1; display: block; visibility: hidden; }
+/* S149 (18/11, "se sale del panel"): la columna no crece con un
+   horario de nombre largo; el desplegable se recorta dentro. */
+.ppane-action-panes { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.ppane-action-panes > .tab-pane { grid-area: 1 / 1; display: block; visibility: hidden; min-width: 0; }
 .ppane-action-panes > .tab-pane.active { visibility: visible; }
 </style>
 {% comment %}
@@ -417,7 +419,7 @@ las filas de debajo se desplacen de verdad.
     .eb-fit-col > .eb-fit-card { position: absolute; inset: 0 calc(var(--bs-gutter-x) * .5); }
 }
 .ppane-scroll-x { overflow-x: auto; }
-.ppane-select-auto { width: auto; max-width: 100%; min-width: 0; }
+.ppane-select-auto { width: auto; max-width: 100%; min-width: 0; text-overflow: ellipsis; }
 .ppane-epi-box {
     height: 40vh;
     overflow-y: auto;
