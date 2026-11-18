@@ -3979,7 +3979,7 @@ class VoiceOrchestrationService:
         """
         logger.warning(
             f"[GREETING-FIRST] '{fn_call.name}' invocada antes de que hable "
-            "el llamante. No se ejecuta; se pide al modelo que salude."
+            "el llamante. No se ejecuta."
         )
         try:
             await session.send_tool_response(
@@ -3988,11 +3988,15 @@ class VoiceOrchestrationService:
                     name=fn_call.name,
                     response={
                         "success": False,
+                        # S155: sin pedir "saluda ahora" (llamada real
+                        # de las 10:59: el saludo salió dos veces).
                         "error": (
                             "No se ha ejecutado: el llamante todavía no ha "
-                            "hablado. Saluda ahora con el saludo indicado y "
-                            "espera a que el llamante hable. No invoques "
-                            "ninguna función hasta entonces."
+                            "hablado. Si aún no has dicho el saludo, dilo "
+                            "una sola vez; si ya lo has dicho, no lo "
+                            "repitas y espera en silencio a que hable el "
+                            "llamante. No invoques ninguna función hasta "
+                            "entonces."
                         ),
                     },
                 )

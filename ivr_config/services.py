@@ -993,11 +993,17 @@ def build_live_config(
         # cualificadas. Iteramos el mapa y resolvemos los nombres desde
         # los CallFlow relacionados para evitar una query extra a BD.
         from ivr_config.models import Section as _Section
+        # S155: con la descripción de cada sección (antes solo el nombre:
+        # "no encuentro el recibo del seguro" iba a Proveedores porque
+        # Alia no sabía qué lleva cada sección).
         section_name_map = {
-            s.pk: s.name
+            s.pk: (
+                f"{s.name} — {' '.join(s.description.split())}"
+                if s.description.strip() else s.name
+            )
             for s in _Section.objects.filter(
                 pk__in=list(section_callflow_map.keys())
-            ).only("pk", "name")
+            ).only("pk", "name", "description")
         }
         section_id_lines = [
             f"  ID {pk}: {section_name_map.get(pk, f'Sección {pk}')}"
