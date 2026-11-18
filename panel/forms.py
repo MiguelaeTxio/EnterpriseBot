@@ -135,13 +135,12 @@ class SectionForm(forms.ModelForm):
         model = Section
         # S155: lo de la centralita (casillas IVR, conjunto de captura,
         # horario de atención) está en SectionTelephonyForm (Telefonía).
-        fields = ["name", "description", "contacts", "is_active", "is_broadcast_enabled", "workday_schedule", "default_role", "onboarding_enabled"]
+        fields = ["name", "description", "contacts", "is_active", "workday_schedule", "default_role", "onboarding_enabled"]
         widgets = {
             "name": forms.TextInput(attrs={"class": "form-control"}),
             "description": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
             "contacts": forms.SelectMultiple(attrs={"class": "form-select", "size": "6"}),
             "is_active": forms.CheckboxInput(attrs={"class": "form-check-input"}),
-            "is_broadcast_enabled": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "workday_schedule": forms.Select(attrs={"class": "form-select"}),
             "default_role": forms.Select(attrs={"class": "form-select"}),
             "onboarding_enabled": forms.CheckboxInput(attrs={"class": "form-check-input"}),
@@ -151,7 +150,6 @@ class SectionForm(forms.ModelForm):
             "description": "Descripción",
             "contacts": "Contactos",
             "is_active": "Activa",
-            "is_broadcast_enabled": "Habilitada para circulares WhatsApp",
             "workday_schedule": "Horario de trabajo por defecto",
             "default_role": "Puesto de quien se da de alta por WhatsApp",
             "onboarding_enabled": "Se ofrece en el alta por WhatsApp",

@@ -28,7 +28,6 @@ from analytics.views import (
     OperatorMonthlyCostDeleteView,
     OperatorMonthlyCostImportView,
     AnalyticsCostsView,
-    BotManagementView,
 )
 
 app_name = "analytics"
@@ -120,10 +119,5 @@ urlpatterns = [
         "lab/export/",
         AnalyticsLabExportView.as_view(),
         name="analytics_lab_export",
-    ),
-    path(
-        "bot/",
-        BotManagementView.as_view(),
-        name="bot_management",
     ),
 ]

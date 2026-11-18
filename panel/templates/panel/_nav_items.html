@@ -48,7 +48,6 @@
 {#   "datacapturesets"    → Conjuntos de captura             (ADMIN)               #}
 {#   "whatsapp_templates" → Plantillas (WhatsApp)            (ADMIN)               #}
 {#   "whatsapp_sessions"  → Sesiones activas (WhatsApp)      (ADMIN)               #}
-{#   "bot_management"     → Gestión del bot (WhatsApp)        (ADMIN)               #}
 {#   "operator_dashboard" → Nuevo parte                      (Taller Mecánico / Mecánicos, != ASSISTANCE) #}
 {#   "spare_parts_upload" → Subir albarán                    (Taller Mecánico / Mecánicos, WORKSHOP/ADMIN) #}
 {#   "work_orders"        → PDFs                             (Administración)      #}
@@ -221,12 +220,6 @@
                         <a class="nav-link {% if active_nav == 'callflows' %}active{% endif %}"
                            href="{% url 'panel:callflow_list' %}">
                             <i class="bi bi-gear-wide-connected"></i>Flujos IVR
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if active_nav == 'bot_management' %}active{% endif %}"
-                           href="{% url 'analytics:bot_management' %}">
-                            <i class="bi bi-robot"></i>Gestión del bot
                         </a>
                     </li>
                     <li class="nav-item">
@@ -879,7 +872,6 @@
         'ivr_sections':             'acc-telefonia',
         'whatsapp_templates':       'acc-telefonia',
         'whatsapp_sessions':        'acc-telefonia',
-        'bot_management':           'acc-telefonia',
         'users':                    'acc-administracion',
         'contacts':                 'acc-administracion',
         'sections':                 'acc-administracion',
