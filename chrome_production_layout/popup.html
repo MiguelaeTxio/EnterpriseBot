@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Disposición PRODUCCIÓN</title>
+  <style>
+    body { font: 13px system-ui, sans-serif; width: 300px; margin: 12px; }
+    h1 { font-size: 14px; margin: 0 0 8px; }
+    label { display: block; margin-bottom: 4px; color: #555; }
+    input { width: 100%; box-sizing: border-box; padding: 4px; margin-bottom: 10px; }
+    button { width: 100%; padding: 8px; margin-bottom: 6px; cursor: pointer; }
+    #open { font-weight: bold; }
+    #saved { color: #555; margin: 6px 0 10px; }
+    #status { white-space: pre-wrap; margin-top: 6px; }
+    .error { color: #b00020; }
+  </style>
+</head>
+<body>
+  <h1>Disposición PRODUCCIÓN</h1>
+  <label for="group">Nombre del grupo</label>
+  <input id="group" value="PRODUCCIÓN">
+  <div id="saved"></div>
+  <button id="open">Abrir PRODUCCIÓN</button>
+  <button id="save">Guardar disposición actual</button>
+  <div id="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>
