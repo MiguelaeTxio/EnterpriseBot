@@ -4,6 +4,48 @@
 // orden, vistas divididas, color) y la vuelve a abrir con un clic.
 
 const STORAGE_KEY = "layout";
+// S152: the layout lives in Chrome's synced storage, so it follows the
+// user's Google account to any PC where the extension is installed. A
+// synced item holds at most 8 KB, so each tab is an item of its own.
+// ---
+// La disposición va al almacenamiento sincronizado de Chrome y sigue a la
+// cuenta de Google a cualquier PC con la extensión. Un elemento
+// sincronizado admite como mucho 8 KB, así que cada pestaña va aparte.
+const META_KEY = "layout_meta";
+const TAB_PREFIX = "layout_tab_";
+
+async function readLayout() {
+  const { [META_KEY]: meta } = await chrome.storage.sync.get(META_KEY);
+  if (!meta) {
+    // Disposición guardada antes en este PC (versión 1.0.0): se pasa a
+    // la sincronizada.
+    const { [STORAGE_KEY]: local } = await chrome.storage.local.get(
+      STORAGE_KEY);
+    if (local) {
+      await writeLayout(local);
+      await chrome.storage.local.remove(STORAGE_KEY);
+    }
+    return local || null;
+  }
+  const keys = Array.from({ length: meta.count }, (_, i) => TAB_PREFIX + i);
+  const items = await chrome.storage.sync.get(keys);
+  return { ...meta, tabs: keys.map((k) => items[k]) };
+}
+
+async function writeLayout(layout) {
+  const old = await chrome.storage.sync.get(null);
+  const stale = Object.keys(old).filter((k) => k.startsWith(TAB_PREFIX));
+  if (stale.length) await chrome.storage.sync.remove(stale);
+  const items = {};
+  layout.tabs.forEach((tab, i) => {
+    items[TAB_PREFIX + i] = { ...tab, title: (tab.title || "").slice(0, 80) };
+  });
+  items[META_KEY] = {
+    title: layout.title, color: layout.color, savedAt: layout.savedAt,
+    count: layout.tabs.length,
+  };
+  await chrome.storage.sync.set(items);
+}
 
 const groupInput = document.getElementById("group");
 const savedLine = document.getElementById("saved");
@@ -28,8 +70,7 @@ async function findGroup(windowId, title) {
 }
 
 async function refreshSaved() {
-  const { [STORAGE_KEY]: layout } = await chrome.storage.local.get(
-    STORAGE_KEY);
+  const layout = await readLayout();
   if (!layout) {
     savedLine.textContent = "Todavía no hay ninguna disposición guardada.";
     return;
@@ -75,7 +116,7 @@ async function saveLayout() {
     tabs: saved,
     savedAt: Date.now(),
   };
-  await chrome.storage.local.set({ [STORAGE_KEY]: layout });
+  await writeLayout(layout);
   await refreshSaved();
   show("Disposición guardada.");
 }
@@ -84,8 +125,7 @@ async function saveLayout() {
 // Abrir: crea las pestañas, las agrupa y vuelve a montar las vistas
 // divididas.
 async function openLayout() {
-  const { [STORAGE_KEY]: layout } = await chrome.storage.local.get(
-    STORAGE_KEY);
+  const layout = await readLayout();
   if (!layout) {
     show("Primero monta el grupo a mano y pulsa «Guardar disposición " +
          "actual».", true);

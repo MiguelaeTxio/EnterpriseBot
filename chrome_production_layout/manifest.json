@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Disposición PRODUCCIÓN",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Guarda y vuelve a abrir el grupo de pestañas PRODUCCIÓN con sus vistas divididas.",
   "minimum_chrome_version": "155",
   "permissions": ["tabs", "tabGroups", "storage"],
