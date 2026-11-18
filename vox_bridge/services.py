@@ -594,6 +594,15 @@ class VoiceOrchestrationService:
         # WebSocket en cuanto Twilio lo abre.
         self.twilio_ws_future: asyncio.Future | None = None
 
+        # S155: no function runs until the caller has spoken once
+        # (activity_start sent). GREETING_FIRST_RULE alone was not enough:
+        # 2 of 4 real calls on 18/11 called route_to_section before greeting.
+        # S155: ninguna función se ejecuta hasta que el llamante haya hablado
+        # una vez (activity_start enviado). GREETING_FIRST_RULE no bastaba:
+        # 2 de 4 llamadas reales del 18/11 invocaron route_to_section antes
+        # de saludar.
+        self.caller_has_spoken: bool = False
+
         # --- Dynamic IVR Configuration / Configuración IVR Dinámica ---
         # ARCHITECTURE NOTE (2026-04-11 — SynchronousOnlyOperation fix):
         # build_live_config() executes synchronous Django ORM queries. Calling
@@ -1781,6 +1790,7 @@ class VoiceOrchestrationService:
                             await session.send_realtime_input(
                                 activity_start=types.ActivityStart()
                             )
+                            self.caller_has_spoken = True
                             # LATENCY-P5: Timestamp when next caller turn
                             # starts.
                             # Measures inter-turn gap: from Gemini
@@ -2868,6 +2878,12 @@ class VoiceOrchestrationService:
                     # el modelo pueda continuar.
                     if response.tool_call:
                         for fn_call in response.tool_call.function_calls:
+                            # S155: antes de que hable el llamante no se
+                            # ejecuta ninguna función.
+                            if not self.caller_has_spoken:
+                                await self._reject_tool_before_caller_spoke(
+                                    session, fn_call)
+                                continue
                             # --- Tool Call Handler: servicio_* (H37, S133) ---
                             # Dar un servicio por teléfono: se ejecuta la
                             # herramienta de budgets.service_intake y se le
@@ -3944,6 +3960,40 @@ class VoiceOrchestrationService:
             # la conference para que el llamante no quede en silencio.
             self.session_active = True
             return False
+
+    async def _reject_tool_before_caller_spoke(self, session,
+                                               fn_call) -> None:
+        """
+        Answers a function call made before the caller has spoken.
+        ---
+        S155: responde a una función invocada antes de que el llamante haya
+        hablado, sin ejecutarla, pidiendo al modelo que salude y espere.
+        """
+        logger.warning(
+            f"[GREETING-FIRST] '{fn_call.name}' invocada antes de que hable "
+            "el llamante. No se ejecuta; se pide al modelo que salude."
+        )
+        try:
+            await session.send_tool_response(
+                function_responses=types.FunctionResponse(
+                    id=fn_call.id,
+                    name=fn_call.name,
+                    response={
+                        "success": False,
+                        "error": (
+                            "No se ha ejecutado: el llamante todavía no ha "
+                            "hablado. Saluda ahora con el saludo indicado y "
+                            "espera a que el llamante hable. No invoques "
+                            "ninguna función hasta entonces."
+                        ),
+                    },
+                )
+            )
+        except Exception as exc:
+            logger.error(
+                f"[GREETING-FIRST] No se pudo responder a '{fn_call.name}': "
+                f"{type(exc).__name__}: {exc}"
+            )
 
     async def _watch_caller_during_transfer(self, outbound_sid: str,
                                             contact_name: str) -> None:
