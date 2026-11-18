@@ -31,6 +31,10 @@ sola. Solo superusuario (Miguel Ángel).
 </div>
 {% else %}
 <div class="border rounded p-3 mb-3" id="wi-capture">
+    <div class="small text-muted mb-2">
+        El recuento puede durar los días que haga falta: déjalo abierto hasta pasar por todos los almacenes.
+        Mientras está abierto solo salen lo que no está en el almacén y lo contado de más.
+    </div>
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
         <div class="fw-semibold">
             Recuento {{ count.pk }} · empezado el {{ count.started_at|date:"d/m/Y H:i" }}
@@ -40,7 +44,7 @@ sola. Solo superusuario (Miguel Ángel).
                 <i class="bi bi-list-check me-1"></i>Diferencias (<span id="wi-pending">{{ pending }}</span> pendientes)
             </a>
             <form method="post" action="{% url 'warehouse_inventory:close' count.pk %}"
-                  onsubmit="return confirm('¿Cerrar el recuento? Aparecerá también lo que el sistema tiene y no se ha visto en ninguna foto.');">
+                  onsubmit="return confirm('¿Has fotografiado TODOS los almacenes? Al cerrar, todo lo que el sistema tiene y no aparece en ninguna foto saldrá como «No se ha visto». Si solo has hecho una parte, deja el recuento abierto y sigue otro día.');">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-sm btn-outline-danger">
                     <i class="bi bi-flag me-1"></i>Cerrar recuento

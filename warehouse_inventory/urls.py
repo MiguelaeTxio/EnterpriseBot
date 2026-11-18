@@ -25,6 +25,10 @@ urlpatterns = [
         name="close",
     ),
     path(
+        "<int:pk>/reabrir/", views.InventoryReopenView.as_view(),
+        name="reopen",
+    ),
+    path(
         "<int:pk>/diferencias/", views.DifferencesPageView.as_view(),
         name="differences",
     ),

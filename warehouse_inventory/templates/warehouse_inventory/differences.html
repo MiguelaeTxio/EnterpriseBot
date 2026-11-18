@@ -20,10 +20,27 @@ Miguel Ángel confirma.
         Diferencias · recuento {{ count.pk }} del {{ count.started_at|date:"d/m/Y" }}
         {% if count.is_open %}<span class="badge text-bg-info ms-1">abierto</span>{% else %}<span class="badge text-bg-secondary ms-1">cerrado</span>{% endif %}
     </h5>
-    <a class="btn btn-sm btn-outline-secondary" href="{% url 'warehouse_inventory:home' %}">
-        <i class="bi bi-camera me-1"></i>Volver a las fotos
-    </a>
+    <div class="d-flex gap-2">
+        {% if not count.is_open %}
+        <form method="post" action="{% url 'warehouse_inventory:reopen' count.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-outline-primary"
+                    title="Para seguir haciendo fotos: lo no visto deja de salir hasta que lo vuelvas a cerrar">
+                <i class="bi bi-arrow-counterclockwise me-1"></i>Reabrir recuento
+            </button>
+        </form>
+        {% endif %}
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'warehouse_inventory:home' %}">
+            <i class="bi bi-camera me-1"></i>Volver a las fotos
+        </a>
+    </div>
 </div>
+{% if not count.is_open %}
+<div class="alert alert-warning py-2 small mb-2">
+    Recuento cerrado: «No se ha visto» incluye todo lo que el sistema tiene en almacén y no aparece en ninguna foto de este recuento.
+    Si no has fotografiado todos los almacenes, reábrelo en vez de confirmar esas diferencias.
+</div>
+{% endif %}
 
 <div class="border rounded p-2 mb-2" id="wid-top-panel">
     <div class="row g-2">

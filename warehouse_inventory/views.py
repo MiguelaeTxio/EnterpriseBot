@@ -29,7 +29,7 @@ from panel.navigation_persistence import (
 
 from .inventory_service import (
     InventoryUploadError, close_count, location_for, open_count,
-    register_photo, resolve_differences, start_count,
+    register_photo, reopen_count, resolve_differences, start_count,
 )
 from .models import (
     InventoryCount, InventoryDifference, InventoryLocation, InventoryPhoto,
@@ -294,6 +294,35 @@ class InventoryCloseView(SuperuserRequiredMixin, View):
             request,
             "Recuento cerrado. Revisa las diferencias: nada cambia en el "
             "almacén hasta que las confirmes.",
+        )
+        return redirect("warehouse_inventory:differences", pk=count.pk)
+
+
+class InventoryReopenView(SuperuserRequiredMixin, View):
+    """
+    POST: reopen a stocktake closed too early.
+
+    ---
+
+    POST: reabre un recuento cerrado antes de tiempo y vuelve a las
+    fotos para seguir.
+    """
+
+    def post(self, request, pk):
+        count = get_object_or_404(
+            InventoryCount, pk=pk,
+            company=request.user.company_user.company,
+        )
+        if reopen_count(count):
+            messages.success(
+                request,
+                "Recuento reabierto: sigue haciendo fotos y ciérralo cuando "
+                "hayas pasado por todos los almacenes.",
+            )
+            return redirect("warehouse_inventory:home")
+        messages.error(
+            request,
+            "Hay otro recuento abierto: ciérralo antes de reabrir este.",
         )
         return redirect("warehouse_inventory:differences", pk=count.pk)
 

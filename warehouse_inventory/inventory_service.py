@@ -581,6 +581,13 @@ def _desired_differences(count):
         system = _system_quantity(entry)
         if system is None or group["quantity"] is None:
             continue
+        # Con el recuento abierto, contar menos de lo que dice el sistema
+        # no es una diferencia todavía: el resto puede estar en otra
+        # balda o en otro almacén aún sin fotografiar (Miguel Ángel,
+        # 18/11/2026: hay cuatro almacenes y uno con dos habitaciones).
+        # Contar más sí lo es siempre.
+        if count.is_open and group["quantity"] < system:
+            continue
         if group["quantity"] != system:
             fields["kind"] = InventoryDifference.KIND_QUANTITY
             fields["system_quantity"] = system
@@ -667,6 +674,27 @@ def close_count(count):
         count.closed_at = timezone.now()
         count.save(update_fields=["closed_at"])
     recompute_differences(count)
+
+
+def reopen_count(count):
+    """
+    Reopen a stocktake closed too early.
+
+    ---
+
+    Reabre un recuento cerrado antes de tiempo (p. ej. tras fotografiar
+    solo una balda): las diferencias pendientes de "no se ha visto" y de
+    "se ha contado menos" desaparecen hasta que se vuelva a cerrar. Lo
+    ya confirmado o descartado no cambia. Solo si no hay otro abierto.
+    """
+    if count.closed_at is None:
+        return True
+    if open_count(count.company) is not None:
+        return False
+    count.closed_at = None
+    count.save(update_fields=["closed_at"])
+    recompute_differences(count)
+    return True
 
 
 def _apply_one(diff, company_user):
