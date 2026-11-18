@@ -620,10 +620,19 @@ las filas de debajo se desplacen de verdad.
         // que desmarcar y volver a marcar la casilla a mano.
         const idsInput = document.getElementById('personalSelectedIdsInput');
         if (idsInput) {
-            idsInput.value = Array.from(selection).join(',');
-            const onlySelectedCheckbox = document.getElementById('personalOnlySelectedCheckbox');
-            if (onlySelectedCheckbox && onlySelectedCheckbox.checked) {
-                onlySelectedCheckbox.dispatchEvent(new Event('change', {bubbles: true}));
+            // S153, incidente real: se relanzaba la búsqueda en cada
+            // repintado del listado aunque la selección no hubiera
+            // cambiado, y como cada repintado vuelve a pasar por aquí,
+            // con la casilla marcada el listado se recargaba solo cada
+            // 2 s sin parar (196 peticiones en 7 min desde una pestaña
+            // abierta), ocupando el servidor. Solo si cambia.
+            const newIds = Array.from(selection).join(',');
+            if (idsInput.value !== newIds) {
+                idsInput.value = newIds;
+                const onlySelectedCheckbox = document.getElementById('personalOnlySelectedCheckbox');
+                if (onlySelectedCheckbox && onlySelectedCheckbox.checked) {
+                    onlySelectedCheckbox.dispatchEvent(new Event('change', {bubbles: true}));
+                }
             }
         }
     }
