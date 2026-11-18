@@ -4205,41 +4205,127 @@ Hoja de Ruta S148 cerrada en sus tres puntos y, a petición de Miguel
 - Paraschiv PRL 18-19 duplicada y facturas de notario de B49/A70 a
   LEASING: hecho.
 
-## Hoja de Ruta S152 (va antes que la "Hoja de Ruta pendiente al reactivar H31", que sigue intacta)
+## COMPLETADAS EN S152 (13-18/11/2026, PEE PC; sesión dedicada a los seguros, en paralelo con las invasoras S153-S155)
 
-Encargo de Alejandro Álvarez (11/11/2026, verbatim): *"en el mes de
-diciembre vence la mayoría de los seguros y Necesito que os pongáis a
-sacarme un listado de todos los seguros con la información necesaria
-para su renovación de precio y demas con los mediadores de seguros.
-Llamarme por favor por la mañana y nos conectamos para iniciar esto."*
-Miguel Ángel llama a Alejandro por la mañana; lo que concrete Alejandro
-en esa llamada se suma a este punto al arrancar la sesión.
+Miguel Ángel, al arrancar: *"Esta sesión está dedicada única y
+exclusivamente al tema de los seguros"*. Los puntos 2 (script local de
+ITV) y 3 (R22) de la Hoja de Ruta S152 no se tocaron por esa orden; pasan
+a la Hoja de Ruta S156.
 
-1. **Listado de seguros para la renovación.** Situación en BD al
-   12/11/2026 (documentos no obsoletos): `SEGURO` (recibo) 315, 50 con
-   caducidad en diciembre de 2026; `POLIZA_SEGURO` 247, 7 en diciembre;
-   `CERTIFICADO_SEGURO` 37, 2 en diciembre; `CARTA_VERDE` 27;
-   `POLIZA_SEGURO_EMPRESA` 1; `CONDICIONES_GENERALES_SEGURO` 1. En local,
-   carpeta `DOC. MAQUINAS/SEGUROS` y el OneDrive `GRUALDI SL` (conectado
-   al PC el 12/11).
-   - Sacar, por cada centro de gasto activo y por cada seguro de empresa:
-     centro de gasto, matrícula, aseguradora, mediador, número de póliza,
-     tipo de cobertura, prima del último recibo, fecha de vencimiento y
-     documento de origen (panel o local). Los datos que no estén en
-     campos de BD se leen del documento (texto OCR del panel).
-   - Entregarlo como Sheet (tipo Sheets), ordenado por vencimiento, con
-     los de diciembre de 2026 primero.
-   - **Cierre:** el Sheet tiene una fila por cada póliza vigente de
-     centro de gasto activo y de empresa; los 50 recibos con caducidad en
-     diciembre están en él; cada fila tiene aseguradora, número de póliza,
-     vencimiento y prima, o la marca "no consta en el documento".
-2. **Script local de ITV**: en `tools/itv_local_check.py`, decidir qué
-   ITV es "más nueva" por la fecha del nombre del archivo, no por la de
-   modificación; buscar en toda la carpeta de la máquina (subcarpetas
-   incluidas, menos OBSOLETOS); descartar archivos que no sean PDF ni
-   imagen. **Cierre:** con el JSON del 11/11, P16 y Z17 salen con ITV
-   nueva en local, y B39 y 6951HZS no.
-3. **R22**: comprobar en el PDF `R-22 MU08876R ITV 19-11-26.pdf` (cubo)
-   la fecha real de caducidad y corregir `expiry_date` en el panel si es
-   el 19/11/2026. **Cierre:** consulta a BD con la entrada 16616 y la
-   fecha que dice el documento.
+### 1. Listado de seguros para Alejandro (punto 1 de la Hoja de Ruta S152) -- cerrado
+- Listado de todos los seguros desde junio de 2026 (hogar incluido),
+  Excel de incidencias (vencidos sin renovar en hoja aparte), los dos
+  ordenados por renovación, agrupados por empresa y tipo, precios
+  primero.
+- Cotejo con los 12 «Listado Mayor Analítico 625»
+  (`Cotejo_seguros_libro_mayor_2026-11-13.xlsx`).
+- Informe HTML para Alejandro por tipo de seguro, vencimientos más
+  próximos primero (artefacto `3zB18BzfpsVnofAnHAtZL1`).
+
+### 2. Pestaña Seguros en Documentación -- `68fc8c5`, `1dceb41`, `a8ffcd5`, `7171fd0`, `b53e77b`, `2584e4f`, `9be3137`, `02eeda2`, `af59697`, `8b52e2a`, `0e0db56`, `9a7217f`, `232a84e`, `b71251f`, `24a2f2f`
+Encargo (verbatim): *"crear una pestaña en EnterpriseBot: Documentación:
+Seguros visible solo para Yolanda y Alejandro (y yo) que replique lo que
+hemos hecho [...] que Yolanda pueda crear un informe con la
+documentación que tenemos en las carpetas y/o añadiendo libros mayores
+introduciendo el mes de vencimiento."*
+- App `insurance`: lector del mayor 625 (`ledger.py`), lecturas de
+  Gemini guardadas por documento (`InsuranceDocumentReading`, solo se
+  vuelve a leer lo nuevo o cambiado), constructor del informe
+  (`builder.py`), informe por tandas de 150 s en Celery, exportación a
+  HTML, Excel, PDF y Word. Migraciones `insurance` 0001-0002 e
+  `ivr_config` 0061 (`CompanyUser.insurance_access`: yolanda.bandera,
+  alejandro_sergio, alvarez_admin), verificadas en BD.
+- Pestaña con el formato 4.24: filtros, «Nuevo informe» (vencimiento,
+  empresas, libros mayores con empresa en desplegable), acciones (ver,
+  exportar, volver a generar, borrar).
+- Correcciones con los datos reales: avance cada 10 s con hora de fin;
+  un informe parado 10 min se relanza solo (`touched_at`); un documento
+  que falla no deja el informe en bucle y los PDF protegidos se leen
+  descifrados; recibo protegido y su copia sin protección cuentan una
+  vez; «Doble seguro» solo con aseguradora (Caser = Helvetia) y póliza
+  distintas; flota en vigor no sale vencida; CESCE en una línea (sus
+  apuntes «S/FRA» no llevan número ni matrícula); listados de pólizas
+  fuera; cada apunte del mayor cuenta en un solo seguro
+  (`_line_owners`); póliza de varias máquinas en una línea; números
+  tapados (XXX) no forman flota; la misma póliza con o sin prefijo.
+- `deploy.yml` reinicia el worker Celery si cambia `insurance/`.
+- **Resultado:** informe nº 2 (noviembre 2026 en adelante, todas las
+  empresas, 12 mayores): 189 seguros, 282.727,12 €, 73 con avisos.
+
+### 3. Agente H28: carpetas de seguros -- `fe1d633`
+- `fs_utils.mirror_name`: una carpeta vigilada se refleja en el cubo con
+  su ruta desde DOCUMENTOS GRUPO ALVAREZ (DOC. MAQUINAS y DOC. PERSONAL
+  igual que antes).
+- Menú «Vigilar carpetas de seguros» con las 37 carpetas de
+  `config.INSURANCE_FOLDERS`. Compilado en el PC de Miguel Ángel el
+  17/11 y lanzado: las 37 existen; la cuarentena recibe los archivos con
+  la ruta completa. Al 18/11 quedan 20 en cuarentena de esas carpetas y
+  DOC. EMPRESA/SEGUROS tiene 55 entradas.
+
+### 4. Tickets de avería -- sin commit (datos)
+- Sheet de cotejo con los 67 tickets abiertos (artefacto
+  `Qk6pazSr9g4gENmJURGXpb`). Miguel Ángel: todos cerrados según los
+  mecánicos. Cerrados en BD como desde el panel (alvarez_admin,
+  17/11 09:13); verificado: 0 tickets abiertos. Ninguno se había
+  cerrado desde el parte («Ticket cerrado»).
+
+### 5. Extensión de Chrome «Disposición PRODUCCIÓN» -- `0a8429f`, `764c31c`, `6714aff`, `d75e260`
+- Carpeta `chrome_production_layout/`: guarda el grupo PRODUCCIÓN con
+  sus vistas divididas (API de Chrome 155+), lo abre con un clic y solo
+  al arrancar Chrome; disposición en `chrome.storage.sync`. Enviada a la
+  Chrome Web Store como no listada (versión 1.2.0, en revisión; editor
+  «Feanor Morgalad»). Ficha en `store/FICHA_TIENDA.md`.
+
+### Incidencias
+- **Firmas, 18/11 10:01:** «Fallo de Gemini al localizar huecos» →
+  `Bad Request` en `/panel/documentacion/firmas/generar/`. Causa en el
+  error log: Vertex AI devolvió 429 RESOURCE_EXHAUSTED (gemini-3.5-flash)
+  durante 4,5 min y un 504; no tiene que ver con el IVR ni con recargar
+  tareas. Mismo fallo el 17/11 a las 12:07.
+- **Firmas, agente de Yolanda sin trabajos desde el 17/11 09:25:** cada
+  5 min `Forbidden (Referer checking failed - no Referer.)` en
+  `/panel/firmas/agente/pendientes/` (295 veces). En `2d9a413` (S153)
+  se insertó `SignedJobCancelView` entre el
+  `@method_decorator(csrf_exempt, ...)` y `AgentPendingView`
+  (`panel/views_signatures.py` ~447-468): el decorador quedó sobre la
+  vista de cancelar (que no debe llevarlo) y la de pendientes perdió la
+  exención. El agente no recoge ninguna firma digital desde entonces.
+
+## Hoja de Ruta S156 (va antes que la "Hoja de Ruta pendiente al reactivar H31", que sigue intacta)
+
+Miguel Ángel, al cerrar S152: *"abrir con el tema de las firmas"*.
+
+1. **Firmas: el agente vuelve a recoger trabajos.** En
+   `panel/views_signatures.py`, poner `@method_decorator(csrf_exempt,
+   name="dispatch")` sobre `AgentPendingView` y quitarlo de
+   `SignedJobCancelView` (que usa la sesión del panel y debe pasar por
+   CSRF). **Cierre:** tras el despliegue, el error log de la web app no
+   tiene ninguna línea nueva `Forbidden (Referer checking failed` en
+   `/panel/firmas/agente/pendientes/`, y una firma digital nueva de
+   prueba queda `done` en `document_explorer_signedformjob`.
+2. **Firmas: el 429 de Gemini no tumba la generación.** En
+   `/panel/documentacion/firmas/generar/`, si Gemini falla al localizar
+   huecos, la petición no se pierde con un `Bad Request`: la
+   localización pasa a una tarea de Celery que reintenta mientras
+   Vertex AI devuelva 429 (como las demás llamadas pesadas), y la
+   pantalla muestra «esperando a Gemini» hasta que termina. **Cierre:** con un 429 simulado en local,
+   el trabajo queda en espera y se completa al volver Gemini, sin error
+   en pantalla.
+3. **Seguros: cuarentena de las 37 carpetas clasificada.** Consulta:
+   entradas con `parent_path` en `_CUARENTENA/` de esas carpetas.
+   **Cierre:** 0 entradas; entonces Yolanda crea un informe con todas
+   las empresas desde noviembre de 2026 con los 12 mayores, y salen
+   seguros de RC, accidentes de convenio y avería de las empresas (no
+   solo de DOC. MAQUINAS).
+4. **Script local de ITV** (arrastrado 1.ª sesión sin avanzar): en
+   `tools/itv_local_check.py`, decidir qué ITV es "más nueva" por la
+   fecha del nombre del archivo, no por la de modificación; buscar en
+   toda la carpeta de la máquina (subcarpetas incluidas, menos
+   OBSOLETOS); descartar archivos que no sean PDF ni imagen. **Cierre:**
+   con el JSON del 11/11, P16 y Z17 salen con ITV nueva en local, y B39
+   y 6951HZS no.
+5. **R22** (arrastrado 1.ª sesión sin avanzar): comprobar en el PDF
+   `R-22 MU08876R ITV 19-11-26.pdf` (cubo) la fecha real de caducidad y
+   corregir `expiry_date` en el panel si es el 19/11/2026. **Cierre:**
+   consulta a BD con la entrada 16616 y la fecha que dice el documento.
+
