@@ -66,6 +66,7 @@ jobs:
           ssh-keyscan -H ssh.pythonanywhere.com >> ~/.ssh/known_hosts
 
       - name: git pull + migrate + collectstatic en PythonAnywhere
+        id: pull
         # BUGFIX S014 (2026-07-13): "ssh ... | tee archivo" enmascaraba
         # el código de salida real del ssh -- sin pipefail, el exit
         # status de la tubería es el de `tee` (que casi siempre es 0),
@@ -176,9 +177,17 @@ jobs:
         # observados.
         if: success()
         run: |
-          curl -sf --max-time 60 -X POST \
+          # S155: muestra el código HTTP de PythonAnywhere si falla (antes
+          # solo "exit code 22", sin saber por qué).
+          RESP=$(curl -s --max-time 60 -w "\nHTTP_STATUS:%{http_code}" -X POST \
             "https://www.pythonanywhere.com/api/v0/user/MiguelAeTxio/webapps/enterprisebot-miguelaetxio.pythonanywhere.com/reload/" \
-            -H "Authorization: Token ${{ secrets.PA_API_TOKEN }}"
+            -H "Authorization: Token ${{ secrets.PA_API_TOKEN }}") || true
+          echo "$RESP"
+          STATUS=$(echo "$RESP" | grep -oE "HTTP_STATUS:[0-9]+" | cut -d: -f2 || true)
+          if [ "${STATUS:0:1}" != "2" ]; then
+            echo "::error title=Recarga de la web fallida::HTTP $STATUS -- $(echo "$RESP" | head -c 300 | tr '\n' ' ')"
+            exit 1
+          fi
           echo "--- Reload solicitado OK ---"
 
       - name: Reiniciar Always-on Tasks si el push las afecta (S014)
@@ -284,7 +293,9 @@ jobs:
         # no solo `classification_service.py`, por el mismo motivo que
         # S025: cualquier módulo de esa app que `tasks.py` importe hoy
         # o en el futuro debe disparar el reinicio.
-        if: success()
+        # S155: el reinicio del bridge/worker depende solo del git pull,
+        # independiente de la recarga de la web: llegó el código al servidor.
+        if: steps.pull.outcome == 'success'
         run: |
           set -o pipefail
           CHANGED=$(sed -n '/--- CHANGED_FILES_START ---/,/--- CHANGED_FILES_END ---/p' /tmp/deploy_output.txt | sed '1d;$d')
