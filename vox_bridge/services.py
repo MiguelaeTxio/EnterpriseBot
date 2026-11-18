@@ -212,7 +212,13 @@ TWILIO_OUTPUT_SAMPLE_RATE = 8000  # Hz — Twilio expects 8kHz mu-law back
 # 32767].
 # 200 RMS (~-44 dBFS) es un umbral conservador que separa de forma fiable el
 # ruido de línea de fondo del habla real en condiciones de telefonía.
-SILENCE_THRESHOLD_RMS = 300
+# S155 (18/11, Miguel Ángel: "cuando se llame va a haber ruido de fondo, o
+# gente hablando alrededor [...] hay que pedir más tiempo y más volumen"):
+# subido de 300 a 1000. En la llamada real de las 10:18 (compañero hablando a
+# voces) la voz del llamante estaba en 2800-5000 de mediana y el ruido cortó
+# dos veces a Alia con 300; con 1000 y 25 frames no la habría cortado. Quien
+# hable muy bajo puede no detectarse y tendrá que repetirlo más alto.
+SILENCE_THRESHOLD_RMS = 1000
 
 # Number of consecutive silent frames required to close an activity window.
 # At Twilio's 8kHz mu-law encoding, each media event carries ~20ms of audio,
@@ -240,7 +246,9 @@ SILENCE_FRAMES_TO_END_ACTIVITY = 30
 # micrófono del auricular. Con 3 frames (~60ms) el detector disparaba sobre
 # la propia salida de audio del modelo, causando señales activity_start
 # espurias que provocaban auto-interrupciones de Gemini.
-SPEECH_FRAMES_TO_START_ACTIVITY = 15
+# S155: subido de 15 (~300ms) a 25 (~500ms) por el ruido de fondo (ver
+# SILENCE_THRESHOLD_RMS).
+SPEECH_FRAMES_TO_START_ACTIVITY = 25
 
 
 # Fallback voice name used when build_live_config() fails to load the dynamic
