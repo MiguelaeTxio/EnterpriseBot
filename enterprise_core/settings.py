@@ -156,6 +156,9 @@ INSTALLED_APPS = [
 # Middleware stack optimized for async processing in Django 5.2.12.
 # Pila de middleware optimizada para procesamiento asíncrono en Django 5.2.12.
 MIDDLEWARE = [
+    # S153: apunta las peticiones lentas (>3 s) con sus consultas en
+    # logs/slow_requests.log, para ver qué hace lenta una página.
+    'panel.slow_requests.SlowRequestLogMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
