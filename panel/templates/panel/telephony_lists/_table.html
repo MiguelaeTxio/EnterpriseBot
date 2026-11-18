@@ -10,7 +10,7 @@ por fila y "todos", menú de tres puntos por fila.
 <table class="table table-sm table-hover align-middle mb-0" id="{{ p }}-table">
     <thead class="table-light">
         <tr>
-            <th class="text-center" style="width: 2rem;">
+            <th class="text-center tl-col-check">
                 <input class="form-check-input" type="checkbox" id="{{ p }}-check-all" aria-label="Seleccionar todos">
             </th>
             {% for col in columns %}
@@ -22,7 +22,7 @@ por fila y "todos", menú de tres puntos por fila.
                 </a>
             </th>
             {% endfor %}
-            <th style="width: 2.5rem;"></th>
+            <th class="tl-col-menu"></th>
         </tr>
     </thead>
     <tbody>
