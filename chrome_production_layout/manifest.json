@@ -4,9 +4,23 @@
   "version": "1.1.0",
   "description": "Guarda y vuelve a abrir el grupo de pestañas PRODUCCIÓN con sus vistas divididas.",
   "minimum_chrome_version": "155",
-  "permissions": ["tabs", "tabGroups", "storage"],
+  "permissions": [
+    "tabs",
+    "tabGroups",
+    "storage"
+  ],
   "action": {
     "default_title": "Disposición PRODUCCIÓN",
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   }
 }
