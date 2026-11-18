@@ -125,3 +125,90 @@ def colorize_workbook(workbook):
     for sheet in workbook.worksheets:
         colorize_sheet(sheet)
     return workbook
+
+
+# ------------------------------------------------------------------
+# S153: separar las filas por empresa, sección o grupos de selección.
+# Miguel Ángel: "podíamos separar por colores cada trabajador por
+# empresa o por grupos de selección, hojas, si no por colores".
+# ------------------------------------------------------------------
+GROUP_FILLS = (
+    "DDEBF7", "E2EFDA", "FFF2CC", "FCE4D6", "EDE2F6", "D9F2F2",
+    "F8E1EC", "E7E6E6", "FDEBD3", "E4F1D9",
+)
+_BAD_TITLE_CHARS = '[]:*?/\\'
+
+
+def _sheet_title(label, used):
+    """
+    A valid, unique sheet title (31 characters, no []:*?/\\).
+    ---
+    Un nombre de hoja válido y sin repetir.
+    """
+    clean = "".join("-" if ch in _BAD_TITLE_CHARS else ch
+                    for ch in (label or "Sin nombre")).strip() or "Hoja"
+    title, number = clean[:31], 2
+    while title.lower() in used:
+        suffix = " (%d)" % number
+        title = clean[:31 - len(suffix)] + suffix
+        number += 1
+    used.add(title.lower())
+    return title
+
+
+def write_grouped(book, header, groups, mode, setup_columns,
+                  group_label="Grupo", title="Listado"):
+    """
+    Writes rows split into groups, as coloured bands or one sheet each.
+
+    `groups`: [(label, [row values, ...]), ...] in order. `mode`:
+    "sheets" (one sheet per group, styled later by colorize_workbook)
+    or "colors" (one sheet with a first column naming the group and
+    each group's rows in its own colour). `setup_columns(sheet,
+    offset)` sets widths and formats (offset 1 when the group column
+    is added).
+    ---
+    Escribe las filas separadas en grupos: una hoja por grupo
+    ("sheets") o una sola hoja con una primera columna con el grupo y
+    las filas de cada grupo en su color ("colors").
+    """
+    if mode == "sheets":
+        used = set()
+        first = True
+        for label, rows in groups:
+            if first:
+                sheet = book.active
+                first = False
+            else:
+                sheet = book.create_sheet()
+            sheet.title = _sheet_title(label, used)
+            sheet.append(header)
+            for row in rows:
+                sheet.append(row)
+            setup_columns(sheet, 0)
+        if first:
+            book.active.title = _sheet_title(title, set())
+            book.active.append(header)
+        return
+    sheet = book.active
+    sheet.title = _sheet_title(title, set())
+    sheet.append([group_label] + list(header))
+    for cell in sheet[1]:
+        cell.fill = HEADER_FILL
+        cell.font = HEADER_FONT
+        cell.alignment = HEADER_ALIGNMENT
+        cell.border = CELL_BORDER
+    for index, (label, rows) in enumerate(groups):
+        fill = PatternFill("solid", fgColor=GROUP_FILLS[
+            index % len(GROUP_FILLS)])
+        for row in rows:
+            sheet.append([label] + list(row))
+            for cell in sheet[sheet.max_row]:
+                cell.fill = fill
+                cell.border = CELL_BORDER
+            sheet.cell(row=sheet.max_row, column=1).font = Font(bold=True)
+    setup_columns(sheet, 1)
+    sheet.column_dimensions["A"].width = max(
+        [len(label) for label, _rows in groups] + [12]) + 2
+    sheet.freeze_panes = "B2"
+    sheet.auto_filter.ref = sheet.dimensions

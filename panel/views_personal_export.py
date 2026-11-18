@@ -214,6 +214,89 @@ def _editable_template(company_user, pk):
     return template if template.company_user_id == company_user.pk else None
 
 
+SPLIT_CHOICES = (
+    ("", "Sin separar"),
+    ("empresa", "Por empresa"),
+    ("seccion", "Por sección"),
+    ("grupos", "Por grupos de selección"),
+)
+
+
+def _group_choices(company_user):
+    """
+    The person selection groups, in tree order, for the split option.
+    ---
+    Los grupos de selección de personas, en el orden del árbol, para
+    "Separar por grupos de selección" (S153).
+    """
+    from panel.person_groups import group_tree
+
+    return [
+        {"id": node["group"].pk, "label": node["group"].name,
+         "depth": node["depth"], "total": node["total"]}
+        for node in group_tree(company_user)
+        if node["kind"] == "group"
+    ]
+
+
+def _split_groups(request, people, values):
+    """
+    [(label, rows)] for the chosen split, or None when not splitting.
+    ---
+    S153: separa las filas por empresa, sección o los grupos de
+    selección elegidos (una persona sale en cada grupo elegido en el
+    que esté, contando sus subgrupos). Lo que no cae en ninguno va al
+    final como "Sin empresa", "Sin sección" o "Sin grupo".
+    """
+    split = request.GET.get("split", "")
+    if split in ("empresa", "seccion"):
+        getter = ((lambda p: p.employer_legal_name) if split == "empresa"
+                  else _section)
+        empty = "Sin empresa" if split == "empresa" else "Sin sección"
+        buckets = {}
+        for person, row in zip(people, values):
+            buckets.setdefault(getter(person) or "", []).append(row)
+        labels = sorted(k for k in buckets if k)
+        groups = [(label, buckets[label]) for label in labels]
+        if "" in buckets:
+            groups.append((empty, buckets[""]))
+        return groups
+    if split == "grupos":
+        from panel.person_groups import group_tree
+
+        wanted = [int(pk) for pk in request.GET.get(
+            "split_groups", "").split(",") if pk.isdigit()]
+        nodes = {node["group"].pk: node
+                 for node in group_tree(request.user.company_user)
+                 if node["kind"] == "group"}
+
+        def members(pk, seen=None):
+            seen = seen or set()
+            if pk in seen or pk not in nodes:
+                return set()
+            seen.add(pk)
+            ids = set(nodes[pk]["member_ids"])
+            for child in nodes[pk]["children"]:
+                ids |= members(child, seen)
+            return ids
+
+        groups, placed = [], set()
+        for pk in wanted:
+            if pk not in nodes:
+                continue
+            ids = members(pk)
+            rows = [row for person, row in zip(people, values)
+                    if person.pk in ids]
+            placed |= ids
+            groups.append((nodes[pk]["group"].name, rows))
+        rest = [row for person, row in zip(people, values)
+                if person.pk not in placed]
+        if rest:
+            groups.append(("Sin grupo", rest))
+        return groups
+    return None
+
+
 class PersonalExportTemplateListView(SupervisorAccessMixin, View):
     """
     GET: the templates the user can use, and the column catalogue.
@@ -230,6 +313,7 @@ class PersonalExportTemplateListView(SupervisorAccessMixin, View):
             ),
             "columns": column_choices(),
             "is_admin": _is_admin(cu),
+            "groups": _group_choices(cu),
         })
 
 
@@ -338,21 +422,42 @@ class PersonalExportView(SupervisorAccessMixin, View):
         ]
         people = list(_person_list_page(request)["page"].object_list)
 
+        header = [c[1] for c in columns]
+        values = [[_cell(c[3](person)) for c in columns]
+                  for person in people]
+
+        def setup_columns(sheet, offset):
+            for index, column in enumerate(columns, start=1 + offset):
+                letter = sheet.cell(row=1, column=index).column_letter
+                sheet.column_dimensions[letter].width = column[2]
+                if column[4]:
+                    for cell in sheet[letter][1:]:
+                        cell.number_format = "DD/MM/YYYY"
+
         book = Workbook()
-        sheet = book.active
-        sheet.title = "Personal"
-        sheet.append([c[1] for c in columns])
-        for person in people:
-            sheet.append([_cell(c[3](person)) for c in columns])
-        for cell in sheet[1]:
-            cell.font = Font(bold=True)
-        sheet.freeze_panes = "A2"
-        for index, column in enumerate(columns, start=1):
-            letter = sheet.cell(row=1, column=index).column_letter
-            sheet.column_dimensions[letter].width = column[2]
-            if column[4]:
-                for cell in sheet[letter][1:]:
-                    cell.number_format = "DD/MM/YYYY"
+        groups = _split_groups(request, people, values)
+        if groups is not None:
+            # S153: separado por empresa, sección o grupos de selección,
+            # en colores (una hoja) o en hojas.
+            from panel.xlsx_style import write_grouped
+
+            mode = ("sheets" if request.GET.get("split_mode") == "sheets"
+                    else "colors")
+            write_grouped(book, header, groups, mode, setup_columns,
+                          group_label=dict(SPLIT_CHOICES)[
+                              request.GET.get("split")].replace(
+                              "Por ", "").capitalize(),
+                          title="Personal")
+        else:
+            sheet = book.active
+            sheet.title = "Personal"
+            sheet.append(header)
+            for row in values:
+                sheet.append(row)
+            for cell in sheet[1]:
+                cell.font = Font(bold=True)
+            sheet.freeze_panes = "A2"
+            setup_columns(sheet, 0)
         filename = "personal_%s.xlsx" % timezone.localdate().strftime(
             "%Y%m%d",
         )

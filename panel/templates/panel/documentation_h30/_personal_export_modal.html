@@ -33,6 +33,33 @@ filtros y orden. Vista: panel/views_personal_export.py.
                 <div id="pexp-summary" class="p-3 bg-light rounded border small d-none">
                     <span class="text-muted">Columnas:</span> <span id="pexp-summary-columns"></span>
                 </div>
+                {# S153: separar por empresa, sección o grupos de selección, en colores o en hojas. #}
+                <div class="row g-2 mt-3 align-items-end">
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold mb-0" for="pexp-split">Separar los trabajadores</label>
+                        <select id="pexp-split" class="form-select form-select-sm">
+                            <option value="">Sin separar</option>
+                            <option value="empresa">Por empresa</option>
+                            <option value="seccion">Por sección</option>
+                            <option value="grupos">Por grupos de selección</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6 d-none" id="pexp-mode-wrap">
+                        <div class="small fw-semibold">En el Excel</div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="pexp-mode" id="pexp-mode-colors" value="colors" checked>
+                            <label class="form-check-label small" for="pexp-mode-colors">Por colores (una hoja)</label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="pexp-mode" id="pexp-mode-sheets" value="sheets">
+                            <label class="form-check-label small" for="pexp-mode-sheets">Una hoja por cada uno</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="border rounded p-2 mt-2 small d-none" id="pexp-groups-wrap" style="max-height: 14rem; overflow-y: auto;">
+                    <div class="text-muted mb-1">Marca los grupos: cada uno en su color u hoja (con sus subgrupos). Quien no esté en ninguno sale en «Sin grupo».</div>
+                    <div id="pexp-groups"></div>
+                </div>
                 <div id="pexp-error" class="alert alert-danger small py-2 mt-3 mb-0 d-none"></div>
             </div>
 
@@ -166,6 +193,7 @@ filtros y orden. Vista: panel/views_personal_export.py.
                 templates = data.templates || [];
                 columns = data.columns || [];
                 isAdmin = !!data.is_admin;
+                renderGroups(data.groups || []);
                 fillSelect(keepId);
                 renderList();
             })
@@ -180,6 +208,39 @@ filtros y orden. Vista: panel/views_personal_export.py.
         load(current() ? current().id : null);
     });
     $("pexp-template").addEventListener("change", updateSummary);
+
+    // S153: separar por empresa, sección o grupos de selección.
+    function renderGroups(groups) {
+        const box = $("pexp-groups");
+        const checked = new Set(Array.from(box.querySelectorAll("input:checked")).map(function (cb) { return cb.value; }));
+        box.innerHTML = "";
+        if (!groups.length) {
+            box.textContent = "No hay grupos de selección.";
+            return;
+        }
+        groups.forEach(function (g) {
+            const div = document.createElement("div");
+            div.className = "form-check";
+            div.style.marginLeft = (g.depth * 1.1) + "rem";
+            const cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.className = "form-check-input";
+            cb.id = "pexpGroup" + g.id;
+            cb.value = g.id;
+            cb.checked = checked.has(String(g.id));
+            const label = document.createElement("label");
+            label.className = "form-check-label";
+            label.htmlFor = cb.id;
+            label.textContent = g.label + " (" + g.total + ")";
+            div.append(cb, label);
+            box.appendChild(div);
+        });
+    }
+    $("pexp-split").addEventListener("change", function () {
+        const split = $("pexp-split").value;
+        $("pexp-mode-wrap").classList.toggle("d-none", !split);
+        $("pexp-groups-wrap").classList.toggle("d-none", split !== "grupos");
+    });
 
     // S148: Excel, PDF o impresión (pestaña nueva) con la misma plantilla.
     document.querySelectorAll(".pexp-go").forEach(function (goBtn) { goBtn.addEventListener("click", function () {
@@ -206,6 +267,18 @@ filtros y orden. Vista: panel/views_personal_export.py.
         }
         params.set("template_pk", tpl.id);
         params.set("export_format", fmt);
+        const split = $("pexp-split").value;
+        if (split) {
+            const chosen = Array.from($("pexp-groups").querySelectorAll("input:checked")).map(function (cb) { return cb.value; });
+            if (split === "grupos" && !chosen.length) {
+                $("pexp-error").textContent = "Marca al menos un grupo de selección.";
+                $("pexp-error").classList.remove("d-none");
+                return;
+            }
+            params.set("split", split);
+            params.set("split_mode", document.querySelector('input[name="pexp-mode"]:checked').value);
+            if (split === "grupos") params.set("split_groups", chosen.join(","));
+        }
         if (fmt === "print") {
             window.open(EXPORT_URL + "?" + params.toString(), "_blank");
         } else {
