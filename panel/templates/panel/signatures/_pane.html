@@ -54,7 +54,8 @@ panel/views_signatures.py (acciones).
     <div class="row g-2">
         <div class="col-lg-{% if lista == 'documentos' %}4{% else %}6{% endif %}">
             <div class="border rounded p-2 h-100">
-                <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                {% include "panel/_filter_panel_tabs.html" with fp="sig" %}
+                <div class="eb-filter-pane" data-filter-pane="filters">
                 <form id="sig-filters" autocomplete="off" onsubmit="return false;"
                       hx-get="{% url 'panel:signature_results' %}" hx-target="#sig-results"
                       hx-include="#sig-sort-inputs"
@@ -123,6 +124,11 @@ panel/views_signatures.py (acciones).
                         </div>
                     </div>
                 </form>
+                </div>
+                {# S153: qué columnas se ven en el listado y en qué orden, con plantillas. #}
+                <div class="eb-filter-pane d-none" data-filter-pane="columns">
+                    {% with sig_screen="signatures_"|add:lista %}{% include "panel/_view_columns_tab.html" with vc="sig" screen=sig_screen %}{% endwith %}
+                </div>
             </div>
         </div>
         {% if lista == "documentos" %}

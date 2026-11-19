@@ -14,7 +14,8 @@ usuario (screen_key "doc_requests"). Vistas: panel/views_doc_requests.py.
     <div class="row g-2">
         <div class="col-lg-4">
             <div class="border rounded p-2 h-100">
-                <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                {% include "panel/_filter_panel_tabs.html" with fp="dreq" %}
+                <div class="eb-filter-pane" data-filter-pane="filters">
                 <form id="dreq-filters" autocomplete="off" onsubmit="return false;"
                       hx-get="{% url 'panel:doc_requests_results' %}" hx-target="#dreq-results"
                       hx-include="#dreq-sort-inputs"
@@ -54,6 +55,11 @@ usuario (screen_key "doc_requests"). Vistas: panel/views_doc_requests.py.
                     </div>
                     {% include "panel/_checkdrop_js.html" %}
                 </form>
+                </div>
+                {# S153: qué columnas se ven en el listado y en qué orden, con plantillas. #}
+                <div class="eb-filter-pane d-none" data-filter-pane="columns">
+                    {% include "panel/_view_columns_tab.html" with vc="dreq" screen="doc_requests" %}
+                </div>
             </div>
         </div>
 

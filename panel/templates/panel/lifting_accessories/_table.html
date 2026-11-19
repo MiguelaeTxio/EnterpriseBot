@@ -26,7 +26,7 @@ S136: sin stack-mobile (decisión de Miguel Ángel): en el móvil, también
 columnas con su cabecera (orden, "Seleccionar todos") y la tabla se
 desliza entera, sin columnas fijas (S123). Mismo formato en PC y móvil.
 {% endcomment %}
-<table class="table table-sm table-hover align-middle mb-0" id="lifting-table">
+<table class="table table-sm table-hover align-middle mb-0" id="lifting-table" data-view-screen="lifting_accessories">
     <thead class="table-light">
         <tr>
             <th class="lifting-check-col">
@@ -34,7 +34,7 @@ desliza entera, sin columnas fijas (S123). Mismo formato en PC y móvil.
                        title="Marcar/desmarcar todos los visibles">
             </th>
             {% for column in sort_columns %}
-            <th>
+            <th data-col="{{ column.key }}" data-col-label="{{ column.label }}">
                 <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none lifting-sort-link"
                    hx-get="{% url 'panel:lifting_accessory_results' %}"
                    hx-target="#lifting-table-container"

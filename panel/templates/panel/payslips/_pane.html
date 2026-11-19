@@ -21,13 +21,14 @@ refresca sola. Lógica: hr_calendar/payslip_delivery.py.
     <div class="row g-2">
         <div class="col-lg-4">
             <div class="border rounded p-2 h-100">
+                {% include "panel/_filter_panel_tabs.html" with fp="psl" %}
+                <div class="eb-filter-pane" data-filter-pane="filters">
                 <form id="psl-filters" autocomplete="off" onsubmit="return false;"
                       hx-get="{% url 'panel:payslip_results' %}" hx-target="#psl-results"
                       hx-include="#psl-sort-inputs"
                       hx-trigger="input changed delay:300ms from:#psl-filter-search, change, psl-selection-refresh">
                     {# S153: sin scroll vertical arriba (Miguel Ángel): «Selección» va en la línea del título y «Situación» junto a «Entrega». #}
-                    <div class="d-flex align-items-center justify-content-between gap-2 mb-1">
-                        <div class="fw-bold small">Buscar y filtrar</div>
+                    <div class="d-flex align-items-center justify-content-end gap-2 mb-1">
                         <div class="form-check small mb-0" title="Mostrar solo la selección actual">
                             <input class="form-check-input" type="checkbox" name="only_selected" value="1" id="pslOnlySelected">
                             <label class="form-check-label" for="pslOnlySelected">Solo la selección actual</label>
@@ -85,6 +86,11 @@ refresca sola. Lógica: hr_calendar/payslip_delivery.py.
                         </div>
                     </div>
                 </form>
+                </div>
+                {# S153: qué columnas se ven en el listado y en qué orden, con plantillas. #}
+                <div class="eb-filter-pane d-none" data-filter-pane="columns">
+                    {% include "panel/_view_columns_tab.html" with vc="psl" screen="payslips_list" %}
+                </div>
             </div>
         </div>
         {% include "panel/_person_group_filter.html" with pg_prefix="psl" pg_form="psl-filters" %}

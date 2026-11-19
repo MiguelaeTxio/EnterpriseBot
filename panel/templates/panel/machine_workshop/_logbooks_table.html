@@ -6,17 +6,17 @@ mantenimiento de la máquina (directriz 4.24), con las columnas a elegir
 Averías. En el menú de cada fila: ver el documento.
 {% endcomment %}
 {% if rows %}
-<table class="table table-sm table-hover align-middle mb-0 small" id="mw-table">
+<table class="table table-sm table-hover align-middle mb-0 small" id="mw-table" data-view-screen="workshop_logbooks">
     <thead class="table-light">
         <tr>
             <th><input class="form-check-input" type="checkbox" id="mw-check-all" title="Marcar/desmarcar todos los visibles"></th>
-            <th class="mwc-type">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.type label="Tipo" %}</th>
-            <th class="mwc-date">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.date label="Fecha" %}</th>
-            <th class="mwc-name">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.name label="Archivo" %}</th>
-            <th class="mwc-origin">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.origin label="Origen" %}</th>
-            <th class="mwc-state">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.state label="Estado" %}</th>
-            <th class="mwc-rows text-end">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.rows label="Filas leídas" align_end=True %}</th>
-            <th class="mwc-by">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.by label="Generado por" %}</th>
+            <th class="mwc-type" data-col="tipo" data-col-label="Tipo">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.type label="Tipo" %}</th>
+            <th class="mwc-date" data-col="fecha" data-col-label="Fecha">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.date label="Fecha" %}</th>
+            <th class="mwc-name" data-col="archivo" data-col-label="Archivo">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.name label="Archivo" %}</th>
+            <th class="mwc-origin" data-col="origen" data-col-label="Origen">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.origin label="Origen" %}</th>
+            <th class="mwc-state" data-col="estado" data-col-label="Estado">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.state label="Estado" %}</th>
+            <th class="mwc-rows text-end" data-col="filas_leidas" data-col-label="Filas leídas">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.rows label="Filas leídas" align_end=True %}</th>
+            <th class="mwc-by" data-col="generado_por" data-col-label="Generado por">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.by label="Generado por" %}</th>
             <th class="text-end">Acciones</th>
         </tr>
     </thead>

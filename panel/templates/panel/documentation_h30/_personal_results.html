@@ -15,7 +15,7 @@ S136: sin stack-mobile (decisión de Miguel Ángel): en el móvil, también
 columnas con su cabecera (orden, "Seleccionar todos") y la tabla se
 desliza entera, sin columnas fijas (S123). Mismo formato en PC y móvil.
 {% endcomment %}
-<table class="table table-hover table-light">
+<table class="table table-hover table-light" data-view-screen="personal">
     <thead class="table-light">
         <tr>
             <th class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input" id="person-select-all-page" title="Seleccionar todos los que cumplen el filtro actual"></th>
@@ -28,8 +28,8 @@ desliza entera, sin columnas fijas (S123). Mismo formato en PC y móvil.
                     {% if sort_key == 'first_surname' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
                 </a>
             </th>
-            <th>DNI</th>
-            <th>
+            <th data-col="dni">DNI</th>
+            <th data-col="hire_date" data-col-label="Alta">
                 <a href="#"
                    hx-get="{% url 'panel:documentation_personal_results' %}?sort=hire_date&dir={% if sort_key == 'hire_date' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}{% if requirement_filter %}&requirement={{ requirement_filter }}{% endif %}{% if req_state_filter %}&req_state={{ req_state_filter }}{% endif %}{% if req_item_filter %}&req_item={{ req_item_filter }}{% endif %}{% if onboarding_filter %}&onboarding={{ onboarding_filter }}{% endif %}{% if section_filter %}&section={{ section_filter }}{% endif %}{% if schedule_filter %}&schedule={{ schedule_filter }}{% endif %}"
                    hx-target="#personal-results" class="text-decoration-none text-dark">
@@ -37,7 +37,7 @@ desliza entera, sin columnas fijas (S123). Mismo formato en PC y móvil.
                     {% if sort_key == 'hire_date' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
                 </a>
             </th>
-            <th>
+            <th data-col="doc_count" data-col-label="Documentos">
                 <a href="#"
                    hx-get="{% url 'panel:documentation_personal_results' %}?sort=doc_count&dir={% if sort_key == 'doc_count' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}{% if requirement_filter %}&requirement={{ requirement_filter }}{% endif %}{% if req_state_filter %}&req_state={{ req_state_filter }}{% endif %}{% if req_item_filter %}&req_item={{ req_item_filter }}{% endif %}{% if onboarding_filter %}&onboarding={{ onboarding_filter }}{% endif %}{% if section_filter %}&section={{ section_filter }}{% endif %}{% if schedule_filter %}&schedule={{ schedule_filter }}{% endif %}"
                    hx-target="#personal-results" class="text-decoration-none text-dark">
@@ -45,7 +45,7 @@ desliza entera, sin columnas fijas (S123). Mismo formato en PC y móvil.
                     {% if sort_key == 'doc_count' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
                 </a>
             </th>
-            <th>
+            <th data-col="requirement" data-col-label="Requisitos de documentación">
                 <a href="#"
                    hx-get="{% url 'panel:documentation_personal_results' %}?sort=requirement_name&dir={% if sort_key == 'requirement_name' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}{% if requirement_filter %}&requirement={{ requirement_filter }}{% endif %}{% if req_state_filter %}&req_state={{ req_state_filter }}{% endif %}{% if req_item_filter %}&req_item={{ req_item_filter }}{% endif %}{% if onboarding_filter %}&onboarding={{ onboarding_filter }}{% endif %}{% if section_filter %}&section={{ section_filter }}{% endif %}{% if schedule_filter %}&schedule={{ schedule_filter }}{% endif %}"
                    hx-target="#personal-results" class="text-decoration-none text-dark">
@@ -53,7 +53,7 @@ desliza entera, sin columnas fijas (S123). Mismo formato en PC y móvil.
                     {% if sort_key == 'requirement_name' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
                 </a>
             </th>
-            <th>
+            <th data-col="onboarding" data-col-label="Alta en el fichaje">
                 <a href="#"
                    hx-get="{% url 'panel:documentation_personal_results' %}?sort=onboarding&dir={% if sort_key == 'onboarding' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}{% if requirement_filter %}&requirement={{ requirement_filter }}{% endif %}{% if req_state_filter %}&req_state={{ req_state_filter }}{% endif %}{% if req_item_filter %}&req_item={{ req_item_filter }}{% endif %}{% if onboarding_filter %}&onboarding={{ onboarding_filter }}{% endif %}{% if section_filter %}&section={{ section_filter }}{% endif %}{% if schedule_filter %}&schedule={{ schedule_filter }}{% endif %}"
                    hx-target="#personal-results" class="text-decoration-none text-dark">
@@ -62,7 +62,7 @@ desliza entera, sin columnas fijas (S123). Mismo formato en PC y móvil.
                 </a>
             </th>
             {# H24 (S144): sección vigente y horario que le toca, como en Horarios. #}
-            <th>
+            <th data-col="section" data-col-label="Sección">
                 <a href="#"
                    hx-get="{% url 'panel:documentation_personal_results' %}?sort=section&dir={% if sort_key == 'section' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}{% if requirement_filter %}&requirement={{ requirement_filter }}{% endif %}{% if req_state_filter %}&req_state={{ req_state_filter }}{% endif %}{% if req_item_filter %}&req_item={{ req_item_filter }}{% endif %}{% if onboarding_filter %}&onboarding={{ onboarding_filter }}{% endif %}{% if section_filter %}&section={{ section_filter }}{% endif %}{% if schedule_filter %}&schedule={{ schedule_filter }}{% endif %}"
                    hx-target="#personal-results" class="text-decoration-none text-dark">
@@ -70,7 +70,7 @@ desliza entera, sin columnas fijas (S123). Mismo formato en PC y móvil.
                     {% if sort_key == 'section' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
                 </a>
             </th>
-            <th>
+            <th data-col="schedule" data-col-label="Horario">
                 <a href="#"
                    hx-get="{% url 'panel:documentation_personal_results' %}?sort=schedule&dir={% if sort_key == 'schedule' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}{% if requirement_filter %}&requirement={{ requirement_filter }}{% endif %}{% if req_state_filter %}&req_state={{ req_state_filter }}{% endif %}{% if req_item_filter %}&req_item={{ req_item_filter }}{% endif %}{% if onboarding_filter %}&onboarding={{ onboarding_filter }}{% endif %}{% if section_filter %}&section={{ section_filter }}{% endif %}{% if schedule_filter %}&schedule={{ schedule_filter }}{% endif %}"
                    hx-target="#personal-results" class="text-decoration-none text-dark">

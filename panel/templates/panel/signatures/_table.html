@@ -11,12 +11,12 @@ panel/views_signatures_lists.py; la selección vive en el JS de _pane.html.
 <span id="sig-sort-inputs" class="d-none">
     <input type="hidden" name="sort" value="{{ current_sort }}">
 </span>
-<table class="table table-hover table-light table-sm align-middle mb-0" id="sig-table">
+<table class="table table-hover table-light table-sm align-middle mb-0" id="sig-table" data-view-screen="signatures_{{ lista }}">
     <thead class="table-light">
         <tr>
             <th><input type="checkbox" class="form-check-input" id="sig-check-all" title="Seleccionar todos los que cumplen el filtro actual"></th>
             {% for column in sort_columns %}
-            <th>
+            <th data-col="{{ column.key }}" data-col-label="{{ column.label }}">
                 <a href="#" class="text-decoration-none text-dark"
                    hx-get="{% url 'panel:signature_results' %}"
                    hx-target="#sig-results"

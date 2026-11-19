@@ -36,7 +36,8 @@ alta y va en el panel de acciones.
     <div class="row g-2">
         <div class="col-lg-7">
             <div class="border rounded p-2 h-100" id="mw-filters">
-                <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                {% include "panel/_filter_panel_tabs.html" with fp="mwl" %}
+                <div class="eb-filter-pane" data-filter-pane="filters">
                 <input type="search" class="form-control form-control-sm mb-2"
                        placeholder="Buscar en el archivo, el tipo, el origen o quién lo generó…"
                        name="search" value="{{ filters.search }}" autocomplete="off"
@@ -119,6 +120,11 @@ alta y va en el panel de acciones.
                             title="Deshacer todos los órdenes aplicados">
                         <i class="bi bi-x-circle me-1"></i>Quitar orden
                     </button>
+                </div>
+                </div>
+                {# S153: qué columnas se ven en el listado y en qué orden, con plantillas. #}
+                <div class="eb-filter-pane d-none" data-filter-pane="columns">
+                    {% include "panel/_view_columns_tab.html" with vc="mwl" screen="workshop_logbooks" %}
                 </div>
             </div>
         </div>

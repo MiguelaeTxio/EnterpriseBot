@@ -7,14 +7,14 @@ por fila y "todos", menú de tres puntos por fila.
 {% with p=spec.prefix %}
 <div id="{{ p }}-fragment-state" class="d-none" data-count="{{ rows|length }}" data-sort-active="{% if sort_active %}1{% endif %}"></div>
 <div id="{{ p }}-sort-inputs" class="d-none"><input type="hidden" name="sort" value="{{ current_sort }}"></div>
-<table class="table table-sm table-hover align-middle mb-0" id="{{ p }}-table">
+<table class="table table-sm table-hover align-middle mb-0" id="{{ p }}-table" data-view-screen="telephony_lists">
     <thead class="table-light">
         <tr>
             <th class="text-center tl-col-check">
                 <input class="form-check-input" type="checkbox" id="{{ p }}-check-all" aria-label="Seleccionar todos">
             </th>
             {% for col in columns %}
-            <th class="text-nowrap">
+            <th class="text-nowrap" data-col="{{ col.key }}" data-col-label="{{ col.label }}">
                 <a href="#" class="text-reset text-decoration-none"
                    hx-get="{{ results_url }}" hx-target="#{{ p }}-results"
                    hx-include="#{{ p }}-filters" hx-vals='{"sort": "{{ col.next }}"}'>

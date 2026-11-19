@@ -13,13 +13,13 @@ trabajador: no hace falta usuario del panel.
 <span id="hor-sort-inputs" class="d-none">
     <input type="hidden" name="sort" value="{{ current_sort }}">
 </span>
-<table class="table table-hover table-light align-middle" id="hor-table">
+<table class="table table-hover table-light align-middle" id="hor-table" data-view-screen="worker_schedules">
     <thead class="table-light">
         <tr>
             <th class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input" id="hor-check-all" title="Seleccionar todos los que cumplen el filtro actual"></th>
             <th class="sticky-col sticky-col-2"></th>
             {% for column in sort_columns %}
-            <th class="{% if column.key == 'person' %}sticky-col sticky-col-3 sticky-col-last{% endif %}">
+            <th class="{% if column.key == 'person' %}sticky-col sticky-col-3 sticky-col-last{% endif %}"{% if column.key != 'person' %} data-col="{{ column.key }}" data-col-label="{{ column.label }}"{% endif %}>
                 <a href="#" class="text-decoration-none text-dark"
                    hx-get="{% url 'panel:worker_schedules_results' %}"
                    hx-target="#hor-results"

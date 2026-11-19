@@ -59,12 +59,12 @@ mientras alguna entrega se lee o se envía, la tabla se pide sola.
 <span id="psl-sort-inputs" class="d-none">
     <input type="hidden" name="sort" value="{{ current_sort }}">
 </span>
-<table class="table table-hover table-light align-middle" id="psl-table">
+<table class="table table-hover table-light align-middle" id="psl-table" data-view-screen="payslips_list">
     <thead class="table-light">
         <tr>
             <th><input type="checkbox" class="form-check-input" id="psl-check-all" title="Seleccionar todas las que cumplen el filtro actual"></th>
             {% for column in sort_columns %}
-            <th>
+            <th data-col="{{ column.key }}" data-col-label="{{ column.label }}">
                 <a href="#" class="text-decoration-none text-dark"
                    hx-get="{% url 'panel:payslip_results' %}"
                    hx-target="#psl-results"
@@ -75,7 +75,7 @@ mientras alguna entrega se lee o se envía, la tabla se pide sola.
                 </a>
             </th>
             {% endfor %}
-            <th>Nota</th>
+            <th data-col="note">Nota</th>
             <th></th>
         </tr>
     </thead>

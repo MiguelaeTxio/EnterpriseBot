@@ -22,7 +22,8 @@ recordatorios, secciones que fichan y permiso de envío).
     <div class="row g-2">
         <div class="col-lg-4">
             <div class="border rounded p-2 h-100">
-                <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                {% include "panel/_filter_panel_tabs.html" with fp="clk" %}
+                <div class="eb-filter-pane" data-filter-pane="filters">
                 <form id="clk-filters" autocomplete="off" onsubmit="return false;"
                       hx-get="{% url 'panel:clock_events_results' %}" hx-target="#clk-results"
                       hx-include="#clk-sort-inputs"
@@ -135,6 +136,11 @@ recordatorios, secciones que fichan y permiso de envío).
                     </div>
                     {% include "panel/_checkdrop_js.html" %}
                 </form>
+                </div>
+                {# S153: qué columnas se ven en el listado y en qué orden, con plantillas. #}
+                <div class="eb-filter-pane d-none" data-filter-pane="columns">
+                    {% include "panel/_view_columns_tab.html" with vc="clk" screen="clock_events" %}
+                </div>
             </div>
         </div>
 

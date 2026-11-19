@@ -7,23 +7,23 @@ tareas en Partes de trabajo (filtro "Avería") y el documento de cada
 parte que la atendió.
 {% endcomment %}
 {% if rows %}
-<table class="table table-sm table-hover align-middle mb-0 small" id="mw-table">
+<table class="table table-sm table-hover align-middle mb-0 small" id="mw-table" data-view-screen="workshop_tickets_list">
     <thead class="table-light">
         <tr>
             <th><input class="form-check-input" type="checkbox" id="mw-check-all" title="Marcar/desmarcar todos los visibles"></th>
-            <th class="mwc-code">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.code label="Ticket" %}</th>
-            <th class="mwc-date">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.date label="Fecha" %}</th>
-            <th class="mwc-status">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.status label="Estado" %}</th>
-            <th class="mwc-urgency">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.urgency label="Urgencia" %}</th>
-            <th class="mwc-tipo">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.tipo label="Tipo" %}</th>
-            <th class="mwc-summary">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.summary label="Avería" %}</th>
-            <th class="mwc-tasks text-end">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.tasks label="Tareas" align_end=True %}</th>
-            <th class="mwc-ordinary text-end">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.ordinary label="H. ordinarias" align_end=True %}</th>
-            <th class="mwc-extra text-end">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.extra label="H. extra" align_end=True %}</th>
-            <th class="mwc-festive text-end">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.festive label="H. festivas" align_end=True %}</th>
-            <th class="mwc-hours text-end">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.hours label="Horas" align_end=True %}</th>
-            <th class="mwc-cost text-end">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.cost label="Importe" align_end=True %}</th>
-            <th class="mwc-closed">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.closed label="Cerrada" %}</th>
+            <th class="mwc-code" data-col="ticket" data-col-label="Ticket">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.code label="Ticket" %}</th>
+            <th class="mwc-date" data-col="fecha" data-col-label="Fecha">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.date label="Fecha" %}</th>
+            <th class="mwc-status" data-col="estado" data-col-label="Estado">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.status label="Estado" %}</th>
+            <th class="mwc-urgency" data-col="urgencia" data-col-label="Urgencia">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.urgency label="Urgencia" %}</th>
+            <th class="mwc-tipo" data-col="tipo" data-col-label="Tipo">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.tipo label="Tipo" %}</th>
+            <th class="mwc-summary" data-col="averia" data-col-label="Avería">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.summary label="Avería" %}</th>
+            <th class="mwc-tasks text-end" data-col="tareas" data-col-label="Tareas">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.tasks label="Tareas" align_end=True %}</th>
+            <th class="mwc-ordinary text-end" data-col="h_ordinarias" data-col-label="H. ordinarias">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.ordinary label="H. ordinarias" align_end=True %}</th>
+            <th class="mwc-extra text-end" data-col="h_extra" data-col-label="H. extra">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.extra label="H. extra" align_end=True %}</th>
+            <th class="mwc-festive text-end" data-col="h_festivas" data-col-label="H. festivas">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.festive label="H. festivas" align_end=True %}</th>
+            <th class="mwc-hours text-end" data-col="horas" data-col-label="Horas">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.hours label="Horas" align_end=True %}</th>
+            <th class="mwc-cost text-end" data-col="importe" data-col-label="Importe">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.cost label="Importe" align_end=True %}</th>
+            <th class="mwc-closed" data-col="cerrada" data-col-label="Cerrada">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.closed label="Cerrada" %}</th>
             <th class="text-end">Acciones</th>
         </tr>
     </thead>

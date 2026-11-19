@@ -18,13 +18,13 @@ S136: sin stack-mobile (decisión de Miguel Ángel): en el móvil, también
 columnas con su cabecera (orden, "Seleccionar todos") y la tabla se
 desliza entera, sin columnas fijas (S123). Mismo formato en PC y móvil.
 {% endcomment %}
-<table class="table table-hover table-light align-middle" id="vbal-table">
+<table class="table table-hover table-light align-middle" id="vbal-table" data-view-screen="vacation_balance">
     <thead class="table-light">
         <tr>
             <th class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input" id="vbal-check-all" title="Seleccionar todos los que cumplen el filtro actual"></th>
             <th class="sticky-col sticky-col-2"></th>
             {% for column in sort_columns %}
-            <th class="{% if column.key == 'person' %}sticky-col sticky-col-3 sticky-col-last{% elif column.key == 'taken' or column.key == 'pending' %}text-end{% endif %}">
+            <th class="{% if column.key == 'person' %}sticky-col sticky-col-3 sticky-col-last{% elif column.key == 'taken' or column.key == 'pending' %}text-end{% endif %}"{% if column.key != 'person' %} data-col="{{ column.key }}" data-col-label="{{ column.label }}"{% endif %}>
                 <a href="#" class="text-decoration-none text-dark vbal-sort-link"
                    hx-get="{% url 'panel:vacation_balance_results' %}"
                    hx-target="#vbal-results"
@@ -35,12 +35,12 @@ desliza entera, sin columnas fijas (S123). Mismo formato en PC y móvil.
                 </a>
             </th>
             {% if column.key == 'section' and can_manage %}
-            <th>Fecha de inicio</th>
-            <th>Fecha de fin</th>
-            <th></th>
+            <th data-col="section_start">Fecha de inicio</th>
+            <th data-col="section_end">Fecha de fin</th>
+            <th data-col="section_save" data-col-label="Guardar sección"></th>
             {% endif %}
             {% endfor %}
-            <th>Año</th>
+            <th data-col="year">Año</th>
         </tr>
     </thead>
     <tbody>

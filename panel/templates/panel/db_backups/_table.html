@@ -16,12 +16,12 @@ cada 5 segundos. Vista: panel/views_db_backups.py.
 <span id="bk-sort-inputs" class="d-none">
     <input type="hidden" name="sort" value="{{ current_sort }}">
 </span>
-<table class="table table-hover table-light align-middle" id="bk-table">
+<table class="table table-hover table-light align-middle" id="bk-table" data-view-screen="db_backups">
     <thead class="table-light">
         <tr>
             <th><input type="checkbox" class="form-check-input" id="bk-check-all" title="Seleccionar todas las que cumplen el filtro actual"></th>
             {% for column in sort_columns %}
-            <th>
+            <th data-col="{{ column.key }}" data-col-label="{{ column.label }}">
                 <a href="#" class="text-decoration-none text-dark"
                    hx-get="{% url 'panel:db_backup_list_results' %}"
                    hx-target="#bk-results"

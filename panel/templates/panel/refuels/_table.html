@@ -37,13 +37,13 @@ ocultaban la cabecera, y con ella la casilla "Seleccionar todos"
 a todos") y el orden por columnas. Igual que Fichajes: la tabla
 mantiene columnas y cabecera en cualquier pantalla, con scroll lateral.
 {% endcomment %}
-<table class="table table-hover table-light align-middle" id="rfl-table">
+<table class="table table-hover table-light align-middle" id="rfl-table" data-view-screen="refuels">
     <thead class="table-light">
         <tr>
             <th class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input" id="rfl-check-all" title="Seleccionar todos los que se ven"></th>
             <th class="sticky-col sticky-col-2"></th>
             {% for column in sort_columns %}
-            <th class="{% if column.key == 'date' %}sticky-col sticky-col-3 sticky-col-last{% elif column.key == 'value' or column.key == 'litres' %}text-end{% endif %}">
+            <th class="{% if column.key == 'date' %}sticky-col sticky-col-3 sticky-col-last{% elif column.key == 'value' or column.key == 'litres' %}text-end{% endif %}"{% if column.key != 'date' %} data-col="{{ column.key }}" data-col-label="{{ column.label }}"{% endif %}>
                 <a href="#" class="text-decoration-none text-dark"
                    hx-get="{% url 'panel:refuels_results' %}"
                    hx-target="#rfl-results"
@@ -54,8 +54,8 @@ mantiene columnas y cabecera en cualquier pantalla, con scroll lateral.
                 </a>
             </th>
             {% endfor %}
-            <th>Unidad</th>
-            <th>Motivo</th>
+            <th data-col="unit">Unidad</th>
+            <th data-col="reason">Motivo</th>
             <th></th>
         </tr>
     </thead>

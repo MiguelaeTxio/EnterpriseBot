@@ -7,17 +7,17 @@ se seleccionan las reconstrucciones pendientes de firma (para enviarlas
 a la firma digital o quitarlas).
 {% endcomment %}
 {% if rows %}
-<table class="table table-sm table-hover align-middle mb-0 small" id="mw-table">
+<table class="table table-sm table-hover align-middle mb-0 small" id="mw-table" data-view-screen="workshop_reviews">
     <thead class="table-light">
         <tr>
             <th><input class="form-check-input" type="checkbox" id="mw-check-all" title="Marcar/desmarcar todos los visibles"></th>
-            <th class="mwc-date">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.date label="Fecha" %}</th>
-            <th class="mwc-concept">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.concept label="Concepto" %}</th>
-            <th class="mwc-entity">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.entity label="Empresa mantenedora" %}</th>
-            <th class="mwc-result">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.result label="Resultado" %}</th>
-            <th class="mwc-next">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.next label="Próxima revisión" %}</th>
-            <th class="mwc-origin">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.origin label="Origen" %}</th>
-            <th class="mwc-signed">Firma</th>
+            <th class="mwc-date" data-col="fecha" data-col-label="Fecha">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.date label="Fecha" %}</th>
+            <th class="mwc-concept" data-col="concepto" data-col-label="Concepto">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.concept label="Concepto" %}</th>
+            <th class="mwc-entity" data-col="empresa_mantenedora" data-col-label="Empresa mantenedora">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.entity label="Empresa mantenedora" %}</th>
+            <th class="mwc-result" data-col="resultado" data-col-label="Resultado">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.result label="Resultado" %}</th>
+            <th class="mwc-next" data-col="proxima_revision" data-col-label="Próxima revisión">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.next label="Próxima revisión" %}</th>
+            <th class="mwc-origin" data-col="origen" data-col-label="Origen">{% include "panel/machine_workshop/_sort_th.html" with col=sort_cols.origin label="Origen" %}</th>
+            <th class="mwc-signed" data-col="firma" data-col-label="Firma">Firma</th>
         </tr>
     </thead>
     <tbody>

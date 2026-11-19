@@ -15,7 +15,7 @@ tontas); la selección vive en el JS de _pane.html.
     <input type="hidden" name="sort" value="{{ current_sort }}">
 </span>
 {% if items %}
-<table class="table table-sm table-hover align-middle mb-0 stack-mobile" id="inbox-table">
+<table class="table table-sm table-hover align-middle mb-0 stack-mobile" id="inbox-table" data-view-screen="inbox">
     <thead class="table-light">
         <tr>
             <th class="inbox-check-col">
@@ -23,7 +23,7 @@ tontas); la selección vive en el JS de _pane.html.
                        title="Marcar/desmarcar todos los visibles">
             </th>
             {% for column in sort_columns %}
-            <th>
+            <th data-col="{{ column.key }}" data-col-label="{{ column.label }}">
                 <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
                    hx-get="{% url 'panel:inbox_results' %}"
                    hx-target="#inbox-table-container"
@@ -39,7 +39,7 @@ tontas); la selección vive en el JS de _pane.html.
                 </a>
             </th>
             {% endfor %}
-            <th>Resultado</th>
+            <th data-col="result">Resultado</th>
         </tr>
     </thead>
     <tbody>

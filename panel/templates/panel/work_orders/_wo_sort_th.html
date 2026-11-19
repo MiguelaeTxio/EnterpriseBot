@@ -2,7 +2,7 @@
 {# S133 (directriz 4.24): cabecera ordenable de Partes Digitales. Clic: pasa a criterio principal  #}
 {# (o invierte su sentido si ya lo es); el superíndice es la prioridad del orden.                  #}
 {# Parámetros: col, label, mark (sort_headers.<col>: pos y dir, o vacío), title (opcional).        #}
-<th class="text-sm fw-semibold text-nowrap">
+<th class="text-sm fw-semibold text-nowrap" data-col="{{ col }}" data-col-label="{{ label }}">
     <a href="#" class="text-dark text-decoration-none sort-header-link" data-col="{{ col }}"{% if title %} title="{{ title }}"{% endif %}>
         {{ label }}
         {% if mark %}<span class="text-primary">{% if mark.dir == 'asc' %}▲{% else %}▼{% endif %}<sup>{{ mark.pos }}</sup></span>{% else %}<span class="text-muted opacity-50">▲</span>{% endif %}

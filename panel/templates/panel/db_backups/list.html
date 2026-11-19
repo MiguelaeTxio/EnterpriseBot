@@ -20,7 +20,8 @@ del estado actual. Vista: panel/views_db_backups.py.
     <div class="row g-2">
         <div class="col-lg-7">
             <div class="border rounded p-2 h-100">
-                <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                {% include "panel/_filter_panel_tabs.html" with fp="bk" %}
+                <div class="eb-filter-pane" data-filter-pane="filters">
                 <form id="bk-filters" autocomplete="off" onsubmit="return false;"
                       hx-get="{% url 'panel:db_backup_list_results' %}" hx-target="#bk-results"
                       hx-include="#bk-sort-inputs"
@@ -65,6 +66,11 @@ del estado actual. Vista: panel/views_db_backups.py.
                         </div>
                     </div>
                 </form>
+                </div>
+                {# S153: qué columnas se ven en el listado y en qué orden, con plantillas. #}
+                <div class="eb-filter-pane d-none" data-filter-pane="columns">
+                    {% include "panel/_view_columns_tab.html" with vc="bk" screen="db_backups" %}
+                </div>
             </div>
         </div>
 

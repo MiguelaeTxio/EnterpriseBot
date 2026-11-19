@@ -23,13 +23,13 @@ documentación": también en el móvil se ve la tabla con sus cabeceras
 ordenables y scroll lateral dentro de la lista, como Centros de gasto
 y Albaranes de Servicios.
 {% endcomment %}
-<table class="table table-hover table-light align-middle" id="clk-table">
+<table class="table table-hover table-light align-middle" id="clk-table" data-view-screen="clock_events">
     <thead class="table-light">
         <tr>
             <th class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input" id="clk-check-all" title="Seleccionar todos los que cumplen el filtro actual"></th>
             <th class="sticky-col sticky-col-2"></th>
             {% for column in sort_columns %}
-            <th class="{% if column.key == 'person' %}sticky-col sticky-col-3 sticky-col-last{% elif column.key == 'events' or column.key == 'issues' or column.key == 'ai' or column.key == 'cancelled' or column.key == 'overtime' or column.key == 'quota' or column.key == 'bag' %}text-end{% endif %}"{% if column.key == 'issues' %} title="Incidencias: llegada tarde, salida antes de hora, fichaje sin su pareja (entrada sin salida o al revés) y fichaje a más de 3 horas de su horario. El detalle del trabajador las explica una a una."{% endif %}>
+            <th class="{% if column.key == 'person' %}sticky-col sticky-col-3 sticky-col-last{% elif column.key == 'events' or column.key == 'issues' or column.key == 'ai' or column.key == 'cancelled' or column.key == 'overtime' or column.key == 'quota' or column.key == 'bag' %}text-end{% endif %}"{% if column.key == 'issues' %} title="Incidencias: llegada tarde, salida antes de hora, fichaje sin su pareja (entrada sin salida o al revés) y fichaje a más de 3 horas de su horario. El detalle del trabajador las explica una a una."{% endif %}{% if column.key != 'person' %} data-col="{{ column.key }}" data-col-label="{{ column.label }}"{% endif %}>
                 <a href="#" class="text-decoration-none text-dark"
                    hx-get="{% url 'panel:clock_events_results' %}"
                    hx-target="#clk-results"

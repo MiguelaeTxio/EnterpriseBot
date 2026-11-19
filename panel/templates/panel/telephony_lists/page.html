@@ -23,7 +23,8 @@ de personas o máquinas (como Copias de seguridad).
     <div class="row g-2">
         <div class="col-lg-7">
             <div class="border rounded p-2 h-100">
-                <div class="fw-bold small mb-1">Buscar y filtrar</div>
+                {% include "panel/_filter_panel_tabs.html" with fp="tl" %}
+                <div class="eb-filter-pane" data-filter-pane="filters">
                 <form id="{{ p }}-filters" autocomplete="off" onsubmit="return false;"
                       hx-get="{{ results_url }}" hx-target="#{{ p }}-results"
                       hx-include="#{{ p }}-sort-inputs"
@@ -56,6 +57,11 @@ de personas o máquinas (como Copias de seguridad).
                         </div>
                     </div>
                 </form>
+                </div>
+                {# S153: qué columnas se ven en el listado y en qué orden, con plantillas. #}
+                <div class="eb-filter-pane d-none" data-filter-pane="columns">
+                    {% include "panel/_view_columns_tab.html" with vc="tl" screen="telephony_lists" %}
+                </div>
             </div>
         </div>
         <div class="col-lg-5">

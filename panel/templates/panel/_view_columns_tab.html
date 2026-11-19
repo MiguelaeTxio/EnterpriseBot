@@ -81,6 +81,7 @@ Dos formas:
     let standard = [];
     let isAdmin = false;
     let saveTimer = null;
+    let loaded = false;
 
     function csrf() {
         const m = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/);
@@ -205,7 +206,15 @@ Dos formas:
             });
         });
     }
-    function applyAll() { tables().forEach(function (t) { applyTo(t, applied); }); }
+    function applyAll() {
+        // Un recuadro que ya no está (pestaña recargada) no toca nada.
+        if (!document.body.contains(root)) {
+            document.body.removeEventListener("htmx:afterSettle", applyAll);
+            return;
+        }
+        tables().forEach(function (t) { applyTo(t, applied); });
+        if (!catalog.length) { ensure(); }
+    }
     if (DOM_MODE) {
         document.body.addEventListener("htmx:afterSettle", applyAll);
         if (document.readyState === "loading") {
@@ -288,6 +297,12 @@ Dos formas:
                 $("global-wrap").classList.toggle("d-none", !isAdmin);
                 fillTemplates(data.view.template);
                 setColumns(data.view.current);
+                if (!catalog.length) {
+                    // Sin filas no hay tabla de la que leer las columnas:
+                    // se vuelve a intentar cuando se repinte con filas.
+                    loaded = false;
+                    message("Las columnas aparecen cuando el listado tiene alguna fila.", true);
+                }
             });
     }
 
@@ -342,8 +357,11 @@ Dos formas:
         }).catch(function () { message("Error de red: no se ha guardado.", true); });
     });
     // Se carga al abrir la pestaña "Columnas" por primera vez.
-    let loaded = false;
     function ensure() {
+        if (!document.body.contains(root)) {
+            document.removeEventListener("eb:filter-tab", ensure);
+            return;
+        }
         if (loaded || root.closest(".d-none")) { return; }
         loaded = true;
         load().catch(function () { message("No se han podido cargar las columnas.", true); });

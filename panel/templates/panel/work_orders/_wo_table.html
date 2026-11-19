@@ -24,7 +24,7 @@
     <input type="hidden" name="action" value="bulk_action">
     <input type="hidden" name="active_tab" value="{{ tab_key }}">
     <input type="hidden" name="back_url" value="{{ back_url }}">
-    <table class="table table-sm table-hover table-striped align-middle mb-0 wo-table">
+    <table class="table table-sm table-hover table-striped align-middle mb-0 wo-table" data-view-screen="work_orders">
         <thead>
             <tr>
                 {% if is_elevated %}
@@ -36,18 +36,18 @@
                 {% include "panel/work_orders/_wo_sort_th.html" with col="fecha" label="Fecha" mark=sort_headers.fecha %}
                 {% include "panel/work_orders/_wo_sort_th.html" with col="clock_in" label="Entrada" mark=sort_headers.clock_in title="Primera entrada del fichaje de ese día, redondeada" %}
                 {% include "panel/work_orders/_wo_sort_th.html" with col="clock_out" label="Salida" mark=sort_headers.clock_out title="Última salida del fichaje de ese día, redondeada" %}
-                <th class="text-sm fw-semibold">Bloques</th>
+                <th class="text-sm fw-semibold" data-col="bloques" data-col-label="Bloques">Bloques</th>
                 {% include "panel/work_orders/_wo_sort_th.html" with col="horas_totales" label="Horas" mark=sort_headers.horas_totales %}
                 {% include "panel/work_orders/_wo_sort_th.html" with col="horas_extra" label="H. Extra" mark=sort_headers.horas_extra %}
                 {% include "panel/work_orders/_wo_sort_th.html" with col="horas_festivas" label="H. Festivas" mark=sort_headers.horas_festivas title="Sábado, domingo o festivo del calendario de la base del trabajador" %}
-                <th class="text-sm fw-semibold">Dieta</th>
-                {% if show_pipeline_status %}<th class="text-sm fw-semibold">Estado</th>{% endif %}
+                <th class="text-sm fw-semibold" data-col="dieta" data-col-label="Dieta">Dieta</th>
+                {% if show_pipeline_status %}<th class="text-sm fw-semibold" data-col="estado" data-col-label="Estado">Estado</th>{% endif %}
                 {% if show_reviewed_badge %}
                 {% include "panel/work_orders/_wo_sort_th.html" with col="reviewed" label="Estado" mark=sort_headers.reviewed %}
                 {% endif %}
-                {% if show_reviewed_by %}<th class="text-sm fw-semibold">Revisado por</th>{% endif %}
-                {% if show_excel %}<th class="text-sm fw-semibold">Excel</th>{% endif %}
-                {% if show_origen %}<th class="text-sm fw-semibold">Origen</th>{% endif %}
+                {% if show_reviewed_by %}<th class="text-sm fw-semibold" data-col="revisado_por" data-col-label="Revisado por">Revisado por</th>{% endif %}
+                {% if show_excel %}<th class="text-sm fw-semibold" data-col="excel" data-col-label="Excel">Excel</th>{% endif %}
+                {% if show_origen %}<th class="text-sm fw-semibold" data-col="origen" data-col-label="Origen">Origen</th>{% endif %}
                 <th class="text-sm fw-semibold text-end"></th>
             </tr>
         </thead>
