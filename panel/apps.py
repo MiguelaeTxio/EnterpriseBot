@@ -33,6 +33,16 @@ class PanelConfig(AppConfig):
         uWSGI (la web) se cargan al arrancar el proceso, antes de
         atender a nadie; los comandos de manage.py no lo pagan.
         """
+        # S157: un guardado de estado de navegación descarta la caché de
+        # la petición (panel/navigation_persistence.py).
+        from django.db.models.signals import post_save
+
+        from panel.models import PanelNavigationState
+        from panel.navigation_persistence import forget_saved_states
+
+        post_save.connect(
+            forget_saved_states, sender=PanelNavigationState,
+            dispatch_uid="panel_forget_saved_states")
         try:
             import uwsgi  # noqa: F401  (solo existe dentro de uWSGI)
         except ImportError:

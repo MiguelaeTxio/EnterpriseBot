@@ -116,15 +116,11 @@ def sidebar_navigation_context(request):
     if company_user is None:
         return {}
 
-    from panel.models import PanelNavigationState
+    from panel.navigation_persistence import saved_state
 
-    nav_state = PanelNavigationState.objects.filter(
-        company_user=company_user, screen_key="sidebar",
-    ).first()
-    state = (
-        nav_state.state
-        if nav_state and isinstance(nav_state.state, dict) else {}
-    )
+    # S157: de la caché de la petición (navigation_persistence).
+    nav_state = saved_state(company_user, "sidebar")
+    state = nav_state if isinstance(nav_state, dict) else {}
 
     context = {}
     for acc_id in SIDEBAR_ACCORDION_IDS:
@@ -161,17 +157,13 @@ def documentation_sidebar_link_context(request):
 
     from django.urls import reverse
 
-    from panel.models import PanelNavigationState
+    from panel.navigation_persistence import saved_state
 
     default_href = reverse("panel:documentation_hub")
 
-    nav_state = PanelNavigationState.objects.filter(
-        company_user=company_user, screen_key="documentation_hub",
-    ).first()
-    state = (
-        nav_state.state
-        if nav_state and isinstance(nav_state.state, dict) else {}
-    )
+    # S157: de la caché de la petición (navigation_persistence).
+    nav_state = saved_state(company_user, "documentation_hub")
+    state = nav_state if isinstance(nav_state, dict) else {}
 
     last_person_pk = state.get("last_person_pk")
     if state.get("active_tab") == "personal" and last_person_pk:

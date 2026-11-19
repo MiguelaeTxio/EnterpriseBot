@@ -133,9 +133,9 @@ def _hub_tab(company_user):
     La pestaña que el hub de Documentación tiene recordada (la última
     en la que estuvo el usuario).
     """
-    state = PanelNavigationState.objects.filter(
-        company_user=company_user, screen_key=HUB_SCREEN_KEY,
-    ).values_list("state", flat=True).first()
+    from panel.navigation_persistence import saved_state
+
+    state = saved_state(company_user, HUB_SCREEN_KEY)
     tab = state.get("active_tab") if isinstance(state, dict) else ""
     return tab if isinstance(tab, str) else ""
 

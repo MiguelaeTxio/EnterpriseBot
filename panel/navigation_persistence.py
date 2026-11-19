@@ -23,9 +23,77 @@ guardadas por ese mismo usuario. "?reset=1" (el enlace de "limpiar
 filtros") guarda un estado vacío.
 """
 
+import contextvars
+import copy
+
 from panel.models import PanelNavigationState
 
 RESET_PARAM = "reset"
+
+# S157: el estado de navegación de cada usuario se leía con una consulta
+# por pantalla y clave, 6-11 veces en cada petición (filtros, selección,
+# columnas, anchos, menú lateral, pestaña del hub...). Durante una
+# petición (NavigationStateCacheMiddleware) se trae entero con una sola
+# consulta; cualquier guardado (post_save) lo descarta y la siguiente
+# lectura lo vuelve a traer.
+_STATES = contextvars.ContextVar("panel_navigation_states", default=None)
+
+
+def saved_state(company_user, screen_key):
+    """
+    The saved state of one screen for one user, or None.
+    ---
+    El estado guardado de una pantalla para un usuario, o None. Dentro
+    de una petición, todos los del usuario con una sola consulta; se
+    devuelve una copia (quien lo lea puede modificarlo sin tocar la
+    caché).
+    """
+    cache = _STATES.get()
+    if cache is None or company_user is None or company_user.pk is None:
+        return (
+            PanelNavigationState.objects
+            .filter(company_user=company_user, screen_key=screen_key)
+            .values_list("state", flat=True)
+            .first()
+        )
+    states = cache.get(company_user.pk)
+    if states is None:
+        states = dict(
+            PanelNavigationState.objects
+            .filter(company_user_id=company_user.pk)
+            .values_list("screen_key", "state")
+        )
+        cache[company_user.pk] = states
+    return copy.deepcopy(states.get(screen_key))
+
+
+def forget_saved_states(sender, instance, **kwargs):
+    """
+    post_save: drops the cached states of that user.
+    ---
+    post_save: descarta los estados en caché de ese usuario.
+    """
+    cache = _STATES.get()
+    if cache is not None:
+        cache.pop(instance.company_user_id, None)
+
+
+class NavigationStateCacheMiddleware:
+    """
+    One cache of navigation states per request.
+    ---
+    Una caché de estados de navegación por petición (saved_state).
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        token = _STATES.set({})
+        try:
+            return self.get_response(request)
+        finally:
+            _STATES.reset(token)
 
 
 def apply_list_navigation(request, screen_key, keys):
@@ -53,12 +121,7 @@ def apply_list_navigation(request, screen_key, keys):
         )
         return
 
-    saved = (
-        PanelNavigationState.objects
-        .filter(company_user=company_user, screen_key=screen_key)
-        .values_list("state", flat=True)
-        .first()
-    )
+    saved = saved_state(company_user, screen_key)
     filters = saved.get("filters") if isinstance(saved, dict) else None
     if not isinstance(filters, dict):
         return
@@ -97,12 +160,7 @@ def get_saved_state_key(company_user, screen_key, key, default=None):
     Devuelve una clave del estado de navegación guardado de una
     pantalla.
     """
-    saved = (
-        PanelNavigationState.objects
-        .filter(company_user=company_user, screen_key=screen_key)
-        .values_list("state", flat=True)
-        .first()
-    )
+    saved = saved_state(company_user, screen_key)
     if isinstance(saved, dict):
         return saved.get(key, default)
     return default

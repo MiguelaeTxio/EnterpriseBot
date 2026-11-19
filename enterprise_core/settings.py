@@ -159,6 +159,9 @@ MIDDLEWARE = [
     # S153: apunta las peticiones lentas (>3 s) con sus consultas en
     # logs/slow_requests.log, para ver qué hace lenta una página.
     'panel.slow_requests.SlowRequestLogMiddleware',
+    # S157: estado de navegación de cada usuario, una consulta por
+    # petición (panel/navigation_persistence.py).
+    'panel.navigation_persistence.NavigationStateCacheMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',

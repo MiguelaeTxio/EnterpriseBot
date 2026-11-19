@@ -32,13 +32,9 @@ STATE_PREFIX = "view_columns:"
 
 
 def _state(company_user, screen):
-    saved = (
-        PanelNavigationState.objects
-        .filter(company_user=company_user,
-                screen_key=STATE_PREFIX + screen.key)
-        .values_list("state", flat=True)
-        .first()
-    )
+    from panel.navigation_persistence import saved_state
+
+    saved = saved_state(company_user, STATE_PREFIX + screen.key)
     return saved if isinstance(saved, dict) else {}
 
 
@@ -262,13 +258,9 @@ def export_panel_columns(company_user, export_id, standard):
     spec = EXPORT_VIEWS.get(export_id)
     if spec is None:
         return list(standard)
-    saved = (
-        PanelNavigationState.objects
-        .filter(company_user=company_user,
-                screen_key=STATE_PREFIX + spec["view"])
-        .values_list("state", flat=True)
-        .first()
-    )
+    from panel.navigation_persistence import saved_state
+
+    saved = saved_state(company_user, STATE_PREFIX + spec["view"])
     chosen = saved.get("columns") if isinstance(saved, dict) else None
     if not isinstance(chosen, list) or not chosen:
         return list(standard)

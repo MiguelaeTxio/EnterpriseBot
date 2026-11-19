@@ -21,38 +21,27 @@ def view_columns_json(context, screen_key):
     Lista JSON de las columnas elegidas ([] = las de siempre).
     """
     from panel.list_columns import STATE_PREFIX
-    from panel.models import PanelNavigationState
+    from panel.navigation_persistence import saved_state
 
     request = context.get("request")
     company_user = getattr(getattr(request, "user", None),
                            "company_user", None)
     if company_user is None:
         return "[]"
-    state = (
-        PanelNavigationState.objects
-        .filter(company_user=company_user,
-                screen_key=STATE_PREFIX + screen_key)
-        .values_list("state", flat=True)
-        .first()
-    )
+    state = saved_state(company_user, STATE_PREFIX + screen_key)
     columns = state.get("columns") if isinstance(state, dict) else None
     return json.dumps(columns if isinstance(columns, list) else [])
 
 
 def _saved(context, screen_key):
-    from panel.models import PanelNavigationState
+    from panel.navigation_persistence import saved_state
 
     request = context.get("request")
     company_user = getattr(getattr(request, "user", None),
                            "company_user", None)
     if company_user is None:
         return {}
-    state = (
-        PanelNavigationState.objects
-        .filter(company_user=company_user, screen_key=screen_key)
-        .values_list("state", flat=True)
-        .first()
-    )
+    state = saved_state(company_user, screen_key)
     return state if isinstance(state, dict) else {}
 
 
