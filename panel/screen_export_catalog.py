@@ -381,6 +381,78 @@ def _record_value(field_name):
     return getter
 
 
+def _status_of(machine, key):
+    for status in machine.service_statuses:
+        if status.schedule.key == key:
+            return status
+    return None
+
+
+# S157 (Miguel Ángel: "saber qué revisiones tenemos constancia de que se
+# han hecho, en qué fecha y con qué horas o kilómetros, y las que faltan
+# para poder anotarlo a mano en un papel"). Por cada revisión del plan
+# (horas, grúa, km): la última anotada (fecha y valor) y su situación;
+# "No configurada" si la máquina no la tiene en el plan.
+_SERVICE_KINDS = (
+    ("HOURS", "horas", "Revisión por horas", "horas"),
+    ("CRANE", "grua", "Revisión de grúa", "horas de grúa"),
+    ("KM", "km", "Revisión por km", "km"),
+)
+
+
+def _kind_date(key):
+    def getter(machine):
+        status = _status_of(machine, key)
+        record = status.last_record if status else None
+        return record.service_date if record else None
+    return getter
+
+
+def _kind_value(key):
+    def getter(machine):
+        status = _status_of(machine, key)
+        return status.last_value if status else None
+    return getter
+
+
+def _kind_state(key):
+    def getter(machine):
+        status = _status_of(machine, key)
+        if status is None:
+            return "No configurada"
+        if status.last_record is None:
+            if status.undated_value_record is not None:
+                return "FALTA: revisión del %s sin %s anotadas" % (
+                    status.undated_value_record.service_date.strftime(
+                        "%d/%m/%Y"), "km" if key == "KM" else "horas")
+            return "FALTA: sin revisión anotada"
+        return _SERVICE_STATE.get(status.state, status.state)
+    return getter
+
+
+def _service_kind_columns():
+    columns = []
+    for key, slug, label, unit in _SERVICE_KINDS:
+        columns += [
+            Column("%s_fecha" % slug, "%s: fecha" % label, 12,
+                   _kind_date(key), DATE),
+            Column("%s_valor" % slug, "%s: %s" % (label, unit), 12,
+                   _kind_value(key)),
+            Column("%s_situacion" % slug, "%s: situación" % label, 24,
+                   _kind_state(key)),
+        ]
+    return tuple(columns)
+
+
+SERVICE_PAPER_COLUMNS = (
+    "codigo", "descripcion", "matricula",
+    "lectura_fecha", "lectura_horas", "lectura_horas_grua", "lectura_km",
+    "horas_fecha", "horas_valor", "horas_situacion",
+    "grua_fecha", "grua_valor", "grua_situacion",
+    "km_fecha", "km_valor", "km_situacion",
+    "a_mano_fecha", "a_mano_valor", "a_mano_notas",
+)
+
 SERVICE = register(Screen(
     key="service_tab",
     label="Revisiones",
@@ -420,6 +492,12 @@ SERVICE = register(Screen(
         Column("situacion", "Situación", 18, _service_situation),
         Column("estado_revisiones", "Estado de cada revisión", 60,
                _service_detail),
+    ) + _service_kind_columns() + (
+        # S157: casillas vacías para anotar a mano sobre el papel.
+        Column("a_mano_fecha", "Fecha (a mano)", 14, lambda m: None),
+        Column("a_mano_valor", "Horas / km (a mano)", 16, lambda m: None),
+        Column("a_mano_notas", "Observaciones (a mano)", 30,
+               lambda m: None),
     ),
     panel_columns=[
         "codigo", "familia", "descripcion", "matricula", "cada_horas",
