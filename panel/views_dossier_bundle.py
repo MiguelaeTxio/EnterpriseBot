@@ -322,6 +322,57 @@ def _download_response(subjects, output_format, skipped):
     return response
 
 
+# S154 (H23, invasora): prueba de punta a punta sin ningún paso manual.
+# Miguel Ángel: "otra prueba en la que no haya que aceptar nada [...]
+# totalmente automático". El navegador del agente no puede guardar una
+# descarga sin el diálogo de "Guardar"; con `action=exchange` el mismo
+# `.eml` va a la carpeta de intercambio de Drive con el modelo
+# (com-actions-relay), privado, y el modelo lo deja en el PC con el
+# puente del escritorio. Solo superusuario.
+ACTION_EXCHANGE = "exchange"
+EXCHANGE_FOLDER_ID = "1SSHSY2FHt-7eN17Wgza2Qcybs-ij6to0"
+
+
+def _exchange_response(request, subjects, output_format, skipped,
+                       company_user):
+    """
+    Upload the `.eml` to the Drive exchange folder (superuser only).
+
+    ---
+
+    Sube el `.eml` a la carpeta de intercambio de Drive con el modelo
+    (privado, nunca compartido) y devuelve su id. Solo superusuario.
+    """
+    import io
+    import uuid
+
+    from googleapiclient.http import MediaIoBaseUpload
+    from spare_parts.gdrive_service import get_drive_service
+
+    if not request.user.is_superuser:
+        return JsonResponse({"error": "Solo superusuario."}, status=403)
+    try:
+        data, size = build_bundle_eml(
+            subjects, output_format,
+            request.POST.get("body_html", "").strip(), company_user,
+        )
+    except DossierBuildError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+    name = "dosier_%s_%s.eml" % (
+        timezone.localdate().isoformat(), uuid.uuid4().hex[:8])
+    uploaded = get_drive_service().files().create(
+        body={"name": name, "parents": [EXCHANGE_FOLDER_ID]},
+        media_body=MediaIoBaseUpload(
+            io.BytesIO(data), mimetype="message/rfc822", resumable=False,
+        ),
+        fields="id",
+    ).execute()
+    return JsonResponse({
+        "file_id": uploaded["id"], "name": name, "size": size,
+        "skipped": skipped,
+    })
+
+
 class DossierBundleEmailView(DocsUploadAccessMixin, View):
     """
     GET: dossier templates for the modal. POST: the single `.eml`
@@ -364,6 +415,10 @@ class DossierBundleEmailView(DocsUploadAccessMixin, View):
             )
         if action == "download":
             return _download_response(subjects, output_format, skipped)
+        if action == ACTION_EXCHANGE:
+            return _exchange_response(
+                request, subjects, output_format, skipped, company_user,
+            )
         try:
             eml_bytes, size = build_bundle_eml(
                 subjects, output_format,
