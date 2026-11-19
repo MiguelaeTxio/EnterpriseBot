@@ -79,6 +79,11 @@ nueva son un acordeón (solo una abierta, guardada por usuario).
                 <div class="d-flex align-items-center gap-2 mb-1">
                     <strong class="small"><span id="svc-mass-count">0</span> seleccionados</strong>
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="svc-mass-clear">Limpiar</button>
+                    {# S153: informe de revisiones (Excel, PDF, HTML o imprimir), con plantillas. #}
+                    <button type="button" class="btn btn-sm btn-success ms-auto" data-bs-toggle="modal" data-bs-target="#svcExportModal"
+                            title="Exporta los marcados o, si no hay ninguno, todo lo que muestra el listado">
+                        <i class="bi bi-box-arrow-up me-1"></i>Exportar
+                    </button>
                 </div>
                 <div class="small text-muted fw-bold">Revisión cada… a los marcados</div>
                 {% if can_edit %}
@@ -412,3 +417,24 @@ nueva son un acordeón (solo una abierta, guardada por usuario).
     placeBarArrow();
 }());
 </script>
+{% url 'panel:service_tab_export' as svc_export_url %}
+{% include "panel/_screen_export_modal.html" with sx="svc" screen="service_tab" export_url=svc_export_url method="get" title="Exportar revisiones" %}
+<script>
+(function () {
+    "use strict";
+    // S153: lo que exporta el modal común: los marcados o, sin ninguno,
+    // todo el listado con sus filtros y orden guardados.
+    window.EbScreenExport = window.EbScreenExport || {};
+    window.EbScreenExport.svc = {
+        params: function () {
+            const ids = (document.getElementById("svc-selected-ids") || {}).value || "";
+            return ids.split(",").filter(Boolean).map(function (pk) { return ["selected", pk]; });
+        },
+        count: function () {
+            const ids = ((document.getElementById("svc-selected-ids") || {}).value || "").split(",").filter(Boolean);
+            return ids.length ? ids.length + " marcados" : "Todo el listado";
+        },
+    };
+}());
+</script>
+

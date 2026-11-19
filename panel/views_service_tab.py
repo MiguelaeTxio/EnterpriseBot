@@ -615,3 +615,39 @@ class ServiceBulkPlanView(CompanyUserRequiredMixin, View):
             if not fields:
                 updated = with_crane
         return JsonResponse({"ok": True, "updated": updated})
+
+
+class ServiceExportView(CompanyUserRequiredMixin, View):
+    """
+    GET: the Revisiones list to Excel, PDF, HTML or print.
+    ---
+    S153 (Miguel Ángel: "en la vista de revisiones falta la exportación
+    porque necesito sacar un informe"). Exporta lo que muestra el
+    listado con sus filtros y orden (o solo los marcados, `selected`),
+    con la plantilla elegida en el modal común.
+    """
+
+    def get(self, request):
+        from django.http import HttpResponse
+        from openpyxl import Workbook
+
+        from panel.export_formats import workbook_response
+        from panel.screen_exports import columns_for, get_screen, write_sheet
+
+        apply_list_navigation(request, SCREEN_KEY, FILTER_KEYS)
+        machines = _list_context(request)["machines"]
+        selected = {v for v in request.GET.getlist("selected") if v.isdigit()}
+        if selected:
+            machines = [m for m in machines if str(m.pk) in selected]
+        if not machines:
+            return HttpResponse("No hay ningún centro de gasto que exportar.",
+                                status=400)
+        columns = columns_for(request, get_screen("service_tab"))
+        if columns is None:
+            return HttpResponse("Plantilla no encontrada.", status=404)
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "REVISIONES"
+        write_sheet(sheet, columns, machines)
+        return workbook_response(request, workbook, "revisiones")
+

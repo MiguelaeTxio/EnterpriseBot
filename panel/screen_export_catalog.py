@@ -338,3 +338,94 @@ CREWS = register(Screen(
         "hasta",
     ],
 ))
+
+
+# S153 (Miguel Ángel: "en la vista de revisiones falta la exportación
+# porque necesito sacar un informe"). Revisiones del hub de
+# Documentación: una fila por centro de gasto, con su plan, la última
+# lectura y la última revisión y el estado de cada revisión. Los objetos
+# son MachineAsset anotados por panel/views_service_tab._annotate_rows.
+_SERVICE_STATE = {
+    "OVERDUE": "Vencida", "UPCOMING": "Próxima", "OK": "Al día",
+    "NO_RECORD": "Sin revisión anotada", "NO_READING": "Sin lectura",
+}
+_SERVICE_ORDER = ("OVERDUE", "UPCOMING", "NO_READING", "NO_RECORD", "OK")
+
+
+def _service_situation(machine):
+    states = [status.state for status in machine.service_statuses]
+    for state in _SERVICE_ORDER:
+        if state in states:
+            return _SERVICE_STATE[state]
+    return "Sin revisiones configuradas"
+
+
+def _service_detail(machine):
+    return "; ".join(
+        "%s: %s" % (status.schedule.label, status.status_text)
+        for status in machine.service_statuses
+    )
+
+
+def _last_value(attr, field_name):
+    def getter(machine):
+        row = getattr(machine, attr, None)
+        return getattr(row, field_name, None) if row is not None else None
+    return getter
+
+
+def _record_value(field_name):
+    def getter(machine):
+        record = machine.last_record
+        return getattr(record, field_name, None) if record else None
+    return getter
+
+
+SERVICE = register(Screen(
+    key="service_tab",
+    label="Revisiones",
+    columns=(
+        Column("codigo", "Código", 12, lambda m: m.code),
+        Column("familia", "Familia", 16, lambda m: m.family),
+        Column("descripcion", "Descripción", 30, lambda m: m.brand_model),
+        Column("tipo", "Tipo", 22, lambda m: m.type_name),
+        Column("matricula", "Matrícula", 12, lambda m: m.plate),
+        Column("empresa", "Empresa", 26, _short_company),
+        Column("activo", "Estado", 10,
+               lambda m: "Activo" if m.is_active else "Inactivo"),
+        Column("cada_horas", "Revisión cada (horas)", 12,
+               lambda m: m.service_hours_interval),
+        Column("cada_horas_grua", "Revisión cada (horas de grúa)", 14,
+               lambda m: m.service_crane_hours_interval),
+        Column("cada_km", "Revisión cada (km)", 12,
+               lambda m: m.service_every_km),
+        Column("lectura_fecha", "Última lectura", 12,
+               lambda m: m.last_reading_date, DATE),
+        Column("lectura_km", "Km (última lectura)", 12,
+               _last_value("last_km", "km")),
+        Column("lectura_horas", "Horas (última lectura)", 12,
+               _last_value("last_hours", "hours")),
+        Column("lectura_horas_grua", "Horas de grúa (última lectura)", 14,
+               _last_value("last_crane_hours", "crane_hours")),
+        Column("revision_fecha", "Última revisión", 12,
+               _record_value("service_date"), DATE),
+        Column("revision_horas", "Horas (última revisión)", 12,
+               _record_value("hours")),
+        Column("revision_horas_grua", "Horas de grúa (última revisión)", 14,
+               _record_value("crane_hours")),
+        Column("revision_km", "Km (última revisión)", 12,
+               _record_value("km")),
+        Column("revision_notas", "Observaciones (última revisión)", 30,
+               _record_value("notes")),
+        Column("situacion", "Situación", 18, _service_situation),
+        Column("estado_revisiones", "Estado de cada revisión", 60,
+               _service_detail),
+    ),
+    panel_columns=[
+        "codigo", "familia", "descripcion", "matricula", "cada_horas",
+        "cada_horas_grua", "cada_km", "lectura_fecha", "lectura_km",
+        "lectura_horas", "lectura_horas_grua", "revision_fecha",
+        "situacion", "estado_revisiones",
+    ],
+))
+

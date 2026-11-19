@@ -69,6 +69,7 @@ from panel.views_service_tab import (
     ServiceBulkPlanView,
     ServiceRowSaveView,
     ServiceTabPaneView,
+    ServiceExportView,
 )
 from panel.views_machine_workshop import (
     MachineWorkshopTasksExportView,
@@ -1499,6 +1500,12 @@ urlpatterns = [
         "documentacion/revisiones/plan/",
         ServiceBulkPlanView.as_view(),
         name="service_tab_bulk_plan",
+    ),
+    # S153: exportación de Revisiones (Excel, PDF, HTML, imprimir).
+    path(
+        "documentacion/revisiones/exportar/",
+        ServiceExportView.as_view(),
+        name="service_tab_export",
     ),
     # H30 (S135): repostajes del surtidor (GasoGes), formato 4.24.
     path(
