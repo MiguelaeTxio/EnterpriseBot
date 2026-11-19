@@ -512,6 +512,54 @@ def _time_in_tract(moment, tract) -> bool:
     return moment >= t_open or moment <= t_close
 
 
+def section_closed_reason(section_id: int):
+    """
+    Why the section cannot take a transfer right now, or None if open.
+    ---
+    S155 (llamada real del 19/11 a las 06:06: Gemini pasó a Yolanda fuera
+    de su horario pese a tenerlo en el contexto): mismo criterio que
+    _build_section_schedule_context, para que la transferencia lo
+    compruebe en el código. Devuelve None si la sección atiende ahora;
+    si no, el texto para Gemini con el horario de hoy.
+    """
+    from django.utils.timezone import localtime
+
+    section = (
+        Section.objects
+        .select_related('attention_schedule')
+        .prefetch_related('schedules', 'attention_schedule__days')
+        .get(pk=section_id)
+    )
+    if section.is_24h:
+        return None
+    local_now = localtime(now())
+    local_time = local_now.time()
+    if section.attention_schedule_id:
+        tracts = attention_tracts(
+            section.attention_schedule, local_now.date())
+        if any(_time_in_tract(local_time, t) for t in tracts):
+            return None
+        slots = ' y '.join(
+            f"{t_open:%H:%M}–{t_close:%H:%M}" for t_open, t_close in tracts)
+    else:
+        schedules_today = [
+            s for s in section.schedules.all()
+            if s.weekday == local_now.weekday()]
+        if any(s.time_open <= local_time <= s.time_close
+               for s in schedules_today):
+            return None
+        slots = ', '.join(
+            f"{s.time_open:%H:%M}–{s.time_close:%H:%M}"
+            for s in sorted(schedules_today, key=lambda s: s.time_open))
+    when = (f"Su horario de hoy es {slots}." if slots
+            else "Hoy no atiende.")
+    return (
+        f"No se ha transferido: la sección '{section.name}' está fuera de "
+        f"su horario en este momento. {when} Díselo al llamante; no "
+        "vuelvas a intentar la transferencia."
+    )
+
+
 def _build_breakdown_context(company) -> tuple[str, list[int]]:
     """
     Queries all active sections of the given company with

@@ -2725,6 +2725,11 @@ class VoiceOrchestrationService:
         # fija antes de llamar a _execute_transfer()
         # que establece
         # session_active=False.
+        # S155: fuera del horario de atención de la sección no se
+        # transfiere, aunque Gemini lo pida.
+        if await self._reject_transfer_if_closed(
+                session, fn_call, section_id):
+            return
         try:
             # H17 FIX (2026-07-09): ver nota en
             # route_to_section.
@@ -2786,6 +2791,46 @@ class VoiceOrchestrationService:
             "completado "
             f"(success={transfer_success})."
         )
+
+    async def _reject_transfer_if_closed(self, session, fn_call,
+                                         section_id: int) -> bool:
+        """
+        Refuses the transfer when the section is out of its hours.
+        ---
+        S155: si la sección está fuera de su horario de atención, responde
+        a Gemini con el horario de hoy, sin transferir, y devuelve True.
+        """
+        from asgiref.sync import sync_to_async
+        from ivr_config.services import section_closed_reason
+
+        try:
+            reason = await sync_to_async(section_closed_reason)(section_id)
+        except Exception as exc:
+            logger.error(
+                f"[PASO-39] No se pudo comprobar el horario de la sección "
+                f"pk={section_id}: {type(exc).__name__}: {exc}"
+            )
+            return False
+        if reason is None:
+            return False
+        logger.warning(
+            f"[PASO-39] Transferencia a la sección pk={section_id} "
+            "rechazada: fuera de horario."
+        )
+        try:
+            await session.send_tool_response(
+                function_responses=types.FunctionResponse(
+                    id=fn_call.id,
+                    name="transfer_to_section_contact",
+                    response={"success": False, "error": reason},
+                )
+            )
+        except Exception as exc:
+            logger.error(
+                "[PASO-39] No se pudo responder al rechazo por horario: "
+                f"{type(exc).__name__}: {exc}"
+            )
+        return True
 
     async def _receive_gemini_audio(self, session) -> None:
         """
