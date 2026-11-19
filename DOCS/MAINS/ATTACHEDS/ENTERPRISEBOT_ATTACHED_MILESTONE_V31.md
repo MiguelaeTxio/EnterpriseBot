@@ -4291,6 +4291,83 @@ introduciendo el mes de vencimiento."*
   vista de cancelar (que no debe llevarlo) y la de pendientes perdió la
   exención. El agente no recoge ninguna firma digital desde entonces.
 
+## COMPLETADAS EN S153 (sesión invasora; 12/11 → 19/11/2026, PEE PC)
+
+Sesión invasora sobre H31 en paralelo con S152 (principal), S149, S151,
+S154, S155 y S156. No se movió el hito EN PROGRESO ni se reescribió
+ninguna hoja de ruta. Arranque en `a49df94`. Lo de fichajes, partes,
+Solicitudes, Vacaciones, Horarios y Nóminas está también en V24 y lo de
+la centralita en V03.
+
+### 1. Formato común de las pestañas (directriz 4.27)
+- Un único recuadro «Grupos de selección» y un filtro «Grupo» común en
+  todas las pestañas (`9cfef10b`, `cbed5dc1`); bloque común de filtros
+  de personas Estado · Empresa · Grupo · Sección (`bb99e713`) llevado a
+  EPIs, Nóminas, Bandeja, Avisos, Accesorios, Repostajes y Revisiones.
+- Exportaciones a Excel con colores y exportación HTML interactiva en
+  todas las que tienen plantilla (`542a5d7b`, `8e63ef30`); Personal
+  se puede separar por empresa, sección o grupos, en colores o en
+  hojas (`4a3f9b6a`); Yolanda exporta como Miguel Ángel en lo que ve
+  (`690a67b2`).
+- Descargar un documento suelto desde las fichas de Personal y Centros
+  de gasto (`b8461cd9`).
+
+### 2. Centros de gasto (datos, a petición de Miguel Ángel)
+Grupos de máquinas a mano y por inferencia de los repostajes, sin tocar
+los hechos a mano (`0b107475`, `f3bfeef6`, `e8b40617`, `51931d05`,
+`56f84ccc`, `d41d8101`, `b47a0806`, `fce02066`, `52673581`,
+`5c409528`); «No pasa ITV» para las que no tienen matrícula de verdad y
+primera matriculación (`95d59031`, `96c44050`, `d275048a`).
+
+### 3. Firmas de empresa
+Acceso solo para Yolanda, Alejandro y Miguel Ángel. Agente v3/v4
+(certificados con huella, firma nativa con sello en todas las páginas,
+lotes cancelables, avisos de certificados con «No mostrar más") y la
+pestaña con el formato único de listados en cuatro listados
+(`c2eacaad`, `e9a55aa1`, `3e59dd11`, `16becd79`, `2d9a4137`,
+`2c3dec9e`). Reintentos de Gemini según Vertex AI (408/429/5xx con
+espera exponencial) y documentación en el maestro 4.1.3 (`7517fa05`).
+
+### 4. Equipos (vehículo + persona)
+Pestaña nueva en Documentación y contacto/teléfono de emergencia en la
+ficha de Personal (`21c0b6c1`, migraciones fleet 0041 y
+document_explorer 0226, aplicadas y comprobadas en BD).
+
+### 5. Despliegues
+Agrupación de pushes (45 s), pasos solo cuando hacen falta y recarga
+con 180 s y reintento (`dee7957c`, `1432e783`). Miguel Ángel decide
+seguir desplegando directo a producción.
+
+### 6. Tiempos de carga
+- Registro de peticiones lentas con sus consultas en
+  `logs/slow_requests.log`, desde 1 s (`2c46854a`, `6320d071`).
+- Personal: horarios en bloque (`aee33fcb`), recarga sin fin con «solo
+  la selección actual» corregida (`30e31973`) e índice
+  `docidx_domain_object` en el índice documental (`f1954a31`,
+  migración document_explorer 0227): resultados de 10-23 s a 1-2,5 s.
+- Fichajes: horarios y partes de todos en bloque (`74feb7b7`).
+- Cada proceso web carga las URLs al arrancar (`ccb87d3a`): las esperas
+  de 8-14 s eran siempre la primera petición tras una recarga.
+
+### 7. Listados configurables (todas las pestañas)
+- Pestaña «Columnas» en el recuadro de filtros: qué columnas se ven y
+  en qué orden, con las plantillas de la exportación; se guarda por
+  usuario (`f5a1bc1e`, `c9d3852e`, `c2a738f4`). Centros de gasto con
+  catálogo completo; el resto con las columnas de su tabla
+  (`panel/view_screens.py`).
+- Al exportar, «Vista del panel» sale elegida y es lo que se ve en el
+  listado; las plantillas anteriores siguen (`6dc273b2`).
+- Ancho de columna arrastrando el borde de la cabecera, separador
+  listado/selección y separador entre el panel de arriba y el listado,
+  guardados por usuario (`7e630016`, `ab580abc`).
+- Pantalla completa inservible por el separador, corregida (`ab580abc`).
+- Exportación de Revisiones (Excel, PDF, HTML, imprimir) (`11aeb649`).
+
+### Decisiones de Miguel Ángel en esta sesión
+- Todos los mensajes al usuario, siempre en castellano.
+- Firmas: solo Yolanda, Alejandro y Miguel Ángel.
+- Despliegue directo a producción, sin rama de integración.
+
 ## Hoja de Ruta S156 (va antes que la "Hoja de Ruta pendiente al reactivar H31", que sigue intacta)
 
 Miguel Ángel, al cerrar S152: *"abrir con el tema de las firmas"*.

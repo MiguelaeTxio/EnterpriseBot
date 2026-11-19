@@ -2185,3 +2185,26 @@ suya a 0211).
   se amplía con la carpeta de facturación en la invasora S151 (H28).
 - TIREA: Miguel Ángel lo aparca.
 
+### 7.19. COMPLETADAS EN S153 (sesión invasora sobre H31, 12/11 → 19/11/2026, PEE PC)
+
+Detalle general en V31 («COMPLETADAS EN S153»). Lo que toca a H24:
+- Fichajes: «Visar» en el panel de acciones y en la ficha, se visa
+  cualquier jornada; motivo «Corrección según albarán n.º(s)» con los
+  números del día (`b62d4c7b`, `9f76ee09`, `ec1e3f01`, `55eff93b`,
+  `ba6abc20`).
+- Albaranes de trabajo guardados en el cubo con copia digital completa
+  (`7c1a0916`, `d9f1defe`).
+- Partes separados de los fichajes; el parte corrige los fichajes como
+  los albaranes; salida fichada al final del día y cortesía en minutos
+  enteros (`d134e8cb`, `03ac03d2`, `0cacccfc`).
+- Solicitudes solo de documentos; el trabajador ve lo concedido;
+  Vacaciones registra ausencias con horas opcionales; el fichaje y «Mis
+  solicitudes» ya solo hablan de pedir documentos (`fa57e496`,
+  `802b9ed2`).
+- Nóminas sin scroll vertical arriba (`528d4e3b`).
+- Rendimiento: Fichajes lee horarios y partes de todos en bloque
+  (`74feb7b7`); Horarios con la caché de horarios en bloque (`aee33fcb`).
+- Columnas configurables, anchos y separadores también en Fichajes,
+  Solicitudes, Vacaciones, Horarios y Nóminas (`c2a738f4`, `7e630016`,
+  `ab580abc`).
+
