@@ -1097,9 +1097,13 @@ def _deduct_parte_lunch(company, user_id, shifts, entries=None):
             timezone.make_aware(datetime.datetime.combine(shift.day, t), tz)
             for t in lunch
         )
+        # S149 (19/11, Antonio Fontalba 06/11: "7:55" con 08:00-13:30 y
+        # 15:00-17:30 redondeados): la pausa se cruza con las horas
+        # redondeadas, las mismas con las que se cuenta lo trabajado; con
+        # las exactas (salió 13:31, volvió 14:56) se descontaban 4 min.
         overlap = (
-            min(shift.clock_out.pressed_at, lunch_to)
-            - max(shift.clock_in.pressed_at, lunch_from)
+            min(_rounded(shift.clock_out), lunch_to)
+            - max(_rounded(shift.clock_in), lunch_from)
         ).total_seconds()
         shift.lunch_seconds = max(int(overlap), 0)
 
