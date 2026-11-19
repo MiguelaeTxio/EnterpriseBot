@@ -38,7 +38,7 @@ desliza entera, sin columnas fijas (S123). Mismo formato en PC y móvil.
                 <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none lifting-sort-link"
                    hx-get="{% url 'panel:lifting_accessory_results' %}"
                    hx-target="#lifting-table-container"
-                   hx-include="#lifting-filter-search, #lifting-filter-type, #lifting-filter-status, #lifting-only-selected, #lifting-selected-ids"
+                   hx-include="#lifting-filter-search, #lifting-filter-type, #lifting-filter-group, #lifting-filter-status, #lifting-only-selected, #lifting-selected-ids"
                    hx-trigger="click"
                    hx-vals='{"sort": "{{ column.next }}"}'>
                     {{ column.label }}
