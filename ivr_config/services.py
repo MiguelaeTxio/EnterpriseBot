@@ -909,6 +909,13 @@ def build_live_config(
                     )
                 )
                 alia_mechanic_context = (
+                    # S155: el trabajador puede llamar por otro asunto.
+                    "LLAMANTE INTERNO: es un trabajador de la empresa. "
+                    "Puede llamar para reportar una averia o por otro "
+                    "asunto. Si es una averia, sigue el perfil de Alia de "
+                    "abajo. Si es otro asunto, atiendele como a cualquier "
+                    "llamante y pasale a la seccion que corresponda; no "
+                    "le hables de averias ni de tickets.\n\n"
                     "PERFIL DE ALIA - TECNICA DE FLOTA:\n"
                     "Eres Alia, tecnica de flota con mas de 20 anos de "
                     "experiencia en vehiculos industriales pesados: gruas, "
@@ -995,14 +1002,9 @@ def build_live_config(
                 breakdown_initial_greeting = (
                     f"El llamante acaba de conectar. Es un trabajador de la "
                     f"empresa llamado {_caller_display}. "
-                    f"Saludale por su nombre y comunícale directamente que "
-                    f"esta llamada va a generar un ticket de avería. "
-                    f"Dile que para abrirlo necesitas que te confirme: "
-                    f"el código o matrícula de la máquina, "
-                    f"la descripción de la avería "
-                    f"y su ubicación (base o ruta). "
-                    f"Pídele que comience cuando quiera. "
-                    f"Mantén un tono profesional y directo."
+                    f"Salúdale por su nombre y pregúntale si llama para "
+                    f"reportar una avería o por otro asunto. "
+                    f"Una sola frase, tono profesional y directo."
                 )
                 logger.info(
                     "[CONFIG] Llamante '%s' es Contact interno ('%s') — "
