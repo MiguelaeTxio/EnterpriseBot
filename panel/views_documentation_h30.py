@@ -3289,6 +3289,28 @@ def _dossier_subject_texts(subject):
     return lines, token
 
 
+def _dossier_entry_bytes(subject, entry):
+    """
+    Bytes of a dossier entry; a generated logbook goes as external book.
+
+    ---
+
+    Bytes de un documento del dosier. S154 (H23): un libro historial
+    generado por la plataforma es el libro interno (con los mecánicos y
+    el detalle de cada reparación); fuera de la empresa va siempre el
+    libro para externos (Miguel Ángel: "uno real [...] y otro de cara a
+    compartir con la calle", sin nombres de mecánicos y con familia y
+    subfamilia de la avería). Se genera al momento; los escaneados van
+    tal cual.
+    """
+    source = getattr(entry, "logbook_source", None)
+    if source is not None and source.kind == source.KIND_GENERATED:
+        from fleet.logbook_service import render_logbook_pdf
+
+        return render_logbook_pdf(source.machine, external=True)
+    return download_bytes(entry.bucket, entry.blob_name)
+
+
 def _build_dossier_pdf_bytes(person, entries, epi_deliveries=None):
     """
     H31 (S104). Extracted from _build_dossier_pdf_response (S103) so
@@ -3340,7 +3362,7 @@ def _build_dossier_pdf_bytes(person, entries, epi_deliveries=None):
             entry.document_type.get_person_family_display()
             if entry.document_type_id else "—"
         )
-        data = download_bytes(entry.bucket, entry.blob_name)
+        data = _dossier_entry_bytes(person, entry)
         pdf_bytes = convert_to_pdf_bytes(data, extension)
         if pdf_bytes is None:
             skipped_lines.append(
@@ -3481,7 +3503,7 @@ def _build_dossier_zip_bytes(person, entries, epi_deliveries=None):
                 )
                 suffix += 1
             used_names.add(arcname)
-            data = download_bytes(entry.bucket, entry.blob_name)
+            data = _dossier_entry_bytes(person, entry)
             zf.writestr(arcname, data)
 
     _lines, person_token = _dossier_subject_texts(person)
