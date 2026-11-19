@@ -228,7 +228,8 @@ def _build_section_system_instruction(section) -> str:
         "",
         "INSTRUCCIÓN DE TRANSFERENCIA — OBLIGATORIO:",
         "Cuando vayas a ejecutar una transferencia al responsable, SIEMPRE",
-        "pronuncia antes: \"Un momento por favor, no se retire.\"",
+        "di antes con quién le pasas: \"Le paso con la persona responsable "
+        f"de {section_name}. Un momento, por favor, no se retire.\"",
         "NUNCA ejecutes la transferencia sin despedirte verbalmente del llamante.",
         "",
         "IDIOMA — OBLIGATORIO:",
