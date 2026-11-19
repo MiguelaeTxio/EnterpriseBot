@@ -846,25 +846,42 @@ def _schedule_times_by_user(company, company_user_ids):
     nocturnos), si tiene horas previstas y los minutos de cortesía del
     horario (S149).
     """
+    from document_explorer.models import PersonIdentity
     from ivr_config.models import CompanyUser
-    from panel.views_operator import _resolve_operator_schedule
+    from panel.views_operator import bulk_schedule_cache
 
     result = {}
-    users = CompanyUser.objects.filter(
+    users = list(CompanyUser.objects.filter(
         pk__in=company_user_ids,
-    ).select_related("base")
-    for company_user in users:
-        schedule = _resolve_operator_schedule(company_user, company)
-        result[company_user.pk] = (
-            _times_of(schedule, company_user.base),
-            _day_rule(company_user, schedule),
-            # S144: con horario y no abierto, los días tienen horas
-            # previstas (bolsa de horas extras).
-            schedule is not None and not schedule.is_open,
-            # S149: minutos de cortesía del horario.
-            schedule.tolerance_minutes if schedule is not None else 0,
-        )
+    ).select_related("base"))
+    # S153: el horario de todos se resuelve con consultas en bloque
+    # (antes, ficha y ajustes de fichaje uno a uno por trabajador).
+    people = PersonIdentity.objects.filter(
+        company_user_id__in=[u.pk for u in users])
+    with bulk_schedule_cache(people, company):
+        for company_user in users:
+            result[company_user.pk] = _schedule_entry(company_user, company)
     return result
+
+
+def _schedule_entry(company_user, company):
+    """
+    The schedule tuple of one user for _schedule_times_by_user.
+    ---
+    La tupla de horario de un usuario (ver _schedule_times_by_user).
+    """
+    from panel.views_operator import _resolve_operator_schedule
+
+    schedule = _resolve_operator_schedule(company_user, company)
+    return (
+        _times_of(schedule, company_user.base),
+        _day_rule(company_user, schedule),
+        # S144: con horario y no abierto, los días tienen horas
+        # previstas (bolsa de horas extras).
+        schedule is not None and not schedule.is_open,
+        # S149: minutos de cortesía del horario.
+        schedule.tolerance_minutes if schedule is not None else 0,
+    )
 
 
 def _times_of(schedule, base=None):
@@ -1014,7 +1031,33 @@ def _range_bounds(date_from, date_to):
     return start, end
 
 
-def _deduct_parte_lunch(company, user_id, shifts):
+def _parte_entries(company, user_ids, days=None, date_from=None,
+                   date_to=None):
+    """
+    {user_id: [(work_date, no_lunch_break, lunch start, lunch end)]}.
+    ---
+    S153. Las líneas de parte de varios trabajadores en una consulta:
+    por días concretos o por un intervalo de fechas.
+    """
+    from work_order_processor.models import WorkOrderEntry
+
+    qs = WorkOrderEntry.objects.filter(
+        work_order__company=company,
+        work_order__uploaded_by_id__in=list(user_ids),
+    )
+    if days is not None:
+        qs = qs.filter(work_date__in=days)
+    else:
+        qs = qs.filter(work_date__gte=date_from, work_date__lte=date_to)
+    result = {}
+    for user_id, work_date, flag, start, end in qs.values_list(
+            "work_order__uploaded_by_id", "work_date", "no_lunch_break",
+            "lunch_break_start", "lunch_break_end"):
+        result.setdefault(user_id, []).append((work_date, flag, start, end))
+    return result
+
+
+def _deduct_parte_lunch(company, user_id, shifts, entries=None):
     """
     Set each shift's lunch_seconds from that day's parte.
 
@@ -1028,8 +1071,6 @@ def _deduct_parte_lunch(company, user_id, shifts):
     cae dentro de la jornada; sin parte, o con "No he parado a comer",
     no hay nada que descontar.
     """
-    from work_order_processor.models import WorkOrderEntry
-
     # S144: la jornada que ficha su pausa para comer ya la descuenta
     # (tipo que no cuenta como jornada); el parte no la descuenta otra vez.
     days = {shift.day for shift in shifts
@@ -1037,14 +1078,14 @@ def _deduct_parte_lunch(company, user_id, shifts):
     if not days:
         return
     lunches = {}
-    for work_date, lunch_start, lunch_end in WorkOrderEntry.objects.filter(
-        work_order__company=company,
-        work_order__uploaded_by_id=user_id,
-        work_date__in=days,
-        no_lunch_break=False,
-        lunch_break_start__isnull=False,
-        lunch_break_end__isnull=False,
-    ).values_list("work_date", "lunch_break_start", "lunch_break_end"):
+    if entries is None:
+        entries = _parte_entries(company, [user_id], days).get(user_id, [])
+    # S153: los partes llegan ya leídos de una vez para todo el listado
+    # (reports_by_user); antes eran dos consultas por trabajador.
+    for work_date, flag, lunch_start, lunch_end in entries:
+        if (work_date not in days or flag or lunch_start is None
+                or lunch_end is None):
+            continue
         if lunch_end > lunch_start:
             lunches.setdefault(work_date, (lunch_start, lunch_end))
     tz = timezone.get_current_timezone()
@@ -1133,7 +1174,7 @@ def _meal_taken(shift, day, kind):
     return taken
 
 
-def _parte_days(company, user_id, shifts):
+def _parte_days(company, user_id, shifts, entries=None):
     """
     (days with a parte, days whose parte says "No he parado a comer").
     ---
@@ -1141,8 +1182,6 @@ def _parte_days(company, user_id, shifts):
     he parado a comer" (S143: el parte es fiable; ahí no se descuenta
     la comida sin fichar).
     """
-    from work_order_processor.models import WorkOrderEntry
-
     days = {
         shift.day for shift in shifts
         if shift.clock_out is not None and shift.clock_in is not None
@@ -1150,11 +1189,11 @@ def _parte_days(company, user_id, shifts):
     if not days:
         return set(), set()
     with_parte, no_lunch = set(), set()
-    for work_date, flag in WorkOrderEntry.objects.filter(
-        work_order__company=company,
-        work_order__uploaded_by_id=user_id,
-        work_date__in=days,
-    ).values_list("work_date", "no_lunch_break"):
+    if entries is None:
+        entries = _parte_entries(company, [user_id], days).get(user_id, [])
+    for work_date, flag, _start, _end in entries:
+        if work_date not in days:
+            continue
         with_parte.add(work_date)
         if flag:
             no_lunch.add(work_date)
@@ -1364,6 +1403,8 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
             base__longitude__isnull=False,
         ).values_list("pk", "base__latitude", "base__longitude")
     }
+    partes = _parte_entries(company, list(grouped),
+                            date_from=date_from, date_to=date_to)
     reports = {}
     for user_id, user_events in grouped.items():
         report = PersonReport()
@@ -1405,8 +1446,10 @@ def reports_by_user(company, company_user_ids, date_from, date_to):
                 shift.expected_end = expected_start(
                     ends, shift.clock_out.pressed_at,
                 )
-        _deduct_parte_lunch(company, user_id, report.shifts)
-        with_parte, no_lunch = _parte_days(company, user_id, report.shifts)
+        _deduct_parte_lunch(company, user_id, report.shifts,
+                            partes.get(user_id, []))
+        with_parte, no_lunch = _parte_days(
+            company, user_id, report.shifts, partes.get(user_id, []))
         _deduct_missing_meals(
             report.shifts, no_lunch, with_parte,
             lambda day: len(times_of(day)[0]) >= 2,
