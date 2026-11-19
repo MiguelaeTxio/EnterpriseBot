@@ -37,3 +37,46 @@ def view_columns_json(context, screen_key):
     )
     columns = state.get("columns") if isinstance(state, dict) else None
     return json.dumps(columns if isinstance(columns, list) else [])
+
+
+def _saved(context, screen_key):
+    from panel.models import PanelNavigationState
+
+    request = context.get("request")
+    company_user = getattr(getattr(request, "user", None),
+                           "company_user", None)
+    if company_user is None:
+        return {}
+    state = (
+        PanelNavigationState.objects
+        .filter(company_user=company_user, screen_key=screen_key)
+        .values_list("state", flat=True)
+        .first()
+    )
+    return state if isinstance(state, dict) else {}
+
+
+@register.simple_tag(takes_context=True)
+def view_widths_json(context, screen_key):
+    """
+    JSON {column: px} of the widths the user set in a list.
+    ---
+    S153: los anchos de columna que el usuario ha puesto ({} = ninguno).
+    """
+    from panel.list_columns import STATE_PREFIX
+
+    widths = _saved(context, STATE_PREFIX + screen_key).get("widths")
+    return json.dumps(widths if isinstance(widths, dict) else {})
+
+
+@register.simple_tag(takes_context=True)
+def view_layout_split(context, key):
+    """
+    Saved width (%) of the list next to the selection, or "".
+    ---
+    S153: el ancho guardado (%) del listado junto a la selección.
+    """
+    from panel.list_columns import LAYOUT_PREFIX
+
+    split = _saved(context, LAYOUT_PREFIX + key).get("split")
+    return split if isinstance(split, (int, float)) else ""

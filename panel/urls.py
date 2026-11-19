@@ -58,7 +58,7 @@ from panel.screen_exports import (
     ScreenExportTemplateListView,
     ScreenExportTemplateSaveView,
 )
-from panel.list_columns import ViewColumnsSaveView
+from panel.list_columns import ViewColumnsSaveView, ViewLayoutSaveView
 from panel.views_refuels_export import (
     RefuelsExportTemplateDeleteView,
     RefuelsExportTemplateListView,
@@ -1556,6 +1556,12 @@ urlpatterns = [
         "vista/columnas/",
         ViewColumnsSaveView.as_view(),
         name="view_columns_save",
+    ),
+    # S153: ancho del listado junto a "Selección actual".
+    path(
+        "vista/disposicion/",
+        ViewLayoutSaveView.as_view(),
+        name="view_layout_save",
     ),
     path(
         "documentacion/repostajes/exportar/plantillas/",

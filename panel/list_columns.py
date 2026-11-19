@@ -141,21 +141,71 @@ class ViewColumnsSaveView(CompanyUserRequiredMixin, View):
         screen = get_screen(data.get("screen"))
         from panel.screen_exports import valid_keys
 
-        columns = [k for k in valid_keys(screen, data.get("columns") or [])
-                   if k not in screen.fixed]
-        if not columns:
-            return JsonResponse(
-                {"error": "Elige al menos una columna."}, status=400)
-        template = data.get("template")
         obj, _created = PanelNavigationState.objects.get_or_create(
             company_user=company_user,
             screen_key=STATE_PREFIX + screen.key,
             defaults={"state": {}},
         )
-        obj.state = {
-            "columns": columns,
-            "template": template if isinstance(template, int) else None,
-        }
+        state = obj.state if isinstance(obj.state, dict) else {}
+        if "widths" in data:
+            # S153: anchos de columna (arrastrando el borde de la
+            # cabecera), en píxeles; sin anchos = los de siempre.
+            widths = data.get("widths")
+            state["widths"] = {
+                k: int(v) for k, v in (
+                    widths.items() if isinstance(widths, dict) else [])
+                if valid_keys(screen, [k]) and isinstance(v, (int, float))
+                and 30 <= v <= 1200
+            }
+        if "columns" in data:
+            columns = [
+                k for k in valid_keys(screen, data.get("columns") or [])
+                if k not in screen.fixed]
+            if not columns:
+                return JsonResponse(
+                    {"error": "Elige al menos una columna."}, status=400)
+            template = data.get("template")
+            state["columns"] = columns
+            state["template"] = (
+                template if isinstance(template, int) else None)
+        obj.state = state
+        obj.save(update_fields=["state", "updated_at"])
+        return JsonResponse({"ok": True})
+
+
+LAYOUT_PREFIX = "view_layout:"
+
+
+class ViewLayoutSaveView(CompanyUserRequiredMixin, View):
+    """
+    POST (JSON) {key, split}: width of the list next to the selection.
+    ---
+    S153 (Miguel Ángel: "hacer crecer el panel de vista de selección y
+    el panel de vista de listado para poder hacerlos uno más ancho que
+    otro"). Guarda, por usuario y panel inferior (`key`, el id del
+    panel), el porcentaje de ancho del listado; null = el de siempre.
+    """
+
+    def post(self, request):
+        import re
+
+        try:
+            data = json.loads(request.body or b"{}")
+        except ValueError:
+            return JsonResponse({"error": "Datos no válidos."}, status=400)
+        key = data.get("key") or ""
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", key):
+            return JsonResponse({"error": "Panel no válido."}, status=400)
+        split = data.get("split")
+        if split is not None and not (
+                isinstance(split, (int, float)) and 15 <= split <= 95):
+            return JsonResponse({"error": "Ancho no válido."}, status=400)
+        obj, _created = PanelNavigationState.objects.get_or_create(
+            company_user=request.user.company_user,
+            screen_key=LAYOUT_PREFIX + key,
+            defaults={"state": {}},
+        )
+        obj.state = {"split": round(split, 1) if split else None}
         obj.save(update_fields=["state", "updated_at"])
         return JsonResponse({"ok": True})
 

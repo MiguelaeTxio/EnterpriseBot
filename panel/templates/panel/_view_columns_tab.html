@@ -23,7 +23,8 @@ Dos formas:
 {% load view_columns %}
 <div class="eb-view-columns" id="{{ vc }}-vcol" data-screen="{{ screen }}"
      data-refresh-el="{{ refresh_el }}" data-refresh-evt="{{ refresh_evt|default:'change' }}"
-     data-current='{% view_columns_json screen %}'>
+     data-current='{% view_columns_json screen %}'
+     data-widths='{% view_widths_json screen %}'>
     <div class="d-flex gap-1 align-items-center mb-1">
         <select class="form-select form-select-sm" id="{{ vc }}-vcol-template" aria-label="Plantilla de columnas"
                 title="Plantilla de columnas: las mismas que en Exportar.">
@@ -61,6 +62,11 @@ Dos formas:
 .eb-vcol-row .btn { padding: 0 .3rem; line-height: 1.2; }
 .eb-vcol-row.is-off label { color: var(--bs-secondary-color); }
 .eb-col-off { display: none !important; }
+/* S153: ancho de cada columna arrastrando el borde derecho de su cabecera. */
+:where(table[data-view-screen] th[data-col]) { position: relative; }
+.eb-col-grip { position: absolute; top: 0; right: -3px; width: 7px; height: 100%; cursor: col-resize; z-index: 3; }
+.eb-col-grip:hover, body.eb-col-resizing .eb-col-grip { background: rgba(13, 110, 253, .35); }
+body.eb-col-resizing { cursor: col-resize; user-select: none; }
 </style>
 <script>
 (function () {
@@ -206,22 +212,105 @@ Dos formas:
             });
         });
     }
+    // S153 (Miguel Ángel: "que en todas las pestañas el ancho de las
+    // columnas sea configurable también, con drag and drop"): cada
+    // cabecera con data-col lleva un asa en su borde derecho. Los anchos
+    // se guardan por usuario y pantalla; doble clic en el asa = el de
+    // siempre. Se aplican con una hoja de estilo por pantalla (por
+    // posición, recalculada tras cada reordenación o repintado).
+    let widths = {};
+    try { widths = JSON.parse(root.dataset.widths || "{}") || {}; } catch (e) { widths = {}; }
+    let widthTimer = null;
+    function widthSheet() {
+        const id = "eb-colw-" + root.dataset.screen;
+        let el = document.getElementById(id);
+        if (!el) {
+            el = document.createElement("style");
+            el.id = id;
+            document.head.appendChild(el);
+        }
+        return el;
+    }
+    function saveWidths() {
+        clearTimeout(widthTimer);
+        widthTimer = setTimeout(function () {
+            fetch(VIEW_URL, {
+                method: "POST",
+                headers: {"Content-Type": "application/json", "X-CSRFToken": csrf()},
+                body: JSON.stringify({screen: root.dataset.screen, widths: widths}),
+            }).catch(function () { /* se reintenta en el siguiente cambio */ });
+        }, 500);
+    }
+    function addGrip(th) {
+        if (th.querySelector(":scope > .eb-col-grip")) { return; }
+        const grip = document.createElement("span");
+        grip.className = "eb-col-grip";
+        grip.title = "Arrastra para cambiar el ancho. Doble clic: el de siempre.";
+        th.appendChild(grip);
+        grip.addEventListener("click", function (ev) { ev.preventDefault(); ev.stopPropagation(); });
+        grip.addEventListener("dblclick", function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            delete widths[th.dataset.col];
+            applyWidths();
+            saveWidths();
+        });
+        grip.addEventListener("mousedown", function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            const x0 = ev.clientX;
+            const w0 = th.getBoundingClientRect().width;
+            document.body.classList.add("eb-col-resizing");
+            function move(e) {
+                widths[th.dataset.col] = Math.max(40, Math.min(1200, Math.round(w0 + e.clientX - x0)));
+                applyWidths();
+            }
+            function up() {
+                document.removeEventListener("mousemove", move);
+                document.removeEventListener("mouseup", up);
+                document.body.classList.remove("eb-col-resizing");
+                saveWidths();
+            }
+            document.addEventListener("mousemove", move);
+            document.addEventListener("mouseup", up);
+        });
+    }
+    function applyWidths() {
+        const sel = 'table[data-view-screen="' + root.dataset.screen + '"]';
+        let css = "";
+        const table = tables()[0];
+        if (table && table.tHead && table.tHead.rows[0]) {
+            Array.from(table.tHead.rows[0].cells).forEach(function (th, index) {
+                const key = th.dataset.col;
+                if (!key) { return; }
+                addGrip(th);
+                const w = widths[key];
+                if (!w) { return; }
+                const n = ":nth-child(" + (index + 1) + ")";
+                css += sel + " > thead > tr > " + n + ", " + sel + " > tbody > tr > " + n +
+                    " { width: " + w + "px; min-width: " + w + "px; max-width: " + w +
+                    "px; overflow: hidden; text-overflow: ellipsis; }\n";
+            });
+        }
+        widthSheet().textContent = css;
+    }
     function applyAll() {
         // Un recuadro que ya no está (pestaña recargada) no toca nada.
         if (!document.body.contains(root)) {
             document.body.removeEventListener("htmx:afterSettle", applyAll);
             return;
         }
-        tables().forEach(function (t) { applyTo(t, applied); });
-        if (!catalog.length) { ensure(); }
-    }
-    if (DOM_MODE) {
-        document.body.addEventListener("htmx:afterSettle", applyAll);
-        if (document.readyState === "loading") {
-            document.addEventListener("DOMContentLoaded", applyAll);
-        } else {
-            setTimeout(applyAll, 0);
+        if (DOM_MODE) {
+            tables().forEach(function (t) { applyTo(t, applied); });
+            if (!catalog.length) { ensure(); }
         }
+        applyWidths();
+    }
+    document.body.addEventListener("htmx:afterSettle", applyAll);
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", applyAll);
+    } else {
+        setTimeout(applyAll, 0);
     }
     function refreshTable() {
         if (DOM_MODE) { applied = chosen(); applyAll(); return; }

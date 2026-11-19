@@ -18,7 +18,13 @@ arriba (filtros y acciones) se pliega tras un botón "Filtros y
 acciones", cerrado al entrar, para que la lista se vea a la primera.
 En el ordenador el botón no existe y el panel no cambia.
 {% endcomment %}
+{% load view_columns %}
 <style>
+/* S153: separador arrastrable entre el listado y "Selección actual". */
+.eb-split-handle { position: absolute; top: 0; bottom: 0; width: 10px; margin-left: -5px; cursor: col-resize; z-index: 5; }
+.eb-split-handle::after { content: ""; position: absolute; top: 50%; left: 3px; width: 4px; height: 48px; margin-top: -24px; border-radius: 2px; background: var(--bs-border-color); }
+.eb-split-handle:hover::after, body.eb-split-resizing .eb-split-handle::after { background: var(--bs-primary); height: 100%; top: 0; margin-top: 0; }
+body.eb-split-resizing { cursor: col-resize; user-select: none; }
 .fixed-list-scroll thead th {
     position: sticky;
     top: 0;
@@ -122,6 +128,80 @@ En el ordenador el botón no existe y el panel no cambia.
         });
         topPanel.parentNode.insertBefore(toggle, topPanel);
     }
+
+    // S153 (Miguel Ángel: "hacer crecer el panel de vista de selección
+    // y el panel de vista de listado para poder hacerlos uno más ancho
+    // que otro"). Si el panel inferior es una fila con dos columnas
+    // (listado y "Selección actual"), entre ellas va un separador que se
+    // arrastra; el reparto se guarda por usuario y panel. Doble clic: el
+    // de siempre. Solo en pantallas de 992 px o más.
+    (function () {
+        const row = bottomPanel.querySelector(":scope > .row");
+        if (!row || row.dataset.split) { return; }
+        const cols = Array.from(row.children).filter(function (el) {
+            return /\bcol-/.test(el.className);
+        });
+        if (cols.length !== 2) { return; }
+        row.dataset.split = "1";
+        row.style.position = "relative";
+        const SAVE_URL = "{% url 'panel:view_layout_save' %}";
+        const KEY = "{{ bottom_id|escapejs }}";
+        let split = parseFloat("{% view_layout_split bottom_id %}") || null;
+        const handle = document.createElement("div");
+        handle.className = "eb-split-handle d-none d-lg-block";
+        handle.title = "Arrastra para ensanchar el listado o la selección. Doble clic: como estaba.";
+        row.appendChild(handle);
+        function csrf() {
+            const m = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/);
+            return m ? decodeURIComponent(m[1]) : "";
+        }
+        function apply() {
+            cols.forEach(function (col, index) {
+                if (split && window.innerWidth >= 992) {
+                    const pct = index === 0 ? split : 100 - split;
+                    col.style.flex = "0 0 " + pct + "%";
+                    col.style.maxWidth = pct + "%";
+                } else {
+                    col.style.flex = "";
+                    col.style.maxWidth = "";
+                }
+            });
+            handle.style.left = cols[1].offsetLeft + "px";
+        }
+        function save() {
+            fetch(SAVE_URL, {
+                method: "POST",
+                headers: {"Content-Type": "application/json", "X-CSRFToken": csrf()},
+                body: JSON.stringify({key: KEY, split: split}),
+            }).catch(function () { /* se guarda en el siguiente cambio */ });
+        }
+        handle.addEventListener("mousedown", function (ev) {
+            ev.preventDefault();
+            document.body.classList.add("eb-split-resizing");
+            function move(e) {
+                const box = row.getBoundingClientRect();
+                split = Math.max(15, Math.min(95, Math.round((e.clientX - box.left) / box.width * 1000) / 10));
+                apply();
+            }
+            function up() {
+                document.removeEventListener("mousemove", move);
+                document.removeEventListener("mouseup", up);
+                document.body.classList.remove("eb-split-resizing");
+                save();
+                recompute();
+            }
+            document.addEventListener("mousemove", move);
+            document.addEventListener("mouseup", up);
+        });
+        handle.addEventListener("dblclick", function () {
+            split = null;
+            apply();
+            save();
+        });
+        window.addEventListener("resize", apply);
+        if (window.ResizeObserver) { new ResizeObserver(apply).observe(row); }
+        apply();
+    }());
 
     let observer = null;
     window.addEventListener("resize", recompute);
