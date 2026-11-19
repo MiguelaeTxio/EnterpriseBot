@@ -1767,6 +1767,48 @@ empezar**.
 Se deja esta sección tal cual como registro histórico de cómo se
 originó, sin más acción pendiente aquí.
 
+### COMPLETADAS EN S154 (sesión invasora)
+
+**Codificación de los `.eml` del panel (commit `33b1ff4`).**
+
+- **Síntoma** (prueba real de Miguel Ángel, 19/11/2026): los `.eml` de
+  dosier abiertos en Outlook clásico y enviados llegaban con el cuerpo
+  HTML roto -- `de:=/p>`, `<==Quedamos`, `sal=do` (dosier de la A29);
+  `<=ul>`, `U= saludo` (dosier de la A35). El PDF adjunto llegaba bien.
+- **Causa** (comprobada en local): `email.message.EmailMessage` codifica
+  el HTML en quoted-printable, que corta las líneas largas con un salto
+  blando `=` al final de la línea. `bytes(msg)` serializa con la política
+  por defecto, con saltos LF (`=\n`). Outlook espera CRLF: toma `=\n`
+  como un escape `=XY` y se come el salto y el carácter siguiente
+  (`sal=\nudo` acaba como `sal=do`).
+- **Arreglo:** función común `panel/eml_utils.py::eml_bytes(msg)` →
+  `msg.as_bytes(policy=msg.policy.clone(linesep="\r\n"))`, usada en los
+  tres sitios que generan `.eml`: `build_bundle_eml`
+  (`panel/views_dossier_bundle.py`) y los dos de
+  `panel/views_documentation_h30.py` (antes líneas 6811 y 6954).
+- **Test de regresión** `panel/test_eml_utils.py` (cuerpo HTML largo con
+  tildes y lista): ningún `\n` sin `\r` delante, y el cuerpo HTML
+  decodificado con `email.message_from_bytes(..., policy=default)` es
+  idéntico al original. Con la serialización antigua el mismo mensaje
+  tenía 85 saltos LF sueltos.
+- **Verificación pendiente en producción** (Miguel Ángel): en
+  Documentación > Centros de gasto, generar el correo de la A35 con la
+  plantilla «DOCUMENTACION MAQUINARIA», abrirlo en Outlook clásico y
+  comprobar que el cuerpo sale limpio («Un saludo.», lista cerrada, sin
+  `=`).
+
+**Contexto (trabajo de otra sesión, anotado aquí a petición de Miguel
+Ángel):**
+
+- Se creó la plantilla de maquinaria «DOCUMENTACION MAQUINARIA» (id 11,
+  11 tipos), que reproduce el envío histórico «DOCUMENTACIÓN MAQUINARIA
+  A-61». La «Inscripción RGM» se ha asimilado al tipo RAE: **pendiente
+  de confirmar**.
+- La A-61 no tiene en el panel ningún documento vigente de esos tipos:
+  **posible tarea de carga o clasificación**, abierta.
+- Flujo validado de punta a punta: petición → plantilla en el panel →
+  `.eml` → envío desde Outlook clásico con el adjunto incluido.
+
 ---
 
 ## 6. Registro de Sesiones
