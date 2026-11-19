@@ -375,7 +375,8 @@ def match_person(people, written):
     apellido que coincide (entero o abreviado, _abbreviates) suma 2 y
     cada palabra del nombre 1; vale el único que más suma, y siempre con
     algún apellido. Solo con el nombre de pila, o con un empate, no se
-    adivina: queda "Sin trabajador".
+    adivina: queda "Sin trabajador" (S149: salvo que lo escrito sea el
+    mote de uno solo, _by_nickname).
     """
     words = _plain(written)
     if not words:
@@ -393,8 +394,21 @@ def match_person(people, written):
     scored.sort(key=lambda item: -item[0])
     if not scored or scored[0][0] < _SURNAME_WEIGHT or (
             len(scored) > 1 and scored[1][0] == scored[0][0]):
-        return None
+        return _by_nickname(people, words)
     return scored[0][1]
+
+
+def _by_nickname(people, words):
+    """
+    The only worker whose nickname is the written name, or None.
+    ---
+    S149 (19/11, albaranes firmados «Leo»): sin apellido, vale el mote de
+    la ficha si es exactamente lo escrito y solo lo tiene uno.
+    """
+    found = [p for p in people
+             if (getattr(p, "nickname", "") or "").strip()
+             and _plain(p.nickname) == words]
+    return found[0] if len(found) == 1 else None
 
 
 def read_batch(batch):
