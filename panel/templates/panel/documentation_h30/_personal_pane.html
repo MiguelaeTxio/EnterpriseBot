@@ -266,7 +266,7 @@ pantalla completa aparte, no un fragmento htmx de este pane.
                         </button>
                         {# S149 (18/11): a quien ya entra en el panel, la circular sin tocar su contraseña. #}
                         <button type="button" class="btn btn-sm btn-outline-secondary" id="person-mass-access-send" disabled
-                                title="Envía por WhatsApp la circular Alta en el fichaje a los marcados sin cambiarles la contraseña ni quitarles los dispositivos de confianza (para quien ya entra en el panel con la suya).">
+                                title="Para quien ya entra en el panel: envía por WhatsApp la circular «Alta en el fichaje (ya con usuario del panel)», que le dice que entre con su contraseña de siempre; no se le cambia la contraseña ni se le quitan los dispositivos de confianza.">
                             <i class="bi bi-send me-1"></i>Enviar el alta sin cambiar la contraseña
                         </button>
                     </div>
@@ -1572,7 +1572,7 @@ las filas de debajo se desplacen de verdad.
         resendBtn.addEventListener('click', async function () {
             if (selection.size === 0) return;
             if (!(await personMassConfirm(keep
-                ? 'Enviar el alta en el fichaje sin cambiar la contraseña: solo se envía la circular por WhatsApp; su contraseña y sus dispositivos de confianza no se tocan.'
+                ? 'Enviar el alta en el fichaje sin cambiar la contraseña: se envía por WhatsApp la circular para quien ya tiene usuario del panel (entra con su contraseña); su contraseña y sus dispositivos de confianza no se tocan.'
                 : 'Reenviar el alta en el fichaje: se les vuelve a poner la contraseña de las 4 últimas cifras del DNI y se les quitan los dispositivos de confianza.'))) return;
             const formData = new FormData();
             selection.forEach((pk) => formData.append('person_ids', pk));

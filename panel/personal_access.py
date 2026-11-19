@@ -277,6 +277,9 @@ def create_access(person, username, section, base, role, by):
 # ---------------------------------------------------------------------------
 
 ONBOARDING_CIRCULAR = "ALTA_FICHAJE"
+# S149 (19/11): la misma alta para quien ya tiene usuario del panel (sin
+# la contraseña del DNI: entra con la suya).
+ONBOARDING_CIRCULAR_PANEL = "ALTA_FICHAJE_PANEL"
 ONBOARDING_NO_USER = "no_user"
 ONBOARDING_NO_PHONE = "no_phone"
 ONBOARDING_NOT_SENT = "not_sent"
@@ -365,7 +368,8 @@ def onboarding_states(people):
     sent_by_person = dict(
         DocumentAcknowledgment.objects.filter(
             person_id__in=pks,
-            document_type__code=ONBOARDING_CIRCULAR,
+            document_type__code__in=(ONBOARDING_CIRCULAR,
+                                     ONBOARDING_CIRCULAR_PANEL),
             channel=DocumentAcknowledgment.CHANNEL_WHATSAPP,
         ).order_by().values("person_id").annotate(last=Max("created_at"))
         .values_list("person_id", "last"))
@@ -439,8 +443,9 @@ def resend_onboarding(person, keep_password=False):
     Devuelve (True, "") o (False, motivo).
 
     S149 (Miguel Ángel, 18/11, Jerónimo ya tiene acceso): con
-    `keep_password` solo se envía la circular; no se tocan ni su
-    contraseña ni sus dispositivos de confianza.
+    `keep_password` se envía la circular ALTA_FICHAJE_PANEL (entra con
+    su contraseña) y no se tocan ni su contraseña ni sus dispositivos
+    de confianza.
     """
     from document_explorer.models import (
         DocumentAcknowledgment,
@@ -459,10 +464,11 @@ def resend_onboarding(person, keep_password=False):
         return False, "no tiene DNI con cifras para la contraseña"
     if not mobile_of(person):
         return False, "sin teléfono 1 (de empresa)"
+    code = ONBOARDING_CIRCULAR_PANEL if keep_password else ONBOARDING_CIRCULAR
     circular = DocumentTypeCatalog.objects.filter(
-        code=ONBOARDING_CIRCULAR, is_active=True).first()
+        code=code, is_active=True).first()
     if circular is None:
-        return False, "no existe la circular Alta en el fichaje"
+        return False, "no existe la circular %s" % code
     ack = DocumentAcknowledgment.objects.create(
         person=person,
         document_type=circular,
