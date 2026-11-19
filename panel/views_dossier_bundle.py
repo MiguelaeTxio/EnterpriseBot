@@ -55,6 +55,7 @@ from django.views import View
 from document_explorer.models import PersonalDossierTemplate, PersonIdentity
 from document_management.pdf_merge_service import merge_pdfs
 from fleet.models import MachineAsset
+from panel.eml_utils import eml_bytes
 from panel.mixins import DocsUploadAccessMixin
 from panel.views_documentation_h30 import (
     DossierBuildError,
@@ -291,7 +292,7 @@ def build_bundle_eml(subjects, output_format, body_html, sender_company_user):
             data, maintype=maintype, subtype=subtype, filename=filename,
         )
         size += len(data)
-    return bytes(msg), size
+    return eml_bytes(msg), size
 
 
 def _download_response(subjects, output_format, skipped):

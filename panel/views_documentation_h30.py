@@ -84,6 +84,7 @@ from document_management.vigencia_service import (
 from fleet.models import MachineAsset
 from hr_calendar.models import AbsencePeriod, VacationPeriod
 from ivr_config.models import Company, CompanyUser, Section, WorkPeriod
+from panel.eml_utils import eml_bytes
 from panel.mixins import (
     CompanyUserRequiredMixin, DocsUploadAccessMixin, FleetAccessMixin,
 )
@@ -6808,7 +6809,7 @@ def _build_notification_eml(person, document_type):
             )
 
     filename = f"notificacion_{document_type.code.lower()}_{person.pk}.eml"
-    return bytes(msg), filename
+    return eml_bytes(msg), filename
 
 
 def _default_dossier_body_html(person, document_count):
@@ -6951,7 +6952,7 @@ def _build_dossier_notification_eml(
     )
 
     filename = f"dossier_notificacion_{person.pk}.eml"
-    return bytes(msg), filename
+    return eml_bytes(msg), filename
 
 
 class PersonalNotificationSendView(DocsUploadAccessMixin, View):
