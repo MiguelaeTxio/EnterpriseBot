@@ -3975,7 +3975,7 @@ class VoiceOrchestrationService:
         Answers a function call made before the caller has spoken.
         ---
         S155: responde a una función invocada antes de que el llamante haya
-        hablado, sin ejecutarla, pidiendo al modelo que salude y espere.
+        hablado, sin ejecutarla y sin que el modelo genere otro turno.
         """
         logger.warning(
             f"[GREETING-FIRST] '{fn_call.name}' invocada antes de que hable "
@@ -3988,17 +3988,20 @@ class VoiceOrchestrationService:
                     name=fn_call.name,
                     response={
                         "success": False,
-                        # S155: sin pedir "saluda ahora" (llamada real
-                        # de las 10:59: el saludo salió dos veces).
                         "error": (
                             "No se ha ejecutado: el llamante todavía no ha "
-                            "hablado. Si aún no has dicho el saludo, dilo "
-                            "una sola vez; si ya lo has dicho, no lo "
-                            "repitas y espera en silencio a que hable el "
-                            "llamante. No invoques ninguna función hasta "
-                            "entonces."
+                            "hablado. Invoca las funciones solo después de "
+                            "que hable."
                         ),
                     },
+                    # S155: SILENT. Las funciones no bloquean en este
+                    # modelo: el saludo ya está sonando mientras llega la
+                    # llamada a la función, y una respuesta sin
+                    # scheduling abre otro turno en el que el modelo
+                    # vuelve a saludar (llamada real del 19/11 a las
+                    # 06:06: dos saludos seguidos). Con SILENT la
+                    # respuesta entra en el contexto sin generar nada.
+                    scheduling=types.FunctionResponseScheduling.SILENT,
                 )
             )
         except Exception as exc:
