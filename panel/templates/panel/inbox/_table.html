@@ -14,7 +14,7 @@ tontas); la selección vive en el JS de _pane.html.
 <span id="inbox-sort-inputs" class="d-none">
     <input type="hidden" name="sort" value="{{ current_sort }}">
 </span>
-{% if items %}
+{# S157: con la tabla siempre pintada, «Columnas» conoce sus nombres aunque no haya filas. #}
 <table class="table table-sm table-hover align-middle mb-0 stack-mobile" id="inbox-table" data-view-screen="inbox">
     <thead class="table-light">
         <tr>
@@ -74,11 +74,10 @@ tontas); la selección vive en el JS de _pane.html.
             <td data-label="Subido por">{{ item.uploaded_by_label|default:"—" }}</td>
             <td class="inbox-reason" data-label="Resultado">{{ item.reason|default:"" }}</td>
         </tr>
+        {% empty %}
+        <tr class="eb-empty-row"><td colspan="99" class="border-0"><div class="text-muted small p-3">
+    {% if is_filtered %}Ningún archivo coincide con el filtro.{% else %}Todavía no se ha subido nada.{% endif %}
+</div></td></tr>
         {% endfor %}
     </tbody>
 </table>
-{% else %}
-<div class="text-muted small p-3">
-    {% if is_filtered %}Ningún archivo coincide con el filtro.{% else %}Todavía no se ha subido nada.{% endif %}
-</div>
-{% endif %}

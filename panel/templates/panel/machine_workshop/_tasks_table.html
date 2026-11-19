@@ -10,7 +10,7 @@ Al pie, fija abajo, la fila de totales de lo listado (horas
 ordinarias, extra, festivas, horas, repuestos e importe). "Ver el
 parte" abre el documento de solo lectura, nunca la vista de edición.
 {% endcomment %}
-{% if rows %}
+{# S157: con la tabla siempre pintada, «Columnas» conoce sus nombres aunque no haya filas. #}
 <table class="table table-sm table-hover align-middle mb-0 small" id="mw-table" data-view-screen="workshop_tasks_list">
     <thead class="table-light">
         <tr>
@@ -74,8 +74,14 @@ parte" abre el documento de solo lectura, nunca la vista de edición.
                 {% endif %}
             </td>
         </tr>
+        {% empty %}
+        <tr class="eb-empty-row"><td colspan="99" class="border-0"><div class="text-center text-muted py-5">
+    <i class="bi bi-tools fs-1 d-block mb-2 opacity-25"></i>
+    <p class="mb-0">No hay tareas de parte que coincidan con los filtros aplicados.</p>
+</div></td></tr>
         {% endfor %}
     </tbody>
+    {% if rows %}
     <tfoot class="mw-totals">
         <tr class="fw-semibold">
             <td></td>
@@ -96,13 +102,8 @@ parte" abre el documento de solo lectura, nunca la vista de edición.
             <td></td>
         </tr>
     </tfoot>
+    {% endif %}
 </table>
-{% else %}
-<div class="text-center text-muted py-5">
-    <i class="bi bi-tools fs-1 d-block mb-2 opacity-25"></i>
-    <p class="mb-0">No hay tareas de parte que coincidan con los filtros aplicados.</p>
-</div>
-{% endif %}
 {% comment %}
 Estado del fragmento para el panel fijo (que no se repinta): nº de
 filas y totales de lo listado, si hay filtro y el orden vigente.

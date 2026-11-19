@@ -18,7 +18,7 @@
 {# (wo.clock_in / wo.clock_out, resueltas en la vista; "—" si no fichó).                         #}
 {# Toda decisión de negocio llega resuelta desde la vista; este parcial solo renderiza.             #}
 
-{% if wo_list %}
+{# S157: con la tabla siempre pintada, «Columnas» conoce sus nombres aunque no haya filas. #}
 <form method="post" id="form-bulk-{{ tab_key }}" class="wo-bulk-form" novalidate>
     {% csrf_token %}
     <input type="hidden" name="action" value="bulk_action">
@@ -143,9 +143,15 @@
                     {% endif %}
                 </td>
             </tr>
-            {% endfor %}
+            {% empty %}
+        <tr class="eb-empty-row"><td colspan="99" class="border-0"><div class="px-4 py-5 text-center text-muted">
+    <i class="bi {{ empty_icon }} fs-3 d-block mb-2"></i>
+    <span class="text-sm">{{ empty_text }}</span>
+</div></td></tr>
+        {% endfor %}
         </tbody>
         {% if show_totals %}
+    {% if wo_list %}
         <tfoot>
             <tr class="table-primary fw-semibold small wo-totals-row">
                 {% if is_elevated %}<td class="px-2"></td>{% endif %}
@@ -163,12 +169,7 @@
                 <td colspan="{% if tab_key == 'pending' %}2{% else %}3{% endif %}"></td>
             </tr>
         </tfoot>
+    {% endif %}
         {% endif %}
     </table>
 </form>
-{% else %}
-<div class="px-4 py-5 text-center text-muted">
-    <i class="bi {{ empty_icon }} fs-3 d-block mb-2"></i>
-    <span class="text-sm">{{ empty_text }}</span>
-</div>
-{% endif %}

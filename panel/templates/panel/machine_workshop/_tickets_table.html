@@ -6,7 +6,7 @@ pie que Partes de trabajo. En el menú de cada fila: el ticket, sus
 tareas en Partes de trabajo (filtro "Avería") y el documento de cada
 parte que la atendió.
 {% endcomment %}
-{% if rows %}
+{# S157: con la tabla siempre pintada, «Columnas» conoce sus nombres aunque no haya filas. #}
 <table class="table table-sm table-hover align-middle mb-0 small" id="mw-table" data-view-screen="workshop_tickets_list">
     <thead class="table-light">
         <tr>
@@ -80,8 +80,14 @@ parte que la atendió.
                 </div>
             </td>
         </tr>
+        {% empty %}
+        <tr class="eb-empty-row"><td colspan="99" class="border-0"><div class="text-center text-muted py-5">
+    <i class="bi bi-exclamation-triangle fs-1 d-block mb-2 opacity-25"></i>
+    <p class="mb-0">No hay averías que coincidan con los filtros aplicados.</p>
+</div></td></tr>
         {% endfor %}
     </tbody>
+    {% if rows %}
     <tfoot class="mw-totals">
         <tr class="fw-semibold">
             <td></td>
@@ -101,13 +107,8 @@ parte que la atendió.
             <td></td>
         </tr>
     </tfoot>
+    {% endif %}
 </table>
-{% else %}
-<div class="text-center text-muted py-5">
-    <i class="bi bi-exclamation-triangle fs-1 d-block mb-2 opacity-25"></i>
-    <p class="mb-0">No hay averías que coincidan con los filtros aplicados.</p>
-</div>
-{% endif %}
 <span id="mw-fragment-state" class="d-none"
       data-count="{{ totals.count }}"
       data-hours="{{ totals.hours|floatformat:2 }}"

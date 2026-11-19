@@ -20,7 +20,7 @@ Orden vigente, para que los filtros del panel fijo lo conserven
 <span id="lifting-sort-inputs" class="d-none">
     <input type="hidden" name="sort" value="{{ current_sort }}">
 </span>
-{% if accessories %}
+{# S157: con la tabla siempre pintada, «Columnas» conoce sus nombres aunque no haya filas. #}
 {% comment %}
 S136: sin stack-mobile (decisión de Miguel Ángel): en el móvil, también
 columnas con su cabecera (orden, "Seleccionar todos") y la tabla se
@@ -100,11 +100,10 @@ desliza entera, sin columnas fijas (S123). Mismo formato en PC y móvil.
                 {% endif %}
             </td>
         </tr>
+        {% empty %}
+        <tr class="eb-empty-row"><td colspan="99" class="border-0"><div class="text-muted small py-3">
+    {% if is_filtered %}Ningún accesorio coincide con el filtro.{% else %}Todavía no hay accesorios de elevación dados de alta.{% endif %}
+</div></td></tr>
         {% endfor %}
     </tbody>
 </table>
-{% else %}
-<div class="text-muted small py-3">
-    {% if is_filtered %}Ningún accesorio coincide con el filtro.{% else %}Todavía no hay accesorios de elevación dados de alta.{% endif %}
-</div>
-{% endif %}

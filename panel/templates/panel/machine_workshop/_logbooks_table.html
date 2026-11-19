@@ -5,7 +5,7 @@ mantenimiento de la máquina (directriz 4.24), con las columnas a elegir
 (mwc-<clave>) y la fila de totales al pie, como Partes de trabajo y
 Averías. En el menú de cada fila: ver el documento.
 {% endcomment %}
-{% if rows %}
+{# S157: con la tabla siempre pintada, «Columnas» conoce sus nombres aunque no haya filas. #}
 <table class="table table-sm table-hover align-middle mb-0 small" id="mw-table" data-view-screen="workshop_logbooks">
     <thead class="table-light">
         <tr>
@@ -59,8 +59,14 @@ Averías. En el menú de cada fila: ver el documento.
                 </div>
             </td>
         </tr>
+        {% empty %}
+        <tr class="eb-empty-row"><td colspan="99" class="border-0"><div class="text-center text-muted py-5">
+    <i class="bi bi-journal-text fs-1 d-block mb-2 opacity-25"></i>
+    <p class="mb-0">No hay libros historial ni órdenes de mantenimiento que coincidan con los filtros aplicados.</p>
+</div></td></tr>
         {% endfor %}
     </tbody>
+    {% if rows %}
     <tfoot class="mw-totals">
         <tr class="fw-semibold">
             <td></td>
@@ -74,13 +80,8 @@ Averías. En el menú de cada fila: ver el documento.
             <td></td>
         </tr>
     </tfoot>
+    {% endif %}
 </table>
-{% else %}
-<div class="text-center text-muted py-5">
-    <i class="bi bi-journal-text fs-1 d-block mb-2 opacity-25"></i>
-    <p class="mb-0">No hay libros historial ni órdenes de mantenimiento que coincidan con los filtros aplicados.</p>
-</div>
-{% endif %}
 <span id="mw-fragment-state" class="d-none"
       data-count="{{ totals.count }}"
       data-filtered="{% if is_filtered %}1{% endif %}"
