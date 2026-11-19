@@ -47,6 +47,11 @@ class Column:
     getter: object
     number_format: str = None
     summed: bool = False
+    # S153 (columnas configurables del panel): clave de orden de la
+    # vista, clases de la celda y cabecera corta para la tabla.
+    sort: str = None
+    css: str = ""
+    short_label: str = None
 
 
 @dataclass
@@ -62,6 +67,9 @@ class Screen:
     label: str
     columns: tuple
     panel_columns: list
+    # S153: columnas que salen siempre las primeras en el panel (no se
+    # quitan ni se mueven desde "Columnas").
+    fixed: tuple = ()
     by_key: dict = field(default_factory=dict)
 
     def __post_init__(self):
@@ -166,13 +174,26 @@ def columns_for(request, screen, template_pk=_FROM_REQUEST):
         template = next(
             (t for t in templates
              if t.is_default and not t.is_global), None,
-        ) or panel_template(screen.panel_columns)
+        ) or panel_template(_panel_keys(company_user, screen))
     else:
-        template = find_template(raw, templates, screen.panel_columns)
+        template = find_template(
+            raw, templates, _panel_keys(company_user, screen))
     if template is None:
         return None
     return [screen.by_key[k] for k in template.columns
             if k in screen.by_key]
+
+
+def _panel_keys(company_user, screen):
+    """
+    S153: "Vista del panel" = the columns the user sees in the panel.
+    ---
+    S153: la plantilla "Vista del panel" es lo que el usuario ve ahora
+    en el listado (columnas configurables, panel/list_columns.py).
+    """
+    from panel.list_columns import view_keys
+
+    return view_keys(company_user, screen)
 
 
 def write_sheet(sheet, columns, rows, total_label=None):
@@ -226,14 +247,18 @@ class ScreenExportTemplateListView(CompanyUserRequiredMixin, View):
     def get(self, request):
         company_user = request.user.company_user
         screen = get_screen(request.GET.get("screen"))
+        from panel.list_columns import view_state
+
         return JsonResponse({
             "templates": with_panel_template(
                 [_as_dict(t, company_user, screen)
                  for t in visible_templates(company_user, screen)],
-                screen.panel_columns),
+                _panel_keys(company_user, screen)),
             "columns": [{"key": c.key, "label": c.label}
                         for c in screen.columns],
             "is_admin": _is_admin(company_user),
+            # S153: estado de la pestaña "Columnas" del panel.
+            "view": view_state(company_user, screen),
         })
 
 

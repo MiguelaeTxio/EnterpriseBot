@@ -58,6 +58,7 @@ from panel.screen_exports import (
     ScreenExportTemplateListView,
     ScreenExportTemplateSaveView,
 )
+from panel.list_columns import ViewColumnsSaveView
 from panel.views_refuels_export import (
     RefuelsExportTemplateDeleteView,
     RefuelsExportTemplateListView,
@@ -1549,6 +1550,12 @@ urlpatterns = [
         "exportar/plantillas/<int:pk>/eliminar/",
         ScreenExportTemplateDeleteView.as_view(),
         name="screen_export_template_delete",
+    ),
+    # S153: columnas que cada usuario ve en los listados del panel.
+    path(
+        "vista/columnas/",
+        ViewColumnsSaveView.as_view(),
+        name="view_columns_save",
     ),
     path(
         "documentacion/repostajes/exportar/plantillas/",

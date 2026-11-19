@@ -1,0 +1,173 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/list_columns.py
+"""
+Configurable columns of the panel lists (S153).
+
+---
+
+Columnas configurables de los listados del panel (S153). Miguel Ángel:
+"en el panel de filtrado y buscado podamos tener la opción de
+configurar qué es lo que vamos a ver en el listado, qué columna vamos a
+ver y tener plantillas, igual que en la exportación [...] trasladar lo
+que tenemos en la exportación [...] a la vista propia del panel".
+
+Cada pantalla usa el mismo catálogo que su exportación
+(panel/screen_export_catalog.py) y las mismas plantillas
+(ScreenExportTemplate). Lo que ve cada usuario se guarda en su
+PanelNavigationState (pantalla "view_columns:<pantalla>"), como los
+filtros. Las columnas `fixed` de la pantalla (p. ej. el código) salen
+siempre las primeras. La plantilla "Vista del panel" de la exportación
+es, desde ahora, lo que el usuario ve en el panel.
+"""
+import datetime
+import json
+from decimal import Decimal
+
+from django.http import JsonResponse
+from django.views import View
+
+from panel.mixins import CompanyUserRequiredMixin
+from panel.models import PanelNavigationState
+
+STATE_PREFIX = "view_columns:"
+
+
+def _state(company_user, screen):
+    saved = (
+        PanelNavigationState.objects
+        .filter(company_user=company_user,
+                screen_key=STATE_PREFIX + screen.key)
+        .values_list("state", flat=True)
+        .first()
+    )
+    return saved if isinstance(saved, dict) else {}
+
+
+def view_keys(company_user, screen):
+    """
+    The column keys the user sees in the panel, fixed ones first.
+    ---
+    Las claves de las columnas que el usuario ve en el panel: las fijas
+    de la pantalla y, detrás, las elegidas (o las de la tabla de
+    siempre, `panel_columns`, si nunca ha elegido).
+    """
+    fixed = [k for k in screen.fixed if k in screen.by_key]
+    chosen = _state(company_user, screen).get("columns")
+    if not isinstance(chosen, list) or not chosen:
+        chosen = screen.panel_columns
+    rest = [k for k in chosen if k in screen.by_key and k not in fixed]
+    return fixed + rest
+
+
+def _display(value):
+    """
+    A catalogue value as text for a plain panel cell.
+    ---
+    Un valor del catálogo como texto para una celda simple del panel.
+    """
+    if value is None or value == "":
+        return ""
+    if isinstance(value, bool):
+        return "Sí" if value else "No"
+    if isinstance(value, datetime.datetime):
+        return value.strftime("%d/%m/%Y %H:%M")
+    if isinstance(value, datetime.date):
+        return value.strftime("%d/%m/%Y")
+    if isinstance(value, (float, Decimal)):
+        return ("%.2f" % value).rstrip("0").rstrip(".").replace(".", ",")
+    return str(value)
+
+
+def view_context(company_user, screen, rows, sort_controls=None,
+                 rich=()):
+    """
+    Context for a configurable table: headers and the cells of each row.
+    ---
+    Contexto de una tabla configurable. `view_columns`: cabeceras (sin
+    las fijas) con su orden de columna; en cada fila, `view_cells`: la
+    clave y, para las columnas que no tienen celda propia en la
+    plantilla de la pantalla (`rich`), el valor ya como texto. Solo se
+    calculan los valores de las columnas visibles.
+    """
+    sort_controls = sort_controls or {}
+    arrows = sort_controls.get("sort_arrows", {})
+    priority = sort_controls.get("sort_priority", {})
+    following = sort_controls.get("sort_next", {})
+    keys = [k for k in view_keys(company_user, screen)
+            if k not in screen.fixed]
+    columns = [screen.by_key[k] for k in keys]
+    headers = []
+    for column in columns:
+        sort = column.sort
+        headers.append({
+            "key": column.key,
+            "label": column.short_label or column.label,
+            "title": column.label,
+            "css": column.css,
+            "sort": sort,
+            "sort_next": following.get(sort, "") if sort else "",
+            "arrow": arrows.get(sort, "") if sort else "",
+            "priority": priority.get(sort, "") if sort else "",
+        })
+    plain = [c for c in columns if c.key not in rich]
+    for row in rows:
+        values = {c.key: _display(c.getter(row)) for c in plain}
+        row.view_cells = [
+            {"key": c.key, "label": c.label, "css": c.css,
+             "rich": c.key in rich, "value": values.get(c.key, "")}
+            for c in columns
+        ]
+    return {"view_columns": headers}
+
+
+class ViewColumnsSaveView(CompanyUserRequiredMixin, View):
+    """
+    POST (JSON) {screen, columns[], template}: the user's panel columns.
+    ---
+    POST (JSON): guarda las columnas que el usuario quiere ver en el
+    listado de esa pantalla y la plantilla de la que salen (o ninguna).
+    """
+
+    def post(self, request):
+        from panel.screen_exports import get_screen
+
+        company_user = request.user.company_user
+        try:
+            data = json.loads(request.body or b"{}")
+        except ValueError:
+            return JsonResponse({"error": "Datos no válidos."}, status=400)
+        screen = get_screen(data.get("screen"))
+        columns = [k for k in (data.get("columns") or [])
+                   if k in screen.by_key and k not in screen.fixed]
+        if not columns:
+            return JsonResponse(
+                {"error": "Elige al menos una columna."}, status=400)
+        template = data.get("template")
+        obj, _created = PanelNavigationState.objects.get_or_create(
+            company_user=company_user,
+            screen_key=STATE_PREFIX + screen.key,
+            defaults={"state": {}},
+        )
+        obj.state = {
+            "columns": columns,
+            "template": template if isinstance(template, int) else None,
+        }
+        obj.save(update_fields=["state", "updated_at"])
+        return JsonResponse({"ok": True})
+
+
+def view_state(company_user, screen):
+    """
+    What the "Columnas" tab needs: current, standard and fixed columns.
+    ---
+    Lo que necesita la pestaña "Columnas": las columnas que se ven, las
+    de siempre de la tabla, las fijas y la plantilla elegida.
+    """
+    state = _state(company_user, screen)
+    return {
+        "current": [k for k in view_keys(company_user, screen)
+                    if k not in screen.fixed],
+        "standard": [k for k in screen.panel_columns
+                     if k not in screen.fixed],
+        "fixed": list(screen.fixed),
+        "template": state.get("template"),
+    }

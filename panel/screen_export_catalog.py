@@ -38,20 +38,31 @@ FLEET = register(Screen(
     label="Centros de gasto",
     columns=(
         Column("codigo", "Código", 12, lambda a: a.code),
-        Column("familia", "Familia", 16, lambda a: a.family),
-        Column("descripcion", "Descripción", 34, lambda a: a.brand_model),
-        Column("tipo", "Tipo", 26, lambda a: a.type_name),
-        Column("matricula", "Matrícula", 14, lambda a: a.plate),
+        Column("familia", "Familia", 16, lambda a: a.family,
+               sort="family", css="fleet-col-w90"),
+        Column("descripcion", "Descripción", 34, lambda a: a.brand_model,
+               sort="brand_model", short_label="Descripción / Marca-Modelo"),
+        Column("tipo", "Tipo", 26, lambda a: a.type_name,
+               sort="type_name", css="fleet-col-w100"),
+        Column("matricula", "Matrícula", 14, lambda a: a.plate,
+               sort="plate", css="fleet-col-w90"),
         Column("documentos", "Documentos", 11,
-               lambda a: getattr(a, "doc_count", None), summed=True),
-        Column("contadores", "Contadores", 22, _counters),
+               lambda a: getattr(a, "doc_count", None), summed=True,
+               sort="doc_count", css="text-center fleet-col-w90",
+               short_label="Docs."),
+        Column("contadores", "Contadores", 22, _counters,
+               css="text-center fleet-col-w70", short_label="Contad."),
         Column("requisito", "Requisito de documentación", 26,
                lambda a: ", ".join(sorted(
-                   req.name for req in a.document_requirements.all()))),
+                   req.name for req in a.document_requirements.all())),
+               sort="requirement", css="fleet-col-w100"),
         Column("estado", "Estado", 10,
-               lambda a: "Activo" if a.is_active else "Inactivo"),
+               lambda a: "Activo" if a.is_active else "Inactivo",
+               sort="is_active", css="text-center fleet-col-w70"),
         Column("usos", "Usos (líneas de parte)", 12,
-               lambda a: getattr(a, "use_count", None), summed=True),
+               lambda a: getattr(a, "use_count", None), summed=True,
+               sort="use_count", css="text-center fleet-col-w55",
+               short_label="Usos"),
         Column("bastidor", "Nº de bastidor", 20,
                lambda a: a.chassis_number),
         Column("fecha_compra", "Fecha de compra", 12,
@@ -72,7 +83,16 @@ FLEET = register(Screen(
         "codigo", "familia", "descripcion", "tipo", "matricula",
         "documentos", "contadores", "requisito", "estado", "usos",
     ],
+    # S153: el código (con su foto y enlace a la ficha) siempre delante.
+    fixed=("codigo",),
 ))
+
+# S153: columnas de Centros de gasto con celda propia en
+# panel/fleet/_table_fragment.html; el resto sale como texto.
+FLEET_RICH = (
+    "familia", "descripcion", "tipo", "matricula", "documentos",
+    "contadores", "requisito", "estado", "usos",
+)
 
 
 def _num(value):

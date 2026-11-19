@@ -1,0 +1,58 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/_filter_panel_tabs.html #}
+{% comment %}
+S153. Pestañas del recuadro "Buscar y filtrar" de los listados:
+"Filtros" y "Columnas" (Miguel Ángel: "si es necesario incluir
+pestañas dentro del panel, como estamos haciendo [...] en fichajes").
+Cambia entre los bloques hermanos con data-filter-pane="filters" y
+data-filter-pane="columns" del mismo recuadro. La pestaña elegida se
+recuerda en este navegador.
+Uso: {% include "panel/_filter_panel_tabs.html" with fp="fleet" %}
+{% endcomment %}
+<ul class="nav nav-tabs small mb-2 eb-filter-tabs" role="tablist" data-fp="{{ fp }}">
+    <li class="nav-item" role="presentation">
+        <button type="button" class="nav-link py-1 px-2 active" data-filter-tab="filters" role="tab">
+            <i class="bi bi-funnel me-1"></i>Buscar y filtrar
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button type="button" class="nav-link py-1 px-2" data-filter-tab="columns" role="tab">
+            <i class="bi bi-layout-three-columns me-1"></i>Columnas
+        </button>
+    </li>
+</ul>
+<script>
+(function () {
+    "use strict";
+    function init() {
+    document.querySelectorAll('.eb-filter-tabs:not([data-ready])').forEach(function (tabs) {
+        tabs.dataset.ready = "1";
+        const box = tabs.parentElement;
+        const key = "eb-filter-tab-" + tabs.dataset.fp;
+        function show(name) {
+            tabs.querySelectorAll("[data-filter-tab]").forEach(function (b) {
+                b.classList.toggle("active", b.dataset.filterTab === name);
+            });
+            box.querySelectorAll(":scope > [data-filter-pane]").forEach(function (pane) {
+                pane.classList.toggle("d-none", pane.dataset.filterPane !== name);
+            });
+            try { localStorage.setItem(key, name); } catch (e) { /* sin almacenamiento */ }
+            box.dispatchEvent(new CustomEvent("eb:filter-tab", {bubbles: true, detail: {tab: name}}));
+        }
+        tabs.addEventListener("click", function (ev) {
+            const button = ev.target.closest("[data-filter-tab]");
+            if (button) { show(button.dataset.filterTab); }
+        });
+        let saved = null;
+        try { saved = localStorage.getItem(key); } catch (e) { /* sin almacenamiento */ }
+        if (saved === "columns") { show("columns"); }
+    });
+    }
+    // Las pestañas van antes que sus bloques: se preparan cuando ya
+    // están en la página (carga completa o fragmento htmx).
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", init);
+    } else {
+        setTimeout(init, 0);
+    }
+}());
+</script>

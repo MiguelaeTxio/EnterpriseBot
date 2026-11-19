@@ -521,7 +521,17 @@ def _build_fragment_context(company, company_user, request):
                 if state != STATUS_OK and (not req_item or key == req_item)
             ]
             asset.requirement_status_checked = True
+    # S153: columnas que este usuario eligió ver (pestaña "Columnas"),
+    # con el mismo catálogo y plantillas que la exportación.
+    from panel.list_columns import view_context
+    from panel.screen_export_catalog import FLEET, FLEET_RICH
+
+    sort_controls = _build_sort_controls(_p("sort"))
+    view = view_context(company_user, FLEET, assets, sort_controls,
+                        rich=FLEET_RICH)
     return {
+        **view,
+        "view_screen": FLEET.key,
         "assets": assets,
         "families": _get_families(company),
         "company": company,
@@ -540,7 +550,7 @@ def _build_fragment_context(company, company_user, request):
         "filter_is_active": _p("is_active"),
         "filter_search": _p("search"),
         "only_selected": request.GET.get("only_selected") == "1",
-        **_build_sort_controls(_p("sort")),
+        **sort_controls,
         **_fleet_permissions(company_user),
         "fleet_door": _fleet_door(_p("door")),
         "fleet_back_url": _fleet_back_url(_fleet_door(_p("door"))),

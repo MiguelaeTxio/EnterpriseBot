@@ -1,0 +1,276 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/_view_columns_tab.html #}
+{% comment %}
+S153. Pestaña "Columnas" del recuadro de filtros: qué columnas se ven
+en el listado y en qué orden, con las mismas plantillas que la
+exportación (propias, una por defecto, y globales de empresa que solo
+edita un administrador). Miguel Ángel: "trasladar lo que tenemos en la
+exportación [...] a la vista propia del panel para que sea configurable
+lo que nosotros queremos ver".
+Cada cambio se aplica al momento: se guarda para este usuario
+(panel/list_columns.py) y se vuelve a pedir la tabla lanzando
+`refresh_evt` en `refresh_el`. Las columnas fijas de la pantalla no
+salen aquí (van siempre delante).
+Uso:
+  {% include "panel/_view_columns_tab.html" with vc="fleet" screen="fleet" refresh_el="#fleet-filter-search" refresh_evt="search" %}
+{% endcomment %}
+<div class="eb-view-columns" id="{{ vc }}-vcol" data-screen="{{ screen }}"
+     data-refresh-el="{{ refresh_el }}" data-refresh-evt="{{ refresh_evt|default:'change' }}">
+    <div class="d-flex gap-1 align-items-center mb-1">
+        <select class="form-select form-select-sm" id="{{ vc }}-vcol-template" aria-label="Plantilla de columnas"
+                title="Plantilla de columnas: las mismas que en Exportar.">
+            <option value="">Cargando…</option>
+        </select>
+        <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" id="{{ vc }}-vcol-reset"
+                title="Volver a las columnas de siempre de esta tabla">Estándar</button>
+    </div>
+    <div class="small text-muted mb-1">Marca las columnas que quieres ver y ordénalas con las flechas.</div>
+    <div class="border rounded eb-vcol-list" id="{{ vc }}-vcol-list"></div>
+    <div class="d-flex flex-wrap gap-1 mt-1 align-items-center">
+        <button type="button" class="btn btn-sm btn-outline-primary d-none" id="{{ vc }}-vcol-update"
+                title="Guarda estas columnas en la plantilla elegida">Guardar en la plantilla</button>
+        <button type="button" class="btn btn-sm btn-outline-success" id="{{ vc }}-vcol-new"
+                title="Guarda estas columnas como una plantilla nueva (también sirve para exportar)">Guardar como plantilla…</button>
+        <span class="small" id="{{ vc }}-vcol-msg"></span>
+    </div>
+    <div class="d-none border rounded p-2 mt-1" id="{{ vc }}-vcol-newbox">
+        <input type="text" class="form-control form-control-sm mb-1" id="{{ vc }}-vcol-name" maxlength="100" placeholder="Nombre de la plantilla">
+        <div class="form-check d-none" id="{{ vc }}-vcol-global-wrap">
+            <input class="form-check-input" type="checkbox" id="{{ vc }}-vcol-global">
+            <label class="form-check-label small" for="{{ vc }}-vcol-global">Global de empresa (la ven todos)</label>
+        </div>
+        <div class="d-flex gap-1 justify-content-end">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="{{ vc }}-vcol-cancel">Cancelar</button>
+            <button type="button" class="btn btn-sm btn-success" id="{{ vc }}-vcol-create">Guardar</button>
+        </div>
+    </div>
+</div>
+<style>
+.eb-vcol-list { max-height: 11.5rem; overflow-y: auto; }
+.eb-vcol-row { display: flex; align-items: center; gap: .25rem; padding: .05rem .4rem; }
+.eb-vcol-row:nth-child(odd) { background: var(--bs-tertiary-bg); }
+.eb-vcol-row label { flex: 1 1 auto; margin: 0; cursor: pointer; }
+.eb-vcol-row .btn { padding: 0 .3rem; line-height: 1.2; }
+.eb-vcol-row.is-off label { color: var(--bs-secondary-color); }
+</style>
+<script>
+(function () {
+    "use strict";
+    const root = document.getElementById("{{ vc|escapejs }}-vcol");
+    if (!root || root.dataset.ready) { return; }
+    root.dataset.ready = "1";
+    const VC = "{{ vc|escapejs }}";
+    const LIST_URL = "{% url 'panel:screen_export_templates' %}";
+    const SAVE_URL = "{% url 'panel:screen_export_template_save' %}";
+    const VIEW_URL = "{% url 'panel:view_columns_save' %}";
+    const STANDARD = "std";
+    const $ = function (id) { return document.getElementById(VC + "-vcol-" + id); };
+    let catalog = [];      // [{key, label}] sin las fijas
+    let order = [];        // claves en el orden de la lista
+    let on = new Set();    // claves marcadas
+    let templates = [];
+    let standard = [];
+    let isAdmin = false;
+    let saveTimer = null;
+
+    function csrf() {
+        const m = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/);
+        return m ? decodeURIComponent(m[1]) : "";
+    }
+    function chosen() { return order.filter(function (k) { return on.has(k); }); }
+    function labelOf(key) {
+        const c = catalog.find(function (x) { return x.key === key; });
+        return c ? c.label : key;
+    }
+    function message(text, bad) {
+        const el = $("msg");
+        el.textContent = text || "";
+        el.className = "small " + (bad ? "text-danger" : "text-success");
+    }
+    function sameColumns(a, b) {
+        return a.length === b.length && a.every(function (k, i) { return k === b[i]; });
+    }
+    function selectedTemplate() {
+        const id = parseInt($("template").value, 10);
+        return templates.find(function (t) { return t.id === id; }) || null;
+    }
+    function templateColumns(value) {
+        if (value === STANDARD) { return standard.slice(); }
+        const t = templates.find(function (x) { return String(x.id) === String(value); });
+        return t ? t.columns.filter(function (k) { return catalog.some(function (c) { return c.key === k; }); }) : null;
+    }
+    function markModified() {
+        // Si lo marcado ya no coincide con la plantilla elegida, se dice.
+        const select = $("template");
+        const cols = templateColumns(select.value);
+        const changed = cols !== null && !sameColumns(cols, chosen());
+        Array.from(select.options).forEach(function (opt) {
+            opt.textContent = opt.dataset.name + (opt.selected && changed ? " (cambiada)" : "");
+        });
+        const t = selectedTemplate();
+        $("update").classList.toggle("d-none", !(changed && t && t.editable));
+    }
+    function render() {
+        const list = $("list");
+        list.innerHTML = "";
+        order.forEach(function (key, index) {
+            const row = document.createElement("div");
+            row.className = "eb-vcol-row small" + (on.has(key) ? "" : " is-off");
+            const id = VC + "-vcol-c-" + key;
+            row.innerHTML =
+                '<input class="form-check-input mt-0" type="checkbox">' +
+                '<label></label>' +
+                '<button type="button" class="btn btn-sm btn-link text-secondary" title="Subir"><i class="bi bi-arrow-up"></i></button>' +
+                '<button type="button" class="btn btn-sm btn-link text-secondary" title="Bajar"><i class="bi bi-arrow-down"></i></button>';
+            const box = row.querySelector("input");
+            box.id = id;
+            box.checked = on.has(key);
+            const label = row.querySelector("label");
+            label.htmlFor = id;
+            label.textContent = labelOf(key);
+            const buttons = row.querySelectorAll("button");
+            buttons[0].disabled = index === 0;
+            buttons[1].disabled = index === order.length - 1;
+            box.addEventListener("change", function () {
+                if (box.checked) { on.add(key); } else { on.delete(key); }
+                if (!on.size) { on.add(key); box.checked = true; message("Deja al menos una columna.", true); return; }
+                row.classList.toggle("is-off", !box.checked);
+                changed();
+            });
+            buttons[0].addEventListener("click", function () { move(index, -1); });
+            buttons[1].addEventListener("click", function () { move(index, 1); });
+            list.appendChild(row);
+        });
+        markModified();
+    }
+    function move(index, step) {
+        const target = index + step;
+        if (target < 0 || target >= order.length) { return; }
+        const tmp = order[index];
+        order[index] = order[target];
+        order[target] = tmp;
+        render();
+        changed();
+    }
+    function setColumns(cols) {
+        on = new Set(cols);
+        order = cols.concat(catalog.map(function (c) { return c.key; }).filter(function (k) { return !on.has(k); }));
+        render();
+    }
+    function refreshTable() {
+        const el = document.querySelector(root.dataset.refreshEl);
+        if (el && window.htmx) { htmx.trigger(el, root.dataset.refreshEvt); }
+    }
+    function persist(templateId) {
+        return fetch(VIEW_URL, {
+            method: "POST",
+            headers: {"Content-Type": "application/json", "X-CSRFToken": csrf()},
+            body: JSON.stringify({screen: root.dataset.screen, columns: chosen(), template: templateId}),
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (data.error) { message(data.error, true); return; }
+            message("");
+            refreshTable();
+        }).catch(function () { message("Error de red: no se ha cambiado la vista.", true); });
+    }
+    function currentTemplateId() {
+        const t = selectedTemplate();
+        return t ? t.id : null;
+    }
+    function changed() {
+        markModified();
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(function () { persist(currentTemplateId()); }, 400);
+    }
+    function fillTemplates(selected) {
+        const select = $("template");
+        select.innerHTML = "";
+        function add(value, name) {
+            const opt = document.createElement("option");
+            opt.value = value;
+            opt.dataset.name = name;
+            opt.textContent = name;
+            select.appendChild(opt);
+        }
+        add(STANDARD, "Estándar de la tabla");
+        // La "Vista del panel" (id 0) es lo que se ve ahora: aquí no se lista.
+        templates.filter(function (t) { return t.id; }).forEach(function (t) {
+            add(t.id, t.name + (t.is_global ? " (empresa)" : ""));
+        });
+        select.value = selected !== null && selected !== undefined && templates.some(function (t) { return t.id === selected; })
+            ? String(selected) : STANDARD;
+    }
+    function load() {
+        return fetch(LIST_URL + "?screen=" + encodeURIComponent(root.dataset.screen), {credentials: "same-origin"})
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                const fixed = new Set(data.view.fixed);
+                catalog = data.columns.filter(function (c) { return !fixed.has(c.key); });
+                templates = data.templates || [];
+                standard = data.view.standard;
+                isAdmin = !!data.is_admin;
+                $("global-wrap").classList.toggle("d-none", !isAdmin);
+                fillTemplates(data.view.template);
+                setColumns(data.view.current);
+            });
+    }
+
+    $("template").addEventListener("change", function () {
+        const cols = templateColumns(this.value);
+        if (cols && cols.length) {
+            setColumns(cols);
+            clearTimeout(saveTimer);
+            persist(currentTemplateId());
+        }
+    });
+    $("reset").addEventListener("click", function () {
+        $("template").value = STANDARD;
+        setColumns(standard.slice());
+        clearTimeout(saveTimer);
+        persist(null);
+    });
+    $("new").addEventListener("click", function () {
+        $("newbox").classList.remove("d-none");
+        $("name").focus();
+    });
+    $("cancel").addEventListener("click", function () { $("newbox").classList.add("d-none"); });
+    function saveTemplate(payload) {
+        return fetch(SAVE_URL, {
+            method: "POST",
+            headers: {"Content-Type": "application/json", "X-CSRFToken": csrf()},
+            body: JSON.stringify(Object.assign({screen: root.dataset.screen, columns: chosen()}, payload)),
+        }).then(function (r) { return r.json(); });
+    }
+    $("create").addEventListener("click", function () {
+        const name = $("name").value.trim();
+        if (!name) { message("Ponle un nombre.", true); return; }
+        saveTemplate({name: name, is_global: $("global").checked}).then(function (data) {
+            if (data.error) { message(data.error, true); return; }
+            $("newbox").classList.add("d-none");
+            $("name").value = "";
+            load().then(function () {
+                $("template").value = String(data.id);
+                markModified();
+                persist(data.id).then(function () { message("Plantilla guardada."); });
+            });
+        }).catch(function () { message("Error de red: no se ha guardado.", true); });
+    });
+    $("update").addEventListener("click", function () {
+        const t = selectedTemplate();
+        if (!t) { return; }
+        saveTemplate({id: t.id, name: t.name, is_default: t.is_default, is_global: t.is_global}).then(function (data) {
+            if (data.error) { message(data.error, true); return; }
+            t.columns = chosen();
+            markModified();
+            message("Plantilla actualizada.");
+        }).catch(function () { message("Error de red: no se ha guardado.", true); });
+    });
+    // Se carga al abrir la pestaña "Columnas" por primera vez.
+    let loaded = false;
+    function ensure() {
+        if (loaded || root.closest(".d-none")) { return; }
+        loaded = true;
+        load().catch(function () { message("No se han podido cargar las columnas.", true); });
+    }
+    document.addEventListener("eb:filter-tab", ensure);
+    ensure();
+}());
+</script>

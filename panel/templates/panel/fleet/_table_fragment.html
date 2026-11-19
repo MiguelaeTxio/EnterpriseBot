@@ -40,135 +40,32 @@ pestaña Personal, S113/S114):
                         {% endif %}
                     </a>
                 </th>
-                <th class="fleet-col-w90">
-                    <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
+                {% comment %}
+                S153: columnas configurables (pestaña "Columnas" del panel
+                de filtros). Las elige cada usuario de entre las del
+                catálogo de la exportación (panel/list_columns.py); el
+                código va siempre delante.
+                {% endcomment %}
+                {% for col in view_columns %}
+                <th class="{{ col.css }}" title="{{ col.title }}" data-col="{{ col.key }}">
+                    {% if col.sort %}
+                    <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none{% if 'text-center' in col.css %} justify-content-center{% endif %}"
                        hx-get="{% url 'panel:fleet_fragment' %}"
                        hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
+                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-group, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
                        hx-trigger="click"
-                       hx-vals='{"sort": "{{ sort_next.family }}"}'
+                       hx-vals='{"sort": "{{ col.sort_next }}"}'
                        role="button">
-                        Familia
-                        {% if sort_arrows.family %}
-                            <i class="bi bi-arrow-{{ sort_arrows.family }}-short"></i>{% if sort_priority.family %}<sup class="small">{{ sort_priority.family }}</sup>{% endif %}
+                        {{ col.label }}
+                        {% if col.arrow %}
+                            <i class="bi bi-arrow-{{ col.arrow }}-short"></i>{% if col.priority %}<sup class="small">{{ col.priority }}</sup>{% endif %}
                         {% else %}
                             <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
                         {% endif %}
                     </a>
+                    {% else %}{{ col.label }}{% endif %}
                 </th>
-                <th>
-                    <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
-                       hx-get="{% url 'panel:fleet_fragment' %}"
-                       hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
-                       hx-trigger="click"
-                       hx-vals='{"sort": "{{ sort_next.brand_model }}"}'
-                       role="button">
-                        Descripción / Marca-Modelo
-                        {% if sort_arrows.brand_model %}
-                            <i class="bi bi-arrow-{{ sort_arrows.brand_model }}-short"></i>{% if sort_priority.brand_model %}<sup class="small">{{ sort_priority.brand_model }}</sup>{% endif %}
-                        {% else %}
-                            <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
-                        {% endif %}
-                    </a>
-                </th>
-                <th class="fleet-col-w100">
-                    <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
-                       hx-get="{% url 'panel:fleet_fragment' %}"
-                       hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
-                       hx-trigger="click"
-                       hx-vals='{"sort": "{{ sort_next.type_name }}"}'
-                       role="button">
-                        Tipo
-                        {% if sort_arrows.type_name %}
-                            <i class="bi bi-arrow-{{ sort_arrows.type_name }}-short"></i>{% if sort_priority.type_name %}<sup class="small">{{ sort_priority.type_name }}</sup>{% endif %}
-                        {% else %}
-                            <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
-                        {% endif %}
-                    </a>
-                </th>
-                <th class="fleet-col-w90">
-                    <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
-                       hx-get="{% url 'panel:fleet_fragment' %}"
-                       hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
-                       hx-trigger="click"
-                       hx-vals='{"sort": "{{ sort_next.plate }}"}'
-                       role="button">
-                        Matrícula
-                        {% if sort_arrows.plate %}
-                            <i class="bi bi-arrow-{{ sort_arrows.plate }}-short"></i>{% if sort_priority.plate %}<sup class="small">{{ sort_priority.plate }}</sup>{% endif %}
-                        {% else %}
-                            <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
-                        {% endif %}
-                    </a>
-                </th>
-                <th class="text-center fleet-col-w90">
-                    <a class="text-decoration-none text-reset d-flex align-items-center justify-content-center gap-1 user-select-none"
-                       hx-get="{% url 'panel:fleet_fragment' %}"
-                       hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
-                       hx-trigger="click"
-                       hx-vals='{"sort": "{{ sort_next.doc_count }}"}'
-                       role="button">
-                        Documentos
-                        {% if sort_arrows.doc_count %}
-                            <i class="bi bi-arrow-{{ sort_arrows.doc_count }}-short"></i>{% if sort_priority.doc_count %}<sup class="small">{{ sort_priority.doc_count }}</sup>{% endif %}
-                        {% else %}
-                            <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
-                        {% endif %}
-                    </a>
-                </th>
-                <th class="text-center fleet-col-w70">Contad.</th>
-                <th class="fleet-col-w100">
-                    <a class="text-decoration-none text-reset d-flex align-items-center gap-1 user-select-none"
-                       hx-get="{% url 'panel:fleet_fragment' %}"
-                       hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
-                       hx-trigger="click"
-                       hx-vals='{"sort": "{{ sort_next.requirement }}"}'
-                       role="button">
-                        Requisito de documentación
-                        {% if sort_arrows.requirement %}
-                            <i class="bi bi-arrow-{{ sort_arrows.requirement }}-short"></i>{% if sort_priority.requirement %}<sup class="small">{{ sort_priority.requirement }}</sup>{% endif %}
-                        {% else %}
-                            <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
-                        {% endif %}
-                    </a>
-                </th>
-                <th class="text-center fleet-col-w70">
-                    <a class="text-decoration-none text-reset d-flex align-items-center justify-content-center gap-1 user-select-none"
-                       hx-get="{% url 'panel:fleet_fragment' %}"
-                       hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
-                       hx-trigger="click"
-                       hx-vals='{"sort": "{{ sort_next.is_active }}"}'
-                       role="button">
-                        Estado
-                        {% if sort_arrows.is_active %}
-                            <i class="bi bi-arrow-{{ sort_arrows.is_active }}-short"></i>{% if sort_priority.is_active %}<sup class="small">{{ sort_priority.is_active }}</sup>{% endif %}
-                        {% else %}
-                            <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
-                        {% endif %}
-                    </a>
-                </th>
-                <th class="text-center fleet-col-w55">
-                    <a class="text-decoration-none text-reset d-flex align-items-center justify-content-center gap-1 user-select-none"
-                       hx-get="{% url 'panel:fleet_fragment' %}"
-                       hx-target="#fleet-table-container"
-                       hx-include="#fleet-filter-search, #fleet-filter-family, #fleet-filter-requirement, #fleet-filter-req-state, #fleet-filter-req-item, #fleet-filter-is-active, #fleet-only-selected, #fleet-selected-ids, #fleet-door"
-                       hx-trigger="click"
-                       hx-vals='{"sort": "{{ sort_next.use_count }}"}'
-                       role="button">
-                        Usos
-                        {% if sort_arrows.use_count %}
-                            <i class="bi bi-arrow-{{ sort_arrows.use_count }}-short"></i>{% if sort_priority.use_count %}<sup class="small">{{ sort_priority.use_count }}</sup>{% endif %}
-                        {% else %}
-                            <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>
-                        {% endif %}
-                    </a>
-                </th>
+                {% endfor %}
                 <th class="text-end fleet-col-w60">Acciones</th>
             </tr>
         </thead>
@@ -202,69 +99,75 @@ pestaña Personal, S113/S114):
                     <a href="{% url 'panel:documentation_machine_detail' pk=asset.pk %}?back_url={{ fleet_back_url|urlencode }}">{{ asset.code }}</a>
                 </td>
 
-                <td data-label="Familia"><span class="text-muted small">{{ asset.family|default:"—" }}</span></td>
-
-                <td data-label="Descripción">
-                    <span title="{{ asset.brand_model }}">
-                        {{ asset.brand_model|default:"—"|truncatechars:50 }}
-                    </span>
-                    {% if asset.company_code %}
-                    <span class="text-muted small ms-1">[{{ asset.company_code }}]</span>
-                    {% endif %}
-                </td>
-
-                <td data-label="Tipo">
-                    <span class="text-muted small" title="{{ asset.type_name }}">
-                        {{ asset.type_name|default:"—"|truncatechars:35 }}
-                    </span>
-                </td>
-
-                <td class="small" data-label="Matrícula">{{ asset.plate|default:"—" }}</td>
-
-                <td class="text-center" data-label="Documentos">{{ asset.doc_count }}</td>
-
-                <td class="text-center" data-label="Contadores">
-                    {% if asset.has_odometer %}
-                    <i class="bi bi-speedometer2 text-secondary" title="Odómetro (km)"></i>
-                    {% endif %}
-                    {% if asset.has_engine_hours %}
-                    <i class="bi bi-clock text-secondary ms-1" title="Horómetro motor"></i>
-                    {% endif %}
-                    {% if asset.has_crane_hours %}
-                    <i class="bi bi-chevron-bar-up text-secondary ms-1" title="Horómetro grúa"></i>
-                    {% endif %}
-                    {% if not asset.has_odometer and not asset.has_engine_hours and not asset.has_crane_hours %}
-                    <span class="text-muted small">—</span>
-                    {% endif %}
-                </td>
-
-                {% comment %}
-                H30 (S119): mismo criterio que la columna "Requisitos
-                de documentación" de Personal (_personal_results.html)
-                -- Miguel Angel: "que aparezca en las columnas [...]
-                mientras que si aparece en personal, no lo hace en la
-                maquinaria".
-                {% endcomment %}
-                <td class="small" data-label="Requisito">{% for requirement in asset.document_requirements.all %}{{ requirement.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}{% if asset.requirement_status_checked %}<div class="{% if asset.requirement_status %}text-danger{% else %}text-success{% endif %}">{% if asset.requirement_status %}{{ asset.requirement_status|join:"; " }}{% else %}{{ status_requirement.name }}: al día{% endif %}</div>{% endif %}</td>
-
-                <td class="text-center" data-label="Estado">
-                    {% if asset.is_active %}
-                    <span class="badge bg-success-subtle text-success border border-success-subtle">Activo</span>
-                    {% else %}
-                    <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">Inactivo</span>
-                    {% endif %}
-                </td>
-
-                <td class="text-center" data-label="Usos">
-                    {% if asset.use_count %}
-                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle"
-                          title="{{ asset.use_count }} línea{{ asset.use_count|pluralize }} de parte asociada{{ asset.use_count|pluralize }}">
-                        {{ asset.use_count }}
-                    </span>
-                    {% else %}
-                    <span class="text-muted small">—</span>
-                    {% endif %}
-                </td>
+                {% for cell in asset.view_cells %}
+                {% if not cell.rich %}
+                <td class="{{ cell.css }}" data-label="{{ cell.label }}">{{ cell.value|default:"—" }}</td>
+                {% elif cell.key == "familia" %}
+    <td data-label="Familia"><span class="text-muted small">{{ asset.family|default:"—" }}</span></td>
+                {% elif cell.key == "descripcion" %}
+    <td data-label="Descripción">
+                        <span title="{{ asset.brand_model }}">
+                            {{ asset.brand_model|default:"—"|truncatechars:50 }}
+                        </span>
+                        {% if asset.company_code %}
+                        <span class="text-muted small ms-1">[{{ asset.company_code }}]</span>
+                        {% endif %}
+                    </td>
+                {% elif cell.key == "tipo" %}
+    <td data-label="Tipo">
+                        <span class="text-muted small" title="{{ asset.type_name }}">
+                            {{ asset.type_name|default:"—"|truncatechars:35 }}
+                        </span>
+                    </td>
+                {% elif cell.key == "matricula" %}
+    <td class="small" data-label="Matrícula">{{ asset.plate|default:"—" }}</td>
+                {% elif cell.key == "documentos" %}
+    <td class="text-center" data-label="Documentos">{{ asset.doc_count }}</td>
+                {% elif cell.key == "contadores" %}
+    <td class="text-center" data-label="Contadores">
+                        {% if asset.has_odometer %}
+                        <i class="bi bi-speedometer2 text-secondary" title="Odómetro (km)"></i>
+                        {% endif %}
+                        {% if asset.has_engine_hours %}
+                        <i class="bi bi-clock text-secondary ms-1" title="Horómetro motor"></i>
+                        {% endif %}
+                        {% if asset.has_crane_hours %}
+                        <i class="bi bi-chevron-bar-up text-secondary ms-1" title="Horómetro grúa"></i>
+                        {% endif %}
+                        {% if not asset.has_odometer and not asset.has_engine_hours and not asset.has_crane_hours %}
+                        <span class="text-muted small">—</span>
+                        {% endif %}
+                    </td>
+                {% elif cell.key == "requisito" %}
+    {% comment %}
+                    H30 (S119): mismo criterio que la columna "Requisitos
+                    de documentación" de Personal (_personal_results.html)
+                    -- Miguel Angel: "que aparezca en las columnas [...]
+                    mientras que si aparece en personal, no lo hace en la
+                    maquinaria".
+                    {% endcomment %}
+                    <td class="small" data-label="Requisito">{% for requirement in asset.document_requirements.all %}{{ requirement.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}{% if asset.requirement_status_checked %}<div class="{% if asset.requirement_status %}text-danger{% else %}text-success{% endif %}">{% if asset.requirement_status %}{{ asset.requirement_status|join:"; " }}{% else %}{{ status_requirement.name }}: al día{% endif %}</div>{% endif %}</td>
+                {% elif cell.key == "estado" %}
+    <td class="text-center" data-label="Estado">
+                        {% if asset.is_active %}
+                        <span class="badge bg-success-subtle text-success border border-success-subtle">Activo</span>
+                        {% else %}
+                        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">Inactivo</span>
+                        {% endif %}
+                    </td>
+                {% elif cell.key == "usos" %}
+    <td class="text-center" data-label="Usos">
+                        {% if asset.use_count %}
+                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle"
+                              title="{{ asset.use_count }} línea{{ asset.use_count|pluralize }} de parte asociada{{ asset.use_count|pluralize }}">
+                            {{ asset.use_count }}
+                        </span>
+                        {% else %}
+                        <span class="text-muted small">—</span>
+                        {% endif %}
+                    </td>
+                {% endif %}
+                {% endfor %}
 
                 <td class="text-end stack-mobile-actions">
                     {% if can_manage or can_delete %}
