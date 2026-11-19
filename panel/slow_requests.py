@@ -26,7 +26,7 @@ from django.db import connection
 
 # S153: 1 s para encontrar también las pestañas de 1-3 s.
 SLOW_SECONDS = 1.0
-_TOP = 6
+_TOP = 15
 _NUMBERS = re.compile(r"\b\d+\b")
 _LOG_PATH = os.path.join(settings.BASE_DIR, "logs", "slow_requests.log")
 
