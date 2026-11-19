@@ -297,6 +297,12 @@ class CompanyUser(models.Model):
     # efecto". Sin permisos propios todavía (como OFFICE: su perfil).
     # SALES: sales staff; no specific permissions yet.
     ROLE_SALES = "SALES"
+    # S149 (Miguel Ángel, 19/11): "hay que añadir un rol que es
+    # servicios". Puesto de trabajador (ficha), sin permisos propios
+    # todavía: su perfil y el fichaje, como OFFICE.
+    # SERVICES: services staff; a worker role with no specific
+    # permissions yet.
+    ROLE_SERVICES = "SERVICES"
     ROLE_CHOICES = [
         (ROLE_ADMIN,         "Administrador"),
         (ROLE_ADMIN_SUPERVISOR, "Supervisor de Administración"),
@@ -312,11 +318,12 @@ class CompanyUser(models.Model):
         (ROLE_OFFICE,        "Administrativo"),
         (ROLE_NIGHTGUARD,    "Guarda nocturno"),
         (ROLE_SALES,         "Comercial"),
+        (ROLE_SERVICES,      "Servicios"),
     ]
     # Puestos de trabajador (alta por WhatsApp, fichaje). Worker roles.
     WORKER_ROLES = (
         ROLE_WORKSHOP, ROLE_DRIVER, ROLE_OFFICE, ROLE_NIGHTGUARD,
-        ROLE_CRANE_OPERATOR,
+        ROLE_CRANE_OPERATOR, ROLE_SERVICES,
     )
 
     company = models.ForeignKey(

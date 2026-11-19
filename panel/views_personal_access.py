@@ -52,10 +52,10 @@ class PersonalAccessPreviewView(SupervisorAccessMixin, View):
         people = _people(company, request.GET.get("ids", "").split(","))
         sections = current_sections([p.pk for p in people])
         rows = propose(people)
-        worker_roles = [
-            (value, label) for value, label in CompanyUser.ROLE_CHOICES
-            if value in CompanyUser.WORKER_ROLES
-        ]
+        # S149 (Miguel Ángel, 19/11: "la lista de roles [...] no es la
+        # misma cuando lo hacemos a través del fichaje que a través del
+        # CRUD de usuarios"): los mismos roles que al crear un usuario.
+        worker_roles = list(CompanyUser.ROLE_CHOICES)
         for row in rows:
             section = sections.get(row["person"].pk)
             row["section"] = section
@@ -64,18 +64,13 @@ class PersonalAccessPreviewView(SupervisorAccessMixin, View):
             account = (row["person"].company_user
                        or pending_account(row["person"]))
             row["base"] = account.base if account else None
-            # S147: un rol que no es de trabajador (supervisor,
-            # administración...) se conserva, no se machaca.
-            row["keep_role"] = (
-                account.get_role_display() if account and account.role
-                and account.role not in CompanyUser.WORKER_ROLES else ""
-            )
+            # S147: el rol que ya tiene (pre-registro) viene elegido; S149:
+            # se puede cambiar por cualquiera de la lista.
+            row["keep_role"] = ""
             default_role = section.default_role if section else ""
             row["role"] = (
                 account.role if account and account.role
-                in CompanyUser.WORKER_ROLES else default_role
-                if default_role in CompanyUser.WORKER_ROLES
-                else CompanyUser.ROLE_DRIVER
+                else default_role or CompanyUser.ROLE_DRIVER
             )
         return render(request, "panel/documentation_h30/_access_rows.html", {
             "rows": rows,

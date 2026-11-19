@@ -212,7 +212,8 @@ def create_access(person, username, section, base, role, by):
     # (supervisor, administración...) lo conserva: role vacío = el suyo.
     if not role and pending is not None and pending.role:
         role = pending.role
-    elif role not in CompanyUser.WORKER_ROLES:
+    elif role not in dict(CompanyUser.ROLE_CHOICES):
+        # S149: los mismos roles que al crear un usuario.
         raise AccessError("rol en el panel no válido")
     clash = User.objects.filter(username__iexact=username)
     if pending is not None:
