@@ -464,6 +464,9 @@ def _row(supply):
         "vehicle_label": vehicle.plate or vehicle.name or (
             "GasoGes %s" % vehicle.gasoges_id),
         "vehicle_name": vehicle.name,
+        # S157: columnas de la exportación que se pueden ver en el listado.
+        "plate": vehicle.plate,
+        "price": supply.price,
         "driver": user.name if user else (
             "Usuario %s" % (supply.gasoges_user_id or "?")),
         "has_person": bool(user and user.person_id),
@@ -910,7 +913,24 @@ def _list_context(request):
     date_from, date_to = _date_range(request)
     statuses = _statuses(request)
     asks = _ask_values(request)
+    controls = _sort_controls(_param(request, "sort"), view)
+    view_columns = {}
+    if view == VIEW_SUPPLIES:
+        # S157: columnas que este usuario eligió ver (pestaña "Columnas"),
+        # con el catálogo de la exportación, como en Centros de gasto.
+        from panel.list_columns import view_context
+        from panel.screen_export_catalog import REFUELS, REFUELS_RICH
+
+        sort_columns = controls["sort_columns"]
+        view_columns = view_context(
+            request.user.company_user, REFUELS, rows, {
+                "sort_arrows": {c["key"]: c["arrow"] for c in sort_columns},
+                "sort_priority": {
+                    c["key"]: c["priority"] for c in sort_columns},
+                "sort_next": {c["key"]: c["next"] for c in sort_columns},
+            }, rich=REFUELS_RICH)
     return {
+        **view_columns,
         "view": view,
         "family_choices": [
             {"code": family,
@@ -942,7 +962,7 @@ def _list_context(request):
             for code, label in ASK_CHOICES],
         "date_from": date_from,
         "date_to": date_to,
-        **_sort_controls(_param(request, "sort"), view),
+        **controls,
     }
 
 

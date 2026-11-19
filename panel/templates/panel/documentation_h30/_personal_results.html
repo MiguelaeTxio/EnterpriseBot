@@ -3,6 +3,8 @@
 <span id="personal-current-sort" class="d-none" data-sort="{{ sort_key }}" data-dir="{{ sort_dir }}"></span>
 {# S153: cuántos trabajadores salen con los filtros; lo pinta la cabecera "Trabajadores" de _personal_pane.html. #}
 <span id="personal-results-total" class="d-none" data-count="{{ page.paginator.count }}"></span>
+{# S157: orden actual, para que al cambiar las columnas (pestaña "Columnas") se repinte sin perderlo. #}
+<span id="personal-sort-inputs" class="d-none"><input type="hidden" name="sort" value="{{ sort_key }}"><input type="hidden" name="dir" value="{{ sort_dir }}"></span>
 {% comment %}
 H31 (S75) punto 1: columna de casillero -- selección para acciones masivas
 (entrega de EPI / envío de circular). El estado marcado/desmarcado lo
@@ -28,56 +30,25 @@ desliza entera, sin columnas fijas (S123). Mismo formato en PC y móvil.
                     {% if sort_key == 'first_surname' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
                 </a>
             </th>
-            <th data-col="dni">DNI</th>
-            <th data-col="hire_date" data-col-label="Alta">
+            {% comment %}
+            S157: columnas configurables (pestaña "Columnas"), como en
+            Centros de gasto: las elige cada usuario de entre las del
+            catálogo de la exportación (panel/screen_export_catalog.py,
+            PERSONAL). Las de siempre conservan su celda; las demás
+            salen como texto.
+            {% endcomment %}
+            {% for col in view_columns %}
+            <th class="{{ col.css }}" title="{{ col.title }}" data-col="{{ col.key }}" data-col-label="{{ col.title }}">
+                {% if col.sort %}
                 <a href="#"
-                   hx-get="{% url 'panel:documentation_personal_results' %}?sort=hire_date&dir={% if sort_key == 'hire_date' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}{% if requirement_filter %}&requirement={{ requirement_filter }}{% endif %}{% if req_state_filter %}&req_state={{ req_state_filter }}{% endif %}{% if req_item_filter %}&req_item={{ req_item_filter }}{% endif %}{% if onboarding_filter %}&onboarding={{ onboarding_filter }}{% endif %}{% if section_filter %}&section={{ section_filter }}{% endif %}{% if schedule_filter %}&schedule={{ schedule_filter }}{% endif %}"
+                   hx-get="{% url 'panel:documentation_personal_results' %}?sort={{ col.sort }}&dir={% if sort_key == col.sort and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}{% if requirement_filter %}&requirement={{ requirement_filter }}{% endif %}{% if req_state_filter %}&req_state={{ req_state_filter }}{% endif %}{% if req_item_filter %}&req_item={{ req_item_filter }}{% endif %}{% if onboarding_filter %}&onboarding={{ onboarding_filter }}{% endif %}{% if section_filter %}&section={{ section_filter }}{% endif %}{% if schedule_filter %}&schedule={{ schedule_filter }}{% endif %}"
                    hx-target="#personal-results" class="text-decoration-none text-dark">
-                    Alta
-                    {% if sort_key == 'hire_date' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
+                    {{ col.label }}
+                    {% if sort_key == col.sort %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
                 </a>
+                {% else %}{{ col.label }}{% endif %}
             </th>
-            <th data-col="doc_count" data-col-label="Documentos">
-                <a href="#"
-                   hx-get="{% url 'panel:documentation_personal_results' %}?sort=doc_count&dir={% if sort_key == 'doc_count' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}{% if requirement_filter %}&requirement={{ requirement_filter }}{% endif %}{% if req_state_filter %}&req_state={{ req_state_filter }}{% endif %}{% if req_item_filter %}&req_item={{ req_item_filter }}{% endif %}{% if onboarding_filter %}&onboarding={{ onboarding_filter }}{% endif %}{% if section_filter %}&section={{ section_filter }}{% endif %}{% if schedule_filter %}&schedule={{ schedule_filter }}{% endif %}"
-                   hx-target="#personal-results" class="text-decoration-none text-dark">
-                    Documentos
-                    {% if sort_key == 'doc_count' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
-                </a>
-            </th>
-            <th data-col="requirement" data-col-label="Requisitos de documentación">
-                <a href="#"
-                   hx-get="{% url 'panel:documentation_personal_results' %}?sort=requirement_name&dir={% if sort_key == 'requirement_name' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}{% if requirement_filter %}&requirement={{ requirement_filter }}{% endif %}{% if req_state_filter %}&req_state={{ req_state_filter }}{% endif %}{% if req_item_filter %}&req_item={{ req_item_filter }}{% endif %}{% if onboarding_filter %}&onboarding={{ onboarding_filter }}{% endif %}{% if section_filter %}&section={{ section_filter }}{% endif %}{% if schedule_filter %}&schedule={{ schedule_filter }}{% endif %}"
-                   hx-target="#personal-results" class="text-decoration-none text-dark">
-                    Requisitos de documentación
-                    {% if sort_key == 'requirement_name' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
-                </a>
-            </th>
-            <th data-col="onboarding" data-col-label="Alta en el fichaje">
-                <a href="#"
-                   hx-get="{% url 'panel:documentation_personal_results' %}?sort=onboarding&dir={% if sort_key == 'onboarding' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}{% if requirement_filter %}&requirement={{ requirement_filter }}{% endif %}{% if req_state_filter %}&req_state={{ req_state_filter }}{% endif %}{% if req_item_filter %}&req_item={{ req_item_filter }}{% endif %}{% if onboarding_filter %}&onboarding={{ onboarding_filter }}{% endif %}{% if section_filter %}&section={{ section_filter }}{% endif %}{% if schedule_filter %}&schedule={{ schedule_filter }}{% endif %}"
-                   hx-target="#personal-results" class="text-decoration-none text-dark">
-                    Alta en el fichaje
-                    {% if sort_key == 'onboarding' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
-                </a>
-            </th>
-            {# H24 (S144): sección vigente y horario que le toca, como en Horarios. #}
-            <th data-col="section" data-col-label="Sección">
-                <a href="#"
-                   hx-get="{% url 'panel:documentation_personal_results' %}?sort=section&dir={% if sort_key == 'section' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}{% if requirement_filter %}&requirement={{ requirement_filter }}{% endif %}{% if req_state_filter %}&req_state={{ req_state_filter }}{% endif %}{% if req_item_filter %}&req_item={{ req_item_filter }}{% endif %}{% if onboarding_filter %}&onboarding={{ onboarding_filter }}{% endif %}{% if section_filter %}&section={{ section_filter }}{% endif %}{% if schedule_filter %}&schedule={{ schedule_filter }}{% endif %}"
-                   hx-target="#personal-results" class="text-decoration-none text-dark">
-                    Sección
-                    {% if sort_key == 'section' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
-                </a>
-            </th>
-            <th data-col="schedule" data-col-label="Horario">
-                <a href="#"
-                   hx-get="{% url 'panel:documentation_personal_results' %}?sort=schedule&dir={% if sort_key == 'schedule' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}&q={{ search }}{% for a in active_filter %}&active={{ a }}{% endfor %}{% for c in company_filter %}&company={{ c }}{% endfor %}{% if requirement_filter %}&requirement={{ requirement_filter }}{% endif %}{% if req_state_filter %}&req_state={{ req_state_filter }}{% endif %}{% if req_item_filter %}&req_item={{ req_item_filter }}{% endif %}{% if onboarding_filter %}&onboarding={{ onboarding_filter }}{% endif %}{% if section_filter %}&section={{ section_filter }}{% endif %}{% if schedule_filter %}&schedule={{ schedule_filter }}{% endif %}"
-                   hx-target="#personal-results" class="text-decoration-none text-dark">
-                    Horario
-                    {% if sort_key == 'schedule' %}<i class="bi bi-chevron-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}"></i>{% endif %}
-                </a>
-            </th>
+            {% endfor %}
             {% comment %}H35 (S105): columna de aviso "falta algo de la plantilla" -- se rellena por JS solo cuando hay una plantilla elegida en la barra de acción masiva, ver _personal_pane.html.{% endcomment %}
             <th></th>
         </tr>
@@ -88,15 +59,27 @@ desliza entera, sin columnas fijas (S123). Mismo formato en PC y móvil.
             <td class="sticky-col sticky-col-1"><input type="checkbox" class="form-check-input person-select-checkbox" value="{{ person.pk }}" data-name="{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }}"></td>
             <td class="sticky-col sticky-col-2 sticky-col-2-wide">{% if person.has_alert %}<i class="bi bi-exclamation-triangle-fill text-danger" title="{{ person.alert_labels|join:", " }}"></i>{% endif %}{% if person.contract_alert %}<span class="badge {{ person.contract_alert.css }} ms-1" title="{{ person.contract_alert.text }}"><i class="bi bi-clock-history"></i></span>{% endif %}</td>
             <td class="sticky-col sticky-col-3 sticky-col-3-after-wide sticky-col-last">{% if person.has_id_photo %}<img src="{% url 'panel:documentation_personal_photo' pk=person.pk %}?v={{ person.id_photo_version }}" alt="" width="28" height="28" loading="lazy" class="rounded border me-1 person-avatar-thumb">{% elif person.avatar_entry_id %}<img src="{% url 'panel:documentation_document_view' pk=person.avatar_entry_id %}" alt="" width="28" height="28" loading="lazy" class="rounded border me-1 person-avatar-thumb">{% endif %}<a href="{% url 'panel:documentation_personal_detail' pk=person.pk %}">{{ person.first_surname }} {{ person.second_surname }}, {{ person.given_name }}</a>{% if person.nickname %} <span class="text-muted small">({{ person.nickname }})</span>{% endif %}</td>
+            {% for cell in person.view_cells %}
+            {% if not cell.rich %}
+            <td class="{{ cell.css }}" data-label="{{ cell.label }}">{{ cell.value|default:"—" }}</td>
+            {% elif cell.key == "dni" %}
             <td data-label="DNI">{{ person.dni }}</td>
+            {% elif cell.key == "hire_date" %}
             <td data-label="Alta">{{ person.hire_date|date:"d/m/Y"|default_if_none:"" }}</td>
+            {% elif cell.key == "doc_count" %}
             <td data-label="Documentos">{{ person.doc_count }}</td>
+            {% elif cell.key == "requirement" %}
             <td data-label="Requisito">{% for requirement in person.document_requirements.all %}{{ requirement.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}{% if person.requirement_status_checked %}<div class="small {% if person.requirement_status %}text-danger{% else %}text-success{% endif %}">{% if person.requirement_status %}{{ person.requirement_status|join:"; " }}{% else %}{{ status_requirement.name }}: al día{% endif %}</div>{% endif %}</td>
+            {% elif cell.key == "onboarding" %}
             <td data-label="Alta en el fichaje"><span class="badge text-bg-{{ person.onboarding.badge }} fw-normal">{{ person.onboarding.label }}</span></td>
+            {% elif cell.key == "section" %}
+            <td data-label="Sección">{{ person.ws_row.state.section.name|default:"—" }}</td>
+            {% elif cell.key == "schedule" %}
             {% with row=person.ws_row %}
-            <td data-label="Sección">{{ row.state.section.name|default:"—" }}</td>
             <td data-label="Horario" class="text-nowrap">{% if row.schedule %}<span title="{{ row.origin_label }}{% if row.days_title %} · {{ row.days_title }}{% endif %}">{{ row.schedule.label }}</span>{% if row.origin == "own" %} <span class="badge text-bg-primary fw-normal">propio</span>{% endif %}{% else %}<span class="text-muted">Sin horario</span>{% endif %}</td>
             {% endwith %}
+            {% endif %}
+            {% endfor %}
             <td><span class="dossier-missing-flag" data-person-id="{{ person.pk }}"></span></td>
         </tr>
         {% empty %}

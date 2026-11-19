@@ -14,8 +14,6 @@ que ve cada usuario.
 
 VIEW_SCREENS = {
     "worker_requests": "Solicitudes",
-    "personal": "Personal",
-    "refuels": "Repostajes",
     "clock_events": "Fichajes",
     "crews_list": "Equipos",
     "epi_deliveries": "EPIs",
@@ -56,6 +54,16 @@ EXPORT_VIEWS = {
             "requirement": ["requisito", "estado_requisito"],
             "onboarding": ["alta_fichaje"], "section": ["seccion"],
             "schedule": ["horario"],
+            # S157: las columnas de la exportación que se pueden ver
+            # en el listado llevan la misma clave en los dos.
+            **{key: [key] for key in (
+                "primer_apellido", "segundo_apellido", "nombre",
+                "fecha_nacimiento", "empresa", "estado", "fecha_baja",
+                "categoria", "estado_requisito", "telefono", "telefono_2",
+                "contacto_emergencia", "telefono_emergencia", "email",
+                "direccion", "codigo_postal", "poblacion", "provincia",
+                "num_ss", "cad_dni", "cad_carnet", "cad_gruista", "cad_cap",
+                "cad_tacografo", "reconocimiento", "usuario_panel")},
         },
     },
     "refuels": {
@@ -65,6 +73,9 @@ EXPORT_VIEWS = {
             "machine": ["centro"], "vehicle": ["matricula"],
             "driver": ["quien"], "value": ["km"], "litres": ["litros"],
             "status": ["estado"], "unit": ["unidad"], "reason": ["motivo"],
+            # S157: las que antes solo salían al exportar.
+            "plate": ["matricula"], "name": ["nombre"],
+            "price": ["precio"], "hours": ["horas"],
         },
     },
     "crews": {

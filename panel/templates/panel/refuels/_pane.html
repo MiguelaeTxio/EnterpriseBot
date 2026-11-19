@@ -151,7 +151,7 @@ repostado o no, y las fechas no cuentan (se desactivan).
                 </div>
                 {# S153: qué columnas se ven en el listado y en qué orden, con plantillas. #}
                 <div class="eb-filter-pane d-none" data-filter-pane="columns">
-                    {% include "panel/_view_columns_tab.html" with vc="rfl" screen="refuels" %}
+                    {% include "panel/_view_columns_tab.html" with vc="rfl" screen="refuels" refresh_el="#rfl-filters" refresh_evt="rfl-selection-refresh" %}
                 </div>
             </div>
         </div>

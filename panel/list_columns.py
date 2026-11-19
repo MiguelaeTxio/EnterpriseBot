@@ -114,11 +114,16 @@ def view_context(company_user, screen, rows, sort_controls=None,
     plain = [c for c in columns if c.key not in rich]
     for row in rows:
         values = {c.key: _display(c.getter(row)) for c in plain}
-        row.view_cells = [
+        cells = [
             {"key": c.key, "label": c.label, "css": c.css,
              "rich": c.key in rich, "value": values.get(c.key, "")}
             for c in columns
         ]
+        # S157: las filas de Repostajes son diccionarios.
+        if isinstance(row, dict):
+            row["view_cells"] = cells
+        else:
+            row.view_cells = cells
     return {"view_columns": headers}
 
 

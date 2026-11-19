@@ -79,6 +79,19 @@ def _requirement_state(person):
     return "; ".join(labels) or "Al día"
 
 
+def _employer(person):
+    """
+    S157: employer's legal name (resolved in bulk by the list).
+    ---
+    S157: razón social de la empresa. El listado la deja resuelta para
+    todos de una vez (`employer_label`, panel/views_documentation_h30);
+    sin ella, la propiedad del modelo (una consulta por persona).
+    """
+    if hasattr(person, "employer_label"):
+        return person.employer_label
+    return person.employer_legal_name
+
+
 def _onboarding(person):
     state = getattr(person, "onboarding", None)
     return getattr(state, "label", "") if state else ""
@@ -110,7 +123,7 @@ PERSONAL_EXPORT_COLUMNS = (
     ("dni", "DNI/NIE", 12, lambda p: p.dni, False),
     ("fecha_nacimiento", "Fecha de nacimiento", 12,
      lambda p: p.birth_date, True),
-    ("empresa", "Empresa", 30, lambda p: p.employer_legal_name, False),
+    ("empresa", "Empresa", 30, _employer, False),
     ("estado", "Estado", 9,
      lambda p: "Activo" if p.is_active_employee else "Baja", False),
     ("fecha_alta", "Fecha de alta", 12, lambda p: p.hire_date, True),

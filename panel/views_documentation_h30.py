@@ -1197,6 +1197,31 @@ def _requirement_items_map():
     }
 
 
+def _attach_employer_labels(people):
+    """
+    Employer's legal name of each person, with one query for all.
+    ---
+    S157: razón social de la empresa de cada persona
+    (`employer_label`), con una sola consulta de perfiles fiscales para
+    todo el listado: la propiedad `employer_legal_name` hace una por
+    persona y la columna "Empresa" del listado o del Excel la pide en
+    cada fila. Mismo criterio que resolve_company_fiscal_profile.
+    """
+    from document_explorer.models import CompanyFiscalProfile
+
+    by_alias = {}
+    for profile in CompanyFiscalProfile.objects.only(
+            "legal_name", "name_aliases"):
+        for line in profile.name_aliases.splitlines():
+            alias = line.strip().upper()
+            if alias and alias not in by_alias:
+                by_alias[alias] = profile.legal_name
+    for person in people:
+        text = person.employer_company
+        needle = (text or "").strip().upper()
+        person.employer_label = by_alias.get(needle, text) if needle else text
+
+
 def _person_list_page(request, ids_only=False):
     """
     The Personal list (filters, search, sort). With ids_only, only the
@@ -1444,7 +1469,17 @@ def _person_list_page(request, ids_only=False):
         row.person.ws_row = row
     page.object_list = _python_sorted(
         list(page.object_list), sort_key, sort_dir)
+    _attach_employer_labels(page.object_list)
+    # S157: columnas que este usuario eligió ver (pestaña "Columnas"),
+    # con el catálogo de la exportación, como en Centros de gasto.
+    from panel.list_columns import view_context
+    from panel.screen_export_catalog import PERSONAL, PERSONAL_RICH
+
+    view = view_context(
+        request.user.company_user, PERSONAL, page.object_list,
+        rich=PERSONAL_RICH)
     return {
+        **view,
         "page": page, "sort_key": sort_key, "sort_dir": sort_dir,
         "search": search, "sort_columns_person": sort_columns,
         "active_filter": request.GET.getlist("active"),

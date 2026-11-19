@@ -50,7 +50,11 @@ pantalla completa aparte, no un fragmento htmx de este pane.
             </div>
             {# S153: qué columnas se ven en el listado y en qué orden, con plantillas. #}
             <div class="eb-filter-pane d-none" data-filter-pane="columns">
-                {% include "panel/_view_columns_tab.html" with vc="personal" screen="personal" %}
+                {% include "panel/_view_columns_tab.html" with vc="personal" screen="personal" refresh_el="#personal-columns-refresh" refresh_evt="eb-columns" %}
+                {# S157: con catálogo, cambiar las columnas vuelve a pedir la tabla con los filtros y el orden de ahora. #}
+                <span id="personal-columns-refresh" class="d-none"
+                      hx-get="{% url 'panel:documentation_personal_results' %}" hx-target="#personal-results"
+                      hx-include="#personal-search-form, #personal-sort-inputs" hx-trigger="eb-columns"></span>
             </div>
         </div>
     </div>

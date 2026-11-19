@@ -429,3 +429,107 @@ SERVICE = register(Screen(
     ],
 ))
 
+
+
+# S157 (Miguel Ángel: en «Columnas» de Personal y Repostajes, las
+# columnas que hoy solo salen al exportar, como en Centros de gasto).
+# Listado de Personal: las columnas de siempre (con celda propia en
+# panel/documentation_h30/_personal_results.html y las mismas claves
+# que ya tenía guardadas cada usuario) y, detrás, las de la exportación
+# (panel/views_personal_export.py), que salen como texto. Los objetos
+# son PersonIdentity preparados por _person_list_page.
+def _personal_columns():
+    from panel.views_personal_export import PERSONAL_EXPORT_COLUMNS
+
+    by_key = {c[0]: c for c in PERSONAL_EXPORT_COLUMNS}
+    own = (
+        Column("dni", "DNI", 12, by_key["dni"][3]),
+        Column("hire_date", "Alta", 12, by_key["fecha_alta"][3],
+               DATE, sort="hire_date"),
+        Column("doc_count", "Documentos", 10, by_key["documentos"][3],
+               sort="doc_count"),
+        Column("requirement", "Requisitos de documentación", 26,
+               by_key["requisito"][3], sort="requirement_name"),
+        Column("onboarding", "Alta en el fichaje", 22,
+               by_key["alta_fichaje"][3], sort="onboarding"),
+        Column("section", "Sección", 22, by_key["seccion"][3],
+               sort="section"),
+        Column("schedule", "Horario", 22, by_key["horario"][3],
+               sort="schedule"),
+    )
+    extra = tuple(
+        Column(key, label, width, getter, DATE if is_date else None)
+        for key, label, width, getter, is_date in PERSONAL_EXPORT_COLUMNS
+        if key in PERSONAL_EXTRA
+    )
+    return own + extra
+
+
+# Columnas de la exportación que el listado no tenía (misma clave en
+# el listado y en la exportación), en el orden de la exportación.
+PERSONAL_EXTRA = (
+    "primer_apellido", "segundo_apellido", "nombre", "fecha_nacimiento",
+    "empresa", "estado", "fecha_baja", "categoria", "estado_requisito",
+    "telefono", "telefono_2", "contacto_emergencia", "telefono_emergencia",
+    "email", "direccion", "codigo_postal", "poblacion", "provincia",
+    "num_ss", "cad_dni", "cad_carnet", "cad_gruista", "cad_cap",
+    "cad_tacografo", "reconocimiento", "usuario_panel",
+)
+PERSONAL = register(Screen(
+    key="personal",
+    label="Personal",
+    columns=_personal_columns(),
+    panel_columns=[
+        "dni", "hire_date", "doc_count", "requirement", "onboarding",
+        "section", "schedule",
+    ],
+))
+PERSONAL_RICH = (
+    "dni", "hire_date", "doc_count", "requirement", "onboarding",
+    "section", "schedule",
+)
+
+
+def _price(row):
+    price = row.get("price")
+    return float(price) if price is not None else None
+
+
+# Listado de Repostajes (vista de suministros): las columnas de siempre
+# (celda propia en panel/refuels/_table.html) y, detrás, las de la
+# exportación que no tenía. Los objetos son los diccionarios de
+# panel/views_refuels._row. Fecha y hora van siempre delante (fijas en
+# la tabla, fuera de la configuración).
+REFUELS = register(Screen(
+    key="refuels",
+    label="Repostajes",
+    columns=(
+        Column("machine", "Centro de gasto", 14,
+               lambda r: r["machine"].code if r["machine"] else "",
+               sort="machine"),
+        Column("vehicle", "Vehículo (GasoGes)", 18,
+               lambda r: r["vehicle_label"], sort="vehicle"),
+        Column("driver", "Quién repostó", 32, lambda r: r["driver"],
+               sort="driver"),
+        Column("value", "KM tecleado", 12, lambda r: r["value"],
+               sort="value", css="text-end"),
+        Column("litres", "Litros", 9, lambda r: r["litres"],
+               sort="litres", css="text-end"),
+        Column("status", "Estado", 24, lambda r: r["status"],
+               sort="status"),
+        Column("unit", "Unidad", 11, lambda r: r["unit"]),
+        Column("reason", "Motivo", 48, lambda r: r["note"]),
+        Column("plate", "Matrícula (GasoGes)", 16, lambda r: r["plate"]),
+        Column("name", "Nombre (GasoGes)", 28, lambda r: r["vehicle_name"]),
+        Column("price", "Precio", 9, _price, css="text-end"),
+        Column("hours", "Horas sin anotar", 20, lambda r: r["hours_issue"]),
+    ),
+    panel_columns=[
+        "machine", "vehicle", "driver", "value", "litres", "status",
+        "unit", "reason",
+    ],
+))
+REFUELS_RICH = (
+    "machine", "vehicle", "driver", "value", "litres", "status", "unit",
+    "reason",
+)

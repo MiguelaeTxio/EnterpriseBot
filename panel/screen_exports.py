@@ -215,7 +215,11 @@ def _panel_keys(company_user, screen):
     from panel.list_columns import export_panel_columns, view_keys
     from panel.view_screens import EXPORT_VIEWS
 
-    if screen.key in EXPORT_VIEWS:
+    # S157: Personal y Repostajes son a la vez la clave de su listado
+    # (con catálogo) y la de su exportación; para el listado, sus
+    # propias columnas.
+    if (screen.key in EXPORT_VIEWS
+            and EXPORT_VIEWS[screen.key]["view"] != screen.key):
         return [k for k in export_panel_columns(
             company_user, screen.key, screen.panel_columns)
             if k in screen.by_key]
