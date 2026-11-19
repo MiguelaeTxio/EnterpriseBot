@@ -196,16 +196,29 @@ class ViewLayoutSaveView(CompanyUserRequiredMixin, View):
         key = data.get("key") or ""
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", key):
             return JsonResponse({"error": "Panel no válido."}, status=400)
-        split = data.get("split")
-        if split is not None and not (
-                isinstance(split, (int, float)) and 15 <= split <= 95):
-            return JsonResponse({"error": "Ancho no válido."}, status=400)
         obj, _created = PanelNavigationState.objects.get_or_create(
             company_user=request.user.company_user,
             screen_key=LAYOUT_PREFIX + key,
             defaults={"state": {}},
         )
-        obj.state = {"split": round(split, 1) if split else None}
+        state = obj.state if isinstance(obj.state, dict) else {}
+        if "split" in data:
+            split = data.get("split")
+            if split is not None and not (
+                    isinstance(split, (int, float)) and 15 <= split <= 95):
+                return JsonResponse(
+                    {"error": "Ancho no válido."}, status=400)
+            state["split"] = round(split, 1) if split else None
+        if "top" in data:
+            # S153: alto (px) del panel de arriba (filtros, grupos y
+            # acciones); el listado ocupa el resto. null = automático.
+            top = data.get("top")
+            if top is not None and not (
+                    isinstance(top, (int, float)) and 60 <= top <= 2000):
+                return JsonResponse(
+                    {"error": "Alto no válido."}, status=400)
+            state["top"] = int(top) if top else None
+        obj.state = state
         obj.save(update_fields=["state", "updated_at"])
         return JsonResponse({"ok": True})
 

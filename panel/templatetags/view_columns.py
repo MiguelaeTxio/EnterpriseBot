@@ -80,3 +80,16 @@ def view_layout_split(context, key):
 
     split = _saved(context, LAYOUT_PREFIX + key).get("split")
     return split if isinstance(split, (int, float)) else ""
+
+
+@register.simple_tag(takes_context=True)
+def view_layout_top(context, key):
+    """
+    Saved height (px) of the top panel of a list, or "".
+    ---
+    S153: el alto guardado (px) del panel de arriba de un listado.
+    """
+    from panel.list_columns import LAYOUT_PREFIX
+
+    top = _saved(context, LAYOUT_PREFIX + key).get("top")
+    return top if isinstance(top, (int, float)) else ""

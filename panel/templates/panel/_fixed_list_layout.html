@@ -25,6 +25,13 @@ En el ordenador el botón no existe y el panel no cambia.
 .eb-split-handle::after { content: ""; position: absolute; top: 50%; left: 3px; width: 4px; height: 48px; margin-top: -24px; border-radius: 2px; background: var(--bs-border-color); }
 .eb-split-handle:hover::after, body.eb-split-resizing .eb-split-handle::after { background: var(--bs-primary); height: 100%; top: 0; margin-top: 0; }
 body.eb-split-resizing { cursor: col-resize; user-select: none; }
+/* En pantalla completa solo se ve el listado: sin separador. */
+:fullscreen .eb-split-handle { display: none !important; }
+/* S153: separador arrastrable entre el panel de arriba y el listado. */
+.eb-vsplit-handle { position: relative; height: 10px; margin: -4px 0 -2px; cursor: row-resize; z-index: 5; }
+.eb-vsplit-handle::after { content: ""; position: absolute; left: 50%; top: 3px; width: 48px; height: 4px; margin-left: -24px; border-radius: 2px; background: var(--bs-border-color); }
+.eb-vsplit-handle:hover::after, body.eb-vsplit-resizing .eb-vsplit-handle::after { background: var(--bs-primary); width: 100%; left: 0; margin-left: 0; }
+body.eb-vsplit-resizing { cursor: row-resize; user-select: none; }
 .fixed-list-scroll thead th {
     position: sticky;
     top: 0;
@@ -41,6 +48,8 @@ body.eb-split-resizing { cursor: col-resize; user-select: none; }
     const bottomPanel = document.getElementById("{{ bottom_id|escapejs }}");
     const topPanel = document.getElementById("{{ top_id|escapejs }}");
     if (!bottomPanel) return;
+    // S153: alto del panel de arriba elegido por el usuario (px) o null.
+    let topHeight = parseInt("{% view_layout_top bottom_id %}", 10) || null;
     // S153: botón "Ampliar" del listado (panel/static/panel/js/
     // list_fullscreen.js, directriz 4.26), salvo que ya tenga el suyo.
     bottomPanel.setAttribute("data-eb-fullscreen", "");
@@ -78,6 +87,7 @@ body.eb-split-resizing { cursor: col-resize; user-select: none; }
             bottomPanel.style.height = "";
             if (topPanel) {
                 topPanel.style.maxHeight = "";
+                topPanel.style.height = "";
                 topPanel.style.overflowY = "";
             }
             return;
@@ -86,19 +96,40 @@ body.eb-split-resizing { cursor: col-resize; user-select: none; }
         // (510 px en una de 900) dejaba la lista en el mínimo y la
         // página se salía de la ventana. Por encima del 45 % del alto
         // de la ventana, el panel fijo tiene su propio scroll.
-        if (topPanel) {
+        if (topPanel && topHeight) {
+            // S153: alto elegido arrastrando el separador; el listado
+            // se queda con el resto.
+            topPanel.style.maxHeight = "";
+            topPanel.style.height = topHeight + "px";
+            topPanel.style.overflowY = "auto";
+            // Los recuadros crecen con el panel (no queda hueco vacío).
+            topPanel.style.display = "flex";
+            topPanel.style.flexDirection = "column";
+            const topRow = topPanel.querySelector(":scope > .row");
+            if (topRow) { topRow.style.flex = "1 0 auto"; }
+        } else if (topPanel) {
+            topPanel.style.height = "";
+            topPanel.style.display = "";
+            topPanel.style.flexDirection = "";
+            const topRow = topPanel.querySelector(":scope > .row");
+            if (topRow) { topRow.style.flex = ""; }
             topPanel.style.maxHeight = Math.round(
                 window.innerHeight * TOP_MAX_RATIO
             ) + "px";
             topPanel.style.overflowY = "auto";
         }
-        const naturalHeight = bottomPanel.getBoundingClientRect().height;
-        const overflow = Math.max(
-            document.documentElement.scrollHeight - window.innerHeight, 0
-        );
-        bottomPanel.style.height = Math.max(
-            naturalHeight - overflow - GUTTER, MIN_HEIGHT
-        ) + "px";
+        // S153: el panel ocupa exactamente el hueco hasta el borde de la
+        // ventana, también cuando la lista es corta (antes solo se
+        // encogía; ahora crece cuando se encoge el panel de arriba con
+        // su separador). Se estira un momento para que la página se
+        // salga, se mide lo que queda por debajo y se ajusta.
+        bottomPanel.style.height = (window.innerHeight * 2) + "px";
+        const box = bottomPanel.getBoundingClientRect();
+        const below = document.documentElement.scrollHeight -
+            (box.bottom + window.scrollY);
+        const available = window.innerHeight - (box.top + window.scrollY) -
+            below - GUTTER;
+        bottomPanel.style.height = Math.max(available, MIN_HEIGHT) + "px";
     }
 
     function onSettle() {
@@ -202,6 +233,59 @@ body.eb-split-resizing { cursor: col-resize; user-select: none; }
         if (window.ResizeObserver) { new ResizeObserver(apply).observe(row); }
         apply();
     }());
+
+    // S153 (Miguel Ángel: "un separador [...] entre el listado y
+    // selección y los paneles de búsqueda y filtrado [...], grupo de
+    // selección y [...] acciones. Esos tres que puedan comprimirse o
+    // expandirse. Atados al de listado y selección"). Arrastrar fija el
+    // alto del panel de arriba; el de abajo se recalcula con el resto.
+    // Doble clic: alto automático. Solo en pantallas de 992 px o más.
+    if (topPanel && !bottomPanel.dataset.vsplit) {
+        bottomPanel.dataset.vsplit = "1";
+        const VSAVE_URL = "{% url 'panel:view_layout_save' %}";
+        const VKEY = "{{ bottom_id|escapejs }}";
+        const vhandle = document.createElement("div");
+        vhandle.className = "eb-vsplit-handle d-none d-lg-block";
+        vhandle.title = "Arrastra para dar más alto a los filtros o al listado. Doble clic: automático.";
+        bottomPanel.parentNode.insertBefore(vhandle, bottomPanel);
+        function vcsrf() {
+            const m = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/);
+            return m ? decodeURIComponent(m[1]) : "";
+        }
+        function vsave() {
+            fetch(VSAVE_URL, {
+                method: "POST",
+                headers: {"Content-Type": "application/json", "X-CSRFToken": vcsrf()},
+                body: JSON.stringify({key: VKEY, top: topHeight}),
+            }).catch(function () { /* se guarda en el siguiente cambio */ });
+        }
+        vhandle.addEventListener("mousedown", function (ev) {
+            ev.preventDefault();
+            const y0 = ev.clientY;
+            const h0 = topPanel.getBoundingClientRect().height;
+            // Lo más alto: lo que el listado puede ceder hasta su mínimo.
+            const most = h0 + Math.max(
+                bottomPanel.getBoundingClientRect().height - MIN_HEIGHT, 0);
+            document.body.classList.add("eb-vsplit-resizing");
+            function move(e) {
+                topHeight = Math.round(Math.max(60, Math.min(most, h0 + e.clientY - y0)));
+                recompute();
+            }
+            function up() {
+                document.removeEventListener("mousemove", move);
+                document.removeEventListener("mouseup", up);
+                document.body.classList.remove("eb-vsplit-resizing");
+                vsave();
+            }
+            document.addEventListener("mousemove", move);
+            document.addEventListener("mouseup", up);
+        });
+        vhandle.addEventListener("dblclick", function () {
+            topHeight = null;
+            recompute();
+            vsave();
+        });
+    }
 
     let observer = null;
     window.addEventListener("resize", recompute);

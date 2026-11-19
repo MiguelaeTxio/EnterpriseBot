@@ -64,7 +64,12 @@
             if (!col) { return; }
             col.classList.add("eb-fs-hide");
             Array.prototype.forEach.call(col.parentElement.children, function (sibling) {
-                if (sibling !== col && !sibling.classList.contains("eb-fs-hide")) {
+                // S153: solo columnas de la rejilla; el separador
+                // arrastrable (eb-split-handle) se quedaba a todo el
+                // ancho, tapaba la pantalla completa y no se podía
+                // pulsar nada.
+                if (sibling !== col && !sibling.classList.contains("eb-fs-hide") &&
+                        /(^|\s)col(-|\s|$)/.test(sibling.className)) {
                     sibling.classList.add("eb-fs-wide");
                 }
             });
