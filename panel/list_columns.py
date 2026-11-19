@@ -178,3 +178,36 @@ def view_state(company_user, screen):
         # S153: sin catálogo, las columnas las da la cabecera de la tabla.
         "dynamic": screen.dynamic,
     }
+
+
+def export_panel_columns(company_user, export_id, standard):
+    """
+    The export columns of "Vista del panel": what the list shows now.
+    ---
+    S153: las columnas de la exportación de la plantilla "Vista del
+    panel" = las que el usuario ve ahora en el listado de esa pantalla,
+    en su orden (panel/view_screens.EXPORT_VIEWS). Si nunca ha elegido
+    columnas, las de siempre (`standard`).
+    """
+    from panel.view_screens import EXPORT_VIEWS
+
+    spec = EXPORT_VIEWS.get(export_id)
+    if spec is None:
+        return list(standard)
+    saved = (
+        PanelNavigationState.objects
+        .filter(company_user=company_user,
+                screen_key=STATE_PREFIX + spec["view"])
+        .values_list("state", flat=True)
+        .first()
+    )
+    chosen = saved.get("columns") if isinstance(saved, dict) else None
+    if not isinstance(chosen, list) or not chosen:
+        return list(standard)
+    result = list(spec["fixed"])
+    for key in chosen:
+        for column in spec["map"].get(key, []):
+            if column not in result:
+                result.append(column)
+    return result
+

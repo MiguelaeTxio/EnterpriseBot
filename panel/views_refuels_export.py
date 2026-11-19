@@ -173,6 +173,22 @@ _COLUMNS = {
          _DATETIME),
     ),
 }
+def _panel_columns(company_user, view):
+    """
+    S153: "Vista del panel" of the supplies list = what it shows now.
+    ---
+    S153: en el listado de repostajes, la "Vista del panel" son las
+    columnas que el usuario ve ahora (pestaña "Columnas"); en las demás
+    vistas, las de su tabla.
+    """
+    if view != VIEW_SUPPLIES:
+        return _PANEL_COLUMNS[view]
+    from panel.list_columns import export_panel_columns
+
+    return export_panel_columns(
+        company_user, "refuels", _PANEL_COLUMNS[view])
+
+
 _BY_KEY = {
     view: {column[0]: column for column in columns}
     for view, columns in _COLUMNS.items()
@@ -276,7 +292,7 @@ class RefuelsExportTemplateListView(CompanyUserRequiredMixin, View):
             "templates": with_panel_template(
                 [_as_dict(template, company_user)
                  for template in _visible_templates(company_user, view)],
-                _PANEL_COLUMNS[view],
+                _panel_columns(company_user, view),
                 ((_AUTO_NAME, [column[0] for column in _COLUMNS[view]]),)),
             "columns": [{"key": column[0], "label": column[1]}
                         for column in _COLUMNS[view]],
@@ -475,7 +491,8 @@ class RefuelsExportView(CompanyUserRequiredMixin, View):
         view = _view(request)
         template = find_template(
             request.GET.get("template_pk"),
-            _visible_templates(company_user, view), _PANEL_COLUMNS[view])
+            _visible_templates(company_user, view),
+            _panel_columns(company_user, view))
         if template is None:
             return HttpResponse("Plantilla no encontrada.", status=404)
         known = _BY_KEY[view]

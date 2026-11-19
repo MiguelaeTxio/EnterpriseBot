@@ -194,10 +194,8 @@ def columns_for(request, screen, template_pk=_FROM_REQUEST):
     else:
         raw = template_pk
     if raw in (None, ""):
-        template = next(
-            (t for t in templates
-             if t.is_default and not t.is_global), None,
-        ) or panel_template(_panel_keys(company_user, screen))
+        # S153: sin plantilla, la vista del panel (lo que se ve).
+        template = panel_template(_panel_keys(company_user, screen))
     else:
         template = find_template(
             raw, templates, _panel_keys(company_user, screen))
@@ -214,8 +212,13 @@ def _panel_keys(company_user, screen):
     S153: la plantilla "Vista del panel" es lo que el usuario ve ahora
     en el listado (columnas configurables, panel/list_columns.py).
     """
-    from panel.list_columns import view_keys
+    from panel.list_columns import export_panel_columns, view_keys
+    from panel.view_screens import EXPORT_VIEWS
 
+    if screen.key in EXPORT_VIEWS:
+        return [k for k in export_panel_columns(
+            company_user, screen.key, screen.panel_columns)
+            if k in screen.by_key]
     return view_keys(company_user, screen)
 
 

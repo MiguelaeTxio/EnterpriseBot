@@ -55,12 +55,14 @@ def with_panel_template(dicts, columns, auto_names=()):
                 item["name"], list(item["columns"])) in [
                 (name, list(cols)) for name, cols in auto_names]:
             item["is_default"] = False
-    own_default = any(item["is_default"] for item in dicts)
+    # S153 (Miguel Ángel): la "Vista del panel" sale siempre elegida al
+    # abrir la exportación y es lo que se ve en el listado; las demás
+    # plantillas se siguen pudiendo elegir.
     panel = {
         "id": PANEL_TEMPLATE_ID,
         "name": PANEL_TEMPLATE_NAME,
         "is_global": False,
-        "is_default": not own_default,
+        "is_default": True,
         "columns": list(columns),
         "editable": False,
         "builtin": True,

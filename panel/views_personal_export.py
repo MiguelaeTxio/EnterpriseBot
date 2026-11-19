@@ -168,6 +168,18 @@ PANEL_COLUMNS = [
 AUTO_TEMPLATES = (("Listado estándar", DEFAULT_COLUMNS),)
 
 
+def _panel_columns(company_user):
+    """
+    S153: "Vista del panel" = the columns shown now in Personal.
+    ---
+    S153: la "Vista del panel" son las columnas que el usuario ve ahora
+    en el listado de Personal (pestaña "Columnas").
+    """
+    from panel.list_columns import export_panel_columns
+
+    return export_panel_columns(company_user, "personal", PANEL_COLUMNS)
+
+
 def column_choices():
     return [{"key": c[0], "label": c[1]} for c in PERSONAL_EXPORT_COLUMNS]
 
@@ -316,7 +328,7 @@ class PersonalExportTemplateListView(CompanyUserRequiredMixin, View):
         return JsonResponse({
             "templates": with_panel_template(
                 [_as_dict(t, cu) for t in _visible_templates(cu)],
-                PANEL_COLUMNS, AUTO_TEMPLATES,
+                _panel_columns(cu), AUTO_TEMPLATES,
             ),
             "columns": column_choices(),
             "is_admin": _is_admin(cu),
@@ -419,7 +431,7 @@ class PersonalExportView(CompanyUserRequiredMixin, View):
         cu = request.user.company_user
         template = find_template(
             request.GET.get("template_pk"), _visible_templates(cu),
-            PANEL_COLUMNS,
+            _panel_columns(cu),
         )
         if template is None:
             return HttpResponse("Plantilla no encontrada.", status=404)
