@@ -227,10 +227,9 @@ def _build_section_system_instruction(section) -> str:
     parts += [
         "",
         "INSTRUCCIÓN DE TRANSFERENCIA — OBLIGATORIO:",
-        "Cuando vayas a ejecutar una transferencia al responsable, SIEMPRE",
-        "di antes con quién le pasas: \"Le paso con la persona responsable "
-        f"de {section_name}. Un momento, por favor, no se retire.\"",
-        "NUNCA ejecutes la transferencia sin despedirte verbalmente del llamante.",
+        "Cuando vayas a transferir al responsable, NO anuncies la",
+        "transferencia: invoca la función directamente. El sistema le dice",
+        "al llamante con quién le pasa.",
         "",
         "IDIOMA — OBLIGATORIO:",
         "El llamante puede llegar a esta sección desde el IVR principal en",

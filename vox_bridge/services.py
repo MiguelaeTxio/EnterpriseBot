@@ -54,6 +54,7 @@ import math
 import os
 import struct
 import time
+from xml.sax.saxutils import escape as xml_escape
 
 from google import genai
 from google.genai import types
@@ -919,10 +920,8 @@ class VoiceOrchestrationService:
                                 "Invoca esta función cuando estés listo para "
                                 "transferir "
                                 "la llamada al responsable de la sección. "
-                                "Antes de invocarla, di al llamante con "
-                                "quién le pasas (la persona responsable de "
-                                "la sección, por el nombre de la sección) "
-                                "y que espere un momento. "
+                                "No anuncies la transferencia: el sistema "
+                                "le dice al llamante con quién le pasa. "
                                 "Proporciona el section_id de la sección "
                                 "destino. "
                                 "Solo invoca esta función una vez por llamada."
@@ -3885,9 +3884,21 @@ class VoiceOrchestrationService:
         # TwiML for the caller: enter Conference and hear hold music.
         # TwiML para el llamante: entrar en la Conference y escuchar música de
         # espera.
+        # S155: el aviso de con quién se le pasa lo dice Twilio al entrar
+        # en la sala, con la voz de la empresa (Chirp3-HD de Google, la
+        # misma familia de voces que Gemini Live). Llamada real del 19/11
+        # a las 10:39: Gemini encadenó route_to_section y
+        # transfer_to_section_contact sin decir nada.
+        announce_voice = f"Google.es-ES-Chirp3-HD-{self.voice_name}"
+        announce_text = xml_escape(
+            f"Le paso con la persona responsable de {section_name}. "
+            "Un momento, por favor, no se retire."
+        )
         caller_twiml = (
             '<?xml version="1.0" encoding="UTF-8"?>'
             '<Response>'
+            f'<Say voice="{announce_voice}" language="es-ES">'
+            f'{announce_text}</Say>'
             f'<Dial action="{action_url}" method="POST" timeout="30">'
             '<Conference '
             'startConferenceOnEnter="false" endConferenceOnExit="true" '
