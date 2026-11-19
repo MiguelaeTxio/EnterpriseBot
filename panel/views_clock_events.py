@@ -1067,6 +1067,11 @@ def _corrections_in_range(company_user_id, date_from, date_to):
         | Q(new_pressed_at__gte=start, new_pressed_at__lt=end),
     ).select_related(
         "corrected_by__user", "old_clock_type", "new_clock_type",
+        # S157: el historial lee la pulsación corregida y la nueva de
+        # cada corrección (lugar, "Ubicación rectificada"); sin esto,
+        # dos consultas por corrección (logs/slow_requests.log del
+        # 18-19/11: 58 y 97 consultas de ClockEvent en una página).
+        "event", "replacement",
     ).order_by("-corrected_at"))
 
 
@@ -1128,6 +1133,21 @@ def worker_detail_data(company, person, date_from, date_to):
     anuladas en su día), el historial de correcciones y el informe de un
     trabajador en un intervalo. Lo usan el detalle (modal de la ficha) y
     la página de fichajes del trabajador (S144).
+    """
+    # S157: el horario de cada día (comida que se propone, informe) sale
+    # de la caché en bloque; sin ella, varias consultas por día
+    # (logs/slow_requests.log: 12-15 de WorkerClockSetting por página).
+    from panel.views_operator import bulk_schedule_cache
+
+    with bulk_schedule_cache([person], company):
+        return _worker_detail_data(company, person, date_from, date_to)
+
+
+def _worker_detail_data(company, person, date_from, date_to):
+    """
+    worker_detail_data without the schedule cache.
+    ---
+    worker_detail_data, ya dentro de la caché de horarios.
     """
     report = _EmptyReport()
     corrections = []

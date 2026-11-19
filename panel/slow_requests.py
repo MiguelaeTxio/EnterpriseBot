@@ -97,8 +97,17 @@ class SlowRequestLogMiddleware:
                     total, request.method, request.get_full_path()[:200],
                     user, timer.count, timer.seconds, total - timer.seconds),
             ]
+            shown = set()
             for shape, times in timer.shapes.most_common(_TOP):
+                shown.add(shape)
                 lines.append("    %4dx %.2fs %s" % (
                     times, timer.shape_seconds[shape], shape))
+            # S157: también las más lentas aunque no se repitan (Personal
+            # del 18/11: 20 s de BD sin que ninguna repetida lo explicara).
+            for shape, seconds in timer.shape_seconds.most_common(_TOP):
+                if shape in shown or seconds < 0.25:
+                    continue
+                lines.append("    %4dx %.2fs LENTA %s" % (
+                    timer.shapes[shape], seconds, shape))
             logger.info("\n".join(lines))
         return response
