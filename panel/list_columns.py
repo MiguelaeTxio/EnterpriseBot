@@ -50,11 +50,14 @@ def view_keys(company_user, screen):
     de la pantalla y, detrás, las elegidas (o las de la tabla de
     siempre, `panel_columns`, si nunca ha elegido).
     """
+    from panel.screen_exports import valid_keys
+
     fixed = [k for k in screen.fixed if k in screen.by_key]
     chosen = _state(company_user, screen).get("columns")
     if not isinstance(chosen, list) or not chosen:
+        # Sin catálogo, [] = todas las de la tabla en su orden.
         chosen = screen.panel_columns
-    rest = [k for k in chosen if k in screen.by_key and k not in fixed]
+    rest = [k for k in valid_keys(screen, chosen) if k not in fixed]
     return fixed + rest
 
 
@@ -136,8 +139,10 @@ class ViewColumnsSaveView(CompanyUserRequiredMixin, View):
         except ValueError:
             return JsonResponse({"error": "Datos no válidos."}, status=400)
         screen = get_screen(data.get("screen"))
-        columns = [k for k in (data.get("columns") or [])
-                   if k in screen.by_key and k not in screen.fixed]
+        from panel.screen_exports import valid_keys
+
+        columns = [k for k in valid_keys(screen, data.get("columns") or [])
+                   if k not in screen.fixed]
         if not columns:
             return JsonResponse(
                 {"error": "Elige al menos una columna."}, status=400)
@@ -170,4 +175,6 @@ def view_state(company_user, screen):
                      if k not in screen.fixed],
         "fixed": list(screen.fixed),
         "template": state.get("template"),
+        # S153: sin catálogo, las columnas las da la cabecera de la tabla.
+        "dynamic": screen.dynamic,
     }

@@ -15,7 +15,9 @@ acciones. Filtros, orden y selección persistidos por usuario
     <div class="row g-2">
         <div class="col-lg-4">
             <div class="border rounded p-2 h-100">
-                <div class="fw-bold small mb-1">Buscar y filtrar <span class="text-muted fw-normal">· {{ pending_count }} pendiente{{ pending_count|pluralize }}</span></div>
+                {% include "panel/_filter_panel_tabs.html" with fp="wreq" %}
+                <div class="eb-filter-pane" data-filter-pane="filters">
+                <div class="small text-muted mb-1"><span class="text-muted fw-normal">{{ pending_count }} pendiente{{ pending_count|pluralize }}</span></div>
                 <form id="wreq-filters" autocomplete="off" onsubmit="return false;"
                       hx-get="{% url 'panel:worker_requests_results' %}" hx-target="#wreq-results"
                       hx-include="#wreq-sort-inputs"
@@ -47,6 +49,11 @@ acciones. Filtros, orden y selección persistidos por usuario
                         </div>
                     </div>
                 </form>
+                </div>
+                {# S153: qué columnas se ven en el listado y en qué orden, con plantillas. #}
+                <div class="eb-filter-pane d-none" data-filter-pane="columns">
+                    {% include "panel/_view_columns_tab.html" with vc="wreq" screen="worker_requests" %}
+                </div>
             </div>
         </div>
         {# S147: "Grupos de selección", la misma columna que en Personal. #}

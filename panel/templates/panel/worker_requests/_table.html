@@ -10,12 +10,12 @@ la vista; la selección vive en el JS de _pane.html.
 <span id="wreq-sort-inputs" class="d-none">
     <input type="hidden" name="sort" value="{{ current_sort }}">
 </span>
-<table class="table table-hover table-light align-middle" id="wreq-table">
+<table class="table table-hover table-light align-middle" id="wreq-table" data-view-screen="worker_requests">
     <thead class="table-light">
         <tr>
             <th><input type="checkbox" class="form-check-input" id="wreq-check-all" title="Seleccionar todas las que cumplen el filtro actual"></th>
             {% for column in sort_columns %}
-            <th class="{% if column.key == 'days' %}text-end{% endif %}">
+            <th class="{% if column.key == 'days' %}text-end{% endif %}" data-col="{{ column.key }}" data-col-label="{{ column.label }}">
                 <a href="#" class="text-decoration-none text-dark"
                    hx-get="{% url 'panel:worker_requests_results' %}"
                    hx-target="#wreq-results"
@@ -26,7 +26,7 @@ la vista; la selección vive en el JS de _pane.html.
                 </a>
             </th>
             {% endfor %}
-            <th>Nota</th>
+            <th data-col="note">Nota</th>
             <th></th>
         </tr>
     </thead>

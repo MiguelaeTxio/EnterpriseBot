@@ -70,6 +70,10 @@ class Screen:
     # S153: columnas que salen siempre las primeras en el panel (no se
     # quitan ni se mueven desde "Columnas").
     fixed: tuple = ()
+    # S153: pantalla sin catálogo de exportación cuyas columnas son las
+    # de su propia tabla (las marca la cabecera con data-col); solo
+    # sirve para las columnas del panel y sus plantillas.
+    dynamic: bool = False
     by_key: dict = field(default_factory=dict)
 
     def __post_init__(self):
@@ -96,11 +100,30 @@ def get_screen(key):
     La pantalla de `key` (404 si no existe).
     """
     import panel.screen_export_catalog  # noqa: F401  (registra)
+    from panel.view_screens import VIEW_SCREENS
 
     screen = SCREENS.get(key or "")
+    if screen is None and key in VIEW_SCREENS:
+        screen = Screen(key=key, label=VIEW_SCREENS[key], columns=(),
+                        panel_columns=[], dynamic=True)
     if screen is None:
         raise Http404("Pantalla de exportación desconocida.")
     return screen
+
+
+def valid_keys(screen, keys):
+    """
+    The keys of `keys` that are columns of the screen (in order).
+    ---
+    S153: las claves de `keys` que son columnas de la pantalla; en una
+    pantalla sin catálogo, cualquier clave con forma de clave.
+    """
+    import re
+
+    if screen.dynamic:
+        return [k for k in keys if isinstance(k, str)
+                and re.fullmatch(r"[a-z0-9_]{1,40}", k)]
+    return [k for k in keys if k in screen.by_key]
 
 
 def _model():
@@ -133,7 +156,7 @@ def _as_dict(template, company_user, screen):
         "name": template.name,
         "is_global": template.is_global,
         "is_default": template.is_default,
-        "columns": [k for k in template.columns if k in screen.by_key],
+        "columns": valid_keys(screen, template.columns),
         "editable": (
             _is_admin(company_user) if template.is_global
             else template.company_user_id == company_user.pk),
@@ -277,8 +300,7 @@ class ScreenExportTemplateSaveView(CompanyUserRequiredMixin, View):
             return JsonResponse({"error": "Datos no válidos."}, status=400)
         screen = get_screen(data.get("screen"))
         name = (data.get("name") or "").strip()[:100]
-        columns = [k for k in (data.get("columns") or [])
-                   if k in screen.by_key]
+        columns = valid_keys(screen, data.get("columns") or [])
         if not name:
             return JsonResponse({"error": "Falta el nombre."}, status=400)
         if not columns:

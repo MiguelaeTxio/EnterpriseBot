@@ -10,11 +10,20 @@ Cada cambio se aplica al momento: se guarda para este usuario
 (panel/list_columns.py) y se vuelve a pedir la tabla lanzando
 `refresh_evt` en `refresh_el`. Las columnas fijas de la pantalla no
 salen aquí (van siempre delante).
-Uso:
+Dos formas:
+- Con catálogo (Centros de gasto...): la vista pinta las columnas
+  elegidas; aquí se guarda la elección y se vuelve a pedir la tabla.
   {% include "panel/_view_columns_tab.html" with vc="fleet" screen="fleet" refresh_el="#fleet-filter-search" refresh_evt="search" %}
+- Sin catálogo (panel/view_screens.py): sin refresh_el. La tabla lleva
+  data-view-screen="<pantalla>" y cada <th> movible data-col="clave";
+  el navegador oculta y reordena las celdas de cada fila según su
+  posición bajo esa cabecera, al cargar y cada vez que se repinta.
+  {% include "panel/_view_columns_tab.html" with vc="wreq" screen="worker_requests" %}
 {% endcomment %}
+{% load view_columns %}
 <div class="eb-view-columns" id="{{ vc }}-vcol" data-screen="{{ screen }}"
-     data-refresh-el="{{ refresh_el }}" data-refresh-evt="{{ refresh_evt|default:'change' }}">
+     data-refresh-el="{{ refresh_el }}" data-refresh-evt="{{ refresh_evt|default:'change' }}"
+     data-current='{% view_columns_json screen %}'>
     <div class="d-flex gap-1 align-items-center mb-1">
         <select class="form-select form-select-sm" id="{{ vc }}-vcol-template" aria-label="Plantilla de columnas"
                 title="Plantilla de columnas: las mismas que en Exportar.">
@@ -51,6 +60,7 @@ Uso:
 .eb-vcol-row label { flex: 1 1 auto; margin: 0; cursor: pointer; }
 .eb-vcol-row .btn { padding: 0 .3rem; line-height: 1.2; }
 .eb-vcol-row.is-off label { color: var(--bs-secondary-color); }
+.eb-col-off { display: none !important; }
 </style>
 <script>
 (function () {
@@ -156,7 +166,56 @@ Uso:
         order = cols.concat(catalog.map(function (c) { return c.key; }).filter(function (k) { return !on.has(k); }));
         render();
     }
+    const DOM_MODE = !root.dataset.refreshEl;
+    let applied = [];
+    try { applied = JSON.parse(root.dataset.current || "[]"); } catch (e) { applied = []; }
+    function tables() {
+        return document.querySelectorAll('table[data-view-screen="' + root.dataset.screen + '"]');
+    }
+    function headerKeys(table) {
+        const row = table.tHead && table.tHead.rows[0];
+        return row ? Array.from(row.cells).filter(function (c) { return c.dataset.col; }) : [];
+    }
+    // Sin catálogo: oculta y reordena las celdas de cada fila según su
+    // posición bajo la cabecera (data-col). [] = todas, en su orden.
+    function applyTo(table, cols) {
+        const head = table.tHead && table.tHead.rows[0];
+        if (!head) { return; }
+        const width = head.cells.length;
+        const positions = [];
+        const keys = [];
+        Array.from(head.cells).forEach(function (cell, index) {
+            if (cell.dataset.col) { positions.push(index); keys.push(cell.dataset.col); }
+        });
+        if (!positions.length) { return; }
+        // El orden original de la tabla (para la lista y "Estándar").
+        if (!table.dataset.viewOriginal) { table.dataset.viewOriginal = JSON.stringify(keys); }
+        const wanted = cols.filter(function (k) { return keys.indexOf(k) >= 0; });
+        const shown = wanted.length ? wanted : keys.slice();
+        const sequence = shown.concat(keys.filter(function (k) { return shown.indexOf(k) < 0; }));
+        Array.from(table.rows).forEach(function (row) {
+            if (row.cells.length !== width) { return; }
+            const byKey = {};
+            positions.forEach(function (pos, i) { byKey[keys[i]] = row.cells[pos]; });
+            const anchor = row.cells[positions[positions.length - 1]].nextSibling;
+            sequence.forEach(function (key) {
+                const cell = byKey[key];
+                cell.classList.toggle("eb-col-off", shown.indexOf(key) < 0);
+                row.insertBefore(cell, anchor);
+            });
+        });
+    }
+    function applyAll() { tables().forEach(function (t) { applyTo(t, applied); }); }
+    if (DOM_MODE) {
+        document.body.addEventListener("htmx:afterSettle", applyAll);
+        if (document.readyState === "loading") {
+            document.addEventListener("DOMContentLoaded", applyAll);
+        } else {
+            setTimeout(applyAll, 0);
+        }
+    }
     function refreshTable() {
+        if (DOM_MODE) { applied = chosen(); applyAll(); return; }
         const el = document.querySelector(root.dataset.refreshEl);
         if (el && window.htmx) { htmx.trigger(el, root.dataset.refreshEvt); }
     }
@@ -203,9 +262,28 @@ Uso:
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 const fixed = new Set(data.view.fixed);
-                catalog = data.columns.filter(function (c) { return !fixed.has(c.key); });
+                if (data.view.dynamic) {
+                    // Las columnas de la propia tabla, en su orden original.
+                    const table = tables()[0];
+                    const seen = {};
+                    catalog = [];
+                    (table ? headerKeys(table) : []).forEach(function (th) {
+                        if (seen[th.dataset.col]) { return; }
+                        seen[th.dataset.col] = true;
+                        catalog.push({key: th.dataset.col,
+                                      label: th.dataset.colLabel || th.textContent.trim() || th.dataset.col});
+                    });
+                    const original = table ? JSON.parse(table.dataset.viewOriginal || "null") : null;
+                    if (original) {
+                        catalog.sort(function (a, b) { return original.indexOf(a.key) - original.indexOf(b.key); });
+                    }
+                    standard = catalog.map(function (c) { return c.key; });
+                    if (!data.view.current.length) { data.view.current = standard.slice(); }
+                } else {
+                    catalog = data.columns.filter(function (c) { return !fixed.has(c.key); });
+                    standard = data.view.standard;
+                }
                 templates = data.templates || [];
-                standard = data.view.standard;
                 isAdmin = !!data.is_admin;
                 $("global-wrap").classList.toggle("d-none", !isAdmin);
                 fillTemplates(data.view.template);

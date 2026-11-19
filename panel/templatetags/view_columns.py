@@ -1,0 +1,39 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templatetags/view_columns.py
+"""
+Template tag with the columns the user sees in a panel list (S153).
+---
+Etiqueta con las columnas que el usuario ve en un listado del panel
+(S153): las que pinta la pestaña "Columnas" al cargar la página, antes
+de abrirla, para colocar la tabla sin esperar a ninguna petición.
+"""
+import json
+
+from django import template
+
+register = template.Library()
+
+
+@register.simple_tag(takes_context=True)
+def view_columns_json(context, screen_key):
+    """
+    JSON list of the column keys the user chose for `screen_key`.
+    ---
+    Lista JSON de las columnas elegidas ([] = las de siempre).
+    """
+    from panel.list_columns import STATE_PREFIX
+    from panel.models import PanelNavigationState
+
+    request = context.get("request")
+    company_user = getattr(getattr(request, "user", None),
+                           "company_user", None)
+    if company_user is None:
+        return "[]"
+    state = (
+        PanelNavigationState.objects
+        .filter(company_user=company_user,
+                screen_key=STATE_PREFIX + screen_key)
+        .values_list("state", flat=True)
+        .first()
+    )
+    columns = state.get("columns") if isinstance(state, dict) else None
+    return json.dumps(columns if isinstance(columns, list) else [])
