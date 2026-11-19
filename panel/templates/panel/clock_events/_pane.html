@@ -718,7 +718,8 @@ recordatorios, secciones que fichan y permiso de envío).
 
 {# S149: carga de albaranes de varios trabajadores, cotejados con los fichajes por la IA. #}
 <div class="modal fade" id="clkAlbModal" tabindex="-1" aria-labelledby="clkAlbModalLabel" aria-hidden="true" data-bs-backdrop="static">
-    <div class="modal-dialog modal-lg">
+    {# S149 (19/11): con muchos avisos, se desplaza dentro de la ventana. #}
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="clkAlbModalLabel">Cargar albaranes de varios trabajadores</h5>
@@ -757,8 +758,8 @@ recordatorios, secciones que fichan y permiso de envío).
     modal.addEventListener("show.bs.modal", function () {
         const n = selectedIds().length;
         document.getElementById("clk-alb-who").textContent = n
-            ? "entre los " + n + " trabajador(es) marcados"
-            : "entre todos los que fichan por tipos (marca trabajadores en la lista para limitarlo a ellos)";
+            ? "primero entre los " + n + " trabajador(es) marcados y, si no es ninguno de ellos, entre todos los que fichan por tipos"
+            : "entre todos los que fichan por tipos (si marcas trabajadores en la lista, se busca primero entre ellos)";
     });
     function cell(row, text, end) {
         const td = document.createElement("td");

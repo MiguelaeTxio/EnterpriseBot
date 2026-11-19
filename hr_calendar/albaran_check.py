@@ -331,7 +331,7 @@ def name_matches(person, written):
 _SURNAME_WEIGHT = 2
 
 
-def candidates(batch):
+def candidates(batch, marked=True):
     """
     Who the albaranes of a multi-worker batch can belong to.
     ---
@@ -345,10 +345,26 @@ def candidates(batch):
     people = PersonIdentity.objects.filter(
         company=batch.company, company_user__isnull=False,
     ).select_related("company_user")
-    if batch.candidate_ids:
+    if marked and batch.candidate_ids:
         people = people.filter(pk__in=batch.candidate_ids)
     today = timezone.localdate()
     return [p for p in people if uses_types(p.company_user, today)]
+
+
+def match_batch_person(batch, people, written):
+    """
+    The worker of an albarán of a multi-worker batch, or None.
+    ---
+    S149 (19/11, carga del 18/11 con un solo trabajador marcado: sus 34
+    albaranes quedaron «Sin trabajador»): primero entre los marcados y,
+    si ninguno encaja, entre todos los que fichan por tipos.
+    """
+    person = match_person(people, written)
+    if person is None and batch.candidate_ids:
+        if not hasattr(batch, "_all_candidates"):
+            batch._all_candidates = candidates(batch, marked=False)
+        person = match_person(batch._all_candidates, written)
+    return person
 
 
 def match_person(people, written):
@@ -422,17 +438,16 @@ def read_batch(batch):
                 bucket_blob=sheet.bucket_blob, person=sheet.person)
             # S149: carga de varios: el trabajador, por el nombre leído.
             if people is not None:
-                target.person = match_person(
-                    people, item.get("operator_name") or "")
+                target.person = match_batch_person(
+                    batch, people, item.get("operator_name") or "")
             _fill(target, item, target.person)
             if target.person is None:
                 target.status = AlbaranSheet.Status.NO_PERSON
                 target.note = ("Nombre «%s»: no se sabe de qué trabajador "
-                               "es (ninguno%s que fiche por tipos, o "
+                               "es (ninguno que fiche por tipos, o "
                                "varios posibles)." % (
                                    target.operator_name or "sin nombre",
-                                   " de los marcados" if batch.candidate_ids
-                                   else ""))[:255]
+                               ))[:255]
             elif not target.bucket_blob:
                 # Al cubo, en la carpeta de su trabajador (una vez por
                 # trabajador si el archivo trae albaranes de varios).
@@ -484,7 +499,8 @@ def rematch(batch, people=None):
             item = json.loads(sheet.raw or "{}")
         except ValueError:
             continue
-        person = match_person(people, item.get("operator_name") or "")
+        person = match_batch_person(batch, people,
+                                    item.get("operator_name") or "")
         if person is None:
             continue
         sheet.person = person
