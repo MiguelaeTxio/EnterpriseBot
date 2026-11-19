@@ -2778,7 +2778,10 @@ class VoiceOrchestrationService:
         # Pausa fija para que los últimos fragmentos
         # desencollados
         # terminen de transmitirse a Twilio.
-        await asyncio.sleep(3.5)
+        # S155: sin audio pendiente (Gemini ya no anuncia el pase; el
+        # aviso lo dice Twilio), la pausa de 3,5 s solo era silencio:
+        # llamada real del 19/11 a las 11:14, pase 4 s después de pedirlo.
+        await asyncio.sleep(3.5 if _drain_elapsed > 0 else 0.5)
         logger.info(
             "[PASO-39] Audio drenado "
             f"({_drain_elapsed:.2f}s) + "
