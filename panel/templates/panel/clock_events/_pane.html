@@ -141,24 +141,30 @@ recordatorios, secciones que fichan y permiso de envío).
         {# S147: "Grupos de selección", la misma columna que en Personal. #}
         {% include "panel/_person_group_filter.html" with pg_prefix="clk" pg_form="clk-filters" %}
         <div class="col-lg-5">
-            <div class="border rounded p-2 h-100">
-                <div class="d-flex align-items-center gap-2 mb-1">
-                    <strong class="small"><span id="clk-mass-count">0</span> seleccionados</strong>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="clk-mass-clear">Limpiar</button>
+            {% comment %}
+            S149 (Miguel Ángel, 19/11): "reorganizar el panel de acciones
+            de los fichajes [...] por pestañas para que no haya scroll
+            vertical, ya que la carga de albaranes es un pequeño CRUD en sí
+            mismo [...] que quede fija esa parte del panel de carga de
+            albaranes y el listado que salga por debajo, dentro del panel,
+            con su scroll". Las pestañas ocupan el alto de la columna; la
+            de Albaranes deja fijo el botón y desplaza solo el listado.
+            {% endcomment %}
+            <div class="border rounded p-2 h-100 d-flex flex-column clk-actions">
+                <div class="d-flex align-items-end gap-2">
+                    <ul class="nav nav-tabs small flex-grow-1 clk-action-tabs" role="tablist">
+                        <li class="nav-item" role="presentation"><button type="button" class="nav-link py-1 px-2" data-pane="#clkActClock" data-tab="clock" role="tab">Fichaje</button></li>
+                        <li class="nav-item" role="presentation"><button type="button" class="nav-link py-1 px-2" data-pane="#clkActReview" data-tab="review" role="tab">Visado y alta</button></li>
+                        <li class="nav-item" role="presentation"><button type="button" class="nav-link py-1 px-2" data-pane="#clkActAlb" data-tab="alb" role="tab">Albaranes</button></li>
+                        <li class="nav-item" role="presentation"><button type="button" class="nav-link py-1 px-2" data-pane="#clkActExport" data-tab="export" role="tab">Exportar</button></li>
+                        <li class="nav-item" role="presentation"><button type="button" class="nav-link py-1 px-2" data-pane="#clkActSettings" data-tab="settings" role="tab">Ajustes</button></li>
+                    </ul>
+                    <strong class="small text-nowrap mb-1"><span id="clk-mass-count">0</span> seleccionados</strong>
+                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 mb-1" id="clk-mass-clear">Limpiar</button>
                 </div>
-                {# S136: acciones en cuadrícula por categoría, como Personal (4.24, regla 6); la explicación, en el título del botón. #}
-                <div class="row g-1">
-                    <div class="col-6 pe-2">
-                        <div class="small text-muted fw-bold">Exportar</div>
-                        {# S148: Excel, PDF o imprimir con plantilla de la hoja Jornadas ("Vista del panel" por defecto). #}
-                        <button type="button" class="btn btn-sm btn-outline-success" id="clk-export"
-                                data-bs-toggle="modal" data-bs-target="#clkExportModal"
-                                title="Jornadas, pulsaciones y correcciones de las fechas elegidas: de los marcados o, si no hay nadie marcado, de todos los del filtro. Excel, PDF o imprimir, con la plantilla que elijas para la hoja de jornadas.">
-                            <i class="bi bi-box-arrow-up me-1"></i>Exportar / imprimir
-                        </button>
-                    </div>
+                <div class="clk-action-panes pt-2">
                     {# S141: ajustes de fichaje de los marcados. #}
-                    <div class="col-6">
+                    <div class="clk-action-pane" id="clkActClock" role="tabpanel">
                         <div class="small text-muted fw-bold">Fichaje de los marcados</div>
                         <div class="d-flex flex-wrap gap-1">
                             <button type="button" class="btn btn-sm btn-outline-primary clk-worker-btn" data-action="clocks_on"
@@ -201,21 +207,13 @@ recordatorios, secciones que fichan y permiso de envío).
                             </div>
                         </div>
                     </div>
-                    {# S144: reenvío del alta (la misma acción que en Personal). #}
-                    <div class="col-6 pe-2 border-top pt-1 mt-1">
-                        <div class="small text-muted fw-bold">Alta en el fichaje</div>
-                        <button type="button" class="btn btn-sm btn-outline-primary" id="clk-access-resend"
-                                title="Vuelve a enviar por WhatsApp la circular Alta en el fichaje a los marcados y, si sale, les pone otra vez la contraseña de las 4 últimas cifras del DNI y les quita los dispositivos de confianza (por si han cambiado de móvil).">
-                            <i class="bi bi-arrow-repeat me-1"></i>Reenviar el alta
-                        </button>
-                    </div>
-                    {% comment %}
-                    S153 (Miguel Ángel: "Juan no puede marcar visados [...]
-                    en el casillero marcándolo y añadir la acción de visado
-                    en el panel de acciones"): visar de una vez las jornadas
-                    con incidencias de los marcados, en las fechas del filtro.
-                    {% endcomment %}
-                    <div class="col-6 border-top pt-1 mt-1">
+                    <div class="clk-action-pane" id="clkActReview" role="tabpanel">
+                        {% comment %}
+                        S153 (Miguel Ángel: "Juan no puede marcar visados [...]
+                        en el casillero marcándolo y añadir la acción de visado
+                        en el panel de acciones"): visar de una vez las jornadas
+                        con incidencias de los marcados, en las fechas del filtro.
+                        {% endcomment %}
                         <div class="small text-muted fw-bold">Visado de los marcados</div>
                         <div class="d-flex flex-wrap gap-1">
                             <button type="button" class="btn btn-sm btn-outline-warning clk-worker-btn" data-action="review"
@@ -225,20 +223,40 @@ recordatorios, secciones que fichan y permiso de envío).
                             <button type="button" class="btn btn-sm btn-outline-secondary clk-worker-btn" data-action="unreview"
                                     title="Quita el visado de las jornadas de los marcados entre Desde y Hasta (las corregidas siguen contando como visadas).">Quitar visado</button>
                         </div>
+                        {# S144: reenvío del alta (la misma acción que en Personal). #}
+                        <div class="small text-muted fw-bold mt-2">Alta en el fichaje</div>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="clk-access-resend"
+                                title="Vuelve a enviar por WhatsApp la circular Alta en el fichaje a los marcados y, si sale, les pone otra vez la contraseña de las 4 últimas cifras del DNI y les quita los dispositivos de confianza (por si han cambiado de móvil).">
+                            <i class="bi bi-arrow-repeat me-1"></i>Reenviar el alta
+                        </button>
                     </div>
                     {# S149 (Miguel Ángel, 16/11): albaranes de varias personas a la vez, cotejados por la IA. #}
-                    <div class="col-6 border-top pt-1 mt-1">
-                        <div class="small text-muted fw-bold">Albaranes</div>
+                    <div class="clk-action-pane clk-alb-pane" id="clkActAlb" role="tabpanel">
+                        <div class="flex-shrink-0">
                         <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#clkAlbModal"
                                 title="Carpeta con albaranes de varios trabajadores: la IA lee cada uno, lo asigna por el nombre (entre los marcados o, sin marcados, entre los que fichan por tipos), compara su día con sus fichajes y corrige lo que se aparte de la cortesía. Los días quedan «Procesados por IA» hasta que los vise un supervisor.">
                             <i class="bi bi-file-earmark-text me-1"></i>Cargar albaranes…
                         </button>
-                        {# S149: cargas de albaranes recientes, se actualiza sola (la lectura va en segundo plano). #}
-                        <div id="clk-alb-batches" class="small mt-1"
+                        </div>
+                        {# S149: cargas de albaranes recientes, se actualiza sola (la lectura va en segundo plano); con su scroll. #}
+                        <div id="clk-alb-batches" class="small clk-alb-list"
                              hx-get="{% url 'panel:clock_albaran_bulk_list' %}" hx-swap="innerHTML"
                              hx-trigger="load, every 20s, clk-alb-refresh"></div>
                     </div>
-                    {% include "panel/clock_events/_settings.html" %}
+                    <div class="clk-action-pane" id="clkActExport" role="tabpanel">
+                        <div class="small text-muted fw-bold">Exportar</div>
+                        {# S148: Excel, PDF o imprimir con plantilla de la hoja Jornadas ("Vista del panel" por defecto). #}
+                        <button type="button" class="btn btn-sm btn-outline-success" id="clk-export"
+                                data-bs-toggle="modal" data-bs-target="#clkExportModal"
+                                title="Jornadas, pulsaciones y correcciones de las fechas elegidas: de los marcados o, si no hay nadie marcado, de todos los del filtro. Excel, PDF o imprimir, con la plantilla que elijas para la hoja de jornadas.">
+                            <i class="bi bi-box-arrow-up me-1"></i>Exportar / imprimir
+                        </button>
+                    </div>
+                    <div class="clk-action-pane" id="clkActSettings" role="tabpanel">
+                        <div class="row g-1">
+                            {% include "panel/clock_events/_settings.html" %}
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -295,6 +313,15 @@ recordatorios, secciones que fichan y permiso de envío).
 .clk-types-menu { min-width: 34rem; max-height: 70vh; overflow-y: auto; }
 .clk-types-menu .clk-type-name { width: 11rem !important; }
 .clk-types-menu .clk-type-order { width: 4.5rem !important; }
+/* S149 (19/11): panel de acciones por pestañas, sin scroll de la página;
+   cada pestaña ocupa el alto de la columna y, si no cabe, se desplaza
+   dentro. En Albaranes, el botón queda fijo y solo baja el listado. */
+.clk-actions { min-height: 16rem; }
+.clk-action-panes { flex: 1 1 0; min-height: 0; position: relative; }
+.clk-action-pane { position: absolute; inset: 0; overflow-y: auto; display: none; }
+.clk-action-pane.active { display: block; }
+.clk-alb-pane.active { display: flex; flex-direction: column; overflow: hidden; }
+.clk-alb-list { flex: 1 1 0; min-height: 0; overflow-y: auto; }
 </style>
 
 <div class="toast-container position-fixed bottom-0 end-0 p-3">
@@ -654,6 +681,25 @@ recordatorios, secciones que fichan y permiso de envío).
             showToast("Sin conexión con el servidor: no se ha reenviado nada.", true);
         }).finally(function () { btn.disabled = false; });
     });
+
+    // S149 (19/11): pestañas del panel de acciones; la elegida se recuerda en este navegador.
+    (function () {
+        const buttons = document.querySelectorAll(".clk-action-tabs [data-tab]");
+        if (!buttons.length) return;
+        let saved = "";
+        try { saved = localStorage.getItem("clkActionTab") || ""; } catch (e) { saved = ""; }
+        function show(btn) {
+            buttons.forEach(function (b) {
+                const on = b === btn;
+                b.classList.toggle("active", on);
+                b.setAttribute("aria-selected", on ? "true" : "false");
+                document.querySelector(b.dataset.pane).classList.toggle("active", on);
+            });
+            try { localStorage.setItem("clkActionTab", btn.dataset.tab); } catch (e) { /* sin almacenamiento */ }
+        }
+        show(Array.from(buttons).find(function (b) { return b.dataset.tab === saved; }) || buttons[0]);
+        buttons.forEach(function (b) { b.addEventListener("click", function () { show(b); }); });
+    })();
 
     // S136: pantalla completa con el formato del laboratorio de análisis (4.26).
     const bottom = document.getElementById("clk-bottom-panel");
