@@ -151,7 +151,25 @@ repostado o no, y las fechas no cuentan (se desactivan).
                 </div>
                 {# S153: qué columnas se ven en el listado y en qué orden, con plantillas. #}
                 <div class="eb-filter-pane d-none" data-filter-pane="columns">
+                    {% comment %}
+                    S157: una configuración de columnas por cada vista
+                    (Ver: Repostajes, Vehículos, Repostadores, Preguntas);
+                    se ve la de la vista elegida (refreshFromFragment).
+                    Repostajes, con el catálogo de la exportación; las
+                    otras tres, con las columnas de su tabla.
+                    {% endcomment %}
+                    <div class="rfl-vcols" data-view="supplies"{% if view != "supplies" %} hidden{% endif %}>
                     {% include "panel/_view_columns_tab.html" with vc="rfl" screen="refuels" refresh_el="#rfl-filters" refresh_evt="rfl-selection-refresh" %}
+                    </div>
+                    <div class="rfl-vcols" data-view="vehicles"{% if view != "vehicles" %} hidden{% endif %}>
+                    {% include "panel/_view_columns_tab.html" with vc="rflv" screen="refuels_vehicles" %}
+                    </div>
+                    <div class="rfl-vcols" data-view="users"{% if view != "users" %} hidden{% endif %}>
+                    {% include "panel/_view_columns_tab.html" with vc="rflu" screen="refuels_users" %}
+                    </div>
+                    <div class="rfl-vcols" data-view="questions"{% if view != "questions" %} hidden{% endif %}>
+                    {% include "panel/_view_columns_tab.html" with vc="rflq" screen="refuels_questions" %}
+                    </div>
                 </div>
             </div>
         </div>
@@ -356,6 +374,9 @@ repostado o no, y las fechas no cuentan (se desactivan).
         if (state) {
             currentView = state.dataset.view || "supplies";
             document.getElementById("rfl-row-title").textContent = state.dataset.title;
+            document.querySelectorAll(".rfl-vcols").forEach(function (el) {
+                el.hidden = el.dataset.view !== currentView;
+            });
             document.querySelectorAll(".rfl-vehicle-action").forEach(function (el) {
                 el.classList.toggle("d-none", currentView === "users" || currentView === "questions");
             });

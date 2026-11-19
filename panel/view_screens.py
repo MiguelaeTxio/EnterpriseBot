@@ -32,6 +32,11 @@ VIEW_SCREENS = {
     "telephony_lists": "Telefonía",
     "db_backups": "Copias de la base de datos",
     "workshop_tasks_list": "Taller: tareas",
+    # S157: las otras vistas de Repostajes (Ver: Vehículos, Repostadores,
+    # Preguntas); la de repostajes tiene catálogo (screen_export_catalog).
+    "refuels_vehicles": "Repostajes: vehículos",
+    "refuels_users": "Repostajes: repostadores",
+    "refuels_questions": "Repostajes: preguntas",
     "workshop_tickets_list": "Taller: tickets de avería",
     "workshop_reviews": "Taller: revisiones",
     "workshop_logbooks": "Taller: libros historial",
