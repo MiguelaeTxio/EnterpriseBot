@@ -478,6 +478,14 @@ class DocumentIndexEntry(models.Model):
                 fields=["deleted_by", "deleted_at"],
                 name="docidx_trash_owner",
             ),
+            # S153: documentos de una persona o máquina concreta. Sin
+            # él, contar los documentos de cada persona de Personal
+            # recorría los ~35.000 documentos vinculados una vez por
+            # persona (4 s por consulta; Personal tardaba 10-23 s).
+            models.Index(
+                fields=["domain_content_type", "domain_object_id"],
+                name="docidx_domain_object",
+            ),
         ]
 
     def __str__(self):
