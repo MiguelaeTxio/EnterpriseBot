@@ -1,0 +1,114 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/machine_qr/sheet.html #}
+{% extends "panel/base.html" %}
+
+{% block title %}QR {{ machine.code }}{% endblock %}
+{% block page_title %}Ficha QR — {{ machine.code }}{% endblock %}
+
+{% block content %}
+{% comment %}
+H23 (S154, invasora). Botón "QR" de la ficha del centro de gasto: lo
+que ve el trabajador al leer el QR con el móvil (observaciones, fotos y
+vídeos, más la revisión por horas o km y la ficha técnica, que salen de
+la ficha del centro de gasto). Contexto: MachineQrSheetView
+(panel/views_machine_qr.py).
+{% endcomment %}
+<div class="mb-2">
+    <a href="{% url 'panel:documentation_machine_detail' machine.pk %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Volver a la ficha</a>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-4">
+        <div class="border rounded p-3 text-center">
+            <div class="fw-bold mb-2">{{ machine.code }} · {{ machine.brand_model }}</div>
+            <div class="mx-auto" style="max-width: 260px;">{{ qr_svg|safe }}</div>
+            <div class="small text-muted mt-2 text-break">{{ public_url }}</div>
+            <div class="d-flex flex-wrap gap-2 justify-content-center mt-2">
+                <a class="btn btn-sm btn-primary" href="{% url 'panel:machine_qr_image' pk=machine.pk %}"><i class="bi bi-download me-1"></i>Descargar QR (PNG)</a>
+                <a class="btn btn-sm btn-outline-primary" href="{{ public_url }}" target="_blank" rel="noopener"><i class="bi bi-phone me-1"></i>Ver como el trabajador</a>
+            </div>
+            <p class="small text-muted mt-2 mb-0">El QR no cambia nunca: lo que se edite aquí aparece al momento en la página del QR.</p>
+        </div>
+
+        <div class="border rounded p-3 mt-3 small">
+            <div class="fw-bold mb-1">Revisión (de la ficha del centro de gasto)</div>
+            {% for line in service_lines %}<div>{{ line }}</div>{% endfor %}
+            {% if specs %}
+            <div class="fw-bold mt-2 mb-1">Ficha técnica</div>
+            {% for label, value in specs %}<div><span class="text-muted">{{ label }}:</span> {{ value }}</div>{% endfor %}
+            {% endif %}
+            <div class="text-muted mt-2">Se cambian en la ficha del centro de gasto.</div>
+        </div>
+    </div>
+
+    <div class="col-lg-8">
+        <div class="border rounded p-3">
+            <div class="fw-bold mb-2">Observaciones</div>
+            {% if can_edit %}
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="notes">
+                <textarea name="observations" rows="6" class="form-control form-control-sm" placeholder="Por ejemplo: el capó se abre desde la palanca bajo el volante, lado izquierdo. Para ver las horas en el tablero, pulsa el botón…">{{ sheet.observations }}</textarea>
+                <button type="submit" class="btn btn-sm btn-primary mt-2"><i class="bi bi-save me-1"></i>Guardar observaciones</button>
+            </form>
+            {% else %}
+            <div style="white-space: pre-line;">{{ sheet.observations|default:"Sin observaciones." }}</div>
+            {% endif %}
+        </div>
+
+        <div class="border rounded p-3 mt-3">
+            <div class="fw-bold mb-2">Fotos y vídeos ({{ media|length }})</div>
+            {% if can_edit %}
+            <form method="post" enctype="multipart/form-data" class="row g-2 align-items-end mb-3"
+                  onsubmit="const b = this.querySelector('button'); b.disabled = true; b.innerHTML = 'Subiendo…';">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="upload">
+                <div class="col-md-5">
+                    <label class="form-label form-label-sm mb-0">Fotos o vídeos</label>
+                    <input type="file" name="files" accept="image/*,video/*" multiple required class="form-control form-control-sm">
+                    <div class="form-text">Fotos hasta {{ max_photo_mb }} MB; vídeos hasta {{ max_video_mb }} MB.</div>
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label form-label-sm mb-0">Descripción</label>
+                    <input type="text" name="caption" maxlength="300" class="form-control form-control-sm" placeholder="Por ejemplo: botón para ver las horas de motor">
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-upload me-1"></i>Subir</button>
+                </div>
+            </form>
+            {% endif %}
+            <div class="row g-3">
+                {% for item in media %}
+                <div class="col-sm-6 col-xl-4">
+                    <div class="border rounded p-2 h-100">
+                        {% if item.is_video %}
+                        <video src="{{ item.url }}" controls preload="metadata" class="w-100 rounded bg-dark"></video>
+                        {% else %}
+                        <a href="{{ item.url }}" target="_blank" rel="noopener"><img src="{{ item.url }}" class="w-100 rounded" alt="{{ item.media.caption }}" loading="lazy"></a>
+                        {% endif %}
+                        {% if can_edit %}
+                        <form method="post" class="mt-2 d-flex gap-1">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="caption">
+                            <input type="hidden" name="media_id" value="{{ item.media.pk }}">
+                            <input type="text" name="caption" value="{{ item.media.caption }}" maxlength="300" class="form-control form-control-sm" placeholder="Descripción">
+                            <button type="submit" class="btn btn-sm btn-outline-primary" title="Guardar descripción"><i class="bi bi-check"></i></button>
+                        </form>
+                        <form method="post" class="mt-1" onsubmit="return confirm('¿Quitar esta foto o vídeo de la ficha QR?');">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="delete">
+                            <input type="hidden" name="media_id" value="{{ item.media.pk }}">
+                            <button type="submit" class="btn btn-sm btn-outline-danger w-100"><i class="bi bi-trash me-1"></i>Quitar</button>
+                        </form>
+                        {% elif item.media.caption %}
+                        <div class="small mt-1">{{ item.media.caption }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% empty %}
+                <div class="col-12 text-muted small">Sin fotos ni vídeos.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

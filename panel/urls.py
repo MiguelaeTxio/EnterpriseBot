@@ -1515,6 +1515,17 @@ urlpatterns = [
         ServiceExportView.as_view(),
         name="service_tab_export",
     ),
+    # H23 (S154): ficha QR de cada centro de gasto.
+    path(
+        "documentacion/maquinaria/<int:pk>/qr/",
+        MachineQrSheetView.as_view(),
+        name="machine_qr_sheet",
+    ),
+    path(
+        "documentacion/maquinaria/<int:pk>/qr/imagen/",
+        MachineQrImageView.as_view(),
+        name="machine_qr_image",
+    ),
     # H23 (S154): especificaciones técnicas de los centros de gasto.
     path(
         "documentacion/especificaciones/",

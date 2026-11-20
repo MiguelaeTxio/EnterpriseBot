@@ -677,6 +677,15 @@ puede ser es que la interfaz no informe de lo que pasa."
                     {% endif %}
                 </div>
                 {% endif %}
+                {% comment %}
+                H23 (S154, invasora): ficha QR -- lo que ve el trabajador
+                al leer con el móvil el QR del centro de gasto.
+                {% endcomment %}
+                <div class="mt-2">
+                    <a href="{% url 'panel:machine_qr_sheet' pk=machine.pk %}" class="btn btn-sm btn-outline-dark">
+                        <i class="bi bi-qr-code me-1"></i>QR
+                    </a>
+                </div>
             </div>
         </div>
     </div>
