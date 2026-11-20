@@ -22,6 +22,9 @@
  * que ese usuario puede abrir. Con Mayúsculas pulsada, sobre casillas
  * de texto o con texto seleccionado sale el menú normal del navegador.
  *
+ * El botón de tres puntos común (panel/_entity_menu_button.html, clase
+ * eb-entity-menu-btn) abre el mismo menú.
+ *
  * EbMachineCard.open(url): ventana con la tarjeta técnica de un centro
  * de gasto (panel/machine_card/_card.html). Un clic normal en un
  * elemento con data-machine-card="<url>" la abre (Ctrl/Cmd/rueda: lo
@@ -228,6 +231,17 @@
     document.addEventListener("click", function (ev) {
         if (menu && !menu.contains(ev.target)) close();
     }, true);
+    // Botón de tres puntos común de las filas (panel/_entity_menu_button.html):
+    // el mismo menú, debajo del botón.
+    document.addEventListener("click", function (ev) {
+        const button = ev.target.closest(".eb-entity-menu-btn");
+        if (!button) return;
+        ev.preventDefault();
+        const entity = entityOfElement(button);
+        if (!entity) return;
+        const rect = button.getBoundingClientRect();
+        open(entity, [], rect.left, rect.bottom + 2);
+    });
     document.addEventListener("keydown", function (ev) { if (ev.key === "Escape") close(); });
     window.addEventListener("scroll", function (ev) {
         if (menu && !menu.contains(ev.target)) close();

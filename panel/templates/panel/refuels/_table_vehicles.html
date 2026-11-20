@@ -34,7 +34,7 @@ Todo llega calculado desde panel/views_refuels.py (_vehicle_rows).
             <td class="sticky-col sticky-col-2">
                 {% if row.hours_km or row.hours_empty %}<i class="bi bi-clock-history text-danger" title="Va por horas y en el periodo le han anotado km o nada"></i>{% elif row.anomalies %}<i class="bi bi-exclamation-triangle-fill text-danger" title="Tiene repostajes con KM dudoso en el periodo"></i>{% elif not row.unit_known and row.machine %}<i class="bi bi-question-circle text-warning-emphasis" title="No se sabe si este vehículo apunta km u horas"></i>{% endif %}
             </td>
-            <td class="sticky-col sticky-col-3 sticky-col-last" data-label="Centro de gasto">{% if row.machine %}{{ row.machine.code }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td class="sticky-col sticky-col-3 sticky-col-last" data-label="Centro de gasto">{% if row.machine %}<span data-machine-pk="{{ row.machine.pk }}">{{ row.machine.code }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
             <td data-label="Vehículo (GasoGes)">{{ row.vehicle_label }}{% if not row.ask_driver %} <i class="bi bi-bell-slash text-secondary" title="No se pregunta al chófer por este vehículo"></i>{% endif %}{% if row.meter_broken %} <i class="bi bi-speedometer text-danger" title="Contador averiado{% if row.meter_broken_since %} desde el {{ row.meter_broken_since|date:'d/m/Y' }}{% endif %}"></i>{% endif %}</td>
             <td data-label="Nombre (GasoGes)">{{ row.vehicle_name|default:"" }}</td>
             <td class="text-end" data-label="Repostajes">{{ row.count }}</td>

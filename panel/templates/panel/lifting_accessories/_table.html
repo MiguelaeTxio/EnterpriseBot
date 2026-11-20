@@ -69,7 +69,7 @@ desliza entera, sin columnas fijas (S123). Mismo formato en PC y móvil.
             </td>
             <td data-label="Descripción">{{ accessory.description }}{% if accessory.dimensions %} <span class="text-muted">({{ accessory.dimensions }})</span>{% endif %}</td>
             <td class="text-end" data-label="Carga (kg)">{{ accessory.working_load_kg|default_if_none:"" }}</td>
-            <td data-label="Centro de gasto">{% if accessory.current_machine %}{{ accessory.current_machine.code }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td data-label="Centro de gasto">{% if accessory.current_machine %}<span data-machine-pk="{{ accessory.current_machine.pk }}">{{ accessory.current_machine.code }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
             <td data-label="Responsable">{% if accessory.responsible_label %}{{ accessory.responsible_label }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
             <td data-label="Última revisión">{{ accessory.last_review_date|date:"d/m/Y"|default:"—" }}</td>
             <td data-label="Caducidad">

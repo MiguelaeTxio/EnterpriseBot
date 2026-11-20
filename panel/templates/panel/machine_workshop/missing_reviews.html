@@ -33,7 +33,7 @@ FleetMissingReviewsView (fleet.logbook_service.missing_reviews).
     <tbody>
         {% for item in cranes %}
         <tr>
-            <td class="fw-semibold text-nowrap">{{ item.machine.code }} <span class="text-muted fw-normal">{{ item.machine.brand_model|default:"" }}</span></td>
+            <td class="fw-semibold text-nowrap" data-machine-pk="{{ item.machine.pk }}">{{ item.machine.code }} <span class="text-muted fw-normal">{{ item.machine.brand_model|default:"" }}</span></td>
             <td>{{ item.reviews }}</td>
             <td>
                 {% for gap in item.gaps %}

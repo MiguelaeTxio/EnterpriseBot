@@ -40,7 +40,7 @@ crane_albaranes/views_panel.py; la selección vive en el JS del panel.
             <td>{{ row.person }}</td>
             <td>{{ row.site }}{% if row.a.task %}<div class="small text-muted text-truncate" style="max-width: 18rem;" title="{{ row.a.task }}">{{ row.a.task }}</div>{% endif %}</td>
             <td>{{ row.a.client_name }}</td>
-            <td class="text-nowrap">{% if row.a.machine %}{{ row.a.machine.code }}{% endif %}{% if row.a.tonnage %} <span class="text-muted small">{{ row.a.tonnage }} t</span>{% endif %}</td>
+            <td class="text-nowrap">{% if row.a.machine %}<span data-machine-pk="{{ row.a.machine_id }}">{{ row.a.machine.code }}</span>{% endif %}{% if row.a.tonnage %} <span class="text-muted small">{{ row.a.tonnage }} t</span>{% endif %}</td>
             <td class="text-nowrap">{% if row.a.base_out %}<span class="small">{{ row.a.base_out|time:"H:i" }}–{{ row.a.base_in|time:"H:i"|default:"…" }}</span>{% endif %}{% if row.a.hours_worked %} <strong>{{ row.a.hours_worked|floatformat:"-2" }} h</strong>{% endif %}{% if row.a.times_from_clock %} <i class="bi bi-clock-history text-primary" title="Horas sacadas de los fichajes"></i>{% endif %}</td>
             <td class="text-nowrap"><span class="badge text-bg-{{ row.color }}" title="{{ row.a.notice_error }}">{{ row.a.get_status_display }}</span></td>
             <td class="small">{% if row.a.delivered_at %}<i class="bi bi-envelope-check text-success me-1"></i>{{ row.a.delivered_to }}<div class="text-muted">{{ row.a.delivered_at|date:"d/m H:i" }}</div>{% elif row.a.delivery_error %}<span class="text-danger">{{ row.a.delivery_error }}</span>{% endif %}</td>

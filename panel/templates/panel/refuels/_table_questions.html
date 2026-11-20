@@ -52,7 +52,7 @@ panel/views_refuels.py (_question_stats, _question_row).
             </td>
             <td class="sticky-col sticky-col-3 sticky-col-last" data-label="Enviada">{{ row.sent|date:"d/m/Y H:i" }}</td>
             <td data-label="Chófer">{{ row.driver }}</td>
-            <td data-label="Centro de gasto">{% if row.machine %}{{ row.machine.code }}{% else %}<span class="text-muted">{{ row.vehicle_label }}</span>{% endif %}</td>
+            <td data-label="Centro de gasto">{% if row.machine %}<span data-machine-pk="{{ row.machine.pk }}">{{ row.machine.code }}</span>{% else %}<span class="text-muted">{{ row.vehicle_label }}</span>{% endif %}</td>
             <td data-label="Pregunta">{{ row.kind }}</td>
             <td class="text-end" data-label="Dato tecleado">{% if row.value is not None %}{{ row.value }} <span class="text-muted small">{{ row.unit }}</span>{% else %}—{% endif %}</td>
             <td class="rfl-wrap" data-label="Por qué se pregunta">{% if row.reason %}{{ row.reason }}{% if not row.reason_sent %} <span class="text-muted small fst-italic">(no iba en el mensaje)</span>{% endif %}{% else %}<span class="text-muted">—</span>{% endif %}</td>

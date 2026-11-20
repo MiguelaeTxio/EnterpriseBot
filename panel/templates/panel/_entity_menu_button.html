@@ -1,0 +1,16 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/_entity_menu_button.html #}
+{% comment %}
+S163 (invasora UX). Botón de tres puntos de la fila de un centro de
+gasto o de un trabajador: abre el MISMO menú que el botón derecho
+(panel/static/panel/js/context_menu.js, entradas del servidor:
+panel/views_machine_menu.py y panel/views_person_menu.py). Pieza común
+para que toda fila de listado tenga su menú (directriz 4.24, punto 9)
+sin repetir en cada pantalla la lista de destinos.
+Uso: {% include "panel/_entity_menu_button.html" with machine_pk=machine.pk %}
+     {% include "panel/_entity_menu_button.html" with person_pk=person.pk %}
+{% endcomment %}
+<button type="button" class="btn btn-sm btn-outline-secondary border-0 px-2 eb-entity-menu-btn"
+        {% if machine_pk %}data-machine-pk="{{ machine_pk }}"{% else %}data-person-pk="{{ person_pk }}"{% endif %}
+        title="Más opciones (también con el botón derecho)" aria-label="Más opciones">
+    <i class="bi bi-three-dots-vertical"></i>
+</button>

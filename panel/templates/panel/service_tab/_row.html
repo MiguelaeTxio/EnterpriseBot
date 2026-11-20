@@ -15,6 +15,8 @@ datos nuevos. Todo llega resuelto de la vista.
     <td class="text-nowrap svc-fix-left">
         <input type="checkbox" class="form-check-input svc-row-check me-1" value="{{ machine.pk }}" data-label="{{ machine.code }}" aria-label="Seleccionar {{ machine.code }}">
         <a href="{% url 'panel:documentation_machine_detail' pk=machine.pk %}?service_open=1#machineServicePlan" class="fw-semibold" title="{{ machine.brand_model|default:'' }}">{{ machine.code }}</a>
+        {# S163: menú de la máquina (el mismo del botón derecho). #}
+        {% include "panel/_entity_menu_button.html" with machine_pk=machine.pk %}
     </td>
     <td class="small svc-family" data-label="Familia">{{ machine.family|default:"—" }}</td>
     <td data-label="Revisión cada">

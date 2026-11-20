@@ -1075,7 +1075,7 @@ usan los documentos.
                             <td data-label="Tipo">{{ accessory.accessory_type.label }}</td>
                             <td class="stack-mobile-title"><a href="{% url 'panel:lifting_accessory_detail' accessory.pk %}?back_url={{ request.get_full_path|urlencode }}">{{ accessory.identifier }}</a></td>
                             <td data-label="Descripción">{{ accessory.description|default:"—" }}</td>
-                            <td data-label="Centro de gasto">{{ accessory.current_machine.code }}</td>
+                            <td data-label="Centro de gasto"><span data-machine-pk="{{ accessory.current_machine.pk }}">{{ accessory.current_machine.code }}</span></td>
                             <td class="text-nowrap" data-label="Entregado el">{{ accessory.current_assignment_row.start_date|date:"d/m/Y" }}</td>
                             <td class="text-nowrap" data-label="Caducidad">
                                 {% if accessory.is_expired %}

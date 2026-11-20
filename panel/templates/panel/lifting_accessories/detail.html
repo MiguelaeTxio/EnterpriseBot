@@ -110,7 +110,7 @@ tontas); cada formulario vuelve aquí (PRG).
                 <tbody>
                     {% for item in assignments %}
                     <tr class="{% if not item.row.end_date %}table-success{% endif %}">
-                        <td>{{ item.row.machine.code }}</td>
+                        <td><span data-machine-pk="{{ item.row.machine.pk }}">{{ item.row.machine.code }}</span></td>
                         <td>{{ item.responsible }}</td>
                         <td>{{ item.row.start_date|date:"d/m/Y" }}</td>
                         <td>{% if item.row.end_date %}{{ item.row.end_date|date:"d/m/Y" }}{% else %}<span class="fw-semibold">Actual</span>{% endif %}</td>

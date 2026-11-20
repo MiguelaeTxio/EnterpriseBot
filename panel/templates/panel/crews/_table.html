@@ -26,22 +26,25 @@ desde panel/views_crews.py; la selección vive en el JS de _pane.html.
                 </a>
             </th>
             {% endfor %}
+            <th class="text-end">Acciones</th>
         </tr>
     </thead>
     <tbody>
         {% for row in rows %}
         <tr{% if not row.current %} class="text-muted"{% endif %}>
             <td><input type="checkbox" class="form-check-input crew-row-check" data-pk="{{ row.key }}" data-person="{{ row.person_id }}" data-label="{{ row.label }}"></td>
-            <td class="text-nowrap fw-semibold">{{ row.crew.machine.code }}</td>
-            <td>{{ row.machine }}</td>
+            <td class="text-nowrap fw-semibold" data-machine-pk="{{ row.crew.machine_id }}">{{ row.crew.machine.code }}</td>
+            <td data-machine-pk="{{ row.crew.machine_id }}">{{ row.machine }}</td>
             <td class="text-nowrap">{{ row.crew.machine.plate }}</td>
-            <td>{{ row.person }}{% if row.crew.notes %}<div class="small text-muted">{{ row.crew.notes }}</div>{% endif %}</td>
+            <td data-person-pk="{{ row.person_id }}">{{ row.person }}{% if row.crew.notes %}<div class="small text-muted">{{ row.crew.notes }}</div>{% endif %}</td>
             <td class="text-nowrap">{% if row.phone %}<a href="tel:{{ row.phone }}" class="text-decoration-none"><i class="bi bi-telephone me-1"></i>{{ row.phone }}</a>{% endif %}{% if row.crew.person.phone_emergency %}<div class="small text-muted" title="Contacto de emergencia{% if row.crew.person.emergency_contact %}: {{ row.crew.person.emergency_contact }}{% endif %}"><i class="bi bi-exclamation-triangle me-1"></i>{{ row.crew.person.phone_emergency }}</div>{% endif %}</td>
             <td class="text-nowrap">{{ row.crew.date_start|date:"d/m/Y" }}</td>
             <td class="text-nowrap">{{ row.crew.date_end|date:"d/m/Y" }}</td>
+            {# S163: menú del centro de gasto; el de la persona, con el botón derecho sobre su nombre. #}
+            <td class="text-end">{% include "panel/_entity_menu_button.html" with machine_pk=row.crew.machine_id %}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="{{ sort_columns|length|add:1 }}" class="text-muted small">No hay equipos con estos filtros.</td></tr>
+        <tr><td colspan="{{ sort_columns|length|add:2 }}" class="text-muted small">No hay equipos con estos filtros.</td></tr>
         {% endfor %}
     </tbody>
 </table>
