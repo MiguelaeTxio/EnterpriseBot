@@ -206,8 +206,10 @@
     <script src="{% static 'panel/js/albaran_upload.js' %}"></script>
     <!-- S153: botón "Ampliar" en todos los listados (solo el listado). -->
     <script src="{% static 'panel/js/list_fullscreen.js' %}"></script>
-    <!-- H24 (S144): botón derecho sobre un trabajador = menú con sus vistas. -->
-    <script src="{% static 'panel/js/person_menu.js' %}"></script>
+    <!-- H24 (S144) / S163: menú propio del botón derecho en todo el panel
+         (trabajadores, centros de gasto y acciones de cualquier fila) y
+         ventana de la tarjeta técnica de un centro de gasto. -->
+    <script src="{% static 'panel/js/context_menu.js' %}"></script>
     <!-- H30 (S123): envío común del modal "Subir documento" de las
          fichas de persona y de máquina. -->
     <script src="{% static 'panel/js/subject_upload.js' %}"></script>

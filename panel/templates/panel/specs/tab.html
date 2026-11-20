@@ -2,79 +2,302 @@
 {% comment %}
 H23 (S154, invasora). Pestaña "Especificaciones" del hub de
 Documentación: centros de gasto filtrados por capacidad de elevación
-(t), momento de carga (t·m, grúa de los autocargantes) y masa máxima
-autorizada (t). Contexto: SpecsTabView (panel/views_specs_tab.py).
-Pantalla fija (directriz 4.24, panel/_fixed_list_layout.html): arriba
-los filtros; abajo solo la lista hace scroll, con la cabecera pegada.
-Los filtros piden por htmx solo la tabla (?fragment=1).
+(t), momento de carga (t·m) y masa máxima autorizada (t). Contexto:
+SpecsTabView (panel/views_specs_tab.py).
+
+S163 (invasora UX): formato común de las pestañas (directrices 4.24 y
+4.27), el mismo que Revisiones y Centros de gasto. Arriba, fijo, tres
+columnas: Buscar y filtrar (Buscar · Estado · Familia · Grupo y, debajo,
+lo propio; pestaña "Columnas") · Grupos de selección · Acciones. Abajo,
+el listado (con "Ampliar") y "Selección actual". El código abre la
+tarjeta técnica; menú de tres puntos y botón derecho en cada fila
+(panel/static/panel/js/context_menu.js).
 {% endcomment %}
 <div class="border rounded p-2 mb-2" id="specs-top-panel">
-    <form class="row g-2 align-items-end small" id="specs-filters"
-          hx-get="{{ tab_url }}?fragment=1" hx-target="#specs-table-container"
-          hx-trigger="change, keyup changed delay:400ms from:input[type=text]">
-        <div class="col-12 col-xl-2">
-            <label class="form-label form-label-sm mb-0">Buscar</label>
-            <input type="text" name="search" value="{{ filters.search }}" class="form-control form-control-sm" placeholder="Código, marca o matrícula">
-        </div>
-        <div class="col-6 col-xl-2">
-            <label class="form-label form-label-sm mb-0">Familia</label>
-            <select name="family" class="form-select form-select-sm">
-                <option value="">Todas</option>
-                {% for family in families %}
-                <option value="{{ family }}" {% if family == filters.family %}selected{% endif %}>{{ family }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <div class="col-6 col-xl-2">
-            <label class="form-label form-label-sm mb-0">Capacidad de elevación (t)</label>
-            <div class="input-group input-group-sm">
-                <input type="text" inputmode="decimal" name="cap_min" value="{{ filters.cap_min }}" class="form-control" placeholder="desde">
-                <input type="text" inputmode="decimal" name="cap_max" value="{{ filters.cap_max }}" class="form-control" placeholder="hasta">
+    <div class="row g-2">
+        <div class="col-lg-4">
+            <div class="border rounded p-2 h-100">
+                {% include "panel/_filter_panel_tabs.html" with fp="specs" %}
+                <div class="eb-filter-pane" data-filter-pane="filters">
+                <form id="specs-filters" autocomplete="off"
+                      hx-get="{% url 'panel:specs_tab' %}?fragment=1"
+                      hx-target="#specs-table-container"
+                      hx-trigger="change, submit, specs-columns, input changed delay:400ms from:.specs-text">
+                    <input type="search" class="form-control form-control-sm mb-2 specs-text" name="search" value="{{ filter_search }}" placeholder="Buscar por código, marca/modelo, matrícula…">
+                    <input type="hidden" name="sort" id="specs-sort" value="{{ current_sort }}">
+                    <input type="hidden" name="is_active" id="specs-is-active" value="{{ filter_is_active }}">
+                    <div class="d-flex flex-wrap gap-3 small">
+                        <div>
+                            <div class="fw-semibold mb-1">Estado</div>
+                            <div class="dropdown checkdrop" data-all="Todos" data-none="Ninguno">
+                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
+                                        data-bs-auto-close="outside" aria-expanded="false"><span class="checkdrop-text">Todos</span></button>
+                                <div class="dropdown-menu p-2 small">
+                                    <div class="form-check">
+                                        <input class="form-check-input specs-estado" type="checkbox" id="specs-estado-activos" data-estado="1" {% if filter_is_active == '' or filter_is_active == '1' %}checked{% endif %}>
+                                        <label class="form-check-label small" for="specs-estado-activos">Activos</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input specs-estado" type="checkbox" id="specs-estado-inactivos" data-estado="0" {% if filter_is_active == '' or filter_is_active == '0' %}checked{% endif %}>
+                                        <label class="form-check-label small" for="specs-estado-inactivos">Inactivos</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="fw-semibold mb-1">Familia</div>
+                            <select class="form-select form-select-sm" name="family">
+                                <option value="">Todas las familias</option>
+                                {% for fam in families %}
+                                <option value="{{ fam }}" {% if filter_family == fam %}selected{% endif %}>{{ fam }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mt-2 small">
+                        {% include "panel/_group_filter_select.html" with gf_id="specs-filter-group" gf_class="w-100" gf_who="máquinas" %}
+                    </div>
+                    <hr class="eb-filters-sep">
+                    {# Lo propio de la pestaña, debajo del bloque común (4.27). #}
+                    <div class="specs-ranges small">
+                        <div class="fw-semibold">Capacidad (t)</div>
+                        <input type="text" inputmode="decimal" name="cap_min" value="{{ ranges.cap_min }}" class="form-control form-control-sm specs-text" placeholder="desde" aria-label="Capacidad desde">
+                        <input type="text" inputmode="decimal" name="cap_max" value="{{ ranges.cap_max }}" class="form-control form-control-sm specs-text" placeholder="hasta" aria-label="Capacidad hasta">
+                        <div class="fw-semibold">Momento (t·m)</div>
+                        <input type="text" inputmode="decimal" name="tm_min" value="{{ ranges.tm_min }}" class="form-control form-control-sm specs-text" placeholder="desde" aria-label="Momento desde">
+                        <input type="text" inputmode="decimal" name="tm_max" value="{{ ranges.tm_max }}" class="form-control form-control-sm specs-text" placeholder="hasta" aria-label="Momento hasta">
+                        <div class="fw-semibold" title="Masa máxima autorizada">MMA (t)</div>
+                        <input type="text" inputmode="decimal" name="mma_min" value="{{ ranges.mma_min }}" class="form-control form-control-sm specs-text" placeholder="desde" aria-label="MMA desde">
+                        <input type="text" inputmode="decimal" name="mma_max" value="{{ ranges.mma_max }}" class="form-control form-control-sm specs-text" placeholder="hasta" aria-label="MMA hasta">
+                    </div>
+                    <input type="hidden" name="with_specs" id="specs-with-specs" value="{% if filter_with_specs %}1{% else %}0{% endif %}">
+                    <div class="form-check small mt-1">
+                        <input class="form-check-input" type="checkbox" id="specs-with-specs-box" {% if filter_with_specs %}checked{% endif %}>
+                        <label class="form-check-label" for="specs-with-specs-box" title="Oculta los centros de gasto sin capacidad, momento, MMA ni masa">Solo los que tienen datos técnicos</label>
+                    </div>
+                    <hr class="eb-filters-sep">
+                    <div class="small fw-semibold mb-1">Selección</div>
+                    <div class="d-flex align-items-center justify-content-between gap-2 small">
+                        <div class="form-check mb-0">
+                            <input class="form-check-input" type="checkbox" id="specs-only-selected" name="only_selected" value="1" autocomplete="off">
+                            <label class="form-check-label" for="specs-only-selected">Mostrar solo la selección actual</label>
+                        </div>
+                        <input type="hidden" name="selected_ids" id="specs-selected-ids" value="">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="specs-clear-sort">
+                            <i class="bi bi-x-circle me-1"></i>Quitar orden
+                        </button>
+                    </div>
+                    {% include "panel/_checkdrop_js.html" %}
+                </form>
+                </div>
+                <div class="eb-filter-pane d-none" data-filter-pane="columns">
+                    {% include "panel/_view_columns_tab.html" with vc="specs" screen="specs_tab" refresh_el="#specs-filters" refresh_evt="specs-columns" %}
+                </div>
             </div>
         </div>
-        <div class="col-6 col-xl-2">
-            <label class="form-label form-label-sm mb-0">Momento de carga (t·m)</label>
-            <div class="input-group input-group-sm">
-                <input type="text" inputmode="decimal" name="tm_min" value="{{ filters.tm_min }}" class="form-control" placeholder="desde">
-                <input type="text" inputmode="decimal" name="tm_max" value="{{ filters.tm_max }}" class="form-control" placeholder="hasta">
+        {% include "panel/_selection_groups_box.html" with sg="specsGroup" sg_nodes=machine_group_nodes sg_collapsed=machine_groups_collapsed sg_parents=machine_group_parents sg_hint="máquinas" %}
+        <div class="col-lg-5">
+            <div class="border rounded p-2 h-100">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <strong class="small"><span id="specs-mass-count">0</span> seleccionados</strong>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="specs-mass-clear">Limpiar</button>
+                </div>
+                <div class="small text-muted fw-bold">Especificaciones</div>
+                <div class="d-flex gap-1 flex-wrap">
+                    <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#specsExportModal"
+                            title="Excel, PDF, HTML o imprimir: los marcados o, si no hay ninguno, todo lo que muestra el listado">
+                        <i class="bi bi-box-arrow-up me-1"></i>Exportar / imprimir
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-primary specs-needs-one" id="specs-open-card" disabled
+                            title="Tarjeta técnica del centro de gasto marcado (marca solo uno)">
+                        <i class="bi bi-card-list me-1"></i>Tarjeta técnica
+                    </button>
+                </div>
+                <div class="alert small py-1 px-2 mt-2 mb-0 d-none" id="specs-result" role="status"></div>
             </div>
-        </div>
-        <div class="col-6 col-xl-2">
-            <label class="form-label form-label-sm mb-0">Masa máxima autorizada (t)</label>
-            <div class="input-group input-group-sm">
-                <input type="text" inputmode="decimal" name="mma_min" value="{{ filters.mma_min }}" class="form-control" placeholder="desde">
-                <input type="text" inputmode="decimal" name="mma_max" value="{{ filters.mma_max }}" class="form-control" placeholder="hasta">
-            </div>
-        </div>
-        <div class="col-8 col-xl-1">
-            <label class="form-label form-label-sm mb-0">Orden</label>
-            <select name="sort" class="form-select form-select-sm">
-                {% for value, label in sort_choices %}
-                <option value="{{ value }}" {% if value == filters.sort %}selected{% endif %}>{{ label }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <div class="col-4 col-xl-1">
-            <input type="hidden" name="active" value="0">
-            <div class="form-check">
-                <input class="form-check-input" type="checkbox" name="active" value="1" id="specs-active" {% if filters.active == "1" %}checked{% endif %}>
-                <label class="form-check-label" for="specs-active">Solo activos</label>
-            </div>
-            <input type="hidden" name="with_specs" value="0">
-            <div class="form-check">
-                <input class="form-check-input" type="checkbox" name="with_specs" value="1" id="specs-with" {% if filters.with_specs == "1" %}checked{% endif %}>
-                <label class="form-check-label" for="specs-with">Con datos</label>
-            </div>
-        </div>
-    </form>
-</div>
-
-<div class="border rounded p-2" id="specs-bottom-panel">
-    <div class="h-100 d-flex flex-column">
-        <div class="fw-bold small mb-1" id="specs-count" data-eb-fullscreen-header>{{ count }} centro{{ count|pluralize }} de gasto</div>
-        <div class="fixed-list-scroll flex-grow-1 overflow-auto position-relative" id="specs-table-container">
-            {% include "panel/specs/_table.html" %}
         </div>
     </div>
 </div>
+
+<div class="border rounded p-2" id="specs-bottom-panel">
+    <div class="row g-2 h-100">
+        <div class="col-lg-9 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1" data-eb-fullscreen-header>Centros de gasto (<span id="specs-count">{{ count }}</span>)</div>
+                <div class="fixed-list-scroll flex-grow-1 overflow-auto position-relative" id="specs-table-container">
+                    {% include "panel/specs/_table.html" %}
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1">Selección actual (<span id="specs-selection-count">0</span>)</div>
+                <div class="flex-scroll-y">
+                    <ul class="mb-0 small ps-0 list-unstyled" id="specs-selection-list"></ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<style>
+.eb-filters-sep { margin: .5rem 0; opacity: .15; }
+.specs-ranges { display: grid; grid-template-columns: auto 1fr 1fr; gap: .25rem .4rem; align-items: center; }
+</style>
+
+{{ saved_selection|json_script:"specs-saved-selection" }}
 {% include "panel/_fixed_list_layout.html" with top_id="specs-top-panel" bottom_id="specs-bottom-panel" %}
+{% url 'panel:specs_tab_export' as specs_export_url %}
+{% include "panel/_screen_export_modal.html" with sx="specs" screen="specs_tab" export_url=specs_export_url method="get" title="Exportar especificaciones" %}
+
+<script>
+(function () {
+    "use strict";
+    const SCREEN_KEY = "{{ screen_key|escapejs }}";
+    const filters = document.getElementById("specs-filters");
+    const container = document.getElementById("specs-table-container");
+    // pk -> código, para el visor "Selección actual".
+    const selection = new Map(
+        (JSON.parse(document.getElementById("specs-saved-selection").textContent) || [])
+            .map(item => [String(item.pk), item.label || ""])
+    );
+    function refreshFilters() { htmx.trigger(filters, "submit"); }
+
+    // Estado en casillas -> is_active (ambas = todos, ninguna = ninguno).
+    filters.querySelectorAll(".specs-estado").forEach(function (box) {
+        box.addEventListener("change", function () {
+            const on = Array.from(filters.querySelectorAll(".specs-estado:checked")).map(b => b.dataset.estado);
+            document.getElementById("specs-is-active").value =
+                on.length === 2 ? "" : (on.length === 1 ? on[0] : "none");
+        });
+    });
+    document.getElementById("specs-with-specs-box").addEventListener("change", function (ev) {
+        document.getElementById("specs-with-specs").value = ev.target.checked ? "1" : "0";
+    });
+    document.getElementById("specs-clear-sort").addEventListener("click", function () {
+        document.getElementById("specs-sort").value = "";
+        refreshFilters();
+    });
+
+    // Selección persistida por usuario (4.15/4.24), contador, "Limpiar",
+    // visor "Selección actual" y grupos de selección (4.27).
+    let machineGroups = null;
+    function paintSelection() {
+        document.getElementById("specs-mass-count").textContent = selection.size;
+        document.getElementById("specs-selection-count").textContent = selection.size;
+        const ids = Array.from(selection.keys()).join(",");
+        const idsInput = document.getElementById("specs-selected-ids");
+        const changed = idsInput.value !== ids;
+        idsInput.value = ids;
+        if (changed && document.getElementById("specs-only-selected").checked) refreshFilters();
+        document.getElementById("specs-open-card").disabled = selection.size !== 1;
+        const list = document.getElementById("specs-selection-list");
+        list.innerHTML = "";
+        if (!selection.size) {
+            const li = document.createElement("li");
+            li.className = "text-muted";
+            li.textContent = "Nada seleccionado todavía.";
+            list.appendChild(li);
+        }
+        Array.from(selection.entries())
+            .sort((x, y) => (x[1] || "").localeCompare(y[1] || ""))
+            .forEach(function ([pk, label]) {
+                const li = document.createElement("li");
+                li.textContent = label || ("#" + pk);
+                li.dataset.machinePk = pk;
+                list.appendChild(li);
+            });
+        if (machineGroups) machineGroups.refresh();
+    }
+    function saveSelection() {
+        if (window.EbNavState) window.EbNavState.save(SCREEN_KEY, {selection: Array.from(selection.keys())});
+        paintSelection();
+    }
+    function syncChecks() {
+        const boxes = container.querySelectorAll(".specs-row-check");
+        boxes.forEach(function (box) {
+            if (selection.has(box.value) && !selection.get(box.value)) selection.set(box.value, box.dataset.label || "");
+            box.checked = selection.has(box.value);
+        });
+        const all = document.getElementById("specs-check-all");
+        if (all) all.checked = boxes.length > 0 && Array.from(boxes).every(b => b.checked);
+        const state = document.getElementById("specs-fragment-state");
+        if (state) document.getElementById("specs-count").textContent = state.dataset.count;
+        paintSelection();
+    }
+    document.getElementById("specs-mass-clear").addEventListener("click", function () {
+        selection.clear();
+        saveSelection();
+        syncChecks();
+    });
+    document.getElementById("specs-open-card").addEventListener("click", function () {
+        const pk = Array.from(selection.keys())[0];
+        const box = container.querySelector('.specs-row-check[value="' + pk + '"]');
+        if (box && box.dataset.cardUrl) window.EbMachineCard.open(box.dataset.cardUrl);
+        else window.EbMachineCard.open("/panel/documentacion/maquinaria/" + pk + "/tarjeta-tecnica/");
+    });
+    container.addEventListener("click", function (ev) {
+        const sort = ev.target.closest(".specs-sort");
+        if (sort) {
+            ev.preventDefault();
+            document.getElementById("specs-sort").value = sort.dataset.sort;
+            refreshFilters();
+        }
+    });
+    container.addEventListener("change", function (ev) {
+        if (ev.target.id === "specs-check-all") {
+            container.querySelectorAll(".specs-row-check").forEach(function (box) {
+                box.checked = ev.target.checked;
+                if (box.checked) selection.set(box.value, box.dataset.label || ""); else selection.delete(box.value);
+            });
+            saveSelection();
+            return;
+        }
+        if (ev.target.classList.contains("specs-row-check")) {
+            if (ev.target.checked) selection.set(ev.target.value, ev.target.dataset.label || ""); else selection.delete(ev.target.value);
+            saveSelection();
+            syncChecks();
+        }
+    });
+    document.body.addEventListener("htmx:afterSettle", function (ev) {
+        if (ev.target === container) syncChecks();
+    });
+
+    // Grupos de selección de máquinas, los mismos que en Centros de gasto.
+    machineGroups = window.EbSelectionGroups.init({
+        prefix: "specsGroup",
+        memoryKey: "specs",
+        collapsedKey: "machine_groups",
+        saveUrl: "{% url 'panel:fleet_group_save' %}",
+        updateUrl: function (pk) { return "/panel/fleet/grupos/" + pk + "/guardar/"; },
+        deleteUrl: function (pk) { return "/panel/fleet/grupos/" + pk + "/eliminar/"; },
+        memberField: "machine_ids",
+        noun: "máquina",
+        getIds: function () { return Array.from(selection.keys()); },
+        setIds: function (pairs) {
+            selection.clear();
+            pairs.forEach(function ([pk, name]) { selection.set(String(pk), (name || "").split(" ")[0]); });
+            saveSelection();
+            syncChecks();
+            if (document.getElementById("specs-only-selected").checked) refreshFilters();
+        },
+        labelOf: function (pk) { return selection.get(String(pk)) || ""; },
+        toast: function (text, isError) {
+            const result = document.getElementById("specs-result");
+            result.className = "alert small py-1 px-2 mt-2 mb-0 alert-" + (isError ? "danger" : "success");
+            result.textContent = text;
+        },
+    });
+
+    // Exportar / imprimir (modal común): los marcados o todo el listado.
+    window.EbScreenExport = window.EbScreenExport || {};
+    window.EbScreenExport.specs = {
+        params: function () {
+            return Array.from(selection.keys()).map(function (pk) { return ["selected", pk]; });
+        },
+        count: function () {
+            return selection.size ? selection.size + " marcados" : "Todo el listado";
+        },
+    };
+    syncChecks();
+}());
+</script>

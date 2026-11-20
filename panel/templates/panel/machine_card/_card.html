@@ -1,0 +1,51 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/machine_card/_card.html #}
+{% comment %}
+S163 (invasora UX). Tarjeta técnica de un centro de gasto: el contenido
+de la ventana que abre panel/static/panel/js/context_menu.js
+(EbMachineCard.open) al pulsar el código en Especificaciones, desde la
+entrada "Tarjeta técnica" del menú del botón derecho o desde el menú de
+tres puntos. Miguel Ángel: "mostrar una tarjeta técnica de la máquina
+en cuestión, no la ficha". Contexto: MachineCardView
+(panel/views_machine_menu.py); aquí solo se pinta.
+{% endcomment %}
+<div class="modal-header py-2">
+    <h5 class="modal-title d-flex align-items-center gap-2">
+        {% if avatar_url %}<img src="{{ avatar_url }}" alt="" width="40" height="40" class="rounded border" style="object-fit: cover;">{% endif %}
+        <span><i class="bi bi-card-list me-1"></i>{{ title }}</span>
+    </h5>
+    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+</div>
+<div class="modal-body">
+    {% if sections %}
+    <div class="row g-3">
+        {% for section_title, rows in sections %}
+        <div class="col-md-6">
+            <div class="border rounded p-2 h-100">
+                <div class="fw-bold small mb-1">{{ section_title }}</div>
+                <table class="table table-sm small mb-0">
+                    <tbody>
+                        {% for label, value in rows %}
+                        <tr><th class="text-muted fw-normal w-50">{{ label }}</th><td>{{ value }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-muted mb-0">Este centro de gasto no tiene todavía datos técnicos.</p>
+    {% endif %}
+    {% if specs_source or specs_read_at %}
+    <div class="small text-muted mt-2">
+        <i class="bi bi-info-circle me-1"></i>Datos leídos{% if specs_read_at %} el {{ specs_read_at|date:"d/m/Y" }}{% endif %}{% if specs_source %} de: {{ specs_source|truncatechars:300 }}{% endif %}
+    </div>
+    {% endif %}
+</div>
+<div class="modal-footer py-2 justify-content-start">
+    {% for link in links %}
+    <a href="{{ link.url }}" class="btn btn-sm {% if link.code == 'libro' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+        <i class="bi {{ link.icon }} me-1"></i>{{ link.label }}
+    </a>
+    {% endfor %}
+</div>

@@ -765,3 +765,101 @@ CRANE_CLIENTS = register(Screen(
         "cliente", "nif", "localidad", "telefono", "correo", "obras",
     ],
 ))
+
+
+# S163 (invasora UX). Especificaciones del hub de Documentación, con el
+# formato común (4.24/4.27): las columnas de su tabla de siempre y,
+# detrás, el resto de datos técnicos de la ficha. Los objetos son
+# MachineAsset. Las mismas claves de orden que
+# panel/views_specs_tab.SORT_KEYS.
+def _spec_tonnes(machine):
+    mma = machine.max_authorized_mass_kg
+    return round(mma / 1000, 2) if mma else None
+
+
+def _spec_metres(field_name):
+    def getter(machine):
+        value = getattr(machine, field_name)
+        return round(value / 1000, 2) if value else None
+    return getter
+
+
+def _spec_dimensions(machine):
+    parts = [
+        ("%.2f" % (value / 1000)).replace(".", ",")
+        for value in (machine.length_mm, machine.width_mm, machine.height_mm)
+        if value
+    ]
+    return " × ".join(parts)
+
+
+def _spec_read_at(machine):
+    from django.utils import timezone
+
+    value = machine.specs_read_at
+    return timezone.localtime(value).date() if value else None
+
+
+SPECS = register(Screen(
+    key="specs_tab",
+    label="Especificaciones",
+    columns=(
+        Column("codigo", "Código", 12, lambda m: m.code, sort="code"),
+        Column("familia", "Familia", 16, lambda m: m.family,
+               sort="family"),
+        Column("descripcion", "Marca y modelo", 30,
+               lambda m: m.brand_model, sort="brand_model"),
+        Column("tipo", "Tipo", 22, lambda m: m.type_name, sort="type_name"),
+        Column("matricula", "Matrícula", 14, lambda m: m.plate,
+               sort="plate", css="text-nowrap"),
+        Column("empresa", "Empresa", 26, _short_company),
+        Column("estado", "Estado", 10,
+               lambda m: "Activo" if m.is_active else "Inactivo",
+               sort="is_active"),
+        Column("capacidad", "Capacidad de elevación (t)", 12,
+               lambda m: _num(m.capacity_tonnes), "0.##", sort="capacity",
+               css="text-end", short_label="Capacidad (t)"),
+        Column("capacidad_libro", "Capacidad máxima (según libro)", 16,
+               lambda m: m.max_capacity),
+        Column("momento", "Momento de carga (t·m)", 12,
+               lambda m: _num(m.capacity_tm), "0.##", sort="moment",
+               css="text-end", short_label="Momento (t·m)"),
+        Column("mma", "Masa máxima autorizada (t)", 12, _spec_tonnes,
+               "0.0", sort="mma", css="text-end", short_label="MMA (t)"),
+        Column("masa", "Masa (kg)", 10, lambda m: m.mass_kg, "#,##0",
+               sort="mass", css="text-end"),
+        Column("ejes", "Número de ejes", 8, lambda m: m.axle_count,
+               sort="axles", css="text-end", short_label="Ejes"),
+        Column("masa_eje", "Masa por eje", 18, lambda m: m.axle_mass),
+        Column("dimensiones", "Largo × ancho × alto (m)", 20,
+               _spec_dimensions, sort="length", css="text-nowrap"),
+        Column("largo", "Largo (m)", 9, _spec_metres("length_mm"), "0.00",
+               sort="length", css="text-end"),
+        Column("ancho", "Ancho (m)", 9, _spec_metres("width_mm"), "0.00",
+               sort="width", css="text-end"),
+        Column("alto", "Alto (m)", 9, _spec_metres("height_mm"), "0.00",
+               sort="height", css="text-end"),
+        Column("anio", "Año de fabricación", 8,
+               lambda m: m.manufacture_year, sort="year", css="text-end",
+               short_label="Año"),
+        Column("num_serie", "Nº de serie de la grúa", 18,
+               lambda m: m.crane_serial_number),
+        Column("bastidor", "Nº de bastidor", 20,
+               lambda m: m.chassis_number),
+        Column("primera_matriculacion", "Primera matriculación", 12,
+               lambda m: m.first_registration_date, DATE),
+        Column("categoria_itv", "Categoría ITV", 12,
+               lambda m: m.itv_category),
+        Column("primer_propietario", "Primer propietario", 30,
+               lambda m: m.first_owner_name),
+        Column("origen", "Origen de los datos", 40,
+               lambda m: m.specs_source),
+        Column("leidos", "Datos leídos el", 12, _spec_read_at, DATE),
+    ),
+    panel_columns=[
+        "codigo", "familia", "descripcion", "matricula", "capacidad",
+        "momento", "mma", "masa", "ejes", "dimensiones", "anio",
+    ],
+    # El código (abre la tarjeta técnica) siempre delante.
+    fixed=("codigo",),
+))

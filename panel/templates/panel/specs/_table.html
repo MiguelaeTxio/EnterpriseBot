@@ -1,45 +1,59 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/specs/_table.html #}
 {% comment %}
 H23 (S154, invasora). Tabla de la pestaña "Especificaciones" (también
-el fragmento que devuelven los filtros). La cabecera de columnas queda
-pegada arriba (.fixed-list-scroll thead th, _fixed_list_layout.html).
+el fragmento que devuelven los filtros). S163 (invasora UX): formato
+común -- casilla por fila y "todos", código fijo delante (abre la
+tarjeta técnica, data-machine-card, panel/static/panel/js/
+context_menu.js), las columnas que el usuario elige en "Columnas"
+(view_columns/view_cells, catálogo specs_tab), orden múltiple por
+cabecera y menú de tres puntos con los destinos de la máquina (los
+mismos del botón derecho). La cabecera queda pegada arriba
+(_fixed_list_layout.html). Todo llega resuelto de la vista.
 {% endcomment %}
-{% if is_fragment %}
-<div class="fw-bold small mb-1" id="specs-count" hx-swap-oob="true">{{ count }} centro{{ count|pluralize }} de gasto</div>
-{% endif %}
-<table class="table table-sm table-hover align-middle small mb-0">
-    <thead>
+<div id="specs-fragment-state" class="d-none" data-count="{{ count }}"></div>
+<table class="table table-sm table-hover align-middle small mb-0" id="specs-table" data-view-screen="specs_tab">
+    <thead class="table-light">
         <tr>
-            <th>Código</th>
-            <th>Familia</th>
-            <th>Marca y modelo</th>
-            <th>Matrícula</th>
-            <th class="text-end">Capacidad (t)</th>
-            <th class="text-end">Momento (t·m)</th>
-            <th class="text-end">MMA (t)</th>
-            <th class="text-end">Masa (kg)</th>
-            <th class="text-end">Ejes</th>
-            <th>Largo × ancho × alto (m)</th>
-            <th class="text-end">Año</th>
+            <th class="text-nowrap">
+                <input type="checkbox" class="form-check-input me-1" id="specs-check-all" title="Seleccionar todos los que cumplen el filtro actual" aria-label="Seleccionar todos">
+                <a href="#" class="specs-sort text-reset text-decoration-none" data-sort="{{ sort_next.code }}">Código{% if sort_arrows.code %} <i class="bi bi-arrow-{{ sort_arrows.code }}-short"></i>{% if sort_priority.code %}<sup class="small">{{ sort_priority.code }}</sup>{% endif %}{% else %} <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>{% endif %}</a>
+            </th>
+            {% for col in view_columns %}
+            <th class="{{ col.css }}" title="{{ col.title }}" data-col="{{ col.key }}">
+                {% if col.sort %}
+                <a href="#" class="specs-sort text-reset text-decoration-none text-nowrap" data-sort="{{ col.sort_next }}">{{ col.label }}{% if col.arrow %} <i class="bi bi-arrow-{{ col.arrow }}-short"></i>{% if col.priority %}<sup class="small">{{ col.priority }}</sup>{% endif %}{% else %} <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>{% endif %}</a>
+                {% else %}{{ col.label }}{% endif %}
+            </th>
+            {% endfor %}
+            <th class="text-end">Acciones</th>
         </tr>
     </thead>
     <tbody>
-        {% for row in rows %}
-        <tr>
-            <td class="fw-semibold text-nowrap"><a href="{{ row.detail_url }}">{{ row.machine.code }}</a></td>
-            <td>{{ row.machine.family|default:"—" }}</td>
-            <td>{{ row.machine.brand_model|default:"—" }}</td>
-            <td class="text-nowrap">{{ row.machine.plate|default:"—" }}</td>
-            <td class="text-end">{% if row.capacity is not None %}{{ row.capacity|floatformat:"-2" }}{% else %}—{% endif %}</td>
-            <td class="text-end">{% if row.machine.capacity_tm is not None %}{{ row.machine.capacity_tm|floatformat:"-2" }}{% else %}—{% endif %}</td>
-            <td class="text-end">{{ row.mma_t|default:"—" }}</td>
-            <td class="text-end">{{ row.machine.mass_kg|default_if_none:"—" }}</td>
-            <td class="text-end">{{ row.machine.axle_count|default_if_none:"—" }}</td>
-            <td class="text-nowrap">{{ row.dimensions|default:"—" }}</td>
-            <td class="text-end">{{ row.machine.manufacture_year|default_if_none:"—" }}</td>
+        {% for machine in machines %}
+        <tr class="{% if not machine.is_active %}table-secondary text-muted{% endif %}">
+            <td class="text-nowrap fw-semibold">
+                <input type="checkbox" class="form-check-input specs-row-check me-1" value="{{ machine.pk }}" data-label="{{ machine.code }}" data-card-url="{{ machine.card_url }}" aria-label="Seleccionar {{ machine.code }}">
+                <a href="{% url 'panel:documentation_machine_detail' pk=machine.pk %}" data-machine-card="{{ machine.card_url }}" title="Tarjeta técnica de {{ machine.code }}">{{ machine.code }}</a>
+            </td>
+            {% for cell in machine.view_cells %}
+            <td class="{{ cell.css }}" data-label="{{ cell.label }}">{{ cell.value|default:"—" }}</td>
+            {% endfor %}
+            <td class="text-end">
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-secondary border-0 px-2" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Acciones de {{ machine.code }}">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm" data-eb-entity-menu>
+                        <li><button type="button" class="dropdown-item" data-machine-card="{{ machine.card_url }}"><i class="bi bi-card-list me-2"></i>Tarjeta técnica</button></li>
+                        {% for item in machine.menu_items %}
+                        <li><a class="dropdown-item" href="{{ item.url }}"><i class="bi {{ item.icon }} me-2"></i>{{ item.label }}</a></li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </td>
         </tr>
         {% empty %}
-        <tr><td colspan="11" class="text-center text-muted py-4">Ningún centro de gasto cumple los filtros.</td></tr>
+        <tr class="eb-empty-row"><td colspan="{{ view_columns|length|add:2 }}" class="text-center text-muted py-4">Ningún centro de gasto cumple los filtros.</td></tr>
         {% endfor %}
     </tbody>
 </table>

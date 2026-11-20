@@ -30,7 +30,10 @@ from panel.views_circulars_h31 import (
     CircularSaveContentView,
     PersonalDocutenExportView,
 )
-from panel.views_specs_tab import SpecsTabView
+from panel.views_specs_tab import SpecsExportView, SpecsTabView
+from panel.views_machine_menu import (
+    MachineCardView, MachineGoView, MachineMenuView,
+)
 from panel.views_refuels import (
     RefuelsResultsView,
     RefuelsTabView,
@@ -1517,6 +1520,29 @@ urlpatterns = [
         "documentacion/especificaciones/",
         SpecsTabView.as_view(),
         name="specs_tab",
+    ),
+    # S163 (invasora UX): exportación de Especificaciones.
+    path(
+        "documentacion/especificaciones/exportar/",
+        SpecsExportView.as_view(),
+        name="specs_tab_export",
+    ),
+    # S163 (invasora UX): menú del botón derecho de un centro de gasto,
+    # sus destinos y su tarjeta técnica.
+    path(
+        "documentacion/maquinaria/<int:pk>/menu/",
+        MachineMenuView.as_view(),
+        name="machine_menu",
+    ),
+    path(
+        "documentacion/maquinaria/<int:pk>/ir/<slug:code>/",
+        MachineGoView.as_view(),
+        name="machine_go",
+    ),
+    path(
+        "documentacion/maquinaria/<int:pk>/tarjeta-tecnica/",
+        MachineCardView.as_view(),
+        name="machine_card",
     ),
     # H30 (S135): repostajes del surtidor (GasoGes), formato 4.24.
     path(

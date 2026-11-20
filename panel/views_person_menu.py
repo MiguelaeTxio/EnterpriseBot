@@ -10,7 +10,7 @@ sitios de ese trabajador. Desde la ficha de personal hasta [...]
 repostajes, cualquier cosa". El clic izquierdo sigue haciendo lo de
 cada vista; el derecho, sobre cualquier enlace a un trabajador (su
 ficha, su página de fichajes o un elemento con data-person-pk), abre el
-menú (panel/static/panel/js/person_menu.js).
+menú (panel/static/panel/js/context_menu.js).
 
 - `PersonMenuView` (JSON): los destinos que tiene ese trabajador y que
   el usuario puede abrir (sin cuenta del panel no hay calendario ni
