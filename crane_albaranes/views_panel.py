@@ -977,6 +977,12 @@ class ClientSaveView(CraneAccessMixin, View):
             return JsonResponse({"error": "Falta el nombre del cliente."},
                                 status=400)
         client = Client.objects.filter(pk=data.get("pk") or 0).first()
+        tax_id = (data.get("tax_id") or "").upper().replace(" ", "")
+        if client is None and tax_id:
+            # Un cliente que ya existe con ese N.I.F. se actualiza, no se
+            # duplica (el traspaso automático desde otro programa puede
+            # pasar el mismo cliente más de una vez).
+            client = Client.objects.filter(tax_id=tax_id).first()
         client = client or Client()
         for field in self.FIELDS:
             max_length = Client._meta.get_field(field).max_length
