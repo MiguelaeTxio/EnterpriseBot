@@ -53,31 +53,41 @@ tarjeta técnica; menú de tres puntos y botón derecho en cada fila
                                 {% endfor %}
                             </select>
                         </div>
-                    </div>
-                    <div class="mt-2 small">
-                        {% include "panel/_group_filter_select.html" with gf_id="specs-filter-group" gf_class="w-100" gf_who="máquinas" %}
+                        <div class="flex-grow-1">
+                            {% include "panel/_group_filter_select.html" with gf_id="specs-filter-group" gf_class="w-100" gf_who="máquinas" %}
+                        </div>
                     </div>
                     <hr class="eb-filters-sep">
                     {# Lo propio de la pestaña, debajo del bloque común (4.27). #}
                     <div class="specs-ranges small">
-                        <div class="fw-semibold">Capacidad (t)</div>
-                        <input type="text" inputmode="decimal" name="cap_min" value="{{ ranges.cap_min }}" class="form-control form-control-sm specs-text" placeholder="desde" aria-label="Capacidad desde">
-                        <input type="text" inputmode="decimal" name="cap_max" value="{{ ranges.cap_max }}" class="form-control form-control-sm specs-text" placeholder="hasta" aria-label="Capacidad hasta">
-                        <div class="fw-semibold">Momento (t·m)</div>
-                        <input type="text" inputmode="decimal" name="tm_min" value="{{ ranges.tm_min }}" class="form-control form-control-sm specs-text" placeholder="desde" aria-label="Momento desde">
-                        <input type="text" inputmode="decimal" name="tm_max" value="{{ ranges.tm_max }}" class="form-control form-control-sm specs-text" placeholder="hasta" aria-label="Momento hasta">
-                        <div class="fw-semibold" title="Masa máxima autorizada">MMA (t)</div>
-                        <input type="text" inputmode="decimal" name="mma_min" value="{{ ranges.mma_min }}" class="form-control form-control-sm specs-text" placeholder="desde" aria-label="MMA desde">
-                        <input type="text" inputmode="decimal" name="mma_max" value="{{ ranges.mma_max }}" class="form-control form-control-sm specs-text" placeholder="hasta" aria-label="MMA hasta">
+                        <div>
+                            <div class="fw-semibold">Capacidad (t)</div>
+                            <div class="input-group input-group-sm">
+                                <input type="text" inputmode="decimal" name="cap_min" value="{{ ranges.cap_min }}" class="form-control specs-text" placeholder="desde" aria-label="Capacidad desde">
+                                <input type="text" inputmode="decimal" name="cap_max" value="{{ ranges.cap_max }}" class="form-control specs-text" placeholder="hasta" aria-label="Capacidad hasta">
+                            </div>
+                        </div>
+                        <div>
+                            <div class="fw-semibold">Momento (t·m)</div>
+                            <div class="input-group input-group-sm">
+                                <input type="text" inputmode="decimal" name="tm_min" value="{{ ranges.tm_min }}" class="form-control specs-text" placeholder="desde" aria-label="Momento desde">
+                                <input type="text" inputmode="decimal" name="tm_max" value="{{ ranges.tm_max }}" class="form-control specs-text" placeholder="hasta" aria-label="Momento hasta">
+                            </div>
+                        </div>
+                        <div>
+                            <div class="fw-semibold" title="Masa máxima autorizada">MMA (t)</div>
+                            <div class="input-group input-group-sm">
+                                <input type="text" inputmode="decimal" name="mma_min" value="{{ ranges.mma_min }}" class="form-control specs-text" placeholder="desde" aria-label="MMA desde">
+                                <input type="text" inputmode="decimal" name="mma_max" value="{{ ranges.mma_max }}" class="form-control specs-text" placeholder="hasta" aria-label="MMA hasta">
+                            </div>
+                        </div>
                     </div>
                     <input type="hidden" name="with_specs" id="specs-with-specs" value="{% if filter_with_specs %}1{% else %}0{% endif %}">
-                    <div class="form-check small mt-1">
-                        <input class="form-check-input" type="checkbox" id="specs-with-specs-box" {% if filter_with_specs %}checked{% endif %}>
-                        <label class="form-check-label" for="specs-with-specs-box" title="Oculta los centros de gasto sin capacidad, momento, MMA ni masa">Solo los que tienen datos técnicos</label>
-                    </div>
-                    <hr class="eb-filters-sep">
-                    <div class="small fw-semibold mb-1">Selección</div>
-                    <div class="d-flex align-items-center justify-content-between gap-2 small">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 small mt-2">
+                        <div class="form-check mb-0">
+                            <input class="form-check-input" type="checkbox" id="specs-with-specs-box" {% if filter_with_specs %}checked{% endif %}>
+                            <label class="form-check-label" for="specs-with-specs-box" title="Oculta los centros de gasto sin capacidad, momento, MMA ni masa">Solo con datos técnicos</label>
+                        </div>
                         <div class="form-check mb-0">
                             <input class="form-check-input" type="checkbox" id="specs-only-selected" name="only_selected" value="1" autocomplete="off">
                             <label class="form-check-label" for="specs-only-selected">Mostrar solo la selección actual</label>
@@ -119,7 +129,7 @@ tarjeta técnica; menú de tres puntos y botón derecho en cada fila
     </div>
 </div>
 
-<div class="border rounded p-2" id="specs-bottom-panel">
+<div class="border rounded p-2" id="specs-list-panel">
     <div class="row g-2 h-100">
         <div class="col-lg-9 h-100">
             <div class="border rounded p-2 h-100 d-flex flex-column">
@@ -141,11 +151,11 @@ tarjeta técnica; menú de tres puntos y botón derecho en cada fila
 </div>
 <style>
 .eb-filters-sep { margin: .5rem 0; opacity: .15; }
-.specs-ranges { display: grid; grid-template-columns: auto 1fr 1fr; gap: .25rem .4rem; align-items: center; }
+.specs-ranges { display: grid; grid-template-columns: repeat(3, 1fr); gap: .4rem; }
 </style>
 
 {{ saved_selection|json_script:"specs-saved-selection" }}
-{% include "panel/_fixed_list_layout.html" with top_id="specs-top-panel" bottom_id="specs-bottom-panel" %}
+{% include "panel/_fixed_list_layout.html" with top_id="specs-top-panel" bottom_id="specs-list-panel" %}
 {% url 'panel:specs_tab_export' as specs_export_url %}
 {% include "panel/_screen_export_modal.html" with sx="specs" screen="specs_tab" export_url=specs_export_url method="get" title="Exportar especificaciones" %}
 
