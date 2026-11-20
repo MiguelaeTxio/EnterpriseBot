@@ -36,7 +36,8 @@ mecánicos); quien ficha con tipos no hace partes.
 Cuándo: al cerrar el parte (panel/views_operator.py), con cada fichaje
 del trabajador (ese día y el anterior; hr_calendar/clock_parts.py) y con
 el comando correct_clock_from_partes_s153 para lo ya hecho. Un día se
-corrige solo cuando ya ha pasado la hora de fin de su parte.
+corrige solo cuando ya ha pasado la hora de fin de su parte y, si es
+hoy, cuando ya ha fichado la salida (S149).
 """
 import datetime
 import logging
@@ -175,6 +176,17 @@ def correct_day(company_user, day, now=None, dry_run=False):
         return result
     if any(e.kind == "CHG" or e.clock_type_id for e in events):
         result.skipped = "Ficha con tipos: se compara con sus albaranes."
+        return result
+    # S149 (Miguel Ángel, 20/11, Antonio Fontalba el 18/11): "el cierre
+    # del parte, aunque coincida con el fin de horario, no debe dar pie a
+    # que la aplicación de fichaje marque ya también fichado el resto del
+    # día". Con la jornada de hoy abierta (lo último fichado es una
+    # entrada), el parte no la cierra: se corrige cuando fiche la salida
+    # (correct_after_press). Una salida olvidada la cierra el parte con
+    # su primer fichaje del día siguiente.
+    if events[-1].kind == "IN" and timezone.localtime(now).date() == day:
+        result.skipped = ("Jornada abierta: se corrige cuando fiche la "
+                          "salida.")
         return result
     tolerance = tolerance_minutes(company_user)
     tolerance_delta = datetime.timedelta(minutes=tolerance)
