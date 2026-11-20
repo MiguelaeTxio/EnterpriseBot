@@ -620,6 +620,7 @@ class DocumentationHubV2View(CompanyUserRequiredMixin, View):
             "fichajes", "horarios", "calendario", "requisitos", "avisos",
             "circulares",
             "plantillas", "bandeja", "revisiones", "repostajes",
+            "especificaciones",
             "solicitudes", "nominas", "pedir", "firmas", "seguros",
         )
         # H30 (S126): "Bandeja de entrada" solo para quien puede subir
@@ -972,7 +973,7 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
         # H23 (S154, invasora): libro historial de las grúas A y H --
         # sus datos en "Datos del centro de gasto" y el botón de generar
         # el libro en la sección Taller.
-        from fleet.forms import LOGBOOK_FIELDS
+        from fleet.forms import LOGBOOK_FIELDS, SPEC_FIELDS
         from fleet.logbook_service import (
             is_logbook_machine, review_gaps, review_rows,
         )
@@ -1026,6 +1027,7 @@ class MachineDetailView(CompanyUserRequiredMixin, View):
                 "back_label": back_label,
                 "form": form,
                 "can_edit_machine": self._can_edit(request),
+                "spec_form_fields": [form[name] for name in SPEC_FIELDS],
                 "show_logbook_fields": is_logbook_crane,
                 "logbook_form_fields": [
                     form[name] for name in LOGBOOK_FIELDS

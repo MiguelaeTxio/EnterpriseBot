@@ -464,6 +464,24 @@ class MachineAsset(models.Model):
         _("Masa por eje"), max_length=120, blank=True, default="",
         help_text=_("Tal como figura en el libro (p. ej. 12.000 kg)."),
     )
+    # S154 (H23, invasora): especificaciones técnicas para filtrar
+    # (Carlos: "cuáles son los camiones y grúas de 50T"). Miguel Ángel:
+    # "sabemos los modelos [...] tenemos los permisos de circulación,
+    # ITV, fichas técnicas, podemos ver perfectamente las capacidades,
+    # pesos". Se leen con fleet.specs_service; solo rellenan vacíos.
+    capacity_tonnes = models.DecimalField(
+        _("Capacidad de elevación (t)"), max_digits=7, decimal_places=2,
+        null=True, blank=True,
+    )
+    max_authorized_mass_kg = models.PositiveIntegerField(
+        _("Masa máxima autorizada (kg)"), null=True, blank=True,
+    )
+    specs_source = models.TextField(
+        _("Origen de las especificaciones"), blank=True, default="",
+    )
+    specs_read_at = models.DateTimeField(
+        _("Especificaciones leídas el"), null=True, blank=True,
+    )
     first_owner_name = models.CharField(
         _("Primer propietario"), max_length=200, blank=True, default="",
     )

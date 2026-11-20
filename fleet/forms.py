@@ -18,15 +18,23 @@ from fleet.models import MachineAsset
 
 # H23 (S154, invasora): datos del libro historial de la grúa en la
 # ficha (Miguel Ángel: "Campos nuevos en la ficha de la máquina").
-LOGBOOK_FIELDS = [
-    "crane_serial_number",
-    "manufacture_year",
+# S154 (H23): especificaciones técnicas, en la ficha de todos los
+# centros de gasto (se filtran en la pestaña Especificaciones); el resto
+# del libro historial, solo en las grúas A y H.
+SPEC_FIELDS = [
+    "capacity_tonnes",
     "max_capacity",
+    "max_authorized_mass_kg",
+    "mass_kg",
+    "axle_count",
     "length_mm",
     "width_mm",
     "height_mm",
-    "mass_kg",
-    "axle_count",
+    "manufacture_year",
+]
+
+LOGBOOK_FIELDS = [
+    "crane_serial_number",
     "axle_mass",
     "first_owner_name",
     "first_owner_tax_id",
@@ -76,7 +84,7 @@ class MachineAssetForm(forms.ModelForm):
             "service_every_km",
             # S148: observaciones libres (campo Memo).
             "notes",
-        ] + LOGBOOK_FIELDS
+        ] + SPEC_FIELDS + LOGBOOK_FIELDS
         widgets = {
             "code": forms.TextInput(attrs={
                 "class": "form-control text-uppercase",
@@ -230,7 +238,7 @@ class MachineAssetForm(forms.ModelForm):
             }),
         )
         # S154: los campos del libro historial, con el estilo del resto.
-        for name in LOGBOOK_FIELDS:
+        for name in SPEC_FIELDS + LOGBOOK_FIELDS:
             widget = self.fields[name].widget
             widget.attrs.setdefault("class", "form-control")
             if isinstance(widget, forms.NumberInput):

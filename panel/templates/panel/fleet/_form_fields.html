@@ -120,6 +120,29 @@
         {% endif %}
     </div>
 
+    {% if spec_form_fields %}
+    {% comment %}
+    H23 (S154, invasora): especificaciones técnicas de todos los centros
+    de gasto (se filtran en la pestaña Especificaciones). Origen de cada
+    dato leído: specs_source.
+    {% endcomment %}
+    <div class="col-12 mt-1">
+        <h6 class="text-muted small fw-semibold text-uppercase mb-2">Especificaciones técnicas</h6>
+    </div>
+    {% for field in spec_form_fields %}
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm" for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.errors %}
+        <div class="invalid-feedback d-block">{{ field.errors.0 }}</div>
+        {% endif %}
+    </div>
+    {% endfor %}
+    {% if form.instance.specs_source %}
+    <div class="col-12 small text-muted" style="white-space: pre-line;">{{ form.instance.specs_source }}</div>
+    {% endif %}
+    {% endif %}
+
     {% if show_logbook_fields %}
     {% comment %}
     H23 (S154, invasora): datos del libro historial de la grúa
