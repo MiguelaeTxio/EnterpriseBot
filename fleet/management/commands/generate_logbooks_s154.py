@@ -63,8 +63,9 @@ class Command(BaseCommand):
             self._log_handle.close()
 
     def _run(self, options):
+        # Miguel Ángel (S154): "solo máquinas activas".
         cranes = MachineAsset.objects.filter(
-            code__regex=r"^[AaHh][0-9]",
+            code__regex=r"^[AaHh][0-9]", is_active=True,
         ).order_by("code")
         if options["machine"]:
             cranes = cranes.filter(code__iexact=options["machine"])

@@ -65,7 +65,9 @@ class Command(BaseCommand):
             self._log_handle.close()
 
     def _run(self, options):
-        machines = MachineAsset.objects.order_by("code")
+        # Miguel Ángel (S154): "solo máquinas activas".
+        machines = MachineAsset.objects.filter(
+            is_active=True).order_by("code")
         if not options["force"]:
             machines = machines.filter(specs_read_at__isnull=True)
         if options["machine"]:
