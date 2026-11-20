@@ -55,7 +55,10 @@ _VALUE = {
         "value": {"type": "number", "nullable": True},
         "source": {
             "type": "string",
-            "enum": list(SOURCE_LABELS) + [""],
+            # Gemini no admite un valor vacío en un enum: "NONE" es
+            # "no aparece" (S154, 400 INVALID_ARGUMENT en la primera
+            # pasada).
+            "enum": list(SOURCE_LABELS) + ["NONE"],
         },
     },
     "required": ["value", "source"],
@@ -90,7 +93,7 @@ ficha: "{brand_model}"), cada uno precedido de su tipo.
 
 Devuelve sus especificaciones técnicas. Para cada dato indica en
 "source" de qué documento lo sacas (ITV, PERMISO_CIRCULACION,
-FICHA_TECNICA, TABLA_DE_CARGA) o "" si no aparece:
+FICHA_TECNICA, TABLA_DE_CARGA) o "NONE" si no aparece:
 - lifting_capacity_tonnes: capacidad máxima de elevación de la grúa en
   toneladas (la nominal del modelo: "50 t", "LTM 1050" son 50 t). Si el
   vehículo lleva grúa y ningún documento la da pero conoces con
@@ -273,6 +276,11 @@ def _number(item, low, high):
     return value
 
 
+def _source(item):
+    source = (item or {}).get("source") or ""
+    return "" if source == "NONE" else source
+
+
 def apply_specs(machine, data):
     """
     Fill the empty specification fields from a reading.
@@ -302,12 +310,12 @@ def apply_specs(machine, data):
             continue
         setattr(machine, field,
                 int(value) if integer else value.quantize(Decimal("0.01")))
-        filled[field] = item.get("source") or ""
+        filled[field] = _source(item)
     text = (data.get("lifting_capacity_text") or "").strip()[:60]
     if text and not machine.max_capacity:
         machine.max_capacity = text
-        filled["max_capacity"] = (
-            data.get("lifting_capacity_tonnes") or {}).get("source") or ""
+        filled["max_capacity"] = _source(
+            data.get("lifting_capacity_tonnes"))
     if not machine.brand_model:
         brand_model = " ".join(
             part for part in (
