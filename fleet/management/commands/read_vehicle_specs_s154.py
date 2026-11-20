@@ -45,6 +45,9 @@ class Command(BaseCommand):
                             help="Solo este centro de gasto (p. ej. A36).")
         parser.add_argument("--family", default="",
                             help="Solo esta familia (p. ej. MÓVILES).")
+        parser.add_argument(
+            "--cranes", action="store_true",
+            help="Solo las grúas A y H, sea cual sea su familia.")
         parser.add_argument("--limit", type=int, default=0)
         parser.add_argument("--log-file", required=True)
 
@@ -72,6 +75,8 @@ class Command(BaseCommand):
             machines = machines.filter(specs_read_at__isnull=True)
         if options["machine"]:
             machines = machines.filter(code__iexact=options["machine"])
+        if options["cranes"]:
+            machines = machines.filter(code__regex=r"^[AaHh][0-9]")
         if options["family"]:
             machines = machines.filter(family__iexact=options["family"])
         machines = list(machines)

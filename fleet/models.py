@@ -476,6 +476,12 @@ class MachineAsset(models.Model):
     max_authorized_mass_kg = models.PositiveIntegerField(
         _("Masa máxima autorizada (kg)"), null=True, blank=True,
     )
+    # S154: la grúa de un autocargante se mide en t·m (momento de
+    # carga), no en toneladas.
+    capacity_tm = models.DecimalField(
+        _("Momento de carga (t·m)"), max_digits=7, decimal_places=2,
+        null=True, blank=True,
+    )
     specs_source = models.TextField(
         _("Origen de las especificaciones"), blank=True, default="",
     )

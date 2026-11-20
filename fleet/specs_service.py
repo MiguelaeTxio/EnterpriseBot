@@ -71,6 +71,7 @@ _SCHEMA = {
         "model": {"type": "string"},
         "lifting_capacity_tonnes": _VALUE,
         "lifting_capacity_text": {"type": "string"},
+        "lifting_moment_tm": _VALUE,
         "max_authorized_mass_kg": _VALUE,
         "tare_kg": _VALUE,
         "length_mm": _VALUE,
@@ -81,7 +82,8 @@ _SCHEMA = {
     },
     "required": [
         "brand", "model", "lifting_capacity_tonnes",
-        "lifting_capacity_text", "max_authorized_mass_kg", "tare_kg",
+        "lifting_capacity_text", "lifting_moment_tm",
+        "max_authorized_mass_kg", "tare_kg",
         "length_mm", "width_mm", "height_mm", "axle_count",
         "manufacture_year",
     ],
@@ -101,7 +103,11 @@ FICHA_TECNICA, TABLA_DE_CARGA) o "NONE" si no aparece:
   la grúa se expresa en t·m (momento), deja value null y escríbelo en
   lifting_capacity_text. Sin grúa: null.
 - lifting_capacity_text: la capacidad tal como figura ("50 t",
-  "25 t·m"), o "".
+  "25 t·m"), o "". Nunca el modelo de la grúa ("PK 29002").
+- lifting_moment_tm: momento de carga de la grúa en t·m (grúas de
+  camión / autocargantes: "PK 44002" -> la cifra en t·m de su ficha).
+  Si ningún documento lo da pero conoces con seguridad el modelo exacto
+  de la grúa, dalo con source "MODEL". Sin grúa de este tipo: null.
 - max_authorized_mass_kg: masa máxima técnicamente admisible / MMA
   (ITV campo F.1 o F.2), en kg.
 - tare_kg: masa en orden de marcha / tara (ITV campo G), en kg.
@@ -158,6 +164,30 @@ def parse_capacity(text):
     return value.quantize(Decimal("0.01"))
 
 
+def parse_moment(text):
+    """
+    t·m from a crane moment as written ("44 t·m", "35Tm", "25.8 t·m").
+
+    ---
+
+    Momento de carga en t·m de un texto escrito ("44 t·m", "35Tm",
+    "25.8 t·m"); None si no hay cifra. Solo para la grúa de los
+    autocargantes, donde "Tm" es t·m.
+    """
+    text = (text or "").strip()
+    match = re.match(r"\s*(\d+(?:[.,]\d+)?)\s*t\s*[·.x*]?\s*m\b", text,
+                     re.I)
+    if not match:
+        return None
+    value = Decimal(match.group(1).replace(",", "."))
+    if value <= 0 or value > 2000:
+        return None
+    return value.quantize(Decimal("0.01"))
+
+
+MOMENT_FAMILIES = ("AUTOCARGANTES",)
+
+
 def source_documents(machine):
     """
     Current ITV, permit, technical sheet and load chart of the machine.
@@ -185,6 +215,17 @@ def source_documents(machine):
             SPEC_TYPE_CODES.index(entry.document_type.code), -entry.pk,
         ),
     )
+
+
+def _pdf_opens(data):
+    import fitz
+
+    try:
+        with fitz.open(stream=data, filetype="pdf") as document:
+            return document.page_count > 0 and bool(
+                document[0].get_text("text") is not None)
+    except Exception:  # noqa: BLE001 -- PDF dañado
+        return False
 
 
 def _first_pages(data, count):
@@ -217,6 +258,13 @@ def _parts(entries):
         data = download_bytes(entry.bucket, entry.blob_name)
         mime = content_type_of(data, entry.name)
         if mime not in READABLE_TYPES:
+            continue
+        if mime == "application/pdf" and not _pdf_opens(data):
+            # S154: un PDF dañado tumbaba la petición entera (A57,
+            # 400 "malformed or corrupted"); se deja fuera y se leen
+            # los demás.
+            logger.warning("# [specs] %s: PDF dañado, se omite.",
+                           entry.name)
             continue
         if len(data) > MAX_FILE_BYTES and mime == "application/pdf":
             data = _first_pages(data, MAX_PAGES_LARGE_PDF)
@@ -293,6 +341,7 @@ def apply_specs(machine, data):
     """
     candidates = {
         "capacity_tonnes": ("lifting_capacity_tonnes", 0.5, 2000, False),
+        "capacity_tm": ("lifting_moment_tm", 0.5, 2000, False),
         "max_authorized_mass_kg": ("max_authorized_mass_kg", 500,
                                    200_000, True),
         "mass_kg": ("tare_kg", 300, 200_000, True),
@@ -336,7 +385,10 @@ def _source_text(filled, used):
     for field, source in filled.items():
         label = MachineAsset._meta.get_field(field).verbose_name
         lines.append("%s: %s" % (
-            label, SOURCE_LABELS.get(source, "documentos")))
+            label,
+            "quitada (era el modelo de la grúa)" if source == "CLEARED"
+            else SOURCE_LABELS.get(source, "documentos"),
+        ))
     if used:
         lines.append("Leído de: %s" % ", ".join(e.name for e in used))
     return "\n".join(lines)
@@ -354,7 +406,22 @@ def read_specs(machine) -> dict:
     {"filled": {campo: origen}, "documents": n}.
     """
     filled = {}
-    if machine.capacity_tonnes is None and machine.max_capacity:
+    is_moment = (machine.family or "").upper() in MOMENT_FAMILIES
+    if (is_moment and machine.max_capacity
+            and parse_moment(machine.max_capacity) is None
+            and "Capacidad máxima:" in machine.specs_source):
+        # S154: en la primera pasada Gemini dejó en algunos
+        # autocargantes el modelo de la grúa ("PK 29002 G") como
+        # capacidad; ese texto lo puso esta lectura, así que se quita.
+        machine.max_capacity = ""
+        filled["max_capacity"] = "CLEARED"
+    if is_moment and machine.capacity_tm is None and machine.max_capacity:
+        value = parse_moment(machine.max_capacity)
+        if value is not None:
+            machine.capacity_tm = value
+            filled["capacity_tm"] = "LOGBOOK"
+    if (not is_moment and machine.capacity_tonnes is None
+            and machine.max_capacity):
         value = parse_capacity(machine.max_capacity)
         if value is not None:
             machine.capacity_tonnes = value

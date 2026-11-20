@@ -23,6 +23,7 @@ from fleet.models import MachineAsset
 # del libro historial, solo en las grúas A y H.
 SPEC_FIELDS = [
     "capacity_tonnes",
+    "capacity_tm",
     "max_capacity",
     "max_authorized_mass_kg",
     "mass_kg",
