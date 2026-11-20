@@ -1,20 +1,22 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/specs/tab.html #}
 {% comment %}
 H23 (S154, invasora). Pestaña "Especificaciones" del hub de
-Documentación: centros de gasto filtrados por capacidad de elevación y
-masa máxima autorizada (en toneladas). Contexto: SpecsTabView
-(panel/views_specs_tab.py); los filtros vuelven a pedir esta misma
-pestaña por htmx.
+Documentación: centros de gasto filtrados por capacidad de elevación
+(t), momento de carga (t·m, grúa de los autocargantes) y masa máxima
+autorizada (t). Contexto: SpecsTabView (panel/views_specs_tab.py).
+Pantalla fija (directriz 4.24, panel/_fixed_list_layout.html): arriba
+los filtros; abajo solo la lista hace scroll, con la cabecera pegada.
+Los filtros piden por htmx solo la tabla (?fragment=1).
 {% endcomment %}
-<div id="specs-root">
-    <form class="row g-2 align-items-end mb-2 small"
-          hx-get="{{ tab_url }}" hx-target="#specs-root" hx-swap="outerHTML"
+<div class="border rounded p-2 mb-2" id="specs-top-panel">
+    <form class="row g-2 align-items-end small" id="specs-filters"
+          hx-get="{{ tab_url }}?fragment=1" hx-target="#specs-table-container"
           hx-trigger="change, keyup changed delay:400ms from:input[type=text]">
-        <div class="col-12 col-md-3">
+        <div class="col-12 col-xl-2">
             <label class="form-label form-label-sm mb-0">Buscar</label>
             <input type="text" name="search" value="{{ filters.search }}" class="form-control form-control-sm" placeholder="Código, marca o matrícula">
         </div>
-        <div class="col-6 col-md-2">
+        <div class="col-6 col-xl-2">
             <label class="form-label form-label-sm mb-0">Familia</label>
             <select name="family" class="form-select form-select-sm">
                 <option value="">Todas</option>
@@ -23,21 +25,28 @@ pestaña por htmx.
                 {% endfor %}
             </select>
         </div>
-        <div class="col-6 col-md-2">
+        <div class="col-6 col-xl-2">
             <label class="form-label form-label-sm mb-0">Capacidad de elevación (t)</label>
             <div class="input-group input-group-sm">
                 <input type="text" inputmode="decimal" name="cap_min" value="{{ filters.cap_min }}" class="form-control" placeholder="desde">
                 <input type="text" inputmode="decimal" name="cap_max" value="{{ filters.cap_max }}" class="form-control" placeholder="hasta">
             </div>
         </div>
-        <div class="col-6 col-md-2">
+        <div class="col-6 col-xl-2">
+            <label class="form-label form-label-sm mb-0">Momento de carga (t·m)</label>
+            <div class="input-group input-group-sm">
+                <input type="text" inputmode="decimal" name="tm_min" value="{{ filters.tm_min }}" class="form-control" placeholder="desde">
+                <input type="text" inputmode="decimal" name="tm_max" value="{{ filters.tm_max }}" class="form-control" placeholder="hasta">
+            </div>
+        </div>
+        <div class="col-6 col-xl-2">
             <label class="form-label form-label-sm mb-0">Masa máxima autorizada (t)</label>
             <div class="input-group input-group-sm">
                 <input type="text" inputmode="decimal" name="mma_min" value="{{ filters.mma_min }}" class="form-control" placeholder="desde">
                 <input type="text" inputmode="decimal" name="mma_max" value="{{ filters.mma_max }}" class="form-control" placeholder="hasta">
             </div>
         </div>
-        <div class="col-6 col-md-2">
+        <div class="col-8 col-xl-1">
             <label class="form-label form-label-sm mb-0">Orden</label>
             <select name="sort" class="form-select form-select-sm">
                 {% for value, label in sort_choices %}
@@ -45,7 +54,7 @@ pestaña por htmx.
                 {% endfor %}
             </select>
         </div>
-        <div class="col-12 col-md-1">
+        <div class="col-4 col-xl-1">
             <input type="hidden" name="active" value="0">
             <div class="form-check">
                 <input class="form-check-input" type="checkbox" name="active" value="1" id="specs-active" {% if filters.active == "1" %}checked{% endif %}>
@@ -58,42 +67,14 @@ pestaña por htmx.
             </div>
         </div>
     </form>
+</div>
 
-    <div class="fw-bold small mb-1">{{ count }} centro{{ count|pluralize }} de gasto</div>
-    <div class="table-responsive" style="max-height: calc(100vh - 290px); overflow-y: auto;">
-        <table class="table table-sm table-hover align-middle small mb-0">
-            <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
-                <tr>
-                    <th>Código</th>
-                    <th>Familia</th>
-                    <th>Marca y modelo</th>
-                    <th>Matrícula</th>
-                    <th class="text-end">Capacidad (t)</th>
-                    <th class="text-end">MMA (t)</th>
-                    <th class="text-end">Masa (kg)</th>
-                    <th class="text-end">Ejes</th>
-                    <th>Largo × ancho × alto (m)</th>
-                    <th class="text-end">Año</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for row in rows %}
-                <tr>
-                    <td class="fw-semibold text-nowrap"><a href="{{ row.detail_url }}">{{ row.machine.code }}</a></td>
-                    <td>{{ row.machine.family|default:"—" }}</td>
-                    <td>{{ row.machine.brand_model|default:"—" }}</td>
-                    <td class="text-nowrap">{{ row.machine.plate|default:"—" }}</td>
-                    <td class="text-end" title="{{ row.capacity_text }}">{% if row.capacity is not None %}{{ row.capacity|floatformat:"-2" }}{% elif row.capacity_text %}<span class="text-muted">{{ row.capacity_text }}</span>{% else %}—{% endif %}</td>
-                    <td class="text-end">{{ row.mma_t|default:"—" }}</td>
-                    <td class="text-end">{{ row.machine.mass_kg|default_if_none:"—" }}</td>
-                    <td class="text-end">{{ row.machine.axle_count|default_if_none:"—" }}</td>
-                    <td class="text-nowrap">{{ row.dimensions|default:"—" }}</td>
-                    <td class="text-end">{{ row.machine.manufacture_year|default_if_none:"—" }}</td>
-                </tr>
-                {% empty %}
-                <tr><td colspan="10" class="text-center text-muted py-4">Ningún centro de gasto cumple los filtros.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
+<div class="border rounded p-2" id="specs-bottom-panel">
+    <div class="h-100 d-flex flex-column">
+        <div class="fw-bold small mb-1" id="specs-count" data-eb-fullscreen-header>{{ count }} centro{{ count|pluralize }} de gasto</div>
+        <div class="fixed-list-scroll flex-grow-1 overflow-auto position-relative" id="specs-table-container">
+            {% include "panel/specs/_table.html" %}
+        </div>
     </div>
 </div>
+{% include "panel/_fixed_list_layout.html" with top_id="specs-top-panel" bottom_id="specs-bottom-panel" %}

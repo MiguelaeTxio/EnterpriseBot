@@ -1,0 +1,45 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/specs/_table.html #}
+{% comment %}
+H23 (S154, invasora). Tabla de la pestaña "Especificaciones" (también
+el fragmento que devuelven los filtros). La cabecera de columnas queda
+pegada arriba (.fixed-list-scroll thead th, _fixed_list_layout.html).
+{% endcomment %}
+{% if is_fragment %}
+<div class="fw-bold small mb-1" id="specs-count" hx-swap-oob="true">{{ count }} centro{{ count|pluralize }} de gasto</div>
+{% endif %}
+<table class="table table-sm table-hover align-middle small mb-0">
+    <thead>
+        <tr>
+            <th>Código</th>
+            <th>Familia</th>
+            <th>Marca y modelo</th>
+            <th>Matrícula</th>
+            <th class="text-end">Capacidad (t)</th>
+            <th class="text-end">Momento (t·m)</th>
+            <th class="text-end">MMA (t)</th>
+            <th class="text-end">Masa (kg)</th>
+            <th class="text-end">Ejes</th>
+            <th>Largo × ancho × alto (m)</th>
+            <th class="text-end">Año</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            <td class="fw-semibold text-nowrap"><a href="{{ row.detail_url }}">{{ row.machine.code }}</a></td>
+            <td>{{ row.machine.family|default:"—" }}</td>
+            <td>{{ row.machine.brand_model|default:"—" }}</td>
+            <td class="text-nowrap">{{ row.machine.plate|default:"—" }}</td>
+            <td class="text-end">{% if row.capacity is not None %}{{ row.capacity|floatformat:"-2" }}{% else %}—{% endif %}</td>
+            <td class="text-end">{% if row.machine.capacity_tm is not None %}{{ row.machine.capacity_tm|floatformat:"-2" }}{% else %}—{% endif %}</td>
+            <td class="text-end">{{ row.mma_t|default:"—" }}</td>
+            <td class="text-end">{{ row.machine.mass_kg|default_if_none:"—" }}</td>
+            <td class="text-end">{{ row.machine.axle_count|default_if_none:"—" }}</td>
+            <td class="text-nowrap">{{ row.dimensions|default:"—" }}</td>
+            <td class="text-end">{{ row.machine.manufacture_year|default_if_none:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="11" class="text-center text-muted py-4">Ningún centro de gasto cumple los filtros.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>

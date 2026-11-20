@@ -26,15 +26,19 @@ from fleet.views import _get_families
 from panel.mixins import CompanyUserRequiredMixin
 
 TEMPLATE = "panel/specs/tab.html"
+TABLE_TEMPLATE = "panel/specs/_table.html"
 SORT_CHOICES = (
     ("-capacity", "Capacidad (mayor primero)"),
     ("capacity", "Capacidad (menor primero)"),
+    ("-moment", "Momento t·m (mayor primero)"),
+    ("moment", "Momento t·m (menor primero)"),
     ("-mma", "MMA (mayor primero)"),
     ("mma", "MMA (menor primero)"),
     ("code", "Código"),
 )
 SORT_FIELDS = {
     "capacity": "capacity_tonnes",
+    "moment": "capacity_tm",
     "mma": "max_authorized_mass_kg",
     "code": "code",
 }
@@ -82,6 +86,8 @@ class SpecsTabView(CompanyUserRequiredMixin, View):
             "family": params.get("family", ""),
             "cap_min": params.get("cap_min", "").strip(),
             "cap_max": params.get("cap_max", "").strip(),
+            "tm_min": params.get("tm_min", "").strip(),
+            "tm_max": params.get("tm_max", "").strip(),
             "mma_min": params.get("mma_min", "").strip(),
             "mma_max": params.get("mma_max", "").strip(),
             "active": params.get("active", "1"),
@@ -105,6 +111,12 @@ class SpecsTabView(CompanyUserRequiredMixin, View):
             machines = machines.filter(capacity_tonnes__gte=cap_min)
         if cap_max is not None:
             machines = machines.filter(capacity_tonnes__lte=cap_max)
+        tm_min, tm_max = _tonnes(filters["tm_min"]), _tonnes(
+            filters["tm_max"])
+        if tm_min is not None:
+            machines = machines.filter(capacity_tm__gte=tm_min)
+        if tm_max is not None:
+            machines = machines.filter(capacity_tm__lte=tm_max)
         mma_min, mma_max = _tonnes(filters["mma_min"]), _tonnes(
             filters["mma_max"])
         if mma_min is not None:
@@ -116,6 +128,7 @@ class SpecsTabView(CompanyUserRequiredMixin, View):
         if filters["with_specs"] == "1":
             machines = machines.filter(
                 Q(capacity_tonnes__isnull=False)
+                | Q(capacity_tm__isnull=False)
                 | Q(max_authorized_mass_kg__isnull=False)
                 | Q(mass_kg__isnull=False)
             )
@@ -145,8 +158,12 @@ class SpecsTabView(CompanyUserRequiredMixin, View):
                 ) if part
             ),
         } for machine in machines[:1000]]
-        return render(request, TEMPLATE, {
+        template = (
+            TABLE_TEMPLATE if params.get("fragment") == "1" else TEMPLATE
+        )
+        return render(request, template, {
             "rows": rows,
+            "is_fragment": template == TABLE_TEMPLATE,
             "count": len(rows),
             "filters": filters,
             "families": _get_families(company),
