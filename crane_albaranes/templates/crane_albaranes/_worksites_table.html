@@ -1,0 +1,56 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/crane_albaranes/templates/crane_albaranes/_worksites_table.html #}
+{% comment %}
+H11 (S162). Tabla de la pestaña Obras: casilla, columnas ordenables,
+enlace al mapa con las coordenadas y menú de tres puntos (editar).
+{% endcomment %}
+<div id="ws-fragment-state" class="d-none"
+     data-count="{{ rows|length }}"
+     data-sort-active="{% if sort_active %}1{% endif %}"></div>
+<span id="ws-sort-inputs" class="d-none">
+    <input type="hidden" name="sort" value="{{ current_sort }}">
+</span>
+<table class="table table-hover table-light table-sm align-middle mb-0" id="ws-table" data-view-screen="crane_worksites_list">
+    <thead class="table-light">
+        <tr>
+            <th><input type="checkbox" class="form-check-input" id="ws-check-all" title="Seleccionar todas las que cumplen el filtro actual"></th>
+            {% for column in sort_columns %}
+            <th data-col="{{ column.key }}" data-col-label="{{ column.label }}">
+                <a href="#" class="text-decoration-none text-dark"
+                   hx-get="{% url 'crane_albaranes:worksite_results' %}"
+                   hx-target="#ws-results"
+                   hx-include="#ws-filters"
+                   hx-vals='{"sort": "{{ column.next }}"}'>
+                    {{ column.label }}
+                    {% if column.arrow %}<i class="bi bi-chevron-{% if column.arrow == 'up' %}up{% else %}down{% endif %}"></i>{% if column.priority %}<sup>{{ column.priority }}</sup>{% endif %}{% endif %}
+                </a>
+            </th>
+            {% endfor %}
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr{% if not row.w.is_active %} class="text-muted"{% endif %}>
+            <td><input type="checkbox" class="form-check-input ws-row-check" data-pk="{{ row.key }}" data-label="{{ row.label }}"></td>
+            <td class="text-nowrap fw-semibold">{{ row.w.code }}</td>
+            <td>{{ row.w.name }}{% if not row.w.is_active %} <span class="badge text-bg-secondary">Finalizada</span>{% endif %}</td>
+            <td>{{ row.client }}</td>
+            <td class="text-nowrap">{{ row.w.project_number }}{% if row.w.order_number %}<div class="small text-muted">Pedido {{ row.w.order_number }}</div>{% endif %}</td>
+            <td>{{ row.place }}{% if row.w.latitude and row.w.longitude %} <a href="https://www.google.com/maps?q={{ row.w.latitude|stringformat:'s' }},{{ row.w.longitude|stringformat:'s' }}" target="_blank" rel="noopener" title="Ver en el mapa ({{ row.w.latitude }}, {{ row.w.longitude }})"><i class="bi bi-geo-alt-fill text-danger"></i></a>{% endif %}</td>
+            <td>{{ row.w.contact_name }}{% if row.w.contact_phone %}<div class="small"><a href="tel:{{ row.w.contact_phone }}" class="text-decoration-none"><i class="bi bi-telephone me-1"></i>{{ row.w.contact_phone }}</a></div>{% endif %}</td>
+            <td class="small">{{ row.w.get_delivery_channel_display }}{% for e in row.w.emails %}<div class="text-muted">{{ e }}</div>{% endfor %}</td>
+            <td class="text-center">{{ row.w.n_alb }}</td>
+            <td class="text-end">
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-link text-dark py-0" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Acciones"><i class="bi bi-three-dots-vertical"></i></button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item ws-edit" href="#" data-url="{% url 'crane_albaranes:worksite_save' %}?pk={{ row.w.pk }}"><i class="bi bi-pencil-square me-1"></i>Editar</a></li>
+                    </ul>
+                </div>
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="{{ sort_columns|length|add:2 }}" class="text-muted small">No hay obras con estos filtros.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>

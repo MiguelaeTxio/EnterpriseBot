@@ -1,0 +1,68 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/crane_albaranes/templates/crane_albaranes/_albaran_form.html #}
+{% comment %}
+H11 (S162). Cuerpo de la ventana "Albarán" de la pestaña Albaranes: todos
+los datos del albarán de papel, editables hasta que firma el cliente;
+firmado, solo se consulta. Lógica: AlbaranDetailView.
+{% endcomment %}
+<div class="d-flex flex-wrap gap-2 align-items-center mb-2 small">
+    <span class="fs-5 fw-bold">{{ a.number }}</span>
+    <span class="badge text-bg-secondary">{{ a.get_status_display }}</span>
+    <span class="text-muted">{{ a.get_origin_display }}{% if a.created_by %} · {{ a.created_by }}{% endif %}</span>
+    {% if a.signed_at %}<span class="text-success"><i class="bi bi-pen me-1"></i>Firmado por {{ a.signer_name }}{% if a.signer_dni %} ({{ a.signer_dni }}){% endif %} el {{ a.signed_at|date:"d/m/Y H:i" }}</span>{% endif %}
+    <a class="btn btn-sm btn-outline-secondary ms-auto" href="{% url 'crane_albaranes:albaran_pdf' a.pk %}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</a>
+</div>
+{% if a.notice_error %}<div class="alert alert-danger py-1 small">{{ a.notice_error }}</div>{% endif %}
+{% if a.delivery_error %}<div class="alert alert-warning py-1 small">{{ a.delivery_error }}</div>{% endif %}
+<div class="small text-muted mb-2">Enlace del gruista: <a href="{{ worker_link }}" target="_blank" rel="noopener">{{ worker_link }}</a></div>
+<form id="alb-detail-form" method="post" action="{% url 'crane_albaranes:albaran_detail' a.pk %}" autocomplete="off">
+<fieldset {% if not a.can_edit %}disabled{% endif %}>
+    <div class="row g-2 small">
+        <div class="col-md-3"><label class="form-label mb-0 fw-semibold">Fecha</label><input type="date" class="form-control form-control-sm" name="day" value="{{ a.day|date:'Y-m-d' }}"></div>
+        <div class="col-md-2"><label class="form-label mb-0 fw-semibold">Hora prevista</label><input type="time" class="form-control form-control-sm" name="planned_time" value="{{ a.planned_time|time:'H:i' }}"></div>
+        <div class="col-md-7"><label class="form-label mb-0 fw-semibold">Empresa emisora</label>
+            <select class="form-select form-select-sm" name="issuer"><option value="">—</option>{% for i in issuers %}<option value="{{ i.pk }}" {% if i.pk == a.issuer_id %}selected{% endif %}>{{ i.legal_name }}</option>{% endfor %}</select></div>
+        <div class="col-md-6"><label class="form-label mb-0 fw-semibold">Obra</label>
+            <select class="form-select form-select-sm" name="worksite"><option value="">—</option>{% for w in worksites %}<option value="{{ w.pk }}" {% if w.pk == a.worksite_id %}selected{% endif %}>{{ w.code }} · {{ w.name }}</option>{% endfor %}</select></div>
+        <div class="col-md-6"><label class="form-label mb-0 fw-semibold">Gruista</label>
+            <select class="form-select form-select-sm" name="person"><option value="">—</option>{% for p in people %}<option value="{{ p.pk }}" {% if p.pk == a.person_id %}selected{% endif %}>{{ p.first_surname }} {{ p.second_surname }}, {{ p.given_name }}</option>{% endfor %}</select></div>
+        <div class="col-md-4"><label class="form-label mb-0 fw-semibold">Máquina</label>
+            <select class="form-select form-select-sm" name="machine"><option value="">—</option>{% for m in machines %}<option value="{{ m.pk }}" {% if m.pk == a.machine_id %}selected{% endif %}>{{ m.code }} · {{ m.brand_model|default:m.type_name }}</option>{% endfor %}</select></div>
+        <div class="col-md-2"><label class="form-label mb-0 fw-semibold">Toneladas</label><input class="form-control form-control-sm" name="tonnage" value="{{ a.tonnage }}"></div>
+        <div class="col-md-3"><label class="form-label mb-0 fw-semibold">Nº de pedido</label><input class="form-control form-control-sm" name="order_number" value="{{ a.order_number }}"></div>
+        <div class="col-md-3"><label class="form-label mb-0 fw-semibold">Ayudantes</label><input class="form-control form-control-sm" name="helpers" value="{{ a.helpers }}"></div>
+        <div class="col-12 fw-bold mt-2">Datos del cliente</div>
+        <div class="col-md-6"><label class="form-label mb-0">Cliente</label><input class="form-control form-control-sm" name="client_name" value="{{ a.client_name }}"></div>
+        <div class="col-md-3"><label class="form-label mb-0">N.I.F.</label><input class="form-control form-control-sm" name="client_tax_id" value="{{ a.client_tax_id }}"></div>
+        <div class="col-md-3"><label class="form-label mb-0">Teléfono</label><input class="form-control form-control-sm" name="client_phone" value="{{ a.client_phone }}"></div>
+        <div class="col-md-6"><label class="form-label mb-0">Domicilio</label><input class="form-control form-control-sm" name="client_address" value="{{ a.client_address }}"></div>
+        <div class="col-md-3"><label class="form-label mb-0">Localidad</label><input class="form-control form-control-sm" name="client_locality" value="{{ a.client_locality }}"></div>
+        <div class="col-md-3"><label class="form-label mb-0">Provincia</label><input class="form-control form-control-sm" name="client_province" value="{{ a.client_province }}"></div>
+        <div class="col-12 fw-bold mt-2">Servicio grúa</div>
+        <div class="col-md-8"><label class="form-label mb-0">Lugar de trabajo</label><input class="form-control form-control-sm" name="work_place" value="{{ a.work_place }}"></div>
+        <div class="col-md-4"><label class="form-label mb-0">Localidad</label><input class="form-control form-control-sm" name="work_locality" value="{{ a.work_locality }}"></div>
+        <div class="col-md-6"><label class="form-label mb-0">Trabajo a realizar (oficina)</label><textarea class="form-control form-control-sm" name="task" rows="2">{{ a.task }}</textarea></div>
+        <div class="col-md-6"><label class="form-label mb-0">Trabajo realizado (gruista)</label><textarea class="form-control form-control-sm" name="work_done" rows="2">{{ a.work_done }}</textarea></div>
+        <div class="col-md-2"><label class="form-label mb-0">Horas trabajadas</label><input class="form-control form-control-sm" name="hours_worked" value="{{ a.hours_worked|default_if_none:'' }}"></div>
+        <div class="col-md-2"><label class="form-label mb-0">Horas mínimas</label><input class="form-control form-control-sm" name="min_hours" value="{{ a.min_hours|default_if_none:'' }}"></div>
+        <div class="col-md-2"><label class="form-label mb-0">Salidas</label><input class="form-control form-control-sm" name="trips" value="{{ a.trips|default_if_none:'' }}"></div>
+        <div class="col-md-2"><label class="form-label mb-0">Kilómetros</label><input class="form-control form-control-sm" name="km" value="{{ a.km|default_if_none:'' }}"></div>
+        <div class="col-12 fw-bold mt-2">Parte de producción {% if a.times_from_clock %}<span class="badge text-bg-primary fw-normal"><i class="bi bi-clock-history me-1"></i>de los fichajes</span>{% endif %}</div>
+        <div class="col-md-3"><label class="form-label mb-0">Salida de base</label><input type="time" class="form-control form-control-sm" name="base_out" value="{{ a.base_out|time:'H:i' }}"></div>
+        <div class="col-md-3"><label class="form-label mb-0">Llegada al trabajo</label><input type="time" class="form-control form-control-sm" name="work_in" value="{{ a.work_in|time:'H:i' }}"></div>
+        <div class="col-md-3"><label class="form-label mb-0">Salida del trabajo</label><input type="time" class="form-control form-control-sm" name="work_out" value="{{ a.work_out|time:'H:i' }}"></div>
+        <div class="col-md-3"><label class="form-label mb-0">Llegada a base</label><input type="time" class="form-control form-control-sm" name="base_in" value="{{ a.base_in|time:'H:i' }}"></div>
+        <div class="col-md-6">
+            <input type="hidden" name="vehicle_on_site_present" value="1"><input type="hidden" name="continues_previous_present" value="1">
+            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="vehicle_on_site" value="1" id="alb-d-vos" {% if a.vehicle_on_site %}checked{% endif %}><label class="form-check-label" for="alb-d-vos">Vehículo en obra</label></div>
+            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="continues_previous" value="1" id="alb-d-cp" {% if a.continues_previous %}checked{% endif %}><label class="form-check-label" for="alb-d-cp">Continuación día ant.</label></div>
+        </div>
+        <div class="col-12"><label class="form-label mb-0">Observaciones</label><textarea class="form-control form-control-sm" name="observations" rows="2">{{ a.observations }}</textarea></div>
+    </div>
+    {% if a.can_edit %}
+    <div class="mt-2">
+        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-save me-1"></i>Guardar</button>
+        <span class="alb-detail-msg small ms-2"></span>
+    </div>
+    {% endif %}
+</fieldset>
+</form>

@@ -1,0 +1,54 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/crane_albaranes/templates/crane_albaranes/_clients_table.html #}
+{% comment %}
+H11 (S162). Tabla de la pestaña Clientes: casilla, columnas ordenables y
+menú de tres puntos (editar).
+{% endcomment %}
+<div id="cl-fragment-state" class="d-none"
+     data-count="{{ rows|length }}"
+     data-sort-active="{% if sort_active %}1{% endif %}"></div>
+<span id="cl-sort-inputs" class="d-none">
+    <input type="hidden" name="sort" value="{{ current_sort }}">
+</span>
+<table class="table table-hover table-light table-sm align-middle mb-0" id="cl-table" data-view-screen="crane_clients_list">
+    <thead class="table-light">
+        <tr>
+            <th><input type="checkbox" class="form-check-input" id="cl-check-all" title="Seleccionar todos los que cumplen el filtro actual"></th>
+            {% for column in sort_columns %}
+            <th data-col="{{ column.key }}" data-col-label="{{ column.label }}">
+                <a href="#" class="text-decoration-none text-dark"
+                   hx-get="{% url 'crane_albaranes:client_results' %}"
+                   hx-target="#cl-results"
+                   hx-include="#cl-filters"
+                   hx-vals='{"sort": "{{ column.next }}"}'>
+                    {{ column.label }}
+                    {% if column.arrow %}<i class="bi bi-chevron-{% if column.arrow == 'up' %}up{% else %}down{% endif %}"></i>{% if column.priority %}<sup>{{ column.priority }}</sup>{% endif %}{% endif %}
+                </a>
+            </th>
+            {% endfor %}
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr{% if not row.c.is_active %} class="text-muted"{% endif %}>
+            <td><input type="checkbox" class="form-check-input cl-row-check" data-pk="{{ row.key }}" data-label="{{ row.label }}"></td>
+            <td class="fw-semibold">{{ row.c.name }}{% if not row.c.is_active %} <span class="badge text-bg-secondary">De baja</span>{% endif %}{% if row.c.address %}<div class="small text-muted fw-normal">{{ row.c.address }}</div>{% endif %}</td>
+            <td class="text-nowrap">{{ row.c.tax_id }}</td>
+            <td>{{ row.place }}</td>
+            <td class="text-nowrap">{% if row.c.phone %}<a href="tel:{{ row.c.phone }}" class="text-decoration-none"><i class="bi bi-telephone me-1"></i>{{ row.c.phone }}</a>{% endif %}</td>
+            <td class="small">{{ row.c.email }}</td>
+            <td class="text-center">{{ row.c.n_sites }}</td>
+            <td class="text-end">
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-link text-dark py-0" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Acciones"><i class="bi bi-three-dots-vertical"></i></button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item cl-edit" href="#" data-url="{% url 'crane_albaranes:client_save' %}?pk={{ row.c.pk }}"><i class="bi bi-pencil-square me-1"></i>Editar</a></li>
+                    </ul>
+                </div>
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="{{ sort_columns|length|add:2 }}" class="text-muted small">No hay clientes con estos filtros.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>

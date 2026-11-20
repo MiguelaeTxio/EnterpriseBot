@@ -41,6 +41,10 @@ VIEW_SCREENS = {
     "workshop_reviews": "Taller: revisiones",
     "workshop_logbooks": "Taller: libros historial",
     "work_orders": "Partes digitales",
+    # H11 (S162): página Grúas.
+    "crane_albaranes_list": "Grúas: albaranes",
+    "crane_worksites_list": "Grúas: obras",
+    "crane_clients_list": "Grúas: clientes",
 }
 
 # S153 (Miguel Ángel: "la vista del panel, que sea la que se elige por
@@ -123,5 +127,35 @@ EXPORT_VIEWS = {
             "ticket", "fecha", "estado", "urgencia", "tipo", "averia",
             "tareas", "h_ordinarias", "h_extra", "h_festivas", "horas",
             "importe", "cerrada")},
+    },
+    # H11 (S162): página Grúas.
+    "crane_albaranes": {
+        "view": "crane_albaranes_list",
+        "fixed": [],
+        "map": {
+            "number": ["numero"], "day": ["fecha"], "time": ["hora"],
+            "person": ["gruista"], "worksite": ["obra"],
+            "client": ["cliente"], "machine": ["maquina"],
+            "hours": ["horas"], "status": ["estado"],
+            "delivery": ["entregado"],
+        },
+    },
+    "crane_worksites": {
+        "view": "crane_worksites_list",
+        "fixed": [],
+        "map": {
+            "code": ["codigo"], "name": ["obra"], "client": ["cliente"],
+            "project": ["proyecto"], "place": ["ubicacion"],
+            "contact": ["contacto"], "delivery": ["entrega"],
+            "albaranes": ["albaranes"],
+        },
+    },
+    "crane_clients": {
+        "view": "crane_clients_list",
+        "fixed": [],
+        "map": {
+            "name": ["cliente"], "tax_id": ["nif"], "place": ["localidad"],
+            "phone": ["telefono"], "email": ["correo"], "sites": ["obras"],
+        },
     },
 }

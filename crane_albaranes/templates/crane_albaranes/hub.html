@@ -1,0 +1,77 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/crane_albaranes/templates/crane_albaranes/hub.html #}
+{% extends "panel/base.html" %}
+
+{% block title %}Grúas{% endblock %}
+{% block page_title %}Grúas{% endblock %}
+
+{% block content %}
+{% comment %}
+H11 (S162). Página Grúas: albaranes de trabajo de las grúas, obras y
+clientes, con pestañas en el formato de Documentación y Servicios. Cada
+pestaña carga su contenido por htmx; la que el usuario dejó activa carga
+al abrir la página (directriz 4.15), el resto al pulsarlas.
+{% endcomment %}
+<ul class="nav nav-tabs mb-3" id="cranesTabs">
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'albaranes' %}active{% endif %}" id="tab-albaranes" data-bs-toggle="tab" href="#pane-albaranes"
+           hx-get="{% url 'crane_albaranes:albaran_tab' %}" hx-target="#pane-albaranes"
+           hx-trigger="{% if active_tab == 'albaranes' %}load once{% else %}click once{% endif %}">
+            <i class="bi bi-file-earmark-text me-1"></i>Albaranes
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'obras' %}active{% endif %}" id="tab-obras" data-bs-toggle="tab" href="#pane-obras"
+           hx-get="{% url 'crane_albaranes:worksite_tab' %}" hx-target="#pane-obras"
+           hx-trigger="{% if active_tab == 'obras' %}load once{% else %}click once{% endif %}">
+            <i class="bi bi-cone-striped me-1"></i>Obras
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'clientes' %}active{% endif %}" id="tab-clientes" data-bs-toggle="tab" href="#pane-clientes"
+           hx-get="{% url 'crane_albaranes:client_tab' %}" hx-target="#pane-clientes"
+           hx-trigger="{% if active_tab == 'clientes' %}load once{% else %}click once{% endif %}">
+            <i class="bi bi-building me-1"></i>Clientes
+        </a>
+    </li>
+</ul>
+
+<div class="tab-content">
+    <div class="tab-pane fade {% if active_tab == 'albaranes' %}show active{% endif %}" id="pane-albaranes">
+        <div class="text-muted small p-3">Cargando…</div>
+    </div>
+    <div class="tab-pane fade {% if active_tab == 'obras' %}show active{% endif %}" id="pane-obras">
+        <div class="text-muted small p-3">Cargando…</div>
+    </div>
+    <div class="tab-pane fade {% if active_tab == 'clientes' %}show active{% endif %}" id="pane-clientes">
+        <div class="text-muted small p-3">Cargando…</div>
+    </div>
+</div>
+{{ screen_key|json_script:"cranes-screen-key" }}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+    "use strict";
+    const screenKey = JSON.parse(document.getElementById("cranes-screen-key").textContent);
+    document.querySelectorAll('#cranesTabs a[data-bs-toggle="tab"]').forEach(function (tabLink) {
+        tabLink.addEventListener("click", function (ev) {
+            window.EbNavState.save(screenKey, {active_tab: ev.currentTarget.id.replace("tab-", "")});
+        });
+    });
+    // Al dar de alta una obra o un cliente, las otras pestañas ya cargadas se refrescan.
+    document.body.addEventListener("cranes-data-changed", function () {
+        ["#pane-albaranes", "#pane-obras", "#pane-clientes"].forEach(function (sel) {
+            const pane = document.querySelector(sel);
+            const link = document.querySelector('#cranesTabs a[href="' + sel + '"]');
+            if (pane && link && !pane.classList.contains("active") && pane.dataset.loaded) {
+                htmx.ajax("GET", link.getAttribute("hx-get"), {target: sel});
+            }
+        });
+    });
+    document.body.addEventListener("htmx:afterSettle", function (ev) {
+        if (ev.target && ev.target.classList && ev.target.classList.contains("tab-pane")) ev.target.dataset.loaded = "1";
+    });
+})();
+</script>
+{% endblock %}

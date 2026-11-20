@@ -1,0 +1,62 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/crane_albaranes/templates/crane_albaranes/_albaranes_table.html #}
+{% comment %}
+H11 (S162). Tabla de la pestaña Albaranes de la página Grúas: casilla,
+columnas ordenables y menú de tres puntos por fila (ver y editar, PDF,
+abrir como el gruista). Todo llega calculado desde
+crane_albaranes/views_panel.py; la selección vive en el JS del panel.
+{% endcomment %}
+<div id="alb-fragment-state" class="d-none"
+     data-count="{{ rows|length }}"
+     data-sort-active="{% if sort_active %}1{% endif %}"></div>
+<span id="alb-sort-inputs" class="d-none">
+    <input type="hidden" name="sort" value="{{ current_sort }}">
+</span>
+<table class="table table-hover table-light table-sm align-middle mb-0" id="alb-table" data-view-screen="crane_albaranes_list">
+    <thead class="table-light">
+        <tr>
+            <th><input type="checkbox" class="form-check-input" id="alb-check-all" title="Seleccionar todos los que cumplen el filtro actual"></th>
+            {% for column in sort_columns %}
+            <th data-col="{{ column.key }}" data-col-label="{{ column.label }}">
+                <a href="#" class="text-decoration-none text-dark"
+                   hx-get="{% url 'crane_albaranes:albaran_results' %}"
+                   hx-target="#alb-results"
+                   hx-include="#alb-filters"
+                   hx-vals='{"sort": "{{ column.next }}"}'>
+                    {{ column.label }}
+                    {% if column.arrow %}<i class="bi bi-chevron-{% if column.arrow == 'up' %}up{% else %}down{% endif %}"></i>{% if column.priority %}<sup>{{ column.priority }}</sup>{% endif %}{% endif %}
+                </a>
+            </th>
+            {% endfor %}
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr{% if row.a.status == 'CANCELLED' %} class="text-muted"{% endif %}>
+            <td><input type="checkbox" class="form-check-input alb-row-check" data-pk="{{ row.key }}" data-person="{{ row.person_id|default:'' }}" data-label="{{ row.label }}"></td>
+            <td class="text-nowrap fw-semibold">{{ row.a.number }}</td>
+            <td class="text-nowrap">{{ row.a.day|date:"d/m/Y" }}</td>
+            <td class="text-nowrap">{{ row.a.planned_time|time:"H:i" }}</td>
+            <td>{{ row.person }}</td>
+            <td>{{ row.site }}{% if row.a.task %}<div class="small text-muted text-truncate" style="max-width: 18rem;" title="{{ row.a.task }}">{{ row.a.task }}</div>{% endif %}</td>
+            <td>{{ row.a.client_name }}</td>
+            <td class="text-nowrap">{% if row.a.machine %}{{ row.a.machine.code }}{% endif %}{% if row.a.tonnage %} <span class="text-muted small">{{ row.a.tonnage }} t</span>{% endif %}</td>
+            <td class="text-nowrap">{% if row.a.base_out %}<span class="small">{{ row.a.base_out|time:"H:i" }}–{{ row.a.base_in|time:"H:i"|default:"…" }}</span>{% endif %}{% if row.a.hours_worked %} <strong>{{ row.a.hours_worked|floatformat:"-2" }} h</strong>{% endif %}{% if row.a.times_from_clock %} <i class="bi bi-clock-history text-primary" title="Horas sacadas de los fichajes"></i>{% endif %}</td>
+            <td class="text-nowrap"><span class="badge text-bg-{{ row.color }}" title="{{ row.a.notice_error }}">{{ row.a.get_status_display }}</span></td>
+            <td class="small">{% if row.a.delivered_at %}<i class="bi bi-envelope-check text-success me-1"></i>{{ row.a.delivered_to }}<div class="text-muted">{{ row.a.delivered_at|date:"d/m H:i" }}</div>{% elif row.a.delivery_error %}<span class="text-danger">{{ row.a.delivery_error }}</span>{% endif %}</td>
+            <td class="text-end">
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-link text-dark py-0" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Acciones"><i class="bi bi-three-dots-vertical"></i></button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item alb-open" href="#" data-url="{% url 'crane_albaranes:albaran_detail' row.a.pk %}"><i class="bi bi-pencil-square me-1"></i>Ver y editar</a></li>
+                        <li><a class="dropdown-item" href="{% url 'crane_albaranes:albaran_pdf' row.a.pk %}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</a></li>
+                        <li><a class="dropdown-item" href="{% url 'crane_albaranes:worker_albaran' row.a.token %}" target="_blank" rel="noopener"><i class="bi bi-phone me-1"></i>Abrir como el gruista</a></li>
+                    </ul>
+                </div>
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="{{ sort_columns|length|add:2 }}" class="text-muted small">No hay albaranes con estos filtros.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>

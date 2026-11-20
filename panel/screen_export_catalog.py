@@ -508,7 +508,6 @@ SERVICE = register(Screen(
 ))
 
 
-
 # S157 (Miguel Ángel: en «Columnas» de Personal y Repostajes, las
 # columnas que hoy solo salen al exportar, como en Centros de gasto).
 # Listado de Personal: las columnas de siempre (con celda propia en
@@ -663,5 +662,106 @@ CLOCK_ONBOARDING = register(Screen(
         "trabajador", "seccion", "situacion", "alta", "envios", "reenvio",
         "whatsapp", "abierta", "acceso", "ultimo_fichaje", "dias_alta",
         "dias_reenvio", "dias_fichaje",
+    ],
+))
+
+
+# H11 (S162): albaranes de grúas, obras y clientes (página Grúas). Las
+# filas son las de crane_albaranes/views_panel.py.
+CRANE_ALBARANES = register(Screen(
+    key="crane_albaranes",
+    label="Albaranes de grúas",
+    columns=(
+        Column("numero", "Nº de albarán", 12, lambda r: r["a"].number),
+        Column("fecha", "Fecha", 12, lambda r: r["a"].day, DATE),
+        Column("hora", "Hora prevista", 9,
+               lambda r: _hhmm(r["a"].planned_time)),
+        Column("gruista", "Gruista", 30, lambda r: r["person"]),
+        Column("obra", "Obra", 30, lambda r: r["site"]),
+        Column("cliente", "Cliente", 28, lambda r: r["a"].client_name),
+        Column("maquina", "Máquina", 10,
+               lambda r: r["a"].machine.code if r["a"].machine else ""),
+        Column("toneladas", "Toneladas", 10, lambda r: r["a"].tonnage),
+        Column("horas", "Horas trabajadas", 10,
+               lambda r: r["a"].hours_worked, "0.00", summed=True),
+        Column("estado", "Estado", 18,
+               lambda r: r["a"].get_status_display()),
+        Column("entregado", "Entregado a", 30,
+               lambda r: r["a"].delivered_to),
+        Column("pedido", "Nº de pedido", 14, lambda r: r["a"].order_number),
+        Column("trabajo", "Trabajo a realizar", 40, lambda r: r["a"].task),
+        Column("realizado", "Trabajo realizado", 40,
+               lambda r: r["a"].work_done),
+        Column("salida_base", "Salida de base", 9,
+               lambda r: _hhmm(r["a"].base_out)),
+        Column("llegada_trabajo", "Llegada al trabajo", 9,
+               lambda r: _hhmm(r["a"].work_in)),
+        Column("salida_trabajo", "Salida del trabajo", 9,
+               lambda r: _hhmm(r["a"].work_out)),
+        Column("llegada_base", "Llegada a base", 9,
+               lambda r: _hhmm(r["a"].base_in)),
+        Column("salidas", "Salidas", 8, lambda r: r["a"].trips),
+        Column("km", "Kilómetros", 10, lambda r: r["a"].km),
+        Column("firmado_por", "Firmado por", 26,
+               lambda r: r["a"].signer_name),
+        Column("observaciones", "Observaciones", 40,
+               lambda r: r["a"].observations),
+    ),
+    panel_columns=[
+        "numero", "fecha", "hora", "gruista", "obra", "cliente", "maquina",
+        "horas", "estado", "entregado",
+    ],
+))
+
+
+CRANE_WORKSITES = register(Screen(
+    key="crane_worksites",
+    label="Obras",
+    columns=(
+        Column("codigo", "Código", 12, lambda r: r["w"].code),
+        Column("obra", "Obra", 34, lambda r: r["w"].name),
+        Column("cliente", "Cliente", 30, lambda r: r["client"]),
+        Column("proyecto", "Nº de proyecto", 16,
+               lambda r: r["w"].project_number),
+        Column("ubicacion", "Ubicación", 40, lambda r: r["place"]),
+        Column("contacto", "Contacto", 26, lambda r: r["w"].contact_name),
+        Column("entrega", "Entrega", 22,
+               lambda r: r["w"].get_delivery_channel_display()),
+        Column("albaranes", "Albaranes", 10, lambda r: r["w"].n_alb,
+               summed=True),
+        Column("pedido", "Nº de pedido", 16, lambda r: r["w"].order_number),
+        Column("telefono", "Teléfono de contacto", 16,
+               lambda r: r["w"].contact_phone),
+        Column("correo", "Correo de la obra", 30,
+               lambda r: ", ".join(r["w"].emails())),
+        Column("latitud", "Latitud", 12, lambda r: r["w"].latitude),
+        Column("longitud", "Longitud", 12, lambda r: r["w"].longitude),
+        Column("minimo", "Horas mínimas", 10, lambda r: r["w"].min_hours),
+        Column("estado", "Estado", 12,
+               lambda r: "Activa" if r["w"].is_active else "Finalizada"),
+    ),
+    panel_columns=[
+        "codigo", "obra", "cliente", "proyecto", "ubicacion", "contacto",
+        "entrega", "albaranes",
+    ],
+))
+
+
+CRANE_CLIENTS = register(Screen(
+    key="crane_clients",
+    label="Clientes",
+    columns=(
+        Column("cliente", "Cliente", 34, lambda r: r["c"].name),
+        Column("nif", "N.I.F.", 14, lambda r: r["c"].tax_id),
+        Column("localidad", "Localidad", 28, lambda r: r["place"]),
+        Column("telefono", "Teléfono", 16, lambda r: r["c"].phone),
+        Column("correo", "Correo", 34, lambda r: r["c"].email),
+        Column("obras", "Obras", 8, lambda r: r["c"].n_sites, summed=True),
+        Column("domicilio", "Domicilio", 40, lambda r: r["c"].address),
+        Column("estado", "Estado", 10,
+               lambda r: "Activo" if r["c"].is_active else "De baja"),
+    ),
+    panel_columns=[
+        "cliente", "nif", "localidad", "telefono", "correo", "obras",
     ],
 ))

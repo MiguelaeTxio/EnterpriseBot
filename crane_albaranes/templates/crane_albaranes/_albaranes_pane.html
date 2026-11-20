@@ -1,0 +1,520 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/crane_albaranes/templates/crane_albaranes/_albaranes_pane.html #}
+{% comment %}
+H11 (S162). Pestaña Albaranes de la página Grúas, con el formato único de
+listados (4.24 y 4.27): arriba, fijo, Buscar y filtrar · Grupos de
+selección (por el gruista) · Acciones; abajo la lista (con Ampliar) y
+"Selección actual". Alta a mano, carga del planning en Excel, envío por
+WhatsApp al gruista, horas desde los fichajes, reenvío al cliente.
+Lógica: crane_albaranes/views_panel.py.
+{% endcomment %}
+<style>
+    .alb-fill { flex: 1 1 auto; min-height: 0; }
+    #alb-list-col > div:fullscreen { background-color: var(--bs-body-bg); padding: 1rem; }
+    #alb-list-col > div:fullscreen .alb-fill { height: calc(100vh - 4rem); }
+</style>
+<div id="alb-root"
+     data-create-url="{% url 'crane_albaranes:albaran_create' %}"
+     data-mass-url="{% url 'crane_albaranes:albaran_mass' %}"
+     data-planning-url="{% url 'crane_albaranes:planning_upload' %}">
+<div id="alb-top-panel" class="mb-2">
+    <div class="border rounded p-2">
+    <div class="row g-2">
+        <div class="col-lg-4">
+            <div class="border rounded p-2 h-100">
+                {% include "panel/_filter_panel_tabs.html" with fp="alb" %}
+                <div class="eb-filter-pane" data-filter-pane="filters">
+                <form id="alb-filters" autocomplete="off" onsubmit="return false;"
+                      hx-get="{% url 'crane_albaranes:albaran_results' %}" hx-target="#alb-results"
+                      hx-include="#alb-sort-inputs"
+                      hx-trigger="input changed delay:300ms from:#alb-filter-search, change, alb-selection-refresh">
+                    <input type="text" name="search" id="alb-filter-search" class="form-control form-control-sm mb-2"
+                           placeholder="Buscar nº, gruista, obra, cliente, máquina, trabajo…" value="{{ filter_search }}">
+                    <div class="d-flex flex-wrap gap-3 align-items-start small">
+                        <div>
+                            <div class="fw-semibold mb-1">Estado</div>
+                            {% for value, label in status_choices %}
+                            <div class="form-check">
+                                <input class="form-check-input alb-status-check" type="checkbox" value="{{ value }}" id="albStatus{{ value }}"
+                                       {% if value in filter_status %}checked{% endif %}>
+                                <label class="form-check-label" for="albStatus{{ value }}">{{ label }}</label>
+                            </div>
+                            {% endfor %}
+                            <input type="hidden" name="status" id="alb-status-input" value="{{ filter_status|join:',' }}">
+                        </div>
+                        {% include "panel/_group_filter_select.html" with gf_id="albFilterGroup" gf_who="gruistas" %}
+                        <div>
+                            <div class="fw-semibold mb-1">Fechas</div>
+                            <input type="date" class="form-control form-control-sm mb-1" name="date_from" value="{{ filter_date_from }}" aria-label="Desde" title="Desde">
+                            <input type="date" class="form-control form-control-sm" name="date_to" value="{{ filter_date_to }}" aria-label="Hasta" title="Hasta">
+                        </div>
+                        <div>
+                            <div class="fw-semibold mb-1">Selección</div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="only_selected" value="1" id="albOnlySelected">
+                                <label class="form-check-label" for="albOnlySelected">Mostrar solo la selección actual</label>
+                            </div>
+                            <input type="hidden" name="selected_ids" id="alb-selected-ids" value="">
+                        </div>
+                    </div>
+                </form>
+                </div>
+                <div class="eb-filter-pane d-none" data-filter-pane="columns">
+                    {% include "panel/_view_columns_tab.html" with vc="alb" screen="crane_albaranes_list" %}
+                </div>
+            </div>
+        </div>
+        {% include "panel/_person_group_filter.html" with pg_prefix="alb" pg_form="alb-filters" %}
+        <div class="col-lg">
+            <div class="border rounded p-2 h-100">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <strong class="small"><span id="alb-mass-count">0</span> seleccionados</strong>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="alb-mass-clear">Limpiar</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="alb-select-filtered" title="Marca todos los que se ven con los filtros actuales">Solo los filtrados</button>
+                </div>
+                <div class="small text-muted fw-bold">Preparar</div>
+                <div class="d-flex gap-1 flex-wrap mb-1">
+                    <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#albCreateModal"
+                            title="Un albarán con la obra, el gruista, la máquina, la fecha y el trabajo a realizar">
+                        <i class="bi bi-plus-circle me-1"></i>Nuevo albarán</button>
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#albPlanningModal"
+                            title="Excel con dónde trabaja cada gruista: un albarán por fila">
+                        <i class="bi bi-file-earmark-spreadsheet me-1"></i>Cargar planning</button>
+                </div>
+                <div class="small text-muted fw-bold">Los marcados</div>
+                <div class="d-flex gap-1 flex-wrap">
+                    <button type="button" class="btn btn-sm btn-success alb-needs-selection alb-mass" data-action="send" disabled
+                            title="Envía a cada gruista su albarán por WhatsApp, con el enlace para abrirlo en el fichaje">
+                        <i class="bi bi-whatsapp me-1"></i>Enviar al gruista</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary alb-needs-selection alb-mass" data-action="clock" disabled
+                            title="Vuelve a poner las horas de los fichajes del gruista ese día (los que no están firmados)">
+                        <i class="bi bi-clock-history me-1"></i>Horas de los fichajes</button>
+                    <button type="button" class="btn btn-sm btn-outline-primary alb-needs-selection alb-mass" data-action="deliver" disabled
+                            title="Vuelve a enviar al cliente los albaranes firmados">
+                        <i class="bi bi-envelope me-1"></i>Reenviar al cliente</button>
+                    <button type="button" class="btn btn-sm btn-outline-success alb-needs-selection" disabled
+                            data-bs-toggle="modal" data-bs-target="#albExportModal"
+                            title="Excel, PDF o imprimir los marcados, con la plantilla que elijas">
+                        <i class="bi bi-box-arrow-up me-1"></i>Exportar / imprimir</button>
+                    <button type="button" class="btn btn-sm btn-outline-danger alb-needs-selection alb-mass" data-action="cancel" disabled
+                            title="Anula los marcados que no están firmados (se quedan en el listado como Anulados)">Anular</button>
+                    <button type="button" class="btn btn-sm btn-outline-danger alb-needs-selection alb-mass" data-action="delete" disabled
+                            title="Borra los preparados que aún no se han enviado (para errores)">Borrar</button>
+                </div>
+                <div class="small mt-1" id="alb-mass-msg"></div>
+            </div>
+        </div>
+    </div>
+    </div>
+</div>
+
+<div class="border rounded p-2" id="alb-bottom-panel">
+    <div class="row g-2 h-100">
+        <div class="col-lg-9 h-100" id="alb-list-col">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1 d-flex align-items-center">
+                    <span>Albaranes (<span id="alb-row-count">{{ rows|length }}</span>)</span>
+                    <button type="button" class="btn btn-sm btn-link py-0{% if not sort_active %} d-none{% endif %}" id="alb-clear-sort"
+                            hx-get="{% url 'crane_albaranes:albaran_results' %}" hx-target="#alb-results"
+                            hx-include="#alb-filters" hx-vals='{"sort": ""}'>Quitar orden</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" id="alb-fullscreen" title="Pantalla completa"><i class="bi bi-fullscreen"></i></button>
+                </div>
+                <div class="alb-fill fixed-list-scroll" style="overflow: auto;">
+                    <div id="alb-results"
+                         hx-get="{% url 'crane_albaranes:albaran_results' %}"
+                         hx-include="#alb-filters, #alb-sort-inputs"
+                         hx-trigger="alb-refresh from:body">
+                        {% include "crane_albaranes/_albaranes_table.html" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1">Selección actual (<span id="alb-selection-count">0</span>)</div>
+                <div class="alb-fill" style="overflow-y: auto;">
+                    <ul class="mb-0 small ps-0 list-unstyled" id="alb-selection-list">
+                        <li class="text-muted">Nada seleccionado todavía.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="albCreateModal" tabindex="-1" aria-labelledby="albCreateModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h5 class="modal-title" id="albCreateModalLabel"><i class="bi bi-file-earmark-plus me-1"></i>Nuevo albarán</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="alb-create-form" autocomplete="off" onsubmit="return false;">
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold mb-0" for="alb-day">Fecha</label>
+                            <input type="date" class="form-control form-control-sm" id="alb-day" name="day" value="{{ today|date:'Y-m-d' }}">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold mb-0" for="alb-time">Hora prevista</label>
+                            <input type="time" class="form-control form-control-sm" id="alb-time" name="planned_time">
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold mb-0" for="alb-worksite">Obra</label>
+                        <select class="form-select form-select-sm" id="alb-worksite" name="worksite">
+                            <option value="">Elige la obra…</option>
+                            {% for w in worksites %}
+                            <option value="{{ w.pk }}">{{ w.code }} · {{ w.name }} ({{ w.client_label }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold mb-0" for="alb-person">Gruista</label>
+                        <input type="text" class="form-control form-control-sm mb-1" id="alb-person-search" placeholder="Buscar gruista…">
+                        <select class="form-select form-select-sm" id="alb-person" name="person" size="5">
+                            {% for p in people %}
+                            <option value="{{ p.pk }}">{{ p.first_surname }} {{ p.second_surname }}, {{ p.given_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-8">
+                            <label class="form-label small fw-semibold mb-0" for="alb-machine-search">Máquina</label>
+                            <input type="text" class="form-control form-control-sm mb-1" id="alb-machine-search" placeholder="Escribe el código…">
+                            <select class="form-select form-select-sm" id="alb-machine" name="machine" size="4">
+                                {% for m in machines %}
+                                <option value="{{ m.pk }}">{{ m.code }}{% if m.plate %} · {{ m.plate }}{% endif %} · {{ m.brand_model|default:m.type_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small fw-semibold mb-0" for="alb-tonnage">Toneladas</label>
+                            <input type="text" class="form-control form-control-sm" id="alb-tonnage" name="tonnage" maxlength="20" placeholder="De su último albarán">
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold mb-0" for="alb-task">Trabajo a realizar</label>
+                        <textarea class="form-control form-control-sm" id="alb-task" name="task" rows="2"></textarea>
+                    </div>
+                    <button type="button" class="btn btn-primary btn-sm" id="alb-create-btn"><i class="bi bi-save me-1"></i>Preparar albarán</button>
+                    <span class="small ms-2" id="alb-create-msg"></span>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="albPlanningModal" tabindex="-1" aria-labelledby="albPlanningModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h5 class="modal-title" id="albPlanningModalLabel"><i class="bi bi-file-earmark-spreadsheet me-1"></i>Cargar planning</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body small">
+                <p class="mb-2">Un Excel con una fila por servicio: <strong>Fecha</strong>, <strong>Gruista</strong> (nombre o DNI), <strong>Obra</strong> (código o nº de proyecto) y, si se quiere, Hora, Máquina, Trabajo a realizar, Nº de pedido, Toneladas, Ayudantes y Observaciones. Cada fila prepara un albarán.</p>
+                <a class="btn btn-sm btn-outline-secondary mb-2" href="{% url 'crane_albaranes:planning_template' %}"><i class="bi bi-download me-1"></i>Descargar la plantilla</a>
+                <form id="alb-planning-form" onsubmit="return false;">
+                    <input type="file" class="form-control form-control-sm mb-2" name="file" id="alb-planning-file" accept=".xlsx">
+                    <button type="button" class="btn btn-primary btn-sm" id="alb-planning-btn"><i class="bi bi-upload me-1"></i>Cargar</button>
+                </form>
+                <div class="mt-2" id="alb-planning-msg"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="albDetailModal" tabindex="-1" aria-labelledby="albDetailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h5 class="modal-title" id="albDetailModalLabel"><i class="bi bi-file-earmark-text me-1"></i>Albarán</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="alb-detail-body">Cargando…</div>
+        </div>
+    </div>
+</div>
+</div>
+{{ saved_selection|json_script:"alb-saved-selection" }}
+{% url 'crane_albaranes:albaran_export' as alb_export_url %}
+{% include "panel/_screen_export_modal.html" with sx="alb" screen="crane_albaranes" export_url=alb_export_url method="post" title="Exportar albaranes" %}
+{% include "panel/_fixed_list_layout.html" with top_id="alb-top-panel" bottom_id="alb-bottom-panel" %}
+<script>
+(function () {
+    "use strict";
+    const root = document.getElementById("alb-root");
+    if (!root) { return; }
+    const results = document.getElementById("alb-results");
+    const filters = document.getElementById("alb-filters");
+    const SCREEN_KEY = "crane_albaranes";
+    const selection = new Map();
+
+    function csrf() {
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? meta.getAttribute("content") : "";
+    }
+    function post(url, data) {
+        return fetch(url, {method: "POST", body: data, headers: {"X-CSRFToken": csrf()}})
+            .then(function (response) {
+                return response.json().catch(function () { return {}; }).then(function (body) {
+                    if (!response.ok) throw new Error(body.error || ("Error " + response.status));
+                    return body;
+                });
+            });
+    }
+    function refreshList() { htmx.trigger(document.body, "alb-refresh"); }
+    function busy(btn, on) {
+        if (!btn) return;
+        if (on) { btn.dataset.html = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Trabajando…'; }
+        else if (btn.dataset.html) { btn.innerHTML = btn.dataset.html; btn.disabled = false; }
+    }
+
+    try {
+        JSON.parse(document.getElementById("alb-saved-selection").textContent).forEach(function (item) {
+            if (item && item.pk) selection.set(String(item.pk), item.label || "");
+        });
+    } catch (e) { /* estado ilegible: se empieza sin selección */ }
+    let lastSaved = null;
+    function saveSelection() {
+        const payload = Array.from(selection.entries()).map(function ([pk, label]) { return {pk: pk, label: label}; });
+        const serialized = JSON.stringify(payload);
+        if (serialized === lastSaved) return;
+        lastSaved = serialized;
+        if (window.EbNavState) window.EbNavState.save(SCREEN_KEY, {selection: payload});
+    }
+    function updateSelectionUi() {
+        saveSelection();
+        document.getElementById("alb-mass-count").textContent = selection.size;
+        document.getElementById("alb-selection-count").textContent = selection.size;
+        const list = document.getElementById("alb-selection-list");
+        list.innerHTML = "";
+        const names = Array.from(selection.values()).sort(function (a, b) { return a.localeCompare(b); });
+        if (!names.length) {
+            const li = document.createElement("li");
+            li.className = "text-muted";
+            li.textContent = "Nada seleccionado todavía.";
+            list.appendChild(li);
+        }
+        names.forEach(function (name) {
+            const li = document.createElement("li");
+            li.textContent = name;
+            list.appendChild(li);
+        });
+        const idsInput = document.getElementById("alb-selected-ids");
+        const newIds = Array.from(selection.keys()).join(",");
+        if (idsInput.value !== newIds) {
+            idsInput.value = newIds;
+            if (document.getElementById("albOnlySelected").checked) htmx.trigger(filters, "alb-selection-refresh");
+        }
+        document.querySelectorAll(".alb-needs-selection").forEach(function (btn) { btn.disabled = selection.size === 0; });
+        const all = document.getElementById("alb-check-all");
+        if (!all) return;
+        const rows = results.querySelectorAll(".alb-row-check");
+        const checked = results.querySelectorAll(".alb-row-check:checked");
+        all.checked = rows.length > 0 && checked.length === rows.length;
+        all.indeterminate = checked.length > 0 && checked.length < rows.length;
+    }
+    function refreshFromFragment() {
+        const state = document.getElementById("alb-fragment-state");
+        if (state) {
+            document.getElementById("alb-row-count").textContent = state.dataset.count;
+            document.getElementById("alb-clear-sort").classList.toggle("d-none", !state.dataset.sortActive);
+        }
+        results.querySelectorAll(".alb-row-check").forEach(function (cb) { cb.checked = selection.has(cb.dataset.pk); });
+        updateSelectionUi();
+    }
+    results.addEventListener("change", function (ev) {
+        const cb = ev.target;
+        if (cb.id === "alb-check-all") {
+            results.querySelectorAll(".alb-row-check").forEach(function (row) {
+                row.checked = cb.checked;
+                if (cb.checked) selection.set(row.dataset.pk, row.dataset.label);
+                else selection.delete(row.dataset.pk);
+            });
+            updateSelectionUi();
+        } else if (cb.classList.contains("alb-row-check")) {
+            if (cb.checked) selection.set(cb.dataset.pk, cb.dataset.label);
+            else selection.delete(cb.dataset.pk);
+            updateSelectionUi();
+        }
+    });
+    document.getElementById("alb-mass-clear").addEventListener("click", function () {
+        selection.clear();
+        results.querySelectorAll(".alb-row-check").forEach(function (cb) { cb.checked = false; });
+        updateSelectionUi();
+    });
+    document.getElementById("alb-select-filtered").addEventListener("click", function () {
+        selection.clear();
+        results.querySelectorAll(".alb-row-check").forEach(function (cb) { cb.checked = true; selection.set(cb.dataset.pk, cb.dataset.label); });
+        updateSelectionUi();
+    });
+    document.body.addEventListener("htmx:afterSettle", function (ev) {
+        if (ev.target === results || results.contains(ev.target)) refreshFromFragment();
+    });
+    document.querySelectorAll(".alb-status-check").forEach(function (cb) {
+        cb.addEventListener("change", function () {
+            document.getElementById("alb-status-input").value = Array.from(document.querySelectorAll(".alb-status-check:checked")).map(function (c) { return c.value; }).join(",");
+        });
+    });
+    document.getElementById("alb-fullscreen").addEventListener("click", function () {
+        const box = document.querySelector("#alb-list-col > div");
+        if (document.fullscreenElement) document.exitFullscreen();
+        else if (box.requestFullscreen) box.requestFullscreen();
+    });
+
+    // Grupos de selección: por el gruista de cada albarán.
+    window.EbGroupSelect = window.EbGroupSelect || {};
+    window.EbGroupGet = window.EbGroupGet || {};
+    window.EbGroupGet["alb"] = function () {
+        const persons = new Set();
+        document.querySelectorAll(".alb-row-check").forEach(function (cb) {
+            if (selection.has(cb.dataset.pk) && cb.dataset.person) persons.add(cb.dataset.person);
+        });
+        return {persons: Array.from(persons), users: []};
+    };
+    window.EbGroupSelect["alb"] = function (people) {
+        selection.clear();
+        const wanted = new Set(people.persons.map(function (p) { return String(p[0]); }));
+        document.querySelectorAll(".alb-row-check").forEach(function (cb) {
+            if (wanted.has(cb.dataset.person)) selection.set(cb.dataset.pk, cb.dataset.label);
+        });
+        refreshFromFragment();
+    };
+
+    window.EbScreenExport = window.EbScreenExport || {};
+    window.EbScreenExport.alb = {
+        params: function () {
+            if (!selection.size) return null;
+            return Array.from(selection.keys()).map(function (pk) { return ["selected", pk]; });
+        },
+        count: function () {
+            return selection.size === 1 ? "Se exportará el albarán seleccionado."
+                : "Se exportarán los " + selection.size + " albaranes seleccionados.";
+        },
+    };
+
+    // Acciones sobre los marcados.
+    const QUESTIONS = {
+        send: "¿Enviar por WhatsApp a cada gruista su albarán? (%n)",
+        clock: "¿Poner las horas de los fichajes en los %n albaranes marcados? Se pisan las escritas.",
+        deliver: "¿Volver a enviar al cliente los %n albaranes marcados (solo los firmados)?",
+        cancel: "¿Anular los %n albaranes marcados?",
+        delete: "¿Borrar los %n albaranes marcados? Solo se borran los que no se han enviado.",
+    };
+    const DONE = {send: "enviados", clock: "con horas de los fichajes", deliver: "entregados", cancel: "anulados", delete: "borrados"};
+    document.querySelectorAll(".alb-mass").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+            const action = btn.dataset.action;
+            if (!window.confirm(QUESTIONS[action].replace("%n", selection.size))) return;
+            const msg = document.getElementById("alb-mass-msg");
+            const data = new FormData();
+            data.append("action", action);
+            data.append("ids", Array.from(selection.keys()).join(","));
+            busy(btn, true);
+            msg.className = "small mt-1 text-muted";
+            msg.textContent = "Trabajando…";
+            post(root.dataset.massUrl, data)
+                .then(function (body) {
+                    msg.className = "small mt-1 " + (body.errors.length ? "text-danger" : "text-success");
+                    msg.textContent = body.done + " " + DONE[action] + "." + (body.errors.length ? " " + body.errors.join(" ") : "");
+                    if (action === "delete") selection.clear();
+                    updateSelectionUi();
+                    refreshList();
+                })
+                .catch(function (err) { msg.className = "small mt-1 text-danger"; msg.textContent = err.message; })
+                .finally(function () { busy(btn, false); updateSelectionUi(); });
+        });
+    });
+
+    // Buscadores de los desplegables.
+    function filterOptions(inputId, selectId) {
+        const input = document.getElementById(inputId);
+        const select = document.getElementById(selectId);
+        if (!input || !select) return;
+        input.addEventListener("input", function () {
+            const words = input.value.toLowerCase().split(/\s+/).filter(Boolean);
+            let first = null;
+            Array.from(select.options).forEach(function (opt) {
+                const text = opt.textContent.toLowerCase().replace(/-/g, "");
+                opt.hidden = !words.every(function (w) { return text.indexOf(w.replace(/-/g, "")) !== -1; });
+                if (!opt.hidden && !first) first = opt;
+            });
+            if (first && words.length) select.value = first.value;
+        });
+    }
+    filterOptions("alb-person-search", "alb-person");
+    filterOptions("alb-machine-search", "alb-machine");
+
+    // Nuevo albarán.
+    document.getElementById("alb-create-btn").addEventListener("click", function () {
+        const btn = this;
+        const msg = document.getElementById("alb-create-msg");
+        busy(btn, true);
+        post(root.dataset.createUrl, new FormData(document.getElementById("alb-create-form")))
+            .then(function (body) {
+                msg.className = "small ms-2 text-success";
+                msg.textContent = "Albarán " + body.number + " preparado.";
+                selection.set(String(body.pk), body.number);
+                updateSelectionUi();
+                refreshList();
+            })
+            .catch(function (err) { msg.className = "small ms-2 text-danger"; msg.textContent = err.message; })
+            .finally(function () { busy(btn, false); });
+    });
+
+    // Planning.
+    document.getElementById("alb-planning-btn").addEventListener("click", function () {
+        const btn = this;
+        const msg = document.getElementById("alb-planning-msg");
+        busy(btn, true);
+        msg.className = "mt-2 text-muted";
+        msg.textContent = "Leyendo el planning…";
+        post(root.dataset.planningUrl, new FormData(document.getElementById("alb-planning-form")))
+            .then(function (body) {
+                msg.className = "mt-2";
+                let html = '<div class="text-success fw-semibold">' + body.created + " albaranes preparados de " + body.rows + " filas. Quedan marcados para enviarlos.</div>";
+                if (body.problems.length) {
+                    html += '<div class="text-danger mt-1">Filas sin cargar:</div><ul class="mb-0">';
+                    body.problems.forEach(function (p) { html += "<li>Fila " + p.row + ": " + p.reasons.join(", ") + "</li>"; });
+                    html += "</ul>";
+                }
+                msg.innerHTML = html;
+                selection.clear();
+                body.items.forEach(function (item) { selection.set(String(item[0]), item[1]); });
+                updateSelectionUi();
+                refreshList();
+            })
+            .catch(function (err) { msg.className = "mt-2 text-danger"; msg.textContent = err.message; })
+            .finally(function () { busy(btn, false); });
+    });
+
+    // Ver / editar un albarán (menú de la fila).
+    results.addEventListener("click", function (ev) {
+        const link = ev.target.closest(".alb-open");
+        if (!link) return;
+        ev.preventDefault();
+        const body = document.getElementById("alb-detail-body");
+        body.textContent = "Cargando…";
+        bootstrap.Modal.getOrCreateInstance(document.getElementById("albDetailModal")).show();
+        fetch(link.dataset.url, {credentials: "same-origin"}).then(function (r) { return r.text(); }).then(function (html) {
+            body.innerHTML = html;
+            const form = body.querySelector("#alb-detail-form");
+            if (!form) return;
+            form.addEventListener("submit", function (e) {
+                e.preventDefault();
+                const save = form.querySelector("button[type=submit]");
+                const out = form.querySelector(".alb-detail-msg");
+                busy(save, true);
+                post(form.action, new FormData(form))
+                    .then(function () { out.className = "alb-detail-msg small ms-2 text-success"; out.textContent = "Guardado."; refreshList(); })
+                    .catch(function (err) { out.className = "alb-detail-msg small ms-2 text-danger"; out.textContent = err.message; })
+                    .finally(function () { busy(save, false); });
+            });
+        });
+    });
+
+    refreshFromFragment();
+}());
+</script>

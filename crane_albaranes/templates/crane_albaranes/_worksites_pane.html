@@ -1,0 +1,329 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/crane_albaranes/templates/crane_albaranes/_worksites_pane.html #}
+{% comment %}
+H11 (S162). Pestaña Obras de la página Grúas: las obras por cliente, con
+su ubicación (coordenadas que saca Google de la dirección si no se
+escriben), nº de proyecto y de pedido, contacto, horas mínimas y cómo se
+entregan sus albaranes firmados. Formato único de listados (4.24 y
+4.27); sin grupos de selección (son de personas y máquinas, como en
+Seguros). Lógica: crane_albaranes/views_panel.py.
+{% endcomment %}
+<style>
+    .ws-fill { flex: 1 1 auto; min-height: 0; }
+    #ws-list-col > div:fullscreen { background-color: var(--bs-body-bg); padding: 1rem; }
+    #ws-list-col > div:fullscreen .ws-fill { height: calc(100vh - 4rem); }
+</style>
+<div id="ws-root"
+     data-save-url="{% url 'crane_albaranes:worksite_save' %}"
+     data-mass-url="{% url 'crane_albaranes:worksite_mass' %}">
+<div id="ws-top-panel" class="mb-2">
+    <div class="border rounded p-2">
+    <div class="row g-2">
+        <div class="col-lg-5">
+            <div class="border rounded p-2 h-100">
+                {% include "panel/_filter_panel_tabs.html" with fp="ws" %}
+                <div class="eb-filter-pane" data-filter-pane="filters">
+                <form id="ws-filters" autocomplete="off" onsubmit="return false;"
+                      hx-get="{% url 'crane_albaranes:worksite_results' %}" hx-target="#ws-results"
+                      hx-include="#ws-sort-inputs"
+                      hx-trigger="input changed delay:300ms from:#ws-filter-search, change, ws-selection-refresh">
+                    <input type="text" name="search" id="ws-filter-search" class="form-control form-control-sm mb-2"
+                           placeholder="Buscar código, obra, cliente, proyecto, lugar…" value="{{ filter_search }}">
+                    <div class="d-flex flex-wrap gap-3 align-items-start small">
+                        <div>
+                            <div class="fw-semibold mb-1">Estado</div>
+                            {% for value, label in state_choices %}
+                            <div class="form-check">
+                                <input class="form-check-input ws-state-check" type="checkbox" value="{{ value }}" id="wsState{{ value }}"
+                                       {% if value in filter_state %}checked{% endif %}>
+                                <label class="form-check-label" for="wsState{{ value }}">{{ label }}</label>
+                            </div>
+                            {% endfor %}
+                            <input type="hidden" name="state" id="ws-state-input" value="{{ filter_state|join:',' }}">
+                        </div>
+                        <div>
+                            <label class="fw-semibold mb-1 d-block" for="ws-filter-client">Cliente</label>
+                            <select class="form-select form-select-sm" name="client" id="ws-filter-client">
+                                <option value="">Todos</option>
+                                {% for c in clients %}<option value="{{ c.pk }}" {% if filter_client == c.pk|stringformat:'s' %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <div class="fw-semibold mb-1">Selección</div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="only_selected" value="1" id="wsOnlySelected">
+                                <label class="form-check-label" for="wsOnlySelected">Mostrar solo la selección actual</label>
+                            </div>
+                            <input type="hidden" name="selected_ids" id="ws-selected-ids" value="">
+                        </div>
+                    </div>
+                </form>
+                </div>
+                <div class="eb-filter-pane d-none" data-filter-pane="columns">
+                    {% include "panel/_view_columns_tab.html" with vc="ws" screen="crane_worksites_list" %}
+                </div>
+            </div>
+        </div>
+        <div class="col-lg">
+            <div class="border rounded p-2 h-100">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <strong class="small"><span id="ws-mass-count">0</span> seleccionadas</strong>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="ws-mass-clear">Limpiar</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="ws-select-filtered" title="Marca todas las que se ven con los filtros actuales">Solo las filtradas</button>
+                </div>
+                <div class="small text-muted fw-bold">Obras</div>
+                <div class="d-flex gap-1 flex-wrap mb-1">
+                    <button type="button" class="btn btn-sm btn-primary" id="ws-new" title="Una obra de un cliente, con su ubicación y sus datos">
+                        <i class="bi bi-plus-circle me-1"></i>Nueva obra</button>
+                    <button type="button" class="btn btn-sm btn-outline-success ws-needs-selection" disabled
+                            data-bs-toggle="modal" data-bs-target="#wsExportModal" title="Excel, PDF o imprimir las marcadas, con la plantilla que elijas">
+                        <i class="bi bi-box-arrow-up me-1"></i>Exportar / imprimir</button>
+                </div>
+                <div class="small text-muted fw-bold">Las marcadas</div>
+                <div class="d-flex gap-1 flex-wrap">
+                    <button type="button" class="btn btn-sm btn-outline-secondary ws-needs-selection ws-mass" data-action="end" disabled title="La obra ha terminado: deja de salir para nuevos albaranes (sigue en el listado como Finalizada)">Finalizar</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary ws-needs-selection ws-mass" data-action="reactivate" disabled>Reactivar</button>
+                    <button type="button" class="btn btn-sm btn-outline-danger ws-needs-selection ws-mass" data-action="delete" disabled title="Solo las que no tienen albaranes ni circulares (para errores)">Borrar</button>
+                </div>
+                <div class="small mt-1" id="ws-mass-msg"></div>
+            </div>
+        </div>
+    </div>
+    </div>
+</div>
+
+<div class="border rounded p-2" id="ws-bottom-panel">
+    <div class="row g-2 h-100">
+        <div class="col-lg-9 h-100" id="ws-list-col">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1 d-flex align-items-center">
+                    <span>Obras (<span id="ws-row-count">{{ rows|length }}</span>)</span>
+                    <button type="button" class="btn btn-sm btn-link py-0{% if not sort_active %} d-none{% endif %}" id="ws-clear-sort"
+                            hx-get="{% url 'crane_albaranes:worksite_results' %}" hx-target="#ws-results"
+                            hx-include="#ws-filters" hx-vals='{"sort": ""}'>Quitar orden</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" id="ws-fullscreen" title="Pantalla completa"><i class="bi bi-fullscreen"></i></button>
+                </div>
+                <div class="ws-fill fixed-list-scroll" style="overflow: auto;">
+                    <div id="ws-results"
+                         hx-get="{% url 'crane_albaranes:worksite_results' %}"
+                         hx-include="#ws-filters, #ws-sort-inputs"
+                         hx-trigger="ws-refresh from:body">
+                        {% include "crane_albaranes/_worksites_table.html" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 h-100">
+            <div class="border rounded p-2 h-100 d-flex flex-column">
+                <div class="fw-bold small mb-1">Selección actual (<span id="ws-selection-count">0</span>)</div>
+                <div class="ws-fill" style="overflow-y: auto;">
+                    <ul class="mb-0 small ps-0 list-unstyled" id="ws-selection-list">
+                        <li class="text-muted">Nada seleccionado todavía.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="wsEditModal" tabindex="-1" aria-labelledby="wsEditModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h5 class="modal-title" id="wsEditModalLabel"><i class="bi bi-cone-striped me-1"></i><span id="ws-edit-title">Nueva obra</span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="ws-edit-form" autocomplete="off" onsubmit="return false;">
+                    <input type="hidden" name="pk" id="ws-f-pk">
+                    <div class="row g-2 small">
+                        <div class="col-md-6"><label class="form-label mb-0 fw-semibold" for="ws-f-client">Cliente</label>
+                            <select class="form-select form-select-sm" name="client" id="ws-f-client"><option value="">Elige el cliente…</option>{% for c in clients %}<option value="{{ c.pk }}">{{ c.name }}{% if c.tax_id %} · {{ c.tax_id }}{% endif %}</option>{% endfor %}</select></div>
+                        <div class="col-md-6"><label class="form-label mb-0 fw-semibold" for="ws-f-name">Nombre de la obra</label><input class="form-control form-control-sm" name="name" id="ws-f-name" maxlength="200"></div>
+                        <div class="col-md-4"><label class="form-label mb-0" for="ws-f-project">Nº de proyecto</label><input class="form-control form-control-sm" name="project_number" id="ws-f-project" maxlength="60"></div>
+                        <div class="col-md-4"><label class="form-label mb-0" for="ws-f-order">Nº de pedido</label><input class="form-control form-control-sm" name="order_number" id="ws-f-order" maxlength="60"></div>
+                        <div class="col-md-4"><label class="form-label mb-0" for="ws-f-company">Empresa del grupo que la gestiona</label>
+                            <select class="form-select form-select-sm" name="managing_company" id="ws-f-company"><option value="">—</option>{% for co in companies %}<option value="{{ co.pk }}">{{ co.name }}</option>{% endfor %}</select></div>
+                        <div class="col-12 fw-bold mt-2">Ubicación</div>
+                        <div class="col-md-6"><label class="form-label mb-0" for="ws-f-address">Dirección o lugar</label><input class="form-control form-control-sm" name="address" id="ws-f-address" maxlength="300"></div>
+                        <div class="col-md-3"><label class="form-label mb-0" for="ws-f-locality">Localidad</label><input class="form-control form-control-sm" name="locality" id="ws-f-locality" maxlength="120"></div>
+                        <div class="col-md-3"><label class="form-label mb-0" for="ws-f-province">Provincia</label><input class="form-control form-control-sm" name="province" id="ws-f-province" maxlength="80"></div>
+                        <div class="col-md-3"><label class="form-label mb-0" for="ws-f-lat">Latitud</label><input class="form-control form-control-sm" name="latitude" id="ws-f-lat" placeholder="Se busca sola"></div>
+                        <div class="col-md-3"><label class="form-label mb-0" for="ws-f-lon">Longitud</label><input class="form-control form-control-sm" name="longitude" id="ws-f-lon" placeholder="Se busca sola"></div>
+                        <div class="col-md-6 d-flex align-items-end"><span class="text-muted">Sin coordenadas, se sacan de la dirección al guardar.</span></div>
+                        <div class="col-12 fw-bold mt-2">Contacto y albaranes</div>
+                        <div class="col-md-4"><label class="form-label mb-0" for="ws-f-contact">Persona de contacto</label><input class="form-control form-control-sm" name="contact_name" id="ws-f-contact" maxlength="120"></div>
+                        <div class="col-md-4"><label class="form-label mb-0" for="ws-f-phone">Teléfono de contacto</label><input class="form-control form-control-sm" name="contact_phone" id="ws-f-phone" maxlength="40"></div>
+                        <div class="col-md-4"><label class="form-label mb-0" for="ws-f-min">Horas mínimas</label><input class="form-control form-control-sm" name="min_hours" id="ws-f-min" placeholder="p. ej. 4"></div>
+                        <div class="col-md-4"><label class="form-label mb-0" for="ws-f-channel">Entrega del albarán firmado</label>
+                            <select class="form-select form-select-sm" name="delivery_channel" id="ws-f-channel">{% for value, label in delivery_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
+                        <div class="col-md-4"><label class="form-label mb-0" for="ws-f-email">Correo de la obra</label><input class="form-control form-control-sm" name="delivery_email" id="ws-f-email" maxlength="254" placeholder="Vacío: el del cliente"></div>
+                        <div class="col-md-4"><label class="form-label mb-0" for="ws-f-wa">WhatsApp de la obra</label><input class="form-control form-control-sm" name="delivery_whatsapp" id="ws-f-wa" maxlength="40" placeholder="Vacío: el del contacto"></div>
+                        <div class="col-12"><label class="form-label mb-0" for="ws-f-notes">Notas</label><textarea class="form-control form-control-sm" name="notes" id="ws-f-notes" rows="2"></textarea></div>
+                    </div>
+                    <div class="mt-2">
+                        <button type="button" class="btn btn-primary btn-sm" id="ws-save-btn"><i class="bi bi-save me-1"></i>Guardar obra</button>
+                        <span class="small ms-2" id="ws-save-msg"></span>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+{{ saved_selection|json_script:"ws-saved-selection" }}
+{% url 'crane_albaranes:worksite_export' as ws_export_url %}
+{% include "panel/_screen_export_modal.html" with sx="ws" screen="crane_worksites" export_url=ws_export_url method="post" title="Exportar obras" %}
+{% include "panel/_fixed_list_layout.html" with top_id="ws-top-panel" bottom_id="ws-bottom-panel" %}
+<script>
+(function () {
+    "use strict";
+    const root = document.getElementById("ws-root");
+    if (!root) { return; }
+    const results = document.getElementById("ws-results");
+    const filters = document.getElementById("ws-filters");
+    const SCREEN_KEY = "crane_worksites";
+    const selection = new Map();
+
+    function csrf() {
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? meta.getAttribute("content") : "";
+    }
+    function post(url, data) {
+        return fetch(url, {method: "POST", body: data, headers: {"X-CSRFToken": csrf()}})
+            .then(function (response) {
+                return response.json().catch(function () { return {}; }).then(function (body) {
+                    if (!response.ok) throw new Error(body.error || ("Error " + response.status));
+                    return body;
+                });
+            });
+    }
+    function refreshList() { htmx.trigger(document.body, "ws-refresh"); }
+    try {
+        JSON.parse(document.getElementById("ws-saved-selection").textContent).forEach(function (item) {
+            if (item && item.pk) selection.set(String(item.pk), item.label || "");
+        });
+    } catch (e) { /* sin selección guardada */ }
+    let lastSaved = null;
+    function updateSelectionUi() {
+        const payload = Array.from(selection.entries()).map(function ([pk, label]) { return {pk: pk, label: label}; });
+        const serialized = JSON.stringify(payload);
+        if (serialized !== lastSaved) { lastSaved = serialized; if (window.EbNavState) window.EbNavState.save(SCREEN_KEY, {selection: payload}); }
+        document.getElementById("ws-mass-count").textContent = selection.size;
+        document.getElementById("ws-selection-count").textContent = selection.size;
+        const list = document.getElementById("ws-selection-list");
+        list.innerHTML = "";
+        const names = Array.from(selection.values()).sort(function (a, b) { return a.localeCompare(b); });
+        if (!names.length) { const li = document.createElement("li"); li.className = "text-muted"; li.textContent = "Nada seleccionado todavía."; list.appendChild(li); }
+        names.forEach(function (name) { const li = document.createElement("li"); li.textContent = name; list.appendChild(li); });
+        const idsInput = document.getElementById("ws-selected-ids");
+        const newIds = Array.from(selection.keys()).join(",");
+        if (idsInput.value !== newIds) { idsInput.value = newIds; if (document.getElementById("wsOnlySelected").checked) htmx.trigger(filters, "ws-selection-refresh"); }
+        document.querySelectorAll(".ws-needs-selection").forEach(function (btn) { btn.disabled = selection.size === 0; });
+        const all = document.getElementById("ws-check-all");
+        if (!all) return;
+        const rows = results.querySelectorAll(".ws-row-check");
+        const checked = results.querySelectorAll(".ws-row-check:checked");
+        all.checked = rows.length > 0 && checked.length === rows.length;
+        all.indeterminate = checked.length > 0 && checked.length < rows.length;
+    }
+    function refreshFromFragment() {
+        const state = document.getElementById("ws-fragment-state");
+        if (state) {
+            document.getElementById("ws-row-count").textContent = state.dataset.count;
+            document.getElementById("ws-clear-sort").classList.toggle("d-none", !state.dataset.sortActive);
+        }
+        results.querySelectorAll(".ws-row-check").forEach(function (cb) { cb.checked = selection.has(cb.dataset.pk); });
+        updateSelectionUi();
+    }
+    results.addEventListener("change", function (ev) {
+        const cb = ev.target;
+        if (cb.id === "ws-check-all") {
+            results.querySelectorAll(".ws-row-check").forEach(function (row) {
+                row.checked = cb.checked;
+                if (cb.checked) selection.set(row.dataset.pk, row.dataset.label); else selection.delete(row.dataset.pk);
+            });
+            updateSelectionUi();
+        } else if (cb.classList.contains("ws-row-check")) {
+            if (cb.checked) selection.set(cb.dataset.pk, cb.dataset.label); else selection.delete(cb.dataset.pk);
+            updateSelectionUi();
+        }
+    });
+    document.getElementById("ws-mass-clear").addEventListener("click", function () {
+        selection.clear(); results.querySelectorAll(".ws-row-check").forEach(function (cb) { cb.checked = false; }); updateSelectionUi();
+    });
+    document.getElementById("ws-select-filtered").addEventListener("click", function () {
+        selection.clear(); results.querySelectorAll(".ws-row-check").forEach(function (cb) { cb.checked = true; selection.set(cb.dataset.pk, cb.dataset.label); }); updateSelectionUi();
+    });
+    document.body.addEventListener("htmx:afterSettle", function (ev) {
+        if (ev.target === results || results.contains(ev.target)) refreshFromFragment();
+    });
+    document.querySelectorAll(".ws-state-check").forEach(function (cb) {
+        cb.addEventListener("change", function () {
+            document.getElementById("ws-state-input").value = Array.from(document.querySelectorAll(".ws-state-check:checked")).map(function (c) { return c.value; }).join(",");
+        });
+    });
+    document.getElementById("ws-fullscreen").addEventListener("click", function () {
+        const box = document.querySelector("#ws-list-col > div");
+        if (document.fullscreenElement) document.exitFullscreen(); else if (box.requestFullscreen) box.requestFullscreen();
+    });
+    window.EbScreenExport = window.EbScreenExport || {};
+    window.EbScreenExport.ws = {
+        params: function () { return selection.size ? Array.from(selection.keys()).map(function (pk) { return ["selected", pk]; }) : null; },
+        count: function () { return selection.size === 1 ? "Se exportará la obra seleccionada." : "Se exportarán las " + selection.size + " obras seleccionadas."; },
+    };
+    document.querySelectorAll(".ws-mass").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+            const names = {end: "Finalizar", reactivate: "Reactivar", delete: "Borrar"};
+            if (!window.confirm("¿" + names[btn.dataset.action] + " las " + selection.size + " obras marcadas?")) return;
+            const data = new FormData();
+            data.append("action", btn.dataset.action);
+            data.append("ids", Array.from(selection.keys()).join(","));
+            const msg = document.getElementById("ws-mass-msg");
+            btn.disabled = true;
+            post(root.dataset.massUrl, data).then(function (body) {
+                msg.className = "small mt-1 " + (body.errors.length ? "text-danger" : "text-success");
+                msg.textContent = "Hecho en " + body.done + "." + (body.errors.length ? " " + body.errors.join(" ") : "");
+                if (btn.dataset.action === "delete") selection.clear();
+                refreshList(); htmx.trigger(document.body, "cranes-data-changed");
+            }).catch(function (err) { msg.className = "small mt-1 text-danger"; msg.textContent = err.message; })
+                .finally(function () { updateSelectionUi(); });
+        });
+    });
+
+    // Alta y edición.
+    const modalEl = document.getElementById("wsEditModal");
+    const form = document.getElementById("ws-edit-form");
+    const FIELDS = {pk: "ws-f-pk", client: "ws-f-client", name: "ws-f-name", project_number: "ws-f-project", order_number: "ws-f-order",
+        managing_company: "ws-f-company", address: "ws-f-address", locality: "ws-f-locality", province: "ws-f-province",
+        latitude: "ws-f-lat", longitude: "ws-f-lon", contact_name: "ws-f-contact", contact_phone: "ws-f-phone", min_hours: "ws-f-min",
+        delivery_channel: "ws-f-channel", delivery_email: "ws-f-email", delivery_whatsapp: "ws-f-wa", notes: "ws-f-notes"};
+    function openForm(data) {
+        form.reset();
+        Object.keys(FIELDS).forEach(function (k) { const el = document.getElementById(FIELDS[k]); if (el && data && data[k] !== undefined) el.value = data[k]; });
+        document.getElementById("ws-edit-title").textContent = data && data.pk ? "Obra " + data.code : "Nueva obra";
+        document.getElementById("ws-save-msg").textContent = "";
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    }
+    document.getElementById("ws-new").addEventListener("click", function () { openForm({delivery_channel: "EMAIL"}); });
+    results.addEventListener("click", function (ev) {
+        const link = ev.target.closest(".ws-edit");
+        if (!link) return;
+        ev.preventDefault();
+        fetch(link.dataset.url, {credentials: "same-origin"}).then(function (r) { return r.json(); }).then(openForm);
+    });
+    document.getElementById("ws-save-btn").addEventListener("click", function () {
+        const btn = this;
+        const msg = document.getElementById("ws-save-msg");
+        btn.disabled = true;
+        msg.className = "small ms-2 text-muted"; msg.textContent = "Guardando…";
+        post(root.dataset.saveUrl, new FormData(form)).then(function (body) {
+            msg.className = "small ms-2 text-success"; msg.textContent = "Obra " + body.code + " guardada.";
+            document.getElementById("ws-f-pk").value = body.pk;
+            refreshList(); htmx.trigger(document.body, "cranes-data-changed");
+            setTimeout(function () { bootstrap.Modal.getOrCreateInstance(modalEl).hide(); }, 900);
+        }).catch(function (err) { msg.className = "small ms-2 text-danger"; msg.textContent = err.message; })
+            .finally(function () { btn.disabled = false; });
+    });
+    refreshFromFragment();
+}());
+</script>
