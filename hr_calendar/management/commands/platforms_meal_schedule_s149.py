@@ -10,7 +10,7 @@ la hora de la comida [...] incluirle el casillero de no he parado a
 comer [...] el horario de plataforma sería exactamente igual que el del
 taller, pero la salida es a las 6:30 de la tarde".
 
-1. La sección (o secciones) cuyo nombre contiene --section pasa al
+1. La sección que se llama --section (nombre exacto) pasa al
    botón único con «No he parado para comer» (SectionClockSetting.
    meal_check).
 2. Horario «Plataformas»: copia del de invierno del taller (--from)
@@ -40,7 +40,9 @@ class Command(BaseCommand):
             "horario del taller con salida a las 18:30.")
 
     def add_arguments(self, parser):
-        parser.add_argument("--section", default="plataforma")
+        # S149: el nombre exacto ("plataforma" a secas cogía también
+        # "Administración-Plataformas").
+        parser.add_argument("--section", default="Plataformas")
         parser.add_argument("--from", dest="source", default="Taller")
         parser.add_argument("--label", default="Plataformas")
         parser.add_argument("--end", default="18:30")
@@ -87,7 +89,7 @@ class Command(BaseCommand):
         end = datetime.datetime.strptime(options["end"], "%H:%M").time()
 
         sections = list(Section.objects.filter(
-            company=company, name__icontains=options["section"]))
+            company=company, name__iexact=options["section"]))
         if not sections:
             raise CommandError("No hay sección con «%s»." % options["section"])
         for section in sections:
@@ -142,11 +144,13 @@ class Command(BaseCommand):
             before = (setting.workday_schedule.label
                       if setting and setting.workday_schedule else "—")
             mode = setting.clock_mode if setting else ""
-            self._log("  [%d] %s %s, %s (persona %d): horario %s → %s%s" % (
-                n, person.first_surname, person.second_surname or "",
-                person.given_name, person.pk, before, schedule.label,
-                "; OJO: tipo de fichaje propio «%s», manda sobre el de la "
-                "sección" % mode if mode else ""))
+            warning = ("; OJO: tipo de fichaje propio «%s», manda sobre el "
+                       "de la sección" % mode if mode else "")
+            self._log("  [%d] %s %s, %s (persona %d, %s): horario %s → %s%s"
+                      % (n, person.first_surname, person.second_surname or "",
+                         person.given_name, person.pk,
+                         in_section[person.pk].name, before, schedule.label,
+                         warning))
         set_worker_schedule(chosen, schedule, by)
         note = ("%s: horario «%s» (taller con salida a las %s) y botón "
                 "único con «No he parado para comer»; por %s." % (
