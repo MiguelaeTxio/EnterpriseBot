@@ -59,7 +59,6 @@ listados (4.24 y 4.27), sin grupos de selección (como Seguros).
                 <div class="d-flex align-items-center gap-2 mb-1">
                     <strong class="small"><span id="cl-mass-count">0</span> seleccionados</strong>
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="cl-mass-clear">Limpiar</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="cl-select-filtered" title="Marca todos los que se ven con los filtros actuales">Solo los filtrados</button>
                 </div>
                 <div class="small text-muted fw-bold">Clientes</div>
                 <div class="d-flex gap-1 flex-wrap mb-1">
@@ -224,9 +223,6 @@ listados (4.24 y 4.27), sin grupos de selección (como Seguros).
     });
     document.getElementById("cl-mass-clear").addEventListener("click", function () {
         selection.clear(); results.querySelectorAll(".cl-row-check").forEach(function (cb) { cb.checked = false; }); updateSelectionUi();
-    });
-    document.getElementById("cl-select-filtered").addEventListener("click", function () {
-        selection.clear(); results.querySelectorAll(".cl-row-check").forEach(function (cb) { cb.checked = true; selection.set(cb.dataset.pk, cb.dataset.label); }); updateSelectionUi();
     });
     document.body.addEventListener("htmx:afterSettle", function (ev) {
         if (ev.target === results || results.contains(ev.target)) refreshFromFragment();

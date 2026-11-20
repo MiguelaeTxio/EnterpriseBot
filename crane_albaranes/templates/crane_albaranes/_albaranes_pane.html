@@ -32,6 +32,7 @@ Lógica: crane_albaranes/views_panel.py.
                     <div class="d-flex flex-wrap gap-3 align-items-start small">
                         <div>
                             <div class="fw-semibold mb-1">Estado</div>
+                            <div style="columns: 2; column-gap: 1rem;">
                             {% for value, label in status_choices %}
                             <div class="form-check">
                                 <input class="form-check-input alb-status-check" type="checkbox" value="{{ value }}" id="albStatus{{ value }}"
@@ -39,6 +40,7 @@ Lógica: crane_albaranes/views_panel.py.
                                 <label class="form-check-label" for="albStatus{{ value }}">{{ label }}</label>
                             </div>
                             {% endfor %}
+                            </div>
                             <input type="hidden" name="status" id="alb-status-input" value="{{ filter_status|join:',' }}">
                         </div>
                         {% include "panel/_group_filter_select.html" with gf_id="albFilterGroup" gf_who="gruistas" %}
@@ -69,7 +71,6 @@ Lógica: crane_albaranes/views_panel.py.
                 <div class="d-flex align-items-center gap-2 mb-1">
                     <strong class="small"><span id="alb-mass-count">0</span> seleccionados</strong>
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="alb-mass-clear">Limpiar</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="alb-select-filtered" title="Marca todos los que se ven con los filtros actuales">Solo los filtrados</button>
                 </div>
                 <div class="small text-muted fw-bold">Preparar</div>
                 <div class="d-flex gap-1 flex-wrap mb-1">
@@ -343,11 +344,6 @@ Lógica: crane_albaranes/views_panel.py.
     document.getElementById("alb-mass-clear").addEventListener("click", function () {
         selection.clear();
         results.querySelectorAll(".alb-row-check").forEach(function (cb) { cb.checked = false; });
-        updateSelectionUi();
-    });
-    document.getElementById("alb-select-filtered").addEventListener("click", function () {
-        selection.clear();
-        results.querySelectorAll(".alb-row-check").forEach(function (cb) { cb.checked = true; selection.set(cb.dataset.pk, cb.dataset.label); });
         updateSelectionUi();
     });
     document.body.addEventListener("htmx:afterSettle", function (ev) {

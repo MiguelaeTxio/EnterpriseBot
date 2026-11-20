@@ -68,7 +68,6 @@ Seguros). Lógica: crane_albaranes/views_panel.py.
                 <div class="d-flex align-items-center gap-2 mb-1">
                     <strong class="small"><span id="ws-mass-count">0</span> seleccionadas</strong>
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="ws-mass-clear">Limpiar</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="ws-select-filtered" title="Marca todas las que se ven con los filtros actuales">Solo las filtradas</button>
                 </div>
                 <div class="small text-muted fw-bold">Obras</div>
                 <div class="d-flex gap-1 flex-wrap mb-1">
@@ -250,9 +249,6 @@ Seguros). Lógica: crane_albaranes/views_panel.py.
     });
     document.getElementById("ws-mass-clear").addEventListener("click", function () {
         selection.clear(); results.querySelectorAll(".ws-row-check").forEach(function (cb) { cb.checked = false; }); updateSelectionUi();
-    });
-    document.getElementById("ws-select-filtered").addEventListener("click", function () {
-        selection.clear(); results.querySelectorAll(".ws-row-check").forEach(function (cb) { cb.checked = true; selection.set(cb.dataset.pk, cb.dataset.label); }); updateSelectionUi();
     });
     document.body.addEventListener("htmx:afterSettle", function (ev) {
         if (ev.target === results || results.contains(ev.target)) refreshFromFragment();
