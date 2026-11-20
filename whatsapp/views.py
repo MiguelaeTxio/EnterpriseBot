@@ -1491,6 +1491,35 @@ class PresenceWhatsAppView(View):
 # and those confirming it reached the phone.
 # Estados de entrega de Twilio que significan que el aviso no llegó, y
 # los que confirman que ha llegado al móvil.
+@method_decorator(csrf_exempt, name="dispatch")
+class CircularStatusView(View):
+    """
+    Twilio status callback for the WhatsApp of a circular (S149).
+    ---
+    S149 (Miguel Ángel, 20/11): informe de entrega del WhatsApp de un
+    envío de circular (POST /api/whatsapp/circular-status/<token>/):
+    guarda en el envío si se entregó, se leyó o falló, para el informe
+    del alta en el fichaje.
+    """
+
+    def post(self, request, token):
+        from document_explorer.models import DocumentAcknowledgment
+
+        from .services import ack_pk_from_status_token, set_ack_whatsapp_status
+
+        ack_pk = ack_pk_from_status_token(token)
+        if ack_pk is None:
+            logger.warning("# [CIRCULAR STATUS] Token no válido.")
+            return HttpResponse(status=403)
+        message_status = request.POST.get("MessageStatus", "")
+        logger.info("# [CIRCULAR STATUS] Envío pk=%s: %s %s", ack_pk,
+                    message_status, request.POST.get("ErrorCode", ""))
+        set_ack_whatsapp_status(
+            DocumentAcknowledgment.objects.filter(pk=ack_pk),
+            message_status)
+        return HttpResponse(status=204)
+
+
 _NOTICE_FAILED_STATUSES = ("failed", "undelivered")
 _NOTICE_DELIVERED_STATUSES = ("delivered", "read")
 

@@ -29,6 +29,7 @@ from django.urls import path
 
 from .views import (
     AlbaranNoticeStatusView,
+    CircularStatusView,
     IncomingWhatsAppView,
     PresenceWhatsAppView,
 )
@@ -52,5 +53,11 @@ urlpatterns = [
         "albaran-status/<str:token>/",
         AlbaranNoticeStatusView.as_view(),
         name="albaran_notice_status",
+    ),
+    # S149: estado de entrega del WhatsApp de una circular.
+    path(
+        "circular-status/<str:token>/",
+        CircularStatusView.as_view(),
+        name="circular_status",
     ),
 ]

@@ -2819,6 +2819,27 @@ class DocumentAcknowledgment(models.Model):
             "botón (el más reciente con este campo nulo)."
         ),
     )
+    # S149 (Miguel Ángel, 20/11: informe de quién tiene el alta
+    # "enviada, que la han recibido, que la han leído y que no están
+    # fichando"): el mensaje de WhatsApp de este envío y su último
+    # estado según Twilio (sent, delivered, read, failed, undelivered).
+    whatsapp_sid = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        verbose_name="Mensaje de WhatsApp (SID)",
+    )
+    whatsapp_status = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name="Estado del WhatsApp",
+    )
+    whatsapp_status_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Estado del WhatsApp (fecha/hora)",
+    )
     worksite = models.ForeignKey(
         "worksites.Worksite",
         null=True,

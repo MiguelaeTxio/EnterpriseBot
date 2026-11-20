@@ -611,3 +611,57 @@ REFUELS_RICH = (
     "machine", "vehicle", "driver", "value", "litres", "status", "unit",
     "reason",
 )
+
+
+def _naive(value):
+    """Hora local sin zona, como la espera Excel."""
+    from django.utils import timezone
+    return timezone.localtime(value).replace(tzinfo=None) if value else None
+
+
+# S149 (Miguel Ángel, 20/11): informe del alta en el fichaje (quién la
+# tiene enviada, recibida, leída y no ficha). Filas de
+# panel/clock_onboarding_report.build_rows.
+CLOCK_ONBOARDING = register(Screen(
+    key="clock_onboarding",
+    label="Informe del alta en el fichaje",
+    columns=(
+        Column("trabajador", "Trabajador", 34, lambda r: r["label"]),
+        Column("dni", "DNI", 12, lambda r: r["dni"]),
+        Column("seccion", "Sección", 18, lambda r: r["section"]),
+        Column("telefono", "Teléfono", 15, lambda r: r["phone"]),
+        Column("usuario", "Usuario del panel", 22, lambda r: r["username"]),
+        Column("situacion", "Situación", 34, lambda r: r["state_label"]),
+        Column("alta", "Alta enviada", 16,
+               lambda r: _naive(r["first_sent"]), "DD/MM/YYYY HH:MM"),
+        Column("envios", "Envíos", 8, lambda r: r["sends"]),
+        Column("reenvio", "Último reenvío", 16,
+               lambda r: _naive(r["last_sent"]), "DD/MM/YYYY HH:MM"),
+        Column("whatsapp", "WhatsApp", 20,
+               lambda r: r["whatsapp"]),
+        Column("whatsapp_fecha", "Estado del WhatsApp", 16,
+               lambda r: _naive(r["whatsapp_at"]), "DD/MM/YYYY HH:MM"),
+        Column("abierta", "Abrió la circular", 16,
+               lambda r: _naive(r["opened"]), "DD/MM/YYYY HH:MM"),
+        Column("acceso", "Último acceso al panel", 16,
+               lambda r: _naive(r["last_login"]), "DD/MM/YYYY HH:MM"),
+        Column("primer_fichaje", "Primer fichaje", 16,
+               lambda r: _naive(r["first_clock"]), "DD/MM/YYYY HH:MM"),
+        Column("ultimo_fichaje", "Último fichaje", 16,
+               lambda r: _naive(r["last_clock"]), "DD/MM/YYYY HH:MM"),
+        Column("dias_alta", "Días sin fichar desde el alta", 12,
+               lambda r: r["days_since_first"]),
+        Column("dias_reenvio", "Días sin fichar desde el reenvío", 12,
+               lambda r: r["days_since_resend"]),
+        Column("dias_fichaje", "Días desde el último fichaje", 12,
+               lambda r: r["days_since_clock"]),
+        Column("ficha", "Ficha (ajuste)", 10,
+               lambda r: "" if r["clocks"] is None
+               else "Sí" if r["clocks"] else "No"),
+    ),
+    panel_columns=[
+        "trabajador", "seccion", "situacion", "alta", "envios", "reenvio",
+        "whatsapp", "abierta", "acceso", "ultimo_fichaje", "dias_alta",
+        "dias_reenvio", "dias_fichaje",
+    ],
+))

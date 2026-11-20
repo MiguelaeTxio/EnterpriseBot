@@ -1,0 +1,127 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/clock_onboarding/page.html #}
+{% extends "panel/base.html" %}
+{% comment %}
+S149 (Miguel Ángel, 20/11). Informe del alta en el fichaje: quién tiene
+el alta enviada, si le llegó, si la abrió, si entró y si ficha; días sin
+fichar desde el alta y desde el último reenvío. Arriba, el mapa (cuántos
+hay en cada situación, clic para filtrar); exportación con el modal
+común de plantillas. Vistas: panel/views_clock_onboarding.py.
+{% endcomment %}
+
+{% block title %}Informe del alta en el fichaje{% endblock %}
+
+{% block page_title %}Informe del alta en el fichaje{% endblock %}
+
+{% block content %}
+{% url 'panel:documentation_hub' as back_fallback %}
+<div class="d-flex align-items-center gap-2 mb-3">
+    <a href="{{ back_fallback }}?tab=fichajes" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Volver</a>
+    <div class="small text-muted">{{ total }} trabajador{{ total|pluralize:"es" }} activo{{ total|pluralize }} con el alta enviada por WhatsApp · <strong>{{ not_clocking }} no fichan</strong></div>
+    <button type="button" class="btn btn-sm btn-outline-success ms-auto" data-bs-toggle="modal" data-bs-target="#cobExportModal"><i class="bi bi-box-arrow-up me-1"></i>Exportar / imprimir</button>
+</div>
+
+<div class="d-flex flex-wrap gap-2 mb-3">
+    {% for key, label, badge, count in summary %}
+    <a href="?estado={{ key }}{% if section %}&seccion={{ section|urlencode }}{% endif %}" class="text-decoration-none">
+        <div class="border rounded px-3 py-2 {% if state == key %}border-dark border-2{% endif %}">
+            <div class="fs-5 fw-bold text-{{ badge }}">{{ count }}</div>
+            <div class="small text-body">{{ label }}</div>
+        </div>
+    </a>
+    {% endfor %}
+</div>
+
+<form method="get" class="row g-2 align-items-end mb-2" id="cob-filters">
+    <div class="col-auto">
+        <label class="form-label small mb-0" for="cob-estado">Situación</label>
+        <select class="form-select form-select-sm" name="estado" id="cob-estado" onchange="this.form.submit()">
+            <option value="{{ not_clocking_key }}" {% if state == not_clocking_key %}selected{% endif %}>Todos los que no fichan</option>
+            <option value="" {% if not state %}selected{% endif %}>Todos</option>
+            {% for key, label, badge in states %}
+            <option value="{{ key }}" {% if state == key %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <label class="form-label small mb-0" for="cob-seccion">Sección</label>
+        <select class="form-select form-select-sm" name="seccion" id="cob-seccion" onchange="this.form.submit()">
+            <option value="">Todas</option>
+            {% for name in sections %}<option {% if section == name %}selected{% endif %}>{{ name }}</option>{% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <label class="form-label small mb-0" for="cob-q">Buscar</label>
+        <input class="form-control form-control-sm" type="search" name="q" id="cob-q" value="{{ q }}" placeholder="Nombre, DNI o usuario">
+    </div>
+    <div class="col-auto"><button class="btn btn-sm btn-primary" type="submit">Filtrar</button></div>
+    <div class="col small text-muted text-end">{{ rows|length }} en la lista</div>
+</form>
+
+<div class="table-responsive border rounded" style="max-height: calc(100vh - 22rem); overflow-y: auto;">
+    <table class="table table-sm table-hover small align-middle mb-0">
+        <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
+            <tr>
+                <th>Trabajador</th>
+                <th>Sección</th>
+                <th>Situación</th>
+                <th>Alta enviada</th>
+                <th class="text-end">Envíos</th>
+                <th>Último reenvío</th>
+                <th>WhatsApp</th>
+                <th>Abrió la circular</th>
+                <th>Último acceso</th>
+                <th>Último fichaje</th>
+                <th class="text-end" title="Días sin fichar desde el primer envío del alta">Días sin fichar desde el alta</th>
+                <th class="text-end" title="Días sin fichar desde el último reenvío del alta">Días sin fichar desde el reenvío</th>
+                <th class="text-end">Días desde el último fichaje</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in rows %}
+            <tr>
+                <td><a href="{% url 'panel:clock_worker' row.person.pk %}">{{ row.label }}</a>{% if row.username %}<div class="text-muted">{{ row.username }}</div>{% else %}<div class="text-danger">sin usuario</div>{% endif %}</td>
+                <td>{{ row.section|default:"—" }}</td>
+                <td><span class="badge text-bg-{{ row.state_badge }} fw-normal">{{ row.state_label }}</span>{% if row.clocks is False %}<div class="text-muted">no tiene puesto «Ficha»</div>{% endif %}</td>
+                <td class="text-nowrap">{{ row.first_sent|date:"d/m/Y H:i" }}</td>
+                <td class="text-end">{{ row.sends }}</td>
+                <td class="text-nowrap">{{ row.last_sent|date:"d/m/Y H:i"|default:"—" }}</td>
+                <td class="text-nowrap">{{ row.whatsapp }}{% if row.whatsapp_at %}<div class="text-muted">{{ row.whatsapp_at|date:"d/m H:i" }}</div>{% endif %}</td>
+                <td class="text-nowrap">{{ row.opened|date:"d/m/Y H:i"|default:"—" }}</td>
+                <td class="text-nowrap">{{ row.last_login|date:"d/m/Y H:i"|default:"—" }}</td>
+                <td class="text-nowrap">{{ row.last_clock|date:"d/m/Y H:i"|default:"nunca" }}</td>
+                <td class="text-end fw-semibold {% if row.days_since_first %}text-danger{% endif %}">{{ row.days_since_first|default_if_none:"—" }}</td>
+                <td class="text-end fw-semibold {% if row.days_since_resend %}text-danger{% endif %}">{{ row.days_since_resend|default_if_none:"—" }}</td>
+                <td class="text-end">{{ row.days_since_clock|default_if_none:"—" }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="13" class="text-center text-muted py-4">Nadie con estos filtros.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<div class="small text-muted mt-2">
+    «WhatsApp» es lo que dice WhatsApp de sus envíos (Entregada o Leída en WhatsApp si le llegó alguno; Fallida o No entregada si no le llegó ninguno); «Abrió la circular» es cuando pulsó «Leer» y la abrió.
+    Los días sin fichar cuentan desde el envío si no ha fichado nada desde entonces. «Fichó, pero lleva días sin fichar»: más de 3 días desde su último fichaje.
+</div>
+
+{% url 'panel:clock_onboarding_export' as cob_export_url %}
+{% include "panel/_screen_export_modal.html" with sx="cob" screen="clock_onboarding" export_url=cob_export_url method="post" title="Exportar el informe del alta en el fichaje" %}
+<script>
+(function () {
+    "use strict";
+    const filters = document.getElementById("cob-filters");
+    window.EbScreenExport = window.EbScreenExport || {};
+    window.EbScreenExport.cob = {
+        params: function () {
+            const pairs = [];
+            new FormData(filters).forEach(function (value, key) { pairs.push([key, value]); });
+            return pairs;
+        },
+        count: function () {
+            const n = {{ rows|length }};
+            return n === 1 ? "Se exportará la persona de la lista." : "Se exportarán las " + n + " personas de la lista.";
+        },
+    };
+}());
+</script>
+{% endblock %}

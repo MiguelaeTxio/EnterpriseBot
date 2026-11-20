@@ -1295,6 +1295,65 @@ def albaran_notice_status_url(unit):
     )
 
 
+CIRCULAR_STATUS_SALT = "circular-whatsapp-status"
+
+
+def circular_status_url(ack):
+    """
+    Twilio status callback URL for the WhatsApp of a circular.
+    ---
+    S149: URL a la que Twilio manda el estado de entrega del WhatsApp de
+    un envío de circular (DocumentAcknowledgment firmado, como el aviso
+    del albarán).
+    """
+    token = signing.dumps(ack.pk, salt=CIRCULAR_STATUS_SALT)
+    return settings.PLATFORM_BASE_URL + reverse(
+        "whatsapp:circular_status", kwargs={"token": token},
+    )
+
+
+def ack_pk_from_status_token(token):
+    """
+    The DocumentAcknowledgment pk signed in the URL, or None.
+    ---
+    pk del envío de circular firmado en la URL, o None si no vale.
+    """
+    try:
+        return signing.loads(token, salt=CIRCULAR_STATUS_SALT)
+    except signing.BadSignature:
+        return None
+
+
+# Orden de los estados de Twilio: uno posterior no vuelve atrás.
+WHATSAPP_STATUS_ORDER = {
+    "accepted": 0, "queued": 1, "sending": 2, "sent": 3,
+    "delivered": 4, "read": 5, "undelivered": 6, "failed": 6,
+}
+
+
+def set_ack_whatsapp_status(ack_qs, status):
+    """
+    Store a newer Twilio status on the circular send(s); True if stored.
+    ---
+    Guarda el estado de Twilio si avanza (sent -> delivered -> read); un
+    fallo (failed, undelivered) queda siempre.
+    """
+    status = (status or "").lower()
+    if status not in WHATSAPP_STATUS_ORDER:
+        return False
+    done = False
+    for ack in ack_qs:
+        if WHATSAPP_STATUS_ORDER.get(ack.whatsapp_status, -1) >= \
+                WHATSAPP_STATUS_ORDER[status] and status not in (
+                    "failed", "undelivered"):
+            continue
+        ack.whatsapp_status = status
+        ack.whatsapp_status_at = now()
+        ack.save(update_fields=["whatsapp_status", "whatsapp_status_at"])
+        done = True
+    return done
+
+
 def unit_pk_from_notice_token(token):
     """
     Unit pk signed in the status callback URL, or None if not valid.
@@ -2751,6 +2810,13 @@ def send_circular_notification_whatsapp(ack) -> bool:
         message = send_notification(
             twilio_client, whatsapp_sender, person.company, phone,
             template.content_sid, content_variables,
+            # S149: Twilio informa de la entrega y la lectura.
+            status_callback=circular_status_url(ack),
+        )
+        type(ack).objects.filter(pk=ack.pk).update(
+            whatsapp_sid=getattr(message, "sid", "") or "",
+            whatsapp_status=(getattr(message, "status", "") or "sent")[:20],
+            whatsapp_status_at=now(),
         )
         logger.info(
             "# [CIRCULAR WHATSAPP] Notificación enviada a %s (%s) por "

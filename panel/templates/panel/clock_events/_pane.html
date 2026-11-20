@@ -235,6 +235,9 @@ recordatorios, secciones que fichan y permiso de envío).
                                 title="Vuelve a enviar por WhatsApp la circular Alta en el fichaje a los marcados y, si sale, les pone otra vez la contraseña de las 4 últimas cifras del DNI y les quita los dispositivos de confianza (por si han cambiado de móvil).">
                             <i class="bi bi-arrow-repeat me-1"></i>Reenviar el alta
                         </button>
+                        {# S149 (20/11): quién tiene el alta y no ficha. #}
+                        <a class="btn btn-sm btn-outline-secondary ms-1" href="{% url 'panel:clock_onboarding_report' %}"
+                           title="Informe: a quién se le ha enviado el alta, si le llegó, si la abrió, si entró y si ficha; días sin fichar desde el alta y desde el reenvío. Con exportación."><i class="bi bi-clipboard-data me-1"></i>Informe del alta</a>
                     </div>
                     {# S149 (Miguel Ángel, 16/11): albaranes de varias personas a la vez, cotejados por la IA. #}
                     <div class="clk-action-pane clk-alb-pane" id="clkActAlb" role="tabpanel">

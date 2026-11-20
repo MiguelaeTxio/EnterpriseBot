@@ -248,6 +248,10 @@ from panel.views_clock_worker import (
     ClockWorkerPageView,
     ClockWorkerResultsView,
 )
+from panel.views_clock_onboarding import (
+    ClockOnboardingExportView,
+    ClockOnboardingReportView,
+)
 from panel.views_personal_access import (
     PersonalAccessCreateView,
     PersonalAccessPreviewView,
@@ -2233,6 +2237,17 @@ urlpatterns = [
         "documentacion/fichajes/<int:pk>/jornadas/visado/",
         ClockWorkerReviewView.as_view(),
         name="clock_worker_review",
+    ),
+    # S149 (20/11): informe del alta en el fichaje.
+    path(
+        "documentacion/fichajes/informe-alta/",
+        ClockOnboardingReportView.as_view(),
+        name="clock_onboarding_report",
+    ),
+    path(
+        "documentacion/fichajes/informe-alta/exportar/",
+        ClockOnboardingExportView.as_view(),
+        name="clock_onboarding_export",
     ),
     # S149 (18/11): marcar un día para revisarlo después.
     path(
