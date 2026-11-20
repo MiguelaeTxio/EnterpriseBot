@@ -2,6 +2,11 @@
 """
 H23 (S154, invasora) -- ficha QR de cada centro de gasto: observaciones
 y fotos y vídeos que ve el trabajador al leer su código QR.
+
+Nota de despliegue: la primera vez no se aplicó (el panel no arrancaba
+por una importación que faltaba en panel/urls.py y el despliegue solo
+lanza migrate cuando el push trae una migración); este comentario la
+vuelve a traer para que deploy.yml ejecute migrate.
 """
 import uuid
 
