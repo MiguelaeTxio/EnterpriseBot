@@ -26,7 +26,7 @@ tarjeta técnica; menú de tres puntos y botón derecho en cada fila
                     <input type="search" class="form-control form-control-sm mb-2 specs-text" name="search" value="{{ filter_search }}" placeholder="Buscar por código, marca/modelo, matrícula…">
                     <input type="hidden" name="sort" id="specs-sort" value="{{ current_sort }}">
                     <input type="hidden" name="is_active" id="specs-is-active" value="{{ filter_is_active }}">
-                    <div class="d-flex flex-wrap gap-3 small">
+                    <div class="d-flex flex-nowrap gap-2 small specs-common-row">
                         <div>
                             <div class="fw-semibold mb-1">Estado</div>
                             <div class="dropdown checkdrop" data-all="Todos" data-none="Ninguno">
@@ -151,6 +151,7 @@ tarjeta técnica; menú de tres puntos y botón derecho en cada fila
 </div>
 <style>
 .eb-filters-sep { margin: .5rem 0; opacity: .15; }
+.specs-common-row > .flex-grow-1 { flex: 1 1 0; min-width: 0; }
 .specs-ranges { display: grid; grid-template-columns: repeat(3, 1fr); gap: .4rem; }
 </style>
 
