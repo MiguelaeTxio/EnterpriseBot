@@ -25,6 +25,7 @@ from django.views import View
 from crane_albaranes import listing
 from crane_albaranes.models import CraneAlbaran
 from crane_albaranes.services import (
+    LOCATION_ONLY_NOTICE,
     apply_worksite,
     create_albaran,
     fill_from_clock,
@@ -273,6 +274,7 @@ class AlbaranTabView(CraneAccessMixin, View):
             **_form_choices(cu.company),
             "saved_selection": saved if isinstance(saved, list) else [],
             "today": timezone.localdate(),
+            "is_location_only": LOCATION_ONLY_NOTICE,
         })
 
 

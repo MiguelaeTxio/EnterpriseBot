@@ -28,6 +28,12 @@ from crane_albaranes.models import CraneAlbaran
 logger = logging.getLogger(__name__)
 
 NOTICE_TEMPLATE_NAME = "crane_albaran_notice"
+LOCATION_TEMPLATE_NAME = "crane_location_notice"
+# Hasta que la dirección dé la orden de implantar los albaranes, al
+# gruista solo se le envía la ubicación de la obra y la hora (decisión de
+# Miguel Ángel, S162). Fijo en el servidor: la casilla del panel no se
+# puede desmarcar.
+LOCATION_ONLY_NOTICE = True
 NUMBER_PREFIX = "D"
 
 
@@ -306,11 +312,79 @@ def notice_text(albaran):
     return "\n".join(lines)
 
 
+def worksite_map_url(albaran):
+    """
+    Google Maps link of the worksite, when it has coordinates.
+    ---
+    Enlace de Google Maps de la obra, si tiene coordenadas.
+    """
+    site = albaran.worksite if albaran.worksite_id else None
+    if site is None or site.latitude is None or site.longitude is None:
+        return ""
+    return "https://www.google.com/maps/search/?api=1&query=%s,%s" % (
+        site.latitude, site.longitude)
+
+
+def _location_parts(albaran):
+    """
+    When, worksite and place of the location-only notice.
+    ---
+    Cuándo, obra y lugar del aviso de solo ubicación.
+    """
+    when = albaran.day.strftime("%d/%m/%Y")
+    if albaran.planned_time:
+        when += " a las %s" % albaran.planned_time.strftime("%H:%M")
+    site = (albaran.worksite.name if albaran.worksite_id
+            else albaran.work_place or "sin indicar")
+    place = ", ".join(p for p in (albaran.work_place,
+                                  albaran.work_locality) if p)
+    return when, site, place or "sin indicar"
+
+
+def location_text(albaran):
+    """
+    WhatsApp text with only the worksite location and the time.
+    ---
+    Texto de WhatsApp con solo la ubicación de la obra y la hora.
+    """
+    when, site, place = _location_parts(albaran)
+    lines = [
+        "\U0001f4cd Servicio el %s" % when,
+        "Obra: %s" % site,
+        "Ubicación: %s" % place,
+    ]
+    map_url = worksite_map_url(albaran)
+    if map_url:
+        lines.append("Mapa: %s" % map_url)
+    return "\n".join(lines)
+
+
+def _location_variables(albaran):
+    """
+    Variables of the crane_location_notice template.
+    ---
+    Variables de la plantilla crane_location_notice: {{1}} gruista,
+    {{2}} fecha y hora, {{3}} obra, {{4}} ubicación, {{5}} enlace del
+    mapa (o "-").
+    """
+    when, site, place = _location_parts(albaran)
+    return {
+        "1": albaran.person.given_name if albaran.person_id else "-",
+        "2": when,
+        "3": site,
+        "4": place,
+        "5": worksite_map_url(albaran) or "-",
+    }
+
+
 def send_worker_notice(albaran):
     """
-    Send the albarán to the worker by WhatsApp.
+    Send the albarán (or, while LOCATION_ONLY_NOTICE, only the worksite
+    location and time) to the worker by WhatsApp.
     ---
-    Envía el albarán al gruista por WhatsApp: la plantilla
+    Con LOCATION_ONLY_NOTICE solo se envía la ubicación de la obra y la
+    hora (plantilla crane_location_notice o texto libre, sin enlace al
+    albarán). Si no, envía el albarán al gruista por WhatsApp: la plantilla
     crane_albaran_notice si está aprobada; dentro de la ventana de 24 h,
     el mismo texto libre (whatsapp.window_service). Sin plantilla y
     fuera de la ventana no se puede enviar y se dice. Deja el albarán en
@@ -336,7 +410,9 @@ def send_worker_notice(albaran):
         error = "Falta TWILIO_WHATSAPP_SENDER en el servidor."
     if not error:
         template = WhatsAppTemplate.objects.filter(
-            company=albaran.company, name=NOTICE_TEMPLATE_NAME,
+            company=albaran.company,
+            name=(LOCATION_TEMPLATE_NAME if LOCATION_ONLY_NOTICE
+                  else NOTICE_TEMPLATE_NAME),
             is_active=True).first()
         sid = template.content_sid if template else ""
         approved = bool(sid) and template_approved(sid)
@@ -346,12 +422,16 @@ def send_worker_notice(albaran):
                      "aprobación y el gruista no ha escrito al bot en las "
                      "últimas 24 h.")
     if not error:
+        if LOCATION_ONLY_NOTICE:
+            variables, text = _location_variables, location_text
+        else:
+            variables, text = _notice_variables, notice_text
         try:
             send_notification(
                 _build_twilio_client(), sender, albaran.company, phone,
                 sid if approved else None,
-                variables=_notice_variables(albaran) if approved else None,
-                text=notice_text(albaran))
+                variables=variables(albaran) if approved else None,
+                text=text(albaran))
         except Exception as exc:  # noqa: BLE001 -- se informa al usuario
             logger.exception("# [ALBARÁN GRÚA] Aviso de %s no enviado",
                              albaran.number)

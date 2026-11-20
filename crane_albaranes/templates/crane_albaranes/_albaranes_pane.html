@@ -15,7 +15,8 @@ Lógica: crane_albaranes/views_panel.py.
 <div id="alb-root"
      data-create-url="{% url 'crane_albaranes:albaran_create' %}"
      data-mass-url="{% url 'crane_albaranes:albaran_mass' %}"
-     data-planning-url="{% url 'crane_albaranes:planning_upload' %}">
+     data-planning-url="{% url 'crane_albaranes:planning_upload' %}"
+     data-location-only="{% if is_location_only %}1{% else %}0{% endif %}">
 <div id="alb-top-panel" class="mb-2">
     <div class="border rounded p-2">
     <div class="row g-2">
@@ -84,7 +85,7 @@ Lógica: crane_albaranes/views_panel.py.
                 <div class="small text-muted fw-bold">Los marcados</div>
                 <div class="d-flex gap-1 flex-wrap">
                     <button type="button" class="btn btn-sm btn-success alb-needs-selection alb-mass" data-action="send" disabled
-                            title="Envía a cada gruista su albarán por WhatsApp, con el enlace para abrirlo en el fichaje">
+                            title="{% if is_location_only %}Envía a cada gruista por WhatsApp solo la ubicación de la obra y la hora{% else %}Envía a cada gruista su albarán por WhatsApp, con el enlace para abrirlo en el fichaje{% endif %}">
                         <i class="bi bi-whatsapp me-1"></i>Enviar al gruista</button>
                     <button type="button" class="btn btn-sm btn-outline-secondary alb-needs-selection alb-mass" data-action="clock" disabled
                             title="Vuelve a poner las horas de los fichajes del gruista ese día (los que no están firmados)">
@@ -220,6 +221,11 @@ Lógica: crane_albaranes/views_panel.py.
                     <input type="file" class="form-control form-control-sm mb-2" name="file" id="alb-planning-file" accept=".xlsx">
                     <button type="button" class="btn btn-primary btn-sm" id="alb-planning-btn"><i class="bi bi-upload me-1"></i>Cargar</button>
                 </form>
+                <div class="form-check mt-3">
+                    <input class="form-check-input" type="checkbox" id="alb-location-only" checked disabled style="opacity: 1;">
+                    <label class="form-check-label fw-semibold" for="alb-location-only" style="opacity: 1;">Enviar al trabajador solo la ubicación de la obra y la hora</label>
+                    <div class="form-text">Fijo hasta que se dé la orden de implantar los albaranes: el gruista recibe por WhatsApp la fecha, la hora, la obra y su ubicación (con el mapa), sin el albarán.</div>
+                </div>
                 <div class="mt-2" id="alb-planning-msg"></div>
             </div>
         </div>
@@ -393,7 +399,9 @@ Lógica: crane_albaranes/views_panel.py.
 
     // Acciones sobre los marcados.
     const QUESTIONS = {
-        send: "¿Enviar por WhatsApp a cada gruista su albarán? (%n)",
+        send: root.dataset.locationOnly === "1"
+            ? "¿Enviar por WhatsApp a cada gruista solo la ubicación de la obra y la hora? (%n)"
+            : "¿Enviar por WhatsApp a cada gruista su albarán? (%n)",
         clock: "¿Poner las horas de los fichajes en los %n albaranes marcados? Se pisan las escritas.",
         deliver: "¿Volver a enviar al cliente los %n albaranes marcados (solo los firmados)?",
         cancel: "¿Anular los %n albaranes marcados?",
@@ -470,7 +478,7 @@ Lógica: crane_albaranes/views_panel.py.
         post(root.dataset.planningUrl, new FormData(document.getElementById("alb-planning-form")))
             .then(function (body) {
                 msg.className = "mt-2";
-                let html = '<div class="text-success fw-semibold">' + body.created + " albaranes preparados de " + body.rows + " filas. Quedan marcados para enviarlos.</div>";
+                let html = '<div class="text-success fw-semibold">' + body.created + " albaranes preparados de " + body.rows + " filas. Quedan marcados para enviarlos" + (root.dataset.locationOnly === "1" ? " (al gruista le llegará solo la ubicación de la obra y la hora)" : "") + ".</div>";
                 if (body.problems.length) {
                     html += '<div class="text-danger mt-1">Filas sin cargar:</div><ul class="mb-0">';
                     body.problems.forEach(function (p) { html += "<li>Fila " + p.row + ": " + p.reasons.join(", ") + "</li>"; });
