@@ -1048,6 +1048,16 @@ class ClockEvent(models.Model):
         default="",
         verbose_name="Mensaje del trabajador",
     )
+    # S149 (Miguel Ángel, 20/11, Plataformas): "poner comentarios tanto
+    # en la entrada como en la salida [...] he fichado en mi casa porque
+    # salgo con vehículo de la empresa desde aquí [...] o cualquier otra
+    # incidencia". Lo escribe el trabajador al fichar.
+    worker_note = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Comentario del trabajador",
+    )
     clock_type = models.ForeignKey(
         "hr_calendar.ClockType",
         null=True,

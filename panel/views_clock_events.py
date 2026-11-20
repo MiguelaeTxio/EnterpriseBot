@@ -1034,6 +1034,8 @@ def _press_view(event, corrections_by_replacement=None):
         "claimed_value": (timezone.localtime(event.claimed_at).strftime(
             "%Y-%m-%dT%H:%M") if event.claimed_at else ""),
         "claim_note": event.claim_note,
+        # S149 (Plataformas): comentario del trabajador al fichar.
+        "worker_note": event.worker_note,
         # S149: corrección hecha por la IA al cotejar los albaranes.
         # S153: o con el parte de trabajo (tampoco visa el día).
         "by_ai": bool(correction and correction.source

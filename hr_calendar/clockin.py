@@ -58,6 +58,7 @@ from django.views.decorators.http import require_GET, require_POST
 from hr_calendar.clock_settings import active_types
 from hr_calendar.clock_settings import default_type
 from hr_calendar.clock_settings import meal_check
+from hr_calendar.clock_settings import press_notes
 from hr_calendar.clock_settings import uses_types
 from hr_calendar.models import ClockEvent
 from hr_calendar.models import ClockType
@@ -301,6 +302,10 @@ def record_press(company_user, payload, user_agent=""):
             event.no_meal_break = bool(
                 payload.get("no_meal_break")
                 and (by_types or meal_check(company_user)))
+            # S149 (Plataformas): comentario en la entrada y la salida.
+            if not by_types and press_notes(company_user):
+                event.worker_note = str(
+                    payload.get("worker_note") or "").strip()[:255]
             # S149: salida fichada tarde con la hora real que indica.
             if kind == ClockEvent.Kind.OUT:
                 _set_claim(event, company_user, payload)
@@ -711,6 +716,8 @@ def status(request):
         "uses_types": by_types,
         # S149: botón único con "No he parado para comer".
         "meal_check": by_types or meal_check(company_user),
+        # S149 (Plataformas): comentario al fichar.
+        "press_notes": not by_types and press_notes(company_user),
         "clock_types": [_type_json(t) for t in types],
         # H11 (S162): albaranes de grúa del trabajador.
         "crane_albaranes": _crane_albaranes_json(company_user),

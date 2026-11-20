@@ -110,6 +110,8 @@ def correct_event(event_id, corrected_by, action, reason, new_kind="",
                                    "Corrección del supervisor"),
                 # S143: la corrección conserva "No he parado para comer".
                 no_meal_break=event.no_meal_break,
+                # S149: y el comentario del trabajador.
+                worker_note=event.worker_note,
             )
         else:
             new_kind, new_pressed_at, new_clock_type = "", None, None

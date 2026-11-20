@@ -100,6 +100,9 @@ responsable corregirá la salida (clock_report.forgotten_after).
         #own-save { background: #198754; color: #fff; border: 0; border-radius: 8px; font-size: 1rem; padding: 10px; width: 100%; margin-top: 10px; font-weight: 700; }
         #no-meal { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 1.05rem; font-weight: 600; }
         #no-meal input { width: 24px; height: 24px; }
+        #press-note { margin-top: 12px; }
+        #press-note label { display: block; font-weight: 600; margin-bottom: 4px; }
+        #press-note input { width: 100%; font-size: 1.05rem; padding: 10px; box-sizing: border-box; border: 1px solid #ced4da; border-radius: 8px; }
         #update { background: #cfe2ff; border-color: #9ec5fe; }
         #btn-update { background: #0d6efd; color: #fff; border: 0; border-radius: 8px; font-size: 1rem; padding: 12px; width: 100%; margin-top: 8px; font-weight: 700; }
         a.action { display: block; margin-top: 8px; padding: 12px; border-radius: 8px; background: #0d6efd; color: #fff; text-align: center; font-weight: 700; text-decoration: none; }
@@ -170,6 +173,11 @@ responsable corregirá la salida (clock_report.forgotten_after).
         <!-- S143: sin esta casilla y sin pausa fichada se descuenta una hora de comida (y otra de cena si toca). -->
         <label id="no-meal" class="hidden"><input type="checkbox" id="no-meal-check"> No he parado para comer</label>
         <div id="no-meal-help" class="muted hidden">Si no fichas la pausa para comer ni marcas esta casilla, se descuenta una hora de comida (y otra de cena si trabajas a la hora de cenar). Márcala antes de fichar la salida.</div>
+    </div>
+    <!-- S149 (Miguel Ángel, Plataformas): comentario al fichar la entrada o la salida. -->
+    <div id="press-note" class="hidden">
+        <label for="press-note-text">Comentario (opcional)</label>
+        <input type="text" id="press-note-text" maxlength="200">
     </div>
     <button type="button" id="btn-fichar">Fichar entrada</button>
     <div id="out-confirm" class="hidden" role="dialog" aria-modal="true">
@@ -729,7 +737,21 @@ responsable corregirá la salida (clock_report.forgotten_after).
         if (!open) store("fichaje-sin-comida", null);
         noMeal.checked = open && !!load("fichaje-sin-comida");
     }
+    // S149 (Plataformas): comentario al fichar (entrada y salida).
+    function pressNotes() {
+        const info = load("fichaje-estado");
+        return !byTypes() && !!(info && info.press_notes);
+    }
+    function showPressNote(records) {
+        const on = pressNotes();
+        document.getElementById("press-note").classList.toggle("hidden", !on);
+        if (!on) return;
+        document.getElementById("press-note-text").placeholder = decideKind(records) === "OUT"
+            ? "p. ej. ficho en casa: llego con el vehículo de la empresa"
+            : "p. ej. ficho en casa: salgo con el vehículo de la empresa";
+    }
     function showTypes(records) {
+        showPressNote(records);
         const info = load("fichaje-estado");
         const box = document.getElementById("types");
         const btn = document.getElementById("btn-fichar");
@@ -1024,6 +1046,8 @@ responsable corregirá la salida (clock_report.forgotten_after).
                     // S149: hora real de salida y mensaje (solo en la salida).
                     claimed_at: decided === "OUT" && claimNow ? claimNow.claimed_at : "",
                     claim_note: decided === "OUT" && claimNow ? claimNow.claim_note : "",
+                    // S149 (Plataformas): comentario de la entrada o la salida.
+                    worker_note: pressNotes() ? document.getElementById("press-note-text").value.trim() : "",
                     // Con cobertura y nada pendiente decide el servidor.
                     auto: navigator.onLine && nothingPending,
                     pressed_at: pressedAt.toISOString(),
@@ -1041,6 +1065,7 @@ responsable corregirá la salida (clock_report.forgotten_after).
                 return;
             }
             showGpsHelp(false);
+            document.getElementById("press-note-text").value = "";
             setStatus(label(record) + " de las " + hhmm(pressedAt) +
                       " guardada" + (navigator.onLine ? "." : " en el móvil: se enviará al volver la cobertura.") +
                       // S143: que no pulsen la salida para "confirmar".

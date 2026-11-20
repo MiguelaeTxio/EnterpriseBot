@@ -323,6 +323,19 @@ def meal_check(company_user, day=None):
                        section_meal_map([section.pk])[section.pk])
 
 
+def press_notes(company_user, day=None):
+    """
+    True if the worker writes a comment when clocking in and out.
+    ---
+    S149 (Miguel Ángel, 20/11, Plataformas): el botón único con «No he
+    parado para comer» lleva también el comentario en la entrada y en la
+    salida ("he fichado en mi casa porque salgo con el vehículo de la
+    empresa..."). No en el fichaje por tipos.
+    """
+    return meal_check(company_user, day) and not uses_types(
+        company_user, day)
+
+
 def set_section_meal(section, value, by):
     """
     Put a section in or out of the single button with the meal box.
