@@ -1,0 +1,68 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/fleet/templates/fleet/qr_worker_vehicle.html #}
+{% comment %}
+H23 (S154, invasora). Editor de la ficha QR de un vehículo dentro del
+fichaje: observaciones, fotos y vídeos (cámara o galería) y quitarlos.
+Contexto: fleet.views_qr_worker.worker_vehicle.
+{% endcomment %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+{% include "crane_albaranes/_worker_head.html" %}
+<title>QR {{ machine.code }}</title>
+<style>
+    .media img, .media video { width: 100%; border-radius: 8px; background: #000; display: block; }
+    .media { border-top: 1px solid #e9ecef; padding: 10px 0; }
+    .media:first-of-type { border-top: 0; }
+    button.small { padding: 8px; font-size: .9rem; margin-top: 6px; background: #f8d7da; color: #842029; border: 0; border-radius: 8px; width: 100%; font-weight: 700; }
+</style>
+</head>
+<body>
+<a class="back" href="{% url 'fleet_qr_worker_list' %}">‹ Elegir otro vehículo</a>
+<h1>{{ machine.code }}</h1>
+<div class="muted">{{ machine.brand_model|default:"" }}{% if machine.plate %} · {{ machine.plate }}{% endif %}</div>
+{% if error %}<div class="card"><span class="badge err">{{ error }}</span></div>{% endif %}
+
+<form class="card" method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="notes">
+    <h2>Observaciones</h2>
+    <textarea name="observations" rows="6" placeholder="Por ejemplo: el capó se abre con la palanca bajo el volante. Para ver las horas en el tablero, mantén pulsado el botón…">{{ sheet.observations }}</textarea>
+    <button type="submit" class="action">Guardar observaciones</button>
+</form>
+
+<form class="card" method="post" enctype="multipart/form-data" onsubmit="var b = this.querySelector('button'); b.disabled = true; b.textContent = 'Subiendo… no cierres la página';">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="upload">
+    <h2>Añadir fotos o vídeos</h2>
+    <input type="file" name="files" accept="image/*,video/*" multiple required>
+    <div class="muted" style="margin-top:4px;">Fotos hasta {{ max_photo_mb }} MB; vídeos hasta {{ max_video_mb }} MB. Con cobertura buena o wifi.</div>
+    <label for="cap">Descripción</label>
+    <input type="text" id="cap" name="caption" maxlength="300" placeholder="Por ejemplo: botón para ver las horas de motor">
+    <button type="submit" class="action green">Subir</button>
+</form>
+
+<div class="card">
+    <h2>Fotos y vídeos ({{ media|length }})</h2>
+    {% for item in media %}
+    <div class="media">
+        {% if item.is_video %}
+        <video src="{{ item.url }}" controls playsinline preload="metadata"></video>
+        {% else %}
+        <img src="{{ item.url }}" alt="{{ item.media.caption }}" loading="lazy">
+        {% endif %}
+        {% if item.media.caption %}<div style="margin-top:6px;">{{ item.media.caption }}</div>{% endif %}
+        <form method="post" onsubmit="return confirm('¿Quitar esta foto o vídeo?');">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="media_id" value="{{ item.media.pk }}">
+            <button type="submit" class="small">Quitar</button>
+        </form>
+    </div>
+    {% empty %}
+    <div class="muted">Todavía no hay fotos ni vídeos.</div>
+    {% endfor %}
+</div>
+
+<a class="action" href="{{ public_url }}" style="background:#6c757d;">Ver como al leer el QR</a>
+</body>
+</html>

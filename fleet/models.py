@@ -1942,3 +1942,37 @@ class MachineQrMedia(models.Model):
 
     def __str__(self):
         return "%s %s" % (self.get_kind_display(), self.caption)
+
+
+class QrEditorSettings(models.Model):
+    """
+    Password of the QR sheet editor inside the clock-in app.
+
+    ---
+
+    Contraseña del editor de fichas QR dentro de la aplicación de
+    fichaje (S154). Miguel Ángel: "un botón en la propia aplicación de
+    fichajes y una contraseña para acceder que no sea la del usuario, de
+    tal forma que solo la persona o personas que conozcan la contraseña
+    puedan acceder". Una por empresa; se guarda cifrada (hash de Django).
+    """
+
+    company = models.OneToOneField(
+        Company, on_delete=models.CASCADE, related_name="qr_editor_settings",
+        verbose_name=_("Empresa"),
+    )
+    password_hash = models.CharField(_("Contraseña (cifrada)"),
+                                     max_length=256, blank=True, default="")
+    updated_by = models.ForeignKey(
+        "ivr_config.CompanyUser", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+        verbose_name=_("Cambiada por"),
+    )
+    updated_at = models.DateTimeField(_("Cambiada el"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("Acceso al editor de fichas QR")
+        verbose_name_plural = _("Acceso al editor de fichas QR")
+
+    def __str__(self):
+        return "Editor QR %s" % self.company

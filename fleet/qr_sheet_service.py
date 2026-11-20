@@ -222,3 +222,100 @@ def spec_rows(machine):
         ("Año", machine.manufacture_year or ""),
     ]
     return [(label, value) for label, value in rows if value]
+
+
+# ------------------------------------------------------------------------
+# S154: editor de fichas QR dentro de la aplicación de fichaje, con una
+# contraseña propia (no la del usuario).
+# ------------------------------------------------------------------------
+EDITOR_SESSION_KEY = "qr_editor_until"
+EDITOR_SESSION_HOURS = 8
+EDITOR_MAX_ATTEMPTS = 5
+EDITOR_ATTEMPTS_KEY = "qr_editor_attempts"
+MIN_PASSWORD_LENGTH = 6
+
+
+def set_editor_password(company, raw_password, user):
+    """
+    Set (or change) the QR editor password of the company.
+
+    ---
+
+    Fija o cambia la contraseña del editor de fichas QR de la empresa
+    (se guarda cifrada). Al cambiarla, quien ya estaba dentro sigue
+    hasta que caduque su acceso (8 h).
+    """
+    from django.contrib.auth.hashers import make_password
+
+    from fleet.models import QrEditorSettings
+
+    raw_password = (raw_password or "").strip()
+    if len(raw_password) < MIN_PASSWORD_LENGTH:
+        raise QrSheetError("La contraseña necesita al menos %d caracteres."
+                           % MIN_PASSWORD_LENGTH)
+    settings_row, _created = QrEditorSettings.objects.get_or_create(
+        company=company)
+    settings_row.password_hash = make_password(raw_password)
+    settings_row.updated_by = user
+    settings_row.save()
+    return settings_row
+
+
+def editor_password_set(company):
+    """
+    Whether the company has a QR editor password.
+
+    ---
+
+    Si la empresa tiene contraseña para el editor de fichas QR.
+    """
+    from fleet.models import QrEditorSettings
+
+    return QrEditorSettings.objects.filter(
+        company=company).exclude(password_hash="").exists()
+
+
+def editor_unlocked(request):
+    """
+    Whether this browser entered the QR editor password recently.
+
+    ---
+
+    Si este navegador metió la contraseña del editor hace menos de 8 h.
+    """
+    from django.utils import timezone
+
+    until = request.session.get(EDITOR_SESSION_KEY)
+    return bool(until) and until > timezone.now().timestamp()
+
+
+def unlock_editor(request, company, raw_password):
+    """
+    Check the password and open the editor for 8 hours.
+
+    ---
+
+    Comprueba la contraseña y abre el editor 8 horas en este navegador.
+    Tras 5 intentos fallidos seguidos queda bloqueado en esta sesión.
+    Devuelve (abierto, mensaje).
+    """
+    from django.contrib.auth.hashers import check_password
+    from django.utils import timezone
+
+    from fleet.models import QrEditorSettings
+
+    attempts = request.session.get(EDITOR_ATTEMPTS_KEY, 0)
+    if attempts >= EDITOR_MAX_ATTEMPTS:
+        return False, ("Demasiados intentos fallidos. Pide la contraseña "
+                       "a la oficina.")
+    settings_row = QrEditorSettings.objects.filter(company=company).first()
+    if settings_row is None or not settings_row.password_hash:
+        return False, "La oficina todavía no ha puesto la contraseña."
+    if not check_password((raw_password or "").strip(),
+                          settings_row.password_hash):
+        request.session[EDITOR_ATTEMPTS_KEY] = attempts + 1
+        return False, "Contraseña incorrecta."
+    request.session[EDITOR_ATTEMPTS_KEY] = 0
+    request.session[EDITOR_SESSION_KEY] = (
+        timezone.now().timestamp() + EDITOR_SESSION_HOURS * 3600)
+    return True, ""

@@ -1,0 +1,89 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/fleet/templates/fleet/qr_worker_list.html #}
+{% comment %}
+H23 (S154, invasora). Editor de fichas QR dentro del fichaje
+(/fichaje/qr/): contraseña del editor y, después, la lista de vehículos
+activos con casilla de elección única y el botón para entrar en el
+marcado. Contexto: fleet.views_qr_worker.worker_list.
+{% endcomment %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+{% include "crane_albaranes/_worker_head.html" %}
+<title>Fichas QR</title>
+<style>
+    .veh { display: flex; align-items: center; gap: 12px; padding: 11px 4px; border-top: 1px solid #e9ecef; cursor: pointer; }
+    .veh:first-of-type { border-top: 0; }
+    .veh input { width: 24px; height: 24px; flex: 0 0 auto; }
+    .veh .code { font-weight: 700; }
+    .veh.hide { display: none; }
+    .sticky { position: sticky; bottom: 0; background: #f5f6f8; padding-bottom: 8px; }
+</style>
+</head>
+<body>
+<a class="back" href="/fichaje/">‹ Volver al fichaje</a>
+<h1>Fichas QR de los vehículos</h1>
+
+{% if no_device %}
+<div class="card">
+    <div><strong>Este móvil no es tu dispositivo de confianza.</strong></div>
+    <div class="muted">Abre primero el fichaje y entra con tu usuario; después vuelve aquí.</div>
+    <a class="action" href="/fichaje/">Ir al fichaje</a>
+</div>
+{% elif locked %}
+<form class="card" method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="unlock">
+    <div class="muted">Lo que metas aquí es lo que ve cualquiera al leer el QR del vehículo. Hace falta la contraseña del editor (no es la tuya del panel).</div>
+    {% if no_password %}<div class="badge err" style="margin-top:8px;">La oficina todavía no ha puesto la contraseña.</div>{% endif %}
+    <label for="qr-pass">Contraseña del editor</label>
+    <input type="password" id="qr-pass" name="password" autocomplete="off" required autofocus>
+    {% if error %}<div class="badge err" style="margin-top:8px;">{{ error }}</div>{% endif %}
+    <button type="submit" class="action">Entrar</button>
+</form>
+{% else %}
+<form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="open">
+    <div class="card">
+        <label for="veh-search" style="margin-top:0;">Buscar</label>
+        <input type="search" id="veh-search" placeholder="Código, matrícula o modelo" autocomplete="off">
+        <div class="muted" style="margin-top:6px;">Marca un vehículo. ✔ = ya tiene algo en su ficha QR.</div>
+    </div>
+    <div class="card" id="veh-list">
+        {% for machine in machines %}
+        <label class="veh" data-text="{{ machine.code|lower }} {{ machine.plate|lower }} {{ machine.brand_model|lower }}">
+            <input type="radio" name="machine" value="{{ machine.pk }}">
+            <div>
+                <div class="code">{{ machine.code }}{% if machine.pk in with_sheet %} ✔{% endif %}</div>
+                <div class="muted">{{ machine.brand_model|default:"" }}{% if machine.plate %} · {{ machine.plate }}{% endif %}</div>
+            </div>
+        </label>
+        {% empty %}
+        <div class="muted">No hay vehículos activos.</div>
+        {% endfor %}
+    </div>
+    <div class="sticky">
+        {% if error %}<div class="badge err">{{ error }}</div>{% endif %}
+        <button type="submit" class="action" id="veh-open" disabled>Acceder a la información del vehículo</button>
+    </div>
+</form>
+<script>
+(function () {
+    "use strict";
+    var search = document.getElementById("veh-search");
+    var rows = Array.prototype.slice.call(document.querySelectorAll(".veh"));
+    var open = document.getElementById("veh-open");
+    search.addEventListener("input", function () {
+        var term = search.value.trim().toLowerCase();
+        rows.forEach(function (row) {
+            row.classList.toggle("hide", term && row.dataset.text.indexOf(term) === -1);
+        });
+    });
+    document.getElementById("veh-list").addEventListener("change", function () {
+        open.disabled = !document.querySelector(".veh input:checked");
+    });
+})();
+</script>
+{% endif %}
+</body>
+</html>

@@ -54,6 +54,9 @@ urlpatterns = [
     # móviles que la instalaron (hr_calendar/clockin.py).
     path('fichaje-prueba/', clockin_views.retired_test_page),
     path('fichaje-prueba/sw.js', clockin_views.retired_test_sw),
+    # H23 (S154): editor de fichas QR dentro del fichaje (contraseña
+    # propia del editor, no la del usuario).
+    path('fichaje/qr/', include('fleet.urls_qr_worker')),
     # H24 (S129): fichaje oficial -- recepción con la llave del
     # dispositivo de confianza (hr_calendar/clockin.py).
     path('fichaje/', include('hr_calendar.clockin_urls',
