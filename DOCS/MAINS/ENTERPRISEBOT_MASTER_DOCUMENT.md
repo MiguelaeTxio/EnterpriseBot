@@ -2050,6 +2050,22 @@ este programa"*. La 4.24 ya lo exigía (punto 6) y se ignoró.
    - `panel/_group_filter_select.html` +
      `panel/person_groups.filter_by_group`: filtro «Grupo».
    - `list_fullscreen.js`: botón «Ampliar» (4.26).
+   - `panel/_filter_panel_tabs.html` + `panel/_view_columns_tab.html`:
+     pestañas «Buscar y filtrar» / «Columnas» del recuadro de filtros.
+   - `panel/_screen_export_modal.html`: «Exportar / imprimir» con
+     plantillas (catálogo en `panel/screen_export_catalog.py`).
+   - `panel/static/panel/js/context_menu.js` (S163, global en
+     `base.html`): **menú propio del botón derecho** sobre cualquier
+     trabajador, centro de gasto o fila con menú de tres puntos. Solo
+     funciona si la vista marca lo que pinta: enlace a la ficha o
+     `data-person-pk` / `data-machine-pk` en la celda, y el menú de tres
+     puntos de la fila dentro de la propia `<tr>`.
+   - `panel/_entity_menu_button.html` (S163): botón de tres puntos de
+     una fila de trabajador o máquina, con el mismo menú que el botón
+     derecho (destinos en `panel/views_person_menu.py` y
+     `panel/views_machine_menu.py`).
+   - Tarjeta técnica de un centro de gasto (S163,
+     `panel/views_machine_menu.MachineCardView`, `data-machine-card`).
 2. **Fila de arriba, siempre tres columnas en este orden:**
    - **Buscar y filtrar.** Primero el bloque común, siempre igual y en
      este orden: Buscar · Estado · Empresa (personas) / Familia
@@ -2066,3 +2082,39 @@ este programa"*. La 4.24 ya lo exigía (punto 6) y se ignoró.
    de trabajo se aplica a todas** (o se deja anotado como pendiente
    abierto con la lista exacta de pestañas que faltan, nunca
    «cerrado»).
+
+**Reincidencia S154 → S163 y lista de comprobación obligatoria.** La
+pestaña Especificaciones (H23, invasora S154) se creó después de esta
+directriz y no cumplía casi nada: filtros en una fila suelta, orden en un
+desplegable, sin casillas, sin Grupos de selección, sin Acciones, sin
+«Selección actual», sin «Columnas», sin navegación persistida y sin menú
+del botón derecho. Miguel Ángel (S163), verbatim: *"Esta vista de
+especificaciones no tiene nada que ver ya con el resto. Esto parece otra
+aplicación diferente [...] Todas las vistas que estamos creando nuevas,
+siempre tengo que decir lo mismo [...] Menú contextual. Sabrá Dios ya la
+de vistas que hemos instalado en la que no tenemos menú contextual."*
+Rehecha en S163 con el formato común; desde entonces es, con Revisiones,
+la **implementación de referencia** de una pestaña de máquinas
+(`panel/views_specs_tab.py`, `panel/templates/panel/specs/`).
+
+**Ninguna pestaña o listado nuevo (ni uno que se toque) se da por
+terminado sin comprobar, uno a uno, en el navegador:**
+
+1. Las tres columnas de arriba en su orden (Buscar y filtrar con el
+   bloque común primero · Grupos de selección · Acciones con «N
+   seleccionados · Limpiar · Solo los filtrados»).
+2. Pestaña «Columnas» en el recuadro de filtros.
+3. Casilla por fila y «Seleccionar todos»; la selección sobrevive a
+   filtros y orden y se ve en «Selección actual».
+4. Orden múltiple por cabecera (superíndice de prioridad, «Quitar
+   orden»); nunca un desplegable «Orden».
+5. «Ampliar» del listado.
+6. Menú de tres puntos en cada fila y **botón derecho** sobre la fila
+   (mismo menú; personas y máquinas con su menú común).
+7. Exportar / imprimir con plantillas, si el listado tiene datos que
+   sacar.
+8. Navegación persistida: se sale de la pestaña, se vuelve y está igual.
+9. El mismo formato en el móvil, con columnas (4.24, punto 11).
+
+Si falta cualquiera de los nueve puntos, la pestaña no está terminada:
+se completa en el mismo bloque de trabajo, nunca se deja para después.
