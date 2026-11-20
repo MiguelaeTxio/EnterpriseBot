@@ -192,6 +192,13 @@ responsable corregirá la salida (clock_report.forgotten_after).
     </div>
     <div id="status"></div>
 
+    <!-- H11 (S162): albaranes de trabajo de las grúas (los que manda la oficina o hace el gruista). -->
+    <div class="card hidden" id="crane-albaranes">
+        <strong>Mis albaranes</strong> <span class="tag-manual" id="crane-albaranes-count"></span>
+        <div class="muted">Los albaranes de trabajo que te envía la oficina, con las horas de tus fichajes, y la firma del cliente. Necesita cobertura.</div>
+        <a class="action" href="/fichaje/albaranes/">Abrir mis albaranes</a>
+    </div>
+
     <!-- S147: Mis solicitudes desde el fichaje. S153: solo documentos y consulta de lo concedido. -->
     <div class="card">
         <strong>Mis solicitudes</strong>
@@ -357,6 +364,11 @@ responsable corregirá la salida (clock_report.forgotten_after).
             : (untrusted ? "Móvil sin identificar" : "…");
         showReminders(info);
         showUpdate(info);
+        // H11 (S162): "Mis albaranes" para los gruistas.
+        const crane = info && info.crane_albaranes;
+        document.getElementById("crane-albaranes").classList.toggle("hidden", !(crane && crane.show));
+        document.getElementById("crane-albaranes-count").textContent = crane && crane.pending
+            ? "· " + crane.pending + (crane.pending === 1 ? " pendiente" : " pendientes") : "";
     }
     // S143: qué avisos por WhatsApp quiere (casillas, los marca cada uno).
     const REMINDER_URL = "/fichaje/avisos/";

@@ -707,7 +707,30 @@ def status(request):
         "starts_text": starts_text(starts) if starts else "",
         "uses_types": by_types,
         "clock_types": [_type_json(t) for t in types],
+        # H11 (S162): albaranes de grúa del trabajador.
+        "crane_albaranes": _crane_albaranes_json(company_user),
     })
+
+
+def _crane_albaranes_json(company_user):
+    """
+    Whether the worker sees "My albaranes" and how many are pending.
+    ---
+    H11 (S162): si el trabajador ve "Mis albaranes" en el fichaje (los
+    gruistas y quien ya tenga alguno) y cuántos tiene sin firmar.
+    """
+    from crane_albaranes.models import CraneAlbaran
+    from ivr_config.models import CompanyUser
+
+    person = _person_of(company_user)
+    if person is None:
+        return {"show": False, "pending": 0}
+    mine = CraneAlbaran.objects.filter(person=person).exclude(
+        status=CraneAlbaran.Status.CANCELLED)
+    pending = mine.filter(signed_at__isnull=True).count()
+    show = (company_user.role == CompanyUser.ROLE_CRANE_OPERATOR
+            or pending > 0 or mine.exists())
+    return {"show": show, "pending": pending}
 
 
 def _reminder_json(company_user):

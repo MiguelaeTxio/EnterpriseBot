@@ -1,0 +1,141 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/crane_albaranes/templates/crane_albaranes/pdf.html #}
+{% comment %}
+H11 (S162). El albarán en PDF (weasyprint), con la disposición del
+albarán de papel actual: cabecera del grupo, empresa, máquina, toneladas
+y número; DATOS CLIENTE; SERVICIO GRÚA; conforme cliente; MERCANCÍA
+TRANSPORTADA; OPERARIO / CONDUCTOR, y el PARTE DE PRODUCCIÓN con las
+horas. Solo flexbox y tablas (weasyprint no lleva bien el grid, S132).
+{% endcomment %}
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+    @page { size: A4; margin: 12mm; }
+    body { font-family: "DejaVu Sans", Arial, sans-serif; font-size: 9.5pt; color: #111; }
+    .top { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0d3b8f; padding-bottom: 6px; }
+    .brand { font-size: 8pt; color: #333; }
+    .brand strong { font-size: 13pt; color: #0d3b8f; display: block; }
+    .number { text-align: right; }
+    .number .n { font-size: 16pt; font-weight: bold; color: #b00; }
+    .services { font-size: 7pt; color: #555; letter-spacing: .3px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+    td, th { border: 1px solid #999; padding: 4px 5px; vertical-align: top; }
+    th { background: #e8eef9; text-align: left; font-size: 8pt; }
+    .sec { background: #0d3b8f; color: #fff; font-weight: bold; font-size: 8.5pt; padding: 3px 6px; margin-top: 8px; }
+    .l { color: #555; font-size: 7.5pt; display: block; }
+    .v { font-weight: bold; }
+    .sig { height: 70px; }
+    .sig img { max-height: 66px; max-width: 100%; }
+    .foot { margin-top: 8px; font-size: 7pt; color: #555; }
+    .digital { color: #0d3b8f; font-size: 7.5pt; }
+</style>
+</head>
+<body>
+<div class="top">
+    <div class="brand">
+        {% if logo_uri %}<img src="{{ logo_uri }}" style="height: 34px;"><br>{% else %}<strong>GRUPO ALVAREZ</strong>{% endif %}
+        GRÚAS ADOLFO ÁLVAREZ, S.L. / GRUALDI, S.L. / TRANSGRUAL, S.L.<br>
+        OFICINA: Telf.: 902 15 84 23 · Fax: 952 43 77 57 · PEDIDOS: 600 476 150
+        <div class="services">GRÚAS HIDRÁULICAS · TRANSPORTES ESPECIALES · PLATAFORMAS ELEVADORAS · GRÚAS DE CADENA · GRÚAS DE REMOLQUE Y SERVICIO DE RESCATE</div>
+    </div>
+    <div class="number">
+        <div>ALBARÁN</div>
+        <div class="n">{{ a.number }}</div>
+        <div class="digital">Albarán digital</div>
+    </div>
+</div>
+
+<table>
+    <tr>
+        <td style="width: 50%"><span class="l">EMPRESA</span><span class="v">{{ a.issuer.legal_name|default:"" }}</span></td>
+        <td><span class="l">MÁQUINA</span><span class="v">{% if a.machine %}{{ a.machine.code }}{% if a.machine.plate %} · {{ a.machine.plate }}{% endif %}{% endif %}</span></td>
+        <td><span class="l">TONELADAS</span><span class="v">{{ a.tonnage }}</span></td>
+    </tr>
+</table>
+
+<div class="sec">DATOS CLIENTE</div>
+<table>
+    <tr>
+        <td><span class="l">Nº Pedido</span><span class="v">{{ a.order_number }}</span></td>
+        <td colspan="2"><span class="l">FECHA</span><span class="v">{{ a.day|date:"d \d\e F \d\e Y" }}</span></td>
+    </tr>
+    <tr>
+        <td colspan="2"><span class="l">Cliente</span><span class="v">{{ a.client_name }}</span></td>
+        <td><span class="l">Teléfono</span>{{ a.client_phone }}</td>
+    </tr>
+    <tr>
+        <td colspan="2"><span class="l">Domicilio</span>{{ a.client_address }}</td>
+        <td><span class="l">Localidad</span>{{ a.client_locality }}</td>
+    </tr>
+    <tr>
+        <td><span class="l">N.I.F.</span>{{ a.client_tax_id }}</td>
+        <td colspan="2"><span class="l">Provincia</span>{{ a.client_province }}</td>
+    </tr>
+</table>
+
+<div class="sec">SERVICIO GRÚA</div>
+<table>
+    <tr>
+        <td colspan="2"><span class="l">Lugar Trabajo</span><span class="v">{{ a.work_place }}</span>{% if a.worksite %} <span class="l">Obra {{ a.worksite.code }}{% if a.worksite.project_number %} · Proyecto {{ a.worksite.project_number }}{% endif %}</span>{% endif %}</td>
+        <td><span class="l">Localidad</span>{{ a.work_locality }}</td>
+    </tr>
+    <tr>
+        <td colspan="3"><span class="l">Trabajo realizado</span><span class="v">{{ a.work_done|default:a.task|linebreaksbr }}</span></td>
+    </tr>
+    <tr>
+        <td><span class="l">Horas trabajadas</span><span class="v">{% if a.hours_worked %}{{ a.hours_worked|floatformat:"-2" }} h{% endif %}</span>{% if a.min_hours %} <span class="l">Mínimo {{ a.min_hours|floatformat:"-1" }} h</span>{% endif %}</td>
+        <td><span class="l">Salida / Desplazamiento</span><span class="v">{{ a.trips|default_if_none:"" }}</span></td>
+        <td><span class="l">Kilómetros</span><span class="v">{{ a.km|default_if_none:"" }}</span></td>
+    </tr>
+    <tr>
+        <td colspan="2" class="sig"><span class="l">Leídas condiciones al dorso. Conforme Cliente (firma y sello)</span>{% if a.client_signature %}<img src="{{ a.client_signature }}">{% endif %}</td>
+        <td><span class="l">Nombre y D.N.I.</span><span class="v">{{ a.signer_name }}</span><br>{{ a.signer_dni }}{% if a.signed_at %}<br><span class="l">Firmado el {{ a.signed_at|date:"d/m/Y H:i" }}</span>{% endif %}</td>
+    </tr>
+</table>
+
+{% if a.goods %}
+<div class="sec">MERCANCÍA TRANSPORTADA</div>
+<table>
+    <tr><th colspan="2">CARGA</th><th colspan="2">DESCARGA</th></tr>
+    <tr>
+        <td><span class="l">Empresa</span>{{ a.goods.load_company }}</td><td><span class="l">Lugar de carga</span>{{ a.goods.load_place }}</td>
+        <td><span class="l">Empresa</span>{{ a.goods.unload_company }}</td><td><span class="l">Lugar de descarga</span>{{ a.goods.unload_place }}</td>
+    </tr>
+    <tr>
+        <td><span class="l">Matrícula tractora</span>{{ a.goods.load_tractor }}</td><td><span class="l">Matrícula remolque</span>{{ a.goods.load_trailer }}</td>
+        <td><span class="l">Matrícula tractora</span>{{ a.goods.unload_tractor }}</td><td><span class="l">Matrícula remolque</span>{{ a.goods.unload_trailer }}</td>
+    </tr>
+    <tr><td colspan="2"><span class="l">Propietaria de la mercancía</span>{{ a.goods.owner_company }}</td><td colspan="2"><span class="l">Fecha de descarga</span>{{ a.goods.unload_date }}</td></tr>
+</table>
+{% endif %}
+
+<div class="sec">OPERARIO / CONDUCTOR</div>
+<table>
+    <tr>
+        <td style="width: 50%"><span class="l">Nombre</span><span class="v">{{ operator }}</span>{% if a.helpers %}<br><span class="l">Ayudantes</span>{{ a.helpers }}{% endif %}</td>
+        <td class="sig"><span class="l">Firma Operario</span>{% if a.operator_signature %}<img src="{{ a.operator_signature }}">{% endif %}</td>
+    </tr>
+</table>
+
+<div class="sec">PARTE DE PRODUCCIÓN</div>
+<table>
+    <tr>
+        <th>Salida base</th><th>Hora llegada trabajo</th><th>Hora salida trabajo</th><th>Llegada base</th>
+    </tr>
+    <tr>
+        <td class="v">{{ a.base_out|time:"H:i" }}</td><td class="v">{{ a.work_in|time:"H:i" }}</td>
+        <td class="v">{{ a.work_out|time:"H:i" }}</td><td class="v">{{ a.base_in|time:"H:i" }}</td>
+    </tr>
+    <tr>
+        <td colspan="2">{% if a.continues_previous %}☒{% else %}☐{% endif %} Continuación día ant. &nbsp; {% if a.vehicle_on_site %}☒{% else %}☐{% endif %} Vehículo en obra</td>
+        <td colspan="2"><span class="l">Observaciones</span>{{ a.observations|linebreaksbr }}</td>
+    </tr>
+</table>
+<div class="foot">
+    {% if a.times_from_clock %}Horas tomadas del registro de jornada (fichaje) del operario. {% endif %}
+    {% if a.sign_latitude %}Firmado en {{ a.sign_latitude|stringformat:'s' }}, {{ a.sign_longitude|stringformat:'s' }}. {% endif %}
+    Documento generado por EnterpriseBot.
+</div>
+</body>
+</html>

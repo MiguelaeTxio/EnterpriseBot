@@ -1,0 +1,220 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/crane_albaranes/templates/crane_albaranes/worker_albaran.html #}
+{% comment %}
+H11 (S162). El albarán en el móvil del gruista (enlace del WhatsApp o
+"Mis albaranes" del fichaje). Lo de la oficina sale ya puesto (obra,
+cliente, lugar, trabajo a realizar); las horas salen de sus fichajes del
+día ("o quedar rellenado con los fichajes del gruista", Miguel Ángel) y
+las puede corregir; él escribe el trabajo realizado y lo que falte,
+firma él y firma el cliente en la pantalla. Al firmar se genera el PDF,
+se guarda en el cubo y se envía al cliente. Lógica:
+crane_albaranes/views_worker.py.
+{% endcomment %}
+<!doctype html>
+<html lang="es">
+<head>
+    {% include "crane_albaranes/_worker_head.html" %}
+    <title>Albarán {{ a.number }}</title>
+</head>
+<body>
+    <a class="back" href="{% url 'crane_albaranes:worker_list' %}">‹ Mis albaranes</a>
+    <div class="head">
+        <h1>Albarán {{ a.number }}</h1>
+        <span class="badge {% if a.is_signed %}ok{% else %}go{% endif %}">{{ a.get_status_display }}</span>
+    </div>
+    <div class="muted">{{ a.day|date:"l d/m/Y" }}{% if a.planned_time %} · {{ a.planned_time|time:"H:i" }}{% endif %}{% if a.issuer %} · {{ a.issuer.legal_name }}{% endif %}</div>
+
+    <div class="card">
+        <h2>El servicio</h2>
+        <div class="row-kv"><span>Obra</span><strong>{% if a.worksite %}{{ a.worksite.name }}{% else %}—{% endif %}</strong></div>
+        <div class="row-kv"><span>Cliente</span><strong>{{ a.client_name|default:"—" }}</strong></div>
+        {% if a.client_tax_id %}<div class="row-kv"><span>N.I.F.</span><span>{{ a.client_tax_id }}</span></div>{% endif %}
+        <div class="row-kv"><span>Lugar</span><span>{{ a.work_place }}{% if a.work_locality %}, {{ a.work_locality }}{% endif %}</span></div>
+        {% if a.worksite.latitude and a.worksite.longitude %}<div class="row-kv"><span></span><a href="https://www.google.com/maps/dir/?api=1&amp;destination={{ a.worksite.latitude|stringformat:'s' }},{{ a.worksite.longitude|stringformat:'s' }}" target="_blank" rel="noopener">Cómo llegar ›</a></div>{% endif %}
+        {% if a.worksite.contact_name %}<div class="row-kv"><span>Contacto</span><span>{{ a.worksite.contact_name }}{% if a.worksite.contact_phone %} · <a href="tel:{{ a.worksite.contact_phone }}">{{ a.worksite.contact_phone }}</a>{% endif %}</span></div>{% endif %}
+        {% if a.order_number %}<div class="row-kv"><span>Nº de pedido</span><span>{{ a.order_number }}</span></div>{% endif %}
+        {% if a.task %}<div class="ro"><strong>Trabajo a realizar:</strong> {{ a.task }}</div>{% endif %}
+    </div>
+
+    {% if a.is_signed %}
+    <div class="card">
+        <h2>Firmado</h2>
+        <div class="row-kv"><span>Firmó</span><strong>{{ a.signer_name }}{% if a.signer_dni %} ({{ a.signer_dni }}){% endif %}</strong></div>
+        <div class="row-kv"><span>Cuándo</span><span>{{ a.signed_at|date:"d/m/Y H:i" }}</span></div>
+        <div class="row-kv"><span>Horas</span><span>{{ a.base_out|time:"H:i" }} – {{ a.base_in|time:"H:i" }}{% if a.hours_worked %} · {{ a.hours_worked|floatformat:"-2" }} h{% endif %}</span></div>
+        {% if a.delivered_at %}<div class="ro okt">Enviado al cliente: {{ a.delivered_to }}</div>{% elif a.delivery_error %}<div class="ro errt">{{ a.delivery_error }}</div>{% endif %}
+        <a class="action" href="{% url 'crane_albaranes:worker_pdf' a.token %}" target="_blank" rel="noopener">Ver el albarán (PDF)</a>
+    </div>
+    {% else %}
+    <form id="alb-form" autocomplete="off" onsubmit="return false;">
+        {% csrf_token %}
+        <div class="card">
+            <h2>Máquina</h2>
+            <select name="machine" id="f-machine">
+                <option value="">Sin máquina</option>
+                {% for m in machines %}<option value="{{ m.pk }}" {% if m.pk == a.machine_id %}selected{% endif %}>{{ m.code }}{% if m.plate %} · {{ m.plate }}{% endif %} · {{ m.brand_model|default:m.type_name }}</option>{% endfor %}
+            </select>
+            <div class="grid2">
+                <div><label for="f-tonnage">Toneladas</label><input name="tonnage" id="f-tonnage" value="{{ a.tonnage }}" inputmode="decimal"></div>
+                <div><label for="f-helpers">Ayudantes</label><input name="helpers" id="f-helpers" value="{{ a.helpers }}"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="head"><h2>Horas del día</h2>{% if a.times_from_clock %}<span class="clock-tag" id="clock-tag">De tus fichajes</span>{% endif %}</div>
+            <div class="muted">Salen de lo que has fichado hoy. Si algo no cuadra, corrígelo aquí.</div>
+            <div class="grid2">
+                <div><label for="f-base-out">Salida de base</label><input type="time" name="base_out" id="f-base-out" value="{{ a.base_out|time:'H:i' }}"></div>
+                <div><label for="f-work-in">Llegada al trabajo</label><input type="time" name="work_in" id="f-work-in" value="{{ a.work_in|time:'H:i' }}"></div>
+                <div><label for="f-work-out">Salida del trabajo</label><input type="time" name="work_out" id="f-work-out" value="{{ a.work_out|time:'H:i' }}"></div>
+                <div><label for="f-base-in">Llegada a base</label><input type="time" name="base_in" id="f-base-in" value="{{ a.base_in|time:'H:i' }}"></div>
+                <div><label for="f-hours">Horas trabajadas</label><input name="hours_worked" id="f-hours" value="{{ a.hours_worked|default_if_none:''|stringformat:'s' }}" inputmode="decimal"></div>
+                <div><label for="f-trips">Salidas</label><input name="trips" id="f-trips" value="{{ a.trips|default_if_none:'' }}" inputmode="numeric"></div>
+                <div><label for="f-km">Kilómetros</label><input name="km" id="f-km" value="{{ a.km|default_if_none:'' }}" inputmode="numeric"></div>
+            </div>
+            <button type="button" class="action light" id="btn-clock">Volver a poner las horas de mis fichajes</button>
+            <input type="hidden" name="vehicle_on_site_present" value="1"><input type="hidden" name="continues_previous_present" value="1">
+            <label class="check"><input type="checkbox" name="vehicle_on_site" value="1" {% if a.vehicle_on_site %}checked{% endif %}> Vehículo en obra</label>
+            <label class="check"><input type="checkbox" name="continues_previous" value="1" {% if a.continues_previous %}checked{% endif %}> Continuación del día anterior</label>
+        </div>
+
+        <div class="card">
+            <h2>El trabajo</h2>
+            <label for="f-done">Trabajo realizado</label>
+            <textarea name="work_done" id="f-done" placeholder="Qué se ha hecho">{{ a.work_done }}</textarea>
+            <label for="f-obs">Observaciones</label>
+            <textarea name="observations" id="f-obs" placeholder="Paradas, incidencias…">{{ a.observations }}</textarea>
+            <details style="margin-top:10px">
+                <summary><strong>Mercancía transportada</strong> (solo si hay transporte)</summary>
+                <div class="grid2">
+                    <div><label>Carga: empresa</label><input name="goods_load_company" value="{{ goods.load_company }}"></div>
+                    <div><label>Lugar de carga</label><input name="goods_load_place" value="{{ goods.load_place }}"></div>
+                    <div><label>Matrícula tractora</label><input name="goods_load_tractor" value="{{ goods.load_tractor }}"></div>
+                    <div><label>Matrícula remolque</label><input name="goods_load_trailer" value="{{ goods.load_trailer }}"></div>
+                    <div><label>Descarga: empresa</label><input name="goods_unload_company" value="{{ goods.unload_company }}"></div>
+                    <div><label>Lugar de descarga</label><input name="goods_unload_place" value="{{ goods.unload_place }}"></div>
+                    <div><label>Matrícula tractora</label><input name="goods_unload_tractor" value="{{ goods.unload_tractor }}"></div>
+                    <div><label>Matrícula remolque</label><input name="goods_unload_trailer" value="{{ goods.unload_trailer }}"></div>
+                    <div><label>Fecha de descarga</label><input name="goods_unload_date" value="{{ goods.unload_date }}"></div>
+                    <div><label>Propietaria de la mercancía</label><input name="goods_owner_company" value="{{ goods.owner_company }}"></div>
+                </div>
+            </details>
+            <button type="button" class="action light" id="btn-save">Guardar sin firmar</button>
+        </div>
+
+        <div class="card">
+            <h2>Firmas</h2>
+            <label>Tu firma ({{ operator }})</label>
+            <canvas class="sig" id="sig-operator"></canvas>
+            <button type="button" class="clear" data-clear="sig-operator">Borrar mi firma</button>
+            <label for="f-signer">Firma del cliente: nombre</label>
+            <input name="signer_name" id="f-signer" placeholder="Nombre de quien firma">
+            <label for="f-signer-dni">D.N.I.</label>
+            <input name="signer_dni" id="f-signer-dni" placeholder="Opcional">
+            <label>Conforme cliente (firma)</label>
+            <canvas class="sig" id="sig-client"></canvas>
+            <button type="button" class="clear" data-clear="sig-client">Borrar la firma del cliente</button>
+            <div class="muted">Leídas las condiciones al dorso. Al firmar, el albarán se envía al cliente{% if a.worksite and a.worksite.emails %} ({{ a.worksite.emails|join:", " }}){% endif %} y ya no se puede cambiar.</div>
+            <button type="button" class="action green" id="btn-sign">Firmar y enviar al cliente</button>
+        </div>
+    </form>
+    <div id="msg"></div>
+    <script>
+    (function () {
+        "use strict";
+        const form = document.getElementById("alb-form");
+        const msg = document.getElementById("msg");
+        const URLS = {
+            save: "{% url 'crane_albaranes:worker_save' a.token %}",
+            clock: "{% url 'crane_albaranes:worker_clock' a.token %}",
+            sign: "{% url 'crane_albaranes:worker_sign' a.token %}",
+        };
+        function say(text, ok) { msg.textContent = text; msg.className = ok ? "okt" : (ok === false ? "errt" : ""); }
+        function post(url, data) {
+            return fetch(url, {method: "POST", body: data, credentials: "same-origin"}).then(function (response) {
+                return response.json().catch(function () { return {}; }).then(function (body) {
+                    if (!response.ok) throw new Error(body.error || ("Error " + response.status));
+                    return body;
+                });
+            });
+        }
+        // Firmas en pantalla.
+        const pads = {};
+        function setupPad(id) {
+            const canvas = document.getElementById(id);
+            const ctx = canvas.getContext("2d");
+            let drawing = false, dirty = false;
+            function size() {
+                const rect = canvas.getBoundingClientRect();
+                canvas.width = rect.width * window.devicePixelRatio;
+                canvas.height = rect.height * window.devicePixelRatio;
+                ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+                ctx.lineWidth = 2.4; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#0b2e6b";
+            }
+            size();
+            function point(ev) {
+                const rect = canvas.getBoundingClientRect();
+                const t = ev.touches ? ev.touches[0] : ev;
+                return [t.clientX - rect.left, t.clientY - rect.top];
+            }
+            function start(ev) { ev.preventDefault(); drawing = true; const p = point(ev); ctx.beginPath(); ctx.moveTo(p[0], p[1]); }
+            function move(ev) { if (!drawing) return; ev.preventDefault(); const p = point(ev); ctx.lineTo(p[0], p[1]); ctx.stroke(); dirty = true; canvas.classList.add("signed"); }
+            function end() { drawing = false; }
+            canvas.addEventListener("mousedown", start); canvas.addEventListener("mousemove", move);
+            window.addEventListener("mouseup", end);
+            canvas.addEventListener("touchstart", start, {passive: false}); canvas.addEventListener("touchmove", move, {passive: false});
+            canvas.addEventListener("touchend", end);
+            pads[id] = {
+                clear: function () { ctx.clearRect(0, 0, canvas.width, canvas.height); dirty = false; canvas.classList.remove("signed"); },
+                data: function () { return dirty ? canvas.toDataURL("image/png") : ""; },
+            };
+        }
+        setupPad("sig-operator");
+        setupPad("sig-client");
+        document.querySelectorAll("[data-clear]").forEach(function (btn) {
+            btn.addEventListener("click", function () { pads[btn.dataset.clear].clear(); });
+        });
+        document.getElementById("btn-save").addEventListener("click", function () {
+            const btn = this; btn.disabled = true; say("Guardando…");
+            post(URLS.save, new FormData(form)).then(function () { say("Guardado. Puedes firmarlo cuando termines.", true); })
+                .catch(function (err) { say(err.message, false); }).finally(function () { btn.disabled = false; });
+        });
+        document.getElementById("btn-clock").addEventListener("click", function () {
+            const btn = this; btn.disabled = true; say("Buscando tus fichajes…");
+            post(URLS.clock, new FormData(form)).then(function (body) {
+                document.getElementById("f-base-out").value = body.base_out;
+                document.getElementById("f-work-in").value = body.work_in;
+                document.getElementById("f-work-out").value = body.work_out;
+                document.getElementById("f-base-in").value = body.base_in;
+                document.getElementById("f-hours").value = body.hours_worked;
+                say("Horas puestas con tus fichajes.", true);
+            }).catch(function (err) { say(err.message, false); }).finally(function () { btn.disabled = false; });
+        });
+        function position() {
+            return new Promise(function (resolve) {
+                if (!navigator.geolocation) return resolve(null);
+                navigator.geolocation.getCurrentPosition(function (p) { resolve(p.coords); }, function () { resolve(null); },
+                    {enableHighAccuracy: true, timeout: 8000, maximumAge: 60000});
+            });
+        }
+        document.getElementById("btn-sign").addEventListener("click", function () {
+            const btn = this;
+            const data = new FormData(form);
+            data.append("operator_signature", pads["sig-operator"].data());
+            data.append("client_signature", pads["sig-client"].data());
+            if (!data.get("operator_signature")) return say("Falta tu firma.", false);
+            if (!data.get("signer_name").trim()) return say("Falta el nombre de quien firma.", false);
+            if (!data.get("client_signature")) return say("Falta la firma del cliente.", false);
+            btn.disabled = true; say("Firmando y enviando al cliente…");
+            position().then(function (coords) {
+                if (coords) { data.append("lat", coords.latitude); data.append("lon", coords.longitude); }
+                return post(URLS.sign, data);
+            }).then(function (body) {
+                say(body.delivered ? "Firmado y enviado a " + body.delivered_to + "." : "Firmado. " + (body.delivery_error || ""), body.delivered);
+                setTimeout(function () { location.reload(); }, 2500);
+            }).catch(function (err) { say(err.message, false); btn.disabled = false; });
+        });
+    }());
+    </script>
+    {% endif %}
+</body>
+</html>

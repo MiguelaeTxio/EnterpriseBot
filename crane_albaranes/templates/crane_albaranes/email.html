@@ -1,0 +1,19 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/crane_albaranes/templates/crane_albaranes/email.html #}
+{% comment %}
+H11 (S162). Cuerpo del correo con el que se entrega al cliente el
+albarán firmado (el PDF va adjunto).
+{% endcomment %}
+<html><body style="font-family: Arial, sans-serif; color: #212529;">
+<p>Buenos días:</p>
+<p>Le adjuntamos el albarán de trabajo <strong>{{ a.number }}</strong>, firmado en obra.</p>
+<table style="border-collapse: collapse; font-size: 14px;">
+    <tr><td style="padding: 3px 12px 3px 0; color: #6c757d;">Fecha</td><td><strong>{{ a.day|date:"d/m/Y" }}</strong></td></tr>
+    {% if a.worksite %}<tr><td style="padding: 3px 12px 3px 0; color: #6c757d;">Obra</td><td>{{ a.worksite.name }}{% if a.worksite.project_number %} (proyecto {{ a.worksite.project_number }}){% endif %}</td></tr>{% endif %}
+    {% if a.order_number %}<tr><td style="padding: 3px 12px 3px 0; color: #6c757d;">Nº de pedido</td><td>{{ a.order_number }}</td></tr>{% endif %}
+    <tr><td style="padding: 3px 12px 3px 0; color: #6c757d;">Máquina</td><td>{% if a.machine %}{{ a.machine.code }}{% endif %}{% if a.tonnage %} · {{ a.tonnage }} t{% endif %}</td></tr>
+    <tr><td style="padding: 3px 12px 3px 0; color: #6c757d;">Operario</td><td>{{ operator }}</td></tr>
+    <tr><td style="padding: 3px 12px 3px 0; color: #6c757d;">Horario</td><td>{{ a.work_in|time:"H:i" }} – {{ a.work_out|time:"H:i" }}{% if a.hours_worked %} · {{ a.hours_worked|floatformat:"-2" }} h{% endif %}</td></tr>
+    <tr><td style="padding: 3px 12px 3px 0; color: #6c757d;">Firmado por</td><td>{{ a.signer_name }}</td></tr>
+</table>
+<p>Un saludo,<br>{{ a.issuer.legal_name|default:"Grupo Álvarez" }}</p>
+</body></html>

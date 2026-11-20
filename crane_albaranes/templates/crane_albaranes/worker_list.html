@@ -1,0 +1,94 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/crane_albaranes/templates/crane_albaranes/worker_list.html #}
+{% comment %}
+H11 (S162). "Mis albaranes" del gruista, dentro del fichaje: los
+pendientes (los que le ha mandado la oficina o empezó él) y los firmados
+de la última semana, y el botón para hacer uno nuevo desde cero (obra y
+máquina). Entra con la llave del dispositivo de confianza del fichaje.
+Lógica: crane_albaranes/views_worker.py (worker_list, worker_new).
+{% endcomment %}
+<!doctype html>
+<html lang="es">
+<head>
+    {% include "crane_albaranes/_worker_head.html" %}
+    <title>Mis albaranes</title>
+</head>
+<body>
+    <a class="back" href="/fichaje/">‹ Volver al fichaje</a>
+    <div class="head"><h1>Mis albaranes</h1></div>
+    {% if no_device %}
+    <div class="card">
+        <div><strong>Este móvil no es tu dispositivo de confianza.</strong></div>
+        <div class="muted">Abre primero el fichaje y entra con tu usuario; después vuelve aquí.</div>
+        <a class="action" href="/fichaje/">Ir al fichaje</a>
+    </div>
+    {% else %}
+    <div class="muted">{{ name }}</div>
+
+    <div class="card">
+        <h2>Pendientes de firmar</h2>
+        {% for a in pending %}
+        <a class="alb" href="{% url 'crane_albaranes:worker_albaran' a.token %}">
+            <div class="head">
+                <span class="num">{{ a.number }}</span>
+                <span class="badge {% if a.day == today %}go{% endif %}">{{ a.day|date:"d/m/Y" }}{% if a.planned_time %} · {{ a.planned_time|time:"H:i" }}{% endif %}</span>
+            </div>
+            <div>{% if a.worksite %}{{ a.worksite.name }}{% else %}{{ a.work_place }}{% endif %} · {{ a.client_name }}</div>
+            <div class="muted">{% if a.machine %}Máquina {{ a.machine.code }}{% endif %}{% if a.task %} · {{ a.task|truncatechars:70 }}{% endif %}</div>
+        </a>
+        {% empty %}
+        <div class="muted">No tienes albaranes pendientes.</div>
+        {% endfor %}
+    </div>
+
+    <div class="card">
+        <h2>Hacer un albarán nuevo</h2>
+        <div class="muted">Si la oficina no te ha enviado el albarán de este servicio, hazlo tú: elige la obra y la máquina.</div>
+        <form method="post" action="{% url 'crane_albaranes:worker_new' %}">
+            {% csrf_token %}
+            <label for="new-site">Obra</label>
+            <select name="worksite" id="new-site" required>
+                <option value="">Elige la obra…</option>
+                {% for w in worksites %}<option value="{{ w.pk }}">{{ w.name }} · {{ w.client_label }}</option>{% endfor %}
+            </select>
+            <label for="new-machine-search">Máquina</label>
+            <input type="text" id="new-machine-search" placeholder="Escribe el código, p. ej. A-65" autocomplete="off">
+            <select name="machine" id="new-machine">
+                <option value="">Sin máquina</option>
+                {% for m in machines %}<option value="{{ m.pk }}">{{ m.code }}{% if m.plate %} · {{ m.plate }}{% endif %} · {{ m.brand_model|default:m.type_name }}</option>{% endfor %}
+            </select>
+            <button type="submit" class="action green">Empezar el albarán</button>
+        </form>
+    </div>
+
+    {% if signed %}
+    <div class="card">
+        <h2>Firmados esta semana</h2>
+        {% for a in signed %}
+        <a class="alb" href="{% url 'crane_albaranes:worker_albaran' a.token %}">
+            <div class="head"><span class="num">{{ a.number }}</span><span class="badge ok">{{ a.get_status_display }}</span></div>
+            <div class="muted">{{ a.day|date:"d/m/Y" }} · {% if a.worksite %}{{ a.worksite.name }}{% else %}{{ a.work_place }}{% endif %}</div>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+    <script>
+    (function () {
+        "use strict";
+        const input = document.getElementById("new-machine-search");
+        const select = document.getElementById("new-machine");
+        input.addEventListener("input", function () {
+            const word = input.value.toLowerCase().replace(/-/g, "");
+            let first = null;
+            Array.from(select.options).forEach(function (opt) {
+                if (!opt.value) return;
+                const hit = !word || opt.textContent.toLowerCase().replace(/-/g, "").indexOf(word) !== -1;
+                opt.hidden = !hit;
+                if (hit && !first) first = opt;
+            });
+            if (word && first) select.value = first.value;
+        });
+    }());
+    </script>
+    {% endif %}
+</body>
+</html>

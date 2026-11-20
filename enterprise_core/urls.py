@@ -57,6 +57,11 @@ urlpatterns = [
     # dispositivo de confianza (hr_calendar/clockin.py).
     path('fichaje/', include('hr_calendar.clockin_urls',
                              namespace='clockin')),
+    # H11 (S162): albaranes de grúas -- página Grúas del panel
+    # (/panel/gruas/) y el gruista dentro del fichaje
+    # (/fichaje/albaranes/).
+    path('', include('crane_albaranes.urls',
+                     namespace='crane_albaranes')),
     # H37 (S138): salas de chat de la plataforma (formato IRC), con
     # enlace personal para quien no tiene cuenta del panel.
     path('sala/', include('chat.urls_room', namespace='chat_room')),
