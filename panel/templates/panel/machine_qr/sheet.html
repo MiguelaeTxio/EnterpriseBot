@@ -38,6 +38,21 @@ la ficha del centro de gasto). Contexto: MachineQrSheetView
             {% endif %}
             <div class="text-muted mt-2">Se cambian en la ficha del centro de gasto.</div>
         </div>
+
+        {% if can_set_password %}
+        {% comment %}
+        S154: contraseña del editor de fichas QR del fichaje (una para
+        toda la empresa; no es la de ningún usuario).
+        {% endcomment %}
+        <form method="post" class="border rounded p-3 mt-3 small">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="editor_password">
+            <div class="fw-bold mb-1">Contraseña del editor QR en el fichaje</div>
+            <div class="text-muted mb-2">Con ella se entra en «Fichas QR de los vehículos» desde la aplicación de fichaje. Es una sola para toda la empresa. {% if editor_password_set %}Ya hay una puesta; aquí se cambia.{% else %}Todavía no hay ninguna.{% endif %}</div>
+            <input type="password" name="password" minlength="{{ min_password_length }}" autocomplete="new-password" class="form-control form-control-sm" placeholder="Nueva contraseña (mínimo {{ min_password_length }} caracteres)" required>
+            <button type="submit" class="btn btn-sm btn-outline-primary mt-2"><i class="bi bi-key me-1"></i>{% if editor_password_set %}Cambiar{% else %}Poner{% endif %} contraseña</button>
+        </form>
+        {% endif %}
     </div>
 
     <div class="col-lg-8">

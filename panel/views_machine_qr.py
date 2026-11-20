@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 
 EDIT_ROLES = {"ADMIN", "ADMIN_SUPERVISOR", "DOCS_SUPERVISOR",
               "WORKSHOPBOSS"}
+# Quién pone la contraseña del editor QR del fichaje.
+PASSWORD_ROLES = {"ADMIN", "ADMIN_SUPERVISOR", "DOCS_SUPERVISOR"}
 
 
 def _machine(request, pk):
@@ -67,6 +69,10 @@ class MachineQrSheetView(FleetAccessMixin, View):
             "can_edit": _can_edit(request),
             "max_photo_mb": qr.MAX_PHOTO_BYTES // (1024 * 1024),
             "max_video_mb": qr.MAX_VIDEO_BYTES // (1024 * 1024),
+            "can_set_password": (
+                request.user.company_user.role in PASSWORD_ROLES),
+            "editor_password_set": qr.editor_password_set(machine.company),
+            "min_password_length": qr.MIN_PASSWORD_LENGTH,
         })
 
     def post(self, request, pk):
@@ -104,6 +110,20 @@ class MachineQrSheetView(FleetAccessMixin, View):
             media.caption = request.POST.get("caption", "").strip()[:300]
             media.save(update_fields=["caption"])
             messages.success(request, "Descripción guardada.")
+        elif action == "editor_password":
+            if company_user.role not in PASSWORD_ROLES:
+                return HttpResponse("No puedes cambiar esta contraseña.",
+                                    status=403)
+            try:
+                qr.set_editor_password(machine.company,
+                                       request.POST.get("password", ""),
+                                       company_user)
+            except qr.QrSheetError as exc:
+                messages.error(request, str(exc))
+            else:
+                messages.success(
+                    request,
+                    "Contraseña del editor QR del fichaje guardada.")
         elif action == "delete":
             media = get_object_or_404(MachineQrMedia, sheet=sheet,
                                       pk=request.POST.get("media_id") or 0)
