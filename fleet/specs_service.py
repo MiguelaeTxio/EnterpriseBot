@@ -311,6 +311,41 @@ def _ask_gemini(machine, parts):
         raise SpecsReadError("Respuesta de Gemini no válida.") from exc
 
 
+def _ask_with_retry(machine, parts, used):
+    """
+    Ask Gemini; if a file is undecodable, drop it and ask again.
+
+    ---
+
+    Pregunta a Gemini; si rechaza un archivo por dañado (A57: 400
+    "malformed or corrupted" con un PDF que PyMuPDF sí abre), prueba
+    cada documento por separado, deja fuera los que rechaza y vuelve a
+    preguntar con los demás. `used` queda solo con los leídos.
+    """
+    try:
+        return _ask_gemini(machine, parts)
+    except Exception as exc:  # noqa: BLE001
+        if "malformed" not in str(exc) and "corrupted" not in str(exc):
+            raise
+    good_parts, good_used = [], []
+    for index, entry in enumerate(list(used)):
+        pair = parts[index * 2:index * 2 + 2]
+        try:
+            _ask_gemini(machine, pair)
+        except Exception as exc:  # noqa: BLE001
+            if "malformed" not in str(exc) and "corrupted" not in str(exc):
+                raise
+            logger.warning("# [specs] %s: %s dañado para Gemini, se omite.",
+                           machine.code, entry.name)
+            continue
+        good_parts.extend(pair)
+        good_used.append(entry)
+    used[:] = good_used
+    if not good_parts:
+        return {}
+    return _ask_gemini(machine, good_parts)
+
+
 def _number(item, low, high):
     value = (item or {}).get("value")
     if value is None:
@@ -429,7 +464,8 @@ def read_specs(machine) -> dict:
     entries = source_documents(machine)
     parts, used = _parts(entries) if entries else ([], [])
     if parts:
-        filled.update(apply_specs(machine, _ask_gemini(machine, parts)))
+        filled.update(apply_specs(machine, _ask_with_retry(
+            machine, parts, used)))
     if not used and not filled:
         # Sin documentos que leer: no se marca, para leerlo cuando los
         # tenga.
