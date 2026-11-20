@@ -175,3 +175,6 @@ rarfile
 # claves VAPID, chat/push_service.py). Aviso principal de la sala; el
 # aviso por WhatsApp queda para quien no active las push.
 pywebpush
+# H23 (S154): código QR de la ficha de cada centro de gasto (PNG/SVG,
+# Python puro, sin dependencias).
+segno
