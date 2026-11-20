@@ -55,6 +55,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from ivr_config.models import PhoneNumber, Section
 from .models import WhatsAppMessage, WhatsAppSession
+from .text_split import split_whatsapp_text
 from .services import (
     BreakdownAgentService,
     OnboardingService,
@@ -848,17 +849,23 @@ class IncomingWhatsAppView(View):
                     "asociada a este número. Si crees que es un error, "
                     "contacta con tu responsable."
                 )
-            try:
-                WhatsAppChatService.send_reply(
-                    from_number=to_number,
-                    to_number=from_number,
-                    reply_text=_reply_text,
-                )
-            except Exception as _exc:
-                logger.error(
-                    "# [WHATSAPP] Error enviando circular a %s: %s",
-                    from_number, _exc,
-                )
+            # S149 (Miguel Ángel, 20/11, Paloma): WhatsApp no admite más
+            # de 1600 caracteres por mensaje; la circular «Alta en el
+            # fichaje (ya con usuario del panel)» pasa de ahí y Twilio la
+            # rechazaba entera. Va en varios mensajes, por párrafos.
+            for _part in split_whatsapp_text(_reply_text):
+                try:
+                    WhatsAppChatService.send_reply(
+                        from_number=to_number,
+                        to_number=from_number,
+                        reply_text=_part,
+                    )
+                except Exception as _exc:
+                    logger.error(
+                        "# [WHATSAPP] Error enviando circular a %s: %s",
+                        from_number, _exc,
+                    )
+                    break
             logger.info(
                 "# [WHATSAPP] leer_aqui_circular procesado para %s — "
                 "ack pk=%s.",
