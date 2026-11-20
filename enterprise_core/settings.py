@@ -63,6 +63,19 @@ ALLOWED_HOSTS = [
 # (mensajes de WhatsApp y botones de plantilla).
 PLATFORM_BASE_URL = "https://enterprisebot-miguelaetxio.pythonanywhere.com"
 
+# H11 (S162): outgoing mailbox for the signed crane albaranes (SMTP).
+# Without EMAIL_HOST in .env nothing is sent and the albarán says so.
+# Buzón de salida para enviar al cliente los albaranes de grúa firmados
+# (SMTP). Sin EMAIL_HOST en el .env no se envía y el albarán lo dice.
+EMAIL_HOST = os.getenv('EMAIL_HOST', '')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
+EMAIL_TIMEOUT = 30
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or
+                               'webmaster@localhost')
+
 # CSRF Trusted Origins for 2026 Secure Webhooks from Twilio and Ngrok tunnels.
 # Orígenes de confianza CSRF para Webhooks seguros de 2026 de Twilio y túneles
 # Ngrok.
@@ -151,6 +164,10 @@ INSTALLED_APPS = [
     # de FACTURACION PROVEEDORES, pipeline del almacén (H28, S151).
     'supplier_invoices',
     'warehouse_inventory',
+    # Crane work delivery notes: planning, notice, filled with the clock
+    # and signed by the client -- albaranes de trabajo de las grúas
+    # (H11, S162).
+    'crane_albaranes',
 ]
 
 # Middleware stack optimized for async processing in Django 5.2.12.
