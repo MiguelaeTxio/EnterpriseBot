@@ -4368,6 +4368,97 @@ seguir desplegando directo a producción.
 - Firmas: solo Yolanda, Alejandro y Miguel Ángel.
 - Despliegue directo a producción, sin rama de integración.
 
+## COMPLETADAS EN S157 (sesión invasora; 19/11 → 20/11/2026, PEE PC)
+
+Invasora sobre H31 en paralelo con S156 (principal) y las invasoras
+S154, S155 y S162; el marcador EN PROGRESO no se movió y ninguna hoja de
+ruta se reescribió. Punto de partida: bloques 6 y 7 de «COMPLETADAS EN
+S153».
+
+### 1. Columnas de la exportación en «Columnas» -- `7abb2a5`, `d21ab21`
+
+- Personal y Repostajes pasan al modo con catálogo de Centros de gasto
+  (`panel/list_columns.view_context`): la pestaña «Columnas» ofrece
+  todas las columnas de su exportación y la tabla pinta solo las
+  elegidas. Catálogos `PERSONAL` y `REFUELS` en
+  `panel/screen_export_catalog.py`; las columnas de siempre conservan
+  su clave (lo guardado por cada usuario y sus plantillas sigue
+  valiendo) y su celda; las nuevas salen como texto (Personal 26,
+  Repostajes 4). «Vista del panel» de la exportación = lo que se ve
+  (`EXPORT_VIEWS`). `_panel_keys` distingue la clave del listado de la
+  de la exportación cuando coinciden (Personal, Repostajes).
+- La columna Empresa de Personal se resuelve para todo el listado con
+  una consulta (`_attach_employer_labels`), en el panel y en el Excel.
+- Repostajes: una configuración de columnas por cada vista (Ver:
+  Repostajes, Vehículos, Repostadores, Preguntas); pantallas nuevas
+  `refuels_vehicles`, `refuels_users`, `refuels_questions` (captura de
+  Miguel Ángel: en «Vehículos» la pestaña enseñaba las columnas de
+  repostajes y no cambiaba la tabla).
+
+### 2. Tiempos de carga -- `7fd9a08`, `a65b793`, `c7d23b2`
+
+- `logs/slow_requests.log` (leído con el relevo): la página de fichajes
+  de un trabajador tardaba 3,5-7,3 s (58-97 consultas de ClockEvent y
+  12-15 de WorkerClockSetting). `_corrections_in_range` con
+  `select_related("event", "replacement")` y `worker_detail_data`
+  dentro de `bulk_schedule_cache`.
+- El estado de navegación de cada usuario (PanelNavigationState) se
+  leía 6-11 veces por petición: `navigation_persistence.saved_state`
+  lo trae una vez por petición (`NavigationStateCacheMiddleware`, en
+  `settings.MIDDLEWARE`); cualquier guardado (post_save, conectado en
+  `PanelConfig.ready`) descarta la caché de ese usuario.
+- Medido en el access log del servidor (19/11): Personal 1,4 → 0,33 s;
+  búsquedas de Personal 1,4 → 0,20 s; Fichajes 1,5 → 0,40 s; ficha de
+  persona 3,4 → 1,3 s (pocas muestras tras el despliegue).
+- `slow_requests` apunta ahora hasta 15 tipos de consulta por petición
+  y, además, las más lentas aunque no se repitan (marcadas LENTA).
+
+### 3. Filtros que se perdían al ordenar o paginar -- `a383ed9`, `f838f27`
+
+Captura de Miguel Ángel (grupo «Grúas (28)», 95 trabajadores). Revisión
+sistemática de todos los enlaces que vuelven a pedir un listado:
+- Personal: ordenar y paginar llevaban los filtros escritos a mano en
+  la URL sin `group` (ni la selección). Ahora llevan solo orden y
+  página y los filtros salen del formulario
+  (`hx-include="#personal-search-form"`).
+- Centros de gasto (cabecera «Código») y Accesorios de elevación
+  (cabeceras) no incluían el filtro de grupo.
+- El resto de pestañas, revisado sin fallos.
+
+### 4. «Columnas» con el listado vacío -- `947e7fb`
+
+Prueba en vivo, en el navegador de Miguel Ángel, de todas las pestañas
+con «Columnas» (quitar una columna, comprobar que desaparece, volver a
+ponerla) y del filtro de grupo al ordenar. Fallo encontrado: con el
+listado vacío la plantilla no pintaba la tabla y la pestaña enseñaba
+claves internas (model, description...). Accesorios, Taller (averías,
+partes, revisiones, libros), Partes de trabajo y Bandeja pintan ahora
+siempre la tabla; el mensaje va en una fila (`{% empty %}`, clase
+`eb-empty-row`, que el JS de columnas no mueve) y los totales solo con
+filas. Resultado final: todas correctas (Documentación completa, Taller,
+Partes, Usuarios, Copias de seguridad, Telefonía y las cuatro vistas de
+Repostajes).
+
+### 5. Revisiones (H30), a petición urgente de Miguel Ángel -- `e3793d1`
+
+Exportación de Revisiones con cada revisión del plan (por horas, de
+grúa, por km): fecha, valor y situación de la última anotada («FALTA:
+sin revisión anotada», «No configurada»...), tres columnas vacías para
+anotar a mano y plantilla global «Revisiones hechas y pendientes (para
+anotar a mano)» (migración `panel 0004`, solo datos, aplicada y
+comprobada en BD). Además, sin commit: PDF de 69 hojas (una por
+vehículo de Asistencia y de Grúas y Camiones, A antes que B, sin G ni
+R) entregado en el chat para rellenar a mano; solo 6 de los 69 tenían
+alguna revisión anotada.
+
+### Incidencias
+
+- Un despliegue (`d21ab21`) falló por un corte de la conexión SSH con
+  PythonAnywhere; relanzado, entró bien.
+- La prueba automática en el navegador llegó a dejar el grupo
+  «Comerciales» en Accesorios y a cambiar el orden de Revisiones de
+  Miguel Ángel; ambos devueltos a como estaban.
+
 ## Hoja de Ruta S156 (va antes que la "Hoja de Ruta pendiente al reactivar H31", que sigue intacta)
 
 Miguel Ángel, al cerrar S152: *"abrir con el tema de las firmas"*.

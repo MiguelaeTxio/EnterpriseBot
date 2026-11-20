@@ -2208,3 +2208,10 @@ Detalle general en V31 («COMPLETADAS EN S153»). Lo que toca a H24:
   Solicitudes, Vacaciones, Horarios y Nóminas (`c2a738f4`, `7e630016`,
   `ab580abc`).
 
+### 7.20. COMPLETADAS EN S157 (sesión invasora sobre H31, 19/11 → 20/11/2026, PEE PC)
+
+Detalle en V31 («COMPLETADAS EN S157»). Lo que toca a H24: la página de
+fichajes de un trabajador sin consultas por corrección ni por día
+(`select_related` de event/replacement y `bulk_schedule_cache`) --
+`7fd9a08`; Fichajes y Vacaciones comprobados en vivo (columnas y
+filtro de grupo).

@@ -10310,3 +10310,13 @@ anotar horas"*.
   - **Familias por casillas**, varias a la vez, con Todas / Ninguna;
     sustituye al desplegable de una sola.
 - Commits: 5550036, 82a7080, 35a5aa3, 5303e08.
+
+## COMPLETADAS EN S157 (sesión invasora sobre H31, 19/11 → 20/11/2026, PEE PC)
+
+Detalle en V31 («COMPLETADAS EN S157»). Lo que toca a H30: exportación
+de Revisiones con cada revisión del plan (fecha, valor y situación de
+la última anotada, casillas vacías para anotar a mano) y plantilla
+global «Revisiones hechas y pendientes (para anotar a mano)» (migración
+`panel 0004`) -- `e3793d1`; PDF de 69 hojas por vehículo entregado en
+el chat; orden por «Código» de Centros de gasto con el filtro de grupo
+-- `f838f27`.
