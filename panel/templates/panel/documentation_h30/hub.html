@@ -81,6 +81,19 @@ EbTypePicker.init() (ver panel/_doc_type_picker.html).
         </a>
     </li>
     <li class="nav-item">
+        {% comment %}
+        H23 (S154, invasora): especificaciones técnicas de los centros de
+        gasto, filtrables por capacidad y masa máxima (Carlos: "cuáles son
+        los camiones y grúas de 50T").
+        {% endcomment %}
+        <a class="nav-link {% if persisted_active_tab == 'especificaciones' %}active{% endif %}" id="tab-especificaciones" data-bs-toggle="tab" href="#pane-especificaciones"
+           hx-get="{% url 'panel:specs_tab' %}"
+           hx-target="#pane-especificaciones"
+           hx-trigger="{% if persisted_active_tab == 'especificaciones' %}load once{% else %}click once{% endif %}">
+            <i class="bi bi-rulers me-1"></i>Especificaciones
+        </a>
+    </li>
+    <li class="nav-item">
         <a class="nav-link {% if persisted_active_tab == 'personal' %}active{% endif %}" id="tab-personal" data-bs-toggle="tab" href="#pane-personal"
            hx-get="{% url 'panel:documentation_personal_list' %}?{{ personal_tab_qs }}"
            hx-target="#pane-personal"
@@ -289,6 +302,9 @@ EbTypePicker.init() (ver panel/_doc_type_picker.html).
         <div class="text-muted small py-3">Cargando…</div>
     </div>
     <div class="tab-pane fade {% if persisted_active_tab == 'repostajes' %}show active{% endif %}" id="pane-repostajes">
+        <div class="text-muted small py-3">Cargando…</div>
+    </div>
+    <div class="tab-pane fade {% if persisted_active_tab == 'especificaciones' %}show active{% endif %}" id="pane-especificaciones">
         <div class="text-muted small py-3">Cargando…</div>
     </div>
     <div class="tab-pane fade {% if persisted_active_tab == 'personal' %}show active{% endif %}" id="pane-personal">

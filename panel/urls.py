@@ -30,6 +30,7 @@ from panel.views_circulars_h31 import (
     CircularSaveContentView,
     PersonalDocutenExportView,
 )
+from panel.views_specs_tab import SpecsTabView
 from panel.views_refuels import (
     RefuelsResultsView,
     RefuelsTabView,
@@ -1506,6 +1507,12 @@ urlpatterns = [
         "documentacion/revisiones/exportar/",
         ServiceExportView.as_view(),
         name="service_tab_export",
+    ),
+    # H23 (S154): especificaciones técnicas de los centros de gasto.
+    path(
+        "documentacion/especificaciones/",
+        SpecsTabView.as_view(),
+        name="specs_tab",
     ),
     # H30 (S135): repostajes del surtidor (GasoGes), formato 4.24.
     path(
