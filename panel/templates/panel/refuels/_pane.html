@@ -129,6 +129,23 @@ repostado o no, y las fechas no cuentan (se desactivan).
                             </div>
                             <input type="hidden" name="ask" id="rfl-ask-input" value="">
                         </div>
+                        <div class="rfl-supply-filter">
+                            <div class="fw-semibold mb-1"><i class="bi bi-person-badge me-1"></i>Trabajador</div>
+                            <div class="dropdown checkdrop" data-all="Todos" data-none="Ninguno">
+                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
+                                        data-bs-auto-close="outside" aria-expanded="false"><span class="checkdrop-text">Todos</span></button>
+                                <div class="dropdown-menu p-2 small">
+                            {% for choice in worker_choices %}
+                            <div class="form-check">
+                                <input class="form-check-input rfl-worker-check" type="checkbox" value="{{ choice.code }}"
+                                       id="rflWorker{{ forloop.counter }}"{% if choice.checked %} checked{% endif %}>
+                                <label class="form-check-label text-nowrap" for="rflWorker{{ forloop.counter }}">{{ choice.label }}</label>
+                            </div>
+                            {% endfor %}
+                                </div>
+                            </div>
+                            <input type="hidden" name="worker" id="rfl-worker-input" value="">
+                        </div>
                         <div class="rfl-date-filter">
                             <div class="fw-semibold mb-1">Desde</div>
                             <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from|date:'Y-m-d' }}">
@@ -510,6 +527,17 @@ repostado o no, y las fechas no cuentan (se desactivan).
         cb.addEventListener("change", syncAsk);
     });
     syncAsk();
+
+    // Trabajador (activo / inactivo / sin ficha): mismas casillas literales.
+    function syncWorker() {
+        const values = Array.from(document.querySelectorAll(".rfl-worker-check:checked"))
+            .map(function (cb) { return cb.value; });
+        document.getElementById("rfl-worker-input").value = values.length ? values.join(",") : "none";
+    }
+    document.querySelectorAll(".rfl-worker-check").forEach(function (cb) {
+        cb.addEventListener("change", syncWorker);
+    });
+    syncWorker();
 
     results.addEventListener("change", function (evt) {
         const target = evt.target;

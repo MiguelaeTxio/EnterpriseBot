@@ -69,13 +69,24 @@ from panel.views_machine_service import can_edit_service
 from panel.views_vacation_balance import _param, _parse_date
 
 SCREEN_KEY = "refuels"
-FILTER_KEYS = ("view", "search", "status", "ask", "date_from", "date_to",
-               "sort", "family", "all_active", "hours", "group")
+FILTER_KEYS = ("view", "search", "status", "ask", "worker", "date_from",
+               "date_to", "sort", "family", "all_active", "hours",
+               "group")
 NO_STATUS = "none"
 # Filtro "¿Se pregunta al chófer?": sí / no (S135).
 # ---
 # "Is the driver asked?" filter: yes / no.
 ASK_CHOICES = (("yes", "Sí"), ("no", "No"))
+# S162 (Miguel Ángel): filtro "Trabajador" para ver los repostajes con
+# usuarios de trabajadores de baja ("filtrar [...] por inactivos").
+# Según la ficha enlazada al usuario de GasoGes (is_active_employee).
+# ---
+# "Worker" filter: active / inactive / no worker card.
+WORKER_CHOICES = (
+    ("active", "Activo"),
+    ("inactive", "Inactivo"),
+    ("unknown", "Sin ficha o sin dato"),
+)
 # S141 (Miguel Ángel): vehículos que van por horas y repostadores que no
 # anotan las horas. Filtro sobre la marca de fleet/gasoges_hours.py.
 # ---
@@ -256,6 +267,45 @@ def _ask_values(request):
     return [code == "yes" for code in chosen]
 
 
+def _worker_values(request):
+    """
+    "Worker" filter codes, literal checkboxes like the status.
+
+    ---
+
+    Filtro "Trabajador" con las casillas en sentido literal, como el de
+    estado: todas = todos, ninguna = ninguno.
+    """
+    raw = _param(request, "worker")
+    if raw == NO_STATUS:
+        return []
+    valid = [code for code, _label in WORKER_CHOICES]
+    chosen = [code for code in raw.split(",") if code in valid]
+    return chosen if raw else valid
+
+
+def _worker_q(values, prefix):
+    """
+    Q of the chosen worker states, or None when all are chosen.
+
+    ---
+
+    Q de los estados de trabajador elegidos (None = todos). `prefix`
+    es el camino hasta el usuario de GasoGes ("user__" o "").
+    """
+    if len(values) == len(WORKER_CHOICES):
+        return None
+    active = prefix + "person__is_active_employee"
+    query = Q(pk__in=[])
+    if "active" in values:
+        query |= Q(**{active: True})
+    if "inactive" in values:
+        query |= Q(**{active: False})
+    if "unknown" in values:
+        query |= Q(**{active + "__isnull": True})
+    return query
+
+
 def _group_machines(request):
     """
     Machines of the chosen selection group, or None for all.
@@ -428,6 +478,9 @@ def _filtered_supplies(request):
         supplies = supplies.exclude(asked)
     elif not ask_values:
         supplies = supplies.none()
+    workers = _worker_q(_worker_values(request), "user__")
+    if workers is not None:
+        supplies = supplies.filter(workers)
     families = _families(request)
     if families is not None:
         supplies = supplies.filter(vehicle__machine__family__in=families)
@@ -651,6 +704,9 @@ def _user_groups(request, order, wanted=None):
         users = users.filter(ask_driver=ask_values[0])
     elif not ask_values:
         users = users.none()
+    workers = _worker_q(_worker_values(request), "")
+    if workers is not None:
+        users = users.filter(workers)
     search = _param(request, "search").strip()
     if search:
         users = users.filter(name__icontains=search)
@@ -913,6 +969,7 @@ def _list_context(request):
     date_from, date_to = _date_range(request)
     statuses = _statuses(request)
     asks = _ask_values(request)
+    workers = _worker_values(request)
     controls = _sort_controls(_param(request, "sort"), view)
     view_columns = {}
     if view == VIEW_SUPPLIES:
@@ -960,6 +1017,9 @@ def _list_context(request):
             {"code": code, "label": label,
              "checked": (code == "yes") in asks}
             for code, label in ASK_CHOICES],
+        "worker_choices": [
+            {"code": code, "label": label, "checked": code in workers}
+            for code, label in WORKER_CHOICES],
         "date_from": date_from,
         "date_to": date_to,
         **controls,
