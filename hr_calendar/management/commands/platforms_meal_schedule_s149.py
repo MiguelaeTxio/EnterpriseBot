@@ -48,6 +48,8 @@ class Command(BaseCommand):
         parser.add_argument("--end", default="18:30")
         parser.add_argument("--by", required=True,
                             help="Usuario del panel que hace el cambio.")
+        # S149: personas (id) que conservan su horario (p. ej. uno propio).
+        parser.add_argument("--exclude", type=int, nargs="*", default=[])
         parser.add_argument("--apply", action="store_true")
         parser.add_argument("--log-file", required=True)
 
@@ -135,6 +137,13 @@ class Command(BaseCommand):
         chosen = [p for p in people
                   if in_section.get(p.pk) is not None
                   and in_section[p.pk].pk in ids]
+        kept = [p for p in chosen if p.pk in options["exclude"]]
+        chosen = [p for p in chosen if p.pk not in options["exclude"]]
+        for person in kept:
+            self._log("Se queda con su horario (--exclude): %s %s, %s "
+                      "(persona %d)." % (
+                          person.first_surname, person.second_surname or "",
+                          person.given_name, person.pk))
         settings = {s.person_id: s for s in WorkerClockSetting.objects.filter(
             person__in=chosen).select_related("workday_schedule")}
         self._log("Trabajadores activos de la sección: %d" % len(chosen))
