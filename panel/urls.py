@@ -30,6 +30,7 @@ from panel.views_circulars_h31 import (
     CircularSaveContentView,
     PersonalDocutenExportView,
 )
+from panel.views_machine_qr import MachineQrImageView, MachineQrSheetView
 from panel.views_specs_tab import SpecsExportView, SpecsTabView
 from panel.views_machine_menu import (
     MachineCardView, MachineGoView, MachineMenuView,
