@@ -21,6 +21,8 @@ Los tres modelos forman el libro de mantenimiento de cada máquina:
   MachineAsset → MaintenanceLog → MaintenanceItem
 """
 
+import uuid
+
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -1850,3 +1852,93 @@ class Crew(models.Model):
 
     def __str__(self):
         return "%s · %s" % (self.machine.code, self.person)
+
+
+# ------------------------------------------------------------------------
+# S154 (H23, invasora) -- ficha QR de cada centro de gasto. Miguel Ángel:
+# "Código QR por cada uno de los centros de gasto. Este código QR accede
+# a una página [...] si el camión pasa la revisión por hora [...] algún
+# tipo de observación escrita, por ejemplo, la apertura del capó se
+# realiza desde tal sitio [...] algún vídeo o varios vídeos explicativos,
+# fotos [...] qué botón hay que pulsar para que el salpicadero nos
+# muestre horas o kilómetros". El QR lleva a una página pública de solo
+# lectura identificada por `token` (imposible de adivinar); los datos se
+# meten desde la ficha del centro de gasto (botón "QR").
+# ------------------------------------------------------------------------
+class MachineQrSheet(models.Model):
+    """
+    QR sheet of a cost centre: notes and media shown when scanning it.
+
+    ---
+
+    Ficha QR de un centro de gasto: observaciones, fotos y vídeos que ve
+    el trabajador al leer su código QR.
+    """
+
+    machine = models.OneToOneField(
+        MachineAsset, on_delete=models.CASCADE, related_name="qr_sheet",
+        verbose_name=_("Centro de gasto"),
+    )
+    token = models.UUIDField(
+        _("Identificador del QR"), unique=True, editable=False,
+        default=uuid.uuid4,
+    )
+    observations = models.TextField(_("Observaciones"), blank=True,
+                                    default="")
+    updated_by = models.ForeignKey(
+        "ivr_config.CompanyUser", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+        verbose_name=_("Modificada por"),
+    )
+    updated_at = models.DateTimeField(_("Modificada el"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("Ficha QR")
+        verbose_name_plural = _("Fichas QR")
+
+    def __str__(self):
+        return "QR %s" % self.machine.code
+
+
+class MachineQrMedia(models.Model):
+    """
+    Photo or video of a QR sheet, stored in GCS.
+
+    ---
+
+    Foto o vídeo de una ficha QR, guardado en GCS.
+    """
+
+    KIND_PHOTO = "PHOTO"
+    KIND_VIDEO = "VIDEO"
+    KIND_CHOICES = (
+        (KIND_PHOTO, _("Foto")),
+        (KIND_VIDEO, _("Vídeo")),
+    )
+
+    sheet = models.ForeignKey(
+        MachineQrSheet, on_delete=models.CASCADE, related_name="media",
+        verbose_name=_("Ficha QR"),
+    )
+    kind = models.CharField(_("Tipo"), max_length=10, choices=KIND_CHOICES)
+    caption = models.CharField(_("Descripción"), max_length=300,
+                               blank=True, default="")
+    bucket = models.CharField(_("Cubo"), max_length=100)
+    blob_name = models.CharField(_("Objeto"), max_length=500)
+    content_type = models.CharField(_("Tipo de contenido"), max_length=100)
+    size = models.PositiveBigIntegerField(_("Tamaño (bytes)"), default=0)
+    position = models.PositiveIntegerField(_("Orden"), default=0)
+    created_by = models.ForeignKey(
+        "ivr_config.CompanyUser", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+        verbose_name=_("Subida por"),
+    )
+    created_at = models.DateTimeField(_("Subida el"), auto_now_add=True)
+
+    class Meta:
+        ordering = ["position", "id"]
+        verbose_name = _("Foto o vídeo de ficha QR")
+        verbose_name_plural = _("Fotos y vídeos de fichas QR")
+
+    def __str__(self):
+        return "%s %s" % (self.get_kind_display(), self.caption)

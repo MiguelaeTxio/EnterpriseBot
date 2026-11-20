@@ -17,6 +17,7 @@ from django.views.decorators.cache import never_cache as _never_cache
 from hr_calendar import clockin as clockin_views
 from budgets.api_driver import asset_links as _asset_links
 
+from fleet import views_qr as fleet_qr_views
 urlpatterns = [
 
     # Web App Manifest — served from root so Chrome can detect the PWA.
@@ -81,6 +82,10 @@ urlpatterns = [
     ),
     # Custom administration panel for CompanyUser accounts — panel de
     # administracion personalizado para cuentas CompanyUser.
+    # H23 (S154): página a la que lleva el QR de cada centro de gasto
+    # (pública, solo lectura, por identificador no adivinable).
+    path('ficha/<uuid:token>/', fleet_qr_views.qr_public_view,
+         name='fleet_qr_public'),
     path('panel/', include('panel.urls')),
     # ASISTENCIA budget module — motor de presupuestos ASISTENCIA (Hito 16).
     path('panel/budgets/', include('budgets.urls', namespace='budgets')),
