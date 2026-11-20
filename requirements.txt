@@ -356,6 +356,8 @@ requests-oauthlib==2.0.0
     # via google-auth-oauthlib
 rtfde==0.1.2.2
     # via extract-msg
+segno==1.6.6
+    # via -r requirements.in
 six==1.17.0
     # via
     #   cssbeautifier
