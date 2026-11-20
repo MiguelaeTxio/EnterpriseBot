@@ -517,5 +517,6 @@ def person_schedule_context(person, company):
         "clock_label": clock_label,
         "must_clock": state.must_clock,
         "uses_types": state.uses_types,
+        "meal_check": state.meal_check,
         "reminders": state.reminders,
     }}

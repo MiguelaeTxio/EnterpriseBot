@@ -51,8 +51,11 @@ class WorkerClockState:
     # S141: su sección ficha por tipos (Grúas, Asistencia). S148: o él,
     # con su tipo de fichaje propio (clock_mode).
     uses_types: bool = False
-    # S148: "" como su sección, "normal" o "types".
+    # S148: "" como su sección, "normal", "meal" o "types".
     clock_mode: str = ""
+    # S149 (20/11): ve la casilla "No he parado para comer" (por tipos,
+    # o botón único con la casilla: Plataformas).
+    meal_check: bool = False
     # S143: los avisos que ha elegido (claves de WorkerClockSetting;
     # None: los de por defecto).
     in_reminders: list = None
@@ -274,6 +277,68 @@ def section_types_map(section_ids):
     return result
 
 
+def section_meal_map(section_ids):
+    """
+    {section id: single button with "No he parado para comer"}.
+    ---
+    {id de sección: botón único con la casilla} (sin fila = no). S149.
+    """
+    result = {pk: False for pk in section_ids}
+    for setting in SectionClockSetting.objects.filter(
+        section_id__in=list(section_ids),
+    ):
+        result[setting.section_id] = setting.meal_check
+    return result
+
+
+def _meal_check(mode, section_types, section_meal):
+    """True if this worker sees "No he parado para comer" (S149)."""
+    if mode == WorkerClockSetting.CLOCK_MODE_TYPES:
+        return True
+    if mode == WorkerClockSetting.CLOCK_MODE_MEAL:
+        return True
+    if mode == WorkerClockSetting.CLOCK_MODE_NORMAL:
+        return False
+    return bool(section_types or section_meal)
+
+
+def meal_check(company_user, day=None):
+    """
+    True if the worker sees "No he parado para comer" when clocking.
+    ---
+    S149 (Miguel Ángel, 20/11): quien ficha por tipos y quien ficha con
+    el botón único con la casilla (su tipo de fichaje propio o el de su
+    sección: Plataformas).
+    """
+    try:
+        person = company_user.person_identity
+    except ObjectDoesNotExist:
+        return False
+    mode = WorkerClockSetting.objects.filter(
+        person=person).values_list("clock_mode", flat=True).first() or ""
+    section = current_sections([person.pk], day).get(person.pk)
+    if section is None:
+        return _meal_check(mode, False, False)
+    return _meal_check(mode, section_types_map([section.pk])[section.pk],
+                       section_meal_map([section.pk])[section.pk])
+
+
+def set_section_meal(section, value, by):
+    """
+    Put a section in or out of the single button with the meal box.
+    ---
+    Pone o quita en una sección la casilla "No he parado para comer"
+    del botón único (S149).
+    """
+    setting, _created = SectionClockSetting.objects.get_or_create(
+        section=section,
+    )
+    setting.meal_check = bool(value)
+    setting.updated_by = by
+    setting.save()
+    return setting
+
+
 def uses_types(company_user, day=None):
     """
     True if the user's section (today) clocks by types.
@@ -345,6 +410,7 @@ def worker_states(people, day=None):
     section_ids = {s.pk for s in sections.values() if s is not None}
     clocks = section_clocks_map(section_ids)
     by_types = section_types_map(section_ids)
+    by_meal = section_meal_map(section_ids)
     settings = {
         s.person_id: s
         for s in WorkerClockSetting.objects.filter(person_id__in=ids)
@@ -367,6 +433,10 @@ def worker_states(people, day=None):
                 else False if mode == WorkerClockSetting.CLOCK_MODE_NORMAL
                 else section_types),
             clock_mode=mode,
+            meal_check=_meal_check(
+                mode, section_types,
+                by_meal.get(section.pk, False) if section is not None
+                else False),
             in_reminders=setting.in_reminder_keys() if setting else None,
             out_reminders=(setting.out_reminder_keys()
                            if setting else None),
@@ -401,7 +471,7 @@ def set_worker_clock_mode(person_ids, mode, by):
     Own clock mode of several workers ("" back to their section's).
     ---
     Tipo de fichaje propio de varios trabajadores (S148): "normal",
-    "types" o "" (vuelven al de su sección). Devuelve cuántos.
+    "meal" (S149), "types" o "" (vuelven al de su sección). Devuelve cuántos.
     """
     if mode not in dict(WorkerClockSetting.CLOCK_MODE_CHOICES):
         raise ValueError(mode)

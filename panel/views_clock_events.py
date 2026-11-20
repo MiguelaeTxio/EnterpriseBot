@@ -433,6 +433,9 @@ def _settings_context(company):
     sections = _sections(company)
     clocks = section_clocks_map([s.pk for s in sections])
     by_types = section_types_map([s.pk for s in sections])
+    from hr_calendar.clock_settings import section_meal_map
+
+    by_meal = section_meal_map([s.pk for s in sections])
     from hr_calendar.clock_extras import monthly_cap_seconds
 
     cap = monthly_cap_seconds(company) // 60
@@ -441,7 +444,8 @@ def _settings_context(company):
         "overtime_cap": "%d:%02d" % (cap // 60, cap % 60),
         "section_settings": [
             {"section": s, "clocks": clocks[s.pk],
-             "uses_types": by_types[s.pk]} for s in sections
+             "uses_types": by_types[s.pk],
+             "meal_check": by_meal[s.pk]} for s in sections
         ],
         # S141: tipos de fichaje (como en Sesame), gestionables.
         "clock_types": list(ClockType.objects.filter(company=company)),
@@ -891,6 +895,18 @@ class ClockSectionSettingView(SupervisorAccessMixin, View):
                     section.name,
                     "ficha por tipos" if value
                     else "ficha con el botón único"),
+            )
+        # S149: botón único con "No he parado para comer".
+        if "meal_check" in request.POST:
+            from hr_calendar.clock_settings import set_section_meal
+
+            value = request.POST.get("meal_check") == "1"
+            set_section_meal(section, value, request.user.company_user)
+            return _settings_response(
+                request, "%s %s." % (
+                    section.name,
+                    "ve la casilla «No he parado para comer»" if value
+                    else "ya no ve la casilla «No he parado para comer»"),
             )
         clocks = request.POST.get("clocks") == "1"
         set_section_clocks(section, clocks, request.user.company_user)

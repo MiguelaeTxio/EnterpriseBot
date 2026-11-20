@@ -338,7 +338,7 @@ y se habilita "Guardar".
                         </div>
                         <div>
                             <strong><i class="bi bi-fingerprint me-1"></i>Fichaje:</strong>
-                            {{ person_clock.clock_label }}{% if person_clock.must_clock %} · {% if person_clock.uses_types %}<span class="badge text-bg-info fw-normal" title="Trabajo efectivo, desplazamiento, presencia, varios">por tipos</span>{% else %}<span class="badge text-bg-light border fw-normal">normal (entrada y salida)</span>{% endif %} · recordatorios {{ person_clock.reminders|yesno:"sí,no" }}{% endif %}
+                            {{ person_clock.clock_label }}{% if person_clock.must_clock %} · {% if person_clock.uses_types %}<span class="badge text-bg-info fw-normal" title="Trabajo efectivo, desplazamiento, presencia, varios">por tipos</span>{% elif person_clock.meal_check %}<span class="badge text-bg-light border fw-normal" title="Botón único con la casilla «No he parado para comer»">normal con «No he parado para comer»</span>{% else %}<span class="badge text-bg-light border fw-normal">normal (entrada y salida)</span>{% endif %} · recordatorios {{ person_clock.reminders|yesno:"sí,no" }}{% endif %}
                         </div>
                         <div class="text-muted ms-md-auto">Se cambian en las pestañas Horarios y Fichajes.</div>
                     </div>

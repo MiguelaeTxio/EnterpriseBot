@@ -46,7 +46,7 @@ screen_key "clock_worker"); la selección, por trabajador.
     <span><i class="bi bi-phone me-1"></i><strong>Ficha:</strong>
         {% if not sched.state.section_clocks %}su sección no ficha
         {% elif not sched.state.worker_clocks %}no ficha
-        {% else %}{% if sched.state.uses_types %}por tipos{% else %}con un botón{% endif %}{% if sched.state.starts_later %} · desde el {{ sched.state.clocks_from|date:"d/m/Y" }}{% endif %}{% endif %}</span>
+        {% else %}{% if sched.state.uses_types %}por tipos{% elif sched.state.meal_check %}con un botón y «No he parado para comer»{% else %}con un botón{% endif %}{% if sched.state.starts_later %} · desde el {{ sched.state.clocks_from|date:"d/m/Y" }}{% endif %}{% endif %}</span>
     <span><i class="bi bi-bell me-1"></i><strong>Avisos:</strong>
         {% if sched.state.reminders %}entrada {{ sched.in_reminders|lower }}; salida {{ sched.out_reminders|lower }}{% else %}no{% endif %}</span>
     {% endif %}

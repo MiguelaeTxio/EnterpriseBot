@@ -57,6 +57,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from hr_calendar.clock_settings import active_types
 from hr_calendar.clock_settings import default_type
+from hr_calendar.clock_settings import meal_check
 from hr_calendar.clock_settings import uses_types
 from hr_calendar.models import ClockEvent
 from hr_calendar.models import ClockType
@@ -295,9 +296,11 @@ def record_press(company_user, payload, user_agent=""):
                 payload.get("own_vehicle") and clock_type is not None
                 and clock_type.role == ClockType.ROLE_TRAVEL
             )
-            # S143: "No he parado para comer" (fichaje por tipos).
+            # S143: "No he parado para comer" (fichaje por tipos). S149:
+            # también el botón único con la casilla (Plataformas).
             event.no_meal_break = bool(
-                by_types and payload.get("no_meal_break"))
+                payload.get("no_meal_break")
+                and (by_types or meal_check(company_user)))
             # S149: salida fichada tarde con la hora real que indica.
             if kind == ClockEvent.Kind.OUT:
                 _set_claim(event, company_user, payload)
@@ -706,6 +709,8 @@ def status(request):
         "starts_on": starts.isoformat() if starts else None,
         "starts_text": starts_text(starts) if starts else "",
         "uses_types": by_types,
+        # S149: botón único con "No he parado para comer".
+        "meal_check": by_types or meal_check(company_user),
         "clock_types": [_type_json(t) for t in types],
         # H11 (S162): albaranes de grúa del trabajador.
         "crane_albaranes": _crane_albaranes_json(company_user),

@@ -194,6 +194,7 @@ recordatorios, secciones que fichan y permiso de envío).
                                 <select class="form-select form-select-sm" id="clk-clock-mode" aria-label="Tipo de fichaje"
                                         title="Tipo de fichaje propio de los marcados, aunque su sección fiche de otra forma.">
                                     <option value="normal">Fichaje normal</option>
+                                    <option value="meal">Normal con «No he parado para comer»</option>
                                     <option value="types">Por tipos</option>
                                     <option value="">Como su sección</option>
                                 </select>
@@ -653,6 +654,16 @@ recordatorios, secciones que fichan y permiso de envío).
             : "¿" + sw.dataset.name + " vuelve al botón único de fichar?";
         if (!confirm(text)) { sw.checked = !sw.checked; return; }
         postSetting(sw.dataset.url, {section_id: sw.dataset.section, uses_types: sw.checked ? "1" : "0"}, false);
+    });
+    // S149: secciones con el botón único y "No he parado para comer".
+    document.getElementById("clk-top-panel").addEventListener("change", function (evt) {
+        const sw = evt.target.closest(".clk-section-meal-switch");
+        if (!sw) return;
+        const text = sw.checked
+            ? "¿" + sw.dataset.name + " ve la casilla «No he parado para comer» al fichar con el botón único?"
+            : "¿" + sw.dataset.name + " deja de ver la casilla «No he parado para comer»?";
+        if (!confirm(text)) { sw.checked = !sw.checked; return; }
+        postSetting(sw.dataset.url, {section_id: sw.dataset.section, meal_check: sw.checked ? "1" : "0"}, false);
     });
     document.getElementById("clk-top-panel").addEventListener("click", function (evt) {
         const btn = evt.target.closest(".clk-type-save");

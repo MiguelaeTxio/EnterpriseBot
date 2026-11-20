@@ -68,6 +68,25 @@ aparte en el detalle y no suman horas.
                 {% endfor %}
             </div>
         </div>
+        {# S149 (Miguel Ángel, 20/11, Plataformas): botón único con la casilla. #}
+        <div class="dropdown">
+            <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
+                    data-bs-auto-close="outside" data-bs-popper-config='{"strategy":"fixed"}' title="Secciones que fichan con el botón único pero ven la casilla «No he parado para comer»: si la marcan, no se les descuenta la comida. Quien ficha por tipos ya la tiene.">
+                <i class="bi bi-cup-hot me-1"></i>Con «No he parado para comer»
+            </button>
+            <div class="dropdown-menu p-2 small">
+                {% for item in section_settings %}
+                <div class="form-check form-switch text-nowrap">
+                    <input class="form-check-input clk-section-meal-switch" type="checkbox" id="clkSectionMeal{{ item.section.pk }}"
+                           data-url="{% url 'panel:clock_settings_section' %}" data-section="{{ item.section.pk }}"
+                           data-name="{{ item.section.name }}"{% if item.meal_check %} checked{% endif %}{% if item.uses_types %} disabled title="Ficha por tipos: ya tiene la casilla"{% endif %}>
+                    <label class="form-check-label" for="clkSectionMeal{{ item.section.pk }}">{{ item.section.name }}{% if item.uses_types %} <span class="text-muted">(por tipos)</span>{% endif %}</label>
+                </div>
+                {% empty %}
+                <div class="text-muted">No hay secciones.</div>
+                {% endfor %}
+            </div>
+        </div>
         <div class="dropdown">
             <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
                     data-bs-auto-close="outside" data-bs-popper-config='{"strategy":"fixed"}' title="Tipos de fichaje: renombrar, desactivar, ordenar, añadir. Los que no cuentan como jornada se ven aparte y no suman horas.">

@@ -712,25 +712,44 @@ responsable corregirá la salida (clock_report.forgotten_after).
         const info = load("fichaje-estado");
         return !!(info && info.uses_types && info.clock_types && info.clock_types.length);
     }
-    function showTypes(records) {
+    // S149 (Plataformas): el botón único con "No he parado para comer".
+    function mealCheck() {
         const info = load("fichaje-estado");
-        const box = document.getElementById("types");
-        const btn = document.getElementById("btn-fichar");
-        const on = byTypes();
-        box.style.display = on ? "block" : "none";
-        if (!on) { btn.classList.remove("hidden"); return; }
-        const kind = decideKind(records);
-        const open = kind === "OUT";
-        const last = lastKnown(records);
-        const current = open && last ? last.clock_type : null;
-        btn.classList.toggle("hidden", !open);
+        return byTypes() || !!(info && info.meal_check);
+    }
+    function showNoMeal(open) {
         // S143: "No he parado para comer", solo con la jornada abierta;
         // se recuerda hasta la salida.
         const noMeal = document.getElementById("no-meal-check");
         document.getElementById("no-meal").classList.toggle("hidden", !open);
         document.getElementById("no-meal-help").classList.toggle("hidden", !open);
+        document.getElementById("no-meal-help").textContent = byTypes()
+            ? "Si no fichas la pausa para comer ni marcas esta casilla, se descuenta una hora de comida (y otra de cena si trabajas a la hora de cenar). Márcala antes de fichar la salida."
+            : "Si no fichas la pausa para comer ni marcas esta casilla, se descuenta una hora de comida. Márcala antes de fichar la salida.";
         if (!open) store("fichaje-sin-comida", null);
         noMeal.checked = open && !!load("fichaje-sin-comida");
+    }
+    function showTypes(records) {
+        const info = load("fichaje-estado");
+        const box = document.getElementById("types");
+        const btn = document.getElementById("btn-fichar");
+        const on = byTypes();
+        const meal = mealCheck();
+        box.style.display = on || meal ? "block" : "none";
+        ["current-type", "types-title", "types-grid"].forEach(function (id) {
+            document.getElementById(id).style.display = on ? "" : "none";
+        });
+        if (!on) {
+            btn.classList.remove("hidden");
+            if (meal) showNoMeal(decideKind(records) === "OUT");
+            return;
+        }
+        const kind = decideKind(records);
+        const open = kind === "OUT";
+        const last = lastKnown(records);
+        const current = open && last ? last.clock_type : null;
+        btn.classList.toggle("hidden", !open);
+        showNoMeal(open);
         document.getElementById("current-type").textContent = open && last && last.clock_type_name
             ? "En curso: " + last.clock_type_name : "";
         document.getElementById("types-title").textContent = open ? "Cambiar a:" : "Fichar entrada como:";
@@ -999,8 +1018,9 @@ responsable corregirá la salida (clock_report.forgotten_after).
                     clock_type: chosen ? chosen.id : null,
                     clock_type_name: chosen ? chosen.name : "",
                     own_vehicle: !!(chosen && chosen.own_vehicle),
-                    // S143: "No he parado para comer" (fichaje por tipos).
-                    no_meal_break: byTypes() && !!load("fichaje-sin-comida"),
+                    // S143: "No he parado para comer" (fichaje por tipos;
+                    // S149: también el botón único con la casilla).
+                    no_meal_break: mealCheck() && !!load("fichaje-sin-comida"),
                     // S149: hora real de salida y mensaje (solo en la salida).
                     claimed_at: decided === "OUT" && claimNow ? claimNow.claimed_at : "",
                     claim_note: decided === "OUT" && claimNow ? claimNow.claim_note : "",

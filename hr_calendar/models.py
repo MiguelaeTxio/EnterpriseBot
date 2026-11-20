@@ -1492,6 +1492,15 @@ class SectionClockSetting(models.Model):
         default=False,
         verbose_name="Ficha por tipos",
     )
+    # S149 (Miguel Ángel, 20/11, Plataformas: fichan con el botón único y
+    # no hacen partes, así que siempre se les descontaba la comida): el
+    # botón único con la casilla "No he parado para comer", como en el
+    # fichaje por tipos. Solo cuenta si la sección no ficha por tipos
+    # (quien ficha por tipos ya tiene la casilla).
+    meal_check = models.BooleanField(
+        default=False,
+        verbose_name="Botón único con «No he parado para comer»",
+    )
     updated_by = models.ForeignKey(
         CompanyUser,
         null=True,
@@ -1626,9 +1635,13 @@ class WorkerClockSetting(models.Model):
     CLOCK_MODE_SECTION = ""
     CLOCK_MODE_NORMAL = "normal"
     CLOCK_MODE_TYPES = "types"
+    # S149 (20/11, Plataformas): botón único con "No he parado para
+    # comer".
+    CLOCK_MODE_MEAL = "meal"
     CLOCK_MODE_CHOICES = [
         (CLOCK_MODE_SECTION, "Como su sección"),
         (CLOCK_MODE_NORMAL, "Fichaje normal"),
+        (CLOCK_MODE_MEAL, "Normal con «No he parado para comer»"),
         (CLOCK_MODE_TYPES, "Por tipos"),
     ]
     clock_mode = models.CharField(
