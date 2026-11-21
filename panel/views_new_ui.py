@@ -597,8 +597,15 @@ class NewUiListView(SuperuserRequiredMixin, View):
                                    "cols_" + section, {})
         columns = visible_columns(
             definition, (cols or {}).get("%s.%s" % (section, tab)))
+        scope_pk = _scope_pk(request)
         qs = filtered(definition, company_user.company, request.GET,
-                      _scope_pk(request))
+                      scope_pk)
+        if scope_pk and definition.entity:
+            # Viendo la ficha de una persona o máquina, su columna se
+            # repetiría en todas las filas (Miguel Ángel, S163): fuera.
+            # La exportación la conserva, para que el archivo diga de
+            # quién es.
+            columns = [c for c in columns if not c.entity] or columns
         qs, current = sorted_qs(definition, qs, request.GET.get("sort", ""))
         total = qs.count()
         rows = rows_for(definition, list(qs[:ROW_LIMIT]), columns)
