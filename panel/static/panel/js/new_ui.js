@@ -508,8 +508,8 @@
         // pestaña aquí (ficha, vacaciones, revisiones...) la abre aquí, con
         // la persona o máquina sola, en vez de ir a la pantalla de siempre.
         const MENU_TABS = {
-            person: {ficha: "ficha", fichajes: "fichajes", horarios: "horarios", vacaciones: "vacaciones", calendario: "ausencias", partes: "partes"},
-            machine: {tarjeta: "ficha", ficha: "ficha", libro: "libro", revisiones_firmadas: "libro", partes: "taller", revisiones: "revisiones", repostajes: "repostajes", equipos: "equipos", especificaciones: "especificaciones"},
+            person: {ficha: "ficha", fichajes: "fichajes", horarios: "horarios", vacaciones: "vacaciones", calendario: "ausencias", partes: "partes", repostajes: "repostajes"},
+            machine: {tarjeta: "ficha", ficha: "ficha", libro: "libro", revisiones_firmadas: "libro", partes: "taller", averias: "averias", revisiones: "revisiones", repostajes: "repostajes", equipos: "equipos", especificaciones: "especificaciones"},
         };
         window.EbEntityOpen = function (kind, pk, label, code) {
             const target = (MENU_TABS[kind] || {})[code];

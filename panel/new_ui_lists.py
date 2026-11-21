@@ -611,6 +611,29 @@ def _cdg_lists():
             search=("fault_description", "repair_notes", "entry__worker_name"),
             default_order=("-entry__work_date",),
             note="Periodo: fecha del parte."),
+        "averias": _machine_fk_def(
+            "Averías", "chat.BreakdownTicket", ("assigned_to__user",),
+            "machine", [
+                Col("fecha", "Fecha", lambda r: fmt_datetime(r.created_at),
+                    "created_at", "text-nowrap"),
+                Col("averia", "Avería", lambda r: short(r.fault_summary, 80),
+                    "fault_summary"),
+                Col("donde", "Dónde", lambda r: short(
+                    r.fault_location or r.location), "fault_location"),
+                Col("urgencia", "Urgencia", lambda r: disp(r, "urgency"),
+                    "urgency"),
+                Col("estado", "Estado", lambda r: disp(r, "status"),
+                    "status"),
+                Col("asignada", "Asignada a", lambda r: (
+                    r.assigned_to.user.get_full_name()
+                    or r.assigned_to.user.username)
+                    if r.assigned_to_id else "", "assigned_to__user__username"),
+                Col("resuelta", "Resuelta", lambda r: fmt_datetime(
+                    r.resolved_at), "resolved_at", "text-nowrap"),
+            ], "created_at", date_is_datetime=True,
+            search=("fault_summary", "fault_location", "location", "notes"),
+            default_order=("-created_at",),
+            note="Periodo: fecha del aviso de avería."),
         "libro": _machine_fk_def(
             "Libro historial", "fleet.MachineLogbookEntry", ("machine",),
             "machine", [
@@ -689,7 +712,10 @@ def _person_fk_def(label, model_path, related, columns, date_field,
         return extra_filter(qs, company) if extra_filter else qs
 
     def entity_of(row):
-        return getattr(row, entity_path, None)
+        obj = row
+        for part in entity_path.split("__"):
+            obj = getattr(obj, part, None) if obj is not None else None
+        return obj
 
     name = Col("persona", "Persona", lambda r: person_name(entity_of(r)),
                entity_path + "__first_surname", entity=True)
@@ -781,6 +807,28 @@ def _per_lists():
             default_order=("-pressed_at",),
             extra_filter=lambda qs, company: qs.filter(company=company),
             note="Periodo: hora del fichaje."),
+        "repostajes": _person_fk_def(
+            "Repostajes", "fleet.GasoGesSupply", ("vehicle__machine",), [
+                Col("fecha", "Fecha", lambda r: fmt_datetime(r.supplied_at),
+                    "supplied_at", "text-nowrap"),
+                Col("vehiculo", "Vehículo", lambda r: (
+                    r.vehicle.machine.code if r.vehicle.machine_id
+                    else (r.vehicle.name or r.vehicle.plate)),
+                    "vehicle__name"),
+                Col("litros", "Litros", lambda r: fmt_num(r.litres),
+                    "litres", "text-end"),
+                Col("precio", "Precio", lambda r: fmt_num(r.price, 3),
+                    "price", "text-end"),
+                Col("contador", "Contador", lambda r: r.meter_value or "",
+                    "meter_value", "text-end"),
+                Col("estado", "Estado", lambda r: r.status, "status"),
+            ], "supplied_at", date_is_datetime=True,
+            search=("vehicle__name", "vehicle__plate"),
+            default_order=("-supplied_at",), entity_path="user__person",
+            extra_filter=lambda qs, company: qs.filter(
+                user__person__isnull=False),
+            note="Periodo: fecha del repostaje (los que hizo como "
+                 "conductor en GasoGes)."),
         "vacaciones": _person_fk_def(
             "Vacaciones", "hr_calendar.VacationPeriod", (), [
                 Col("desde", "Desde", lambda r: fmt_date(r.date_start),
