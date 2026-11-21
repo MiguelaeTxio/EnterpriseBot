@@ -1,0 +1,164 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/new_ui/_ficha.html #}
+{% comment %}
+S163 (invasora UX). Pestaña "Ficha" de la nueva interfaz
+(NewUiCardView): la ficha de la persona o máquina que se está viendo
+sola, en el panel del listado como una pestaña más. Miguel Ángel: "no
+quiero la organización por acordeones [...] rompe por completo la
+vista de la aplicación". Todo a la vista, en cajas con el mismo aspecto
+que los paneles de la vista; nada plegado.
+- Cabecera: foto (la cámara la cambia por las mismas subidas que la
+  ficha de siempre), nombre, estado y botones (Modificar / Guardar /
+  Cancelar; en máquinas, Exportar la tarjeta técnica).
+- Persona: cada dato se ve y, al pulsar "Modificar", los editables se
+  cambian en el sitio y se guardan por documentation_personal_update
+  (la misma vista de la ficha de siempre). Debajo, periodos de
+  contratación y accesorios de elevación entregados.
+- Máquina: apartados de la tarjeta técnica; "Modificar" abre su
+  formulario real, guardado por NewUiMachineSaveView.
+Comportamiento en panel/static/panel/js/new_ui.js (data-nui-card-*,
+data-nui-view-only, data-nui-edit-only). Todo llega resuelto de la vista.
+{% endcomment %}
+<form class="nui-ficha p-2" data-kind="{{ kind }}" data-pk="{{ obj.pk }}" data-nui-card-form action="{{ save_url }}" novalidate>
+    {% csrf_token %}
+    <div class="d-flex gap-3 align-items-start flex-wrap mb-2">
+        <div class="position-relative flex-none" style="width: 120px; height: 120px;">
+            {% if photo_url %}
+            <img src="{{ photo_url }}" alt="Foto" class="rounded border w-100 h-100" style="object-fit: cover;">
+            {% else %}
+            <div class="rounded border w-100 h-100 d-flex align-items-center justify-content-center bg-light text-secondary"><i class="bi {% if kind == 'machine' %}bi-truck{% else %}bi-person{% endif %}" style="font-size: 3.2rem;"></i></div>
+            {% endif %}
+            <label class="btn btn-sm btn-primary rounded-circle position-absolute p-0 d-flex align-items-center justify-content-center" style="width: 32px; height: 32px; right: -6px; bottom: -6px;" title="{% if photo_url %}Cambiar foto{% else %}Añadir foto{% endif %}">
+                <i class="bi bi-camera"></i>
+                <input type="file" accept="image/*" class="d-none" data-nui-card-photo aria-label="Cambiar foto">
+            </label>
+        </div>
+        <div class="min-w-0 flex-grow-1">
+            <div class="fw-bold fs-5">{{ title }}</div>
+            <div class="small text-muted">{{ subtitle }}</div>
+            <div class="mt-1">{% if active %}<span class="badge text-bg-success">Activo</span>{% else %}<span class="badge text-bg-secondary">Inactivo</span>{% endif %}</div>
+        </div>
+        <div class="d-flex flex-wrap gap-1 align-items-start">
+            <button type="button" class="btn btn-sm btn-primary" data-nui-card-edit data-nui-view-only><i class="bi bi-pencil me-1"></i>Modificar</button>
+            {% if kind == "machine" %}
+            <div class="dropdown" data-nui-view-only>
+                <button type="button" class="btn btn-sm btn-success dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-box-arrow-up me-1"></i>Exportar</button>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                    {% for fmt, label, icon in export_formats %}<li><a class="dropdown-item" href="{{ export_url }}?fmt={{ fmt }}" download><i class="bi {{ icon }} me-2"></i>{{ label }}</a></li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            <button type="submit" class="btn btn-sm btn-success d-none" data-nui-edit-only><i class="bi bi-check2 me-1"></i>Guardar</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary d-none" data-nui-card-cancel data-nui-edit-only>Cancelar</button>
+        </div>
+    </div>
+    <div class="alert small py-1 px-2 mb-2 d-none" data-nui-card-result role="status"></div>
+
+    {% if kind == "machine" %}
+    <div class="nui-ficha-grid" data-nui-view-only>
+        {% for box in boxes %}
+        <section class="nui-ficha-box">
+            <div class="nui-ficha-head">{{ box.title }}</div>
+            <table class="table table-sm small mb-0"><tbody>
+                {% for item in box.items %}<tr><th class="text-muted fw-normal">{{ item.label }}</th><td>{{ item.display|default:"—" }}</td></tr>{% endfor %}
+            </tbody></table>
+        </section>
+        {% empty %}
+        <p class="text-muted small mb-0">Sin datos técnicos todavía: pulsa «Modificar» para rellenarlos.</p>
+        {% endfor %}
+    </div>
+    <section class="nui-ficha-box d-none" data-nui-edit-only>
+        <div class="nui-ficha-head">Modificar el centro de gasto</div>
+        <div class="p-2">{% include "panel/fleet/_form_fields.html" with hide_footer=True form_action="update" %}</div>
+    </section>
+    {% else %}
+    <div class="nui-ficha-grid">
+        {% for box in boxes %}
+        <section class="nui-ficha-box{% if box.wide %} nui-ficha-wide{% endif %}">
+            <div class="nui-ficha-head">{{ box.title }}</div>
+            <table class="table table-sm small mb-0"><tbody>
+                {% for item in box.items %}
+                <tr>
+                    <th class="text-muted fw-normal">{% if item.name %}<label class="mb-0" for="nui-ficha-{{ item.name }}">{{ item.label }}</label>{% else %}{{ item.label }}{% endif %}</th>
+                    <td>
+                        <span data-nui-view-only>{{ item.display|default:"—"|linebreaksbr }}</span>
+                        {% if item.name %}
+                        <span class="d-none" data-nui-edit-only>
+                            {% if item.kind == "textarea" %}
+                            <textarea class="form-control form-control-sm" id="nui-ficha-{{ item.name }}" name="{{ item.name }}" rows="3" disabled>{{ item.value }}</textarea>
+                            {% elif item.kind == "requirements" %}
+                            <input type="hidden" name="document_requirements_sent" value="1" disabled>
+                            <span class="d-flex flex-wrap gap-2" id="nui-ficha-{{ item.name }}">
+                                {% for position in positions %}
+                                <span class="form-check mb-0">
+                                    <input class="form-check-input" type="checkbox" name="document_requirements" value="{{ position.pk }}" id="nui-req-{{ position.pk }}" {% if position.pk in item.value %}checked{% endif %} disabled>
+                                    <label class="form-check-label text-nowrap" for="nui-req-{{ position.pk }}">{{ position.name }}{% if not position.is_active %} (desactivado){% endif %}</label>
+                                </span>
+                                {% endfor %}
+                            </span>
+                            {% else %}
+                            <input class="form-control form-control-sm" id="nui-ficha-{{ item.name }}" name="{{ item.name }}" type="{% if item.kind == 'date' %}date{% else %}text{% endif %}" value="{{ item.value }}" disabled>
+                            {% endif %}
+                        </span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody></table>
+        </section>
+        {% endfor %}
+
+        <section class="nui-ficha-box nui-ficha-wide">
+            <div class="nui-ficha-head">Periodos de contratación{% if employment.missing_count %} <span class="badge bg-danger ms-1">Falta{{ employment.missing_count|pluralize:"n" }} {{ employment.missing_count }} contrato{{ employment.missing_count|pluralize }}</span>{% endif %}</div>
+            <table class="table table-sm small mb-0">
+                <thead><tr><th>Alta</th><th>Baja</th><th>Contrato</th></tr></thead>
+                <tbody>
+                    {% for period in employment.periods %}
+                    <tr>
+                        <td class="text-nowrap">{% for alta in period.altas %}<a href="{% url 'panel:documentation_document_view' alta.pk %}" target="_blank">{{ alta.issue_date|date:"d/m/Y" }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</td>
+                        <td class="text-nowrap">{% if period.end_baja %}<a href="{% url 'panel:documentation_document_view' period.end_baja.pk %}" target="_blank">{{ period.end_date|date:"d/m/Y" }}</a>{% elif period.is_open %}<span class="text-muted">En curso</span>{% else %}<span class="text-warning-emphasis">Sin baja registrada</span>{% endif %}</td>
+                        <td>
+                            {% if period.has_contract %}{% for contract in period.contracts %}<a href="{% url 'panel:documentation_document_view' contract.pk %}" target="_blank">{{ contract.issue_date|date:"d/m/Y" }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}
+                            {% else %}<span class="text-danger fw-semibold">Falta contrato</span> <span class="text-muted">(fechado entre el {{ period.search_from|date:"d/m/Y" }} y el {{ period.search_to|date:"d/m/Y" }})</span>{% endif %}
+                            {% for extension in period.extensions %}<div class="text-muted"><a href="{% url 'panel:documentation_document_view' extension.pk %}" target="_blank">{{ extension.document_type.label }} del {{ extension.issue_date|date:"d/m/Y" }}{% if extension.expiry_date %} al {{ extension.expiry_date|date:"d/m/Y" }}{% endif %}</a></div>{% endfor %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="3" class="text-muted">Sin altas en la Seguridad Social registradas.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% if employment.undated_altas or employment.unplaced_extensions or employment.unmatched_contracts %}
+            <div class="small px-2 py-1 border-top">
+                {% if employment.undated_altas %}<div class="text-danger">Altas sin fecha: {% for alta in employment.undated_altas %}<a href="{% url 'panel:documentation_document_view' alta.pk %}" target="_blank">{{ alta.name }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+                {% if employment.unplaced_extensions %}<div class="text-muted">Prórrogas sin periodo: {% for extension in employment.unplaced_extensions %}<a href="{% url 'panel:documentation_document_view' extension.pk %}" target="_blank">{% if extension.issue_date %}{{ extension.issue_date|date:"d/m/Y" }}{% else %}{{ extension.name }}{% endif %}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+                {% if employment.unmatched_contracts %}<div class="text-muted">Contratos sin alta: {% for contract in employment.unmatched_contracts %}<a href="{% url 'panel:documentation_document_view' contract.pk %}" target="_blank">{% if contract.issue_date %}{{ contract.issue_date|date:"d/m/Y" }}{% else %}{{ contract.name }}{% endif %}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+            </div>
+            {% endif %}
+        </section>
+
+        <section class="nui-ficha-box nui-ficha-wide">
+            <div class="nui-ficha-head">Accesorios de elevación entregados</div>
+            <table class="table table-sm small mb-0">
+                <thead><tr><th>Identificador</th><th>Tipo</th><th>Descripción</th><th>Centro de gasto</th><th>Entregado</th><th>Caduca</th></tr></thead>
+                <tbody>
+                    {% for accessory in accessories %}
+                    <tr>
+                        <td class="text-nowrap">{{ accessory.identifier }}</td>
+                        <td>{{ accessory.accessory_type.label|default:"—" }}</td>
+                        <td>{{ accessory.description|default:"—" }}</td>
+                        <td class="text-nowrap">{% if accessory.current_machine %}<span data-machine-pk="{{ accessory.current_machine.pk }}">{{ accessory.current_machine.code }}</span>{% else %}—{% endif %}</td>
+                        <td class="text-nowrap">{{ accessory.current_assignment_row.start_date|date:"d/m/Y"|default:"—" }}</td>
+                        <td class="text-nowrap{% if accessory.is_expired %} text-danger fw-semibold{% endif %}">{{ accessory.expiry|date:"d/m/Y"|default:"—" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="text-muted">No tiene accesorios entregados.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+    </div>
+    {% endif %}
+    <div class="d-none" data-nui-card-urls
+         data-photo-upload="{% if kind == 'machine' %}{% url 'panel:documentation_upload' domain='machine' subject_pk=obj.pk %}{% else %}{% url 'panel:documentation_personal_photo_upload' pk=obj.pk %}{% endif %}"
+         data-photo-set="{% if kind == 'machine' %}{% url 'panel:documentation_machine_set_avatar' pk=obj.pk %}{% endif %}"></div>
+</form>

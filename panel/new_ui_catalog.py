@@ -21,6 +21,13 @@ PERMISSIONS = "permisos"
 
 # Sección -> (texto, icono, [(clave del listado, texto)]). El orden es
 # el del selector y el de las pestañas.
+#
+# "Ficha" (S163) no es un listado: es la ficha de la persona o máquina
+# que se está viendo sola, en la misma vista y con el mismo formato
+# que el resto (Miguel Ángel: "que no vaya por acordeones, que siga el
+# mismo formato que ya tenemos para todo"). Con una persona o máquina
+# sola, "Ficha" ocupa el sitio de "General"; sin ella, no se ve.
+FICHA = "ficha"
 SECTIONS = OrderedDict([
     ("doc", ("Documentos", "bi-folder2-open", [
         ("bandeja", "Bandeja de entrada"),
@@ -34,12 +41,14 @@ SECTIONS = OrderedDict([
     ])),
     ("per", ("Personal", "bi-people", [
         ("general", "General"),
+        ("ficha", "Ficha"),
         ("documentos", "Documentos"),
         ("laboral", "Laboral"),
         ("partes", "Partes"),
         ("fichajes", "Fichajes"),
         ("vacaciones", "Vacaciones"),
         ("salud", "Salud"),
+        ("ausencias", "Ausencias"),
         ("solicitudes", "Solicitudes"),
         ("horarios", "Horarios"),
         ("nominas", "Nóminas"),
@@ -48,6 +57,7 @@ SECTIONS = OrderedDict([
     ])),
     ("cdg", ("Centros de gasto", "bi-truck", [
         ("general", "General"),
+        ("ficha", "Ficha"),
         ("documentos", "Documentos"),
         ("especificaciones", "Especificaciones"),
         ("avisos", "Avisos"),

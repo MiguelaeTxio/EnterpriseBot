@@ -2094,6 +2094,20 @@ este programa"*. La 4.24 ya lo exigía (punto 6) y se ignoró.
    - **Cada panel se organiza en pestañas** para su configuración (como
      ya «Buscar y filtrar» / «Columnas», o el menú de acciones por
      bloques), en vez de alargarse hacia abajo.
+   - **Fichas (persona, centro de gasto) sin acordeones, nunca.** La
+     ficha es una pestaña más («Ficha») del listado de la misma vista,
+     con el mismo formato que el resto: al pulsar una persona o máquina
+     la vista se queda solo con lo suyo, «Ficha» ocupa el sitio de
+     «General» (foto, todos sus datos en cajas a la vista, «Modificar»
+     en el sitio) y las demás pestañas (Documentos, Laboral, Partes,
+     Vacaciones...) muestran solo lo suyo. Miguel Ángel (S163),
+     verbatim: *"no quiero la organización por acordeones [...] rompe
+     por completo la vista de la aplicación y parece que estamos dentro
+     de una aplicación diferente."* Referencia:
+     `panel/templates/panel/new_ui/_ficha.html` (NewUiCardView). Las
+     fichas de acordeones de siempre siguen en producción hasta que la
+     nueva interfaz se abra a todos; dentro de ella, nada lleva ya a
+     ellas (menú de la fila, botón derecho y Acciones abren la pestaña).
 5. **Al añadir o cambiar algo común en una pestaña, en el mismo bloque
    de trabajo se aplica a todas** (o se deja anotado como pendiente
    abierto con la lista exacta de pestañas que faltan, nunca

@@ -256,21 +256,15 @@ def entity_ids(kind, company, params):
 
 
 def _person_actions(person):
-    if person is None:
-        return []
-    return [
-        ("Ficha actual del trabajador", "bi-person-badge",
-         reverse("panel:documentation_personal_detail", args=[person.pk])),
-    ]
+    # S163: la ficha de la persona es la pestaña "Ficha" de esta misma
+    # vista ("Ver su ficha" en el menú de la fila); nada lleva ya a la
+    # ficha antigua de acordeones.
+    return []
 
 
 def _machine_actions(machine):
-    if machine is None:
-        return []
-    return [
-        ("Ficha actual del centro de gasto", "bi-truck",
-         reverse("panel:documentation_machine_detail", args=[machine.pk])),
-    ]
+    # S163: igual que _person_actions, con la ficha del centro de gasto.
+    return []
 
 
 def _doc_actions(entry):
@@ -810,6 +804,20 @@ def _per_lists():
                     lambda r: disp(r, "contingency_type"), "contingency_type"),
             ], "date_start", default_order=("-date_start",),
             note="Periodo: inicio de la baja."),
+        "ausencias": _person_fk_def(
+            "Ausencias", "hr_calendar.AbsencePeriod", ("category",), [
+                Col("motivo", "Ausencia", lambda r: r.category.label
+                    if r.category_id else "", "category__label"),
+                Col("desde", "Desde", lambda r: fmt_date(r.date_start),
+                    "date_start", "text-nowrap"),
+                Col("hasta", "Hasta", lambda r: fmt_date(r.date_end),
+                    "date_end", "text-nowrap"),
+                Col("dias", "Días", _days, "", "text-end"),
+                Col("nota", "Nota", lambda r: short(r.note), "note"),
+            ], "date_start", search=("note", "category__label"),
+            default_order=("-date_start",),
+            extra_filter=lambda qs, company: qs.filter(company=company),
+            note="Periodo: inicio de la ausencia."),
         "solicitudes": _person_fk_def(
             "Solicitudes", "hr_calendar.WorkerRequest", (), [
                 Col("tipo", "Solicitud", lambda r: disp(r, "kind"),

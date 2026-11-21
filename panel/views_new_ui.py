@@ -35,7 +35,7 @@ from panel.navigation_persistence import (
     apply_list_navigation, get_saved_state_key,
 )
 from panel.new_ui_catalog import (
-    PERMISSIONS, SECTIONS, all_view_keys, label_of,
+    FICHA, PERMISSIONS, SECTIONS, all_view_keys, label_of,
 )
 from panel.new_ui_filters import (
     period_context, period_range, sort_headers, sort_rows,
@@ -266,6 +266,9 @@ def _section_context(company_user, section):
     tabs_cols = []
     for tab_key, tab_label in SECTIONS[section][2]:
         definition = list_def(section, tab_key)
+        if definition is None:
+            # "Ficha" no es un listado: sin columnas ni filtros propios.
+            continue
         visible = {c.key for c in visible_columns(
             definition, cols.get("%s.%s" % (section, tab_key)))}
         tabs_cols.append({
@@ -672,14 +675,48 @@ class NewUiExportView(SuperuserRequiredMixin, View):
             "%s_%s" % (SECTIONS[section][0], definition.label))
 
 
-def _machine_card_context(request, machine):
+def _ficha_item(label, display, name="", value="", kind="text"):
+    """
+    One row of a ficha box: label, shown value and (if editable) input.
+
+    ---
+
+    Una fila de un apartado de la ficha: rótulo, valor que se ve y,
+    si se puede modificar, el nombre y el valor del campo (`kind`:
+    text, date o textarea).
+    """
+    return {"label": label, "display": display, "name": name,
+            "value": value, "kind": kind}
+
+
+def _machine_ficha_context(request, machine):
+    """
+    Ficha of a cost centre: photo, technical card boxes and its form.
+
+    ---
+
+    La ficha del centro de gasto en la pestaña "Ficha": foto, los
+    apartados de la tarjeta técnica (como cajas, todas a la vista) y,
+    al pulsar "Modificar", su formulario real (MachineAssetForm), que
+    se guarda por la vista real de la ficha (NewUiMachineSaveView).
+    """
     from django.urls import reverse
 
+    from fleet.forms import MachineAssetForm
     from panel.views_machine_menu import (
-        EXPORT_CHOICES, card_sections, machine_menu_items, machine_title,
+        EXPORT_CHOICES, card_sections, machine_title,
     )
 
     avatar = machine.avatar_document
+    boxes = [{"title": title, "items": [_ficha_item(label, value)
+                                        for label, value in rows]}
+             for title, rows in card_sections(machine)]
+    if machine.specs_read_at or machine.specs_source:
+        boxes.append({"title": "Origen de los datos", "items": [
+            _ficha_item("Leídos de", machine.specs_source or "—"),
+            _ficha_item("Fecha", machine.specs_read_at.strftime(
+                "%d/%m/%Y %H:%M") if machine.specs_read_at else "—"),
+        ]})
     return {
         "kind": "machine",
         "obj": machine,
@@ -687,25 +724,41 @@ def _machine_card_context(request, machine):
         "subtitle": " · ".join(p for p in (machine.type_name, machine.family,
                                             machine.company_name) if p),
         "active": machine.is_active,
-        "sections": card_sections(machine),
+        "boxes": boxes,
         "photo_url": (reverse("panel:documentation_document_view",
                               args=[avatar.pk])
                       if avatar is not None and not avatar.deleted_at
                       else ""),
-        "links": [i for i in machine_menu_items(
-            _company_user(request), machine) if not i["card"]],
         "export_url": reverse("panel:machine_card_export",
                               args=[machine.pk]),
         "export_formats": EXPORT_CHOICES,
+        "form": MachineAssetForm(instance=machine, company=machine.company),
+        "save_url": reverse("panel:new_ui_machine_save", args=[machine.pk]),
     }
 
 
-def _person_card_context(request, person):
+def _person_ficha_context(request, person):
+    """
+    Ficha of a worker: photo, every datum in boxes, employment, kit.
+
+    ---
+
+    La ficha del trabajador en la pestaña "Ficha": foto y todos sus
+    datos en cajas a la vista (datos personales, contacto, empresa y
+    puesto, caducidades, observaciones), sus periodos de contratación y
+    los accesorios de elevación que tiene entregados. "Modificar" deja
+    editables en el sitio los mismos campos que la ficha de siempre y
+    guarda por su misma vista (documentation_personal_update); lo que
+    trae el Excel de personal (DNI, empresa, caducidades) se queda de
+    solo lectura, como allí.
+    """
     from django.urls import reverse
 
-    from document_explorer.models import PersonIdPhoto
-    from panel.new_ui_lists import fmt_date, person_name
-    from panel.views_documentation_h30 import PersonalUpdateView
+    from document_explorer.models import JobPosition, PersonIdPhoto
+    from panel.new_ui_lists import fmt_date, person_name, persons_base
+    from panel.views_documentation_h30 import (
+        _person_employment_periods, _person_lifting_accessories,
+    )
 
     id_photo = PersonIdPhoto.objects.filter(person=person).values(
         "extracted_at").first()
@@ -719,37 +772,66 @@ def _person_card_context(request, person):
                             args=[avatar.pk])
     else:
         photo_url = ""
-    labels = {
-        "given_name": "Nombre", "first_surname": "Primer apellido",
-        "second_surname": "Segundo apellido", "nickname": "Apodo",
-        "phone": "Teléfono", "phone_secondary": "Teléfono 2",
-        "email": "Correo", "address_street": "Domicilio",
-        "postal_code": "C.P.", "city": "Población", "province": "Provincia",
-        "ss_affiliation_number": "Nº de afiliación a la S.S.",
-        "professional_category": "Categoría profesional",
-        "emergency_contact": "Contacto de emergencia",
-        "phone_emergency": "Teléfono de emergencia", "notes": "Observaciones",
-        "hire_date": "Fecha de alta", "termination_date": "Fecha de baja",
-    }
-    fields = []
-    for field in PersonalUpdateView.EDITABLE_FIELDS:
+
+    def text(label, field, kind="text"):
+        value = getattr(person, field) or ""
+        return _ficha_item(label, value, field, value, kind)
+
+    def day(label, field, editable=False):
         value = getattr(person, field)
-        is_date = field in PersonalUpdateView.DATE_EDITABLE_FIELDS
-        fields.append({
-            "name": field, "label": labels.get(field, field),
-            "is_date": is_date,
-            "value": value.isoformat() if is_date and value else (value or ""),
-            "display": fmt_date(value) if is_date else (value or ""),
-        })
-    fixed = [
-        ("DNI/NIE", person.dni), ("Empresa", person.employer_company),
-        ("Fecha de nacimiento", fmt_date(person.birth_date)),
-        ("Caducidad del DNI", fmt_date(person.dni_expiry_date)),
-        ("Caducidad del carné de conducir",
-         fmt_date(person.driving_license_expiry_date)),
-        ("Caducidad del carné de gruista",
-         fmt_date(person.crane_operator_card_expiry_date)),
-        ("Reconocimiento médico", fmt_date(person.medical_exam_date)),
+        return _ficha_item(label, fmt_date(value),
+                           field if editable else "",
+                           value.isoformat() if value else "", "date")
+
+    section = persons_base().filter(pk=person.pk).values_list(
+        "current_section_name", flat=True).first()
+    user = person.company_user
+    requirements = list(person.document_requirements.order_by("name"))
+    boxes = [
+        {"title": "Datos personales", "items": [
+            text("Nombre", "given_name"),
+            text("Primer apellido", "first_surname"),
+            text("Segundo apellido", "second_surname"),
+            text("Apodo", "nickname"),
+            _ficha_item("DNI/NIE", person.dni),
+            day("Fecha de nacimiento", "birth_date"),
+        ]},
+        {"title": "Contacto", "items": [
+            text("Teléfono", "phone"),
+            text("Teléfono 2", "phone_secondary"),
+            text("Correo", "email"),
+            text("Domicilio", "address_street"),
+            text("C.P.", "postal_code"),
+            text("Población", "city"),
+            text("Provincia", "province"),
+            text("Contacto de emergencia", "emergency_contact"),
+            text("Teléfono de emergencia", "phone_emergency"),
+        ]},
+        {"title": "Empresa y puesto", "items": [
+            _ficha_item("Empresa", person.employer_company),
+            text("Categoría profesional", "professional_category"),
+            _ficha_item("Sección (SIME)", section or ""),
+            _ficha_item("Requisitos de documentación", ", ".join(
+                r.name for r in requirements), "document_requirements",
+                [r.pk for r in requirements], "requirements"),
+            day("Fecha de alta", "hire_date", True),
+            day("Fecha de baja", "termination_date", True),
+            text("Nº de afiliación a la S.S.", "ss_affiliation_number"),
+            _ficha_item("Usuario del panel", "%s (%s)" % (
+                user.user.username, user.get_role_display())
+                if user is not None else ""),
+        ]},
+        {"title": "Caducidades", "items": [
+            day("DNI", "dni_expiry_date"),
+            day("Carné de conducir", "driving_license_expiry_date"),
+            day("Carné de gruista", "crane_operator_card_expiry_date"),
+            day("CAP", "driver_qualification_card_expiry_date"),
+            day("Tarjeta de tacógrafo", "tachograph_card_expiry_date"),
+            day("Reconocimiento médico", "medical_exam_date"),
+        ]},
+        {"title": "Observaciones", "wide": True, "items": [
+            text("Observaciones", "notes", "textarea"),
+        ]},
     ]
     return {
         "kind": "person",
@@ -758,29 +840,33 @@ def _person_card_context(request, person):
         "subtitle": " · ".join(p for p in (person.professional_category,
                                             person.employer_company) if p),
         "active": person.is_active_employee,
-        "fixed": [(k, v) for k, v in fixed if v],
-        "fields": fields,
+        "boxes": boxes,
+        "positions": JobPosition.objects.order_by("name"),
+        "employment": _person_employment_periods(person),
+        "accessories": _person_lifting_accessories(
+            person, _company_user(request).company),
         "photo_url": photo_url,
-        "detail_url": reverse("panel:documentation_personal_detail",
-                              args=[person.pk]),
+        "save_url": reverse("panel:documentation_personal_update",
+                            args=[person.pk]),
     }
 
 
 class NewUiCardView(SuperuserRequiredMixin, View):
     """
-    GET ?s=cdg|per&pk=: the card of one machine or person (panel 5).
+    GET ?s=cdg|per&pk=: the "Ficha" tab of one machine or person.
 
     ---
 
-    GET: la tarjeta del panel de seleccionados: foto (con la cámara para
-    cambiarla), datos y "Modificar". La máquina se modifica con su
-    formulario real (MachineAssetForm) y la persona con los campos
-    editables de su ficha, por las mismas vistas que la ficha actual.
+    GET: la pestaña "Ficha" de la máquina o la persona que se está
+    viendo sola, en el panel del listado y con el mismo formato que el
+    resto de la vista (S163, Miguel Ángel: "no quiero la organización
+    por acordeones [...] parece que estamos dentro de una aplicación
+    diferente"). Sustituye, dentro de la nueva interfaz, a las fichas
+    de acordeones de siempre, que siguen igual en producción.
     """
 
     def get(self, request):
         from document_explorer.models import PersonIdentity
-        from fleet.forms import MachineAssetForm
         from fleet.models import MachineAsset
 
         section = request.GET.get("s", "")
@@ -788,22 +874,23 @@ class NewUiCardView(SuperuserRequiredMixin, View):
         company_user = _company_user(request)
         if not pk.isdigit():
             return HttpResponseBadRequest("Falta la persona o máquina.")
+        if not _check_view(request, section, FICHA):
+            return HttpResponseBadRequest("Ficha no disponible.")
         if section == "cdg":
             machine = MachineAsset.objects.filter(
                 company=company_user.company, pk=int(pk)).first()
             if machine is None:
                 return HttpResponseBadRequest("No existe.")
-            context = _machine_card_context(request, machine)
-            context["form"] = MachineAssetForm(
-                instance=machine, company=machine.company)
+            context = _machine_ficha_context(request, machine)
         elif section == "per":
-            person = PersonIdentity.objects.filter(pk=int(pk)).first()
+            person = PersonIdentity.objects.filter(pk=int(pk)).select_related(
+                "company_user__user").first()
             if person is None:
                 return HttpResponseBadRequest("No existe.")
-            context = _person_card_context(request, person)
+            context = _person_ficha_context(request, person)
         else:
-            return HttpResponseBadRequest("Sin tarjeta.")
-        return render(request, "panel/new_ui/_card.html", context)
+            return HttpResponseBadRequest("Sin ficha.")
+        return render(request, "panel/new_ui/_ficha.html", context)
 
 
 class NewUiMachineSaveView(SuperuserRequiredMixin, View):

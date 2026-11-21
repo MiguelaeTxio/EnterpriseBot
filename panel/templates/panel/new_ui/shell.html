@@ -10,8 +10,8 @@ el 21/11/2026). Selector de qué se gestiona y cinco paneles comunes
   abajo (salida, alto y ancho ajustables): Listado de filtrados · Seleccionados
 Documentos, Personal y Centros de gasto: un listado por pestaña
 (panel/new_ui_lists.py, cargado al abrirla) y, al pulsar una persona o
-máquina, la misma vista solo con lo suyo y su tarjeta en el panel de
-seleccionados. Permisos: panel/new_ui/permisos/. Comportamiento en
+máquina, la misma vista solo con lo suyo: su pestaña "Ficha" (en el
+sitio de "General", panel/new_ui/_ficha.html) y sus listados. Permisos: panel/new_ui/permisos/. Comportamiento en
 panel/static/panel/js/new_ui.js. De momento solo para el superusuario.
 {% endcomment %}
 {% block title %}Nueva interfaz{% endblock %}
@@ -37,6 +37,13 @@ panel/static/panel/js/new_ui.js. De momento solo para el superusuario.
 body.nui-dragging { user-select: none; }
 .nui-list table thead th { position: sticky; top: 0; background: #f8f9fa; z-index: 1; white-space: nowrap; }
 .nui-depth-1 { padding-left: 1.6rem !important; }
+.nui-ficha-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 8px; align-items: start; }
+.nui-ficha-box { border: 1px solid #dee2e6; border-radius: .375rem; background: #fff; min-width: 0; overflow: hidden; }
+.nui-ficha-box.nui-ficha-wide { grid-column: 1 / -1; }
+.nui-ficha-head { font-size: .8rem; font-weight: 600; padding: .3rem .6rem; background: #f8f9fa; border-bottom: 1px solid #dee2e6; }
+.nui-ficha-box .table th { width: 42%; }
+.nui-ficha-box .table > :not(caption) > * > * { padding: .2rem .6rem; }
+.nui-ficha-box .table tr:last-child > * { border-bottom: 0; }
 .nui-panel .eb-fit-col { position: relative; width: 100%; flex: 1 1 auto; min-height: 0; padding: 0; }
 .nui-panel .eb-fit-col > .eb-fit-card { position: absolute; inset: 0; border: 0 !important; }
 .nui-panel .eb-fit-col > .eb-fit-card > .fw-bold:first-child { display: none; }
@@ -62,7 +69,7 @@ body.nui-dragging { user-select: none; }
     {% if section == "cdg" or section == "per" %}
     <div id="nui-scope-chip" class="align-items-center gap-2 rounded-pill border border-primary-subtle bg-primary-subtle px-2 py-1 small {% if scope %}d-flex{% else %}d-none{% endif %}">
         <i class="bi bi-funnel-fill text-primary"></i>
-        <span>Solo <strong id="nui-scope-label">{{ scope.label }}</strong>: sus listados y su tarjeta</span>
+        <span>Solo <strong id="nui-scope-label">{{ scope.label }}</strong>: su ficha y sus listados</span>
         <button type="button" class="btn btn-sm btn-link p-0 text-danger" id="nui-scope-clear" aria-label="Volver al listado completo" title="Volver al listado completo"><i class="bi bi-x-lg"></i></button>
     </div>
     {% endif %}
@@ -95,6 +102,7 @@ body.nui-dragging { user-select: none; }
                         </div>
                     </div>
                     {% endfor %}
+                    {% if section == "cdg" or section == "per" %}<p data-nui-cols-for="ficha" class="small text-muted mb-0 d-none">La ficha no tiene columnas: enseña todos los datos.</p>{% endif %}
                 </div>
                 {% endif %}
                 <div data-nui-pane="propios" class="d-none">
@@ -102,6 +110,7 @@ body.nui-dragging { user-select: none; }
                     <p class="text-muted mb-1">Permisos no tiene filtros propios: el bloque común filtra los usuarios (el periodo, por su último acceso; «Sección», por su rol).</p>
                     {% else %}
                     {% for tab in tabs_cols %}<p class="small mb-1 d-none" data-nui-note-for="{{ tab.key }}"><strong>{{ tab.label }}:</strong> {{ tab.note|default:"sin filtros propios." }}</p>{% endfor %}
+                    {% if section == "cdg" or section == "per" %}<p class="small mb-1 d-none" data-nui-note-for="ficha"><strong>Ficha:</strong> los filtros no se aplican a la ficha; sí a las demás pestañas.</p>{% endif %}
                     <p class="small text-muted mb-0">El bloque común (estado, empresa, grupo, {{ opts.family_label|lower }}) se aplica a {% if section == "cdg" %}la máquina{% else %}la persona{% endif %} de cada fila.</p>
                     {% endif %}
                 </div>
@@ -168,9 +177,10 @@ body.nui-dragging { user-select: none; }
         <section class="nui-panel nui-list" data-nui-panel="listado" aria-label="Listado de filtrados">
             <div class="nui-tabs nav" role="tablist">
                 {% for key, label in list_tabs %}
-                <button type="button" class="nav-link" data-nui-tab="{{ key }}" role="tab">{{ label }}</button>
+                {# "Ficha" solo con una persona o máquina sola; entonces ocupa el sitio de "General". #}
+                <button type="button" class="nav-link{% if key == 'ficha' and not scope %} d-none{% elif key == 'general' and scope and section != 'doc' %} d-none{% endif %}" data-nui-tab="{{ key }}" role="tab">{{ label }}</button>
                 {% endfor %}
-                {% if section != "permisos" %}<span class="ms-auto small text-muted align-self-center pe-2"><span data-nui-total>…</span> filas</span>{% endif %}
+                {% if section != "permisos" %}<span class="ms-auto small text-muted align-self-center pe-2" data-nui-total-box><span data-nui-total>…</span> filas</span>{% endif %}
             </div>
             <div class="nui-body flush" id="nui-lists">
                 {% if section == "permisos" %}
@@ -191,8 +201,6 @@ body.nui-dragging { user-select: none; }
                 <button type="button" class="nav-link" data-nui-tab="lista" role="tab">Seleccionados (<span data-nui-count>0</span>)</button>
                 {% if section == "permisos" %}
                 <button type="button" class="nav-link" data-nui-tab="permisos" role="tab">Permisos</button>
-                {% elif section != "doc" %}
-                <button type="button" class="nav-link" data-nui-tab="tarjeta" role="tab">Tarjeta</button>
                 {% endif %}
             </div>
             <div class="nui-body">
@@ -211,8 +219,6 @@ body.nui-dragging { user-select: none; }
                     </select>
                     <div id="nui-editor"></div>
                 </div>
-                {% elif section != "doc" %}
-                <div data-nui-pane="tarjeta" class="d-none" id="nui-card"><p class="text-muted small mb-0">Pulsa {% if section == "cdg" %}un centro de gasto{% else %}una persona{% endif %} en el listado para ver aquí su tarjeta.</p></div>
                 {% endif %}
             </div>
         </section>

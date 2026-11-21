@@ -14,7 +14,9 @@
  * (panel/views_new_ui.NewUiListView), con su orden, sus columnas
  * ("cols_<sección>") y su selección ("sel_<sección>"); pulsar una
  * persona o máquina la deja sola en toda la vista ("scope_<sección>"),
- * con su tarjeta y sus acciones; exportar; grupos de selección.
+ * con su pestaña "Ficha" (en el sitio de "General", sin acordeones) y
+ * sus acciones; el botón derecho abre aquí las pestañas que existen
+ * (window.EbEntityOpen); exportar; grupos de selección.
  * Permisos: editor, acciones en bloque y grupos de usuarios.
  */
 (function () {
@@ -270,6 +272,7 @@
         let loading = 0;
         function load() {
             const t = tab();
+            if (t === "ficha") { loadCard(); return; }
             const box = pane(t);
             if (!box) return;
             const ticket = ++loading;
@@ -304,6 +307,10 @@
         // Cambio de pestaña del listado: su selección, sus columnas, su nota.
         listPanel.addEventListener("nui:tab", function (ev) {
             const t = ev.detail;
+            const scoped = !!(scope && scope.pk) && section !== "doc";
+            if (t === "ficha" && !scoped) { showTab(listPanel, "general", false); return; }
+            if (t === "general" && scoped) { showTab(listPanel, "ficha", false); return; }
+            root.querySelectorAll("[data-nui-total-box]").forEach(el => el.classList.toggle("invisible", t === "ficha"));
             root.querySelectorAll("[data-nui-cols-for]").forEach(el => el.classList.toggle("d-none", el.dataset.nuiColsFor !== t));
             root.querySelectorAll("[data-nui-note-for]").forEach(el => el.classList.toggle("d-none", el.dataset.nuiNoteFor !== t));
             load();
@@ -360,13 +367,19 @@
                 const label = document.getElementById("nui-scope-label");
                 if (label) label.textContent = scope ? scope.label : "";
             }
-            loadCard();
+            const scoped = !!(scope && scope.pk);
+            const fichaTab = listPanel.querySelector('[data-nui-tab="ficha"]');
+            const generalTab = listPanel.querySelector('[data-nui-tab="general"]');
+            if (fichaTab) fichaTab.classList.toggle("d-none", !scoped);
+            if (generalTab && fichaTab) generalTab.classList.toggle("d-none", scoped);
             loadEntityActions();
         }
-        function setScope(value) {
+        function setScope(value, target) {
             if (section === "doc") {
                 // En Documentos, la persona se abre en Personal.
                 const values = {"scope_per": value};
+                tabs["per:listado"] = "ficha";
+                values.tabs = tabs;
                 save(values);
                 if (window.EbNavState && window.EbNavState.flush) window.EbNavState.flush();
                 setTimeout(function () { window.location.href = "?s=per"; }, 300);
@@ -377,9 +390,11 @@
             values["scope_" + section] = value;
             save(values);
             paintScope();
-            const sp = panelOf("seleccion");
-            if (sp && value && sp.querySelector('[data-nui-tab="tarjeta"]')) showTab(sp, "tarjeta", true);
-            load();
+            // Con una persona o máquina sola se abre su ficha (o la pestaña
+            // pedida desde el menú); al quitarla, se vuelve a "General".
+            const now = tab();
+            const wanted = value ? (target || "ficha") : (now === "ficha" ? "general" : now);
+            if (wanted !== now) showTab(listPanel, wanted, true); else load();
         }
         const scopeClear = document.getElementById("nui-scope-clear");
         if (scopeClear) scopeClear.addEventListener("click", function () { setScope(null); });
@@ -407,86 +422,121 @@
                     a.href = item.url;
                     a.innerHTML = '<i class="bi ' + item.icon + ' me-1"></i>';
                     a.appendChild(document.createTextNode(item.label));
-                    if (item.card) {
-                        a.addEventListener("click", function (ev) { ev.preventDefault(); window.EbMachineCard.open(item.url); });
-                    }
+                    a.addEventListener("click", function (ev) {
+                        if (ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
+                        if (window.EbEntityOpen(section === "cdg" ? "machine" : "person", scope.pk, scope.label, item.code)) { ev.preventDefault(); return; }
+                        if (item.card) { ev.preventDefault(); window.EbMachineCard.open(item.url); }
+                    });
                     wrap.appendChild(a);
                 });
                 box.appendChild(wrap);
             }).catch(function () { box.innerHTML = '<p class="small text-danger mb-0">No se han podido cargar sus acciones.</p>'; });
         }
 
-        // Tarjeta: foto, datos, Modificar.
-        const cardBox = document.getElementById("nui-card");
+        // Pestaña "Ficha" (S163): la ficha de la persona o máquina vista
+        // sola, como una pestaña más del listado (sin acordeones).
+        function fichaBox() { return pane("ficha"); }
         function loadCard() {
-            if (!cardBox) return;
-            if (!(scope && scope.pk)) {
-                cardBox.innerHTML = '<p class="text-muted small mb-0">Pulsa ' + (section === "cdg" ? "un centro de gasto" : "una persona") + ' en el listado para ver aquí su tarjeta.</p>';
-                return;
-            }
-            cardBox.innerHTML = '<p class="text-muted small mb-0">Cargando…</p>';
+            const box = fichaBox();
+            if (!box) return;
+            if (!(scope && scope.pk)) { box.innerHTML = ""; return; }
+            const ticket = ++loading;
+            box.innerHTML = '<p class="text-muted small p-3 mb-0">Cargando…</p>';
             fetch(urls.card + "?s=" + section + "&pk=" + scope.pk, {credentials: "same-origin"})
                 .then(r => r.ok ? r.text() : Promise.reject(r.status))
-                .then(function (html) { cardBox.innerHTML = html; })
-                .catch(function () { cardBox.innerHTML = '<p class="text-danger small mb-0">No se ha podido cargar la tarjeta.</p>'; });
+                .then(function (html) { if (ticket === loading) box.innerHTML = html; })
+                .catch(function () { if (ticket === loading) box.innerHTML = '<p class="text-danger small p-3 mb-0">No se ha podido cargar la ficha.</p>'; });
         }
         function cardResult(text, isError) {
-            const box = cardBox.querySelector("[data-nui-card-result]");
+            const box = fichaBox() && fichaBox().querySelector("[data-nui-card-result]");
             if (!box) return;
             box.className = "alert small py-1 px-2 mb-2 alert-" + (isError ? "danger" : "success");
             box.textContent = text;
         }
         function cardEditing(on) {
-            cardBox.querySelectorAll("[data-nui-card-view]").forEach(el => el.classList.toggle("d-none", on));
-            const f = cardBox.querySelector("[data-nui-card-form]");
-            if (f) f.classList.toggle("d-none", !on);
-        }
-        if (cardBox) {
-            cardBox.addEventListener("click", function (ev) {
-                if (ev.target.closest("[data-nui-card-edit]")) cardEditing(true);
-                if (ev.target.closest("[data-nui-card-cancel]")) cardEditing(false);
-            });
-            cardBox.addEventListener("submit", function (ev) {
-                const f = ev.target.closest("[data-nui-card-form]");
-                if (!f) return;
-                ev.preventDefault();
-                const body = new FormData(f);
-                post(f.getAttribute("action"), body, cardResult)
-                    .then(function () { setTimeout(function () { loadCard(); load(); }, 600); })
-                    .catch(() => {});
-            });
-            cardBox.addEventListener("change", function (ev) {
-                const input = ev.target.closest("[data-nui-card-photo]");
-                if (!input || !input.files.length) return;
-                const card = cardBox.querySelector(".nui-card");
-                const urlsBox = cardBox.querySelector("[data-nui-card-urls]");
-                const body = new FormData();
-                body.append("file", input.files[0]);
-                if (card.dataset.kind === "machine") body.append("document_type_code", "IMAGEN");
-                cardResult("Subiendo la foto…", false);
-                fetch(urlsBox.dataset.photoUpload, {method: "POST", credentials: "same-origin", body: body, headers: {"X-CSRFToken": csrf()}})
-                    .then(r => r.json())
-                    .then(function (data) {
-                        if (card.dataset.kind === "machine") {
-                            const up = (data.uploaded || [])[0];
-                            if (!up) throw new Error((data.errors && data.errors[0]) || data.error || "No se ha podido subir la foto.");
-                            const b = new URLSearchParams({entry_id: up.entry_id});
-                            return fetch(urlsBox.dataset.photoSet, {method: "POST", credentials: "same-origin", body: b, headers: {"X-CSRFToken": csrf()}}).then(r => r.json());
-                        }
-                        return data;
-                    })
-                    .then(function (data) {
-                        if (data && data.ok === false) throw new Error(data.error || "No se ha podido fijar la foto.");
-                        cardResult("Foto cambiada.", false);
-                        setTimeout(loadCard, 600);
-                    })
-                    .catch(function (err) { cardResult(err.message || "No se ha podido cambiar la foto.", true); });
+            const box = fichaBox();
+            if (!box) return;
+            box.querySelectorAll("[data-nui-view-only]").forEach(el => el.classList.toggle("d-none", on));
+            box.querySelectorAll("[data-nui-edit-only]").forEach(function (el) {
+                el.classList.toggle("d-none", !on);
+                el.querySelectorAll("input, textarea, select").forEach(i => { i.disabled = !on; });
             });
         }
+        lists.addEventListener("click", function (ev) {
+            if (!ev.target.closest(".nui-ficha")) return;
+            if (ev.target.closest("[data-nui-card-edit]")) cardEditing(true);
+            if (ev.target.closest("[data-nui-card-cancel]")) { cardEditing(false); loadCard(); }
+        });
+        lists.addEventListener("submit", function (ev) {
+            const f = ev.target.closest("[data-nui-card-form]");
+            if (!f) return;
+            ev.preventDefault();
+            const body = new FormData(f);
+            post(f.getAttribute("action"), body, cardResult)
+                .then(function () { setTimeout(loadCard, 600); })
+                .catch(() => {});
+        });
+        lists.addEventListener("change", function (ev) {
+            const input = ev.target.closest("[data-nui-card-photo]");
+            if (!input || !input.files.length) return;
+            const card = input.closest(".nui-ficha");
+            const urlsBox = card.querySelector("[data-nui-card-urls]");
+            const body = new FormData();
+            body.append("file", input.files[0]);
+            if (card.dataset.kind === "machine") body.append("document_type_code", "IMAGEN");
+            cardResult("Subiendo la foto…", false);
+            fetch(urlsBox.dataset.photoUpload, {method: "POST", credentials: "same-origin", body: body, headers: {"X-CSRFToken": csrf()}})
+                .then(r => r.json())
+                .then(function (data) {
+                    if (card.dataset.kind === "machine") {
+                        const up = (data.uploaded || [])[0];
+                        if (!up) throw new Error((data.errors && data.errors[0]) || data.error || "No se ha podido subir la foto.");
+                        const b = new URLSearchParams({entry_id: up.entry_id});
+                        return fetch(urlsBox.dataset.photoSet, {method: "POST", credentials: "same-origin", body: b, headers: {"X-CSRFToken": csrf()}}).then(r => r.json());
+                    }
+                    return data;
+                })
+                .then(function (data) {
+                    if (data && data.ok === false) throw new Error(data.error || "No se ha podido fijar la foto.");
+                    cardResult("Foto cambiada.", false);
+                    setTimeout(loadCard, 600);
+                })
+                .catch(function (err) { cardResult(err.message || "No se ha podido cambiar la foto.", true); });
+        });
+
+        // Desde el botón derecho (context_menu.js): una entrada que tiene
+        // pestaña aquí (ficha, vacaciones, revisiones...) la abre aquí, con
+        // la persona o máquina sola, en vez de ir a la pantalla de siempre.
+        const MENU_TABS = {
+            person: {ficha: "ficha", fichajes: "fichajes", horarios: "horarios", vacaciones: "vacaciones", calendario: "ausencias", partes: "partes"},
+            machine: {tarjeta: "ficha", ficha: "ficha", libro: "libro", revisiones_firmadas: "libro", partes: "taller", revisiones: "revisiones", repostajes: "repostajes", equipos: "equipos", especificaciones: "especificaciones"},
+        };
+        window.EbEntityOpen = function (kind, pk, label, code) {
+            const target = (MENU_TABS[kind] || {})[code];
+            if (!target) return false;
+            const own = (kind === "person" && section === "per") || (kind === "machine" && section === "cdg");
+            const scopeValue = {pk: String(pk), label: label || ""};
+            if (!own) {
+                if (!(kind === "person" && section === "doc")) return false;
+                const values = {scope_per: scopeValue};
+                tabs["per:listado"] = target;
+                values.tabs = tabs;
+                save(values);
+                if (window.EbNavState && window.EbNavState.flush) window.EbNavState.flush();
+                setTimeout(function () { window.location.href = "?s=per"; }, 300);
+                return true;
+            }
+            setScope(scopeValue, target);
+            return true;
+        };
 
         // Exportar.
         root.querySelectorAll("[data-nui-export]").forEach(function (button) {
             button.addEventListener("click", function () {
+                if (tab() === "ficha") {
+                    result(section === "cdg" ? "La ficha se exporta con su botón «Exportar» (PDF, Word, HTML, PNG o JPG)." : "La ficha no es un listado: elige otra pestaña para exportar.", false);
+                    return;
+                }
                 const p = params({export_format: button.dataset.nuiExport});
                 Array.from(sel().keys()).forEach(pk => p.append("selected", pk));
                 const url = urls.export + "?" + p.toString();
