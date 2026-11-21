@@ -311,13 +311,18 @@ def _mark_current(entries):
     `is_obsolete`, que solo recoge las sustituciones ya escritas en BD.
     Miguel Ángel (S163): "3 contratos laborales, 3 contratos vigentes".
     Se calcula con todos los documentos de cada sujeto de las filas
-    pintadas, no solo con los que se ven.
+    pintadas, no solo con los que se ven. En personas, además, los dos
+    pasos de su ficha: los laborales de periodos de contratación
+    anteriores y, en Laboral, solo el último de cada tipo.
     """
-    from document_explorer.models import DocumentIndexEntry
+    from document_explorer.models import DocumentIndexEntry, PersonIdentity
     from document_explorer.required_documentation_service import (
         get_required_type_ids,
     )
-    from panel.views_documentation_h30 import _split_current_obsolete
+    from panel.views_documentation_h30 import (
+        _keep_latest_laboral_per_type, _move_previous_period_documents,
+        _person_employment_periods, _split_current_obsolete,
+    )
 
     subjects = {}
     for entry in entries:
@@ -339,10 +344,23 @@ def _mark_current(entries):
         for sibling in siblings:
             by_subject.setdefault(
                 (ct_id, sibling.domain_object_id), []).append(sibling)
+    # Requisitos de todos los sujetos en tres consultas (no dos por cada
+    # uno): get_required_type_ids lee el prefetch.
+    for ct_id, ids in by_ct.items():
+        model = ContentType.objects.get_for_id(ct_id).model_class()
+        for subject in model.objects.filter(pk__in=ids).prefetch_related(
+                "document_requirements__required_document_types"):
+            subjects[(ct_id, subject.pk)] = subject
     current = set()
     for key, subject in subjects.items():
-        kept, _old = _split_current_obsolete(
-            by_subject.get(key, []), get_required_type_ids(subject))
+        siblings = by_subject.get(key, [])
+        kept, old = _split_current_obsolete(
+            siblings, get_required_type_ids(subject))
+        if isinstance(subject, PersonIdentity):
+            employment = _person_employment_periods(subject, siblings)
+            kept, old = _move_previous_period_documents(
+                kept, old, employment["periods"])
+            kept, old = _keep_latest_laboral_per_type(kept, old)
         current.update(e.pk for e in kept)
     for entry in entries:
         entry.nui_current = (entry.pk in current
