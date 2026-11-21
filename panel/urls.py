@@ -33,7 +33,8 @@ from panel.views_circulars_h31 import (
 from panel.views_machine_qr import MachineQrImageView, MachineQrSheetView
 from panel.views_specs_tab import SpecsExportView, SpecsTabView
 from panel.views_machine_menu import (
-    MachineCardView, MachineGoView, MachineMenuView,
+    MachineCardExportView, MachineCardView, MachineGoView,
+    MachineMenuView,
 )
 from panel.views_refuels import (
     RefuelsResultsView,
@@ -1555,6 +1556,11 @@ urlpatterns = [
         "documentacion/maquinaria/<int:pk>/tarjeta-tecnica/",
         MachineCardView.as_view(),
         name="machine_card",
+    ),
+    path(
+        "documentacion/maquinaria/<int:pk>/tarjeta-tecnica/exportar/",
+        MachineCardExportView.as_view(),
+        name="machine_card_export",
     ),
     # H30 (S135): repostajes del surtidor (GasoGes), formato 4.24.
     path(

@@ -50,6 +50,16 @@ _HUB_TABS = {
 }
 
 
+# Formatos de la exportación de la tarjeta: (parámetro, texto, icono).
+EXPORT_CHOICES = (
+    ("pdf", "PDF", "bi-filetype-pdf"),
+    ("docx", "Word", "bi-filetype-docx"),
+    ("html", "HTML", "bi-filetype-html"),
+    ("png", "Imagen PNG", "bi-filetype-png"),
+    ("jpg", "Imagen JPG", "bi-filetype-jpg"),
+)
+
+
 def _machine(request, pk):
     machine = MachineAsset.objects.filter(
         pk=pk, company=request.user.company_user.company,
@@ -270,6 +280,26 @@ def card_sections(machine):
     return sections
 
 
+class MachineCardExportView(CompanyUserRequiredMixin, View):
+    """
+    GET ?fmt=jpg|png|pdf|docx|html: the technical card as a download.
+    ---
+    GET ?fmt=jpg|png|pdf|docx|html: la tarjeta técnica como descarga
+    (panel/machine_card_export.py). Miguel Ángel (S163): "un botón
+    exportar con opciones jpg, png, pdf, word, html".
+    """
+
+    def get(self, request, pk):
+        from panel.machine_card_export import FORMATS, card_export_response
+
+        machine = _machine(request, pk)
+        fmt = (request.GET.get("fmt") or "pdf").lower()
+        if fmt not in FORMATS:
+            raise Http404
+        return card_export_response(
+            machine, machine_title(machine), card_sections(machine), fmt)
+
+
 class MachineCardView(CompanyUserRequiredMixin, View):
     """
     GET: the technical card of a cost centre (window fragment).
@@ -298,4 +328,7 @@ class MachineCardView(CompanyUserRequiredMixin, View):
             ],
             "specs_read_at": machine.specs_read_at,
             "specs_source": machine.specs_source,
+            "export_url": reverse("panel:machine_card_export",
+                                  args=[machine.pk]),
+            "export_formats": EXPORT_CHOICES,
         })

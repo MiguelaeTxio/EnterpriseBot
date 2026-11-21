@@ -43,6 +43,17 @@ en cuestión, no la ficha". Contexto: MachineCardView
     {% endif %}
 </div>
 <div class="modal-footer py-2 justify-content-start">
+    {# S163: exportar la tarjeta (panel/machine_card_export.py). #}
+    <div class="dropdown">
+        <button type="button" class="btn btn-sm btn-success dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+            <i class="bi bi-box-arrow-up me-1"></i>Exportar
+        </button>
+        <ul class="dropdown-menu shadow-sm">
+            {% for fmt, label, icon in export_formats %}
+            <li><a class="dropdown-item" href="{{ export_url }}?fmt={{ fmt }}" download><i class="bi {{ icon }} me-2"></i>{{ label }}</a></li>
+            {% endfor %}
+        </ul>
+    </div>
     {% for link in links %}
     <a href="{{ link.url }}" class="btn btn-sm {% if link.code == 'libro' %}btn-primary{% else %}btn-outline-primary{% endif %}">
         <i class="bi {{ link.icon }} me-1"></i>{{ link.label }}
