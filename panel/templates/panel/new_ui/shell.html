@@ -69,8 +69,9 @@ body.nui-dragging { user-select: none; }
     {% if section == "cdg" or section == "per" %}
     <div id="nui-scope-chip" class="align-items-center gap-2 rounded-pill border border-primary-subtle bg-primary-subtle px-2 py-1 small {% if scope %}d-flex{% else %}d-none{% endif %}">
         <i class="bi bi-funnel-fill text-primary"></i>
-        <span>Solo <strong id="nui-scope-label">{{ scope.label }}</strong>: su ficha y sus listados</span>
-        <button type="button" class="btn btn-sm btn-link p-0 text-danger" id="nui-scope-clear" aria-label="Volver al listado completo" title="Volver al listado completo"><i class="bi bi-x-lg"></i></button>
+        <span>Viendo la ficha de <strong id="nui-scope-label">{{ scope.label }}</strong></span>
+        <span class="text-muted">·</span>
+        <button type="button" class="btn btn-sm btn-link p-0 text-danger text-decoration-none" id="nui-scope-clear" title="Volver al listado completo"><i class="bi bi-x-lg me-1"></i>volver a todos</button>
     </div>
     {% endif %}
     <span class="small text-muted ms-auto">Nueva interfaz · solo visible para ti</span>
