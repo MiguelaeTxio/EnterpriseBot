@@ -1,0 +1,46 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/new_ui/permisos/_actions_panel.html #}
+{% comment %}
+S163 (invasora UX). Permisos · Acciones: arriba siempre "N
+seleccionados · Limpiar · Solo los filtrados" (4.27); debajo, en
+pestañas, dar un nivel sobre una vista a todos los seleccionados. Cada
+acción avisa de lo que hizo o de por qué falló (#nui-result).
+{% endcomment %}
+<div class="nui-tabs nav" role="tablist">
+    <button type="button" class="nav-link" data-nui-tab="permisos" role="tab">Dar permisos</button>
+    <button type="button" class="nav-link" data-nui-tab="ayuda" role="tab">Cómo se combinan</button>
+</div>
+<div class="nui-body">
+    <div class="d-flex align-items-center gap-2 mb-2">
+        <strong class="small"><span data-nui-count id="nui-mass-count">0</span> seleccionados</strong>
+        <button type="button" class="btn btn-sm btn-outline-secondary py-0" id="nui-mass-clear">Limpiar</button>
+    </div>
+    <div data-nui-pane="permisos">
+        <div class="row g-1 small">
+            <div class="col-7">
+                <label class="fw-semibold" for="nui-grant-view">Vista</label>
+                <select class="form-select form-select-sm" id="nui-grant-view">
+                    {% for key, label, depth in view_keys %}
+                    <option value="{{ key }}">{% if depth %}   · {% endif %}{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-5">
+                <label class="fw-semibold" for="nui-grant-level">Nivel</label>
+                <select class="form-select form-select-sm" id="nui-grant-level">
+                    {% for code, label in levels %}<option value="{{ code }}">{{ label }}</option>{% endfor %}
+                    <option value="">Quitar (heredado)</option>
+                </select>
+            </div>
+        </div>
+        <button type="button" class="btn btn-sm btn-success mt-2" id="nui-grant-apply">Aplicar a los seleccionados</button>
+    </div>
+    <div data-nui-pane="ayuda" class="d-none small">
+        <ol class="ps-3 mb-0">
+            <li>Lo puesto al propio usuario manda sobre todo.</li>
+            <li>Si no, el mayor entre sus grupos y su rol.</li>
+            <li>Un listado sin permiso propio hereda el de su sección.</li>
+            <li>Sin nada: sin acceso. Tú (superusuario) lo ves todo.</li>
+        </ol>
+    </div>
+    <div class="alert small py-1 px-2 mt-2 mb-0 d-none" id="nui-result" role="status"></div>
+</div>

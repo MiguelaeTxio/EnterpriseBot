@@ -1,0 +1,88 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/new_ui/permisos/_lists.html #}
+{% comment %}
+S163 (invasora UX). Permisos · listados (también el fragmento que
+devuelven los filtros): Usuarios (casillas, orden múltiple por
+cabecera, menú de tres puntos), Grupos de usuarios y Por vista (quién
+tiene permiso propio en cada vista). Contexto: _list_context en
+panel/views_new_ui.py.
+{% endcomment %}
+<div id="nui-list-state" class="d-none" data-count="{{ count }}"></div>
+<div data-nui-pane="usuarios">
+    <table class="table table-sm table-hover align-middle small mb-0">
+        <thead>
+            <tr>
+                <th><input type="checkbox" class="form-check-input" id="nui-check-all" aria-label="Seleccionar todos" title="Seleccionar todos los que cumplen el filtro"></th>
+                {% for col in user_headers %}
+                <th>{% if col.sort %}<a href="#" class="text-reset text-decoration-none" data-nui-sort="{{ col.next }}">{{ col.label }}{% if col.arrow %} <i class="bi bi-arrow-{{ col.arrow }}-short"></i>{% if col.priority %}<sup>{{ col.priority }}</sup>{% endif %}{% else %} <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>{% endif %}</a>{% else %}{{ col.label }}{% endif %}</th>
+                {% endfor %}
+                <th class="text-end">Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+            <tr class="{% if not user.is_active %}text-muted{% endif %}">
+                <td><input type="checkbox" class="form-check-input nui-row-check" value="{{ user.pk }}" data-label="{{ user.display_name }}" aria-label="Seleccionar {{ user.display_name }}"></td>
+                <td class="text-nowrap">{{ user.user.username }}</td>
+                <td>{{ user.display_name }}</td>
+                <td>{{ user.get_role_display }}</td>
+                <td>{{ user.group_names|default:"—" }}</td>
+                <td>{% if user.is_active %}<span class="badge text-bg-success">Activo</span>{% else %}<span class="badge text-bg-secondary">Inactivo</span>{% endif %}</td>
+                <td class="text-nowrap">{{ user.user.last_login|date:"d/m/Y H:i"|default:"—" }}</td>
+                <td class="text-end">{{ user.views_count }}</td>
+                <td class="text-end">
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-outline-secondary border-0 px-2" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Acciones de {{ user.display_name }}"><i class="bi bi-three-dots-vertical"></i></button>
+                        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                            <li><button type="button" class="dropdown-item" data-nui-edit="user:{{ user.pk }}"><i class="bi bi-shield-lock me-2"></i>Ver y cambiar sus permisos</button></li>
+                        </ul>
+                    </div>
+                </td>
+            </tr>
+            {% empty %}
+            <tr class="eb-empty-row"><td colspan="{{ user_headers|length|add:2 }}" class="text-center text-muted py-4">Ningún usuario cumple los filtros.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<div data-nui-pane="grupos" class="d-none">
+    <table class="table table-sm table-hover align-middle small mb-0">
+        <thead><tr><th>Grupo de usuarios</th><th>Usuarios</th><th>Vistas con permiso propio</th><th class="text-end">Acciones</th></tr></thead>
+        <tbody>
+            {% for group in groups %}
+            <tr>
+                <td class="fw-semibold">{{ group.name }}</td>
+                <td>{{ group.members.all|length }}</td>
+                <td>{{ group.grants.all|length }}</td>
+                <td class="text-end">
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-outline-secondary border-0 px-2" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Acciones de {{ group.name }}"><i class="bi bi-three-dots-vertical"></i></button>
+                        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                            <li><button type="button" class="dropdown-item" data-nui-edit="group:{{ group.pk }}"><i class="bi bi-shield-lock me-2"></i>Ver y cambiar sus permisos</button></li>
+                            <li><button type="button" class="dropdown-item" data-nui-select-group="{{ group.pk }}"><i class="bi bi-check2-square me-2"></i>Seleccionar sus usuarios</button></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><button type="button" class="dropdown-item text-danger" data-nui-delete-group="{{ group.pk }}"><i class="bi bi-trash me-2"></i>Borrar el grupo</button></li>
+                        </ul>
+                    </div>
+                </td>
+            </tr>
+            {% empty %}
+            <tr class="eb-empty-row"><td colspan="4" class="text-center text-muted py-4">Todavía no hay grupos de usuarios: marca usuarios y créalo en Grupos de selección › Gestionar.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<div data-nui-pane="vistas" class="d-none">
+    <table class="table table-sm align-middle small mb-0">
+        <thead><tr><th>Vista</th><th>Roles</th><th>Grupos de usuarios</th><th>Usuarios</th></tr></thead>
+        <tbody>
+            {% for view in views %}
+            <tr class="{% if not view.depth %}table-light fw-semibold{% endif %}">
+                <td class="{% if view.depth %}nui-depth-1{% endif %}">{{ view.label }}</td>
+                <td>{{ view.roles|default:"—" }}</td>
+                <td>{{ view.groups|default:"—" }}</td>
+                <td>{{ view.users|default:"—" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

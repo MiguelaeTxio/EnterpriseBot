@@ -1,0 +1,39 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/new_ui/permisos/_groups_panel.html #}
+{% comment %}
+S163 (invasora UX). Permisos · Grupos de selección: los grupos de
+usuarios (PanelUserGroup). Marcar uno o varios carga sus usuarios como
+selección (la suma); "Gestionar" crea un grupo con la selección actual
+o añade/quita la selección de un grupo. Lógica: panel/views_new_ui.py.
+{% endcomment %}
+<div class="nui-tabs nav" role="tablist">
+    <button type="button" class="nav-link" data-nui-tab="grupos" role="tab">Grupos de usuarios</button>
+    <button type="button" class="nav-link" data-nui-tab="gestionar" role="tab">Gestionar</button>
+</div>
+<div class="nui-body">
+    <div data-nui-pane="grupos">
+        {% for group in user_groups %}
+        <div class="form-check">
+            <input class="form-check-input nui-group-check" type="checkbox" value="{{ group.pk }}" id="nui-group-{{ group.pk }}">
+            <label class="form-check-label" for="nui-group-{{ group.pk }}">{{ group.name }} <span class="text-muted">({{ group.members.count }})</span></label>
+        </div>
+        {% empty %}
+        <p class="text-muted mb-1">Todavía no hay grupos de usuarios.</p>
+        {% endfor %}
+        <p class="small text-muted mt-2 mb-0">Marca uno o varios grupos: sus usuarios pasan a ser la selección (la suma).</p>
+    </div>
+    <div data-nui-pane="gestionar" class="d-none">
+        <label class="small fw-semibold" for="nui-group-name">Grupo nuevo con la selección</label>
+        <div class="input-group input-group-sm mb-2">
+            <input type="text" class="form-control" id="nui-group-name" maxlength="120" placeholder="Nombre del grupo">
+            <button type="button" class="btn btn-primary" id="nui-group-create">Crear</button>
+        </div>
+        <label class="small fw-semibold" for="nui-group-target">Grupo existente</label>
+        <select class="form-select form-select-sm mb-1" id="nui-group-target">
+            {% for group in user_groups %}<option value="{{ group.pk }}">{{ group.name }}</option>{% endfor %}
+        </select>
+        <div class="d-flex gap-1">
+            <button type="button" class="btn btn-sm btn-outline-primary" id="nui-group-add">Añadir la selección</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="nui-group-remove">Quitar la selección</button>
+        </div>
+    </div>
+</div>

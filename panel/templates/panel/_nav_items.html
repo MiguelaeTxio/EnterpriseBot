@@ -829,6 +829,13 @@
     {# (Django is_superuser, not a CompanyUser role).                      #}
     {# ------------------------------------------------------------------ #}
     {% if request.user.is_superuser %}
+        {# S163 (invasora UX): nueva interfaz en construcción, solo superusuario. #}
+        <li class="nav-item mt-2">
+            <a class="nav-link {% if active_nav == 'new_ui' %}active{% endif %}"
+               href="{% url 'panel:new_ui' %}">
+                <i class="bi bi-window-stack"></i>Nueva interfaz
+            </a>
+        </li>
         <li class="nav-item mt-2">
             <a class="nav-link {% if active_nav == 'work_order_drafts' %}active{% endif %}"
                href="{% url 'panel:work_order_drafts' %}">

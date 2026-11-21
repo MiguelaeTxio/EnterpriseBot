@@ -1,0 +1,37 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/new_ui/permisos/_editor.html #}
+{% comment %}
+S163 (invasora UX). Editor de permisos de un sujeto (usuario, grupo o
+rol): una fila por vista con su permiso propio ("Heredado" si no tiene)
+y, para un usuario, el permiso efectivo y de dónde sale. Cada cambio se
+guarda al momento (panel/static/panel/js/new_ui.js →
+PermEditorView.post).
+{% endcomment %}
+{% if not subject %}
+<p class="text-muted small mb-0">Marca un solo usuario en el listado, o elige arriba un grupo o un rol, para ver y cambiar sus permisos.</p>
+{% else %}
+<div data-subject="{{ subject }}">
+    <div class="fw-semibold small mb-1">{{ subject_label }}</div>
+    <table class="table table-sm align-middle small mb-0">
+        <thead><tr><th>Vista</th><th>Permiso propio</th>{% if subject_kind == "user" %}<th>Efectivo</th>{% endif %}</tr></thead>
+        <tbody>
+            {% for row in rows %}
+            <tr class="{% if not row.depth %}table-light{% endif %}">
+                <td class="{% if row.depth %}nui-depth-1{% else %}fw-semibold{% endif %}">{{ row.label }}</td>
+                <td>
+                    <select class="form-select form-select-sm py-0" data-view-key="{{ row.key }}" aria-label="Permiso propio en {{ row.label }}">
+                        <option value="" {% if not row.own %}selected{% endif %}>Heredado</option>
+                        {% for code, label in levels %}<option value="{{ code }}" {% if row.own == code %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                </td>
+                {% if subject_kind == "user" %}
+                <td title="{{ row.origin }}">
+                    <span class="badge {% if row.effective_rank == 2 %}text-bg-success{% elif row.effective_rank == 1 %}text-bg-primary{% else %}text-bg-secondary{% endif %}">{{ row.effective }}</span>
+                    <div class="text-muted" style="font-size: .7rem">{{ row.origin }}</div>
+                </td>
+                {% endif %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}

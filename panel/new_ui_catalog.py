@@ -1,0 +1,115 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/new_ui_catalog.py
+"""
+Catalogue of the new interface's views (sections and their lists).
+
+---
+
+Catálogo de las vistas de la nueva interfaz (S163, sesión invasora de
+UX): una vista única de Documentación con un selector de qué se
+gestiona (Documentos, Personal, Centros de gasto, Permisos) y, dentro,
+los listados de cada uno en pestañas. Miguel Ángel: "Quiero que
+tengamos una única vista para la entrada de documentación que lo
+unifique todo".
+
+Cada sección y cada listado tiene una clave (`cdg`, `cdg.documentos`...)
+sobre la que se dan permisos (panel/new_ui_permissions.py). Las claves
+no se renombran nunca: son las que quedan guardadas en PanelViewGrant.
+"""
+from collections import OrderedDict
+
+PERMISSIONS = "permisos"
+
+# Sección -> (texto, icono, [(clave del listado, texto)]). El orden es
+# el del selector y el de las pestañas.
+SECTIONS = OrderedDict([
+    ("doc", ("Documentos", "bi-folder2-open", [
+        ("bandeja", "Bandeja de entrada"),
+        ("circulares", "Circulares"),
+        ("dosieres", "Dosieres"),
+        ("avisos", "Avisos"),
+        ("pedir", "Pedir documentos"),
+        ("firmas", "Firmas"),
+        ("seguros", "Seguros"),
+        ("calendario", "Calendario"),
+    ])),
+    ("per", ("Personal", "bi-people", [
+        ("general", "General"),
+        ("documentos", "Documentos"),
+        ("laboral", "Laboral"),
+        ("partes", "Partes"),
+        ("fichajes", "Fichajes"),
+        ("vacaciones", "Vacaciones"),
+        ("salud", "Salud"),
+        ("solicitudes", "Solicitudes"),
+        ("horarios", "Horarios"),
+        ("nominas", "Nóminas"),
+        ("epis", "EPIs"),
+        ("requisitos", "Requisitos"),
+    ])),
+    ("cdg", ("Centros de gasto", "bi-truck", [
+        ("general", "General"),
+        ("documentos", "Documentos"),
+        ("especificaciones", "Especificaciones"),
+        ("avisos", "Avisos"),
+        ("revisiones", "Revisiones"),
+        ("repostajes", "Repostajes"),
+        ("accesorios", "Accesorios"),
+        ("taller", "Taller"),
+        ("libro", "Libro historial"),
+        ("equipos", "Equipos"),
+    ])),
+    (PERMISSIONS, ("Permisos", "bi-shield-lock", [
+        ("usuarios", "Usuarios"),
+        ("grupos", "Grupos de usuarios"),
+        ("vistas", "Por vista"),
+    ])),
+])
+
+
+def section_key(view_key):
+    """
+    "cdg.documentos" -> "cdg".
+
+    ---
+
+    La sección a la que pertenece una clave.
+    """
+    return view_key.split(".", 1)[0]
+
+
+def all_view_keys():
+    """
+    [(key, label, depth)] of every grantable view, in display order.
+
+    ---
+
+    Todas las vistas a las que se dan permisos, en orden: la sección
+    (profundidad 0) y debajo sus listados (profundidad 1). Permisos no
+    entra: de momento solo la ve el superusuario, sin permisos que dar.
+    """
+    rows = []
+    for key, (label, _icon, tabs) in SECTIONS.items():
+        if key == PERMISSIONS:
+            continue
+        rows.append((key, label, 0))
+        for tab_key, tab_label in tabs:
+            rows.append(("%s.%s" % (key, tab_key), tab_label, 1))
+    return rows
+
+
+def label_of(view_key):
+    """
+    "Centros de gasto › Documentos" for a key; the key if unknown.
+
+    ---
+
+    Rótulo legible de una clave.
+    """
+    section = section_key(view_key)
+    if section not in SECTIONS:
+        return view_key
+    label, _icon, tabs = SECTIONS[section]
+    if view_key == section:
+        return label
+    tab = view_key.split(".", 1)[1]
+    return "%s › %s" % (label, dict(tabs).get(tab, tab))
