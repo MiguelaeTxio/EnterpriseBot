@@ -1,4 +1,4 @@
-# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/new_ui_permissions.py
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/permissions.py
 """
 Effective permission of a user on a view of the new interface.
 
@@ -16,21 +16,21 @@ Permiso efectivo de un usuario sobre una vista de la nueva interfaz
    (`cdg.documentos` hereda de `cdg`).
 5. Sin ningún permiso: sin acceso.
 """
-from panel.models import PanelViewGrant
-from panel.new_ui_catalog import PERMISSIONS, section_key
+from new_ui.models import UiViewGrant
+from new_ui.catalog import PERMISSIONS, section_key
 
 RANK = {
-    PanelViewGrant.LEVEL_NONE: 0,
-    PanelViewGrant.LEVEL_VIEW: 1,
-    PanelViewGrant.LEVEL_EDIT: 2,
+    UiViewGrant.LEVEL_NONE: 0,
+    UiViewGrant.LEVEL_VIEW: 1,
+    UiViewGrant.LEVEL_EDIT: 2,
 }
-LABELS = dict(PanelViewGrant.LEVEL_CHOICES)
+LABELS = dict(UiViewGrant.LEVEL_CHOICES)
 
 
 def _grants_for(company_user, keys):
-    group_ids = list(company_user.panel_user_groups.values_list(
+    group_ids = list(company_user.new_ui_user_groups.values_list(
         "pk", flat=True))
-    grants = PanelViewGrant.objects.filter(
+    grants = UiViewGrant.objects.filter(
         company=company_user.company, view_key__in=keys,
     ).select_related("user_group")
     out = []
@@ -73,14 +73,14 @@ def effective_levels(company_user, keys):
     clave, con una sola consulta.
     """
     if company_user.user.is_superuser:
-        return {key: (PanelViewGrant.LEVEL_EDIT, "Superusuario")
+        return {key: (UiViewGrant.LEVEL_EDIT, "Superusuario")
                 for key in keys}
     sections = {section_key(key) for key in keys}
     grants = _grants_for(company_user, set(keys) | sections)
     result = {}
     for key in keys:
         if section_key(key) == PERMISSIONS:
-            result[key] = (PanelViewGrant.LEVEL_NONE, "Solo superusuario")
+            result[key] = (UiViewGrant.LEVEL_NONE, "Solo superusuario")
             continue
         level, origin = _resolve(grants, company_user, key)
         if level is None and key != section_key(key):
@@ -88,7 +88,7 @@ def effective_levels(company_user, keys):
             if level is not None:
                 origin = "%s (heredado de la sección)" % origin
         if level is None:
-            level, origin = PanelViewGrant.LEVEL_NONE, "Sin permiso"
+            level, origin = UiViewGrant.LEVEL_NONE, "Sin permiso"
         result[key] = (level, origin)
     return result
 
@@ -102,7 +102,7 @@ def can_view(company_user, key):
     True si el usuario puede al menos ver la vista.
     """
     level, _origin = effective_levels(company_user, [key])[key]
-    return RANK[level] >= RANK[PanelViewGrant.LEVEL_VIEW]
+    return RANK[level] >= RANK[UiViewGrant.LEVEL_VIEW]
 
 
 def set_grant(company, view_key, level, updated_by, role="",
@@ -120,13 +120,13 @@ def set_grant(company, view_key, level, updated_by, role="",
         "role": role if not (user_group or company_user) else "",
         "user_group": user_group, "company_user": company_user,
     }
-    existing = PanelViewGrant.objects.filter(**filters)
+    existing = UiViewGrant.objects.filter(**filters)
     if not level:
         existing.delete()
         return None
     grant = existing.first()
     if grant is None:
-        grant = PanelViewGrant(**filters)
+        grant = UiViewGrant(**filters)
     grant.level = level
     grant.updated_by = updated_by
     grant.save()

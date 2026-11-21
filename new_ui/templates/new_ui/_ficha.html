@@ -1,4 +1,4 @@
-{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/new_ui/_ficha.html #}
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_ficha.html #}
 {% comment %}
 S163 (invasora UX). Pestaña "Ficha" de la nueva interfaz
 (NewUiCardView): la ficha de la persona o máquina que se está viendo
@@ -15,7 +15,7 @@ que los paneles de la vista; nada plegado.
   contratación y accesorios de elevación entregados.
 - Máquina: apartados de la tarjeta técnica; "Modificar" abre su
   formulario real, guardado por NewUiMachineSaveView.
-Comportamiento en panel/static/panel/js/new_ui.js (data-nui-card-*,
+Comportamiento en new_ui/static/new_ui/js/new_ui.js (data-nui-card-*,
 data-nui-view-only, data-nui-edit-only). Todo llega resuelto de la vista.
 {% endcomment %}
 <form class="nui-ficha p-2" data-kind="{{ kind }}" data-pk="{{ obj.pk }}" data-nui-card-form action="{{ save_url }}" novalidate>
@@ -60,10 +60,10 @@ data-nui-view-only, data-nui-edit-only). Todo llega resuelto de la vista.
             <div class="d-flex gap-3 align-items-center p-2">
                 <div class="flex-none" style="width: 120px;">{{ qr_svg|safe }}</div>
                 <div class="small">
-                    <p class="text-muted mb-2">Lo que ve el trabajador al leerlo con el móvil.</p>
+                    <p class="text-muted mb-2">Lo que ve el trabajador al leerlo con el móvil. Observaciones, fotos y vídeos: pestaña «QR».</p>
                     <div class="d-flex flex-wrap gap-1">
-                        <a class="btn btn-sm btn-outline-dark" href="{{ qr_sheet_url }}"><i class="bi bi-qr-code me-1"></i>Página del QR</a>
                         <a class="btn btn-sm btn-outline-secondary" href="{{ qr_image_url }}" download><i class="bi bi-download me-1"></i>Descargar para imprimir</a>
+                        <a class="btn btn-sm btn-outline-primary" href="{{ qr_public_url }}" target="_blank" rel="noopener"><i class="bi bi-phone me-1"></i>Ver como el trabajador</a>
                     </div>
                 </div>
             </div>
@@ -81,7 +81,7 @@ data-nui-view-only, data-nui-edit-only). Todo llega resuelto de la vista.
     </div>
     <section class="nui-ficha-box d-none" data-nui-edit-only>
         <div class="nui-ficha-head">Modificar el centro de gasto</div>
-        <div class="p-2">{% include "panel/fleet/_form_fields.html" with hide_footer=True form_action="update" %}</div>
+        <div class="p-2">{% include "new_ui/_machine_form_fields.html" with hide_footer=True form_action="update" %}</div>
     </section>
     {% else %}
     <div class="nui-ficha-grid">
@@ -127,12 +127,12 @@ data-nui-view-only, data-nui-edit-only). Todo llega resuelto de la vista.
                 <tbody>
                     {% for period in employment.periods %}
                     <tr>
-                        <td class="text-nowrap">{% for alta in period.altas %}<a href="{% url 'panel:documentation_document_view' alta.pk %}" target="_blank">{{ alta.issue_date|date:"d/m/Y" }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</td>
-                        <td class="text-nowrap">{% if period.end_baja %}<a href="{% url 'panel:documentation_document_view' period.end_baja.pk %}" target="_blank">{{ period.end_date|date:"d/m/Y" }}</a>{% elif period.is_open %}<span class="text-muted">En curso</span>{% else %}<span class="text-warning-emphasis">Sin baja registrada</span>{% endif %}</td>
+                        <td class="text-nowrap">{% for alta in period.altas %}<a href="{% url 'new_ui:document_file' alta.pk %}" target="_blank">{{ alta.issue_date|date:"d/m/Y" }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</td>
+                        <td class="text-nowrap">{% if period.end_baja %}<a href="{% url 'new_ui:document_file' period.end_baja.pk %}" target="_blank">{{ period.end_date|date:"d/m/Y" }}</a>{% elif period.is_open %}<span class="text-muted">En curso</span>{% else %}<span class="text-warning-emphasis">Sin baja registrada</span>{% endif %}</td>
                         <td>
-                            {% if period.has_contract %}{% for contract in period.contracts %}<a href="{% url 'panel:documentation_document_view' contract.pk %}" target="_blank">{{ contract.issue_date|date:"d/m/Y" }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}
+                            {% if period.has_contract %}{% for contract in period.contracts %}<a href="{% url 'new_ui:document_file' contract.pk %}" target="_blank">{{ contract.issue_date|date:"d/m/Y" }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}
                             {% else %}<span class="text-danger fw-semibold">Falta contrato</span> <span class="text-muted">(fechado entre el {{ period.search_from|date:"d/m/Y" }} y el {{ period.search_to|date:"d/m/Y" }})</span>{% endif %}
-                            {% for extension in period.extensions %}<div class="text-muted"><a href="{% url 'panel:documentation_document_view' extension.pk %}" target="_blank">{{ extension.document_type.label }} del {{ extension.issue_date|date:"d/m/Y" }}{% if extension.expiry_date %} al {{ extension.expiry_date|date:"d/m/Y" }}{% endif %}</a></div>{% endfor %}
+                            {% for extension in period.extensions %}<div class="text-muted"><a href="{% url 'new_ui:document_file' extension.pk %}" target="_blank">{{ extension.document_type.label }} del {{ extension.issue_date|date:"d/m/Y" }}{% if extension.expiry_date %} al {{ extension.expiry_date|date:"d/m/Y" }}{% endif %}</a></div>{% endfor %}
                         </td>
                     </tr>
                     {% empty %}
@@ -142,9 +142,9 @@ data-nui-view-only, data-nui-edit-only). Todo llega resuelto de la vista.
             </table>
             {% if employment.undated_altas or employment.unplaced_extensions or employment.unmatched_contracts %}
             <div class="small px-2 py-1 border-top">
-                {% if employment.undated_altas %}<div class="text-danger">Altas sin fecha: {% for alta in employment.undated_altas %}<a href="{% url 'panel:documentation_document_view' alta.pk %}" target="_blank">{{ alta.name }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
-                {% if employment.unplaced_extensions %}<div class="text-muted">Prórrogas sin periodo: {% for extension in employment.unplaced_extensions %}<a href="{% url 'panel:documentation_document_view' extension.pk %}" target="_blank">{% if extension.issue_date %}{{ extension.issue_date|date:"d/m/Y" }}{% else %}{{ extension.name }}{% endif %}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
-                {% if employment.unmatched_contracts %}<div class="text-muted">Contratos sin alta: {% for contract in employment.unmatched_contracts %}<a href="{% url 'panel:documentation_document_view' contract.pk %}" target="_blank">{% if contract.issue_date %}{{ contract.issue_date|date:"d/m/Y" }}{% else %}{{ contract.name }}{% endif %}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+                {% if employment.undated_altas %}<div class="text-danger">Altas sin fecha: {% for alta in employment.undated_altas %}<a href="{% url 'new_ui:document_file' alta.pk %}" target="_blank">{{ alta.name }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+                {% if employment.unplaced_extensions %}<div class="text-muted">Prórrogas sin periodo: {% for extension in employment.unplaced_extensions %}<a href="{% url 'new_ui:document_file' extension.pk %}" target="_blank">{% if extension.issue_date %}{{ extension.issue_date|date:"d/m/Y" }}{% else %}{{ extension.name }}{% endif %}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+                {% if employment.unmatched_contracts %}<div class="text-muted">Contratos sin alta: {% for contract in employment.unmatched_contracts %}<a href="{% url 'new_ui:document_file' contract.pk %}" target="_blank">{% if contract.issue_date %}{{ contract.issue_date|date:"d/m/Y" }}{% else %}{{ contract.name }}{% endif %}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
             </div>
             {% endif %}
         </section>
@@ -172,6 +172,6 @@ data-nui-view-only, data-nui-edit-only). Todo llega resuelto de la vista.
     </div>
     {% endif %}
     <div class="d-none" data-nui-card-urls
-         data-photo-upload="{% if kind == 'machine' %}{% url 'panel:documentation_upload' domain='machine' subject_pk=obj.pk %}{% else %}{% url 'panel:documentation_personal_photo_upload' pk=obj.pk %}{% endif %}"
-         data-photo-set="{% if kind == 'machine' %}{% url 'panel:documentation_machine_set_avatar' pk=obj.pk %}{% endif %}"></div>
+         data-photo-upload="{% if kind == 'machine' %}{% url 'new_ui:subject_upload' domain='machine' subject_pk=obj.pk %}{% else %}{% url 'new_ui:person_photo_upload' pk=obj.pk %}{% endif %}"
+         data-photo-set="{% if kind == 'machine' %}{% url 'new_ui:machine_set_avatar' pk=obj.pk %}{% endif %}"></div>
 </form>

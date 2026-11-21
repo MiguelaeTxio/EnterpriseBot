@@ -89,6 +89,9 @@ urlpatterns = [
     # (pública, solo lectura, por identificador no adivinable).
     path('ficha/<uuid:token>/', fleet_qr_views.qr_public_view,
          name='fleet_qr_public'),
+    # S163 (invasora UX): nueva interfaz, app aparte (new_ui). Antes que
+    # 'panel/' para que sus rutas no las tome el panel.
+    path('panel/nueva-interfaz/', include('new_ui.urls')),
     path('panel/', include('panel.urls')),
     # ASISTENCIA budget module — motor de presupuestos ASISTENCIA (Hito 16).
     path('panel/budgets/', include('budgets.urls', namespace='budgets')),

@@ -107,6 +107,9 @@ INSTALLED_APPS = [
     # Custom administration panel for CompanyUser accounts — panel de
     # administración personalizado para cuentas CompanyUser.
     'panel',
+    # S163 (invasora UX): nueva interfaz, en su propia app para poder
+    # borrarla entera sin tocar `panel` (ni al revés).
+    'new_ui',
     # WhatsApp channel app — app del canal WhatsApp.
     'whatsapp',
     'work_order_processor',

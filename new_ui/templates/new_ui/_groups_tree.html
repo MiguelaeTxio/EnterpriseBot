@@ -1,0 +1,72 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_groups_tree.html -- S163: copia de new_ui/_groups_tree.html #}
+{% comment %}
+S147. Grupos de selección en árbol (panel/person_groups.group_tree):
+cada grupo con su casilla; los que tienen subgrupos se pliegan y su
+casilla marca todos sus subgrupos. Las personas viajan en data-* (las
+suyas; un grupo con subgrupos no tiene sueltas). El JS de
+_personal_pane.html junta las personas de los grupos marcados. Solo
+quien creó un grupo lo cambia (data-can-edit); los ajenos dicen de
+quién son. El sangrado va con stringformat: con el idioma en español,
+{{ node.indent }} sale "1,1" y el navegador lo descarta (los subgrupos se
+veían a la altura de los grupos principales). El mismo árbol sale en el recuadro "Grupos de selección" de
+las demás vistas (panel/_person_group_filter.html): pg_id da a cada
+vista sus propios ids (por defecto, los de Personal).
+S147: los grupos van en carpetas por quién los creó (Generales,
+Usuarios con una por usuario, Propios): filas person-group-folder, sin
+casilla, que solo se pliegan; cada grupo lleva data-folder.
+S148 (Miguel Ángel): "no hay forma de eliminar un grupo de selección";
+"siempre y cuando que el usuario haya sido el que lo haya creado": papelera
+(.person-group-delete) en cada grupo propio sin subgrupos (uno con
+subgrupos se borra cuando ya no los tiene). La maneja el JS de cada árbol.
+S148: "los administradores sí puedan borrar cualquier grupo, excepto los
+grupos generales": node.can_delete (person_groups.can_delete).
+{% endcomment %}
+{% with gid=pg_id|default:"personGroup" %}
+{% for node in person_group_nodes %}
+{% if node.kind == "folder" %}
+<li class="list-group-item px-1 py-0 person-group-folder bg-light" id="{{ gid }}Folder{{ node.key }}"
+    data-pk="{{ node.key }}" data-folder="{{ node.folder }}"
+    style="padding-left: {{ node.indent|stringformat:".2f" }}rem !important;">
+    <button type="button" class="btn btn-link btn-sm p-0 text-dark text-decoration-none person-group-toggle" data-pk="{{ node.key }}" title="Desplegar o plegar">
+        <i class="bi bi-chevron-down"></i> <i class="bi bi-folder2"></i>
+        <span class="{% if node.depth == 0 %}fw-bold text-uppercase{% else %}fw-semibold{% endif %} small">{{ node.label }}</span>
+        <span class="text-muted small">({{ node.count }})</span>
+    </button>
+</li>
+{% else %}
+<li class="list-group-item px-1 py-0 person-group-node" id="{{ gid }}Row{{ node.group.pk }}"
+    data-pk="{{ node.group.pk }}"
+    data-folder="{{ node.folder }}"
+    data-parent="{{ node.group.parent_id|default:'' }}"
+    data-children="{{ node.children|join:',' }}"
+    data-name="{{ node.group.name }}"
+    data-can-edit="{{ node.can_edit|yesno:'1,0' }}"
+    data-owner="{{ node.owner }}"
+    data-member-ids="{{ node.member_ids|join:',' }}"
+    data-member-names="{{ node.member_names|join:'||' }}"
+    data-member-users="{{ node.member_user_ids|join:',' }}"
+    style="padding-left: {{ node.indent|stringformat:".2f" }}rem !important;">
+    <div class="d-flex align-items-center gap-1">
+        {% if node.children %}
+        <button type="button" class="btn btn-link btn-sm p-0 text-dark person-group-toggle" data-pk="{{ node.group.pk }}" title="Desplegar o plegar">
+            <i class="bi bi-chevron-down"></i>
+        </button>
+        {% else %}
+        <span class="d-inline-block" style="width: 1rem;"></span>
+        {% endif %}
+        <div class="form-check mb-0">
+            <input class="form-check-input person-group-select-checkbox" type="checkbox" id="{{ gid }}Select{{ node.group.pk }}" data-pk="{{ node.group.pk }}">
+            <label class="form-check-label{% if not node.group.parent_id %} fw-bold{% endif %}" for="{{ gid }}Select{{ node.group.pk }}">{{ node.group.name }} ({{ node.total }})</label>
+        </div>
+        {% if node.can_delete and not node.children %}
+        <button type="button" class="btn btn-link btn-sm p-0 ms-auto text-danger person-group-delete" data-pk="{{ node.group.pk }}" data-name="{{ node.group.name }}" title="Eliminar el grupo «{{ node.group.name }}» (no afecta a las personas)">
+            <i class="bi bi-trash"></i>
+        </button>
+        {% endif %}
+    </div>
+</li>
+{% endif %}
+{% empty %}
+<li class="list-group-item px-1 py-0 text-muted" id="{{ gid }}EmptyRow">Sin grupos guardados todavía.</li>
+{% endfor %}
+{% endwith %}

@@ -1,4 +1,4 @@
-# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/new_ui_catalog.py
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/catalog.py
 """
 Catalogue of the new interface's views (sections and their lists).
 
@@ -12,8 +12,8 @@ tengamos una única vista para la entrada de documentación que lo
 unifique todo".
 
 Cada sección y cada listado tiene una clave (`cdg`, `cdg.documentos`...)
-sobre la que se dan permisos (panel/new_ui_permissions.py). Las claves
-no se renombran nunca: son las que quedan guardadas en PanelViewGrant.
+sobre la que se dan permisos (new_ui/permissions.py). Las claves
+no se renombran nunca: son las que quedan guardadas en UiViewGrant.
 """
 from collections import OrderedDict
 
@@ -28,6 +28,9 @@ PERMISSIONS = "permisos"
 # mismo formato que ya tenemos para todo"). Con una persona o máquina
 # sola, "Ficha" ocupa el sitio de "General"; sin ella, no se ve.
 FICHA = "ficha"
+# Pestañas de una sola persona o máquina (no son listados): solo se ven
+# con ella elegida. "QR" (S163): la página del QR del centro de gasto.
+ENTITY_TABS = {"per": ("ficha",), "cdg": ("ficha", "qr")}
 SECTIONS = OrderedDict([
     ("doc", ("Documentos", "bi-folder2-open", [
         ("bandeja", "Bandeja de entrada"),
@@ -59,6 +62,7 @@ SECTIONS = OrderedDict([
     ("cdg", ("Centros de gasto", "bi-truck", [
         ("general", "General"),
         ("ficha", "Ficha"),
+        ("qr", "QR"),
         ("documentos", "Documentos"),
         ("especificaciones", "Especificaciones"),
         ("avisos", "Avisos"),

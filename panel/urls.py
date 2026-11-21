@@ -32,10 +32,6 @@ from panel.views_circulars_h31 import (
 )
 from panel.views_machine_qr import MachineQrImageView, MachineQrSheetView
 from panel.views_specs_tab import SpecsExportView, SpecsTabView
-from panel.views_new_ui import (
-    NewUiCardView, NewUiExportView, NewUiListView, NewUiMachineSaveView,
-    NewUiView, PermBulkView, PermEditorView, PermGroupMembersView,
-)
 from panel.views_machine_menu import (
     MachineCardExportView, MachineCardView, MachineGoView,
     MachineMenuView,
@@ -1537,35 +1533,6 @@ urlpatterns = [
         "documentacion/especificaciones/",
         SpecsTabView.as_view(),
         name="specs_tab",
-    ),
-    # S163 (invasora UX): nueva interfaz (vista única de Documentación) y
-    # su sección Permisos. Solo superusuario de momento.
-    path("nueva-interfaz/", NewUiView.as_view(), name="new_ui"),
-    path("nueva-interfaz/listado/", NewUiListView.as_view(),
-         name="new_ui_list"),
-    path("nueva-interfaz/exportar/", NewUiExportView.as_view(),
-         name="new_ui_export"),
-    path("nueva-interfaz/tarjeta/", NewUiCardView.as_view(),
-         name="new_ui_card"),
-    path(
-        "nueva-interfaz/maquina/<int:pk>/guardar/",
-        NewUiMachineSaveView.as_view(),
-        name="new_ui_machine_save",
-    ),
-    path(
-        "nueva-interfaz/permisos/editor/",
-        PermEditorView.as_view(),
-        name="new_ui_perm_editor",
-    ),
-    path(
-        "nueva-interfaz/permisos/acciones/",
-        PermBulkView.as_view(),
-        name="new_ui_perm_bulk",
-    ),
-    path(
-        "nueva-interfaz/permisos/grupos/usuarios/",
-        PermGroupMembersView.as_view(),
-        name="new_ui_perm_members",
     ),
     # S163 (invasora UX): exportación de Especificaciones.
     path(

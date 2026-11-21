@@ -1,0 +1,55 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/machine_card_export.html #}
+{% comment %}
+S163 (invasora UX). Tarjeta técnica de un centro de gasto como página
+independiente: es la descarga HTML y la base del PDF, PNG y JPG
+(panel/machine_card_export.py). Mismos apartados que la ventana
+(_card.html). Estilos en la propia página (sin estáticos externos).
+{% endcomment %}<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Tarjeta técnica · {{ title }}</title>
+<style>
+@page { size: A4; margin: 14mm; }
+body { font-family: "DejaVu Sans", Arial, sans-serif; font-size: 10pt; color: #212529; margin: 0; }
+.card-head { border-bottom: 2px solid #0d6efd; padding-bottom: 6px; margin-bottom: 10px; }
+.card-head h1 { font-size: 15pt; margin: 0; }
+.card-head .sub { color: #6c757d; font-size: 9pt; }
+.grid { width: 100%; border-collapse: separate; border-spacing: 8px; margin: -8px; }
+.grid > tbody > tr > td.cell { width: 50%; vertical-align: top; padding: 0; border: 0; }
+.box { border: 1px solid #dee2e6; border-radius: 6px; padding: 6px 8px; break-inside: avoid; }
+.box h2 { font-size: 10.5pt; margin: 0 0 4px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; vertical-align: top; padding: 3px 4px; border-top: 1px solid #f1f3f5; }
+th { color: #6c757d; font-weight: normal; width: 48%; }
+.note { color: #6c757d; font-size: 8pt; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="card-head">
+    <h1>{{ title }}</h1>
+    <div class="sub">Tarjeta técnica · {{ generated_at|date:"d/m/Y H:i" }}</div>
+</div>
+{% if sections %}
+<table class="grid"><tbody>
+    {% for section_title, rows in sections %}
+    {% if forloop.counter0|divisibleby:2 %}<tr>{% endif %}
+    <td class="cell"><div class="box">
+        <h2>{{ section_title }}</h2>
+        <table>
+            {% for label, value in rows %}
+            <tr><th>{{ label }}</th><td>{{ value }}</td></tr>
+            {% endfor %}
+        </table>
+    </div></td>
+    {% if not forloop.counter0|divisibleby:2 or forloop.last %}{% if forloop.last and forloop.counter0|divisibleby:2 %}<td class="cell"></td>{% endif %}</tr>{% endif %}
+    {% endfor %}
+</tbody></table>
+{% else %}
+<p>Este centro de gasto no tiene todavía datos técnicos.</p>
+{% endif %}
+{% if specs_source or specs_read_at %}
+<div class="note">Datos leídos{% if specs_read_at %} el {{ specs_read_at|date:"d/m/Y" }}{% endif %}{% if specs_source %} de: {{ specs_source|truncatechars:300 }}{% endif %}</div>
+{% endif %}
+</body>
+</html>

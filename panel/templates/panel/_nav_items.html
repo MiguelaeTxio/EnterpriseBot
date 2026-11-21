@@ -830,12 +830,16 @@
     {# ------------------------------------------------------------------ #}
     {% if request.user.is_superuser %}
         {# S163 (invasora UX): nueva interfaz en construcción, solo superusuario. #}
+        {# App aparte (new_ui): si se borra, la entrada desaparece sola.        #}
+        {% url 'new_ui:home' as new_ui_url %}
+        {% if new_ui_url %}
         <li class="nav-item mt-2">
             <a class="nav-link {% if active_nav == 'new_ui' %}active{% endif %}"
-               href="{% url 'panel:new_ui' %}">
+               href="{{ new_ui_url }}">
                 <i class="bi bi-window-stack"></i>Nueva interfaz
             </a>
         </li>
+        {% endif %}
         <li class="nav-item mt-2">
             <a class="nav-link {% if active_nav == 'work_order_drafts' %}active{% endif %}"
                href="{% url 'panel:work_order_drafts' %}">

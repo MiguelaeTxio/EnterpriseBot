@@ -1,4 +1,4 @@
-# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/new_ui_lists.py
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/lists.py
 """
 List engine of the new interface: one definition per list tab.
 
@@ -29,7 +29,7 @@ from django.db.models import F, OuterRef, Q, Subquery
 from django.urls import reverse
 from django.utils import timezone
 
-from panel.new_ui_filters import parse_sort, period_range
+from new_ui.filters import parse_sort, period_range
 
 ROW_LIMIT = 1000
 BUCKET = "cgs_grupo_alvarez"
@@ -75,7 +75,7 @@ def person_name(person):
 
 
 def short_company(machine):
-    from fleet.views import _short_company_name
+    from new_ui.docs_core import short_company_name as _short_company_name
 
     return _short_company_name(machine.company_name)
 
@@ -273,7 +273,7 @@ class ListDef:
 
 # ------------------------------------------------- personas y máquinas
 def _company_filter_choices():
-    from panel.views_documentation_h30 import COMPANY_FILTER_CHOICES
+    from new_ui.docs_core import COMPANY_FILTER_CHOICES
 
     return COMPANY_FILTER_CHOICES
 
@@ -307,7 +307,7 @@ def filter_options(section, company, editor=None):
     empresas agrupadas de Personal y las secciones (SIME).
     """
     from ivr_config.models import Section
-    from panel.person_groups import (
+    from new_ui.groups import (
         GROUP_FILTER_NONE, MACHINE_KIND, PERSON_KIND, group_filter_options,
     )
 
@@ -346,7 +346,7 @@ def entity_ids(kind, company, params):
     Personas o máquinas que pasan Estado, Empresa, Grupo y
     Familia/Sección; None si ninguno de esos filtros está puesto.
     """
-    from panel.person_groups import MACHINE_KIND, PERSON_KIND, filter_by_group
+    from new_ui.groups import MACHINE_KIND, PERSON_KIND, filter_by_group
 
     state = params.get("estado", "1")
     company_value = params.get("empresa", "")
@@ -396,7 +396,7 @@ def _machine_actions(machine):
 
 def _doc_actions(entry):
     return [("Ver documento", "bi-file-earmark-text",
-             reverse("panel:documentation_document_view", args=[entry.pk]))]
+             reverse("new_ui:document_file", args=[entry.pk]))]
 
 
 # --------------------------------------------------------- documentos
@@ -442,7 +442,7 @@ def _mark_current(entries):
     from document_explorer.required_documentation_service import (
         get_required_type_ids,
     )
-    from panel.views_documentation_h30 import (
+    from new_ui.docs_core import (
         _keep_latest_laboral_per_type, _move_previous_period_documents,
         _person_employment_periods, _split_current_obsolete,
     )
@@ -1157,7 +1157,7 @@ def _per_lists():
                 batch__company=company, person__isnull=False),
             actions=lambda r: (
                 [("Ver nómina", "bi-file-earmark-text", reverse(
-                    "panel:documentation_document_view", args=[r.entry_id]))]
+                    "new_ui:document_file", args=[r.entry_id]))]
                 if r.entry_id else []) + _person_actions(r.person),
             note="Periodo: mes de la nómina."),
         "epis": _person_fk_def(
@@ -1246,7 +1246,7 @@ def _doc_lists():
             ], "created_at", search=("original_name", "reason"),
             default_order=("-created_at",),
             actions=lambda r: ([("Ver documento", "bi-file-earmark-text",
-                                 reverse("panel:documentation_document_view",
+                                 reverse("new_ui:document_file",
                                          args=[r.entry_id]))]
                                if r.entry_id else [])
             + _person_actions(r.person),

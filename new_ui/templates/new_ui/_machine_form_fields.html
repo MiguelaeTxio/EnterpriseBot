@@ -1,0 +1,232 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_machine_form_fields.html -- S163: copia de panel/fleet/_form_fields.html #}
+{#                                                                                           #}
+{# Reusable form fields partial for MachineAsset create/edit forms.                        #}
+{# Included by _form_fragment.html. Requires: form, form_action in context.                #}
+{#                                                                                           #}
+{# Parcial de campos de formulario reutilizable para formularios de alta/edición           #}
+{# de MachineAsset. Incluido por _form_fragment.html.                                       #}
+{# Requiere en contexto: form, form_action.                                                 #}
+{% load static %}
+<input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+
+<div class="row g-3">
+
+    {# Identificación principal #}
+    <div class="col-12">
+        <h6 class="text-muted small fw-semibold text-uppercase mb-2">Identificación</h6>
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.code.label }} <span class="text-danger">*</span></label>
+        {{ form.code }}
+        {% if form.code.errors %}
+        <div class="invalid-feedback d-block">{{ form.code.errors.0 }}</div>
+        {% endif %}
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.plate.label }}</label>
+        {{ form.plate }}
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.chassis_number.label }}</label>
+        {{ form.chassis_number }}
+    </div>
+
+    <div class="col-12">
+        <label class="form-label form-label-sm">{{ form.brand_model.label }}</label>
+        {{ form.brand_model }}
+    </div>
+
+    {# Clasificación catálogo #}
+    <div class="col-12 mt-1">
+        <h6 class="text-muted small fw-semibold text-uppercase mb-2">Clasificación catálogo</h6>
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.company_code.label }}</label>
+        {{ form.company_code }}
+    </div>
+
+    <div class="col-12 col-sm-8">
+        <label class="form-label form-label-sm">{{ form.company_name.label }}</label>
+        {{ form.company_name }}
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.family.label }}</label>
+        {{ form.family }}
+        {% comment %}
+        S117: "Nueva familia…" despliega este campo (JS de
+        fleet/list.html, delegado sobre los modales); oculto por
+        defecto salvo que el POST vuelva con "Nueva familia…" elegida.
+        {% endcomment %}
+        <div class="fleet-family-new mt-1{% if form.family.value != form.NEW_FAMILY_VALUE %} d-none{% endif %}">
+            {{ form.family_new }}
+            {% for error in form.family_new.errors %}
+            <div class="text-danger small">{{ error }}</div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.type_code.label }}</label>
+        {{ form.type_code }}
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.type_name.label }}</label>
+        {{ form.type_name }}
+    </div>
+
+    {# Datos de adquisición #}
+    <div class="col-12 mt-1">
+        <h6 class="text-muted small fw-semibold text-uppercase mb-2">Adquisición</h6>
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.purchase_date.label }}</label>
+        {{ form.purchase_date }}
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.mileage.label }}</label>
+        {{ form.mileage }}
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.hours.label }}</label>
+        {{ form.hours }}
+    </div>
+
+    {# S153: primera ITV de un vehículo nuevo #}
+    <div class="col-12 mt-1">
+        <h6 class="text-muted small fw-semibold text-uppercase mb-2">ITV</h6>
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm" for="{{ form.first_registration_date.id_for_label }}">{{ form.first_registration_date.label }}</label>
+        {{ form.first_registration_date }}
+    </div>
+
+    <div class="col-12 col-sm-8">
+        <label class="form-label form-label-sm" for="{{ form.itv_category.id_for_label }}">{{ form.itv_category.label }}</label>
+        {{ form.itv_category }}
+        {% if form.instance.itv_exempt_until %}
+        <div class="form-text">Primera ITV: {{ form.instance.itv_exempt_until|date:"d/m/Y" }}. Hasta entonces no se avisa de que falta la ITV.</div>
+        {% else %}
+        <div class="form-text">Con la fecha y el tipo, no se avisa de que falta la ITV hasta que le toque la primera.</div>
+        {% endif %}
+    </div>
+
+    {% if spec_form_fields %}
+    {% comment %}
+    H23 (S154, invasora): especificaciones técnicas de todos los centros
+    de gasto (se filtran en la pestaña Especificaciones). Origen de cada
+    dato leído: specs_source.
+    {% endcomment %}
+    <div class="col-12 mt-1">
+        <h6 class="text-muted small fw-semibold text-uppercase mb-2">Especificaciones técnicas</h6>
+    </div>
+    {% for field in spec_form_fields %}
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm" for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.errors %}
+        <div class="invalid-feedback d-block">{{ field.errors.0 }}</div>
+        {% endif %}
+    </div>
+    {% endfor %}
+    {% if form.instance.specs_source %}
+    <div class="col-12 small text-muted" style="white-space: pre-line;">{{ form.instance.specs_source }}</div>
+    {% endif %}
+    {% endif %}
+
+    {% if show_logbook_fields %}
+    {% comment %}
+    H23 (S154, invasora): datos del libro historial de la grúa
+    (identificación, pesos y dimensiones, titularidad inicial). Solo en la
+    ficha de las grúas A y H (show_logbook_fields, MachineDetailView).
+    {% endcomment %}
+    <div class="col-12 mt-1">
+        <h6 class="text-muted small fw-semibold text-uppercase mb-2">Libro historial de la grúa</h6>
+    </div>
+    {% for field in logbook_form_fields %}
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm" for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.errors %}
+        <div class="invalid-feedback d-block">{{ field.errors.0 }}</div>
+        {% endif %}
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    {# H30 (S131): plan de revisiones por horas y km #}
+    <div class="col-12 mt-1">
+        <h6 class="text-muted small fw-semibold text-uppercase mb-2">Revisiones</h6>
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.service_hours_interval.label }}</label>
+        {{ form.service_hours_interval }}
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.service_crane_hours_interval.label }}</label>
+        {{ form.service_crane_hours_interval }}
+        <div class="form-text">Solo con horómetro de grúa.</div>
+    </div>
+
+    <div class="col-12 col-sm-4">
+        <label class="form-label form-label-sm">{{ form.service_every_km.label }}</label>
+        {{ form.service_every_km }}
+        {% if form.service_every_km.errors %}
+        <div class="invalid-feedback d-block">{{ form.service_every_km.errors.0 }}</div>
+        {% endif %}
+    </div>
+
+    {# S148: observaciones libres (campo Memo) #}
+    <div class="col-12">
+        <label class="form-label form-label-sm" for="{{ form.notes.id_for_label }}">{{ form.notes.label }}</label>
+        {{ form.notes }}
+    </div>
+
+    {# Estado #}
+    <div class="col-12 mt-1">
+        <div class="form-check">
+            {{ form.is_active }}
+            <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                {{ form.is_active.label }}
+            </label>
+        </div>
+    </div>
+
+    {# Non-field errors #}
+    {% if form.non_field_errors %}
+    <div class="col-12">
+        <div class="alert alert-danger py-2 mb-0">
+            {% for error in form.non_field_errors %}
+            <div>{{ error }}</div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+
+{# Form footer with action buttons -- S117: sin pie en la ficha de máquina (hide_footer), que pone el suyo #}
+{% if not hide_footer %}
+<div class="d-flex justify-content-end gap-2 mt-4 pt-2 border-top">
+    <button type="button" class="btn btn-sm btn-outline-secondary"
+            data-bs-dismiss="modal">Cancelar</button>
+    <button type="submit" class="btn btn-sm btn-primary">
+        {% if form_action == 'create' %}
+        <i class="bi bi-plus-lg me-1"></i>Crear
+        {% else %}
+        <i class="bi bi-check-lg me-1"></i>Guardar
+        {% endif %}
+    </button>
+</div>
+{% endif %}

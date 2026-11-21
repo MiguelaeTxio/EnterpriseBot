@@ -1,7 +1,7 @@
-/* /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/static/panel/js/new_ui.js
+/* /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/static/new_ui/js/new_ui.js
  *
  * Nueva interfaz (S163, sesión invasora de UX): la vista única de
- * Documentación (panel/templates/panel/new_ui/shell.html).
+ * Documentación (new_ui/templates/new_ui/shell.html).
  *
  * Común a todas las secciones (directriz 4.27, punto 4bis):
  *   - Cinco paneles: los tres de arriba cambian de altura con el asa
@@ -16,7 +16,8 @@
  * persona o máquina la deja sola en toda la vista ("scope_<sección>"),
  * con su pestaña "Ficha" (en el sitio de "General", sin acordeones) y
  * sus acciones; el botón derecho abre aquí las pestañas que existen
- * (window.EbEntityOpen); exportar; grupos de selección.
+ * (window.EbUiOpen, new_ui_context_menu.js); exportar; grupos de
+ * selección (EbUiGroups).
  * Permisos: editor, acciones en bloque y grupos de usuarios.
  */
 (function () {
@@ -37,7 +38,7 @@
     const urls = json("nui-urls", {});
 
     function save(values) {
-        if (window.EbNavState) window.EbNavState.save(SCREEN, values);
+        if (window.EbUiState) window.EbUiState.save(SCREEN, values);
     }
     function csrf() {
         const meta = document.querySelector('meta[name="csrf-token"]');
@@ -270,9 +271,13 @@
             return p;
         }
         let loading = 0;
+        // Pestañas de una sola persona o máquina (Ficha, QR): no son
+        // listados; solo se ven con ella elegida.
+        const entityTabs = Array.from(listPanel.querySelectorAll("[data-nui-entity-tab]")).map(b => b.dataset.nuiTab);
+        function isEntityTab(t) { return entityTabs.indexOf(t) !== -1; }
         function load() {
             const t = tab();
-            if (t === "ficha") { loadCard(); return; }
+            if (isEntityTab(t)) { loadCard(); return; }
             const box = pane(t);
             if (!box) return;
             const ticket = ++loading;
@@ -321,9 +326,9 @@
         listPanel.addEventListener("nui:tab", function (ev) {
             const t = ev.detail;
             const scoped = !!(scope && scope.pk) && section !== "doc";
-            if (t === "ficha" && !scoped) { showTab(listPanel, "general", false); return; }
-            if (t === "general" && scoped) { showTab(listPanel, "ficha", false); return; }
-            root.querySelectorAll("[data-nui-total-box]").forEach(el => el.classList.toggle("invisible", t === "ficha"));
+            if (isEntityTab(t) && !scoped) { showTab(listPanel, "general", false); return; }
+            if (t === "general" && scoped && entityTabs.length) { showTab(listPanel, "ficha", false); return; }
+            root.querySelectorAll("[data-nui-total-box]").forEach(el => el.classList.toggle("invisible", isEntityTab(t)));
             root.querySelectorAll("[data-nui-cols-for]").forEach(el => el.classList.toggle("d-none", el.dataset.nuiColsFor !== t));
             root.querySelectorAll("[data-nui-note-for]").forEach(el => el.classList.toggle("d-none", el.dataset.nuiNoteFor !== t));
             // "Filtros de <pestaña>": el nombre dice a qué listado se
@@ -345,7 +350,7 @@
             const values = {};
             values["cols_" + section] = cols;
             save(values);
-            if (window.EbNavState && window.EbNavState.flush) window.EbNavState.flush();
+            if (window.EbUiState && window.EbUiState.flush) window.EbUiState.flush();
             setTimeout(load, 300);
         });
 
@@ -386,10 +391,9 @@
                 if (label) label.textContent = scope ? scope.label : "";
             }
             const scoped = !!(scope && scope.pk);
-            const fichaTab = listPanel.querySelector('[data-nui-tab="ficha"]');
             const generalTab = listPanel.querySelector('[data-nui-tab="general"]');
-            if (fichaTab) fichaTab.classList.toggle("d-none", !scoped);
-            if (generalTab && fichaTab) generalTab.classList.toggle("d-none", scoped);
+            listPanel.querySelectorAll("[data-nui-entity-tab]").forEach(b => b.classList.toggle("d-none", !scoped));
+            if (generalTab && entityTabs.length) generalTab.classList.toggle("d-none", scoped);
             loadEntityActions();
         }
         function setScope(value, target) {
@@ -399,7 +403,7 @@
                 tabs["per:listado"] = "ficha";
                 values.tabs = tabs;
                 save(values);
-                if (window.EbNavState && window.EbNavState.flush) window.EbNavState.flush();
+                if (window.EbUiState && window.EbUiState.flush) window.EbUiState.flush();
                 setTimeout(function () { window.location.href = "?s=per"; }, 300);
                 return;
             }
@@ -411,7 +415,7 @@
             // Con una persona o máquina sola se abre su ficha (o la pestaña
             // pedida desde el menú); al quitarla, se vuelve a "General".
             const now = tab();
-            const wanted = value ? (target || "ficha") : (now === "ficha" ? "general" : now);
+            const wanted = value ? (target || "ficha") : (isEntityTab(now) ? "general" : now);
             if (wanted !== now) showTab(listPanel, wanted, true); else load();
         }
         const scopeClear = document.getElementById("nui-scope-clear");
@@ -419,61 +423,36 @@
 
         // Acciones de la persona o máquina vista (las del botón derecho).
         function loadEntityActions() {
+            // Acciones › «Del trabajador» / «Del centro de gasto». Lo que
+            // tiene pestaña abajo no se repite aquí (S163); aquí irán las
+            // acciones que no son un listado (subir, pedir, avisar...).
             const box = document.getElementById("nui-entity-actions");
             if (!box) return;
+            box.innerHTML = "";
+            const p = document.createElement("p");
+            p.className = "small text-muted mb-0";
             if (!(scope && scope.pk)) {
-                box.innerHTML = '<p class="small text-muted mb-0">Pulsa ' + (section === "cdg" ? "un centro de gasto" : "una persona") + ' en el listado: aquí salen las acciones que no tienen pestaña abajo.</p>';
-                return;
-            }
-            const url = section === "cdg" ? "/panel/documentacion/maquinaria/" + scope.pk + "/menu/" : "/panel/documentacion/personal/" + scope.pk + "/menu/";
-            fetch(url, {credentials: "same-origin"}).then(r => r.json()).then(function (data) {
-                box.innerHTML = "";
+                p.textContent = "Pulsa " + (section === "cdg" ? "un centro de gasto" : "una persona") + " en el listado para ver aquí sus acciones.";
+            } else {
                 const title = document.createElement("div");
                 title.className = "small fw-semibold mb-1";
-                title.textContent = data.name;
+                title.textContent = scope.label;
                 box.appendChild(title);
-                const wrap = document.createElement("div");
-                wrap.className = "d-flex flex-wrap gap-1";
-                // S163: lo que ya es una pestaña del listado (ficha,
-                // fichajes, vacaciones...) no se repite aquí como botón
-                // (Miguel Ángel: "parece que los botones están
-                // duplicados"); solo lo que se hace en otra pantalla.
-                const kind = section === "cdg" ? "machine" : "person";
-                const items = data.items.filter(item => !(MENU_TABS[kind] || {})[item.code]);
-                if (!items.length) {
-                    const p = document.createElement("p");
-                    p.className = "small text-muted mb-0";
-                    p.textContent = "Todo lo suyo está en las pestañas de abajo.";
-                    box.appendChild(p);
-                    return;
-                }
-                items.forEach(function (item) {
-                    const a = document.createElement("a");
-                    a.className = "btn btn-sm btn-outline-primary";
-                    a.href = item.url;
-                    a.innerHTML = '<i class="bi ' + item.icon + ' me-1"></i>';
-                    a.appendChild(document.createTextNode(item.label));
-                    a.addEventListener("click", function (ev) {
-                        if (ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
-                        if (window.EbEntityOpen(section === "cdg" ? "machine" : "person", scope.pk, scope.label, item.code)) { ev.preventDefault(); return; }
-                        if (item.card) { ev.preventDefault(); window.EbMachineCard.open(item.url); }
-                    });
-                    wrap.appendChild(a);
-                });
-                box.appendChild(wrap);
-            }).catch(function () { box.innerHTML = '<p class="small text-danger mb-0">No se han podido cargar sus acciones.</p>'; });
+                p.textContent = "Todo lo suyo está en las pestañas de abajo.";
+            }
+            box.appendChild(p);
         }
 
         // Pestaña "Ficha" (S163): la ficha de la persona o máquina vista
         // sola, como una pestaña más del listado (sin acordeones).
-        function fichaBox() { return pane("ficha"); }
+        function fichaBox() { return pane(tab()); }
         function loadCard() {
             const box = fichaBox();
-            if (!box) return;
-            if (!(scope && scope.pk)) { box.innerHTML = ""; return; }
+            if (!box) return Promise.resolve();
+            if (!(scope && scope.pk)) { box.innerHTML = ""; return Promise.resolve(); }
             const ticket = ++loading;
             box.innerHTML = '<p class="text-muted small p-3 mb-0">Cargando…</p>';
-            fetch(urls.card + "?s=" + section + "&pk=" + scope.pk, {credentials: "same-origin"})
+            return fetch(urls.card + "?s=" + section + "&t=" + tab() + "&pk=" + scope.pk, {credentials: "same-origin"})
                 .then(r => r.ok ? r.text() : Promise.reject(r.status))
                 .then(function (html) { if (ticket === loading) box.innerHTML = html; })
                 .catch(function () { if (ticket === loading) box.innerHTML = '<p class="text-danger small p-3 mb-0">No se ha podido cargar la ficha.</p>'; });
@@ -507,6 +486,27 @@
                 .then(function () { setTimeout(loadCard, 600); })
                 .catch(() => {});
         });
+        // Formularios de las pestañas de una sola persona o máquina (QR...):
+        // se envían sin salir y la pestaña se repinta con el resultado.
+        lists.addEventListener("submit", function (ev) {
+            const f = ev.target.closest("[data-nui-pane-form]");
+            if (!f) return;
+            ev.preventDefault();
+            if (f.dataset.nuiConfirm && !window.confirm(f.dataset.nuiConfirm)) return;
+            const button = f.querySelector('[type="submit"]');
+            if (button) { button.disabled = true; }
+            fetch(f.getAttribute("action"), {method: "POST", credentials: "same-origin", body: new FormData(f), headers: {"X-CSRFToken": csrf()}})
+                .then(r => r.json().catch(() => ({ok: false, message: "Error " + r.status})))
+                .then(function (data) {
+                    const message = data.message || (data.ok ? "Hecho." : "No se ha podido hacer.");
+                    const ok = !!data.ok;
+                    loadCard().then(function () {
+                        const box = fichaBox() && fichaBox().querySelector("[data-nui-pane-result]");
+                        if (box) { box.className = "alert small py-1 px-2 mb-2 alert-" + (ok ? "success" : "danger"); box.textContent = message; }
+                    });
+                })
+                .catch(function () { if (button) button.disabled = false; });
+        });
         lists.addEventListener("change", function (ev) {
             const input = ev.target.closest("[data-nui-card-photo]");
             if (!input || !input.files.length) return;
@@ -535,36 +535,31 @@
                 .catch(function (err) { cardResult(err.message || "No se ha podido cambiar la foto.", true); });
         });
 
-        // Desde el botón derecho (context_menu.js): una entrada que tiene
-        // pestaña aquí (ficha, vacaciones, revisiones...) la abre aquí, con
-        // la persona o máquina sola, en vez de ir a la pantalla de siempre.
-        const MENU_TABS = {
-            person: {ficha: "ficha", fichajes: "fichajes", horarios: "horarios", vacaciones: "vacaciones", calendario: "ausencias", partes: "partes", repostajes: "repostajes"},
-            machine: {tarjeta: "ficha", ficha: "ficha", libro: "libro", revisiones_firmadas: "libro", partes: "taller", averias: "averias", revisiones: "revisiones", repostajes: "repostajes", equipos: "equipos", especificaciones: "especificaciones"},
-        };
-        window.EbEntityOpen = function (kind, pk, label, code) {
-            const target = (MENU_TABS[kind] || {})[code];
-            if (!target) return false;
+        // Desde el botón derecho (new_ui_context_menu.js): abre aquí la
+        // pestaña `tab` con la persona o máquina sola. En Documentos, una
+        // persona lleva a Personal.
+        window.EbUiOpen = function (kind, pk, label, tab) {
             const own = (kind === "person" && section === "per") || (kind === "machine" && section === "cdg");
             const scopeValue = {pk: String(pk), label: label || ""};
             if (!own) {
-                if (!(kind === "person" && section === "doc")) return false;
-                const values = {scope_per: scopeValue};
-                tabs["per:listado"] = target;
+                const target = kind === "person" ? "per" : "cdg";
+                const values = {};
+                values["scope_" + target] = scopeValue;
+                tabs[target + ":listado"] = tab || "ficha";
                 values.tabs = tabs;
                 save(values);
-                if (window.EbNavState && window.EbNavState.flush) window.EbNavState.flush();
-                setTimeout(function () { window.location.href = "?s=per"; }, 300);
+                if (window.EbUiState && window.EbUiState.flush) window.EbUiState.flush();
+                setTimeout(function () { window.location.href = "?s=" + target; }, 300);
                 return true;
             }
-            setScope(scopeValue, target);
+            setScope(scopeValue, tab || "ficha");
             return true;
         };
 
         // Exportar.
         root.querySelectorAll("[data-nui-export]").forEach(function (button) {
             button.addEventListener("click", function () {
-                if (tab() === "ficha") {
+                if (isEntityTab(tab())) {
                     result(section === "cdg" ? "La ficha se exporta con su botón «Exportar» (PDF, Word, HTML, PNG o JPG)." : "La ficha no es un listado: elige otra pestaña para exportar.", false);
                     return;
                 }
@@ -578,18 +573,18 @@
         });
 
         // Grupos de selección de siempre (máquinas o personas) sobre "General".
-        if (window.EbSelectionGroups && document.getElementById("nuiGroupSavedList")) {
+        if (window.EbUiGroups && document.getElementById("nuiGroupSavedList")) {
             const machines = section === "cdg";
-            groups = window.EbSelectionGroups.init({
+            groups = window.EbUiGroups.init({
                 prefix: "nuiGroup",
                 memoryKey: "nui_" + section,
                 collapsedKey: machines ? "machine_groups" : "person_groups",
-                saveUrl: machines ? urls.fleetGroupSave : urls.personGroupSave,
+                saveUrl: urls.groupSave,
                 updateUrl: function (pk) {
-                    return machines ? "/panel/fleet/grupos/" + pk + "/guardar/" : urls.personGroupUpdate.replace("/0/", "/" + pk + "/");
+                    return urls.groupUpdate.replace("/0/", "/" + pk + "/");
                 },
                 deleteUrl: function (pk) {
-                    return machines ? "/panel/fleet/grupos/" + pk + "/eliminar/" : urls.personGroupDelete.replace("/0/", "/" + pk + "/");
+                    return urls.groupDelete.replace("/0/", "/" + pk + "/");
                 },
                 memberField: machines ? "machine_ids" : "person_ids",
                 noun: machines ? "máquina" : "persona",

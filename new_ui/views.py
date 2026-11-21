@@ -1,4 +1,4 @@
-# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/views_new_ui.py
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/views.py
 """
 New interface (S163): one Documentation view with five panels.
 
@@ -29,18 +29,18 @@ from django.shortcuts import render
 from django.views import View
 
 from ivr_config.models import Company, CompanyUser
-from panel.mixins import SuperuserRequiredMixin
-from panel.models import PanelUserGroup, PanelViewGrant
-from panel.navigation_persistence import (
-    apply_list_navigation, get_saved_state_key,
+from new_ui.mixins import SuperuserRequiredMixin
+from new_ui.models import UiUserGroup, UiViewGrant
+from new_ui.state import apply_list_navigation
+from new_ui.state import get_key as get_saved_state_key
+from new_ui.state import save_keys as _save_keys
+from new_ui.catalog import (
+    ENTITY_TABS, FICHA, PERMISSIONS, SECTIONS, all_view_keys, label_of,
 )
-from panel.new_ui_catalog import (
-    FICHA, PERMISSIONS, SECTIONS, all_view_keys, label_of,
-)
-from panel.new_ui_filters import (
+from new_ui.filters import (
     period_context, period_range, sort_headers, sort_rows,
 )
-from panel.new_ui_permissions import (
+from new_ui.permissions import (
     LABELS, RANK, effective_levels, set_grant,
 )
 
@@ -77,26 +77,6 @@ USER_SORT = {
     "last_login": lambda u: u.user.last_login,
     "views": lambda u: u.views_count,
 }
-
-
-def _save_keys(company_user, screen_key, values):
-    """
-    Merge top-level keys into a screen's saved state.
-
-    ---
-
-    Suma claves de primer nivel al estado guardado de una pantalla.
-    """
-    from panel.models import PanelNavigationState
-
-    obj, _created = PanelNavigationState.objects.get_or_create(
-        company_user=company_user, screen_key=screen_key,
-        defaults={"state": {}},
-    )
-    state = obj.state if isinstance(obj.state, dict) else {}
-    state.update(values)
-    obj.state = state
-    obj.save(update_fields=["state", "updated_at"])
 
 
 def _company_user(request):
@@ -140,7 +120,7 @@ def _filter_users(request):
     company_user = _company_user(request)
     users = CompanyUser.objects.filter(
         company=company_user.company, pending_onboarding=False,
-    ).select_related("user").prefetch_related("panel_user_groups")
+    ).select_related("user").prefetch_related("new_ui_user_groups")
     selected = [pk for pk in params.get("selected_ids", "").split(",")
                 if pk.isdigit()]
     if params.get("only_selected") == "1" and selected:
@@ -164,9 +144,9 @@ def _filter_users(request):
         users = users.filter(company_id=int(company))
     group = params.get("grupo", "")
     if group == "none":
-        users = users.filter(panel_user_groups__isnull=True)
+        users = users.filter(new_ui_user_groups__isnull=True)
     elif group.isdigit():
-        users = users.filter(panel_user_groups__pk=int(group))
+        users = users.filter(new_ui_user_groups__pk=int(group))
     role = params.get("seccion", "")
     if role:
         users = users.filter(role=role)
@@ -185,14 +165,14 @@ def _annotate_users(users):
         user.views_count = sum(
             1 for key in keys if RANK[levels[key][0]] >= 1)
         user.group_names = ", ".join(
-            g.name for g in user.panel_user_groups.all())
+            g.name for g in user.new_ui_user_groups.all())
         user.display_name = (user.user.get_full_name()
                              or user.user.username)
     return users
 
 
 def _groups(company):
-    return list(PanelUserGroup.objects.filter(company=company)
+    return list(UiUserGroup.objects.filter(company=company)
                 .prefetch_related("members", "grants"))
 
 
@@ -211,7 +191,7 @@ def _list_context(request):
                                     USER_COLUMNS)
     users = sort_rows(users, current, USER_SORT, "username")
     groups = _groups(company)
-    grants = list(PanelViewGrant.objects.filter(company=company)
+    grants = list(UiViewGrant.objects.filter(company=company)
                   .select_related("user_group", "company_user__user"))
     roles = dict(CompanyUser.ROLE_CHOICES)
     views = []
@@ -252,10 +232,10 @@ def _section_context(company_user, section):
     por el usuario), selecciones, la persona/máquina que se está viendo
     sola (`scope`) y los grupos de selección de siempre.
     """
-    from panel.new_ui_lists import (
+    from new_ui.lists import (
         extra_param, extras_for, filter_options, list_def, visible_columns,
     )
-    from panel.person_groups import (
+    from new_ui.groups import (
         MACHINE_KIND, PERSON_KIND, collapsed_state, group_tree,
         parent_choices,
     )
@@ -296,6 +276,7 @@ def _section_context(company_user, section):
         "period": period_context(saved),
         "opts": filter_options(section, company_user.company, company_user),
         "tabs_cols": tabs_cols,
+        "entity_tabs": ENTITY_TABS.get(section, ()),
         "selections": selections,
         "scope": scope if isinstance(scope, dict) and scope.get("pk")
         else None,
@@ -329,7 +310,7 @@ class NewUiView(SuperuserRequiredMixin, View):
         if section == PERMISSIONS:
             apply_list_navigation(request, PERM_SCREEN_KEY, PERM_FILTER_KEYS)
         if section == PERMISSIONS and request.GET.get("fragment") == "1":
-            return render(request, "panel/new_ui/permisos/_lists.html",
+            return render(request, "new_ui/permisos/_lists.html",
                           _list_context(request))
         layout = get_saved_state_key(company_user, SCREEN_KEY, "layout", {})
         tabs = get_saved_state_key(company_user, SCREEN_KEY, "tabs", {})
@@ -350,10 +331,10 @@ class NewUiView(SuperuserRequiredMixin, View):
             "period": period_context(request.GET),
             "companies": Company.objects.filter(
                 pk=company_user.company_id),
-            "user_groups": PanelUserGroup.objects.filter(
+            "user_groups": UiUserGroup.objects.filter(
                 company=company_user.company),
             "roles": CompanyUser.ROLE_CHOICES,
-            "levels": PanelViewGrant.LEVEL_CHOICES,
+            "levels": UiViewGrant.LEVEL_CHOICES,
             "view_keys": all_view_keys(),
         }
         if section == PERMISSIONS:
@@ -370,7 +351,7 @@ class NewUiView(SuperuserRequiredMixin, View):
             }
         else:
             context.update(_section_context(company_user, section))
-        return render(request, "panel/new_ui/shell.html", context)
+        return render(request, "new_ui/shell.html", context)
 
 
 def _subject(company, raw):
@@ -390,7 +371,7 @@ def _subject(company, raw):
             return ("user", user, user.user.get_full_name()
                     or user.user.username)
     if kind == "group" and value.isdigit():
-        group = PanelUserGroup.objects.filter(
+        group = UiUserGroup.objects.filter(
             company=company, pk=int(value)).first()
         if group:
             return ("group", group, "Grupo «%s»" % group.name)
@@ -424,10 +405,10 @@ class PermEditorView(SuperuserRequiredMixin, View):
         company = _company_user(request).company
         subject = _subject(company, request.GET.get("subject"))
         if subject is None:
-            return render(request, "panel/new_ui/permisos/_editor.html",
+            return render(request, "new_ui/permisos/_editor.html",
                           {"subject": None})
         kind, obj, label = subject
-        own = {g.view_key: g.level for g in PanelViewGrant.objects.filter(
+        own = {g.view_key: g.level for g in UiViewGrant.objects.filter(
             company=company, **_grant_filter(kind, obj))}
         keys = [k for k, _l, _d in all_view_keys()]
         effective = effective_levels(obj, keys) if kind == "user" else {}
@@ -441,12 +422,12 @@ class PermEditorView(SuperuserRequiredMixin, View):
                 "effective_rank": RANK.get(level, 0),
                 "origin": origin,
             })
-        return render(request, "panel/new_ui/permisos/_editor.html", {
+        return render(request, "new_ui/permisos/_editor.html", {
             "subject": request.GET.get("subject"),
             "subject_kind": kind,
             "subject_label": label,
             "rows": rows,
-            "levels": PanelViewGrant.LEVEL_CHOICES,
+            "levels": UiViewGrant.LEVEL_CHOICES,
         })
 
     def post(self, request):
@@ -511,7 +492,7 @@ class PermBulkView(SuperuserRequiredMixin, View):
             name = request.POST.get("name", "").strip()[:120]
             if not name:
                 return HttpResponseBadRequest("Escribe el nombre del grupo.")
-            group, created = PanelUserGroup.objects.get_or_create(
+            group, created = UiUserGroup.objects.get_or_create(
                 company=company, name=name,
                 defaults={"created_by": company_user})
             group.members.add(*users)
@@ -519,7 +500,7 @@ class PermBulkView(SuperuserRequiredMixin, View):
                 "Grupo «%s» %s con %d usuario%s." % (
                     name, "creado" if created else "ampliado", len(users),
                     "" if len(users) == 1 else "s"))})
-        group = PanelUserGroup.objects.filter(
+        group = UiUserGroup.objects.filter(
             company=company, pk=request.POST.get("group") or 0).first()
         if group is None:
             return HttpResponseBadRequest("Elige un grupo.")
@@ -552,7 +533,7 @@ class PermGroupMembersView(SuperuserRequiredMixin, View):
         ids = [pk for pk in request.GET.get("groups", "").split(",")
                if pk.isdigit()]
         users = CompanyUser.objects.filter(
-            company=company, panel_user_groups__pk__in=ids,
+            company=company, new_ui_user_groups__pk__in=ids,
         ).select_related("user").distinct()
         return JsonResponse({"users": [
             [str(u.pk), u.user.get_full_name() or u.user.username]
@@ -568,7 +549,7 @@ def _scope_pk(request):
 
 
 def _check_view(request, section, tab):
-    from panel.new_ui_permissions import can_view
+    from new_ui.permissions import can_view
 
     return can_view(_company_user(request), "%s.%s" % (section, tab))
 
@@ -586,7 +567,7 @@ class NewUiListView(SuperuserRequiredMixin, View):
     """
 
     def get(self, request):
-        from panel.new_ui_lists import (
+        from new_ui.lists import (
             ROW_LIMIT, apply_extras, filtered, headers, list_def,
             materialize, rows_for, sorted_qs, visible_columns,
         )
@@ -628,7 +609,7 @@ class NewUiListView(SuperuserRequiredMixin, View):
             definition, qs, post, ROW_LIMIT,
             state_first=bool(definition.prepare) and not current)
         rows = rows_for(definition, objects, columns)
-        return render(request, "panel/new_ui/_list.html", {
+        return render(request, "new_ui/_list.html", {
             "section": section,
             "tab": tab,
             "definition": definition,
@@ -656,8 +637,8 @@ class NewUiExportView(SuperuserRequiredMixin, View):
         from openpyxl import Workbook
         from openpyxl.styles import Font, PatternFill
 
-        from panel.export_formats import workbook_response
-        from panel.new_ui_lists import (
+        from new_ui.export_formats import workbook_response
+        from new_ui.lists import (
             apply_extras, filtered, list_def, materialize, rows_for,
             sorted_qs, visible_columns,
         )
@@ -733,8 +714,8 @@ def _machine_ficha_context(request, machine):
     from django.urls import reverse
 
     from fleet import qr_sheet_service as qr
-    from fleet.forms import MachineAssetForm
-    from panel.views_machine_menu import (
+    from new_ui.forms import MachineAssetForm
+    from new_ui.machine_card import (
         EXPORT_CHOICES, card_sections, machine_title,
     )
 
@@ -756,11 +737,10 @@ def _machine_ficha_context(request, machine):
                                             machine.company_name) if p),
         "active": machine.is_active,
         "boxes": boxes,
-        "photo_url": (reverse("panel:documentation_document_view",
-                              args=[avatar.pk])
+        "photo_url": (reverse("new_ui:document_file", args=[avatar.pk])
                       if avatar is not None and not avatar.deleted_at
                       else ""),
-        "export_url": reverse("panel:machine_card_export",
+        "export_url": reverse("new_ui:machine_card_export",
                               args=[machine.pk]),
         "export_formats": EXPORT_CHOICES,
         "form": MachineAssetForm(instance=machine, company=machine.company),
@@ -769,9 +749,10 @@ def _machine_ficha_context(request, machine):
         # descarga para imprimir. Miguel Ángel: "no encuentro el QR".
         "qr_svg": qr.qr_image(qr.public_url(request, qr.sheet_for(machine)),
                               "svg", scale=4),
-        "qr_sheet_url": reverse("panel:machine_qr_sheet", args=[machine.pk]),
-        "qr_image_url": reverse("panel:machine_qr_image", args=[machine.pk]),
-        "save_url": reverse("panel:new_ui_machine_save", args=[machine.pk]),
+        "qr_public_url": qr.public_url(request, qr.sheet_for(machine)),
+        "qr_image_url": reverse("new_ui:machine_qr_image",
+                                args=[machine.pk]),
+        "save_url": reverse("new_ui:machine_save", args=[machine.pk]),
     }
 
 
@@ -793,8 +774,8 @@ def _person_ficha_context(request, person):
     from django.urls import reverse
 
     from document_explorer.models import JobPosition, PersonIdPhoto
-    from panel.new_ui_lists import fmt_date, person_name, persons_base
-    from panel.views_documentation_h30 import (
+    from new_ui.lists import fmt_date, person_name, persons_base
+    from new_ui.docs_core import (
         _person_employment_periods, _person_lifting_accessories,
     )
 
@@ -803,10 +784,10 @@ def _person_ficha_context(request, person):
     avatar = person.avatar_document
     if id_photo:
         photo_url = "%s?v=%s" % (
-            reverse("panel:documentation_personal_photo", args=[person.pk]),
+            reverse("new_ui:person_photo", args=[person.pk]),
             int(id_photo["extracted_at"].timestamp()))
     elif avatar is not None and not avatar.deleted_at:
-        photo_url = reverse("panel:documentation_document_view",
+        photo_url = reverse("new_ui:document_file",
                             args=[avatar.pk])
     else:
         photo_url = ""
@@ -884,8 +865,42 @@ def _person_ficha_context(request, person):
         "accessories": _person_lifting_accessories(
             person, _company_user(request).company),
         "photo_url": photo_url,
-        "save_url": reverse("panel:documentation_personal_update",
+        "save_url": reverse("new_ui:person_update",
                             args=[person.pk]),
+    }
+
+
+def _machine_qr_context(request, machine):
+    """
+    "QR" tab of a cost centre: what the worker sees when reading it.
+
+    ---
+
+    La pestaña "QR" del centro de gasto (H23, S154; copia de la página
+    MachineQrSheetView de la antigua): el QR, el enlace, la revisión y
+    la ficha técnica que salen en él, observaciones, fotos y vídeos, y
+    la contraseña del editor QR del fichaje.
+    """
+    from django.urls import reverse
+
+    from fleet import qr_sheet_service as qr
+
+    sheet = qr.sheet_for(machine)
+    url = qr.public_url(request, sheet)
+    return {
+        "machine": machine,
+        "sheet": sheet,
+        "public_url": url,
+        "qr_svg": qr.qr_image(url, "svg", scale=6),
+        "media": qr.media_rows(sheet),
+        "specs": qr.spec_rows(machine),
+        "service_lines": qr.service_lines(machine),
+        "max_photo_mb": qr.MAX_PHOTO_BYTES // (1024 * 1024),
+        "max_video_mb": qr.MAX_VIDEO_BYTES // (1024 * 1024),
+        "editor_password_set": qr.editor_password_set(machine.company),
+        "min_password_length": qr.MIN_PASSWORD_LENGTH,
+        "image_url": reverse("new_ui:machine_qr_image", args=[machine.pk]),
+        "action_url": reverse("new_ui:machine_qr_action", args=[machine.pk]),
     }
 
 
@@ -909,11 +924,20 @@ class NewUiCardView(SuperuserRequiredMixin, View):
 
         section = request.GET.get("s", "")
         pk = request.GET.get("pk", "")
+        tab = request.GET.get("t", FICHA)
         company_user = _company_user(request)
         if not pk.isdigit():
             return HttpResponseBadRequest("Falta la persona o máquina.")
-        if not _check_view(request, section, FICHA):
+        if (tab not in ENTITY_TABS.get(section, ())
+                or not _check_view(request, section, tab)):
             return HttpResponseBadRequest("Ficha no disponible.")
+        if section == "cdg" and tab == "qr":
+            machine = MachineAsset.objects.filter(
+                company=company_user.company, pk=int(pk)).first()
+            if machine is None:
+                return HttpResponseBadRequest("No existe.")
+            return render(request, "new_ui/_qr.html",
+                          _machine_qr_context(request, machine))
         if section == "cdg":
             machine = MachineAsset.objects.filter(
                 company=company_user.company, pk=int(pk)).first()
@@ -928,43 +952,104 @@ class NewUiCardView(SuperuserRequiredMixin, View):
             context = _person_ficha_context(request, person)
         else:
             return HttpResponseBadRequest("Sin ficha.")
-        return render(request, "panel/new_ui/_ficha.html", context)
+        return render(request, "new_ui/_ficha.html", context)
 
 
 class NewUiMachineSaveView(SuperuserRequiredMixin, View):
     """
-    POST: save the machine card through the real machine edit view.
+    POST: save the machine form of the "Ficha" tab.
 
     ---
 
-    POST: guarda la tarjeta de la máquina llamando a la vista real de
-    la ficha (MachineDetailView.post), con todo lo que hace al guardar
-    (carpeta y nombres de documentos si cambian código o familia). Si
-    el formulario no valida, devuelve sus errores.
+    POST: guarda el formulario de la máquina de la pestaña "Ficha".
+    Copia de lo que hace MachineDetailView.post de la antigua (S163):
+    código en mayúsculas y, si cambian familia o código, su carpeta y
+    los nombres de sus documentos le siguen (sync_machine_documents) y
+    el agente mueve la carpeta local. Errores del formulario, en JSON.
     """
 
     def post(self, request, pk):
-        from fleet.forms import MachineAssetForm
+        from document_explorer import machine_local_folder_service
+        from document_explorer.machine_folder_service import (
+            sync_machine_documents,
+        )
         from fleet.models import MachineAsset
-        from panel.views_documentation_h30 import MachineDetailView
+        from new_ui.forms import MachineAssetForm
 
+        company_user = _company_user(request)
         machine = MachineAsset.objects.filter(
-            company=_company_user(request).company, pk=pk).first()
+            company=company_user.company, pk=pk).first()
         if machine is None:
             return JsonResponse({"ok": False, "message": "No existe."},
                                 status=404)
-        response = MachineDetailView.as_view()(request, pk=pk)
-        if response.status_code in (301, 302):
-            return JsonResponse({"ok": True, "message": "Guardado."})
-        if response.status_code == 403:
-            return JsonResponse({"ok": False, "message": (
-                "No tienes permiso para editar este centro de gasto.")},
-                status=403)
-        form = MachineAssetForm(request.POST, instance=MachineAsset.objects.get(
-            pk=pk), company=machine.company)
-        form.is_valid()
-        errors = "; ".join(
-            "%s: %s" % (form.fields[f].label if f in form.fields else f,
-                        " ".join(e)) for f, e in form.errors.items())
-        return JsonResponse({"ok": False, "message": errors
-                             or "No se ha podido guardar."}, status=400)
+        previous_local = machine_local_folder_service.current_local_folder(
+            machine)
+        form = MachineAssetForm(request.POST, instance=machine,
+                                company=machine.company)
+        if not form.is_valid():
+            errors = "; ".join(
+                "%s: %s" % (form.fields[f].label if f in form.fields else f,
+                            " ".join(e)) for f, e in form.errors.items())
+            return JsonResponse({"ok": False, "message": errors
+                                 or "No se ha podido guardar."}, status=400)
+        updated = form.save(commit=False)
+        updated.code = updated.code.strip().upper()
+        updated.save()
+        sync_machine_documents(updated)
+        machine_local_folder_service.follow_change(
+            updated, previous_local, requested_by=company_user)
+        return JsonResponse({"ok": True, "message": "Guardado."})
+
+
+class NewUiMenuView(SuperuserRequiredMixin, View):
+    """
+    GET ?kind=person|machine&pk=: right-click menu of one entity (JSON).
+
+    ---
+
+    GET: el menú del botón derecho de una persona o máquina en la nueva
+    interfaz (new_ui_context_menu.js): su nombre y sus pestañas de la
+    nueva interfaz que este usuario puede ver, para abrirlas aquí.
+    """
+
+    ICONS = {
+        "ficha": "bi-person-vcard", "qr": "bi-qr-code",
+        "documentos": "bi-folder2-open", "laboral": "bi-briefcase",
+        "partes": "bi-clipboard-check", "fichajes": "bi-clock-history",
+        "repostajes": "bi-fuel-pump", "vacaciones": "bi-sun",
+        "salud": "bi-heart-pulse", "ausencias": "bi-calendar-x",
+        "solicitudes": "bi-envelope-paper", "horarios": "bi-clock",
+        "nominas": "bi-cash-stack", "epis": "bi-cone-striped",
+        "requisitos": "bi-list-check", "especificaciones": "bi-rulers",
+        "avisos": "bi-exclamation-triangle", "revisiones": "bi-wrench",
+        "accesorios": "bi-link-45deg", "taller": "bi-tools",
+        "averias": "bi-cone", "libro": "bi-journal-text",
+        "equipos": "bi-people",
+    }
+
+    def get(self, request):
+        from document_explorer.models import PersonIdentity
+        from fleet.models import MachineAsset
+        from new_ui.lists import machine_label, person_name
+
+        kind = request.GET.get("kind", "")
+        pk = request.GET.get("pk", "")
+        if not pk.isdigit() or kind not in ("person", "machine"):
+            return HttpResponseBadRequest("Falta la persona o máquina.")
+        section = "per" if kind == "person" else "cdg"
+        if kind == "person":
+            obj = PersonIdentity.objects.filter(pk=int(pk)).first()
+            name = person_name(obj) if obj else ""
+        else:
+            obj = MachineAsset.objects.filter(
+                company=_company_user(request).company, pk=int(pk)).first()
+            name = machine_label(obj) if obj else ""
+        if obj is None:
+            return HttpResponseBadRequest("No existe.")
+        items = []
+        for key, label in SECTIONS[section][2]:
+            if key == "general" or not _check_view(request, section, key):
+                continue
+            items.append({"code": key, "label": label,
+                          "icon": self.ICONS.get(key, "bi-list")})
+        return JsonResponse({"name": name, "items": items})

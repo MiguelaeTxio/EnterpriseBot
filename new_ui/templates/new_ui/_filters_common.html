@@ -1,4 +1,4 @@
-{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/new_ui/_filters_common.html #}
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_filters_common.html #}
 {% comment %}
 S163 (invasora UX). Bloque común de filtros de la nueva interfaz,
 siempre igual y en este orden (directriz 4.27, punto 4bis): Buscar ·
@@ -7,8 +7,8 @@ desde/hasta) · Estado · Empresa · Grupo · Familia/Sección.
 - Permisos: filtra usuarios (periodo = último acceso; Grupo = grupos de
   usuarios; Sección = rol), por htmx.
 - Documentos, Personal y Centros de gasto: filtra la pestaña abierta
-  del listado (panel/new_ui_lists.filtered), por new_ui.js. Opciones en
-  `opts` (panel/new_ui_lists.filter_options), valores guardados en `f`.
+  del listado (new_ui/lists.filtered), por new_ui.js. Opciones en
+  `opts` (new_ui/lists.filter_options), valores guardados en `f`.
 {% endcomment %}
 <form id="nui-filters" autocomplete="off"
       {% if section == "permisos" %}hx-get="?s=permisos&fragment=1" hx-target="#nui-lists"

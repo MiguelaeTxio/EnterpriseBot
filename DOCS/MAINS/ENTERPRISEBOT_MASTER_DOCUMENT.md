@@ -2104,10 +2104,32 @@ este programa"*. La 4.24 ya lo exigía (punto 6) y se ignoró.
      verbatim: *"no quiero la organización por acordeones [...] rompe
      por completo la vista de la aplicación y parece que estamos dentro
      de una aplicación diferente."* Referencia:
-     `panel/templates/panel/new_ui/_ficha.html` (NewUiCardView). Las
+     `new_ui/templates/new_ui/_ficha.html` (NewUiCardView). Las
      fichas de acordeones de siempre siguen en producción hasta que la
      nueva interfaz se abra a todos; dentro de ella, nada lleva ya a
      ellas (menú de la fila, botón derecho y Acciones abren la pestaña).
+   - **Nueva interfaz y antigua, separadas del todo (S163).** La nueva
+     vive en su propia app (`new_ui/`: vistas, plantillas, JS, rutas
+     bajo /panel/nueva-interfaz/ y tablas propias UiUserGroup,
+     UiViewGrant y UiState). Miguel Ángel, verbatim: *"no quiero que
+     utilicen las rutinas del otro, porque cuando borre, si no me gusta
+     [...] no quiero borrar lo otro. Y si borramos la antigua porque la
+     nueva funciona, no pueden estar mezcladas."* Reglas:
+     1. Lo que la nueva necesite de la antigua se COPIA entero en un
+        archivo propio con otro nombre (nota "copia de ..." en su
+        cabecera); nunca se importa, se incluye ni se llama a una ruta
+        de la antigua, y nunca se cambia un archivo de la antigua para
+        servir a la nueva.
+     2. Comunes a las dos, porque no son de ninguna interfaz: los datos
+        y sus modelos, los servicios de negocio de las apps de dominio
+        (document_explorer, fleet, hr_calendar...) y el armazón general
+        (panel/base.html, barra lateral, inicio de sesión).
+     3. Para borrar la nueva: la carpeta `new_ui/`, la línea de
+        INSTALLED_APPS, la línea de enterprise_core/urls.py y una
+        migración que borre sus tablas; la entrada de la barra lateral
+        desaparece sola. Para borrar la antigua, la nueva no se toca.
+     4. Mientras convivan, un arreglo de una regla copiada (vigencia,
+        periodos...) hay que hacerlo en las dos copias.
 5. **Al añadir o cambiar algo común en una pestaña, en el mismo bloque
    de trabajo se aplica a todas** (o se deja anotado como pendiente
    abierto con la lista exacta de pestañas que faltan, nunca

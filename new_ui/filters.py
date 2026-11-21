@@ -1,4 +1,4 @@
-# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/new_ui_filters.py
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/filters.py
 """
 Common filter block of the new interface: quick period and multi-sort.
 
