@@ -404,7 +404,7 @@
             const box = document.getElementById("nui-entity-actions");
             if (!box) return;
             if (!(scope && scope.pk)) {
-                box.innerHTML = '<p class="small text-muted mb-0">Pulsa ' + (section === "cdg" ? "un centro de gasto" : "una persona") + ' en el listado: aquí salen todas sus acciones (las mismas del botón derecho).</p>';
+                box.innerHTML = '<p class="small text-muted mb-0">Pulsa ' + (section === "cdg" ? "un centro de gasto" : "una persona") + ' en el listado: aquí salen las acciones que no tienen pestaña abajo.</p>';
                 return;
             }
             const url = section === "cdg" ? "/panel/documentacion/maquinaria/" + scope.pk + "/menu/" : "/panel/documentacion/personal/" + scope.pk + "/menu/";
@@ -416,7 +416,20 @@
                 box.appendChild(title);
                 const wrap = document.createElement("div");
                 wrap.className = "d-flex flex-wrap gap-1";
-                data.items.forEach(function (item) {
+                // S163: lo que ya es una pestaña del listado (ficha,
+                // fichajes, vacaciones...) no se repite aquí como botón
+                // (Miguel Ángel: "parece que los botones están
+                // duplicados"); solo lo que se hace en otra pantalla.
+                const kind = section === "cdg" ? "machine" : "person";
+                const items = data.items.filter(item => !(MENU_TABS[kind] || {})[item.code]);
+                if (!items.length) {
+                    const p = document.createElement("p");
+                    p.className = "small text-muted mb-0";
+                    p.textContent = "Todo lo suyo está en las pestañas de abajo.";
+                    box.appendChild(p);
+                    return;
+                }
+                items.forEach(function (item) {
                     const a = document.createElement("a");
                     a.className = "btn btn-sm btn-outline-primary";
                     a.href = item.url;
