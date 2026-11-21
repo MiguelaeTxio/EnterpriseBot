@@ -241,6 +241,60 @@ def _list_context(request):
     }
 
 
+def _section_context(company_user, section):
+    """
+    Context of Documentos, Personal or Centros de gasto in the shell.
+
+    ---
+
+    Lo que pinta el armazón para una sección con listados: opciones del
+    bloque común, filtros guardados, columnas de cada pestaña (elegidas
+    por el usuario), selecciones, la persona/máquina que se está viendo
+    sola (`scope`) y los grupos de selección de siempre.
+    """
+    from panel.new_ui_lists import filter_options, list_def, visible_columns
+    from panel.person_groups import (
+        MACHINE_KIND, PERSON_KIND, collapsed_state, group_tree,
+        parent_choices,
+    )
+
+    saved = get_saved_state_key(company_user, "nui_filters_" + section,
+                                "filters", {})
+    saved = saved if isinstance(saved, dict) else {}
+    cols = get_saved_state_key(company_user, SCREEN_KEY,
+                                   "cols_" + section, {}) or {}
+    tabs_cols = []
+    for tab_key, tab_label in SECTIONS[section][2]:
+        definition = list_def(section, tab_key)
+        visible = {c.key for c in visible_columns(
+            definition, cols.get("%s.%s" % (section, tab_key)))}
+        tabs_cols.append({
+            "key": tab_key, "label": tab_label, "note": definition.note,
+            "columns": [{"key": c.key, "label": c.label,
+                         "on": c.key in visible, "fixed": c.entity}
+                        for c in definition.columns],
+        })
+    selections = get_saved_state_key(company_user, SCREEN_KEY,
+                                     "sel_" + section, {})
+    selections = {k: v for k, v in (selections or {}).items()
+                  if isinstance(v, list)}
+    scope = get_saved_state_key(company_user, SCREEN_KEY,
+                                "scope_" + section, None)
+    kind = MACHINE_KIND if section == "cdg" else PERSON_KIND
+    return {
+        "f": saved,
+        "period": period_context(saved),
+        "opts": filter_options(section, company_user.company, company_user),
+        "tabs_cols": tabs_cols,
+        "selections": selections,
+        "scope": scope if isinstance(scope, dict) and scope.get("pk")
+        else None,
+        "group_nodes": group_tree(company_user, kind),
+        "groups_collapsed": collapsed_state(company_user, kind),
+        "group_parents": parent_choices(editor=company_user, kind=kind),
+    }
+
+
 class NewUiView(SuperuserRequiredMixin, View):
     """
     GET: the single Documentation view of the new interface.
@@ -294,6 +348,18 @@ class NewUiView(SuperuserRequiredMixin, View):
         }
         if section == PERMISSIONS:
             context.update(_list_context(request))
+            context["f"] = request.GET
+            context["opts"] = {
+                "companies": [(str(c.pk), c.name)
+                              for c in context["companies"]],
+                "groups": [("none", "Sin grupo", True)] + [
+                    (str(g.pk), g.name, True)
+                    for g in context["user_groups"]],
+                "families": list(CompanyUser.ROLE_CHOICES),
+                "family_label": "Sección (rol)",
+            }
+        else:
+            context.update(_section_context(company_user, section))
         return render(request, "panel/new_ui/shell.html", context)
 
 
@@ -481,3 +547,299 @@ class PermGroupMembersView(SuperuserRequiredMixin, View):
         return JsonResponse({"users": [
             [str(u.pk), u.user.get_full_name() or u.user.username]
             for u in users]})
+
+
+# ======================================================================
+# Documentos, Personal y Centros de gasto (S163, "Termina todo")
+# ======================================================================
+def _scope_pk(request):
+    raw = request.GET.get("scope", "")
+    return int(raw) if raw.isdigit() else None
+
+
+def _check_view(request, section, tab):
+    from panel.new_ui_permissions import can_view
+
+    return can_view(_company_user(request), "%s.%s" % (section, tab))
+
+
+class NewUiListView(SuperuserRequiredMixin, View):
+    """
+    GET ?s=&t=&filters...: one list tab of a section (table fragment).
+
+    ---
+
+    GET: el listado de una pestaña con el bloque común de filtros, la
+    vista de una sola persona/máquina (`scope`), el orden por cabecera
+    y las columnas elegidas por el usuario. Pinta como mucho
+    ROW_LIMIT filas y dice cuántas hay en total.
+    """
+
+    def get(self, request):
+        from panel.new_ui_lists import (
+            ROW_LIMIT, filtered, headers, list_def, rows_for, sorted_qs,
+            visible_columns,
+        )
+
+        section = request.GET.get("s", "")
+        tab = request.GET.get("t", "")
+        definition = list_def(section, tab)
+        if definition is None or not _check_view(request, section, tab):
+            return HttpResponseBadRequest("Listado no disponible.")
+        company_user = _company_user(request)
+        _save_keys(company_user, "nui_filters_" + section, {
+            "filters": {k: request.GET.get(k, "") for k in PERM_FILTER_KEYS
+                        if k != "sort"}})
+        cols = get_saved_state_key(company_user, SCREEN_KEY,
+                                   "cols_" + section, {})
+        columns = visible_columns(
+            definition, (cols or {}).get("%s.%s" % (section, tab)))
+        qs = filtered(definition, company_user.company, request.GET,
+                      _scope_pk(request))
+        qs, current = sorted_qs(definition, qs, request.GET.get("sort", ""))
+        total = qs.count()
+        rows = rows_for(definition, list(qs[:ROW_LIMIT]), columns)
+        return render(request, "panel/new_ui/_list.html", {
+            "section": section,
+            "tab": tab,
+            "definition": definition,
+            "headers": headers(definition, columns, current),
+            "rows": rows,
+            "total": total,
+            "shown": len(rows),
+            "limited": total > len(rows),
+            "sort_active": bool(current),
+        })
+
+
+class NewUiExportView(SuperuserRequiredMixin, View):
+    """
+    GET ?s=&t=&export_format=xlsx|pdf|html|print: the list, exported.
+
+    ---
+
+    GET: exporta el listado con sus filtros, su orden y sus columnas
+    (o solo las filas marcadas, `selected`), sin límite de filas, a
+    Excel, PDF, HTML o impresión (panel/export_formats).
+    """
+
+    def get(self, request):
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill
+
+        from panel.export_formats import workbook_response
+        from panel.new_ui_lists import (
+            filtered, list_def, rows_for, sorted_qs, visible_columns,
+        )
+
+        section = request.GET.get("s", "")
+        tab = request.GET.get("t", "")
+        definition = list_def(section, tab)
+        if definition is None or not _check_view(request, section, tab):
+            return HttpResponseBadRequest("Listado no disponible.")
+        company_user = _company_user(request)
+        cols = get_saved_state_key(company_user, SCREEN_KEY,
+                                   "cols_" + section, {})
+        columns = visible_columns(
+            definition, (cols or {}).get("%s.%s" % (section, tab)))
+        qs = filtered(definition, company_user.company, request.GET,
+                      _scope_pk(request))
+        selected = [pk for pk in request.GET.getlist("selected")
+                    if pk.isdigit()]
+        if selected:
+            qs = qs.filter(pk__in=selected)
+        qs, _current = sorted_qs(definition, qs, request.GET.get("sort", ""))
+        rows = rows_for(definition, list(qs[:20000]), columns)
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = definition.label[:31].upper()
+        sheet.append([c.label for c in columns])
+        for cell in sheet[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="0D6EFD")
+        band = PatternFill("solid", fgColor="EEF4FF")
+        for index, row in enumerate(rows):
+            sheet.append([c["value"] for c in row["cells"]])
+            if index % 2:
+                for cell in sheet[sheet.max_row]:
+                    cell.fill = band
+        for column_cells in sheet.columns:
+            width = max(len(str(c.value or "")) for c in column_cells)
+            sheet.column_dimensions[column_cells[0].column_letter].width = (
+                min(max(width + 2, 8), 60))
+        return workbook_response(
+            request, workbook,
+            "%s_%s" % (SECTIONS[section][0], definition.label))
+
+
+def _machine_card_context(request, machine):
+    from django.urls import reverse
+
+    from panel.views_machine_menu import (
+        EXPORT_CHOICES, card_sections, machine_menu_items, machine_title,
+    )
+
+    avatar = machine.avatar_document
+    return {
+        "kind": "machine",
+        "obj": machine,
+        "title": machine_title(machine),
+        "subtitle": " · ".join(p for p in (machine.type_name, machine.family,
+                                            machine.company_name) if p),
+        "active": machine.is_active,
+        "sections": card_sections(machine),
+        "photo_url": (reverse("panel:documentation_document_view",
+                              args=[avatar.pk])
+                      if avatar is not None and not avatar.deleted_at
+                      else ""),
+        "links": [i for i in machine_menu_items(
+            _company_user(request), machine) if not i["card"]],
+        "export_url": reverse("panel:machine_card_export",
+                              args=[machine.pk]),
+        "export_formats": EXPORT_CHOICES,
+    }
+
+
+def _person_card_context(request, person):
+    from django.urls import reverse
+
+    from document_explorer.models import PersonIdPhoto
+    from panel.new_ui_lists import fmt_date, person_name
+    from panel.views_documentation_h30 import PersonalUpdateView
+
+    id_photo = PersonIdPhoto.objects.filter(person=person).values(
+        "extracted_at").first()
+    avatar = person.avatar_document
+    if id_photo:
+        photo_url = "%s?v=%s" % (
+            reverse("panel:documentation_personal_photo", args=[person.pk]),
+            int(id_photo["extracted_at"].timestamp()))
+    elif avatar is not None and not avatar.deleted_at:
+        photo_url = reverse("panel:documentation_document_view",
+                            args=[avatar.pk])
+    else:
+        photo_url = ""
+    labels = {
+        "given_name": "Nombre", "first_surname": "Primer apellido",
+        "second_surname": "Segundo apellido", "nickname": "Apodo",
+        "phone": "Teléfono", "phone_secondary": "Teléfono 2",
+        "email": "Correo", "address_street": "Domicilio",
+        "postal_code": "C.P.", "city": "Población", "province": "Provincia",
+        "ss_affiliation_number": "Nº de afiliación a la S.S.",
+        "professional_category": "Categoría profesional",
+        "emergency_contact": "Contacto de emergencia",
+        "phone_emergency": "Teléfono de emergencia", "notes": "Observaciones",
+        "hire_date": "Fecha de alta", "termination_date": "Fecha de baja",
+    }
+    fields = []
+    for field in PersonalUpdateView.EDITABLE_FIELDS:
+        value = getattr(person, field)
+        is_date = field in PersonalUpdateView.DATE_EDITABLE_FIELDS
+        fields.append({
+            "name": field, "label": labels.get(field, field),
+            "is_date": is_date,
+            "value": value.isoformat() if is_date and value else (value or ""),
+            "display": fmt_date(value) if is_date else (value or ""),
+        })
+    fixed = [
+        ("DNI/NIE", person.dni), ("Empresa", person.employer_company),
+        ("Fecha de nacimiento", fmt_date(person.birth_date)),
+        ("Caducidad del DNI", fmt_date(person.dni_expiry_date)),
+        ("Caducidad del carné de conducir",
+         fmt_date(person.driving_license_expiry_date)),
+        ("Caducidad del carné de gruista",
+         fmt_date(person.crane_operator_card_expiry_date)),
+        ("Reconocimiento médico", fmt_date(person.medical_exam_date)),
+    ]
+    return {
+        "kind": "person",
+        "obj": person,
+        "title": person_name(person),
+        "subtitle": " · ".join(p for p in (person.professional_category,
+                                            person.employer_company) if p),
+        "active": person.is_active_employee,
+        "fixed": [(k, v) for k, v in fixed if v],
+        "fields": fields,
+        "photo_url": photo_url,
+        "detail_url": reverse("panel:documentation_personal_detail",
+                              args=[person.pk]),
+    }
+
+
+class NewUiCardView(SuperuserRequiredMixin, View):
+    """
+    GET ?s=cdg|per&pk=: the card of one machine or person (panel 5).
+
+    ---
+
+    GET: la tarjeta del panel de seleccionados: foto (con la cámara para
+    cambiarla), datos y "Modificar". La máquina se modifica con su
+    formulario real (MachineAssetForm) y la persona con los campos
+    editables de su ficha, por las mismas vistas que la ficha actual.
+    """
+
+    def get(self, request):
+        from document_explorer.models import PersonIdentity
+        from fleet.forms import MachineAssetForm
+        from fleet.models import MachineAsset
+
+        section = request.GET.get("s", "")
+        pk = request.GET.get("pk", "")
+        company_user = _company_user(request)
+        if not pk.isdigit():
+            return HttpResponseBadRequest("Falta la persona o máquina.")
+        if section == "cdg":
+            machine = MachineAsset.objects.filter(
+                company=company_user.company, pk=int(pk)).first()
+            if machine is None:
+                return HttpResponseBadRequest("No existe.")
+            context = _machine_card_context(request, machine)
+            context["form"] = MachineAssetForm(
+                instance=machine, company=machine.company)
+        elif section == "per":
+            person = PersonIdentity.objects.filter(pk=int(pk)).first()
+            if person is None:
+                return HttpResponseBadRequest("No existe.")
+            context = _person_card_context(request, person)
+        else:
+            return HttpResponseBadRequest("Sin tarjeta.")
+        return render(request, "panel/new_ui/_card.html", context)
+
+
+class NewUiMachineSaveView(SuperuserRequiredMixin, View):
+    """
+    POST: save the machine card through the real machine edit view.
+
+    ---
+
+    POST: guarda la tarjeta de la máquina llamando a la vista real de
+    la ficha (MachineDetailView.post), con todo lo que hace al guardar
+    (carpeta y nombres de documentos si cambian código o familia). Si
+    el formulario no valida, devuelve sus errores.
+    """
+
+    def post(self, request, pk):
+        from fleet.forms import MachineAssetForm
+        from fleet.models import MachineAsset
+        from panel.views_documentation_h30 import MachineDetailView
+
+        machine = MachineAsset.objects.filter(
+            company=_company_user(request).company, pk=pk).first()
+        if machine is None:
+            return JsonResponse({"ok": False, "message": "No existe."},
+                                status=404)
+        response = MachineDetailView.as_view()(request, pk=pk)
+        if response.status_code in (301, 302):
+            return JsonResponse({"ok": True, "message": "Guardado."})
+        if response.status_code == 403:
+            return JsonResponse({"ok": False, "message": (
+                "No tienes permiso para editar este centro de gasto.")},
+                status=403)
+        form = MachineAssetForm(request.POST, instance=MachineAsset.objects.get(
+            pk=pk), company=machine.company)
+        form.is_valid()
+        errors = "; ".join(
+            "%s: %s" % (form.fields[f].label if f in form.fields else f,
+                        " ".join(e)) for f, e in form.errors.items())
+        return JsonResponse({"ok": False, "message": errors
+                             or "No se ha podido guardar."}, status=400)

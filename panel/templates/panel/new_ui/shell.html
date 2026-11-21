@@ -8,14 +8,17 @@ el 21/11/2026). Selector de qué se gestiona y cinco paneles comunes
 (directriz 4.27, punto 4bis), cada uno con sus pestañas:
   arriba (entrada, alto ajustable): Filtros · Grupos de selección · Acciones
   abajo (salida, alto y ancho ajustables): Listado de filtrados · Seleccionados
-Lo de cada sección va en panel/new_ui/<sección>/. Comportamiento en
+Documentos, Personal y Centros de gasto: un listado por pestaña
+(panel/new_ui_lists.py, cargado al abrirla) y, al pulsar una persona o
+máquina, la misma vista solo con lo suyo y su tarjeta en el panel de
+seleccionados. Permisos: panel/new_ui/permisos/. Comportamiento en
 panel/static/panel/js/new_ui.js. De momento solo para el superusuario.
 {% endcomment %}
 {% block title %}Nueva interfaz{% endblock %}
 {% block page_title %}Nueva interfaz · {{ section_label }}{% endblock %}
 {% block extra_head %}
 <style>
-#nui { display: flex; flex-direction: column; gap: 8px; --nui-top: 270px; --nui-sel: 30%; min-height: 520px; }
+#nui { display: flex; flex-direction: column; gap: 0; --nui-top: 270px; --nui-sel: 30%; min-height: 520px; }
 .nui-top { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1.25fr); gap: 8px; height: var(--nui-top); flex: none; }
 .nui-bottom { display: flex; gap: 0; flex: 1 1 auto; min-height: 160px; }
 .nui-bottom > .nui-list { flex: 1 1 auto; min-width: 0; }
@@ -26,7 +29,7 @@ panel/static/panel/js/new_ui.js. De momento solo para el superusuario.
 .nui-tabs .nav-link.active { color: #212529; font-weight: 600; background: #fff; border-color: #dee2e6; margin-bottom: -1px; }
 .nui-body { padding: 8px 10px; overflow: auto; flex: 1 1 auto; min-height: 0; font-size: .85rem; }
 .nui-body.flush { padding: 0; }
-.nui-hsplit { height: 8px; cursor: row-resize; flex: none; display: flex; align-items: center; justify-content: center; touch-action: none; }
+.nui-hsplit { height: 10px; cursor: row-resize; flex: none; display: flex; align-items: center; justify-content: center; touch-action: none; }
 .nui-hsplit::after { content: ""; width: 48px; height: 4px; border-radius: 2px; background: #adb5bd; }
 .nui-vsplit { width: 10px; cursor: col-resize; flex: none; display: flex; align-items: center; justify-content: center; touch-action: none; }
 .nui-vsplit::after { content: ""; width: 4px; height: 48px; border-radius: 2px; background: #adb5bd; }
@@ -34,12 +37,16 @@ panel/static/panel/js/new_ui.js. De momento solo para el superusuario.
 body.nui-dragging { user-select: none; }
 .nui-list table thead th { position: sticky; top: 0; background: #f8f9fa; z-index: 1; white-space: nowrap; }
 .nui-depth-1 { padding-left: 1.6rem !important; }
+.nui-panel .eb-fit-col { position: relative; width: 100%; flex: 1 1 auto; min-height: 0; padding: 0; }
+.nui-panel .eb-fit-col > .eb-fit-card { position: absolute; inset: 0; border: 0 !important; }
+.nui-panel .eb-fit-col > .eb-fit-card > .fw-bold:first-child { display: none; }
 @media (max-width: 991.98px) {
   .nui-top { grid-template-columns: minmax(0, 1fr); height: auto; }
   .nui-bottom { flex-direction: column; }
   .nui-bottom > .nui-sel { flex-basis: auto; }
   .nui-hsplit, .nui-vsplit { display: none; }
   #nui { height: auto !important; }
+  .nui-panel .eb-fit-col { min-height: 16rem; }
 }
 </style>
 {% endblock %}
@@ -52,7 +59,14 @@ body.nui-dragging { user-select: none; }
         </a>
         {% endfor %}
     </div>
-    <span class="small text-muted">Nueva interfaz en construcción · solo visible para ti</span>
+    {% if section == "cdg" or section == "per" %}
+    <div id="nui-scope-chip" class="align-items-center gap-2 rounded-pill border border-primary-subtle bg-primary-subtle px-2 py-1 small {% if scope %}d-flex{% else %}d-none{% endif %}">
+        <i class="bi bi-funnel-fill text-primary"></i>
+        <span>Solo <strong id="nui-scope-label">{{ scope.label }}</strong>: sus listados y su tarjeta</span>
+        <button type="button" class="btn btn-sm btn-link p-0 text-danger" id="nui-scope-clear" aria-label="Volver al listado completo" title="Volver al listado completo"><i class="bi bi-x-lg"></i></button>
+    </div>
+    {% endif %}
+    <span class="small text-muted ms-auto">Nueva interfaz · solo visible para ti</span>
 </div>
 
 <div id="nui" data-section="{{ section }}">
@@ -61,17 +75,34 @@ body.nui-dragging { user-select: none; }
         <section class="nui-panel" data-nui-panel="filtros" aria-label="Filtros y búsqueda">
             <div class="nui-tabs nav" role="tablist">
                 <button type="button" class="nav-link" data-nui-tab="filtrar" role="tab">Buscar y filtrar</button>
-                <button type="button" class="nav-link" data-nui-tab="columnas" role="tab">Columnas</button>
+                {% if section != "permisos" %}<button type="button" class="nav-link" data-nui-tab="columnas" role="tab">Columnas</button>{% endif %}
                 <button type="button" class="nav-link" data-nui-tab="propios" role="tab">Propios</button>
             </div>
             <div class="nui-body">
                 <div data-nui-pane="filtrar">{% include "panel/new_ui/_filters_common.html" %}</div>
-                <div data-nui-pane="columnas" class="d-none"><p class="text-muted mb-0">Qué columnas se ven y en qué orden, con plantillas como las de exportar: se añade con cada listado.</p></div>
+                {% if section != "permisos" %}
+                <div data-nui-pane="columnas" class="d-none">
+                    {% for tab in tabs_cols %}
+                    <div data-nui-cols-for="{{ tab.key }}" class="d-none">
+                        <div class="small text-muted mb-1">Columnas de «{{ tab.label }}» (se guardan para ti):</div>
+                        <div class="d-flex flex-wrap gap-2 small">
+                            {% for col in tab.columns %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="nui-col-{{ tab.key }}-{{ col.key }}" value="{{ col.key }}" data-nui-col {% if col.on %}checked{% endif %} {% if col.fixed %}disabled{% endif %}>
+                                <label class="form-check-label" for="nui-col-{{ tab.key }}-{{ col.key }}">{{ col.label }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
                 <div data-nui-pane="propios" class="d-none">
                     {% if section == "permisos" %}
                     <p class="text-muted mb-1">Permisos no tiene filtros propios: el bloque común filtra los usuarios (el periodo, por su último acceso; «Sección», por su rol).</p>
                     {% else %}
-                    <p class="text-muted mb-0">Los filtros propios de cada listado (fechas, importes, capacidades…) llegan con su fase.</p>
+                    {% for tab in tabs_cols %}<p class="small mb-1 d-none" data-nui-note-for="{{ tab.key }}"><strong>{{ tab.label }}:</strong> {{ tab.note|default:"sin filtros propios." }}</p>{% endfor %}
+                    <p class="small text-muted mb-0">El bloque común (estado, empresa, grupo, {{ opts.family_label|lower }}) se aplica a {% if section == "cdg" %}la máquina{% else %}la persona{% endif %} de cada fila.</p>
                     {% endif %}
                 </div>
             </div>
@@ -81,9 +112,18 @@ body.nui-dragging { user-select: none; }
         <section class="nui-panel" data-nui-panel="grupos" aria-label="Grupos de selección">
             {% if section == "permisos" %}
             {% include "panel/new_ui/permisos/_groups_panel.html" %}
+            {% elif section == "doc" %}
+            <div class="nui-tabs nav" role="tablist"><button type="button" class="nav-link" data-nui-tab="grupos" role="tab">Grupos de selección</button></div>
+            <div class="nui-body"><div data-nui-pane="grupos"><p class="text-muted small mb-0">Los grupos de personas se aplican aquí con el filtro «Grupo»: cada listado se queda con las filas de las personas de ese grupo.</p></div></div>
             {% else %}
-            <div class="nui-tabs nav" role="tablist"><button type="button" class="nav-link" data-nui-tab="grupos" role="tab">Grupos</button></div>
-            <div class="nui-body"><div data-nui-pane="grupos"><p class="text-muted mb-0">Los grupos de selección de {{ section_label|lower }} llegan con su fase.</p></div></div>
+            <div class="nui-tabs nav" role="tablist"><button type="button" class="nav-link" data-nui-tab="grupos" role="tab">Grupos de selección</button></div>
+            <div class="nui-body d-flex flex-column p-0"><div data-nui-pane="grupos" class="d-flex flex-column flex-grow-1 position-relative">
+                {% if section == "cdg" %}
+                {% include "panel/_selection_groups_box.html" with sg="nuiGroup" sg_nodes=group_nodes sg_collapsed=groups_collapsed sg_parents=group_parents sg_hint="máquinas" %}
+                {% else %}
+                {% include "panel/_selection_groups_box.html" with sg="nuiGroup" sg_nodes=group_nodes sg_collapsed=groups_collapsed sg_parents=group_parents sg_hint="personas" %}
+                {% endif %}
+            </div></div>
             {% endif %}
         </section>
 
@@ -92,11 +132,30 @@ body.nui-dragging { user-select: none; }
             {% if section == "permisos" %}
             {% include "panel/new_ui/permisos/_actions_panel.html" %}
             {% else %}
-            <div class="nui-tabs nav" role="tablist"><button type="button" class="nav-link" data-nui-tab="seleccion" role="tab">Selección</button></div>
+            <div class="nui-tabs nav" role="tablist">
+                <button type="button" class="nav-link" data-nui-tab="seleccion" role="tab">Selección y exportar</button>
+                {% if section != "doc" %}<button type="button" class="nav-link" data-nui-tab="uno" role="tab">{% if section == "cdg" %}Del centro de gasto{% else %}Del trabajador{% endif %}</button>{% endif %}
+            </div>
             <div class="nui-body">
-                <div data-nui-pane="seleccion">
-                    <div class="d-flex align-items-center gap-2"><strong><span data-nui-count id="nui-mass-count">0</span> seleccionados</strong><button type="button" class="btn btn-sm btn-outline-secondary" id="nui-mass-clear">Limpiar</button></div>
+                <div class="d-flex align-items-center gap-2 mb-2">
+                    <strong class="small"><span data-nui-count id="nui-mass-count">0</span> seleccionados</strong>
+                    <button type="button" class="btn btn-sm btn-outline-secondary py-0" id="nui-mass-clear">Limpiar</button>
                 </div>
+                <div data-nui-pane="seleccion">
+                    <div class="small text-muted mb-1">Exportar el listado abierto (los marcados o, si no hay ninguno, todo lo filtrado):</div>
+                    <div class="d-flex flex-wrap gap-1">
+                        <button type="button" class="btn btn-sm btn-success" data-nui-export="xlsx"><i class="bi bi-file-earmark-excel me-1"></i>Excel</button>
+                        <button type="button" class="btn btn-sm btn-outline-success" data-nui-export="pdf"><i class="bi bi-filetype-pdf me-1"></i>PDF</button>
+                        <button type="button" class="btn btn-sm btn-outline-success" data-nui-export="html"><i class="bi bi-filetype-html me-1"></i>HTML</button>
+                        <button type="button" class="btn btn-sm btn-outline-success" data-nui-export="print"><i class="bi bi-printer me-1"></i>Imprimir</button>
+                    </div>
+                </div>
+                {% if section != "doc" %}
+                <div data-nui-pane="uno" class="d-none">
+                    <div id="nui-entity-actions"><p class="small text-muted mb-0">Pulsa {% if section == "cdg" %}un centro de gasto{% else %}una persona{% endif %} en el listado: aquí salen todas sus acciones (las mismas del botón derecho).</p></div>
+                </div>
+                {% endif %}
+                <div class="alert small py-1 px-2 mt-2 mb-0 d-none" id="nui-result" role="status"></div>
             </div>
             {% endif %}
         </section>
@@ -111,16 +170,14 @@ body.nui-dragging { user-select: none; }
                 {% for key, label in list_tabs %}
                 <button type="button" class="nav-link" data-nui-tab="{{ key }}" role="tab">{{ label }}</button>
                 {% endfor %}
+                {% if section != "permisos" %}<span class="ms-auto small text-muted align-self-center pe-2"><span data-nui-total>…</span> filas</span>{% endif %}
             </div>
             <div class="nui-body flush" id="nui-lists">
                 {% if section == "permisos" %}
                 {% include "panel/new_ui/permisos/_lists.html" %}
                 {% else %}
                 {% for key, label in list_tabs %}
-                <div data-nui-pane="{{ key }}" class="p-3{% if not forloop.first %} d-none{% endif %}">
-                    <p class="text-muted mb-1">«{{ label }}» de {{ section_label|lower }}: en construcción.</p>
-                    <p class="small text-muted mb-0">{{ pending }}</p>
-                </div>
+                <div data-nui-pane="{{ key }}" class="nui-list-pane{% if not forloop.first %} d-none{% endif %}" data-tab="{{ key }}"></div>
                 {% endfor %}
                 {% endif %}
             </div>
@@ -134,7 +191,7 @@ body.nui-dragging { user-select: none; }
                 <button type="button" class="nav-link" data-nui-tab="lista" role="tab">Seleccionados (<span data-nui-count>0</span>)</button>
                 {% if section == "permisos" %}
                 <button type="button" class="nav-link" data-nui-tab="permisos" role="tab">Permisos</button>
-                {% else %}
+                {% elif section != "doc" %}
                 <button type="button" class="nav-link" data-nui-tab="tarjeta" role="tab">Tarjeta</button>
                 {% endif %}
             </div>
@@ -154,8 +211,8 @@ body.nui-dragging { user-select: none; }
                     </select>
                     <div id="nui-editor"></div>
                 </div>
-                {% else %}
-                <div data-nui-pane="tarjeta" class="d-none"><p class="text-muted mb-0">Con uno solo seleccionado, aquí sale su tarjeta (llega con la fase de {{ section_label|lower }}).</p></div>
+                {% elif section != "doc" %}
+                <div data-nui-pane="tarjeta" class="d-none" id="nui-card"><p class="text-muted small mb-0">Pulsa {% if section == "cdg" %}un centro de gasto{% else %}una persona{% endif %} en el listado para ver aquí su tarjeta.</p></div>
                 {% endif %}
             </div>
         </section>
@@ -167,6 +224,10 @@ body.nui-dragging { user-select: none; }
 {{ selection|json_script:"nui-selection" }}
 {% if section == "permisos" %}
 <script id="nui-urls" type="application/json">{"editor": "{% url 'panel:new_ui_perm_editor' %}", "bulk": "{% url 'panel:new_ui_perm_bulk' %}", "members": "{% url 'panel:new_ui_perm_members' %}"}</script>
+{% else %}
+{{ selections|json_script:"nui-selections" }}
+{{ scope|json_script:"nui-scope" }}
+<script id="nui-urls" type="application/json">{"list": "{% url 'panel:new_ui_list' %}", "export": "{% url 'panel:new_ui_export' %}", "card": "{% url 'panel:new_ui_card' %}", "fleetGroupSave": "{% url 'panel:fleet_group_save' %}", "personGroupSave": "{% url 'panel:documentation_personal_group_create' %}", "personGroupUpdate": "{% url 'panel:documentation_personal_group_update' 0 %}", "personGroupDelete": "{% url 'panel:documentation_personal_group_delete' 0 %}"}</script>
 {% endif %}
 {% endblock %}
 {% block extra_scripts %}

@@ -3,20 +3,22 @@
 S163 (invasora UX). Bloque común de filtros de la nueva interfaz,
 siempre igual y en este orden (directriz 4.27, punto 4bis): Buscar ·
 Periodo rápido (día, semana, mes, año; periodo actual o anterior; o
-desde/hasta) · Estado · Empresa · Grupo · Familia/Sección. El
-periodo lo calcula panel/new_ui_filters.period_range; los botones,
-panel/static/panel/js/new_ui.js. En Permisos, "Grupo" son los grupos de
-usuarios y "Sección" el rol (el criterio más cercano).
+desde/hasta) · Estado · Empresa · Grupo · Familia/Sección.
+- Permisos: filtra usuarios (periodo = último acceso; Grupo = grupos de
+  usuarios; Sección = rol), por htmx.
+- Documentos, Personal y Centros de gasto: filtra la pestaña abierta
+  del listado (panel/new_ui_lists.filtered), por new_ui.js. Opciones en
+  `opts` (panel/new_ui_lists.filter_options), valores guardados en `f`.
 {% endcomment %}
 <form id="nui-filters" autocomplete="off"
       {% if section == "permisos" %}hx-get="?s=permisos&fragment=1" hx-target="#nui-lists"
-      hx-trigger="change, submit, keyup changed delay:400ms from:#nui-q"{% else %}onsubmit="return false"{% endif %}>
-    <input type="hidden" name="sort" value="{{ current_sort }}">
+      hx-trigger="change, submit, keyup changed delay:400ms from:#nui-q"{% endif %}>
+    <input type="hidden" name="sort" value="{% if section == 'permisos' %}{{ current_sort }}{% endif %}">
     <input type="hidden" name="periodo" value="{{ period.unit }}">
     <input type="hidden" name="cual" value="{{ period.cual }}">
-    <input type="search" class="form-control form-control-sm mb-2" id="nui-q" name="q" value="{{ request.GET.q }}"
-           placeholder="{% if section == 'permisos' %}Buscar por usuario, nombre, DNI o teléfono…{% else %}Buscar…{% endif %}" aria-label="Buscar">
-    <div class="small fw-semibold mb-1">Periodo{% if section == "permisos" %} <span class="fw-normal text-muted">(último acceso)</span>{% endif %}</div>
+    <input type="search" class="form-control form-control-sm mb-2" id="nui-q" name="q" value="{{ f.q }}"
+           placeholder="{% if section == 'permisos' %}Buscar por usuario, nombre, DNI o teléfono…{% elif section == 'cdg' %}Buscar por código, marca, matrícula…{% elif section == 'per' %}Buscar por nombre, DNI, teléfono…{% else %}Buscar…{% endif %}" aria-label="Buscar">
+    <div class="small fw-semibold mb-1">Periodo{% if section == "permisos" %} <span class="fw-normal text-muted">(último acceso)</span>{% else %} <span class="fw-normal text-muted" id="nui-period-note"></span>{% endif %}</div>
     <div class="d-flex flex-wrap gap-1 align-items-center mb-1">
         {% for unit in period.units %}
         <button type="button" class="btn btn-sm btn-outline-primary py-0{% if unit.on %} active{% endif %}" data-period-unit="{{ unit.key }}">{{ unit.label }}</button>
@@ -36,7 +38,7 @@ usuarios y "Sección" el rol (el criterio más cercano).
         <div class="col-3">
             <label class="fw-semibold" for="nui-estado">Estado</label>
             <select class="form-select form-select-sm" id="nui-estado" name="estado">
-                {% with estado=request.GET.estado|default:"1" %}
+                {% with estado=f.estado|default:"1" %}
                 <option value="1" {% if estado == "1" %}selected{% endif %}>Activos</option>
                 <option value="0" {% if estado == "0" %}selected{% endif %}>Inactivos</option>
                 <option value="todos" {% if estado == "todos" %}selected{% endif %}>Todos</option>
@@ -47,26 +49,22 @@ usuarios y "Sección" el rol (el criterio más cercano).
             <label class="fw-semibold" for="nui-empresa">Empresa</label>
             <select class="form-select form-select-sm" id="nui-empresa" name="empresa">
                 <option value="">Todas</option>
-                {% for company in companies %}<option value="{{ company.pk }}" {% if request.GET.empresa == company.pk|stringformat:"s" %}selected{% endif %}>{{ company.name }}</option>{% endfor %}
+                {% for value, label in opts.companies %}<option value="{{ value }}" {% if f.empresa == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
             </select>
         </div>
         <div class="col-3">
             <label class="fw-semibold" for="nui-grupo">Grupo</label>
             <select class="form-select form-select-sm" id="nui-grupo" name="grupo">
                 <option value="">Todos</option>
-                {% if section == "permisos" %}
-                <option value="none" {% if request.GET.grupo == "none" %}selected{% endif %}>Sin grupo</option>
-                {% for group in user_groups %}<option value="{{ group.pk }}" {% if request.GET.grupo == group.pk|stringformat:"s" %}selected{% endif %}>{{ group.name }}</option>{% endfor %}
-                {% endif %}
+                {% if section != "permisos" %}<option value="{{ opts.group_none }}" {% if f.grupo == opts.group_none %}selected{% endif %}>Sin grupo</option>{% endif %}
+                {% for value, label, enabled in opts.groups %}<option value="{{ value }}" {% if not enabled %}disabled{% endif %} {% if enabled and f.grupo == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
             </select>
         </div>
         <div class="col-3">
-            <label class="fw-semibold" for="nui-seccion">{% if section == "cdg" %}Familia{% elif section == "permisos" %}Sección (rol){% else %}Sección{% endif %}</label>
+            <label class="fw-semibold" for="nui-seccion">{{ opts.family_label }}</label>
             <select class="form-select form-select-sm" id="nui-seccion" name="seccion">
                 <option value="">Todas</option>
-                {% if section == "permisos" %}
-                {% for code, label in roles %}<option value="{{ code }}" {% if request.GET.seccion == code %}selected{% endif %}>{{ label }}</option>{% endfor %}
-                {% endif %}
+                {% for value, label in opts.families %}<option value="{{ value }}" {% if f.seccion == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
             </select>
         </div>
     </div>

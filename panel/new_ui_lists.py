@@ -1,0 +1,1176 @@
+# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/new_ui_lists.py
+"""
+List engine of the new interface: one definition per list tab.
+
+---
+
+Motor de listados de la nueva interfaz (S163, sesión invasora de UX).
+Miguel Ángel: "Termina todo". Cada pestaña de Documentos, Personal y
+Centros de gasto es una definición (`ListDef`): de qué modelo salen sus
+filas, sus columnas, en qué campos busca, a qué fecha se aplica el
+periodo y cómo llega a su persona o máquina. Todo lo demás es común y
+sale de aquí: el bloque común de filtros (Buscar · Periodo · Estado ·
+Empresa · Grupo · Familia/Sección, directriz 4.27 4bis), la vista de
+una sola máquina o persona (`scope`), el orden múltiple por cabecera
+(en la base de datos, sin dato siempre al final), las columnas visibles
+y el límite de filas pintadas.
+
+Las reglas de Personal son las de su pestaña de siempre
+(panel/views_documentation_h30._apply_personal_filters): activos = en el
+Excel de plantilla; inactivos = el resto; empresas agrupadas por
+COMPANY_FILTER_CHOICES. Los grupos son los grupos de selección de
+siempre (panel/person_groups).
+"""
+import datetime
+
+from django.contrib.contenttypes.models import ContentType
+from django.db.models import F, OuterRef, Q, Subquery
+from django.urls import reverse
+from django.utils import timezone
+
+from panel.new_ui_filters import parse_sort, period_range
+
+ROW_LIMIT = 300
+BUCKET = "cgs_grupo_alvarez"
+
+
+# ------------------------------------------------------------ utilidades
+def fmt_date(value):
+    return value.strftime("%d/%m/%Y") if value else ""
+
+
+def fmt_datetime(value):
+    if not value:
+        return ""
+    if timezone.is_aware(value):
+        value = timezone.localtime(value)
+    return value.strftime("%d/%m/%Y %H:%M")
+
+
+def fmt_num(value, decimals=2):
+    if value in (None, ""):
+        return ""
+    text = ("%.*f" % (decimals, value)).rstrip("0").rstrip(".")
+    return text.replace(".", ",")
+
+
+def disp(obj, field):
+    """Texto de un campo con opciones (o su valor tal cual)."""
+    method = getattr(obj, "get_%s_display" % field, None)
+    return method() if callable(method) else getattr(obj, field, "")
+
+
+def short(text, size=80):
+    text = (text or "").strip().replace("\n", " ")
+    return text if len(text) <= size else text[:size - 1] + "…"
+
+
+def person_name(person):
+    if person is None:
+        return ""
+    return " ".join(p for p in (person.given_name, person.first_surname,
+                                person.second_surname) if p).strip() \
+        or person.dni or "#%s" % person.pk
+
+
+def machine_label(machine):
+    return machine.code if machine else ""
+
+
+class Col:
+    """
+    One column: key, header, value(row) -> text, ORM order path, css.
+
+    ---
+
+    Una columna: clave, cabecera, valor que se pinta (y se exporta),
+    campo por el que ordena la base de datos ("" = no ordenable) y
+    clase CSS. `entity` marca la columna que lleva a la persona o
+    máquina de la fila (botón derecho, ver sus listados).
+    """
+
+    def __init__(self, key, label, value, order="", css="", entity=False):
+        self.key = key
+        self.label = label
+        self.value = value
+        self.order = order
+        self.css = css
+        self.entity = entity
+
+
+class ListDef:
+    """
+    Definition of one list tab (see module docstring).
+
+    ---
+
+    Definición de una pestaña de listado:
+    - `queryset(company)`: filas base de la empresa.
+    - `entity`: "person", "machine" o None; `entity_path`: campo que
+      lleva de la fila a su persona/máquina ("" = la fila lo es);
+      `entity_filter(qs, ids)` cuando no hay un campo directo.
+    - `entity_of(row)`: la persona/máquina de una fila (para pintar).
+    - `search`: campos donde busca "Buscar"; `date_field` (+
+      `date_is_datetime`): a qué fecha se aplica el periodo.
+    - `columns`, `default_order`, `actions(row)` (menú de tres puntos).
+    """
+
+    def __init__(self, label, queryset, columns, entity=None,
+                 entity_path="", entity_filter=None, entity_of=None,
+                 search=(), date_field="", date_is_datetime=False,
+                 default_order=("-pk",), actions=None, note=""):
+        self.label = label
+        self.queryset = queryset
+        self.columns = columns
+        self.entity = entity
+        self.entity_path = entity_path
+        self.entity_filter = entity_filter
+        self.entity_of = entity_of or (lambda row: row if not entity_path
+                                       else None)
+        self.search = search
+        self.date_field = date_field
+        self.date_is_datetime = date_is_datetime
+        self.default_order = default_order
+        self.actions = actions or (lambda row: [])
+        self.note = note
+
+
+# ------------------------------------------------- personas y máquinas
+def _company_filter_choices():
+    from panel.views_documentation_h30 import COMPANY_FILTER_CHOICES
+
+    return COMPANY_FILTER_CHOICES
+
+
+def persons_base():
+    from document_explorer.models import PersonIdentity
+    from hr_calendar.models import PersonSectionAssignment
+
+    latest = PersonSectionAssignment.objects.filter(
+        person=OuterRef("pk")).order_by("-valid_from", "-pk")
+    return PersonIdentity.objects.annotate(
+        current_section_id=Subquery(latest.values("section_id")[:1]),
+        current_section_name=Subquery(latest.values("section__name")[:1]),
+    )
+
+
+def machines_base(company):
+    from fleet.models import MachineAsset
+
+    return MachineAsset.objects.filter(company=company)
+
+
+def filter_options(section, company, editor=None):
+    """
+    Options of Empresa, Grupo and Familia/Sección for a section.
+
+    ---
+
+    Opciones del bloque común según la sección: en Centros de gasto,
+    empresas y familias de las máquinas; en Personal y Documentos, las
+    empresas agrupadas de Personal y las secciones (SIME).
+    """
+    from ivr_config.models import Section
+    from panel.person_groups import (
+        GROUP_FILTER_NONE, MACHINE_KIND, PERSON_KIND, group_filter_options,
+    )
+
+    if section == "cdg":
+        machines = machines_base(company)
+        companies = [(v, v) for v in sorted(set(
+            machines.exclude(company_name="").values_list(
+                "company_name", flat=True)))]
+        families = [(v, v) for v in sorted(set(
+            machines.exclude(family="").values_list("family", flat=True)))]
+        kind = MACHINE_KIND
+        family_label = "Familia"
+    else:
+        companies = [(slug, label) for slug, label, _raws
+                     in _company_filter_choices()]
+        families = [(str(pk), name) for pk, name in Section.objects.filter(
+            company=company).order_by("name").values_list("pk", "name")]
+        kind = PERSON_KIND
+        family_label = "Sección"
+    return {
+        "companies": companies,
+        "families": families,
+        "family_label": family_label,
+        "groups": group_filter_options(editor, kind),
+        "group_none": GROUP_FILTER_NONE,
+        "group_kind": kind,
+    }
+
+
+def entity_ids(kind, company, params):
+    """
+    Queryset of the person/machine pks that pass the common filters.
+
+    ---
+
+    Personas o máquinas que pasan Estado, Empresa, Grupo y
+    Familia/Sección; None si ninguno de esos filtros está puesto.
+    """
+    from panel.person_groups import MACHINE_KIND, PERSON_KIND, filter_by_group
+
+    state = params.get("estado", "1")
+    company_value = params.get("empresa", "")
+    group = params.get("grupo", "")
+    family = params.get("seccion", "")
+    if state == "todos" and not (company_value or group or family):
+        return None
+    if kind == "machine":
+        qs = machines_base(company)
+        if state == "1":
+            qs = qs.filter(is_active=True)
+        elif state == "0":
+            qs = qs.filter(is_active=False)
+        if company_value:
+            qs = qs.filter(company_name=company_value)
+        if family:
+            qs = qs.filter(family=family)
+        qs = filter_by_group(qs, group, MACHINE_KIND)
+    else:
+        qs = persons_base()
+        if state == "1":
+            qs = qs.filter(is_active_employee=True)
+        elif state == "0":
+            qs = qs.filter(Q(is_active_employee=False)
+                           | Q(is_active_employee__isnull=True))
+        if company_value:
+            raws = dict((s, r) for s, _l, r in _company_filter_choices()).get(
+                company_value)
+            qs = qs.filter(employer_company__in=raws or ["__ninguna__"])
+        if family.isdigit():
+            qs = qs.filter(current_section_id=int(family))
+        qs = filter_by_group(qs, group, PERSON_KIND)
+    return qs.values("pk")
+
+
+def _person_actions(person):
+    if person is None:
+        return []
+    return [
+        ("Ficha actual del trabajador", "bi-person-badge",
+         reverse("panel:documentation_personal_detail", args=[person.pk])),
+    ]
+
+
+def _machine_actions(machine):
+    if machine is None:
+        return []
+    return [
+        ("Ficha actual del centro de gasto", "bi-truck",
+         reverse("panel:documentation_machine_detail", args=[machine.pk])),
+    ]
+
+
+def _doc_actions(entry):
+    return [("Ver documento", "bi-file-earmark-text",
+             reverse("panel:documentation_document_view", args=[entry.pk]))]
+
+
+# --------------------------------------------------------- documentos
+def _documents(domain_model, family=None, expiring=False):
+    def queryset(company):
+        from document_explorer.models import DocumentIndexEntry
+
+        ct = ContentType.objects.get_for_model(domain_model())
+        qs = DocumentIndexEntry.objects.filter(
+            bucket=BUCKET, entry_kind=DocumentIndexEntry.KIND_FILE,
+            domain_content_type=ct, deleted_at__isnull=True,
+            purged_at__isnull=True,
+        ).select_related("document_type").prefetch_related("domain_object")
+        if family:
+            qs = qs.filter(document_type__family=family)
+        if expiring:
+            qs = qs.filter(
+                is_obsolete=False, expiry_date__isnull=False,
+                expiry_date__lte=timezone.localdate()
+                + datetime.timedelta(days=30),
+            )
+        return qs
+    return queryset
+
+
+def _doc_state(entry):
+    if entry.is_obsolete:
+        return "Sustituido"
+    if entry.expiry_date:
+        days = (entry.expiry_date - timezone.localdate()).days
+        if days < 0:
+            return "Caducado"
+        if days <= 30:
+            return "Caduca en %d días" % days
+    return "Vigente"
+
+
+def _family_label(entry, for_person):
+    if not entry.document_type_id:
+        return "Sin tipo"
+    from document_explorer.models import DocumentTypeCatalog
+
+    return DocumentTypeCatalog.family_label(entry.document_type.family,
+                                            for_person=for_person)
+
+
+def _person_model():
+    from document_explorer.models import PersonIdentity
+
+    return PersonIdentity
+
+
+def _machine_model():
+    from fleet.models import MachineAsset
+
+    return MachineAsset
+
+
+def _doc_columns(entity_label, entity_value, for_person):
+    return [
+        Col("entidad", entity_label, entity_value, entity=True),
+        Col("tipo", "Tipo", lambda e: e.document_type.label
+            if e.document_type_id else "Sin tipo", "document_type__label"),
+        Col("familia", "Familia documental",
+            lambda e: _family_label(e, for_person), "document_type__family"),
+        Col("emision", "Emisión", lambda e: fmt_date(e.issue_date),
+            "issue_date", "text-nowrap"),
+        Col("caducidad", "Caducidad", lambda e: fmt_date(e.expiry_date),
+            "expiry_date", "text-nowrap"),
+        Col("estado", "Estado", _doc_state, "is_obsolete"),
+        Col("entrada", "Entrada", lambda e: fmt_datetime(e.indexed_at),
+            "indexed_at", "text-nowrap"),
+        Col("archivo", "Archivo", lambda e: short(e.name, 60), "name"),
+    ]
+
+
+def _doc_def(label, domain, family=None, expiring=False):
+    for_person = domain == "person"
+    model = _person_model if for_person else _machine_model
+    return ListDef(
+        label, _documents(model, family, expiring),
+        _doc_columns(
+            "Persona" if for_person else "Código",
+            (lambda e: person_name(e.domain_object)) if for_person
+            else (lambda e: machine_label(e.domain_object)),
+            for_person),
+        entity=domain, entity_path="domain_object_id",
+        entity_of=lambda e: e.domain_object,
+        search=("name", "document_type__label", "ocr_text"),
+        date_field="expiry_date" if expiring else "indexed_at",
+        date_is_datetime=not expiring,
+        default_order=("expiry_date",) if expiring else ("-indexed_at",),
+        actions=_doc_actions,
+        note=("Periodo: fecha de caducidad." if expiring
+              else "Periodo: fecha de entrada del documento."),
+    )
+
+
+# -------------------------------------------------- centros de gasto
+def _machine_general():
+    return ListDef(
+        "General", lambda company: machines_base(company),
+        [
+            Col("codigo", "Código", lambda m: m.code, "code", entity=True),
+            Col("familia", "Familia", lambda m: m.family, "family"),
+            Col("descripcion", "Marca y modelo", lambda m: m.brand_model,
+                "brand_model"),
+            Col("tipo", "Tipo", lambda m: m.type_name, "type_name"),
+            Col("matricula", "Matrícula", lambda m: m.plate, "plate",
+                "text-nowrap"),
+            Col("empresa", "Empresa", lambda m: m.company_name,
+                "company_name"),
+            Col("estado", "Estado",
+                lambda m: "Activo" if m.is_active else "Inactivo",
+                "is_active"),
+            Col("itv", "ITV", lambda m: fmt_date(m.itv_date), "itv_date",
+                "text-nowrap"),
+            Col("horas", "Horas", lambda m: m.hours or "", "hours",
+                "text-end"),
+            Col("km", "Km", lambda m: m.mileage or "", "mileage",
+                "text-end"),
+        ],
+        entity="machine",
+        search=("code", "brand_model", "plate", "type_name",
+                "chassis_number"),
+        default_order=("code",), actions=_machine_actions,
+        note="El periodo no se aplica a este listado.",
+    )
+
+
+def _dims(m):
+    parts = [fmt_num(v / 1000) for v in (m.length_mm, m.width_mm,
+                                         m.height_mm) if v]
+    return " × ".join(parts)
+
+
+def _machine_specs():
+    def queryset(company):
+        return machines_base(company).filter(
+            Q(capacity_tonnes__isnull=False) | Q(capacity_tm__isnull=False)
+            | Q(max_authorized_mass_kg__isnull=False)
+            | Q(mass_kg__isnull=False))
+    return ListDef(
+        "Especificaciones", queryset,
+        [
+            Col("codigo", "Código", lambda m: m.code, "code", entity=True),
+            Col("descripcion", "Marca y modelo", lambda m: m.brand_model,
+                "brand_model"),
+            Col("matricula", "Matrícula", lambda m: m.plate, "plate"),
+            Col("capacidad", "Capacidad (t)",
+                lambda m: fmt_num(m.capacity_tonnes), "capacity_tonnes",
+                "text-end"),
+            Col("momento", "Momento (t·m)", lambda m: fmt_num(m.capacity_tm),
+                "capacity_tm", "text-end"),
+            Col("mma", "MMA (t)", lambda m: fmt_num(
+                m.max_authorized_mass_kg / 1000)
+                if m.max_authorized_mass_kg else "",
+                "max_authorized_mass_kg", "text-end"),
+            Col("masa", "Masa (kg)", lambda m: m.mass_kg or "", "mass_kg",
+                "text-end"),
+            Col("ejes", "Ejes", lambda m: m.axle_count or "", "axle_count",
+                "text-end"),
+            Col("dimensiones", "Largo × ancho × alto (m)", _dims,
+                "length_mm", "text-nowrap"),
+            Col("anio", "Año", lambda m: m.manufacture_year or "",
+                "manufacture_year", "text-end"),
+        ],
+        entity="machine", search=("code", "brand_model", "plate"),
+        default_order=(F("capacity_tonnes").desc(nulls_last=True), "code"),
+        actions=_machine_actions,
+        note="El periodo no se aplica a este listado.",
+    )
+
+
+def _machine_fk_def(label, model_path, related, entity_path, columns,
+                    date_field, date_is_datetime=False, search=(),
+                    default_order=("-pk",), note=""):
+    def queryset(company):
+        from django.apps import apps
+
+        model = apps.get_model(model_path)
+        return model.objects.filter(
+            **{entity_path + "__company": company}).select_related(*related)
+
+    def entity_of(row):
+        obj = row
+        for part in entity_path.split("__"):
+            obj = getattr(obj, part, None) if obj is not None else None
+        return obj
+
+    code = Col("codigo", "Código", lambda r: machine_label(entity_of(r)),
+               entity_path + "__code", entity=True)
+    return ListDef(
+        label, queryset, [code] + columns, entity="machine",
+        entity_path=entity_path, entity_of=entity_of,
+        search=(entity_path + "__code",) + tuple(search),
+        date_field=date_field, date_is_datetime=date_is_datetime,
+        default_order=default_order,
+        actions=lambda r: _machine_actions(entity_of(r)), note=note,
+    )
+
+
+def _cdg_lists():
+    return {
+        "general": _machine_general(),
+        "documentos": _doc_def("Documentos", "machine"),
+        "especificaciones": _machine_specs(),
+        "avisos": _doc_def("Avisos", "machine", expiring=True),
+        "revisiones": _machine_fk_def(
+            "Revisiones", "fleet.MachineServiceRecord", ("machine",),
+            "machine", [
+                Col("fecha", "Fecha", lambda r: fmt_date(r.service_date),
+                    "service_date", "text-nowrap"),
+                Col("horas", "Horas", lambda r: r.hours or "", "hours",
+                    "text-end"),
+                Col("horas_grua", "Horas de grúa",
+                    lambda r: r.crane_hours or "", "crane_hours", "text-end"),
+                Col("km", "Km", lambda r: r.km or "", "km", "text-end"),
+                Col("proxima", "Próxima (h / km)", lambda r: " / ".join(
+                    str(v) for v in (r.next_service_hours, r.next_service_km)
+                    if v)),
+                Col("motor", "Motor", lambda r: r.engine, "engine"),
+                Col("notas", "Notas", lambda r: short(r.notes), "notes"),
+            ], "service_date", search=("notes",),
+            default_order=("-service_date",),
+            note="Periodo: fecha de la revisión."),
+        "repostajes": _machine_fk_def(
+            "Repostajes", "fleet.GasoGesSupply", ("vehicle__machine", "user"),
+            "vehicle__machine", [
+                Col("fecha", "Fecha", lambda r: fmt_datetime(r.supplied_at),
+                    "supplied_at", "text-nowrap"),
+                Col("vehiculo", "Vehículo (GasoGes)",
+                    lambda r: r.vehicle.name or r.vehicle.plate,
+                    "vehicle__name"),
+                Col("litros", "Litros", lambda r: fmt_num(r.litres),
+                    "litres", "text-end"),
+                Col("precio", "Precio", lambda r: fmt_num(r.price, 3),
+                    "price", "text-end"),
+                Col("contador", "Contador", lambda r: r.meter_value or "",
+                    "meter_value", "text-end"),
+                Col("conductor", "Conductor",
+                    lambda r: r.user.name if r.user_id else "",
+                    "user__name"),
+                Col("estado", "Estado", lambda r: r.status, "status"),
+            ], "supplied_at", date_is_datetime=True,
+            search=("vehicle__name", "vehicle__plate", "user__name"),
+            default_order=("-supplied_at",),
+            note="Periodo: fecha del repostaje."),
+        "accesorios": _machine_fk_def(
+            "Accesorios", "document_explorer.LiftingAccessoryAssignment",
+            ("machine", "accessory__accessory_type", "responsible_person"),
+            "machine", [
+                Col("accesorio", "Accesorio",
+                    lambda r: r.accessory.identifier,
+                    "accessory__identifier"),
+                Col("tipo", "Tipo", lambda r: r.accessory.accessory_type.label
+                    if r.accessory.accessory_type_id else "",
+                    "accessory__accessory_type__label"),
+                Col("carga", "Carga (kg)",
+                    lambda r: r.accessory.working_load_kg or "",
+                    "accessory__working_load_kg", "text-end"),
+                Col("desde", "Desde", lambda r: fmt_date(r.start_date),
+                    "start_date", "text-nowrap"),
+                Col("hasta", "Hasta", lambda r: fmt_date(r.end_date)
+                    or "Actual", "end_date", "text-nowrap"),
+                Col("responsable", "Responsable",
+                    lambda r: person_name(r.responsible_person)),
+            ], "start_date",
+            search=("accessory__identifier", "accessory__description"),
+            default_order=("-start_date",),
+            note="Periodo: fecha de asignación."),
+        "taller": _machine_fk_def(
+            "Taller", "work_order_processor.WorkOrderEntryLine",
+            ("machine_asset", "entry"), "machine_asset", [
+                Col("fecha", "Fecha", lambda r: fmt_date(r.entry.work_date),
+                    "entry__work_date", "text-nowrap"),
+                Col("operario", "Operario", lambda r: r.entry.worker_name,
+                    "entry__worker_name"),
+                Col("tarea", "Tipo de tarea", lambda r: r.tipo_tarea,
+                    "tipo_tarea"),
+                Col("averia", "Avería", lambda r: short(r.fault_description),
+                    "fault_description"),
+                Col("reparacion", "Reparación", lambda r: short(
+                    r.repair_notes), "repair_notes"),
+                Col("horas", "Horas", lambda r: fmt_num(r.delta_hours),
+                    "delta_hours", "text-end"),
+            ], "entry__work_date",
+            search=("fault_description", "repair_notes", "entry__worker_name"),
+            default_order=("-entry__work_date",),
+            note="Periodo: fecha del parte."),
+        "libro": _machine_fk_def(
+            "Libro historial", "fleet.MachineLogbookEntry", ("machine",),
+            "machine", [
+                Col("fecha", "Fecha", lambda r: fmt_date(r.entry_date),
+                    "entry_date", "text-nowrap"),
+                Col("seccion", "Apartado", lambda r: r.section, "section"),
+                Col("tipo", "Tipo", lambda r: r.entry_type, "entry_type"),
+                Col("concepto", "Concepto", lambda r: short(r.concept),
+                    "concept"),
+                Col("entidad", "Entidad", lambda r: r.entity, "entity"),
+                Col("resultado", "Resultado", lambda r: r.result, "result"),
+                Col("proxima", "Próxima", lambda r: fmt_date(r.next_date),
+                    "next_date", "text-nowrap"),
+                Col("firmada", "Firmada", lambda r: fmt_datetime(
+                    r.signed_at), "signed_at", "text-nowrap"),
+            ], "entry_date", search=("concept", "entity", "result"),
+            default_order=("-entry_date",),
+            note="Periodo: fecha de la anotación."),
+        "equipos": _machine_fk_def(
+            "Equipos", "fleet.Crew", ("machine", "person"), "machine", [
+                Col("persona", "Persona", lambda r: person_name(r.person),
+                    "person__first_surname"),
+                Col("desde", "Desde", lambda r: fmt_date(r.date_start),
+                    "date_start", "text-nowrap"),
+                Col("hasta", "Hasta", lambda r: fmt_date(r.date_end)
+                    or "Actual", "date_end", "text-nowrap"),
+                Col("notas", "Notas", lambda r: short(r.notes), "notes"),
+            ], "date_start",
+            search=("person__given_name", "person__first_surname", "notes"),
+            default_order=("-date_start",),
+            note="Periodo: inicio del equipo."),
+    }
+
+
+# ------------------------------------------------------------ personal
+def _person_general():
+    return ListDef(
+        "General", lambda company: persons_base(),
+        [
+            Col("nombre", "Nombre", person_name, "first_surname",
+                entity=True),
+            Col("dni", "DNI/NIE", lambda p: p.dni, "dni", "text-nowrap"),
+            Col("empresa", "Empresa", lambda p: p.employer_company,
+                "employer_company"),
+            Col("categoria", "Categoría", lambda p: p.professional_category,
+                "professional_category"),
+            Col("seccion", "Sección (SIME)",
+                lambda p: p.current_section_name or "",
+                "current_section_name"),
+            Col("telefono", "Teléfono", lambda p: p.phone, "phone",
+                "text-nowrap"),
+            Col("alta", "Alta", lambda p: fmt_date(p.hire_date),
+                "hire_date", "text-nowrap"),
+            Col("estado", "Estado", lambda p: "Activo"
+                if p.is_active_employee else "Inactivo",
+                "is_active_employee"),
+        ],
+        entity="person",
+        search=("given_name", "first_surname", "second_surname", "dni",
+                "phone", "email", "nickname"),
+        default_order=("first_surname", "second_surname", "given_name"),
+        actions=_person_actions,
+        note="Periodo: fecha de alta.", date_field="hire_date",
+    )
+
+
+def _person_fk_def(label, model_path, related, columns, date_field,
+                   date_is_datetime=False, search=(),
+                   default_order=("-pk",), entity_path="person", note="",
+                   extra_filter=None, actions=None):
+    def queryset(company):
+        from django.apps import apps
+
+        model = apps.get_model(model_path)
+        qs = model.objects.select_related(entity_path, *related)
+        return extra_filter(qs, company) if extra_filter else qs
+
+    def entity_of(row):
+        return getattr(row, entity_path, None)
+
+    name = Col("persona", "Persona", lambda r: person_name(entity_of(r)),
+               entity_path + "__first_surname", entity=True)
+    return ListDef(
+        label, queryset, [name] + columns, entity="person",
+        entity_path=entity_path, entity_of=entity_of,
+        search=(entity_path + "__given_name", entity_path + "__first_surname",
+                entity_path + "__dni") + tuple(search),
+        date_field=date_field, date_is_datetime=date_is_datetime,
+        default_order=default_order,
+        actions=actions or (lambda r: _person_actions(entity_of(r))),
+        note=note,
+    )
+
+
+def _days(row):
+    if row.date_start and row.date_end:
+        return (row.date_end - row.date_start).days + 1
+    return ""
+
+
+def _partes_filter(qs, ids):
+    from document_explorer.models import PersonIdentity
+
+    return qs.filter(work_order__uploaded_by__in=PersonIdentity.objects.filter(
+        pk__in=ids).values("company_user"))
+
+
+def _partes_def():
+    def queryset(company):
+        from work_order_processor.models import WorkOrderEntry
+
+        return WorkOrderEntry.objects.filter(
+            work_order__company=company,
+            work_order__uploaded_by__isnull=False,
+        ).select_related("work_order__uploaded_by__person_identity")
+
+    def entity_of(row):
+        user = row.work_order.uploaded_by
+        return getattr(user, "person_identity", None) if user else None
+
+    return ListDef(
+        "Partes", queryset,
+        [
+            Col("persona", "Persona", lambda r: person_name(entity_of(r))
+                or r.worker_name, "worker_name", entity=True),
+            Col("fecha", "Fecha", lambda r: fmt_date(r.work_date),
+                "work_date", "text-nowrap"),
+            Col("origen", "Origen", lambda r: disp(r.work_order, "source"),
+                "work_order__source"),
+            Col("comida", "Pausa de comida", lambda r: "No hizo"
+                if r.no_lunch_break else " – ".join(
+                    t.strftime("%H:%M") for t in (r.lunch_break_start,
+                                                  r.lunch_break_end) if t)),
+            Col("dieta", "Dieta", lambda r: "Sí" if r.has_diet else "",
+                "has_diet"),
+        ],
+        entity="person", entity_filter=_partes_filter, entity_of=entity_of,
+        search=("worker_name",), date_field="work_date",
+        default_order=("-work_date",),
+        actions=lambda r: _person_actions(entity_of(r)),
+        note=("Periodo: fecha del parte. Los partes en PDF antiguos siguen "
+              "en la ficha actual del trabajador."),
+    )
+
+
+def _per_lists():
+    from document_explorer.models import DocumentTypeCatalog
+
+    return {
+        "general": _person_general(),
+        "documentos": _doc_def("Documentos", "person"),
+        "laboral": _doc_def("Laboral", "person",
+                            family=DocumentTypeCatalog.FAMILY_LABORAL),
+        "partes": _partes_def(),
+        "fichajes": _person_fk_def(
+            "Fichajes", "hr_calendar.ClockEvent", ("clock_type",), [
+                Col("hora", "Fecha y hora", lambda r: fmt_datetime(
+                    r.pressed_at), "pressed_at", "text-nowrap"),
+                Col("tipo", "Entrada / salida", lambda r: disp(r, "kind"),
+                    "kind"),
+                Col("fichaje", "Tipo de fichaje", lambda r: str(r.clock_type)
+                    if r.clock_type_id else "", "clock_type__pk"),
+                Col("municipio", "Municipio", lambda r: r.municipality,
+                    "municipality"),
+                Col("nota", "Nota", lambda r: short(r.worker_note),
+                    "worker_note"),
+            ], "pressed_at", date_is_datetime=True, search=("municipality",),
+            default_order=("-pressed_at",),
+            extra_filter=lambda qs, company: qs.filter(company=company),
+            note="Periodo: hora del fichaje."),
+        "vacaciones": _person_fk_def(
+            "Vacaciones", "hr_calendar.VacationPeriod", (), [
+                Col("desde", "Desde", lambda r: fmt_date(r.date_start),
+                    "date_start", "text-nowrap"),
+                Col("hasta", "Hasta", lambda r: fmt_date(r.date_end),
+                    "date_end", "text-nowrap"),
+                Col("dias", "Días", _days, "", "text-end"),
+                Col("registrado", "Registrado", lambda r: fmt_datetime(
+                    r.created_at), "created_at", "text-nowrap"),
+            ], "date_start", default_order=("-date_start",),
+            extra_filter=lambda qs, company: qs.filter(company=company),
+            note="Periodo: inicio de las vacaciones."),
+        "salud": _person_fk_def(
+            "Salud", "hr_calendar.MedicalLeavePeriod", (), [
+                Col("desde", "Desde", lambda r: fmt_date(r.date_start),
+                    "date_start", "text-nowrap"),
+                Col("hasta", "Hasta", lambda r: fmt_date(r.date_end)
+                    or "Abierta", "date_end", "text-nowrap"),
+                Col("dias", "Días", _days, "", "text-end"),
+                Col("contingencia", "Contingencia",
+                    lambda r: disp(r, "contingency_type"), "contingency_type"),
+            ], "date_start", default_order=("-date_start",),
+            note="Periodo: inicio de la baja."),
+        "solicitudes": _person_fk_def(
+            "Solicitudes", "hr_calendar.WorkerRequest", (), [
+                Col("tipo", "Solicitud", lambda r: disp(r, "kind"),
+                    "kind"),
+                Col("estado", "Estado", lambda r: disp(r, "status"),
+                    "status"),
+                Col("desde", "Desde", lambda r: fmt_date(r.date_start),
+                    "date_start", "text-nowrap"),
+                Col("hasta", "Hasta", lambda r: fmt_date(r.date_end),
+                    "date_end", "text-nowrap"),
+                Col("nota", "Nota", lambda r: short(r.note), "note"),
+                Col("pedida", "Pedida", lambda r: fmt_datetime(r.created_at),
+                    "created_at", "text-nowrap"),
+            ], "created_at", date_is_datetime=True, search=("note",),
+            default_order=("-created_at",),
+            extra_filter=lambda qs, company: qs.filter(company=company),
+            note="Periodo: fecha de la solicitud."),
+        "horarios": ListDef(
+            "Horarios",
+            lambda company: persons_base().filter(
+                company_user__isnull=False).select_related(
+                "company_user__workday_schedule"),
+            [
+                Col("nombre", "Persona", person_name, "first_surname",
+                    entity=True),
+                Col("horario", "Horario", lambda p: str(
+                    p.company_user.workday_schedule)
+                    if p.company_user.workday_schedule_id else "Sin horario",
+                    "company_user__workday_schedule__pk"),
+                Col("intensivo", "Intensiva forzada", lambda p: "Sí"
+                    if p.company_user.is_intensive_override else "",
+                    "company_user__is_intensive_override"),
+                Col("seccion", "Sección (SIME)",
+                    lambda p: p.current_section_name or "",
+                    "current_section_name"),
+            ],
+            entity="person", search=("given_name", "first_surname", "dni"),
+            default_order=("first_surname", "given_name"),
+            actions=_person_actions,
+            note="El periodo no se aplica a este listado."),
+        "nominas": _person_fk_def(
+            "Nóminas", "hr_calendar.PayslipItem", ("batch",), [
+                Col("periodo", "Periodo", lambda r: r.period_label,
+                    "period_start"),
+                Col("estado", "Estado", lambda r: disp(r, "status"),
+                    "status"),
+                Col("enviada", "Enviada", lambda r: fmt_datetime(r.sent_at),
+                    "sent_at", "text-nowrap"),
+                Col("archivo", "Archivo", lambda r: short(r.original_name, 50),
+                    "original_name"),
+            ], "period_start", default_order=("-period_start",),
+            extra_filter=lambda qs, company: qs.filter(
+                batch__company=company, person__isnull=False),
+            actions=lambda r: (
+                [("Ver nómina", "bi-file-earmark-text", reverse(
+                    "panel:documentation_document_view", args=[r.entry_id]))]
+                if r.entry_id else []) + _person_actions(r.person),
+            note="Periodo: mes de la nómina."),
+        "epis": _person_fk_def(
+            "EPIs", "document_explorer.EpiDelivery",
+            ("epi", "destination_machine"), [
+                Col("epi", "EPI", lambda r: r.epi.label if r.epi_id else "",
+                    "epi__label"),
+                Col("familia", "Familia", lambda r: r.epi.family
+                    if r.epi_id else "", "epi__family"),
+                Col("fecha", "Entrega", lambda r: fmt_date(r.delivery_date),
+                    "delivery_date", "text-nowrap"),
+                Col("maquina", "Máquina", lambda r: machine_label(
+                    r.destination_machine), "destination_machine__code"),
+            ], "delivery_date", search=("epi__label",),
+            default_order=("-delivery_date",),
+            note="Periodo: fecha de entrega."),
+        "requisitos": ListDef(
+            "Requisitos",
+            lambda company: persons_base().prefetch_related(
+                "document_requirements"),
+            [
+                Col("nombre", "Persona", person_name, "first_surname",
+                    entity=True),
+                Col("requisitos", "Requisitos de documentación",
+                    lambda p: ", ".join(r.name for r in
+                                        p.document_requirements.all())
+                    or "Sin requisito"),
+                Col("categoria", "Categoría", lambda p: p.professional_category,
+                    "professional_category"),
+            ],
+            entity="person", search=("given_name", "first_surname", "dni"),
+            default_order=("first_surname", "given_name"),
+            actions=_person_actions,
+            note="El periodo no se aplica a este listado."),
+    }
+
+
+# ---------------------------------------------------------- documentos
+def _doc_lists():
+    from django.apps import apps
+
+    def model(path):
+        return apps.get_model(path)
+
+    def fk(label, path, related, columns, date_field, date_is_datetime=True,
+           search=(), default_order=("-pk",), company_field="", note="",
+           actions=None, person=True):
+        def queryset(company):
+            qs = model(path).objects.select_related(*related)
+            if company_field:
+                qs = qs.filter(**{company_field: company})
+            return qs
+
+        cols = list(columns)
+        if person:
+            cols.insert(0, Col("persona", "Persona",
+                               lambda r: person_name(r.person),
+                               "person__first_surname", entity=True))
+        return ListDef(
+            label, queryset, cols,
+            entity="person" if person else None,
+            entity_path="person" if person else "",
+            entity_of=(lambda r: r.person) if person else (lambda r: None),
+            search=search, date_field=date_field,
+            date_is_datetime=date_is_datetime, default_order=default_order,
+            actions=actions or ((lambda r: _person_actions(r.person))
+                                if person else None),
+            note=note)
+
+    return {
+        "bandeja": fk(
+            "Bandeja de entrada", "document_explorer.InboxItem",
+            ("person", "document_type", "uploaded_by__user"), [
+                Col("archivo", "Archivo", lambda r: short(r.original_name, 60),
+                    "original_name"),
+                Col("estado", "Estado", lambda r: disp(r, "status"),
+                    "status"),
+                Col("tipo", "Tipo", lambda r: r.document_type.label
+                    if r.document_type_id else "", "document_type__label"),
+                Col("motivo", "Motivo", lambda r: short(r.reason), "reason"),
+                Col("subido", "Subido por", lambda r: r.uploaded_by.user
+                    .get_full_name() if r.uploaded_by_id else "",
+                    "uploaded_by__user__first_name"),
+                Col("fecha", "Fecha", lambda r: fmt_datetime(r.created_at),
+                    "created_at", "text-nowrap"),
+            ], "created_at", search=("original_name", "reason"),
+            default_order=("-created_at",),
+            actions=lambda r: ([("Ver documento", "bi-file-earmark-text",
+                                 reverse("panel:documentation_document_view",
+                                         args=[r.entry_id]))]
+                               if r.entry_id else [])
+            + _person_actions(r.person),
+            note="Periodo: fecha de llegada."),
+        "circulares": fk(
+            "Circulares", "document_explorer.DocumentAcknowledgment",
+            ("person", "document_type"), [
+                Col("circular", "Circular", lambda r: r.document_type.label
+                    if r.document_type_id else "", "document_type__label"),
+                Col("entrega", "Entrega", lambda r: fmt_date(r.delivery_date),
+                    "delivery_date", "text-nowrap"),
+                Col("canal", "Canal", lambda r: r.channel, "channel"),
+                Col("whatsapp", "WhatsApp", lambda r: r.whatsapp_status,
+                    "whatsapp_status"),
+                Col("leida", "Leída", lambda r: fmt_datetime(
+                    r.whatsapp_read_at), "whatsapp_read_at", "text-nowrap"),
+            ], "delivery_date", date_is_datetime=False,
+            search=("document_type__label",),
+            default_order=("-delivery_date",),
+            note="Periodo: fecha de entrega."),
+        "dosieres": fk(
+            "Dosieres", "document_explorer.PersonalDossierTemplate",
+            ("created_by__user",), [
+                Col("nombre", "Plantilla", lambda r: r.name, "name"),
+                Col("ambito", "Ámbito", lambda r: disp(r, "scope"), "scope"),
+                Col("tipos", "Tipos de documento",
+                    lambda r: r.document_types.count()),
+                Col("creado", "Creada por", lambda r: r.created_by.user
+                    .get_full_name() if r.created_by_id else ""),
+                Col("fecha", "Fecha", lambda r: fmt_datetime(r.created_at),
+                    "created_at", "text-nowrap"),
+            ], "created_at", search=("name",), default_order=("name",),
+            company_field="company", person=False,
+            note="Periodo: fecha de creación."),
+        "avisos": fk(
+            "Avisos", "document_management.DocumentAlert", (), [
+                Col("documento", "Documento", lambda r: r.document_label,
+                    "document_label"),
+                Col("sujeto", "Persona / máquina", lambda r: r.subject_label,
+                    "subject_label"),
+                Col("caducidad", "Caducidad", lambda r: fmt_date(
+                    r.expiry_date), "expiry_date", "text-nowrap"),
+                Col("estado", "Estado", lambda r: disp(r, "status"),
+                    "status"),
+                Col("enviado", "Avisado", lambda r: fmt_datetime(r.sent_at),
+                    "sent_at", "text-nowrap"),
+            ], "expiry_date", date_is_datetime=False,
+            search=("document_label", "subject_label"),
+            default_order=("expiry_date",), company_field="company",
+            person=False, note="Periodo: fecha de caducidad."),
+        "pedir": fk(
+            "Pedir documentos", "document_explorer.WorkerDocumentRequest",
+            ("person", "document_type"), [
+                Col("documento", "Documento", lambda r: r.document_type.label
+                    if r.document_type_id else "", "document_type__label"),
+                Col("motivo", "Motivo", lambda r: short(r.reason), "reason"),
+                Col("estado", "Estado", lambda r: disp(r, "status"),
+                    "status"),
+                Col("pedido", "Pedido", lambda r: fmt_datetime(r.created_at),
+                    "created_at", "text-nowrap"),
+                Col("enviado", "Enviado", lambda r: fmt_datetime(r.sent_at),
+                    "sent_at", "text-nowrap"),
+                Col("recibido", "Recibido", lambda r: fmt_datetime(
+                    r.received_at), "received_at", "text-nowrap"),
+            ], "created_at", search=("reason", "document_type__label"),
+            default_order=("-created_at",), note="Periodo: fecha de petición."),
+        "firmas": fk(
+            "Firmas", "document_explorer.SignedFormJob",
+            ("person", "signature"), [
+                Col("tipo", "Tipo", lambda r: disp(r, "kind"), "kind"),
+                Col("firma", "Firma de empresa", lambda r: r.signature.label
+                    if r.signature_id else "", "signature__label"),
+                Col("estado", "Estado", lambda r: disp(r, "status"),
+                    "status"),
+                Col("creada", "Pedida", lambda r: fmt_datetime(r.created_at),
+                    "created_at", "text-nowrap"),
+                Col("terminada", "Terminada", lambda r: fmt_datetime(
+                    r.finished_at), "finished_at", "text-nowrap"),
+            ], "created_at", default_order=("-created_at",),
+            note="Periodo: fecha de la firma."),
+        "seguros": fk(
+            "Seguros", "insurance.InsuranceReport", ("created_by__user",), [
+                Col("titulo", "Informe", lambda r: r.title, "title"),
+                Col("desde", "Desde", lambda r: fmt_date(r.month_from),
+                    "month_from", "text-nowrap"),
+                Col("hasta", "Hasta", lambda r: fmt_date(r.month_to),
+                    "month_to", "text-nowrap"),
+                Col("estado", "Estado", lambda r: disp(r, "status"),
+                    "status"),
+                Col("polizas", "Pólizas", lambda r: r.policy_count,
+                    "policy_count", "text-end"),
+                Col("prima", "Prima total", lambda r: fmt_num(
+                    r.premium_total), "premium_total", "text-end"),
+                Col("alertas", "Avisos", lambda r: r.alert_count,
+                    "alert_count", "text-end"),
+                Col("creado", "Creado", lambda r: fmt_datetime(r.created_at),
+                    "created_at", "text-nowrap"),
+            ], "created_at", search=("title",), default_order=("-created_at",),
+            person=False, note="Periodo: fecha del informe."),
+        "calendario": fk(
+            "Calendario", "hr_calendar.AbsencePeriod",
+            ("person", "category"), [
+                Col("motivo", "Ausencia", lambda r: r.category.label
+                    if r.category_id else "", "category__label"),
+                Col("desde", "Desde", lambda r: fmt_date(r.date_start),
+                    "date_start", "text-nowrap"),
+                Col("hasta", "Hasta", lambda r: fmt_date(r.date_end),
+                    "date_end", "text-nowrap"),
+                Col("dias", "Días", _days, "", "text-end"),
+                Col("nota", "Nota", lambda r: short(r.note), "note"),
+            ], "date_start", date_is_datetime=False,
+            default_order=("-date_start",), company_field="company",
+            note=("Ausencias. Vacaciones y bajas, en Personal › Vacaciones "
+                  "y Salud. Periodo: inicio.")),
+    }
+
+
+_CACHE = {}
+
+
+def list_def(section, tab):
+    """
+    The ListDef of a section's tab, or None.
+
+    ---
+
+    La definición de una pestaña (se construye una vez por proceso).
+    """
+    if not _CACHE:
+        _CACHE["cdg"] = _cdg_lists()
+        _CACHE["per"] = _per_lists()
+        _CACHE["doc"] = _doc_lists()
+    return _CACHE.get(section, {}).get(tab)
+
+
+# --------------------------------------------------------- consulta común
+def filtered(definition, company, params, scope_pk=None):
+    """
+    Queryset of a list with every common filter applied (unsorted).
+
+    ---
+
+    Las filas de un listado con el bloque común aplicado: vista de una
+    sola persona/máquina, solo la selección actual, buscar, periodo y
+    los filtros de la entidad (estado, empresa, grupo, familia/sección).
+    """
+    qs = definition.queryset(company)
+    path = definition.entity_path or "pk"
+
+    def by_entities(qs, ids):
+        if definition.entity_filter:
+            return definition.entity_filter(qs, ids)
+        return qs.filter(**{path + "__in": ids})
+
+    if scope_pk and definition.entity:
+        if definition.entity_filter:
+            qs = definition.entity_filter(qs, [scope_pk])
+        else:
+            qs = qs.filter(**{path: scope_pk})
+    selected = [pk for pk in params.get("selected_ids", "").split(",")
+                if pk.isdigit()]
+    if params.get("only_selected") == "1" and selected:
+        return qs.filter(pk__in=selected)
+    search = params.get("q", "").strip()
+    if search and definition.search:
+        query = Q()
+        for field in definition.search:
+            query |= Q(**{field + "__icontains": search})
+        qs = qs.filter(query)
+    if definition.date_field:
+        start, end = period_range(params)
+        suffix = "__date" if definition.date_is_datetime else ""
+        if start:
+            qs = qs.filter(**{definition.date_field + suffix + "__gte": start})
+        if end:
+            qs = qs.filter(**{definition.date_field + suffix + "__lte": end})
+    if definition.entity and not scope_pk:
+        ids = entity_ids(definition.entity, company, params)
+        if ids is not None:
+            qs = by_entities(qs, ids)
+    return qs
+
+
+def visible_columns(definition, saved_keys):
+    keys = [c.key for c in definition.columns]
+    if isinstance(saved_keys, list):
+        chosen = [k for k in saved_keys if k in keys]
+        if chosen:
+            entity_cols = [c.key for c in definition.columns if c.entity]
+            for key in entity_cols:
+                if key not in chosen:
+                    chosen.insert(0, key)
+            return [c for c in definition.columns if c.key in chosen]
+    return list(definition.columns)
+
+
+def sorted_qs(definition, qs, raw_sort):
+    """
+    Apply the multi-sort of the headers (nulls always last).
+
+    ---
+
+    Orden múltiple por cabecera en la base de datos; sin orden
+    elegido, el de la definición.
+    """
+    valid = {c.key: c.order for c in definition.columns if c.order}
+    current = parse_sort(raw_sort, list(valid))
+    if not current:
+        return qs.order_by(*definition.default_order), current
+    order = []
+    for key, desc in current:
+        expr = F(valid[key])
+        order.append(expr.desc(nulls_last=True) if desc
+                     else expr.asc(nulls_last=True))
+    order.append("-pk")
+    return qs.order_by(*order), current
+
+
+def headers(definition, columns, current):
+    """
+    Header cells: label, next sort value, arrow, priority.
+
+    ---
+
+    Cabeceras con el "sort" que manda un clic, su flecha y prioridad.
+    """
+    active = [k for k, _d in current]
+    out = []
+    for col in columns:
+        item = {"key": col.key, "label": col.label, "css": col.css,
+                "next": "", "arrow": "", "priority": ""}
+        if col.order:
+            if col.key in active:
+                index = active.index(col.key)
+                desc = current[index][1]
+                item["arrow"] = "down" if desc else "up"
+                item["priority"] = index + 1 if len(current) > 1 else ""
+                first = (col.key, (not desc) if index == 0 else desc)
+            else:
+                first = (col.key, False)
+            keys = [first] + [(k, d) for k, d in current if k != col.key]
+            item["next"] = ",".join(("-" if d else "") + k
+                                    for k, d in keys[:4])
+        out.append(item)
+    return out
+
+
+def rows_for(definition, rows, columns):
+    """
+    Render-ready rows: pk, cells, entity kind/pk/label, actions.
+
+    ---
+
+    Filas listas para pintar (y exportar): celdas, entidad de la fila
+    (para el botón derecho y "ver sus listados") y acciones.
+    """
+    out = []
+    for row in rows:
+        entity = definition.entity_of(row)
+        label = ""
+        if entity is not None:
+            label = (person_name(entity) if definition.entity == "person"
+                     else machine_label(entity))
+        cells = []
+        for col in columns:
+            value = col.value(row)
+            cells.append({"key": col.key, "value": "" if value is None
+                          else value, "css": col.css,
+                          "entity": col.entity})
+        out.append({
+            "pk": row.pk,
+            "cells": cells,
+            "entity_kind": definition.entity if entity is not None else "",
+            "entity_pk": entity.pk if entity is not None else "",
+            "entity_label": label,
+            "label": label or (cells[0]["value"] if cells else ""),
+            "actions": definition.actions(row),
+        })
+    return out

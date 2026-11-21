@@ -1,0 +1,52 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/panel/templates/panel/new_ui/_list.html #}
+{% comment %}
+S163 (invasora UX). Una pestaña del listado de filtrados de la nueva
+interfaz (NewUiListView, motor panel/new_ui_lists.py): casilla por
+fila y "todos", cabeceras con orden múltiple, la persona o máquina de
+la fila (botón derecho = su menú; pulsar = ver sus listados aquí) y el
+menú de tres puntos con sus acciones. Todo llega resuelto de la vista.
+{% endcomment %}
+<div class="nui-list-state d-none" data-count="{{ total }}" data-sorted="{% if sort_active %}1{% endif %}" data-note="{{ definition.note }}"></div>
+{% if limited %}<div class="alert alert-warning small py-1 px-2 m-2">Se muestran {{ shown }} de {{ total }}: afina los filtros para ver el resto (exportar saca todas).</div>{% endif %}
+<table class="table table-sm table-hover align-middle small mb-0">
+    <thead>
+        <tr>
+            <th><input type="checkbox" class="form-check-input" id="nui-check-all" aria-label="Seleccionar todos" title="Seleccionar todos los que cumplen el filtro"></th>
+            {% for col in headers %}
+            <th class="{{ col.css }}">{% if col.next %}<a href="#" class="text-reset text-decoration-none text-nowrap" data-nui-sort="{{ col.next }}">{{ col.label }}{% if col.arrow %} <i class="bi bi-arrow-{{ col.arrow }}-short"></i>{% if col.priority %}<sup>{{ col.priority }}</sup>{% endif %}{% else %} <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>{% endif %}</a>{% else %}{{ col.label }}{% endif %}</th>
+            {% endfor %}
+            <th class="text-end">Acciones</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            <td><input type="checkbox" class="form-check-input nui-row-check" value="{{ row.pk }}" data-label="{{ row.label }}" aria-label="Seleccionar {{ row.label }}"></td>
+            {% for cell in row.cells %}
+            {% if cell.entity and row.entity_pk %}
+            <td class="{{ cell.css }} fw-semibold" {% if row.entity_kind == "machine" %}data-machine-pk="{{ row.entity_pk }}"{% else %}data-person-pk="{{ row.entity_pk }}"{% endif %}>
+                <a href="#" data-nui-scope="{{ row.entity_pk }}" data-nui-scope-label="{{ row.entity_label }}" title="Ver sus listados y su tarjeta aquí">{{ cell.value|default:"—" }}</a>
+            </td>
+            {% else %}
+            <td class="{{ cell.css }}">{{ cell.value|default:"—" }}</td>
+            {% endif %}
+            {% endfor %}
+            <td class="text-end">
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-secondary border-0 px-2" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Acciones de {{ row.label }}"><i class="bi bi-three-dots-vertical"></i></button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                        {% if row.entity_pk %}
+                        <li><button type="button" class="dropdown-item" data-nui-scope="{{ row.entity_pk }}" data-nui-scope-label="{{ row.entity_label }}"><i class="bi bi-funnel me-2"></i>Ver sus listados aquí</button></li>
+                        {% endif %}
+                        {% for label, icon, url in row.actions %}
+                        <li><a class="dropdown-item" href="{{ url }}"><i class="bi {{ icon }} me-2"></i>{{ label }}</a></li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </td>
+        </tr>
+        {% empty %}
+        <tr class="eb-empty-row"><td colspan="{{ headers|length|add:2 }}" class="text-center text-muted py-4">Nada cumple los filtros.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
