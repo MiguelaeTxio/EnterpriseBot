@@ -55,6 +55,19 @@ data-nui-view-only, data-nui-edit-only). Todo llega resuelto de la vista.
 
     {% if kind == "machine" %}
     <div class="nui-ficha-grid" data-nui-view-only>
+        <section class="nui-ficha-box">
+            <div class="nui-ficha-head">Código QR</div>
+            <div class="d-flex gap-3 align-items-center p-2">
+                <div class="flex-none" style="width: 120px;">{{ qr_svg|safe }}</div>
+                <div class="small">
+                    <p class="text-muted mb-2">Lo que ve el trabajador al leerlo con el móvil.</p>
+                    <div class="d-flex flex-wrap gap-1">
+                        <a class="btn btn-sm btn-outline-dark" href="{{ qr_sheet_url }}"><i class="bi bi-qr-code me-1"></i>Página del QR</a>
+                        <a class="btn btn-sm btn-outline-secondary" href="{{ qr_image_url }}" download><i class="bi bi-download me-1"></i>Descargar para imprimir</a>
+                    </div>
+                </div>
+            </div>
+        </section>
         {% for box in boxes %}
         <section class="nui-ficha-box">
             <div class="nui-ficha-head">{{ box.title }}</div>

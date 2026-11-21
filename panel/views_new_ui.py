@@ -732,6 +732,7 @@ def _machine_ficha_context(request, machine):
     """
     from django.urls import reverse
 
+    from fleet import qr_sheet_service as qr
     from fleet.forms import MachineAssetForm
     from panel.views_machine_menu import (
         EXPORT_CHOICES, card_sections, machine_title,
@@ -763,6 +764,13 @@ def _machine_ficha_context(request, machine):
                               args=[machine.pk]),
         "export_formats": EXPORT_CHOICES,
         "form": MachineAssetForm(instance=machine, company=machine.company),
+        # H23 (S154): el QR que se pega en el vehículo; S163: a la vista
+        # en la ficha, con su página (observaciones, fotos, vídeos) y la
+        # descarga para imprimir. Miguel Ángel: "no encuentro el QR".
+        "qr_svg": qr.qr_image(qr.public_url(request, qr.sheet_for(machine)),
+                              "svg", scale=4),
+        "qr_sheet_url": reverse("panel:machine_qr_sheet", args=[machine.pk]),
+        "qr_image_url": reverse("panel:machine_qr_image", args=[machine.pk]),
         "save_url": reverse("panel:new_ui_machine_save", args=[machine.pk]),
     }
 
