@@ -116,7 +116,7 @@
         return hr;
     }
 
-    function serverItem(item, entity, name) {
+    function serverItem(item) {
         const a = document.createElement("a");
         a.className = "dropdown-item";
         a.href = item.url;
@@ -124,18 +124,6 @@
         icon.className = "bi " + item.icon + " me-2";
         a.appendChild(icon);
         a.appendChild(document.createTextNode(item.label));
-        // S163: en la nueva interfaz (EbEntityOpen), las entradas que
-        // tienen pestaña allí (ficha, vacaciones, revisiones...) se abren
-        // en la misma vista, nunca en la ficha de acordeones.
-        if (entity && window.EbEntityOpen) {
-            a.addEventListener("click", function (ev) {
-                if (ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
-                if (!window.EbEntityOpen(entity.kind, entity.pk, name, item.code)) return;
-                ev.preventDefault();
-                ev.stopImmediatePropagation();
-                close();
-            });
-        }
         if (item.card) {
             a.addEventListener("click", function (ev) {
                 if (ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
@@ -204,7 +192,7 @@
                 if (menu !== current) return;
                 current.innerHTML = "";
                 current.appendChild(header(data.name));
-                data.items.forEach(function (item) { current.appendChild(serverItem(item, entity, data.name)); });
+                data.items.forEach(function (item) { current.appendChild(serverItem(item)); });
                 addRowActions(current, actions);
                 place(current, x, y);
             })

@@ -83,7 +83,7 @@ class PersonMenuView(CompanyUserRequiredMixin, View):
         return JsonResponse({
             "name": name.strip(),
             "items": [
-                {"code": code, "label": label, "icon": icon,
+                {"label": label, "icon": icon,
                  "url": reverse("panel:person_go", args=[person.pk, code])}
                 for code, label, icon in _destinations(request, person)
             ],

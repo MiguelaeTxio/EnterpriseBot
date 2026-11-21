@@ -3053,7 +3053,7 @@ def _keep_latest_laboral_per_type(current, obsolete):
     return kept, obsolete + moved
 
 
-def _person_employment_periods(person, entries=None):
+def _person_employment_periods(person):
     """
     Employment periods of a person, ready to paint.
 
@@ -3067,30 +3067,18 @@ def _person_employment_periods(person, entries=None):
     """
     from document_explorer import employment_period_service as periods
 
+    person_ct = ContentType.objects.get_for_model(PersonIdentity)
     by_code = {code: [] for code in periods.PERIOD_CODES}
-    if entries is None:
-        person_ct = ContentType.objects.get_for_model(PersonIdentity)
-        entries = DocumentIndexEntry.objects.filter(
-            bucket=BUCKET, domain_content_type=person_ct,
-            domain_object_id=person.pk,
-            entry_kind=DocumentIndexEntry.KIND_FILE,
-            deleted_at__isnull=True, purged_at__isnull=True,
-            # S125: un obsoleto (duplicado exacto, carpeta "obsoleto")
-            # no es un periodo -- salía como "Alta sin fecha".
-            is_obsolete=False,
-            document_type__code__in=periods.PERIOD_CODES,
-        ).select_related("document_type")
-    else:
-        # S163: la nueva interfaz ya tiene todos los documentos del
-        # trabajador; se filtran aquí con el mismo criterio, sin otra
-        # consulta.
-        entries = [
-            entry for entry in entries
-            if not entry.is_obsolete and entry.deleted_at is None
-            and entry.purged_at is None and entry.document_type_id
-            and entry.document_type.code in periods.PERIOD_CODES
-        ]
-    for entry in entries:
+    for entry in DocumentIndexEntry.objects.filter(
+        bucket=BUCKET, domain_content_type=person_ct,
+        domain_object_id=person.pk,
+        entry_kind=DocumentIndexEntry.KIND_FILE,
+        deleted_at__isnull=True, purged_at__isnull=True,
+        # S125: un obsoleto (duplicado exacto, carpeta "obsoleto") no
+        # es un periodo -- salía como "Alta sin fecha".
+        is_obsolete=False,
+        document_type__code__in=periods.PERIOD_CODES,
+    ).select_related("document_type"):
         by_code[entry.document_type.code].append(entry)
 
     built, undated_altas = periods.build_periods(
