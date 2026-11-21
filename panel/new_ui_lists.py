@@ -22,6 +22,7 @@ COMPANY_FILTER_CHOICES. Los grupos son los grupos de selección de
 siempre (panel/person_groups).
 """
 import datetime
+from types import SimpleNamespace
 
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import F, OuterRef, Q, Subquery
@@ -30,7 +31,7 @@ from django.utils import timezone
 
 from panel.new_ui_filters import parse_sort, period_range
 
-ROW_LIMIT = 300
+ROW_LIMIT = 1000
 BUCKET = "cgs_grupo_alvarez"
 
 
@@ -71,6 +72,12 @@ def person_name(person):
     return " ".join(p for p in (person.given_name, person.first_surname,
                                 person.second_surname) if p).strip() \
         or person.dni or "#%s" % person.pk
+
+
+def short_company(machine):
+    from fleet.views import _short_company_name
+
+    return _short_company_name(machine.company_name)
 
 
 def machine_label(machine):
@@ -118,8 +125,10 @@ class ListDef:
     def __init__(self, label, queryset, columns, entity=None,
                  entity_path="", entity_filter=None, entity_of=None,
                  search=(), date_field="", date_is_datetime=False,
-                 default_order=("-pk",), actions=None, note=""):
+                 default_order=("-pk",), actions=None, note="",
+                 scope_filter=None):
         self.label = label
+        self.scope_filter = scope_filter
         self.queryset = queryset
         self.columns = columns
         self.entity = entity
@@ -358,7 +367,8 @@ def _doc_def(label, domain, family=None, expiring=False):
         search=("name", "document_type__label", "ocr_text"),
         date_field="expiry_date" if expiring else "indexed_at",
         date_is_datetime=not expiring,
-        default_order=("expiry_date",) if expiring else ("-indexed_at",),
+        default_order=("expiry_date",) if expiring
+        else ("is_obsolete", "document_type__label", "-indexed_at"),
         actions=_doc_actions,
         note=("Periodo: fecha de caducidad." if expiring
               else "Periodo: fecha de entrada del documento."),
@@ -377,8 +387,7 @@ def _machine_general():
             Col("tipo", "Tipo", lambda m: m.type_name, "type_name"),
             Col("matricula", "Matrícula", lambda m: m.plate, "plate",
                 "text-nowrap"),
-            Col("empresa", "Empresa", lambda m: m.company_name,
-                "company_name"),
+            Col("empresa", "Empresa", short_company, "company_name"),
             Col("estado", "Estado",
                 lambda m: "Activo" if m.is_active else "Inactivo",
                 "is_active"),
@@ -469,6 +478,79 @@ def _machine_fk_def(label, model_path, related, entity_path, columns,
     )
 
 
+def _open_assignments():
+    from document_explorer.models import LiftingAccessoryAssignment
+
+    return LiftingAccessoryAssignment.objects.filter(end_date__isnull=True)
+
+
+def _accessories_def():
+    """
+    Lifting accessories with their current machine (if any).
+
+    ---
+
+    Los accesorios de elevación (como su pestaña de siempre), con la
+    máquina de su asignación abierta si la tienen. Los filtros de máquina
+    solo quitan los asignados a máquinas que no pasan el filtro (los no
+    asignados se ven siempre); con una máquina sola, solo los suyos.
+    """
+    def queryset(company):
+        from document_explorer.models import LiftingAccessory
+
+        current = _open_assignments().filter(
+            accessory=OuterRef("pk")).order_by("-start_date", "-pk")
+        return LiftingAccessory.objects.filter(company=company).annotate(
+            current_machine_id=Subquery(current.values("machine_id")[:1]),
+            current_machine_code=Subquery(current.values("machine__code")[:1]),
+        ).select_related("accessory_type", "model")
+
+    def entity_filter(qs, ids):
+        assigned_ok = _open_assignments().filter(
+            machine__in=ids).values("accessory")
+        assigned_any = _open_assignments().values("accessory")
+        return qs.filter(Q(pk__in=assigned_ok) | ~Q(pk__in=assigned_any))
+
+    def scope_filter(qs, pk):
+        return qs.filter(pk__in=_open_assignments().filter(
+            machine_id=pk).values("accessory"))
+
+    def entity_of(row):
+        if not row.current_machine_id:
+            return None
+        return SimpleNamespace(pk=row.current_machine_id,
+                               code=row.current_machine_code)
+
+    return ListDef(
+        "Accesorios", queryset,
+        [
+            Col("codigo", "Máquina", lambda a: a.current_machine_code or
+                "Sin asignar", "current_machine_code", entity=True),
+            Col("identificador", "Identificador", lambda a: a.identifier,
+                "identifier"),
+            Col("tipo", "Tipo", lambda a: a.accessory_type.label
+                if a.accessory_type_id else "", "accessory_type__label"),
+            Col("descripcion", "Descripción", lambda a: short(
+                a.description, 60), "description"),
+            Col("carga", "Carga (kg)", lambda a: a.working_load_kg or "",
+                "working_load_kg", "text-end"),
+            Col("fabricante", "Fabricante", lambda a: a.manufacturer,
+                "manufacturer"),
+            Col("suministro", "Suministro", lambda a: fmt_date(
+                a.supply_date), "supply_date", "text-nowrap"),
+            Col("estado", "Estado", lambda a: "Activo" if a.is_active
+                else "Baja", "is_active"),
+        ],
+        entity="machine", entity_filter=entity_filter,
+        scope_filter=scope_filter, entity_of=entity_of,
+        search=("identifier", "description", "manufacturer",
+                "traceability"),
+        date_field="supply_date", default_order=("identifier",),
+        note="Periodo: fecha de suministro. Los no asignados se ven "
+             "siempre.",
+    )
+
+
 def _cdg_lists():
     return {
         "general": _machine_general(),
@@ -515,29 +597,7 @@ def _cdg_lists():
             search=("vehicle__name", "vehicle__plate", "user__name"),
             default_order=("-supplied_at",),
             note="Periodo: fecha del repostaje."),
-        "accesorios": _machine_fk_def(
-            "Accesorios", "document_explorer.LiftingAccessoryAssignment",
-            ("machine", "accessory__accessory_type", "responsible_person"),
-            "machine", [
-                Col("accesorio", "Accesorio",
-                    lambda r: r.accessory.identifier,
-                    "accessory__identifier"),
-                Col("tipo", "Tipo", lambda r: r.accessory.accessory_type.label
-                    if r.accessory.accessory_type_id else "",
-                    "accessory__accessory_type__label"),
-                Col("carga", "Carga (kg)",
-                    lambda r: r.accessory.working_load_kg or "",
-                    "accessory__working_load_kg", "text-end"),
-                Col("desde", "Desde", lambda r: fmt_date(r.start_date),
-                    "start_date", "text-nowrap"),
-                Col("hasta", "Hasta", lambda r: fmt_date(r.end_date)
-                    or "Actual", "end_date", "text-nowrap"),
-                Col("responsable", "Responsable",
-                    lambda r: person_name(r.responsible_person)),
-            ], "start_date",
-            search=("accessory__identifier", "accessory__description"),
-            default_order=("-start_date",),
-            note="Periodo: fecha de asignación."),
+        "accesorios": _accessories_def(),
         "taller": _machine_fk_def(
             "Taller", "work_order_processor.WorkOrderEntryLine",
             ("machine_asset", "entry"), "machine_asset", [
@@ -1050,7 +1110,9 @@ def filtered(definition, company, params, scope_pk=None):
         return qs.filter(**{path + "__in": ids})
 
     if scope_pk and definition.entity:
-        if definition.entity_filter:
+        if definition.scope_filter:
+            qs = definition.scope_filter(qs, scope_pk)
+        elif definition.entity_filter:
             qs = definition.entity_filter(qs, [scope_pk])
         else:
             qs = qs.filter(**{path: scope_pk})
