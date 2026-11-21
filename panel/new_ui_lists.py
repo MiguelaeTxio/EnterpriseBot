@@ -1348,7 +1348,7 @@ def rows_for(definition, rows, columns):
     Filas listas para pintar (y exportar): celdas, entidad de la fila
     (para el botón derecho y "ver sus listados") y acciones.
     """
-    if definition.prepare and rows:
+    if definition.prepare and rows and not hasattr(rows[0], "nui_current"):
         definition.prepare(rows)
     out = []
     for row in rows:

@@ -608,7 +608,14 @@ class NewUiListView(SuperuserRequiredMixin, View):
             columns = [c for c in columns if not c.entity] or columns
         qs, current = sorted_qs(definition, qs, request.GET.get("sort", ""))
         total = qs.count()
-        rows = rows_for(definition, list(qs[:ROW_LIMIT]), columns)
+        objects = list(qs[:ROW_LIMIT])
+        if definition.prepare and objects and not current:
+            # Sin orden elegido por el usuario: los vigentes primero (como
+            # la ficha de siempre), con la vigencia real, no solo la
+            # marcada en BD; dentro de cada grupo, el orden de siempre.
+            definition.prepare(objects)
+            objects.sort(key=lambda o: not getattr(o, "nui_current", True))
+        rows = rows_for(definition, objects, columns)
         return render(request, "panel/new_ui/_list.html", {
             "section": section,
             "tab": tab,
