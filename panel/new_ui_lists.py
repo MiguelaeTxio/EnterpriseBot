@@ -105,6 +105,126 @@ class Col:
         self.entity = entity
 
 
+class Extra:
+    """
+    One own filter of a list tab ("Filtros de <pestaña>").
+
+    ---
+
+    Un filtro propio de una pestaña de listado (S163): `options(company)`
+    da [(valor, texto)]; `apply(qs, valor)` lo aplica en la consulta o,
+    si no sale de la BD (`post=True`), `keep(fila, valor)` decide fila a
+    fila después de `ListDef.prepare` (p. ej. el estado real de un
+    documento).
+    """
+
+    def __init__(self, key, label, options, apply=None, keep=None):
+        self.key = key
+        self.label = label
+        self.options = options
+        self.apply = apply
+        self.keep = keep
+        self.post = keep is not None
+
+
+def extra_param(tab, extra):
+    return "x_%s_%s" % (tab, extra.key)
+
+
+def extras_for(definition, company):
+    """
+    Own filters of a tab: the declared ones plus one per choice column.
+
+    ---
+
+    Los filtros propios de una pestaña: los declarados en la definición
+    (`extras`) y, además, uno por cada columna que ordena por un campo
+    con opciones fijas (estado, urgencia, entrada/salida...) o por el
+    rótulo de un catálogo (motivo de ausencia, tipo de documento...),
+    con esas mismas opciones. Así ninguna pestaña se queda sin ellos.
+    """
+    out = list(definition.extras)
+    taken = {extra.key for extra in out}
+    model = definition.queryset(company).model
+    for col in definition.columns:
+        if col.entity or not col.order or col.key in taken:
+            continue
+        parts = col.order.split("__")
+        try:
+            field = model._meta.get_field(parts[0])
+        except Exception:
+            continue
+        if len(parts) == 1 and getattr(field, "choices", None):
+            choices = [(str(v), str(t)) for v, t in field.flatchoices]
+            out.append(Extra(
+                col.key, col.label, lambda company, c=choices: c,
+                lambda qs, value, f=parts[0]: qs.filter(**{f: value})))
+            taken.add(col.key)
+        elif (len(parts) == 2 and field.is_relation and field.many_to_one
+              and parts[1] in ("label", "name")):
+            related = field.related_model
+
+            def options(company, related=related, attr=parts[1]):
+                return [(str(pk), str(text)) for pk, text in
+                        related.objects.order_by(attr).values_list(
+                            "pk", attr)[:300]]
+            out.append(Extra(
+                col.key, col.label, options,
+                lambda qs, value, f=parts[0]: qs.filter(**{f + "_id": value})
+                if value.isdigit() else qs))
+            taken.add(col.key)
+    return out
+
+
+def apply_extras(definition, company, qs, params, tab):
+    """
+    Apply the tab's own filters; return (qs, [(extra, value)] for later).
+
+    ---
+
+    Aplica los filtros propios de la pestaña que tengan valor; devuelve
+    la consulta y los que se deciden después, fila a fila.
+    """
+    post = []
+    for extra in extras_for(definition, company):
+        value = params.get(extra_param(tab, extra), "")
+        if not value:
+            continue
+        if extra.post:
+            post.append((extra, value))
+        elif extra.apply:
+            qs = extra.apply(qs, value)
+    return qs, post
+
+
+def materialize(definition, qs, post, limit, state_first=False):
+    """
+    Rows to paint or export and the real total, own filters applied.
+
+    ---
+
+    Las filas que se pintan o exportan y el total real: con filtros que
+    se deciden fila a fila, se cargan todas, se preparan, se filtran y
+    se cuenta; sin ellos, el total sale de la BD y solo se carga el
+    tramo. `state_first`: vigentes primero (sin orden elegido).
+    """
+    if post:
+        objects = list(qs)
+        if definition.prepare and objects:
+            definition.prepare(objects)
+        objects = [o for o in objects
+                   if all(extra.keep(o, value) for extra, value in post)]
+        total = len(objects)
+    else:
+        total = qs.count()
+        objects = list(qs[:limit])
+        if definition.prepare and objects and state_first:
+            definition.prepare(objects)
+    if state_first:
+        objects.sort(key=lambda o: not getattr(o, "nui_current", True))
+    return objects[:limit], total
+
+
 class ListDef:
     """
     Definition of one list tab (see module docstring).
@@ -126,8 +246,11 @@ class ListDef:
                  entity_path="", entity_filter=None, entity_of=None,
                  search=(), date_field="", date_is_datetime=False,
                  default_order=("-pk",), actions=None, note="",
-                 scope_filter=None, prepare=None):
+                 scope_filter=None, prepare=None, extras=()):
         self.label = label
+        # Filtros propios declarados (además de los automáticos de
+        # extras_for).
+        self.extras = list(extras)
         # prepare(rows): completa las filas que se van a pintar o
         # exportar con lo que no sale de una consulta (p. ej. qué
         # documento está vigente de verdad, _mark_current).
@@ -425,6 +548,32 @@ def _doc_columns(entity_label, entity_value, for_person):
     ]
 
 
+_DOC_STATES = (
+    ("vigentes", "Vigentes"),
+    ("por_caducar", "Caducan en 30 días"),
+    ("caducados", "Caducados"),
+    ("sustituidos", "Sustituidos"),
+)
+
+
+def _doc_state_keep(entry, value):
+    state = _doc_state(entry)
+    return {
+        "vigentes": state == "Vigente" or state.startswith("Caduca en"),
+        "por_caducar": state.startswith("Caduca en"),
+        "caducados": state == "Caducado",
+        "sustituidos": state == "Sustituido",
+    }.get(value, True)
+
+
+def _doc_family_options(for_person):
+    from document_explorer.models import DocumentTypeCatalog
+
+    return lambda company: [
+        (code, DocumentTypeCatalog.family_label(code, for_person=for_person))
+        for code, _label in DocumentTypeCatalog.FAMILY_CHOICES]
+
+
 def _doc_def(label, domain, family=None, expiring=False):
     for_person = domain == "person"
     model = _person_model if for_person else _machine_model
@@ -443,6 +592,14 @@ def _doc_def(label, domain, family=None, expiring=False):
         default_order=("expiry_date",) if expiring
         else ("is_obsolete", "document_type__label", "-indexed_at"),
         actions=_doc_actions, prepare=_mark_current,
+        extras=[
+            Extra("estado", "Estado", lambda company: list(_DOC_STATES),
+                  keep=_doc_state_keep),
+        ] + ([] if family else [
+            Extra("familia", "Familia documental",
+                  _doc_family_options(for_person),
+                  lambda qs, value: qs.filter(document_type__family=value)),
+        ]),
         note=("Periodo: fecha de caducidad." if expiring
               else "Periodo: fecha de entrada del documento."),
     )

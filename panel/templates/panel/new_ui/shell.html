@@ -84,7 +84,7 @@ body.nui-dragging { user-select: none; }
             <div class="nui-tabs nav" role="tablist">
                 <button type="button" class="nav-link" data-nui-tab="filtrar" role="tab">Buscar y filtrar</button>
                 {% if section != "permisos" %}<button type="button" class="nav-link" data-nui-tab="columnas" role="tab">Columnas</button>{% endif %}
-                <button type="button" class="nav-link" data-nui-tab="propios" role="tab">Propios</button>
+                <button type="button" class="nav-link" data-nui-tab="propios" role="tab" id="nui-own-filters-tab">{% if section == "permisos" %}Más filtros{% else %}Filtros de la pestaña{% endif %}</button>
             </div>
             <div class="nui-body">
                 <div data-nui-pane="filtrar">{% include "panel/new_ui/_filters_common.html" %}</div>
@@ -110,9 +110,26 @@ body.nui-dragging { user-select: none; }
                     {% if section == "permisos" %}
                     <p class="text-muted mb-1">Permisos no tiene filtros propios: el bloque común filtra los usuarios (el periodo, por su último acceso; «Sección», por su rol).</p>
                     {% else %}
-                    {% for tab in tabs_cols %}<p class="small mb-1 d-none" data-nui-note-for="{{ tab.key }}"><strong>{{ tab.label }}:</strong> {{ tab.note|default:"sin filtros propios." }}</p>{% endfor %}
+                    {% for tab in tabs_cols %}
+                    <div class="d-none" data-nui-note-for="{{ tab.key }}">
+                        {% if tab.extras %}
+                        <div class="row g-2 mb-2">
+                            {% for extra in tab.extras %}
+                            <div class="col-6">
+                                <label class="form-label small mb-0" for="{{ extra.name }}">{{ extra.label }}</label>
+                                <select class="form-select form-select-sm" id="{{ extra.name }}" name="{{ extra.name }}" form="nui-filters" data-nui-own-filter>
+                                    <option value="">Todos</option>
+                                    {% for value, text in extra.options %}<option value="{{ value }}"{% if value == extra.value %} selected{% endif %}>{{ text }}</option>{% endfor %}
+                                </select>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        <p class="small text-muted mb-0">{{ tab.note|default:"" }}</p>
+                    </div>
+                    {% endfor %}
                     {% if section == "cdg" or section == "per" %}<p class="small mb-1 d-none" data-nui-note-for="ficha"><strong>Ficha:</strong> los filtros no se aplican a la ficha; sí a las demás pestañas.</p>{% endif %}
-                    <p class="small text-muted mb-0">El bloque común (estado, empresa, grupo, {{ opts.family_label|lower }}) se aplica a {% if section == "cdg" %}la máquina{% else %}la persona{% endif %} de cada fila.</p>
+                    <p class="small text-muted mb-0">El bloque común de «Buscar y filtrar» (estado, empresa, grupo, {{ opts.family_label|lower }}) se aplica a {% if section == "cdg" %}la máquina{% else %}la persona{% endif %} de cada fila.</p>
                     {% endif %}
                 </div>
             </div>

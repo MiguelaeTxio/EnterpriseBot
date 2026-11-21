@@ -252,7 +252,9 @@ def _section_context(company_user, section):
     por el usuario), selecciones, la persona/máquina que se está viendo
     sola (`scope`) y los grupos de selección de siempre.
     """
-    from panel.new_ui_lists import filter_options, list_def, visible_columns
+    from panel.new_ui_lists import (
+        extra_param, extras_for, filter_options, list_def, visible_columns,
+    )
     from panel.person_groups import (
         MACHINE_KIND, PERSON_KIND, collapsed_state, group_tree,
         parent_choices,
@@ -276,6 +278,11 @@ def _section_context(company_user, section):
             "columns": [{"key": c.key, "label": c.label,
                          "on": c.key in visible, "fixed": c.entity}
                         for c in definition.columns],
+            "extras": [{
+                "name": extra_param(tab_key, extra), "label": extra.label,
+                "value": saved.get(extra_param(tab_key, extra), ""),
+                "options": extra.options(company_user.company),
+            } for extra in extras_for(definition, company_user.company)],
         })
     selections = get_saved_state_key(company_user, SCREEN_KEY,
                                      "sel_" + section, {})
@@ -580,8 +587,8 @@ class NewUiListView(SuperuserRequiredMixin, View):
 
     def get(self, request):
         from panel.new_ui_lists import (
-            ROW_LIMIT, filtered, headers, list_def, rows_for, sorted_qs,
-            visible_columns,
+            ROW_LIMIT, apply_extras, filtered, headers, list_def,
+            materialize, rows_for, sorted_qs, visible_columns,
         )
 
         section = request.GET.get("s", "")
@@ -590,9 +597,14 @@ class NewUiListView(SuperuserRequiredMixin, View):
         if definition is None or not _check_view(request, section, tab):
             return HttpResponseBadRequest("Listado no disponible.")
         company_user = _company_user(request)
+        saved_filters = {k: request.GET.get(k, "") for k in PERM_FILTER_KEYS
+                         if k != "sort"}
+        # Filtros propios de las pestañas ("x_<pestaña>_<filtro>"): se
+        # guardan todos, cada uno se aplica solo en su pestaña.
+        saved_filters.update({k: v for k, v in request.GET.items()
+                              if k.startswith("x_") and len(v) < 100})
         _save_keys(company_user, "nui_filters_" + section, {
-            "filters": {k: request.GET.get(k, "") for k in PERM_FILTER_KEYS
-                        if k != "sort"}})
+            "filters": saved_filters})
         cols = get_saved_state_key(company_user, SCREEN_KEY,
                                    "cols_" + section, {})
         columns = visible_columns(
@@ -606,15 +618,15 @@ class NewUiListView(SuperuserRequiredMixin, View):
             # La exportación la conserva, para que el archivo diga de
             # quién es.
             columns = [c for c in columns if not c.entity] or columns
+        qs, post = apply_extras(definition, company_user.company, qs,
+                                request.GET, tab)
         qs, current = sorted_qs(definition, qs, request.GET.get("sort", ""))
-        total = qs.count()
-        objects = list(qs[:ROW_LIMIT])
-        if definition.prepare and objects and not current:
-            # Sin orden elegido por el usuario: los vigentes primero (como
-            # la ficha de siempre), con la vigencia real, no solo la
-            # marcada en BD; dentro de cada grupo, el orden de siempre.
-            definition.prepare(objects)
-            objects.sort(key=lambda o: not getattr(o, "nui_current", True))
+        # Sin orden elegido por el usuario: los vigentes primero (como la
+        # ficha de siempre), con la vigencia real, no solo la marcada en
+        # BD; dentro de cada grupo, el orden de siempre.
+        objects, total = materialize(
+            definition, qs, post, ROW_LIMIT,
+            state_first=bool(definition.prepare) and not current)
         rows = rows_for(definition, objects, columns)
         return render(request, "panel/new_ui/_list.html", {
             "section": section,
@@ -646,7 +658,8 @@ class NewUiExportView(SuperuserRequiredMixin, View):
 
         from panel.export_formats import workbook_response
         from panel.new_ui_lists import (
-            filtered, list_def, rows_for, sorted_qs, visible_columns,
+            apply_extras, filtered, list_def, materialize, rows_for,
+            sorted_qs, visible_columns,
         )
 
         section = request.GET.get("s", "")
@@ -665,8 +678,11 @@ class NewUiExportView(SuperuserRequiredMixin, View):
                     if pk.isdigit()]
         if selected:
             qs = qs.filter(pk__in=selected)
+        qs, post = apply_extras(definition, company_user.company, qs,
+                                request.GET, tab)
         qs, _current = sorted_qs(definition, qs, request.GET.get("sort", ""))
-        rows = rows_for(definition, list(qs[:20000]), columns)
+        objects, _total = materialize(definition, qs, post, 20000)
+        rows = rows_for(definition, objects, columns)
         workbook = Workbook()
         sheet = workbook.active
         sheet.title = definition.label[:31].upper()

@@ -290,6 +290,19 @@
                 });
         }
         submitFilters = load;
+        function paintOwnFilters(t, label) {
+            const ownTab = document.getElementById("nui-own-filters-tab");
+            if (!ownTab) return;
+            const active = Array.from(root.querySelectorAll('[data-nui-note-for="' + t + '"] [data-nui-own-filter]')).filter(el => el.value).length;
+            ownTab.textContent = "Filtros de " + label + (active ? " (" + active + ")" : "");
+        }
+        root.addEventListener("change", function (ev) {
+            const own = ev.target.closest("[data-nui-own-filter]");
+            if (!own) return;
+            const tabButton = listPanel.querySelector('[data-nui-tab="' + tab() + '"]');
+            if (tabButton) paintOwnFilters(tab(), tabButton.textContent.trim());
+            load();
+        });
         let typing = null;
         form.addEventListener("change", function (ev) {
             if (ev.target.id === "nui-q") return;
@@ -313,6 +326,11 @@
             root.querySelectorAll("[data-nui-total-box]").forEach(el => el.classList.toggle("invisible", t === "ficha"));
             root.querySelectorAll("[data-nui-cols-for]").forEach(el => el.classList.toggle("d-none", el.dataset.nuiColsFor !== t));
             root.querySelectorAll("[data-nui-note-for]").forEach(el => el.classList.toggle("d-none", el.dataset.nuiNoteFor !== t));
+            // "Filtros de <pestaña>": el nombre dice a qué listado se
+            // aplican; con alguno puesto, se marca con su número.
+            const ownTab = document.getElementById("nui-own-filters-tab");
+            const tabButton = listPanel.querySelector('[data-nui-tab="' + t + '"]');
+            if (ownTab && tabButton) paintOwnFilters(t, tabButton.textContent.trim());
             load();
         });
 
