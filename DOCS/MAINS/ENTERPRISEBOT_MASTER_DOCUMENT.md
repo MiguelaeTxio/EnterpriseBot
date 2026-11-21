@@ -2078,6 +2078,22 @@ este programa"*. La 4.24 ya lo exigía (punto 6) y se ignoró.
    derecha.
 4. **Lo propio de una pestaña va dentro de esas columnas**, nunca
    cambiando su número ni su orden.
+4bis. **Ampliación S163 (Miguel Ángel, 21/11/2026), vinculante en todas
+   las vistas:**
+   - **Bloque común de filtros completo, siempre presente:** Buscar ·
+     filtro rápido de periodo (día, semana, mes, año, periodo actual,
+     periodo anterior; y desde/hasta) · Activos/inactivos · Empresas ·
+     Grupos · Familia (máquinas) / Sección (personas, dato heredado del
+     SIME). Si un dato no aplica a una vista, el filtro se queda (sin
+     efecto o con el criterio más cercano), nunca se quita del bloque.
+   - **Cinco paneles redimensionables en todos los listados.** Los tres
+     de arriba (entrada): filtros/búsqueda, grupos de selección y
+     acciones, ajustables en altura. Los dos de abajo (salida): listado
+     de filtrados y listado de seleccionados, ajustables en altura y en
+     anchura. El tamaño se guarda por usuario.
+   - **Cada panel se organiza en pestañas** para su configuración (como
+     ya «Buscar y filtrar» / «Columnas», o el menú de acciones por
+     bloques), en vez de alargarse hacia abajo.
 5. **Al añadir o cambiar algo común en una pestaña, en el mismo bloque
    de trabajo se aplica a todas** (o se deja anotado como pendiente
    abierto con la lista exacta de pestañas que faltan, nunca
