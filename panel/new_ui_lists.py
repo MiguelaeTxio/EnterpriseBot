@@ -126,8 +126,12 @@ class ListDef:
                  entity_path="", entity_filter=None, entity_of=None,
                  search=(), date_field="", date_is_datetime=False,
                  default_order=("-pk",), actions=None, note="",
-                 scope_filter=None):
+                 scope_filter=None, prepare=None):
         self.label = label
+        # prepare(rows): completa las filas que se van a pintar o
+        # exportar con lo que no sale de una consulta (p. ej. qué
+        # documento está vigente de verdad, _mark_current).
+        self.prepare = prepare
         self.scope_filter = scope_filter
         self.queryset = queryset
         self.columns = columns
@@ -295,9 +299,66 @@ def _documents(domain_model, family=None, expiring=False):
     return queryset
 
 
+def _mark_current(entries):
+    """
+    Mark each document as current or not, exactly like the old ficha.
+
+    ---
+
+    Marca en cada documento (`nui_current`) si está vigente con la misma
+    regla que la ficha de siempre (_split_current_obsolete, con el
+    requisito de documentación de su persona o máquina): no basta con
+    `is_obsolete`, que solo recoge las sustituciones ya escritas en BD.
+    Miguel Ángel (S163): "3 contratos laborales, 3 contratos vigentes".
+    Se calcula con todos los documentos de cada sujeto de las filas
+    pintadas, no solo con los que se ven.
+    """
+    from document_explorer.models import DocumentIndexEntry
+    from document_explorer.required_documentation_service import (
+        get_required_type_ids,
+    )
+    from panel.views_documentation_h30 import _split_current_obsolete
+
+    subjects = {}
+    for entry in entries:
+        if entry.document_type_id and entry.domain_object is not None:
+            subjects.setdefault(
+                (entry.domain_content_type_id, entry.domain_object_id),
+                entry.domain_object)
+    by_subject = {}
+    by_ct = {}
+    for ct_id, obj_id in subjects:
+        by_ct.setdefault(ct_id, []).append(obj_id)
+    for ct_id, ids in by_ct.items():
+        siblings = DocumentIndexEntry.objects.filter(
+            bucket=BUCKET, entry_kind=DocumentIndexEntry.KIND_FILE,
+            domain_content_type_id=ct_id, domain_object_id__in=ids,
+            deleted_at__isnull=True, purged_at__isnull=True,
+            document_type__isnull=False,
+        ).select_related("document_type")
+        for sibling in siblings:
+            by_subject.setdefault(
+                (ct_id, sibling.domain_object_id), []).append(sibling)
+    current = set()
+    for key, subject in subjects.items():
+        kept, _old = _split_current_obsolete(
+            by_subject.get(key, []), get_required_type_ids(subject))
+        current.update(e.pk for e in kept)
+    for entry in entries:
+        entry.nui_current = (entry.pk in current
+                             if entry.document_type_id else
+                             not entry.is_obsolete)
+
+
 def _doc_state(entry):
-    if entry.is_obsolete:
-        return "Sustituido"
+    current = getattr(entry, "nui_current", not entry.is_obsolete)
+    expired = bool(entry.expiry_date
+                   and entry.expiry_date < timezone.localdate())
+    if entry.is_obsolete or not current:
+        # Fuera de vigencia: sustituido por otro más reciente o, si no
+        # lo tiene, caducado sin sustituto.
+        return "Caducado" if expired and not entry.is_obsolete \
+            else "Sustituido"
     if entry.expiry_date:
         days = (entry.expiry_date - timezone.localdate()).days
         if days < 0:
@@ -363,7 +424,7 @@ def _doc_def(label, domain, family=None, expiring=False):
         date_is_datetime=not expiring,
         default_order=("expiry_date",) if expiring
         else ("is_obsolete", "document_type__label", "-indexed_at"),
-        actions=_doc_actions,
+        actions=_doc_actions, prepare=_mark_current,
         note=("Periodo: fecha de caducidad." if expiring
               else "Periodo: fecha de entrada del documento."),
     )
@@ -1269,6 +1330,8 @@ def rows_for(definition, rows, columns):
     Filas listas para pintar (y exportar): celdas, entidad de la fila
     (para el botón derecho y "ver sus listados") y acciones.
     """
+    if definition.prepare and rows:
+        definition.prepare(rows)
     out = []
     for row in rows:
         entity = definition.entity_of(row)
