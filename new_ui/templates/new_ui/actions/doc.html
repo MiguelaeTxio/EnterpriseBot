@@ -157,3 +157,11 @@ new_ui.js enseña el de la vista abierta. Formularios:
         </div>
     </form>
 </div>
+<div class="d-none" data-nui-actions-for="pedir">
+    {# S163: cancelar peticiones de documentos marcadas. Se piden desde Personal › General. #}
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:doc_request_cancel_rows' %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-sm btn-outline-secondary" data-nui-confirm="¿Cancelar las peticiones marcadas?">Cancelar las peticiones marcadas</button>
+        <p class="small text-muted mt-1 mb-0">Para pedir documentos: Personal › General, marca a los trabajadores y Acciones › Pedir documentos. Si se cancela el activo, se envía el siguiente de su cola.</p>
+    </form>
+</div>

@@ -49,7 +49,7 @@ Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
   (Personal y Centros de gasto); crear, modificar, activar, borrar y
   categoría de un tipo (Documentos › Requisitos)
 - ⬜ Contrato revisado
-- ⬜ Avisar / notificar (uno, en masa, WhatsApp)
+- ✅ (S163) Avisar de una circular a los marcados: WhatsApp o correos (.eml)
 - ⬜ Acceso al panel (vista previa, crear, reenviar)
 - ⬜ Empresa, horario, sección y base en masa · ⬜ sección de uno
 - ⬜ Bajas médicas
@@ -81,7 +81,7 @@ Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
   borrar), asignar sección, ajustes, días libres, reglas, importar
 
 ## Pedir documentos y solicitudes
-- ⬜ Pedir documentos (pedir, cancelar) · ⬜ pedir al trabajador desde avisos
+- ✅ (S163) Pedir documentos (pedir, cancelar; cancelar peticiones marcadas) · ⬜ pedir al trabajador desde avisos
 - ⬜ Solicitudes de los trabajadores (detalle, acciones, en masa)
 
 ## Avisos

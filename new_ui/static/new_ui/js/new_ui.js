@@ -371,7 +371,7 @@
                 ids.forEach(id => body.append("selected", id));
             }
             const url = (submitter && submitter.getAttribute("formaction")) || f.getAttribute("action");
-            if (f.hasAttribute("data-nui-download")) { download(url, body); return; }
+            if (f.hasAttribute("data-nui-download") || (submitter && submitter.hasAttribute("data-nui-download-button"))) { download(url, body); return; }
             post(url, body)
                 .then(function (data) {
                     result(data.message || "Hecho.", false);

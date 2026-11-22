@@ -13,7 +13,8 @@ from django.urls import path
 
 from new_ui import (
     state, views, views_circulars, views_docs, views_dossiers, views_groups,
-    views_doc_actions, views_photos, views_requirements, views_schedules,
+    views_doc_actions, views_notify, views_photos, views_requirements,
+    views_schedules,
 )
 
 app_name = "new_ui"
@@ -34,6 +35,18 @@ urlpatterns = [
     path("grupos/<str:kind>/<int:group_pk>/eliminar/",
          views_groups.GroupDeleteView.as_view(), name="group_delete"),
     # Documentos y ficha.
+    # Pedir documentos y avisar (S163).
+    path("pedir/", views_notify.DocRequestSendView.as_view(),
+         name="doc_request_send"),
+    path("pedir/cancelar/", views_notify.DocRequestCancelView.as_view(),
+         name="doc_request_cancel"),
+    path("pedir/cancelar-marcadas/",
+         views_notify.DocRequestCancelRowsView.as_view(),
+         name="doc_request_cancel_rows"),
+    path("avisar/correo/", views_notify.NotifyEmailView.as_view(),
+         name="notify_email"),
+    path("avisar/whatsapp/", views_notify.NotifyWhatsAppView.as_view(),
+         name="notify_whatsapp"),
     # Requisitos de documentación (S163).
     path("requisitos/<int:pk>/",
          views_requirements.RequirementDataView.as_view(),
