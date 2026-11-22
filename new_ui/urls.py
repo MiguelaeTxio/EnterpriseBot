@@ -12,7 +12,7 @@ interfaz antigua.
 from django.urls import path
 
 from new_ui import (
-    views_accessories, views_clock, views_crews,
+    clock_export, views_accessories, views_clock, views_crews,
     state, views, views_circulars, views_docs, views_dossiers, views_groups,
     views_access, views_doc_actions, views_notify, views_personnel,
     views_epis, views_machines, views_medical, views_photos,
@@ -47,6 +47,8 @@ urlpatterns = [
          name="reading_add"),
     path("revisiones/borrar/", views_service.ServiceRowsDeleteView.as_view(),
          name="service_rows_delete"),
+    path("fichajes/exportar/", clock_export.ClockExportView.as_view(),
+         name="clock_export"),
     # Jornadas de un trabajador (S163).
     path("persona/<int:pk>/jornada/editar/",
          views_clock.ShiftEditView.as_view(), name="shift_edit"),

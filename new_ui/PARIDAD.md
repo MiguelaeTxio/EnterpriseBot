@@ -64,7 +64,7 @@ Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
   certificada
 
 ## Fichajes y horarios
-- ✅ (S163) Fichajes: detalle y jornadas del trabajador (Personal › Jornadas, con el periodo del filtro), editar la jornada, anular el día, visado, pendiente de revisar, kilómetros, bolsa de horas, historial de correcciones · ⬜ exportar el registro de jornada (Excel por trabajador)
+- ✅ (S163) Fichajes: detalle y jornadas del trabajador (Personal › Jornadas, con el periodo del filtro), editar la jornada, anular el día, visado, pendiente de revisar, kilómetros, bolsa de horas, historial de correcciones, exportar el registro de jornada (Excel de la persona abierta o de las marcadas: trabajadores, jornadas, pulsaciones, correcciones; membrete con uno solo)
 - ⬜ Albaranes del fichaje (cargas, archivos, estado, ver)
 - ⬜ Informe de alta y su exportación
 - ✅ (S163) Trabajadores que fichan, recordatorios, ficha desde, tipo de

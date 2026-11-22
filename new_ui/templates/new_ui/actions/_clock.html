@@ -1,0 +1,19 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_clock.html -- S163: exportar el registro de jornada (Excel) de la persona abierta o de las marcadas. Vista: new_ui/clock_export.py. #}
+<div class="d-none" data-nui-actions-for="jornadas fichajes general">
+    <div class="small fw-semibold mb-1"><i class="bi bi-file-earmark-spreadsheet me-1"></i>Registro de jornada (Excel)</div>
+    <div class="d-flex flex-wrap align-items-center gap-1 mb-1 small">
+        <label class="text-muted" for="nui-clock-from">Desde</label><input type="date" id="nui-clock-from" class="form-control form-control-sm" style="width: 10rem;" data-nui-clock-from>
+        <label class="text-muted" for="nui-clock-to">hasta</label><input type="date" id="nui-clock-to" class="form-control form-control-sm" style="width: 10rem;" data-nui-clock-to>
+    </div>
+    <p class="small text-muted mb-1">Sin fechas, el mes en curso. Jornadas, pulsaciones con su posición y correcciones; con un solo trabajador, sus datos van arriba.</p>
+    <div class="d-flex flex-wrap gap-1">
+        <form data-nui-action-form data-nui-download data-nui-no-refresh action="{% url 'new_ui:clock_export' %}" data-nui-clock-export>
+            {% csrf_token %}<input type="hidden" name="person_pk" value="" data-nui-scope-input><input type="hidden" name="desde"><input type="hidden" name="hasta">
+            <button type="submit" class="btn btn-sm btn-outline-primary">De la persona abierta</button>
+        </form>
+        <form data-nui-action-form data-nui-needs-selection data-nui-download data-nui-no-refresh action="{% url 'new_ui:clock_export' %}" data-nui-clock-export>
+            {% csrf_token %}<input type="hidden" name="desde"><input type="hidden" name="hasta">
+            <button type="submit" class="btn btn-sm btn-outline-primary">De las marcadas</button>
+        </form>
+    </div>
+</div>

@@ -356,6 +356,14 @@
             if (tabButton) tabButton.textContent = "De " + (label ? label.textContent.trim() : "la vista");
         }
         listPanel.addEventListener("nui:tab", function (ev) { paintViewActions(ev.detail); });
+        // Registro de jornada: las fechas de arriba del bloque van con cada botón.
+        root.addEventListener("submit", function (ev) {
+            const f = ev.target.closest("[data-nui-clock-export]");
+            if (!f) return;
+            const box = f.closest("[data-nui-actions-for]");
+            f.querySelector('[name="desde"]').value = box.querySelector("[data-nui-clock-from]").value;
+            f.querySelector('[name="hasta"]').value = box.querySelector("[data-nui-clock-to]").value;
+        }, true);
         root.addEventListener("submit", function (ev) {
             const f = ev.target.closest("[data-nui-action-form]");
             if (!f) return;
