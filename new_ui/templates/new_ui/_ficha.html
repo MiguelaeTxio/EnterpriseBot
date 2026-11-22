@@ -58,8 +58,9 @@ data-nui-view-only, data-nui-edit-only). Todo llega resuelto de la vista.
         <section class="nui-ficha-box">
             <div class="nui-ficha-head">Código QR</div>
             <div class="d-flex gap-3 align-items-center p-2">
-                <div class="flex-none" style="width: 120px;">{{ qr_svg|safe }}</div>
-                <div class="small">
+                {# El SVG trae ancho/alto fijos: se ajusta a la caja para no tapar el texto. #}
+                <div class="nui-ficha-qr flex-shrink-0">{{ qr_svg|safe }}</div>
+                <div class="small min-w-0">
                     <p class="text-muted mb-2">Lo que ve el trabajador al leerlo con el móvil. Observaciones, fotos y vídeos: pestaña «QR».</p>
                     <div class="d-flex flex-wrap gap-1">
                         <a class="btn btn-sm btn-outline-secondary" href="{{ qr_image_url }}" download><i class="bi bi-download me-1"></i>Descargar para imprimir</a>

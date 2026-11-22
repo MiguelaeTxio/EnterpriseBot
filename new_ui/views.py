@@ -23,6 +23,8 @@ diferentes vistas, para poder configurar desde esa vista."
 De momento todo es solo para el superusuario (SuperuserRequiredMixin);
 Documentos, Personal y Centros de gasto se van llenando por fases.
 """
+import re
+
 from django.db.models import Q
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import render
@@ -730,6 +732,24 @@ def _ficha_item(label, display, name="", value="", kind="text"):
             "value": value, "kind": kind}
 
 
+def _scalable_svg(svg):
+    """
+    Give a fixed-size SVG a viewBox so CSS can resize it.
+
+    ---
+
+    El SVG del QR trae ancho y alto fijos y sin viewBox: al encajarlo en
+    su caja de la ficha se cortaba o tapaba el texto (S163). Con viewBox
+    se escala entero al tamaño de la caja.
+    """
+    match = re.search(r'<svg[^>]*\swidth="(\d+)"\s+height="(\d+)"', svg)
+    if not match or "viewBox" in svg[:300]:
+        return svg
+    width, height = match.groups()
+    return svg.replace(
+        "<svg ", '<svg viewBox="0 0 %s %s" ' % (width, height), 1)
+
+
 def _machine_ficha_context(request, machine):
     """
     Ficha of a cost centre: photo, technical card boxes and its form.
@@ -777,8 +797,8 @@ def _machine_ficha_context(request, machine):
         # H23 (S154): el QR que se pega en el vehículo; S163: a la vista
         # en la ficha, con su página (observaciones, fotos, vídeos) y la
         # descarga para imprimir. Miguel Ángel: "no encuentro el QR".
-        "qr_svg": qr.qr_image(qr.public_url(request, qr.sheet_for(machine)),
-                              "svg", scale=4),
+        "qr_svg": _scalable_svg(qr.qr_image(
+            qr.public_url(request, qr.sheet_for(machine)), "svg", scale=4)),
         "qr_public_url": qr.public_url(request, qr.sheet_for(machine)),
         "qr_image_url": reverse("new_ui:machine_qr_image",
                                 args=[machine.pk]),
