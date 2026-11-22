@@ -49,8 +49,23 @@
     // La vista ocupa justo la pantalla: sin barra de desplazamiento de la
     // página (S163, Miguel Ángel); cada panel desplaza lo suyo. Se mide
     // lo que sobra por debajo (márgenes del panel) y se descuenta.
+    // La página nunca se desplaza (S163): al enfocar un campo, el
+    // navegador de la tableta subía todo y dejaba hueco debajo.
+    const wide = window.matchMedia("(min-width: 992px)");
+    function lockScroll() {
+        document.documentElement.classList.toggle("nui-locked", wide.matches);
+        if (wide.matches && (window.scrollY || document.documentElement.scrollTop)) {
+            window.scrollTo(0, 0);
+        }
+    }
+    window.addEventListener("scroll", function () { if (wide.matches) lockScroll(); }, {passive: true});
+    document.addEventListener("focusout", function () { setTimeout(lockScroll, 50); });
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", function () { setTimeout(fitHeight, 50); });
+    }
     function fitHeight() {
-        if (window.matchMedia("(max-width: 991.98px)").matches) { root.style.height = ""; return; }
+        lockScroll();
+        if (!wide.matches) { root.style.height = ""; return; }
         const top = root.getBoundingClientRect().top + window.scrollY;
         let height = Math.max(300, window.innerHeight - top - 4);
         root.style.height = height + "px";

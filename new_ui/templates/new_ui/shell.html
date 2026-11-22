@@ -44,6 +44,12 @@ new_ui/static/new_ui/js/new_ui.js. De momento solo para el superusuario.
 /* S163: sin márgenes que se coman la pantalla (solo en esta página). */
 .page-content { padding: 4px 8px !important; }
 .top-navbar { padding-top: 4px !important; padding-bottom: 4px !important; min-height: 0 !important; }
+/* S163 (Miguel Ángel): la página no se desplaza nunca; la parte de arriba
+   queda fija y solo se reparte el alto con la barra entre los paneles. */
+@media (min-width: 992px) {
+  html.nui-locked, html.nui-locked body { height: 100%; overflow: hidden !important; overscroll-behavior: none; }
+  html.nui-locked .main-wrapper, html.nui-locked .main-content { min-height: 0 !important; }
+}
 #nui { display: flex; flex-direction: column; gap: 0; --nui-top: 270px; --nui-sel: 30%; min-height: 300px; }
 .nui-top { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1.25fr); gap: 8px; height: var(--nui-top); flex: none; }
 .nui-bottom { display: flex; gap: 0; flex: 1 1 auto; min-height: 150px; }
