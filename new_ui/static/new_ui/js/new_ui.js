@@ -360,16 +360,116 @@
             const f = ev.target.closest("[data-nui-action-form]");
             if (!f) return;
             ev.preventDefault();
+            const submitter = ev.submitter || null;
+            const ask = submitter && submitter.dataset.nuiConfirm;
+            if (ask && !window.confirm(ask)) return;
             const body = new FormData(f);
+            if (submitter && submitter.name) body.append(submitter.name, submitter.value);
             if (f.hasAttribute("data-nui-needs-selection")) {
                 const ids = Array.from(sel().keys());
                 if (!ids.length) { result("Marca primero en el listado las filas a las que aplicarlo.", true); return; }
                 ids.forEach(id => body.append("selected", id));
             }
-            post(f.getAttribute("action"), body)
-                .then(function (data) { result(data.message || "Hecho.", false); load(); })
+            const url = (submitter && submitter.getAttribute("formaction")) || f.getAttribute("action");
+            if (f.hasAttribute("data-nui-download")) { download(url, body); return; }
+            post(url, body)
+                .then(function (data) {
+                    result(data.message || "Hecho.", false);
+                    const pkInput = f.querySelector('[name="template_pk"]');
+                    if (pkInput && data.id) pkInput.value = data.id;
+                    load();
+                })
                 .catch(function (err) { result(err.message, true); });
         });
+        // Acciones que devuelven un archivo (dosieres, S163): se descarga
+        // sin salir de la vista; si vuelve JSON es un aviso o, al
+        // comprobar una plantilla, las filas a resaltar.
+        function download(url, body) {
+            result("Preparando…", false);
+            fetch(url, {method: "POST", credentials: "same-origin", body: body, headers: {"X-CSRFToken": csrf()}})
+                .then(function (r) {
+                    const type = r.headers.get("Content-Type") || "";
+                    if (type.indexOf("application/json") !== -1) {
+                        return r.json().then(function (data) {
+                            if (!r.ok || data.ok === false) throw new Error(data.message || data.error || ("Error " + r.status));
+                            markMissing(data.missing || null);
+                            result(data.message || "Hecho.", false);
+                        });
+                    }
+                    if (!r.ok) return r.text().then(function (t) { throw new Error(t || ("Error " + r.status)); });
+                    const disposition = r.headers.get("Content-Disposition") || "";
+                    const match = /filename="?([^";]+)"?/.exec(disposition);
+                    let note = "Descargado.";
+                    try { note = JSON.parse(r.headers.get("X-Nui-Message") || '"Descargado."'); } catch (e) { /* aviso por defecto */ }
+                    return r.blob().then(function (blob) {
+                        const a = document.createElement("a");
+                        a.href = URL.createObjectURL(blob);
+                        a.download = match ? match[1] : "descarga";
+                        document.body.appendChild(a);
+                        a.click();
+                        setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+                        result(note, false);
+                    });
+                })
+                .catch(function (err) { result(err.message, true); });
+        }
+        function markMissing(ids) {
+            const box = pane();
+            if (!box || ids === null) return;
+            box.querySelectorAll("tr.nui-missing").forEach(tr => tr.classList.remove("nui-missing"));
+            ids.forEach(function (id) {
+                const mark = box.querySelector('.nui-rowmark[value="' + CSS.escape(String(id)) + '"]');
+                if (mark) mark.closest("tr").classList.add("nui-missing");
+            });
+        }
+        // Plantillas de dosier (Documentos › Dosieres): ámbito, nueva y
+        // «Modificar» desde Esta fila (enlace #nui-dossier-edit-<pk>).
+        const dossierForm = document.getElementById("nui-dossier-form");
+        function dossierScope(scope, locked) {
+            if (!dossierForm) return;
+            dossierForm.querySelectorAll('[name="scope"]').forEach(function (r) { r.checked = r.value === scope; r.disabled = !!locked && r.value !== scope; });
+            dossierForm.querySelectorAll("[data-nui-dossier-scope]").forEach(function (box) {
+                const on = box.dataset.nuiDossierScope === scope;
+                box.classList.toggle("d-none", !on);
+                box.querySelectorAll("input").forEach(i => { i.disabled = !on; });
+            });
+        }
+        function dossierReset() {
+            dossierForm.reset();
+            dossierForm.querySelector('[name="template_pk"]').value = "";
+            dossierForm.querySelector("[data-nui-dossier-title]").innerHTML = '<i class="bi bi-plus-circle me-1"></i>Nueva plantilla';
+            dossierScope("PERSONAL", false);
+        }
+        if (dossierForm) {
+            dossierForm.addEventListener("change", function (ev) {
+                if (ev.target.name === "scope") dossierScope(ev.target.value, false);
+            });
+            dossierForm.querySelector("[data-nui-dossier-new]").addEventListener("click", dossierReset);
+            document.addEventListener("click", function (ev) {
+                const link = ev.target.closest('a[href^="#nui-dossier-edit-"]');
+                if (!link) return;
+                ev.preventDefault();
+                const pk = link.getAttribute("href").replace("#nui-dossier-edit-", "");
+                fetch(dossierForm.dataset.dataUrl.replace("/0/", "/" + pk + "/"), {credentials: "same-origin"})
+                    .then(r => r.json())
+                    .then(function (data) {
+                        if (!data.ok) throw new Error(data.message || "No se ha podido cargar.");
+                        dossierReset();
+                        dossierForm.querySelector('[name="template_pk"]').value = data.id;
+                        dossierForm.querySelector('[name="name"]').value = data.name;
+                        dossierForm.querySelector("[data-nui-dossier-title]").innerHTML = '<i class="bi bi-pencil-square me-1"></i>Modificar «' + data.name.replace(/[<>&]/g, "") + "»";
+                        dossierScope(data.scope, true);
+                        const types = new Set(data.type_ids.map(String));
+                        const epis = new Set(data.epi_ids.map(String));
+                        dossierForm.querySelectorAll('[name="document_type_ids"]').forEach(c => { c.checked = !c.disabled && types.has(c.value); });
+                        dossierForm.querySelectorAll('[name="epi_item_ids"]').forEach(c => { c.checked = !c.disabled && epis.has(c.value); });
+                        showTab(panelOf("acciones"), "vista", true);
+                        result("Plantilla cargada: cambia lo que haga falta y guarda.", false);
+                    })
+                    .catch(function (err) { result(err.message, true); });
+            });
+            dossierScope("PERSONAL", false);
+        }
 
         // Acciones › Esta fila: las acciones de la fila marcada (una sola).
         function paintRowActions() {

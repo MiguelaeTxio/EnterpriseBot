@@ -1310,6 +1310,9 @@ def _doc_lists():
                     "created_at", "text-nowrap"),
             ], "created_at", search=("name",), default_order=("name",),
             company_field="company", person=False,
+            # S163: «Modificar» la carga en el editor de Acciones.
+            actions=lambda r: [("Modificar", "bi-pencil-square",
+                                "#nui-dossier-edit-%d" % r.pk)],
             note="Periodo: fecha de creación."),
         "avisos": fk(
             "Avisos", "document_management.DocumentAlert", (), [

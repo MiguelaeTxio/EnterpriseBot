@@ -12,7 +12,7 @@ interfaz antigua.
 from django.urls import path
 
 from new_ui import (
-    state, views, views_circulars, views_docs, views_groups,
+    state, views, views_circulars, views_docs, views_dossiers, views_groups,
 )
 
 app_name = "new_ui"
@@ -33,6 +33,25 @@ urlpatterns = [
     path("grupos/<str:kind>/<int:group_pk>/eliminar/",
          views_groups.GroupDeleteView.as_view(), name="group_delete"),
     # Documentos y ficha.
+    # Dosieres (S163).
+    path("dosieres/plantilla/<int:pk>/",
+         views_dossiers.DossierTemplateDataView.as_view(),
+         name="dossier_template_data"),
+    path("dosieres/plantilla/guardar/",
+         views_dossiers.DossierTemplateSaveView.as_view(),
+         name="dossier_template_save"),
+    path("dosieres/plantillas/borrar/",
+         views_dossiers.DossierTemplateDeleteView.as_view(),
+         name="dossier_template_delete"),
+    path("dosieres/documentos/",
+         views_dossiers.DossierDocumentsView.as_view(),
+         name="dossier_documents"),
+    path("dosieres/<str:section>/aplicar/",
+         views_dossiers.DossierTemplateApplyView.as_view(),
+         name="dossier_apply"),
+    path("dosieres/<str:section>/comprobar/",
+         views_dossiers.DossierMissingCheckView.as_view(),
+         name="dossier_missing_check"),
     path("documento/<int:pk>/", views_docs.DocumentFileView.as_view(),
          name="document_file"),
     path("subir/<str:domain>/<int:subject_pk>/",

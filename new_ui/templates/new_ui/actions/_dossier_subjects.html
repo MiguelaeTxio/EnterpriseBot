@@ -1,0 +1,54 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_dossier_subjects.html #}
+{% comment %}
+S163. Dosieres en Personal y Centros de gasto (Acciones › De la vista),
+copiados de la interfaz antigua (selección de documentos de la ficha,
+plantillas y correo conjunto). Sin desplegables: botones de opción.
+- «Documentos»: dosier con los documentos marcados.
+- «General»: dosier de las personas o máquinas marcadas con una
+  plantilla, y comprobar a quién le falta algo de ella.
+Variables: noun ("persona" / "máquina"), section ("per" / "cdg").
+{% endcomment %}
+<div class="d-none" data-nui-actions-for="documentos">
+    <form data-nui-action-form data-nui-needs-selection data-nui-download action="{% url 'new_ui:dossier_documents' %}">
+        {% csrf_token %}
+        <div class="small fw-semibold mb-1"><i class="bi bi-collection me-1"></i>Dosier con los documentos marcados</div>
+        <div class="d-flex flex-wrap gap-2 small mb-1" role="radiogroup" aria-label="Cómo">
+            {% for code, label in dossier_formats %}
+            <label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="format" value="{{ code }}" {% if forloop.first %}checked{% endif %}> <span class="form-check-label">{{ label }}</span></label>
+            {% endfor %}
+        </div>
+        <div class="d-flex flex-wrap gap-1">
+            <button type="submit" name="action" value="download" class="btn btn-sm btn-primary"><i class="bi bi-download me-1"></i>Descargar</button>
+            <button type="submit" name="action" value="email" class="btn btn-sm btn-outline-primary"><i class="bi bi-envelope me-1"></i>Correo (borrador de Outlook)</button>
+        </div>
+        <p class="small text-muted mt-1 mb-0">Con documentos de varias {{ noun }}s sale un dosier de cada una, todos juntos. Las nóminas confidenciales nunca entran.</p>
+    </form>
+</div>
+<div class="d-none" data-nui-actions-for="general">
+    <form data-nui-action-form data-nui-needs-selection data-nui-download action="{% url 'new_ui:dossier_apply' section %}">
+        {% csrf_token %}
+        <div class="small fw-semibold mb-1"><i class="bi bi-collection me-1"></i>Dosier de las {{ noun }}s marcadas</div>
+        {% if dossier_templates %}
+        <div class="small text-muted">Plantilla:</div>
+        <div class="d-flex flex-wrap gap-2 small mb-1" role="radiogroup" aria-label="Plantilla">
+            {% for pk, name in dossier_templates %}
+            <label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="template_id" value="{{ pk }}" {% if forloop.first %}checked{% endif %}> <span class="form-check-label">{{ name }}</span></label>
+            {% endfor %}
+        </div>
+        <div class="small text-muted">Cómo:</div>
+        <div class="d-flex flex-wrap gap-2 small mb-1" role="radiogroup" aria-label="Cómo">
+            {% for code, label in dossier_formats %}
+            <label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="format" value="{{ code }}" {% if forloop.first %}checked{% endif %}> <span class="form-check-label">{{ label }}</span></label>
+            {% endfor %}
+        </div>
+        <div class="d-flex flex-wrap gap-1">
+            <button type="submit" name="action" value="download" class="btn btn-sm btn-primary"><i class="bi bi-download me-1"></i>Descargar</button>
+            <button type="submit" name="action" value="email" class="btn btn-sm btn-outline-primary"><i class="bi bi-envelope me-1"></i>Correo (borrador de Outlook)</button>
+            <button type="submit" name="action" value="check" formaction="{% url 'new_ui:dossier_missing_check' section %}" class="btn btn-sm btn-outline-warning"><i class="bi bi-exclamation-triangle me-1"></i>¿A quién le falta algo?</button>
+        </div>
+        <p class="small text-muted mt-1 mb-0">Va el documento vigente de cada tipo de la plantilla en este momento; todo en una descarga o en un solo correo.</p>
+        {% else %}
+        <p class="small text-muted mb-0">No hay plantillas de dosier de {{ noun }}s. Se crean en Documentos › Dosieres.</p>
+        {% endif %}
+    </form>
+</div>

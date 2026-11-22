@@ -31,8 +31,10 @@ Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
 - ⬜ Crear un tipo documental al vuelo
 - ⬜ Descargar varios (elegir) y papelera de descargas
 - ⬜ Selección de documentos: vista previa, PDF único, ZIP, enviar por correo
-- ⬜ Dosieres: plantillas (crear, editar, borrar), aplicar a una persona o
-  máquina, comprobar los que faltan en masa, enviar lote por correo
+- ✅ Dosieres (S163): plantillas (crear, modificar, borrar) en Documentos ›
+  Dosieres; dosier de los documentos marcados (Personal/Centros de gasto ›
+  Documentos); dosier de los marcados con plantilla, todo junto, para
+  descargar o en un correo, y «¿A quién le falta algo?» (› General)
 
 ## Personal
 - ✅ Ficha sin acordeones: datos, contacto, empresa y puesto, caducidades,

@@ -32,6 +32,7 @@ from django.views import View
 
 from document_explorer.models import DocumentTypeCatalog
 from ivr_config.models import Company, CompanyUser
+from new_ui.views_dossiers import dossier_context
 from new_ui.mixins import SuperuserRequiredMixin
 from new_ui.models import UiUserGroup, UiViewGrant
 from new_ui.state import apply_list_navigation
@@ -287,6 +288,7 @@ def _section_context(company_user, section):
             if code in (DocumentTypeCatalog.DOMAIN_PERSONAL,
                         DocumentTypeCatalog.DOMAIN_BOTH,
                         DocumentTypeCatalog.DOMAIN_COMPANY)],
+        **dossier_context(section, company_user.company),
         "selections": selections,
         "scope": scope if isinstance(scope, dict) and scope.get("pk")
         else None,
