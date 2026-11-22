@@ -15,7 +15,7 @@ S163. Acceso al panel, reenviar el alta, base y empresa de los marcados
             {% csrf_token %}
             <button type="submit" class="btn btn-sm btn-outline-secondary" data-nui-confirm="¿Reenviar por WhatsApp el alta en el fichaje a los marcados?">Reenviar el alta</button>
             <label class="form-check form-check-inline small mb-0"><input class="form-check-input" type="checkbox" name="keep_password" value="1"> <span class="form-check-label">Sin cambiarles la contraseña</span></label>
-        </div>
+        </form>
         <p class="small text-muted mt-1 mb-0">La contraseña es siempre las cuatro últimas cifras de su DNI.</p>
     </div>
     <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:mass_base' %}" class="mt-3">
