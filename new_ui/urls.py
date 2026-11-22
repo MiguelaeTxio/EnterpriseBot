@@ -15,7 +15,8 @@ from new_ui import (
     state, views, views_circulars, views_docs, views_dossiers, views_groups,
     views_access, views_doc_actions, views_notify, views_personnel,
     views_epis, views_machines, views_medical, views_photos,
-    views_logbook, views_requirements, views_schedules, views_service,
+    views_logbook, views_refuels, views_requirements, views_schedules,
+    views_service,
 )
 
 app_name = "new_ui"
@@ -45,6 +46,13 @@ urlpatterns = [
          name="reading_add"),
     path("revisiones/borrar/", views_service.ServiceRowsDeleteView.as_view(),
          name="service_rows_delete"),
+    # Repostajes del surtidor (S163).
+    path("repostajes/unidad/", views_refuels.RefuelUnitView.as_view(),
+         name="refuel_unit"),
+    path("repostajes/preguntar/", views_refuels.RefuelAskView.as_view(),
+         name="refuel_ask"),
+    path("repostajes/contador/", views_refuels.RefuelMeterView.as_view(),
+         name="refuel_meter"),
     path("libro-historial/escaneo/",
          views_logbook.ReviewScanUploadView.as_view(),
          name="review_scan_upload"),
