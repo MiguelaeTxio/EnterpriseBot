@@ -54,7 +54,7 @@ Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
 - ✅ (S163) Empresa, horario, sección y base en masa (sección de uno: marcarlo en Horarios)
 - ✅ (S163) Bajas médicas: añadir a la persona abierta, dar el alta y borrar (Personal › Salud)
 - ✅ (S163) Preparar Docuten (General › Acciones: circular con firma, obra, los tres archivos)
-- ⬜ EPIs: entrega por lotes, plantillas de lote, historial, ficha técnica
+- ✅ (S163) EPIs: entregar (a los marcados o a la persona abierta, con lotes), lotes (crear, modificar, borrar), historial de un EPI, documento de entrega, fichas técnicas (Catálogo de EPIs)
 - ⬜ Parte del día (detalle de jornada)
 
 ## Circulares

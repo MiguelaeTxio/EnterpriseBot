@@ -537,6 +537,41 @@ def _clock_mode_label(state):
         "Normal (su sección)")
 
 
+# ----------------------------------------------------------------- EPIs
+def _epi_sheets(epi):
+    """Ids of the technical sheets of an EPI (documents linked to it)."""
+    from document_explorer.models import DocumentIndexEntry
+
+    return list(DocumentIndexEntry.objects.filter(
+        domain_content_type=ContentType.objects.get_for_model(epi),
+        domain_object_id=epi.pk, deleted_at__isnull=True,
+        purged_at__isnull=True).values_list("pk", flat=True))
+
+
+def _epi_delivery_actions(delivery):
+    """
+    Row actions of an EPI delivery.
+
+    ---
+
+    Acciones de una entrega de EPI: ver su documento de entrega y el
+    historial de ese EPI de esa persona (el propio listado, filtrado).
+    """
+    from urllib.parse import quote
+
+    actions = []
+    if delivery.source_entry_id:
+        actions.append(("Ver documento de entrega", "bi-file-earmark-text",
+                        reverse("new_ui:document_file",
+                                args=[delivery.source_entry_id])))
+    if delivery.epi_id and delivery.person_id:
+        actions.append(("Historial de este EPI", "bi-clock-history",
+                        "#nui-epi-history:%d:%d:%s" % (
+                            delivery.person_id, delivery.epi_id,
+                            quote(person_name(delivery.person), safe=""))))
+    return actions
+
+
 # --------------------------------------------------------- documentos
 def _documents(domain_model, family=None, expiring=False):
     def queryset(company):
@@ -1364,7 +1399,33 @@ def _per_lists():
                     r.destination_machine), "destination_machine__code"),
             ], "delivery_date", search=("epi__label",),
             default_order=("-delivery_date",),
+            actions=_epi_delivery_actions,
             note="Periodo: fecha de entrega."),
+        # S163: el catálogo de EPIs (fichas técnicas y lotes en Acciones).
+        "catalogo_epis": ListDef(
+            "Catálogo de EPIs",
+            lambda company: apps.get_model(
+                "document_explorer.EpiItemCatalog").objects.filter(
+                is_active=True),
+            [
+                Col("epi", "EPI", lambda r: r.label, "label"),
+                Col("familia", "Familia", lambda r: r.family, "family"),
+                Col("codigo", "Código", lambda r: r.code, "code"),
+                Col("revision", "Revisión periódica", lambda r: "Sí"
+                    if r.requires_periodic_review else "",
+                    "requires_periodic_review"),
+                Col("fichas", "Fichas técnicas",
+                    lambda r: len(_epi_sheets(r)), "", "text-end"),
+                Col("entregas", "Entregas", lambda r: r.deliveries.count()
+                    if hasattr(r, "deliveries") else "", "", "text-end"),
+            ],
+            search=("label", "code", "family"),
+            default_order=("family", "label"),
+            actions=lambda r: [
+                ("Ficha técnica %d" % (n + 1), "bi-file-earmark-text",
+                 reverse("new_ui:document_file", args=[entry_pk]))
+                for n, entry_pk in enumerate(_epi_sheets(r))],
+            note="El periodo no se aplica a este listado."),
         "requisitos": ListDef(
             "Requisitos",
             lambda company: persons_base().prefetch_related(

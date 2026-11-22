@@ -720,6 +720,49 @@
                   .finally(function () { createBtn.disabled = false; });
             });
         }
+        // EPIs (S163): en General se entrega a los marcados; en EPIs, a
+        // la persona abierta. Un lote marca sus EPIs de golpe.
+        root.addEventListener("submit", function (ev) {
+            const form = ev.target;
+            if (!form.hasAttribute || !form.hasAttribute("data-nui-epi-form")) return;
+            const input = form.querySelector('[name="person_ids"]');
+            if (tab() === "general") {
+                input.value = "";
+                const ids = Array.from(sel().keys());
+                form.querySelectorAll("[data-nui-temp]").forEach(el => el.remove());
+                ids.forEach(function (id) {
+                    const extra = document.createElement("input");
+                    extra.type = "hidden"; extra.name = "selected"; extra.value = id;
+                    extra.setAttribute("data-nui-temp", "");
+                    form.appendChild(extra);
+                });
+            }
+        }, true);
+        root.addEventListener("click", function (ev) {
+            const batch = ev.target.closest("[data-nui-epi-batch]");
+            if (batch) {
+                const items = new Set(batch.dataset.nuiEpiBatch.split(",").filter(Boolean));
+                batch.closest("form").querySelectorAll('[name="epi_ids"]').forEach(c => { c.checked = items.has(c.value); });
+                return;
+            }
+            const edit = ev.target.closest("[data-nui-epi-batch-edit]");
+            const fresh = ev.target.closest("[data-nui-epi-batch-new]");
+            if (!edit && !fresh) return;
+            const form = (edit || fresh).closest("form");
+            form.querySelector('[name="batch_pk"]').value = edit ? edit.dataset.nuiEpiBatchEdit : "";
+            form.querySelector('[name="name"]').value = edit ? edit.dataset.name : "";
+            const items = new Set(edit ? edit.dataset.items.split(",").filter(Boolean) : []);
+            form.querySelectorAll('[name="item_ids"]').forEach(c => { c.checked = items.has(c.value); });
+        });
+        document.addEventListener("click", function (ev) {
+            const link = ev.target.closest('a[href^="#nui-epi-history:"]');
+            if (!link) return;
+            ev.preventDefault();
+            const parts = link.getAttribute("href").slice(1).split(":");
+            ownFilter("x_epis_epi", parts[2], "Este EPI");
+            result("Historial de ese EPI de esta persona.", false);
+            setScope({pk: parts[1], label: decodeURIComponent(parts[3] || "")}, "epis");
+        });
         // Horario: qué partes del formulario se ven según las casillas.
         const scheduleForm = document.getElementById("nui-schedule-form");
         function scheduleParts() {

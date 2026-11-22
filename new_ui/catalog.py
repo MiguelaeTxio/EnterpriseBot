@@ -61,6 +61,7 @@ SECTIONS = OrderedDict([
         ("tipos_fichaje", "Tipos de fichaje"),
         ("nominas", "Nóminas"),
         ("epis", "EPIs"),
+        ("catalogo_epis", "Catálogo de EPIs"),
         ("requisitos", "Requisitos"),
     ])),
     ("cdg", ("Centros de gasto", "bi-truck", [

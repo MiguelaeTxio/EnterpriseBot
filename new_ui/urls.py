@@ -14,7 +14,7 @@ from django.urls import path
 from new_ui import (
     state, views, views_circulars, views_docs, views_dossiers, views_groups,
     views_access, views_doc_actions, views_notify, views_personnel,
-    views_medical, views_photos,
+    views_epis, views_medical, views_photos,
     views_requirements, views_schedules,
 )
 
@@ -36,6 +36,15 @@ urlpatterns = [
     path("grupos/<str:kind>/<int:group_pk>/eliminar/",
          views_groups.GroupDeleteView.as_view(), name="group_delete"),
     # Documentos y ficha.
+    # EPIs (S163).
+    path("epis/entregar/", views_epis.NuiEpiDeliveryView.as_view(),
+         name="epi_deliver"),
+    path("epis/lotes/guardar/", views_epis.NuiEpiBatchSaveView.as_view(),
+         name="epi_batch_save"),
+    path("epis/lotes/borrar/", views_epis.NuiEpiBatchDeleteView.as_view(),
+         name="epi_batch_delete"),
+    path("epis/ficha-tecnica/", views_epis.NuiEpiSheetUploadView.as_view(),
+         name="epi_sheet_upload"),
     # Bajas médicas (S163).
     path("bajas/nueva/", views_medical.MedicalLeaveAddView.as_view(),
          name="medical_add"),
