@@ -1211,7 +1211,8 @@
             const block = root.querySelector('[data-nui-cols-for="' + tab() + '"]');
             const cols = block ? Array.from(block.querySelectorAll("[data-nui-col]")).filter(c => c.checked) : [];
             box.innerHTML = "";
-            [["", "nada"]].concat(cols.map(c => [c.value, c.nextElementSibling ? c.nextElementSibling.textContent.trim() : c.value])).forEach(function ([value, label], i) {
+            const byGroups = (section === "per" || section === "cdg") ? [["__grupos", "grupos marcados en Selección"]] : [];
+            [["", "nada"]].concat(cols.map(c => [c.value, c.nextElementSibling ? c.nextElementSibling.textContent.trim() : c.value]), byGroups).forEach(function ([value, label], i) {
                 const l = document.createElement("label");
                 l.className = "form-check form-check-inline mb-0 ms-1";
                 l.innerHTML = '<input class="form-check-input" type="radio" name="nui_split"> <span class="form-check-label"></span>';
@@ -1287,6 +1288,11 @@
                 }
                 const split = root.querySelector('[name="nui_split"]:checked');
                 const p = params({export_format: button.dataset.nuiExport, split_col: split ? split.value : ""});
+                if (split && split.value === "__grupos") {
+                    const marked = Array.from(root.querySelectorAll(".person-group-select-checkbox:checked")).map(el => el.dataset.pk);
+                    if (!marked.length) { result("Marca en Selección los grupos con los que separar las hojas.", true); return; }
+                    p.set("split_groups", marked.join(","));
+                }
                 Array.from(sel().keys()).forEach(pk => p.append("selected", pk));
                 const url = urls.export + "?" + p.toString();
                 if (button.dataset.nuiExport === "print" || button.dataset.nuiExport === "html") window.open(url, "_blank");

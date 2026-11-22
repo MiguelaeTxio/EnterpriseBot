@@ -723,7 +723,10 @@ class NewUiExportView(SuperuserRequiredMixin, View):
         split_key = request.GET.get("split_col", "")
         keys = [c.key for c in columns]
         groups = [(definition.label, rows)]
-        if split_key in keys:
+        if split_key == "__grupos" and definition.entity:
+            groups = _split_by_groups(company_user, section, rows,
+                                      request.GET.get("split_groups", ""))
+        elif split_key in keys:
             position = keys.index(split_key)
             buckets = {}
             for row in rows:
@@ -745,6 +748,48 @@ class NewUiExportView(SuperuserRequiredMixin, View):
         return workbook_response(
             request, workbook,
             "%s_%s" % (SECTIONS[section][0], definition.label))
+
+
+def _split_by_groups(company_user, section, rows, raw_groups):
+    """
+    [(group name, rows)] for the chosen selection groups.
+
+    ---
+
+    S163 (como «Separar por grupos de selección» de la exportación
+    antigua): una hoja por cada grupo marcado en Selección, contando sus
+    subgrupos; una persona o máquina sale en cada grupo en el que esté y
+    lo que no cae en ninguno va al final como «Sin grupo».
+    """
+    from new_ui.groups import MACHINE_KIND, PERSON_KIND, group_tree
+
+    kind = MACHINE_KIND if section == "cdg" else PERSON_KIND
+    nodes = {node["group"].pk: node
+             for node in group_tree(company_user, kind)
+             if node["kind"] == "group"}
+
+    def members(pk, seen):
+        if pk in seen or pk not in nodes:
+            return set()
+        seen.add(pk)
+        ids = set(nodes[pk]["member_ids"])
+        for child in nodes[pk]["children"]:
+            ids |= members(child, seen)
+        return ids
+
+    wanted = [int(v) for v in raw_groups.split(",") if v.isdigit()]
+    groups, placed = [], set()
+    for pk in wanted:
+        if pk not in nodes:
+            continue
+        ids = members(pk, set())
+        placed |= ids
+        groups.append((nodes[pk]["group"].name,
+                       [r for r in rows if r["entity_pk"] in ids]))
+    rest = [r for r in rows if r["entity_pk"] not in placed]
+    if rest or not groups:
+        groups.append(("Sin grupo", rest))
+    return groups
 
 
 def _fill_sheet(sheet, columns, rows, Font, PatternFill):

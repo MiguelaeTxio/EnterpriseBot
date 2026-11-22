@@ -44,7 +44,7 @@ Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
   un documento · girar · modo automático · cola de fotos (General) ·
   elegir una imagen como foto («Esta fila» en Documentos)
 - ✅ (S163) Alta de trabajador (guiada por documentos o a mano; reactiva si está de baja) · baja · deshacer baja · recontratar
-- ✅ (S163) Exportar con plantillas de columnas (guardar, aplicar, borrar; en todas las vistas) y separar en hojas por una columna (empresa, sección...) · ⬜ separar por grupos de selección
+- ✅ (S163) Exportar con plantillas de columnas (guardar, aplicar, borrar; en todas las vistas) y separar en hojas por una columna (empresa, sección...) y por los grupos de selección marcados
 - ✅ (S163) Requisitos de documentación: añadir/quitar a los marcados
   (Personal y Centros de gasto); crear, modificar, activar, borrar y
   categoría de un tipo (Documentos › Requisitos)
