@@ -37,6 +37,7 @@ SECTIONS = OrderedDict([
         ("circulares", "Circulares"),
         ("plantillas_circular", "Plantillas de circular"),
         ("dosieres", "Dosieres"),
+        ("lista_requisitos", "Requisitos"),
         ("avisos", "Avisos"),
         ("pedir", "Pedir documentos"),
         ("firmas", "Firmas"),

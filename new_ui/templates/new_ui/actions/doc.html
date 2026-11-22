@@ -91,3 +91,69 @@ new_ui.js enseña el de la vista abierta. Formularios:
         <button type="submit" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Borrar las plantillas marcadas? Los documentos no se tocan."><i class="bi bi-trash me-1"></i>Borrar las marcadas</button>
     </form>
 </div>
+<div class="d-none" data-nui-actions-for="lista_requisitos">
+    {# S163: requisitos de documentación (antes, el gestor de Requisitos). #}
+    <form data-nui-action-form action="{% url 'new_ui:requirement_save' %}" id="nui-requirement-form" data-data-url="{% url 'new_ui:requirement_data' 0 %}" data-new-title="Nuevo requisito">
+        {% csrf_token %}
+        <input type="hidden" name="position_pk" value="" data-nui-pk>
+        <div class="d-flex align-items-center gap-2 mb-1">
+            <div class="small fw-semibold" data-nui-form-title><i class="bi bi-plus-circle me-1"></i>Nuevo requisito</div>
+            <button type="button" class="btn btn-sm btn-link py-0 ms-auto" data-nui-form-new>Empezar uno nuevo</button>
+        </div>
+        <input type="text" name="name" class="form-control form-control-sm mb-1" placeholder="Nombre (p. ej. Gruista, Administrativo, Grúa móvil)" aria-label="Nombre" required>
+        <div class="d-flex flex-wrap gap-2 small mb-1" role="radiogroup" aria-label="Qué tipos ver">
+            <span class="text-muted">Ver:</span>
+            <label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="_req_group" value="all" checked data-nui-req-view> <span class="form-check-label">Todos</span></label>
+            {% for g in req_groups %}<label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="_req_group" value="{{ g.key }}" data-nui-req-view> <span class="form-check-label">{{ g.title }}</span></label>{% endfor %}
+        </div>
+        <div class="d-flex flex-wrap gap-2 small mb-1" role="radiogroup" aria-label="Categoría">
+            <span class="text-muted">Categoría:</span>
+            <label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="_req_cat" value="1" checked data-nui-req-view> <span class="form-check-label">1 (esencial)</span></label>
+            <label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="_req_cat" value="2" data-nui-req-view> <span class="form-check-label">2 (resto)</span></label>
+            <label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="_req_cat" value="all" data-nui-req-view> <span class="form-check-label">Las dos</span></label>
+        </div>
+        <div class="rounded px-2 py-1 mb-1 border">
+            <div class="small fw-semibold">Permiso de conducción: clases exigidas</div>
+            <div class="d-flex flex-wrap column-gap-3 small">
+                {% for cat in req_driving %}<label class="form-check mb-0" title="{{ cat.label }}"><input class="form-check-input" type="checkbox" name="driving_category_ids" value="{{ cat.pk }}"> <span class="form-check-label">{{ cat.code }}</span></label>{% endfor %}
+            </div>
+        </div>
+        {% for g in req_groups %}
+        <div data-nui-req-group="{{ g.key }}">
+            <div class="small fw-semibold mt-1">{{ g.title }}</div>
+            {% for s in g.sections %}
+            <div class="rounded px-2 py-1 mb-1" style="background: {{ s.color }};" data-nui-req-section>
+                <div class="small fw-semibold">{{ s.title }}</div>
+                <div class="d-flex flex-wrap column-gap-3 small">
+                    {% for pk, label, cat in s.items %}<label class="form-check mb-0" data-nui-req-cat="{{ cat }}"><input class="form-check-input" type="checkbox" name="document_type_ids" value="{{ pk }}"> <span class="form-check-label">{{ label }}</span></label>{% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endfor %}
+        <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-check2 me-1"></i>Guardar requisito</button>
+        <p class="small text-muted mt-1 mb-2">Los documentos marcados son obligatorios: disparan los avisos de falta y de caducidad. Con clases de permiso marcadas, «Carnet de conducir» solo avisa si falta. Para modificar uno: márcalo y «Esta fila» › Modificar. Se asignan en Personal y Centros de gasto.</p>
+    </form>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:requirement_bulk' %}" class="d-flex flex-wrap gap-1 mb-2">
+        {% csrf_token %}
+        <button type="submit" name="action" value="activate" class="btn btn-sm btn-outline-success">Activar los marcados</button>
+        <button type="submit" name="action" value="deactivate" class="btn btn-sm btn-outline-secondary">Desactivar (no avisan)</button>
+        <button type="submit" name="action" value="delete" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Borrar los requisitos marcados? Quien los tenga se queda sin ellos."><i class="bi bi-trash me-1"></i>Borrar</button>
+    </form>
+    <form data-nui-action-form action="{% url 'new_ui:requirement_type_category' %}">
+        {% csrf_token %}
+        <div class="small fw-semibold mb-1">Cambiar un tipo de categoría</div>
+        <input type="search" class="form-control form-control-sm mb-1" placeholder="Escribe para buscar el tipo…" aria-label="Buscar tipo" data-nui-filter-list>
+        <div class="border rounded px-2 py-1 mb-1 small" style="max-height: 9rem; overflow-y: auto;" data-nui-filter-target>
+            {% for g in req_groups %}{% for s in g.sections %}
+            <div data-nui-filter-group>
+                <div class="fw-semibold text-muted mt-1">{{ g.title }} · {{ s.title }}</div>
+                {% for pk, label, cat in s.items %}<label class="form-check mb-0" data-nui-filter-item><input class="form-check-input" type="radio" name="type_id" value="{{ pk }}" required> <span class="form-check-label">{{ label }} <span class="text-muted">(cat. {{ cat }})</span></span></label>{% endfor %}
+            </div>
+            {% endfor %}{% endfor %}
+        </div>
+        <div class="d-flex flex-wrap gap-1">
+            {% for code, label in req_categories %}<button type="submit" name="category" value="{{ code }}" class="btn btn-sm btn-outline-primary">Pasar a la {{ label|lower }}</button>{% endfor %}
+        </div>
+    </form>
+</div>

@@ -1505,6 +1505,32 @@ def _doc_lists():
             actions=lambda r: [("Modificar", "bi-pencil-square",
                                 "#nui-dossier-edit-%d" % r.pk)],
             note="Periodo: fecha de creación."),
+        # S163: el catálogo de requisitos (de personas y de máquinas).
+        "lista_requisitos": ListDef(
+            "Requisitos",
+            lambda company: model("document_explorer.JobPosition")
+            .objects.prefetch_related("required_document_types",
+                                      "required_driving_categories"),
+            [
+                Col("nombre", "Requisito", lambda r: r.name, "name"),
+                Col("activo", "Activo", lambda r: "Sí" if r.is_active
+                    else "No (no avisa)", "is_active"),
+                Col("tipos", "Documentos obligatorios", lambda r: short(
+                    ", ".join(t.label for t in
+                              r.required_document_types.all()), 120)),
+                Col("permiso", "Clases de permiso", lambda r: ", ".join(
+                    c.code for c in r.required_driving_categories.all())),
+                Col("personas", "Personas", lambda r: r.people.count(),
+                    "", "text-end"),
+                Col("maquinas", "Máquinas", lambda r: r.machines.count(),
+                    "", "text-end"),
+                Col("editado", "Editado", lambda r: fmt_datetime(
+                    r.updated_at), "updated_at", "text-nowrap"),
+            ],
+            search=("name",), default_order=("name",),
+            actions=lambda r: [("Modificar", "bi-pencil-square",
+                                "#nui-edit:nui-requirement-form:%d" % r.pk)],
+            note="El periodo no se aplica a este listado."),
         "avisos": fk(
             "Avisos", "document_management.DocumentAlert", (), [
                 Col("documento", "Documento", lambda r: r.document_label,

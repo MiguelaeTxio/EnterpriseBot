@@ -35,6 +35,7 @@ from ivr_config.models import Company, CompanyUser
 from new_ui.views_dossiers import dossier_context
 from new_ui.views_schedules import schedules_context
 from new_ui.views_doc_actions import doc_types_context
+from new_ui.views_requirements import requirements_context
 from new_ui.mixins import SuperuserRequiredMixin
 from new_ui.models import UiUserGroup, UiViewGrant
 from new_ui.state import apply_list_navigation
@@ -293,6 +294,7 @@ def _section_context(company_user, section):
         **dossier_context(section, company_user.company),
         **schedules_context(section, company_user.company),
         **doc_types_context(section),
+        **requirements_context(section),
         "selections": selections,
         "scope": scope if isinstance(scope, dict) and scope.get("pk")
         else None,

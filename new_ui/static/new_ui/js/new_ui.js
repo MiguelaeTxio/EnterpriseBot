@@ -572,6 +572,29 @@
                 group.classList.toggle("d-none", !any);
             });
         });
+        // Requisitos: ver solo un grupo (Personal, Centros de gasto,
+        // Comunes) y una categoría; lo marcado y oculto se conserva.
+        const reqForm = document.getElementById("nui-requirement-form");
+        function reqView() {
+            const group = (reqForm.querySelector('[name="_req_group"]:checked') || {}).value || "all";
+            const cat = (reqForm.querySelector('[name="_req_cat"]:checked') || {}).value || "all";
+            reqForm.querySelectorAll("[data-nui-req-group]").forEach(function (g) {
+                g.classList.toggle("d-none", group !== "all" && g.dataset.nuiReqGroup !== group);
+                g.querySelectorAll("[data-nui-req-section]").forEach(function (s) {
+                    let any = false;
+                    s.querySelectorAll("[data-nui-req-cat]").forEach(function (item) {
+                        const on = cat === "all" || item.dataset.nuiReqCat === cat;
+                        item.classList.toggle("d-none", !on);
+                        any = any || on;
+                    });
+                    s.classList.toggle("d-none", !any);
+                });
+            });
+        }
+        if (reqForm) {
+            reqForm.addEventListener("change", reqView);
+            reqView();
+        }
         // Horario: qué partes del formulario se ven según las casillas.
         const scheduleForm = document.getElementById("nui-schedule-form");
         function scheduleParts() {

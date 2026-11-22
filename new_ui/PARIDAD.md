@@ -45,8 +45,9 @@ Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
   elegir una imagen como foto («Esta fila» en Documentos)
 - ⬜ Alta de trabajador (con extracción del DNI) · ⬜ baja · ⬜ reactivar
 - ⬜ Exportar Personal con plantillas (guardar/borrar plantillas)
-- ⬜ Requisitos de documentación: asignar en masa, puestos (crear, editar,
-  activar, borrar, categoría)
+- ✅ (S163) Requisitos de documentación: añadir/quitar a los marcados
+  (Personal y Centros de gasto); crear, modificar, activar, borrar y
+  categoría de un tipo (Documentos › Requisitos)
 - ⬜ Contrato revisado
 - ⬜ Avisar / notificar (uno, en masa, WhatsApp)
 - ⬜ Acceso al panel (vista previa, crear, reenviar)
@@ -101,7 +102,7 @@ Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
 ## Centros de gasto
 - ✅ Ficha técnica, Modificar, foto, exportar tarjeta (5 formatos)
 - ✅ QR: código, descarga, observaciones, fotos y vídeos, contraseña editor
-- ⬜ Alta de máquina, requisito en masa, grupos (✅ grupos de selección)
+- ⬜ Alta de máquina · ✅ requisito en masa (S163) · ✅ grupos de selección
 - ⬜ Revisiones: nueva, borrar, plan en masa, guardar fila, exportar,
   revisiones que faltan
 - ⬜ Lecturas de contador: nueva, borrar

@@ -13,7 +13,7 @@ from django.urls import path
 
 from new_ui import (
     state, views, views_circulars, views_docs, views_dossiers, views_groups,
-    views_doc_actions, views_photos, views_schedules,
+    views_doc_actions, views_photos, views_requirements, views_schedules,
 )
 
 app_name = "new_ui"
@@ -34,6 +34,22 @@ urlpatterns = [
     path("grupos/<str:kind>/<int:group_pk>/eliminar/",
          views_groups.GroupDeleteView.as_view(), name="group_delete"),
     # Documentos y ficha.
+    # Requisitos de documentación (S163).
+    path("requisitos/<int:pk>/",
+         views_requirements.RequirementDataView.as_view(),
+         name="requirement_data"),
+    path("requisitos/guardar/",
+         views_requirements.RequirementSaveView.as_view(),
+         name="requirement_save"),
+    path("requisitos/marcados/",
+         views_requirements.RequirementBulkView.as_view(),
+         name="requirement_bulk"),
+    path("requisitos/categoria/",
+         views_requirements.TypeCategoryView.as_view(),
+         name="requirement_type_category"),
+    path("requisitos/<str:section>/asignar/",
+         views_requirements.RequirementAssignView.as_view(),
+         name="requirement_assign"),
     # Foto de la persona (S163).
     path("persona/<int:pk>/foto/panel/",
          views_photos.PersonPhotoPanelView.as_view(),
