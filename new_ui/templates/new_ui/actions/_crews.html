@@ -1,0 +1,24 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_crews.html -- S163: equipos (vehículo + persona): alta en la máquina abierta, terminar y borrar los marcados. Vista: new_ui/views_crews.py. #}
+<div class="d-none" data-nui-actions-for="equipos">
+    <form data-nui-action-form action="{% url 'new_ui:crew_create' %}" class="mb-3" data-nui-reset-after>
+        {% csrf_token %}
+        <input type="hidden" name="machine_pk" value="" data-nui-scope-input>
+        <div class="small fw-semibold mb-1"><i class="bi bi-plus-circle me-1"></i>Nuevo equipo en la máquina abierta</div>
+        <input type="search" class="form-control form-control-sm mb-1" placeholder="Escribe para buscar a la persona…" aria-label="Buscar persona" data-nui-filter-list>
+        <div class="border rounded px-2 py-1 mb-1 small" style="max-height: 8rem; overflow-y: auto;" data-nui-filter-target>
+            {% for pk, label in acc_people %}<label class="form-check mb-0" data-nui-filter-item><input class="form-check-input" type="checkbox" name="person" value="{{ pk }}"> <span class="form-check-label">{{ label }}</span></label>{% endfor %}
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-1">
+            <input type="date" name="date_start" class="form-control form-control-sm" style="width: 10rem;" aria-label="Desde" required>
+            <input name="notes" maxlength="255" class="form-control form-control-sm" style="max-width: 16rem;" placeholder="Notas">
+            <button type="submit" class="btn btn-sm btn-success">Crear equipo</button>
+        </div>
+    </form>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:crew_mass' %}" class="d-flex flex-wrap align-items-center gap-1">
+        {% csrf_token %}
+        <span class="small fw-semibold me-1">Los marcados</span>
+        <input type="date" name="date_end" class="form-control form-control-sm" style="width: 10rem;" aria-label="Fecha de fin (vacía: hoy)">
+        <button type="submit" name="action" value="end" class="btn btn-sm btn-outline-primary">Terminar</button>
+        <button type="submit" name="action" value="delete" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Borrar los equipos marcados? Para dejar historial, mejor terminarlos.">Borrar</button>
+    </form>
+</div>

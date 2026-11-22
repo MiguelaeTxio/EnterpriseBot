@@ -111,4 +111,4 @@ Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
 - ✅ (S163) Repostajes: unidad, preguntar (vehículo y, en Personal, chófer), contador; exportar con plantillas (Exportar y Columnas comunes)
 - ✅ (S163) Accesorios de elevación: alta (con certificado), estado (retirar/reactivar), revisión, entrega, devolución y otro certificado
   (uno y en masa), certificado, tipos y modelos
-- ⬜ Equipos: nuevo, acciones, exportar
+- ✅ (S163) Equipos: nuevo (máquina abierta + personas), terminar y borrar los marcados; exportar con el Exportar común
