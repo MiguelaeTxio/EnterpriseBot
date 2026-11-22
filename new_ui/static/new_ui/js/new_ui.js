@@ -66,13 +66,16 @@
     function fitHeight() {
         lockScroll();
         if (!wide.matches) { root.style.height = ""; return; }
+        // El borde de abajo va pegado al final de la pantalla siempre
+        // (S163): alto = 100dvh menos lo que hay encima, así sigue a la
+        // pantalla real (barras del navegador, teclado) sin esperar a JS.
         const top = root.getBoundingClientRect().top + window.scrollY;
-        let height = Math.max(300, window.innerHeight - top - 4);
-        root.style.height = height + "px";
+        let offset = Math.ceil(top) + 4;
+        root.style.height = "calc(100dvh - " + offset + "px)";
         const extra = document.documentElement.scrollHeight - window.innerHeight;
         if (extra > 0) {
-            height = Math.max(300, height - extra);
-            root.style.height = height + "px";
+            offset += extra;
+            root.style.height = "calc(100dvh - " + offset + "px)";
         }
         applyLayout();
     }
