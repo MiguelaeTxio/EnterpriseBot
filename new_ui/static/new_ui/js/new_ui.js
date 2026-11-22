@@ -1144,7 +1144,8 @@
             if (!(scope && scope.pk)) { box.innerHTML = ""; return Promise.resolve(); }
             const ticket = ++loading;
             box.innerHTML = '<p class="text-muted small p-3 mb-0">Cargando…</p>';
-            return fetch(urls.card + "?s=" + section + "&t=" + tab() + "&pk=" + scope.pk, {credentials: "same-origin"})
+            // Con el periodo del filtro común (Jornadas lo usa).
+            return fetch(urls.card + "?" + params({pk: scope.pk}).toString(), {credentials: "same-origin"})
                 .then(r => r.ok ? r.text() : Promise.reject(r.status))
                 .then(function (html) { if (ticket === loading) box.innerHTML = html; })
                 .catch(function () { if (ticket === loading) box.innerHTML = '<p class="text-danger small p-3 mb-0">No se ha podido cargar la ficha.</p>'; });

@@ -30,7 +30,7 @@ PERMISSIONS = "permisos"
 FICHA = "ficha"
 # Pestañas de una sola persona o máquina (no son listados): solo se ven
 # con ella elegida. "QR" (S163): la página del QR del centro de gasto.
-ENTITY_TABS = {"per": ("ficha",), "cdg": ("ficha", "qr")}
+ENTITY_TABS = {"per": ("ficha", "jornadas"), "cdg": ("ficha", "qr")}
 SECTIONS = OrderedDict([
     ("doc", ("Documentos", "bi-folder2-open", [
         ("bandeja", "Bandeja de entrada"),
@@ -51,6 +51,7 @@ SECTIONS = OrderedDict([
         ("laboral", "Laboral"),
         ("partes", "Partes"),
         ("fichajes", "Fichajes"),
+        ("jornadas", "Jornadas"),
         ("repostajes", "Repostajes"),
         ("vacaciones", "Vacaciones"),
         ("salud", "Salud"),

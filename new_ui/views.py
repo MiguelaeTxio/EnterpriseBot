@@ -1094,6 +1094,14 @@ class NewUiCardView(SuperuserRequiredMixin, View):
                 return HttpResponseBadRequest("No existe.")
             return render(request, "new_ui/_qr.html",
                           _machine_qr_context(request, machine))
+        if section == "per" and tab == "jornadas":
+            from new_ui.views_clock import render_jornadas
+
+            person = PersonIdentity.objects.filter(pk=int(pk)).select_related(
+                "company_user__company").first()
+            if person is None:
+                return HttpResponseBadRequest("No existe.")
+            return render_jornadas(request, person)
         if section == "cdg":
             machine = MachineAsset.objects.filter(
                 company=company_user.company, pk=int(pk)).first()
