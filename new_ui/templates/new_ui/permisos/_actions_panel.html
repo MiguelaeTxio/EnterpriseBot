@@ -1,19 +1,17 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/permisos/_actions_panel.html #}
 {% comment %}
-S163 (invasora UX). Permisos · Acciones: arriba siempre "N
-seleccionados · Limpiar · Solo los filtrados" (4.27); debajo, en
-pestañas, dar un nivel sobre una vista a todos los seleccionados. Cada
+S163 (invasora UX). Permisos · Acciones, en pestañas: dar un nivel
+sobre una vista a todos los seleccionados, y ver y cambiar los permisos
+de un usuario, grupo o rol (editor). "N seleccionados · Limpiar" está
+en el panel Selección. Cada
 acción avisa de lo que hizo o de por qué falló (#nui-result).
 {% endcomment %}
 <div class="nui-tabs nav" role="tablist">
     <button type="button" class="nav-link" data-nui-tab="permisos" role="tab">Dar permisos</button>
+    <button type="button" class="nav-link" data-nui-tab="ver" role="tab">Ver y cambiar</button>
     <button type="button" class="nav-link" data-nui-tab="ayuda" role="tab">Cómo se combinan</button>
 </div>
 <div class="nui-body">
-    <div class="d-flex align-items-center gap-2 mb-2">
-        <strong class="small"><span data-nui-count id="nui-mass-count">0</span> seleccionados</strong>
-        <button type="button" class="btn btn-sm btn-outline-secondary py-0" id="nui-mass-clear">Limpiar</button>
-    </div>
     <div data-nui-pane="permisos">
         <div class="row g-1 small">
             <div class="col-7">
@@ -33,6 +31,19 @@ acción avisa de lo que hizo o de por qué falló (#nui-result).
             </div>
         </div>
         <button type="button" class="btn btn-sm btn-success mt-2" id="nui-grant-apply">Aplicar a los seleccionados</button>
+    </div>
+    <div data-nui-pane="ver" class="d-none">
+        <label class="form-label small mb-1" for="nui-subject">Permisos de</label>
+        <select class="form-select form-select-sm mb-2" id="nui-subject">
+            <option value="">El usuario marcado (marca solo uno)</option>
+            <optgroup label="Grupos de usuarios">
+                {% for group in user_groups %}<option value="group:{{ group.pk }}">{{ group.name }}</option>{% endfor %}
+            </optgroup>
+            <optgroup label="Roles">
+                {% for code, label in roles %}<option value="role:{{ code }}">{{ label }}</option>{% endfor %}
+            </optgroup>
+        </select>
+        <div id="nui-editor"></div>
     </div>
     <div data-nui-pane="ayuda" class="d-none small">
         <ol class="ps-3 mb-0">

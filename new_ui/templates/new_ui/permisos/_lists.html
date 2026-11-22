@@ -11,7 +11,7 @@ new_ui/views.py.
     <table class="table table-sm table-hover align-middle small mb-0">
         <thead>
             <tr>
-                <th><input type="checkbox" class="form-check-input" id="nui-check-all" aria-label="Seleccionar todos" title="Seleccionar todos los que cumplen el filtro"></th>
+                <th><input type="checkbox" class="form-check-input" id="nui-all" aria-label="Seleccionar todos" title="Seleccionar todos los que cumplen el filtro"></th>
                 {% for col in user_headers %}
                 <th>{% if col.sort %}<a href="#" class="text-reset text-decoration-none" data-nui-sort="{{ col.next }}">{{ col.label }}{% if col.arrow %} <i class="bi bi-arrow-{{ col.arrow }}-short"></i>{% if col.priority %}<sup>{{ col.priority }}</sup>{% endif %}{% else %} <i class="bi bi-arrow-down-up text-muted opacity-50 small"></i>{% endif %}</a>{% else %}{{ col.label }}{% endif %}</th>
                 {% endfor %}
@@ -21,7 +21,7 @@ new_ui/views.py.
         <tbody>
             {% for user in users %}
             <tr class="{% if not user.is_active %}text-muted{% endif %}">
-                <td><input type="checkbox" class="form-check-input nui-row-check" value="{{ user.pk }}" data-label="{{ user.display_name }}" aria-label="Seleccionar {{ user.display_name }}"></td>
+                <td><input type="checkbox" class="form-check-input nui-rowmark" value="{{ user.pk }}" data-label="{{ user.display_name }}" aria-label="Seleccionar {{ user.display_name }}"></td>
                 <td class="text-nowrap">{{ user.user.username }}</td>
                 <td>{{ user.display_name }}</td>
                 <td>{{ user.get_role_display }}</td>

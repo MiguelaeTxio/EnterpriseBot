@@ -221,8 +221,35 @@
             });
     }
 
+    // ---- «Qué ver» (arriba, en la entrada) manda en el listado (abajo) ----
+    // El listado no tiene nada que elegir: sus pestañas, ocultas, solo
+    // llevan el estado; aquí se reflejan los botones de arriba y su título.
+    function syncViewbar() {
+        const listPanel = panelOf("listado");
+        if (!listPanel) return;
+        const current = activeTab("listado");
+        root.querySelectorAll("[data-nui-view]").forEach(function (b) {
+            const twin = listPanel.querySelector(':scope > .nui-tabs [data-nui-tab="' + b.dataset.nuiView + '"]');
+            b.classList.toggle("d-none", !!(twin && twin.classList.contains("d-none")));
+            b.classList.toggle("active", b.dataset.nuiView === current);
+            b.setAttribute("aria-selected", b.dataset.nuiView === current ? "true" : "false");
+        });
+        const title = document.getElementById("nui-list-title");
+        const button = listPanel.querySelector(':scope > .nui-tabs [data-nui-tab="' + current + '"]');
+        if (title) title.textContent = button ? button.textContent.trim() : "";
+    }
+    root.addEventListener("click", function (ev) {
+        const view = ev.target.closest("[data-nui-view]");
+        if (!view) return;
+        showTab(panelOf("listado"), view.dataset.nuiView, true);
+    });
+    root.addEventListener("nui:tab", function (ev) {
+        if (ev.target === panelOf("listado")) syncViewbar();
+    });
+
     if (section === "permisos") { permisos(); } else { lists(); }
     restoreTabs();
+    syncViewbar();
 
     // =================== DOCUMENTOS, PERSONAL, CENTROS DE GASTO ===================
     function lists() {
@@ -251,9 +278,42 @@
         }
         function pane(t) { return listPanel.querySelector('.nui-list-pane[data-tab="' + (t || tab()) + '"]'); }
         let groups = null;
+        // Acciones › Esta fila: las acciones de la fila marcada (una sola).
+        function paintRowActions() {
+            const box = document.getElementById("nui-row-actions");
+            if (!box) return;
+            box.innerHTML = "";
+            const map = sel();
+            const listBox = pane();
+            const mark = map.size === 1 && listBox ? listBox.querySelector('.nui-rowmark[value="' + CSS.escape(Array.from(map.keys())[0]) + '"]') : null;
+            const items = mark ? Array.from(mark.closest("tr").querySelectorAll("[data-nui-row-actions] .dropdown-item")) : [];
+            if (!items.length) {
+                const p = document.createElement("p");
+                p.className = "small text-muted mb-0";
+                p.textContent = map.size === 1 ? "Esa fila no tiene acciones propias." : "Marca una sola fila del listado para ver aquí sus acciones.";
+                box.appendChild(p);
+                return;
+            }
+            const title = document.createElement("div");
+            title.className = "small fw-semibold mb-1";
+            title.textContent = mark.dataset.label || "";
+            box.appendChild(title);
+            const wrap = document.createElement("div");
+            wrap.className = "d-flex flex-wrap gap-1";
+            items.forEach(function (original) {
+                const b = document.createElement("button");
+                b.type = "button";
+                b.className = "btn btn-sm btn-outline-primary";
+                b.innerHTML = original.innerHTML;
+                b.addEventListener("click", function () { original.click(); });
+                wrap.appendChild(b);
+            });
+            box.appendChild(wrap);
+        }
         function refreshSelection() {
             const map = sel();
             paintSelectionList(map, function (pk) { map.delete(pk); persistSelection(); syncChecks(); });
+            paintRowActions();
             const idsInput = document.getElementById("nui-selected-ids");
             if (idsInput) idsInput.value = Array.from(map.keys()).join(",");
             if (groups) groups.refresh();
@@ -262,12 +322,12 @@
             const box = pane();
             const map = sel();
             if (box) {
-                const boxes = box.querySelectorAll(".nui-row-check");
+                const boxes = box.querySelectorAll(".nui-rowmark");
                 boxes.forEach(function (b) {
                     if (map.has(b.value) && !map.get(b.value)) map.set(b.value, b.dataset.label || "");
                     b.checked = map.has(b.value);
                 });
-                const all = box.querySelector("#nui-check-all");
+                const all = box.querySelector("#nui-all");
                 if (all) all.checked = boxes.length > 0 && Array.from(boxes).every(b => b.checked);
                 const state = box.querySelector(".nui-list-state");
                 root.querySelectorAll("[data-nui-total]").forEach(el => { el.textContent = state ? state.dataset.count : "…"; });
@@ -372,15 +432,15 @@
         const lists = document.getElementById("nui-lists");
         lists.addEventListener("change", function (ev) {
             const map = sel();
-            if (ev.target.id === "nui-check-all") {
-                pane().querySelectorAll(".nui-row-check").forEach(function (b) {
+            if (ev.target.id === "nui-all") {
+                pane().querySelectorAll(".nui-rowmark").forEach(function (b) {
                     b.checked = ev.target.checked;
                     if (b.checked) map.set(b.value, b.dataset.label || ""); else map.delete(b.value);
                 });
                 persistSelection();
                 return;
             }
-            if (ev.target.classList.contains("nui-row-check")) {
+            if (ev.target.classList.contains("nui-rowmark")) {
                 if (ev.target.checked) map.set(ev.target.value, ev.target.dataset.label || ""); else map.delete(ev.target.value);
                 persistSelection();
                 syncChecks();
@@ -392,8 +452,20 @@
             const pick = ev.target.closest("[data-nui-scope]");
             if (pick) { ev.preventDefault(); setScope({pk: pick.dataset.nuiScope, label: pick.dataset.nuiScopeLabel}); }
         });
-        const clear = document.getElementById("nui-mass-clear");
+        const clear = document.getElementById("nui-sel-clear");
         if (clear) clear.addEventListener("click", function () { sel().clear(); persistSelection(); syncChecks(); });
+        // «Solo los filtrados»: de lo seleccionado, solo lo que cumple el
+        // filtro del listado abierto. Hace el cruce y se desmarca sola.
+        const onlyFiltered = document.getElementById("nui-sel-only-filtered");
+        if (onlyFiltered) onlyFiltered.addEventListener("change", function () {
+            if (!onlyFiltered.checked) return;
+            const box = pane();
+            const shown = new Set(box ? Array.from(box.querySelectorAll(".nui-rowmark")).map(b => b.value) : []);
+            Array.from(sel().keys()).forEach(function (pk) { if (!shown.has(pk)) sel().delete(pk); });
+            persistSelection();
+            syncChecks();
+            onlyFiltered.checked = false;
+        });
 
         // Una sola persona o máquina: toda la vista con lo suyo.
         const chip = document.getElementById("nui-scope-chip");
@@ -408,6 +480,7 @@
             const generalTab = listPanel.querySelector('[data-nui-tab="general"]');
             listPanel.querySelectorAll("[data-nui-entity-tab]").forEach(b => b.classList.toggle("d-none", !scoped));
             if (generalTab && entityTabs.length) generalTab.classList.toggle("d-none", scoped);
+            syncViewbar();
             loadEntityActions();
         }
         function setScope(value, target) {
@@ -640,27 +713,36 @@
             if (subjectSelect && !subjectSelect.value) loadEditor(currentSubject());
         }
         function syncChecks() {
-            const boxes = list.querySelectorAll(".nui-row-check");
+            const boxes = list.querySelectorAll(".nui-rowmark");
             boxes.forEach(function (box) {
                 if (selection.has(box.value) && !selection.get(box.value)) selection.set(box.value, box.dataset.label || "");
                 box.checked = selection.has(box.value);
             });
-            const all = document.getElementById("nui-check-all");
+            const all = document.getElementById("nui-all");
             if (all) all.checked = boxes.length > 0 && Array.from(boxes).every(b => b.checked);
             paint();
         }
-        const clear = document.getElementById("nui-mass-clear");
+        const clear = document.getElementById("nui-sel-clear");
         if (clear) clear.addEventListener("click", function () { selection.clear(); persistSelection(); syncChecks(); });
+        const onlyFiltered = document.getElementById("nui-sel-only-filtered");
+        if (onlyFiltered) onlyFiltered.addEventListener("change", function () {
+            if (!onlyFiltered.checked) return;
+            const shown = new Set(Array.from(list.querySelectorAll(".nui-rowmark")).map(b => b.value));
+            Array.from(selection.keys()).forEach(function (pk) { if (!shown.has(pk)) selection.delete(pk); });
+            persistSelection();
+            syncChecks();
+            onlyFiltered.checked = false;
+        });
         list.addEventListener("change", function (ev) {
-            if (ev.target.id === "nui-check-all") {
-                list.querySelectorAll(".nui-row-check").forEach(function (box) {
+            if (ev.target.id === "nui-all") {
+                list.querySelectorAll(".nui-rowmark").forEach(function (box) {
                     box.checked = ev.target.checked;
                     if (box.checked) selection.set(box.value, box.dataset.label || ""); else selection.delete(box.value);
                 });
                 persistSelection();
                 return;
             }
-            if (ev.target.classList.contains("nui-row-check")) {
+            if (ev.target.classList.contains("nui-rowmark")) {
                 if (ev.target.checked) selection.set(ev.target.value, ev.target.dataset.label || ""); else selection.delete(ev.target.value);
                 persistSelection();
                 syncChecks();
@@ -700,8 +782,8 @@
         }
         function openEditor(subject) {
             if (subjectSelect) subjectSelect.value = subject.startsWith("user:") ? "" : subject;
-            const panel = panelOf("seleccion");
-            if (panel) showTab(panel, "permisos", true);
+            const panel = panelOf("acciones");
+            if (panel) showTab(panel, "ver", true);
             loadEditor(subject);
         }
         if (subjectSelect) subjectSelect.addEventListener("change", function () { loadEditor(currentSubject()); });
