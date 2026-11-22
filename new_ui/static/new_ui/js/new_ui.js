@@ -46,11 +46,25 @@
     }
 
     // ---- Alto de la vista y tamaños de los paneles ----
+    // La vista ocupa justo la pantalla: sin barra de desplazamiento de la
+    // página (S163, Miguel Ángel); cada panel desplaza lo suyo. Se mide
+    // lo que sobra por debajo (márgenes del panel) y se descuenta.
     function fitHeight() {
-        const top = root.getBoundingClientRect().top;
-        root.style.height = Math.max(520, window.innerHeight - top - 12) + "px";
+        if (window.matchMedia("(max-width: 991.98px)").matches) { root.style.height = ""; return; }
+        const top = root.getBoundingClientRect().top + window.scrollY;
+        let height = Math.max(300, window.innerHeight - top - 4);
+        root.style.height = height + "px";
+        const extra = document.documentElement.scrollHeight - window.innerHeight;
+        if (extra > 0) {
+            height = Math.max(300, height - extra);
+            root.style.height = height + "px";
+        }
+        applyLayout();
     }
     function applyLayout() {
+        // El panel de arriba nunca deja al de abajo sin sitio.
+        const room = (root.clientHeight || 600) - 170;
+        if (room > 120 && layout.top > room) layout.top = room;
         root.style.setProperty("--nui-top", layout.top + "px");
         root.style.setProperty("--nui-sel", layout.sel + "%");
     }
@@ -74,15 +88,15 @@
     const vHandle = root.querySelector('[data-nui-resize="sel"]');
     if (hHandle) dragger(hHandle, function (e) {
         const box = root.querySelector(".nui-top").getBoundingClientRect();
-        layout.top = Math.min(root.clientHeight - 200, Math.max(120, e.clientY - box.top));
+        layout.top = Math.min(root.clientHeight - 170, Math.max(120, e.clientY - box.top));
     });
     if (vHandle) dragger(vHandle, function (e) {
         const box = root.querySelector(".nui-bottom").getBoundingClientRect();
         layout.sel = Math.min(70, Math.max(15, (box.right - e.clientX) / box.width * 100));
     });
     window.addEventListener("resize", fitHeight);
+    window.addEventListener("load", fitHeight);
     fitHeight();
-    applyLayout();
 
     // ---- Pestañas de cada panel ----
     function panelOf(name) { return root.querySelector('[data-nui-panel="' + name + '"]'); }
