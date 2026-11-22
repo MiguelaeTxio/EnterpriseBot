@@ -435,6 +435,19 @@ def _doc_actions(entry):
             and (entry.name or "").lower().endswith(".pdf")):
         actions.append(("Separar páginas", "bi-scissors",
                         "#nui-doc-split:%d" % entry.pk))
+    if is_person:
+        from new_ui.views_photos import IMAGE_EXTENSIONS, is_photo_source
+
+        action_url = quote(reverse("new_ui:person_photo_action",
+                                   args=[subject.pk]), safe="")
+        if (entry.name or "").lower().endswith(IMAGE_EXTENSIONS):
+            actions.append(("Usar como foto", "bi-person-square",
+                            "#nui-post:%s:action=use&entry=%d" % (
+                                action_url, entry.pk)))
+        if is_photo_source(entry):
+            actions.append(("Sacar la foto de aquí", "bi-person-bounding-box",
+                            "#nui-post:%s:action=extract&entry=%d" % (
+                                action_url, entry.pk)))
     return actions
 
 

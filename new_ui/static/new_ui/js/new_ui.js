@@ -378,6 +378,8 @@
                     // Lo guardado sigue en el formulario: guardar otra vez lo modifica.
                     const pkInput = f.querySelector("[data-nui-pk]");
                     if (pkInput && data.id) pkInput.value = data.id;
+                    // Lo de la persona vista (su foto) se repinta.
+                    if (f.closest("#nui-entity-actions")) loadEntityActions();
                     // Formularios de un solo uso (subir): vuelven a empezar.
                     if (f.hasAttribute("data-nui-reset-after")) {
                         f.reset();
@@ -867,9 +869,78 @@
                 title.textContent = scope.label;
                 box.appendChild(title);
                 p.textContent = "Todo lo suyo está en las pestañas de abajo.";
+                if (section === "per" && urls.photoPanel) {
+                    // S163: su foto (para plataformas, girar, subir...).
+                    const photo = document.createElement("div");
+                    photo.className = "mt-2";
+                    box.appendChild(p);
+                    box.appendChild(photo);
+                    fetch(urls.photoPanel.replace("/0/", "/" + scope.pk + "/"), {credentials: "same-origin"})
+                        .then(r => r.ok ? r.text() : "")
+                        .then(function (html) { photo.innerHTML = html; });
+                    return;
+                }
             }
             box.appendChild(p);
         }
+        // Recuadro sobre la foto para descargarla recortada.
+        root.addEventListener("pointerdown", function (ev) {
+            const area = ev.target.closest("[data-nui-crop]");
+            if (!area) return;
+            ev.preventDefault();
+            const img = area.querySelector("img");
+            const boxEl = area.querySelector("[data-nui-crop-box]");
+            const rect = img.getBoundingClientRect();
+            const start = {x: ev.clientX - rect.left, y: ev.clientY - rect.top};
+            function clamp(v, max) { return Math.max(0, Math.min(v, max)); }
+            function move(e) {
+                const x = clamp(e.clientX - rect.left, rect.width), y = clamp(e.clientY - rect.top, rect.height);
+                const l = Math.min(start.x, x), t = Math.min(start.y, y);
+                const w = Math.abs(x - start.x), h = Math.abs(y - start.y);
+                Object.assign(boxEl.style, {left: l + "px", top: t + "px", width: w + "px", height: h + "px"});
+                boxEl.classList.remove("d-none");
+                boxEl.dataset.frac = [l / rect.width, t / rect.height, w / rect.width, h / rect.height].map(v => v.toFixed(4)).join(",");
+            }
+            function up() {
+                window.removeEventListener("pointermove", move);
+                window.removeEventListener("pointerup", up);
+                const panel = area.parentElement;
+                const link = panel.querySelector("[data-nui-crop-download]");
+                const frac = (boxEl.dataset.frac || "").split(",").map(Number);
+                const clear = panel.querySelector("[data-nui-crop-clear]");
+                if (frac.length === 4 && frac[2] > 0.03 && frac[3] > 0.03) {
+                    link.href = link.dataset.base + "?x=" + frac[0] + "&y=" + frac[1] + "&w=" + frac[2] + "&h=" + frac[3];
+                    panel.querySelector("[data-nui-crop-label]").textContent = "Descargar el recuadro para plataformas";
+                    clear.classList.remove("d-none");
+                } else {
+                    boxEl.classList.add("d-none");
+                }
+            }
+            window.addEventListener("pointermove", move);
+            window.addEventListener("pointerup", up);
+        });
+        root.addEventListener("click", function (ev) {
+            const clear = ev.target.closest("[data-nui-crop-clear]");
+            if (!clear) return;
+            const panel = clear.closest("div.d-flex").parentElement.parentElement;
+            panel.querySelector("[data-nui-crop-box]").classList.add("d-none");
+            const link = panel.querySelector("[data-nui-crop-download]");
+            link.href = link.dataset.base;
+            panel.querySelector("[data-nui-crop-label]").textContent = "Descargar para plataformas";
+            clear.classList.add("d-none");
+        });
+        // Acciones de fila que se hacen sin más (#nui-post:<url>:<datos>).
+        document.addEventListener("click", function (ev) {
+            const link = ev.target.closest('a[href^="#nui-post:"]');
+            if (!link) return;
+            ev.preventDefault();
+            const parts = link.getAttribute("href").split(":");
+            const body = new FormData();
+            new URLSearchParams(parts[2] || "").forEach((v, k) => body.append(k, v));
+            post(decodeURIComponent(parts[1]), body)
+                .then(function (data) { result(data.message || "Hecho.", false); load(); loadEntityActions(); })
+                .catch(function (err) { result(err.message, true); });
+        });
 
         // Pestaña "Ficha" (S163): la ficha de la persona o máquina vista
         // sola, como una pestaña más del listado (sin acordeones).

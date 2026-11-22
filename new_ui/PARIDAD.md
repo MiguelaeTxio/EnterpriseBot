@@ -40,8 +40,9 @@ Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
 - ✅ Ficha sin acordeones: datos, contacto, empresa y puesto, caducidades,
   observaciones, periodos de contratación, accesorios; Modificar en el sitio
 - ✅ Foto de perfil (subir)
-- ⬜ Foto para plataformas · ⬜ sacar la foto del DNI · ⬜ girar · ⬜ cola de
-  fotos · ⬜ elegir un documento como foto
+- ✅ (S163) Foto para plataformas (entera o recuadro) · sacar la foto de
+  un documento · girar · modo automático · cola de fotos (General) ·
+  elegir una imagen como foto («Esta fila» en Documentos)
 - ⬜ Alta de trabajador (con extracción del DNI) · ⬜ baja · ⬜ reactivar
 - ⬜ Exportar Personal con plantillas (guardar/borrar plantillas)
 - ⬜ Requisitos de documentación: asignar en masa, puestos (crear, editar,
