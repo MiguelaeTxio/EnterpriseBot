@@ -15,9 +15,32 @@ sitio de "General", new_ui/_ficha.html) y sus listados. Permisos: new_ui/permiso
 new_ui/static/new_ui/js/new_ui.js. De momento solo para el superusuario.
 {% endcomment %}
 {% block title %}Nueva interfaz{% endblock %}
-{% block page_title %}Nueva interfaz · {{ section_label }}{% endblock %}
+{% block page_title %}
+{# S163: las secciones van en la propia barra de título, para no gastar pantalla (Miguel Ángel). #}
+<span class="d-inline-flex align-items-center gap-2 flex-wrap">
+    <div class="btn-group btn-group-sm" role="group" aria-label="Qué se gestiona">
+        {% for key, label, icon in sections %}
+        <a href="?s={{ key }}" class="btn btn-sm py-0 {% if key == section %}btn-primary{% else %}btn-outline-primary{% endif %}"{% if key == section %} aria-current="page"{% endif %}>
+            <i class="bi {{ icon }} me-1"></i>{{ label }}
+        </a>
+        {% endfor %}
+    </div>
+    {% if section == "cdg" or section == "per" %}
+    <div id="nui-scope-chip" class="align-items-center gap-2 rounded-pill border border-primary-subtle bg-primary-subtle px-2 py-0 small {% if scope %}d-flex{% else %}d-none{% endif %}">
+        <i class="bi bi-funnel-fill text-primary"></i>
+        <span>Viendo la ficha de <strong id="nui-scope-label">{{ scope.label }}</strong></span>
+        <span class="text-muted">·</span>
+        <button type="button" class="btn btn-sm btn-link p-0 text-danger text-decoration-none" id="nui-scope-clear" title="Volver al listado completo"><i class="bi bi-x-lg me-1"></i>volver a todos</button>
+    </div>
+    {% endif %}
+    <span class="small text-muted fw-normal">Nueva interfaz · solo tú</span>
+</span>
+{% endblock %}
 {% block extra_head %}
 <style>
+/* S163: sin márgenes que se coman la pantalla (solo en esta página). */
+.page-content { padding: 4px 8px !important; }
+.top-navbar { padding-top: 4px !important; padding-bottom: 4px !important; min-height: 0 !important; }
 #nui { display: flex; flex-direction: column; gap: 0; --nui-top: 270px; --nui-sel: 30%; min-height: 300px; }
 .nui-top { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1.25fr); gap: 8px; height: var(--nui-top); flex: none; }
 .nui-bottom { display: flex; gap: 0; flex: 1 1 auto; min-height: 150px; }
@@ -62,25 +85,6 @@ body.nui-dragging { user-select: none; }
 </style>
 {% endblock %}
 {% block content %}
-<div class="d-flex align-items-center gap-2 flex-wrap mb-1">
-    <div class="btn-group btn-group-sm" role="group" aria-label="Qué se gestiona">
-        {% for key, label, icon in sections %}
-        <a href="?s={{ key }}" class="btn btn-sm py-0 {% if key == section %}btn-primary{% else %}btn-outline-primary{% endif %}"{% if key == section %} aria-current="page"{% endif %}>
-            <i class="bi {{ icon }} me-1"></i>{{ label }}
-        </a>
-        {% endfor %}
-    </div>
-    {% if section == "cdg" or section == "per" %}
-    <div id="nui-scope-chip" class="align-items-center gap-2 rounded-pill border border-primary-subtle bg-primary-subtle px-2 py-0 small {% if scope %}d-flex{% else %}d-none{% endif %}">
-        <i class="bi bi-funnel-fill text-primary"></i>
-        <span>Viendo la ficha de <strong id="nui-scope-label">{{ scope.label }}</strong></span>
-        <span class="text-muted">·</span>
-        <button type="button" class="btn btn-sm btn-link p-0 text-danger text-decoration-none" id="nui-scope-clear" title="Volver al listado completo"><i class="bi bi-x-lg me-1"></i>volver a todos</button>
-    </div>
-    {% endif %}
-    <span class="small text-muted ms-auto">Nueva interfaz · solo visible para ti</span>
-</div>
-
 <div id="nui" data-section="{{ section }}">
     {# S163. ENTRADA arriba (qué ver y cómo filtrarlo · selección · acciones) #}
     {# y SALIDA abajo (listado · seleccionados), sin nada que elegir en la     #}
