@@ -1,0 +1,11 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_reason_buttons.html -- S163: motivos habituales de una corrección de fichaje (copia de panel/templates/panel/clock_worker/_fix_reasons.html); van al campo «reason» de su formulario y se pueden completar. «Según albarán n.º(s)…» pone solos los números de los albaranes cargados ese día. Uso: include con reason_day (fecha del día) y reason_person (pk). JS: new_ui.js (data-nui-reasons). #}
+<div class="w-100 d-flex flex-wrap gap-1 mt-1" data-nui-reasons data-day="{{ reason_day|date:'Y-m-d' }}" data-albaran-url="{% url 'new_ui:albaran_numbers' reason_person %}">
+    <button type="button" class="btn btn-sm btn-outline-primary py-0" data-reason="Corrección según albarán n.º(s) " data-albaran title="Pone los números de los albaranes cargados de ese día; si no hay, escribe detrás el número o los números (p. ej. 348203 y 348204)">Según albarán n.º(s)…</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Olvido del trabajador: no fichó la salida.">Olvidó la salida</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Olvido del trabajador: no fichó la entrada.">Olvidó la entrada</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Se quedó trabajando con ">Se quedó trabajando con…</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Fichó a una hora que no era: ">Hora equivocada</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Olvido del trabajador: no fichó la pausa de comida.">Olvidó la comida</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Olvido del trabajador: no fichó el desplazamiento.">Olvidó el desplazamiento</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-reason="Desplazamiento en coche.">Desplazamiento en coche</button>
+</div>

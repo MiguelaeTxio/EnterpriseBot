@@ -1175,6 +1175,29 @@
         // sola, como una pestaña más del listado (sin acordeones).
         function fichaBox() { return pane(tab()); }
         let cardView = {pk: null, tab: null, extra: {}};
+        // Motivos habituales de una corrección: al campo «reason» de su
+        // formulario; «Según albarán n.º(s)…», con los números del día.
+        lists.addEventListener("click", function (ev) {
+            const btn = ev.target.closest("[data-nui-reasons] [data-reason]");
+            if (!btn) return;
+            ev.preventDefault();
+            const bar = btn.closest("[data-nui-reasons]");
+            const box = btn.closest("form") && btn.closest("form").querySelector('[name="reason"]');
+            if (!box) return;
+            function put(text) {
+                box.value = (box.value.trim() ? box.value.trim() + " " : "") + text;
+                box.focus();
+                box.setSelectionRange(box.value.length, box.value.length);
+            }
+            if (!btn.hasAttribute("data-albaran") || !bar.dataset.day) { put(btn.dataset.reason); return; }
+            fetch(bar.dataset.albaranUrl + "?day=" + encodeURIComponent(bar.dataset.day), {credentials: "same-origin"})
+                .then(r => r.ok ? r.json() : {numbers: []})
+                .then(function (data) {
+                    const numbers = (data && data.numbers) || [];
+                    put(btn.dataset.reason + numbers.join(", ") + (numbers.length ? "." : ""));
+                })
+                .catch(function () { put(btn.dataset.reason); });
+        });
         lists.addEventListener("click", function (ev) {
             const view = ev.target.closest("[data-nui-card-view]");
             const day = ev.target.closest("[data-nui-card-day]");

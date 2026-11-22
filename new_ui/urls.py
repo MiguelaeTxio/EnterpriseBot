@@ -63,6 +63,8 @@ urlpatterns = [
          views_clock.ShiftEditView.as_view(), name="shift_edit"),
     path("persona/<int:pk>/jornada/pausa-tramo/",
          views_clock.ShiftFixView.as_view(), name="shift_fix"),
+    path("persona/<int:pk>/albaranes-del-dia/",
+         views_clock.AlbaranNumbersView.as_view(), name="albaran_numbers"),
     path("persona/<int:pk>/jornada/anular/",
          views_clock.ShiftCancelView.as_view(), name="shift_cancel"),
     path("persona/<int:pk>/jornada/visado/",

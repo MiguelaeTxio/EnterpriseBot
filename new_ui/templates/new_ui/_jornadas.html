@@ -60,7 +60,7 @@
                                     {% if clock_types %}<div class="w-100 ps-1">{% for ct in clock_types %}<label class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="type_{{ n }}" value="{{ ct.pk }}"> {{ ct.name }}</label>{% endfor %}</div>{% endif %}
                                 </div>
                                 {% endfor %}
-                                <input name="reason" class="form-control form-control-sm mb-1" placeholder="Motivo (obligatorio)" required>
+                                <input name="reason" class="form-control form-control-sm mb-1" placeholder="Motivo (obligatorio)" required>{% include "new_ui/_reason_buttons.html" with reason_day=row.day reason_person=person.pk %}
                                 <button type="submit" class="btn btn-sm btn-primary">Guardar la jornada</button>
                             </form>
                             {% for item in row.trips %}{% if item.trip %}
@@ -80,7 +80,7 @@
                                 <span class="text-nowrap"><i class="bi bi-cup-hot"></i> Corregir la pausa de las {{ meal.out.time|time:"H:i" }}</span>
                                 <input type="datetime-local" name="meal_start" value="{{ meal.out.input_value }}" class="form-control form-control-sm" style="width: 13rem;" required>
                                 <input type="datetime-local" name="meal_end" value="{{ meal.back.input_value }}" class="form-control form-control-sm" style="width: 13rem;" required>
-                                <input name="reason" class="form-control form-control-sm" style="width: 12rem;" placeholder="Motivo" required>
+                                <input name="reason" class="form-control form-control-sm" style="width: 12rem;" placeholder="Motivo" required>{% include "new_ui/_reason_buttons.html" with reason_day=row.day reason_person=person.pk %}
                                 <button type="submit" class="btn btn-sm btn-outline-primary">Guardar</button>
                             </form>
                             {% endfor %}
@@ -89,7 +89,7 @@
                                 <span class="text-nowrap"><i class="bi bi-cup-hot"></i> Añadir la pausa de comida ({{ part.entry.time|time:"H:i" }}–{% if part.exit %}{{ part.exit.time|time:"H:i" }}{% else %}en curso{% endif %})</span>
                                 <input type="datetime-local" name="meal_start" value="{% if part.lunch %}{{ part.lunch.0 }}{% else %}{{ part.entry.input_value }}{% endif %}" class="form-control form-control-sm" style="width: 13rem;" required>
                                 <input type="datetime-local" name="meal_end" value="{% if part.lunch %}{{ part.lunch.1 }}{% elif part.exit %}{{ part.exit.input_value }}{% else %}{{ part.entry.input_value }}{% endif %}" class="form-control form-control-sm" style="width: 13rem;" required>
-                                <input name="reason" class="form-control form-control-sm" style="width: 12rem;" placeholder="Motivo" required>
+                                <input name="reason" class="form-control form-control-sm" style="width: 12rem;" placeholder="Motivo" required>{% include "new_ui/_reason_buttons.html" with reason_day=row.day reason_person=person.pk %}
                                 <button type="submit" class="btn btn-sm btn-outline-primary">Añadir</button>
                             </form>
                             {% if part.entry.event.clock_type_id and clock_types %}
@@ -100,7 +100,7 @@
                                 <div class="d-flex flex-wrap align-items-center gap-1">
                                     <label class="text-muted">Desde</label><input type="datetime-local" name="insert_start" value="{{ part.entry.input_value }}" class="form-control form-control-sm" style="width: 13rem;" required>
                                     <label class="text-muted">hasta</label><input type="datetime-local" name="insert_end" class="form-control form-control-sm" style="width: 13rem;" title="Vacío: hasta el siguiente fichaje">
-                                    <input name="reason" class="form-control form-control-sm" style="width: 12rem;" placeholder="Motivo" required>
+                                    <input name="reason" class="form-control form-control-sm" style="width: 12rem;" placeholder="Motivo" required>{% include "new_ui/_reason_buttons.html" with reason_day=row.day reason_person=person.pk %}
                                     <button type="submit" class="btn btn-sm btn-outline-primary">Intercalar</button>
                                 </div>
                                 <div class="text-muted">Sin «hasta», llega hasta el siguiente fichaje.</div>
@@ -113,7 +113,7 @@
                                 <span class="text-nowrap{% if gap.quick %} text-danger{% endif %}"><i class="bi bi-cup-hot"></i> Salió {{ gap.out|time:"H:i" }} y volvió {{ gap.back|time:"H:i" }}{% if gap.quick %} (en pocos minutos){% endif %}</span>
                                 <input type="datetime-local" name="meal_start" value="{{ gap.out_press.input_value }}" class="form-control form-control-sm" style="width: 13rem;" required>
                                 <input type="datetime-local" name="meal_end" value="{{ gap.back_press.input_value }}" class="form-control form-control-sm" style="width: 13rem;" required>
-                                <input name="reason" class="form-control form-control-sm" style="width: 12rem;" placeholder="Motivo" required>
+                                <input name="reason" class="form-control form-control-sm" style="width: 12rem;" placeholder="Motivo" required>{% include "new_ui/_reason_buttons.html" with reason_day=row.day reason_person=person.pk %}
                                 <button type="submit" class="btn btn-sm btn-outline-primary">Corregir la pausa</button>
                             </form>
                             {% endfor %}
@@ -128,7 +128,7 @@
                             {% if row.event_ids %}
                             <form data-nui-pane-form action="{% url 'new_ui:shift_cancel' person.pk %}" class="d-flex gap-1" data-nui-confirm="¿Anular todas las pulsaciones de este día? Se ven tachadas y quedan en el historial.">
                                 {% csrf_token %}<input type="hidden" name="event_ids" value="{{ row.event_ids }}">
-                                <input name="reason" class="form-control form-control-sm" placeholder="Motivo de la anulación" required>
+                                <input name="reason" class="form-control form-control-sm" placeholder="Motivo de la anulación" required>{% include "new_ui/_reason_buttons.html" with reason_day=row.day reason_person=person.pk %}
                                 <button type="submit" class="btn btn-sm btn-outline-danger">Anular el día</button>
                             </form>
                             {% endif %}

@@ -424,3 +424,36 @@ class BagMovementView(SuperuserRequiredMixin, View):
             minutes=minutes, reason=reason,
             created_by=request.user.company_user)
         return _ok("Movimiento apuntado.")
+
+
+class AlbaranNumbersView(SuperuserRequiredMixin, View):
+    """
+    GET ?day=: numbers of the worker's delivery notes of that day.
+
+    ---
+
+    GET: números de los albaranes cargados del trabajador para ese día
+    (a veces 2 o 3 en la misma jornada), en el orden en que se cargaron,
+    para que «Según albarán n.º(s)…» los ponga solos en el motivo
+    (copia de panel/views_clock_extras.AlbaranNumbersView).
+    """
+
+    def get(self, request, pk):
+        from hr_calendar.models import AlbaranSheet
+
+        person = _person(pk)
+        try:
+            day = datetime.date.fromisoformat(request.GET.get("day") or "")
+        except ValueError:
+            return JsonResponse({"numbers": []})
+        numbers = []
+        for number in AlbaranSheet.objects.filter(
+            batch__person=person,
+            batch__company=request.user.company_user.company,
+            day=day,
+        ).exclude(number="").order_by(
+            "batch__created_at", "position",
+        ).values_list("number", flat=True):
+            if number.strip() not in numbers:
+                numbers.append(number.strip())
+        return JsonResponse({"numbers": numbers})
