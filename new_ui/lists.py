@@ -21,9 +21,11 @@ Excel de plantilla; inactivos = el resto; empresas agrupadas por
 COMPANY_FILTER_CHOICES. Los grupos son los grupos de selección de
 siempre (panel/person_groups).
 """
+import contextvars
 import datetime
 from types import SimpleNamespace
 
+from django.apps import apps
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import F, OuterRef, Q, Subquery
 from django.urls import reverse
@@ -397,6 +399,86 @@ def _machine_actions(machine):
 def _doc_actions(entry):
     return [("Ver documento", "bi-file-earmark-text",
              reverse("new_ui:document_file", args=[entry.pk]))]
+
+
+# ------------------------------------------------------------ horarios
+# S163: la empresa del listado de Horarios, para resolver el horario de
+# cada trabajador (la fija el propio queryset al pedirse).
+_SCHEDULE_COMPANY = contextvars.ContextVar("nui_schedule_company",
+                                           default=None)
+
+
+def _schedule_people(company):
+    _SCHEDULE_COMPANY.set(company)
+    return persons_base()
+
+
+def _prepare_schedules(people):
+    """
+    Attach to each worker their schedule, its origin and clock state.
+
+    ---
+
+    A cada trabajador, el horario que le toca, de dónde le viene y su
+    estado de fichaje, todo de golpe (caché por petición).
+    """
+    from hr_calendar.clock_settings import worker_states
+    from new_ui.schedule_core import (
+        bulk_schedule_cache, resolve_person_schedule,
+    )
+
+    company = _SCHEDULE_COMPANY.get()
+    states = worker_states(people)
+    origins = {
+        "intensive": "Jornada intensiva (verano)",
+        "own": "Propio", "user": "De su usuario del panel",
+        "section": "De la sección", "default": "Por defecto de la empresa",
+        "none": "Sin horario",
+    }
+    with bulk_schedule_cache(people, company):
+        for person in people:
+            schedule, (origin, section) = resolve_person_schedule(
+                person, company)
+            person.nui_schedule = schedule
+            person.nui_state = states[person.pk]
+            label = origins.get(origin, "")
+            if origin == "section" and section is not None:
+                label = "De la sección %s" % section.name
+            person.nui_origin = label
+            person.nui_current = True
+
+
+def _schedule_summary(schedule):
+    if schedule is None:
+        return ""
+    from new_ui.views_schedules import days_summary
+
+    return days_summary(schedule)
+
+
+def _schedule_options(company):
+    return [("none", "Sin horario")] + [
+        (str(pk), label) for pk, label in apps.get_model(
+            "ivr_config.WorkdaySchedule").objects.filter(
+            company=company).order_by("label").values_list("pk", "label")]
+
+
+def _clock_label(state):
+    if state.must_clock:
+        return "Sí"
+    if state.starts_later:
+        return "Desde el %s" % state.clocks_from.strftime("%d/%m/%Y")
+    if not state.section_clocks:
+        return "No (su sección ficha por otro sistema)"
+    return "No"
+
+
+def _clock_mode_label(state):
+    if state.clock_mode:
+        return dict(apps.get_model("hr_calendar.WorkerClockSetting")
+                    .CLOCK_MODE_CHOICES).get(state.clock_mode, "")
+    return "Por tipos (su sección)" if state.uses_types else (
+        "Normal (su sección)")
 
 
 # --------------------------------------------------------- documentos
@@ -1119,28 +1201,82 @@ def _per_lists():
             default_order=("-created_at",),
             extra_filter=lambda qs, company: qs.filter(company=company),
             note="Periodo: fecha de la solicitud."),
+        # S163: el horario que le toca a cada trabajador y de dónde le
+        # viene (como la pestaña Horarios antigua), y cómo ficha.
         "horarios": ListDef(
-            "Horarios",
-            lambda company: persons_base().filter(
-                company_user__isnull=False).select_related(
-                "company_user__workday_schedule"),
+            "Horarios", _schedule_people,
             [
                 Col("nombre", "Persona", person_name, "first_surname",
                     entity=True),
-                Col("horario", "Horario", lambda p: str(
-                    p.company_user.workday_schedule)
-                    if p.company_user.workday_schedule_id else "Sin horario",
-                    "company_user__workday_schedule__pk"),
-                Col("intensivo", "Intensiva forzada", lambda p: "Sí"
-                    if p.company_user.is_intensive_override else "",
-                    "company_user__is_intensive_override"),
-                Col("seccion", "Sección (SIME)",
-                    lambda p: p.current_section_name or "",
-                    "current_section_name"),
+                Col("seccion", "Sección", lambda p: p.nui_state.section_name),
+                Col("horario", "Horario", lambda p: p.nui_schedule.label
+                    if p.nui_schedule else "Sin horario"),
+                Col("origen", "De dónde le viene", lambda p: p.nui_origin),
+                Col("horas", "Horas", lambda p: _schedule_summary(
+                    p.nui_schedule)),
+                Col("ficha", "Ficha", lambda p: _clock_label(p.nui_state)),
+                Col("tipo", "Tipo de fichaje", lambda p: _clock_mode_label(
+                    p.nui_state)),
+                Col("avisos", "Recordatorios", lambda p: "Sí"
+                    if p.nui_state.reminders else "No"),
             ],
             entity="person", search=("given_name", "first_surname", "dni"),
             default_order=("first_surname", "given_name"),
-            actions=_person_actions,
+            actions=_person_actions, prepare=_prepare_schedules,
+            extras=[
+                Extra("horario", "Horario", _schedule_options,
+                      keep=lambda p, v: (p.nui_schedule is None) if v ==
+                      "none" else (p.nui_schedule is not None
+                                   and str(p.nui_schedule.pk) == v)),
+                Extra("ficha", "Ficha", lambda company: [
+                    ("si", "Ficha con la plataforma"), ("no", "No ficha")],
+                      keep=lambda p, v: p.nui_state.must_clock == (
+                          v == "si")),
+            ],
+            note="El periodo no se aplica a este listado."),
+        # S163: los horarios de la empresa (crear y modificar en Acciones).
+        "lista_horarios": ListDef(
+            "Lista de horarios",
+            lambda company: apps.get_model(
+                "ivr_config.WorkdaySchedule").objects.filter(
+                company=company).prefetch_related("days"),
+            [
+                Col("nombre", "Horario", lambda r: r.label, "label"),
+                Col("temporada", "Temporada", lambda r: disp(r, "season"),
+                    "season"),
+                Col("horas", "Horas", _schedule_summary),
+                Col("defecto", "Por defecto", lambda r: "Sí"
+                    if r.is_default else "", "is_default"),
+                Col("tolerancia", "Tolerancia (min)",
+                    lambda r: r.tolerance_minutes, "tolerance_minutes",
+                    "text-end"),
+                Col("trabajadores", "Trabajadores",
+                    lambda r: r.worker_settings.count()
+                    + r.assigned_users.count(), "", "text-end"),
+            ],
+            search=("label",), default_order=("label",),
+            actions=lambda r: [("Modificar", "bi-pencil-square",
+                                "#nui-edit:nui-schedule-form:%d" % r.pk)],
+            note="El periodo no se aplica a este listado."),
+        "tipos_fichaje": ListDef(
+            "Tipos de fichaje",
+            lambda company: apps.get_model(
+                "hr_calendar.ClockType").objects.filter(company=company),
+            [
+                Col("nombre", "Tipo", lambda r: r.name, "name"),
+                Col("funcion", "Función", lambda r: disp(r, "role"), "role"),
+                Col("jornada", "Cuenta como jornada", lambda r: "Sí"
+                    if r.counts_as_work else "No", "counts_as_work"),
+                Col("activo", "Activo", lambda r: "Sí"
+                    if r.is_active else "No", "is_active"),
+                Col("defecto", "Por defecto", lambda r: "Sí"
+                    if r.is_default else "", "is_default"),
+                Col("orden", "Orden", lambda r: r.order, "order",
+                    "text-end"),
+            ],
+            search=("name",), default_order=("order", "name"),
+            actions=lambda r: [("Modificar", "bi-pencil-square",
+                                "#nui-edit:nui-clocktype-form:%d" % r.pk)],
             note="El periodo no se aplica a este listado."),
         "nominas": _person_fk_def(
             "Nóminas", "hr_calendar.PayslipItem", ("batch",), [
@@ -1542,7 +1678,8 @@ def rows_for(definition, rows, columns):
         definition.prepare(rows)
     out = []
     for row in rows:
-        entity = definition.entity_of(row)
+        # Solo los listados de personas o máquinas llevan a una ficha.
+        entity = definition.entity_of(row) if definition.entity else None
         label = ""
         if entity is not None:
             label = (person_name(entity) if definition.entity == "person"

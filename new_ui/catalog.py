@@ -56,6 +56,8 @@ SECTIONS = OrderedDict([
         ("ausencias", "Ausencias"),
         ("solicitudes", "Solicitudes"),
         ("horarios", "Horarios"),
+        ("lista_horarios", "Lista de horarios"),
+        ("tipos_fichaje", "Tipos de fichaje"),
         ("nominas", "Nóminas"),
         ("epis", "EPIs"),
         ("requisitos", "Requisitos"),

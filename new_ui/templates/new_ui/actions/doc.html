@@ -45,7 +45,7 @@ new_ui.js enseña el de la vista abierta. Formularios:
     {# S163: plantillas de dosier (antes, página aparte de la interfaz antigua). #}
     <form data-nui-action-form action="{% url 'new_ui:dossier_template_save' %}" id="nui-dossier-form" data-data-url="{% url 'new_ui:dossier_template_data' 0 %}">
         {% csrf_token %}
-        <input type="hidden" name="template_pk" value="">
+        <input type="hidden" name="template_pk" value="" data-nui-pk>
         <div class="d-flex align-items-center gap-2 mb-1">
             <div class="small fw-semibold" data-nui-dossier-title><i class="bi bi-plus-circle me-1"></i>Nueva plantilla</div>
             <button type="button" class="btn btn-sm btn-link py-0 ms-auto" data-nui-dossier-new>Empezar una nueva</button>

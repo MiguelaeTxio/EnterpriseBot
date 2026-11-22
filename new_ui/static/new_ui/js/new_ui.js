@@ -375,7 +375,8 @@
             post(url, body)
                 .then(function (data) {
                     result(data.message || "Hecho.", false);
-                    const pkInput = f.querySelector('[name="template_pk"]');
+                    // Lo guardado sigue en el formulario: guardar otra vez lo modifica.
+                    const pkInput = f.querySelector("[data-nui-pk]");
                     if (pkInput && data.id) pkInput.value = data.id;
                     load();
                 })
@@ -439,6 +440,72 @@
             dossierForm.querySelector('[name="template_pk"]').value = "";
             dossierForm.querySelector("[data-nui-dossier-title]").innerHTML = '<i class="bi bi-plus-circle me-1"></i>Nueva plantilla';
             dossierScope("PERSONAL", false);
+        }
+        // Formularios de crear/modificar (horarios, tipos de fichaje):
+        // «Esta fila» › Modificar (#nui-edit:<formulario>:<pk>) carga la
+        // fila en su formulario; «Empezar uno nuevo» lo vacía.
+        function formTitle(form, html) {
+            const t = form.querySelector("[data-nui-form-title]");
+            if (t) t.innerHTML = html;
+        }
+        function formReset(form) {
+            form.reset();
+            const pkInput = form.querySelector("[data-nui-pk]");
+            if (pkInput) pkInput.value = "";
+            formTitle(form, '<i class="bi bi-plus-circle me-1"></i>' + (form.dataset.newTitle || "Nuevo"));
+            form.dispatchEvent(new Event("change", {bubbles: true}));
+        }
+        function formFill(form, fields) {
+            Object.keys(fields).forEach(function (name) {
+                const value = fields[name];
+                form.querySelectorAll('[name="' + CSS.escape(name) + '"]').forEach(function (el) {
+                    if (el.type === "checkbox") el.checked = Array.isArray(value) ? value.map(String).indexOf(el.value) !== -1 : !!value;
+                    else if (el.type === "radio") el.checked = String(el.value) === String(value);
+                    else el.value = value === null || value === undefined ? "" : value;
+                });
+            });
+            form.dispatchEvent(new Event("change", {bubbles: true}));
+        }
+        root.addEventListener("click", function (ev) {
+            const b = ev.target.closest("[data-nui-form-new]");
+            if (b) formReset(b.closest("form"));
+        });
+        document.addEventListener("click", function (ev) {
+            const link = ev.target.closest('a[href^="#nui-edit:"]');
+            if (!link) return;
+            ev.preventDefault();
+            const parts = link.getAttribute("href").split(":");
+            const form = document.getElementById(parts[1]);
+            if (!form) return;
+            fetch(form.dataset.dataUrl.replace("/0/", "/" + parts[2] + "/"), {credentials: "same-origin"})
+                .then(r => r.json())
+                .then(function (data) {
+                    if (!data.ok) throw new Error(data.message || "No se ha podido cargar.");
+                    formReset(form);
+                    formFill(form, data.fields);
+                    formTitle(form, '<i class="bi bi-pencil-square me-1"></i>Modificar «' + String(data.title || "").replace(/[<>&]/g, "") + "»");
+                    showTab(panelOf("acciones"), "vista", true);
+                    result("Cargado: cambia lo que haga falta y guarda.", false);
+                })
+                .catch(function (err) { result(err.message, true); });
+        });
+        // Horario: qué partes del formulario se ven según las casillas.
+        const scheduleForm = document.getElementById("nui-schedule-form");
+        function scheduleParts() {
+            const f = scheduleForm;
+            const open = f.querySelector('[name="is_open"]').checked;
+            const varies = !open && f.querySelector('[name="varies_by_day"]').checked;
+            const continuous = f.querySelector('[name="is_intensive"]').checked;
+            const holidays = f.querySelector('[name="works_holidays"]').checked;
+            f.querySelector('[name="varies_by_day"]').disabled = open;
+            f.querySelector('[data-nui-schedule-part="fixed"]').classList.toggle("d-none", varies);
+            f.querySelectorAll('[data-nui-schedule-part="afternoon"]').forEach(el => el.classList.toggle("d-none", open || continuous));
+            f.querySelector('[data-nui-schedule-part="days"]').classList.toggle("d-none", !varies);
+            f.querySelector('[data-nui-schedule-part="holiday"]').classList.toggle("d-none", !holidays);
+        }
+        if (scheduleForm) {
+            scheduleForm.addEventListener("change", scheduleParts);
+            scheduleParts();
         }
         if (dossierForm) {
             dossierForm.addEventListener("change", function (ev) {

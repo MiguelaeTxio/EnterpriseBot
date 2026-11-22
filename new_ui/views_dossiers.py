@@ -424,8 +424,10 @@ class DossierMissingCheckView(SuperuserRequiredMixin, View):
             message = "Todos los marcados (%d) tienen todo lo de «%s»." % (
                 len(ids), template.name)
         else:
-            message = "A %d de %d les falta algo de «%s» (resaltados): %s" % (
-                len(missing), len(ids), template.name, " · ".join(lines))
+            message = (
+                "A %d de %d les falta algo de «%s» (resaltados): %s" % (
+                    len(missing), len(ids), template.name,
+                    " · ".join(lines)))
         return JsonResponse({
             "ok": True, "missing": missing, "message": message,
         })

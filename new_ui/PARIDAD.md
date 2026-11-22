@@ -66,9 +66,13 @@ Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
   de horas, kilómetros, visado, pendiente, corregir, exportar
 - ⬜ Albaranes del fichaje (cargas, archivos, estado, ver)
 - ⬜ Informe de alta y su exportación
-- ⬜ Ajustes: trabajadores que fichan, recordatorios, tope de horas extra,
-  sección, **tipos de fichaje**
-- ⬜ Horarios: **crear**, lista, **asignar**, por sección
+- ✅ (S163) Trabajadores que fichan, recordatorios, ficha desde, tipo de
+  fichaje de cada uno, sección desde una fecha (Personal › Horarios o
+  Fichajes › Acciones) · ⬜ tope de horas extra, ajustes de sección
+- ✅ (S163) Tipos de fichaje: crear y modificar (Personal › Tipos de fichaje)
+- ✅ (S163) Horarios: crear, modificar, borrar (Personal › Lista de
+  horarios), asignar o quitar a los marcados; vista Horarios con el que
+  le toca y de dónde le viene
 
 ## Vacaciones y ausencias
 - ⬜ Saldo, detalle, registrar, editar/borrar periodo, ausencia (crear,
