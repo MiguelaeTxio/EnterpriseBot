@@ -978,6 +978,22 @@ def _cdg_lists():
             ], "service_date", search=("notes",),
             default_order=("-service_date",),
             note="Periodo: fecha de la revisión."),
+        # S163: lecturas de horas y km (antes, en la ficha).
+        "lecturas": _machine_fk_def(
+            "Lecturas", "fleet.MachineMeterReading", ("machine",),
+            "machine", [
+                Col("fecha", "Fecha", lambda r: fmt_date(r.reading_date),
+                    "reading_date", "text-nowrap"),
+                Col("horas", "Horas", lambda r: r.hours or "", "hours",
+                    "text-end"),
+                Col("horas_grua", "Horas de grúa",
+                    lambda r: r.crane_hours or "", "crane_hours", "text-end"),
+                Col("km", "Km", lambda r: r.km or "", "km", "text-end"),
+                Col("origen", "Origen", lambda r: disp(r, "source")
+                    if hasattr(r, "get_source_display") else r.source,
+                    "source"),
+            ], "reading_date", default_order=("-reading_date",),
+            note="Periodo: fecha de la lectura."),
         "repostajes": _machine_fk_def(
             "Repostajes", "fleet.GasoGesSupply", ("vehicle__machine", "user"),
             "vehicle__machine", [

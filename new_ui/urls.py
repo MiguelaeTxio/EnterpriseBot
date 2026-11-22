@@ -15,7 +15,7 @@ from new_ui import (
     state, views, views_circulars, views_docs, views_dossiers, views_groups,
     views_access, views_doc_actions, views_notify, views_personnel,
     views_epis, views_machines, views_medical, views_photos,
-    views_requirements, views_schedules,
+    views_requirements, views_schedules, views_service,
 )
 
 app_name = "new_ui"
@@ -36,6 +36,21 @@ urlpatterns = [
     path("grupos/<str:kind>/<int:group_pk>/eliminar/",
          views_groups.GroupDeleteView.as_view(), name="group_delete"),
     # Documentos y ficha.
+    # Revisiones, lecturas y libro historial (S163).
+    path("maquina/<int:pk>/panel/", views_service.MachinePanelView.as_view(),
+         name="machine_panel"),
+    path("revisiones/nueva/", views_service.ServiceRecordAddView.as_view(),
+         name="service_add"),
+    path("lecturas/nueva/", views_service.ReadingAddView.as_view(),
+         name="reading_add"),
+    path("revisiones/borrar/", views_service.ServiceRowsDeleteView.as_view(),
+         name="service_rows_delete"),
+    path("libro-historial/generar/",
+         views_service.LogbookGenerateView.as_view(),
+         name="logbook_generate"),
+    path("maquina/<int:pk>/libro-externo/",
+         views_service.LogbookExternalView.as_view(),
+         name="logbook_external"),
     # Alta, baja y borrado de centros de gasto (S163).
     path("maquinas/alta/leer/",
          views_machines.NuiMachineIntakeExtractView.as_view(),

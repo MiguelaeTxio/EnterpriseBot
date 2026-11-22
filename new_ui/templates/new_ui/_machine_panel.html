@@ -1,0 +1,22 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_machine_panel.html -- S163: Acciones › «Del centro de gasto»: estado de las revisiones y libro historial. Vista: new_ui/views_service.py. #}
+<div class="small fw-semibold mb-1"><i class="bi bi-wrench-adjustable me-1"></i>Revisiones</div>
+{% if has_service_plan %}
+<ul class="list-unstyled small mb-2">
+    {% for status in service_statuses %}
+    <li><span class="fw-semibold">{{ status.schedule.label }}</span>{% if status.schedule.unit == "km" %} (cada {{ status.interval }} km){% endif %}: <span class="{{ status.css_class }}">{{ status.status_text }}</span></li>
+    {% endfor %}
+</ul>
+{% else %}
+<p class="small text-muted mb-2">Sin revisiones configuradas (se eligen en su Ficha › Modificar: revisión por horas o cada N km).</p>
+{% endif %}
+<p class="small text-muted mb-2">Anotar revisiones y lecturas: vistas «Revisiones» y «Lecturas».</p>
+{% if is_logbook %}
+<div class="small fw-semibold mb-1"><i class="bi bi-journal-text me-1"></i>Libro historial</div>
+<form data-nui-action-form action="{% url 'new_ui:logbook_generate' %}" class="d-flex flex-wrap gap-1">
+    {% csrf_token %}
+    <input type="hidden" name="machine_pk" value="{{ machine.pk }}">
+    <button type="submit" class="btn btn-sm btn-outline-primary" data-nui-confirm="¿Generar y guardar el libro historial de {{ machine.code }}?">Generar y guardar</button>
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'new_ui:logbook_external' machine.pk %}"><i class="bi bi-download me-1"></i>Libro para externos</a>
+</form>
+<p class="small text-muted mt-1 mb-0">El de externos no lleva los nombres de los mecánicos y no se guarda.</p>
+{% endif %}

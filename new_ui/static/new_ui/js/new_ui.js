@@ -1061,13 +1061,14 @@
                 title.textContent = scope.label;
                 box.appendChild(title);
                 p.textContent = "Todo lo suyo está en las pestañas de abajo.";
-                if (section === "per" && urls.photoPanel) {
+                const panelUrl = section === "per" ? urls.photoPanel : (section === "cdg" ? urls.machinePanel : "");
+                if (panelUrl) {
                     // S163: su foto (para plataformas, girar, subir...).
                     const photo = document.createElement("div");
                     photo.className = "mt-2";
                     box.appendChild(p);
                     box.appendChild(photo);
-                    fetch(urls.photoPanel.replace("/0/", "/" + scope.pk + "/"), {credentials: "same-origin"})
+                    fetch(panelUrl.replace("/0/", "/" + scope.pk + "/"), {credentials: "same-origin"})
                         .then(r => r.ok ? r.text() : "")
                         .then(function (html) { photo.innerHTML = html; });
                     return;

@@ -72,6 +72,7 @@ SECTIONS = OrderedDict([
         ("especificaciones", "Especificaciones"),
         ("avisos", "Avisos"),
         ("revisiones", "Revisiones"),
+        ("lecturas", "Lecturas"),
         ("repostajes", "Repostajes"),
         ("accesorios", "Accesorios"),
         ("taller", "Taller"),

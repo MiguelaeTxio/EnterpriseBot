@@ -103,10 +103,9 @@ Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
 - ✅ Ficha técnica, Modificar, foto, exportar tarjeta (5 formatos)
 - ✅ QR: código, descarga, observaciones, fotos y vídeos, contraseña editor
 - ✅ (S163) Alta de máquina (por documentos o a mano; reactiva si está de baja) · baja/reactivar/borrar en masa · ✅ requisito en masa · ✅ grupos de selección
-- ⬜ Revisiones: nueva, borrar, plan en masa, guardar fila, exportar,
-  revisiones que faltan
-- ⬜ Lecturas de contador: nueva, borrar
-- ⬜ Libro historial: generar, externo
+- ✅ (S163) Revisiones: nueva, borrar, estado del plan («Del centro de gasto») · ⬜ plan en masa, guardar fila, revisiones que faltan
+- ✅ (S163) Lecturas de contador: nueva, borrar (vista Lecturas)
+- ✅ (S163) Libro historial: generar, externo («Del centro de gasto»)
 - ⬜ Taller: partes, averías, libros (ZIP), revisiones (escaneo,
   reconstruir, a firma, quitar) y sus Excel
 - ⬜ Especificaciones: exportar

@@ -1,0 +1,39 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_service.html -- S163: anotar revisiones y lecturas de la máquina abierta y borrar las marcadas. Vista: new_ui/views_service.py. #}
+<div class="d-none" data-nui-actions-for="revisiones">
+    <form data-nui-action-form action="{% url 'new_ui:service_add' %}" class="mb-3">
+        {% csrf_token %}
+        <input type="hidden" name="machine_pk" value="" data-nui-scope-input>
+        <div class="small fw-semibold mb-1"><i class="bi bi-plus-circle me-1"></i>Anotar una revisión hecha (máquina abierta)</div>
+        <div class="row g-1 small mb-1">
+            <div class="col-6 col-xl-3"><label class="text-muted d-block">Fecha *</label><input type="date" name="service_date" class="form-control form-control-sm" required></div>
+            <div class="col-6 col-xl-3"><label class="text-muted d-block">Horas</label><input inputmode="numeric" name="hours" class="form-control form-control-sm"></div>
+            <div class="col-6 col-xl-3"><label class="text-muted d-block">Horas de grúa</label><input inputmode="numeric" name="crane_hours" class="form-control form-control-sm"></div>
+            <div class="col-6 col-xl-3"><label class="text-muted d-block">Km</label><input inputmode="numeric" name="km" class="form-control form-control-sm"></div>
+            <div class="col-12"><label class="text-muted d-block">Notas</label><input name="notes" maxlength="255" class="form-control form-control-sm"></div>
+        </div>
+        <button type="submit" class="btn btn-sm btn-success">Anotar revisión</button>
+        <span class="small text-muted ms-1">Solo con fecha no avisa hasta que se anoten las horas o los km.</span>
+    </form>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:service_rows_delete' %}">
+        {% csrf_token %}<input type="hidden" name="kind" value="records">
+        <button type="submit" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Borrar las revisiones marcadas?">Borrar las marcadas</button>
+    </form>
+</div>
+<div class="d-none" data-nui-actions-for="lecturas">
+    <form data-nui-action-form action="{% url 'new_ui:reading_add' %}" class="mb-3">
+        {% csrf_token %}
+        <input type="hidden" name="machine_pk" value="" data-nui-scope-input>
+        <div class="small fw-semibold mb-1"><i class="bi bi-plus-circle me-1"></i>Anotar una lectura (máquina abierta)</div>
+        <div class="row g-1 small mb-1">
+            <div class="col-6 col-xl-3"><label class="text-muted d-block">Fecha *</label><input type="date" name="reading_date" class="form-control form-control-sm" required></div>
+            <div class="col-6 col-xl-3"><label class="text-muted d-block">Horas</label><input inputmode="numeric" name="hours" class="form-control form-control-sm"></div>
+            <div class="col-6 col-xl-3"><label class="text-muted d-block">Horas de grúa</label><input inputmode="numeric" name="crane_hours" class="form-control form-control-sm"></div>
+            <div class="col-6 col-xl-3"><label class="text-muted d-block">Km</label><input inputmode="numeric" name="km" class="form-control form-control-sm"></div>
+        </div>
+        <button type="submit" class="btn btn-sm btn-success">Anotar lectura</button>
+    </form>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:service_rows_delete' %}">
+        {% csrf_token %}<input type="hidden" name="kind" value="readings">
+        <button type="submit" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Borrar las lecturas marcadas?">Borrar las marcadas</button>
+    </form>
+</div>

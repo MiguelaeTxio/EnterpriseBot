@@ -257,7 +257,7 @@ body.nui-dragging { user-select: none; }
 {{ selections|json_script:"nui-selections" }}
 {{ col_templates|json_script:"nui-coltpl" }}
 {{ scope|json_script:"nui-scope" }}
-<script id="nui-urls" type="application/json">{"list": "{% url 'new_ui:list' %}", "export": "{% url 'new_ui:export' %}", "card": "{% url 'new_ui:card' %}", "menu": "{% url 'new_ui:menu' %}", "groupSave": "{% if section == 'cdg' %}{% url 'new_ui:group_save' 'maquinas' %}{% else %}{% url 'new_ui:group_save' 'personas' %}{% endif %}", "groupUpdate": "{% if section == 'cdg' %}{% url 'new_ui:group_update' 'maquinas' 0 %}{% else %}{% url 'new_ui:group_update' 'personas' 0 %}{% endif %}", "photoPanel": "{% url 'new_ui:person_photo_panel' 0 %}", "groupDelete": "{% if section == 'cdg' %}{% url 'new_ui:group_delete' 'maquinas' 0 %}{% else %}{% url 'new_ui:group_delete' 'personas' 0 %}{% endif %}"}</script>
+<script id="nui-urls" type="application/json">{"list": "{% url 'new_ui:list' %}", "export": "{% url 'new_ui:export' %}", "card": "{% url 'new_ui:card' %}", "menu": "{% url 'new_ui:menu' %}", "groupSave": "{% if section == 'cdg' %}{% url 'new_ui:group_save' 'maquinas' %}{% else %}{% url 'new_ui:group_save' 'personas' %}{% endif %}", "groupUpdate": "{% if section == 'cdg' %}{% url 'new_ui:group_update' 'maquinas' 0 %}{% else %}{% url 'new_ui:group_update' 'personas' 0 %}{% endif %}", "photoPanel": "{% url 'new_ui:person_photo_panel' 0 %}", "machinePanel": "{% url 'new_ui:machine_panel' 0 %}", "groupDelete": "{% if section == 'cdg' %}{% url 'new_ui:group_delete' 'maquinas' 0 %}{% else %}{% url 'new_ui:group_delete' 'personas' 0 %}{% endif %}"}</script>
 {% endif %}
 {% endblock %}
 {% block extra_scripts %}
