@@ -41,6 +41,7 @@ from new_ui.views_personnel import personnel_context
 from new_ui.views_access import access_context
 from new_ui.views_medical import medical_context
 from new_ui.views_epis import epis_context
+from new_ui.views_logbook import logbook_context
 from new_ui.views_machines import machines_context
 from new_ui.mixins import SuperuserRequiredMixin
 from new_ui.models import UiUserGroup, UiViewGrant
@@ -307,6 +308,7 @@ def _section_context(company_user, section):
         **medical_context(section),
         **epis_context(section),
         **machines_context(section, company_user.company),
+        **(logbook_context() if section == "cdg" else {}),
         "selections": selections,
         # S163: plantillas de columnas de cada vista (como las plantillas
         # de exportación antiguas de Personal).

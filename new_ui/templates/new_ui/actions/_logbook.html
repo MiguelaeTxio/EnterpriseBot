@@ -1,0 +1,45 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_logbook.html -- S163: revisiones del libro historial de la grúa abierta (escaneo, reconstrucción, firma digital, quitar). Vista: new_ui/views_logbook.py. #}
+<div class="d-none" data-nui-actions-for="libro">
+    <p class="small text-muted mb-2">Solo grúas móviles A y H. Los huecos sin revisión de la grúa abierta salen en «Del centro de gasto»; <a href="{% url 'new_ui:missing_reviews' %}" target="_blank" rel="noopener">los de todas las grúas</a>.</p>
+    <form data-nui-action-form action="{% url 'new_ui:review_scan_upload' %}" enctype="multipart/form-data" class="mb-3" data-nui-reset-after>
+        {% csrf_token %}
+        <input type="hidden" name="machine_pk" value="" data-nui-scope-input>
+        <div class="small fw-semibold mb-1"><i class="bi bi-upload me-1"></i>Subir el escaneo de una revisión que faltaba</div>
+        <div class="row g-1 small mb-1">
+            <div class="col-12 col-xl-5"><label class="text-muted d-block">Fecha de la revisión *</label><input type="date" name="review_date" class="form-control form-control-sm" required></div>
+            <div class="col-12 col-xl-7"><label class="text-muted d-block">Escaneo (PDF, JPG o PNG) *</label><input type="file" name="scan" accept=".pdf,.jpg,.jpeg,.png" class="form-control form-control-sm" required></div>
+        </div>
+        <button type="submit" class="btn btn-sm btn-success">Subir escaneo</button>
+    </form>
+    <form data-nui-action-form action="{% url 'new_ui:review_reconstruct' %}" class="mb-3" data-nui-reset-after>
+        {% csrf_token %}
+        <input type="hidden" name="machine_pk" value="" data-nui-scope-input>
+        <div class="small fw-semibold mb-1"><i class="bi bi-pencil-square me-1"></i>Reconstruir una revisión perdida</div>
+        <div class="row g-1 small mb-1">
+            <div class="col-6 col-xl-3"><label class="text-muted d-block">Fecha *</label><input type="date" name="entry_date" class="form-control form-control-sm" required></div>
+            <div class="col-6 col-xl-3"><label class="text-muted d-block">Próxima</label><input type="date" name="next_date" class="form-control form-control-sm"></div>
+            <div class="col-6 col-xl-3"><label class="text-muted d-block">Empresa mantenedora</label><input name="entity" class="form-control form-control-sm"></div>
+            <div class="col-6 col-xl-3"><label class="text-muted d-block">Resultado</label><input name="result" class="form-control form-control-sm" placeholder="Favorable"></div>
+            <div class="col-12"><label class="text-muted d-block">Concepto</label><input name="concept" class="form-control form-control-sm"></div>
+        </div>
+        <button type="submit" class="btn btn-sm btn-success">Anotar reconstrucción</button>
+        <span class="small text-muted ms-1">La fecha tiene que caer en un hueco sin revisiones. Queda pendiente de la firma digital.</span>
+    </form>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:review_send_to_sign' %}" class="mb-2">
+        {% csrf_token %}
+        <input type="hidden" name="machine_pk" value="" data-nui-scope-input>
+        <div class="small fw-semibold mb-1"><i class="bi bi-pen me-1"></i>Enviar las reconstrucciones marcadas a la firma digital</div>
+        {% if logbook_signatures %}
+        <div class="small mb-1">{% for signature in logbook_signatures %}
+            <div class="form-check"><input class="form-check-input" type="radio" name="signature" value="{{ signature.pk }}" id="nui-logsig-{{ signature.pk }}"{% if forloop.first %} checked{% endif %}><label class="form-check-label" for="nui-logsig-{{ signature.pk }}">{{ signature.label }} <span class="text-muted">({{ signature.company }})</span></label></div>
+        {% endfor %}</div>
+        <button type="submit" class="btn btn-sm btn-primary" data-nui-confirm="¿Enviar las reconstrucciones marcadas a la firma digital?">Enviar a la firma</button>
+        {% else %}
+        <p class="small text-muted mb-0">No hay firmas de empresa con certificado.</p>
+        {% endif %}
+    </form>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:review_remove' %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Quitar las reconstrucciones marcadas? Solo se quitan las que no se han enviado a la firma.">Quitar las reconstrucciones marcadas</button>
+    </form>
+</div>

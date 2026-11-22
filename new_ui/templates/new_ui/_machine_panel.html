@@ -12,6 +12,11 @@
 <p class="small text-muted mb-2">Anotar revisiones y lecturas: vistas «Revisiones» y «Lecturas».</p>
 {% if is_logbook %}
 <div class="small fw-semibold mb-1"><i class="bi bi-journal-text me-1"></i>Libro historial</div>
+<p class="small mb-1">Revisiones leídas del libro: {{ reviews_read }}.{% if review_gaps %} <span class="text-danger fw-semibold">Faltan revisiones en {{ review_gaps|length }} hueco(s):</span>{% elif reviews_read %} Sin huecos.{% else %} Ninguna leída todavía: hay que subir su libro escaneado.{% endif %}</p>
+{% if review_gaps %}
+<ul class="small mb-1">{% for gap in review_gaps %}<li>{% if gap.start %}del {{ gap.start|date:"d/m/Y" }}{% else %}desde el principio{% endif %} al {{ gap.end|date:"d/m/Y" }} ({{ gap.days }} días)</li>{% endfor %}</ul>
+<p class="small text-muted mb-1">Búscala en su libro y súbela escaneada (vista «Libro historial»); si se perdió, se reconstruye allí.</p>
+{% endif %}
 <form data-nui-action-form action="{% url 'new_ui:logbook_generate' %}" class="d-flex flex-wrap gap-1">
     {% csrf_token %}
     <input type="hidden" name="machine_pk" value="{{ machine.pk }}">
@@ -19,4 +24,5 @@
     <a class="btn btn-sm btn-outline-secondary" href="{% url 'new_ui:logbook_external' machine.pk %}"><i class="bi bi-download me-1"></i>Libro para externos</a>
 </form>
 <p class="small text-muted mt-1 mb-0">El de externos no lleva los nombres de los mecánicos y no se guarda.</p>
+<a class="small" href="{% url 'new_ui:missing_reviews' %}" target="_blank" rel="noopener">Revisiones que faltan en todas las grúas</a>
 {% endif %}

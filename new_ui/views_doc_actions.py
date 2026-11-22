@@ -197,6 +197,52 @@ class DocumentTrashView(SuperuserRequiredMixin, View):
         return _ok("%d documento(s) a la papelera." % count)
 
 
+class DocumentZipView(SuperuserRequiredMixin, View):
+    """
+    POST: ZIP with the originals of the marked documents.
+
+    ---
+
+    POST: ZIP con los originales de los documentos marcados (S163; en
+    la antigua, «Libros» del taller y la descarga de la ficha). Las
+    nóminas confidenciales no entran.
+    """
+
+    def post(self, request):
+        import io
+        import zipfile
+
+        from new_ui.dossier_core import _entry_bytes
+
+        entries = [e for e in _marked_entries(request).select_related(
+            "document_type") if not e.is_confidential]
+        if not entries:
+            return _error("Marca primero los documentos.")
+        buffer = io.BytesIO()
+        used = set()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            for entry in entries:
+                name = entry.name
+                stem, dot, ext = name.rpartition(".")
+                if not dot:
+                    stem, ext = name, ""
+                suffix = 2
+                while name in used:
+                    name = "%s_%d%s%s" % (stem, suffix, "." if ext else "",
+                                          ext)
+                    suffix += 1
+                used.add(name)
+                zf.writestr(name, _entry_bytes(entry))
+        response = HttpResponse(buffer.getvalue(),
+                                content_type="application/zip")
+        response["Content-Disposition"] = (
+            'attachment; filename="Documentos_%s.zip"'
+            % timezone.localdate().isoformat())
+        response["X-Nui-Message"] = "%d documento(s) en el ZIP." % len(
+            entries)
+        return response
+
+
 # --------------------------------------------------------------- separar
 def _upper(value):
     value = unicodedata.normalize("NFKD", value or "")

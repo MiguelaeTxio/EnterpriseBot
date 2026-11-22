@@ -1,0 +1,16 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/missing_reviews.html -- S163: revisiones que faltan en las grúas A y H. Vista: new_ui/views_logbook.py. #}
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Revisiones que faltan</title>
+<style>body{font-family:system-ui,sans-serif;margin:1.5rem;color:#222}table{border-collapse:collapse;width:100%;max-width:900px}td,th{border:1px solid #ddd;padding:.35rem .5rem;font-size:.9rem;text-align:left;vertical-align:top}th{background:#f4f4f4}.muted{color:#777}</style>
+</head><body>
+<h1 style="font-size:1.3rem">Revisiones que faltan ({{ gaps_total }} hueco{{ gaps_total|pluralize }} en {{ cranes|length }} grúa{{ cranes|length|pluralize }})</h1>
+<p class="muted">Cada hueco es una revisión periódica que hay que buscar en su libro y subir escaneada desde Centros de gasto › Libro historial (o reconstruirla si se perdió).</p>
+<table><thead><tr><th>Grúa</th><th>Revisiones leídas</th><th>Huecos</th></tr></thead><tbody>
+{% for item in cranes %}
+<tr><td>{{ item.machine.code }}</td><td>{{ item.reviews }}</td><td>{% if item.gaps %}{% for gap in item.gaps %}{% if gap.start %}del {{ gap.start|date:"d/m/Y" }}{% else %}desde el principio{% endif %} al {{ gap.end|date:"d/m/Y" }} ({{ gap.days }} días)<br>{% endfor %}{% else %}<span class="muted">Ninguna revisión leída todavía</span>{% endif %}</td></tr>
+{% empty %}
+<tr><td colspan="3">No falta ninguna revisión.</td></tr>
+{% endfor %}
+</tbody></table>
+</body></html>

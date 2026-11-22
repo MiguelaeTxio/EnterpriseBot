@@ -96,13 +96,19 @@ class MachinePanelView(SuperuserRequiredMixin, View):
     def get(self, request, pk):
         from fleet.logbook_service import is_logbook_machine
 
+        from new_ui.views_logbook import review_gaps
+
         machine = get_object_or_404(MachineAsset, pk=pk)
+        is_logbook = is_logbook_machine(machine)
+        gaps, reviews = review_gaps(machine) if is_logbook else ([], 0)
         return render(request, "new_ui/_machine_panel.html", {
+            "review_gaps": gaps,
+            "reviews_read": reviews,
             "machine": machine,
             "has_service_plan": machine.has_service_plan,
             "service_statuses": service_statuses(machine)
             if machine.has_service_plan else [],
-            "is_logbook": is_logbook_machine(machine),
+            "is_logbook": is_logbook,
         })
 
 
