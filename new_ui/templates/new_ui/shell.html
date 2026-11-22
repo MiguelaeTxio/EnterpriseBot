@@ -255,9 +255,9 @@ body.nui-dragging { user-select: none; }
 {% endif %}
 {% endblock %}
 {% block extra_scripts %}
-<script src="{% static 'new_ui/js/new_ui_state.js' %}"></script>
-<script src="{% static 'new_ui/js/new_ui_splitter.js' %}"></script>
-<script src="{% static 'new_ui/js/new_ui_groups.js' %}"></script>
-<script src="{% static 'new_ui/js/new_ui_context_menu.js' %}"></script>
-<script src="{% static 'new_ui/js/new_ui.js' %}"></script>
+<script src="{% static 'new_ui/js/new_ui_state.js' %}?v={{ asset_v }}"></script>
+<script src="{% static 'new_ui/js/new_ui_splitter.js' %}?v={{ asset_v }}"></script>
+<script src="{% static 'new_ui/js/new_ui_groups.js' %}?v={{ asset_v }}"></script>
+<script src="{% static 'new_ui/js/new_ui_context_menu.js' %}?v={{ asset_v }}"></script>
+<script src="{% static 'new_ui/js/new_ui.js' %}?v={{ asset_v }}"></script>
 {% endblock %}

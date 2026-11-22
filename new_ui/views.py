@@ -286,6 +286,27 @@ def _section_context(company_user, section):
     }
 
 
+def _asset_version():
+    """
+    Version tag of the new interface's JS (latest file change).
+
+    ---
+
+    Huella de la versión del JS de la nueva interfaz (la fecha del más
+    reciente), para pedirlo como "?v=..." y que el navegador no use una
+    copia vieja tras desplegar (S163: se vio servir el JS anterior).
+    """
+    import os
+
+    folder = os.path.join(os.path.dirname(__file__), "static", "new_ui",
+                          "js")
+    try:
+        return str(int(max(os.path.getmtime(os.path.join(folder, name))
+                           for name in os.listdir(folder))))
+    except (OSError, ValueError):
+        return "1"
+
+
 class NewUiView(SuperuserRequiredMixin, View):
     """
     GET: the single Documentation view of the new interface.
@@ -351,6 +372,7 @@ class NewUiView(SuperuserRequiredMixin, View):
             }
         else:
             context.update(_section_context(company_user, section))
+        context["asset_v"] = _asset_version()
         return render(request, "new_ui/shell.html", context)
 
 
