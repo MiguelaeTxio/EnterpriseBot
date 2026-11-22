@@ -228,7 +228,7 @@
         const listPanel = panelOf("listado");
         if (!listPanel) return;
         const current = activeTab("listado");
-        root.querySelectorAll("[data-nui-view]").forEach(function (b) {
+        document.querySelectorAll("[data-nui-view]").forEach(function (b) {
             const twin = listPanel.querySelector(':scope > .nui-tabs [data-nui-tab="' + b.dataset.nuiView + '"]');
             b.classList.toggle("d-none", !!(twin && twin.classList.contains("d-none")));
             b.classList.toggle("active", b.dataset.nuiView === current);
@@ -238,7 +238,8 @@
         const button = listPanel.querySelector(':scope > .nui-tabs [data-nui-tab="' + current + '"]');
         if (title) title.textContent = button ? button.textContent.trim() : "";
     }
-    root.addEventListener("click", function (ev) {
+    // Los botones de «Qué ver» van en la barra de título, fuera de #nui.
+    document.addEventListener("click", function (ev) {
         const view = ev.target.closest("[data-nui-view]");
         if (!view) return;
         showTab(panelOf("listado"), view.dataset.nuiView, true);

@@ -17,6 +17,7 @@ new_ui/static/new_ui/js/new_ui.js. De momento solo para el superusuario.
 {% block title %}Nueva interfaz{% endblock %}
 {% block page_title %}
 {# S163: las secciones van en la propia barra de título, para no gastar pantalla (Miguel Ángel). #}
+<span class="d-flex flex-column gap-1">
 <span class="d-inline-flex align-items-center gap-2 flex-wrap">
     <div class="btn-group btn-group-sm" role="group" aria-label="Qué se gestiona">
         {% for key, label, icon in sections %}
@@ -35,6 +36,8 @@ new_ui/static/new_ui/js/new_ui.js. De momento solo para el superusuario.
     {% endif %}
     <span class="small text-muted fw-normal">Nueva interfaz · solo tú</span>
 </span>
+{% include "new_ui/_view_picker.html" %}
+</span>
 {% endblock %}
 {% block extra_head %}
 <style>
@@ -50,7 +53,7 @@ new_ui/static/new_ui/js/new_ui.js. De momento solo para el superusuario.
 .nui-tabs { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid #dee2e6; padding: 4px 6px 0; flex: none; }
 .nui-tabs .nav-link { padding: .25rem .6rem; font-size: .8rem; border: 1px solid transparent; border-bottom: 0; border-radius: .3rem .3rem 0 0; background: none; color: var(--bs-link-color); }
 .nui-tabs .nav-link.active { color: #212529; font-weight: 600; background: #fff; border-color: #dee2e6; margin-bottom: -1px; }
-.nui-viewbar { display: flex; flex-wrap: wrap; gap: 4px; }
+.nui-viewbar { display: flex; flex-wrap: wrap; gap: 3px; }
 .nui-viewbar .btn { --bs-btn-padding-y: .15rem; --bs-btn-padding-x: .5rem; --bs-btn-font-size: .8rem; border: 1px solid #0d6efd; color: #0d6efd; background: #fff; }
 .nui-viewbar .btn.active { background: #0d6efd; color: #fff; font-weight: 600; }
 .nui-head { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: 5px 10px; border-bottom: 1px solid #dee2e6; font-size: .85rem; flex: none; }
@@ -96,7 +99,7 @@ body.nui-dragging { user-select: none; }
             {# S163, Miguel Ángel: siempre en el mismo orden, sin desplegables: #}
             {# filtros comunes, debajo qué ver (botones) y debajo sus filtros. #}
             <div class="nui-tabs nav" role="tablist">
-                <button type="button" class="nav-link" data-nui-tab="filtrar" role="tab">Qué ver y filtros</button>
+                <button type="button" class="nav-link" data-nui-tab="filtrar" role="tab">Buscar y filtrar</button>
                 {% if section != "permisos" %}<button type="button" class="nav-link" data-nui-tab="columnas" role="tab">Columnas</button>{% endif %}
             </div>
             <div class="nui-body">

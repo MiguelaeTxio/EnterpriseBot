@@ -1,13 +1,13 @@
 {# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/_view_picker.html #}
 {% comment %}
-S163. Dentro del panel de filtro, después de Buscar y del Periodo:
-«Qué ver» (botones, sin desplegables; los de la sección elegida arriba)
-y los filtros (comunes y los propios de la vista). Miguel Ángel: "Pulso
-un botón y me sale ya lo que quiero ver. Y ahora, sus filtros."
+S163. «Qué ver»: segunda hilera de botones pequeños en la barra de
+título, justo debajo de Documentos · Personal · Centros de gasto ·
+Permisos, con las vistas de la sección elegida. Miguel Ángel: "Justo
+debajo, con otra hilera de botones con ese mismo tamaño, que ocupe poco
+espacio de altura y que cambie según lo que tengamos escogido arriba."
 {% endcomment %}
-    <div class="small fw-semibold mt-2 mb-1">Qué ver</div>
-    <div class="nui-viewbar" role="tablist" aria-label="Qué ver">
-        {% for key, label in list_tabs %}
-        <button type="button" class="btn btn-sm{% if key in entity_tabs and not scope %} d-none{% elif key == 'general' and scope and entity_tabs %} d-none{% endif %}" data-nui-view="{{ key }}" role="tab">{{ label }}</button>
-        {% endfor %}
-    </div>
+<div class="nui-viewbar" role="tablist" aria-label="Qué ver">
+    {% for key, label in list_tabs %}
+    <button type="button" class="btn btn-sm py-0{% if key in entity_tabs and not scope %} d-none{% elif key == 'general' and scope and entity_tabs %} d-none{% endif %}" data-nui-view="{{ key }}" role="tab">{{ label }}</button>
+    {% endfor %}
+</div>
