@@ -12,6 +12,7 @@ interfaz antigua.
 from django.urls import path
 
 from new_ui import (
+    views_accessories,
     state, views, views_circulars, views_docs, views_dossiers, views_groups,
     views_access, views_doc_actions, views_notify, views_personnel,
     views_epis, views_machines, views_medical, views_photos,
@@ -46,6 +47,23 @@ urlpatterns = [
          name="reading_add"),
     path("revisiones/borrar/", views_service.ServiceRowsDeleteView.as_view(),
          name="service_rows_delete"),
+    # Accesorios de elevación (S163).
+    path("accesorios/alta/", views_accessories.AccessoryCreateView.as_view(),
+         name="accessory_create"),
+    path("accesorios/estado/", views_accessories.AccessoryStatusView.as_view(),
+         name="accessory_status"),
+    path("accesorios/revision/",
+         views_accessories.AccessoryReviewView.as_view(),
+         name="accessory_review"),
+    path("accesorios/entregar/",
+         views_accessories.AccessoryDeliverView.as_view(),
+         name="accessory_deliver"),
+    path("accesorios/devolver/",
+         views_accessories.AccessoryReturnView.as_view(),
+         name="accessory_return"),
+    path("accesorios/certificado/",
+         views_accessories.AccessoryCertificateView.as_view(),
+         name="accessory_certificate"),
     # Repostajes del surtidor (S163).
     path("repostajes/unidad/", views_refuels.RefuelUnitView.as_view(),
          name="refuel_unit"),

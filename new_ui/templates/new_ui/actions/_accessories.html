@@ -1,0 +1,80 @@
+{# /home/MiguelAeTxio/PROJECTS/EnterpriseBot/new_ui/templates/new_ui/actions/_accessories.html -- S163: accesorios de elevación (alta, estado, revisión, entrega, devolución, certificado). Vista: new_ui/views_accessories.py. #}
+<div class="d-none" data-nui-actions-for="accesorios">
+    <details class="mb-3">
+        <summary class="small fw-semibold"><i class="bi bi-plus-circle me-1"></i>Alta de un accesorio nuevo</summary>
+        <form data-nui-action-form action="{% url 'new_ui:accessory_create' %}" enctype="multipart/form-data" class="mt-2" data-nui-reset-after>
+            {% csrf_token %}
+            <div class="small text-muted mb-1">Modelo (rellena tipo, medidas, carga y norma si los dejas en blanco)</div>
+            <input type="search" class="form-control form-control-sm mb-1" placeholder="Escribe para buscar el modelo…" aria-label="Buscar modelo" data-nui-filter-list>
+            <div class="border rounded px-2 py-1 mb-2 small" style="max-height: 8rem; overflow-y: auto;" data-nui-filter-target>
+                <label class="form-check mb-0" data-nui-filter-item><input class="form-check-input" type="radio" name="model" value="" checked> <span class="form-check-label text-muted">Sin modelo</span></label>
+                {% for pk, label in acc_models %}<label class="form-check mb-0" data-nui-filter-item><input class="form-check-input" type="radio" name="model" value="{{ pk }}"> <span class="form-check-label">{{ label }}</span></label>{% endfor %}
+            </div>
+            <div class="small text-muted mb-1">Tipo (solo si no eliges modelo)</div>
+            <input type="search" class="form-control form-control-sm mb-1" placeholder="Escribe para buscar el tipo…" aria-label="Buscar tipo" data-nui-filter-list>
+            <div class="border rounded px-2 py-1 mb-2 small" style="max-height: 6rem; overflow-y: auto;" data-nui-filter-target>
+                <label class="form-check mb-0" data-nui-filter-item><input class="form-check-input" type="radio" name="accessory_type" value="" checked> <span class="form-check-label text-muted">El del modelo</span></label>
+                {% for pk, label in acc_types %}<label class="form-check mb-0" data-nui-filter-item><input class="form-check-input" type="radio" name="accessory_type" value="{{ pk }}"> <span class="form-check-label">{{ label }}</span></label>{% endfor %}
+            </div>
+            <div class="row g-1 small mb-1">
+                <div class="col-6 col-xl-4"><label class="text-muted d-block">Nº *</label><input name="identifier" class="form-control form-control-sm" required></div>
+                <div class="col-6 col-xl-4"><label class="text-muted d-block">Trazabilidad</label><input name="traceability" class="form-control form-control-sm"></div>
+                <div class="col-12 col-xl-4"><label class="text-muted d-block">Descripción</label><input name="description" class="form-control form-control-sm"></div>
+                <div class="col-6 col-xl-4"><label class="text-muted d-block">Medidas</label><input name="dimensions" class="form-control form-control-sm"></div>
+                <div class="col-6 col-xl-4"><label class="text-muted d-block">Carga (kg)</label><input name="working_load_kg" inputmode="numeric" class="form-control form-control-sm"></div>
+                <div class="col-6 col-xl-4"><label class="text-muted d-block">Norma</label><input name="standard" class="form-control form-control-sm"></div>
+                <div class="col-6 col-xl-4"><label class="text-muted d-block">Fabricante</label><input name="manufacturer" class="form-control form-control-sm"></div>
+                <div class="col-6 col-xl-4"><label class="text-muted d-block">Fecha de suministro</label><input type="date" name="supply_date" class="form-control form-control-sm"></div>
+                <div class="col-12 col-xl-8"><label class="text-muted d-block">Certificado del fabricante (PDF o foto) *</label><input type="file" name="certificate_file" accept=".pdf,.jpg,.jpeg,.png" class="form-control form-control-sm" required></div>
+            </div>
+            <button type="submit" class="btn btn-sm btn-success">Dar de alta</button>
+            <span class="small text-muted ms-1">El alta no lo entrega: se entrega aparte.</span>
+        </form>
+    </details>
+    <details class="mb-3">
+        <summary class="small fw-semibold"><i class="bi bi-box-arrow-right me-1"></i>Entregar los marcados</summary>
+        <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:accessory_deliver' %}" class="mt-2">
+            {% csrf_token %}
+            <input type="hidden" name="machine_pk" value="" data-nui-scope-input>
+            <div class="row g-1 small mb-1">
+                <div class="col-6"><label class="text-muted d-block">Centro de gasto (vacío: el abierto)</label><input name="cost_center" class="form-control form-control-sm" placeholder="Código"></div>
+                <div class="col-6"><label class="text-muted d-block">Fecha de entrega *</label><input type="date" name="start_date" class="form-control form-control-sm" required></div>
+            </div>
+            <div class="small text-muted mb-1">Entregado a (responsable) *</div>
+            <input type="search" class="form-control form-control-sm mb-1" placeholder="Escribe para buscar al trabajador…" aria-label="Buscar trabajador" data-nui-filter-list>
+            <div class="border rounded px-2 py-1 mb-1 small" style="max-height: 8rem; overflow-y: auto;" data-nui-filter-target>
+                {% for pk, label in acc_people %}<label class="form-check mb-0" data-nui-filter-item><input class="form-check-input" type="radio" name="responsible_person" value="{{ pk }}"> <span class="form-check-label">{{ label }}</span></label>{% endfor %}
+            </div>
+            <input name="notes" class="form-control form-control-sm mb-1" placeholder="Observaciones">
+            <button type="submit" class="btn btn-sm btn-success">Entregar</button>
+        </form>
+    </details>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:accessory_return' %}" class="mb-3 d-flex flex-wrap align-items-center gap-1">
+        {% csrf_token %}
+        <span class="small fw-semibold me-1">Devolver los marcados</span>
+        <input type="date" name="end_date" class="form-control form-control-sm" style="width: 10rem;" aria-label="Fecha de devolución" required>
+        <button type="submit" class="btn btn-sm btn-outline-primary">Devolver</button>
+    </form>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:accessory_review' %}" enctype="multipart/form-data" class="mb-3">
+        {% csrf_token %}
+        <div class="small fw-semibold mb-1">Registrar la revisión de los marcados</div>
+        <div class="row g-1 small mb-1">
+            <div class="col-6"><label class="text-muted d-block">Fecha de revisión *</label><input type="date" name="review_date" class="form-control form-control-sm" required></div>
+            <div class="col-6"><label class="text-muted d-block">Caducidad (opcional)</label><input type="date" name="explicit_expiry_date" class="form-control form-control-sm"></div>
+            <div class="col-12"><label class="text-muted d-block">Documento (opcional, con uno solo marcado)</label><input type="file" name="review_file" accept=".pdf,.jpg,.jpeg,.png" class="form-control form-control-sm"></div>
+        </div>
+        <button type="submit" class="btn btn-sm btn-primary">Registrar revisión</button>
+        <span class="small text-muted ms-1">Sin caducidad, vale la revisión + 12 meses.</span>
+    </form>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:accessory_certificate' %}" enctype="multipart/form-data" class="mb-3 d-flex flex-wrap align-items-center gap-1" data-nui-reset-after>
+        {% csrf_token %}
+        <span class="small fw-semibold me-1">Otro certificado (uno marcado)</span>
+        <input type="file" name="certificate_file" accept=".pdf,.jpg,.jpeg,.png" class="form-control form-control-sm" style="max-width: 16rem;" required>
+        <button type="submit" class="btn btn-sm btn-outline-primary">Subir</button>
+    </form>
+    <form data-nui-action-form data-nui-needs-selection action="{% url 'new_ui:accessory_status' %}">
+        {% csrf_token %}
+        <button type="submit" name="action" value="retire" class="btn btn-sm btn-outline-danger" data-nui-confirm="¿Retirar del servicio los marcados? Se cierra su entrega abierta con fecha de hoy.">Retirar del servicio</button>
+        <button type="submit" name="action" value="reactivate" class="btn btn-sm btn-outline-success">Reactivar</button>
+    </form>
+</div>

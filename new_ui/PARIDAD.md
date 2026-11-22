@@ -109,6 +109,6 @@ Estado: ✅ hecho y comprobado en producción · ⬜ pendiente.
 - ✅ (S163) Taller: partes, averías y libro (vistas Taller, Averías y Libro historial; Excel con Exportar), libros en ZIP (Documentos › Descargar los marcados), revisiones del libro (escaneo, reconstruir, a firma, quitar) y revisiones que faltan («Del centro de gasto» y página aparte)
 - ✅ (S163) Especificaciones: exportar (Exportar común, como todas las vistas)
 - ✅ (S163) Repostajes: unidad, preguntar (vehículo y, en Personal, chófer), contador; exportar con plantillas (Exportar y Columnas comunes)
-- ⬜ Accesorios de elevación: alta, estado, revisión, entrega y devolución
+- ✅ (S163) Accesorios de elevación: alta (con certificado), estado (retirar/reactivar), revisión, entrega, devolución y otro certificado
   (uno y en masa), certificado, tipos y modelos
 - ⬜ Equipos: nuevo, acciones, exportar
